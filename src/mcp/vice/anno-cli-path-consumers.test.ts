@@ -477,7 +477,7 @@ test("planted violation: a command function that writes a caller-supplied --out 
   // that a tiny file has few call sites.
   const plantedConfined = [
     'import { writeFileSync } from "node:fs";',
-    'import { storePathWithinWorkspace } from "./anno-types.ts";',
+    'import { storePathWithinWorkspace } from "./anno-types.mts";',
     "export function cmdSomething(out: string, body: string, root: string): number {",
     "  const outPath = storePathWithinWorkspace(out, root);",
     "  writeFileSync(outPath, body);",

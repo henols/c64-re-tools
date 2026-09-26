@@ -42,7 +42,7 @@ import {
   setDataType,
   setLabel,
   updateProjectEnum,
-} from "./anno-store.ts";
+} from "./anno-store.mts";
 import {
   ANNO_READ_REGION_MAX_BYTES,
   ANNO_READ_REGION_MAX_BYTES_ENV,
@@ -54,13 +54,13 @@ import {
   READ_ONLY_ANNO_VERBS,
   assertAnnoBatch,
   assertAnnoTool,
-} from "./anno-tools.ts";
+} from "./anno-tools.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
 import { loadTextFixture } from "./textmon-fixtures.ts";
-import { accessMapRanges, parseAccessMap } from "./textmon-memmap.ts";
-import { execObservationsFrom } from "./evid-ingest.ts";
-import { argvDigest } from "./capture-predicate.ts";
-import * as annoTypesModule from "./anno-types.ts";
+import { accessMapRanges, parseAccessMap } from "./textmon-memmap.mts";
+import { execObservationsFrom } from "./evid-ingest.mts";
+import { argvDigest } from "./capture-predicate.mts";
+import * as annoTypesModule from "./anno-types.mts";
 import { callStockTool } from "./stock-tools.ts";
 import { type StockSessionDeps } from "./stock-session.ts";
 import type { BrokerControlSession } from "./vice-broker-client.ts";
@@ -68,7 +68,7 @@ import { textConnect, textDisconnect } from "./text-connect.ts";
 import { withTextChannelLock } from "./text-protocol.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ANNO_TOOLS_SOURCE = readFileSync(join(HERE, "anno-tools.ts"), "utf8");
+const ANNO_TOOLS_SOURCE = readFileSync(join(HERE, "anno-tools.mts"), "utf8");
 const ANNO_CALL_CLIENT_SOURCE = readFileSync(join(HERE, "anno-call-client.ts"), "utf8");
 
 /** Runs `body` with `CLAUDE_PROJECT_DIR` pointed at a fresh temp workspace
@@ -253,14 +253,14 @@ test("CURATED_ANNO_TOOLS is DERIVED from ANNO_TOOL_DEFINITIONS, never a second h
 // Structural guards over this module's own source (D-06, T-29-03, MCP-02).
 // ---------------------------------------------------------------------------
 
-test("anno-tools.ts holds no module-level mutable store handle (D-06)", () => {
+test("anno-tools.mts holds no module-level mutable store handle (D-06)", () => {
   const declarations = ANNO_TOOLS_SOURCE.split("\n").filter((line) => /^(?:let|var)\s/.test(line));
-  assert.deepEqual(declarations, [], `anno-tools.ts must hold no module-level mutable state, found: ${JSON.stringify(declarations)}`);
+  assert.deepEqual(declarations, [], `anno-tools.mts must hold no module-level mutable state, found: ${JSON.stringify(declarations)}`);
   const topLevelBindings = ANNO_TOOLS_SOURCE.split("\n").filter((line) => /^(?:const|let|var)\s+\w+.*=\s*openStore\(/.test(line));
   assert.deepEqual(topLevelBindings, [], "no module-scope binding may hold a store handle -- the handle lives for one call and no longer");
 });
 
-test("anno-tools.ts opens no store, and every openStore( in anno-call-client.ts is closed by a closeStore( inside a finally (T-29-03)", () => {
+test("anno-tools.mts opens no store, and every openStore( in anno-call-client.ts is closed by a closeStore( inside a finally (T-29-03)", () => {
   const code = (source: string) => source.split("\n").filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"));
   assert.deepEqual(code(ANNO_TOOLS_SOURCE).filter((line) => /\b(openStore|closeStore)\(/.test(line)), [], "the engine never opens or closes a store; its caller owns the handle");
   const opens = code(ANNO_CALL_CLIENT_SOURCE).filter((line) => line.includes("openStore("));
@@ -278,16 +278,16 @@ test("anno-tools.ts opens no store, and every openStore( in anno-call-client.ts 
   );
 });
 
-test("MCP-02 by construction: anno-tools.ts reaches no VICE transport", () => {
+test("MCP-02 by construction: anno-tools.mts reaches no VICE transport", () => {
   const code = ANNO_TOOLS_SOURCE.split("\n")
     .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"))
     .join("\n");
   for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments"]) {
-    assert.ok(!code.includes(forbidden), `anno-tools.ts must not reach ${forbidden} -- that is what makes the anno_* family's backend-independence sound`);
+    assert.ok(!code.includes(forbidden), `anno-tools.mts must not reach ${forbidden} -- that is what makes the anno_* family's backend-independence sound`);
   }
 });
 
-test("anno-tools.ts never throws a bare Error -- every refusal is an AnnoStoreError and therefore a ViceError", () => {
+test("anno-tools.mts never throws a bare Error -- every refusal is an AnnoStoreError and therefore a ViceError", () => {
   assert.equal(ANNO_TOOLS_SOURCE.includes("throw new Error("), false, "a bare Error escapes the ViceError family one catch is written against");
 });
 
@@ -910,21 +910,21 @@ test("every verb closes the store: no handle is left open and no journal sidecar
   );
 });
 
-test("anno-tools.ts re-implements no address parsing, no range validation and no data-type membership -- every such check calls an anno-types.ts export", () => {
+test("anno-tools.mts re-implements no address parsing, no range validation and no data-type membership -- every such check calls an anno-types.mts export", () => {
   for (const owned of ["parseStoreAddress(", "assertRangeShape(", "assertDataType(", "assertLegalLabel(", "assertCommentText(", "assertEnumName(", "assertCommentType(", "assertLabelKind("]) {
-    assert.ok(ANNO_TOOLS_CODE.includes(owned), `anno-tools.ts must route through anno-types.ts's ${owned}`);
+    assert.ok(ANNO_TOOLS_CODE.includes(owned), `anno-tools.mts must route through anno-types.mts's ${owned}`);
   }
   // Asserted over the STRIPPED source, so the header prose naming these
   // hazards cannot make the check pass by containing the words.
   for (const forbidden of ["parseInt(", "parseFloat(", "charCodeAt(", "normalize("]) {
-    assert.equal(ANNO_TOOLS_CODE.includes(forbidden), false, `${forbidden} in anno-tools.ts would be a second, divergent rule beside the store's own`);
+    assert.equal(ANNO_TOOLS_CODE.includes(forbidden), false, `${forbidden} in anno-tools.mts would be a second, divergent rule beside the store's own`);
   }
   // Case folding is permitted in EXACTLY one place -- normalizing a FILE
   // EXTENSION, which is `anno-cli.ts`'s own discipline and not an argument
   // rule. Anywhere else it would silently merge two names a human
   // distinguished, which is the sanitization T-29-23 forbids.
   const foldSites = ANNO_TOOLS_CODE.split("toLowerCase()").length - 1;
-  assert.equal(foldSites, 1, "case folding must appear exactly once in anno-tools.ts");
+  assert.equal(foldSites, 1, "case folding must appear exactly once in anno-tools.mts");
   assert.match(ANNO_TOOLS_CODE, /extname\([^)]*\)\.toLowerCase\(\)/, "the one case-folding site must be the file-extension normalization");
   // No second copy of the frozen twelve as an executable array. The
   // inputSchema's `enum` is documentation and its members are string literals,
@@ -1004,8 +1004,8 @@ test("anno_disassemble decodes at an EXPLICIT address, and the surface names no 
 
 // ---------------------------------------------------------------------------
 // D-16/D-17 (plan 45-05): `anno_disassemble` is the SECOND renderer -- it
-// calls `decomposeRegisterValue()` (`anno-enum-gen.ts`, plan 45-03), the SAME
-// owning decoder `anno-export-asm.ts`'s real-ACME byte-diff oracle proves.
+// calls `decomposeRegisterValue()` (`anno-enum-gen.mts`, plan 45-03), the SAME
+// owning decoder `anno-export-asm.mts`'s real-ACME byte-diff oracle proves.
 // This surface adds NOTHING to that proof; it only makes a bound register
 // write readable in the one place a Claude session actually looks.
 // ---------------------------------------------------------------------------
@@ -1084,7 +1084,7 @@ test("D-16 Test 4: an enum usage naming an enum the store does not hold is REFUS
       // applyEnumUsage() resolves the enum inside its own transaction, so
       // reaching "the store holds no definition" needs a project enum that
       // is later removed from underneath the usage -- the same unreachable-
-      // through-the-public-route state `anno-export-asm.ts`'s own identical
+      // through-the-public-route state `anno-export-asm.mts`'s own identical
       // check documents. Reproduced the SAME way that file's own comment
       // says: create the enum, bind the usage, then rename the enum away
       // from the name the usage still carries (`updateProjectEnum` replaces
@@ -1323,7 +1323,7 @@ test("CR-01: an inverted span is refused IDENTICALLY by both verbs, and the one 
       const image = writeImage(ws, "tiny.prg", TINY_PRG);
 
       // FIRST LAYER. When the caller NAMES an end below the start, the shared
-      // range-shape validator in anno-types.ts refuses it for both verbs
+      // range-shape validator in anno-types.mts refuses it for both verbs
       // before any byte is indexed. That is a caller error, not an
       // unanswerable question, and both verbs report it the same way -- the
       // agreement CR-01 is about holds at this layer too.
@@ -2148,7 +2148,7 @@ test("WR-01: anno_join_memmap's loadImage() error paths -- a missing image and a
 
 // ---------------------------------------------------------------------------
 // Plan 43-05 Task 2: anno_evid_ingest -- registered through the existing
-// anno loop, writing the rows through evid-ingest.ts's pure transform.
+// anno loop, writing the rows through evid-ingest.mts's pure transform.
 // ---------------------------------------------------------------------------
 
 const VALID_SHA = "b".repeat(64);
@@ -2733,7 +2733,7 @@ test(
 
 // ---------------------------------------------------------------------------
 // Plan 43-06 Task 1: anno_evid_disagreements and anno_evid_runs -- the
-// store-side query verbs over evid-reconcile.ts's pure join.
+// store-side query verbs over evid-reconcile.mts's pure join.
 // ---------------------------------------------------------------------------
 
 function rangesOf(ws: string, store: string): ReturnType<typeof listRanges> {
@@ -2751,7 +2751,7 @@ test(
   async () => {
     await withStore(
       (handle) => {
-        // "byte" maps to the neutral "data" class through block-class.ts's
+        // "byte" maps to the neutral "data" class through block-class.mts's
         // fallthrough -- the store's own twelve-member vocabulary has no
         // literal "data" spelling; every non-code, non-undefined spelling
         // becomes "data".
@@ -2905,12 +2905,12 @@ test("anno_evid_disagreements and anno_evid_runs are curated (derived from ANNO_
 
 /**
  * The run-class vocabulary this store schema ACTUALLY supports, derived from
- * `anno-types.ts`'s own exports rather than hand-typed. On the `promote`
+ * `anno-types.mts`'s own exports rather than hand-typed. On the `promote`
  * branch of this project's own frame-exact-vs-instrumented A/B decision --
- * the branch not taken here -- this would be `anno-types.ts`'s own exported
+ * the branch not taken here -- this would be `anno-types.mts`'s own exported
  * `RUN_CLASSES` (`"frame-exact" |
  * "instrumented"`). On the `no-change` branch this project's own live A/B
- * actually selected, `anno-types.ts` exports no such array at all: there is
+ * actually selected, `anno-types.mts` exports no such array at all: there is
  * exactly ONE implicit run class -- the bare `(imageSha256, argvDigest,
  * seed)` triple, no discriminator column -- and that single-element
  * vocabulary is what this constant derives, by detecting the ABSENCE of a
@@ -3070,10 +3070,10 @@ test("anno_evid_reset is absent from READ_ONLY_ANNO_VERBS -- it writes, so it ta
   assert.ok(CURATED_ANNO_TOOLS.includes("anno_evid_reset"));
 });
 
-test("anno-tools.ts calls argvDigest() nowhere -- the digest is computed only inside evid-ingest.ts/capture-predicate.ts, so a call site here would be a second identity site", () => {
+test("anno-tools.mts calls argvDigest() nowhere -- the digest is computed only inside evid-ingest.mts/capture-predicate.mts, so a call site here would be a second identity site", () => {
   assert.equal(
     (ANNO_TOOLS_SOURCE.match(/argvDigest\(/g) ?? []).length,
     0,
-    "anno-tools.ts must reference argvDigest only as a field/property name (via runIdentityFrom()'s return value), never call the function itself",
+    "anno-tools.mts must reference argvDigest only as a field/property name (via runIdentityFrom()'s return value), never call the function itself",
   );
 });

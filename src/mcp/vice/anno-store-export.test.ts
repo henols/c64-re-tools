@@ -21,8 +21,8 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { openStore, closeStore, setDataType, setLabel, setComment, createProjectEnum, applyEnumUsage, putXref, insertExecObservations, addScope, listScopes } from "./anno-store.ts";
-import type { AnnoStoreHandle } from "./anno-store.ts";
+import { openStore, closeStore, setDataType, setLabel, setComment, createProjectEnum, applyEnumUsage, putXref, insertExecObservations, addScope, listScopes } from "./anno-store.mts";
+import type { AnnoStoreHandle } from "./anno-store.mts";
 import {
   STORE_EXPORT_SCHEMA_VERSION,
   DECLINE_COMMENT_PREFIX,
@@ -33,8 +33,8 @@ import {
   provenanceForComment,
   isDeclineComment,
   AnnoStoreExportError,
-} from "./anno-store-export.ts";
-import type { StoreExportDocument } from "./anno-store-export.ts";
+} from "./anno-store-export.mts";
+import type { StoreExportDocument } from "./anno-store-export.mts";
 
 /** One temp directory per test, removed unconditionally -- mirrors
  * `anno-import.test.ts`'s own `inTempDir()`. Never inside the repo tree. */

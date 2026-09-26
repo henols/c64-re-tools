@@ -192,15 +192,15 @@ tree, and review the diff before you commit it.
 `memmap.json`'s structured `bits` entries are the source of the curated register bit-name table used
 to generate program-specific enums for this project's annotation store: register
 writes disassemble as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` instead of a bare `#$1b`. The
-generator is `src/mcp/vice/anno-regbits-gen.ts`. Its committed output is
+generator is `src/mcp/vice/anno-regbits-gen.mts`. Its committed output is
 `src/mcp/vice/anno-regbits.json`. That output is **digest-pinned** to `memmap.json`. A
-`node anno-regbits-gen.ts` run compares its own fresh build against the committed file, and CI fails
+`node anno-regbits-gen.mts` run compares its own fresh build against the committed file, and CI fails
 if `memmap.json` changed without a re-run.
 
 **The honest gap:** only 29 of this file's 959 entries carry a structured `bits` array. `$D015`,
 `$D017`, `$D01A` and `$D01B`–`$D01D` — the sprite-plane bitmask registers a real game writes
 constantly — are **not** among those 29, so the enum generator supplies them from its own curated
-override table (`OVERRIDES` in `anno-regbits-gen.ts`), not from this file. Widening `memmap.json`'s
+override table (`OVERRIDES` in `anno-regbits-gen.mts`), not from this file. Widening `memmap.json`'s
 `io` parser (or correcting the OCR damage already present in some `bits` prose, e.g. a letter `O` for
 the digit `0`) so those registers get a real structured entry here is separate work belonging to this
 skill, not the generator.

@@ -1,4 +1,4 @@
-// anno-regbits.test.ts -- coverage for anno-regbits-gen.ts (D-22, ANNO-13
+// anno-regbits.test.ts -- coverage for anno-regbits-gen.mts (D-22, ANNO-13
 // Task 1): the drift guard between the generator and the committed artifact,
 // the digest pin against memmap.json, identifier legality across the whole
 // table, presence of the six override-supplied (memmap-absent) registers,
@@ -17,7 +17,7 @@ import {
   memmapSha256,
   parseBitRange,
   type RegBitsField,
-} from "./anno-regbits-gen.ts";
+} from "./anno-regbits-gen.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ACME_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -59,7 +59,7 @@ test("drift guard: the committed banner's memmapSha256 equals memmap.json's curr
   const committed = readCommittedDoc();
   const banner = committed._generated as { memmapSha256: string; generator: string; warning: string };
   assert.equal(banner.memmapSha256, memmapSha256());
-  assert.equal(banner.generator, "anno-regbits-gen.ts");
+  assert.equal(banner.generator, "anno-regbits-gen.mts");
   assert.match(banner.warning, /do not hand-edit/i);
 });
 
@@ -98,11 +98,11 @@ test("non-vacuous drift guard: appending a byte to a SCRATCH COPY of memmap.json
   const mutatedPath = path.join(skillsDir, "memmap.json");
   fs.writeFileSync(mutatedPath, Buffer.concat([realBytes, Buffer.from("\n// planted for T-11-GEN-DRIFT non-vacuity\n")]));
 
-  const genSrc = readFileSync(join(HERE, "anno-regbits-gen.ts"), "utf8");
-  fs.writeFileSync(path.join(mcpDir, "anno-regbits-gen.ts"), genSrc);
+  const genSrc = readFileSync(join(HERE, "anno-regbits-gen.mts"), "utf8");
+  fs.writeFileSync(path.join(mcpDir, "anno-regbits-gen.mts"), genSrc);
 
   const { memmapSha256: mutatedMemmapSha256 } = (await import(
-    `${path.join(mcpDir, "anno-regbits-gen.ts")}?t=${Date.now()}`
+    `${path.join(mcpDir, "anno-regbits-gen.mts")}?t=${Date.now()}`
   )) as { memmapSha256: () => string };
 
   const committedDigest = (readCommittedDoc()._generated as { memmapSha256: string }).memmapSha256;
@@ -187,7 +187,7 @@ test("the table also contains $D011 and $01 (address 1)", () => {
 // ---------------------------------------------------------------------------
 
 test("OVERRIDES: every field/register override entry carries a WHY comment (grep-counted, not eyeballed)", () => {
-  const src = readFileSync(join(HERE, "anno-regbits-gen.ts"), "utf8");
+  const src = readFileSync(join(HERE, "anno-regbits-gen.mts"), "utf8");
   const overridesSection = src.slice(src.indexOf("export const OVERRIDES"), src.indexOf("function findOverride"));
   const whyComments = overridesSection.match(/\/\/ WHY:/g) ?? [];
   // Count override "entries" as field-override objects (each carries its own bit) plus
@@ -195,7 +195,7 @@ test("OVERRIDES: every field/register override entry carries a WHY comment (grep
   const fieldEntries = overridesSection.match(/\{ bit: "/g) ?? [];
   const registerEntries = overridesSection.match(/address: \d+, \/\//g) ?? [];
   console.log(
-    `anno-regbits-gen.ts OVERRIDES: ${whyComments.length} WHY comments, ${fieldEntries.length} field-level entries, ` +
+    `anno-regbits-gen.mts OVERRIDES: ${whyComments.length} WHY comments, ${fieldEntries.length} field-level entries, ` +
       `${registerEntries.length} register-level (label/synthetic) entries needing their own WHY`,
   );
   assert.ok(whyComments.length >= fieldEntries.length, "every field-level override entry must carry its own WHY comment");
@@ -232,11 +232,11 @@ test("non-vacuity: a synthetic memmap entry whose desc is unmappable and absent 
   };
   fs.writeFileSync(path.join(skillsDir, "memmap.json"), JSON.stringify(syntheticMemmap));
 
-  const genSrc = fs.readFileSync(path.join(HERE, "anno-regbits-gen.ts"), "utf8");
-  const copiedGenPath = path.join(mcpDir, "anno-regbits-gen.ts");
+  const genSrc = fs.readFileSync(path.join(HERE, "anno-regbits-gen.mts"), "utf8");
+  const copiedGenPath = path.join(mcpDir, "anno-regbits-gen.mts");
   fs.writeFileSync(copiedGenPath, genSrc);
 
-  const { buildRegBits: buildRegBitsFromCopy } = (await import(`${path.join(mcpDir, "anno-regbits-gen.ts")}?t=${Date.now()}`)) as {
+  const { buildRegBits: buildRegBitsFromCopy } = (await import(`${path.join(mcpDir, "anno-regbits-gen.mts")}?t=${Date.now()}`)) as {
     buildRegBits: () => unknown;
   };
 

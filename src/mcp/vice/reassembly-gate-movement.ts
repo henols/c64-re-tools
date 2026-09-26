@@ -62,7 +62,7 @@
 //     stated in words instead.
 import type { AcmeOutcome } from "./acme-verify.ts";
 import type { MovementOutcome, MovementResult } from "./reassembly-gate.ts";
-import type { StoreExportDocument, StoreExportRangeRow, StoreExportScopeRow } from "./anno-store-export.ts";
+import type { StoreExportDocument, StoreExportRangeRow, StoreExportScopeRow } from "./anno-store-export.mts";
 
 /**
  * The three ways a declared reference site holds an address, and there are

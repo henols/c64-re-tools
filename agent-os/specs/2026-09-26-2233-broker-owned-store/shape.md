@@ -119,7 +119,7 @@ from all 28 `anno call` tools and all 6 report verbs.
 - **Step 2a scaffolding:** until the cutover, the client still takes `store`,
   opens it through the shim, and strips the argument before calling the engine.
 
-- **Report engine (step 2b).** `anno-reports.ts` answers all six report verbs
+- **Report engine (step 2b).** `anno-reports.mts` answers all six report verbs
   through `runAnnoReportOnHandle(handle, name, args, inputs)`, which returns
   `{json, files}`.
   - `anno-cli.ts` confines the paths and reads the inputs. It stages each
@@ -145,6 +145,20 @@ from all 28 `anno call` tools and all 6 report verbs.
   `buildCoverageReport({project})`. They move client-side at the cutover.
   - The export-asm ledger text is a thunk. A store with no ranges is then
     still refused before a named ledger is read, as it was before.
+
+- **The engine is host-bound (step 2c).** `anno-tools`, `anno-reports` and
+  their whole import closure -- 32 modules, all self-contained, types included
+  -- are renamed to `.mts` and compiled into `resources/`. That brings
+  `HOST_BOUND_ARTIFACTS` to 54.
+  - The rename rewrote 1183 references in 174 files. Past specs were left
+    alone as history.
+  - `build()` now puts its banner after a leading shebang, because the
+    engine sources start with `#!/usr/bin/env node` and the banner was
+    landing above it.
+  - `HOST_BOUND_DATA_FILES` now carries a source path per file, so
+    `memmap.json` (from `skills/c64-memory-mapping/`) and `anno-regbits.json`
+    sit beside the compiled engine, where memmap-lookup and anno-enum-gen look
+    first. The packed smoke test reads 959 memmap entries from the package.
 
 ## Context
 

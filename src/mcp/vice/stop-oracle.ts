@@ -17,7 +17,7 @@
 //      byte-array parameter of any kind, and `capture-seam.test.ts` asserts that
 //      from this module's own exported signatures, over stripped code, with a
 //      planted oracle-shaped module as its positive control.
-//   2. This module imports NOTHING from `capture-predicate.ts`, on any route,
+//   2. This module imports NOTHING from `capture-predicate.mts`, on any route,
 //      static or dynamic -- and that module imports nothing from here. Both
 //      directions are asserted, because the circularity is symmetric and a
 //      one-directional guard leaves half of it open.
@@ -41,7 +41,7 @@
 //     the structural assertions cannot see it: a caller that reads the capture
 //     and passes a digest in here has reintroduced the circularity through a
 //     `number`. It is recorded as an accepted limit rather than left implicit.
-//   - Never import `capture-predicate.ts` here, and never reach it dynamically.
+//   - Never import `capture-predicate.mts` here, and never reach it dynamically.
 //   - Never ship a two-term mode flag. `GATE-01`'s pre-mapped
 //     `ORACLE_NECESSITY: unproven` narrowing is implementable by READING
 //     `differingTerms` and treating the frame entries as recorded-not-fatal;

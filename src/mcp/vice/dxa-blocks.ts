@@ -2,7 +2,7 @@
 // dxa-blocks.ts
 //
 // Phase 35, plan 35-04 (DXA-03): the ONE emitter that turns the annotation
-// store's frozen twelve-member `DATA_TYPES` vocabulary (`anno-types.ts`) into
+// store's frozen twelve-member `DATA_TYPES` vocabulary (`anno-types.mts`) into
 // the two files dxa itself reads back -- a `-B` datablocks file (one
 // `xxxx-yyyy` range per line) and a `-l` xa65-format labels file. Naming a
 // range here is what makes dxa's OWN classification exclude those bytes from
@@ -14,16 +14,16 @@
 //
 // THIS MODULE MUST NEVER CALL `node:child_process` (SEAM-05's `BANNED_COMMAND_SHAPES` already names
 // `dxa`; nothing here spawns anything). It also NEVER NAMES `node:sqlite` and
-// NEVER OPENS THE STORE FILE ITSELF: `anno-store.ts` is the one module
+// NEVER OPENS THE STORE FILE ITSELF: `anno-store.mts` is the one module
 // permitted to name that dependency, and this module reads
 // only the ALREADY-FETCHED rows a caller passes in (typically
-// `anno-store.ts`'s own `listRanges()` result, augmented with an optional
+// `anno-store.mts`'s own `listRanges()` result, augmented with an optional
 // `sym` per row for `emitLabels()`) -- it never opens the store's `.db` file,
-// never imports `anno-store.ts`, and asserts nothing about how the caller got
+// never imports `anno-store.mts`, and asserts nothing about how the caller got
 // its rows.
 //
 // A-12: THE SELECTION IS DERIVED, NEVER HAND-LISTED. `DATA_BEARING_TYPES` is
-// `DATA_TYPES` (the frozen twelve, `anno-types.ts`) filtered to exclude
+// `DATA_TYPES` (the frozen twelve, `anno-types.mts`) filtered to exclude
 // exactly `"code"` (bytes the store says ARE program) and `"undefined"`
 // (bytes the store does not know) -- the remaining ten are every dataType the
 // store already knows is data. A thirteenth member added to `DATA_TYPES`
@@ -65,7 +65,7 @@
 // derived row set, rather than building a second emitter.
 import { writeFileSync } from "node:fs";
 
-import { DATA_TYPES, type DataType } from "./anno-types.ts";
+import { DATA_TYPES, type DataType } from "./anno-types.mts";
 
 /** The ten `DATA_TYPES` members that are ALREADY known to be data --
  * every member of the frozen twelve EXCEPT `"code"` (program) and
@@ -79,7 +79,7 @@ export const DATA_BEARING_TYPES: readonly DataType[] = Object.freeze(
 const DATA_BEARING_SET: ReadonlySet<DataType> = new Set(DATA_BEARING_TYPES);
 
 /** One known-data row, as this module consumes it. `start`/`endInclusive`
- * mirror `anno-types.ts`'s own `RangeRow` shape (inclusive at both ends);
+ * mirror `anno-types.mts`'s own `RangeRow` shape (inclusive at both ends);
  * `sym`, when present, is the name `emitLabels()` binds to `start` in the
  * xa65-format labels file. A row with no `sym` is silently omitted from the
  * labels file -- never synthesised (a synthesised name would enter dxa's

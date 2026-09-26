@@ -1,6 +1,6 @@
 # SQLite Rules
 
-Only `anno-store.ts` imports `node:sqlite`. Everything else calls its
+Only `anno-store.mts` imports `node:sqlite`. Everything else calls its
 functions.
 
 ```ts

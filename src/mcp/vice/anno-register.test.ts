@@ -42,7 +42,7 @@ import { fileURLToPath } from "node:url";
 
 import { ANNO_VERB_REGISTER, annoRegisterEntryFor } from "./anno-register.ts";
 import type { AnnoVerbRegisterEntry } from "./anno-register.ts";
-import { ANNO_TOOL_DEFINITIONS, CURATED_ANNO_TOOLS } from "./anno-tools.ts";
+import { ANNO_TOOL_DEFINITIONS, CURATED_ANNO_TOOLS } from "./anno-tools.mts";
 import { repoRoot } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -367,7 +367,7 @@ test("the register's exported lookup agrees with the array it reads -- one looku
 const CLEAN_SYNTHETIC: AnnoVerbRegisterEntry = {
   verb: "anno_search",
   kind: "unclassified",
-  consumers: [{ path: "src/mcp/vice/anno-derive.ts", symbol: "searchAnnotations" }],
+  consumers: [{ path: "src/mcp/vice/anno-derive.mts", symbol: "searchAnnotations" }],
   requirements: ["STORE-06"],
   rationale: "a synthetic clean entry, used only to drive the predicates as a negative control",
 };

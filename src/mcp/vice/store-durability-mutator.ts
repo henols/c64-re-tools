@@ -30,7 +30,7 @@
 // `STORE-04` requires ONE combined test whose planted violation is the removal
 // of the single `commit`, because two separate tests -- one for durability, one
 // for revert -- both stay green over a store that satisfies neither claim. The
-// mechanism that fuses them is in `anno-store.ts`: the snapshot POINTER ROW is
+// mechanism that fuses them is in `anno-store.mts`: the snapshot POINTER ROW is
 // inserted in the same transaction as the mutation, so losing the commit loses
 // the mutation and the ability to undo it at the same instant.
 //
@@ -101,7 +101,7 @@
 // above, and it reuses their two decisions rather than re-deriving them:
 //
 //   * THE MUTATION IS A SINGLE RAW INSERT, for decision 2's exact reason.
-//     `insertExecObservations()` (`anno-store.ts`) hard-wires `applyWrite`
+//     `insertExecObservations()` (`anno-store.mts`) hard-wires `applyWrite`
 //     (the COMMITTING wrapper) the same way `setDataType()` does, so routing
 //     a committing planting through it and a no-commit planting through
 //     `applyWriteWithoutCommit` would make the two plantings differ in more
@@ -136,8 +136,8 @@
 import { writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { applyWrite, applyWriteWithoutCommit, closeStore, openStore } from "./anno-store.ts";
-import type { AnnoStoreHandle, ScopedDb } from "./anno-store.ts";
+import { applyWrite, applyWriteWithoutCommit, closeStore, openStore } from "./anno-store.mts";
+import type { AnnoStoreHandle, ScopedDb } from "./anno-store.mts";
 
 /** The project-scoped statement factory a mutate callback receives. */
 type StoreDb = ScopedDb;
@@ -214,7 +214,7 @@ function pickWriter(token: string | undefined): Writer {
 function mutateStore(storePath: string, write: Writer, range: RangeSpec): AnnoStoreHandle {
   // CONFINED, NOT ESCAPED (WR-25). `openStore`'s workspace root is REQUIRED as
   // of 28-21, and this helper has a real one to give: the store file's own
-  // directory. It is not a module-derived path in `anno-store.ts`'s sense --
+  // directory. It is not a module-derived path in `anno-store.mts`'s sense --
   // it arrives on argv -- so the escape hatch is the wrong remedy here and
   // would make this spawned helper the one caller that forgets.
   const handle = openStore(storePath, { workspaceRoot: dirname(storePath) });

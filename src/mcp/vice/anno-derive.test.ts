@@ -3,7 +3,7 @@
 // sorted and de-duplicated -- and NOTHING is written while answering.
 //
 // WHY THE FIXTURE IS A REAL `.prg` DECODED BY THE REAL DECODERS. A hand-built
-// `Instruction[]` would let this file's expectations and `disasm-decoder.ts`'s
+// `Instruction[]` would let this file's expectations and `disasm-decoder.mts`'s
 // behaviour drift apart silently: the test would keep passing over a decoder
 // that stopped resolving branch targets. Every case below therefore starts from
 // 34 real bytes, goes through `parsePrg()`, and is decoded by the same
@@ -34,18 +34,18 @@ import {
   setComment,
   setDataType,
   setLabel,
-} from "./anno-store.ts";
-import type { AnnoStoreHandle } from "./anno-store.ts";
-import { NO_ROW, resolveAt } from "./anno-index.ts";
-import { AnnoAddressError } from "./anno-types.ts";
-import { parsePrg } from "./prg-image.ts";
+} from "./anno-store.mts";
+import type { AnnoStoreHandle } from "./anno-store.mts";
+import { NO_ROW, resolveAt } from "./anno-index.mts";
+import { AnnoAddressError } from "./anno-types.mts";
+import { parsePrg } from "./prg-image.mts";
 import {
   AnnoDeriveArgumentError,
   ANNO_DERIVE_MAX_IMAGE_BYTES,
   crossReferencesTo,
   searchAnnotations,
-} from "./anno-derive.ts";
-import { composeAddressDetails } from "./anno-details.ts";
+} from "./anno-derive.mts";
+import { composeAddressDetails } from "./anno-details.mts";
 
 // ---------------------------------------------------------------------------
 // The fixture: 34 real bytes, laid out so every behavioural case in the plan

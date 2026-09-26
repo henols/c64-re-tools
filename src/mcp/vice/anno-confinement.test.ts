@@ -1,5 +1,5 @@
 // anno-confinement.test.ts -- the workspace-confinement control set for
-// `STORE-01`'s write path and `anno-store.ts`'s trap 7: a store write must not
+// `STORE-01`'s write path and `anno-store.mts`'s trap 7: a store write must not
 // land outside the workspace root it was confined to.
 //
 // WHY THIS FILE EXISTS AT ALL. `28-VERIFICATION.md` gap 3 / `28-REVIEW.md`
@@ -93,10 +93,10 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
-import { closeStore, openStore } from "./anno-store.ts";
-import { AnnoStorePathError, storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.ts";
+import { closeStore, openStore } from "./anno-store.mts";
+import { AnnoStorePathError, storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
-import { ViceError } from "./vice-errors.ts";
+import { ViceError } from "./vice-errors.mts";
 
 /** `anno-store.test.ts`'s `inTempDir` shape -- `mkdtempSync` under `tmpdir()`
  * inside a `try` with an UNCONDITIONAL `finally rmSync`. The one addition is
@@ -712,7 +712,7 @@ test("15. a symlink cycle in an ANCESTOR position is refused with AnnoStorePathE
 
 // ---------------------------------------------------------------------------
 // `workspaceRelativePath()` -- the control set for the OTHER seam in
-// `anno-types.ts`, placed here rather than in a new file because it shares a
+// `anno-types.mts`, placed here rather than in a new file because it shares a
 // root-resolution rule with `storePathWithinWorkspace()` above and the same
 // symlink scaffolding is what tests that rule.
 //
@@ -854,7 +854,7 @@ test("19. workspaceRelativePath: a symlinked workspace ROOT does not make an in-
 // WORKSPACE ROOT IS MOVED, NOT MOCKED" -- `repoRoot()`'s branch 0 reads
 // `CLAUDE_PROJECT_DIR` from `process.env` on every call, so pointing that
 // variable at a temp directory exercises the REAL confinement code against a
-// REAL temporary workspace. A removal of the resolve call in `anno-tools.ts`'s
+// REAL temporary workspace. A removal of the resolve call in `anno-tools.mts`'s
 // dispatch arm reddens THIS file rather than only a unit test that could
 // drift out of sync with the real dispatch.
 // ---------------------------------------------------------------------------

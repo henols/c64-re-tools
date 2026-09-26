@@ -378,7 +378,7 @@ finds interesting".
 ## `charset-phantom.a` / `charset-phantom.prg` (37-08, the graphics-feedback before/after fixture)
 
 `AUTO-07`'s own criterion needs a fixture that (a) writes a complete,
-recovered `$DD00`/`$D018`/`$D011` combination, so `anno-graphics.ts`'s
+recovered `$DD00`/`$D018`/`$D011` combination, so `anno-graphics.mts`'s
 `deriveGraphicsRanges()` has real input to derive a character-set range from,
 and (b) places, inside that exact derived range, a byte pattern that decodes
 as plausible-looking 6502 code when nothing marks it as data -- so the
@@ -387,7 +387,7 @@ before/after label-set comparison is non-vacuous. Neither `bank.a` nor
 (MEASURED: neither source contains `$dd00`/`$d018`/`$d011` anywhere), so a
 new fixture was required.
 
-**The three register values, decoded (matching `anno-graphics.ts`'s own
+**The three register values, decoded (matching `anno-graphics.mts`'s own
 arithmetic, cross-checked by hand against the source's own header comment):**
 - `$DD00 = $3f` -- bits #0-#1 = `%11` -- VIC bank select inverts to 0 -- bank
   base `$0000`.
@@ -461,7 +461,7 @@ fixture's own trace states):
 proof, and the phantom-label before/after comparison is therefore asserted
 on the flat-64K route ONLY.** This is a NEW consequence of the
 already-documented per-route offset (the "CORRECTED 2026-09-04" paragraph
-under `bank.a` above), not a new defect: `anno-graphics.ts`'s derived range
+under `bank.a` above), not a new defect: `anno-graphics.mts`'s derived range
 (`$1000-$17ff`) is computed PURELY from the register VALUES this fixture
 writes -- a fact about the C64's own real hardware address space, entirely
 independent of where `ghidra.analyze` happens to import the image bytes.

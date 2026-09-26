@@ -42,7 +42,7 @@
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { resolve, sep } from "node:path";
 
-import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
+import { ViceError, type ViceErrorOptions } from "./vice-errors.mts";
 import { repoRoot } from "./repo-root.ts";
 import { parseAddress, setSymbolResolver, type SymbolResolver } from "./stock-address.ts";
 import { derivedAnswer, isErrorText } from "./stock-handler.ts";

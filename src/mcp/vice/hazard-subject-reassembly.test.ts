@@ -42,9 +42,9 @@ import { fileURLToPath } from "node:url";
 import { build } from "./build.ts";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { verifyAcmeAssembles } from "./acme-verify.ts";
-import { exportAsmTree, ROOT_FILE_NAME, SYMBOLS_FILE_NAME, scopeFileName, type ExportAsmTreeResult } from "./anno-export-asm.ts";
-import { openStore, closeStore } from "./anno-store.ts";
-import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.ts";
+import { exportAsmTree, ROOT_FILE_NAME, SYMBOLS_FILE_NAME, scopeFileName, type ExportAsmTreeResult } from "./anno-export-asm.mts";
+import { openStore, closeStore } from "./anno-store.mts";
+import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");

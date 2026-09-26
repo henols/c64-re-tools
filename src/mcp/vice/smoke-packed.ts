@@ -14,7 +14,7 @@
 //      runs the extracted bin: the MCP handshake, `anno --help`, and
 //      `broker --help`, which the broker refuses with its usage line before
 //      it starts anything. It also loads the extracted
-//      dist/memmap-lookup.js and reads memmap.json through it.
+//      dist/memmap-lookup.mjs and reads memmap.json through it.
 // It prints a one-line JSON verdict on stdout and exits non-zero on any
 // failure.
 //
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
     }
     pass("packed broker --help", "refused with its usage line, exit 1, no broker started");
 
-    const memmapModule: unknown = await import(pathToFileURL(join(pkgDir, "dist", "memmap-lookup.js")).href);
+    const memmapModule: unknown = await import(pathToFileURL(join(pkgDir, "dist", "memmap-lookup.mjs")).href);
     const lookup = memmapModule as { MEMMAP_PATH: string; loadMemmap: () => readonly unknown[] };
     if (!lookup.MEMMAP_PATH.startsWith(pkgDir + sep)) {
       throw new Error(`packed memmap-lookup reads ${lookup.MEMMAP_PATH}, outside the package ${pkgDir}`);

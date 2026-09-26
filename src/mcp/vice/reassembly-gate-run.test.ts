@@ -57,12 +57,12 @@ import { fileURLToPath } from "node:url";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { verifyAcmeAssemblesTree } from "./acme-verify.ts";
-import { exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.ts";
-import { openStore, closeStore } from "./anno-store.ts";
-import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.ts";
-import type { ScopeRow } from "./anno-types.ts";
-import { buildHazardReport, type HazardReport } from "./anno-hazard-report.ts";
-import type { BlockEntry } from "./block-class.ts";
+import { exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.mts";
+import { openStore, closeStore } from "./anno-store.mts";
+import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.mts";
+import type { ScopeRow } from "./anno-types.mts";
+import { buildHazardReport, type HazardReport } from "./anno-hazard-report.mts";
+import type { BlockEntry } from "./block-class.mts";
 import { hazardCoverageOutsideDiffScope, movementRebuildFromResult, DIFF_SCOPE_COVERAGES, HAZARD_DISPOSITIONS, type DiffScopeExtent } from "./reassembly-gate.ts";
 import { relocateSubject, buildMovementResult } from "./reassembly-gate-movement.ts";
 import { MOVEMENT_ORIGIN, movementDocument, movementImage, ROUTINE_A_SITES, MOVEMENT_DELTA } from "./reassembly-gate-movement-subject.ts";

@@ -44,8 +44,8 @@
 //     every test that imports this module -- the whole point of one shared
 //     declaration is that a change to it is visible everywhere it is used.
 //   - Never carry this project's own planning bookkeeping in this file.
-import type { StoreExportDocument } from "./anno-store-export.ts";
-import { STORE_EXPORT_SCHEMA_VERSION } from "./anno-store-export.ts";
+import type { StoreExportDocument } from "./anno-store-export.mts";
+import { STORE_EXPORT_SCHEMA_VERSION } from "./anno-store-export.mts";
 import type { RelocationSite } from "./reassembly-gate-movement.ts";
 
 /** Image origin: $0801. */

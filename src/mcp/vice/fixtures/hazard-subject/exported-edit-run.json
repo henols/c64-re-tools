@@ -6,8 +6,8 @@
   "store_document_sha256": "7dab66644a093b9722ae3bf3a751ba121e4ce9cd57d2f61d62dfffc95adefcc3",
   "image_the_export_was_taken_against": "/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/fixtures/hazard-subject/hazard-subject.prg",
   "image_sha256": "89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828",
-  "export_entry_point": "exportAsmTree() (src/mcp/vice/anno-export-asm.ts)",
-  "import_entry_point": "importStoreDocument() (src/mcp/vice/anno-store-export.ts)",
+  "export_entry_point": "exportAsmTree() (src/mcp/vice/anno-export-asm.mts)",
+  "import_entry_point": "importStoreDocument() (src/mcp/vice/anno-store-export.mts)",
   "assemble_entry_point": "verifyAcmeAssemblesTree() (src/mcp/vice/acme-verify.ts)",
   "tree_files": [
     "data_1000.bin",

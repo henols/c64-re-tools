@@ -35,9 +35,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { runAnnoCli, VERB_OPTIONS, checkAcceptedOptions } from "./anno-cli.ts";
-import { symbolsFromStore, commentsFromStore, crossReferencesFromStore } from "./anno-reports.ts";
-import { blocksFromStore } from "./block-class.ts";
-import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
+import { symbolsFromStore, commentsFromStore, crossReferencesFromStore } from "./anno-reports.mts";
+import { blocksFromStore } from "./block-class.mts";
+import { CURATED_ANNO_TOOLS } from "./anno-tools.mts";
 import {
   openStore,
   closeStore,
@@ -50,12 +50,12 @@ import {
   listRanges,
   insertExecObservations,
   addExcludedRange,
-} from "./anno-store.ts";
-import { buildCoverageReport, coverageFindings } from "./anno-coverage.ts";
-import type { AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.ts";
-import type { BlockEntry } from "./block-class.ts";
+} from "./anno-store.mts";
+import { buildCoverageReport, coverageFindings } from "./anno-coverage.mts";
+import type { AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.mts";
+import type { BlockEntry } from "./block-class.mts";
 import { repoRoot } from "./repo-root.ts";
-import { ROOT_FILE_NAME, SYMBOLS_FILE_NAME, UNSCOPED_FILE_NAME } from "./anno-export-asm.ts";
+import { ROOT_FILE_NAME, SYMBOLS_FILE_NAME, UNSCOPED_FILE_NAME } from "./anno-export-asm.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -224,7 +224,7 @@ test("bin: `vice-mcp anno --help` exits 0, prints the plugin invocation and no n
 // ---------------------------------------------------------------------------
 
 /** The three live image forms, each with the pattern that locates it in
- * `anno-coverage.ts`'s dispatch and the pattern that locates it in the
+ * `anno-coverage.mts`'s dispatch and the pattern that locates it in the
  * shipped USAGE text. The legacy JSON branch is excluded: it is the fallthrough
  * and has no `ext ===` test to locate. */
 const COVERAGE_IMAGE_FORMS = [
@@ -259,7 +259,7 @@ function orderOfForms(text: string, which: "inCode" | "inUsage"): string[] {
 }
 
 test("WR-21: the coverage USAGE names the image forms in loadProjectImage()'s OWN branch order", () => {
-  const loaderSource = readFileSync(join(HERE, "anno-coverage.ts"), "utf8");
+  const loaderSource = readFileSync(join(HERE, "anno-coverage.mts"), "utf8");
   const loaderStart = loaderSource.indexOf("export function loadProjectImage(");
   assert.notEqual(loaderStart, -1, "precondition: loadProjectImage() is still the dispatcher this text describes");
   const loaderBody = loaderSource.slice(loaderStart, loaderSource.indexOf("// The retired project form", loaderStart));
@@ -534,7 +534,7 @@ test("coverage: an absent project file is refused before the store is opened", a
 // store from a fixture's own recorded facts, reading it back through the four
 // adapter functions, and asserting the census reaches the verdict the fixture
 // records. A vocabulary mismatch at any of the four shapes -- most easily the
-// block-type column, whose two vocabularies `block-class.ts` alone reconciles
+// block-type column, whose two vocabularies `block-class.mts` alone reconciles
 // -- changes that verdict.
 // ---------------------------------------------------------------------------
 
@@ -560,7 +560,7 @@ function fixtureDirs(): string[] {
 /** The fixtures are spelled in the CAPITALISED vocabulary the retired analyser
  * emitted; the store's own `dataType` column is lowercase. The translation is
  * written out here, in the test, rather than reached for in production code:
- * `block-class.ts` is the only module allowed to reconcile the two
+ * `block-class.mts` is the only module allowed to reconcile the two
  * vocabularies at runtime, and this is a fixture-loading concern. Everything
  * outside the two spellings the fixtures actually use is refused loudly rather
  * than defaulted, so a fixture gaining a third block type fails here instead

@@ -11,7 +11,7 @@
 // a later comparison would pass on bytes nobody vetted, with a non-zero exit
 // long since scrolled past. The exit code alone cannot see that.
 //
-// Portable: the agreement checks import `capture-predicate.ts` over the same
+// Portable: the agreement checks import `capture-predicate.mts` over the same
 // resolution ladder `vsf-slice.ts` uses. With the MCP tree absent they SKIP
 // WITH A NAMED REASON -- never silently, because a silently skipped agreement
 // test is worse than an absent one.
@@ -32,13 +32,13 @@ const SCRIPT = join(SCRIPT_DIR, "derive-transients.ts");
 const IMAGE_BYTES = 65536;
 
 /** The MCP-side predicate module's shape, for typing the dynamic import below. */
-type Predicate = typeof import("../../../src/mcp/vice/capture-predicate.ts");
+type Predicate = typeof import("../../../src/mcp/vice/capture-predicate.mts");
 
 // ---------------------------------------------------------------------------
 // The MCP-side predicate, over `vsf-slice.ts`'s resolution ladder.
 // ---------------------------------------------------------------------------
 
-const TARGET_FILE = "capture-predicate.ts";
+const TARGET_FILE = "capture-predicate.mts";
 const TARGET_PACKAGE = "@henols/vice-mcp";
 
 /** The same three rungs, in the same order, as `vsf-slice.ts`'s `ladder()`:

@@ -82,12 +82,12 @@
 //     the only import that ever needed the flag.
 // The lease-state accessors and shared error hierarchy (used by BOTH
 // backends, since buildHeldLease() reads activeInstance() on every stock
-// tool call too) live in vice-errors.ts. The fork's own HTTP/JSON-RPC
+// tool call too) live in vice-errors.mts. The fork's own HTTP/JSON-RPC
 // transport module (its outer-name refusal array, the session-identity
 // apparatus, `call()`/`callTool`, `serverInfo()`) is gone entirely: every
 // remaining tool dispatch in this file goes through stock-tools.ts, never
 // through a fork transport.
-import { activeInstance, useInstance, type ActiveInstance, type ToolInfo } from "./vice-errors.ts";
+import { activeInstance, useInstance, type ActiveInstance, type ToolInfo } from "./vice-errors.mts";
 import { repoRoot, toolsDir } from "./repo-root.ts";
 // The single version-resolution seam (quick-260819-tsz, D-5) -- PROXY_VERSION
 // below is the only consumer in this file; see version.mts's own header for
@@ -135,7 +135,7 @@ import type { StockSessionDeps } from "./stock-session.ts";
 // Annotation now runs as a stateless, client-local CLI (D-12,
 // `vice-mcp anno call <name> --args JSON`, anno-cli.ts), with no route back
 // onto this file's own tool registry. See anno-cli.ts's own header for the
-// full reasoning; this file no longer imports anything from anno-tools.ts.
+// full reasoning; this file no longer imports anything from anno-tools.mts.
 
 // ------------------------------------------------------------ anno subcommand
 //
@@ -750,7 +750,7 @@ function handleResultContinue(args: Record<string, unknown>): ToolCallResult {
 // precisely because it needed a real, wire-registered tool with no
 // emulator, no broker and no stand-in server, a property that has nothing
 // to do with anno itself. This fixture reproduces that SAME property with
-// no dependency on anno-tools.ts at all: a real registered tool, answered
+// no dependency on anno-tools.mts at all: a real registered tool, answered
 // proxy-locally, fully deterministic from one integer argument.
 //
 // NEVER wire-visible outside a test process: registered only when
@@ -1181,7 +1181,7 @@ for (const { def, tool } of stockToolDefinitions(readManifestTools())) {
 // kind, so it is deliberately NOT one of the stock tools.
 tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) => Promise.resolve(handleResultContinue(args)));
 // D-13 (plan 65-02): the anno_* registration loop that used to sit here --
-// 25 tools, imported from anno-tools.ts's own curated definitions -- is
+// 25 tools, imported from anno-tools.mts's own curated definitions -- is
 // deleted outright, not narrowed. Annotation is a stateless, client-local
 // CLI now (D-12, `vice-mcp anno call <name> --args JSON`), reached with no
 // route back onto this proxy's own tool registry at all. This is a one-way

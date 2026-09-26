@@ -941,7 +941,7 @@ export interface RemedyTextsForDeps {
  *
  * An id the declaration does not carry, and a record with no `remedies`
  * block, both return `[]` rather than throwing: this module returns
- * structured results, and `vice-errors.ts` is not reached from here. The id
+ * structured results, and `vice-errors.mts` is not reached from here. The id
  * lookup is exact ARRAY membership against the declaration's own key set,
  * never a bracket property lookup on an unchecked string (T-60-02) -- the
  * same defence `resolveTool()` and `validateToolsFile()` already carry for

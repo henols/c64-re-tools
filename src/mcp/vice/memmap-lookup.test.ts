@@ -1,5 +1,5 @@
 // memmap-lookup.test.ts -- Phase 37 plan 37-01 task 3: the dedicated unit
-// cases for `memmap-lookup.ts`'s loader, digest and narrowest-containing-
+// cases for `memmap-lookup.mts`'s loader, digest and narrowest-containing-
 // range selection. The tracer's own end-to-end proof (a real import feeding
 // a real join) lives in `anno-import.test.ts`; this file is unit-level and
 // never opens an annotation store.
@@ -9,8 +9,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { BANK_CONDITIONAL_RANGES, loadMemmap, MEMMAP_PATH, memmapDigest, selectMemmapEntry } from "./memmap-lookup.ts";
-import type { MemmapEntry } from "./memmap-lookup.ts";
+import { BANK_CONDITIONAL_RANGES, loadMemmap, MEMMAP_PATH, memmapDigest, selectMemmapEntry } from "./memmap-lookup.mts";
+import type { MemmapEntry } from "./memmap-lookup.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -39,7 +39,7 @@ test("memmapDigest(): equals the _generated.memmapSha256 value committed in anno
   assert.equal(
     memmapDigest(),
     regbits._generated.memmapSha256,
-    "memmap.json is a living file -- this asserts the relation anno-regbits-gen.ts's own banner records, never a pinned digest literal",
+    "memmap.json is a living file -- this asserts the relation anno-regbits-gen.mts's own banner records, never a pinned digest literal",
   );
 });
 
@@ -145,7 +145,7 @@ test("selectMemmapEntry(): two consecutive calls with the same address return de
 });
 
 test("the selection path contains at most one sort() call -- more than one would make the three comparison steps non-separable and plan 37-04's mutations unwritable", () => {
-  const source = readFileSync(join(HERE, "memmap-lookup.ts"), "utf8");
+  const source = readFileSync(join(HERE, "memmap-lookup.mts"), "utf8");
   const codeOnly = source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
   const sortCalls = codeOnly.match(/\bsort\(/g) ?? [];
   assert.ok(sortCalls.length <= 1, `expected at most one sort( call, found ${sortCalls.length}`);

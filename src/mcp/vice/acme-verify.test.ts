@@ -87,10 +87,10 @@ import {
   type AcmeOutcome,
   type SpawnClassifier,
 } from "./acme-verify.ts";
-import { exportAsm, exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.ts";
-import { openStore, closeStore, setDataType, setLabel } from "./anno-store.ts";
-import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.ts";
-import type { ScopeRow } from "./anno-types.ts";
+import { exportAsm, exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.mts";
+import { openStore, closeStore, setDataType, setLabel } from "./anno-store.mts";
+import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.mts";
+import type { ScopeRow } from "./anno-types.mts";
 import { runReassemblyGate, type GateInput } from "./reassembly-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -801,7 +801,7 @@ after(() => {
 });
 
 /**
- * `result.blocks` (`anno-export-asm.ts`'s own contract) is ascending by
+ * `result.blocks` (`anno-export-asm.mts`'s own contract) is ascending by
  * START -- the order a SINGLE source file emits them in, and therefore the
  * order ACME's own per-segment stdout lines come back in for the
  * single-source path. A TREE does not preserve that order: `exportAsmTree()`
@@ -813,7 +813,7 @@ after(() => {
  * order, never address order, so the unanimity rule
  * (`firstResultLineDisagreement()`) needs `expectedSegments` reordered to
  * match -- this function does that reordering, and ONLY that: it uses the
- * exact wholly-contained-in-scope arithmetic `anno-export-asm.ts`'s own
+ * exact wholly-contained-in-scope arithmetic `anno-export-asm.mts`'s own
  * `placeBlockInScope()` doc comment already states as this project's public
  * contract for the question "which file does this block belong to", never a
  * re-derivation of anything hidden. Safe to rely on here only because
@@ -1279,7 +1279,7 @@ test("two blocks with a gap: expectedBytes spans both and $00-fills between them
 
 test("an opcode ACME cannot express goes out as `!byte` with all its bytes, and is counted", () => {
   // $12 is a `jam` whose bare mnemonic ACME assembles to $02 instead -- exactly
-  // the over-substitution case `disasm-opcodes.ts`'s `acmeExpressible` column
+  // the over-substitution case `disasm-opcodes.mts`'s `acmeExpressible` column
   // exists to record.
   withStore(
     0x0801,
@@ -1998,7 +1998,7 @@ test("the honest-pass transcript and parseAcmeResultLines() agree -- the parser 
 //
 // The mirror of `acme-gate.test.ts`'s own absence assertion, deliberately
 // worded the same way and placed next to its subject rather than beside that
-// one. Added 2026-08-31, in the plan that made `anno-export-asm.ts` reachable
+// one. Added 2026-08-31, in the plan that made `anno-export-asm.mts` reachable
 // from `vice-proxy.ts` through `anno-cli.ts`: the exporter joining the
 // published closure is exactly the change that makes it tempting to let the
 // verifier follow it.
@@ -2019,9 +2019,9 @@ test("acme-verify.ts is absent from package.json's files[] array (test-only, mec
   // created it. Without this half, an accidentally-emptied files[] would
   // satisfy the assertion above.
   assert.equal(
-    pkg.files.includes("anno-export-asm.ts"),
+    pkg.files.includes("anno-export-asm.mts"),
     true,
-    "anno-export-asm.ts is shipped runtime -- it is reachable from vice-proxy.ts through anno-cli.ts's export-asm " +
+    "anno-export-asm.mts is shipped runtime -- it is reachable from vice-proxy.ts through anno-cli.ts's export-asm " +
       "verb, and a closure walk over the published set fails when a reachable module is unlisted"
   );
 });

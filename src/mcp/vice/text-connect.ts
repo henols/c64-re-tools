@@ -46,7 +46,7 @@
 //     the bullet above this one. The relay changes WHERE the socket comes
 //     from, never WHETHER a dead one may be silently re-established.
 import { TextMonitorClient } from "./text-protocol.ts";
-import { ViceError } from "./vice-errors.ts";
+import { ViceError } from "./vice-errors.mts";
 import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-connect.ts";
 import { MonitorOwnershipError, type MonitorClaimChannel } from "./vice-broker-client.ts";
 import { dialMonitorRelay } from "./broker-endpoint.mts";

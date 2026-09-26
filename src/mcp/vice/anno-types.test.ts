@@ -51,8 +51,8 @@ import {
   splitEntryAddressPairs,
   SPLIT_DATA_TYPES,
   XREF_ACCESS_KINDS,
-} from "./anno-types.ts";
-import { OPCODES } from "./disasm-opcodes.ts";
+} from "./anno-types.mts";
+import { OPCODES } from "./disasm-opcodes.mts";
 
 /** The twelve members, WRITTEN OUT BY HAND -- see the file header for why this
  * one expectation is not derived from its own subject. */
@@ -291,7 +291,7 @@ test("resolveSplitTargets refuses an odd byte count on each of the four split la
 // ---------------------------------------------------------------------------
 //
 // `splitEntryAddressPairs()` names the two ADDRESSES whose bytes form one entry
-// of a split table. `anno-store.ts`'s `retype()` gate consults it before it
+// of a split table. `anno-store.mts`'s `retype()` gate consults it before it
 // fragments a split row, and `resolveSplitTargets()` above consults the SAME
 // underlying `splitPartnerOffsets()` couples to read bytes -- so a resolver and
 // a writer cannot disagree about what an entry IS.

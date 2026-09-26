@@ -46,7 +46,7 @@
 // session, never touches a socket, never imports anything from the
 // session/session-handler layer.
 
-import { ViceError } from "./vice-errors.ts";
+import { ViceError } from "./vice-errors.mts";
 
 // ---------------------------------------------------------------------------
 // Errors

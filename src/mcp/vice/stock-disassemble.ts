@@ -2,8 +2,8 @@
 // stock-disassemble.ts
 //
 // vice_disassemble -- a DERIVED tool (DERIV-07, DISASM-01): its answer is
-// computed CLIENT-SIDE from bytes MEM_GET returned (disasm-decoder.ts's
-// decode() + disasm-renderer.ts's render()), never answered by one
+// computed CLIENT-SIDE from bytes MEM_GET returned (disasm-decoder.mts's
+// decode() + disasm-renderer.mts's render()), never answered by one
 // binary-monitor opcode the way a direct tool's answer is. Listed in
 // stock-tools.ts as a "binary" tool (it reads memory over the session).
 //
@@ -33,12 +33,12 @@
 import { CommandType, memGetBody } from "./stock-protocol.ts";
 import { parseAddress, parseByteCount, symbolNameFor, hasSymbolStore } from "./stock-address.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler } from "./stock-handler.ts";
-import { decode, type Instruction } from "./disasm-decoder.ts";
-import { render } from "./disasm-renderer.ts";
+import { decode, type Instruction } from "./disasm-decoder.mts";
+import { render } from "./disasm-renderer.mts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention
- * (stock-memory.ts, disasm-decoder.ts et al.). */
+ * (stock-memory.ts, disasm-decoder.mts et al.). */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -51,7 +51,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 const MAX_INSTRUCTIONS = 100;
 
 /** Renders an 8-bit value as ACME hex syntax, e.g. `$0f`. Duplicated from
- * disasm-renderer.ts's own private helper of the same shape -- that module
+ * disasm-renderer.mts's own private helper of the same shape -- that module
  * exports no per-operand text primitive, and this file's `instructions[]`
  * answer field is a distinct concern from `listing` (D-13's structured
  * per-instruction fields are plain numeric text, never symbol-substituted;

@@ -3,7 +3,7 @@
 //
 // Phase 64 (D-13/XFER-03): the CLIENT's refusal of a broker-supplied
 // destination name, plus the client-side snapshot name/path owner it lives
-// beside. This module is a leaf: it imports only `vice-errors.ts`,
+// beside. This module is a leaf: it imports only `vice-errors.mts`,
 // `repo-root.ts` and `transfer-client.mts`, none of which import back.
 //
 // WHAT NOT TO DO:
@@ -18,7 +18,7 @@
 //     pre-Phase-65 importer of `transfer-paths.ts` unchanged.
 import { join } from "node:path";
 
-import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
+import { ViceError, type ViceErrorOptions } from "./vice-errors.mts";
 import { toolsDir } from "./repo-root.ts";
 import { validateContainedDestination, type ContainedDestinationResult } from "./transfer-client.mts";
 

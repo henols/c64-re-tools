@@ -67,6 +67,41 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "host-tool-endpoint.mjs",
   "broker-children.mjs",
   "broker-watchdog.mjs",
+  // The annotation engine: the store, the tool dispatcher, the report
+  // engine and their whole import closure. The broker runs it; no path ever
+  // reaches it.
+  "anno-acme-ident.mjs",
+  "anno-bank.mjs",
+  "anno-confidence.mjs",
+  "anno-coverage.mjs",
+  "anno-derive.mjs",
+  "anno-details.mjs",
+  "anno-enum-gen.mjs",
+  "anno-export-asm.mjs",
+  "anno-graphics.mjs",
+  "anno-hazard-report.mjs",
+  "anno-import.mjs",
+  "anno-index.mjs",
+  "anno-join.mjs",
+  "anno-memmap-render.mjs",
+  "anno-provenance-ledger.mjs",
+  "anno-regbits-gen.mjs",
+  "anno-reports.mjs",
+  "anno-store.mjs",
+  "anno-store-export.mjs",
+  "anno-tools.mjs",
+  "anno-types.mjs",
+  "block-class.mjs",
+  "capture-predicate.mjs",
+  "disasm-decoder.mjs",
+  "disasm-opcodes.mjs",
+  "disasm-renderer.mjs",
+  "evid-ingest.mjs",
+  "evid-reconcile.mjs",
+  "memmap-lookup.mjs",
+  "prg-image.mjs",
+  "textmon-memmap.mjs",
+  "vice-errors.mjs",
 ];
 
 /** A plain data file that travels WITH the compiled artifacts above, never
@@ -87,7 +122,13 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
  * code needed -- and gives `readDeclaration()`'s FIRST candidate ("beside
  * `here`") a real file at every location the compiled module ever runs
  * from, deployed or not. */
-export const HOST_BOUND_DATA_FILES: string[] = ["prerequisites.json"];
+export const HOST_BOUND_DATA_FILES: ReadonlyArray<{ from: string; to: string }> = [
+  { from: "src/mcp/vice/prerequisites.json", to: "prerequisites.json" },
+  // The annotation engine's package data, found "beside `here`" first by
+  // memmap-lookup.mts and anno-enum-gen.mts / anno-reports.mts.
+  { from: "skills/c64-memory-mapping/memmap.json", to: "memmap.json" },
+  { from: "src/mcp/vice/anno-regbits.json", to: "anno-regbits.json" },
+];
 
 /** The generated-file banner (01.6-RESEARCH.md §F), a function of the
  * source's relative path. Prepended to every emitted file by build() below --
@@ -247,8 +288,9 @@ export function build({ outDir = "resources" }: BuildOptions = {}): void {
       const staged = join(stagingDir, rel);
       const banner = GENERATED_BANNER(sourceRelForEmitted(rel));
       const content = readFileSync(staged, "utf8");
-      if (!content.startsWith(banner)) {
-        writeFileSync(staged, banner + content);
+      if (!content.includes(banner)) {
+        // After a leading shebang, which must stay line 1.
+        writeFileSync(staged, withBannerAfterShebang(content, banner));
       }
     }
 
@@ -273,9 +315,9 @@ export function build({ outDir = "resources" }: BuildOptions = {}): void {
     // compiled artifact -- never exposed at an `outDir` path half-written --
     // so it must be moved into place BEFORE the leftover check below, or its
     // own staged copy would itself register as an unexplained leftover.
-    for (const rel of HOST_BOUND_DATA_FILES) {
+    for (const { from, to: rel } of HOST_BOUND_DATA_FILES) {
       const staged = join(stagingDir, rel);
-      copyFileSync(join(HERE, rel), staged);
+      copyFileSync(join(REPO_ROOT, from), staged);
       const to = join(outDirAbs, rel);
       try {
         renameSync(staged, to);
@@ -404,7 +446,7 @@ export const SERVER_ROOTS: ReadonlyArray<{ source: string; emitted: string }> = 
  * one directory up, in the package root. `from` is relative to REPO_ROOT,
  * `to` is relative to the server outDir. memmap.json lives in the
  * c64-memory-mapping skill, outside this package, so the package carries a
- * copy (memmap-lookup.ts reads it beside itself first). Every other data
+ * copy (memmap-lookup.mts reads it beside itself first). Every other data
  * file (package.json, tools-manifest.stock.json, anno-regbits.json,
  * prerequisites.json, resources/) sits in the package root and is found by
  * a two-candidate `[HERE, HERE/..]` lookup, so it is not copied. */

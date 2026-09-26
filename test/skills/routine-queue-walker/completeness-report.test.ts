@@ -132,12 +132,12 @@ test("Test 1: one Undefined byte makes the gate exit non-zero and names that byt
 test("Test 2: blockCoveredNeverObservedCount renders on its own named line beside denominator, and the report never combines two buckets or prints a percentage", () => {
   const report = buildCompletenessReport(completeAnswer());
   const text = renderCompletenessReport(report);
-  assert.match(text, /NO OBSERVATION: 18 of 21/, "blockCoveredNeverObservedCount must render under its own name, spelled exactly as evid-reconcile.ts declares it");
+  assert.match(text, /NO OBSERVATION: 18 of 21/, "blockCoveredNeverObservedCount must render under its own name, spelled exactly as evid-reconcile.mts declares it");
   assert.ok(!text.includes("%"), "the rendered report must never contain a percentage, rate or combined figure");
   // grep-shaped: the field's own name must appear verbatim somewhere findable.
   assert.ok(
     JSON.stringify(report).includes("blockCoveredNeverObservedCount"),
-    "the field name must be spelled exactly as evid-reconcile.ts declares it",
+    "the field name must be spelled exactly as evid-reconcile.mts declares it",
   );
 });
 
@@ -505,13 +505,13 @@ test("PLANTED CONTROL 2 (permanent, anti-vacuity): a fabricated run identity is 
   // run-identity mismatch check runs only after existsSync(storePath)
   // succeeds and the store is actually opened, so control 1's "no store
   // needed at all" shortcut does not apply here. Built fresh, in-process,
-  // via anno-store.ts's own openStore()/setDataType() -- CI-safe (no VICE,
+  // via anno-store.mts's own openStore()/setDataType() -- CI-safe (no VICE,
   // no broker: the store is node:sqlite
   // in-process) and non-vacuous: a store with ZERO recorded runs makes
   // EVERY complete-but-non-matching runIdentity a genuine anti-vacuity
   // refusal, exactly like this same control's own captured real-store
   // transcript.
-  const { openStore, closeStore, setDataType } = await import("../../../src/mcp/vice/anno-store.ts");
+  const { openStore, closeStore, setDataType } = await import("../../../src/mcp/vice/anno-store.mts");
 
   await withWorkspaceTempDir(async (dir) => {
     const storePath = join(dir, "control2.annostore");

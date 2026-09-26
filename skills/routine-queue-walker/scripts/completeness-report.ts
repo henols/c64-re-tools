@@ -22,7 +22,7 @@
 //
 // WHAT NOT TO DO:
 //   - Never derive a completeness measure from the store's block-type
-//     listing directly in THIS file. `anno-coverage.ts`'s own trap 1 forbids
+//     listing directly in THIS file. `anno-coverage.mts`'s own trap 1 forbids
 //     it there, and extending or re-implementing that module here is
 //     equally forbidden -- this script never reads a store; it renders the fifth CLI
 //     verb's own `--json` answer, which already did the reading.
@@ -33,7 +33,7 @@
 //   - Never print a percentage, rate or combined figure. Every count in this
 //     report carries its own denominator, exactly like
 //     `printEvidDisagreementsReport()`'s own discipline.
-//   - Never re-implement `evid-reconcile.ts`'s four-bucket join, or rename
+//   - Never re-implement `evid-reconcile.mts`'s four-bucket join, or rename
 //     any of its field names. This script only ever reads
 //     `disagreementInput`'s fields verbatim, as `anno decomp-completeness
 //     --json` already named them.
@@ -41,7 +41,7 @@
 //     as a literal string in THIS file (a mechanical grep guard over this
 //     exact file is a standing acceptance criterion). The "table" naming
 //     is computed on the VERB side (`anno-cli.ts`'s own
-//     `renderedType` field, read from `anno-types.ts`'s `isSplitDataType()`)
+//     `renderedType` field, read from `anno-types.mts`'s `isSplitDataType()`)
 //     and this script only ever renders `renderedType` verbatim.
 //   - Never soften a gate failure into a bulletin. `computeGateFailures()`
 //     below is the ONE place a measure becomes a pass/fail verdict; a

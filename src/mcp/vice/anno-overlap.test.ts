@@ -74,7 +74,7 @@
 //   * NOTHING here asserts that stderr is empty, and nothing may:
 //     `node:sqlite` emits an `ExperimentalWarning` unconditionally on first
 //     load, so such an assertion would fail for that alone.
-//   * Everything goes through `anno-store.ts`'s exported entry points. This
+//   * Everything goes through `anno-store.mts`'s exported entry points. This
 //     file must never name `node:sqlite`: the store is the ONE module allowed
 //     to.
 import test from "node:test";
@@ -84,7 +84,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildPaintIndex, NO_ROW, resolveAt } from "./anno-index.ts";
+import { buildPaintIndex, NO_ROW, resolveAt } from "./anno-index.mts";
 import {
   ADDRESS_MAX,
   ADDRESS_MIN,
@@ -95,7 +95,7 @@ import {
   resolveSplitTargets,
   type DataType,
   type RangeRow,
-} from "./anno-types.ts";
+} from "./anno-types.mts";
 import {
   applyWrite,
   closeStore,
@@ -105,8 +105,8 @@ import {
   setComment,
   setDataType,
   type SetDataTypeResult,
-} from "./anno-store.ts";
-import { ViceError } from "./vice-errors.ts";
+} from "./anno-store.mts";
+import { ViceError } from "./vice-errors.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -584,7 +584,7 @@ test("planting B, OBSERVED: with the contradiction query removed the identical s
 // `resolveSplitTargets()` comparison over the same bytes BEFORE and AFTER can,
 // which is why every accepted case below carries one.
 //
-// `retype()`'s DECISION 1 in `anno-store.ts` records both rules, the answer not
+// `retype()`'s DECISION 1 in `anno-store.mts` records both rules, the answer not
 // taken for each, and why the disclosure is a return channel rather than a
 // column.
 
@@ -1383,7 +1383,7 @@ test("CR-10, THE ROUND-6 VERIFIER'S OWN FIVE DRIVES, re-run verbatim through pro
 // Both tests pin TODAY'S BEHAVIOUR AS INTENDED. The decision itself -- that a
 // caller-spanning retype deletes the rows it spans and inserts one, that this
 // does not contradict STORE-02, and why `changed: true` is right for it -- is
-// recorded ONCE, in `retype()`'s doc comment in `anno-store.ts`, next to its
+// recorded ONCE, in `retype()`'s doc comment in `anno-store.mts`, next to its
 // STORE-02 reference. It is deliberately not restated here: two copies of a
 // decision drift, and the pin's job is the numbers.
 
@@ -1682,7 +1682,7 @@ function describePairKeys(keys: Iterable<string>): string {
  * INDEPENDENT ORACLE rather than the implementation agreeing with itself -- the
  * same rule the `SPLIT_CASES` expectations follow. Split membership IS asked
  * through the exported `isSplitDataType`, because a hand-written list of the four
- * names here would be a second copy of the vocabulary (`anno-types.ts` trap 2).
+ * names here would be a second copy of the vocabulary (`anno-types.mts` trap 2).
  */
 function splitPairsOf(rows: readonly RangeRow[]): Set<string> {
   const pairs = new Set<string>();

@@ -14,7 +14,7 @@
 
 ### Store export document
 
-- **Location:** `src/mcp/vice/anno-store-export.ts` (`exportStoreDocument`, `importStoreDocument`)
+- **Location:** `src/mcp/vice/anno-store-export.mts` (`exportStoreDocument`, `importStoreDocument`)
 - **Relevance:** the deterministic JSON round trip. It becomes the v2 document, which carries fixtures, `export-project` and `import-project`.
 
 ### Test broker harness

@@ -44,7 +44,7 @@
 //     is one published-file-list edit away from shipping and a consumer has
 //     no planning tree to resolve a citation against.
 import type { AcmeOutcome } from "./acme-verify.ts";
-import type { HazardFinding, HazardRegionDisposition } from "./anno-hazard-report.ts";
+import type { HazardFinding, HazardRegionDisposition } from "./anno-hazard-report.mts";
 
 /** The three verdict tokens, and there are exactly three. There is no fourth
  * "could not resolve" token: every reachable combination of the seven inputs

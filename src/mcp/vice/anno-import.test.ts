@@ -17,8 +17,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, currentRevision, listComments, listXrefs, openStore } from "./anno-store.ts";
-import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.ts";
+import { closeStore, currentRevision, listComments, listXrefs, openStore } from "./anno-store.mts";
+import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
 import { annoRegisterEntryFor } from "./anno-register.ts";
 import {
@@ -28,8 +28,8 @@ import {
   importGhidraExport,
   parseConstWrites,
   parseGhidraExport,
-} from "./anno-import.ts";
-import { runMemmapJoin } from "./anno-join.ts";
+} from "./anno-import.mts";
+import { runMemmapJoin } from "./anno-join.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -365,7 +365,7 @@ test("runMemmapJoin: run twice over an unchanged store reports commentsChanged 0
   });
 });
 
-// `memmap-lookup.ts`'s own unit cases (memmapDigest, selectMemmapEntry,
+// `memmap-lookup.mts`'s own unit cases (memmapDigest, selectMemmapEntry,
 // loadMemmap, MEMMAP_PATH, BANK_CONDITIONAL_RANGES) moved to the dedicated
 // `memmap-lookup.test.ts` (plan 37 task 3) -- this file keeps only the
 // importer's own tracer and parser cases plus the registration surface below.

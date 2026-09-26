@@ -40,16 +40,16 @@ import { join } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { StoreExportDocument } from "../../anno-store-export.ts";
-import type { ExportAsmTreeResult, ExportBlock } from "../../anno-export-asm.ts";
+import type { StoreExportDocument } from "../../anno-store-export.mts";
+import type { ExportAsmTreeResult, ExportBlock } from "../../anno-export-asm.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VICE_DIR = join(HERE, "..", "..");
 const FIXTURE_DIR = HERE;
 
-const { openStore, closeStore } = (await import(join(VICE_DIR, "anno-store.ts"))) as typeof import("../../anno-store.ts");
-const { importStoreDocument } = (await import(join(VICE_DIR, "anno-store-export.ts"))) as typeof import("../../anno-store-export.ts");
-const { exportAsmTree, ROOT_FILE_NAME } = (await import(join(VICE_DIR, "anno-export-asm.ts"))) as typeof import("../../anno-export-asm.ts");
+const { openStore, closeStore } = (await import(join(VICE_DIR, "anno-store.mts"))) as typeof import("../../anno-store.mts");
+const { importStoreDocument } = (await import(join(VICE_DIR, "anno-store-export.mts"))) as typeof import("../../anno-store-export.mts");
+const { exportAsmTree, ROOT_FILE_NAME } = (await import(join(VICE_DIR, "anno-export-asm.mts"))) as typeof import("../../anno-export-asm.mts");
 const { verifyAcmeAssemblesTree, VERIFY_OUTPUT_FILE_NAME } = (await import(join(VICE_DIR, "acme-verify.ts"))) as typeof import("../../acme-verify.ts");
 
 /** One `source_edits` entry of the pre-registered manifest. The shape is
@@ -360,8 +360,8 @@ const record = {
   store_document_sha256: sha256(readFileSync(STORE_DOC)),
   image_the_export_was_taken_against: IMAGE,
   image_sha256: sha256(committedImage),
-  export_entry_point: "exportAsmTree() (src/mcp/vice/anno-export-asm.ts)",
-  import_entry_point: "importStoreDocument() (src/mcp/vice/anno-store-export.ts)",
+  export_entry_point: "exportAsmTree() (src/mcp/vice/anno-export-asm.mts)",
+  import_entry_point: "importStoreDocument() (src/mcp/vice/anno-store-export.mts)",
   assemble_entry_point: "verifyAcmeAssemblesTree() (src/mcp/vice/acme-verify.ts)",
   tree_files: [...pristineExport.files].sort(),
   edited_files: [...editedTargets].sort(),

@@ -10,17 +10,17 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, listComments, listRanges, openStore, putXref, setComment } from "./anno-store.ts";
-import { AnnoCommentError, MAX_COMMENT_BYTES } from "./anno-types.ts";
-import { AnnoJoinError, runMemmapJoin } from "./anno-join.ts";
-import { memmapDigest, PROVENANCE_TOKEN_PREFIX } from "./memmap-lookup.ts";
-import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.ts";
+import { closeStore, listComments, listRanges, openStore, putXref, setComment } from "./anno-store.mts";
+import { AnnoCommentError, MAX_COMMENT_BYTES } from "./anno-types.mts";
+import { AnnoJoinError, runMemmapJoin } from "./anno-join.mts";
+import { memmapDigest, PROVENANCE_TOKEN_PREFIX } from "./memmap-lookup.mts";
+import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.mts";
 // Phase 37, plan 37-08 (AUTO-07): the disassembler feedback -- the join hands
 // rows to these ALREADY-BUILT emitters, writes no second one (D-37-32).
 import { emitDataBlocks, emitLabels } from "./dxa-blocks.ts";
 import type { KnownDataRow } from "./dxa-blocks.ts";
-import type { GraphicsConstWriteFact } from "./anno-graphics.ts";
-import { BANK_SELECT_ADDRESS, MEMORY_CONTROL_ADDRESS, CONTROL_REGISTER_1_ADDRESS } from "./anno-graphics.ts";
+import type { GraphicsConstWriteFact } from "./anno-graphics.mts";
+import { BANK_SELECT_ADDRESS, MEMORY_CONTROL_ADDRESS, CONTROL_REGISTER_1_ADDRESS } from "./anno-graphics.mts";
 
 const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const PROVENANCE_TOKEN_RE = new RegExp(`${ESCAPED_PROVENANCE_TOKEN_PREFIX}[0-9a-f]{64}$`);
@@ -307,10 +307,10 @@ test("runMemmapJoin: setComment() refuses, by name, a synthetic label long enoug
 // prose.
 // ---------------------------------------------------------------------------
 
-// Phase 37, plan 37-08: anno-graphics.ts joins the scan -- anno-join.ts now
+// Phase 37, plan 37-08: anno-graphics.mts joins the scan -- anno-join.mts now
 // imports it (the graphics write-back), so it is genuinely part of the
 // join's own module graph and must be covered by AUTO-01's structural proof
-// exactly like anno-bank.ts was added in plan 37-06.
+// exactly like anno-bank.mts was added in plan 37-06.
 test("the structural proof's non-vacuity assertion is itself non-vacuous: deleting it would let the scan pass over an empty file list", () => {
   // Confirmed by hand rather than executed here (an empty-list run would
   // require duplicating the scan over zero files, which proves nothing this
@@ -366,7 +366,7 @@ test("runMemmapJoin (graphics write-back): writes each derived range as a typed 
     const reopened = openStore(storePath, { workspaceRoot: dir });
     const ranges = listRanges(reopened).sort((a, b) => a.start - b.start);
     // The sprite-pointer range ($03f8-$03ff) is the screen matrix's own LAST
-    // eight bytes on real VIC-II hardware (anno-graphics.ts's own arithmetic)
+    // eight bytes on real VIC-II hardware (anno-graphics.mts's own arithmetic)
     // -- it genuinely OVERLAPS the screen-matrix range written just before
     // it. `setDataType()`'s own retype() fragments the earlier row at the
     // overlap boundary (STORE-03's own documented behaviour, not new logic

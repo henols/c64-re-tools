@@ -35,8 +35,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, openStore, setDataType } from "./anno-store.ts";
-import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.ts";
+import { closeStore, openStore, setDataType } from "./anno-store.mts";
+import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -84,7 +84,7 @@ before(async () => {
 
   const handle = openStore(storePath, { workspaceRoot: ws });
   try {
-    // "byte" maps to the neutral "data" class through block-class.ts's own
+    // "byte" maps to the neutral "data" class through block-class.mts's own
     // fallthrough -- planting a disagreement at 0x4000 the same way plan
     // 43-06's own tracer test does, so direction 2's non-vacuity assertion has
     // a real nested disagreement row to visit.

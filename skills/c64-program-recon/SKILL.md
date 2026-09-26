@@ -207,7 +207,7 @@ an exactly-65536-byte flat capture, dispatched **by extension first**, never by 
 | `anno call anno_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels, comments and block ranges. One batch is one open, commit, close instead of dozens. You name the store (and the image, when an inner call needs one) ONCE at the top level, and every inner call inherits it. A malformed payload, an empty `calls` array, an uncurated inner name at any depth, or an illegal label name refuses the **whole** batch by index. It executes nothing. Past that gate, execution runs to completion and each entry carries its own status. So an error entry inside a successful result means that one call did not work |
 
 **Grade with the confidence prefix.** Lead every evidence comment with exactly one of these five
-bracket tokens (quoted verbatim from `anno-confidence.ts`, the parser's own source of truth):
+bracket tokens (quoted verbatim from `anno-confidence.mts`, the parser's own source of truth):
 
 `[confirmed-code]` (`confirmed code`), `[probable-code]` (`probable code`), `[confirmed-data]`
 (`confirmed data`), `[probable-data]` (`probable data`), `[unknown]` (`unknown`).

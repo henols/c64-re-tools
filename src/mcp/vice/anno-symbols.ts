@@ -96,7 +96,7 @@
 //     advertised on both backends diverge in semantics.
 //   - Never let an illegal label name from a `.lbl` file reach a spawned
 //     child (T-11-NAME-INJECT, closed). `validateLabelFileForImport()` below
-//     validates every name against `anno-acme-ident.ts`'s
+//     validates every name against `anno-acme-ident.mts`'s
 //     `assertLegalAcmeIdentifier()` BEFORE any argv is built -- REJECT, never
 //     sanitize. Any rebuilt import route must call it first, for the same
 //     reason and in the same position -- the obligation is on the route,
@@ -104,7 +104,7 @@
 import { readFileSync, statSync } from "node:fs";
 
 import { parseViceLabelFile, MAX_LABEL_FILE_BYTES } from "./stock-symbols.ts";
-import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
+import { assertLegalAcmeIdentifier } from "./anno-acme-ident.mts";
 
 /** This module's own error class, minimal shape (message-only, `.name` set to
  * the class name). Never thrown for a ceiling violation on a `.lbl` file's
@@ -203,7 +203,7 @@ export interface ValidatedLabelFile {
  *   2. One full `parseViceLabelFile()` pass, whose `StockSymbolsError`
  *      ceiling violations (`MAX_LABEL_FILE_LINES`/`MAX_SYMBOLS`) propagate
  *      VERBATIM rather than being re-wrapped.
- *   3. Every discovered name validated against `anno-acme-ident.ts`'s
+ *   3. Every discovered name validated against `anno-acme-ident.mts`'s
  *      `assertLegalAcmeIdentifier()`. An illegal name throws
  *      `AnnoSymbolsError` naming the offending name, its 1-based line
  *      number, and that line's own text -- REJECT, never sanitize.

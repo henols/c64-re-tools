@@ -69,7 +69,7 @@ import { encodeResponseFrame, syntheticJamFrame } from "./binmon-fixtures.ts";
 import { build } from "./build.ts";
 import type { Socket as NetSocket } from "node:net";
 import { stockConnect, stockReconnect, stockDisconnect, type StockConnectBrokerControl, type DialMonitorSocketFn } from "./stock-connect.ts";
-import { MachineRestartedError } from "./vice-errors.ts";
+import { MachineRestartedError } from "./vice-errors.mts";
 import { convertHandshakeError } from "./stock-handler.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

@@ -3,7 +3,7 @@
 //
 // WHY THIS FILE EXISTS: the client half of one `anno call`. It confines every
 // path the call names to the workspace, reads those files, and hands the
-// engine (`anno-tools.ts`) staged bytes, so the engine never sees a path. It
+// engine (`anno-tools.mts`) staged bytes, so the engine never sees a path. It
 // also deletes a Ghidra transfer file once the engine reports that the import
 // consuming it succeeded.
 //
@@ -16,7 +16,7 @@
 //     gone" and "there are no annotations" must not read the same.
 import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
 
-import { closeStore, openStore } from "./anno-store.ts";
+import { closeStore, openStore } from "./anno-store.mts";
 import {
   assertAnnoTool,
   clientFileKeys,
@@ -26,8 +26,8 @@ import {
   AnnoToolArgumentError,
   type AnnoInputFile,
   type ToolCallResult,
-} from "./anno-tools.ts";
-import { AnnoStorePathError, storePathWithinWorkspace } from "./anno-types.ts";
+} from "./anno-tools.mts";
+import { AnnoStorePathError, storePathWithinWorkspace } from "./anno-types.mts";
 import { repoRoot } from "./repo-root.ts";
 
 /** Side-effecting leaves a test may replace. */

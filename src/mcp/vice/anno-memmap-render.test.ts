@@ -36,11 +36,11 @@ import {
   checkRenderedMemoryMap,
   escapeMarkdownCell,
   RENDERER_VERSION,
-} from "./anno-memmap-render.ts";
-import { openStore, closeStore, setDataType, setLabel, setComment } from "./anno-store.ts";
-import type { AnnoStoreHandle } from "./anno-store.ts";
-import { AnnoCommentError } from "./anno-types.ts";
-import { formatConfidenceComment, CONFIDENCE_GRADES } from "./anno-confidence.ts";
+} from "./anno-memmap-render.mts";
+import { openStore, closeStore, setDataType, setLabel, setComment } from "./anno-store.mts";
+import type { AnnoStoreHandle } from "./anno-store.mts";
+import { AnnoCommentError } from "./anno-types.mts";
+import { formatConfidenceComment, CONFIDENCE_GRADES } from "./anno-confidence.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -154,9 +154,9 @@ test("parseProvenanceHeader refuses a non-object payload", () => {
 // ---------------------------------------------------------------------------
 
 test("the renderer's layout is embedded in TypeScript, never read from the recon skill's template at runtime", () => {
-  const source = readFileSync(join(HERE, "anno-memmap-render.ts"), "utf8");
+  const source = readFileSync(join(HERE, "anno-memmap-render.mts"), "utf8");
   const templateFilenameMentions = (source.match(/memory-map\.template\.md/g) ?? []).length;
-  assert.equal(templateFilenameMentions, 0, "anno-memmap-render.ts must never name the recon skill's template file");
+  assert.equal(templateFilenameMentions, 0, "anno-memmap-render.mts must never name the recon skill's template file");
 });
 
 // ---------------------------------------------------------------------------
@@ -324,7 +324,7 @@ test("the surviving measurement-provenance paragraph STATES the version-2 wire s
   // measurements before D-17. What is pinned HERE is that the paragraph still
   // has a live subject; the removal gate that separately pinned the count and
   // line of its one exempted mention has since been retired.
-  const bytes = readFileSync(join(HERE, "anno-memmap-render.ts"));
+  const bytes = readFileSync(join(HERE, "anno-memmap-render.mts"));
   assert.ok(bytes.includes(0x00), "the NUL byte that makes this a grep-blind file must still be here");
   const source = bytes.toString("utf8");
 

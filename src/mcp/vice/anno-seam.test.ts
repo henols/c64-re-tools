@@ -11,7 +11,7 @@
 //
 // Nothing here asserts that stderr is empty, and nothing may: `node:sqlite`
 // emits an `ExperimentalWarning` unconditionally on first load (via
-// anno-store.ts, the module both surviving tests import).
+// anno-store.mts, the module both surviving tests import).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -19,13 +19,13 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { AnnoStorePathError } from "./anno-types.ts";
-import { closeStore, openStore } from "./anno-store.ts";
+import { AnnoStorePathError } from "./anno-types.mts";
+import { closeStore, openStore } from "./anno-store.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The three shipped modules this area adds. */
-const NEW_SHIPPED_MODULES = ["anno-types.ts", "anno-index.ts", "anno-store.ts"];
+const NEW_SHIPPED_MODULES = ["anno-types.mts", "anno-index.mts", "anno-store.mts"];
 
 // ---------------------------------------------------------------------------
 // 1. Non-vacuity: the scanned set and the shipped list are real
@@ -42,7 +42,7 @@ test("package.json files[] ships every anno-* production module on disk and no a
     );
   }
   // DERIVED FROM DISK, NOT HAND-TYPED (re-pointed by plan 29-01, which adds
-  // anno-tools.ts and is the first of several plans in phase 29 to add an
+  // anno-tools.mts and is the first of several plans in phase 29 to add an
   // anno-* module). The property this assertion has always been about is NOT
   // "there are exactly three modules" -- it is "files[] ships every anno-*
   // PRODUCTION module and nothing else anno-prefixed": no test file, and no

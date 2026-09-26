@@ -33,8 +33,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
-import { decode, type Instruction } from "./disasm-decoder.ts";
-import type { StoreExportDocument } from "./anno-store-export.ts";
+import { decode, type Instruction } from "./disasm-decoder.mts";
+import type { StoreExportDocument } from "./anno-store-export.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");

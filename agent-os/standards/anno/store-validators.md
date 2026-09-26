@@ -1,7 +1,7 @@
 # Store Validators
 
 The MCP proxy validates nothing. Every store argument goes through an
-`assertX()`/`parseStoreX()` in `anno-types.ts` before it reaches SQL.
+`assertX()`/`parseStoreX()` in `anno-types.mts` before it reaches SQL.
 
 ```ts
 parseStoreAddress(4096)     // ok

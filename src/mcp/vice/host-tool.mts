@@ -35,7 +35,7 @@
 //     resolveWorkspacePath() is the only place a wire-supplied path becomes a
 //     real path. BOTH the workspace root and the candidate go through the
 //     same ancestor-realpath walk (realpathOfNearestExisting(), mirroring
-//     anno-types.ts's storePathWithinWorkspace() and its own incident
+//     anno-types.mts's storePathWithinWorkspace() and its own incident
 //     history by name) before the prefix comparison, and the comparison is
 //     over the WALKED (real) paths, never the lexical join -- a purely
 //     lexical path.resolve() + startsWith() check is exactly what a live
@@ -1097,7 +1097,7 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
 // separator-appended prefix comparison, and the returned `ok: true` value is
 // the WALKED (real) path, never the lexical join. That is load-bearing
 // rather than a symmetry preference, for the two reasons
-// anno-types.ts:1159-1176 already names for its own two consumers of this
+// anno-types.mts:1159-1176 already names for its own two consumers of this
 // walk: a workspace root that does not yet exist is a legitimate input (a
 // bare realpath would throw a raw ENOENT), and resolving only the candidate
 // side makes every in-workspace path look foreign whenever the root itself
@@ -1126,9 +1126,9 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
 /**
  * The maximum number of DANGLING-symlink hops `realpathOfNearestExisting`
  * will take before refusing. 40 is deliberately the same value
- * anno-types.ts:971 uses -- Linux's own `MAXSYMLINKS`, so a chain this walk
+ * anno-types.mts:971 uses -- Linux's own `MAXSYMLINKS`, so a chain this walk
  * refuses is one the kernel would refuse too. Task 2's equivalence case
- * (against anno-types.ts's storePathWithinWorkspace()) is what keeps the two
+ * (against anno-types.mts's storePathWithinWorkspace()) is what keeps the two
  * copies from drifting apart. The bound exists because a cycle (`a -> b`,
  * `b -> a`) is otherwise an infinite loop inside a function whose input
  * arrives unvalidated from the transport.
@@ -1138,14 +1138,14 @@ const MAX_SYMLINK_HOPS = 40;
 /**
  * Does the path ENTRY `entry` exist -- does this NAME exist in its
  * directory -- without following a symlink at the leaf, and without
- * throwing. Mirrors anno-types.ts's own `pathEntryExists`, with one
+ * throwing. Mirrors anno-types.mts's own `pathEntryExists`, with one
  * deliberate difference: this returns a refusal where that version throws,
  * because `resolveWorkspacePath()`'s contract is a result object and this
  * module's own never-throw discipline must not be widened by adding
  * filesystem access.
  *
  * `throwIfNoEntry: false` suppresses `ENOENT` and NOTHING ELSE
- * (anno-types.ts:985-1000's own REVERSED-2026-08-28 note) -- a permission
+ * (anno-types.mts:985-1000's own REVERSED-2026-08-28 note) -- a permission
  * error or any other stat failure on an ancestor becomes a named refusal
  * here rather than escaping as a bare thrown error.
  */
@@ -1166,7 +1166,7 @@ function pathEntryExists(entry: string, forPath: string): { ok: true; exists: bo
  * re-joined after it -- or a refusal naming the path when the walk cannot
  * answer.
  *
- * Mirrors anno-types.ts:1082's `realpathOfNearestExisting()` exactly, with
+ * Mirrors anno-types.mts:1082's `realpathOfNearestExisting()` exactly, with
  * the same deliberate difference `pathEntryExists()` above states: this
  * RETURNS a refusal where that version THROWS `AnnoStorePathError`. Walks up
  * while the path ENTRY does not exist, unshifting each `basename` onto a

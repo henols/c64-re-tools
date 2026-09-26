@@ -1,6 +1,6 @@
 // textmon-memmap.test.ts
 //
-// Deterministic, no-emulator coverage for textmon-memmap.ts's `memmapshow`
+// Deterministic, no-emulator coverage for textmon-memmap.mts's `memmapshow`
 // parser -- the phase's tracer slice (PARSE-01, PARSE-03). Task 1 lands the
 // tracer's own coverage: purity, both real two-binary captures parsing
 // clean, the ROM-execute-without-read proof from real bytes, the `(dummy)`
@@ -23,10 +23,10 @@ import {
   type AccessMap,
   type AccessMapEntry,
   type AccessFlags,
-} from "./textmon-memmap.ts";
+} from "./textmon-memmap.mts";
 
 const HERE = fileURLToPath(import.meta.url);
-const OWN_MODULE = HERE.replace(/textmon-memmap\.test\.ts$/, "textmon-memmap.ts");
+const OWN_MODULE = HERE.replace(/textmon-memmap\.test\.ts$/, "textmon-memmap.mts");
 
 // ---------------------------------------------------------------------------
 // Purity (PARSE-03): the module imports NOTHING. Asserted mechanically by
@@ -34,7 +34,7 @@ const OWN_MODULE = HERE.replace(/textmon-memmap\.test\.ts$/, "textmon-memmap.ts"
 // statement, not by review.
 // ---------------------------------------------------------------------------
 
-test("purity (PARSE-03): textmon-memmap.ts contains no top-level ES import statement", () => {
+test("purity (PARSE-03): textmon-memmap.mts contains no top-level ES import statement", () => {
   const src = readFileSync(OWN_MODULE, "utf8");
   const importLines = src.split("\n").filter((line) => /^\s*import\s/.test(line));
   assert.deepEqual(importLines, [], `expected zero import lines, found: ${JSON.stringify(importLines)}`);

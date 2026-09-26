@@ -40,7 +40,7 @@
 - Runtime: `@mastra/mcp` 1.15.0, `@mastra/core` 1.55.0 and `@modelcontextprotocol/sdk`
   (imported directly by `vice-proxy.ts`, already pulled in by `@mastra/mcp`) only. Mastra telemetry
   is disabled with `MASTRA_TELEMETRY_DISABLED=1`.
-- Node built-ins that carry architecture: `node:sqlite` (only `anno-store.ts`
+- Node built-ins that carry architecture: `node:sqlite` (only `anno-store.mts`
   may import it), `node:net` (the monitor channels and the broker endpoint) and
   `node:zlib`.
 - Dev: TypeScript 7.0.2 (typecheck only) and `@types/node`.
@@ -127,7 +127,7 @@ declared in `src/mcp/vice/prerequisites.json`.
 - The emulator binary is spawned only with an argv array, never a shell string.
 
 **Analysis and store**
-- `node:sqlite` is used in one module only (`anno-store.ts`). The schema version
+- `node:sqlite` is used in one module only (`anno-store.mts`). The schema version
   check is strict equality, with no migration.
 - Annotation is a CLI (`anno call`). It never touches the emulator.
 - **Target store ownership (not yet built):** the broker owns ONE annotation
@@ -136,7 +136,7 @@ declared in `src/mcp/vice/prerequisites.json`.
   `project_id` on first use in `<project>/.c64-re-tools/project.json` and sends
   it on every call. Every row carries `project_id`. The broker binds it into
   every read and write, so no call can reach another project's data. There is
-  no cross-project query. `anno-store.ts` then becomes host-bound. Today the
+  no cross-project query. `anno-store.mts` then becomes host-bound. Today the
   store is still one client-local `.annostore` file per project.
 - Skill scripts never spawn external binaries. Every host tool goes through the
   broker's fixed endpoint (`host_tool_stage`/`host_tool_run`): inputs upload as

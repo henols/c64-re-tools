@@ -4,7 +4,7 @@
 // project's revision advance read back BY VALUE -- all in the SAME test.
 //
 // WHY ONE TEST AND NOT TWO. The revision advance and the mutation share one
-// transaction, so ONE planted violation -- removing `anno-store.ts`'s single
+// transaction, so ONE planted violation -- removing `anno-store.mts`'s single
 // `commit` -- fails both at once: the row is gone and the revision is still 0.
 // That fusion is the mechanism, documented at `runWriteSequence`.
 //
@@ -38,10 +38,10 @@ import {
   listRanges,
   openStore,
   setDataType,
-} from "./anno-store.ts";
-import { AnnoAddressError, AnnoStoreCorruptError, AnnoStoreError, AnnoTypeError, SCHEMA_VERSION } from "./anno-types.ts";
-import type { RangeRow } from "./anno-types.ts";
-import { ViceError } from "./vice-errors.ts";
+} from "./anno-store.mts";
+import { AnnoAddressError, AnnoStoreCorruptError, AnnoStoreError, AnnoTypeError, SCHEMA_VERSION } from "./anno-types.mts";
+import type { RangeRow } from "./anno-types.mts";
+import { ViceError } from "./vice-errors.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -439,7 +439,7 @@ test("SCHEMA_VERSION 6: a store whose anno_meta.schema_version is 3 is refused b
 });
 
 // IN-01 (46-REVIEW): the `reaffirm-refusal` doc comment in
-// `anno-types.ts` states, as part of its own decision basis, "a version-4
+// `anno-types.mts` states, as part of its own decision basis, "a version-4
 // store does not open under this SCHEMA_VERSION" -- but until this test, no
 // committed fixture actually constructed one; the general `openStore()`
 // mismatch branch was exercised only via the version-3 fixture above. Same

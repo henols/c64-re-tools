@@ -3,9 +3,9 @@
 //
 // Phase 37, plan 37-04 (AUTO-02's three observed-red controls, PITFALLS.md
 // Pitfall 23): each case here plants ONE named violation into a SCRATCH copy
-// of `memmap-lookup.ts` -- never the committed module -- and asserts the
+// of `memmap-lookup.mts` -- never the committed module -- and asserts the
 // SPECIFIC wrong answer the violation produces, not merely that the answer
-// differs from the correct one. The committed `memmap-lookup.ts` is never
+// differs from the correct one. The committed `memmap-lookup.mts` is never
 // opened for writing; each case asserts, before mutating, that the committed
 // source still contains the exact text it is about to replace in the scratch
 // copy, so source drift fails the case by name instead of silently
@@ -17,7 +17,7 @@
 // specific named signal, tear down in a `finally`, never touch the committed
 // tree).
 //
-// THIS FILE MUST NEVER MUTATE `memmap-lookup.ts` ON DISK. Every mutation
+// THIS FILE MUST NEVER MUTATE `memmap-lookup.mts` ON DISK. Every mutation
 // happens inside an `mkdtempSync` root, mirroring the real repo shape three
 // levels deep (`src/mcp/vice` next to `skills/c64-memory-mapping`, both
 // under one temporary root) so the module's own `HERE`-relative `MEMMAP_PATH`
@@ -30,13 +30,13 @@ import * as path from "node:path";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { selectMemmapEntry, loadMemmap } from "./memmap-lookup.ts";
+import { selectMemmapEntry, loadMemmap } from "./memmap-lookup.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REAL_MODULE_PATH = join(HERE, "memmap-lookup.ts");
+const REAL_MODULE_PATH = join(HERE, "memmap-lookup.mts");
 const REAL_MEMMAP_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
 
-/** `memmap-lookup.ts`'s own `inclusiveWidth()` is unexported (private to the
+/** `memmap-lookup.mts`'s own `inclusiveWidth()` is unexported (private to the
  * module) -- this test-local copy computes the SAME `end - start` value from
  * a plain entry, for measuring expected winners against the real,
  * unmutated `memmap.json` before comparing to a scratch module's answer. */
@@ -48,10 +48,10 @@ function inclusiveWidthOf(entry: { start: number; end: number }): number {
 // The committed forms of the two mutable steps `selectMemmapEntry()` calls,
 // held verbatim so a drifted source fails the case by name rather than making
 // a `.replace()` a silent no-op. Copied character-for-character from
-// `memmap-lookup.ts` at plan time.
+// `memmap-lookup.mts` at plan time.
 // ---------------------------------------------------------------------------
 
-/** STEP ONE, WIDTH -- the committed form (`memmap-lookup.ts:169-176`). */
+/** STEP ONE, WIDTH -- the committed form (`memmap-lookup.mts:169-176`). */
 const COMMITTED_WIDTH_STEP =
   "function narrowestWidthSurvivors(containing: readonly MemmapEntry[]): MemmapEntry[] {\n" +
   "  let minWidth = Infinity;\n" +
@@ -80,7 +80,7 @@ const MUTATED_WIDTH_STEP_LONGEST_DESC =
   "  return [winner];\n" +
   "}";
 
-/** STEP TWO, SYMBOL -- the committed form (`memmap-lookup.ts:186-189`). */
+/** STEP TWO, SYMBOL -- the committed form (`memmap-lookup.mts:186-189`). */
 const COMMITTED_SYMBOL_STEP =
   "function symbolSurvivors(survivors: readonly MemmapEntry[]): MemmapEntry[] {\n" +
   '  const withSym = survivors.filter((entry) => typeof entry.sym === "string" && entry.sym.length > 0);\n' +
@@ -95,7 +95,7 @@ const MUTATED_SYMBOL_STEP_REVERSED =
   "  return withoutSym.length > 0 ? withoutSym : survivors.slice();\n" +
   "}";
 
-/** STEP THREE, ORDER -- the committed form (`memmap-lookup.ts:204-211`), held
+/** STEP THREE, ORDER -- the committed form (`memmap-lookup.mts:204-211`), held
  * here ONLY to assert Task 3's mutation leaves it (and the WIDTH step)
  * byte-identical in the scratch copy -- the reversed-symbol control must be
  * attributable to the SYMBOL step alone. */
@@ -114,11 +114,11 @@ const COMMITTED_ORDER_STEP =
 // shared test-file convenience). Mirrors `anno-regbits.test.ts`'s own
 // mirrored-depth scratch tree: `skills/c64-memory-mapping/memmap.json`
 // (the REAL, unmutated bytes -- only the selection CODE is ever mutated)
-// next to `src/mcp/vice/memmap-lookup.ts` (the ONE mutated copy), both under
+// next to `src/mcp/vice/memmap-lookup.mts` (the ONE mutated copy), both under
 // one `mkdtempSync` root that this host's RAM-backed `/tmp` never ages.
 // ---------------------------------------------------------------------------
 
-/** Builds a scratch tree containing a mutated copy of `memmap-lookup.ts` and
+/** Builds a scratch tree containing a mutated copy of `memmap-lookup.mts` and
  * the REAL, unmutated `memmap.json` at the depth its `HERE`-relative
  * `MEMMAP_PATH` formula expects. `mutate` receives the real committed source
  * text and returns the text to write into the scratch copy -- the real file
@@ -136,7 +136,7 @@ function buildScratchMemmapModule(mutate: (committedSource: string) => string): 
 
   const committedSource = fs.readFileSync(REAL_MODULE_PATH, "utf8");
   const mutatedSource = mutate(committedSource);
-  const modulePath = path.join(mcpDir, "memmap-lookup.ts");
+  const modulePath = path.join(mcpDir, "memmap-lookup.mts");
   fs.writeFileSync(modulePath, mutatedSource, "utf8");
 
   return { tmpDir, modulePath };
@@ -161,7 +161,7 @@ test(
     const committedSource = fs.readFileSync(REAL_MODULE_PATH, "utf8");
     assert.ok(
       committedSource.includes(COMMITTED_WIDTH_STEP),
-      "expected the committed memmap-lookup.ts to still carry the WIDTH step's committed form -- has the source drifted?",
+      "expected the committed memmap-lookup.mts to still carry the WIDTH step's committed form -- has the source drifted?",
     );
 
     // The committed, unmutated selection for $D020: a one-byte entry.
@@ -212,7 +212,7 @@ test(
     const committedSource = fs.readFileSync(REAL_MODULE_PATH, "utf8");
     assert.ok(
       committedSource.includes(COMMITTED_WIDTH_STEP),
-      "expected the committed memmap-lookup.ts to still carry the WIDTH step's committed form -- has the source drifted?",
+      "expected the committed memmap-lookup.mts to still carry the WIDTH step's committed form -- has the source drifted?",
     );
 
     // The committed, unmutated selection for $D020: still the one-byte entry
@@ -277,7 +277,7 @@ test(
     const committedSource = fs.readFileSync(REAL_MODULE_PATH, "utf8");
     assert.ok(
       committedSource.includes(COMMITTED_SYMBOL_STEP),
-      "expected the committed memmap-lookup.ts to still carry the SYMBOL step's committed form -- has the source drifted?",
+      "expected the committed memmap-lookup.mts to still carry the SYMBOL step's committed form -- has the source drifted?",
     );
 
     // MEASURED at execution time, over the real, committed memmap.json:

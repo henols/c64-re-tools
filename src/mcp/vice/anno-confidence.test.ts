@@ -10,7 +10,7 @@ import {
   formatConfidenceComment,
   searchQueryForGrade,
   AnnoConfidenceGradeError,
-} from "./anno-confidence.ts";
+} from "./anno-confidence.mts";
 
 // ---------------------------------------------------------------------------
 // Non-vacuity control: the vocabulary itself. A drift from

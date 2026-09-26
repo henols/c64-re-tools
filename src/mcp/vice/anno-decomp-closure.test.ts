@@ -13,7 +13,7 @@
 // it on the next commit. This file is the regression that keeps the phase's
 // own closure claim true on EVERY CI run, mechanically, using nothing but
 // what is already committed: the nine `.annostore.json` exports plan 45-02's
-// `anno-store-export.ts` produces and this repository's own fixture images.
+// `anno-store-export.mts` produces and this repository's own fixture images.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR
@@ -58,8 +58,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { openStore, closeStore } from "./anno-store.ts";
-import { exportStoreDocument, importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.ts";
+import { openStore, closeStore } from "./anno-store.mts";
+import { exportStoreDocument, importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.mts";
 import { runAnnoCli } from "./anno-cli.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

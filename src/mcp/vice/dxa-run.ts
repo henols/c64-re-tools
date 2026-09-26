@@ -16,7 +16,7 @@
 // text being validated against it would make the validation vacuous). For
 // `imageKind: "prg"` this module uses `parsePrg()`'s own origin and a body
 // length of `fileSize - 2`; for `imageKind: "flat64k"` it uses origin `0`
-// and the file's own size (`flatImageOrigin()` from prg-image.ts refuses
+// and the file's own size (`flatImageOrigin()` from prg-image.mts refuses
 // anything that is not exactly 65536 bytes).
 //
 // Phase 35, plan 35-04 (DXA-03): `DxaRunArgs.knownDataRows` is an
@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 
 import { runHostToolOverEndpoint, type HostToolClientResult, type RunHostToolOverEndpointOptions } from "./host-tool-endpoint.mts";
 import { repoRoot, toolsDirUnder } from "./repo-root.ts";
-import { parsePrg, flatImageOrigin } from "./prg-image.ts";
+import { parsePrg, flatImageOrigin } from "./prg-image.mts";
 import { parseDumpListing, type DumpListingMap } from "./dxa-listing.ts";
 import { emitDataBlocks, emitLabels, type KnownDataRow } from "./dxa-blocks.ts";
 
@@ -116,7 +116,7 @@ function isContained(candidate: string, root: string): boolean {
 /** Canonicalises `p`, or -- when `p` does not exist yet (the write path:
  * a `-B`/`-l` file this module is about to create) -- the deepest ancestor
  * of `p` that does exist, with the non-existent tail re-appended. Mirrors
- * `anno-types.ts`'s own `realpathOfNearestExisting()`, which is not
+ * `anno-types.mts`'s own `realpathOfNearestExisting()`, which is not
  * exported, and `host-tool.mts`'s, which is host-bound and must not be
  * imported from this container-side module. */
 function realpathOfNearestExisting(p: string): string {

@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// `anno-export-asm.ts` produces text that CLAIMS to reassemble. The previous
+// `anno-export-asm.mts` produces text that CLAIMS to reassemble. The previous
 // export route was withdrawn in Phase 29 precisely because that claim was
 // never checked by an assembler. This file is where the claim is settled, and
 // it is settled the only way that means anything: a REAL ACME 0.97 assembles
@@ -42,12 +42,12 @@
 // ---------------------------------------------------------------------------
 //   - Never hardcode a static list where the source table can drive the
 //     assertions. The twelve-member data-type suite iterates `DATA_TYPES`
-//     imported from `anno-types.ts`, so a thirteenth member added later is
+//     imported from `anno-types.mts`, so a thirteenth member added later is
 //     covered the next time this file runs. A copied list would silently stop
 //     covering the vocabulary the moment it grew.
 //   - Never hardcode a static "known unassemblable" list for the 256-opcode
 //     suite, in the same voice `disasm-roundtrip.test.ts:33-37` uses it. Every
-//     assertion there is driven from `disasm-opcodes.ts`'s own `OPCODES` table,
+//     assertion there is driven from `disasm-opcodes.mts`'s own `OPCODES` table,
 //     so a future correction to that table is automatically re-verified the
 //     next time this file runs -- and that matters here more than anywhere: an
 //     internally-verified version of that table shipped FOURTEEN wrong entries,
@@ -100,13 +100,13 @@ import {
   type ExportAsmResult,
   type ExportAsmTreeResult,
   type ExportBlock,
-} from "./anno-export-asm.ts";
-import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
+} from "./anno-export-asm.mts";
+import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.mts";
 // Phase 46 plan 06 (BUILD-07): the real ledger reader, used by the
 // TEST-ONLY filtering variant below to decide which ranges to drop -- never
 // re-derived, on the same "re-check, never re-define" terms this file
 // already applies elsewhere.
-import { provenanceForRange, readProvenanceLedger } from "./anno-provenance-ledger.ts";
+import { provenanceForRange, readProvenanceLedger } from "./anno-provenance-ledger.mts";
 // BUILD-05 (phase 46 plan 01): `renderLedger()` is the ONE writer of the
 // generated tier this fixture must satisfy exactly (its own three refusal
 // preconditions -- non-empty UNKNOWN reasons, agreeing_releases >= 2 for
@@ -130,8 +130,8 @@ import {
   setComment,
   setDataType,
   setLabel,
-} from "./anno-store.ts";
-import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
+} from "./anno-store.mts";
+import { AnnoCommentError, DATA_TYPES } from "./anno-types.mts";
 // D-16/D-17 (plan 45-05): the ONE owning decoder's own test-only cache reset,
 // used ONLY to construct a synthetic register table for the one collision
 // scenario the REAL committed anno-regbits.json cannot reach (see the test
@@ -139,10 +139,10 @@ import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
 // a bijection for any one real, well-formed field, so "same name, different
 // value" can only be reproduced with a deliberately non-injective synthetic
 // token table, exactly `anno-enum-gen.test.ts`'s own sanctioned technique).
-import { __resetRegBitsCacheForTests } from "./anno-enum-gen.ts";
-import type { RegBitsTable } from "./anno-regbits-gen.ts";
-import { decode } from "./disasm-decoder.ts";
-import { OPCODES } from "./disasm-opcodes.ts";
+import { __resetRegBitsCacheForTests } from "./anno-enum-gen.mts";
+import type { RegBitsTable } from "./anno-regbits-gen.mts";
+import { decode } from "./disasm-decoder.mts";
+import { OPCODES } from "./disasm-opcodes.mts";
 
 /** Computed exactly once, by the shared seam. Every ACME-dependent test in
  * this file passes this through node:test's own `{ skip }` option. */
@@ -383,7 +383,7 @@ const SHAPE_BODY = [0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x60] as const;
  * $0801..$0808, exclusive end $0809.
  *
  * Deliberately carries BOTH operand shapes for the same zero-page address:
- * a zeropage-mode operand, which `disasm-renderer.ts` renders as a hex literal
+ * a zeropage-mode operand, which `disasm-renderer.mts` renders as a hex literal
  * and never substitutes a symbol into (D-11), and an absolute-mode operand
  * below $0100, which it renders with ACME's `+2` size-forcing postfix. The two
  * planted violations below each attack one of them.
@@ -559,7 +559,7 @@ test("PLANTED VIOLATION 2: a symbol substituted into a zeropage operand with its
 
   // RESEARCH.md Pitfall 4, reproduced on this exporter's own output. Two
   // things have to be undone at once, and that is the finding rather than an
-  // inconvenience: `disasm-renderer.ts` never substitutes a symbol into a
+  // inconvenience: `disasm-renderer.mts` never substitutes a symbol into a
   // zeropage operand (D-11), AND every definition is emitted before the first
   // `* =`. Undo BOTH and ACME assembles `lda zpf_90` as absolute -- three bytes
   // where the original was two, with only
@@ -1294,7 +1294,7 @@ test("NON-VACUITY: the top-of-memory end assertion still BITES -- a corrupted by
 // reasoning applies to `dataType` and had not been applied.
 //
 // DRIVEN AT THE PREDICATE, NOT THROUGH A CORRUPTED STORE, deliberately:
-// `anno-store.ts` is the ONE module in this repo permitted to name
+// `anno-store.mts` is the ONE module in this repo permitted to name
 // `node:sqlite`, so a test cannot manufacture the corrupted row without
 // breaking a stated architectural constraint to prove a point about
 // robustness. The predicate is what the call site calls.
@@ -1650,7 +1650,7 @@ test("a mid-instruction label below $0100 is REFUSED BY NAME rather than emitted
   // $0081 is the immediate operand byte of the `lda #$00` at $0080. A `=*+$01`
   // label is defined INLINE, so this exporter's own two-hex-digit header
   // definition rule cannot hold the referencing operand's width, and the only
-  // remaining defence is a `disasm-renderer.ts` invariant this module does not
+  // remaining defence is a `disasm-renderer.mts` invariant this module does not
   // own. Measured on ACME 0.97, the unforced form assembles `inc smc_operand`
   // to `e6 81` -- two bytes where the original was three -- at exit 0 with NO
   // diagnostic at all.
@@ -1833,7 +1833,7 @@ test("ROUND TRIP: the ALIASED store still reassembles byte-identically -- a mark
 // ---------------------------------------------------------------------------
 // The eleven typed auto-name prefixes, read from their ONE home.
 //
-// `anno-types.ts:93-99` forbids restating them and names the failure a short
+// `anno-types.mts:93-99` forbids restating them and names the failure a short
 // reimplementation causes: a five-prefix copy silently under-counts, breaking
 // `routine-queue-walker`'s backlog construction while every test keeps passing.
 // The structural scan below is what turns that from a rule into a check, and it
@@ -2017,7 +2017,7 @@ test("PRECONDITION: every opcode in UNEXPRESSIBLE_IMMEDIATE_OPCODES really is `m
   assert.deepEqual(
     actual,
     UNEXPRESSIBLE_IMMEDIATE_OPCODES.map((o) => o.byte).sort((a, b) => a - b),
-    "the unexpressible-immediate opcode set in disasm-opcodes.ts changed -- update this control's list",
+    "the unexpressible-immediate opcode set in disasm-opcodes.mts changed -- update this control's list",
   );
 });
 
@@ -2177,7 +2177,7 @@ test("an enum usage with no decoded instruction at its address is REFUSED by nam
 
 // ---------------------------------------------------------------------------
 // D-16/D-17 (plan 45-05): the OR-ed multi-bit decomposition. `decomposeRegisterValue()`
-// (`anno-enum-gen.ts`, plan 45-03) is the ONE owning decoder; this module never
+// (`anno-enum-gen.mts`, plan 45-03) is the ONE owning decoder; this module never
 // decodes a bit itself -- see the header import comment and `grep -ac
 // 'field.mask'` (must stay 0). An enum usage whose NAME has the shape
 // `registerKeyFor().slice(1)` produces (four uppercase hex digits) is
@@ -2210,7 +2210,7 @@ function d018Fixture(tag: string, extra: Partial<StoreSpec> = {}): StoreFixture 
   });
 }
 
-/** The directive half of a line -- everything before `disasm-renderer.ts`'s
+/** The directive half of a line -- everything before `disasm-renderer.mts`'s
  * own `"  ; "` comment separator, the same split `substituteImmediateEnum()`
  * confines its own search to. */
 function directiveHalf(line: string): string {
@@ -2585,7 +2585,7 @@ test("a SINGLE-ELEMENT range -- one byte, one instruction -- exports bracketed a
 // ---------------------------------------------------------------------------
 // All 256 opcodes through the exporter, in ONE image and ONE ACME invocation.
 //
-// This is the control that caught FOURTEEN wrong entries in `disasm-opcodes.ts`
+// This is the control that caught FOURTEEN wrong entries in `disasm-opcodes.mts`
 // during phase 04: two `jam`/`anc` duplicate groups and four `nop` subgroups
 // were corrected from an untested seed by a real-ACME round trip. Every
 // assertion below is driven from the `OPCODES` table itself, so a future
@@ -2593,16 +2593,16 @@ test("a SINGLE-ELEMENT range -- one byte, one instruction -- exports bracketed a
 // runs.
 // ---------------------------------------------------------------------------
 
-const RENDERER_PATH = join(HERE, "disasm-renderer.ts");
+const RENDERER_PATH = join(HERE, "disasm-renderer.mts");
 
-/** `disasm-renderer.ts`'s FIXED note vocabulary for the two flags that put an
+/** `disasm-renderer.mts`'s FIXED note vocabulary for the two flags that put an
  * instruction on the `!byte` path. Not exported from that module, so the
  * strings are asserted present in its source below before anything matches on
  * them -- the `acme-gate.test.ts` non-vacuity technique. */
 const UNASSEMBLABLE_NOTE = "not expressible in ACME !cpu 6510";
 const ILLEGAL_NOTE = "illegal opcode";
 
-/** `$xx`, matching `disasm-renderer.ts`'s own `!byte` operand spelling. */
+/** `$xx`, matching `disasm-renderer.mts`'s own `!byte` operand spelling. */
 function byteHex(value: number): string {
   return `$${(value & 0xff).toString(16).padStart(2, "0")}`;
 }
@@ -2615,7 +2615,7 @@ function byteHex(value: number): string {
  *
  * The filler is `$00`, which keeps every relative branch's target at
  * `address + 2` -- inside the block and trivially in range -- and every
- * absolute operand at `$0000`, which `disasm-renderer.ts` renders with its
+ * absolute operand at `$0000`, which `disasm-renderer.mts` renders with its
  * `+2` width force.
  */
 function everyOpcodeImage(origin: number): { bytes: number[]; addressOf: number[] } {
@@ -2650,10 +2650,10 @@ function everyOpcodeBranchTargetLabels(addressOf: readonly number[]): { address:
   return labels;
 }
 
-test("the `!byte` note vocabulary matched below is really present in disasm-renderer.ts (so this file cannot pass for the wrong reason)", () => {
+test("the `!byte` note vocabulary matched below is really present in disasm-renderer.mts (so this file cannot pass for the wrong reason)", () => {
   const src = readFileSync(RENDERER_PATH, "utf8");
   for (const note of [UNASSEMBLABLE_NOTE, ILLEGAL_NOTE]) {
-    assert.ok(src.includes(note), `disasm-renderer.ts no longer contains the note text this file matches on (${JSON.stringify(note)}) -- update both together, never only one`);
+    assert.ok(src.includes(note), `disasm-renderer.mts no longer contains the note text this file matches on (${JSON.stringify(note)}) -- update both together, never only one`);
   }
 });
 
@@ -2735,7 +2735,7 @@ test("ALL 256 OPCODES: every `acmeExpressible: false` entry goes out as `!byte` 
   assert.equal(
     verdict.outcome,
     "ok",
-    "THIS is the control that caught fourteen wrong entries in disasm-opcodes.ts: an internally-verified opcode table still shipped " +
+    "THIS is the control that caught fourteen wrong entries in disasm-opcodes.mts: an internally-verified opcode table still shipped " +
       `two \`jam\`/\`anc\` duplicate groups and four \`nop\` subgroups wrong, and only a real assembler found them.${context(result, verdict)}`,
   );
   assert.equal(verdict.byteDiff?.equal, true, `all 256 opcodes must reassemble byte-identically:${context(result, verdict)}`);
@@ -2746,7 +2746,7 @@ test("ALL 256 OPCODES: every `acmeExpressible: false` entry goes out as `!byte` 
 //
 // A REFINEMENT OF RESEARCH.md's ASSUMPTION A5, recorded here rather than left
 // implicit. `anno_label.name` carries a `unique` DDL constraint
-// (`anno-store.ts:266`) ON TOP OF `setLabel()`'s own guard, so the store cannot
+// (`anno-store.mts:266`) ON TOP OF `setLabel()`'s own guard, so the store cannot
 // hold two rows with one name AT ALL and a store-level plant can never reach
 // ACME. The external observation is therefore produced at the SOURCE-TEXT
 // boundary, which is the only place the duplicate can exist.
@@ -2757,7 +2757,7 @@ test("ALL 256 OPCODES: every `acmeExpressible: false` entry goes out as `!byte` 
 // duplicate with its own words and its own exit status.
 // ---------------------------------------------------------------------------
 
-const STORE_PATH_ON_DISK = join(HERE, "anno-store.ts");
+const STORE_PATH_ON_DISK = join(HERE, "anno-store.mts");
 
 /** `setLabel()`'s own refusal wording, read out of the module source rather
  * than retyped from memory -- the `acme-gate.test.ts` technique. Retyping is
@@ -2765,11 +2765,11 @@ const STORE_PATH_ON_DISK = join(HERE, "anno-store.ts");
  * `assert.throws()` with no message predicate. */
 const SET_LABEL_REFUSAL = "is already bound to address";
 
-test("the store's duplicate-label refusal wording asserted below is really present in anno-store.ts (so this file cannot pass for the wrong reason)", () => {
+test("the store's duplicate-label refusal wording asserted below is really present in anno-store.mts (so this file cannot pass for the wrong reason)", () => {
   const src = readFileSync(STORE_PATH_ON_DISK, "utf8");
   assert.ok(
     src.includes(SET_LABEL_REFUSAL),
-    `anno-store.ts no longer contains the refusal wording this file matches on (${JSON.stringify(SET_LABEL_REFUSAL)}) -- update both together, never only one`,
+    `anno-store.mts no longer contains the refusal wording this file matches on (${JSON.stringify(SET_LABEL_REFUSAL)}) -- update both together, never only one`,
   );
 });
 
@@ -3328,7 +3328,7 @@ test("empty: a single-range store against a single-row ledger tiling all of $000
  * splits the first write into a head ($0801..$0804) and a tail
  * ($0809..$0810) remainder plus the new middle range -- three disjoint rows
  * from two spans written, per `retype()`'s own measured behaviour
- * (`anno-store.ts:2160-2245`, read in this plan's `<read_first>`).
+ * (`anno-store.mts:2160-2245`, read in this plan's `<read_first>`).
  */
 function orderingStore(dir: string): StoreFixture {
   const imagePath = join(dir, "game.prg");
@@ -3696,7 +3696,7 @@ test("exclusion empty: a store with zero ranges still raises the pre-existing no
 
 // ---------------------------------------------------------------------------
 // exclusion ordering (backstop -- see EXCLUSION_MARKER_PREFIX's own overlap
-// comment in anno-export-asm.ts for what is contractual and what is a
+// comment in anno-export-asm.mts for what is contractual and what is a
 // recorded choice)
 // ---------------------------------------------------------------------------
 
@@ -3867,7 +3867,7 @@ const PLANTED_CONTROL_LEDGER_RANGES = [
 ];
 
 /**
- * TEST-ONLY. Must never be copied into `anno-export-asm.ts` or any module in
+ * TEST-ONLY. Must never be copied into `anno-export-asm.mts` or any module in
  * `package.json`'s `files[]`. This is the negative control BUILD-07
  * criterion 1 requires: a deliberately-filtering re-implementation of just
  * the block-construction stretch, dropping any range whose overlapping
@@ -5170,7 +5170,7 @@ test("a re-export into a directory holding a hand-swapped .bin refuses by name a
 // unprefixed name defined in one file resolves from another -- measured live
 // 2026-09-12, both forward and backward. That only holds because every name
 // this exporter emits is globally unique (`setLabel()` refuses a name
-// already bound to a different address, `anno-store.ts`) and carries no
+// already bound to a different address, `anno-store.mts`) and carries no
 // leading dot (`assertLegalAcmeIdentifier()`'s anchored pattern accepts
 // none, so no emitted name is ever the kind of local label a `!zone`
 // directive would scope) -- BOTH properties of OTHER modules. A test that
@@ -5343,7 +5343,7 @@ test("cross file: an auto-generated label name survives the split -- its symbols
 //
 // The exporter's own mitigation for the zero-page-widening hazard is
 // TWO-FOLD, and the two halves are why this section runs THREE assemblies
-// rather than one: `disasm-renderer.ts` never substitutes a symbol into a
+// rather than one: `disasm-renderer.mts` never substitutes a symbol into a
 // zeropage-mode operand at all (D-11), so nothing this exporter emits ON
 // ITS OWN is order-sensitive -- the hazard can only be exercised by hand,
 // exactly as `PLANTED VIOLATION 2` above already does for the single-file
@@ -5370,7 +5370,7 @@ test("cross file: an auto-generated label name survives the split -- its symbols
  * Exports `plantedFixture()`'s own store as a TREE and applies the named
  * mutations to the WRITTEN FILES, one at a time:
  *  - `substitute` -- turns the raw `lda $90` zeropage literal in
- *    `unscoped.a` into `lda zpf_90`, the substitution `disasm-renderer.ts`
+ *    `unscoped.a` into `lda zpf_90`, the substitution `disasm-renderer.mts`
  *    itself never performs (D-11) -- without it, sourcing order cannot
  *    matter at all, since nothing this exporter emits references the
  *    symbol at that operand.

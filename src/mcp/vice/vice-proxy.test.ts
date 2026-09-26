@@ -743,7 +743,7 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
 // removed that tool from tools/list along with the rest of the anno_*
 // family, so this section now drives the test-only fixture tool below
 // instead -- same property (a real, wire-registered, backend-independent,
-// deterministically oversized producer), no anno-tools.ts dependency.
+// deterministically oversized producer), no anno-tools.mts dependency.
 // -----------------------------------------------------------------------
 
 test("an oversized result is recoverable in full across continuations", async () => {

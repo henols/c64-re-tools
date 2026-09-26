@@ -11,7 +11,7 @@ yet implemented").
 
 **What happens today:**
 - Every `anno` call names a client-local `.annostore` SQLite file.
-- The client opens that file in-process through `anno-store.ts`.
+- The client opens that file in-process through `anno-store.mts`.
 - Every write snapshots the whole file.
 
 This breaks the v2 rule that the broker owns machine state and the client never
@@ -99,7 +99,7 @@ An older dev broker answers `unknown op: anno_run`, and the client turns that in
   plus the caller's own `image` string.
 - **Migration: none.** No production path ever created a store.
   `c64-program-recon/SKILL.md:184` claims the first write creates one, but
-  `anno-tools.ts:2139` refuses; this milestone fixes that mismatch.
+  `anno-tools.mts:2139` refuses; this milestone fixes that mismatch.
 - **Fixtures:** the export document goes to v2. It adds `excludedRanges` and
   drops `store`. The 12 `*.annostore.json` files are rewritten mechanically and
   keep their names.
@@ -122,12 +122,12 @@ roadmap.
 ### Step 1: schema v6, project-scoped, no snapshot ring (in-process)
 
 **Files:**
-- `anno-store.ts`: DDL at :270, `openStore` at :476, `runWriteSequence` at
+- `anno-store.mts`: DDL at :270, `openStore` at :476, `runWriteSequence` at
   :1553; delete the ring code (:653-1388 region) and `revertTo` at :2502.
-- `anno-types.ts:338`: `SCHEMA_VERSION = 6`.
-- `anno-store-export.ts`: export document v2.
+- `anno-types.mts:338`: `SCHEMA_VERSION = 6`.
+- `anno-store-export.mts`: export document v2.
 - `fixtures/**/*.annostore.json`
-- Tool texts that mention the "32-deep snapshot ring": `anno-tools.ts:612,640`
+- Tool texts that mention the "32-deep snapshot ring": `anno-tools.mts:612,640`
   and `anno-register.ts:155,238`.
 - A temporary shim, `openStore(path)`, which serves one project under a fixed
   id. Step 4 deletes it.
@@ -161,7 +161,7 @@ roadmap.
 - **Engine** (broker-side): `runAnnoTool(handle, name, args, inputs)` and
   `runAnnoReport(handle, name, args, inputs) → {json, files[]}`. The engine does
   no fs reads, no unlinks and no repo-root lookups. Today's only fs touch points
-  are `anno-tools.ts:2689-2696` and `anno-import.ts:391,415`; they become
+  are `anno-tools.mts:2689-2696` and `anno-import.mts:391,415`; they become
   byte inputs.
 - **Client** (new `anno-call-client.ts`): confines paths, reads bytes, deletes a
   consumed `export_path` after success, writes the `--out` files, and adds the
@@ -217,7 +217,7 @@ roadmap.
 **Files:**
 - `anno-cli.ts`: every verb goes through `anno-remote`. `--out` is required and
   `--export` is added.
-- `anno-tools.ts`: delete `assertStorePresent` and the inode guard.
+- `anno-tools.mts`: delete `assertStorePresent` and the inode guard.
 - Delete the step-1 shim.
 - Update the 4 SKILL.md files (c64-program-recon, c64-provenance-diff,
   acme-build, routine-queue-walker) and `memory-map.template.md`.

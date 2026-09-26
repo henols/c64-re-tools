@@ -66,8 +66,8 @@ import { repoRoot } from "./repo-root.ts";
 // Phase 37, plan 37-08 (AUTO-07): the derived character-set range is computed
 // from the fixture's own real CONST_WRITES facts, never hard-coded -- the
 // SAME two production modules the join itself will use.
-import { parseConstWrites, parseGhidraExport } from "./anno-import.ts";
-import { deriveGraphicsRanges } from "./anno-graphics.ts";
+import { parseConstWrites, parseGhidraExport } from "./anno-import.mts";
+import { deriveGraphicsRanges } from "./anno-graphics.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures", "ghidra");
@@ -2036,7 +2036,7 @@ test(
 // advance to), reporting a fully-successful seed as `DATARANGE-FAILED` and
 // undercounting `DATARANGE-SEED-COUNT` by one. `$fff8-$ffff` is not a
 // hypothetical boundary: it is exactly the sprite-pointer range
-// `anno-graphics.ts`'s own `deriveGraphicsRanges()` can legitimately derive
+// `anno-graphics.mts`'s own `deriveGraphicsRanges()` can legitimately derive
 // (bank base $0000 with $D018's high nibble $F -- see the finding's own
 // worked example). The flat-64K route is used so every address up to
 // $FFFF is backed by real memory (a .prg's own small loaded range is not).

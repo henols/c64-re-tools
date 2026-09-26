@@ -1,6 +1,6 @@
 // anno-engine-boundary.test.ts -- proof that no path reaches the anno engine.
 //
-// The engine (`anno-tools.ts`, `anno-reports.ts`) runs where the store lives,
+// The engine (`anno-tools.mts`, `anno-reports.mts`) runs where the store lives,
 // which is not where the caller's files live. So:
 //   * every argument a definition marks `clientFile` is REFUSED when it
 //     arrives as a plain string, and accepted when it arrives as a staged
@@ -18,9 +18,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, openStore } from "./anno-store.ts";
-import { ANNO_TOOL_DEFINITIONS, clientFileKeys, runAnnoToolOnHandle, type AnnoInputFile } from "./anno-tools.ts";
-import { runAnnoReportOnHandle } from "./anno-reports.ts";
+import { closeStore, openStore } from "./anno-store.mts";
+import { ANNO_TOOL_DEFINITIONS, clientFileKeys, runAnnoToolOnHandle, type AnnoInputFile } from "./anno-tools.mts";
+import { runAnnoReportOnHandle } from "./anno-reports.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STAGED_REFUSAL = /did not arrive as a staged file/;
@@ -98,7 +98,7 @@ function handlePathUses(source: string): string[] {
 }
 
 test("the engine never reads handle.path, so no answer can echo where the store lives", () => {
-  assert.deepEqual(handlePathUses(readFileSync(join(HERE, "anno-tools.ts"), "utf8")), []);
+  assert.deepEqual(handlePathUses(readFileSync(join(HERE, "anno-tools.mts"), "utf8")), []);
   assert.deepEqual(handlePathUses("  return { store: handle.path, symbols };\n"), ["  return { store: handle.path, symbols };"], "planted: the check sees a use");
 });
 
@@ -124,5 +124,5 @@ test("every report file input is refused as a plain path", async () => {
 });
 
 test("the report engine never reads handle.path", () => {
-  assert.deepEqual(handlePathUses(readFileSync(join(HERE, "anno-reports.ts"), "utf8")), []);
+  assert.deepEqual(handlePathUses(readFileSync(join(HERE, "anno-reports.mts"), "utf8")), []);
 });

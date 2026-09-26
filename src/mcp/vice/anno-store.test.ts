@@ -30,7 +30,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildPaintIndex, NO_ROW, resolveAt } from "./anno-index.ts";
+import { buildPaintIndex, NO_ROW, resolveAt } from "./anno-index.mts";
 import {
   AnnoAddressError,
   AnnoCommentError,
@@ -44,7 +44,7 @@ import {
   AnnoTypeError,
   DATA_TYPES,
   SCHEMA_VERSION,
-} from "./anno-types.ts";
+} from "./anno-types.mts";
 import {
   addExcludedRange,
   addScope,
@@ -75,9 +75,9 @@ import {
   setDataType,
   setLabel,
   updateProjectEnum,
-} from "./anno-store.ts";
-import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.ts";
-import { ViceError } from "./vice-errors.ts";
+} from "./anno-store.mts";
+import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.mts";
+import { ViceError } from "./vice-errors.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -737,7 +737,7 @@ test("nothing derivable is cached: anno_xref holds ZERO rows after typing a lo_h
     const store = openStore(path, { workspaceRoot: dir });
     try {
       // $C000-$C007 as a four-entry split ADDRESS table. Its targets are fully
-      // derivable from the bytes -- `resolveSplitTargets()` in anno-types.ts
+      // derivable from the bytes -- `resolveSplitTargets()` in anno-types.mts
       // computes them -- which is exactly why finding them on disk here would be
       // the failure. A non-empty result would mean the store had cached a
       // derivation: a SECOND on-disk truth that can disagree with the range
@@ -1235,7 +1235,7 @@ test("WR-16: the commit-failure refusal reports the rollback it OBSERVED -- roll
   inTempDir((dir) => {
     /** Replaces `db.exec` with one that throws for the named statements and
      * passes everything else through. Driven through PRODUCTION entry points:
-     * `anno-store.ts` is not edited, and the failure enters where a real
+     * `anno-store.mts` is not edited, and the failure enters where a real
      * `SQLITE_BUSY` on this connection would. */
     const plant = (store: { db: { exec: (sql: string) => void } }, matcher: RegExp): (() => void) => {
       const real = store.db.exec.bind(store.db);
@@ -1796,7 +1796,7 @@ test("a stale baseRevision on removeExcludedRange is refused by the same mechani
 // WR-25 -- workspace confinement is `openStore`'s DEFAULT, and the unconfined
 // path is a word a grep can find.
 //
-// `anno-types.ts`'s header names three things nothing upstream validates: "an
+// `anno-types.mts`'s header names three things nothing upstream validates: "an
 // address of 65536, a misspelled data type, and a store path pointing outside
 // the workspace all look identical to the transport". The store path was the
 // only one of the three whose mitigation a caller could simply forget.

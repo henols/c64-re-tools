@@ -31,11 +31,11 @@ import { fileURLToPath } from "node:url";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { verifyAcmeAssemblesTree } from "./acme-verify.ts";
-import { exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.ts";
-import { openStore, closeStore } from "./anno-store.ts";
-import { importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument, type StoreExportRangeRow } from "./anno-store-export.ts";
-import type { ScopeRow } from "./anno-types.ts";
-import { buildHazardReport, type HazardReport, type HazardFinding, type HazardRegionDisposition } from "./anno-hazard-report.ts";
+import { exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.mts";
+import { openStore, closeStore } from "./anno-store.mts";
+import { importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument, type StoreExportRangeRow } from "./anno-store-export.mts";
+import type { ScopeRow } from "./anno-types.mts";
+import { buildHazardReport, type HazardReport, type HazardFinding, type HazardRegionDisposition } from "./anno-hazard-report.mts";
 import {
   runReassemblyGate,
   movementRebuildFromResult,
@@ -293,7 +293,7 @@ test(
 // above): a few dozen bytes carrying one detectable self-modification, one
 // plain code block and one data block. The self-modification's WRITER
 // instruction is stored as `byte`-typed data, never `code` -- the exporter's
-// own in-tree-reference rule (`anno-export-asm.ts`'s `referencedAddress()` /
+// own in-tree-reference rule (`anno-export-asm.mts`'s `referencedAddress()` /
 // `isInTree()`) treats ANY absolute- or zeropage-mode operand pointing at an
 // address covered by some OTHER emitted range as a reference that must
 // resolve through a store label, and this subject deliberately carries none.
@@ -305,7 +305,7 @@ test(
 // address of the subject's four ranges, deliberately: the export's own
 // extent is `[minBlockStart, maxBlockEnd)`, and removing a MIDDLE range
 // would leave that span unchanged (a gap is still spanned, per
-// `anno-export-asm.ts`'s own $00-fill rule). Only removing the range at
+// `anno-export-asm.mts`'s own $00-fill rule). Only removing the range at
 // either END actually narrows the extent -- which is the whole point being
 // pinned here: a clean byte-diff over a scope that quietly stopped covering
 // the interesting range.

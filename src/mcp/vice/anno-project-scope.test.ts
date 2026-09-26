@@ -44,9 +44,9 @@ import {
   setLabel,
   type AnnoDatabase,
   type AnnoStoreHandle,
-} from "./anno-store.ts";
-import { exportStoreDocument, importStoreDocument } from "./anno-store-export.ts";
-import { AnnoProjectError, AnnoStoreError, AnnoStoreStaleRevisionError } from "./anno-types.ts";
+} from "./anno-store.mts";
+import { exportStoreDocument, importStoreDocument } from "./anno-store-export.mts";
+import { AnnoProjectError, AnnoStoreError, AnnoStoreStaleRevisionError } from "./anno-types.mts";
 
 const PROJECT_A = "3f0c9a4e-1b2c-4d3e-8f40-5a6b7c8d9e0f";
 const PROJECT_B = "7d1e2f30-4a5b-4c6d-9e7f-8091a2b3c4d5";

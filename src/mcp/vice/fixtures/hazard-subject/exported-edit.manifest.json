@@ -2,7 +2,7 @@
   "provenance": {
     "store_document": "hazard-subject.annostore.json",
     "image": "hazard-subject.prg",
-    "statement": "The tree this manifest edits is produced by exportAsmTree() (src/mcp/vice/anno-export-asm.ts) and by nothing else -- see make-exported-edit.mjs, which imports the committed store through importStoreDocument() and exports it through exportAsmTree() before any edit in this manifest is applied."
+    "statement": "The tree this manifest edits is produced by exportAsmTree() (src/mcp/vice/anno-export-asm.mts) and by nothing else -- see make-exported-edit.mjs, which imports the committed store through importStoreDocument() and exports it through exportAsmTree() before any edit in this manifest is applied."
   },
   "source_edits": [
     {

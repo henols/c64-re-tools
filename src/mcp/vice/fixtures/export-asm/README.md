@@ -1,7 +1,7 @@
 # `export-asm` round-trip fixtures
 
 A committed C64 program that **genuinely modifies its own code**, plus the ACME
-source it was assembled from, used to prove `anno-export-asm.ts`'s
+source it was assembled from, used to prove `anno-export-asm.mts`'s
 mid-instruction `=*+$01` label emission (`EXPORT-02`) against a real assembler
 rather than against a substring match on the exporter's own output.
 
@@ -63,7 +63,7 @@ only the byte-diff tells them apart.
 
 ## `smc.annostore.json` (D-02, D-12)
 
-Phase 45, plan 45-06's committed derived-half export (`anno-store-export.ts`'s
+Phase 45, plan 45-06's committed derived-half export (`anno-store-export.mts`'s
 `exportStoreDocument()`, D-02 schema, `schemaVersion: 1`). Producing tool
 versions: the vendored `dxa` binary (sha256
 `0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523`), Ghidra

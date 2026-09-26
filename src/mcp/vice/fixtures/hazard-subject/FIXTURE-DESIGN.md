@@ -178,7 +178,7 @@ the VIC-II bank through a read-modify-write on $dd00 (`lda $dd00` / `and` /
 `ora` / `sta $dd00`, preserving whatever the CIA2 port A register already
 held) and never wrote VIC-II control register 1 ($d011) at all. Both
 omissions were invisible to the fixture's own claim, not merely to a casual
-reading of it: `anno-graphics.ts`'s register recovery only ever accepts a
+reading of it: `anno-graphics.mts`'s register recovery only ever accepts a
 register value stated as an immediate load directly followed by its store --
 a read-modify-write's result is a runtime fact about whatever the port held
 at the moment the CPU actually ran it, not a static one, and a static report

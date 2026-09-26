@@ -6,7 +6,7 @@
 // that turns the framed text into structured data.
 //
 // WHY THIS FILE EXISTS RATHER THAN LIVING INSIDE THE TOOL HANDLER: same
-// reasoning `textmon-memmap.ts` states for itself (D-42-3, inherited from
+// reasoning `textmon-memmap.mts` states for itself (D-42-3, inherited from
 // plan 42-01, not re-decided here) -- keeping the parser import-free of
 // transport code means any future non-tool consumer can depend on this one
 // file without dragging in a socket, and an owning module that is pure by

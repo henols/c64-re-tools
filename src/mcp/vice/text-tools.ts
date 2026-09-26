@@ -79,7 +79,7 @@ import {
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { ChannelLockTimeoutError } from "./channel-lock.ts";
 import { isErrorText, derivedAnswer, convertHandshakeError, convertWireError, type StockToolResult } from "./stock-handler.ts";
-import { parseAccessMap, accessMapRanges, type AccessMap, type AccessMapRangesOptions } from "./textmon-memmap.ts";
+import { parseAccessMap, accessMapRanges, type AccessMap, type AccessMapRangesOptions } from "./textmon-memmap.mts";
 import { parseCpuHistory } from "./textmon-cpuhistory.ts";
 import { parseBacktrace } from "./textmon-backtrace.ts";
 import { parseFlatProfile } from "./textmon-profile.ts";
@@ -271,7 +271,7 @@ export async function handleWarpSet(args: Record<string, unknown>, deps: StockSe
  * to the C64's 16-bit address space -- the shared narrowing for
  * `startAddress`/`endAddress`. Declared locally, per this module tree's
  * own "repeated per file, never centrally imported" convention
- * (disasm-decoder.ts). */
+ * (disasm-decoder.mts). */
 function isValidAddressArg(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0xffff;
 }
@@ -416,7 +416,7 @@ export async function handleMemmapShow(args: Record<string, unknown>, deps: Stoc
  * `handleMemmapShow`'s own discipline exactly -- WITH ONE MEASURED
  * EXCEPTION, discovered live against genuine stock VICE (plan 43-03 Task 1):
  * `no-data-lines` (header present, zero data lines -- `parseAccessMap()`'s
- * own deliberate refusal, `textmon-memmap.ts`'s "never decoded as a
+ * own deliberate refusal, `textmon-memmap.mts`'s "never decoded as a
  * zero-entry access map") is the GUARANTEED shape of a real `memmapshow`
  * dialed immediately after a real `memmapzap`, inside this SAME
  * `withTextChannelLock()` hold, with the machine halted the whole time --

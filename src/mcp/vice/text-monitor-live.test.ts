@@ -94,7 +94,7 @@ import { clearHeldStockSession, ensureStockSession, type StockSessionDeps } from
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
 import { resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";
 import { CommandType, checkpointSetBody, CheckpointOperation, cpNumBody } from "./stock-protocol.ts";
-import { parseAccessMap } from "./textmon-memmap.ts";
+import { parseAccessMap } from "./textmon-memmap.mts";
 import { parseCpuHistory } from "./textmon-cpuhistory.ts";
 import { parseBacktrace } from "./textmon-backtrace.ts";
 import { parseFlatProfile } from "./textmon-profile.ts";

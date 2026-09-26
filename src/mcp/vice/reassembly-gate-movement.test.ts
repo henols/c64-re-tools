@@ -16,9 +16,9 @@ import { join } from "node:path";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { verifyAcmeAssemblesTree } from "./acme-verify.ts";
-import { exportAsmTree, ROOT_FILE_NAME } from "./anno-export-asm.ts";
-import { openStore, closeStore } from "./anno-store.ts";
-import { importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.ts";
+import { exportAsmTree, ROOT_FILE_NAME } from "./anno-export-asm.mts";
+import { openStore, closeStore } from "./anno-store.mts";
+import { importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.mts";
 import { runReassemblyGate, movementRebuildFromResult, type GateInput } from "./reassembly-gate.ts";
 import { relocateSubject, buildMovementResult, refusedMovement, type RelocationRequest, type RelocationSite, type RelocatedSubject } from "./reassembly-gate-movement.ts";
 import { MOVEMENT_ORIGIN, movementDocument, movementImage, ROUTINE_A_SITES, MOVEMENT_DELTA } from "./reassembly-gate-movement-subject.ts";
@@ -551,7 +551,7 @@ test(
  * the half-patched export's OWN self-derived `expectedBytes`.
  *
  * WHY: `emitSplitAddressLines()`'s per-entry reconstruction (task 1's
- * `read_first`, `anno-export-asm.ts`) recomputes a table entry's target
+ * `read_first`, `anno-export-asm.mts`) recomputes a table entry's target
  * address FROM THE SAME IMAGE BYTES it is about to render, then either
  * substitutes a symbol whose real address IS that reconstructed target by
  * definition, or falls back to the identical raw bytes. Either way, the

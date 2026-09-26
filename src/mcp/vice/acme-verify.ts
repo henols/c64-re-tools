@@ -379,12 +379,12 @@ export interface AcmeVerifyResult {
 
 /**
  * Options for verifying a whole TREE a caller already wrote to disk --
- * `anno-export-asm.ts`'s `exportAsmTree()`'s own `outDir`, most commonly --
+ * `anno-export-asm.mts`'s `exportAsmTree()`'s own `outDir`, most commonly --
  * rather than a single in-memory source string.
  *
  * This is the ADDITIVE sibling of `AcmeVerifyOptions`: it exists because the
  * tree's own root file `!source`s its siblings by BARE FILENAME with no
- * directory component (by design -- `anno-export-asm.ts`'s `exportAsmTree()`
+ * directory component (by design -- `anno-export-asm.mts`'s `exportAsmTree()`
  * doc comment), so ACME can only resolve them when its OWN working directory
  * is the tree's directory. `AcmeVerifyOptions.source` has no directory at
  * all, so that dependence never arises for the single-source path, and
@@ -397,7 +397,7 @@ export interface AcmeVerifyTreeOptions {
    * caller, exactly as `exportAsmTree()`'s own doc comment states for the
    * directory it writes into. */
   treeDir: string;
-  /** The tree's root file's BARE name (e.g. `anno-export-asm.ts`'s
+  /** The tree's root file's BARE name (e.g. `anno-export-asm.mts`'s
    * `ROOT_FILE_NAME`, `"root.a"`) -- resolved to an absolute path under
    * `treeDir` by this function, never accepted as an absolute path itself. */
   rootFileName: string;
@@ -813,7 +813,7 @@ function compareBytes(expected: Buffer, actual: Buffer): AcmeByteDiff {
  * supplies one -- `verifyAcmeAssemblesTree()` below -- gets it passed
  * straight through to the child spawn call. That matters because a multi-file
  * tree's root source `!source`s its siblings by BARE FILENAME with no
- * directory component, BY DESIGN (`anno-export-asm.ts`'s `exportAsmTree()`
+ * directory component, BY DESIGN (`anno-export-asm.mts`'s `exportAsmTree()`
  * doc comment): ACME resolves a bare filename against its OWN working
  * directory and nothing else -- MEASURED live against ACME 0.97 "Zem" -- so a
  * tree assembled with the child's cwd anywhere but the tree's own directory

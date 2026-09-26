@@ -22,7 +22,7 @@
 // A SEVENTH VERB, `call`, landed 2026-09-25 (D-12, plan 65-02) for a
 // different reason than the first six: D-13 deletes the whole `anno_*` MCP
 // tool family from `tools/list` in the same change. `CURATED_ANNO_TOOLS`
-// (anno-tools.ts) MEASURED at 28 names at this commit -- the plan that
+// (anno-tools.mts) MEASURED at 28 names at this commit -- the plan that
 // authored this verb estimated 25 and named exactly two as colliding with a
 // CLI verb name (hazard-report, evid-disagreements); the measured count is
 // higher, but the same two are still the only ones that collide, so 26 of
@@ -71,7 +71,7 @@
 //     caller-supplied path from another.
 //   - Never grow a second path validator. Every caller-supplied path below
 //     goes through `storePathWithinWorkspace()` -- the ONE confinement seam,
-//     the same one `anno-tools.ts` puts its store and image arguments
+//     the same one `anno-tools.mts` puts its store and image arguments
 //     through. A second answer to "is this path inside the workspace" is a
 //     confinement escape waiting to be written.
 //
@@ -129,26 +129,26 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { compareRenderedMemoryMap } from "./anno-memmap-render.ts";
+import { compareRenderedMemoryMap } from "./anno-memmap-render.mts";
 // The tree writer. `acme-verify.ts` -- the module that DOES spawn ACME -- is
 // deliberately NOT imported here and must never be: it is test-only.
-import { writeExportAsmTree } from "./anno-export-asm.ts";
-import { coverageFindings } from "./anno-coverage.ts";
-import type { CoverageReport } from "./anno-coverage.ts";
-import { openStore, closeStore } from "./anno-store.ts";
-import type { HazardReport } from "./anno-hazard-report.ts";
-import type { EvidReconciliation } from "./evid-reconcile.ts";
-import { storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.ts";
+import { writeExportAsmTree } from "./anno-export-asm.mts";
+import { coverageFindings } from "./anno-coverage.mts";
+import type { CoverageReport } from "./anno-coverage.mts";
+import { openStore, closeStore } from "./anno-store.mts";
+import type { HazardReport } from "./anno-hazard-report.mts";
+import type { EvidReconciliation } from "./evid-reconcile.mts";
+import { storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.mts";
 import { repoRoot } from "./repo-root.ts";
 // `call`'s one generic runner. A STATIC import is safe here -- `vice-proxy.ts`
 // reaches this whole module only through its own dynamic import, so it never
 // becomes part of the server's startup cost.
-import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
-import type { AnnoInputFile } from "./anno-tools.ts";
+import { CURATED_ANNO_TOOLS } from "./anno-tools.mts";
+import type { AnnoInputFile } from "./anno-tools.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
 // The report engine: every report is computed there, from the store and the
 // bytes this verb stages. This module confines, reads, writes and prints.
-import { AnnoReportRefusal, runAnnoReportOnHandle, type AnnoReportName, type AnnoReportResult } from "./anno-reports.ts";
+import { AnnoReportRefusal, runAnnoReportOnHandle, type AnnoReportName, type AnnoReportResult } from "./anno-reports.mts";
 import type {
   DecompCompletenessReport,
   DecompExecutionManifest,
@@ -157,7 +157,7 @@ import type {
   EntryPointRow,
   RangeProvenanceRow,
   ReferencedAddressesCensus,
-} from "./anno-reports.ts";
+} from "./anno-reports.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -235,7 +235,7 @@ verbs:
 
   coverage <image> --store FILE [--out FILE] [--force] [--sample N]
       Measures how far a program has actually been reverse-engineered
-      through anno-coverage.ts. <image> supplies the
+      through anno-coverage.mts. <image> supplies the
       PAYLOAD BYTES and the load origin; --store names the ANNOTATION STORE
       holding the labels, comments and typed ranges. Those are two separate
       files on purpose: the store holds annotations and never bytes, so a
@@ -623,7 +623,7 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
 
 /**
  * `render-memmap <store> --provenance FILE [--out FILE] [--force] [--check]`
- * -- the generated-view verb, via `anno-memmap-render.ts`'s
+ * -- the generated-view verb, via `anno-memmap-render.mts`'s
  * `renderMemoryMap()`/`checkRenderedMemoryMap()`. Never writes a file when
  * `--check` is given -- that mode only reads and reports.
  *
@@ -642,7 +642,7 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
  *     it an arbitrary-file read oracle; the sidecar parse failure then
  *     interpolated Node's own parse error, which carries a snippet of the
  *     file, so the oracle DISCLOSED CONTENT. Confining it here also
- *     confines it for `anno-memmap-render.ts`, which reads it with no check
+ *     confines it for `anno-memmap-render.mts`, which reads it with no check
  *     of its own.
  *
  * Every one of them now goes through the SAME one confinement seam,
@@ -901,7 +901,7 @@ function addressList(addresses: readonly number[], cap = 12): string {
  * THE ONE RULE THIS FUNCTION EXISTS TO HOLD (and the reason the
  * rendering lives here rather than being a generic pretty-printer): print
  * every measure's own numbers under its own heading, and never compute a
- * combined figure at the point of display. `anno-coverage.ts`'s report
+ * combined figure at the point of display. `anno-coverage.mts`'s report
  * object carries no aggregate -- if one ever appears, it will be because
  * somebody averaged, summed or weighted these numbers HERE. Do not. The
  * ratios below measure different populations (labels, comments, sampled
@@ -1018,7 +1018,7 @@ function printCoverageReport(report: CoverageReport): void {
 
 /**
  * `coverage <image> --store FILE [--out FILE] [--force] [--sample N]` --
- * This verb's delivery path: the instrument from `anno-coverage.ts`, run against
+ * This verb's delivery path: the instrument from `anno-coverage.mts`, run against
  * a real program and a real annotation store.
  *
  * TWO PATHS, NEITHER DERIVED FROM THE OTHER. `<image>` carries the payload
@@ -1036,7 +1036,7 @@ function printCoverageReport(report: CoverageReport): void {
  *     `coverage <project> --store <store> --out /tmp/...` wrote the report
  *     outside the workspace root. All three now go through
  *     `storePathWithinWorkspace()` against `repoRoot()` -- the one seam, the
- *     same one `anno-tools.ts` puts its own store and image arguments through.
+ *     same one `anno-tools.mts` puts its own store and image arguments through.
  *     `openStore()` is then handed the same workspace root, so its own
  *     confinement agrees by construction rather than by a second rule. The
  *     enumeration is now mechanical rather than prose:
@@ -1177,7 +1177,7 @@ interface ExportAsmParsedArgs {
   outMissingValue?: boolean;
   /** The ledger `c64-provenance-diff` generates
    * (`recovery/PROVENANCE.md`). OPTIONAL -- see `ExportAsmOptions.ledgerPath`
-   * in `anno-export-asm.ts` for why. */
+   * in `anno-export-asm.mts` for why. */
   ledger?: string;
   ledgerMissingValue?: boolean;
   force?: boolean;
@@ -1288,7 +1288,7 @@ function pathIsOrContains(dir: string, candidate: string): boolean {
 /**
  * `export-asm <image> --store FILE [--out DIR] [--ledger FILE] [--force]` --
  * a TREE of ACME source files for a program, emitted from its annotation
- * store by `anno-export-asm.ts`'s `exportAsmTree()` (`--out` promoted from a
+ * store by `anno-export-asm.mts`'s `exportAsmTree()` (`--out` promoted from a
  * FILE to a DIRECTORY, a decision made deliberately at a checkpoint rather
  * than left to fall out of implementation).
  *
@@ -2256,7 +2256,7 @@ function parseCallArgs(rest: string[]): CallParsedArgs {
  * generic verb. It refuses a name outside `CURATED_ANNO_TOOLS`, reads the
  * argument object from exactly one of `--args`/`--args-file`, and hands both
  * straight to `runAnnoTool()` UNCHANGED -- there is no second implementation
- * of any of the 28 former MCP verbs here, and `anno-tools.ts` is not edited
+ * of any of the 28 former MCP verbs here, and `anno-tools.mts` is not edited
  * by this change. The name set and the argument shapes are exactly the
  * former `anno_*` MCP tools' own, so a skill's existing argument
  * documentation for those tools stays valid against this verb.

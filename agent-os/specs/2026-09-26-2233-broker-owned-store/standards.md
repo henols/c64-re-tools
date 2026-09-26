@@ -29,14 +29,14 @@ creates it on first use and reads it after that:
   survives moves and never collides.
 - A missing project.json creates a new id, which means a new, empty
   project. Never guess an existing one.
-- `anno-store.ts` stays the only `node:sqlite` importer and becomes
+- `anno-store.mts` stays the only `node:sqlite` importer and becomes
   host-bound (see broker/host-bound-modules.md).
 
 ---
 
 ## anno/sqlite-rules
 
-Only `anno-store.ts` imports `node:sqlite`. Everything else calls its
+Only `anno-store.mts` imports `node:sqlite`. Everything else calls its
 functions.
 
 ```ts
@@ -63,7 +63,7 @@ db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values
 ## anno/store-validators
 
 The MCP proxy validates nothing. Every store argument goes through an
-`assertX()`/`parseStoreX()` in `anno-types.ts` before it reaches SQL.
+`assertX()`/`parseStoreX()` in `anno-types.mts` before it reaches SQL.
 
 ```ts
 parseStoreAddress(4096)     // ok

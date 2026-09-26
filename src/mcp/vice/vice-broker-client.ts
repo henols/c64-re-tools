@@ -20,7 +20,7 @@ import { dialControlSocket, type DialControlSocketOptions } from "./broker-endpo
 import type { LaunchProfile } from "./broker-launch.mts";
 // backend-detect.mts is ViceBackend's one home. Type-only, same discipline.
 import type { ViceBackend } from "./backend-detect.mts";
-import { ViceError } from "./vice-errors.ts";
+import { ViceError } from "./vice-errors.mts";
 
 // -------------------------------------------------------------- request ids
 //

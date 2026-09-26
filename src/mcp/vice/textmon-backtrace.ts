@@ -7,10 +7,10 @@
 // is `textmon-cpuhistory.ts` (Task 1 of this same plan); both share the
 // address/bytes/disassembly column layout the `chis` format established,
 // and both inherit D-42-3 (a parser returns a discriminated refusal, never
-// throws) from plan 42-01's `textmon-memmap.ts`.
+// throws) from plan 42-01's `textmon-memmap.mts`.
 //
 // WHY THIS FILE EXISTS RATHER THAN LIVING INSIDE THE TOOL HANDLER: the same
-// reasoning `textmon-memmap.ts` and `textmon-cpuhistory.ts` state for
+// reasoning `textmon-memmap.mts` and `textmon-cpuhistory.ts` state for
 // themselves applies here unchanged.
 //
 // WHAT NOT TO DO:

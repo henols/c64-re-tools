@@ -10,7 +10,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { DATA_TYPES } from "./anno-types.ts";
+import { DATA_TYPES } from "./anno-types.mts";
 import { DATA_BEARING_TYPES, emitDataBlocks, emitLabels, type KnownDataRow } from "./dxa-blocks.ts";
 
 function scratchDir(): string {

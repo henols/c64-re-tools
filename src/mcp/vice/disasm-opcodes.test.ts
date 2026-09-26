@@ -1,8 +1,8 @@
-// node:test coverage of disasm-opcodes.ts -- D-06's independent bit-pattern
+// node:test coverage of disasm-opcodes.mts -- D-06's independent bit-pattern
 // derivation test. Its entire value is that it does NOT depend on the
 // source the table was transcribed from (cc65's opc6502x.c): deriveMode()
 // below re-derives each opcode's addressing mode from the 6502's own
-// `aaabbbcc` bit structure, so a transcription typo in disasm-opcodes.ts
+// `aaabbbcc` bit structure, so a transcription typo in disasm-opcodes.mts
 // fails HERE, independently of whatever produced the table. This is the
 // same ethic as this repo's own post-mortem lesson from Phase 2/3: "a green
 // suite written by the same pass that wrote the code proves less than it
@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { OPCODES, LENGTH_FOR_MODE, type AddressingMode } from "./disasm-opcodes.ts";
+import { OPCODES, LENGTH_FOR_MODE, type AddressingMode } from "./disasm-opcodes.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -43,7 +43,7 @@ describe("shape", () => {
 /**
  * Re-derives an opcode's addressing mode from the 6502's own `aaabbbcc` bit
  * decomposition (`cc = opcode & 0b11`, `bbb = (opcode >> 2) & 0b111`,
- * `aaa = opcode >> 5`), independently of disasm-opcodes.ts. Returns `null`
+ * `aaa = opcode >> 5`), independently of disasm-opcodes.mts. Returns `null`
  * where the uniform rule for that (cc, bbb, aaa) combination does not apply
  * -- those opcodes are the table's genuine irregulars and must appear in
  * IRREGULARS below instead.
@@ -373,7 +373,7 @@ describe("acmeExpressible seed sanity (D-09: 04-06's real-ACME assertion test is
   });
 
   test("the 6 implied 1-byte NOPs are seeded per the table -- 04-06's real-ACME assertion test is the authority, not this assertion", () => {
-    // This suite only pins whatever disasm-opcodes.ts currently states; it
+    // This suite only pins whatever disasm-opcodes.mts currently states; it
     // does not itself judge whether ACME would accept a 1-byte NOP variant
     // like $1A. If 04-06 finds ACME disagrees, that test corrects the seed,
     // not this one.
@@ -386,8 +386,8 @@ describe("acmeExpressible seed sanity (D-09: 04-06's real-ACME assertion test is
 // --------------------------------------------------------------- 6. Purity
 
 describe("purity (DISASM-07 / D-05)", () => {
-  test("disasm-opcodes.ts has zero import statements once comment lines are stripped", () => {
-    const source = readFileSync(join(HERE, "disasm-opcodes.ts"), "utf8");
+  test("disasm-opcodes.mts has zero import statements once comment lines are stripped", () => {
+    const source = readFileSync(join(HERE, "disasm-opcodes.mts"), "utf8");
     // Strip `//`-comment lines before counting -- this module's own header
     // comment legitimately talks ABOUT imports ("never add an import"), so
     // counting against the raw file would false-positive on that prose.

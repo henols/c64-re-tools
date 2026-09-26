@@ -67,7 +67,7 @@
 import { EventEmitter } from "node:events";
 import net from "node:net";
 
-import { ViceError } from "./vice-errors.ts";
+import { ViceError } from "./vice-errors.mts";
 import { acquireChannelLock, currentChannelLockHolder } from "./channel-lock.ts";
 
 // ---------------------------------------------------------------------------
@@ -223,7 +223,7 @@ export type BuildTextCommandResult = { readonly ok: true; readonly command: stri
  * the spec's inclusive bounds; a string that merely looks numeric is
  * refused too -- the parameter's type is a number, and accepting a string
  * here would be the first step back toward a free-text field. Returns a
- * discriminated result rather than throwing (mirrors textmon-memmap.ts's
+ * discriminated result rather than throwing (mirrors textmon-memmap.mts's
  * D-42-3 discipline for the same reason): a refusal is a value the caller
  * renders to the user, not an exception whose meaning a catch block has to
  * guess.

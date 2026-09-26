@@ -16,7 +16,7 @@
 //     the one conversion for a client.send() rejection.
 //   - Never value-import stock-session.ts from this file; `import type` only.
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
-import { MachineRestartedError } from "./vice-errors.ts";
+import { MachineRestartedError } from "./vice-errors.mts";
 import { ErrorCode, StockFramingError, StockProtocolError, StockResponseMismatchError, StockConnectionClosedError, type ViceMonitorClient } from "./stock-protocol.ts";
 import { runStateFor } from "./stock-runstate.ts";
 import type { StockConnectSession } from "./stock-connect.ts";

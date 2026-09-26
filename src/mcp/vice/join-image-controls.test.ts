@@ -5,12 +5,12 @@
 // own commit -- a red
 // observation is its own committed deliverable, never batched together with
 // the fix that makes it green again. Both cases mutate a SCRATCH copy only;
-// the committed `anno-join.ts`, `memmap-lookup.ts` and `memmap.json` are
+// the committed `anno-join.mts`, `memmap-lookup.mts` and `memmap.json` are
 // never opened for writing by this file.
 //
 // Task 1 (AUTO-03, the phase's required control #4): deletes
 // `runMemmapJoin()`'s in-image early-return guard in a scratch copy of
-// `anno-join.ts` and observes an ordinary, map-covered in-image address
+// `anno-join.mts` and observes an ordinary, map-covered in-image address
 // start annotating as a machine feature -- with an injected COUNTING
 // selection spy proving the map lookup is genuinely REACHED under the
 // mutation and genuinely UNREACHED under the committed code, so the claim
@@ -32,16 +32,16 @@
 // deliberate, not an oversight.
 //
 // Task 1's scratch tree does NOT need Task 2's three-level repo-shape
-// mirror at all: only `anno-join.ts` itself is mutated, and its two sibling
-// imports (`anno-store.ts`, `memmap-lookup.ts`) are satisfied by tiny
+// mirror at all: only `anno-join.mts` itself is mutated, and its two sibling
+// imports (`anno-store.mts`, `memmap-lookup.mts`) are satisfied by tiny
 // RE-EXPORT SHIMS that forward to the real, absolute, unmutated files -- so
 // the mutated join calls the exact SAME real store functions and the exact
 // SAME real memmap-lookup functions this test file itself uses statically,
-// with no need to drag `anno-store.ts`'s own deep dependency chain
-// (`anno-index.ts`, `anno-confidence.ts`, `vice.ts`, `node:sqlite`, ...)
+// with no need to drag `anno-store.mts`'s own deep dependency chain
+// (`anno-index.mts`, `anno-confidence.mts`, `vice.ts`, `node:sqlite`, ...)
 // into a scratch copy just to resolve one import. Task 2's provenance
 // control DOES need the three-level mirror, because it mutates
-// `memmap.json` itself and `memmap-lookup.ts`'s own `MEMMAP_PATH` formula
+// `memmap.json` itself and `memmap-lookup.mts`'s own `MEMMAP_PATH` formula
 // is `HERE`-relative.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -51,25 +51,25 @@ import * as path from "node:path";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, listComments, openStore, putXref } from "./anno-store.ts";
-import { runMemmapJoin } from "./anno-join.ts";
-import { memmapDigest, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "./memmap-lookup.ts";
-import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.ts";
+import { closeStore, listComments, openStore, putXref } from "./anno-store.mts";
+import { runMemmapJoin } from "./anno-join.mts";
+import { memmapDigest, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "./memmap-lookup.mts";
+import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REAL_ANNO_JOIN_PATH = join(HERE, "anno-join.ts");
-const REAL_ANNO_STORE_PATH = join(HERE, "anno-store.ts");
-const REAL_MEMMAP_LOOKUP_PATH = join(HERE, "memmap-lookup.ts");
-// Plan 37-06 (AUTO-04/AUTO-05) added a third sibling import to anno-join.ts
-// (`./anno-bank.ts`, the processor-port decode/region-resolution module) --
+const REAL_ANNO_JOIN_PATH = join(HERE, "anno-join.mts");
+const REAL_ANNO_STORE_PATH = join(HERE, "anno-store.mts");
+const REAL_MEMMAP_LOOKUP_PATH = join(HERE, "memmap-lookup.mts");
+// Plan 37-06 (AUTO-04/AUTO-05) added a third sibling import to anno-join.mts
+// (`./anno-bank.mts`, the processor-port decode/region-resolution module) --
 // shimmed here the same way, by absolute path, so this file's own scratch
 // copy (built before that plan landed) keeps resolving.
-const REAL_ANNO_BANK_PATH = join(HERE, "anno-bank.ts");
-// Plan 37-08 (AUTO-07) added a fourth sibling import to anno-join.ts
-// (`./anno-graphics.ts`, the graphics write-back's own derivation module) --
-// shimmed here the same way, by absolute path, mirroring the anno-bank.ts
+const REAL_ANNO_BANK_PATH = join(HERE, "anno-bank.mts");
+// Plan 37-08 (AUTO-07) added a fourth sibling import to anno-join.mts
+// (`./anno-graphics.mts`, the graphics write-back's own derivation module) --
+// shimmed here the same way, by absolute path, mirroring the anno-bank.mts
 // precedent immediately above.
-const REAL_ANNO_GRAPHICS_PATH = join(HERE, "anno-graphics.ts");
+const REAL_ANNO_GRAPHICS_PATH = join(HERE, "anno-graphics.mts");
 const REAL_MEMMAP_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
 
 const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -82,7 +82,7 @@ function makeTempDir(prefix: string): string {
 // ---------------------------------------------------------------------------
 // Task 1 (AUTO-03): the in-image guard's committed text, held verbatim
 // (D-37-18: the mutation is a DELETION of exactly this block, nothing else).
-// Copied character-for-character from `anno-join.ts` at plan time.
+// Copied character-for-character from `anno-join.mts` at plan time.
 // ---------------------------------------------------------------------------
 
 const IN_IMAGE_GUARD_LINES = [
@@ -100,10 +100,10 @@ const IN_IMAGE_GUARD_LINES = [
 ];
 const IN_IMAGE_GUARD_TEXT = IN_IMAGE_GUARD_LINES.join("\n");
 
-/** Builds a scratch tree holding ONE mutated copy of `anno-join.ts` (the
+/** Builds a scratch tree holding ONE mutated copy of `anno-join.mts` (the
  * in-image guard block deleted, nothing else touched) plus tiny re-export
  * shims for its two sibling imports, so the dynamic import resolves without
- * dragging `anno-store.ts`'s own deep dependency chain into a scratch copy.
+ * dragging `anno-store.mts`'s own deep dependency chain into a scratch copy.
  * Asserts the committed source still carries the guard's exact text before
  * mutating, so source drift fails the case by name rather than silently
  * no-op-ing the mutation. Returns the scratch root (remove in the caller's
@@ -115,29 +115,29 @@ function buildScratchAnnoJoinModule(): { tmpDir: string; modulePath: string } {
   const committedSource = fs.readFileSync(REAL_ANNO_JOIN_PATH, "utf8");
   assert.ok(
     committedSource.includes(IN_IMAGE_GUARD_TEXT),
-    "expected the committed anno-join.ts to still carry the in-image guard's committed form -- has the source drifted?",
+    "expected the committed anno-join.mts to still carry the in-image guard's committed form -- has the source drifted?",
   );
   const mutatedSource = committedSource.replace(IN_IMAGE_GUARD_TEXT, "");
   assert.ok(!mutatedSource.includes(IN_IMAGE_GUARD_TEXT), "expected the guard's text to be gone from the mutated source");
 
-  fs.writeFileSync(path.join(tmpDir, "anno-join.ts"), mutatedSource, "utf8");
-  // Re-export shims: forward, by absolute path, to the REAL anno-store.ts /
-  // memmap-lookup.ts -- so the mutated join calls the exact SAME real
+  fs.writeFileSync(path.join(tmpDir, "anno-join.mts"), mutatedSource, "utf8");
+  // Re-export shims: forward, by absolute path, to the REAL anno-store.mts /
+  // memmap-lookup.mts -- so the mutated join calls the exact SAME real
   // functions this test file itself imports statically, with no duplicated
   // store logic and no dragged-in dependency chain.
-  fs.writeFileSync(path.join(tmpDir, "anno-store.ts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
+  fs.writeFileSync(path.join(tmpDir, "anno-store.mts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
   fs.writeFileSync(
-    path.join(tmpDir, "memmap-lookup.ts"),
+    path.join(tmpDir, "memmap-lookup.mts"),
     `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`,
     "utf8",
   );
-  fs.writeFileSync(path.join(tmpDir, "anno-bank.ts"), `export * from ${JSON.stringify(REAL_ANNO_BANK_PATH)};\n`, "utf8");
-  fs.writeFileSync(path.join(tmpDir, "anno-graphics.ts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
+  fs.writeFileSync(path.join(tmpDir, "anno-bank.mts"), `export * from ${JSON.stringify(REAL_ANNO_BANK_PATH)};\n`, "utf8");
+  fs.writeFileSync(path.join(tmpDir, "anno-graphics.mts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
 
-  return { tmpDir, modulePath: path.join(tmpDir, "anno-join.ts") };
+  return { tmpDir, modulePath: path.join(tmpDir, "anno-join.mts") };
 }
 
-/** Dynamic-imports the scratch tree's mutated `anno-join.ts` with a
+/** Dynamic-imports the scratch tree's mutated `anno-join.mts` with a
  * cache-busting query, exactly as `memmap-lookup-controls.test.ts`'s own
  * planted-violation cases do. */
 async function importScratchAnnoJoin(modulePath: string): Promise<{ runMemmapJoin: typeof runMemmapJoin }> {
@@ -271,7 +271,7 @@ test(
 // Task 2 (AUTO-08, EXTRA -- not one of the phase's six required controls):
 // mirror the repository shape three levels deep, copy the REAL memmap.json
 // into the mirrored location, append ONE byte to THAT COPY only, copy the
-// REAL memmap-lookup.ts beside it so its own HERE-relative MEMMAP_PATH
+// REAL memmap-lookup.mts beside it so its own HERE-relative MEMMAP_PATH
 // formula resolves against the mutated copy, dynamically import with a
 // cache-busting query, and compare digests. Pattern copied verbatim in
 // shape from `anno-regbits.test.ts`'s own drift control (D-37-19).
@@ -280,7 +280,7 @@ test(
 /** Builds a scratch tree mirroring the repo shape three levels deep
  * (`skills/c64-memory-mapping` next to `src/mcp/vice`, both under one
  * `mkdtempSync` root), with a COPY of the real `memmap.json` mutated by one
- * appended byte, and the real `memmap-lookup.ts` source copied unmutated
+ * appended byte, and the real `memmap-lookup.mts` source copied unmutated
  * beside it at the depth its own `MEMMAP_PATH` formula expects. Asserts the
  * copy is byte-identical to the committed map BEFORE the append (a failed
  * copy must never be mistaken for a successful mutation). Returns the
@@ -306,7 +306,7 @@ function buildMutatedMemmapTree(): { tmpDir: string; mutatedModulePath: string }
   fs.appendFileSync(mutatedMapPath, "\n// planted for AUTO-08 provenance-drift non-vacuity (plan 37-05)\n");
 
   const memmapLookupSource = fs.readFileSync(REAL_MEMMAP_LOOKUP_PATH, "utf8");
-  const mutatedModulePath = path.join(mcpDir, "memmap-lookup.ts");
+  const mutatedModulePath = path.join(mcpDir, "memmap-lookup.mts");
   fs.writeFileSync(mutatedModulePath, memmapLookupSource, "utf8");
 
   return { tmpDir, mutatedModulePath };

@@ -46,8 +46,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { NO_ROW, PAINT_INDEX_SIZE, buildPaintIndex, resolveAt, type IndexableRange } from "./anno-index.ts";
-import { ADDRESS_MAX, ADDRESS_MIN, AnnoAddressError } from "./anno-types.ts";
+import { NO_ROW, PAINT_INDEX_SIZE, buildPaintIndex, resolveAt, type IndexableRange } from "./anno-index.mts";
+import { ADDRESS_MAX, ADDRESS_MIN, AnnoAddressError } from "./anno-types.mts";
 
 // ---------------------------------------------------------------------------
 // Oracle B -- the second, independently written implementation
@@ -64,7 +64,7 @@ import { ADDRESS_MAX, ADDRESS_MIN, AnnoAddressError } from "./anno-types.ts";
  * that could disagree with the first in someone's running store.
  *
  * It shares no code path with Oracle A (the paint index): no sort, no typed
- * array, and no call into `anno-index.ts`. The tie-break is written out here
+ * array, and no call into `anno-index.mts`. The tie-break is written out here
  * as an explicit length-then-id comparison rather than derived from any sort
  * order, so decision `A4` -- equal length, LATER insertion (higher id) wins --
  * is stated a second, independent time. A change to either statement of the
@@ -114,7 +114,7 @@ function seededSteps(seed: number): () => number {
 /** ~2,000 ranges spanning `$0000-$FFFF`, DELIBERATELY overlapping. This is the
  * fixture the store's write path is designed never to produce -- split-and-
  * preserve (`STORE-02`) guarantees no two stored ranges overlap -- and feeding
- * it in directly is the whole reason `anno-index.ts` is a pure module taking
+ * it in directly is the whole reason `anno-index.mts` is a pure module taking
  * rows as an argument rather than a query behind the write path. */
 function overlappingFixture(): readonly IndexableRange[] {
   const nextRaw = seededSteps(0x5eedc64d);
@@ -368,7 +368,7 @@ test("two rows of EQUAL length covering one address resolve to the HIGHER id, an
 
   // Reversing ARRAY ORDER must not move the answer: the tie-break is pinned in
   // the comparator, NOT left to `Array.prototype.sort`'s stability or to
-  // insertion order (trap 5 in anno-index.ts's header).
+  // insertion order (trap 5 in anno-index.mts's header).
   const highFirst: readonly IndexableRange[] = [lowFirst[1], lowFirst[0]];
   assert.equal(resolveAt(buildPaintIndex(highFirst), 0x1080), 9, "array order must not decide an equal-length tie");
   assert.equal(resolveByScan(highFirst, 0x1080), 9);

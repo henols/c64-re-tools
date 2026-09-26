@@ -23,5 +23,5 @@ creates it on first use and reads it after that:
   survives moves and never collides.
 - A missing project.json creates a new id, which means a new, empty
   project. Never guess an existing one.
-- `anno-store.ts` stays the only `node:sqlite` importer and becomes
+- `anno-store.mts` stays the only `node:sqlite` importer and becomes
   host-bound (see broker/host-bound-modules.md).

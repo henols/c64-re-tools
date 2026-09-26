@@ -25,10 +25,10 @@ import {
 } from "./stock-session.ts";
 import { STOCK_TOOLS, callStockTool, stockToolDefinitions, StockToolManifestMismatchError } from "./stock-tools.ts";
 import { STUB_BROKER_CONTROL, makeLease, fakeSession } from "./stock-session-fixtures.ts";
-import type { ToolInfo } from "./vice-errors.ts";
+import type { ToolInfo } from "./vice-errors.mts";
 import type { DerivedPureHandler } from "./stock-handler.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
-import { MachineRestartedError } from "./vice-errors.ts";
+import { MachineRestartedError } from "./vice-errors.mts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import { stockConnect, type StockConnectSession, type StockConnectOptions, type DialMonitorSocketFn } from "./stock-connect.ts";
@@ -39,7 +39,7 @@ import { CommandType } from "./stock-protocol.ts";
 import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
 import { resetSymbolStoreForTest } from "./stock-symbols.ts";
-import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
+import { CURATED_ANNO_TOOLS } from "./anno-tools.mts";
 import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockForTests } from "./channel-lock.ts";
 import { TEXT_COMMAND_ALLOWLIST } from "./text-protocol.ts";
 import {
