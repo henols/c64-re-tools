@@ -385,6 +385,9 @@ export function buildViceArgs(
 }
 
 export interface TryLaunchDeps {
+  /** Registers the spawned emulator in the broker's child registry
+   * (broker-children.mts's trackChild()). The real broker always sets it. */
+  trackChild?: (child: ChildProcess) => void;
   state: BrokerState;
   supervisorDir: string;
   epochFile: string;
@@ -611,7 +614,10 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
   }
   log(logLine);
 
-  const child = spawnOptions === undefined ? spawnFn(viceBin, viceArgs) : spawnFn(viceBin, viceArgs, spawnOptions);
+  // Its own process group, so a stop of the broker can signal the whole
+  // group (broker-children.mts) -- never a pid alone.
+  const child = spawnFn(viceBin, viceArgs, { ...(spawnOptions ?? {}), detached: true });
+  deps.trackChild?.(child);
 
   if (scratchConfigDir !== undefined && typeof child.pid === "number") {
     // Ties the directory to the child's own pid AND this launch's own
@@ -685,6 +691,8 @@ export function tryLaunchOne(reason: string, port: number, deps: TryLaunchDeps):
 }
 
 export interface AcquirePortAndLaunchDeps {
+  /** See TryLaunchDeps.trackChild. */
+  trackChild?: (child: ChildProcess) => void;
   state: BrokerState;
   stateDir: string;
   allocatePort: (state: BrokerState) => Promise<PortAllocationResult>;
@@ -856,6 +864,7 @@ export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndL
       binmonHost: deps.binmonHost,
       remoteMonitorPort,
       profile: deps.profile,
+      trackChild: deps.trackChild,
     });
     return { ok: true, record };
   } finally {
@@ -1346,6 +1355,8 @@ export interface EpochWriterDeps {
 
 export interface SuperviseChildDeps {
   state: BrokerState;
+  /** See TryLaunchDeps.trackChild -- a crash respawn is tracked too. */
+  trackChild?: (child: ChildProcess) => void;
   /** Root state directory -- per-port supervisorDir/epochFile/logDir are
    * all derived from this, exactly like every other launch path. */
   stateDir: string;
@@ -1459,6 +1470,13 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
   const sleepMs = deps.sleepMs ?? ((ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)));
   const currentBackoffMs = record.backoffMs ?? resolveMs("VICE_RESTART_BACKOFF_S", 3, deps.initialBackoffMs);
   await sleepMs(currentBackoffMs);
+
+  // A shutdown or a deliberate teardown that happened during the backoff
+  // wins: never start a new emulator for a record that is no longer wanted.
+  if (deps.state.shuttingDown || record.deliberateKill || deps.state.instances.get(port) !== record) {
+    log(`vice-broker: not respawning port ${port} -- the broker is shutting down or the instance was torn down during the backoff`);
+    return;
+  }
 
   const maxBackoffMs = resolveMs("VICE_RESTART_BACKOFF_MAX_S", 30, deps.maxBackoffMs);
   const nextBackoffMs = Math.min(currentBackoffMs * 2, maxBackoffMs);
@@ -1608,6 +1626,7 @@ function launchSupervised(
     remoteMonitorPort,
     profile,
     log: deps.log,
+    trackChild: deps.trackChild,
   });
   if (!record) return null;
 

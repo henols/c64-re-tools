@@ -514,13 +514,14 @@ interface BrokerHandle {
   stderr: string;
 }
 
-function startBroker(stateDir: string): BrokerHandle {
+function startBroker(stateDir: string, extraEnv: NodeJS.ProcessEnv = {}): BrokerHandle {
   const child = realSpawn(process.execPath, [BROKER_ARTIFACT, "--repo-root", "/tmp/fake-repo-root-kill", "--state-dir", stateDir], {
     env: {
       ...process.env,
       VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
       VICE_BIN: "/bin/sleep",
       VICE_ARGS: "600",
+      ...extraEnv,
       VICE_BROKER_CONTROL_PORT: "0",
       // 64-05 (D-08): this spawned broker's own stock launches now create a
       // config-scratch directory under VICE_BROKER_HOME -- confined to this
@@ -603,6 +604,66 @@ for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
     } finally {
       if (handle.child.exitCode === null && handle.child.signalCode === null) {
         handle.child.kill("SIGKILL");
+      }
+      rmSync(stateDir, { recursive: true, force: true });
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Nothing the broker started survives it: the stub emulator below starts a
+// background grandchild, the way analyzeHeadless starts a JVM. A graceful
+// stop kills the whole process group; a SIGKILL of the broker, which it cannot
+// handle, is covered by its watchdog.
+// ---------------------------------------------------------------------------
+
+/** A stub emulator that records its own pid and its background grandchild's,
+ * then waits. */
+function writeForkingStub(dir: string): string {
+  const stub = join(dir, "forking-stub.sh");
+  writeFileSync(stub, '#!/bin/sh\nsleep 600 &\necho "$$ $!" > "$0.pids.$$"\nwait\n', { mode: 0o755 });
+  return stub;
+}
+
+function stubPidsUnder(dir: string): number[] {
+  return readdirSync(dir)
+    .filter((name) => name.startsWith("forking-stub.sh.pids."))
+    .flatMap((name) => readFileSync(join(dir, name), "utf8").trim().split(/\s+/).map(Number));
+}
+
+for (const how of ["SIGTERM", "SIGKILL"] as const) {
+  test(`end-to-end: after a ${how} of the broker, neither the emulator it started nor that emulator's own child is left running`, { timeout: 30000 }, async () => {
+    build();
+    const stateDir = mkdtempSync(join(tmpdir(), `broker-kill-tree-${how}-`));
+    const stub = writeForkingStub(stateDir);
+    const handle = startBroker(stateDir, { VICE_BIN: stub, VICE_ARGS: "", VICE_BROKER_KILL_WAIT_S: "2" });
+    let pids: number[] | null = null;
+    try {
+      const port = await waitForReady(handle);
+      const session = await acquireOverSession(port);
+      pids = await waitFor(() => {
+        const found = stubPidsUnder(stateDir);
+        return found.length === 2 ? found : null;
+      });
+      assert.ok(pids, `the stub and its grandchild must both have recorded their pids, stderr:\n${handle.stderr}`);
+      assert.ok(pids!.every(isAlive), `the stub and its grandchild must be alive before the broker stops; stderr:\n${handle.stderr}`);
+
+      handle.child.kill(how);
+
+      const allGone = await waitFor(() => pids!.every((p) => !isAlive(p)), { timeoutMs: 15000 });
+      assert.ok(allGone, `after ${how} of the broker, pids ${JSON.stringify(pids!.filter(isAlive))} are still alive; stderr:\n${handle.stderr}`);
+      const watchdogPid = Number(/vice-broker: watchdog pid (\d+)/.exec(handle.stderr)?.[1]);
+      assert.ok(watchdogPid > 0, `the broker must name its watchdog pid, stderr:\n${handle.stderr}`);
+      assert.ok(await waitFor(() => !isAlive(watchdogPid), { timeoutMs: 15000 }), `the watchdog (pid ${watchdogPid}) must exit once the broker is gone`);
+      void session;
+    } finally {
+      if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.kill("SIGKILL");
+      for (const p of pids ?? []) {
+        try {
+          process.kill(p, "SIGKILL");
+        } catch {
+          // already gone
+        }
       }
       rmSync(stateDir, { recursive: true, force: true });
     }

@@ -66,7 +66,7 @@ async function loadModules(): Promise<{ broker: BrokerModule; launch: LaunchModu
 }
 
 function createState(): BrokerState {
-  return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map() };
+  return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map(), children: new Map(), childListener: null, shuttingDown: false };
 }
 
 /** A fully-controlled stand-in ChildProcess -- a real EventEmitter (so the

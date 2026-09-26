@@ -1856,7 +1856,25 @@ function tailBytes(text, capBytes) {
  * existing default shape; only `acme.build` passes one, and every other
  * tool's spawn is therefore byte-identical to before this parameter
  * existed. */
-function spawnHostTool(toolPath, argv, timeoutMs, env, cwd) {
+/** SIGKILLs the whole process group a tool leads, falling back to its pid. */
+function killToolGroup(pid) {
+    if (typeof pid !== "number")
+        return;
+    try {
+        process.kill(-pid, "SIGKILL");
+        return;
+    }
+    catch {
+        // not a group leader
+    }
+    try {
+        process.kill(pid, "SIGKILL");
+    }
+    catch {
+        // already gone
+    }
+}
+function spawnHostTool(toolPath, argv, timeoutMs, env, cwd, trackChild) {
     return new Promise((resolvePromise) => {
         let settled = false;
         let timedOut = false;
@@ -1864,7 +1882,10 @@ function spawnHostTool(toolPath, argv, timeoutMs, env, cwd) {
         let stderr = "";
         let child;
         try {
-            child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
+            // Its own process group: a tool that forks (analyzeHeadless starts a
+            // JVM) is stopped as a whole, by the timeout below or a broker stop.
+            child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], detached: true, ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
+            trackChild?.(child);
         }
         catch (e) {
             resolvePromise({
@@ -1878,7 +1899,7 @@ function spawnHostTool(toolPath, argv, timeoutMs, env, cwd) {
         }
         const timer = setTimeout(() => {
             timedOut = true;
-            child.kill("SIGKILL");
+            killToolGroup(child.pid);
         }, timeoutMs);
         if (typeof timer.unref === "function")
             timer.unref();
@@ -2463,7 +2484,7 @@ export async function runHostTool(raw, deps) {
             }
         }
     }
-    const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv, built.cwd);
+    const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv, built.cwd, deps.trackChild);
     // The Ghidra project is never an output -- remove its directory now, on
     // every outcome, so nothing accumulates under the Ghidra root.
     if (ghidraReservedProjectLocation !== undefined) {
@@ -2684,7 +2705,7 @@ async function runOracleProbe(deps) {
     }
     const command = resolved.command;
     const timeoutMs = hostToolTimeoutMs("oracle.probe", deps.timeoutMs);
-    const spawnResult = await spawnHostTool(command, ["--version"], timeoutMs);
+    const spawnResult = await spawnHostTool(command, ["--version"], timeoutMs, undefined, undefined, deps.trackChild);
     if (spawnResult.spawnErrorMessage !== null) {
         deps.log?.(`host_tool tool=oracle.probe exit=spawn_error timeout_ms=${timeoutMs}`);
         return {
@@ -2765,7 +2786,7 @@ async function runOracleRun(args, deps) {
         mkdirSync(scratchDir, { recursive: true });
         const scratchOut = join(scratchDir, "unpacked.out");
         const timeoutMs = hostToolTimeoutMs("oracle.run", deps.timeoutMs);
-        const spawnResult = await spawnHostTool(resolvedCommand.command, [sourceResolved.path, scratchOut], timeoutMs);
+        const spawnResult = await spawnHostTool(resolvedCommand.command, [sourceResolved.path, scratchOut], timeoutMs, undefined, undefined, deps.trackChild);
         if (spawnResult.spawnErrorMessage !== null) {
             deps.log?.(`host_tool tool=oracle.run exit=spawn_error timeout_ms=${timeoutMs}`);
             return { ok: false, tool: "oracle.run", stdout: "", reason: "the oracle could not be run against the input file" };

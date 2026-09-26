@@ -57,7 +57,17 @@ const defaultReadProcessArgs = (pid) => {
         return "";
     }
 };
+/** Signals the process group the pid leads (every broker child is spawned
+ * as its own group leader), so descendants go too; falls back to the pid
+ * alone for a process that leads no group. */
 const defaultKill = (pid, signal) => {
+    try {
+        process.kill(-pid, signal);
+        return;
+    }
+    catch {
+        // not a group leader -- signal the pid itself
+    }
     try {
         process.kill(pid, signal);
     }
@@ -148,17 +158,31 @@ export async function verifiedKill({ pid, expectedIdentity, deps = {} }) {
  * removal IS the kill-never-recycle structural guarantee: the only way an
  * instance becomes grantable again is a fresh launch, never a reset of this
  * entry (mirrors teardown()'s own header comment in the bash original).
+ * Before any of that, the broker stops taking work (deps.stopIntake) and sets
+ * state.shuttingDown, so no acquire, host-tool run or crash respawn starts
+ * mid-shutdown. The instance kills run in parallel. Afterwards every group
+ * still in the child registry is stopped (deps.stopChildren): host tools, and
+ * emulators whose record a release had already removed. Nothing the broker
+ * started is left running.
  * Never throws past an individual kill failure -- one instance's kill
  * rejecting must not stop every other instance from being torn down. */
 export async function shutdown(deps) {
     const kill = deps.kill ?? verifiedKill;
     const log = deps.log ?? defaultLog;
+    // No new acquire, host-tool run or respawn may start from here on.
+    deps.state.shuttingDown = true;
+    try {
+        deps.stopIntake?.();
+    }
+    catch (e) {
+        log(`vice-broker: shutdown -- stopping intake threw: ${e.message}`);
+    }
     const instances = Array.from(deps.state.instances.values());
     for (const instance of instances) {
         instance.deliberateKill = true;
     }
     let killed = 0;
-    for (const instance of instances) {
+    await Promise.all(instances.map(async (instance) => {
         try {
             const stage = await kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
             if (stage === "sigterm" || stage === "sigkill")
@@ -170,8 +194,17 @@ export async function shutdown(deps) {
         finally {
             deps.state.instances.delete(instance.port);
         }
+    }));
+    let children = 0;
+    if (deps.stopChildren) {
+        try {
+            children = await deps.stopChildren(deps.state);
+        }
+        catch (e) {
+            log(`vice-broker: shutdown -- stopping child processes threw: ${e.message}`);
+        }
     }
-    log(`vice-broker: shutdown complete -- ${instances.length} instance(s) processed, ${killed} signalled`);
+    log(`vice-broker: shutdown complete -- ${instances.length} instance(s) processed, ${killed} signalled, ${children} child process group(s) stopped`);
 }
 /** The six catchable entry points every real broker process registers
  * shutdown() against. Not exported: registerShutdownHandlers() below is the
@@ -209,12 +242,9 @@ export const _HANDLED_SIGNALS = HANDLED_SIGNALS;
  * The 'exit' listener is registered identically to the other five, but
  * carries an honest limitation worth stating rather than hiding: Node's
  * 'exit' event fires synchronously and cannot keep the event loop alive for
- * pending async work, so on a REAL process exit only shutdown()'s
- * synchronous prefix (marking every instance deliberately-killed, issuing
- * the initial SIGTERM to each) is guaranteed to run before the process is
- * actually gone -- the SIGTERM-wait-then-SIGKILL escalation's own polling
- * cannot complete there. This is a real Node platform limitation, not a gap
- * in this module; it is why the 'exit' path is exercised in this module's
+ * pending async work. So the 'exit' listener first SIGKILLs every tracked
+ * process group synchronously (deps.killChildrenNow), and only then starts
+ * shutdown(), whose asynchronous part cannot complete there. It is why the 'exit' path is exercised in this module's
  * own tests via the injectable `proc` seam (a plain EventEmitter, which CAN
  * await async work in its own listeners) rather than a real process exit.
  *
@@ -284,7 +314,12 @@ export function registerShutdownHandlers(deps) {
         log(`vice-broker: unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`);
         run("unhandledRejection", 1);
     });
-    register("exit", () => run("exit", 0));
+    register("exit", () => {
+        // Nothing asynchronous runs after 'exit': kill every group now.
+        deps.state.shuttingDown = true;
+        deps.killChildrenNow?.(deps.state);
+        run("exit", 0);
+    });
     return () => {
         const p = proc;
         if (typeof p.removeListener === "function") {

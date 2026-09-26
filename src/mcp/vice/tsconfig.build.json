@@ -27,6 +27,8 @@
     "version.mts",
     "broker-endpoint.mts",
     "transfer-client.mts",
-    "host-tool-endpoint.mts"
+    "host-tool-endpoint.mts",
+    "broker-children.mts",
+    "broker-watchdog.mts"
   ]
 }

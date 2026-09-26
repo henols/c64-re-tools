@@ -83,7 +83,7 @@
 // not the unbuilt source). The dot-segment rule and the per-run project
 // location are NEVER copied here -- this module reaches them through the
 // one place that owns them.
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
@@ -2167,6 +2167,10 @@ export type HostToolResponse =
 
 export interface HostToolDeps {
   repoRoot: string;
+  /** Registers each spawned tool process in the broker's child registry
+   * (broker-children.mts's trackChild()), so a broker stop reaches it and
+   * its descendants. The broker always sets it. */
+  trackChild?: (child: ChildProcess) => void;
   log?: (line: string) => void;
   timeoutMs?: number;
   /** Test-only override threaded into the `HostToolLocator` runHostTool()
@@ -2481,12 +2485,29 @@ interface HostToolSpawnResult {
  * existing default shape; only `acme.build` passes one, and every other
  * tool's spawn is therefore byte-identical to before this parameter
  * existed. */
+/** SIGKILLs the whole process group a tool leads, falling back to its pid. */
+function killToolGroup(pid: number | undefined): void {
+  if (typeof pid !== "number") return;
+  try {
+    process.kill(-pid, "SIGKILL");
+    return;
+  } catch {
+    // not a group leader
+  }
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // already gone
+  }
+}
+
 function spawnHostTool(
   toolPath: string,
   argv: string[],
   timeoutMs: number,
   env?: NodeJS.ProcessEnv,
   cwd?: string,
+  trackChild?: (child: ChildProcess) => void,
 ): Promise<HostToolSpawnResult> {
   return new Promise((resolvePromise) => {
     let settled = false;
@@ -2496,7 +2517,10 @@ function spawnHostTool(
 
     let child;
     try {
-      child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
+      // Its own process group: a tool that forks (analyzeHeadless starts a
+      // JVM) is stopped as a whole, by the timeout below or a broker stop.
+      child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], detached: true, ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
+      trackChild?.(child);
     } catch (e) {
       resolvePromise({
         exitCode: null,
@@ -2510,7 +2534,7 @@ function spawnHostTool(
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      killToolGroup(child.pid);
     }, timeoutMs);
     if (typeof timer.unref === "function") timer.unref();
 
@@ -3126,7 +3150,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       }
     }
   }
-  const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv, built.cwd);
+  const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv, built.cwd, deps.trackChild);
   // The Ghidra project is never an output -- remove its directory now, on
   // every outcome, so nothing accumulates under the Ghidra root.
   if (ghidraReservedProjectLocation !== undefined) {
@@ -3360,7 +3384,7 @@ async function runOracleProbe(deps: HostToolDeps): Promise<HostToolResponse> {
   const command = resolved.command;
 
   const timeoutMs = hostToolTimeoutMs("oracle.probe", deps.timeoutMs);
-  const spawnResult = await spawnHostTool(command, ["--version"], timeoutMs);
+  const spawnResult = await spawnHostTool(command, ["--version"], timeoutMs, undefined, undefined, deps.trackChild);
 
   if (spawnResult.spawnErrorMessage !== null) {
     deps.log?.(`host_tool tool=oracle.probe exit=spawn_error timeout_ms=${timeoutMs}`);
@@ -3447,7 +3471,7 @@ async function runOracleRun(args: OracleRunArgs, deps: HostToolDeps): Promise<Ho
     mkdirSync(scratchDir, { recursive: true });
     const scratchOut = join(scratchDir, "unpacked.out");
     const timeoutMs = hostToolTimeoutMs("oracle.run", deps.timeoutMs);
-    const spawnResult = await spawnHostTool(resolvedCommand.command, [sourceResolved.path, scratchOut], timeoutMs);
+    const spawnResult = await spawnHostTool(resolvedCommand.command, [sourceResolved.path, scratchOut], timeoutMs, undefined, undefined, deps.trackChild);
 
     if (spawnResult.spawnErrorMessage !== null) {
       deps.log?.(`host_tool tool=oracle.run exit=spawn_error timeout_ms=${timeoutMs}`);

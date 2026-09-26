@@ -11,9 +11,9 @@
 // mcp__vice__* stays the only route to the emulator; nothing here opens a
 // connection to it.
 import { mkdirSync, openSync, existsSync } from "node:fs";
-import { join, basename, relative, resolve as resolvePath } from "node:path";
+import { join, basename, dirname, relative, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn as nodeSpawn, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
+import { spawn as nodeSpawn, fork, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Socket } from "node:net";
 
@@ -89,6 +89,7 @@ import {
 // HOST_BOUND_ARTIFACTS). handleRelayDeath() below is this module's one and
 // only production call site -- see that function's own header comment.
 import { writeBrokerIncident, type BrokerIncidentInput } from "./broker-incident.mjs";
+import { trackChild, stopAllChildren, killAllChildrenNow } from "./broker-children.mjs";
 // resolvedBackend() resolves the emulator binary's identity -- ViceBackend's
 // own definition lives in backend-detect.mts too (narrowed to a single
 // literal now that the fork backend has been removed entirely), so
@@ -347,6 +348,36 @@ function writeEpochForLaunch(record: InstanceRecord, logRelPath: string): void {
   record.epoch = epochRecord.epoch;
 }
 
+/** broker-watchdog.mjs, compiled next to this artifact. */
+const WATCHDOG_ARTIFACT = join(dirname(fileURLToPath(import.meta.url)), "broker-watchdog.mjs");
+
+/** VICE_BROKER_KILL_WAIT_S in ms (default 5 s): how long a stop waits after
+ * SIGTERM before SIGKILL. */
+function resolveKillWaitMs(): number {
+  const n = Number(process.env.VICE_BROKER_KILL_WAIT_S);
+  return (Number.isFinite(n) && n >= 0 ? n : 5) * 1000;
+}
+
+/** Forks the watchdog (broker-watchdog.mts) in its own process group and
+ * forwards every child track/untrack to it over IPC. If this broker is
+ * killed with SIGKILL, the channel closes and the watchdog stops every group
+ * it still holds. */
+function startWatchdog(state: BrokerState): void {
+  const watchdog = fork(WATCHDOG_ARTIFACT, [], { detached: true, stdio: ["ignore", "ignore", "ignore", "ipc"] });
+  const send = (event: { op: "track" | "untrack"; pid: number }): void => {
+    if (!watchdog.connected) return;
+    try {
+      watchdog.send(event);
+    } catch {
+      // the watchdog is gone; the shutdown handlers still stop every child
+    }
+  };
+  watchdog.on("error", (e) => process.stderr.write(`vice-broker: watchdog error: ${e.message}\n`));
+  process.stderr.write(`vice-broker: watchdog pid ${String(watchdog.pid)}\n`);
+  state.childListener = send;
+  for (const pid of state.children.keys()) send({ op: "track", pid });
+}
+
 /** Builds the supervision dependency object for withCrashSupervision(),
  * once per launch, so the real launch path (handleAcquire's own cold arm,
  * here -- the second real launch path this comment used to name, the warm
@@ -398,6 +429,7 @@ function superviseDepsFor(stateDir: string, state: BrokerState, backend: ViceBac
     backend,
     viceBin,
     binmonHost,
+    trackChild: (child: ChildProcess) => trackChild(state, child, "emulator"),
   };
 }
 
@@ -734,6 +766,11 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
   const kill = deps.kill ?? ((opts: { pid: number | null; expectedIdentity: string }) => verifiedKill(opts));
   const log = deps.log ?? ((line: string) => process.stderr.write(`${line}\n`));
 
+  if (state.shuttingDown) {
+    log(`vice-broker: refusing acquire ${requestId} -- the broker is shutting down`);
+    return { ok: false, reason: "internal" };
+  }
+
   const winner = await selectWarmInstance(state, { probe, kill, log, requestedProfile: deps.profile });
 
   let record: InstanceRecord;
@@ -775,6 +812,7 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
       // makes "a dedicated instance for that grant" true rather than
       // aspirational.
       profile: deps.profile,
+      trackChild: (child: ChildProcess) => trackChild(state, child, "emulator"),
       spawnFactory:
         deps.buildColdSpawnFactory ??
         ((port: number) => {
@@ -1216,7 +1254,15 @@ function redactScratchRoot(value: string, scratchRoot: string, ghidraRoot: strin
  * remaining string field is scrubbed of the scratch root (D-10, T-65-06).
  * Never rejects -- every failure resolves `{ ok: false, message }`,
  * mirroring `runHostTool()`'s own contract. */
-export async function handleHostToolRun(requestKey: string, raw: unknown, projectRoot: string, deps: { log?: (line: string) => void } = {}): Promise<unknown> {
+export async function handleHostToolRun(
+  requestKey: string,
+  raw: unknown,
+  projectRoot: string,
+  deps: { log?: (line: string) => void; state?: BrokerState } = {},
+): Promise<unknown> {
+  if (deps.state?.shuttingDown) {
+    return { ok: false, message: "vice: host_tool_run: the broker is shutting down" };
+  }
   const uploads = listHostToolUploads(requestKey);
   for (const upload of uploads) {
     if (!existsSync(upload.path)) {
@@ -1263,6 +1309,7 @@ export async function handleHostToolRun(requestKey: string, raw: unknown, projec
     clearDeclaredOutputs: true,
     outputDir: join(scratchRoot, "out"),
     log: deps.log,
+    ...(deps.state ? { trackChild: (child: ChildProcess) => trackChild(deps.state!, child, "host-tool") } : {}),
   });
 
   const responseObj = response as unknown as Record<string, unknown>;
@@ -2023,6 +2070,14 @@ async function run(args: ParsedArgs): Promise<void> {
   // what a Ctrl-C costs before there is anything running for them to Ctrl-C.
   process.stderr.write(`${startupBanner()}\n`);
 
+  // Without its watchdog a SIGKILL of this broker would leave every child
+  // running, so a broken install refuses to start rather than run unguarded.
+  if (!existsSync(WATCHDOG_ARTIFACT)) {
+    process.stderr.write(`vice-broker: FATAL -- ${WATCHDOG_ARTIFACT} is missing; reinstall @henols/vice-mcp (or run \`node build.ts\` in a checkout)\n`);
+    process.exitCode = 1;
+    return;
+  }
+
   const state = createBrokerState();
   const startedAt = new Date().toISOString();
   const pollMs = Number(process.env.VICE_BROKER_POLL_MS) || 500;
@@ -2170,6 +2225,7 @@ async function run(args: ParsedArgs): Promise<void> {
 
   // The singleton guarantee holds only while the control port keeps its default -- two brokers deliberately configured onto different ports are two brokers, and no code prevents that.
   let listener: { host: string; port: number; pendingAcquires: PendingAcquireQueue };
+  let controlServers: Array<{ server: { close(): void } }> = [];
   {
     const bindResult = await startControlListenerOnHosts(bindHosts, {
       port: controlPort,
@@ -2227,6 +2283,7 @@ async function run(args: ParsedArgs): Promise<void> {
       onHostToolRun: (requestKey, raw) =>
         handleHostToolRun(requestKey, raw, args.repoRoot, {
           log: (line: string) => process.stderr.write(`${line}\n`),
+          state,
         }),
       onHostToolEnd: (requestKey) => handleHostToolEnd(requestKey),
       onHostState: (): HostStateFields => ({
@@ -2348,6 +2405,7 @@ async function run(args: ParsedArgs): Promise<void> {
     process.stderr.write(`vice-broker: state directory: ${args.stateDir}\n`);
     process.stderr.write(`vice-broker: ghidra projects directory: ${brokerGhidraDir()}\n`);
 
+    controlServers = bindResult.listeners;
     listener = { host: loopbackListener.host, port: loopbackListener.port, pendingAcquires: bindResult.pendingAcquires };
   }
 
@@ -2391,7 +2449,20 @@ async function run(args: ParsedArgs): Promise<void> {
   // this broker launched and clears the map unconditionally
   // (kill-never-recycle). Registered once the listener is up, since there is
   // nothing to tear down before that point.
-  registerShutdownHandlers({ state });
+  // The watchdog first, so every child from here on is reported to it; then
+  // the shutdown handlers. Nothing between the bind and this point awaits,
+  // so no acquire or host-tool run can have spawned anything yet.
+  startWatchdog(state);
+  let passTimer: ReturnType<typeof setInterval> | null = null;
+  registerShutdownHandlers({
+    state,
+    stopIntake: () => {
+      if (passTimer !== null) clearInterval(passTimer);
+      for (const bound of controlServers) bound.server.close();
+    },
+    stopChildren: (s) => stopAllChildren(s, { killWaitMs: resolveKillWaitMs() }),
+    killChildrenNow: (s) => killAllChildrenNow(s),
+  });
 
   // The readiness line. node_exec_path is process.execPath: exec() replaces
   // the process image, so whatever interpreter the launcher resolved IS this
@@ -2417,7 +2488,7 @@ async function run(args: ParsedArgs): Promise<void> {
   // still running (e.g. a slow readiness probe against a genuinely slow
   // host) is never overlapped by the next tick.
   let passInFlight = false;
-  setInterval(() => {
+  passTimer = setInterval(() => {
     if (passInFlight) return;
     passInFlight = true;
     runBrokerPass({

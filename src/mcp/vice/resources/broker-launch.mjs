@@ -460,7 +460,10 @@ function spawnAndRecordInstance(reason, port, deps) {
         logLine += ` (XDG_CONFIG_HOME=${scratchConfigDir})`;
     }
     log(logLine);
-    const child = spawnOptions === undefined ? spawnFn(viceBin, viceArgs) : spawnFn(viceBin, viceArgs, spawnOptions);
+    // Its own process group, so a stop of the broker can signal the whole
+    // group (broker-children.mts) -- never a pid alone.
+    const child = spawnFn(viceBin, viceArgs, { ...(spawnOptions ?? {}), detached: true });
+    deps.trackChild?.(child);
     if (scratchConfigDir !== undefined && typeof child.pid === "number") {
         // Ties the directory to the child's own pid AND this launch's own
         // resolved binary identity (viceBin) -- see ConfigScratchOwnerRecord's
@@ -642,6 +645,7 @@ export async function acquirePortAndLaunch(reason, deps) {
             binmonHost: deps.binmonHost,
             remoteMonitorPort,
             profile: deps.profile,
+            trackChild: deps.trackChild,
         });
         return { ok: true, record };
     }
@@ -1085,6 +1089,12 @@ async function handleExit(reason, port, deps) {
     const sleepMs = deps.sleepMs ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     const currentBackoffMs = record.backoffMs ?? resolveMs("VICE_RESTART_BACKOFF_S", 3, deps.initialBackoffMs);
     await sleepMs(currentBackoffMs);
+    // A shutdown or a deliberate teardown that happened during the backoff
+    // wins: never start a new emulator for a record that is no longer wanted.
+    if (deps.state.shuttingDown || record.deliberateKill || deps.state.instances.get(port) !== record) {
+        log(`vice-broker: not respawning port ${port} -- the broker is shutting down or the instance was torn down during the backoff`);
+        return;
+    }
     const maxBackoffMs = resolveMs("VICE_RESTART_BACKOFF_MAX_S", 30, deps.maxBackoffMs);
     const nextBackoffMs = Math.min(currentBackoffMs * 2, maxBackoffMs);
     // A crash must not
@@ -1214,6 +1224,7 @@ function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonit
         remoteMonitorPort,
         profile,
         log: deps.log,
+        trackChild: deps.trackChild,
     });
     if (!record)
         return null;

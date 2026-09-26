@@ -14,6 +14,11 @@
   incident record is written before any kill. When the channels are contended,
   the tool reports the contention by name instead of treating it as a wedge.
   A stuck emulator is recovered by restarting the broker (a human action).
+- Nothing the broker started outlives it. Every emulator and host tool runs in
+  its own process group and is tracked; a stop (Ctrl-C, SIGTERM, SIGHUP, a
+  crash) first stops taking work and blocks respawns, then stops every group,
+  descendants included. A SIGKILL of the broker is covered by a watchdog it
+  forks at startup, which stops every tracked group when the broker is gone.
 - Reproducible runs: a hard reset plus pinned launch settings makes two runs of
   the same program stop in the same frame. A flat 64K RAM capture is sliced from
   a `.vsf` snapshot, with no hex transcription. Runs stay frame-exact through

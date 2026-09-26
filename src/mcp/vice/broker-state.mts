@@ -28,6 +28,7 @@ import type { LaunchProfile } from "./broker-launch.mjs";
 // handle -- see BrokerState.relaySessions' own header comment below for why
 // it can never be serialised.
 import type { RelaySession } from "./broker-relay.mjs";
+import type { TrackedChild, ChildEvent } from "./broker-children.mjs";
 
 // ---------------------------------------------------------------------------
 // MonitorChannel: exactly two channels exist -- stock VICE
@@ -345,10 +346,26 @@ export interface BrokerState {
    * nothing).
    */
   relaySessions: Map<string, RelaySession>;
+  /** Every process this broker started and that has not exited yet, keyed
+   * by pid (= its process-group id). broker-children.mts's trackChild() is
+   * the only writer. Shutdown and the watchdog stop every group here. */
+  children: Map<number, TrackedChild>;
+  /** Told about every track/untrack (the watchdog's IPC forwarder), or null. */
+  childListener: ((event: ChildEvent) => void) | null;
+  /** Set once shutdown starts: no acquire, host-tool run or respawn begins after it. */
+  shuttingDown: boolean;
 }
 
 export function createBrokerState(): BrokerState {
-  return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map() };
+  return {
+    instances: new Map(),
+    grants: new Map(),
+    blockedPorts: new Set(),
+    relaySessions: new Map(),
+    children: new Map(),
+    childListener: null,
+    shuttingDown: false,
+  };
 }
 
 // ---------------------------------------------------------------------------

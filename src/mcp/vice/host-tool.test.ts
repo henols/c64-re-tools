@@ -134,7 +134,7 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
     // own doc comment) -- threaded into the HostToolLocator runHostTool()
     // builds internally, so a case can point resolution at a scratch
     // prerequisites.json (DECL-03 non-vacuity) without a mocking library.
-    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; here?: string; projectRoot?: string; ghidraProjectsRoot?: string; outputDir?: string; clearDeclaredOutputs?: boolean },
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; here?: string; projectRoot?: string; ghidraProjectsRoot?: string; outputDir?: string; clearDeclaredOutputs?: boolean; trackChild?: (child: import("node:child_process").ChildProcess) => void },
   ) => Promise<
     | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
     | { ok: false; message: string }
@@ -2039,7 +2039,7 @@ test("Plan 60-07 Test 6 (the memo is unchanged): within one module instance, a s
  * declared" refusal. */
 const FAKE_GHIDRA_HOME_LANGUAGE_ID = "6502:LE:16:default";
 
-async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T, opts: { sleepSeconds?: number } = {}): Promise<T> {
+async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T, opts: { sleepSeconds?: number; forkGrandchild?: boolean } = {}): Promise<T> {
   const previous = process.env.GHIDRA_HOME;
   return withTempDir(async (dir) => {
     const supportDir = join(dir, "support");
@@ -2068,7 +2068,13 @@ async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T,
     // and the sleeping process the SAME pid, so SIGKILL actually terminates
     // the sleep promptly (observed live while writing the kill-on-expiry
     // case below -- the naive `sleep N; exit 0` form measured a ~6s "kill").
-    const launcherBody = opts.sleepSeconds ? `#!/bin/sh\nexec sleep ${opts.sleepSeconds}\n` : "#!/bin/sh\nexit 0\n";
+    // `forkGrandchild` does fork, the way the real analyzeHeadless starts a
+    // JVM: the tool must be stopped as a whole process group.
+    const launcherBody = opts.forkGrandchild
+      ? `#!/bin/sh\nsleep 600 &\necho $! > "${join(dir, "grandchild.pid")}"\nwait\n`
+      : opts.sleepSeconds
+        ? `#!/bin/sh\nexec sleep ${opts.sleepSeconds}\n`
+        : "#!/bin/sh\nexit 0\n";
     writeFileSync(join(supportDir, "analyzeHeadless"), launcherBody, "utf8");
     chmodSync(join(supportDir, "analyzeHeadless"), 0o755);
     process.env.GHIDRA_HOME = dir;
@@ -2462,6 +2468,43 @@ test("runHostTool: a slow ghidra.analyze launcher killed on expiry names the sma
       });
     },
     { sleepSeconds: 6 },
+  );
+});
+
+test("runHostTool: a tool that forks is stopped as a whole process group on expiry -- its grandchild does not survive, and the tool was handed to trackChild", async () => {
+  await withFakeGhidraHome(
+    async (ghidraHome) => {
+      await withTempDir(async (dir) => {
+        writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+        const tracked: number[] = [];
+        const startedAt = Date.now();
+        const response = await runHostTool(
+          { tool: "ghidra.analyze", args: { runId: "group-kill-run", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
+          { repoRoot: dir, timeoutMs: 500, trackChild: (child) => tracked.push(child.pid ?? -1) },
+        );
+        const elapsedMs = Date.now() - startedAt;
+        assert.equal(response.ok, false);
+        assert.ok(elapsedMs < 3000, `the killed group must release the tool's pipes promptly; took ${elapsedMs}ms`);
+        assert.equal(tracked.length, 1, "the spawned tool must be handed to trackChild exactly once");
+        const grandchild = Number(readFileSync(join(ghidraHome, "grandchild.pid"), "utf8").trim());
+        assert.ok(grandchild > 0);
+        // Killed, it may linger a moment as a zombie until it is reaped.
+        const isAlive = (): boolean => {
+          try {
+            process.kill(grandchild, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        };
+        const deadline = Date.now() + 3000;
+        while (isAlive() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+        const alive = isAlive();
+        if (alive) process.kill(grandchild, "SIGKILL");
+        assert.equal(alive, false, `the tool's grandchild (pid ${grandchild}) must be dead after the tool is killed`);
+      });
+    },
+    { forkGrandchild: true },
   );
 });
 
