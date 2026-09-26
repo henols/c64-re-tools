@@ -86,8 +86,7 @@ test("Test 1: exportStoreDocument() on a store with one row of every class retur
       const doc = exportStoreDocument(handle);
 
       assert.equal(doc.schemaVersion, STORE_EXPORT_SCHEMA_VERSION);
-      assert.equal(doc.store, "proj.annostore");
-      assert.ok(!doc.store.includes("/"), "store field must be a basename, never an absolute path");
+      assert.ok(!("store" in doc), "a version-2 document names no store: it is a copy of one project's rows");
 
       assert.equal(doc.ranges.length, 2);
       assert.equal(doc.labels.length, 1);
@@ -146,7 +145,7 @@ test("Test 3: importStoreDocument() into a fresh empty store, then re-exporting,
         assert.equal(summary.xrefs, 1);
         assert.equal(summary.execObservations, 1);
 
-        const reexported = exportStoreDocument(target, { storeName: original.store });
+        const reexported = exportStoreDocument(target);
         assert.deepEqual(reexported, original, "re-exporting a freshly imported store must reproduce the original document exactly");
       } finally {
         closeStore(target);
@@ -248,7 +247,6 @@ test("CR-02 Fix: a scope import that overlaps a pre-existing scope in the target
 
       const doc: StoreExportDocument = {
         schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-        store: "x.annostore",
         ranges: [{ start: 0x0800, endInclusive: 0x080f, dataType: "byte", bank: null, provenance: "derived" }],
         labels: [{ address: 0x0810, name: "start", kind: "User", bank: null }],
         comments: [],
@@ -257,6 +255,7 @@ test("CR-02 Fix: a scope import that overlaps a pre-existing scope in the target
         xrefs: [],
         execObservations: [],
         scopes: [{ start: 0x1005, endInclusive: 0x1020 }], // overlaps the existing 0x1000..0x1010
+        excludedRanges: [],
       };
 
       assert.throws(
@@ -293,7 +292,6 @@ test("CR-02 Fix non-vacuity control: a scope import genuinely disjoint from the 
 
       const doc: StoreExportDocument = {
         schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-        store: "x.annostore",
         ranges: [],
         labels: [],
         comments: [],
@@ -302,6 +300,7 @@ test("CR-02 Fix non-vacuity control: a scope import genuinely disjoint from the 
         xrefs: [],
         execObservations: [],
         scopes: [{ start: 0x2000, endInclusive: 0x2010 }], // disjoint from 0x1000..0x1010
+        excludedRanges: [],
       };
 
       assert.doesNotThrow(() => importStoreDocument(target, doc));
@@ -320,7 +319,6 @@ test("CR-02 Fix non-vacuity control: a scope import BYTE-IDENTICAL to an existin
 
       const doc: StoreExportDocument = {
         schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-        store: "x.annostore",
         ranges: [],
         labels: [],
         comments: [],
@@ -329,6 +327,7 @@ test("CR-02 Fix non-vacuity control: a scope import BYTE-IDENTICAL to an existin
         xrefs: [],
         execObservations: [],
         scopes: [{ start: 0x1000, endInclusive: 0x1010 }], // byte-identical repeat of the existing scope
+        excludedRanges: [],
       };
 
       assert.doesNotThrow(
@@ -356,7 +355,6 @@ test("WR-01 Fix: a non-null bank on a ranges/labels/comments/enumUsage/xrefs row
     try {
       const base: StoreExportDocument = {
         schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-        store: "x.annostore",
         ranges: [],
         labels: [],
         comments: [],
@@ -364,6 +362,8 @@ test("WR-01 Fix: a non-null bank on a ranges/labels/comments/enumUsage/xrefs row
         enumUsage: [],
         xrefs: [],
         execObservations: [],
+        scopes: [],
+        excludedRanges: [],
       };
 
       const cases: { what: string; doc: StoreExportDocument }[] = [
@@ -440,7 +440,6 @@ test("an enum usage naming an enum the document does not define is refused, neve
     try {
       const doc: StoreExportDocument = {
         schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-        store: "x.annostore",
         ranges: [],
         labels: [],
         comments: [],
@@ -448,6 +447,8 @@ test("an enum usage naming an enum the document does not define is refused, neve
         enumUsage: [{ address: 0x0810, enumName: "NO_SUCH_ENUM", bank: null }],
         xrefs: [],
         execObservations: [],
+        scopes: [],
+        excludedRanges: [],
       };
       assert.throws(() => importStoreDocument(handle, doc), /does not define/);
     } finally {
@@ -483,7 +484,7 @@ test("LIVE: exporting a REAL dxa+Ghidra-derived store, re-importing into a fresh
   const readHandle = openStore(livePath, { mustExist: true, workspaceRoot: dirname(livePath) });
   let original: StoreExportDocument;
   try {
-    original = exportStoreDocument(readHandle, { storeName: "tracer.annostore" });
+    original = exportStoreDocument(readHandle);
   } finally {
     closeStore(readHandle);
   }
@@ -492,7 +493,7 @@ test("LIVE: exporting a REAL dxa+Ghidra-derived store, re-importing into a fresh
     const target = freshStore(dir, "reimported.annostore");
     try {
       importStoreDocument(target, original);
-      const reexported = exportStoreDocument(target, { storeName: "tracer.annostore" });
+      const reexported = exportStoreDocument(target);
       assert.deepEqual(reexported, original, "a real derived store must round-trip exactly, including any row shape this test's author did not anticipate");
     } finally {
       closeStore(target);

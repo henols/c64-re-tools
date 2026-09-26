@@ -9,8 +9,9 @@ db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values
 ```
 
 - Bound parameters via `prepare().run()`. Never interpolate into
-  `exec()`. (Sole exception: `vacuum into '<path>'`, validated and
-  quote-doubled at its one site.)
+  `exec()`, which runs only the fixed DDL and transaction keywords.
+- Every statement on a project table binds `$pid` through the scoped
+  statement factory (`scopeOf(handle)`), which refuses SQL without it.
 - Single quotes for SQL literals. Double quotes throw `no such column`.
 - Never load an extension, and never enable the constructor option.
 - Never set `journal_mode` or `synchronous`. They persist in the file,

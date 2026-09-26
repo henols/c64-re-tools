@@ -1,6 +1,5 @@
 {
-  "schemaVersion": 1,
-  "store": "hazard-subject.annostore",
+  "schemaVersion": 2,
   "ranges": [
     {
       "start": 2049,
@@ -290,5 +289,6 @@
       "start": 4239,
       "endInclusive": 4327
     }
-  ]
+  ],
+  "excludedRanges": []
 }

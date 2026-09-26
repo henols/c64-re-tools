@@ -20,7 +20,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -34,7 +34,6 @@ import {
   setComment,
   setDataType,
   setLabel,
-  snapshotDirFor,
 } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
 import { NO_ROW, resolveAt } from "./anno-index.ts";
@@ -378,25 +377,16 @@ test("STORE-06: the instruction corpus is bounded, and exceeding the cap is refu
 // 3. The never-cached control, behavioural half (task 2)
 // ---------------------------------------------------------------------------
 
-/** Four independent observations of the store file, plus the snapshot ring and
- * the revision. A cache written on a read path moves at least one of them. */
+/** Four independent observations of the store file, plus the revision. A cache written on a read path moves at least one of them. */
 function observe(fx: Fixture): Record<string, unknown> {
   const stat = statSync(fx.handle.path);
   const bytes = readFileSync(fx.handle.path);
-  const snapshotDir = snapshotDirFor(fx.handle);
-  let snapshotEntries = 0;
-  try {
-    snapshotEntries = readdirSync(snapshotDir).length;
-  } catch {
-    snapshotEntries = -1; // the ring directory does not exist yet -- also a fact
-  }
   return {
     xrefRows: (fx.handle.db.prepare("select count(*) as n from anno_xref").get() as { n: number }).n,
     size: stat.size,
     mtimeMs: stat.mtimeMs,
     hash: createHash("sha256").update(bytes).digest("hex"),
     revision: currentRevision(fx.handle),
-    snapshotEntries,
   };
 }
 
@@ -419,7 +409,7 @@ test("STORE-06 never-cached control: repeated derived queries leave the store by
       before,
       "putXref's own contract: \"A cached derivation would be a SECOND ON-DISK TRUTH that can disagree with the range table it " +
         'came from, and the disagreement is invisible because both answers look authoritative." A derived query that writes ' +
-        "anything -- an xref row, a byte of the store file, a snapshot, a revision -- has broken that contract.",
+        "anything -- an xref row, a byte of the store file, a revision -- has broken that contract.",
     );
   });
 });

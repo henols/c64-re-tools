@@ -61,7 +61,6 @@ export const MOVEMENT_ORIGIN = 0x0801;
 export function movementDocument(): StoreExportDocument {
   return {
     schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-    store: "movement-subject.annostore",
     ranges: [
       { start: 0x0801, endInclusive: 0x0806, dataType: "code", bank: null, provenance: "derived" },
       { start: 0x0807, endInclusive: 0x080a, dataType: "lo_hi_address", bank: null, provenance: "derived" },
@@ -79,6 +78,7 @@ export function movementDocument(): StoreExportDocument {
     xrefs: [],
     execObservations: [],
     scopes: [],
+    excludedRanges: [],
   };
 }
 

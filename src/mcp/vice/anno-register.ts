@@ -152,9 +152,8 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     note:
       "The measured consequence, which is why this is not merely tidiness: `anno_add_scope($1000, $ffff)` -- " +
       "ONE TRANSPOSED END, arriving from a transport whose validator returns its input unchanged -- makes " +
-      "every future scope from $1000 upward permanently unaddable. The only route back was `revertTo`, and " +
-      "the snapshot ring is bounded at MAX_SNAPSHOT_REVISIONS: 32 further writes and the store's own " +
-      "published floor refuses, by name, the revision that would undo it.",
+      "every future scope from $1000 upward permanently unaddable. The store keeps no revert history, so " +
+      "without this inverse there is no route back at all.",
   },
   {
     verb: "anno_search",
@@ -234,12 +233,10 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     rationale:
       "The inverse of the overlap refusal, on the same terms anno_remove_scope's entry states: the store " +
       "refuses any exclusion overlapping an existing one, so a single transposed end would otherwise make a " +
-      "whole region permanently unexcludable, with the only route back being a revert through the bounded " +
-      "snapshot ring. A write verb whose mistakes cannot be undone is a data-loss surface even when every " +
+      "whole region permanently unexcludable, with no route back at all. A write verb whose mistakes cannot be undone is a data-loss surface even when every " +
       "individual refusal is correct, so the inverse ships in the same phase as the refusal.",
     note:
-      "The measured mechanism, not an asserted risk: the snapshot ring is bounded at MAX_SNAPSHOT_REVISIONS, so " +
-      "a mistake that is not directly undoable becomes permanently undoable after that many further writes.",
+      "The store keeps no revert history, so a mistake that is not directly undoable is permanent.",
   },
   {
     verb: "anno_import_ghidra_export",

@@ -66,6 +66,34 @@ from all 28 `anno call` tools and all 6 report verbs.
 
 ### Decided during implementation
 
+- **Scoping is enforced at prepare time (step 1).**
+  - Every project-table statement goes through `scopeOf(handle)`. It binds the
+    handle's id as the named parameter `$pid`, and it refuses any SQL that does
+    not name `$pid`.
+  - The refusal is needed because SQLite binds an unsupplied named parameter as
+    NULL without complaint (measured on Node 24). An unscoped read would quietly
+    return nothing, and an unscoped write would insert rows that no project
+    owns.
+  - `anno_meta` and `anno_project` are the only tables reached through the raw
+    connection.
+- **The handle keeps the raw `db`.** It is used for the two unscoped tables
+  and for the tests that plant corruption. In step 4 the handle stops leaving
+  the broker, so no client ever holds it.
+- **The revision is read inside `begin immediate`.** The old "revision moved
+  under us" refusal (a failed compare-and-swap) cannot happen any more, so it
+  is gone. A stale `base_revision` keeps its exact refusal text.
+- **Step-1 shim:** `openStore(path)` binds `FILE_STORE_PROJECT_ID` (a fixed
+  UUID), so every existing caller keeps working until the cutover.
+- **Export document v2:** `scopes` and `excludedRanges` are required, and
+  `store` is gone. A v1 document is refused by version, as any unknown
+  version is.
+- **Tests:**
+  - The ring and revert tests are deleted: about 30 cases, plus the orphan-file
+    durability case.
+  - The SIGKILL proof now pairs the row with the project's revision.
+  - New `anno-project-scope.test.ts`: a pragma-driven structure check, an
+    isolation check and a generic round trip, each with a planted proof.
+
 ## Context
 
 - **Visuals:** none.

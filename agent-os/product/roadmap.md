@@ -26,8 +26,8 @@
 
 **Annotation store**
 - `.annostore` (`node:sqlite`, schema version 5) holds labels, comments, a
-  12-member per-range type vocabulary, scopes, project enums, cross-references,
-  search and revert. Durability is proven across a real `SIGKILL`.
+  12-member per-range type vocabulary, scopes, project enums and cross-references,
+  with search. Durability is proven across a real `SIGKILL`.
 - A runtime evidence layer stores what the emulator was observed executing,
   keyed by run. It is joined with the byte-derived block table, and disagreements
   are reported first.

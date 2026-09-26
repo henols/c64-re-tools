@@ -59,7 +59,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { openStore, closeStore } from "./anno-store.ts";
-import { exportStoreDocument, importStoreDocument, type StoreExportDocument } from "./anno-store-export.ts";
+import { exportStoreDocument, importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.ts";
 import { runAnnoCli } from "./anno-cli.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -260,11 +260,7 @@ for (const fixture of NINE_FIXTURES) {
       const handle = openStore(storePath, { workspaceRoot: dirname(storePath), mustExist: true });
       let reExported: StoreExportDocument;
       try {
-        // `storeName` is passed EXPLICITLY as the committed document's own
-        // `store` field -- that field records the ORIGINAL store's basename
-        // at export time, which this scratch copy's own filename need not
-        // match for the row classes themselves to be proven equal.
-        reExported = exportStoreDocument(handle, { storeName: doc.store });
+        reExported = exportStoreDocument(handle);
       } finally {
         closeStore(handle);
       }
@@ -398,8 +394,7 @@ test("WR-02 Fix: a fixture whose image cannot be located reports imageUnavailabl
       // so the assertion below distinguishes "the fix empties everything" from
       // "the fix removes only the fabricated $0000", the actual claim.
       const doc: StoreExportDocument = {
-        schemaVersion: 1,
-        store: "does-not-exist-wr02.annostore",
+        schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
         ranges: [{ start: 0x1000, endInclusive: 0x1002, dataType: "code", bank: null, provenance: "derived" }],
         labels: [],
         comments: [],
@@ -408,6 +403,7 @@ test("WR-02 Fix: a fixture whose image cannot be located reports imageUnavailabl
         xrefs: [{ fromAddress: 0x0810, toAddress: 0x1000, accessKind: "COMPUTED_JUMP", bank: null }],
         execObservations: [],
         scopes: [],
+        excludedRanges: [],
       };
       importStoreDocument(handle, doc);
     } finally {

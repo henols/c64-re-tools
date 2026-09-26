@@ -341,7 +341,7 @@ function buildExportDocument(subjectOutput: string, bytes: Uint8Array, symbols: 
           "address, which is exactly why a report reading this program shows no self-modification finding at it.",
       });
 
-      return exportStoreDocument(handle, { storeName: "hazard-subject.annostore" });
+      return exportStoreDocument(handle);
     } finally {
       closeStore(handle);
     }

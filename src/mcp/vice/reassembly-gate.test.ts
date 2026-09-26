@@ -383,7 +383,6 @@ function exportScopeSubjectTree(tag: string, ranges: readonly StoreExportRangeRo
   try {
     importStoreDocument(handle, {
       schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-      store: "scope-subject",
       ranges: [...ranges],
       labels: [],
       comments: [],
@@ -392,6 +391,7 @@ function exportScopeSubjectTree(tag: string, ranges: readonly StoreExportRangeRo
       xrefs: [],
       execObservations: [],
       scopes: [],
+      excludedRanges: [],
     });
   } finally {
     closeStore(handle);

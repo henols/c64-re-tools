@@ -80,8 +80,6 @@
 //     narrow residual gap -- see this module's test file for what IS
 //     covered by the pre-write pass.
 
-import { basename } from "node:path";
-
 import {
   setDataType,
   setLabel,
@@ -91,12 +89,14 @@ import {
   putXref,
   insertExecObservations,
   addScope,
+  addExcludedRange,
   listRanges,
   listLabels,
   listComments,
   listProjectEnums,
   listEnumUsage,
   listXrefs,
+  listExcludedRanges,
   listExecObservations,
   listScopes,
 } from "./anno-store.ts";
@@ -120,8 +120,12 @@ import type { DataType, CommentType, LabelKind, XrefAccessKind, EvidSourceBank }
 /** The one version number a document carries. Bumped only when this file's
  * own export shape changes in a way an older importer could not read
  * safely. An unrecognised version is REFUSED BY NAME (this project's
- * standing decline-by-name pattern), never best-effort imported. */
-export const STORE_EXPORT_SCHEMA_VERSION = 1;
+ * standing decline-by-name pattern), never best-effort imported.
+ *
+ * Version 2 carries `excludedRanges` and drops the `store` filename: a
+ * project in the shared database has no file of its own to name, and a
+ * document that omitted exclusions was not a complete copy of a project. */
+export const STORE_EXPORT_SCHEMA_VERSION = 2;
 
 /** The two provenance classes the store is split into (derived vs authored). See this file's
  * own header for why this is never a real store column. */
@@ -241,6 +245,13 @@ export interface StoreExportScopeRow {
   endInclusive: number;
 }
 
+/** One recorded exclusion as the export document holds it. `id` omitted. */
+export interface StoreExportExcludedRangeRow {
+  start: number;
+  endInclusive: number;
+  reason: string;
+}
+
 /** One runtime-execution observation as the export document holds it. `id`
  * omitted. */
 export interface StoreExportExecObservationRow {
@@ -255,13 +266,10 @@ export interface StoreExportExecObservationRow {
  * `importStoreDocument()` accepts. Every array `exportStoreDocument()` itself
  * produces is present even when empty (never omitted), and every array is
  * sorted by its own stated stable key so two exports of the same store are
- * byte-identical (Test 2). `store` is the BASENAME only -- an absolute host
- * path in a committed artifact is a portability defect (T-45-08). `scopes`
- * is the one field a hand-written or older document may omit -- see its own
- * doc comment. */
+ * byte-identical (Test 2). The document names no store and no project: it is
+ * a copy of one project's rows, importable into any project. */
 export interface StoreExportDocument {
   schemaVersion: number;
-  store: string;
   ranges: StoreExportRangeRow[];
   labels: StoreExportLabelRow[];
   comments: StoreExportCommentRow[];
@@ -269,10 +277,8 @@ export interface StoreExportDocument {
   enumUsage: StoreExportEnumUsageRow[];
   xrefs: StoreExportXrefRow[];
   execObservations: StoreExportExecObservationRow[];
-  /** Optional for backward compatibility with a document exported before this
-   * field existed -- `importStoreDocument()` treats an absent array as
-   * empty. `exportStoreDocument()` always populates it. */
-  scopes?: StoreExportScopeRow[];
+  scopes: StoreExportScopeRow[];
+  excludedRanges: StoreExportExcludedRangeRow[];
 }
 
 /** Per-row-class counts of what `importStoreDocument()` wrote. */
@@ -285,6 +291,7 @@ export interface ImportSummary {
   xrefs: number;
   execObservations: number;
   scopes: number;
+  excludedRanges: number;
 }
 
 /** This module's own refusal class for document-shape violations that are
@@ -378,8 +385,7 @@ function assertExportDescription(description: unknown, what: string): string | n
  * `node:sqlite`'s own row order, which is insertion order and can drift
  * across a rewritten table.
  */
-export function exportStoreDocument(handle: AnnoStoreHandle, opts: { storeName?: string } = {}): StoreExportDocument {
-  const storeName = opts.storeName ?? basename(handle.path);
+export function exportStoreDocument(handle: AnnoStoreHandle): StoreExportDocument {
 
   const ranges: StoreExportRangeRow[] = [...listRanges(handle)]
     .sort((a, b) => a.start - b.start || a.endInclusive - b.endInclusive)
@@ -438,9 +444,12 @@ export function exportStoreDocument(handle: AnnoStoreHandle, opts: { storeName?:
     .sort((a, b) => a.start - b.start)
     .map((row) => ({ start: row.start, endInclusive: row.endInclusive }));
 
+  const excludedRanges: StoreExportExcludedRangeRow[] = [...listExcludedRanges(handle)]
+    .sort((a, b) => a.start - b.start)
+    .map((row) => ({ start: row.start, endInclusive: row.endInclusive, reason: row.reason }));
+
   return {
     schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-    store: storeName,
     ranges,
     labels,
     comments,
@@ -449,6 +458,7 @@ export function exportStoreDocument(handle: AnnoStoreHandle, opts: { storeName?:
     xrefs,
     execObservations,
     scopes,
+    excludedRanges,
   };
 }
 
@@ -463,7 +473,8 @@ type PlannedWrite =
   | { kind: "enumUsage"; address: number; name: string }
   | { kind: "xref"; fromAddress: number; toAddress: number; accessKind: XrefAccessKind }
   | { kind: "execObservationGroup"; imageSha256: string; argvDigest: string; seed: string; observations: { address: number; sourceBank: EvidSourceBank }[] }
-  | { kind: "scope"; start: number; endInclusive: number };
+  | { kind: "scope"; start: number; endInclusive: number }
+  | { kind: "excludedRange"; start: number; endInclusive: number; reason: string };
 
 /**
  * Imports a `StoreExportDocument` into an already-open store handle.
@@ -563,11 +574,7 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
     plan.push({ kind: "execObservationGroup", ...group });
   }
 
-  // `scopes` is OPTIONAL on the document -- see `StoreExportScopeRow`'s own
-  // doc comment. A document from before this field existed has `undefined`
-  // here, treated as empty, never as a schema violation.
-  const scopeRows = doc.scopes ?? [];
-  const sortedScopes = [...scopeRows].map((row, i) => ({ row, i })).sort((a, b) => a.row.start - b.row.start);
+  const sortedScopes = [...doc.scopes].map((row, i) => ({ row, i })).sort((a, b) => a.row.start - b.row.start);
   // EXISTING-STORE OVERLAP IS ALSO REFUSED HERE, before any write -- not just
   // overlap among the document's own scopes (checked below). `addScope()`
   // itself refuses a scope that overlaps a scope ALREADY IN THE TARGET STORE,
@@ -610,10 +617,55 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
     plan.push({ kind: "scope", start: row.start, endInclusive: row.endInclusive });
   }
 
+  // EXCLUSIONS, validated the way `addExcludedRange()` would refuse them, and
+  // BEFORE any write: a non-empty reason, no overlap with an exclusion already
+  // in the target project unless it is the identical record, and no overlap
+  // within the document.
+  const existingExclusions = listExcludedRanges(handle);
+  const sortedExclusions = [...doc.excludedRanges].map((row, i) => ({ row, i })).sort((a, b) => a.row.start - b.row.start);
+  for (let x = 0; x < sortedExclusions.length; x++) {
+    const { row, i } = sortedExclusions[x]!;
+    assertRangeShape(row.start, row.endInclusive, "byte");
+    const reason = assertCommentText(row.reason, { what: `excludedRanges[${i}].reason` });
+    if (reason.trim() === "") {
+      throw new AnnoStoreExportError(`anno-store-export refused: excludedRanges[${i}] has an empty reason -- an exclusion records why, or it is not imported.`);
+    }
+    const conflict = existingExclusions.find(
+      (existing) =>
+        !(existing.start === row.start && existing.endInclusive === row.endInclusive && existing.reason === reason) &&
+        existing.start <= row.endInclusive &&
+        existing.endInclusive >= row.start,
+    );
+    if (conflict) {
+      throw new AnnoStoreExportError(
+        `anno-store-export refused: excludedRanges[${i}] (${row.start}..${row.endInclusive}) overlaps an exclusion already present in the ` +
+          `target project (id=${conflict.id} ${conflict.start}..${conflict.endInclusive}), so the whole import is refused rather than partially applied.`,
+      );
+    }
+    const prev = x > 0 ? sortedExclusions[x - 1]!.row : undefined;
+    if (prev && prev.endInclusive >= row.start) {
+      throw new AnnoStoreExportError(
+        `anno-store-export refused: excludedRanges[${i}] (${row.start}..${row.endInclusive}) overlaps another exclusion in this same document, ` +
+          `so the whole import is refused rather than partially applied.`,
+      );
+    }
+    plan.push({ kind: "excludedRange", start: row.start, endInclusive: row.endInclusive, reason });
+  }
+
   // VALIDATION IS COMPLETE. Nothing above this line calls a `set*`/`put*`/
   // `insert*` function on `handle` -- everything from here on is applying
   // the already-validated plan.
-  const summary: ImportSummary = { ranges: 0, labels: 0, comments: 0, projectEnums: 0, enumUsage: 0, xrefs: 0, execObservations: 0, scopes: 0 };
+  const summary: ImportSummary = {
+    ranges: 0,
+    labels: 0,
+    comments: 0,
+    projectEnums: 0,
+    enumUsage: 0,
+    xrefs: 0,
+    execObservations: 0,
+    scopes: 0,
+    excludedRanges: 0,
+  };
 
   for (const write of plan) {
     switch (write.kind) {
@@ -653,6 +705,10 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
       case "scope":
         addScope(handle, { start: write.start, endInclusive: write.endInclusive });
         summary.scopes++;
+        break;
+      case "excludedRange":
+        addExcludedRange(handle, { start: write.start, endInclusive: write.endInclusive, reason: write.reason });
+        summary.excludedRanges++;
         break;
     }
   }

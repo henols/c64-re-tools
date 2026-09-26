@@ -387,13 +387,13 @@ function retypeByFilterAndInsert(
   dataType: DataType,
 ): null {
   applyWrite(store, (db) => {
-    const overlapping = db.prepare("select id from anno_range where end_inclusive >= ? and start <= ?").all(start, endInclusive) as {
+    const overlapping = db.prepare("select id from anno_range where project_id = $pid and end_inclusive >= ? and start <= ?").all(start, endInclusive) as {
       id: number;
     }[];
     for (const row of overlapping) {
-      db.prepare("delete from anno_range where id = ?").run(row.id);
+      db.prepare("delete from anno_range where project_id = $pid and id = ?").run(row.id);
     }
-    db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(start, endInclusive, dataType, null);
+    db.prepare("insert into anno_range(project_id, start, end_inclusive, data_type, bank) values ($pid, ?, ?, ?, ?)").run(start, endInclusive, dataType, null);
     return true;
   });
   // A planting does not go through `setDataType`, so it has NO result object --
@@ -491,12 +491,12 @@ function retypeWithoutContradictionQuery(
 ): { changed: boolean; contradictedComments: readonly unknown[] } {
   const { result } = applyWrite(store, (db) => {
     const overlapping = db
-      .prepare("select id, start, end_inclusive, data_type from anno_range where end_inclusive >= ? and start <= ? order by id")
+      .prepare("select id, start, end_inclusive, data_type from anno_range where project_id = $pid and end_inclusive >= ? and start <= ? order by id")
       .all(start, endInclusive) as { id: number; start: number; end_inclusive: number; data_type: string }[];
     for (const row of overlapping) {
-      db.prepare("delete from anno_range where id = ?").run(row.id);
+      db.prepare("delete from anno_range where project_id = $pid and id = ?").run(row.id);
       if (row.start < start) {
-        db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(
+        db.prepare("insert into anno_range(project_id, start, end_inclusive, data_type, bank) values ($pid, ?, ?, ?, ?)").run(
           row.start,
           start - 1,
           row.data_type,
@@ -504,7 +504,7 @@ function retypeWithoutContradictionQuery(
         );
       }
       if (row.end_inclusive > endInclusive) {
-        db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(
+        db.prepare("insert into anno_range(project_id, start, end_inclusive, data_type, bank) values ($pid, ?, ?, ?, ?)").run(
           endInclusive + 1,
           row.end_inclusive,
           row.data_type,
@@ -512,7 +512,7 @@ function retypeWithoutContradictionQuery(
         );
       }
     }
-    db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(start, endInclusive, dataType, null);
+    db.prepare("insert into anno_range(project_id, start, end_inclusive, data_type, bank) values ($pid, ?, ?, ?, ?)").run(start, endInclusive, dataType, null);
     return true;
   });
   return { changed: result, contradictedComments: [] };
@@ -819,7 +819,7 @@ test("IN-06: a remainder carries the overlapped row's own `bank` forward, while 
   // `setDataType`, and the result is read back through `listRanges()`.
   inFreshStore((store) => {
     applyWrite(store, (db) => {
-      db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(
+      db.prepare("insert into anno_range(project_id, start, end_inclusive, data_type, bank) values ($pid, ?, ?, ?, ?)").run(
         SPLIT_A,
         SPLIT_B,
         "lo_hi_address",
@@ -1960,7 +1960,7 @@ function retypeWithoutRemainderRule(
 ): null {
   applyWrite(store, (db) => {
     const overlapping = db
-      .prepare("select id, start, end_inclusive, data_type, bank from anno_range where end_inclusive >= ? and start <= ? order by id")
+      .prepare("select id, start, end_inclusive, data_type, bank from anno_range where project_id = $pid and end_inclusive >= ? and start <= ? order by id")
       .all(start, endInclusive) as { id: number; start: number; end_inclusive: number; data_type: string; bank: number | null }[];
 
     if (
@@ -1973,9 +1973,9 @@ function retypeWithoutRemainderRule(
     }
 
     for (const row of overlapping) {
-      db.prepare("delete from anno_range where id = ?").run(row.id);
+      db.prepare("delete from anno_range where project_id = $pid and id = ?").run(row.id);
       if (row.start < start) {
-        db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(
+        db.prepare("insert into anno_range(project_id, start, end_inclusive, data_type, bank) values ($pid, ?, ?, ?, ?)").run(
           row.start,
           start - 1,
           row.data_type,
@@ -1983,7 +1983,7 @@ function retypeWithoutRemainderRule(
         );
       }
       if (row.end_inclusive > endInclusive) {
-        db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(
+        db.prepare("insert into anno_range(project_id, start, end_inclusive, data_type, bank) values ($pid, ?, ?, ?, ?)").run(
           endInclusive + 1,
           row.end_inclusive,
           row.data_type,
@@ -1991,7 +1991,7 @@ function retypeWithoutRemainderRule(
         );
       }
     }
-    db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(start, endInclusive, dataType, null);
+    db.prepare("insert into anno_range(project_id, start, end_inclusive, data_type, bank) values ($pid, ?, ?, ?, ?)").run(start, endInclusive, dataType, null);
     return true;
   });
   return null; // see `retypeByFilterAndInsert` -- a planting has no report.

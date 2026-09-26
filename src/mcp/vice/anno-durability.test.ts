@@ -1,31 +1,20 @@
 // anno-durability.test.ts -- the ONE combined proof that `STORE-04` asks for:
 // a separate OS process mutates an annotation store and SIGKILLs itself with no
-// clean close, a FRESH process reopens the file, the mutation reads back BY
-// VALUE, and the revert returns the prior value -- all in the SAME test.
+// clean close, a FRESH process reopens the file, and the mutation AND the
+// project's revision advance read back BY VALUE -- all in the SAME test.
 //
-// WHY ONE TEST AND NOT TWO. Split into a durability test and a revert test,
-// BOTH STAY GREEN over a store that satisfies neither claim: the durability
-// half passes on anything that happens to have flushed, and the revert half
-// passes in-process without ever proving the snapshot outlived the writer.
-// Combined, ONE planted violation -- removing `anno-store.ts`'s single `commit`
-// -- fails both halves at once, because the snapshot POINTER ROW is inserted in
-// the same transaction as the mutation. That fusion is the mechanism, and it is
-// documented at `runWriteSequence` in the seam itself.
+// WHY ONE TEST AND NOT TWO. The revision advance and the mutation share one
+// transaction, so ONE planted violation -- removing `anno-store.ts`'s single
+// `commit` -- fails both at once: the row is gone and the revision is still 0.
+// That fusion is the mechanism, documented at `runWriteSequence`.
 //
-// THE TWO BOOLEANS ARE VALUES, ASSERTED AS VALUES. The observation helper below
-// returns them; the assertions read them and sit outside any `try`. The reason
-// is measured rather than stylistic: in phase research the revert half failed
-// with a NAMED DOMAIN ERROR (`AnnoStoreError: no snapshot recorded for revision
-// 0`) rather than an assertion failure, so a `try/catch` wrapped around the
-// assertions would have absorbed the red and reported a pass. The only `catch`
-// in this file CONVERTS that domain error into `false`; it never wraps an
-// assertion.
+// THE BOOLEANS ARE VALUES, ASSERTED AS VALUES. The observation helper below
+// returns them; the assertions read them and sit outside any `try`.
 //
 // Every temp directory is `mkdtempSync(join(tmpdir(), "anno-"))` removed in an
 // unconditional `finally`, and THE PARENT DOES THE CLEANING because on the
 // SIGKILL path the child cannot: `/tmp` here is a tmpfs with cleanup disabled,
-// and these cases leave database files, hot journals and a `snapshots/`
-// directory behind.
+// and these cases leave database files and hot journals behind.
 //
 // NOTHING here asserts stderr is empty, and nothing may: `node:sqlite` emits an
 // `ExperimentalWarning` unconditionally on first load, and every spawn below
@@ -35,7 +24,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,7 +37,6 @@ import {
   listExecObservations,
   listRanges,
   openStore,
-  revertTo,
   setDataType,
 } from "./anno-store.ts";
 import { AnnoAddressError, AnnoStoreCorruptError, AnnoStoreError, AnnoTypeError, SCHEMA_VERSION } from "./anno-types.ts";
@@ -122,25 +110,12 @@ interface Observation {
    * fields, read from a store file reopened by a DIFFERENT OS process than the
    * one that wrote it. */
   readBackByValue: boolean;
-  /** `revertTo(0)` put the store back to no ranges at revision 0. FALSE also
-   * when the revert was REFUSED -- see the one `catch` below. */
-  revertReturnsPriorValue: boolean;
-  /** The revision the file carried after the kill: 1 when the write committed,
-   * 0 when it did not. Recorded so a reader can see WHY both halves move
-   * together rather than having to infer it. */
+  /** The project's revision after the kill: 1 when the write committed, 0 when
+   * it did not. It moves in the same transaction as the mutation. */
   revisionAfterKill: number;
   /** Every row the reopened store returned, so the all-or-nothing property can
    * be asserted on the actual set rather than only on a boolean. */
   rangesAfterKill: RangeRow[];
-  /** Snapshot files left in `snapshots/` after the kill, by filename. */
-  snapshotFilesAfterKill: string[];
-  /** The revisions `anno_snapshot` still points at after the kill. A file with
-   * no row here is an ORPHAN, which is the harmless failure direction the
-   * write sequence's ordering deliberately chooses. */
-  snapshotRowsAfterKill: number[];
-  /** The refusal message, when the revert was refused rather than performed.
-   * Null when it was performed. */
-  revertRefusal: string | null;
 }
 
 /**
@@ -151,85 +126,35 @@ interface Observation {
  * That sharing is the requirement, not a convenience: `STORE-04` asks that
  * removing the commit reddens THAT SAME TEST, so the planted run must not be
  * able to drift into a different sequence than the one it is the counterpart
- * of.
- *
- * The `try/finally` here is TEMP-DIRECTORY CLEANUP ONLY and has no `catch`, so
- * it cannot absorb a failure. The single `catch` inside converts the revert's
- * named domain refusal into `revertReturnsPriorValue = false`, which is the
- * whole point: the caller asserts a VALUE, never merely that nothing threw.
+ * of. The `try/finally` is temp-directory cleanup only and has no `catch`.
  */
 function observeMutateKillReopen(mode: "commit" | "no-commit"): Observation {
   const dir = mkdtempSync(join(tmpdir(), "anno-"));
   try {
     const path = join(dir, "proj.annostore");
 
-    // The store exists, with its DDL and its revision-0 meta row, BEFORE the
+    // The store exists, with its DDL and its project at revision 0, BEFORE the
     // child runs -- so the child is a writer to an existing file rather than
-    // its creator, and the file the parent reopens is not one the parent has
-    // never seen initialised.
+    // its creator.
     closeStore(openStore(path, { workspaceRoot: dir }));
 
     try {
       execFileSync(process.execPath, [MUTATOR, path, mode], { stdio: "pipe" });
     } catch {
       // EXPECTED AND IGNORED. The child kills itself, so `execFileSync` throws
-      // on the non-zero status (137 = 128 + SIGKILL). A run that did NOT throw
-      // here would mean the child exited cleanly, which is the one thing this
-      // proof must not permit -- and that is caught downstream, because a store
-      // written by a cleanly-exiting child is not what any assertion below is
-      // about. Swallowing the status is safe precisely because every claim is
-      // read back off the FILE, never off the child's exit.
+      // on the non-zero status (137 = 128 + SIGKILL). Every claim is read back
+      // off the FILE, never off the child's exit.
     }
 
     // A different OS process from the mutator, by construction.
     const reopened = openStore(path, { workspaceRoot: dir });
     try {
       const rows = listRanges(reopened);
-      const revisionAfterKill = currentRevision(reopened);
-      const snapshotDir = join(dir, "proj.annostore.snapshots");
-      const snapshotFilesAfterKill = existsSync(snapshotDir) ? readdirSync(snapshotDir).sort() : [];
-      const snapshotRowsAfterKill = (
-        reopened.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]
-      ).map((row) => row.revision);
-
       const readBackByValue =
         rows.length === 1 && rows[0].start === EXPECTED.start && rows[0].endInclusive === EXPECTED.endInclusive && rows[0].dataType === EXPECTED.dataType;
-
-      let revertReturnsPriorValue = false;
-      let revertRefusal: string | null = null;
-      try {
-        const reverted = revertTo(reopened, 0);
-        revertReturnsPriorValue = listRanges(reverted).length === 0 && currentRevision(reverted) === 0;
-        closeStore(reverted);
-      } catch (e) {
-        // THE ONE CATCH IN THIS FILE, AND IT CONVERTS RATHER THAN ABSORBS. When
-        // the commit is missing, the pointer row rolls back with everything
-        // else and the revert is refused by NAME -- a domain error, not an
-        // assertion failure. Turning it into `false` here is what lets the
-        // caller assert a boolean; a `catch` around the caller's assertions
-        // instead would have reported a pass.
-        revertRefusal = (e as Error).message;
-        revertReturnsPriorValue = false;
-      }
-
-      return {
-        readBackByValue,
-        revertReturnsPriorValue,
-        revisionAfterKill,
-        rangesAfterKill: rows,
-        snapshotFilesAfterKill,
-        snapshotRowsAfterKill,
-        revertRefusal,
-      };
+      return { readBackByValue, revisionAfterKill: currentRevision(reopened), rangesAfterKill: rows };
     } finally {
-      // `revertTo` closes the handle it was given on its success path, so this
-      // close is for the refused path. Closing an already-closed handle throws,
-      // which is why it is guarded rather than unconditional.
-      try {
-        closeStore(reopened);
-      } catch {
-        // already closed by a successful revertTo -- nothing to do
-      }
+      closeStore(reopened);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -253,7 +178,7 @@ function observeEvidenceMutateKillReopen(writerToken: "commit" | "no-commit"): {
     const path = join(dir, "proj.annostore");
 
     // The store exists, with its DDL (including `anno_evid_exec` at
-    // SCHEMA_VERSION 4) and its revision-0 meta row, BEFORE the child runs.
+    // SCHEMA_VERSION 4) and its project at revision 0, BEFORE the child runs.
     closeStore(openStore(path, { workspaceRoot: dir }));
 
     try {
@@ -289,173 +214,48 @@ function observeEvidenceMutateKillReopen(writerToken: "commit" | "no-commit"): {
   }
 }
 
-test("STORE-04, one combined test: a separate OS process mutates the store and SIGKILLs itself with no clean close, a FRESH process reopens the file, the mutation reads back BY VALUE, and revertTo(0) returns the prior value", () => {
+test("STORE-04, one combined test: a separate OS process mutates the store and SIGKILLs itself with no clean close, a FRESH process reopens the file, and the mutation and the revision advance read back BY VALUE", () => {
   const observed = observeMutateKillReopen("commit");
 
-  // Both halves, asserted as VALUES, outside any try. Each message names WHICH
-  // half failed, because "the durability test failed" does not say whether the
-  // mutation was lost or the undo was.
   assert.equal(
     observed.readBackByValue,
     true,
     `the DURABILITY half failed: after a real SIGKILL with no clean close, a fresh process read back ` +
       `${JSON.stringify(observed.rangesAfterKill)} rather than exactly ${JSON.stringify(EXPECTED)} (revision ${observed.revisionAfterKill})`,
   );
-  assert.equal(
-    observed.revertReturnsPriorValue,
-    true,
-    `the REVERT half failed: revertTo(0) did not return the prior value${observed.revertRefusal === null ? "" : ` -- it was refused: ${observed.revertRefusal}`}`,
-  );
+  assert.equal(observed.revisionAfterKill, 1, "the committed write advanced the project's revision by exactly one and the advance survived the kill");
 
-  // The mechanism, asserted rather than left to be inferred: the write
-  // committed, so the revision advanced by exactly one and the pointer row for
-  // the pre-mutation revision is on disk. These are the two things that move
-  // TOGETHER when the commit is removed.
-  assert.equal(observed.revisionAfterKill, 1, "the committed write advanced the revision by exactly one and the advance survived the kill");
-  assert.deepEqual(observed.snapshotRowsAfterKill, [0], "and the pointer row for the pre-mutation revision survived with it, in the same transaction");
-
-  // ---------------------------------------------------------------------
-  // ALL-OR-NOTHING, asserted on THIS SAME RUN rather than in a test of its
-  // own. That is deliberate: it is a property of the interrupted write just
-  // performed, and giving it a separate test would mean a third call of the
-  // shared helper -- a third SIGKILLed child proving a property of a run the
-  // assertions above already have in hand. The helper is called exactly
-  // twice in this file, once per mode, which is what keeps the planted
-  // counterpart the counterpart OF THIS TEST.
-  // ---------------------------------------------------------------------
+  // ALL-OR-NOTHING, asserted on THIS SAME RUN. Both acceptable states are
+  // enumerated explicitly; the property proven is that the THIRD state -- a
+  // row present but wrong, from a half-applied write -- does not exist.
   const rows = observed.rangesAfterKill;
-
-  // BOTH acceptable states are enumerated explicitly. Asserting only the
-  // expected one would make this test a second copy of the durability half
-  // above; the property being proven here is that the THIRD state -- a row
-  // present but wrong, a start without an end, a type from a half-applied
-  // write -- does not exist.
   const isCompleteMutation =
     rows.length === 1 && rows[0].start === EXPECTED.start && rows[0].endInclusive === EXPECTED.endInclusive && rows[0].dataType === EXPECTED.dataType;
   const isNothingAtAll = rows.length === 0;
-
   assert.equal(
     isCompleteMutation || isNothingAtAll,
     true,
     `an interrupted write must be all-or-nothing, but the reopened store held ${JSON.stringify(rows)} -- neither the complete ` +
       `${JSON.stringify(EXPECTED)} nor an empty set`,
   );
-
-  // And which of the two was observed, recorded so a silent flip from "always
-  // complete" to "always empty" -- which the assertion above would tolerate --
-  // is still visible in a failure message here.
   assert.equal(isCompleteMutation, true, "on this store the committed write is expected to be the COMPLETE one, not the empty state");
-  assert.equal(isNothingAtAll, false);
 });
 
-test("STORE-04's planted violation, in the SAME shape and through the SAME helper: with the commit removed, readBackByValue is FALSE and revertReturnsPriorValue is FALSE -- one planting, both halves", () => {
+test("STORE-04's planted violation, in the SAME shape and through the SAME helper: with the commit removed, readBackByValue is FALSE and the revision is still 0 -- one planting, both halves", () => {
   const observed = observeMutateKillReopen("no-commit");
 
-  // BOTH halves asserted false, in ONE test, on ONE planting. This is the
-  // criterion `STORE-04` states and the reason it demands one combined test
-  // rather than two: the snapshot POINTER ROW is inserted in the same
-  // transaction as the mutation, so removing the single `commit` destroys the
-  // durability claim and the revert claim SIMULTANEOUSLY. Two separate tests
-  // would both stay green over a store satisfying neither.
   assert.equal(
     observed.readBackByValue,
     false,
     `with the commit removed the mutation must NOT survive, but a fresh process read back ${JSON.stringify(observed.rangesAfterKill)}`,
   );
-  assert.equal(
-    observed.revertReturnsPriorValue,
-    false,
-    "with the commit removed the revert must NOT return the prior value: the pointer row rolled back with the mutation, so there is nothing to revert to",
-  );
+  assert.equal(observed.revisionAfterKill, 0, "the revision advance rolled back with the mutation -- the project is still at revision 0");
+  assert.deepEqual(observed.rangesAfterKill, [], "and no half of the write landed");
 
-  // THE MECHANISM, ASSERTED RATHER THAN INFERRED. A reader should be able to
-  // see WHY both halves fail, not just that they do: the revision
-  // compare-and-swap rolled back with everything else, so the file is still at
-  // revision 0 and `anno_snapshot` is empty -- while the pre-mutation snapshot
-  // FILE is on disk, orphaned, which is the harmless failure direction the
-  // write sequence's ordering deliberately chooses.
-  assert.equal(observed.revisionAfterKill, 0, "the CAS's revision bump rolled back with the mutation -- the file is still at revision 0");
-  assert.deepEqual(observed.snapshotRowsAfterKill, [], "and no pointer row landed, which is exactly why the revert half fails too");
-  assert.deepEqual(observed.snapshotFilesAfterKill, ["r0.db"], "the snapshot FILE is still there, orphaned -- extra files, never a missing one");
-  assert.ok(
-    observed.revertRefusal !== null && /cannot revert to revision 0/.test(observed.revertRefusal),
-    `the revert half fails through a NAMED refusal, which is why it is converted to a boolean rather than allowed to propagate: ${String(observed.revertRefusal)}`,
-  );
-
-  // THE VALUES MEASURED IN PHASE RESEARCH, recorded so a future divergence
-  // from them is visible rather than silently absorbed into a still-green
-  // test:
-  //     [commit]    revision=1 readBackByValue=true  revertReturnsPriorValue=true  -> GREEN
-  //     [no-commit] revision=0 readBackByValue=false revertReturnsPriorValue=false -> RED
-  //                 (AnnoStoreError: no snapshot recorded for revision 0)
-  //
-  // AND THE LIMIT OF THIS TEST, stated because it is easy to over-read. This
-  // test is PERMANENTLY GREEN: it proves the criterion's shape is falsifiable
-  // and keeps proving it in CI. It is NOT `STORE-04`'s observed red, because
-  // the planting is a parameter to a SIBLING entry point -- the absence of the
-  // commit is never exercised in the real, shipped call path here. That
-  // obligation is discharged separately, by removing `runWriteSequence`'s
-  // single `commit` BY HAND, watching the committing test above go red in both
-  // halves, and reverting. Both are required; neither substitutes for the
-  // other, and a reader who takes this test's green FOR that red has mis-read
-  // it.
-});
-
-test("an orphan snapshot file left in the kill window is identified by its revision and does not affect the readback", () => {
-  const dir = mkdtempSync(join(tmpdir(), "anno-"));
-  try {
-    const path = join(dir, "proj.annostore");
-    closeStore(openStore(path, { workspaceRoot: dir }));
-
-    try {
-      execFileSync(process.execPath, [MUTATOR, path, "commit"], { stdio: "pipe" });
-    } catch {
-      // the self-SIGKILL's status 137 -- expected, see the helper above
-    }
-
-    // A kill between `vacuum into` and the commit leaves a snapshot FILE whose
-    // pointer row never landed. Reproduced here by planting the extra file
-    // directly, because the window is too narrow to hit reliably by timing --
-    // and the property under test is about the FILE's effect on a later read,
-    // not about the window's width. The revision this orphan claims is chosen
-    // ABOVE every real one, which is the case that would matter if the read
-    // path ever consulted the directory listing instead of the pointer rows.
-    const snapshotDir = join(dir, "proj.annostore.snapshots");
-    const realSnapshots = readdirSync(snapshotDir).sort();
-    assert.ok(realSnapshots.includes("r0.db"), `the pre-mutation snapshot must be on disk, found ${realSnapshots.join(", ")}`);
-    const orphan = join(snapshotDir, "r99.db");
-    copyFileSync(join(snapshotDir, "r0.db"), orphan);
-
-    const reopened = openStore(path, { workspaceRoot: dir });
-    try {
-      // The orphan is identifiable BY ITS REVISION from its filename alone --
-      // which is what makes it reconcilable rather than merely harmless.
-      const onDisk = readdirSync(snapshotDir).sort();
-      assert.ok(onDisk.includes("r99.db"), "the planted orphan is on disk");
-      const pointed = (reopened.db.prepare("select revision from anno_snapshot order by revision").all() as { revision: number }[]).map(
-        (row) => row.revision,
-      );
-      assert.deepEqual(pointed, [0], "and no pointer row claims it -- that is exactly what makes it an orphan");
-      assert.deepEqual(
-        onDisk.filter((name) => !pointed.includes(Number(/^r(\d+)\.db$/.exec(name)?.[1] ?? "-1"))),
-        ["r99.db"],
-        "the orphan set is derivable from the filenames and the pointer rows, with no extra bookkeeping",
-      );
-
-      // The readback is unaffected: an extra file in `snapshots/` is not part
-      // of any read path.
-      const rows = listRanges(reopened);
-      assert.equal(rows.length, 1, "the readback is unaffected by an extra snapshot file");
-      assert.equal(rows[0].start, EXPECTED.start);
-      assert.equal(rows[0].endInclusive, EXPECTED.endInclusive);
-      assert.equal(rows[0].dataType, EXPECTED.dataType);
-      assert.equal(currentRevision(reopened), 1);
-    } finally {
-      closeStore(reopened);
-    }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  // THE LIMIT OF THIS TEST: it is PERMANENTLY GREEN. It proves the
+  // criterion's shape is falsifiable; the real red is observed by removing
+  // `runWriteSequence`'s single `commit` BY HAND and watching the committing
+  // test above fail.
 });
 
 test("the mutator is test-only: absent from package.json files[], and its filename does not match the *.test.* glob the runner collects", () => {
@@ -573,24 +373,22 @@ test("CR-06: with a separate OS process holding a READ transaction, the commit R
 // one evidence observation survives a real process death end to end.
 // ---------------------------------------------------------------------------
 
-test("SCHEMA_VERSION 5: a fresh store carries anno_evid_exec with exactly the no-change run-identity column set, all NOT NULL", () => {
+test("SCHEMA_VERSION 6: a fresh store carries anno_evid_exec with exactly the no-change run-identity column set plus project_id, all NOT NULL", () => {
   const dir = mkdtempSync(join(tmpdir(), "anno-"));
   try {
     const path = join(dir, "proj.annostore");
     const store = openStore(path, { workspaceRoot: dir });
     try {
-      // RE-RECORDED 2026-09-11 (46-03), 4 -> 5: `anno_evid_exec` itself is
-      // unchanged by this bump (46-03 adds `anno_excluded_range`, a sibling
-      // table), so this test's own claim about `anno_evid_exec`'s column set
-      // stays true; only the SCHEMA_VERSION number it pins moves.
-      assert.equal(SCHEMA_VERSION, 5, "EVID-02's bump was 4; 46-03's is 5 -- this build's SCHEMA_VERSION");
+      // RE-RECORDED 2026-09-26, 5 -> 6: `anno_evid_exec` gains `project_id`
+      // like every project table; its identity columns are unchanged.
+      assert.equal(SCHEMA_VERSION, 6, "this build's SCHEMA_VERSION is 6, the per-project database");
       const meta = store.db.prepare("select schema_version from anno_meta where id = 1").get() as { schema_version: number };
-      assert.equal(meta.schema_version, 5, "a fresh store's declared schema_version is this build's SCHEMA_VERSION");
+      assert.equal(meta.schema_version, 6, "a fresh store's declared schema_version is this build's SCHEMA_VERSION");
 
       const columns = store.db.prepare("pragma table_info(anno_evid_exec)").all() as { name: string; notnull: number; pk: number }[];
       assert.deepEqual(
         columns.map((c) => c.name).sort(),
-        ["address", "argv_digest", "id", "image_sha256", "seed", "source_bank"],
+        ["address", "argv_digest", "id", "image_sha256", "project_id", "seed", "source_bank"],
         "anno_evid_exec must carry exactly the no-change identity columns plus address and source_bank -- no run_class (plan 43-01's " +
           "verdict), no bank (unlike the annotation tables), and no other column",
       );
@@ -606,7 +404,7 @@ test("SCHEMA_VERSION 5: a fresh store carries anno_evid_exec with exactly the no
   }
 });
 
-test("SCHEMA_VERSION 5: a store whose anno_meta.schema_version is 3 is refused by name, naming both versions, with its bytes and mtime unchanged", () => {
+test("SCHEMA_VERSION 6: a store whose anno_meta.schema_version is 3 is refused by name, naming both versions, with its bytes and mtime unchanged", () => {
   const dir = mkdtempSync(join(tmpdir(), "anno-"));
   try {
     const path = join(dir, "proj.annostore");
@@ -625,7 +423,7 @@ test("SCHEMA_VERSION 5: a store whose anno_meta.schema_version is 3 is refused b
       (e: unknown) => {
         assert.ok(e instanceof AnnoStoreCorruptError, `expected AnnoStoreCorruptError, got ${String(e)}`);
         assert.match(e.message, /schema_version 3/, "the refusal must name the version it found");
-        assert.match(e.message, /expected 5/, "the refusal must name the version it wanted");
+        assert.match(e.message, /expected 6/, "the refusal must name the version it wanted");
         return true;
       },
     );
@@ -640,14 +438,14 @@ test("SCHEMA_VERSION 5: a store whose anno_meta.schema_version is 3 is refused b
   }
 });
 
-// IN-01 (46-REVIEW): the version-5 `reaffirm-refusal` doc comment in
+// IN-01 (46-REVIEW): the `reaffirm-refusal` doc comment in
 // `anno-types.ts` states, as part of its own decision basis, "a version-4
 // store does not open under this SCHEMA_VERSION" -- but until this test, no
 // committed fixture actually constructed one; the general `openStore()`
 // mismatch branch was exercised only via the version-3 fixture above. Same
 // shape as that test, `4` in place of `3` throughout, so the two fixtures
 // stay visibly parallel rather than one silently drifting from the other.
-test("SCHEMA_VERSION 5: a store whose anno_meta.schema_version is 4 is refused by name, naming both versions, with its bytes and mtime unchanged", () => {
+test("SCHEMA_VERSION 6: a store whose anno_meta.schema_version is 4 is refused by name, naming both versions, with its bytes and mtime unchanged", () => {
   const dir = mkdtempSync(join(tmpdir(), "anno-"));
   try {
     const path = join(dir, "proj.annostore");
@@ -665,7 +463,7 @@ test("SCHEMA_VERSION 5: a store whose anno_meta.schema_version is 4 is refused b
       (e: unknown) => {
         assert.ok(e instanceof AnnoStoreCorruptError, `expected AnnoStoreCorruptError, got ${String(e)}`);
         assert.match(e.message, /schema_version 4/, "the refusal must name the version it found");
-        assert.match(e.message, /expected 5/, "the refusal must name the version it wanted");
+        assert.match(e.message, /expected 6/, "the refusal must name the version it wanted");
         return true;
       },
     );

@@ -137,11 +137,10 @@ import { writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { applyWrite, applyWriteWithoutCommit, closeStore, openStore } from "./anno-store.ts";
-import type { AnnoStoreHandle } from "./anno-store.ts";
+import type { AnnoStoreHandle, ScopedDb } from "./anno-store.ts";
 
-/** The store connection a mutate callback receives. Taken from the handle so
- * this file never names the SQLite builtin itself. */
-type StoreDb = AnnoStoreHandle["db"];
+/** The project-scoped statement factory a mutate callback receives. */
+type StoreDb = ScopedDb;
 
 /** A write wrapper: `applyWrite` or its planted no-commit twin. */
 type Writer = (handle: AnnoStoreHandle, mutate: (db: StoreDb) => boolean) => unknown;
@@ -220,7 +219,7 @@ function mutateStore(storePath: string, write: Writer, range: RangeSpec): AnnoSt
   // would make this spawned helper the one caller that forgets.
   const handle = openStore(storePath, { workspaceRoot: dirname(storePath) });
   write(handle, (db) => {
-    db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)").run(
+    db.prepare("insert into anno_range(project_id, start, end_inclusive, data_type, bank) values ($pid, ?, ?, ?, ?)").run(
       range.start,
       range.endInclusive,
       range.dataType,
@@ -252,7 +251,7 @@ function mutateEvidence(
     writeFileSync(markerPath, `${process.pid}\n`);
   }
   write(handle, (db) => {
-    db.prepare("insert into anno_evid_exec(image_sha256, argv_digest, seed, address, source_bank) values (?, ?, ?, ?, ?)").run(
+    db.prepare("insert into anno_evid_exec(project_id, image_sha256, argv_digest, seed, address, source_bank) values ($pid, ?, ?, ?, ?, ?)").run(
       identity.imageSha256,
       identity.argvDigest,
       identity.seed,
@@ -299,7 +298,7 @@ if (mode === MODE_COMMIT || mode === MODE_NO_COMMIT) {
   // nothing; the SHARED lock arrives with the first statement that actually
   // reads a page. One row out of `anno_meta` is the smallest statement that
   // does it.
-  handle.db.prepare("select revision from anno_meta where id = 1").get();
+  handle.db.prepare("select revision from anno_project where project_id = ?").get(handle.projectId);
 
   // ONLY NOW is the marker written: the parent treats its appearance as "the
   // reader is holding the lock", and writing it any earlier would let the

@@ -593,7 +593,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       "existing scope's id and span; the incoming scope is neither trimmed nor split. Two scopes that merely TOUCH at " +
       "a boundary are disjoint and both accepted. An identical repeat SUCCEEDS and reports `changed: false`. " +
       "MIND THE ENDS: one transposed end (say $1000..$ffff instead of $1000..$10ff) makes every later scope above that " +
-      "start refuse -- use anno_remove_scope to undo it rather than burning revisions off the 32-deep snapshot ring.",
+      "start refuse -- use anno_remove_scope to undo it; the store keeps no revert history.",
     inputSchema: {
       type: "object",
       properties: {
@@ -609,8 +609,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     name: "anno_remove_scope",
     description:
       "Removes the scope whose span is EXACTLY start_address..end_address -- the inverse of anno_add_scope, and the " +
-      "recovery route for a transposed span, which would otherwise be undoable only by reverting through the 32-deep " +
-      "snapshot ring. The span must match both stored ends exactly: a scope is never trimmed, split or partially " +
+      "recovery route for a transposed span, which nothing else can undo. The span must match both stored ends exactly: a scope is never trimmed, split or partially " +
       "removed, because a partial removal would leave a shape nothing downstream can express while reporting success. " +
       "Read the stored spans with anno_get_blocks (include: [\"scopes\"]) first if you are unsure. Removing a scope " +
       "that is not there SUCCEEDS and reports `changed: false`.",
@@ -635,8 +634,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       "overlapping span is REFUSED naming both spans; two records that merely TOUCH at a boundary are disjoint and both " +
       "accepted; an identical repeat SUCCEEDS reporting `changed: false`; the same extent with a DIFFERENT reason is " +
       "REFUSED rather than overwriting the stored reason. MIND THE ENDS: one transposed end makes every later exclusion " +
-      "overlapping that start refuse -- use anno_include_range to undo it rather than burning revisions off the 32-deep " +
-      "snapshot ring.",
+      "overlapping that start refuse -- use anno_include_range to undo it; the store keeps no revert history.",
     inputSchema: {
       type: "object",
       properties: {

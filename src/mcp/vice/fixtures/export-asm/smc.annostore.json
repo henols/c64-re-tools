@@ -1,6 +1,5 @@
 {
-  "schemaVersion": 1,
-  "store": "smc.annostore",
+  "schemaVersion": 2,
   "ranges": [
     {
       "start": 2049,
@@ -12198,5 +12197,6 @@
       "sourceBank": "rom"
     }
   ],
-  "scopes": []
+  "scopes": [],
+  "excludedRanges": []
 }

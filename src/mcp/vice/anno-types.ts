@@ -334,19 +334,50 @@ import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
  * channel is shown to have shipped a version-4 or version-5 store to users
  * who have not yet upgraded past it. Absent that evidence the refusal stays
  * the default.
+ *
+ * ---------------------------------------------------------------------------
+ * VERSION 6, 2026-09-26 -- ONE DATABASE PER MACHINE, SCOPED BY PROJECT.
+ *
+ * WHAT THE BUMP BUYS: the broker owns one annotation database for the whole
+ * machine, and every row belongs to exactly one project. `anno_project` holds
+ * each project's id and its own revision; every other table except
+ * `anno_meta` carries `project_id`, and every UNIQUE constraint and index
+ * leads with it, so two projects can bind the same label name without
+ * colliding. `anno_meta` keeps only the schema version. The snapshot ring and
+ * `anno_snapshot` are gone: a whole-file snapshot of a shared database would
+ * copy and revert every project at once. Backup is the export document.
+ *
+ * THE OPTION SELECTED, BY NAME: `reaffirm-refusal`, as at versions 4 and 5.
+ * A version-5 file is a per-project store with no project column; nothing in
+ * it says which project its rows belong to, so a migration would have to
+ * guess. Its rows move by hand: export them with a version-5 build, then
+ * import the document into a project.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** The 6510's address space, inclusive at both ends. */
 export const ADDRESS_MIN = 0x0000;
 export const ADDRESS_MAX = 0xffff;
 
-/** How many pre-mutation snapshots the store's own snapshot ring directory
- * (`anno-store.ts`'s `snapshotDirFor()` -- a sibling named after the store
- * FILE, not the fixed `<dir>/snapshots` version 1 used) may hold before the
- * oldest is pruned. Declared here because the bound is a property of the
- * store's format; the pruning that enforces it belongs to the revert surface. */
-export const MAX_SNAPSHOT_REVISIONS = 32;
+/** A project id: a lowercase RFC 4122 UUID, as `randomUUID()` mints it. */
+const PROJECT_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
+ * Validates a project id before it is bound into any statement. The id is
+ * minted by the calling script and persisted, never derived from a path or a
+ * remote, so anything that is not a UUID is a damaged or hand-edited value and
+ * is refused rather than normalised -- a normalised id would name a different,
+ * empty project.
+ */
+export function assertProjectId(value: unknown): string {
+  if (typeof value !== "string" || !PROJECT_ID_SHAPE.test(value)) {
+    throw new AnnoProjectError(
+      `project id ${JSON.stringify(value)} is not a project id -- expected a lowercase UUID as randomUUID() mints it. Nothing has been read and nothing has been written.`,
+      { projectId: value },
+    );
+  }
+  return value;
+}
 
 /**
  * The twelve annotation data types, in the `anno_set_data_type` schema's own
@@ -857,6 +888,25 @@ export class AnnoRevisionArgumentError extends AnnoStoreError {
     this.name = "AnnoRevisionArgumentError";
     this.value = value;
     this.parameter = parameter;
+  }
+}
+
+export interface AnnoProjectErrorOptions {
+  /** The project id exactly as supplied. */
+  projectId?: unknown;
+}
+
+/** The project id is malformed, or names no project in this database. An
+ * unknown id is refused rather than treated as an empty project: "this
+ * project's annotations are gone" and "this project has none" must not read
+ * the same. */
+export class AnnoProjectError extends AnnoStoreError {
+  projectId?: unknown;
+
+  constructor(message: string, { projectId }: AnnoProjectErrorOptions = {}) {
+    super(message);
+    this.name = "AnnoProjectError";
+    this.projectId = projectId;
   }
 }
 

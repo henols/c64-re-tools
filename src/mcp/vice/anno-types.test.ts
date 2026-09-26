@@ -663,12 +663,12 @@ test("assertEnumName and parseVariantKey complete the validator set: the identif
 // Deriving `3` from the constant would make the pin read its own subject.
 // ---------------------------------------------------------------------------
 
-test("SCHEMA_VERSION is 5 -- a deliberate one-way bump that strands every version 4 store, not a number that drifted", () => {
+test("SCHEMA_VERSION is 6 -- a deliberate one-way bump that strands every version 5 store, not a number that drifted", () => {
   assert.equal(
     SCHEMA_VERSION,
-    5,
-    "version 5 is a deliberate one-way bump: it buys the anno_excluded_range table, and it strands every version 4 store on disk " +
-      "because the checkpoint decision was reaffirm-refusal -- no migration arm was written. An edit to this number must be a decision, " +
+    6,
+    "version 6 is a deliberate one-way bump: it buys one database for every project, scoped by project_id, and it strands every " +
+      "version 5 store on disk because the decision was reaffirm-refusal -- no migration arm was written. An edit to this number must be a decision, " +
       "which is why the expectation is typed out here by hand rather than derived from the constant it is checking.",
   );
 });

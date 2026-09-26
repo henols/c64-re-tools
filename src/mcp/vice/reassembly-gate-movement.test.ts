@@ -81,7 +81,6 @@ const IMAGE_LENGTH = 0x24; // covers $0800..$0823 inclusive
 function baseDocument(): StoreExportDocument {
   return {
     schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-    store: "movement-fixture.annostore",
     ranges: [
       { start: 0x0800, endInclusive: 0x0803, dataType: "byte", bank: null, provenance: "derived" },
       { start: 0x0810, endInclusive: 0x0813, dataType: "byte", bank: null, provenance: "derived" },
@@ -94,6 +93,7 @@ function baseDocument(): StoreExportDocument {
     xrefs: [],
     execObservations: [],
     scopes: [{ start: 0x0810, endInclusive: 0x0813 }],
+    excludedRanges: [],
   };
 }
 
