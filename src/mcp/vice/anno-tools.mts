@@ -7,7 +7,8 @@
 // caller opened. The definitions, the allow-list and every argument validator
 // live in `anno-tool-defs.mts`, which a client loads without the store; this
 // module re-exports them. The client half -- confining paths, staging the
-// files, reaching the broker -- is `anno-call-client.ts`.
+// files, opening the workspace's annotations.db -- is `anno-call-client.ts`
+// with `anno-workspace-store.ts`.
 //
 // WHY THIS FILE EXISTS, in the words of the decisions that shaped it:
 //

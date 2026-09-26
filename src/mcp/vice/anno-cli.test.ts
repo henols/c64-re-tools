@@ -35,7 +35,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { runAnnoCli as runAnnoCliWith, VERB_OPTIONS, checkAcceptedOptions } from "./anno-cli.ts";
-import { openTestAnnoBroker, type TestAnnoBroker } from "./inproc-anno-broker.ts";
+import { openTestProject } from "./workspace-store-fixture.ts";
+import { workspaceStoreRunner, type RunAnno } from "./anno-workspace-store.ts";
 import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 import { symbolsFromStore, commentsFromStore, crossReferencesFromStore } from "./anno-reports.mts";
 import { blocksFromStore } from "./block-class.mts";
@@ -57,7 +58,6 @@ import { buildCoverageReport, coverageFindings } from "./anno-coverage.mts";
 import type { AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.mts";
 import type { BlockEntry } from "./block-class.mts";
 import { repoRoot } from "./repo-root.ts";
-import { startHarnessBroker } from "./broker-harness.ts";
 import { ROOT_FILE_NAME, SYMBOLS_FILE_NAME, UNSCOPED_FILE_NAME } from "./anno-export-asm.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -85,7 +85,7 @@ const REMOVED_VERBS = ["bootstrap", "verify", "gen-enums", "export-lbl", "import
  * ONE generic route for the other nineteen former `anno_*` MCP tools,
  * added in the same change that removes all 25 from `tools/list` (D-13) --
  * and from seven to nine with `export-project` and `import-project`, the
- * backup pair for a project that lives only in the broker's database. */
+ * text form of a project's committed annotations.db. */
 const SURVIVING_VERBS = [
   "render-memmap",
   "coverage",
@@ -120,30 +120,31 @@ const RENDER_SIDECAR = {
 // ---------------------------------------------------------------------------
 
 /** The store the current test's verbs read, served as its workspace's
- * project by an in-process broker. Outside `serveStore()` there is none: a
- * verb that gets as far as the broker is refused as unreachable, and never
- * falls through to a real endpoint. */
-let served: { broker: TestAnnoBroker; workspace: string } | undefined;
+ * project through the client's own runner. Outside `serveStore()` there is
+ * none: a verb that gets as far as the runner fails loudly, and never falls
+ * through to this checkout's own .c64-re-tools/. */
+let served: { runAnno: RunAnno; close(): void; workspace: string } | undefined;
 
 /** Serves the store file at `storePath` as `workspace`'s annotation project
  * for the rest of the test: the database is that file, under
  * `FILE_STORE_PROJECT_ID`, so `openStore(storePath)` reads exactly what the
  * verbs read and write. */
 function serveStore(workspace: string, storePath: string): void {
-  served?.broker.close();
-  served = { broker: openTestAnnoBroker(workspace, { dbPath: storePath, projectId: FILE_STORE_PROJECT_ID }), workspace };
+  served?.close();
+  const project = openTestProject(workspace, { dbPath: storePath, projectId: FILE_STORE_PROJECT_ID });
+  served = { runAnno: project.runAnno, close: project.close, workspace };
 }
 
 afterEach(() => {
-  served?.broker.close();
+  served?.close();
   served = undefined;
 });
 
-/** Serves `workspace` with NO annotation project -- no project.json -- the
- * state a report must refuse. */
+/** Serves `workspace` with NO annotation project -- no annotations.db --
+ * the state a report must refuse. */
 function serveEmptyWorkspace(workspace: string): void {
-  served?.broker.close();
-  served = { broker: openTestAnnoBroker(workspace, { register: false }), workspace };
+  served?.close();
+  served = { runAnno: workspaceStoreRunner({ workspaceRoot: workspace }), close: () => {}, workspace };
 }
 
 /** Runs the CLI against the served project, with its workspace as the root. */
@@ -151,8 +152,8 @@ function runAnnoCli(argv: string[]): Promise<number> {
   return runAnnoCliWith(
     argv,
     served === undefined
-      ? { runRemote: async () => ({ ok: false, code: "unreachable", message: "no test store is served for this call" }) }
-      : { runRemote: served.broker.runRemote, workspaceRoot: served.workspace },
+      ? { runAnno: async () => ({ ok: false, code: "internal", message: "no test store is served for this call" }) }
+      : { runAnno: served.runAnno, workspaceRoot: served.workspace },
   );
 }
 
@@ -426,7 +427,7 @@ test("render-memmap: a workspace with no annotation project is refused, and noth
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /has no annotation project yet/);
-    assert.equal(existsSync(join(dir, ".c64-re-tools", "project.json")), false, "a report must not create the project it refused to find");
+    assert.equal(existsSync(join(dir, ".c64-re-tools", "annotations.db")), false, "a report must not create the project it refused to find");
     assert.equal(existsSync(join(dir, "memory-map.md")), false);
   });
 });
@@ -544,7 +545,7 @@ test("coverage: a workspace with no annotation project is refused BY NAME, and n
     const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["coverage", projectPath]));
     assert.notEqual(code, 0);
     assert.match(stderr, /has no annotation project yet/);
-    assert.equal(existsSync(join(dir, ".c64-re-tools", "project.json")), false, "a refused run must not create a project");
+    assert.equal(existsSync(join(dir, ".c64-re-tools", "annotations.db")), false, "a refused run must not create a project");
   });
 });
 
@@ -1627,10 +1628,10 @@ test("CR-03 (H): an in-workspace sidecar that is not JSON fails naming the path 
       runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", join(ws, "memory-map.md")]),
     );
     assert.notEqual(code, 0);
-    // The render runs in the broker, which learns only the sidecar's
-    // WORKSPACE-RELATIVE location -- never the client's own path.
+    // The report engine learns only the sidecar's WORKSPACE-RELATIVE
+    // location -- never the client's own path.
     assert.ok(stderr.includes('"sidecar.json"'), `the failure must still NAME the sidecar it could not parse; got ${stderr}`);
-    assert.ok(!stderr.includes(provenancePath), "the client's absolute path never reaches the broker, so it cannot be in the broker's message");
+    assert.ok(!stderr.includes(provenancePath), "the client's absolute path never reaches the engine, so it cannot be in the engine's message");
     assert.match(stderr, /not valid JSON/i, "the failure must still say WHAT went wrong");
     assert.ok(
       !`${stdout}\n${stderr}`.includes(token),
@@ -1869,12 +1870,12 @@ test("export-asm: --force re-writes a previous export of the same store into the
 // annotation store".
 // ---------------------------------------------------------------------------
 
-test("export-asm: --out that IS or CONTAINS the image or the ledger is refused, and --force does NOT lift it (T-47-14)", async () => {
+test("export-asm: --out that IS or CONTAINS the image, the ledger or the annotation store is refused, and --force does NOT lift it (T-47-14)", async () => {
   await withWorkspaceTempDir(async (ws) => {
     // Image and ledger each live in their OWN directory, so containment can
     // be asserted per-input without one scenario's directory accidentally
-    // also containing a DIFFERENT input. The annotations are the broker's,
-    // so there is no store file left for --out to land on.
+    // also containing a DIFFERENT input. The annotation store is the
+    // workspace's own .c64-re-tools/annotations.db.
     const imageDir = join(ws, "image-home");
     const ledgerDir = join(ws, "ledger-home");
     mkdirSync(imageDir);
@@ -1892,6 +1893,8 @@ test("export-asm: --out that IS or CONTAINS the image or the ledger is refused, 
       { out: imageDir, expect: /image/i, label: "CONTAINS the image" },
       { out: ledgerPath, expect: /ledger/i, label: "IS the ledger" },
       { out: ledgerDir, expect: /ledger/i, label: "CONTAINS the ledger" },
+      { out: join(ws, ".c64-re-tools", "annotations.db"), expect: /annotation store/i, label: "IS the annotation store" },
+      { out: join(ws, ".c64-re-tools"), expect: /annotation store/i, label: "CONTAINS the annotation store" },
     ];
 
     for (const { out, expect, label } of cases) {
@@ -1964,7 +1967,7 @@ test("export-asm: a workspace with no annotation project is refused, and none is
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /has no annotation project yet/);
-    assert.equal(existsSync(join(ws, ".c64-re-tools", "project.json")), false, "a report must not create the project it refused to find");
+    assert.equal(existsSync(join(ws, ".c64-re-tools", "annotations.db")), false, "a report must not create the project it refused to find");
     assert.equal(existsSync(outDir), false);
   });
 });
@@ -2381,7 +2384,7 @@ test("evid-disagreements: a workspace with no annotation project is refused, and
     const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements"]));
     assert.notEqual(code, 0);
     assert.match(stderr, /has no annotation project yet/);
-    assert.equal(existsSync(join(ws, ".c64-re-tools", "project.json")), false);
+    assert.equal(existsSync(join(ws, ".c64-re-tools", "annotations.db")), false);
   });
 });
 
@@ -2401,20 +2404,20 @@ function getSymbolsArgsJson(maxResults = 10): string {
   return JSON.stringify({ max_results: maxResults });
 }
 
-/** Runs `anno call` write-then-read through the real bin against a real
- * harness broker, from a workspace with no project yet: the write registers
- * one and persists project.json, the read finds the label in it. */
-async function spawnedWriteThenRead(ws: string, label: string, address: number, env: (brokerEnv: NodeJS.ProcessEnv) => NodeJS.ProcessEnv): Promise<void> {
-  const broker = await startHarnessBroker();
-  try {
-    const childEnv = env({ ...broker.childEnv, VICE_SKIP_RESOURCE_INSTALL: "1", MASTRA_TELEMETRY_DISABLED: "1", CLAUDE_PROJECT_DIR: ws });
+/** Runs `anno call` write-then-read through the real bin, from a workspace
+ * with no project yet: the write creates .c64-re-tools/annotations.db, the
+ * read finds the label in it. No broker is involved: the project is a file of
+ * the workspace. */
+async function spawnedWriteThenRead(ws: string, label: string, address: number, env: (base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv): Promise<void> {
+  {
+    const childEnv = env({ ...CLI_ENV, CLAUDE_PROJECT_DIR: ws });
     const setResult = spawnSync(
       process.execPath,
       [VICE_PROXY, "anno", "call", "anno_set_label_name", "--args", setLabelArgsJson(address, label)],
       { encoding: "utf8" as const, env: childEnv, timeout: CLI_TIMEOUT_MS },
     );
     assert.equal(setResult.status, 0, `anno_set_label_name via call must exit 0: stdout=${setResult.stdout} stderr=${setResult.stderr}`);
-    assert.ok(existsSync(join(ws, ".c64-re-tools", "project.json")), "the first write must persist the workspace's project id");
+    assert.ok(existsSync(join(ws, ".c64-re-tools", "annotations.db")), "the first write must create the workspace's annotations.db");
 
     const getResult = spawnSync(
       process.execPath,
@@ -2423,12 +2426,10 @@ async function spawnedWriteThenRead(ws: string, label: string, address: number, 
     );
     assert.equal(getResult.status, 0, `anno_get_symbols via call must exit 0: stdout=${getResult.stdout} stderr=${getResult.stderr}`);
     assert.match(getResult.stdout, new RegExp(label), "the label just set must round-trip back out through call");
-  } finally {
-    await broker.stop();
   }
 }
 
-test("call, Test 1: write-then-read against a real harness broker, from a workspace with no project yet (spawned, CLAUDE_PROJECT_DIR set)", async () => {
+test("call, Test 1: write-then-read through the real bin, from a workspace with no project yet (spawned, CLAUDE_PROJECT_DIR set)", async () => {
   await withWorkspaceTempDir(async (ws) => {
     await spawnedWriteThenRead(ws, "call_test1_label", 0xc000, (env) => env);
   });

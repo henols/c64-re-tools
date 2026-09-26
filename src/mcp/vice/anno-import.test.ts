@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { closeStore, currentRevision, listComments, listXrefs, openStore } from "./anno-store.mts";
 import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
-import { openTestAnnoBroker } from "./inproc-anno-broker.ts";
+import { openTestProject } from "./workspace-store-fixture.ts";
 import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 import { annoRegisterEntryFor } from "./anno-register.ts";
 import {
@@ -66,9 +66,9 @@ function importFile(handle: ReturnType<typeof openStore>, path: string, expected
 async function callInWorkspace(dir: string, name: string, args: Record<string, unknown>, deps?: Parameters<typeof runAnnoTool>[2]) {
   const previous = process.env.CLAUDE_PROJECT_DIR;
   process.env.CLAUDE_PROJECT_DIR = dir;
-  const broker = openTestAnnoBroker(dir, { dbPath: join(dir, "proj.annostore"), projectId: FILE_STORE_PROJECT_ID });
+  const broker = openTestProject(dir, { dbPath: join(dir, "proj.annostore"), projectId: FILE_STORE_PROJECT_ID });
   try {
-    return await runAnnoTool(name, args, { runRemote: broker.runRemote, ...deps });
+    return await runAnnoTool(name, args, { runAnno: broker.runAnno, ...deps });
   } finally {
     broker.close();
     if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;

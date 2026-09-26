@@ -127,6 +127,18 @@
   `2026-09-25-2240-deletion-cutover/`, `2026-09-26-0022-ghidra-without-alias/`
   and `2026-09-26-1019-no-cross-side-paths/`.
 
+## In Progress: project-owned store (v2.0.0)
+
+- **Spec:** `agent-os/specs/2026-09-27-0124-project-owned-store/`.
+- The annotation database is a project artifact: one SQLite file per project,
+  at `<project>/.c64-re-tools/annotations.db`, opened by the client and
+  committed with the project. This replaces the broker-owned store below
+  before any release shipped it.
+- Steps:
+  1. a client-owned store behind the existing runner seam;
+  2. remove the broker seam;
+  3. invert the boundary test, update the docs, close.
+
 ## Planned / Later
 
 **Operator surface**

@@ -96,7 +96,7 @@ import { join, sep } from "node:path";
 import { closeStore, openStore } from "./anno-store.mts";
 import { AnnoStorePathError, storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
-import { openTestAnnoBroker } from "./inproc-anno-broker.ts";
+import { openTestProject } from "./workspace-store-fixture.ts";
 import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 import { ViceError } from "./vice-errors.mts";
 
@@ -867,7 +867,7 @@ test("20. anno_import_ghidra_export: an export_path resolving outside the worksp
   try {
     const ws = join(root, "ws");
     mkdirSync(ws);
-    const broker = openTestAnnoBroker(ws, { dbPath: join(ws, "proj.annostore"), projectId: FILE_STORE_PROJECT_ID });
+    const broker = openTestProject(ws, { dbPath: join(ws, "proj.annostore"), projectId: FILE_STORE_PROJECT_ID });
 
     // An ABSOLUTE outside path, mirroring `anno-tools.test.ts`'s own store-path
     // confinement case -- this sidesteps any question of what a RELATIVE
@@ -877,7 +877,7 @@ test("20. anno_import_ghidra_export: an export_path resolving outside the worksp
     writeFileSync(outsideFile, "## REFERENCES\n## REFERENCE_COUNT 0\n", "utf8");
 
     process.env.CLAUDE_PROJECT_DIR = ws;
-    const result = await runAnnoTool("anno_import_ghidra_export", { export_path: outsideFile }, { runRemote: broker.runRemote });
+    const result = await runAnnoTool("anno_import_ghidra_export", { export_path: outsideFile }, { runAnno: broker.runAnno });
     broker.close();
     assert.equal(result.isError, true, "an export_path outside the workspace root must be refused, never read");
     assert.match(result.content[0]!.text, /export_path/);
@@ -899,10 +899,10 @@ test("21. anno_import_ghidra_export: a symlink inside the workspace whose target
     writeFileSync(join(outside, "export.txt"), "## REFERENCES\n## REFERENCE_COUNT 0\n", "utf8");
     symlinkSync(join(outside, "export.txt"), join(ws, "escape.txt"));
 
-    const broker = openTestAnnoBroker(ws, { dbPath: join(ws, "proj.annostore"), projectId: FILE_STORE_PROJECT_ID });
+    const broker = openTestProject(ws, { dbPath: join(ws, "proj.annostore"), projectId: FILE_STORE_PROJECT_ID });
 
     process.env.CLAUDE_PROJECT_DIR = ws;
-    const result = await runAnnoTool("anno_import_ghidra_export", { export_path: join(ws, "escape.txt") }, { runRemote: broker.runRemote });
+    const result = await runAnnoTool("anno_import_ghidra_export", { export_path: join(ws, "escape.txt") }, { runAnno: broker.runAnno });
     broker.close();
     assert.equal(result.isError, true, "a symlinked export_path resolving outside the workspace must be refused");
     assert.match(result.content[0]!.text, /export_path|AnnoStorePathError/);

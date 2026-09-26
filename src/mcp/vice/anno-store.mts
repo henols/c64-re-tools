@@ -106,6 +106,7 @@
 //      any SQL that does not name it; a raw `db.prepare` on a project table
 //      reads or writes EVERY project's rows. Only `anno_meta` and
 //      `anno_project` are reached through the raw connection.
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue, type StatementResultingChanges } from "node:sqlite";
@@ -663,6 +664,50 @@ export function projectStore(adb: AnnoDatabase, projectId: unknown, opts: { crea
   }
   readProjectRevision(handle);
   return handle;
+}
+
+/**
+ * Binds a workspace's annotation file to the ONE project it holds.
+ *
+ * With `create: true` a file with no project gets a new one, under a fresh
+ * random id. The check and the insert share one `begin immediate`, so two
+ * first writes racing on a new file agree on one project. Without `create`, a
+ * file with no project is refused. A file holding more than one project is
+ * always refused: picking one would be a guess.
+ */
+export function soleProjectStore(adb: AnnoDatabase, opts: { create?: boolean } = {}): AnnoStoreHandle {
+  const ids = (): string[] =>
+    (adb.db.prepare("select project_id from anno_project order by project_id").all() as { project_id: string }[]).map((r) => r.project_id);
+  let found = ids();
+  if (found.length === 0 && opts.create === true) {
+    adb.db.exec("begin immediate");
+    try {
+      found = ids();
+      if (found.length === 0) {
+        const minted = randomUUID();
+        adb.db.prepare("insert into anno_project(project_id, revision) values (?, 0)").run(minted);
+        found = [minted];
+      }
+    } catch (e) {
+      try {
+        adb.db.exec("rollback");
+      } catch {
+        // the original error is the one worth reporting
+      }
+      throw e;
+    }
+    commitTransaction(adb.db);
+  }
+  if (found.length === 0) {
+    throw new AnnoProjectError(`${adb.path} holds no annotation project -- refusing to read it as an empty one`);
+  }
+  if (found.length > 1) {
+    throw new AnnoProjectError(
+      `${adb.path} holds ${found.length} projects (${found.join(", ")}) -- a workspace's annotation file holds exactly one, and ` +
+        "this refuses to pick one.",
+    );
+  }
+  return projectStore(adb, found[0]);
 }
 
 /** The project a single-file store opened through `openStore` belongs to. */

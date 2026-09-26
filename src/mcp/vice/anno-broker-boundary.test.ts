@@ -1,14 +1,13 @@
-// anno-client-boundary.test.ts -- the client never opens the annotation
+// anno-broker-boundary.test.ts -- the broker never opens an annotation
 // database.
 //
-// The broker owns the one annotation database per machine: its worker thread
-// holds the only `DatabaseSync`, and every client (the `anno` CLI, `anno
-// call`, the MCP server) reaches the annotations through `anno_run`. That
-// holds only while no client-side module can load the store, so this file
-// checks it structurally: from every shipped module that is NOT host-bound
-// (not compiled into resources/ by build.ts), follow every value import
-// transitively and require that the closure never reaches `anno-store.mts`
-// and never names `node:sqlite`.
+// A project's annotations are an artifact of that project: its own
+// .c64-re-tools/annotations.db, opened in-process by the client. The broker
+// owns machine state only -- emulators, host tools, transfers -- so no module
+// it runs may load the store. This file checks that structurally: from every
+// host-bound module (compiled into resources/ by build.ts), follow every
+// value import transitively and require that the closure never reaches
+// `anno-store.mts` and never names `node:sqlite`.
 //
 // This restores, in its new shape, the `node:sqlite` confinement scan Phase 56
 // dropped from `anno-seam.test.ts`.
@@ -128,7 +127,9 @@ function clientBoundaryViolations(dir: string, roots: readonly string[]): Bounda
         continue;
       }
       for (const spec of valueImports(src)) {
-        const next = resolve(dirname(abs), spec);
+        let next = resolve(dirname(abs), spec);
+        // Host-bound sources import each other as the `.mjs` build emits.
+        if (!existsSync(next) && next.endsWith(".mjs")) next = next.replace(/\.mjs$/, ".mts");
         if (parent.has(next) || !existsSync(next)) continue;
         parent.set(next, abs);
         queue.push(next);
@@ -141,35 +142,40 @@ function clientBoundaryViolations(dir: string, roots: readonly string[]): Bounda
 /** The host-bound sources: each compiled artifact's `.mts`. */
 const HOST_BOUND_SOURCES = new Set(HOST_BOUND_ARTIFACTS.map((artifact) => artifact.replace(/\.mjs$/, ".mts")));
 
-/** Every shipped module that runs on the client: package.json files[] minus
- * the host-bound set. */
-function clientRoots(): string[] {
-  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
-  return pkg.files.filter((f) => /^[^/]+\.m?ts$/.test(f) && !HOST_BOUND_SOURCES.has(f));
+/** Every module the broker runs: the host-bound set. */
+function brokerRoots(): string[] {
+  return [...HOST_BOUND_SOURCES];
 }
 
-test("PRECONDITION: the client roots include the anno CLI, the call client and the proxy, and exclude the store and the worker", () => {
-  const roots = clientRoots();
-  for (const expected of ["vice-proxy.ts", "anno-cli.ts", "anno-call-client.ts", "anno-remote.ts", "anno-project.ts"]) {
-    assert.ok(roots.includes(expected), `${expected} must be scanned as a client root; roots: ${roots.join(", ")}`);
+test("PRECONDITION: the broker roots include the broker and its endpoint, and exclude the store", () => {
+  const roots = brokerRoots();
+  for (const expected of ["vice-broker.mts", "broker-control.mts", "broker-endpoint.mts", "host-tool.mts"]) {
+    assert.ok(roots.includes(expected), `${expected} must be scanned as a broker root; roots: ${roots.join(", ")}`);
   }
-  for (const hostBound of ["anno-store.mts", "anno-worker.mts", "anno-host.mts"]) {
-    assert.ok(HOST_BOUND_SOURCES.has(hostBound), `${hostBound} must be host-bound`);
-    assert.ok(!roots.includes(hostBound), `${hostBound} must not be a client root`);
-  }
+  assert.ok(!roots.includes("anno-store.mts"), "the store must not be host-bound");
 });
 
-test("no shipped client module value-imports anno-store.mts or names node:sqlite, directly or transitively", () => {
-  const violations = clientBoundaryViolations(HERE, clientRoots());
+test("the walk follows the broker's own .mjs-spelled imports into their .mts sources (non-vacuity)", () => {
+  const reached = new Set<string>();
+  // vice-broker.mts imports broker-home under its emitted .mjs name.
+  const violations = clientBoundaryViolations(HERE, ["vice-broker.mts"]);
+  assert.deepEqual(violations, []);
+  const src = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
+  for (const spec of valueImports(stripComments(src))) if (spec.endsWith(".mjs")) reached.add(spec);
+  assert.ok(reached.size >= 5, `precondition: vice-broker.mts imports at least five host-bound modules by .mjs name; found ${[...reached].join(", ")}`);
+});
+
+test("no host-bound module value-imports anno-store.mts or names node:sqlite, directly or transitively", () => {
+  const violations = clientBoundaryViolations(HERE, brokerRoots());
   assert.deepEqual(
     violations.map((v) => `${v.chain.join(" -> ")} (${v.reason})`),
     [],
-    "a client module reaches the annotation database; only the broker's worker may open it",
+    "a broker module reaches the annotation store; a project's annotations are opened by the client, never the broker",
   );
 });
 
 test("planted violations: a transitive import, a re-export and a dynamic import of the store are each reported; type-only imports are not", () => {
-  const dir = mkdtempSync(join(tmpdir(), "anno-client-boundary-"));
+  const dir = mkdtempSync(join(tmpdir(), "anno-broker-boundary-"));
   try {
     const write = (name: string, body: string) => writeFileSync(join(dir, name), body);
     write("anno-store.mts", 'import { DatabaseSync } from "node:sqlite";\nexport const db = DatabaseSync;\n');

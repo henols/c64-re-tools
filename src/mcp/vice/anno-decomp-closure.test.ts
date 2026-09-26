@@ -50,7 +50,7 @@
 //     this file's own helpers. The non-vacuity control at the bottom exists
 //     precisely so a future change that makes `--disagreements` optional
 //     reds this suite.
-import { test, before, after } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -61,9 +61,7 @@ import { fileURLToPath } from "node:url";
 import { openStore, closeStore } from "./anno-store.mts";
 import { exportStoreDocument, importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.mts";
 import { runAnnoCli } from "./anno-cli.ts";
-import { runAnnoRemote } from "./anno-remote.ts";
-import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
-import { seedBrokerProject } from "./inproc-anno-broker.ts";
+import { seedWorkspaceProject } from "./workspace-store-fixture.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures");
@@ -74,17 +72,6 @@ const MANIFEST_PATH = join(FIXTURES_DIR, "decomp-execution-manifest.json");
 // "computed hop count, never a fixed count" discipline (see that module's
 // header on the stale-offset incident this project has already had).
 const COMPLETENESS_SCRIPT = join(HERE, "..", "..", "..", "skills", "routine-queue-walker", "scripts", "completeness-report.ts");
-
-/** One real broker for the whole file, on a dynamic port and a temp
- * `VICE_BROKER_HOME`: every fixture workspace seeds its OWN project in it,
- * so the in-process verbs and the spawned gate read the same annotations. */
-let broker: HarnessBroker;
-before(async () => {
-  broker = await startHarnessBroker();
-});
-after(async () => {
-  await broker?.stop();
-});
 
 interface FixtureSpec {
   readonly dir: string;
@@ -176,8 +163,8 @@ interface FixtureWorkspace {
  * refuses a store path outside its own resolved workspace root by design
  * (T-29-28's mitigation, not an inconvenience to route around).
  *
- * The fixture's annotations are seeded as that workspace's project in the
- * file's harness broker, which is what `evid-disagreements`,
+ * The fixture's annotations are seeded as that workspace's own project, its
+ * .c64-re-tools/annotations.db, which is what `evid-disagreements`,
  * `decomp-completeness` and the spawned gate all read.
  *
  * The manifest is copied into the SAME temp directory: `decomp-completeness`
@@ -206,7 +193,7 @@ async function withFixtureWorkspace<T>(fixture: FixtureSpec, body: (ws: FixtureW
     } finally {
       closeStore(handle);
     }
-    seedBrokerProject(broker.home, tempDir, (project) => importStoreDocument(project, doc));
+    seedWorkspaceProject(tempDir, (project) => importStoreDocument(project, doc));
 
     return await body({ tempDir, storePath, manifestPath, doc, fixtureArg: `${fixture.dir}/${fixture.name}.prg` });
   } finally {
@@ -216,13 +203,10 @@ async function withFixtureWorkspace<T>(fixture: FixtureSpec, body: (ws: FixtureW
   }
 }
 
-/** The CLI's dependencies for `workspace`: its project, answered by the
- * file's harness broker over the real transport. */
+/** The CLI's dependencies for `workspace`: its own project, through the
+ * default runner. */
 function cliDeps(workspace: string) {
-  return {
-    runRemote: (call: Parameters<typeof runAnnoRemote>[0]) => runAnnoRemote(call, { port: broker.port, candidates: ["127.0.0.1"] }),
-    workspaceRoot: workspace,
-  };
+  return { workspaceRoot: workspace };
 }
 
 /** Runs `evid-disagreements --json` for `workspace`'s project through the
@@ -281,12 +265,11 @@ interface GateRun {
  * condition, proven here exactly as `routine-queue-walker` itself observes
  * it. NEVER an `import` (see this file's header) -- always a subprocess,
  * matching `skill-acme-build-cli.test.ts`'s own sanctioned cross-package
- * pattern. The gate's own CLI child dials the file's harness broker from
- * `workspace`.
+ * pattern. The gate's own CLI child reads `workspace`'s project.
  */
 function spawnGate(workspace: string, argv: readonly string[]): GateRun {
   assert.ok(existsSync(COMPLETENESS_SCRIPT), `the routine-queue-walker gate script must exist at ${COMPLETENESS_SCRIPT}`);
-  const env = { ...broker.childEnv, CLAUDE_PROJECT_DIR: workspace, VICE_SKIP_RESOURCE_INSTALL: "1", MASTRA_TELEMETRY_DISABLED: "1" };
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: workspace, VICE_SKIP_RESOURCE_INSTALL: "1", MASTRA_TELEMETRY_DISABLED: "1" };
   const r = spawnSync(process.execPath, [COMPLETENESS_SCRIPT, ...argv], { encoding: "utf8", timeout: 30_000, env });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
@@ -446,7 +429,7 @@ test("WR-02 Fix: a fixture whose image cannot be located reports imageUnavailabl
         scopes: [],
         excludedRanges: [],
       };
-      seedBrokerProject(broker.home, tempDir, (project) => importStoreDocument(project, doc));
+      seedWorkspaceProject(tempDir, (project) => importStoreDocument(project, doc));
     }
 
     const disagreements = await realDisagreements(tempDir);

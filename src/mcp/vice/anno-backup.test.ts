@@ -1,9 +1,8 @@
 // anno-backup.test.ts -- `anno export-project` and `anno import-project`, the
-// backup pair for a project that lives only in the broker's database.
+// text form of a project's committed annotations.db.
 //
-// Each workspace here gets its OWN in-process broker over its own temp
-// database, the way two machines would: the only thing that crosses between
-// them is the export document.
+// Each workspace here has its OWN annotations.db, the way two clones would:
+// the only thing that crosses between them is the export document.
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -11,9 +10,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runAnnoCli } from "./anno-cli.ts";
-import { openTestAnnoBroker, type TestAnnoBroker } from "./inproc-anno-broker.ts";
-import { readProjectId } from "./anno-project.ts";
-import { addExcludedRange, addScope, currentRevision, projectStore, setComment, setDataType, setLabel } from "./anno-store.mts";
+import { openTestProject, type TestProject } from "./workspace-store-fixture.ts";
+import { workspaceStoreRunner, type RunAnno } from "./anno-workspace-store.ts";
+import { addExcludedRange, addScope, currentRevision, setComment, setDataType, setLabel } from "./anno-store.mts";
 import { exportStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.mts";
 
 const cleanups: Array<() => void> = [];
@@ -27,13 +26,19 @@ function workspace(): string {
   return ws;
 }
 
-function broker(ws: string, register = true): TestAnnoBroker {
-  const b = openTestAnnoBroker(ws, { register });
-  cleanups.push(() => b.close());
-  return b;
+/** The workspace's own project, opened for populating and inspecting. */
+function project(ws: string): TestProject {
+  const p = openTestProject(ws);
+  cleanups.push(() => p.close());
+  return p;
 }
 
-async function anno(ws: string, b: TestAnnoBroker, argv: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+/** A workspace with no annotations.db yet: only the client's runner. */
+function noProject(ws: string): { runAnno: RunAnno } {
+  return { runAnno: workspaceStoreRunner({ workspaceRoot: ws }) };
+}
+
+async function anno(ws: string, b: { runAnno: RunAnno }, argv: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const origLog = console.log;
   const origError = console.error;
   const out: string[] = [];
@@ -41,7 +46,7 @@ async function anno(ws: string, b: TestAnnoBroker, argv: string[]): Promise<{ co
   console.log = (...args: unknown[]) => void out.push(args.map(String).join(" "));
   console.error = (...args: unknown[]) => void err.push(args.map(String).join(" "));
   try {
-    const code = await runAnnoCli(argv, { runRemote: b.runRemote, workspaceRoot: ws });
+    const code = await runAnnoCli(argv, { runAnno: b.runAnno, workspaceRoot: ws });
     return { code, stdout: out.join("\n"), stderr: err.join("\n") };
   } finally {
     console.log = origLog;
@@ -50,7 +55,7 @@ async function anno(ws: string, b: TestAnnoBroker, argv: string[]): Promise<{ co
 }
 
 /** One row of every class a project can hold. */
-function populate(b: TestAnnoBroker): void {
+function populate(b: TestProject): void {
   setDataType(b.handle, { start: 0xc000, endInclusive: 0xc005, dataType: "code" });
   setLabel(b.handle, { address: 0xc000, name: "start", kind: "User" });
   setComment(b.handle, { address: 0xc000, commentType: "side", text: "[confirmed-code] entry point" });
@@ -73,7 +78,7 @@ const EMPTY_DOCUMENT: StoreExportDocument = {
 
 test("export-project then import-project moves a whole project into another workspace's fresh project, row for row", async () => {
   const wsA = workspace();
-  const a = broker(wsA);
+  const a = project(wsA);
   populate(a);
   const exported = join(wsA, "backup.json");
   const out = await anno(wsA, a, ["export-project", "--out", exported]);
@@ -81,24 +86,24 @@ test("export-project then import-project moves a whole project into another work
   assert.match(out.stdout, /^export-project: wrote .*backup\.json \(project [0-9a-f-]{36}: 1 ranges, 1 labels, 1 comments/);
   assert.deepEqual(JSON.parse(readFileSync(exported, "utf8")), exportStoreDocument(a.handle), "the file is the project's export document");
 
-  // A second machine: its own database, a workspace with no project yet.
+  // A second clone: a workspace with no annotations.db yet.
   const wsB = workspace();
-  const b = broker(wsB, false);
+  const b = noProject(wsB);
   const document = join(wsB, "backup.json");
   writeFileSync(document, readFileSync(exported));
   const imported = await anno(wsB, b, ["import-project", document]);
   assert.equal(imported.code, 0, imported.stderr);
   assert.match(imported.stdout, /^import-project: imported .* into project [0-9a-f-]{36} \(1 ranges, 1 labels, 1 comments/);
 
-  const read = readProjectId(wsB);
-  assert.ok(read.present, "import-project is a write: it registers the workspace's project");
-  assert.notEqual(read.projectId, a.projectId, "the imported project is a new project, not the exporter's id");
-  assert.deepEqual(exportStoreDocument(projectStore(b.adb, read.projectId)), exportStoreDocument(a.handle));
+  assert.ok(existsSync(join(wsB, ".c64-re-tools", "annotations.db")), "import-project is a write: it creates the workspace's annotations.db");
+  const imported2 = project(wsB);
+  assert.notEqual(imported2.projectId, a.projectId, "the imported project is a new project, not the exporter's id");
+  assert.deepEqual(exportStoreDocument(imported2.handle), exportStoreDocument(a.handle));
 });
 
 test("import-project refuses a project that already holds annotations, naming what it holds, and leaves it untouched", async () => {
   const ws = workspace();
-  const b = broker(ws);
+  const b = project(ws);
   setLabel(b.handle, { address: 0x1000, name: "mine", kind: "User" });
   const before = exportStoreDocument(b.handle);
   const revision = currentRevision(b.handle);
@@ -115,7 +120,7 @@ test("import-project refuses a project that already holds annotations, naming wh
 
 test("import-project is one transaction: a document the store refuses part-way leaves the project empty", async () => {
   const ws = workspace();
-  const b = broker(ws);
+  const b = project(ws);
   const document = join(ws, "clash.json");
   // Every row is well-formed on its own, so validation passes; the store
   // refuses the second label because its name is already bound elsewhere --
@@ -142,7 +147,7 @@ test("import-project is one transaction: a document the store refuses part-way l
 
 test("import-project refuses a file that is not an export document, without echoing its bytes", async () => {
   const ws = workspace();
-  const b = broker(ws);
+  const b = project(ws);
   const token = "QQZZBACKUP";
   const cases: Array<{ body: string; expect: RegExp }> = [
     { body: `${token}\nnot json\n`, expect: /is not valid JSON/ },
@@ -163,7 +168,7 @@ test("import-project refuses a file that is not an export document, without echo
 
 test("export-project requires --out, refuses to overwrite without --force, and refuses a workspace with no project", async () => {
   const ws = workspace();
-  const b = broker(ws);
+  const b = project(ws);
   populate(b);
 
   const noOut = await anno(ws, b, ["export-project"]);
@@ -181,7 +186,7 @@ test("export-project requires --out, refuses to overwrite without --force, and r
   assert.equal(JSON.parse(readFileSync(existing, "utf8")).schemaVersion, STORE_EXPORT_SCHEMA_VERSION);
 
   const fresh = workspace();
-  const none = await anno(fresh, broker(fresh, false), ["export-project", "--out", join(fresh, "x.json")]);
+  const none = await anno(fresh, noProject(fresh), ["export-project", "--out", join(fresh, "x.json")]);
   assert.notEqual(none.code, 0);
   assert.match(none.stderr, /has no annotation project yet/);
   assert.equal(existsSync(join(fresh, "x.json")), false);
@@ -190,7 +195,7 @@ test("export-project requires --out, refuses to overwrite without --force, and r
 
 test("import-project takes exactly one document, and refuses a missing one by name", async () => {
   const ws = workspace();
-  const b = broker(ws);
+  const b = project(ws);
   const none = await anno(ws, b, ["import-project"]);
   assert.notEqual(none.code, 0);
   assert.match(none.stderr, /usage: import-project <file>/);

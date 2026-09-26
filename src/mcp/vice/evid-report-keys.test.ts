@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 import { closeStore, openStore, setDataType } from "./anno-store.mts";
 import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.mts";
 import { runAnnoTool as runAnnoToolWith } from "./anno-call-client.ts";
-import { openTestAnnoBroker, type TestAnnoBroker } from "./inproc-anno-broker.ts";
+import { openTestProject, type TestProject } from "./workspace-store-fixture.ts";
 import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -71,7 +71,7 @@ const FIXTURE_IDENTITY = {
 
 let ws: string;
 let storePath: string;
-let broker: TestAnnoBroker | undefined;
+let broker: TestProject | undefined;
 let previousProjectDir: string | undefined;
 let ANSWERS: {
   ingest: Record<string, unknown>;
@@ -85,7 +85,7 @@ before(async () => {
   previousProjectDir = process.env.CLAUDE_PROJECT_DIR;
   storePath = join(ws, "project.annostore");
 
-  broker = openTestAnnoBroker(ws, { dbPath: storePath, projectId: FILE_STORE_PROJECT_ID });
+  broker = openTestProject(ws, { dbPath: storePath, projectId: FILE_STORE_PROJECT_ID });
   const handle = broker.handle;
   {
     // "byte" maps to the neutral "data" class through block-class.mts's own
@@ -95,7 +95,7 @@ before(async () => {
     setDataType(handle, { start: 0x4000, endInclusive: 0x4000, dataType: "byte" });
   }
   process.env.CLAUDE_PROJECT_DIR = ws;
-  const runAnnoTool = (name: string, args: Record<string, unknown>) => runAnnoToolWith(name, args, { runRemote: broker!.runRemote });
+  const runAnnoTool = (name: string, args: Record<string, unknown>) => runAnnoToolWith(name, args, { runAnno: broker!.runAnno });
 
   const ingestResult = await runAnnoTool("anno_evid_ingest", {
     memmap_text: memmapReplyText([{ address: 0x4000, ram: "--x" }]),

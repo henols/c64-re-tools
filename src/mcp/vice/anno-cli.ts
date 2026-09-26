@@ -143,9 +143,8 @@ import { repoRoot } from "./repo-root.ts";
 // reaches this whole module only through its own dynamic import, so it never
 // becomes part of the server's startup cost.
 import { CURATED_ANNO_TOOLS } from "./anno-tool-defs.mts";
-import { brokerRefusal, remoteRunner, runAnnoTool, workspaceProject, type RunAnnoRemote } from "./anno-call-client.ts";
-import { AnnoProjectFileError } from "./anno-project.ts";
-import type { AnnoRemoteResult } from "./anno-remote.ts";
+import { annoRefusal, annoRunner, runAnnoTool } from "./anno-call-client.ts";
+import { annoDbPath, type AnnoCallResult, type RunAnno } from "./anno-workspace-store.ts";
 // The report engine: every report is computed there, from the store and the
 // bytes this verb stages. This module confines, reads, writes and prints.
 import type { AnnoReportName } from "./anno-reports.mts";
@@ -161,18 +160,19 @@ import type {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** What a verb reaches the broker through, and the workspace it runs in. The
+/** What a verb runs its call through, and the workspace it runs in. The
  * root is read only when a verb needs it, so a verb refused at parsing never
  * resolves one. */
 interface CliContext {
   workspaceRoot: () => string;
-  runRemote: RunAnnoRemote;
+  runAnno: () => RunAnno;
 }
 
-/** What `runAnnoCli()` reaches the broker through; tests inject an in-process
- * runner. Defaults to the broker's endpoint and `repoRoot()`. */
+/** What `runAnnoCli()` runs its calls through; tests inject a runner over
+ * their own database. Defaults to the workspace's annotations.db under
+ * `repoRoot()`. */
 export interface AnnoCliDeps {
-  runRemote?: RunAnnoRemote;
+  runAnno?: RunAnno;
   workspaceRoot?: string;
 }
 
@@ -183,10 +183,10 @@ interface ReportAnswer {
   files: { name: string; bytes: Uint8Array }[];
 }
 
-/** A refusal from the broker or the route to it. */
+/** A refused report call. */
 class ReportFailure extends Error {
-  readonly failure: Extract<AnnoRemoteResult, { ok: false }>;
-  constructor(failure: Extract<AnnoRemoteResult, { ok: false }>) {
+  readonly failure: Extract<AnnoCallResult, { ok: false }>;
+  constructor(failure: Extract<AnnoCallResult, { ok: false }>) {
     super(failure.message);
     this.failure = failure;
   }
@@ -194,8 +194,8 @@ class ReportFailure extends Error {
 
 /**
  * Runs one report for the workspace's project. Each input in `files` is a
- * confined local path, staged under its key; the broker receives its bytes,
- * never the path. A workspace with no project is refused: every report reads.
+ * confined local path, staged under its key; the engine receives its name and
+ * bytes, never the path. A read in a workspace with no project is refused.
  */
 async function runReport(
   ctx: CliContext,
@@ -204,7 +204,6 @@ async function runReport(
   files: Record<string, string | undefined>,
   mode: "read" | "write" = "read",
 ): Promise<ReportAnswer> {
-  const projectId = await workspaceProject(name, mode, ctx.workspaceRoot(), ctx.runRemote);
   const staged: Record<string, unknown> = { ...args };
   const slots: Record<string, string> = {};
   for (const [key, path] of Object.entries(files)) {
@@ -213,10 +212,10 @@ async function runReport(
     slots[slot] = path;
     staged[key] = { $file: slot };
   }
-  const result = await ctx.runRemote({ projectId, kind: "report", name, args: staged, files: slots });
+  const result = await ctx.runAnno()({ mode, kind: "report", name, args: staged, files: slots });
   if (!result.ok) throw new ReportFailure(result);
-  if (result.type !== "report") throw new Error(`the broker answered a report with a ${result.type} answer`);
-  return { projectId, json: result.json, files: result.files };
+  if (result.type !== "report") throw new Error(`a report was answered with a ${result.type} answer`);
+  return { projectId: result.projectId, json: result.json, files: result.files };
 }
 
 /** Prints a report failure: a refusal the engine wrote in full, verbatim;
@@ -226,7 +225,8 @@ function reportFailure(verb: string, err: unknown): number {
     const failure = err.failure;
     if (failure.code === "refused") console.error(failure.message);
     else if (failure.code === "failed") console.error(`${verb}: ${failure.message}`);
-    else console.error(`${verb}: ${brokerRefusal(failure).message}`);
+    else if (failure.code === "no_project") console.error(annoRefusal(verb, failure).message);
+    else console.error(`${verb}: ${failure.message}`);
   } else if (err instanceof AnnoProjectError) {
     // Already names the verb: "<verb> refused: this workspace has no ...".
     console.error(errMsg(err));
@@ -420,10 +420,10 @@ verbs:
       Writes this workspace's whole annotation project -- every range, label,
       comment, enum, cross-reference, observation, scope and exclusion -- as
       one JSON export document at --out, refusing to overwrite an existing
-      file unless --force is passed. The project lives only in the broker's
-      database and .c64-re-tools/project.json is not committed, so this
-      document is how a project is backed up, and how it moves to another
-      machine, clone or worktree. Requires an EXISTING annotation project.
+      file unless --force is passed. The document is a text copy of the
+      project's committed annotations.db: it diffs and reviews like source,
+      and it is the format the test fixtures use. Requires an EXISTING
+      annotation project.
 
   import-project <file>
       Fills this workspace's project from an export-project document, in one
@@ -435,13 +435,13 @@ verbs:
   call NAME (--args JSON | --args-file FILE)
       The name set and the argument shapes are exactly the former anno_* MCP
       tools' own. A write in a workspace with no annotation project yet
-      creates it: the broker registers a new project and its id is written to
-      .c64-re-tools/project.json.
+      creates it: .c64-re-tools/annotations.db, with its one project.
 
-Every annotation lives in the broker's database, in this workspace's
-project, named by .c64-re-tools/project.json. Every report verb except
-import-project reads it and refuses a workspace with no project; none derives
-one path from another -- this CLI never guesses.
+Every annotation lives in this workspace's project, the SQLite file
+.c64-re-tools/annotations.db -- a project artifact, committed with the rest of
+the project. Every report verb except import-project reads it and refuses a
+workspace with no project; none derives one path from another -- this CLI
+never guesses.
 `;
 
 function errMsg(err: unknown): string {
@@ -460,7 +460,7 @@ function errMsg(err: unknown): string {
  * refuses the rest before the verb ever runs.
  *
  * No verb takes a store: every annotation is the workspace's own project,
- * in the broker's database.
+ * in its .c64-re-tools/annotations.db.
  *
  * `export-asm` deliberately carries NO assembler-facing option. It writes
  * source and runs no assembler, so there is no binary to name, no exit status
@@ -683,8 +683,8 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
 
 /**
  * `render-memmap --provenance FILE --out FILE [--force] [--check]` -- the
- * generated-view verb. The broker renders the workspace's project with the
- * staged sidecar; this verb writes the file, or with `--check` compares it,
+ * generated-view verb. The report engine renders the workspace's project
+ * with the staged sidecar; this verb writes the file, or with `--check` compares it,
  * and never writes on `--check`.
  *
  * BOTH OF THIS VERB'S PATHS ARE CONFINED before any filesystem probe, because
@@ -986,13 +986,13 @@ function printCoverageReport(report: CoverageReport): void {
 
 /**
  * `coverage <image> [--out FILE] [--force] [--sample N]` -- the coverage
- * instrument, computed by the broker from the workspace's project and the
- * staged image. The image supplies the bytes; the project holds annotations
+ * instrument, computed by the report engine from the workspace's project
+ * and the staged image. The image supplies the bytes; the project holds annotations
  * and never bytes, so the measure has to be told which bytes it measures.
  *
  * BOTH PATHS ARE CONFINED -- the positional and `--out` -- through the one
  * seam, before any probe. The report's `project.path` is restored to the
- * confined path this verb read: the broker saw only the file's name.
+ * confined path this verb read: the engine saw only the file's name.
  *
  * The exit code is 0 for any report it managed to build, however poor the
  * numbers are -- a bad score is a result, not a failure. Non-zero is reserved
@@ -1181,13 +1181,14 @@ function pathIsOrContains(dir: string, candidate: string): boolean {
 
 /**
  * `export-asm <image> --out DIR [--ledger FILE] [--force]` -- a TREE of ACME
- * source files for a program, planned by the broker from the workspace's
- * project and the staged image, and written here.
+ * source files for a program, planned by the report engine from the
+ * workspace's project and the staged image, and written here.
  *
  * EVERY PATH IS CONFINED before any probe, and the RAW CALLER STRING IS DEAD
  * after it: the confined realpath is what is read, compared and written.
- * The output directory may not BE, and may not CONTAIN, the image or the
- * ledger, and `--force` does not lift that refusal: nobody types it meaning
+ * The output directory may not BE, and may not CONTAIN, the image, the
+ * ledger or the project's annotations.db, and `--force` does not lift that
+ * refusal: nobody types it meaning
  * "destroy my input". The directory's own overwrite contract is
  * `writeExportAsmTree()`'s.
  *
@@ -1240,10 +1241,15 @@ async function cmdExportAsm(rest: string[], ctx: CliContext): Promise<number> {
   }
   const outPath = confine("export-asm", out, workspaceRoot);
   if (outPath === undefined) return 1;
+  // The project's own database lives inside the workspace, so an --out at or
+  // above it would put the tree among the annotations it was exported from.
+  const storePath = confine("export-asm", annoDbPath(workspaceRoot), workspaceRoot);
+  if (storePath === undefined) return 1;
 
   for (const { path: inputPath, which } of [
     { path: imagePath, which: "image (<image>)" },
     { path: ledgerPath, which: "ledger (--ledger)" },
+    { path: storePath, which: "annotation store (.c64-re-tools/annotations.db)" },
   ]) {
     if (inputPath !== undefined && pathIsOrContains(outPath, inputPath)) {
       console.error(
@@ -1353,8 +1359,8 @@ function printEvidDisagreementsReport(label: string, r: EvidReconciliation): voi
 
 /**
  * `evid-disagreements [--json]` -- where the workspace's typed ranges and its
- * observed-execution evidence disagree, as the broker's reconciliation
- * answers it. `--json` prints the raw answer, with the project and the run
+ * observed-execution evidence disagree, as the report engine's
+ * reconciliation answers it. `--json` prints the raw answer, with the project and the run
  * identity beside it; otherwise `printEvidDisagreementsReport()` renders the
  * three states.
  */
@@ -1466,7 +1472,7 @@ function parseDecompCompletenessArgs(rest: string[]): DecompCompletenessParsedAr
  * [--json]` -- the completeness gate for one fixture whose annotations are
  * the workspace's project. Three required arguments, none defaulted from
  * another. This verb finds the fixture's manifest entry and stages the
- * fixture's own image beside it; the broker validates the disagreement
+ * fixture's own image beside it; the report engine validates the disagreement
  * document against the project's own runs and computes every measure.
  */
 async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<number> {
@@ -1807,7 +1813,7 @@ function printHazardReport(label: string, imagePath: string, r: HazardReport & {
 
 /**
  * `hazard-report --image FILE [--json]` -- the movement-hazard report for the
- * workspace's project over the staged image, as the broker computes it. It
+ * workspace's project over the staged image, as the report engine computes it. It
  * REPORTS and changes nothing. `--json` prints the raw answer with the
  * project and the image beside it.
  */
@@ -1853,10 +1859,9 @@ async function cmdHazardReport(rest: string[], ctx: CliContext): Promise<number>
 }
 
 // ---------------------------------------------------------------------------
-// The backup pair: `export-project` and `import-project`. The project lives
-// only in the broker's database and project.json is gitignored, so these are
-// how a project is saved and how it moves to another machine, clone or
-// worktree.
+// The text pair: `export-project` and `import-project`. The committed
+// annotations.db is binary, so these give it a text form that diffs and
+// reviews, and fill a fresh project from one -- the fixtures' own format.
 // ---------------------------------------------------------------------------
 
 interface ExportProjectParsedArgs {
@@ -2117,7 +2122,7 @@ async function cmdCall(rest: string[], ctx: CliContext): Promise<number> {
     return 1;
   }
 
-  const result = await runAnnoTool(name, parsed, { runRemote: ctx.runRemote, workspaceRoot: ctx.workspaceRoot() });
+  const result = await runAnnoTool(name, parsed, { runAnno: ctx.runAnno(), workspaceRoot: ctx.workspaceRoot() });
   const text = result.content.map((c) => c.text).join("");
   if (result.isError) {
     console.error(text);
@@ -2140,7 +2145,7 @@ export async function runAnnoCli(argv: string[], deps: AnnoCliDeps = {}): Promis
   let workspaceRoot: string | undefined = deps.workspaceRoot;
   const ctx: CliContext = {
     workspaceRoot: () => (workspaceRoot ??= repoRoot()),
-    runRemote: remoteRunner(deps),
+    runAnno: () => annoRunner({ runAnno: deps.runAnno, workspaceRoot: ctx.workspaceRoot() }),
   };
 
   if (!verb || verb === "--help" || verb === "-h") {

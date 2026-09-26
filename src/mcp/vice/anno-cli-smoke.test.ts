@@ -1,10 +1,10 @@
-// anno-cli-smoke.test.ts -- the shipped `anno` bin, spawned, against a REAL
-// harness broker (dynamic port, temp VICE_BROKER_HOME, stopped in after()).
+// anno-cli-smoke.test.ts -- the shipped `anno` bin, spawned, with its
+// default wiring: no injected runner and no broker.
 //
 // Every other anno CLI test drives `runAnnoCli()` in-process with an injected
-// runner. These few prove the default wiring: the bin finds the broker
-// through VICE_BROKER_CONTROL_PORT, a first write creates project.json, and
-// each report's result comes back from the broker into the file --out names.
+// runner. These few prove the default: the bin finds the workspace through
+// CLAUDE_PROJECT_DIR, a first write creates .c64-re-tools/annotations.db
+// there, and each report writes its result where --out names.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -13,19 +13,17 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
-import { readProjectId } from "./anno-project.ts";
+import { closeAnnoDatabase, openAnnoDatabase, soleProjectStore } from "./anno-store.mts";
+import { annoDbPath } from "./anno-workspace-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VICE_PROXY = join(HERE, "vice-proxy.ts");
 
-let broker: HarnessBroker;
 let ws: string;
 let fresh: string;
 let moved: string;
 
 before(async () => {
-  broker = await startHarnessBroker();
   ws = mkdtempSync(join(tmpdir(), "anno-cli-smoke-"));
   fresh = mkdtempSync(join(tmpdir(), "anno-cli-smoke-fresh-"));
   moved = mkdtempSync(join(tmpdir(), "anno-cli-smoke-moved-"));
@@ -50,28 +48,37 @@ before(async () => {
 });
 
 after(async () => {
-  await broker?.stop();
   for (const dir of [ws, fresh, moved]) if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
 });
 
 function anno(workspace: string, argv: string[]) {
   return spawnSync(process.execPath, [VICE_PROXY, "anno", ...argv], {
     encoding: "utf8" as const,
-    env: { ...broker.childEnv, CLAUDE_PROJECT_DIR: workspace, VICE_SKIP_RESOURCE_INSTALL: "1", MASTRA_TELEMETRY_DISABLED: "1" },
+    env: { ...process.env, CLAUDE_PROJECT_DIR: workspace, VICE_SKIP_RESOURCE_INSTALL: "1", MASTRA_TELEMETRY_DISABLED: "1" },
     timeout: 30_000,
   });
 }
 
-test("smoke: the first write through the bin registers the workspace's project, and export-asm writes the tree at --out", () => {
+/** The one project a workspace's annotations.db holds. */
+function projectIdOf(workspace: string): string {
+  const adb = openAnnoDatabase(annoDbPath(workspace), { unconfinedModuleDerivedPath: true });
+  try {
+    return soleProjectStore(adb).projectId;
+  } finally {
+    closeAnnoDatabase(adb);
+  }
+}
+
+test("smoke: the first write through the bin creates the workspace's annotations.db, and export-asm writes the tree at --out", () => {
   const typed = anno(ws, ["call", "anno_set_data_type", "--args", JSON.stringify({ start_address: "$c000", end_address: "$c005", data_type: "code" })]);
   assert.equal(typed.status, 0, typed.stderr);
-  assert.ok(existsSync(join(ws, ".c64-re-tools", "project.json")), "the first write must persist the workspace's project id");
+  assert.ok(existsSync(join(ws, ".c64-re-tools", "annotations.db")), "the first write must create the workspace's annotations.db");
   const labelled = anno(ws, ["call", "anno_set_label_name", "--args", JSON.stringify({ address: "$c000", name: "start" })]);
   assert.equal(labelled.status, 0, labelled.stderr);
 
   const exported = anno(ws, ["export-asm", join(ws, "game.prg"), "--out", join(ws, "game-src")]);
   assert.equal(exported.status, 0, exported.stderr);
-  assert.ok(readdirSync(join(ws, "game-src")).length >= 3, "the tree's files come back from the broker");
+  assert.ok(readdirSync(join(ws, "game-src")).length >= 3, "the tree's files are written at --out");
   assert.match(readFileSync(join(ws, "game-src", "symbols.a"), "utf8"), /^start = \$c000$/m);
 });
 
@@ -101,10 +108,7 @@ test("smoke: export-project and import-project move the project into another wor
   writeFileSync(join(moved, "backup.json"), readFileSync(backup));
   const imported = anno(moved, ["import-project", join(moved, "backup.json")]);
   assert.equal(imported.status, 0, imported.stderr);
-  const movedId = readProjectId(moved);
-  const originalId = readProjectId(ws);
-  assert.ok(movedId.present && originalId.present);
-  assert.notEqual(movedId.projectId, originalId.projectId, "the import fills a new project of the second workspace's own");
+  assert.notEqual(projectIdOf(moved), projectIdOf(ws), "the import fills a new project of the second workspace's own");
 
   const again = anno(moved, ["export-project", "--out", join(moved, "again.json")]);
   assert.equal(again.status, 0, again.stderr);

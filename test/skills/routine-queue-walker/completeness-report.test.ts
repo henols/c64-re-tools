@@ -474,9 +474,9 @@ test("a full survivor list, non-empty entry-point/referenced-address failures an
 // that quietly softens either refusal reds this suite.
 //
 // THIS SPAWNS A REAL SUBPROCESS (`main()` -> `fetchCompletenessReport()` ->
-// the resolved `vice-proxy.ts anno decomp-completeness`) and starts NO VICE
-// process. Control 1 is refused before any broker is asked; control 2 asks a
-// harness broker of its own (dynamic port, temp home), stopped in a finally.
+// the resolved `vice-proxy.ts anno decomp-completeness`), and starts no VICE
+// process and no broker. Control 1 is refused before any project is read;
+// control 2 reads a project seeded into its temp workspace.
 // ---------------------------------------------------------------------------
 
 test("PLANTED CONTROL 1 (permanent): omitting --disagreements refuses by name with exit 1, through main()", () => {
@@ -490,7 +490,7 @@ test("PLANTED CONTROL 1 (permanent): omitting --disagreements refuses by name wi
     // Deliberately a NONEXISTENT manifest: control 1's own refusal fires on
     // the ABSENCE of --disagreements, before any file-existence check -- this
     // reproduces a real captured transcript as a permanent pin. No project
-    // and no broker are needed for THIS control.
+    // is needed for THIS control.
     exitCode = main(["--fixture", "scratch/control1.prg", "--manifest", "/nonexistent/whatever.json"]);
   } finally {
     console.error = originalError;
@@ -502,26 +502,23 @@ test("PLANTED CONTROL 1 (permanent): omitting --disagreements refuses by name wi
 
 test("PLANTED CONTROL 2 (permanent, anti-vacuity): a fabricated run identity is refused by name, distinguishing 'no disagreements' from 'the query was never run', through main() against a REAL project", async () => {
   // This control genuinely needs a REAL annotation project -- the
-  // run-identity mismatch check runs in the broker, against the project's
-  // own evid-runs table, so control 1's "no project needed at all" shortcut
-  // does not apply here. The project is seeded into a harness broker's own
-  // database -- CI-safe (no VICE) and non-vacuous: a project with ZERO
-  // recorded runs makes EVERY complete-but-non-matching runIdentity a
-  // genuine anti-vacuity refusal, exactly like this same control's own
-  // captured real-store transcript.
+  // run-identity mismatch check runs against the project's own evid-runs
+  // table, so control 1's "no project needed at all" shortcut does not apply
+  // here. The project is seeded as the temp workspace's annotations.db --
+  // CI-safe (no VICE) and non-vacuous: a project with ZERO recorded runs
+  // makes EVERY complete-but-non-matching runIdentity a genuine anti-vacuity
+  // refusal, exactly like this same control's own captured real-store
+  // transcript.
   const { setDataType } = await import("../../../src/mcp/vice/anno-store.mts");
-  const { seedBrokerProject } = await import("../../../src/mcp/vice/inproc-anno-broker.ts");
-  const { startHarnessBroker } = await import("../../../src/mcp/vice/broker-harness.ts");
+  const { seedWorkspaceProject } = await import("../../../src/mcp/vice/workspace-store-fixture.ts");
 
-  const broker = await startHarnessBroker();
-  const saved = { dir: process.env.CLAUDE_PROJECT_DIR, port: process.env.VICE_BROKER_CONTROL_PORT };
+  const saved = process.env.CLAUDE_PROJECT_DIR;
   try {
     await withWorkspaceTempDir(async (dir) => {
-      seedBrokerProject(broker.home, dir, (project) => setDataType(project, { start: 0x0800, endInclusive: 0x0800, dataType: "byte" }));
+      seedWorkspaceProject(dir, (project) => setDataType(project, { start: 0x0800, endInclusive: 0x0800, dataType: "byte" }));
       // main() spawns the CLI with this process's environment: point it at
-      // the workspace and at this control's own broker.
+      // the workspace.
       process.env.CLAUDE_PROJECT_DIR = dir;
-      process.env.VICE_BROKER_CONTROL_PORT = String(broker.port);
 
       const manifestPath = join(dir, "manifest.json");
       writeFileSync(
@@ -567,10 +564,7 @@ test("PLANTED CONTROL 2 (permanent, anti-vacuity): a fabricated run identity is 
       assert.match(stderrOutput, /fabricated or foreign document is refused, never rendered/, "must carry the anti-vacuity reason verbatim");
     });
   } finally {
-    for (const [key, value] of [["CLAUDE_PROJECT_DIR", saved.dir], ["VICE_BROKER_CONTROL_PORT", saved.port]] as const) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-    await broker.stop();
+    if (saved === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = saved;
   }
 });

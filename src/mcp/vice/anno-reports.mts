@@ -880,10 +880,10 @@ function hazardReport(handle: AnnoStoreHandle, args: Record<string, unknown>, in
 }
 
 // ---------------------------------------------------------------------------
-// The backup pair. A project lives only in the broker's database, and
-// project.json is gitignored, so these two are how a project moves between
-// machines, worktrees and clones -- and how it is backed up. The document is
-// the same export document the committed fixtures use.
+// The text pair. A project's annotations.db is committed as a binary file,
+// so these two give it a text form that diffs and reviews, and fill a fresh
+// project from one. The document is the same export document the committed
+// fixtures use.
 // ---------------------------------------------------------------------------
 
 /** The file name export-project's document travels under. */
@@ -942,7 +942,7 @@ function importProjectReport(handle: AnnoStoreHandle, args: Record<string, unkno
     throw new AnnoReportRefusal(
       `import-project: this workspace's project already holds annotations (${held.map(([k, n]) => `${n} ${k}`).join(", ")}) -- ` +
         "import-project fills an EMPTY project only and never merges. To replace it, save it first with " +
-        "`anno export-project --out FILE`, delete .c64-re-tools/project.json, and import into the new, empty project.",
+        "`anno export-project --out FILE`, delete .c64-re-tools/annotations.db, and import into the new, empty project.",
     );
   }
 

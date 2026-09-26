@@ -67,46 +67,6 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "host-tool-endpoint.mjs",
   "broker-children.mjs",
   "broker-watchdog.mjs",
-  // The annotation engine: the store, the tool dispatcher, the report
-  // engine and their whole import closure. The broker runs it; no path ever
-  // reaches it.
-  "anno-acme-ident.mjs",
-  "anno-bank.mjs",
-  "anno-confidence.mjs",
-  "anno-coverage.mjs",
-  "anno-derive.mjs",
-  "anno-details.mjs",
-  "anno-enum-gen.mjs",
-  "anno-export-asm.mjs",
-  "anno-graphics.mjs",
-  "anno-hazard-report.mjs",
-  "anno-import.mjs",
-  "anno-index.mjs",
-  "anno-join.mjs",
-  "anno-memmap-render.mjs",
-  "anno-provenance-ledger.mjs",
-  "anno-regbits-gen.mjs",
-  "anno-reports.mjs",
-  "anno-store.mjs",
-  "anno-store-export.mjs",
-  "anno-tools.mjs",
-  "anno-tool-defs.mjs",
-  "anno-memmap-check.mjs",
-  "anno-tree-writer.mjs",
-  "anno-types.mjs",
-  "anno-worker.mjs",
-  "anno-host.mjs",
-  "block-class.mjs",
-  "capture-predicate.mjs",
-  "disasm-decoder.mjs",
-  "disasm-opcodes.mjs",
-  "disasm-renderer.mjs",
-  "evid-ingest.mjs",
-  "evid-reconcile.mjs",
-  "memmap-lookup.mjs",
-  "prg-image.mjs",
-  "textmon-memmap.mjs",
-  "vice-errors.mjs",
 ];
 
 /** A plain data file that travels WITH the compiled artifacts above, never
@@ -129,10 +89,6 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
  * from, deployed or not. */
 export const HOST_BOUND_DATA_FILES: ReadonlyArray<{ from: string; to: string }> = [
   { from: "src/mcp/vice/prerequisites.json", to: "prerequisites.json" },
-  // The annotation engine's package data, found "beside `here`" first by
-  // memmap-lookup.mts and anno-enum-gen.mts / anno-reports.mts.
-  { from: "skills/c64-memory-mapping/memmap.json", to: "memmap.json" },
-  { from: "src/mcp/vice/anno-regbits.json", to: "anno-regbits.json" },
 ];
 
 /** The generated-file banner (01.6-RESEARCH.md §F), a function of the

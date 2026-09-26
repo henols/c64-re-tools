@@ -56,7 +56,7 @@ import { decodeRawData } from "./prg-image.mts";
 // through its published face, `anno_get_binary_info`.
 import { openStore, closeStore } from "./anno-store.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
-import { openTestAnnoBroker } from "./inproc-anno-broker.ts";
+import { openTestProject } from "./workspace-store-fixture.ts";
 import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -4024,7 +4024,7 @@ test("CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer id
   const ws = mkdtempSync(join(tmpdir(), "anno-coverage-agree-"));
   const previous = process.env.CLAUDE_PROJECT_DIR;
   try {
-    const broker = openTestAnnoBroker(ws, { dbPath: join(ws, "project.annostore"), projectId: FILE_STORE_PROJECT_ID });
+    const broker = openTestProject(ws, { dbPath: join(ws, "project.annostore"), projectId: FILE_STORE_PROJECT_ID });
     process.env.CLAUDE_PROJECT_DIR = ws;
 
     for (const [name, bytes, expectOrigin] of [
@@ -4033,7 +4033,7 @@ test("CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer id
     ] as const) {
       const image = writeImageFile(ws, name, bytes);
       const loaded = loadProjectImage(image);
-      const info = await runAnnoTool("anno_get_binary_info", { image }, { runRemote: broker.runRemote });
+      const info = await runAnnoTool("anno_get_binary_info", { image }, { runAnno: broker.runAnno });
       assert.equal(info.isError, false, info.content[0]!.text);
       const toolBody = JSON.parse(info.content[0]!.text) as { origin: number; body_bytes: number };
       assert.equal(loaded.payloadDecoded, true, `${name}: the coverage loader must accept what the tool surface accepts`);

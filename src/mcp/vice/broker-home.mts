@@ -198,14 +198,6 @@ export function brokerRunsDir(kind: string, opts: BrokerHomeOptions = {}): strin
   return join(brokerHome(opts), "runs", kind);
 }
 
-/** The machine's one annotation database -- every project's rows, scoped by
- * project id -- inside an `anno` subdirectory of the machine-level root. No
- * legacy variable overrides it; `VICE_BROKER_HOME` moves it with everything
- * else. Only the broker's anno worker opens it. */
-export function brokerAnnoDbPath(opts: BrokerHomeOptions = {}): string {
-  return join(brokerHome(opts), "anno", "annotations.db");
-}
-
 /** The environment variable that places the Ghidra projects root. */
 export const BROKER_GHIDRA_DIR_ENV = "VICE_BROKER_GHIDRA_DIR";
 

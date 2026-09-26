@@ -56,7 +56,8 @@ import {
   assertAnnoTool,
 } from "./anno-tools.mts";
 import { runAnnoTool as runAnnoToolWith, type AnnoCallDeps } from "./anno-call-client.ts";
-import { openTestAnnoBroker, type TestAnnoBroker } from "./inproc-anno-broker.ts";
+import { openTestProject, type TestProject } from "./workspace-store-fixture.ts";
+import { workspaceStoreRunner } from "./anno-workspace-store.ts";
 import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { accessMapRanges, parseAccessMap } from "./textmon-memmap.mts";
@@ -76,12 +77,12 @@ const ANNO_CALL_CLIENT_SOURCE = readFileSync(join(HERE, "anno-call-client.ts"), 
 /** The in-process broker the current test's calls reach. Outside `withStore`
  * there is none, and a call that gets as far as the broker fails loudly --
  * it never falls through to a real endpoint. */
-let activeBroker: TestAnnoBroker | undefined;
+let activeBroker: TestProject | undefined;
 
 /** Runs one call against the active in-process broker. */
 function runAnnoTool(name: string, args: unknown, deps: AnnoCallDeps = {}): ReturnType<typeof runAnnoToolWith> {
   return runAnnoToolWith(name, args, {
-    runRemote: activeBroker?.runRemote ?? (async () => ({ ok: false, code: "unreachable", message: "no test broker is active for this call" })),
+    runAnno: activeBroker?.runAnno ?? (async () => ({ ok: false, code: "internal", message: "no test project is active for this call" })),
     ...deps,
   });
 }
@@ -100,7 +101,7 @@ async function withStore(
   const ws = mkdtempSync(join(tmpdir(), "anno-"));
   const previous = process.env.CLAUDE_PROJECT_DIR;
   const storePath = join(ws, "project.annostore");
-  const broker = openTestAnnoBroker(ws, { dbPath: storePath, projectId: FILE_STORE_PROJECT_ID });
+  const broker = openTestProject(ws, { dbPath: storePath, projectId: FILE_STORE_PROJECT_ID });
   try {
     seed(broker.handle);
     process.env.CLAUDE_PROJECT_DIR = ws;
@@ -202,18 +203,14 @@ test("a store argument is refused by name: the broker owns the store, and a call
 test("a read in a workspace with no project is refused and creates nothing -- 'gone' and 'empty' stay distinguishable", async () => {
   const ws = mkdtempSync(join(tmpdir(), "anno-"));
   const previous = process.env.CLAUDE_PROJECT_DIR;
-  const broker = openTestAnnoBroker(ws, { register: false });
   try {
     process.env.CLAUDE_PROJECT_DIR = ws;
-    activeBroker = broker;
-    const result = await runAnnoTool("anno_get_symbols", { max_results: 10 });
+    const result = await runAnnoTool("anno_get_symbols", { max_results: 10 }, { runAnno: workspaceStoreRunner({ workspaceRoot: ws }) });
     assert.equal(result.isError, true);
     assert.match(result.content[0]!.text, /anno_get_symbols failed: \[AnnoProjectError\]/);
     assert.match(result.content[0]!.text, /has no annotation project yet/);
-    assert.equal(existsSync(join(ws, ".c64-re-tools", "project.json")), false, "a read must not create the project");
+    assert.equal(existsSync(join(ws, ".c64-re-tools")), false, "a read must not create the project");
   } finally {
-    activeBroker = undefined;
-    broker.close();
     if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
     else process.env.CLAUDE_PROJECT_DIR = previous;
     rmSync(ws, { recursive: true, force: true });

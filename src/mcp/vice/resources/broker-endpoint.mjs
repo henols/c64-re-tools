@@ -985,7 +985,7 @@ function sendHostToolLineAwaitReply(socket, line, timeoutMs) {
             const obj = parsed;
             if (obj.kind === "error") {
                 const message = typeof obj.message === "string" ? obj.message : "vice: the broker refused the request with an unrecognisable error reply";
-                finish({ ok: false, reason: `vice: ${message}`, ...(typeof obj.code === "string" ? { code: obj.code } : {}) });
+                finish({ ok: false, reason: `vice: ${message}` });
                 return;
             }
             finish({ ok: true, value: obj });
@@ -1097,26 +1097,6 @@ function dialKeptSocket(tag, options) {
 /** Dials the fixed endpoint for a host-tool session (tag `HOST_TOOL_TAG`). */
 export function dialHostToolSession(options = {}) {
     return dialKeptSocket(HOST_TOOL_TAG, options).then((dialed) => dialed.ok ? { ok: true, session: makeHostToolSession(dialed.socket) } : dialed);
-}
-/** The hello tag of an annotation call's connection. */
-export const ANNO_TAG = "anno";
-/** Dials the fixed endpoint for an annotation call (tag `ANNO_TAG`). */
-export function dialAnnoSession(options = {}) {
-    return dialKeptSocket(ANNO_TAG, options).then((dialed) => {
-        if (!dialed.ok)
-            return dialed;
-        const socket = dialed.socket;
-        const hostTool = makeHostToolSession(socket);
-        const session = {
-            stage: (files, replyTimeoutMs) => hostTool.stage(files, replyTimeoutMs),
-            async run(line, replyTimeoutMs = DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS) {
-                const result = await sendHostToolLineAwaitReply(socket, { ...line, op: "anno_run" }, replyTimeoutMs);
-                return result.ok ? { ok: true, response: result.value } : result;
-            },
-            close: () => hostTool.close(),
-        };
-        return { ok: true, session };
-    });
 }
 /** The hello tag of a long-lived control connection: the one that carries
  * acquire/release/status and monitor claims, and whose close is the lease's
