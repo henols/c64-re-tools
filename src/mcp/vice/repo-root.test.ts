@@ -9,7 +9,7 @@
 // vice-session.mjs -- both are deleted in plan 04.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -146,6 +146,27 @@ test("repoRoot() last-resort fallback pins the HOP COUNT as a property of depth,
     assert.equal(repoRoot({ from: moduleDir, env: {}, exists: () => false }), root);
   } finally {
     console.error = originalError;
+  }
+});
+
+test("repoRoot() last-resort fallback counts its three hops from the PACKAGE directory: the compiled copy in <package>/dist climbs from <package>, not from dist/", () => {
+  // buildServer() compiles this module into dist/, one level below the
+  // package directory. The package.json marker picks the package directory,
+  // so the hop count stays a property of the package's depth.
+  const root = mkdtempSync(join(tmpdir(), "reporoot-dist-"));
+  const packageDir = join(root, "src", "mcp", "vice");
+  const distDir = join(packageDir, "dist");
+  mkdirSync(distDir, { recursive: true });
+  const exists = (p: string): boolean => p === join(packageDir, "package.json");
+
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    assert.equal(repoRoot({ from: distDir, env: {}, exists }), root);
+    assert.equal(repoRoot({ from: packageDir, env: {}, exists }), root);
+  } finally {
+    console.error = originalError;
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

@@ -475,12 +475,13 @@ export async function dialBrokerEndpoint(options: DialBrokerEndpointOptions = {}
  * machine-level bin) both produce a path the refusing client has no way to
  * compute.
  *
- * It names the plugin (or checkout) tree with a `<plugin-root>` placeholder
- * the reader fills in, never a computed path, and never an `npx` form:
+ * It names both routes in one literal: the npm package's `vice-mcp` bin,
+ * and the plugin (or checkout) tree with a `<plugin-root>` placeholder the
+ * reader fills in -- never a computed path, and never an `npx` form:
  * never-auto-install binds shipped remedy text too, and `npx -y` installs.
  *
- * README.md's "Starting the broker" section quotes this exact string;
- * change both in the SAME change.
+ * README.md's "Starting the broker" section and src/mcp/vice/README.md
+ * name the same two commands; change them in the SAME change.
  *
  * Deliberately does NOT join `prerequisites.json`: that file's `kind` field
  * is a closed two-member union (`"executable"` | `"directory"`) enforced by
@@ -489,15 +490,12 @@ export async function dialBrokerEndpoint(options: DialBrokerEndpointOptions = {}
  * real failed dial) would add pre-flight-flavoured indirection for no
  * benefit (RESEARCH.md's own Deferred Question, answered "no, inline the
  * constant instead"). */
-export const BROKER_START_COMMAND = "node <plugin-root>/src/mcp/vice/vice-cli.mjs broker";
+export const BROKER_START_COMMAND = "vice-mcp broker (npm install) or node <plugin-root>/src/mcp/vice/vice-cli.mjs broker (plugin or checkout)";
 
-/** D-05's supporting fact: CI derives both packages' versions from the same
- * `v*` tag and publishes them together, so a major-version skew is only
- * possible when a user updates one side (the broker, or this client's own
- * installed copy) and not the other. Both names are surfaced in the rank-4
- * message so the reader knows both packages move in lockstep. */
+/** The client and the broker ship in one package, so a major-version skew
+ * only happens when the broker was started from a different install (an
+ * older checkout, plugin or npm copy) than the one this client runs from. */
 const SERVER_PACKAGE_NAME = "@henols/vice-mcp";
-const INSTALLER_PACKAGE_NAME = "@henols/c64-re-tools";
 
 /** D-08: appended to a refusal ONLY when some candidate's hostname RESOLVED
  * -- since every observation in a DialFailure already represents a FAILED
@@ -574,7 +572,7 @@ function rank4Message(failure: DialFailure): string {
   const brokerMajor = skewed?.version !== undefined ? parseLeadingMajor(skewed.version) : null;
   let whichSide: string;
   if (clientMajor !== null && brokerMajor !== null && clientMajor < brokerMajor) {
-    whichSide = `this client is behind -- update ${SERVER_PACKAGE_NAME} (and ${INSTALLER_PACKAGE_NAME}, published together)`;
+    whichSide = `this client is behind -- update the install this client runs from (${SERVER_PACKAGE_NAME}, the plugin or the checkout)`;
   } else if (clientMajor !== null && brokerMajor !== null && clientMajor > brokerMajor) {
     whichSide = `the broker is behind -- stop it and start one from the current package`;
   } else {
@@ -582,8 +580,8 @@ function rank4Message(failure: DialFailure): string {
   }
   return (
     `vice: this client (${SERVER_PACKAGE_NAME} v${failure.clientVersion}) and the broker (v${brokerVersion}) ` +
-    `are on incompatible major versions -- ${whichSide}. ${SERVER_PACKAGE_NAME} and ${INSTALLER_PACKAGE_NAME} ` +
-    `are always published together at the same version, so bringing one up to date means bringing both:\n` +
+    `are on incompatible major versions -- ${whichSide}. The client and the broker ship in the same package, ` +
+    `so start the broker from the same install this client runs from:\n` +
     `  ${BROKER_START_COMMAND}` +
     rootlessDisclosure(failure)
   );

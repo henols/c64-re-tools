@@ -19,7 +19,6 @@
     "reverse-engineering",
     "mcp"
   ],
-  "skills": "./src/skills/",
   "mcpServers": "./.mcp.json",
   "defaultEnabled": false
 }

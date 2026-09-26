@@ -28,9 +28,9 @@
 // under `fixtures/vsf/` observed to trigger it.
 //
 // THIS MODULE MUST BE LISTED IN `package.json`'s `files[]`. Two mechanical
-// reasons: the skill-side route (`src/skills/c64-ram-capture/scripts/
-// vsf-slice.ts`) resolves this file inside the published tarball on the
-// npm-installer route, and the structural census over `shippedTsModules()` is
+// reasons: the skill-side route (`skills/c64-ram-capture/scripts/
+// vsf-slice.ts`) resolves this file (compiled, from `dist/`) inside the
+// published package when the MCP server is npm-installed, and the structural census over `shippedTsModules()` is
 // derived from `files[]`, so a module absent from that array is outside every
 // structural guard's scanned set entirely.
 //
@@ -388,9 +388,9 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
 // WHY THE ENTRY POINT LIVES HERE AT ALL, rather than in a sibling CLI module:
 // the skill-side wrapper needs a route to this layout knowledge across a
 // package boundary. THE CONSTRAINT, MEASURED: the MCP server ships as one
-// npm package whose `files[]` covers only `src/mcp/vice/`, the skills ship
-// in the other package, and a plain cross-package import resolves on
-// neither installer route. This project's own precedent for that exact
+// npm package whose `files[]` covers only `src/mcp/vice/`, each skill is
+// installed on its own by `npx skills add`, and a plain cross-package
+// import resolves from neither side. This project's own precedent for that exact
 // constraint (the MCP-side disk-image reader deleted in Phase 40 plan
 // 40-06, once it moved to the seam that now provides its old capability)
 // answered it with a second, independent copy of a *stable, published*
@@ -415,7 +415,7 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
 //     `node:crypto`, and names this module in comments alone. A repo-wide
 //     grep finds NO non-test module importing it. Today's only non-test
 //     consumers are this module's OWN CLI -- invoked as a subprocess by
-//     `src/skills/c64-ram-capture/scripts/vsf-slice.ts`, which is a spawn
+//     `skills/c64-ram-capture/scripts/vsf-slice.ts`, which is a spawn
 //     and not an import -- and `shippedTsModules()`'s structural census,
 //     which reads the file rather than importing it either.
 //

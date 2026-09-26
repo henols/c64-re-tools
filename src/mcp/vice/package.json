@@ -95,6 +95,7 @@
     "anno-bank.ts",
     "anno-graphics.ts",
     "memmap-lookup.ts",
+    "dist/",
     "resources",
     "tools-manifest.stock.json",
     "README.md",
@@ -139,11 +140,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "node build.ts",
     "generate:readme": "node prereq-readme-gen.ts --write",
-    "smoke": "node smoke.ts"
+    "smoke": "node smoke.ts",
+    "prepack": "node build.ts --server"
   },
   "dependencies": {
     "@mastra/mcp": "1.15.0",
-    "@mastra/core": "1.55.0"
+    "@mastra/core": "1.55.0",
+    "@modelcontextprotocol/sdk": "1.30.0"
   },
   "devDependencies": {
     "@types/node": "24.13.3",

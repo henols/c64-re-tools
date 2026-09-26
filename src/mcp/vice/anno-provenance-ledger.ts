@@ -5,7 +5,7 @@
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
 // Nothing in this repository has ever READ the provenance ledger. It has one
-// writer -- `renderLedger()` in `src/skills/c64-provenance-diff/scripts/
+// writer -- `renderLedger()` in `skills/c64-provenance-diff/scripts/
 // diff-images.ts` -- and zero readers, because the requirement governing this
 // module requires the verdict be READ from the existing ledger, "never
 // re-derived". Recomputing it in-process would force the
@@ -73,7 +73,7 @@
 //     not of a reader bug -- accepting it would mean joining a store range
 //     against a table that does not describe the whole address space.
 //
-// This module imports NOTHING from `src/skills/` (the shipped `@henols/
+// This module imports NOTHING from `skills/` (the shipped `@henols/
 // vice-mcp` tarball does not contain that tree, and `anno-join.ts:26` already
 // states the rule for this module family). Every path this module reads is
 // handed to it already resolved, exactly as `anno-export-asm.ts`'s own `imagePath`

@@ -8,7 +8,7 @@
 // standing, because it made a reassembly claim nothing verified: it produced
 // something that looked like ACME source and asserted, in effect, that
 // assembling it would reproduce the program. No assembler ever ran. Withdrawing
-// it was the right call and the withdrawal notices in both skill trees are the
+// it was the right call and the withdrawal notices in the skill docs are the
 // record that the capability was missing.
 //
 // This module is the rebuild, over this project's own annotation store, and it is

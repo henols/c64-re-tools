@@ -12,7 +12,7 @@ description: <what it does, one sentence>. Use when asked to <trigger>,
 **<The one rule whose violation is expensive.>** <Why, 1-2 lines.>
 
 ```bash
-S=src/skills/c64-petcat/scripts/petcat.ts   # from the repo root
+S=skills/c64-petcat/scripts/petcat.ts   # from the repo root
 ```
 
 ## <Task sections, in the order the work happens>

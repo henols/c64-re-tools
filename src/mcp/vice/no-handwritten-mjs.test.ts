@@ -44,15 +44,14 @@ function repoFiles(): string[] {
 
 test("planted violations are caught and build-owned output is not", () => {
   const planted = [
-    "src/skills/c64-petcat/scripts/petcat.mjs",
-    "installer/scripts/helper.js",
+    "skills/c64-petcat/scripts/petcat.mjs",
+    "test/skills/helper.js",
     "src/mcp/vice/tool.cjs",
     "src/mcp/vice/resources/not-in-the-build-list.mjs",
   ];
   const owned = [
     "src/mcp/vice/resources/vice-broker.mjs",
     "src/mcp/vice/vice-cli.mjs",
-    "installer/bin/cli.mjs",
     ".agents/skills/mastra/scripts/provider-registry.mjs",
     "src/mcp/vice/node_modules/x/index.js",
     "src/mcp/vice/stock-tools.ts",

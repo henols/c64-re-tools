@@ -115,7 +115,7 @@ import { provenanceForRange, readProvenanceLedger } from "./anno-provenance-ledg
 // does exactly this for `c64-memory-mapping`'s own `driver.ts` -- and tests
 // are not in `package.json`'s `files[]`, so the shipped-closure rule this
 // file's own header names is untouched.
-import { renderLedger } from "../../skills/c64-provenance-diff/scripts/diff-images.ts";
+import { renderLedger } from "../../../skills/c64-provenance-diff/scripts/diff-images.ts";
 import {
   addExcludedRange,
   addScope,
@@ -3786,7 +3786,7 @@ const FILTERED_VERDICT = "CRACKER-PATCH";
 /**
  * The planted range's own text: printable PETSCII (space, digits, and
  * uppercase letters share the same byte values as ASCII in unshifted PETSCII
- * text mode -- `src/skills/c64-petcat/SKILL.md`) reading as crack-credit
+ * text mode -- `skills/c64-petcat/SKILL.md`) reading as crack-credit
  * text -- exactly the shape a plausible heuristic would reach for and drop.
  */
 const PLANTED_TEXT = "CRACKED BY GRP";

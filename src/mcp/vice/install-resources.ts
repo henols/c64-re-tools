@@ -86,8 +86,11 @@ export type ResourceStatus = "missing" | "present" | "diverged";
  * this hop wrong is silent and total: readdirSync() throws inside
  * resourceEntries(), but ensureResourcesInstalled() catches everything by
  * contract (D-3 above), so every command keeps reporting success while
- * nothing is ever deployed. */
-export const RESOURCES_DIR = join(HERE, "resources");
+ * nothing is ever deployed. The compiled copy of this module runs from
+ * dist/, one level below the package root, so the second candidate is one
+ * directory up. */
+export const RESOURCES_DIR =
+  [join(HERE, "resources"), join(HERE, "..", "resources")].find((c) => existsSync(c)) ?? join(HERE, "resources");
 
 /** Where resources/ gets deployed to, for a given repo root. Always
  * `<root>/.c64-re-tools/bin` -- moved 2026-09-08 (D-33) under the single

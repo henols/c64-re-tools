@@ -1,4 +1,4 @@
-// Coverage for src/skills/c64-program-recon/scripts/derive.ts -- the
+// Coverage for skills/c64-program-recon/scripts/derive.ts -- the
 // c64-program-recon skill's CLI, which derives VIC banking/mode, sprite
 // pointers and reset/IRQ vector state from register values and a RAM image.
 // It has no external dependency (pure arithmetic, no assembler, no
@@ -13,7 +13,7 @@
 // This file lives in src/mcp/vice/ -- not next to derive.ts -- because test
 // discovery here (this package's `npm test` glob and `test-gate.ts`'s
 // enumeration) is a non-recursive listing of ONE directory. A test file
-// under src/skills/c64-program-recon/scripts/ would never be discovered by
+// under skills/c64-program-recon/scripts/ would never be discovered by
 // either gate. The script itself is reached by a relative path computed
 // from this file's own URL, joined outward into the sibling skills tree.
 //
@@ -36,7 +36,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // Two levels up out of src/mcp/vice/, back down into the sibling skills
 // tree -- see this file's own header for why this hop, not a colocated
 // test, is the only route discovery actually exercises.
-const SCRIPT_PATH = join(HERE, "..", "..", "skills", "c64-program-recon", "scripts", "derive.ts");
+const SCRIPT_PATH = join(HERE, "..", "..", "..", "skills", "c64-program-recon", "scripts", "derive.ts");
 
 const REQUIRED_IMAGE_SIZE = 65536;
 

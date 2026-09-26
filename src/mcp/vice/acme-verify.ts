@@ -437,11 +437,11 @@ export interface AcmeVerifyTreeOptions {
 /**
  * ACME's argv flags, frozen. Deliberately EXCLUDES the binary token, the `-o`
  * output path and the source path, so the flag list has one named subject that
- * a test can compare against `src/skills/acme-build/scripts/acme.ts`'s own
+ * a test can compare against `skills/acme-build/scripts/acme.ts`'s own
  * `args` array.
  *
  * The two constructions are a deliberate second implementation of the same
- * invocation: `src/mcp/vice/**` and `src/skills/**` publish as separate npm
+ * invocation: `src/mcp/vice/**` and `skills/**` publish as separate npm
  * packages and cannot import each other, so a shared module is not reachable
  * without inventing a third package for one flag array. `acme-verify.test.ts`
  * reads both lists off disk and goes red on any divergence beyond three
@@ -475,12 +475,12 @@ export const ACME_VERIFY_ARGV_FLAGS: readonly string[] = Object.freeze([
 const FORMAT_FLAG = "-f";
 
 /** ACME's `--msvc` diagnostic shape, the SAME regex the sibling build driver
- * carries at `src/skills/acme-build/scripts/acme.ts`:
+ * carries at `skills/acme-build/scripts/acme.ts`:
  * `file(line) : Error (Zone <z>): message`.
  *
  * This is a DELIBERATE second implementation of one shape, for exactly the
  * reason `ACME_VERIFY_ARGV_FLAGS` is (see plan 30-01's assumption-delta
- * decision): `src/mcp/vice/**` and `src/skills/**` publish as separate npm
+ * decision): `src/mcp/vice/**` and `skills/**` publish as separate npm
  * packages that cannot import each other, so a shared module is not reachable
  * without inventing a third package for one regex. The accepted cost is that
  * the two can drift; the argv-agreement test in `acme-verify.test.ts` is the

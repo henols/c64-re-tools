@@ -127,7 +127,7 @@
 //     name provably never reaches a child.
 //   - Never re-derive the register set from a second hardcoded list. It comes
 //     from `anno-regbits.json`'s own keys, via `loadRegBits()`, always.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -140,7 +140,9 @@ import type { AnnoStoreHandle } from "./anno-store.ts";
 import { AnnoLabelError } from "./anno-types.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REGBITS_PATH = join(HERE, "anno-regbits.json");
+// Beside this module (the package root), else one directory up (the
+// compiled dist/ copy, one level below the package root).
+const REGBITS_PATH = [join(HERE, "anno-regbits.json"), join(HERE, "..", "anno-regbits.json")].find((c) => existsSync(c)) ?? join(HERE, "anno-regbits.json");
 
 /** The ceiling a caller states instead of trusting a producer's own default
  * (which was 50, `handler.rs:1074-1077`). The "no silent caps" rule: the

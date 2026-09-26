@@ -64,17 +64,23 @@
   tool, in this order: environment variable, then `.c64-re-tools/tools.json`, then
   `$PATH` or a sibling of `x64sc`. Every refusal quotes the remedy from that file,
   and the README install tables are generated from it.
-- The Claude Code plugin carries the MCP server and the skills. The npm
-  installer (`npx @henols/c64-re-tools`) copies the skills only: it writes no
-  `.mcp.json`, never runs `npm` or `npx`, refuses the removed `--vendor`,
-  and declares no dependencies. No shipped remedy text uses `npx -y`; the
-  broker is started with `node <plugin-root>/src/mcp/vice/vice-cli.mjs broker`.
-  CI publishes both packages through OIDC from `v*` tags.
+- Skills install with the `skills` CLI (`npx skills add henols/c64-re-tools
+  --skill '*'`) straight from the root `skills/` folder; our own npm installer
+  is retired. A skill installed without `c64-ram-capture` refuses by name and
+  gives the install command. Skill-script tests live in `test/skills/` and
+  derived evidence in `evidence/`, so neither ships.
+- The MCP server comes from the Claude Code plugin, or from
+  `npm i -g @henols/vice-mcp`: its `prepack` compiles the server graph into
+  `dist/`, so `vice-mcp`, `vice-mcp anno` and `vice-mcp broker` run from
+  `node_modules` (`smoke-packed.ts` proves it in CI). Other agents wire it with
+  `npx add-mcp vice-mcp`. The broker is started by hand. No shipped remedy
+  text uses `npx -y`. CI publishes `@henols/vice-mcp` through OIDC from `v*`
+  tags. Spec: `agent-os/specs/2026-09-26-2049-skills-cli-install/`.
 - TypeScript only. No hand-written JavaScript remains: skill scripts are
   plain `.ts` (each skill's `scripts/` has a `{"type":"module"}`
   `package.json`), repo-only tools and fixture generators are `.ts`, and the
-  two package bins (`vice-cli`, the installer CLI) are `.mts` sources that
-  `build.ts` compiles beside themselves (`ENTRY_ARTIFACTS`).
+  package bin `vice-cli` is an `.mts` source that `build.ts` compiles beside
+  itself (`ENTRY_ARTIFACTS`).
   `no-handwritten-mjs.test.ts` fails on any other `.mjs`/`.js`. Spec:
   `agent-os/specs/2026-09-26-1946-mjs-to-ts-no-auto-install/`.
 
@@ -121,10 +127,6 @@
   against a primary release note.
 
 **Known defects and gaps**
-- An npm-installed `@henols/vice-mcp` cannot start the server or `anno`:
-  `vice-cli.mjs` imports `vice-proxy.ts`, and Node never strips types under
-  `node_modules`. The plugin (or a checkout) is the supported route. Fixing
-  it means compiling the server's whole import graph.
 - The text-monitor command timeout does nothing. `TextMonitorClient.command()`
   ignores `timeoutMs`, so a VICE that does not respond can hang while it holds
   the channel lock.
@@ -141,7 +143,8 @@
 **Cleanup**
 - Remove byte-identical assertions from the tests. The owner has decided this;
   its requirements are not written yet.
-- Optionally, move the colocated tests into a dedicated test folder.
+- Optionally, move the server's colocated tests into a dedicated test folder
+  (the skill-script tests already live in `test/skills/`).
 
 ## Explicitly Out of Scope
 

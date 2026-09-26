@@ -546,15 +546,16 @@ test("non-vacuity floor: CLI_PATH_ARGUMENTS has at least CLI_PATH_ARGUMENT_FLOOR
 // ---------------------------------------------------------------------------
 
 test("WR-20: no Node child is spawned as a bare \"node\" -- every site passes process.execPath", () => {
-  // This directory plus every skill's `scripts/` -- the skill scripts are the
-  // other tree that spawns Node children (the host-tool endpoint client).
-  const skillsDir = join(HERE, "..", "..", "skills");
-  const roots = [
-    HERE,
-    ...readdirSync(skillsDir, { withFileTypes: true })
-      .filter((d) => d.isDirectory() && existsSync(join(skillsDir, d.name, "scripts")))
-      .map((d) => join(skillsDir, d.name, "scripts")),
-  ];
+  // This directory, every skill's `scripts/` -- the skill scripts are the
+  // other tree that spawns Node children (the host-tool endpoint client) --
+  // and every test/skills/<skill>/ folder holding those scripts' tests.
+  const skillsDir = join(HERE, "..", "..", "..", "skills");
+  const skillTestsDir = join(HERE, "..", "..", "..", "test", "skills");
+  const subdirs = (root: string, leaf: string) =>
+    readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(join(root, d.name, leaf)))
+      .map((d) => join(root, d.name, leaf));
+  const roots = [HERE, ...subdirs(skillsDir, "scripts"), ...subdirs(skillTestsDir, ".")];
   const offenders: string[] = [];
   let scanned = 0;
   for (const root of roots) {

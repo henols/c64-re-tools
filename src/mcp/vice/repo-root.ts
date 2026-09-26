@@ -48,6 +48,14 @@
 // branches 1-3's depth-independence and branch 4's fixed hop count would not
 // survive). See repo-root.test.ts's own standing caution for that
 // distinction, drawn explicitly there for the first time by this move.
+//
+// COMPILED COPY (npm package): build.ts's buildServer() compiles this module
+// into dist/, one level below the package directory. Branch 4 therefore
+// counts its three hops from the PACKAGE directory, not blindly from
+// `from`: `from` itself when it holds a package.json, else `from`'s parent
+// when that one does (the dist/ case), else `from` unchanged. The marker
+// check keeps the hop count a property of the package directory's depth,
+// which is what the paragraph above pins.
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, sep } from "node:path";
@@ -86,6 +94,18 @@ function isInside(child: string, parent: string): boolean {
   const c = resolve(child);
   const p = resolve(parent);
   return c === p || c.startsWith(p.endsWith(sep) ? p : p + sep);
+}
+
+/** The package directory branch 4 counts its hops from: `from` when it
+ * holds a package.json, else `from`'s parent when that one does (the
+ * compiled copy in dist/), else `from` unchanged. See the header's
+ * "COMPILED COPY" paragraph. */
+function packageDirFor(from: string, exists: (path: string) => boolean): string {
+  const here = resolve(from);
+  if (exists(join(here, "package.json"))) return here;
+  const parent = dirname(here);
+  if (exists(join(parent, "package.json"))) return parent;
+  return here;
 }
 
 /**
@@ -166,16 +186,17 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
     return resolve(cwp);
   }
 
+  const packageDir = packageDirFor(from, exists);
+  const fallback = resolve(packageDir, "..", "..", "..");
   if (!warnedNoMarkerFound) {
     warnedNoMarkerFound = true;
-    const fallback = resolve(from, "..", "..", "..");
     console.error(
       `warn: could not find a .git ancestor above ${from} and CONTAINER_WORKSPACE_PATH is not set -- ` +
         `falling back to three levels up (${fallback}), the shape <root>/src/mcp/<server>/ implies. ` +
         `This is a last resort; if it's wrong, set CONTAINER_WORKSPACE_PATH or run from inside a git repo.`
     );
   }
-  return resolve(from, "..", "..", "..");
+  return fallback;
 }
 
 /** The ONE definition of the tool-written root every writer in this codebase
@@ -294,8 +315,18 @@ export function supervisorDir(opts: RepoRootOptions = {}): string {
 // install-resources.ts's own header describes ("Cannot access 'HERE' before
 // initialization") -- install-resources.ts takes the repo root as an
 // argument specifically so it never needs to import this file back.
+//
+// SKIPPED UNDER node_modules: an npm-installed copy (the compiled dist/
+// build) never deploys. The deploy copies the obsolete launcher, and with
+// no project marker above a global install, repoRoot() would resolve inside
+// <prefix>/lib and the deploy would write there. The plugin and a checkout
+// never run from under node_modules, so they still deploy as before.
+function runsUnderNodeModules(dir: string): boolean {
+  return resolve(dir).split(sep).includes("node_modules");
+}
+
 try {
-  ensureResourcesInstalled({ root: repoRoot() });
+  if (!runsUnderNodeModules(HERE)) ensureResourcesInstalled({ root: repoRoot() });
 } catch {
   // ensureResourcesInstalled() already never throws (D-3) -- this catch is
   // belt-and-suspenders against a future change to that contract, not a

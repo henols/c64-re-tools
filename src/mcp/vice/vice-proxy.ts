@@ -92,7 +92,7 @@ import { repoRoot, toolsDir } from "./repo-root.ts";
 // The single version-resolution seam (quick-260819-tsz, D-5) -- PROXY_VERSION
 // below is the only consumer in this file; see version.mts's own header for
 // why this file must never re-derive any part of the algorithm itself.
-import { runtimeVersion } from "./version.mts";
+import { runtimeVersion, DEV_PLACEHOLDER } from "./version.mts";
 // The client half of the broker protocol. Acquisition and release go over
 // the TCP control session (dialControlSession()/BrokerControlSession).
 import {
@@ -102,7 +102,7 @@ import {
 } from "./vice-broker-client.ts";
 import { brokerStateDir } from "./broker-home.mts";
 import { BROKER_START_COMMAND } from "./broker-endpoint.mts";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 // The wire-layer replacement (this plan, D-01): MCPServer owns tools/list's
@@ -117,8 +117,8 @@ import { dirname, join } from "node:path";
 import { MCPServer } from "@mastra/mcp";
 import { createTool, noopObserve } from "@mastra/core/tools";
 import type { StandardSchemaWithJSON } from "@mastra/core/schema";
-// A real, already-resolved transitive dependency of @mastra/mcp (Plan 01's
-// Task 2 note) -- deliberately NOT added to package.json directly.
+// Declared in package.json's dependencies at the exact version @mastra/mcp
+// resolves, because this file imports it directly.
 import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 // Plan 02-10: this file's own backend-detection and stock-tools consumer
 // edits. Both are namespace imports, deliberately -- keeps every reference to
@@ -139,12 +139,12 @@ import type { StockSessionDeps } from "./stock-session.ts";
 
 // ------------------------------------------------------------ anno subcommand
 //
-// `anno <verb>` runs on the plugin route and an in-repo checkout only. Node
-// refuses to type-strip any `.ts` under `node_modules`
-// (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, no flag lifts it), so an
-// npm-installed copy of this file cannot run at all -- a known roadmap
-// defect. The installer no longer wires this server, and no shipped text
-// names an `npx` form.
+// `anno <verb>` runs on every route: the plugin and an in-repo checkout run
+// this file type-stripped, and the npm package runs its compiled copy,
+// dist/vice-proxy.js (build.ts's buildServer(), run by `prepack`), because
+// Node refuses to type-strip any `.ts` under `node_modules`
+// (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`). No shipped text names an
+// `npx` form.
 //
 // This branch runs as the first executable statement of the module body,
 // deliberately ABOVE `RESOLVED_BINARY`'s own path resolution (which stats the
@@ -253,6 +253,17 @@ if (process.argv[2] === "anno") {
 
 const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 
+/** The first of `fileName` beside this module or one directory up that
+ * exists, else the beside-this-module path. The compiled copy runs from
+ * dist/, one level below the package root that holds the data files; the
+ * source runs from the package root itself. Same two-candidate idiom as
+ * broker-endpoint.mts's CLIENT_VERSION and tool-location.mts's
+ * readDeclaration(). */
+function packageFile(fileName: string): string {
+  const candidates = [join(HERE_DIR, fileName), join(HERE_DIR, "..", fileName)];
+  return candidates.find((c) => existsSync(c)) ?? candidates[0];
+}
+
 // FORKRM-01 (plan 52-06): there is one backend now, so there is nothing left
 // to select between here -- this used to settle a backend verdict constant
 // once, at module scope, for the manifest selection, the tools construction
@@ -359,7 +370,12 @@ process.stdout.on("error", (err) => {
 // repo-root `VERSION` template -- rendered as `<resolved>-dev` -- only in a
 // git checkout, degrading to `0.0.0-dev` if neither is available. Reused,
 // unchanged, as MCPServer's own `version` field below.
-const PROXY_VERSION = runtimeVersion({ pkgJsonPath: join(HERE_DIR, "package.json") });
+// Reads package.json beside this module, then one directory up (the
+// compiled dist/ copy), so the npm package never reports the dev placeholder.
+const PROXY_VERSION =
+  [join(HERE_DIR, "package.json"), join(HERE_DIR, "..", "package.json")]
+    .map((pkgJsonPath) => runtimeVersion({ pkgJsonPath }))
+    .find((v) => v !== DEV_PLACEHOLDER) ?? DEV_PLACEHOLDER;
 
 // --------------------------------------------------------------- tools/list
 //
@@ -463,12 +479,12 @@ const RESULT_CONTINUE_TOOL: ToolDefinition = {
   },
 };
 
-// The committed manifest beside this file is the only source of the
+// The committed manifest in the package root is the only source of the
 // advertised schemas. A missing or malformed manifest is a packaging bug, so
 // reading it throws and the server fails at startup rather than advertising
 // a partial tool surface.
 function readManifestTools(): ToolInfo[] {
-  const path = join(HERE_DIR, "tools-manifest.stock.json");
+  const path = packageFile("tools-manifest.stock.json");
   const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
   const shapeOk =
     isPlainObject(parsed) &&
@@ -567,8 +583,8 @@ function brokerUnreachableMessage(reason: string): string {
  * command (purely as a reference) and the only-route sentence. */
 function brokerLaunchFailedMessage(reason: string): string {
   return (
-    `vice: the on-demand VICE broker (started with ${BROKER_START_COMMAND}) declined ` +
-    `to grant an instance for this session: ${reason} ${ONLY_ROUTE_NOTE}`
+    `vice: the on-demand VICE broker declined to grant an instance for this session: ${reason} ` +
+    `The broker is started with: ${BROKER_START_COMMAND}. ${ONLY_ROUTE_NOTE}`
   );
 }
 

@@ -70,7 +70,7 @@ const REAL_ANNO_BANK_PATH = join(HERE, "anno-bank.ts");
 // shimmed here the same way, by absolute path, mirroring the anno-bank.ts
 // precedent immediately above.
 const REAL_ANNO_GRAPHICS_PATH = join(HERE, "anno-graphics.ts");
-const REAL_MEMMAP_PATH = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
+const REAL_MEMMAP_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
 
 const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const PROVENANCE_TOKEN_CAPTURE_RE = new RegExp(`${ESCAPED_PROVENANCE_TOKEN_PREFIX}([0-9a-f]{64})$`);
@@ -278,7 +278,7 @@ test(
 // ---------------------------------------------------------------------------
 
 /** Builds a scratch tree mirroring the repo shape three levels deep
- * (`src/skills/c64-memory-mapping` next to `src/mcp/vice`, both under one
+ * (`skills/c64-memory-mapping` next to `src/mcp/vice`, both under one
  * `mkdtempSync` root), with a COPY of the real `memmap.json` mutated by one
  * appended byte, and the real `memmap-lookup.ts` source copied unmutated
  * beside it at the depth its own `MEMMAP_PATH` formula expects. Asserts the
@@ -288,7 +288,7 @@ test(
  * module's path. */
 function buildMutatedMemmapTree(): { tmpDir: string; mutatedModulePath: string } {
   const tmpDir = makeTempDir("join-image-controls-provenance-");
-  const skillsDir = path.join(tmpDir, "src", "skills", "c64-memory-mapping");
+  const skillsDir = path.join(tmpDir, "skills", "c64-memory-mapping");
   fs.mkdirSync(skillsDir, { recursive: true });
   const mcpDir = path.join(tmpDir, "src", "mcp", "vice");
   fs.mkdirSync(mcpDir, { recursive: true });

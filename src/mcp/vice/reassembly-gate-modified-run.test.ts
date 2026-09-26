@@ -437,13 +437,13 @@ test("gate run: the four in-process gate inputs, measured for real against the M
 // comparison instrument plan 50-01 committed
 // (`compare-cross-binary.ts`) is run over the pair through its own CLI.
 //
-// A SUBPROCESS, NEVER AN IMPORT: `src/mcp/vice/**` and `src/skills/**`
+// A SUBPROCESS, NEVER AN IMPORT: `src/mcp/vice/**` and `skills/**`
 // publish as separate npm packages and cannot import each other
 // (`acme-verify.ts`'s own header states the identical constraint for
 // `ACME_VERIFY_ARGV_FLAGS`). `skill-acme-build-cli.test.ts` already
 // establishes this exact pattern -- a `src/mcp/vice/` test file driving a
-// sibling `src/skills/` script via `spawnSync(process.execPath, [...])` --
-// for `src/skills/acme-build/scripts/acme.ts`; this is the same pattern
+// sibling `skills/` script via `spawnSync(process.execPath, [...])` --
+// for `skills/acme-build/scripts/acme.ts`; this is the same pattern
 // applied to `compare-cross-binary.ts`. This is NOT a second real-assembler
 // launch site: `compare-cross-binary.ts` never spawns anything and
 // contacts nothing (its own header states this), so `T-50-09`'s "the one
@@ -453,7 +453,7 @@ test("gate run: the four in-process gate inputs, measured for real against the M
 // ---------------------------------------------------------------------------
 
 const ALLOWLIST_PATH = join(FIXTURE_DIR, "hazard-subject-modified.allowlist.json");
-const CROSS_BINARY_SCRIPT = join(HERE, "..", "..", "skills", "c64-ram-capture", "scripts", "compare-cross-binary.ts");
+const CROSS_BINARY_SCRIPT = join(HERE, "..", "..", "..", "skills", "c64-ram-capture", "scripts", "compare-cross-binary.ts");
 
 interface AllowlistEntry {
   start: number;
@@ -477,7 +477,7 @@ function loadAllowlistDoc(): AllowlistDoc {
  * register mask and `IMAGE_VOLATILE` image mask, for the two static
  * mask-overlap assertions below. This file cannot import the real tables --
  * see this section's own header for why a subprocess, not an import, is
- * this file's only route to `src/skills/**` at all. This is the SAME
+ * this file's only route to `skills/**` at all. This is the SAME
  * deliberate second-implementation pattern `acme-verify.ts`'s
  * `ACME_VERIFY_ARGV_FLAGS`/`MSVC` already carry across the identical
  * package boundary, kept minimal and matched address-for-address against

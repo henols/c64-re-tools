@@ -27,9 +27,9 @@
 // WHY THE LAYOUT IS EMBEDDED IN TYPESCRIPT RATHER THAN READ FROM A TEMPLATE
 // FILE AT RUNTIME (the second decision this plan records): an earlier
 // finding established that `.claude/mcp/vice/*.ts` exists as files on disk only
-// under the Claude Code plugin route -- both npm-installer routes launch via
-// `npx`. A renderer that resolved a template path into the skills tree at
-// runtime would silently fail to resolve for an npm-installed user. The
+// under the Claude Code plugin route; an npm-installed server has no skills
+// tree beside it. A renderer that resolved a template path into the skills
+// tree at runtime would silently fail to resolve for an npm-installed user. The
 // recon skill's own template becomes prose pointing at this generator
 // instead (a later plan's job); this module hardcodes the target shape.
 //

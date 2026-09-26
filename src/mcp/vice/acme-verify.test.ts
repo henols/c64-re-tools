@@ -97,7 +97,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY_MODULE_PATH = join(HERE, "acme-verify.ts");
 const GATE_MODULE_PATH = join(HERE, "acme-gate.ts");
 // Phase 34, plan 34-04 (SEAM-05): the argv construction this section compares
-// against USED TO be `src/skills/acme-build/scripts/acme.ts`'s own `args`
+// against USED TO be `skills/acme-build/scripts/acme.ts`'s own `args`
 // array literal -- it moved to `host-tool.mts`'s `buildHostToolArgv()` when
 // `acme.ts` was migrated onto the host-tool execution seam (the skill
 // script no longer constructs argv or spawns `acme` at all; it sends a typed

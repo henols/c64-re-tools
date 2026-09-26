@@ -30,8 +30,8 @@
 // ---------------------------------------------------------------------------
 // WHAT NOT TO DO
 // ---------------------------------------------------------------------------
-//   - Never import `src/skills/routine-queue-walker/scripts/completeness-report.ts`.
-//     `src/mcp/vice/**` and `src/skills/**` publish as SEPARATE npm packages
+//   - Never import `skills/routine-queue-walker/scripts/completeness-report.ts`.
+//     `src/mcp/vice/**` and `skills/**` publish as SEPARATE npm packages
 //     and cannot import each other (`acme-verify.ts`'s own header states this
 //     constraint; `skill-acme-build-cli.test.ts` is the sanctioned pattern
 //     this file copies: SPAWN the skill script as a subprocess, never
@@ -66,11 +66,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures");
 const MANIFEST_PATH = join(FIXTURES_DIR, "decomp-execution-manifest.json");
 
-// `src/mcp/vice/` -> `src/` -> `src/skills/routine-queue-walker/scripts/` --
+// `src/mcp/vice/` -> `src/` -> `skills/routine-queue-walker/scripts/` --
 // computed from THIS file's own location, matching `mcp-module.ts`'s own
 // "computed hop count, never a fixed count" discipline (see that module's
 // header on the stale-offset incident this project has already had).
-const COMPLETENESS_SCRIPT = join(HERE, "..", "..", "skills", "routine-queue-walker", "scripts", "completeness-report.ts");
+const COMPLETENESS_SCRIPT = join(HERE, "..", "..", "..", "skills", "routine-queue-walker", "scripts", "completeness-report.ts");
 
 interface FixtureSpec {
   readonly dir: string;

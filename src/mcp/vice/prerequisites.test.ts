@@ -42,7 +42,7 @@ import type { HostToolId } from "./host-tool.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..", "..", "..");
-const SKILLS_DIR = resolve(HERE, "..", "..", "skills");
+const SKILLS_DIR = resolve(HERE, "..", "..", "..", "skills");
 
 // Build BEFORE importing the artifact -- host-tool.test.ts's own idiom --
 // so this suite never reads a stale committed resources/host-tool.mjs.
@@ -121,7 +121,7 @@ export function assertNoExecutableShape(doc: PrerequisitesDoc): string[] {
 }
 
 /** D-08 mitigation: every `unblocks.skills` value must name a real
- * directory under `src/skills/`; every `unblocks.mcp` value must be a
+ * directory under `skills/`; every `unblocks.mcp` value must be a
  * member of `HOST_TOOL_IDS`; every `remedies` platform key must be one of
  * the four permitted keys. Both vocabularies are asserted as a subset
  * relation, never a record count. */
@@ -702,8 +702,12 @@ test("D-07: the two declared directory markers match their tool ids (relation, n
 // scripts/check-npm-packages.mjs.
 // ---------------------------------------------------------------------------
 
+// `--ignore-scripts` keeps the dry run from running `prepack`, which would
+// write the gitignored dist/ build into this checkout as a test side effect
+// (vice-cli.mjs prefers dist/ when present). The file list checked here
+// never depends on dist/.
 function packedFileList(): string[] {
-  const out = execFileSync("npm", ["pack", "--dry-run", "--json"], { cwd: HERE, encoding: "utf8" });
+  const out = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], { cwd: HERE, encoding: "utf8" });
   const parsed = JSON.parse(out) as Array<{ files: Array<{ path: string }> }>;
   return parsed[0]!.files.map((f) => f.path);
 }

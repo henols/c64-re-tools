@@ -22,7 +22,7 @@
 // prose.
 //
 // WHAT NOT TO DO:
-//   - Never import anything under `src/skills/`. This function's entire
+//   - Never import anything under `skills/`. This function's entire
 //     point is that annotating an address costs one mechanical call, not an
 //     agent turn.
 //   - Never spawn a child process from this module.

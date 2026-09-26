@@ -38,7 +38,7 @@
 //   1. NEVER re-spell, re-order, add to or remove from the twelve members of
 //      `DATA_TYPES`. They are the `anno_set_data_type` schema's own strings in
 //      the schema's own order (`anno-tools.ts:291-304`), and
-//      `src/skills/c64-memory-mapping/SKILL.md` already names all four split
+//      `skills/c64-memory-mapping/SKILL.md` already names all four split
 //      variants verbatim -- a re-spelling breaks a shipped playbook and buys
 //      nothing. Narrowing the vocabulary once a project file exists is not a
 //      migration; it is data loss.
@@ -429,7 +429,7 @@ export type CommentType = (typeof COMMENT_TYPES)[number];
  *
  * THE CAPITALISATION IS A DECIDED ASYMMETRY, not an oversight. `DATA_TYPES` is
  * lowercase because it is read off `anno_set_data_type`'s own schema and is
- * named verbatim in `src/skills/c64-memory-mapping/SKILL.md`, so a re-spelling
+ * named verbatim in `skills/c64-memory-mapping/SKILL.md`, so a re-spelling
  * would break a shipped playbook. `LABEL_KINDS` is capitalised because its only
  * mechanical consumer is the coverage census, which already spells it
  * `"User"`/`"Auto"`/`"System"` at four sites (`anno-coverage.ts:206` for the

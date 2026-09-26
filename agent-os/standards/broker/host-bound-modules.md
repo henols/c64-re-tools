@@ -22,5 +22,5 @@ import type { BrokerState } from "./broker-state.mjs";   // type-only: loads unb
   mismatch.
 - Entry artifacts (`build.ts` `ENTRY_ARTIFACTS`, `tsconfig.entry.json`)
   are compiled too, but emitted beside their `.mts` source and never
-  host-bound: package bins that run from `node_modules` (`vice-cli`,
-  the installer CLI). `entry-sync.test.ts` reds on drift.
+  host-bound: the package bin `vice-cli`, which runs from `node_modules`.
+  `entry-sync.test.ts` reds on drift.

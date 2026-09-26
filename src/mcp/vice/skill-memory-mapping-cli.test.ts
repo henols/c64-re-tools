@@ -1,4 +1,4 @@
-// Coverage for src/skills/c64-memory-mapping/scripts/driver.ts -- the
+// Coverage for skills/c64-memory-mapping/scripts/driver.ts -- the
 // c64-memory-mapping skill's address-lookup and listing-annotation driver.
 //
 // The script guards its CLI dispatch behind an entry-point check
@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 // driver.ts is a typed skill script, checked by this package's typecheck.
-import { lookup } from "../../skills/c64-memory-mapping/scripts/driver.ts";
+import { lookup } from "../../../skills/c64-memory-mapping/scripts/driver.ts";
 
 interface MemMapEntry {
   start: number;
@@ -48,8 +48,8 @@ interface MemMapEntry {
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRIPT_PATH = join(HERE, "..", "..", "skills", "c64-memory-mapping", "scripts", "driver.ts");
-const MEMMAP_JSON_PATH = join(HERE, "..", "..", "skills", "c64-memory-mapping", "memmap.json");
+const SCRIPT_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "scripts", "driver.ts");
+const MEMMAP_JSON_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
 
 test("driver.ts is resolved at the expected relative path", () => {
   assert.ok(existsSync(SCRIPT_PATH), `expected driver.ts at ${SCRIPT_PATH}`);

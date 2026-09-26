@@ -37,7 +37,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { build, HOST_BOUND_ARTIFACTS, resolveStagingParent } from "./build.ts";
+import { build, buildServer, HOST_BOUND_ARTIFACTS, resolveStagingParent, SERVER_DATA_FILES, SERVER_ROOTS } from "./build.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -267,4 +267,18 @@ test("a real default build leaves no .build-tmp-* directory in the walked tree, 
   build();
   const strayAfter = readdirSync(HERE).filter((n) => n.startsWith(".build-tmp-"));
   assert.deepEqual(strayAfter, [], "a build must not leave a staging dir in the walked tree");
+});
+
+test("buildServer(): emits every server root and data file as JavaScript/JSON only, and removes a stale file it did not produce", () => {
+  const outDir = mkdtempSync(join(tmpdir(), "build-server-"));
+  try {
+    writeFileSync(join(outDir, "stale-module.js"), "// a module the new build does not produce\n");
+    const produced = buildServer({ outDir });
+    for (const { emitted } of SERVER_ROOTS) assert.ok(produced.includes(emitted), `missing root artifact ${emitted}`);
+    for (const { to } of SERVER_DATA_FILES) assert.ok(produced.includes(to), `missing data file ${to}`);
+    assert.deepEqual(produced.filter((f) => /\.m?ts$/.test(f)), [], "no TypeScript may reach the server output");
+    assert.deepEqual(readdirSync(outDir).sort(), [...produced].sort(), "the output holds exactly what the build produced");
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
 });

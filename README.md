@@ -20,45 +20,72 @@ It provides two things as a single installable unit:
 
 ## Install
 
-There are two independent ways to install; pick one.
+The skills, the MCP server and the broker install separately. Nothing here
+installs anything for you: every command below is one you run yourself.
 
-### A. npm / npx (any project)
+### Skills — any agent, with the `skills` CLI
 
-From the project you want to set up:
+The eight skills install with the open agent-skills CLI
+([`skills`](https://github.com/vercel-labs/skills), the one `/find-skills` uses).
+It reads them straight from this GitHub repository; nothing has to be published.
 
 ```
-npx @henols/c64-re-tools
+npx skills add henols/c64-re-tools --skill '*'
 ```
 
-This copies the eight skills into `<project>/.claude/skills/` and nothing else.
-It writes no `.mcp.json` and installs nothing: the `vice` MCP server comes from
-the Claude Code plugin (B below). Existing skills are preserved; pass `--force` to
-overwrite, `--dry-run` to preview. The skill scripts require **Node ≥ 24** as the
-`node` on `PATH`.
+- Install all eight. Several skills use `c64-ram-capture`'s scripts; a skill
+  installed without it refuses by name and gives the command that installs it.
+- `-a claude-code` (or `cursor`, `codex`, …) picks the agent; `-g` installs for
+  your user instead of the project; `--list` shows the skills without installing.
+- `npx skills update` updates them. The CLI sends anonymous telemetry;
+  `DISABLE_TELEMETRY=1` turns it off.
+- The skill scripts need **Node ≥ 24** as the `node` on `PATH`.
 
-The two published packages:
-
-- [`@henols/vice-mcp`](https://www.npmjs.com/package/@henols/vice-mcp) — the MCP server.
-- [`@henols/c64-re-tools`](https://www.npmjs.com/package/@henols/c64-re-tools) — this installer (bundles the skills; no dependencies).
-
-### B. Claude Code plugin
+### MCP server — Claude Code plugin
 
 ```
 /plugin marketplace add henols/c64-re-tools
 /plugin install c64-re-tools@c64-re-tools
 ```
 
-The plugin is `defaultEnabled: false`; enable it in the project where you want
-the C64 tooling. (In plugin mode the tools are namespaced
-`mcp__plugin_c64-re-tools_vice__*`.)
+The plugin carries the `vice` MCP server and the skills. It is
+`defaultEnabled: false`; enable it in the project where you want the C64 tooling.
+In plugin mode the tools are namespaced `mcp__plugin_c64-re-tools_vice__*`.
+The server's npm dependencies are not committed: run
+`npm ci --prefix <plugin-root>/src/mcp/vice` once, and again after an update that
+changes its `package-lock.json` (needs `node` ≥ 24, `npm` and registry access).
+
+### MCP server — any other agent, from npm
+
+```
+npm install -g @henols/vice-mcp
+npx add-mcp vice-mcp --env MASTRA_TELEMETRY_DISABLED=1
+```
+
+[`add-mcp`](https://github.com/neon-solutions/add-mcp) writes the server entry
+(command `vice-mcp`) into Cursor, Codex, VS Code, Claude Code and other agents'
+MCP configs; `-a <agent>` picks one. Or add `"command": "vice-mcp"` to the
+agent's MCP config by hand. Never configure `npx @henols/vice-mcp` as the
+command: that installs the package every time the agent starts the server.
+
+### Broker — started by hand
+
+The MCP server needs one broker per machine, and never starts it for you:
+
+```
+vice-mcp broker                                      # npm install
+node <plugin-root>/src/mcp/vice/vice-cli.mjs broker  # plugin or checkout
+```
+
+See [Starting the broker](#starting-the-broker).
 
 ### Developing this repo: no in-repo autoload
 
-The payload (the eight skills under `src/skills/` and the `vice` MCP server) now
-lives under `src/`, which is not a path Claude Code auto-discovers. A Claude Code session opened
-on this repository's own working tree therefore does **not** auto-load the
-skills or the server the way it would if they still sat directly under
-`.claude/`. This is a deliberate tradeoff, not an oversight: with the payload
+The payload (the eight skills under `skills/` and the `vice` MCP server under
+`src/mcp/vice/`) lives outside `.claude/`, so Claude Code does not auto-discover
+it. A Claude Code session opened on this repository's own working tree therefore
+does **not** auto-load the skills or the server the way it would if they sat
+under `.claude/`. This is a deliberate tradeoff, not an oversight: with the payload
 on the auto-discovery path, "it works in the repo" was never real evidence
 that "it works when installed" — an install-path defect (a wrong manifest
 path, a stale packaging literal) was structurally invisible to local
@@ -67,9 +94,9 @@ consumer uses.
 
 Two supported ways to exercise the payload as a consumer does:
 
-- **The npm installer** — `npx @henols/c64-re-tools <dir>`, or from a
-  checkout of this repo, `node installer/bin/cli.mjs <dir>`. Either can be
-  run by an automated agent; neither touches machine-global state.
+- **The skills CLI from this checkout** — `npx skills add ./ --skill '*' --copy`
+  run from a scratch project with this checkout's path in place of `./`. It
+  installs into that project only.
 - **A local-marketplace plugin install** — this repository's own
   `.claude-plugin/marketplace.json` already declares `"source": "./"`, so
   `/plugin marketplace add ./` (run from this checkout) and
@@ -78,14 +105,6 @@ Two supported ways to exercise the payload as a consumer does:
   state, so it is a **human action**, never something an automated agent
   performs.
 
-### Dependencies
-
-The MCP server has real npm dependencies (`@mastra/mcp`, `@mastra/core`). They
-are **not** committed and nothing installs them for you. After installing the
-plugin, run `npm ci --prefix <plugin-root>/src/mcp/vice` once, and again after
-an update that changes its `package-lock.json`. Without it the `vice` MCP
-server fails to start. This needs `node` ≥ 24 and `npm` on `PATH` and network
-access to the npm registry.
 
 ## Prerequisites at a glance
 
@@ -202,12 +221,13 @@ it is wedged, then restart the broker.
 
 The `vice` MCP server does not start the broker for you, and does not install
 anything to make that happen — it **detects, then refuses by name with the
-remedy**. The remedy is the same everywhere: run the broker from the plugin (or
-a checkout of this repository) as a foreground command, where `<plugin-root>`
-is that directory:
+remedy**. The remedy is the same everywhere: run the broker as a foreground
+command from the same install the MCP server runs from — the npm package, or
+the plugin (or a checkout of this repository) at `<plugin-root>`:
 
 ```
-node <plugin-root>/src/mcp/vice/vice-cli.mjs broker
+vice-mcp broker                                      # npm install
+node <plugin-root>/src/mcp/vice/vice-cli.mjs broker  # plugin or checkout
 ```
 
 **One broker per machine** means every project and every Claude Code session
@@ -271,21 +291,20 @@ through the `mcp__plugin_c64-re-tools_vice__*` tools.
 
 ```
 .claude-plugin/
-  plugin.json        # manifest: skills, mcpServers, deps hook
+  plugin.json        # manifest: mcpServers (skills/ is the default skills location)
   marketplace.json   # single-plugin marketplace, so `marketplace add` works on this repo
 .mcp.json            # vice server, launched via ${CLAUDE_PLUGIN_ROOT}
-src/
-  mcp/vice/          # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/, tests)
-  skills/            # the eight skills above (canonical source)
-installer/           # @henols/c64-re-tools — npx installer; bundles the skills, depends on vice-mcp
+skills/              # the eight skills (canonical source; what `npx skills add` installs)
+src/mcp/vice/        # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/, tests)
+test/skills/         # the skill scripts' tests (kept out of the skill folders so they never ship)
+evidence/            # repo-only measured artifacts that must never ship with a skill
 ```
 
 The payload no longer sits on Claude Code's auto-discovery path — see
 "Developing this repo: no in-repo autoload" above for why that is deliberate.
-What did not change: the MCP server's own test suite resolves paths relative
-to its own module directory (`repo-root.ts`'s depth-based fallback), so
-relocating the payload under `src/` left every test's behavior unchanged even
-though the tree no longer mirrors a consumer's installed `.claude/` layout.
+The MCP server's own test suite resolves paths relative to its own module
+directory (`repo-root.ts`'s depth-based fallback), so it does not depend on the
+tree mirroring a consumer's installed `.claude/` layout.
 
 ## Publishing (maintainers)
 
@@ -298,28 +317,28 @@ git push origin v1.2.3
 ```
 
 That tag triggers the `publish-npm` job, which derives `1.2.3` from the ref,
-stamps it into both `package.json` files with `npm version`, pins the installer's
-`@henols/vice-mcp` dependency to that exact version, and publishes
-`@henols/vice-mcp` first, then `@henols/c64-re-tools`. A manual
+stamps it into `src/mcp/vice/package.json` with `npm version`, and publishes
+`@henols/vice-mcp` (its `prepack` compiles the server into `dist/`). A manual
 `workflow_dispatch` with an explicit version does the same thing without a tag;
 do not use both for one version, or the loser gets a 409.
 
 Merging to `main` publishes nothing. It runs the build job — typecheck, the MCP
-server suite, the installer suite and the skill suites — and stops there.
+server suite, the skill suites and the packed-install smoke test — and stops there.
 
 Every publishable version string in the working tree carries the self-evident
-placeholder `0.0.0-dev`: both `package.json` `.version` fields, the installer's
-`@henols/vice-mcp` pin, and the plugin manifests. `npm version` overwrites the
-first three inside CI's ephemeral checkout at publish time. Never pre-bump one by
-hand — a test asserts they are all still the placeholder. Because the pin is a
-placeholder in the tree, a local `cd installer && npm install` will not resolve
-it; use the published package.
+placeholder `0.0.0-dev`: `src/mcp/vice/package.json` `.version` and the plugin
+manifests. `npm version` overwrites the first inside CI's ephemeral checkout at
+publish time. Never pre-bump one by hand — a test asserts they are all still the
+placeholder.
+
+The skills are not published anywhere: `npx skills add henols/c64-re-tools`
+reads them from this repository.
 
 The plugin itself is **not** distributed as a release artifact. It installs from
 this repository (`/plugin marketplace add henols/c64-re-tools`), so there is no
 zip to build and none is attached to a release.
 
-Publishing uses **npm Trusted Publishing (OIDC)** — no `NPM_TOKEN` secret. Each
+Publishing uses **npm Trusted Publishing (OIDC)** — no `NPM_TOKEN` secret. The
 package has a Trusted Publisher configured on npmjs.com pointing at this repo and
 `ci.yml`; the `publish-npm` job runs with `id-token: write` and authenticates to
 npm directly, and npm records provenance automatically.

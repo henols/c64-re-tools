@@ -3,31 +3,63 @@
 A stdio [MCP](https://modelcontextprotocol.io) server that exposes a running
 [VICE](https://vice-emu.sourceforge.io/) Commodore 64 emulator to an MCP client
 (such as Claude Code) for reverse-engineering work. It forwards `vice` tool calls
-to a **host** VICE MCP server, and on first use deploys the host launcher scripts
-it needs into `<project>/tools/`.
+to a broker on the **host**, which launches an emulator instance per session.
 
-The supported way to run it is the Claude Code plugin, which carries this
-server and the matching skills. The
-[`@henols/c64-re-tools`](https://www.npmjs.com/package/@henols/c64-re-tools)
-installer copies the skills only; it does not install or wire this server.
+It runs two ways: from the Claude Code plugin (or a checkout of the
+repository), which also carries the matching skills, or as this npm package
+for any other MCP client. The skills install separately with the `skills` CLI
+(`npx skills add henols/c64-re-tools --skill '*'`).
 
 ## Requirements
 
-- **Node.js ≥ 24**. The server ships as TypeScript and runs under
-  Node's native type-stripping — no build step, no flags. Older Node needs
-  `--experimental-strip-types` and is unsupported.
-- **Run it from the Claude Code plugin or a checkout, not from `node_modules`.**
-  Node refuses to strip types from any `.ts` under `node_modules`, so an
-  npm-installed copy cannot start the server today (a known defect).
-- A **host** with VICE (`x64sc`) and a running broker
-  (`node <plugin-root>/src/mcp/vice/vice-cli.mjs broker`, started by hand). The server
-  reaches the broker on TCP port 19510, dialling `127.0.0.1` and then
-  `host.docker.internal`, so the same configuration works on the host and inside a
-  container. Nothing is read from disk to find it.
+- **Node.js ≥ 24**. The plugin and a checkout run the TypeScript sources under
+  Node's native type stripping, with no build step and no flags. The npm
+  package runs a compiled copy (`dist/`, built when the package is packed),
+  because Node never strips types under `node_modules`.
+- A **host** with VICE (`x64sc`) and a running broker, started by hand from the
+  same install the server runs from:
+
+  ```sh
+  vice-mcp broker                                      # npm install
+  node <plugin-root>/src/mcp/vice/vice-cli.mjs broker  # plugin or checkout
+  ```
+
+  No client starts the broker for you. The server reaches it on TCP port 19510,
+  dialling `127.0.0.1` and then `host.docker.internal`, so the same
+  configuration works on the host and inside a container. Nothing is read from
+  disk to find it.
 
 ## Use as an MCP server
 
-Add it to your MCP client configuration and let the client launch it:
+**Claude Code:** install the plugin, then install the server's dependencies once
+with `npm ci --prefix <plugin-root>/src/mcp/vice`. The plugin wires the server
+itself.
+
+**Other MCP clients:** install the package globally, then register its bin:
+
+```sh
+npm i -g @henols/vice-mcp
+npx add-mcp vice-mcp --env MASTRA_TELEMETRY_DISABLED=1
+```
+
+Or add it to the client configuration by hand:
+
+```json
+{
+  "mcpServers": {
+    "vice": {
+      "command": "vice-mcp",
+      "timeout": 150000,
+      "env": { "MASTRA_TELEMETRY_DISABLED": "1" }
+    }
+  }
+}
+```
+
+Register the installed `vice-mcp` bin, not the package name: a configuration
+that launches the package through `npx` installs it at launch time.
+
+A checkout runs the source directly:
 
 ```json
 {
@@ -42,6 +74,9 @@ Add it to your MCP client configuration and let the client launch it:
 }
 ```
 
+The annotation CLI runs from the same install: `vice-mcp anno <verb>` (npm) or
+`node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>` (plugin or checkout).
+
 The bin (`vice-mcp`) speaks the MCP stdio protocol. `initialize` and `tools/list`
 are answered locally (from `tools-manifest.stock.json`); `tools/call` runs through an
 emulator instance the broker launches for this session.
@@ -52,7 +87,7 @@ emulator instance the broker launches for this session.
 | --- | --- |
 | `VICE_MCP_URL` | Full host MCP endpoint (overrides host/port derivation). |
 | `VICE_BROKER_CONTROL_PORT` | The broker's control port (default `19510`), for the broker and every client. |
-| `VICE_SKIP_RESOURCE_INSTALL=1` | Disable deploying host launcher scripts into `<project>/tools/`. |
+| `VICE_SKIP_RESOURCE_INSTALL=1` | Disable deploying host launcher scripts into `<project>/.c64-re-tools/bin/` (the npm package never deploys them). |
 | `MASTRA_TELEMETRY_DISABLED=1` | Disable Mastra telemetry. |
 | `VICE_LIVE_STOCK_BIN` | Absolute path to a genuinely unpatched stock VICE binary; opts `stock-live.test.ts` in (default-skipped). |
 | `VICE_BROKER_RELAY_IDLE_MS` | The broker-owned idle deadline (default `300000`, 5 minutes) a monitor-relay connection may sit carrying no traffic in either direction before the broker reclaims that one channel. This is the mechanism the broker actually controls end-to-end (`Socket.setTimeout()`, userspace, needs no cooperation from the OS or the peer); it is suspended for as long as the connection's own grant has a declared operation in flight, so a legitimately long-running capture is never torn down by the clock. An absent, non-numeric, zero or negative value falls back to the default and is logged by name — it is never possible to disable this bound. |
@@ -105,6 +140,7 @@ npm test
 npm run test:automated  # the automated subset (excludes manual-only files)
 npm run smoke     # boots the server and completes an MCP initialize + tools/list handshake
 npm run build     # recompiles the host-bound .mts launchers into resources/
+node smoke-packed.ts  # builds dist/, packs the package, runs it from a scratch node_modules
 ```
 
 ## License

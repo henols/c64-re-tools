@@ -609,14 +609,14 @@ function makeFailure(overrides: Partial<DialFailure> & { rank: DialFailure["rank
   };
 }
 
-test("BROKER_START_COMMAND is the plugin-root invocation, one literal with no interpolation and no npx", () => {
-  assert.equal(BROKER_START_COMMAND, "node <plugin-root>/src/mcp/vice/vice-cli.mjs broker");
+test("BROKER_START_COMMAND names the npm bin and the plugin-root invocation, one literal with no interpolation and no npx", () => {
+  assert.equal(BROKER_START_COMMAND, "vice-mcp broker (npm install) or node <plugin-root>/src/mcp/vice/vice-cli.mjs broker (plugin or checkout)");
   assert.doesNotMatch(BROKER_START_COMMAND, /npx/);
 });
 
 test("the start-command literal appears in broker-endpoint.mts between 1 and 3 times -- one definition, never a hand-copied second string", () => {
   const source = readFileSync(BROKER_ENDPOINT_TS, "utf8");
-  const count = (source.match(/node <plugin-root>\/src\/mcp\/vice\/vice-cli\.mjs broker/g) ?? []).length;
+  const count = (source.match(/vice-mcp broker \(npm install\) or node <plugin-root>\/src\/mcp\/vice\/vice-cli\.mjs broker \(plugin or checkout\)/g) ?? []).length;
   assert.ok(count >= 1 && count <= 3, `expected the literal to appear 1-3 times, found ${count}`);
 });
 
@@ -645,7 +645,7 @@ test("rank 3: states the listener is an older broker that must be restarted from
   assert.match(message, /older than v2\.0\.0|older broker|stale/i);
 });
 
-test("rank 4: names both package names, both observed versions, and which side is behind", () => {
+test("rank 4: names the package, both observed versions, and which side is behind", () => {
   const failure = makeFailure({
     rank: 4,
     clientVersion: "5.0.0",
@@ -656,7 +656,7 @@ test("rank 4: names both package names, both observed versions, and which side i
   });
   const message = describeDialFailure(failure);
   assert.ok(message.includes("@henols/vice-mcp"), "must name the server package");
-  assert.ok(message.includes("@henols/c64-re-tools"), "must name the skills/installer package");
+  assert.ok(!message.includes("@henols/c64-re-tools"), "the retired installer package must not be named");
   assert.ok(message.includes("5.0.0"), "must name the client's own observed version");
   assert.ok(message.includes("6.0.0"), "must name the broker's observed version");
 });

@@ -50,7 +50,7 @@
 //   - CITATION DISCIPLINE, carried over verbatim in intent from
 //     `module-classification.ts`: `path` is ALWAYS repository-root-relative,
 //     never relative to this directory, because consumers legitimately live
-//     under `scripts/` and `src/skills/` as well as beside this file. `symbol` names what the consumer actually TAKES from the verb (an
+//     under `scripts/` and `skills/` as well as beside this file. `symbol` names what the consumer actually TAKES from the verb (an
 //     imported binding, a store entry point, or -- for a documentation consumer
 //     -- the identifier the cited line names); it is a CITATION, never a
 //     justification. `line` is OPTIONAL AND ADVISORY: where present the

@@ -925,7 +925,7 @@ function corpusBodyOffsetForAddress(address: number, bodyLength: number): number
  * never a fixed guess, so the seam request's `repoRoot` for THIS call is
  * always exactly big enough to contain both the corpus image and the
  * scratch output directory, and no bigger. Mirrors `c1541.ts`'s own
- * `commonAncestorDir()` (`src/skills/c64-disk-access/scripts/c1541.ts`),
+ * `commonAncestorDir()` (`skills/c64-disk-access/scripts/c1541.ts`),
  * duplicated here rather than imported -- this file must never reach into a
  * skill script (D-36-12's own container/host-side split; a skill script
  * additionally ships in the OTHER npm package). Duplicated a second time in

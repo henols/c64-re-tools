@@ -20,10 +20,8 @@
   "include": [
     "**/*.ts",
     "**/*.mts",
-    "../../skills/*/scripts/*.ts",
-    "../../../installer/bin/*.mts",
-    "../../../installer/scripts/*.ts",
-    "../../../installer/*.ts"
+    "../../../skills/*/scripts/*.ts",
+    "../../../test/**/*.ts"
   ],
   "exclude": [
     "node_modules",

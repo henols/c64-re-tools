@@ -4,9 +4,9 @@
 
 **c64-re-tools** is a Claude Code plugin that bundles the tooling used to
 reverse-engineer and rebuild Commodore 64 programs, reusable across C64
-projects. It ships as a Claude Code plugin and as two npm packages:
-`@henols/vice-mcp` (the MCP server and broker) and `@henols/c64-re-tools` (an
-installer that adds the skills and wires the server into a project).
+projects. It ships as a Claude Code plugin, as the npm package
+`@henols/vice-mcp` (the MCP server and broker), and as skills that any agent
+installs with the `skills` CLI (`npx skills add henols/c64-re-tools`).
 
 ## Problem
 
@@ -63,8 +63,9 @@ state) and keep working when the emulator misbehaves.
   plausible wrong answer.
 - **Never auto-install.** External tools are detected, never installed. When one
   is missing, the refusal names the tool and gives the remedy for the user to
-  run. This binds our own packages too: the installer copies skills and never
-  runs `npm` or `npx`, and no shipped remedy text uses `npx -y`.
+  run. This binds our own packages too: no shipped remedy text uses `npx -y`, and
+  the docs never configure `npx @henols/vice-mcp` as a server command. Every
+  install command is one the user runs.
 
 ## Key Constraints
 
@@ -76,5 +77,6 @@ state) and keep working when the emulator misbehaves.
   project and container on the machine shares it.
 - Tool-written output goes under one root: the project's `.c64-re-tools/`
   directory for client-side files, and `~/.c64-re-tools` for broker-owned state.
-- The server has exactly two npm runtime dependencies. New runtime dependencies
-  need a strong reason.
+- The server has exactly three npm runtime dependencies: `@mastra/mcp`,
+  `@mastra/core` and `@modelcontextprotocol/sdk` (imported directly, already
+  pulled in by `@mastra/mcp`). New runtime dependencies need a strong reason.

@@ -15,7 +15,7 @@
 // that reason, under the class `upstream-audit-manifest-provenance`.
 //
 // WHY THIS EXISTS: `upstream-procedure-manifest.json` is the dated snapshot
-// record for five third-party procedures absorbed into `src/skills/` at one
+// record for five third-party procedures absorbed into `skills/` at one
 // pinned upstream commit. A snapshot record is only worth anything if the
 // three things that make it re-checkable cannot rot:
 //   1. The PIN must be an immutable object. An abbreviated SHA is ambiguous

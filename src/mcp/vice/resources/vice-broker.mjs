@@ -114,8 +114,8 @@ const USAGE = "usage: vice-broker.mjs [--repo-root <path>] [--state-dir <path>] 
  * onto whatever project was named, and `vice-launcher.sh` always passes
  * `--repo-root`, so that pin was silently pulling broker state into one
  * project's tree on the ONE route that used it -- exactly what BROKER-06
- * forbids -- while the documented start route (`vice-cli.mjs broker`,
- * which passes no `--repo-root`) wrote to the machine-level root instead.
+ * forbids -- while the documented start route (`vice-mcp broker` /
+ * `vice-cli.mjs broker`, which pass no `--repo-root`) wrote to the machine-level root instead.
  * The client read the machine-level root unconditionally, so only the
  * launcher route ever agreed with it. `--repo-root` is still parsed and
  * still returned on `ParsedArgs.repoRoot` -- it keeps anchoring the Ghidra

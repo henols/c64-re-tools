@@ -7,7 +7,6 @@
     "allowImportingTsExtensions": false
   },
   "include": [
-    "vice-cli.mts",
-    "../../../installer/bin/cli.mts"
+    "vice-cli.mts"
   ]
 }

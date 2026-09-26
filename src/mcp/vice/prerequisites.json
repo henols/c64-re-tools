@@ -279,7 +279,7 @@
             "ecosystem": "generic",
             "text": "Install ACME.",
             "provenance": "carried",
-            "source": "src/skills/acme-build/SKILL.md:254"
+            "source": "skills/acme-build/SKILL.md:254"
           }
         ]
       }
@@ -306,7 +306,7 @@
             "ecosystem": "generic",
             "text": "export ACME=<dir holding cbm/c64/vic.a>.",
             "provenance": "carried",
-            "source": "src/skills/acme-build/SKILL.md:255"
+            "source": "skills/acme-build/SKILL.md:255"
           }
         ]
       }

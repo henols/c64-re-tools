@@ -1,7 +1,7 @@
 // entry-sync.test.ts
 //
-// The committed entry artifacts (build.ts ENTRY_ARTIFACTS: the vice-mcp bin
-// and the installer CLI) must equal a fresh build of their .mts sources. A
+// The committed entry artifacts (build.ts ENTRY_ARTIFACTS: the vice-mcp bin)
+// must equal a fresh build of their .mts sources. A
 // stale bin is what npm would publish, so drift is a test failure. Builds
 // through the SAME buildEntries() into a scratch root, so the banner and the
 // shebang handling never exist in two implementations.

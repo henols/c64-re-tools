@@ -8,9 +8,12 @@
 // below-floor Node by name BEFORE anything type-stripped is imported, then
 // dispatches: `broker` to the compiled resources/vice-broker.mjs (with the
 // subcommand token removed), everything else (`anno`, no subcommand) to
-// vice-proxy.ts with argv unchanged. build.ts compiles it to vice-cli.mjs
-// beside this file, because a bin runs from node_modules, where Node never
-// strips types, and because a below-floor Node cannot parse TypeScript at all.
+// the proxy with argv unchanged: the compiled dist/vice-proxy.js when it
+// exists beside this file (the npm package, built by `prepack`), otherwise
+// vice-proxy.ts (a checkout or the plugin). build.ts compiles this file to
+// vice-cli.mjs beside itself, because a bin runs from node_modules, where
+// Node never strips types, and because a below-floor Node cannot parse
+// TypeScript at all.
 //
 // WHAT NOT TO DO:
 //   - Never import anything but node: builtins before the floor check.
@@ -18,14 +21,22 @@
 //     pull the broker or proxy graph into this file's standalone compile.
 //   - Never list this file as host-bound: it is an entry artifact, and
 //     install-resources must never deploy it.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 const PACKAGE_JSON_PATH = new URL("./package.json", import.meta.url);
 const DEFAULT_PACKAGE_NAME = "@henols/vice-mcp";
 // Dispatch targets: variables, never literal import() specifiers (see header).
 const BROKER_ARTIFACT = "./resources/vice-broker.mjs";
-const PROXY_ENTRY = "./vice-proxy.ts";
+const COMPILED_PROXY_ENTRY = "./dist/vice-proxy.js";
+const SOURCE_PROXY_ENTRY = "./vice-proxy.ts";
+/** The proxy entry to import: the compiled dist/ copy when it exists beside
+ * this file, otherwise the TypeScript source. Node refuses to strip types
+ * under node_modules, so the npm package must take the compiled copy; a
+ * checkout without a dist/ build keeps running the source. */
+function proxyEntry() {
+    return existsSync(new URL(COMPILED_PROXY_ENTRY, import.meta.url)) ? COMPILED_PROXY_ENTRY : SOURCE_PROXY_ENTRY;
+}
 /** The bash launcher's own floor-refusal exit code
  * (`resources/vice-launcher.sh`'s "interpreter gate" section) -- mirrored
  * here, never re-derived, so the two refusals are indistinguishable to
@@ -160,7 +171,7 @@ async function main() {
     // subcommand" fallthrough) exactly as it behaves today. A side effect of
     // routing through here at all: the annotation route now gets the same
     // floor protection above it never had before this file existed.
-    await import(PROXY_ENTRY);
+    await import(proxyEntry());
 }
 // -------------------------------------------------------------------- CLI
 //

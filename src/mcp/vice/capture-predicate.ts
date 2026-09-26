@@ -39,7 +39,7 @@
 // `prg-image.ts` and `vsf-slice.ts`'s library region make about themselves.
 //
 // WHY THIS FILE EXISTS, AND WHAT IT IS NOT: the existing
-// `src/skills/c64-ram-capture/scripts/compare.ts` is a VOCABULARY ANALOG
+// `skills/c64-ram-capture/scripts/compare.ts` is a VOCABULARY ANALOG
 // ONLY. This module is a REPLACEMENT IN KIND for its rules and never an
 // extension of them. Its report vocabulary is kept deliberately -- the
 // `divergence` class, the `pass` verdict field, the `addr`/`a`/`b`/`bits` row

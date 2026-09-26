@@ -75,13 +75,10 @@ test("placeholder consistency: every derived version string in the tree equals D
   const readJson = (rel: string) => JSON.parse(readFileSync(join(root, rel), "utf8"));
 
   const vicePkg = readJson("src/mcp/vice/package.json");
-  const installerPkg = readJson("installer/package.json");
   const pluginJson = readJson(".claude-plugin/plugin.json");
   const marketplaceJson = readJson(".claude-plugin/marketplace.json");
 
   assert.equal(vicePkg.version, DEV_PLACEHOLDER, "src/mcp/vice/package.json .version");
-  assert.equal(installerPkg.version, DEV_PLACEHOLDER, "installer/package.json .version");
-  assert.equal(installerPkg.dependencies, undefined, "installer/package.json declares no dependencies: it never installs the MCP server");
   assert.equal(pluginJson.version, DEV_PLACEHOLDER, ".claude-plugin/plugin.json .version");
   assert.equal(marketplaceJson.version, DEV_PLACEHOLDER, ".claude-plugin/marketplace.json .version");
   assert.equal(

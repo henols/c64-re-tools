@@ -18,7 +18,7 @@ import { HOST_BOUND_ARTIFACTS } from "./build.ts";
 import { STOCK_TOOLS } from "./stock-tools.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SKILLS_DIR = join(HERE, "..", "..", "skills");
+const SKILLS_DIR = join(HERE, "..", "..", "..", "skills");
 
 /** The deleted modules, by stem. */
 const DELETED_STEMS = ["hostpath", "containerpath", "stock-paths", "host-tool-client"];
@@ -152,7 +152,7 @@ test("the scanned set meets its floor and includes all three kinds of source", (
   const rel = files.map((f) => relative(HERE, f));
   assert.ok(rel.includes("vice-proxy.ts"), "a top-level module must be scanned");
   assert.ok(rel.includes(join("resources", "vice-broker.mjs")), "a compiled resource must be scanned");
-  assert.ok(rel.includes(join("..", "..", "skills", "c64-ram-capture", "scripts", "mcp-module.ts")), "a skill script must be scanned");
+  assert.ok(rel.includes(join("..", "..", "..", "skills", "c64-ram-capture", "scripts", "mcp-module.ts")), "a skill script must be scanned");
 });
 
 test("planted violations: each deleted-module shape and each seam identifier is caught", () => {

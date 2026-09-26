@@ -1537,7 +1537,7 @@ export function buildHostToolArgv(
     }
     const acmePath = acmeResolved.path;
 
-    // Fixed flags first, in the SAME order src/skills/acme-build/scripts/
+    // Fixed flags first, in the SAME order skills/acme-build/scripts/
     // acme.ts's build() uses today, then one -D per define and one -I pair
     // per include in caller-given order, then --setpc if given, then the
     // resolved source path LAST.

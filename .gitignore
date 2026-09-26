@@ -30,25 +30,12 @@ node_modules/
 # symlink-to-directory as a directory.
 /c64-re-tools
 
-# build artifacts from scripts/package.sh
+# The npm server build (src/mcp/vice/build.ts --server, run by prepack).
+# Built at publish time, never committed.
 dist/
-
-# Skills copied into the installer package by installer/scripts/sync-skills.mjs
-# on `npm pack`/`prepack`. Generated from the canonical src/skills/; never
-# committed.
-/installer/skills/
 
 # npm pack output
 *.tgz
-
-# Synthetic --root fixture trees built by src/mcp/vice/audit-root-args.test.ts.
-# They MUST live inside the repository (resolveContainedRoot() refuses anything
-# outside it), and they are removed in a `finally` and again in a `t.after`.
-# Ignored anyway because a crashed test that left one behind would dirty the
-# working tree, and a dirty tree is picked up by every `git status --porcelain`
-# assertion in this repository -- so this entry makes a test crash a test
-# failure instead of a corruption of the next run.
-/.audit-root-synth-*/
 
 # Local editor config, machine-specific, never shared.
 /.vscode/

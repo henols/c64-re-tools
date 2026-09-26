@@ -7,11 +7,10 @@
   files. Settings: ES2022, NodeNext modules, `strict`, `erasableSyntaxOnly`.
   Code that must run where Node cannot strip types is written as `.mts` and
   compiled by `build.ts`.
-- **Generated `.mjs`**: `resources/*.mjs` is compiler output from `.mts`
-  sources, never edited by hand.
-- **Existing hand-written `.mjs`**: the installer CLI, the skill scripts and a
-  few server entry files are legacy code, to be converted to TypeScript (see
-  the roadmap).
+- **Generated JavaScript**, never edited by hand: `resources/*.mjs` (host-bound,
+  committed), `vice-cli.mjs` (the package bin, committed) and `dist/` (the npm
+  server build, made at publish time, never committed). No hand-written
+  `.mjs`/`.js` exists; `no-handwritten-mjs.test.ts` enforces it.
 - **Bash**: the host launcher (`resources/vice-launcher.sh`) and `dxa`'s build
   script.
 - **6502/6510 assembly (ACME dialect)**: skill templates and the exported
@@ -20,22 +19,26 @@
 
 ## Runtime
 
-- **Node.js ≥ 24** for `@henols/vice-mcp`. It runs `.ts` directly through
-  native type-stripping, with no build step at runtime, and needs `node:sqlite`.
+- **Node.js ≥ 24** for `@henols/vice-mcp`, which needs `node:sqlite`. From the
+  plugin or a checkout it runs `.ts` directly through native type-stripping.
+  Installed from npm it runs the compiled `dist/` build, because Node never
+  strips types under `node_modules`.
 - **Node.js ≥ 24** for skill scripts. They are plain `.ts` and run directly,
-  with no build step. The installer copies them into `<project>/.claude/skills/`,
-  which is outside `node_modules`, so type-stripping applies. They need a
+  with no build step. `npx skills add` installs them into the project (e.g.
+  `.agents/skills/` linked from `.claude/skills/`), which is outside
+  `node_modules`, so type-stripping applies. Each skill's `scripts/` carries a
+  `{"type":"module"}` `package.json`. They need a
   `node` ≥ 24 on PATH. A bare non-interactive `node` can resolve to an older
   system Node (measured on the dev host: v20.19), and an older `node` cannot run
   a `.ts` script at all.
-- **Node.js ≥ 18** for the `@henols/c64-re-tools` installer CLI. It must be
-  compiled TypeScript. The same applies to any module loaded from
-  `node_modules`, where Node never strips types.
+- Any module loaded from `node_modules` must be compiled TypeScript, where Node
+  never strips types: `dist/`, `resources/*.mjs` or `vice-cli.mjs`.
 - ESM (`"type": "module"`) is used everywhere.
 
 ## Dependencies
 
-- Runtime: `@mastra/mcp` 1.15.0 and `@mastra/core` 1.55.0 only. Mastra telemetry
+- Runtime: `@mastra/mcp` 1.15.0, `@mastra/core` 1.55.0 and `@modelcontextprotocol/sdk`
+  (imported directly by `vice-proxy.ts`, already pulled in by `@mastra/mcp`) only. Mastra telemetry
   is disabled with `MASTRA_TELEMETRY_DISABLED=1`.
 - Node built-ins that carry architecture: `node:sqlite` (only `anno-store.ts`
   may import it), `node:net` (the monitor channels and the broker endpoint) and
@@ -59,18 +62,21 @@ declared in `src/mcp/vice/prerequisites.json`.
 
 - `build.ts` compiles the host-side `.mts` modules into committed
   `resources/*.mjs`. `resources-sync.test.ts` fails when the two drift apart.
-- Tests use Node's built-in `node --test` and sit next to the module they test.
+- Tests use Node's built-in `node --test`. Server tests sit next to the module
+  they test; skill-script tests live in `test/skills/<skill>/` so they never ship.
   `npm run test:automated` skips the manual-only suites, and live suites run only
   when `VICE_LIVE_*` environment variables are set. Tests must be data-driven: no
   test may scan source text.
-- GitHub Actions run the typecheck, the tests, the smoke test and a check of
-  both tarballs. A `v*` tag publishes both npm packages through OIDC trusted
-  publishing.
+- GitHub Actions run the typecheck, the tests, the smoke test and the
+  packed-install smoke test (`smoke-packed.ts`). A `v*` tag publishes
+  `@henols/vice-mcp` through OIDC trusted publishing.
 
 ## Distribution
 
-- npm: `@henols/vice-mcp` (bin `vice-mcp`) and `@henols/c64-re-tools` (bin
-  `c64-re-tools`).
+- npm: `@henols/vice-mcp` (bin `vice-mcp`: the MCP server, `vice-mcp anno`,
+  `vice-mcp broker`). Other agents wire it with `npx add-mcp vice-mcp`.
+- Skills: `npx skills add henols/c64-re-tools` reads `skills/` from this
+  repository. Nothing is published for them.
 - Claude Code plugin: `.claude-plugin/plugin.json` and `.mcp.json`, with
   `defaultEnabled: false`. In plugin mode the tools are namespaced
   `mcp__plugin_c64-re-tools_vice__*`.
@@ -80,8 +86,8 @@ declared in `src/mcp/vice/prerequisites.json`.
 **Process topology**
 - Three separate parts: the stdio MCP server (`vice-proxy.ts`), one broker per
   machine (`vice-broker.mts`), and the `x64sc` instances that the broker
-  launches. The user starts the broker by hand with
-  `node <plugin-root>/src/mcp/vice/vice-cli.mjs broker`. No client spawns it, and the project ships
+  launches. The user starts the broker by hand with `vice-mcp broker` (npm)
+  or `node <plugin-root>/src/mcp/vice/vice-cli.mjs broker` (plugin or checkout). No client spawns it, and the project ships
   no service definition for it: how the user keeps it running is their business.
 - Endpoint: fixed TCP port 19510, dialled at `127.0.0.1` and then at
   `host.docker.internal`. The first handshake that completes wins, and the

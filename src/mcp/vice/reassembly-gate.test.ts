@@ -58,7 +58,7 @@ test("ACME availability gate", () => {
 // imported across these two test files, which is deliberate: neither ships,
 // and a shared non-test module for this alone would be new surface for two
 // call sites) exactly the way `ACME_VERIFY_ARGV_FLAGS`'s own sibling
-// construction in `src/skills/acme-build/scripts/acme.ts` is documented as a
+// construction in `skills/acme-build/scripts/acme.ts` is documented as a
 // deliberate second copy in `acme-verify.ts`.
 // ---------------------------------------------------------------------------
 

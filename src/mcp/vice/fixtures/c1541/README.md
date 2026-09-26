@@ -212,7 +212,7 @@ call itself fails.
 `synthetic.d64` and `synthetic-corrupt.d64` were BOTH built by the very
 `c1541` binary this project's `c1541.*` seam calls read back — the
 "acknowledged mild circularity" section above names the resulting risk.
-The mitigation lives in `src/skills/c64-disk-access/scripts/c1541.test.ts`,
+The mitigation lives in `skills/c64-disk-access/scripts/c1541.test.ts`,
 as ONE live-gated test case cross-validating the directory listing, one
 entry's own claimed first track/sector, and that same entry's independently
 walked sector chain against each other, run against Phase 23's own evidence

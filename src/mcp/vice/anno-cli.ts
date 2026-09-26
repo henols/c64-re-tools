@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // anno-cli.ts -- the thin CLI ergonomics layer over the annotation store.
 // Reached as `node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>` on
-// the plugin route or an in-repo checkout, the only routes that execute it.
+// the plugin route or an in-repo checkout, and as `vice-mcp anno <verb>`
+// from the npm package (which runs the compiled dist/ copy).
 // No usage line names an `npx` form: never-auto-install binds shipped
 // remedy text, and `npx -y` installs.
 //
@@ -54,7 +55,7 @@
 //     the symbol round trip still has NO route at all. That is recorded as a
 //     withdrawal in this project's own capability record rather than left for
 //     a reader to discover by running it. The exact wording of those
-//     withdrawal notices across both skill trees is kept in exactly one
+//     withdrawal notices across the skill docs is kept in exactly one
 //     place; this file states the code fact and does not restate their text,
 //     so the two edits cannot contradict each other.
 //
@@ -188,8 +189,10 @@ import { DECLINE_COMMENT_PREFIX, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX, AUTHORED_
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>";
+const NPM_INVOCATION = "vice-mcp anno <verb>";
 
 const USAGE = `usage (plugin/in-repo): ${PLUGIN_INVOCATION}
+usage (npm install):    ${NPM_INVOCATION}
 
 verbs:
   render-memmap <store> --provenance FILE [--out FILE] [--force] [--check]
@@ -2029,7 +2032,10 @@ const HARDWARE_CHIP_RANGES: readonly { start: number; endInclusive: number }[] =
   { start: 0xdd00, endInclusive: 0xddff }, // CIA#2
 ]);
 
-const REGBITS_PATH_FOR_HARDWARE_CHECK = join(HERE, "anno-regbits.json");
+// Beside this module (the package root), else one directory up (the
+// compiled dist/ copy, one level below the package root).
+const REGBITS_PATH_FOR_HARDWARE_CHECK =
+  [join(HERE, "anno-regbits.json"), join(HERE, "..", "anno-regbits.json")].find((c) => existsSync(c)) ?? join(HERE, "anno-regbits.json");
 
 let cachedHardwareRegBitsAddresses: ReadonlySet<number> | undefined;
 
@@ -3131,7 +3137,7 @@ async function cmdCall(rest: string[]): Promise<number> {
 /**
  * Entry point for the `anno` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
- * verb per `acme.ts`'s own dispatch convention (`src/skills/acme-build/
+ * verb per `acme.ts`'s own dispatch convention (`skills/acme-build/
  * scripts/acme.ts`), with one deliberate difference: an explicit `--help`
  * returns 0 (a no-op invocation with no verb also returns 0), while an
  * unrecognised verb returns 1.

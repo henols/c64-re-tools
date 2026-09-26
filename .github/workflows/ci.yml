@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish to npm (e.g. 0.1.5) -- no leading v. Publishes both packages via OIDC."
+        description: "Version to publish to npm (e.g. 0.1.5) -- no leading v. Publishes @henols/vice-mcp via OIDC."
         required: true
         type: string
 
@@ -99,7 +99,7 @@ jobs:
         # running it. The file it now invokes is part of the ordinary suite,
         # so the same break surfaces on a developer machine before it reaches
         # this job. It still runs here as well, early and separately, because
-        # this step gates every later step including both publish paths, and
+        # this step gates every later step including the publish job, and
         # a fast dedicated failure is worth the second second.
         #
         # The test file starts its OWN harness broker (broker-harness.ts) and
@@ -109,24 +109,6 @@ jobs:
         env:
           VICE_REQUIRE_ACME: "1"
         run: node --test skill-acme-build-cli.test.ts
-
-      # Phase 31 gap closure (31-04, verification gap 1 / code review CR-01):
-      # `installer/skills/` is a GENERATED, GITIGNORED tree -- `git ls-files
-      # installer/skills` returns 0 -- and its ONE producer is
-      # `installer/scripts/sync-skills.ts`, the exact command the installer
-      # package's own `prepack` hook runs. This step reuses that single
-      # producer rather than introducing a second sync path.
-      #
-      # IT MUST STAY ORDERED BEFORE `Test`. The step further down that also
-      # materialises the tree (`Validate npm package contents`, via
-      # the retired tarball checker's pack walk) ran AFTER the suite and was
-      # therefore too late to help it. Any guard that scores BOTH skill trees
-      # reads the shipped tree from disk, so if it does not exist when the
-      # suite runs the guard scores ONE tree and reports a clean pass with
-      # zero skips -- indistinguishable from having scored two.
-      - name: Generate the shipped skills tree (scored by the skill guards)
-        working-directory: installer
-        run: node scripts/sync-skills.ts
 
       - name: Test
         working-directory: src/mcp/vice
@@ -169,36 +151,32 @@ jobs:
         working-directory: src/mcp/vice
         run: npm run smoke
 
-      # installer/cli.test.ts drives the committed, compiled installer/bin/cli.mjs
-      # as a subprocess: it copies skills, writes no .mcp.json, refuses --vendor
-      # and never runs npm/npx. No `npm ci` step is needed -- the CLI imports
-      # only node: builtins, so the suite runs against a bare checkout.
-      - name: Test the installer
-        working-directory: installer
-        run: npm test
+      # Proves the npm package runs from node_modules, where Node refuses to
+      # strip types: builds dist/, runs the bin with type stripping off, then
+      # packs the tarball, extracts it as real files under a scratch
+      # node_modules and runs the extracted bin (MCP handshake, `anno --help`,
+      # `broker --help`, which refuses without starting a broker).
+      - name: Smoke-test the packed npm package (runs from node_modules)
+        working-directory: src/mcp/vice
+        run: node smoke-packed.ts
 
-      # Phase 16 gap closure (16-08, code review WR-01): the four skill suites under
-      # src/skills/*/scripts/ (diff-images.test.ts, d64-parse.test.ts,
-      # dump-artifacts.test.ts, watch-loads.test.ts; 95 tests, 87 pass, 8 skipped,
-      # 0 fail measured at plan time) were likewise committed and executed by
-      # nothing in CI -- the vice-mcp `npm test` glob above is cwd-only and
-      # non-recursive, so it structurally cannot reach a suite outside its own
-      # directory. These suites need no ACME and no emulator, so they add roughly
-      # half a second to the job. The glob is quoted so Node receives the pattern
-      # rather than a shell expansion.
+      # The skill scripts' tests live in test/skills/<skill>/, outside the skill
+      # folders so `npx skills add` never ships them. The vice-mcp `npm test`
+      # glob above is cwd-only, so it cannot reach them. The glob is quoted so
+      # Node receives the pattern rather than a shell expansion.
       - name: Test the skills
-        run: node --test 'src/skills/*/scripts/*.test.ts'
+        run: node --test 'test/skills/**/*.test.ts'
 
   publish-npm:
-    # On a v* tag, publish both npm packages to the public registry via
+    # On a v* tag, publish @henols/vice-mcp to the public registry via
     # npm Trusted Publishing (OIDC) -- no NPM_TOKEN secret required.
     #
     # The published version is taken from the tag (v1.2.3 -> 1.2.3), so a release
     # can be cut just by pushing/creating a tag -- no need to pre-bump the source
-    # package.json files to match. The committed versions are placeholders that
+    # package.json to match. The committed versions are placeholders that
     # `npm version` overwrites here before publishing.
     #
-    # Prerequisite (one-time, on npmjs.com): each package must have a Trusted
+    # Prerequisite (one-time, on npmjs.com): the package must have a Trusted
     # Publisher configured for this repo + workflow (henols/c64-re-tools, ci.yml).
     # OIDC also requires npm >= 11.5.1, so npm is upgraded below (the runner's
     # bundled npm is older). Provenance attestations are produced automatically.
@@ -231,49 +209,15 @@ jobs:
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           fi
 
-      # Both packages publish at the same version from the same tag.
+      # The package's `prepack` script compiles dist/ with the pinned tsc, a
+      # devDependency, so the dependencies must be installed before publishing.
+      - name: Install MCP server dependencies
+        working-directory: src/mcp/vice
+        run: npm ci --no-audit --no-fund
+
       # No NODE_AUTH_TOKEN: npm authenticates to the registry via GitHub OIDC.
       - name: Publish @henols/vice-mcp
         working-directory: src/mcp/vice
         run: |
           npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
           npm publish
-
-      - name: Publish @henols/c64-re-tools
-        working-directory: installer
-        run: |
-          npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
-          npm publish
-
-  # DECL-02 (phase 58 plan 01): src/mcp/vice/prerequisites.json must parse
-  # under the LOW end of this project's Node support -- the installer
-  # package's own floor (installer/package.json's engines.node), which
-  # Phase 61's doctor cell will pin to the same number -- even though the
-  # MCP server itself requires Node >= 24. This job is deliberately
-  # standalone: no `needs:` edge to or from `build`, `release` or
-  # `publish-npm`, so it fails its own check independently and the publish
-  # chain's blast radius stays exactly what it is today. It provisions Node
-  # 18 via `actions/setup-node@v4` only -- a language runtime, not an
-  # install of an external prerequisite -- and never reaches for a package
-  # manager, matching the governing never-auto-install constraint exactly as
-  # it binds shipped code.
-  decl-02-node18-proof:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-      - name: Prove prerequisites.json parses on the installer's own Node floor
-        run: |
-          node -e '
-            const fs = require("fs");
-            const doc = JSON.parse(fs.readFileSync("src/mcp/vice/prerequisites.json", "utf8"));
-            if (!doc || typeof doc !== "object" || typeof doc.tools !== "object") {
-              console.error("prerequisites.json did not parse into the expected shape under Node 18");
-              process.exit(1);
-            }
-            console.log(`prerequisites.json parsed on Node 18 -- ${Object.keys(doc.tools).length} tool record(s)`);
-          '

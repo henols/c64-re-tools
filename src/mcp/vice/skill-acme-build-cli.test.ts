@@ -1,4 +1,4 @@
-// Coverage for src/skills/acme-build/scripts/acme.ts -- the acme-build
+// Coverage for skills/acme-build/scripts/acme.ts -- the acme-build
 // skill's ACME driver (new/build/sym verbs).
 //
 // acme.ts's `VERBS[cmd](rest)` dispatch sits unconditionally at module
@@ -51,7 +51,7 @@ import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRIPT_PATH = join(HERE, "..", "..", "skills", "acme-build", "scripts", "acme.ts");
+const SCRIPT_PATH = join(HERE, "..", "..", "..", "skills", "acme-build", "scripts", "acme.ts");
 
 /** Computed once, by the shared seam -- never a second hand-rolled probe. */
 const SKIP_REASON: string | false = acmeSkipReasonFor("skill-acme-build-cli.test.ts");
@@ -160,7 +160,7 @@ test("the scaffold verb writes a `; Build:` line naming the consumer's installed
     );
     assert.doesNotMatch(
       content,
-      /src\/skills\/acme-build\/scripts\/acme\.ts/,
+      /(?<!\.claude\/)skills\/acme-build\/scripts\/acme\.ts/,
       "the scaffold must never name this repository's source-tree script path"
     );
   });
