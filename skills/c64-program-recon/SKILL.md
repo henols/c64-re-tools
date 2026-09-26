@@ -181,18 +181,18 @@ The JSON object carries the same argument names each verb below documents.
 Use `--args-file <path>` for a large object, such as `anno_batch_execute`'s.
 The npm-installed form is `vice-mcp anno call <name> --args '<json>'`.
 
-**Where the findings live.** The broker holds one annotation database per machine, and every
-row in it belongs to a project. This workspace's project is the one named by
-`.c64-re-tools/project.json`, which is gitignored: a fresh clone or a new worktree starts with an
-empty project of its own. No call takes a `store` argument, and one that passes it is refused.
-Save a project with `anno export-project --out FILE`; `anno import-project FILE` fills an empty
-project from that file, which is also how a project moves to another machine, clone or worktree.
+**Where the findings live.** In this workspace's own SQLite file,
+`.c64-re-tools/annotations.db` — a project artifact. **Commit it** with the rest of the project, so
+the findings version with the program: branches, clones and review all carry them. No call takes a
+`store` argument, and one that passes it is refused. No broker is involved. The file is binary, so
+for a diffable copy (or a fixture) run `anno export-project --out FILE`; `anno import-project FILE`
+fills an empty project from such a copy.
 
 **There is no bootstrap step, and no bootstrap verb.** The first mutating call — `anno call anno_set_label_name`,
-`anno call anno_set_comment`, `anno call anno_set_data_type`, `anno call anno_add_scope` — registers a project
-with the broker and writes `project.json`. A read before any write is REFUSED by name ("has no
+`anno call anno_set_comment`, `anno call anno_set_data_type`, `anno call anno_add_scope` — creates
+`annotations.db` and its one project. A read before any write is REFUSED by name ("has no
 annotation project yet") rather than answering against an empty project, so "I read nothing" and
-"there is nothing to read" stay distinguishable. Every `anno` call needs the broker running.
+"there is nothing to read" stay distinguishable.
 
 Every call that derives its answer from the program's **bytes** rather than from the annotations
 takes an `image` path — `anno call anno_get_binary_info`, `anno call anno_read_region`, `anno call anno_disassemble`,

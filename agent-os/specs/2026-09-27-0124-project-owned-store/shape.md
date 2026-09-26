@@ -71,3 +71,38 @@ it.
   pick one of several projects.
 
 ### Decided during implementation
+
+- **Steps 1 and 2 shipped as one commit (`e7d52a9f`).** The inverted
+  boundary test can only pass once the broker seam is gone, and a commit
+  whose own test fails was not worth splitting out.
+- **The broker files were restored from their pre-seam versions.**
+  `broker-control`, `broker-endpoint`, `broker-home`, `vice-broker` and their
+  tests had been touched only by the seam commit (`de049ca8`), so restoring
+  them from `de049ca8^` removed the seam exactly.
+- **A measured closure decided which modules leave the host-bound set.**
+  Starting from the host-bound modules that predate the engine, the broker
+  reaches none of the 37 engine modules. All of them left
+  `HOST_BOUND_ARTIFACTS`, `tsconfig.build.json` and `resources/`, and so did
+  the `memmap.json` / `anno-regbits.json` data files. The client imports the
+  `.mts` sources directly.
+- **The runner is `runAnno({mode, kind, name, args, files})`**, with the
+  default `workspaceStoreRunner()`. A report answer carries the project id,
+  so the printed labels (`project <id>`) are unchanged. The one refusal code
+  this adds is `no_project`, and the client turns it into the familiar
+  "`<verb>` refused: this workspace has no annotation project yet".
+- **`soleProjectStore()` repeats its check under `begin immediate`.** A
+  process-level race test never overlapped (the mutant survived 6 runs out
+  of 6), so the test is a worker thread instead. The worker holds an
+  uncommitted insert, and the main thread must adopt the worker's project
+  once it commits. That test fails on the mutant.
+- **export-asm refuses an `--out` that is, or contains, the annotation
+  store** again (T-47-14). The store is back inside the workspace, so
+  `--out .c64-re-tools` would put the tree among the annotations.
+- **The boundary scan follows `.mjs`-spelled imports into their `.mts`
+  sources.** Host-bound modules import each other under the names the build
+  emits. Without the mapping the walk silently stopped at the first hop; a
+  planted `node:sqlite` import behind `broker-home` proves it now follows
+  them.
+- **Test support** is `workspace-store-fixture.ts` (`openTestProject`,
+  `seedWorkspaceProject`) and `project-race-holder.ts`. Neither name starts
+  with `anno-`, and neither ships.

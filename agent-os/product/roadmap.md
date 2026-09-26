@@ -25,28 +25,27 @@
   anchor hit 50; exactness is lost from anchor hit 75.
 
 **Annotation store**
-- The broker owns ONE annotation database per machine (`node:sqlite`, schema
-  version 6). It holds labels, comments, a 12-member per-range type vocabulary,
+- Each project keeps its annotations in ONE SQLite file (`node:sqlite`, schema
+  version 6), `<project>/.c64-re-tools/annotations.db`, committed with the
+  project. It holds labels, comments, a 12-member per-range type vocabulary,
   scopes, project enums and cross-references, with search. Durability is proven
   across a real `SIGKILL`.
-- Every row is scoped by a persisted, randomly created `project_id` from the
-  workspace's gitignored `.c64-re-tools/project.json`, which the first write
-  creates. No call can read or write another project's data. A worker thread in
-  the broker holds the only connection; no client module can load the store,
-  and a structural test with a planted proof keeps it that way. Spec:
-  `agent-os/specs/2026-09-26-2233-broker-owned-store/`.
+- The client opens the file per call; the broker never loads the store, and a
+  structural test with a planted proof keeps it that way. The first write
+  creates the file and its one project; a read without it is refused. Specs:
+  `agent-os/specs/2026-09-26-2233-broker-owned-store/` (the call surface) and
+  `2026-09-27-0124-project-owned-store/` (where the store lives).
 - A runtime evidence layer stores what the emulator was observed executing,
   keyed by run. It is joined with the byte-derived block table, and disagreements
   are reported first.
 - Enums are generated from `memmap.json`, so register writes render with bit
   names.
 - The store is reached through the `vice-mcp anno` CLI (`anno call <name> --args
-  JSON` and six report verbs), which stages input bytes and asks the broker over
-  one `anno_run` op. It is no longer on the MCP tool surface. No call takes a
-  store path.
-- `anno export-project` and `anno import-project` back a project up and move it
-  between machines, clones and worktrees. Import fills an empty project only, in
-  one transaction.
+  JSON` and six report verbs), which hands the engine staged input bytes, never
+  a path. It is no longer on the MCP tool surface. No call takes a store path.
+- `anno export-project` and `anno import-project` give the binary file a
+  diffable text form, in the fixtures' format. Import fills an empty project
+  only, in one transaction.
 
 **Static analysis**
 - dxa 0.1.5 (vendored source) produces a machine-readable code/data map.
@@ -126,18 +125,6 @@
   assert they stay gone. Specs: `agent-os/specs/2026-09-25-1853-one-endpoint-client/`,
   `2026-09-25-2240-deletion-cutover/`, `2026-09-26-0022-ghidra-without-alias/`
   and `2026-09-26-1019-no-cross-side-paths/`.
-
-## In Progress: project-owned store (v2.0.0)
-
-- **Spec:** `agent-os/specs/2026-09-27-0124-project-owned-store/`.
-- The annotation database is a project artifact: one SQLite file per project,
-  at `<project>/.c64-re-tools/annotations.db`, opened by the client and
-  committed with the project. This replaces the broker-owned store below
-  before any release shipped it.
-- Steps:
-  1. a client-owned store behind the existing runner seam;
-  2. remove the broker seam;
-  3. invert the boundary test, update the docs, close.
 
 ## Planned / Later
 

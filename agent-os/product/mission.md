@@ -38,8 +38,9 @@ state) and keep working when the emulator misbehaves.
   crash.
 - **Annotation store.** Findings are kept as queryable state, not as prose:
   labels, comments, per-range types, scopes, enums, cross-references and
-  runtime execution evidence. The broker holds one database per machine, with a
-  project per workspace. It is reached through the `vice-mcp anno` CLI.
+  runtime execution evidence. Each project keeps them in its own SQLite file,
+  `.c64-re-tools/annotations.db`, committed with the project. It is reached
+  through the `vice-mcp anno` CLI.
 - **Analysis engines.** A vendored dxa builds the code/data map, and headless
   Ghidra runs under this project's own NMOS 6502 language. Both annotate the
   project automatically.
@@ -77,7 +78,8 @@ state) and keep working when the emulator misbehaves.
 - The user starts one broker per machine. No client ever starts it, and every
   project and container on the machine shares it.
 - Tool-written output goes under one root: the project's `.c64-re-tools/`
-  directory for client-side files, and `~/.c64-re-tools` for broker-owned state.
+  directory for client-side files (including the committed annotations.db),
+  and `~/.c64-re-tools` for broker-owned machine state.
 - The server has exactly three npm runtime dependencies: `@mastra/mcp`,
   `@mastra/core` and `@modelcontextprotocol/sdk` (imported directly, already
   pulled in by `@mastra/mcp`). New runtime dependencies need a strong reason.

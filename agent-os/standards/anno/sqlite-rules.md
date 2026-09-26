@@ -1,7 +1,8 @@
 # SQLite Rules
 
 Only `anno-store.mts` imports `node:sqlite`. Everything else calls its
-functions, and only the broker's worker thread opens the database.
+functions. The client opens a project's database for one call and closes
+it; no broker module ever loads the store.
 
 ```ts
 db.prepare("insert into anno_range(project_id, start, end_inclusive, data_type, bank) values ($pid, ?, ?, ?, ?)")

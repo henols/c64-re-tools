@@ -41,7 +41,7 @@
   (imported directly by `vice-proxy.ts`, already pulled in by `@mastra/mcp`) only. Mastra telemetry
   is disabled with `MASTRA_TELEMETRY_DISABLED=1`.
 - Node built-ins that carry architecture: `node:sqlite` (only `anno-store.mts`
-  may import it, and only the broker loads it), `node:net` (the monitor channels and the broker endpoint) and
+  may import it, and no broker module loads it), `node:net` (the monitor channels and the broker endpoint) and
   `node:zlib`.
 - Dev: TypeScript 7.0.2 (typecheck only) and `@types/node`.
 
@@ -131,15 +131,12 @@ declared in `src/mcp/vice/prerequisites.json`.
   (6) check is strict equality, with no migration.
 - Annotation is a CLI (`anno call` and the report verbs). It never touches the
   emulator.
-- **The broker owns the store:** ONE annotation database per machine, at
-  `<broker home>/anno/annotations.db`, serves every project, and no store file
-  lives in a project. A worker thread in the broker holds the only connection.
-  The first write in a workspace registers a random `project_id` and persists
-  it in `<project>/.c64-re-tools/project.json` (gitignored); every call sends
-  it. Every row carries `project_id`, and the broker binds it into every read
-  and write, so no call can reach another project's data. The store, the tool
-  engine and the report engine are host-bound. A project moves between
-  machines, clones and worktrees with `anno export-project` / `import-project`.
+- **The project owns the store:** each project's annotations are ONE SQLite
+  file, `<project>/.c64-re-tools/annotations.db`, committed with the project.
+  The client opens it in-process per call; the broker never loads the store.
+  The file holds exactly one project, created by the first write. Every row
+  still carries `project_id`, bound into every statement. `anno export-project`
+  / `import-project` give the binary file a diffable text form.
 - Skill scripts never spawn external binaries. Every host tool goes through the
   broker's fixed endpoint (`host_tool_stage`/`host_tool_run`): inputs upload as
   bytes, results download by handle, and no request names a broker-side path.

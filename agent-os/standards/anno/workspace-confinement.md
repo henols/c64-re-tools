@@ -1,9 +1,11 @@
 # Workspace Path Confinement
 
 Every caller-supplied file path (image, `--out`, `--provenance`,
-sidecars, ...) goes through the one seam before any fs call, on the
-client. The broker only ever sees staged bytes under a basename. The
-annotation DB is not a caller path; see store-ownership.md.
+sidecars, ...) goes through the one seam before any fs call. The
+engine only ever sees staged bytes under a basename. The annotation DB
+is not a caller path: it derives from the workspace root, and it is
+confined too, so a symlinked `.c64-re-tools` cannot move it out. See
+store-ownership.md.
 
 ```ts
 const out = storePathWithinWorkspace(args.out, workspaceRoot); // throws if outside

@@ -169,8 +169,9 @@ node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --out gam
 node src/mcp/vice/vice-proxy.ts anno export-asm game.prg --out game-src
 ```
 
-`<image>` supplies the bytes; the workspace's own annotation project, which the
-broker holds, supplies the names, ranges, typed regions and comments. `--out` is
+`<image>` supplies the bytes; the workspace's own annotation project
+(`.c64-re-tools/annotations.db`) supplies the names, ranges, typed regions and
+comments. `--out` is
 required and names a **directory**: the verb writes the whole export into it, and
 there is no default location. The directory holds a root file that sources
 the rest, one file per annotation scope, and an `unscoped.a` for anything inside

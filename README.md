@@ -212,9 +212,9 @@ that cause this, none of them specific to this project: a stray `nc` session
 against the monitor port, a second Claude Code session pointed at the same
 instance, VICE's own `-remotemonitor` flag, or any other 6502 debugger that
 dials in. This plugin's own annotation route can never cause it: the `anno`
-CLI asks the broker's annotation database and decodes bytes staged from a file
-on disk, and there is no emulator connection anywhere on that path to contend
-for the port. If an emulator has gone silent, check for one of these before assuming
+CLI opens the project's own SQLite annotation file and decodes bytes out of a
+file on disk, and there is no emulator connection anywhere on that path to
+contend for the port. If an emulator has gone silent, check for one of these before assuming
 it is wedged, then restart the broker.
 
 ## Starting the broker
@@ -255,9 +255,10 @@ namespace caveat went with it — that limit belonged to the analyser's own HTTP
 MCP route, which this project never used and now cannot.
 
 **What replaced it.** Annotations — labels, comments, typed ranges, scopes and
-enums — live in the broker's SQLite annotation database, one project per
-workspace, reached through the `anno` CLI's `call` verb, with no external
-process anywhere on the path. Whole-program ACME export is **withdrawn and returns in Phase 30**,
+enums — live in the project's own SQLite file,
+`.c64-re-tools/annotations.db`, committed with the project and reached
+through the `anno` CLI's `call` verb, with no external process anywhere on
+the path. Whole-program ACME export is **withdrawn and returns in Phase 30**,
 rebuilt over that store and settled by assembling the output with a real ACME
 and diffing the bytes against the input. The skill playbooks name that
 withdrawal at each place a reader would otherwise reach for the old route.
@@ -282,7 +283,9 @@ output) under `.c64-re-tools/` in the **project you are working in**, not under
 the plugin's own install directory. It resolves that root from
 `CLAUDE_PROJECT_DIR` (which Claude Code sets), falling back to
 `CONTAINER_WORKSPACE_PATH` and then a `.git` ancestor walk — see
-`src/mcp/vice/repo-root.ts`. The broker keeps its own state under its
+`src/mcp/vice/repo-root.ts`. The annotations live there too, in
+`.c64-re-tools/annotations.db`: a project artifact, meant to be committed with
+the project so the findings version with the program. The broker keeps its own state under its
 machine-level home (`VICE_BROKER_HOME`), never inside a project. The VICE
 emulator itself runs on the host, launched by the broker, and is reached only
 through the `mcp__plugin_c64-re-tools_vice__*` tools.

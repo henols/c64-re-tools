@@ -1,5 +1,11 @@
 # Broker-Owned Store — Shaping Notes
 
+> **Superseded on 2026-09-27 for where the store lives:** the owner ruled the
+> annotation database a committed project artifact. See
+> `../2026-09-27-0124-project-owned-store/`. The call-surface decisions here
+> (no `store` argument, staged file references, the required `--out`,
+> `--fixture`, the backup verbs) still stand.
+
 ## Scope
 
 This is the last v2.0.0 milestone before the tag. It builds the roadmap's

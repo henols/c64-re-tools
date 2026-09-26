@@ -20,8 +20,8 @@ finish*.
 ## The one rule that makes this different from upstream's version
 
 **Work the queue one entry at a time.** Not as a throughput compromise — as an
-accurate model of the project underneath. The broker runs every annotation
-call on one database connection, one at a time. Every mutating call commits
+accurate model of the project underneath. The project is one SQLite file, and
+SQLite lets one writer at a time hold it. Every mutating call commits
 inside the call, and every one of them accepts an optional `base_revision`
 compare-and-swap. That REFUSES a write computed against a revision the project
 has already moved past. Fanning several writers at one project therefore buys
@@ -37,9 +37,9 @@ The JSON object carries the same argument names each verb below documents.
 Use `--args-file <path>` for a large object, such as `anno_batch_execute`'s.
 The npm-installed form is `vice-mcp anno call <name> --args '<json>'`.
 
-**Every call annotates the workspace's own project.** The broker holds the
-annotations; `.c64-re-tools/project.json` names this workspace's project, and
-the first write creates it. No call takes a `store` argument. Pass `image` on
+**Every call annotates the workspace's own project**, the committed file
+`.c64-re-tools/annotations.db`; the first write creates it. No call takes a
+`store` argument. Pass `image` on
 every call that derives its answer from the program's bytes rather than from
 the annotations. Those calls are `anno call anno_get_binary_info`,
 `anno call anno_read_region`, `anno call anno_disassemble`, `anno call anno_get_cross_references`,
