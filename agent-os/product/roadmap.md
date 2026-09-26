@@ -102,7 +102,8 @@ from production code**, not only bypassed.
   stale guidance that the broker binds `0.0.0.0` and remove the dead guard
   comments. Structural tests must assert that the old seam is absent, so that
   they cannot pass vacuously.
-- **Ghidra without the symlink alias.** Ghidra runs land on a broker-side root
+- **Done: Ghidra without the symlink alias** (spec
+  `agent-os/specs/2026-09-26-0022-ghidra-without-alias/`). Ghidra runs land on a broker-side root
   that has no dot-prefixed segment, and the alias mechanism is deleted. This must
   be measured against real Ghidra, because Ghidra's dot-path refusal still
   applies.

@@ -28,6 +28,17 @@ one, so `ghidra.analyze` could not run under a machine-level broker at all.
 - **Verification:** measured against real Ghidra 12.1.3, including a broker
   with no `--repo-root` and the default dotted home.
 
+### Decided during implementation
+
+- `sweepOrphanedStaging()` gained an optional `label` for its log lines. The
+  unlabelled wording is unchanged.
+- `startHarnessBroker()` gained `homeSegment`, so a live test can run a broker
+  under a dotted home, such as the default `~/.c64-re-tools`, and prove the
+  projects root is independent of it.
+- `.gitignore` keeps a one-line `/c64-re-tools` ignore for the symlink older
+  brokers left in checkouts.
+- `path-seam-absent.test.ts` also forbids the alias identifiers.
+
 ## Context
 
 - **Visuals:** none.
