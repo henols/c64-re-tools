@@ -1,7 +1,7 @@
 // anno-engine-boundary.test.ts -- proof that no path reaches the anno engine.
 //
-// The engine (`anno-tools.ts`) runs where the store lives, which is not where
-// the caller's files live. So:
+// The engine (`anno-tools.ts`, `anno-reports.ts`) runs where the store lives,
+// which is not where the caller's files live. So:
 //   * every argument a definition marks `clientFile` is REFUSED when it
 //     arrives as a plain string, and accepted when it arrives as a staged
 //     reference -- the contrast is what shows the refusal is about the path,
@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 
 import { closeStore, openStore } from "./anno-store.ts";
 import { ANNO_TOOL_DEFINITIONS, clientFileKeys, runAnnoToolOnHandle, type AnnoInputFile } from "./anno-tools.ts";
+import { runAnnoReportOnHandle } from "./anno-reports.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STAGED_REFUSAL = /did not arrive as a staged file/;
@@ -99,4 +100,29 @@ function handlePathUses(source: string): string[] {
 test("the engine never reads handle.path, so no answer can echo where the store lives", () => {
   assert.deepEqual(handlePathUses(readFileSync(join(HERE, "anno-tools.ts"), "utf8")), []);
   assert.deepEqual(handlePathUses("  return { store: handle.path, symbols };\n"), ["  return { store: handle.path, symbols };"], "planted: the check sees a use");
+});
+
+/** One minimal call per report whose inputs include a staged file, with
+ * each file input given as `file`. */
+function reportCallsWith(file: unknown): Record<string, Record<string, unknown>> {
+  return {
+    "render-memmap": { sidecar: file, store_location: "s", sidecar_location: "p" },
+    coverage: { image: file },
+    "export-asm": { image: file, store_label: "s" },
+    "decomp-completeness": { disagreements: file, store_label: "s", manifest_entry: { path: "x.prg", execution: "executed", reason: null } },
+    "hazard-report": { image: file },
+  };
+}
+
+test("every report file input is refused as a plain path", async () => {
+  await withHandle(async (handle) => {
+    for (const [name, args] of Object.entries(reportCallsWith("/home/someone/file"))) {
+      await assert.rejects(runAnnoReportOnHandle(handle, name, args, new Map()), STAGED_REFUSAL, `${name} must refuse a plain path`);
+    }
+    await assert.rejects(runAnnoReportOnHandle(handle, "export-asm", { image: { $file: "f0" }, ledger: "/home/someone/PROVENANCE.md", store_label: "s" }, new Map([["f0", { name: "game.prg", bytes: PRG }]])), STAGED_REFUSAL);
+  });
+});
+
+test("the report engine never reads handle.path", () => {
+  assert.deepEqual(handlePathUses(readFileSync(join(HERE, "anno-reports.ts"), "utf8")), []);
 });

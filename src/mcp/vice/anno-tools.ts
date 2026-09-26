@@ -2254,7 +2254,7 @@ function dispatchImportGhidraExport(handle: AnnoStoreHandle, args: unknown, inpu
   const bag = argBag(args);
   const baseRevision = assertBaseRevisionArg("anno_import_ghidra_export", args);
   assertNotStale("anno_import_ghidra_export", handle, baseRevision);
-  const exportFile = stagedFile("anno_import_ghidra_export", "export_path", bag.export_path, inputs);
+  const exportFile = stagedInputFile("anno_import_ghidra_export", "export_path", bag.export_path, inputs);
   return importGhidraExport(handle, {
     exportName: exportFile.name,
     exportBytes: exportFile.bytes,
@@ -2520,7 +2520,7 @@ export function clientFileKeys(name: string): readonly string[] {
 
 /** Resolves a file argument to its staged bytes. A plain string is refused: it
  * is a path, and a path never reaches this module. */
-function stagedFile(name: string, key: string, value: unknown, inputs: AnnoInputs): AnnoInputFile {
+export function stagedInputFile(name: string, key: string, value: unknown, inputs: AnnoInputs): AnnoInputFile {
   if (!isAnnoFileRef(value)) {
     throw new AnnoToolArgumentError(
       `${name} refused: "${key}" did not arrive as a staged file -- this engine reads only bytes the client staged beside the ` +
@@ -2547,7 +2547,7 @@ interface LoadedImage {
 }
 
 function loadImage(name: string, args: unknown, inputs: AnnoInputs): LoadedImage {
-  const file = stagedFile(name, "image", argBag(args).image, inputs);
+  const file = stagedInputFile(name, "image", argBag(args).image, inputs);
   const path = file.name;
   const bytes = file.bytes;
   const ext = extname(path).toLowerCase();

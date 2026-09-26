@@ -34,15 +34,9 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import {
-  runAnnoCli,
-  VERB_OPTIONS,
-  checkAcceptedOptions,
-  symbolsFromStore,
-  commentsFromStore,
-  blocksFromStore,
-  crossReferencesFromStore,
-} from "./anno-cli.ts";
+import { runAnnoCli, VERB_OPTIONS, checkAcceptedOptions } from "./anno-cli.ts";
+import { symbolsFromStore, commentsFromStore, crossReferencesFromStore } from "./anno-reports.ts";
+import { blocksFromStore } from "./block-class.ts";
 import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 import {
   openStore,
@@ -1265,7 +1259,7 @@ test("structural (WR-09): every writeFileSync( in anno-cli.ts is inside a try bl
   // site's own arguments are visible in the matched text.
   const contexts = indices.map((idx) => source.slice(idx, idx + 60));
   assert.ok(
-    contexts.some((c) => c.includes("outPath, rendered.markdown")),
+    contexts.some((c) => c.includes("outPath, rendered.files[0]!.bytes")),
     `expected to see cmdRenderMemmap()'s own write site among: ${JSON.stringify(contexts)}`,
   );
   // `outPath`, not `out`: CR-02 confined `coverage`'s output argument through

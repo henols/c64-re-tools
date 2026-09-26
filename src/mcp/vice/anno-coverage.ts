@@ -2073,7 +2073,12 @@ export const COVERAGE_REPORT_KEYS: readonly string[] = [
 ];
 
 export interface CoverageOptions {
+  /** The project image's name: read from disk when `project` is omitted, and
+   * echoed as `report.project.path` either way. */
   projectPath: string;
+  /** The image, already decoded by `decodeProjectImage()` -- how a caller
+   * that holds the bytes rather than a path supplies them. */
+  project?: LoadedProject;
   symbols?: readonly AnnoSymbol[];
   comments?: readonly AnnoComment[];
   blocks?: readonly BlockEntry[];
@@ -2216,7 +2221,16 @@ export function loadProjectImage(projectPath: string): LoadedProject {
       { cause: err, projectPath },
     );
   }
+  return decodeProjectImage(projectPath, bytes);
+}
 
+/**
+ * Decodes a project image from its bytes. `projectPath` names it -- its
+ * extension picks the branch, and every reason quotes it -- so a caller that
+ * received the bytes rather than a path gets the same answer
+ * `loadProjectImage()` gives for the file. Never throws.
+ */
+export function decodeProjectImage(projectPath: string, bytes: Uint8Array): LoadedProject {
   // The live image forms, in `loadImage()`'s own branch order.
   const ext = extname(projectPath).toLowerCase();
   if (ext === ".raw" || ext === ".bin") {
@@ -2312,7 +2326,7 @@ export function buildCoverageReport(opts: CoverageOptions): CoverageReport {
   // never disagree about which store vocabulary they are reading.
   const blockClassifier = typeof opts.blockClassifier === "function" ? opts.blockClassifier : blockClassAt;
 
-  const loaded = loadProjectImage(opts.projectPath);
+  const loaded = opts.project ?? loadProjectImage(opts.projectPath);
 
   const seeds = new Set<number>();
   seeds.add(loaded.origin);

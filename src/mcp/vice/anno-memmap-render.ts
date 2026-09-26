@@ -70,6 +70,7 @@ import { createHash } from "node:crypto";
 import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.ts";
 import type { ConfidenceGrade } from "./anno-confidence.ts";
 import { openStore, closeStore, listRanges, listLabels, listComments } from "./anno-store.ts";
+import type { AnnoStoreHandle } from "./anno-store.ts";
 import { COMMENT_TYPES, workspaceRelativePath } from "./anno-types.ts";
 import type { CommentRow, LabelRow, RangeRow } from "./anno-types.ts";
 import { blockClassAt } from "./block-class.ts";
@@ -386,52 +387,85 @@ export interface RenderMemoryMapResult {
 export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<RenderMemoryMapResult> {
   const { storePath, provenancePath, workspaceRoot } = opts;
 
-  let sidecarBytes: string;
+  let sidecarText: string;
   try {
-    sidecarBytes = readFileSync(provenancePath, "utf8");
+    sidecarText = readFileSync(provenancePath, "utf8");
   } catch (err) {
     throw new Error(`renderMemoryMap: could not read provenance sidecar at "${provenancePath}": ${errMsg(err)}`);
   }
+  // Judged BEFORE the store is opened, so a malformed sidecar is refused as
+  // such whether or not the store is there.
+  parseSidecar(sidecarText, provenancePath);
 
+  // `mustExist` is what makes "the annotations are gone" and "there are no
+  // annotations" refuse differently (T-29-52): without it a mistyped path
+  // would CREATE an empty store and render as an empty memory map.
+  const handle = openStore(storePath, { workspaceRoot, mustExist: true });
+  try {
+    return renderMemoryMapFrom({
+      handle,
+      sidecarText,
+      sidecarLabel: provenancePath,
+      // The two recorded locations are WORKSPACE-RELATIVE: every byte of the
+      // render is compared BYTE FOR BYTE by `checkRenderedMemoryMap()`, so an
+      // absolute path would make the drift verdict a function of where the
+      // checkout sits.
+      storeLocation: workspaceRelativePath(storePath, workspaceRoot),
+      sidecarLocation: workspaceRelativePath(provenancePath, workspaceRoot),
+    });
+  } finally {
+    closeStore(handle);
+  }
+}
+
+/** What `renderMemoryMapFrom()` renders from: an open handle, the sidecar's
+ * text, and the two locations the banner records. */
+export interface RenderMemoryMapSource {
+  handle: AnnoStoreHandle;
+  sidecarText: string;
+  /** How a refusal names the sidecar. */
+  sidecarLabel: string;
+  /** The store and sidecar locations the banner records. Workspace-relative
+   * (or otherwise location-independent), so a relocated checkout renders the
+   * same bytes. */
+  storeLocation: string;
+  sidecarLocation: string;
+}
+
+/** Parses the sidecar's text into its header, refusing by name. */
+function parseSidecar(sidecarText: string, sidecarLabel: string): ProvenanceHeader {
   let sidecarJson: unknown;
   try {
-    sidecarJson = JSON.parse(sidecarBytes);
+    sidecarJson = JSON.parse(sidecarText);
   } catch (err) {
     // NEVER INTERPOLATE THE UNDERLYING PARSE ERROR HERE. Node's
     // SyntaxError quotes a snippet of the input it choked on -- e.g.
     // `Unexpected token 'Q', "QQZZORACLE"... is not valid JSON` -- so passing
-    // it through turns a read refusal into a CONTENT-DISCLOSURE ORACLE. That
-    // matters here specifically because this argument arrives from an
-    // agent-composed Bash invocation: the shipped playbooks tell an LLM to
-    // compose this path, so the error text is read by whatever composed it.
-    //
-    // What survives is everything a caller legitimately needs to fix the
-    // problem: WHICH file, and THAT it is not JSON. The byte OFFSET is
-    // included where Node exposes one, because a position is a fact about
-    // where parsing stopped and not about what the file contains.
+    // it through turns a read refusal into a CONTENT-DISCLOSURE ORACLE.
+    // What survives is WHICH file, THAT it is not JSON, and the byte offset
+    // where Node exposes one -- a fact about where parsing stopped, not about
+    // what the file contains.
     throw new Error(
-      `renderMemoryMap: provenance sidecar at "${provenancePath}" is not valid JSON${jsonParsePosition(err)}. ` +
+      `renderMemoryMap: provenance sidecar at "${sidecarLabel}" is not valid JSON${jsonParsePosition(err)}. ` +
         "The underlying parser message is deliberately NOT included -- it quotes the file's own bytes.",
     );
   }
-  const provenance = parseProvenanceHeader(sidecarJson);
+  return parseProvenanceHeader(sidecarJson);
+}
 
-  // ONE handle for the whole render, closed in a `finally`. `mustExist` is
-  // what makes "the annotations are gone" and "there are no annotations"
-  // refuse differently (T-29-52): without it a mistyped path would CREATE an
-  // empty store and render as an empty memory map indistinguishable from a
-  // real one.
-  const handle = openStore(storePath, { workspaceRoot, mustExist: true });
-  let ranges: RangeRow[];
-  let labels: LabelRow[];
-  let lineComments: CommentRow[];
-  try {
-    ranges = listRanges(handle);
-    labels = listLabels(handle);
-    lineComments = listComments(handle).filter((c) => c.commentType === LINE_COMMENT);
-  } finally {
-    closeStore(handle);
-  }
+/**
+ * Renders the memory map from an open store handle plus the provenance
+ * sidecar's text. Reads the store DIRECTLY -- `listRanges()`, `listLabels()`
+ * and `listComments()` on the ONE handle its caller opened.
+ */
+export function renderMemoryMapFrom(source: RenderMemoryMapSource): RenderMemoryMapResult {
+  const { handle, sidecarText } = source;
+  const sidecarBytes = sidecarText;
+  const provenance = parseSidecar(sidecarText, source.sidecarLabel);
+
+  const ranges: RangeRow[] = listRanges(handle);
+  const labels: LabelRow[] = listLabels(handle);
+  const lineComments: CommentRow[] = listComments(handle).filter((c) => c.commentType === LINE_COMMENT);
 
   const sortedBlocks = [...ranges].sort((a, b) => a.start - b.start);
   const sortedSymbols = [...labels].sort((a, b) => a.address - b.address);
@@ -457,16 +491,8 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
 
   const renderDigest = computeRenderDigest(sortedBlocks, sortedSymbols, sortedComments, sidecarBytes);
 
-  // The two recorded locations are WORKSPACE-RELATIVE, and that is the
-  // load-bearing detail rather than a formatting preference: every byte below
-  // is re-rendered and compared BYTE FOR BYTE by `checkRenderedMemoryMap()`,
-  // so an absolute path here would make the drift verdict a function of where
-  // the checkout sits. `workspaceRelativePath()` is the one definition
-  // of that spelling; it computes a location and refuses one that escapes the
-  // root. It is NOT a confinement check -- this module still performs no
-  // confinement of its own, exactly as `RenderMemoryMapOptions` documents.
-  const storeLocation = workspaceRelativePath(storePath, workspaceRoot);
-  const sidecarLocation = workspaceRelativePath(provenancePath, workspaceRoot);
+  const storeLocation = source.storeLocation;
+  const sidecarLocation = source.sidecarLocation;
 
   const lines: string[] = [];
 
@@ -649,7 +675,12 @@ export async function checkRenderedMemoryMap(
 
   const onDisk = readFileSync(renderedPath, "utf8");
   const { markdown } = await renderMemoryMap({ storePath, provenancePath, workspaceRoot });
+  return compareRenderedMemoryMap(onDisk, markdown);
+}
 
+/** Compares a rendered file's text with a fresh render, naming the first
+ * differing line. Never auto-fixes. */
+export function compareRenderedMemoryMap(onDisk: string, markdown: string): CheckRenderedMemoryMapResult {
   if (onDisk === markdown) {
     return { status: "in-sync" };
   }

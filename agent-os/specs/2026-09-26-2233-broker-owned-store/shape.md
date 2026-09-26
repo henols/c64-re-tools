@@ -119,6 +119,33 @@ from all 28 `anno call` tools and all 6 report verbs.
 - **Step 2a scaffolding:** until the cutover, the client still takes `store`,
   opens it through the shim, and strips the argument before calling the engine.
 
+- **Report engine (step 2b).** `anno-reports.ts` answers all six report verbs
+  through `runAnnoReportOnHandle(handle, name, args, inputs)`, which returns
+  `{json, files}`.
+  - `anno-cli.ts` confines the paths and reads the inputs. It stages each
+    input under the argument key the report expects (`image`, `sidecar`,
+    `ledger`, `disagreements`, `fixture_image`), then writes or prints the
+    answer. It reaches the store only through `runReport()`, the one call the
+    cutover makes remote.
+  - An `AnnoReportRefusal` is printed verbatim. Any other error is printed
+    after the verb, so every existing refusal line is unchanged.
+- **The labels the reports print are the client's.** The client sends the
+  render banner's locations, export-asm's store name and decomp-completeness's
+  store label as arguments.
+- **decomp-completeness splits at the manifest.** The client parses the
+  manifest, matches the store's stem, and stages the fixture image from
+  `fixtures/<entry.path>` when it exists. The engine validates the
+  disagreement document and the run identity and computes the measures. The
+  one visible effect: when both inputs are bad, the manifest refusal now comes
+  first.
+- **The path-based library functions stay as thin wrappers** over the new
+  cores, because `acme-verify.ts` and many tests call them:
+  `renderMemoryMap` over `renderMemoryMapFrom`, `exportAsm`/`exportAsmTree`
+  over `exportAsmFrom` + `planExportAsmTree` + `writeExportAsmTree`, and
+  `buildCoverageReport({project})`. They move client-side at the cutover.
+  - The export-asm ledger text is a thunk. A store with no ranges is then
+    still refused before a named ledger is read, as it was before.
+
 ## Context
 
 - **Visuals:** none.

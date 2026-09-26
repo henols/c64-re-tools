@@ -317,9 +317,13 @@ function refuseBadAddress(ledgerPath: string, lineNumber: number, column: "Start
  * are deliberately never re-asserted here.
  */
 export function readProvenanceLedger(ledgerPath: string): ProvenanceLedger {
-  let raw: string;
+  return parseProvenanceLedger(ledgerPath, readProvenanceLedgerText(ledgerPath));
+}
+
+/** Reads a ledger's text, refusing an unreadable file by name (check 1). */
+export function readProvenanceLedgerText(ledgerPath: string): string {
   try {
-    raw = readFileSync(ledgerPath, "utf8");
+    return readFileSync(ledgerPath, "utf8");
   } catch (err) {
     throw new ProvenanceLedgerError(
       `anno-provenance-ledger: could not read the ledger at "${ledgerPath}" (${err instanceof Error ? err.message : String(err)}) -- ` +
@@ -327,7 +331,12 @@ export function readProvenanceLedger(ledgerPath: string): ProvenanceLedger {
       { path: ledgerPath },
     );
   }
+}
 
+/** Parses a ledger's text. `ledgerPath` names it in every refusal, so a
+ * caller that received the text rather than a path gets the same refusals
+ * `readProvenanceLedger()` gives for the file. */
+export function parseProvenanceLedger(ledgerPath: string, raw: string): ProvenanceLedger {
   const lines = raw.split(/\r?\n/);
 
   let headerLineIndex = -1;

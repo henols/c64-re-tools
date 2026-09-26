@@ -90,6 +90,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import { extname, join } from "node:path";
 
 import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage, listExcludedRanges, listScopes } from "./anno-store.ts";
+import type { AnnoStoreHandle } from "./anno-store.ts";
 import { AnnoCommentError, COMMENT_TYPES, DATA_TYPES, assertCommentText, assertDataType, isSplitDataType, parseVariantKey } from "./anno-types.ts";
 import type { CommentRow, DataType, EnumUsageRow, ExcludedRangeRow, LabelRow, ProjectEnumRow, RangeRow, ScopeRow } from "./anno-types.ts";
 import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
@@ -126,7 +127,7 @@ import { parsePrg, flatImageOrigin } from "./prg-image.ts";
 // generated tier. This module never recomputes a verdict -- see
 // `anno-provenance-ledger.ts`'s own header for why reading and recomputing
 // are deliberately kept apart.
-import { provenanceForRange, readProvenanceLedger, type ProvenanceLedger } from "./anno-provenance-ledger.ts";
+import { provenanceForRange, parseProvenanceLedger, readProvenanceLedgerText, type ProvenanceLedger } from "./anno-provenance-ledger.ts";
 
 /** The store's own spelling for an executable range, read out of the one home
  * of that vocabulary rather than re-typed as a literal. `dataType` is never
@@ -715,16 +716,19 @@ function emitBlock(start: number, endExclusive: number, lines: readonly string[]
  * payload bytes, and every downstream address is then wrong with no
  * diagnostic.
  */
-function loadImage(imagePath: string): { origin: number; bytes: Uint8Array } {
-  let raw: Uint8Array;
+function readImageFile(imagePath: string): Uint8Array {
   try {
-    raw = new Uint8Array(readFileSync(imagePath));
+    return new Uint8Array(readFileSync(imagePath));
   } catch (err) {
     // An ERRNO-class failure (ENOENT, EACCES, EISDIR) carries no byte of the
     // file's content, so it is left interpolated on purpose.
     throw new Error(`exportAsm: could not read the image at "${imagePath}": ${err instanceof Error ? err.message : String(err)}`);
   }
+}
 
+/** Decodes an image's bytes; `imagePath` names it, and its extension picks
+ * the layout. */
+function decodeImage(imagePath: string, raw: Uint8Array): { origin: number; bytes: Uint8Array } {
   const ext = extname(imagePath).toLowerCase();
   if (ext === ".raw" || ext === ".bin") {
     return { origin: flatImageOrigin(raw), bytes: raw };
@@ -1194,8 +1198,7 @@ function isInTree(address: number, blocks: readonly ExportBlock[]): boolean {
  */
 export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   const { storePath, imagePath, workspaceRoot, ledgerPath } = options;
-
-  const image = loadImage(imagePath);
+  const imageBytes = readImageFile(imagePath);
 
   // ONE handle for the whole export, closed in a `finally`. `mustExist` is what
   // makes "the annotations are gone" and "there are no annotations" refuse
@@ -1203,32 +1206,51 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   // export as a program with nothing annotated, indistinguishable from a real
   // one.
   const handle = openStore(storePath, { workspaceRoot, mustExist: true });
-  let ranges: RangeRow[];
-  let labels: LabelRow[];
-  let comments: CommentRow[];
-  let projectEnums: ProjectEnumRow[];
-  let enumUsage: EnumUsageRow[];
-  let excludedRanges: ExcludedRangeRow[];
-  let scopes: ScopeRow[];
   try {
-    ranges = listRanges(handle);
-    labels = listLabels(handle);
-    comments = listComments(handle);
-    projectEnums = listProjectEnums(handle);
-    enumUsage = listEnumUsage(handle);
-    // a sixth read in the SAME handle and the
-    // SAME `try`, mirroring the discipline the five siblings above already
-    // follow -- one handle for the whole export, closed once in the
-    // `finally` below. There is no second store opened for this.
-    excludedRanges = listExcludedRanges(handle);
-    // a SEVENTH read in the SAME handle and the SAME
-    // `try`, on the same terms as the sixth above -- still one handle for
-    // the whole export, closed once in the `finally` below. There is no
-    // second store opened for this either.
-    scopes = listScopes(handle);
+    return exportAsmFrom({
+      handle,
+      storeLabel: storePath,
+      image: { name: imagePath, bytes: imageBytes },
+      ...(ledgerPath !== undefined ? { ledger: { name: ledgerPath, text: () => readProvenanceLedgerText(ledgerPath) } } : {}),
+    });
   } finally {
     closeStore(handle);
   }
+}
+
+/** What `exportAsmFrom()` exports from: an open handle, the image's name and
+ * bytes, and optionally the provenance ledger's name and text. The names are
+ * how refusals refer to each input. The ledger's text is fetched only once
+ * the export has got as far as needing it, so a store with nothing to export
+ * is refused the same way whether or not a ledger was named. */
+export interface ExportAsmSource {
+  handle: AnnoStoreHandle;
+  storeLabel: string;
+  image: { name: string; bytes: Uint8Array };
+  ledger?: { name: string; text: () => string };
+}
+
+/**
+ * Exports the store behind `source.handle`, over the staged image bytes, as
+ * ACME source plus the exact bytes that source must assemble to. The same
+ * emitter as `exportAsm()`, which reads the files and calls this; nothing here
+ * touches the filesystem.
+ */
+export function exportAsmFrom(source: ExportAsmSource): ExportAsmResult {
+  const { handle } = source;
+  const storePath = source.storeLabel;
+  const imagePath = source.image.name;
+  const ledgerPath = source.ledger?.name;
+
+  const image = decodeImage(imagePath, source.image.bytes);
+
+  const ranges: RangeRow[] = listRanges(handle);
+  const labels: LabelRow[] = listLabels(handle);
+  const comments: CommentRow[] = listComments(handle);
+  const projectEnums: ProjectEnumRow[] = listProjectEnums(handle);
+  const enumUsage: EnumUsageRow[] = listEnumUsage(handle);
+  const excludedRanges: ExcludedRangeRow[] = listExcludedRanges(handle);
+  const scopes: ScopeRow[] = listScopes(handle);
 
   if (ranges.length === 0) {
     throw new Error(
@@ -1293,7 +1315,8 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   // this line either has a ledger to join against or does not, and no branch
   // anywhere below (here or in the per-block loop) ever reads a Verdict,
   // Confidence or Kind VALUE to decide anything.
-  const ledger: ProvenanceLedger | undefined = ledgerPath === undefined ? undefined : readProvenanceLedger(ledgerPath);
+  const ledger: ProvenanceLedger | undefined =
+    ledgerPath === undefined || source.ledger === undefined ? undefined : parseProvenanceLedger(ledgerPath, source.ledger.text());
 
   // The label index the renderer's `symbolFor` hook reads. Every name is
   // validated BEFORE it can reach the source text -- REJECT, never sanitise.
@@ -2235,8 +2258,30 @@ function placeBlockInScope(block: ExportBlock, sortedScopes: readonly ScopeRow[]
  */
 export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResult {
   const result = exportAsm(options);
-  const { outDir } = options;
+  const plan = planExportAsmTree(result);
+  writeExportAsmTree(options.outDir, plan, options.force === true);
+  return { ...result, outDir: options.outDir, files: plan.files.map((file) => file.name).sort(), sourceOrder: plan.sourceOrder };
+}
 
+/** One file of a planned tree. */
+export interface ExportAsmTreeFile {
+  name: string;
+  bytes: Uint8Array;
+}
+
+/** A whole tree, planned before anything is written: every file in write
+ * order -- `root.a` LAST -- and the `!source` order `root.a` carries. */
+export interface ExportAsmTreePlan {
+  files: ExportAsmTreeFile[];
+  sourceOrder: string[];
+}
+
+/**
+ * Plans the tree `exportAsmTree()` writes, as file names and bytes, with no
+ * filesystem access. Every block is placed first, so a placement refusal
+ * throws before any file is planned.
+ */
+export function planExportAsmTree(result: ExportAsmResult): ExportAsmTreePlan {
   const sortedScopes = [...result.scopes].sort((a, b) => a.start - b.start);
   // Keyed by scope START (D47-B's own file-naming key), never by scope id --
   // the file name is a function of `start`, so the grouping key matches it.
@@ -2259,50 +2304,86 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
     else scopeBlocks.set(placement.start, [block]);
   }
 
-  // The FULL set of names this call will write, computed BEFORE any write and
-  // BEFORE the directory-contract check below reads it: the placement pass
-  // above already knows exactly which scopes are populated and whether any
-  // block is unscoped, so this is arithmetic over what is already decided,
-  // never a guess revised after the fact.
   const populatedScopeStarts = [...scopeBlocks.keys()].sort((a, b) => a - b);
-  const hasUnscoped = unscopedBlocks.length > 0;
-  // every `.bin` sibling this call will write
-  // joins the SAME name set the directory contract below evaluates, so a
-  // re-export with `force: true` may replace a previously-exported `.bin`
-  // exactly as it may replace a previously-exported `.a` file -- and, without
-  // `force`, a directory holding one is refused by name like anything else.
-  const binaryNames = result.binaries.map((binary) => binary.name);
-  const namesToWrite = [
-    SYMBOLS_FILE_NAME,
-    ...populatedScopeStarts.map((start) => scopeFileName(start)),
-    ...(hasUnscoped ? [UNSCOPED_FILE_NAME] : []),
-    ...binaryNames,
-    ROOT_FILE_NAME,
-  ];
+  const encoder = new TextEncoder();
+  const files: ExportAsmTreeFile[] = [];
+  const sourceOrder: string[] = [];
 
-  // ---------------------------------------------------------------------
-  // The output-directory contract. Two rules,
-  // both evaluated BEFORE the first write below -- a refusal that has
-  // already written half a tree has left an artefact a later assemble might
-  // succeed on (the same reason the placement pass above runs to completion
-  // before any write).
-  //
-  // Rule one, without `force`: a directory holding ANY entry at all is
-  // refused by name, unconditionally. An export writes a whole tree and will
-  // not mix its files with whatever the directory already held.
-  //
-  // Rule two, with `force`: the caller is asking "this directory already
-  // holds a tree I exported before, replace it" -- never "remove whatever is
-  // in my way". Anything in the directory that is NOT one of `namesToWrite`
-  // is refused by name; nothing is ever deleted to make room for it. The
-  // `.bin` files this export writes are the ones a person is expected to
-  // edit by hand, so replacing them is something the user has to ask for,
-  // and a directory the user pointed at by mistake must not lose a file this
-  // tool never created.
-  // ---------------------------------------------------------------------
+  // symbols.a -- ALWAYS written, sourced FIRST (D47-B). Measured live this
+  // session: a zero-page symbol defined AFTER its first use widens the
+  // referencing instruction, so every scope file depends on this one having
+  // already run.
+  const symbolsFileLines = [
+    `; ${SYMBOLS_FILE_NAME} -- every symbol definition this export carries. Sourced FIRST by ${ROOT_FILE_NAME}: a symbol defined after its first use widens the referencing instruction (measured against real ACME 0.97), so every other file in this tree depends on this one having already run.`,
+    ...result.headerLines,
+  ];
+  files.push({ name: SYMBOLS_FILE_NAME, bytes: encoder.encode(`${symbolsFileLines.join("\n")}\n`) });
+  sourceOrder.push(SYMBOLS_FILE_NAME);
+
+  // One scope_XXXX.a per POPULATED scope, ascending by scope start (D47-B).
+  for (const scopeStart of populatedScopeStarts) {
+    const name = scopeFileName(scopeStart);
+    const blocksInScope = [...scopeBlocks.get(scopeStart)!].sort((a, b) => a.start - b.start);
+    const fileLines = [`; ${name} -- one scope of this export's tree, addresses ${hex4(scopeStart)} upward.`, ...blocksInScope.flatMap((b) => b.lines)];
+    files.push({ name, bytes: encoder.encode(`${fileLines.join("\n")}\n`) });
+    sourceOrder.push(name);
+  }
+
+  // unscoped.a -- only when at least one block lies inside no scope (D47-D):
+  // losslessness is the governing constraint, so every existing store (which
+  // has zero scopes today, since nothing reads listScopes() yet) still
+  // exports every block somewhere, never nowhere.
+  if (unscopedBlocks.length > 0) {
+    const sortedUnscoped = [...unscopedBlocks].sort((a, b) => a.start - b.start);
+    const fileLines = [`; ${UNSCOPED_FILE_NAME} -- every block this export emitted that lies inside no scope.`, ...sortedUnscoped.flatMap((b) => b.lines)];
+    files.push({ name: UNSCOPED_FILE_NAME, bytes: encoder.encode(`${fileLines.join("\n")}\n`) });
+    sourceOrder.push(UNSCOPED_FILE_NAME);
+  }
+
+  // .bin siblings (T-47-08/T-47-09/T-47-10) -- one per
+  // `external_file`-typed block, written in the SAME pass as every `.a`
+  // file above and, like them, BEFORE root.a: data files precede the root
+  // for the identical interruption-safety reason the `.a` files already do
+  // -- a partial tree must have no root an assembler could start from.
+  // These are NOT `!source`d, so `sourceOrder` is untouched; they are only
+  // ever reached through the `!binary` line `emitDataLines()` already wrote
+  // into their owning scope/unscoped `.a` file.
+  for (const binary of result.binaries) {
+    files.push({ name: binary.name, bytes: new Uint8Array(binary.bytes) });
+  }
+
+  // root.a -- LAST. A tree whose root exists is a tree every file it sources
+  // exists for, so the writer publishes it last.
+  const rootFileLines = [`; ${ROOT_FILE_NAME} -- this tree's entry point.`, "!cpu 6510", ...sourceOrder.map((name) => `!source "${name}"`)];
+  files.push({ name: ROOT_FILE_NAME, bytes: encoder.encode(`${rootFileLines.join("\n")}\n`) });
+
+  return { files, sourceOrder };
+}
+
+/**
+ * Writes a planned tree into `outDir`, under the output-directory contract.
+ * Two rules, both evaluated BEFORE the first write -- a refusal that has
+ * already written half a tree has left an artefact a later assemble might
+ * succeed on.
+ *
+ * Rule one, without `force`: a directory holding ANY entry at all is refused
+ * by name, unconditionally. An export writes a whole tree and will not mix its
+ * files with whatever the directory already held.
+ *
+ * Rule two, with `force`: the caller is asking "this directory already holds a
+ * tree I exported before, replace it" -- never "remove whatever is in my way".
+ * Anything in the directory that is NOT one of the planned names is refused by
+ * name; nothing is ever deleted to make room for it.
+ *
+ * `root.a` is written LAST, through a temp name in the same directory followed
+ * by a rename into place, so an interrupted write leaves no root an assembler
+ * could start from.
+ */
+export function writeExportAsmTree(outDir: string, plan: ExportAsmTreePlan, force: boolean): void {
+  const namesToWrite = plan.files.map((file) => file.name);
   const existingEntries = existsSync(outDir) ? readdirSync(outDir) : [];
   if (existingEntries.length > 0) {
-    if (!options.force) {
+    if (!force) {
       throw new Error(
         `exportAsmTree: the output directory "${outDir}" already holds ${existingEntries.length} ` +
           `${existingEntries.length === 1 ? "entry" : "entries"} -- refusing to write into it. An export writes a whole tree and will ` +
@@ -2323,68 +2404,14 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
   }
   mkdirSync(outDir, { recursive: true });
 
-  const files: string[] = [];
-  const sourceOrder: string[] = [];
-
-  // symbols.a -- ALWAYS written, sourced FIRST (D47-B). Measured live this
-  // session: a zero-page symbol defined AFTER its first use widens the
-  // referencing instruction, so every scope file depends on this one having
-  // already run.
-  const symbolsFileLines = [
-    `; ${SYMBOLS_FILE_NAME} -- every symbol definition this export carries. Sourced FIRST by ${ROOT_FILE_NAME}: a symbol defined after its first use widens the referencing instruction (measured against real ACME 0.97), so every other file in this tree depends on this one having already run.`,
-    ...result.headerLines,
-  ];
-  writeFileSync(join(outDir, SYMBOLS_FILE_NAME), `${symbolsFileLines.join("\n")}\n`, "utf8");
-  files.push(SYMBOLS_FILE_NAME);
-  sourceOrder.push(SYMBOLS_FILE_NAME);
-
-  // One scope_XXXX.a per POPULATED scope, ascending by scope start (D47-B).
-  // `populatedScopeStarts` was already computed above, for `namesToWrite`.
-  for (const scopeStart of populatedScopeStarts) {
-    const name = scopeFileName(scopeStart);
-    const blocksInScope = [...scopeBlocks.get(scopeStart)!].sort((a, b) => a.start - b.start);
-    const fileLines = [`; ${name} -- one scope of this export's tree, addresses ${hex4(scopeStart)} upward.`, ...blocksInScope.flatMap((b) => b.lines)];
-    writeFileSync(join(outDir, name), `${fileLines.join("\n")}\n`, "utf8");
-    files.push(name);
-    sourceOrder.push(name);
+  for (const file of plan.files) {
+    if (file.name === ROOT_FILE_NAME) continue;
+    writeFileSync(join(outDir, file.name), file.bytes);
   }
-
-  // unscoped.a -- only when at least one block lies inside no scope (D47-D):
-  // losslessness is the governing constraint, so every existing store (which
-  // has zero scopes today, since nothing reads listScopes() yet) still
-  // exports every block somewhere, never nowhere.
-  if (unscopedBlocks.length > 0) {
-    const sortedUnscoped = [...unscopedBlocks].sort((a, b) => a.start - b.start);
-    const fileLines = [`; ${UNSCOPED_FILE_NAME} -- every block this export emitted that lies inside no scope.`, ...sortedUnscoped.flatMap((b) => b.lines)];
-    writeFileSync(join(outDir, UNSCOPED_FILE_NAME), `${fileLines.join("\n")}\n`, "utf8");
-    files.push(UNSCOPED_FILE_NAME);
-    sourceOrder.push(UNSCOPED_FILE_NAME);
+  const root = plan.files.find((file) => file.name === ROOT_FILE_NAME);
+  if (root !== undefined) {
+    const rootTmpPath = join(outDir, `${ROOT_FILE_NAME}.tmp-${process.pid}`);
+    writeFileSync(rootTmpPath, root.bytes);
+    renameSync(rootTmpPath, join(outDir, ROOT_FILE_NAME));
   }
-
-  // .bin siblings (T-47-08/T-47-09/T-47-10) -- one per
-  // `external_file`-typed block, written in the SAME pass as every `.a`
-  // file above and, like them, BEFORE root.a: data files precede the root
-  // for the identical interruption-safety reason the `.a` files already do
-  // -- a partial tree must have no root an assembler could start from.
-  // These are NOT `!source`d, so `sourceOrder` is untouched; they are only
-  // ever reached through the `!binary` line `emitDataLines()` already wrote
-  // into their owning scope/unscoped `.a` file.
-  for (const binary of result.binaries) {
-    writeFileSync(join(outDir, binary.name), Buffer.from(binary.bytes.buffer, binary.bytes.byteOffset, binary.bytes.byteLength));
-    files.push(binary.name);
-  }
-
-  // root.a -- LAST, and atomically: a temp name in the SAME directory (so
-  // `renameSync` is a same-filesystem rename, never EXDEV), then renamed into
-  // place. A tree whose root exists is a tree every file it sources exists
-  // for.
-  const rootPath = join(outDir, ROOT_FILE_NAME);
-  const rootTmpPath = join(outDir, `${ROOT_FILE_NAME}.tmp-${process.pid}`);
-  const rootFileLines = [`; ${ROOT_FILE_NAME} -- this tree's entry point.`, "!cpu 6510", ...sourceOrder.map((name) => `!source "${name}"`)];
-  writeFileSync(rootTmpPath, `${rootFileLines.join("\n")}\n`, "utf8");
-  renameSync(rootTmpPath, rootPath);
-  files.push(ROOT_FILE_NAME);
-  files.sort();
-
-  return { ...result, outDir, files, sourceOrder };
 }

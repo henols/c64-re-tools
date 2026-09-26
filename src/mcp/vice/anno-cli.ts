@@ -129,66 +129,79 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts";
-// The ACME source emitter. It reads the store and the image and
-// returns text plus counts; it starts no assembler and knows nothing about
-// one. `acme-verify.ts` -- the module that DOES spawn ACME -- is deliberately
-// NOT imported here and must never be: it is test-only (it is absent from
-// `package.json`'s `files[]` on purpose), so a shipped module importing it
-// would drag it into the published closure.
-import { exportAsmTree } from "./anno-export-asm.ts";
-import type { ExportAsmTreeResult } from "./anno-export-asm.ts";
-// The coverage instrument. It declares its own input shapes
-// and never reads a store, a file or a tool on its own behalf -- a caller
-// fetches and hands the data in, which is exactly what makes the store
-// re-point below a CALLER-side change and nothing more.
-import { buildCoverageReport, coverageFindings, loadProjectImage, AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
-import type { CoverageReport, LoadedProject, AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.ts";
-// The store's block-entry shape comes from the boundary that owns its
-// vocabulary, not from the census -- see `block-class.ts`.
-import { blocksFromStore, type BlockEntry } from "./block-class.ts";
-import { openStore, closeStore, listLabels, listComments, listRanges, listExecObservations, listObservedRuns, listXrefs } from "./anno-store.ts";
-import type { AnnoStoreHandle } from "./anno-store.ts";
-// The shared 6502/6510 decoder. `decomp-completeness`'s
-// entry-point and referenced-address censuses walk the
-// SAME code-range decode `anno_disassemble` and `anno-enum-gen.ts`'s
-// `fetchRegisterSearchRows()` already use -- never a second decoder, never a
-// regex over rendered text.
-import { decode } from "./disasm-decoder.ts";
-import type { Instruction } from "./disasm-decoder.ts";
-// The disagreement query's own pure join. This
-// is the SAME reconcileObservedExecution() the anno_evid_disagreements MCP
-// tool calls -- reached here directly (a static import, never lazy) because
-// this module IS the CLI, not a startup-cost-sensitive MCP server entry
-// point.
-import { reconcileObservedExecution } from "./evid-reconcile.ts";
-// The pure, read-only movement-hazard report. The SAME buildHazardReport()
-// the anno_hazard_report MCP tool calls -- reached here directly (a static
-// import, never lazy) because this module IS the CLI.
-import { buildHazardReport } from "./anno-hazard-report.ts";
+import { compareRenderedMemoryMap } from "./anno-memmap-render.ts";
+// The tree writer. `acme-verify.ts` -- the module that DOES spawn ACME -- is
+// deliberately NOT imported here and must never be: it is test-only.
+import { writeExportAsmTree } from "./anno-export-asm.ts";
+import { coverageFindings } from "./anno-coverage.ts";
+import type { CoverageReport } from "./anno-coverage.ts";
+import { openStore, closeStore } from "./anno-store.ts";
 import type { HazardReport } from "./anno-hazard-report.ts";
 import type { EvidReconciliation } from "./evid-reconcile.ts";
-// The derived half of the cross-reference union: cross-references are DERIVED from the bytes
-// plus the store's typed ranges plus the few rows that cannot be recovered
-// from bytes at all. There is exactly one definition of that union and this
-// file calls it rather than restating it.
-import { crossReferencesTo } from "./anno-derive.ts";
-import { storePathWithinWorkspace, isSplitDataType } from "./anno-types.ts";
-import type { CommentRow, LabelRow, RangeRow, DataType } from "./anno-types.ts";
+import { storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.ts";
 import { repoRoot } from "./repo-root.ts";
-// D-12 (plan 65-02): `call`'s one generic runner. A STATIC import is safe
-// here -- `vice-proxy.ts` reaches this whole module only through its own
-// dynamic `import("./anno-cli.ts")` above the server path, so this file's
-// own static dependency on `anno-tools.ts` never becomes part of the
-// server's startup cost.
+// `call`'s one generic runner. A STATIC import is safe here -- `vice-proxy.ts`
+// reaches this whole module only through its own dynamic import, so it never
+// becomes part of the server's startup cost.
 import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
+import type { AnnoInputFile } from "./anno-tools.ts";
 import { runAnnoTool } from "./anno-call-client.ts";
-// The three comment-text conventions, declared once in
-// anno-store-export.ts and imported everywhere they are matched -- never
-// restated as a second literal.
-import { DECLINE_COMMENT_PREFIX, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX, AUTHORED_PROVENANCE_COMMENT_PREFIX } from "./anno-store-export.ts";
+// The report engine: every report is computed there, from the store and the
+// bytes this verb stages. This module confines, reads, writes and prints.
+import { AnnoReportRefusal, runAnnoReportOnHandle, type AnnoReportName, type AnnoReportResult } from "./anno-reports.ts";
+import type {
+  DecompCompletenessReport,
+  DecompExecutionManifest,
+  DecompDisagreementInput,
+  DisagreementResolutionCensus,
+  EntryPointRow,
+  RangeProvenanceRow,
+  ReferencedAddressesCensus,
+} from "./anno-reports.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** A file a report reads, as its bytes and the name refusals and echoes use. */
+type ReportInput = AnnoInputFile;
+
+/** Reads a report input the caller named; the path is already confined. */
+function reportInput(path: string): ReportInput {
+  return { name: path, bytes: new Uint8Array(readFileSync(path)) };
+}
+
+/**
+ * Runs one report against the store at `storePath`. Each file in `files` is
+ * staged beside the call under its key, so the report engine receives bytes,
+ * never a path.
+ */
+async function runReport(
+  storePath: string,
+  workspaceRoot: string,
+  name: AnnoReportName,
+  args: Record<string, unknown>,
+  files: Record<string, ReportInput | undefined>,
+): Promise<AnnoReportResult> {
+  const inputs = new Map<string, AnnoInputFile>();
+  const staged: Record<string, unknown> = { ...args };
+  for (const [key, file] of Object.entries(files)) {
+    if (file === undefined) continue;
+    const slot = `f${inputs.size}`;
+    inputs.set(slot, file);
+    staged[key] = { $file: slot };
+  }
+  const handle = openStore(storePath, { workspaceRoot, mustExist: true });
+  try {
+    return await runAnnoReportOnHandle(handle, name, staged, inputs);
+  } finally {
+    closeStore(handle);
+  }
+}
+
+/** Prints a report failure: a refusal verbatim, anything else after the verb. */
+function reportFailure(verb: string, err: unknown): number {
+  console.error(err instanceof AnnoReportRefusal ? err.message : `${verb}: ${errMsg(err)}`);
+  return 1;
+}
 const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>";
 const NPM_INVOCATION = "vice-mcp anno <verb>";
 
@@ -742,13 +755,23 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     return 1;
   }
 
+  const renderArgs = {
+    store_location: workspaceRelativePath(storePath, workspaceRoot),
+    sidecar_location: workspaceRelativePath(provenancePath, workspaceRoot),
+  };
+
   if (check) {
-    let result: Awaited<ReturnType<typeof checkRenderedMemoryMap>>;
-    try {
-      result = await checkRenderedMemoryMap({ storePath, provenancePath, renderedPath: outPath, workspaceRoot });
-    } catch (err) {
-      console.error(`render-memmap: ${errMsg(err)}`);
+    if (!existsSync(outPath)) {
+      console.error(`render-memmap: missing -- ${outPath} does not exist yet. Run render-memmap without --check first.`);
       return 1;
+    }
+    let result: ReturnType<typeof compareRenderedMemoryMap>;
+    try {
+      const onDisk = readFileSync(outPath, "utf8");
+      const rendered = await runReport(storePath, workspaceRoot, "render-memmap", renderArgs, { sidecar: reportInput(provenancePath) });
+      result = compareRenderedMemoryMap(onDisk, new TextDecoder().decode(rendered.files[0]!.bytes));
+    } catch (err) {
+      return reportFailure("render-memmap", err);
     }
     if (result.status === "in-sync") {
       console.log(`render-memmap: in sync (${outPath})`);
@@ -771,26 +794,22 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     return 1;
   }
 
-  let rendered: Awaited<ReturnType<typeof renderMemoryMap>>;
+  let rendered: AnnoReportResult;
   try {
-    rendered = await renderMemoryMap({ storePath, provenancePath, workspaceRoot });
+    rendered = await runReport(storePath, workspaceRoot, "render-memmap", renderArgs, { sidecar: reportInput(provenancePath) });
   } catch (err) {
-    console.error(`render-memmap: ${errMsg(err)}`);
-    return 1;
+    return reportFailure("render-memmap", err);
   }
+  const summary = rendered.json as { renderDigest: string; rowCount: number; unknownCount: number };
   try {
-    writeFileSync(outPath, rendered.markdown);
+    writeFileSync(outPath, rendered.files[0]!.bytes);
   } catch (err) {
-    // The same shape as bootstrapProject()'s write above,
-    // one verb over -- an ordinary write failure (missing parent directory,
-    // permissions, full disk) must not throw past this verb's own
-    // never-throw contract.
+    // An ordinary write failure (missing parent directory, permissions, full
+    // disk) must not throw past this verb's own never-throw contract.
     console.error(`render-memmap: could not write ${outPath}: ${errMsg(err)}`);
     return 1;
   }
-  console.log(
-    `render-memmap: wrote ${outPath} (${rendered.rowCount} row(s), ${rendered.unknownCount} [unknown], digest ${rendered.renderDigest})`,
-  );
+  console.log(`render-memmap: wrote ${outPath} (${summary.rowCount} row(s), ${summary.unknownCount} [unknown], digest ${summary.renderDigest})`);
   return 0;
 }
 
@@ -860,122 +879,6 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
     }
   }
   return { positional, store, storeMissingValue, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption };
-}
-
-// ---------------------------------------------------------------------------
-// THE STORE-TO-CENSUS ADAPTER (Discretion 4).
-//
-// `anno-coverage.ts` declares four input shapes and fetches NONE of them: a
-// caller hands the data in. So moving the census from the retired analyser's
-// project JSON onto this project's own annotation store is a CALLER-side
-// change and nothing else -- the four functions below, and no edit to the
-// instrument.
-//
-// THE COLUMN MAPPING, stated once, here, because a vocabulary mismatch at this
-// boundary changes coverage verdicts SILENTLY (T-29-29):
-//
-//   LabelRow   -> AnnoSymbol        address, name, kind. `kind` needs no
-//                                    translation: the store's LABEL_KINDS are
-//                                    the same four tokens the census filters
-//                                    on ("User"/"Auto"/"System"/"Platform").
-//                                    `id` and `bank` are store-only and are
-//                                    dropped. The census never reads a
-//                                    symbol's `type`, so its absence from the
-//                                    store costs nothing.
-//   CommentRow -> AnnoComment       address, commentType -> type, text ->
-//                                    comment. COMMENT_TYPES is "line"/"side",
-//                                    which is exactly the census's own pair.
-//   RangeRow   -> BlockEntry         start -> start_address, endInclusive ->
-//                                    end_address (both INCLUSIVE on both
-//                                    sides), dataType -> type. That last
-//                                    column is the one the census must NOT
-//                                    interpret itself: it goes through
-//                                    `block-class.ts`, the one boundary
-//                                    allowed to read a store block spelling,
-//                                    and `block-class.test.ts` pins the class
-//                                    each of the frozen twelve resolves to BY
-//                                    NAME so this mapping cannot drift
-//                                    quietly.
-//   derived    -> AnnoCrossReference the union `crossReferencesTo()` computes
-//                                    from the bytes, the typed split tables
-//                                    and the stored rows.
-// ---------------------------------------------------------------------------
-
-/** `LabelRow[]` as the census's symbol shape. */
-export function symbolsFromStore(rows: readonly LabelRow[]): AnnoSymbol[] {
-  return rows.map((row) => ({ address: row.address, name: row.name, kind: row.kind }));
-}
-
-/** `CommentRow[]` as the census's comment shape. */
-export function commentsFromStore(rows: readonly CommentRow[]): AnnoComment[] {
-  return rows.map((row) => ({ address: row.address, type: row.commentType, comment: row.text }));
-}
-
-/** `RangeRow[]` as the census's block shape -- `block-class.ts`'s one seam. */
-export { blocksFromStore };
-
-/**
- * The census's fourth input, derived in ONE pass over the store and the image
- * rather than fetched one address at a time.
- *
- * WHAT THIS REPLACED, and why the replacement has no ceiling. The previous
- * implementation issued one transport round trip PER LABEL through a held
- * child process, and bounded that at a hard ceiling of 512 lookups, printing a
- * note when the ceiling bit. Over an in-process derivation that ceiling would
- * be strictly worse than the bound it used to express: it would truncate a
- * COMPLETE answer and call the remainder a floor. So it is gone, and this
- * function answers over the WHOLE population -- every non-System, non-Platform
- * label the store holds.
- *
- * `System`/`Platform` labels are excluded because every label figure already
- * excludes them, so deriving their callers would buy the census nothing.
- */
-export function crossReferencesFromStore(
-  handle: AnnoStoreHandle,
-  image: Uint8Array,
-  origin: number,
-  symbols: readonly AnnoSymbol[],
-): AnnoCrossReference[] {
-  const targets = [
-    ...new Set(
-      (Array.isArray(symbols) ? symbols : [])
-        .filter((s) => s && String(s.kind ?? "") !== "System" && String(s.kind ?? "") !== "Platform")
-        .map((s) => s.address),
-    ),
-  ].sort((a, b) => a - b);
-  return targets.map((address) => ({ address, callers: crossReferencesTo(handle, image, origin, address).callers }));
-}
-
-/**
- * The payload bytes and the load origin, read from the SAME project file the
- * census reads them from -- and, since 2026-08-30, through the SAME FUNCTION.
- *
- * NOT a second byte source, and no longer only by convention. This used to be
- * a second hand-rolled decode sitting beside `buildCoverageReport()`'s own,
- * with a comment asking a reader to keep the two in step; two decodes over one
- * path is two answers to "which program does this report describe", and the
- * comment was the only thing holding them together (`T-29-16-02`). It now
- * delegates to `anno-coverage.ts`'s exported `loadProjectImage()`, so the
- * derived half and the censused half of one report CANNOT describe different
- * programs -- they are the same call.
- *
- * Returns `null` -- never a throw and never a guess -- when the payload did
- * not decode or decoded to nothing. The census reports that same condition
- * itself, in its own words, and the verb exits non-zero on it.
- */
-function projectImage(projectPath: string): { origin: number; bytes: Uint8Array } | null {
-  let loaded: LoadedProject;
-  try {
-    loaded = loadProjectImage(projectPath);
-  } catch {
-    // The one throw the loader has left is an unreadable PATH. This verb has
-    // already checked existence above and the census reports the condition in
-    // its own words, so a null is the right answer here rather than a second
-    // diagnosis of the same fact.
-    return null;
-  }
-  if (!loaded.payloadDecoded || loaded.bytes.length === 0) return null;
-  return { origin: loaded.origin, bytes: loaded.bytes };
 }
 
 function hexAddr(address: number): string {
@@ -1232,48 +1135,14 @@ async function cmdCoverage(rest: string[]): Promise<number> {
     return 1;
   }
 
-  let symbols: AnnoSymbol[];
-  let comments: AnnoComment[];
-  let blocks: BlockEntry[];
-  let crossReferences: AnnoCrossReference[];
-  let handle: AnnoStoreHandle;
-  try {
-    handle = openStore(storePath, { workspaceRoot, mustExist: true });
-  } catch (err) {
-    console.error(`coverage: ${errMsg(err)}`);
-    return 1;
-  }
-  try {
-    symbols = symbolsFromStore(listLabels(handle));
-    comments = commentsFromStore(listComments(handle));
-    blocks = blocksFromStore(listRanges(handle));
-    // The bytes come from the SAME file the census decodes, so the derived
-    // half and the censused half can never describe different programs. A
-    // payload that will not decode yields no cross-references at all rather
-    // than a partial answer -- the census reports that condition itself and
-    // this verb exits non-zero on it below.
-    const image = projectImage(projectPath);
-    crossReferences = image === null ? [] : crossReferencesFromStore(handle, image.bytes, image.origin, symbols);
-  } catch (err) {
-    console.error(`coverage: ${errMsg(err)}`);
-    return 1;
-  } finally {
-    closeStore(handle);
-  }
-
   let report: CoverageReport;
   try {
-    report = buildCoverageReport({
-      projectPath,
-      symbols,
-      comments,
-      blocks,
-      crossReferences,
-      ...(sample !== undefined ? { sampleSize: sample } : {}),
+    const result = await runReport(storePath, workspaceRoot, "coverage", sample !== undefined ? { sample_size: sample } : {}, {
+      image: reportInput(projectPath),
     });
+    report = result.json as CoverageReport;
   } catch (err) {
-    console.error(`coverage: ${errMsg(err)}`);
-    return 1;
+    return reportFailure("coverage", err);
   }
 
   printCoverageReport(report);
@@ -1604,36 +1473,39 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
 
   // The output-directory contract itself -- create when missing, refuse a
   // non-empty directory without `--force`, and with `--force` replace only
-  // the names this export produces -- lives entirely in `exportAsmTree()`.
-  // This verb adds no second overwrite rule of its
-  // own: it forwards the request and reports the library's own refusal
-  // through this same single-line error path every other exporter refusal
-  // already takes.
-  let result: ExportAsmTreeResult;
+  // the names this export produces -- lives entirely in `writeExportAsmTree()`.
+  // Every refusal -- an uncovered range, an inexpressible enum binding, a
+  // comment with no line to attach to, a range crossing a scope boundary, or
+  // the directory contract -- arrives here already named and is reported as
+  // this verb's own single line.
+  let summary: {
+    files: string[];
+    blockCount: number;
+    symbolCount: number;
+    autoNamedSymbolCount: number;
+    unexpressibleCount: number;
+    midInstructionLabelCount: number;
+    enumSubstitutionCount: number;
+    excludedRangeCount: number;
+  };
   try {
-    result = exportAsmTree({ storePath, imagePath, workspaceRoot, ledgerPath, outDir: outPath, force });
+    const result = await runReport(storePath, workspaceRoot, "export-asm", { store_label: storePath }, {
+      image: reportInput(imagePath),
+      ledger: ledgerPath === undefined ? undefined : reportInput(ledgerPath),
+    });
+    summary = result.json as typeof summary;
+    writeExportAsmTree(outPath, { files: result.files, sourceOrder: (result.json as { sourceOrder: string[] }).sourceOrder }, force === true);
   } catch (err) {
-    // Every refusal `exportAsmTree()` raises -- an uncovered range, an
-    // inexpressible enum binding, a comment with no line to attach to, a
-    // range crossing a scope boundary, or the output-directory contract's
-    // own refusal -- arrives here already named. It is reported as this
-    // verb's own single actionable line and never as a thrown stack trace,
-    // and the verb exits non-zero rather than reporting success over a
-    // dropped annotation or a scribbled-into directory.
-    console.error(`export-asm: ${errMsg(err)}`);
-    return 1;
+    return reportFailure("export-asm", err);
   }
-  // Every file this call wrote MINUS the two structural files that are
-  // ALWAYS written (symbols.a, root.a) -- the scope files and the optional
-  // unscoped.a, i.e. the files that actually carry this store's own content
-  // rather than glue. `result.files.length` is never less than 2 (both are
-  // unconditional), so this can never go negative.
-  const dataFileCount = result.files.length - 2;
+  // Every file MINUS the two structural files that are ALWAYS written
+  // (symbols.a, root.a) -- the files that carry this store's own content.
+  const dataFileCount = summary.files.length - 2;
   console.log(
-    `export-asm: wrote ${outPath} (${result.files.length} file(s), ${dataFileCount} data file(s), ${result.blocks.length} block(s), ` +
-      `${result.symbolCount} symbol(s), ${result.autoNamedSymbolCount} auto-named, ${result.unexpressibleCount} unexpressible instruction(s), ` +
-      `${result.midInstructionLabelCount} mid-instruction label(s), ${result.enumSubstitutionCount} enum substitution(s), ` +
-      `${result.excludedRangeCount} exclusion(s) marked)`,
+    `export-asm: wrote ${outPath} (${summary.files.length} file(s), ${dataFileCount} data file(s), ${summary.blockCount} block(s), ` +
+      `${summary.symbolCount} symbol(s), ${summary.autoNamedSymbolCount} auto-named, ${summary.unexpressibleCount} unexpressible instruction(s), ` +
+      `${summary.midInstructionLabelCount} mid-instruction label(s), ${summary.enumSubstitutionCount} enum substitution(s), ` +
+      `${summary.excludedRangeCount} exclusion(s) marked)`,
   );
   console.log("export-asm: this tree has NOT been assembled -- this command writes source text and runs no assembler.");
   return 0;
@@ -1771,38 +1643,13 @@ async function cmdEvidDisagreements(rest: string[]): Promise<number> {
     return 1;
   }
 
-  let handle: AnnoStoreHandle;
-  try {
-    handle = openStore(storePath, { workspaceRoot, mustExist: true });
-  } catch (err) {
-    console.error(`evid-disagreements: ${errMsg(err)}`);
-    return 1;
-  }
+  let runIdentity: { imageSha256: string; argvDigest: string; seed: string } | null;
   let reconciliation: EvidReconciliation;
-  // Rule 2 (missing critical functionality): `runIdentity`
-  // is NOT an `EvidReconciliation` field -- it rides alongside the spread
-  // reconciliation in the JSON envelope, exactly like `store` already does.
-  // Added so `decomp-completeness` has a run identity to
-  // validate this document against the SAME store's own `anno_evid_runs`
-  // table, rather than accepting a fabricated or foreign empty document as
-  // this run's own answer. `null` when the store holds zero or more than one
-  // distinct run identity -- an ambiguous "which run" is refused by the
-  // consuming verb, never guessed here.
-  let runIdentity: { imageSha256: string; argvDigest: string; seed: string } | null = null;
   try {
-    const blocks = blocksFromStore(listRanges(handle));
-    const observations = listExecObservations(handle);
-    reconciliation = reconcileObservedExecution({ blocks, observations });
-    const { runs } = listObservedRuns(handle);
-    if (runs.length === 1) {
-      const run = runs[0]!;
-      runIdentity = { imageSha256: run.imageSha256, argvDigest: run.argvDigest, seed: run.seed };
-    }
+    const result = await runReport(storePath, workspaceRoot, "evid-disagreements", {}, {});
+    ({ runIdentity, ...reconciliation } = result.json as { runIdentity: typeof runIdentity } & EvidReconciliation);
   } catch (err) {
-    console.error(`evid-disagreements: ${errMsg(err)}`);
-    return 1;
-  } finally {
-    closeStore(handle);
+    return reportFailure("evid-disagreements", err);
   }
 
   if (json) {
@@ -1811,55 +1658,6 @@ async function cmdEvidDisagreements(rest: string[]): Promise<number> {
   }
   printEvidDisagreementsReport(storePath, reconciliation);
   return 0;
-}
-
-// ---------------------------------------------------------------------------
-// decomp-completeness -- the fifth verb.
-// ---------------------------------------------------------------------------
-
-/**
- * The frozen survivor prefix set, measured
- * against a real dxa+Ghidra-derived store rather than against roadmap prose
- * alone -- MEASURED against a zero-label population (derivation writes typed
- * ranges and xrefs, never names) and the reasoning this set was frozen
- * against. `AUTO_NAME_PREFIX_RE`
- * (imported from anno-coverage.ts, NEVER restated as a second literal here --
- * a census over this file for any of its own eleven prefix strings returns
- * zero, proving that) covers the eleven upstream-analyser-shaped
- * prefixes; this file adds three defensive, ANCHORED, case-sensitive cases no
- * import route writes today, kept here in case a future one ever carries a
- * raw dxa or Ghidra name through unrenamed: `l_XXXX` (an underscored form no
- * current tool emits), `FUN_XXXX`/`LAB_XXXX` (Ghidra's own default naming),
- * and `lXXX`/`lXXXX` (dxa's own real, no-underscore listing convention,
- * `dxa-listing.test.ts:52`). Anchored at both ends, unlike
- * `AUTO_NAME_PREFIX_RE`'s prefix-only match, because these three shapes are
- * short enough that an unanchored match would false-fire on a legitimate
- * longer authored name that merely starts the same way.
- */
-const SURVIVOR_EXTRA_RE = /^(?:l_[0-9a-f]{4}|(?:FUN|LAB)_[0-9a-f]{4}|l[0-9a-f]{3,4})$/;
-
-/** True iff `name` is a survivor under the frozen set above. ASCII
- * case-sensitive throughout -- `l_0810` IS a survivor, `L_0810` is NOT
- * (anno-coverage.test.ts's own `L_` exclusion precedent, restated for this
- * phase's own prefix set rather than reused blindly, since `L_` was never
- * one of `AUTO_NAME_PREFIX_RE`'s eleven prefixes to begin with). */
-function isSurvivorLabelName(name: string): boolean {
-  return AUTO_NAME_PREFIX_RE.test(name) || SURVIVOR_EXTRA_RE.test(name);
-}
-
-/** One row of the manifest `anno decomp-completeness --manifest FILE` reads.
- * `path` is relative to `src/mcp/vice/fixtures`; `reason` is
- * required (non-empty) when `execution` is `"not-executed"` and `null`
- * otherwise. */
-interface DecompExecutionManifestEntry {
-  path: string;
-  execution: "executed" | "not-executed";
-  reason: string | null;
-  ghidraRoute: "flat64k" | "prg";
-}
-
-interface DecompExecutionManifest {
-  fixtures: DecompExecutionManifestEntry[];
 }
 
 /** Strips a trailing recognised extension and any leading directory
@@ -1871,411 +1669,6 @@ interface DecompExecutionManifest {
 function fixtureStem(path: string): string {
   const base = basename(path);
   return base.replace(/\.[^./]+$/, "");
-}
-
-/** The subset of `EvidReconciliation` (verbatim field names, never renamed)
- * that a `--disagreements` document must carry for
- * `decomp-completeness` to accept it as real, plus the `runIdentity` this
- * verb (via `cmdEvidDisagreements`'s own `--json` branch) adds alongside it.
- * `disagreementInput` in the `--json` answer below is exactly this shape. */
-interface DecompDisagreementInput extends EvidReconciliation {
-  // (Rule 1 fix, disclosed): `null` is a THIRD, LEGITIMATE
-  // value here -- `anno evid-disagreements --json`'s own `runIdentity` field
-  // reads `null` when the store holds zero observed runs (listObservedRuns()),
-  // which is exactly the real, non-fabricated answer a non-executed
-  // fixture's store produces. Refusing null unconditionally made a real
-  // `anno evid-disagreements --json` answer for a non-executed fixture
-  // unusable by this verb, contradicting this phase's own must_haves ("a
-  // non-executed fixture's disagreement answer is a real answer over zero
-  // observations ... never an omitted argument"). The anti-vacuity property
-  // is preserved below: null is accepted ONLY when the store's own evid-runs
-  // table is ALSO empty (cmdDecompCompleteness's own match-check) -- a store
-  // that DOES carry real runs must still supply a real, matching identity.
-  runIdentity: { imageSha256: string; argvDigest: string; seed: string } | null;
-}
-
-const EVID_RECONCILIATION_FIELDS = [
-  "disagreements",
-  "disagreementCount",
-  "agreementCount",
-  "blockCoveredNeverObservedCount",
-  "observedOutsideAnyBlockCount",
-  "observedAtUndefinedBlockCount",
-  "denominator",
-  "positiveClass",
-  "tier",
-] as const;
-
-/**
- * Validates a parsed `--disagreements` document has every `EvidReconciliation`
- * field AND a complete `runIdentity` -- refusing BY NAME, never silently
- * treating a missing field as an empty answer (a required
- * output-schema field only the real `--disagreements` input can populate).
- * Returns the validated document (typed as `DecompDisagreementInput`) or a
- * refusal message string. Never throws.
- */
-function validateDisagreementDocumentShape(doc: unknown): DecompDisagreementInput | string {
-  if (typeof doc !== "object" || doc === null) {
-    return "decomp-completeness: the --disagreements document is not a JSON object -- refusing to render";
-  }
-  const bag = doc as Record<string, unknown>;
-  for (const field of EVID_RECONCILIATION_FIELDS) {
-    if (!(field in bag)) {
-      return (
-        `decomp-completeness: the --disagreements document is missing the "${field}" field -- ` +
-        "this is not a real anno evid-disagreements --json answer, refusing to render"
-      );
-    }
-  }
-  const runIdentity = bag.runIdentity;
-  // Rule 1 fix (disclosed): `null` is accepted HERE as a
-  // well-formed shape -- it is `anno evid-disagreements --json`'s own real
-  // answer for a store with zero observed runs (a non-executed
-  // fixture). It is NOT yet accepted as a legitimate ANSWER: cmdDecompCompleteness's
-  // own match-check below still refuses a null identity unless the store's
-  // evid-runs table is ALSO genuinely empty, so a store that DOES carry real
-  // runs can never slip past validation with a null identity.
-  if (runIdentity !== null) {
-    if (
-      typeof runIdentity !== "object" ||
-      typeof (runIdentity as Record<string, unknown>).imageSha256 !== "string" ||
-      typeof (runIdentity as Record<string, unknown>).argvDigest !== "string" ||
-      typeof (runIdentity as Record<string, unknown>).seed !== "string"
-    ) {
-      return (
-        "decomp-completeness: the --disagreements document carries no complete runIdentity " +
-        "(image_sha256/argv_digest/seed) -- an empty or ambiguous-run document is refused rather than " +
-        "rendered as \"no disagreements\""
-      );
-    }
-  }
-  return doc as DecompDisagreementInput;
-}
-
-// ---------------------------------------------------------------------------
-// The full measure set -- rangeProvenance
-// (typed by evidence, never inferred), entryPoints, referencedAddresses and
-// disagreementResolution (the gate-vs-bulletin distinction).
-// ---------------------------------------------------------------------------
-
-/** One typed range's provenance classification. Always
- * one of the three named values -- never a fourth, never a boolean. */
-type RangeTypedBy = "observed-executing" | "byte-derived" | "authored";
-
-interface RangeProvenanceRow {
-  start: number;
-  endInclusive: number;
-  dataType: DataType;
-  /** `dataType` unless it is one of the four `SPLIT_DATA_TYPES` members, in
-   * which case it renders as `"table"` -- read from `anno-types.ts`'s
-   * own `isSplitDataType()`, NEVER a restated literal, so the four split
-   * spellings never appear in this file's own source as strings. */
-  renderedType: string;
-  typedBy: RangeTypedBy;
-}
-
-interface EntryPointPurposeElements {
-  function: boolean;
-  inputs: boolean;
-  outputs: boolean;
-  sideEffects: boolean;
-}
-
-interface EntryPointRow {
-  address: number;
-  name: string | null;
-  /** True iff `name` is a real, authored label -- present AND not one of the
-   * frozen survivor prefixes (an auto-generated name is not a name for this
-   * gate's purposes, exactly like criterion 3's own survivor search). */
-  hasName: boolean;
-  purposeElements: EntryPointPurposeElements;
-}
-
-interface ReferencedAddressesCensus {
-  resolved: number[];
-  declined: { address: number; reason: string }[];
-  unresolved: number[];
-  denominator: number;
-}
-
-interface DisagreementResolutionRow {
-  address: number;
-  resolved: boolean;
-  accepted: boolean;
-  reason: string | null;
-}
-
-interface DisagreementResolutionCensus {
-  rows: DisagreementResolutionRow[];
-  unresolvedCount: number;
-  denominator: number;
-}
-
-/**
- * The four hardware-chip memory-mapped register bands `c64-memory-mapping`'s
- * own `memmap.json` labels by name -- VIC-II, SID, CIA#1, CIA#2. Color RAM
- * ($D800-$DBFF) and the two generic "I/O Area" bands are deliberately
- * EXCLUDED: neither holds a chip register this project's curated
- * `anno-regbits.json` table names, and folding them in would make an
- * ordinary color-RAM write "hardware" by construction. `$0001` (the 6510's
- * own I/O port, zero page -- outside every one of these four bands) is
- * covered separately, by `hardwareRegisterAddresses()` below reading
- * `anno-regbits.json` itself, never a hand-restated address list.
- */
-const HARDWARE_CHIP_RANGES: readonly { start: number; endInclusive: number }[] = Object.freeze([
-  { start: 0xd000, endInclusive: 0xd3ff }, // VIC-II
-  { start: 0xd400, endInclusive: 0xd7ff }, // SID
-  { start: 0xdc00, endInclusive: 0xdcff }, // CIA#1
-  { start: 0xdd00, endInclusive: 0xddff }, // CIA#2
-]);
-
-// Beside this module (the package root), else one directory up (the
-// compiled dist/ copy, one level below the package root).
-const REGBITS_PATH_FOR_HARDWARE_CHECK =
-  [join(HERE, "anno-regbits.json"), join(HERE, "..", "anno-regbits.json")].find((c) => existsSync(c)) ?? join(HERE, "anno-regbits.json");
-
-let cachedHardwareRegBitsAddresses: ReadonlySet<number> | undefined;
-
-/** Every address `anno-regbits.json` names, read directly (this file never
- * imports `anno-enum-gen.ts`'s own private `loadRegBits()`, which is not
- * exported) -- this is a KEY-EXISTENCE check against the generated,
- * committed artifact, never a second bit-name derivation from memmap.json
- * (that generator's own header reserves that job to itself). Cached once per
- * process, mirroring `anno-enum-gen.ts`'s own cache discipline for the same
- * file. */
-function hardwareRegBitsAddresses(): ReadonlySet<number> {
-  if (cachedHardwareRegBitsAddresses === undefined) {
-    const doc = JSON.parse(readFileSync(REGBITS_PATH_FOR_HARDWARE_CHECK, "utf8")) as Record<string, unknown>;
-    const addresses = new Set<number>();
-    for (const key of Object.keys(doc)) {
-      if (key === "_generated") continue;
-      const parsed = Number.parseInt(key.slice(1), 16);
-      if (Number.isInteger(parsed)) addresses.add(parsed);
-    }
-    cachedHardwareRegBitsAddresses = addresses;
-  }
-  return cachedHardwareRegBitsAddresses;
-}
-
-/** True iff `address` is a hardware register address -- the union `anno-
- * regbits.json`'s own keys and memmap.json's four labelled chip bands
- * classify as hardware (see `HARDWARE_CHIP_RANGES`'s own doc comment for
- * what is deliberately excluded and why). */
-function isHardwareRegisterAddress(address: number): boolean {
-  if (hardwareRegBitsAddresses().has(address)) return true;
-  return HARDWARE_CHIP_RANGES.some((r) => address >= r.start && address <= r.endInclusive);
-}
-
-/** The address an instruction references for the purposes of this file's
- * entry-point and referenced-address censuses -- mirrors `anno-derive.ts`'s
- * own (private, unexported) `referencedAddress()` rule exactly: no operand
- * (`rts`), an `immediate` operand (the value itself, never an address) and an
- * `indirect` operand (the target lives AT the operand, not IN it) all
- * reference nothing; everything else resolves to `resolvedTarget` when the
- * decoder produced one (a branch, a `jmp`/`jsr` absolute) or `operand.value`
- * otherwise. Restated here, not imported, because `anno-derive.ts` does not
- * export it. */
-function instructionReferencedAddress(instruction: Instruction): number | undefined {
-  const operand = instruction.operand;
-  if (operand === undefined) return undefined;
-  if (operand.role === "immediate" || operand.role === "indirect") return undefined;
-  const target = instruction.resolvedTarget ?? operand.value;
-  if (!Number.isInteger(target) || target < 0 || target > 0xffff) return undefined;
-  return target;
-}
-
-/** Decodes every `code`-typed range fresh (never memoised, never a second
- * decoder) and returns every instruction found, tagged with nothing but its
- * own decoded shape. `image` is the SAME `{origin, bytes}` pair
- * `loadProjectImage()` already produced for this store's own fixture file. */
-function decodeCodeRanges(ranges: readonly RangeRow[], image: { origin: number; bytes: Uint8Array }): Instruction[] {
-  const instructions: Instruction[] = [];
-  for (const range of ranges) {
-    if (range.dataType !== "code") continue;
-    const from = range.start - image.origin;
-    const to = range.endInclusive - image.origin;
-    if (from < 0 || to >= image.bytes.length || from > to) continue; // this image does not cover the range
-    const bytes = image.bytes.subarray(from, to + 1);
-    instructions.push(...decode(bytes, range.start, { end: range.endInclusive }));
-  }
-  return instructions;
-}
-
-/** True iff any comment at `address` starts with `prefix`. */
-function hasCommentWithPrefix(comments: readonly CommentRow[], address: number, prefix: string): boolean {
-  return comments.some((c) => c.address === address && c.text.startsWith(prefix));
-}
-
-/** The first comment at `address` starting with `prefix`, its text with the
- * prefix stripped and trimmed -- or `null` when none exists. */
-function commentReasonAfterPrefix(comments: readonly CommentRow[], address: number, prefix: string): string | null {
-  const found = comments.find((c) => c.address === address && c.text.startsWith(prefix));
-  return found ? found.text.slice(prefix.length).trim() : null;
-}
-
-/** How ONE typed range was typed. Evidence beats
- * inference, stated as a fixed precedence that must never be reordered:
- * `observed-executing` (at least one real execute observation falls inside
- * the range) beats `authored` (the range's start address carries an
- * `AUTHORED_PROVENANCE_COMMENT_PREFIX` comment and no observation) beats
- * `byte-derived` (neither). */
-function typedByFor(hasObservation: boolean, hasAuthoredComment: boolean): RangeTypedBy {
-  if (hasObservation) return "observed-executing";
-  if (hasAuthoredComment) return "authored";
-  return "byte-derived";
-}
-
-/** Builds `rangeProvenance`: one row per typed range,
- * sorted ascending by `start` then `endInclusive` (ranges never overlap, so
- * this is already the input order once `ranges` itself is pre-sorted, but
- * the sort is restated here so this function's OWN output contract does not
- * depend on a caller's sort surviving unchanged). */
-function buildRangeProvenance(
-  ranges: readonly RangeRow[],
-  observations: readonly { address: number }[],
-  comments: readonly CommentRow[],
-): RangeProvenanceRow[] {
-  const sorted = [...ranges].sort((a, b) => a.start - b.start || a.endInclusive - b.endInclusive);
-  return sorted.map((r) => {
-    const hasObservation = observations.some((o) => o.address >= r.start && o.address <= r.endInclusive);
-    const hasAuthoredComment = hasCommentWithPrefix(comments, r.start, AUTHORED_PROVENANCE_COMMENT_PREFIX);
-    return {
-      start: r.start,
-      endInclusive: r.endInclusive,
-      dataType: r.dataType,
-      renderedType: isSplitDataType(r.dataType) ? "table" : r.dataType,
-      typedBy: typedByFor(hasObservation, hasAuthoredComment),
-    };
-  });
-}
-
-/** Builds `entryPoints`: every address that is the target of at least one
- * JSR-shaped cross-reference (a decoded `jsr` instruction in a `code` range,
- * unioned with every stored `listXrefs()` row whose target falls inside a
- * `code`-typed range -- the store's own `XrefAccessKind` vocabulary carries
- * no separate "call" member, so a stored xref landing in code is treated as
- * a call reference for this census), PLUS the image's own load/start
- * address (`image.origin`) -- the fixture's own natural entry point.
- * Sorted ascending by address.
- *
- * `image === null` (fixed 2026-09-11) means the fixture's
- * own bytes could not be located: no instructions are decoded and NO
- * `image.origin` candidate is added -- a missing image degrades this to
- * whatever the store's own stored `xrefs` already establish, never a
- * fabricated `$0000` from a placeholder's own zero origin. */
-function buildEntryPoints(
-  ranges: readonly RangeRow[],
-  image: { origin: number; bytes: Uint8Array } | null,
-  xrefs: readonly { toAddress: number }[],
-  labels: readonly LabelRow[],
-  comments: readonly CommentRow[],
-): EntryPointRow[] {
-  const codeRanges = ranges.filter((r) => r.dataType === "code");
-  const instructions = image === null ? [] : decodeCodeRanges(ranges, image);
-
-  const candidates = new Set<number>();
-  if (image !== null) candidates.add(image.origin);
-  for (const instr of instructions) {
-    if (instr.mnemonic === "jsr") {
-      const target = instructionReferencedAddress(instr);
-      if (target !== undefined) candidates.add(target);
-    }
-  }
-  for (const xref of xrefs) {
-    if (codeRanges.some((r) => xref.toAddress >= r.start && xref.toAddress <= r.endInclusive)) {
-      candidates.add(xref.toAddress);
-    }
-  }
-
-  const purposeLabelPatterns: Record<keyof EntryPointPurposeElements, RegExp> = {
-    function: /function:/i,
-    inputs: /inputs:/i,
-    outputs: /outputs:/i,
-    sideEffects: /side effects:/i,
-  };
-
-  return [...candidates]
-    .sort((a, b) => a - b)
-    .map((address) => {
-      const label = labels.find((l) => l.address === address);
-      const hasName = label !== undefined && !isSurvivorLabelName(label.name);
-      const addressComments = comments.filter((c) => c.address === address);
-      const purposeElements: EntryPointPurposeElements = {
-        function: addressComments.some((c) => purposeLabelPatterns.function.test(c.text)),
-        inputs: addressComments.some((c) => purposeLabelPatterns.inputs.test(c.text)),
-        outputs: addressComments.some((c) => purposeLabelPatterns.outputs.test(c.text)),
-        sideEffects: addressComments.some((c) => purposeLabelPatterns.sideEffects.test(c.text)),
-      };
-      return { address, name: label?.name ?? null, hasName, purposeElements };
-    });
-}
-
-/** Builds `referencedAddresses` (criterion 4): every non-hardware address a
- * `code` range's decoded instructions or the store's own `listXrefs()` rows
- * reference, classified `resolved` (an authored, non-survivor label exists),
- * `declined` (a `DECLINE_COMMENT_PREFIX` comment exists, carrying the
- * decline's own reason), or `unresolved` (neither) -- sorted ascending by
- * address within each bucket.
- *
- * `image === null` (fixed 2026-09-11): no instructions are
- * decoded, so this degrades to whatever the store's own stored `xrefs`
- * establish -- never fabricated from a placeholder image's bytes. */
-function buildReferencedAddresses(
-  ranges: readonly RangeRow[],
-  image: { origin: number; bytes: Uint8Array } | null,
-  xrefs: readonly { toAddress: number }[],
-  labels: readonly LabelRow[],
-  comments: readonly CommentRow[],
-): ReferencedAddressesCensus {
-  const instructions = image === null ? [] : decodeCodeRanges(ranges, image);
-  const candidates = new Set<number>();
-  for (const instr of instructions) {
-    const target = instructionReferencedAddress(instr);
-    if (target !== undefined && !isHardwareRegisterAddress(target)) candidates.add(target);
-  }
-  for (const xref of xrefs) {
-    if (!isHardwareRegisterAddress(xref.toAddress)) candidates.add(xref.toAddress);
-  }
-
-  const resolved: number[] = [];
-  const declined: { address: number; reason: string }[] = [];
-  const unresolved: number[] = [];
-  for (const address of [...candidates].sort((a, b) => a - b)) {
-    const label = labels.find((l) => l.address === address);
-    if (label !== undefined && !isSurvivorLabelName(label.name)) {
-      resolved.push(address);
-      continue;
-    }
-    const reason = commentReasonAfterPrefix(comments, address, DECLINE_COMMENT_PREFIX);
-    if (reason !== null) {
-      declined.push({ address, reason });
-      continue;
-    }
-    unresolved.push(address);
-  }
-  return { resolved, declined, unresolved, denominator: resolved.length + declined.length + unresolved.length };
-}
-
-/** Builds `disagreementResolution` (the gate-vs-bulletin distinction,
- * criterion 2): one row per disagreement the supplied `--disagreements`
- * document carries, `accepted` when the address carries a
- * `DISAGREEMENT_ACCEPTED_COMMENT_PREFIX` comment, `resolved` identically (the
- * only resolution mechanism this gate recognises today), `reason` the
- * accepting comment's own text with the prefix stripped. `unresolvedCount`
- * is a named line beside its own `denominator`, never folded into any other
- * count -- criterion 2's own words: a nonzero unresolved count BLOCKS rather
- * than being reported beside a pass. */
-function buildDisagreementResolution(
-  disagreements: readonly { address: number }[],
-  comments: readonly CommentRow[],
-): DisagreementResolutionCensus {
-  const rows = disagreements.map((d) => {
-    const reason = commentReasonAfterPrefix(comments, d.address, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX);
-    const accepted = reason !== null;
-    return { address: d.address, resolved: accepted, accepted, reason };
-  });
-  const unresolvedCount = rows.filter((r) => !r.resolved).length;
-  return { rows, unresolvedCount, denominator: rows.length };
 }
 
 interface DecompCompletenessParsedArgs {
@@ -2421,20 +1814,6 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
     return 1;
   }
 
-  let disagreementDoc: unknown;
-  try {
-    disagreementDoc = JSON.parse(readFileSync(disagreementsPath, "utf8"));
-  } catch (err) {
-    console.error(`decomp-completeness: --disagreements file is not valid JSON: ${errMsg(err)}`);
-    return 1;
-  }
-  const validated = validateDisagreementDocumentShape(disagreementDoc);
-  if (typeof validated === "string") {
-    console.error(validated);
-    return 1;
-  }
-  const disagreementInput = validated;
-
   let manifestDoc: unknown;
   try {
     manifestDoc = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -2462,141 +1841,20 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
     return 1;
   }
 
-  let handle: AnnoStoreHandle;
+  // The fixture's own bytes -- the fixtures-relative manifest path, resolved
+  // beside this module, never a second guess at where the image lives. An
+  // image that is not there is not sent; the report says so by name.
+  const fixtureImagePath = join(HERE, "fixtures", manifestEntry.path);
+  let report: DecompCompletenessReport;
   try {
-    handle = openStore(storePath, { workspaceRoot, mustExist: true });
+    const result = await runReport(storePath, workspaceRoot, "decomp-completeness", { store_label: storePath, manifest_entry: manifestEntry }, {
+      disagreements: reportInput(disagreementsPath),
+      fixture_image: existsSync(fixtureImagePath) ? reportInput(fixtureImagePath) : undefined,
+    });
+    report = result.json as DecompCompletenessReport;
   } catch (err) {
-    console.error(`decomp-completeness: ${errMsg(err)}`);
-    return 1;
+    return reportFailure("decomp-completeness", err);
   }
-
-  let report: {
-    store: string;
-    fixture: string;
-    executionDisposition: "executed" | "not-executed";
-    notExecutedReason: string | null;
-    byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number; undefinedRanges: { start: number; endInclusive: number }[] };
-    survivors: { address: number; name: string }[];
-    rangeProvenance: RangeProvenanceRow[];
-    // Fixed 2026-09-11: true when the fixture's own image
-    // bytes could not be located -- see the fallback below. `entryPoints`/
-    // `referencedAddresses` are DEGRADED (never fabricated) when this is
-    // true: no synthetic `$0000` entry point is manufactured from a
-    // zero-length placeholder's own `origin`.
-    imageUnavailable: boolean;
-    entryPoints: EntryPointRow[];
-    referencedAddresses: ReferencedAddressesCensus;
-    disagreementInput: DecompDisagreementInput;
-    disagreementResolution: DisagreementResolutionCensus;
-  };
-  try {
-    const ranges = listRanges(handle);
-    const { runs } = listObservedRuns(handle);
-    // Rule 1 fix (disclosed): a `null` runIdentity is accepted
-    // ONLY when the store's own evid-runs table is ALSO genuinely empty --
-    // the real, honest answer for a non-executed fixture. A store that
-    // DOES carry real runs must still supply a real, matching identity; the
-    // anti-vacuity property this whole check exists for is unaffected.
-    if (disagreementInput.runIdentity === null) {
-      if (runs.length !== 0) {
-        console.error(
-          `decomp-completeness: the --disagreements document carries a null run identity, but ${storePath}'s own ` +
-            `evid-runs table is NOT empty (${runs.length} recorded run(s)) -- a store with real runs must supply a ` +
-            "real, matching identity, never null.",
-        );
-        closeStore(handle);
-        return 1;
-      }
-    } else {
-      const matchesSomeRun = runs.some(
-        (r) =>
-          r.imageSha256 === disagreementInput.runIdentity!.imageSha256 &&
-          r.argvDigest === disagreementInput.runIdentity!.argvDigest &&
-          r.seed === disagreementInput.runIdentity!.seed,
-      );
-      if (!matchesSomeRun) {
-        console.error(
-          `decomp-completeness: the --disagreements document's run identity (image_sha256=${disagreementInput.runIdentity.imageSha256}, ` +
-            `argv_digest=${disagreementInput.runIdentity.argvDigest}, seed=${JSON.stringify(disagreementInput.runIdentity.seed)}) ` +
-            `matches no row in ${storePath}'s own evid-runs table -- a fabricated or foreign document is refused, never rendered.`,
-        );
-        closeStore(handle);
-        return 1;
-      }
-    }
-
-    const sortedRanges = [...ranges].sort((a, b) => a.start - b.start);
-    const byType: Record<string, number> = {};
-    let denominator = 0;
-    let undefinedCount = 0;
-    // Every gap between typed ranges, by ADDRESS -- so the gate can name
-    // exactly which byte(s) are Undefined rather than reporting a bare
-    // count (Task 1 Test 1: "a store with one undefined-typed byte ... renders
-    // that byte's address"). Sorted ascending, matching every other array
-    // this verb returns.
-    const undefinedRanges: { start: number; endInclusive: number }[] = [];
-    let cursor = sortedRanges.length > 0 ? sortedRanges[0]!.start : 0;
-    for (const r of sortedRanges) {
-      if (r.start > cursor) {
-        const gap = r.start - cursor;
-        undefinedCount += gap;
-        denominator += gap;
-        undefinedRanges.push({ start: cursor, endInclusive: r.start - 1 });
-      }
-      const len = r.endInclusive - r.start + 1;
-      byType[r.dataType] = (byType[r.dataType] ?? 0) + len;
-      denominator += len;
-      cursor = Math.max(cursor, r.endInclusive + 1);
-    }
-
-    const labels = listLabels(handle);
-    const survivors = labels
-      .filter((l) => isSurvivorLabelName(l.name) && sortedRanges.some((r) => r.dataType === "code" && l.address >= r.start && l.address <= r.endInclusive))
-      .map((l) => ({ address: l.address, name: l.name }))
-      .sort((a, b) => a.address - b.address);
-
-    // The full measure set. All four use the SAME
-    // fixture bytes the derivation route itself read -- the fixtures-relative
-    // manifest path, resolved beside this module (`fixtures/<manifestEntry.path>`),
-    // never a second guess at where the image lives. An image that cannot be
-    // located (never expected for a committed fixture, but never fabricated
-    // either) degrades entryPoints/referencedAddresses to EMPTY -- never a
-    // synthetic zero-length placeholder whose own `origin` (0) would read as
-    // a real `$0000` entry point (fixed 2026-09-11: the
-    // placeholder's origin was previously unioned into the candidate set
-    // unconditionally, fabricating a plausible-looking but fictitious
-    // finding). `imageUnavailable` reports the condition BY NAME instead.
-    const comments = listComments(handle);
-    const xrefs = listXrefs(handle);
-    const fixtureImagePath = join(HERE, "fixtures", manifestEntry.path);
-    const loadedImage = existsSync(fixtureImagePath) ? projectImage(fixtureImagePath) : null;
-    const imageUnavailable = loadedImage === null;
-
-    const rangeProvenance = buildRangeProvenance(sortedRanges, listExecObservations(handle), comments);
-    const entryPoints = buildEntryPoints(sortedRanges, loadedImage, xrefs, labels, comments);
-    const referencedAddresses = buildReferencedAddresses(sortedRanges, loadedImage, xrefs, labels, comments);
-    const disagreementResolution = buildDisagreementResolution(disagreementInput.disagreements, comments);
-
-    report = {
-      store: storePath,
-      fixture: manifestEntry.path,
-      executionDisposition: manifestEntry.execution,
-      notExecutedReason: manifestEntry.execution === "not-executed" ? manifestEntry.reason : null,
-      byteCensus: { byType, undefinedCount, denominator, undefinedRanges },
-      survivors,
-      rangeProvenance,
-      imageUnavailable,
-      entryPoints,
-      referencedAddresses,
-      disagreementInput,
-      disagreementResolution,
-    };
-  } catch (err) {
-    console.error(`decomp-completeness: ${errMsg(err)}`);
-    closeStore(handle);
-    return 1;
-  }
-  closeStore(handle);
 
   if (json) {
     console.log(JSON.stringify(report, null, 2));
@@ -2927,39 +2185,12 @@ async function cmdHazardReport(rest: string[]): Promise<number> {
     return 1;
   }
 
-  let handle: AnnoStoreHandle;
+  let report: HazardReport & { returned: number; matched: number };
   try {
-    handle = openStore(storePath, { workspaceRoot, mustExist: true });
+    const result = await runReport(storePath, workspaceRoot, "hazard-report", {}, { image: reportInput(imagePath) });
+    report = result.json as typeof report;
   } catch (err) {
-    console.error(`hazard-report: ${errMsg(err)}`);
-    return 1;
-  }
-  let report: ReturnType<typeof buildHazardReport>;
-  try {
-    const ranges = blocksFromStore(listRanges(handle));
-    const symbols = listLabels(handle);
-    const comments = listComments(handle);
-    const xrefs = listXrefs(handle);
-    const execObservations = listExecObservations(handle);
-    const loadedImage = projectImage(imagePath);
-    if (loadedImage === null) {
-      console.error(`hazard-report: ${imagePath} did not decode -- supply a .prg or an exactly-65536-byte flat capture`);
-      return 1;
-    }
-    report = buildHazardReport({
-      bytes: loadedImage.bytes,
-      origin: loadedImage.origin,
-      symbols,
-      comments,
-      ranges,
-      xrefs,
-      execObservations,
-    });
-  } catch (err) {
-    console.error(`hazard-report: ${errMsg(err)}`);
-    return 1;
-  } finally {
-    closeStore(handle);
+    return reportFailure("hazard-report", err);
   }
 
   // `matched`/`returned` always equal `report.findings.length` here -- this
@@ -2969,10 +2200,10 @@ async function cmdHazardReport(rest: string[]): Promise<number> {
   // `--max-results` flag on THIS verb would need to make these two diverge
   // again, the same way the MCP tool's `dispatchHazardReport` already does.
   if (json) {
-    console.log(JSON.stringify({ store: storePath, image: imagePath, ...report, returned: report.findings.length, matched: report.findings.length }, null, 2));
+    console.log(JSON.stringify({ store: storePath, image: imagePath, ...report }, null, 2));
     return 0;
   }
-  printHazardReport(storePath, imagePath, { ...report, returned: report.findings.length, matched: report.findings.length });
+  printHazardReport(storePath, imagePath, report);
   return 0;
 }
 
