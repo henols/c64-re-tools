@@ -114,9 +114,6 @@
   external analyser was removed, and nothing replaces it yet.
 - The bank-boundary annotation claim is proven only on a synthetic fixture, not
   yet on real cracked code.
-- v2.0.0's container case is proven by tests that give the client and the
-  broker disjoint roots, and by the structural seam tests. It has not been run
-  inside a real devcontainer, because this repository has none.
 - Cycle-exact equivalence past anchor hit 75 is still open. CPU history through
   the text monitor now provides an instrument for it.
 
