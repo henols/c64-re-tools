@@ -1369,7 +1369,7 @@ function sendHostToolLineAwaitReply(
   socket: Socket,
   line: Record<string, unknown>,
   timeoutMs: number,
-): Promise<{ ok: true; value: Record<string, unknown> } | { ok: false; reason: string }> {
+): Promise<{ ok: true; value: Record<string, unknown> } | { ok: false; reason: string; code?: string }> {
   return new Promise((resolve) => {
     let carry = "";
     let settled = false;
@@ -1379,7 +1379,7 @@ function sendHostToolLineAwaitReply(
     }, timeoutMs);
     if (typeof timer.unref === "function") timer.unref();
 
-    function finish(result: { ok: true; value: Record<string, unknown> } | { ok: false; reason: string }): void {
+    function finish(result: { ok: true; value: Record<string, unknown> } | { ok: false; reason: string; code?: string }): void {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -1407,7 +1407,7 @@ function sendHostToolLineAwaitReply(
       const obj = parsed as Record<string, unknown>;
       if (obj.kind === "error") {
         const message = typeof obj.message === "string" ? obj.message : "vice: the broker refused the request with an unrecognisable error reply";
-        finish({ ok: false, reason: `vice: ${message}` });
+        finish({ ok: false, reason: `vice: ${message}`, ...(typeof obj.code === "string" ? { code: obj.code } : {}) });
         return;
       }
       finish({ ok: true, value: obj });
@@ -1534,6 +1534,37 @@ export function dialHostToolSession(options: DialHostToolSessionOptions = {}): P
   return dialKeptSocket(HOST_TOOL_TAG, options).then((dialed) =>
     dialed.ok ? { ok: true, session: makeHostToolSession(dialed.socket) } : dialed,
   );
+}
+
+/** The hello tag of an annotation call's connection. */
+export const ANNO_TAG = "anno";
+
+/** One annotation call's connection: stage the call's files, run it once,
+ * close. */
+export interface AnnoSession {
+  stage(files: HostToolStageFileSpec[], replyTimeoutMs?: number): Promise<HostToolSessionStageResult>;
+  /** Sends `anno_run` with the fields of `line` and resolves its one reply.
+   * A refusal carries the broker's error `code` when it sent one. */
+  run(line: Record<string, unknown>, replyTimeoutMs?: number): Promise<{ ok: true; response: Record<string, unknown> } | { ok: false; reason: string; code?: string }>;
+  close(): void;
+}
+
+/** Dials the fixed endpoint for an annotation call (tag `ANNO_TAG`). */
+export function dialAnnoSession(options: DialHostToolSessionOptions = {}): Promise<{ ok: true; session: AnnoSession } | { ok: false; reason: string }> {
+  return dialKeptSocket(ANNO_TAG, options).then((dialed) => {
+    if (!dialed.ok) return dialed;
+    const socket = dialed.socket;
+    const hostTool = makeHostToolSession(socket);
+    const session: AnnoSession = {
+      stage: (files, replyTimeoutMs) => hostTool.stage(files, replyTimeoutMs),
+      async run(line, replyTimeoutMs = DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS) {
+        const result = await sendHostToolLineAwaitReply(socket, { ...line, op: "anno_run" }, replyTimeoutMs);
+        return result.ok ? { ok: true, response: result.value } : result;
+      },
+      close: () => hostTool.close(),
+    };
+    return { ok: true, session };
+  });
 }
 
 /** The hello tag of a long-lived control connection: the one that carries

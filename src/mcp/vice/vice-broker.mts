@@ -10,11 +10,11 @@
 // Imports node: builtins ONLY plus this phase's own sibling modules --
 // mcp__vice__* stays the only route to the emulator; nothing here opens a
 // connection to it.
-import { mkdirSync, openSync, existsSync } from "node:fs";
+import { mkdirSync, openSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, basename, dirname, relative, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn, fork, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Socket } from "node:net";
 
 import { containerGuardReport, containerGuardEnforce } from "./container-guard.mjs";
@@ -147,7 +147,10 @@ import {
 // below -- it answers only when no explicit --state-dir, no VICE_POOL_DIR,
 // and no --repo-root apply, which is exactly BROKER-01/BROKER-06's "no
 // project argument at all" case (D-13).
-import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir, brokerGhidraDir } from "./broker-home.mjs";
+import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir, brokerGhidraDir, brokerAnnoDbPath } from "./broker-home.mjs";
+// The annotation worker's host: every anno_run request runs on its thread,
+// against the machine's one annotation database.
+import { AnnoHost, type AnnoHostRequest } from "./anno-host.mjs";
 // The endpoint dialler, for the hello probe that arbitrates a busy control port.
 import { dialBrokerEndpoint, describeDialFailure } from "./broker-endpoint.mjs";
 // A VALUE import of the staging/transfer primitives (Phase 64, plan 64-03,
@@ -1342,6 +1345,81 @@ export function handleHostToolEnd(requestKey: string): void {
   clearStagingForSession(requestKey);
 }
 
+/** The request kinds an `anno_run` may carry. */
+const ANNO_RUN_KINDS = new Set(["register", "tool", "report"]);
+
+/**
+ * Answers `anno_run`: reads the request's staged `args.json` and input files,
+ * hands them to the annotation worker as bytes, and relays its answer. A
+ * report's files are written into this request's own scratch and returned as
+ * download handles, never as paths. Never rejects -- every failure resolves
+ * as a reply the client reads by name.
+ */
+export async function handleAnnoRun(
+  requestKey: string,
+  raw: unknown,
+  deps: { host: Pick<AnnoHost, "run">; state?: BrokerState },
+): Promise<unknown> {
+  const refuse = (message: string): unknown => ({ kind: "anno_result", ok: false, code: "failed", message: `anno_run: ${message}` });
+  if (deps.state?.shuttingDown) return refuse("the broker is shutting down");
+  for (const upload of listHostToolUploads(requestKey)) {
+    if (!existsSync(upload.path)) return refuse("not every staged upload has finished transferring yet");
+  }
+
+  const req = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  const projectId = req.project_id;
+  const kind = req.kind;
+  const name = req.name;
+  if (typeof projectId !== "string" || typeof kind !== "string" || !ANNO_RUN_KINDS.has(kind) || typeof name !== "string") {
+    return refuse('requires project_id (string), kind ("register" | "tool" | "report") and name (string)');
+  }
+
+  /** Resolves one of THIS request's upload handles to its staged path. */
+  const stagedPath = (handle: unknown): string | undefined => {
+    if (typeof handle !== "string") return undefined;
+    const resolved = resolveStagedFile(handle);
+    return resolved.ok && resolved.entry.grantId === requestKey && resolved.entry.slot.startsWith("in:") ? resolved.entry.path : undefined;
+  };
+
+  const argsPath = stagedPath(req.args_file);
+  if (argsPath === undefined) return refuse("args_file must name an upload staged by this request");
+  let args: unknown;
+  try {
+    args = JSON.parse(readFileSync(argsPath, "utf8"));
+  } catch {
+    return refuse("the staged args file is not valid JSON");
+  }
+
+  const inputs: AnnoHostRequest["inputs"] = [];
+  const inputSpecs = Array.isArray(req.inputs) ? req.inputs : [];
+  for (const spec of inputSpecs) {
+    const entry = typeof spec === "object" && spec !== null ? (spec as Record<string, unknown>) : {};
+    const path = stagedPath(entry.handle);
+    if (typeof entry.slot !== "string" || path === undefined) return refuse("every inputs[] entry must be {slot, handle} naming an upload staged by this request");
+    // The staged file's own name is the client's file name: it drives an
+    // image's extension-first dispatch and is what the answer echoes.
+    inputs.push([entry.slot, { name: basename(path), bytes: new Uint8Array(readFileSync(path)) }]);
+  }
+
+  const reply = await deps.host.run({ projectId, create: kind === "register", kind: kind as AnnoHostRequest["kind"], name, args, inputs });
+  if (!reply.ok) {
+    if (reply.code === "unknown_project") return { kind: "error", code: "unknown_project", message: reply.message };
+    return { kind: "anno_result", ok: false, code: reply.code, message: reply.message };
+  }
+  if (reply.kind === "register") return { kind: "anno_result", ok: true, type: "register" };
+  if (reply.kind === "tool") return { kind: "anno_result", ok: true, type: "tool", result: reply.result };
+
+  const outDir = join(brokerStagingDir(), requestKey, "out");
+  mkdirSync(outDir, { recursive: true });
+  const files = reply.files.map((file, index) => {
+    const path = join(outDir, `${index}-${basename(file.name)}`);
+    writeFileSync(path, file.bytes);
+    const handle = registerHostToolResult({ requestKey, path, index });
+    return { name: file.name, handle, byteLength: file.bytes.byteLength, sha256: createHash("sha256").update(file.bytes).digest("hex") };
+  });
+  return { kind: "anno_result", ok: true, type: "report", json: reply.json, files };
+}
+
 /**
  * Injectable dependency seam for handleRelayDeath() (Phase 63, SESS-05) --
  * this project's standard destructured-options-object register, mirroring
@@ -2222,6 +2300,10 @@ async function run(args: ParsedArgs): Promise<void> {
     process.stderr.write(`vice-broker: ${backendResult.locationRefusal}\n`);
   }
 
+  // The annotation worker starts on the first anno_run, not here: a broker
+  // that never sees an annotation call never opens the database.
+  const annoHost = new AnnoHost({ annoDbPath: brokerAnnoDbPath() });
+
   // The singleton guarantee holds only while the control port keeps its default -- two brokers deliberately configured onto different ports are two brokers, and no code prevents that.
   let listener: { host: string; port: number; pendingAcquires: PendingAcquireQueue };
   let controlServers: Array<{ server: { close(): void } }> = [];
@@ -2285,6 +2367,7 @@ async function run(args: ParsedArgs): Promise<void> {
           state,
         }),
       onHostToolEnd: (requestKey) => handleHostToolEnd(requestKey),
+      onAnnoRun: (requestKey, raw) => handleAnnoRun(requestKey, raw, { host: annoHost, state }),
       onHostState: (): HostStateFields => ({
         pid: process.pid,
         startedAt,
@@ -2458,6 +2541,7 @@ async function run(args: ParsedArgs): Promise<void> {
     stopIntake: () => {
       if (passTimer !== null) clearInterval(passTimer);
       for (const bound of controlServers) bound.server.close();
+      void annoHost.close();
     },
     stopChildren: (s) => stopAllChildren(s, { killWaitMs: resolveKillWaitMs() }),
     killChildrenNow: (s) => killAllChildrenNow(s),

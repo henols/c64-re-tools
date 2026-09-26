@@ -160,6 +160,41 @@ from all 28 `anno call` tools and all 6 report verbs.
     sit beside the compiled engine, where memmap-lookup and anno-enum-gen look
     first. The packed smoke test reads 959 memmap entries from the package.
 
+- **One op for every annotation call (step 3).** `anno_run` carries `kind`:
+  `register`, `tool` or `report`. Registration is its own kind, so the client
+  can register a project, persist `project.json`, and only then write.
+  - The backup verbs in step 5 go through the same op, so no separate
+    `anno_export`/`anno_import` kinds were added. `ControlRequestKind` is now
+    14 members.
+- **Staging reuses `host_tool_stage`.**
+  - Tree 0 is `args.json`, and each input file gets a tree of its own, so two
+    inputs with the same basename never collide.
+  - `anno_run` presents the connection's bound request key, as
+    `host_tool_run` does.
+  - A staged file travels under its basename, and that basename is the
+    engine's file name: an image's extension dispatch and the answer's
+    `image` echo both see only the basename.
+- **Report files come back as download handles**, written into the request's
+  own scratch `out/` and registered with `registerHostToolResult()`. The
+  client downloads them into a per-call temp directory and removes it in a
+  `finally`.
+- **The worker thread holds the only `DatabaseSync`.** It chains requests so
+  none interleave, and `AnnoHost` starts it lazily and turns a crash into
+  `internal` for every waiting request.
+  - Store refusals name the database's path, so the worker writes its own
+    `unknown_project` message and replaces the database path with
+    `<annotation database>` in every message and tool answer it posts.
+- **`unknown_project` is a `ControlErrorCode`.** `sendHostToolLineAwaitReply`
+  now passes the broker's error `code` through, so the client tells "gone"
+  apart from a malformed call.
+- **`project.json` is created by a temp file plus `linkSync`** (create-if-absent),
+  owner-only. On `EEXIST` the loser adopts the winner's id. A malformed file is
+  refused and never rewritten.
+- **Test note:** the socket-tee proof needs `allowHalfOpen` on both of its
+  legs. A transfer client half-closes after its payload and still reads the
+  broker's `transfer_complete`, so a default server socket closed that too
+  early.
+
 ## Context
 
 - **Visuals:** none.

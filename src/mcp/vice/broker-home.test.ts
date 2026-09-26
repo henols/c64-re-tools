@@ -19,6 +19,7 @@ import { join, resolve, sep } from "node:path";
 import { HOST_BOUND_ARTIFACTS } from "./build.ts";
 import {
   BROKER_HOME_ENV,
+  brokerAnnoDbPath,
   brokerHome,
   brokerStateDir,
   brokerIncidentsDir,
@@ -32,7 +33,7 @@ import {
 } from "./broker-home.mts";
 import * as brokerHomeModule from "./broker-home.mts";
 
-test("broker-home.mts exports exactly the eleven documented names", () => {
+test("broker-home.mts exports exactly the twelve documented names", () => {
   const expected = [
     "BROKER_HOME_ENV",
     "brokerHome",
@@ -44,9 +45,14 @@ test("broker-home.mts exports exactly the eleven documented names", () => {
     "brokerConfigScratchDir",
     "brokerGhidraDir",
     "BROKER_GHIDRA_DIR_ENV",
+    "brokerAnnoDbPath",
     "ensureBrokerDir",
   ].sort();
   assert.deepEqual(Object.keys(brokerHomeModule).sort(), expected);
+});
+
+test("brokerAnnoDbPath(): the machine's one annotation database sits in an anno directory under the broker home", () => {
+  assert.equal(brokerAnnoDbPath({ env: { VICE_BROKER_HOME: "/srv/broker" } }), join("/srv/broker", "anno", "annotations.db"));
 });
 
 function tempDir(prefix: string): string {

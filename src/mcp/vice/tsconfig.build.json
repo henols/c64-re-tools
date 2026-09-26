@@ -61,6 +61,8 @@
     "memmap-lookup.mts",
     "prg-image.mts",
     "textmon-memmap.mts",
-    "vice-errors.mts"
+    "vice-errors.mts",
+    "anno-worker.mts",
+    "anno-host.mts"
   ]
 }

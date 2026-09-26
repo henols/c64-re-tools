@@ -77,7 +77,11 @@ import type { ViceBackend } from "./backend-detect.mjs";
 //     `host_tool_stage` mints a request key bound to the connection that sent
 //     it; `host_tool_run` on that same connection must present that key back
 //     (T-65-04), and a key is never honoured on another connection.
-export type ControlRequestKind = "acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run";
+//   - `anno_run`: one annotation call -- a tool, a report, or a project's
+//     registration -- for the project id it names. Its arguments and input
+//     files arrive staged by `host_tool_stage` on the same connection, whose
+//     key it presents back exactly as `host_tool_run` does.
+export type ControlRequestKind = "acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run" | "anno_run";
 // `no_free_text_port` joins the vocabulary as its OWN code -- a stock
 // acquire that fails only on the SECOND (`-remotemonitor`) allocation is
 // reported distinctly from `no_free_port` (which still means the
@@ -102,7 +106,11 @@ export type ControlErrorCode =
   | "at_capacity"
   | "internal"
   | "monitor_owned"
-  | "emulator_unreachable";
+  | "emulator_unreachable"
+  // An anno_run naming a project id the broker's annotation database does
+  // not hold. Its own code, never `bad_request`: "this project's rows are
+  // gone" must not read like a malformed call.
+  | "unknown_project";
 
 export interface ControlRequest {
   op: string;
@@ -497,6 +505,11 @@ export interface StartControlListenerOptions {
    * clean up either, so this callback is simply never invoked on such a
    * broker. */
   onHostToolEnd?: (requestKey: string) => void;
+  /** Called on `anno_run`, after the same per-connection request-key check
+   * `host_tool_run` passes. `raw` is the full request object; the callback
+   * narrows it. Resolves the reply object to write. OPTIONAL: refused
+   * `internal` by name when unwired. */
+  onAnnoRun?: (requestKey: string, raw: unknown) => Promise<unknown>;
 }
 
 export interface StartControlListenerResult {
@@ -1477,6 +1490,33 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           .catch(() => {
             if (!socket.destroyed) {
               writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "host_tool_run threw" });
+            }
+          });
+        return;
+      }
+
+      if (req.op === "anno_run") {
+        const presentedRequest = typeof req.request === "string" ? req.request : "";
+        if (hostToolRequestKey === null || presentedRequest === "" || presentedRequest !== hostToolRequestKey) {
+          writeLine(socket, {
+            kind: "error",
+            code: "denied" as ControlErrorCode,
+            message: "anno_run: no matching host_tool_stage request is bound to this connection",
+          });
+          return;
+        }
+        if (!opts.onAnnoRun) {
+          writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "anno_run is not wired on this broker" });
+          return;
+        }
+        opts
+          .onAnnoRun(hostToolRequestKey, req)
+          .then((result) => {
+            if (!socket.destroyed) writeHostToolLine(socket, result);
+          })
+          .catch(() => {
+            if (!socket.destroyed) {
+              writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "anno_run threw" });
             }
           });
         return;

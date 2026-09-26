@@ -91,6 +91,8 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "anno-store-export.mjs",
   "anno-tools.mjs",
   "anno-types.mjs",
+  "anno-worker.mjs",
+  "anno-host.mjs",
   "block-class.mjs",
   "capture-predicate.mjs",
   "disasm-decoder.mjs",

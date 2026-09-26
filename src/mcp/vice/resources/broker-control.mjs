@@ -892,6 +892,33 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 });
                 return;
             }
+            if (req.op === "anno_run") {
+                const presentedRequest = typeof req.request === "string" ? req.request : "";
+                if (hostToolRequestKey === null || presentedRequest === "" || presentedRequest !== hostToolRequestKey) {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "denied",
+                        message: "anno_run: no matching host_tool_stage request is bound to this connection",
+                    });
+                    return;
+                }
+                if (!opts.onAnnoRun) {
+                    writeLine(socket, { kind: "error", code: "internal", message: "anno_run is not wired on this broker" });
+                    return;
+                }
+                opts
+                    .onAnnoRun(hostToolRequestKey, req)
+                    .then((result) => {
+                    if (!socket.destroyed)
+                        writeHostToolLine(socket, result);
+                })
+                    .catch(() => {
+                    if (!socket.destroyed) {
+                        writeLine(socket, { kind: "error", code: "internal", message: "anno_run threw" });
+                    }
+                });
+                return;
+            }
             if (req.op === "acquire") {
                 const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("req");
                 // Narrow BEFORE attemptAcquire, so a malformed profile never

@@ -1827,13 +1827,13 @@ test("structural: attemptAcquire()'s own comment names which half bounds which f
   assert.match(comment, /does NOT eliminate that race/i);
 });
 
-test("ControlRequestKind: exactly thirteen members, and a new host tool is a HOST_TOOL_IDS entry, never a new member", () => {
+test("ControlRequestKind: exactly fourteen members, and a new host tool is a HOST_TOOL_IDS entry, never a new member", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const match = source.match(/export type ControlRequestKind = ([^;]+);/);
   assert.ok(match, "ControlRequestKind's own type declaration must be found");
   assert.equal(match![1].trim(),
-    '"acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run"',
-    "the union must be exactly these thirteen members (recycle went with vice_recycle, host_tool with the legacy client)",
+    '"acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run" | "anno_run"',
+    "the union must be exactly these fourteen members (recycle went with vice_recycle, host_tool with the legacy client; anno_run carries the annotation store)",
   );
 });
 
@@ -2312,7 +2312,7 @@ async function startProfileRecordingListener(): Promise<{
   return { listener, received };
 }
 
-test("ControlRequestKind: the message set is exactly thirteen reviewed members, and this union is never widened PER-TOOL", () => {
+test("ControlRequestKind: the message set is exactly fourteen reviewed members, and this union is never widened PER-TOOL", () => {
   // Read off the type's own declaration in the source rather than a
   // hand-maintained list here: a second list would be the very drift this
   // asserts against. The union is a single line by convention in this file.
@@ -2324,8 +2324,8 @@ test("ControlRequestKind: the message set is exactly thirteen reviewed members, 
     .map((s) => s.trim().replace(/^"|"$/g, ""))
     .filter((s) => s !== "");
   assert.deepEqual(members,
-    ["acquire", "release", "status", "host_state", "monitor_claim", "monitor_release", "hello", "attach", "operation", "stage_file", "transfer", "host_tool_stage", "host_tool_run"],
-    "the message set must be exactly these thirteen members " +
+    ["acquire", "release", "status", "host_state", "monitor_claim", "monitor_release", "hello", "attach", "operation", "stage_file", "transfer", "host_tool_stage", "host_tool_run", "anno_run"],
+    "the message set must be exactly these fourteen members " +
       "(SEAM-01) -- a genuinely reviewed widening, not a per-tool one: a second host tool is still a new " +
       "HOST_TOOL_IDS entry in host-tool.mts, never a further ControlRequestKind member",
   );
@@ -2614,7 +2614,7 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
 
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
-test("the ControlRequestKind union has exactly thirteen members including hello, attach, operation, stage_file, transfer, host_tool_stage and host_tool_run", () => {
+test("the ControlRequestKind union has exactly fourteen members including hello, attach, operation, stage_file, transfer, host_tool_stage, host_tool_run and anno_run", () => {
   const source = readFileSync(BROKER_CONTROL_MTS, "utf8");
 
   const unionMatch = source.match(/export type ControlRequestKind = ([^;]+);/);
@@ -2623,7 +2623,7 @@ test("the ControlRequestKind union has exactly thirteen members including hello,
     .split("|")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  assert.equal(members.length, 13, `expected 13 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
+  assert.equal(members.length, 14, `expected 14 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
   assert.ok(members.includes('"hello"'), `hello must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"attach"'), `attach must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"operation"'), `operation must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
@@ -2631,6 +2631,7 @@ test("the ControlRequestKind union has exactly thirteen members including hello,
   assert.ok(members.includes('"transfer"'), `transfer must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"host_tool_stage"'), `host_tool_stage must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"host_tool_run"'), `host_tool_run must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
+  assert.ok(members.includes('"anno_run"'), `anno_run must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
 });
 
 test("a raw hello line returns a handshake reply", async () => {
@@ -3038,8 +3039,9 @@ test("two sessions, one broker: two connections declaring two labels each acquir
 // neither reads `target_id` at all -- `host_tool_stage` carries only
 // `files`, `host_tool_run` carries `tool`/`args`/`request` (a request KEY,
 // never a target id), and both are gated on a per-connection BOUND request
-// key, never on `ownsTarget()`.
-const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "hello", "transfer", "host_tool_stage", "host_tool_run"]);
+// key, never on `ownsTarget()`. `anno_run` joins on the same terms: it names a
+// project id, never a target, and is gated on the same bound request key.
+const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "hello", "transfer", "host_tool_stage", "host_tool_run", "anno_run"]);
 // The set this invariant test actually EXERCISES below -- every op whose
 // dispatch arm reads `req.target_id` and resolves it against a grant.
 // `stage_file` (Phase 64, XFER-04) joins this set: gated by the SAME
