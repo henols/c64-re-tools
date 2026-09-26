@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import { closeStore, currentRevision, listComments, listXrefs, openStore } from "./anno-store.ts";
 import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.ts";
+import { runAnnoTool } from "./anno-call-client.ts";
 import { annoRegisterEntryFor } from "./anno-register.ts";
 import {
   AnnoImportError,
@@ -50,26 +51,55 @@ function writeTransfer(dir: string, text: string, name = "export.txt"): string {
   return path;
 }
 
+/** Imports the transfer file at `path` straight through the engine function,
+ * the way the engine receives it: as the file's name and bytes. */
+function importFile(handle: ReturnType<typeof openStore>, path: string, expectedSha256?: string): ReturnType<typeof importGhidraExport> {
+  return importGhidraExport(handle, { exportName: path, exportBytes: new Uint8Array(readFileSync(path)), expectedSha256 });
+}
+
+/** Runs one `anno call` through the client with `dir` as the workspace root. */
+async function callInWorkspace(dir: string, name: string, args: Record<string, unknown>, deps?: Parameters<typeof runAnnoTool>[2]) {
+  const previous = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = dir;
+  try {
+    return await runAnnoTool(name, args, deps);
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = previous;
+  }
+}
+
+/** One temp directory per test for an async body, removed unconditionally. */
+async function inTempDirAsync(body: (dir: string) => Promise<void>): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), "anno-import-"));
+  try {
+    await body(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 const SINGLE_WRITE_EXPORT = ["## REFERENCES", "$0812 -> $d020 WRITE", "## REFERENCE_COUNT 1", ""].join("\n");
 
 // ---------------------------------------------------------------------------
 // THE TRACER'S OWN END-TO-END CASE.
 // ---------------------------------------------------------------------------
 
-test("tracer: import writes an anno_xref row that survives close+reopen, then the join writes a comment that also survives close+reopen", () => {
-  inTempDir((dir) => {
+test("tracer: import writes an anno_xref row that survives close+reopen, then the join writes a comment that also survives close+reopen", async () => {
+  await inTempDirAsync(async (dir) => {
     const storePath = join(dir, "proj.annostore");
     const transferPath = writeTransfer(dir, SINGLE_WRITE_EXPORT);
+    closeStore(openStore(storePath, { workspaceRoot: dir }));
 
-    const handle = openStore(storePath, { workspaceRoot: dir });
-    const counts = importGhidraExport(handle, { exportPath: transferPath });
+    const result = await callInWorkspace(dir, "anno_import_ghidra_export", { store: storePath, export_path: transferPath });
+    assert.equal(result.isError, false, result.content[0]!.text);
+    const counts = JSON.parse(result.content[0]!.text) as { referencesSeen: number; xrefsWritten: number; xrefsAlreadyPresent: number; kindsSeenNotImported: Record<string, number>; transferDeleted: boolean };
     assert.equal(counts.referencesSeen, 1);
     assert.equal(counts.xrefsWritten, 1);
     assert.equal(counts.xrefsAlreadyPresent, 0);
     assert.deepEqual(counts.kindsSeenNotImported, {});
     assert.equal(counts.transferDeleted, true);
     assert.equal(existsSync(transferPath), false, "the transfer file must be gone after a successful import");
-    closeStore(handle);
 
     // Read-back #1: a FRESH open, never the import call's own return value.
     const reopened1 = openStore(storePath, { workspaceRoot: dir });
@@ -155,7 +185,7 @@ test("importGhidraExport: a duplicate REFERENCES line dedupes to one row, report
     const text = ["## REFERENCES", "$0812 -> $d020 WRITE", "$0812 -> $d020 WRITE", "## REFERENCE_COUNT 2", ""].join("\n");
     const transferPath = writeTransfer(dir, text);
     const handle = openStore(storePath, { workspaceRoot: dir });
-    const counts = importGhidraExport(handle, { exportPath: transferPath });
+    const counts = importFile(handle, transferPath);
     assert.equal(counts.referencesSeen, 2);
     assert.equal(counts.xrefsWritten, 1);
     assert.equal(counts.xrefsAlreadyPresent, 1);
@@ -173,7 +203,7 @@ test("importGhidraExport: adjacent-but-unequal target addresses produce two dist
     const text = ["## REFERENCES", "$0812 -> $d020 WRITE", "$0813 -> $d021 WRITE", "## REFERENCE_COUNT 2", ""].join("\n");
     const transferPath = writeTransfer(dir, text);
     const handle = openStore(storePath, { workspaceRoot: dir });
-    importGhidraExport(handle, { exportPath: transferPath });
+    importFile(handle, transferPath);
     closeStore(handle);
 
     const reopened = openStore(storePath, { workspaceRoot: dir });
@@ -189,24 +219,23 @@ test("importGhidraExport: a zero-byte transfer file refuses, leaves currentRevis
     const transferPath = writeTransfer(dir, "");
     const handle = openStore(storePath, { workspaceRoot: dir });
     const before = currentRevision(handle);
-    assert.throws(() => importGhidraExport(handle, { exportPath: transferPath }), AnnoImportError);
+    assert.throws(() => importFile(handle, transferPath), AnnoImportError);
     assert.equal(currentRevision(handle), before);
     assert.equal(existsSync(transferPath), true);
     closeStore(handle);
   });
 });
 
-test("importGhidraExport: a second call naming the same, now-deleted path refuses, naming the absent path", () => {
-  inTempDir((dir) => {
+test("anno_import_ghidra_export: a second call naming the same, now-deleted path refuses, naming the absent path", async () => {
+  await inTempDirAsync(async (dir) => {
     const storePath = join(dir, "proj.annostore");
     const transferPath = writeTransfer(dir, SINGLE_WRITE_EXPORT);
-    const handle = openStore(storePath, { workspaceRoot: dir });
-    importGhidraExport(handle, { exportPath: transferPath });
-    assert.throws(
-      () => importGhidraExport(handle, { exportPath: transferPath }),
-      (err: unknown) => err instanceof AnnoImportError && err.message.includes(transferPath),
-    );
-    closeStore(handle);
+    closeStore(openStore(storePath, { workspaceRoot: dir }));
+    const first = await callInWorkspace(dir, "anno_import_ghidra_export", { store: storePath, export_path: transferPath });
+    assert.equal(first.isError, false, first.content[0]!.text);
+    const second = await callInWorkspace(dir, "anno_import_ghidra_export", { store: storePath, export_path: transferPath });
+    assert.equal(second.isError, true);
+    assert.ok(second.content[0]!.text.includes(transferPath), second.content[0]!.text);
   });
 });
 
@@ -218,7 +247,7 @@ test("importGhidraExport: an expectedSha256 mismatch refuses, naming both digest
     const handle = openStore(storePath, { workspaceRoot: dir });
     const before = currentRevision(handle);
     assert.throws(
-      () => importGhidraExport(handle, { exportPath: transferPath, expectedSha256: "0".repeat(64) }),
+      () => importFile(handle, transferPath, "0".repeat(64)),
       (err: unknown) =>
         err instanceof AnnoImportError && err.message.includes("0".repeat(64)) && err.message.includes(realDigest),
     );
@@ -228,25 +257,29 @@ test("importGhidraExport: an expectedSha256 mismatch refuses, naming both digest
   });
 });
 
-test("importGhidraExport: when the delete step itself throws, the call still returns successfully with transferDeleted false and a non-empty reason, and every write is readable after a reopen", () => {
-  // Injection route (per this task's own action text): making a directory
-  // read-only does not reliably block a delete when the test process runs
-  // as root (CI containers commonly do), so the delete step is a
-  // caller-supplied function here rather than a chmod-based fixture.
-  inTempDir((dir) => {
+test("anno_import_ghidra_export: when the delete step itself throws, the call still returns successfully with transferDeleted false and a non-empty reason, and every write is readable after a reopen", async () => {
+  // Injection route: making a directory read-only does not reliably block a
+  // delete when the test process runs as root (CI containers commonly do), so
+  // the client's delete step is replaced through its deps instead.
+  await inTempDirAsync(async (dir) => {
     const storePath = join(dir, "proj.annostore");
     const transferPath = writeTransfer(dir, SINGLE_WRITE_EXPORT);
-    const handle = openStore(storePath, { workspaceRoot: dir });
-    const counts = importGhidraExport(handle, {
-      exportPath: transferPath,
-      deleteFile: () => {
-        throw new Error("synthetic unlink failure for the deterministic injection test");
+    closeStore(openStore(storePath, { workspaceRoot: dir }));
+    const result = await callInWorkspace(
+      dir,
+      "anno_import_ghidra_export",
+      { store: storePath, export_path: transferPath },
+      {
+        deleteFile: () => {
+          throw new Error("synthetic unlink failure for the deterministic injection test");
+        },
       },
-    });
+    );
+    assert.equal(result.isError, false, result.content[0]!.text);
+    const counts = JSON.parse(result.content[0]!.text) as { transferDeleted: boolean; transferDeleteError?: string };
     assert.equal(counts.transferDeleted, false);
     assert.ok(counts.transferDeleteError && counts.transferDeleteError.length > 0);
     assert.equal(existsSync(transferPath), true, "the injected failure must leave the transfer file in place");
-    closeStore(handle);
 
     const reopened = openStore(storePath, { workspaceRoot: dir });
     assert.equal(listXrefs(reopened).length, 1, "the write committed before the delete step ran, and must still be readable");
@@ -264,11 +297,11 @@ test("importGhidraExport: two byte-identical transfer files into two fresh store
       const transferB = writeTransfer(dirB, text);
 
       const handleA = openStore(pathA, { workspaceRoot: dirA });
-      importGhidraExport(handleA, { exportPath: transferA });
+      importFile(handleA, transferA);
       closeStore(handleA);
 
       const handleB = openStore(pathB, { workspaceRoot: dirB });
-      importGhidraExport(handleB, { exportPath: transferB });
+      importFile(handleB, transferB);
       closeStore(handleB);
 
       const reopenedA = openStore(pathA, { workspaceRoot: dirA });
@@ -297,7 +330,7 @@ test("GHIDRA_REFTYPE_TO_ACCESS_KIND: an unrecognised kind is dropped and counted
     ].join("\n");
     const transferPath = writeTransfer(dir, text);
     const handle = openStore(storePath, { workspaceRoot: dir });
-    const counts = importGhidraExport(handle, { exportPath: transferPath });
+    const counts = importFile(handle, transferPath);
     assert.equal(counts.kindsSeenNotImported.UNCONDITIONAL_JUMP, 1);
     closeStore(handle);
 
@@ -315,7 +348,7 @@ test("runMemmapJoin: run twice over an unchanged store reports commentsChanged 0
     const storePath = join(dir, "proj.annostore");
     const transferPath = writeTransfer(dir, SINGLE_WRITE_EXPORT);
     const handle = openStore(storePath, { workspaceRoot: dir });
-    importGhidraExport(handle, { exportPath: transferPath });
+    importFile(handle, transferPath);
 
     const first = runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100 });
     assert.equal(first.counts.annotated, 1);

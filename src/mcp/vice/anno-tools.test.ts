@@ -54,8 +54,8 @@ import {
   READ_ONLY_ANNO_VERBS,
   assertAnnoBatch,
   assertAnnoTool,
-  runAnnoTool,
 } from "./anno-tools.ts";
+import { runAnnoTool } from "./anno-call-client.ts";
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { accessMapRanges, parseAccessMap } from "./textmon-memmap.ts";
 import { execObservationsFrom } from "./evid-ingest.ts";
@@ -69,6 +69,7 @@ import { withTextChannelLock } from "./text-protocol.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ANNO_TOOLS_SOURCE = readFileSync(join(HERE, "anno-tools.ts"), "utf8");
+const ANNO_CALL_CLIENT_SOURCE = readFileSync(join(HERE, "anno-call-client.ts"), "utf8");
 
 /** Runs `body` with `CLAUDE_PROJECT_DIR` pointed at a fresh temp workspace
  * holding a store seeded by `seed`, restoring the variable and removing the
@@ -242,8 +243,8 @@ test("CURATED_ANNO_TOOLS is DERIVED from ANNO_TOOL_DEFINITIONS, never a second h
     assert.match(def.name, /^anno_[a-z0-9_]+$/, `${def.name} must carry the one D-05 prefix`);
     assert.ok(def.description.length > 0, `${def.name} must carry a description`);
     assert.ok(
-      (def.inputSchema.required ?? []).includes("store"),
-      `${def.name} must require an explicit store argument -- there is no ambient current store (D-06)`,
+      !("store" in def.inputSchema.properties) && !(def.inputSchema.required ?? []).includes("store"),
+      `${def.name} must carry no store argument -- the engine's handle is bound to one project before the call arrives`,
     );
   }
 });
@@ -259,13 +260,15 @@ test("anno-tools.ts holds no module-level mutable store handle (D-06)", () => {
   assert.deepEqual(topLevelBindings, [], "no module-scope binding may hold a store handle -- the handle lives for one call and no longer");
 });
 
-test("every openStore( in anno-tools.ts is closed by a closeStore( inside a finally (T-29-03)", () => {
-  const opens = ANNO_TOOLS_SOURCE.split("\n").filter((line) => line.includes("openStore(") && !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"));
+test("anno-tools.ts opens no store, and every openStore( in anno-call-client.ts is closed by a closeStore( inside a finally (T-29-03)", () => {
+  const code = (source: string) => source.split("\n").filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"));
+  assert.deepEqual(code(ANNO_TOOLS_SOURCE).filter((line) => /\b(openStore|closeStore)\(/.test(line)), [], "the engine never opens or closes a store; its caller owns the handle");
+  const opens = code(ANNO_CALL_CLIENT_SOURCE).filter((line) => line.includes("openStore("));
   assert.equal(opens.length, 1, `expected exactly one openStore( call site, found ${opens.length}: ${JSON.stringify(opens)}`);
 
-  const start = ANNO_TOOLS_SOURCE.indexOf("export async function runAnnoTool(");
+  const start = ANNO_CALL_CLIENT_SOURCE.indexOf("export async function runAnnoTool(");
   assert.ok(start > 0, "runAnnoTool() must exist");
-  const body = ANNO_TOOLS_SOURCE.slice(start, ANNO_TOOLS_SOURCE.indexOf("\n}", start));
+  const body = ANNO_CALL_CLIENT_SOURCE.slice(start, ANNO_CALL_CLIENT_SOURCE.indexOf("\n}", start));
   assert.ok(body.includes("openStore("), "the one openStore( call must live inside runAnnoTool()");
   const finallyIndex = body.indexOf("} finally {");
   assert.ok(finallyIndex > body.indexOf("openStore("), "the finally must follow the open");
@@ -369,7 +372,7 @@ async function body(result: { content: { text: string }[]; isError: boolean }): 
   return JSON.parse(result.content[0]!.text) as Record<string, unknown>;
 }
 
-test("the twelve write and stored-read verbs are advertised, each requiring an explicit store (D-06)", () => {
+test("the twelve write and stored-read verbs are advertised, and none names a store -- the handle is bound before the call arrives", () => {
   const expected = [
     "anno_set_label_name",
     "anno_set_comment",
@@ -387,7 +390,7 @@ test("the twelve write and stored-read verbs are advertised, each requiring an e
   for (const name of expected) {
     const def = definitionNamed(name);
     assert.ok(def, `${name} must be in ANNO_TOOL_DEFINITIONS`);
-    assert.ok((def!.inputSchema.required ?? []).includes("store"), `${name} must require "store"`);
+    assert.ok(!("store" in def!.inputSchema.properties), `${name} must not name a store`);
     assert.ok(def!.description.length >= 40, `${name}'s description must be written for an agent, not a token`);
   }
 });
@@ -978,7 +981,6 @@ test("the six derived and composed verbs are advertised, and every one requires 
     const def = definitionNamed(name);
     assert.ok(def, `${name} must be in ANNO_TOOL_DEFINITIONS`);
     const required = def!.inputSchema.required ?? [];
-    assert.ok(required.includes("store"), `${name} must require "store"`);
     assert.ok(required.includes("image"), `${name} must require "image" -- the store holds annotations, never bytes (D-07)`);
   }
 });
@@ -1596,7 +1598,6 @@ function batchRefusal(payload: unknown): Error {
 test("anno_batch_execute is advertised as the ONE sanctioned nested-argument verb, and the header says no second may join it", () => {
   const def = definitionNamed("anno_batch_execute");
   assert.ok(def, "anno_batch_execute must be in ANNO_TOOL_DEFINITIONS");
-  assert.ok((def!.inputSchema.required ?? []).includes("store"));
   assert.ok((def!.inputSchema.required ?? []).includes("calls"));
   assert.match(ANNO_TOOLS_SOURCE, /ONE SANCTIONED NESTED-ARGUMENT VERB ON THIS/);
   assert.match(ANNO_TOOLS_SOURCE, /NO SECOND MAY JOIN IT/);
@@ -2779,11 +2780,9 @@ test(
         assert.equal(disagreements[0]!.byteDerived, "data");
         assert.equal(disagreements[0]!.runtime, "code");
         assert.equal(b.agreementCount, 0);
-        assert.equal(b.store, store);
 
         const keys = Object.keys(b);
-        assert.equal(keys[0], "store");
-        assert.equal(keys[1], "disagreements", "disagreements must be the FIRST key after store (EVID-03)");
+        assert.equal(keys[0], "disagreements", "disagreements must be the FIRST key of the answer (EVID-03)");
 
         const rangesAfter = rangesOf(ws, store);
         assert.deepEqual(rangesAfter, rangesBefore, "anno_evid_disagreements must never write to the byte-derived block table");
@@ -2879,7 +2878,6 @@ test("anno_evid_runs: reports every run identity's observation count beside a de
       const result = await runAnnoTool("anno_evid_runs", { store });
       assert.equal(result.isError, false, result.content[0]?.text);
       const b = await body(result);
-      assert.equal(b.store, store);
       assert.equal(typeof b.denominator, "number");
       const runs = b.runs as { imageSha256: string; argvDigest: string; seed: string; observationCount: number }[];
       assert.equal(runs.length, 1);

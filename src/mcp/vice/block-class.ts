@@ -84,6 +84,8 @@
 // The neutral vocabulary
 // ---------------------------------------------------------------------------
 
+import type { RangeRow } from "./anno-types.ts";
+
 /**
  * The three neutral block classes every consumer speaks. Lowercase tokens.
  *
@@ -115,6 +117,12 @@ export interface BlockEntry {
   end_address: number;
   /** The store's own block-kind spelling. Interpreted HERE and nowhere else. */
   type: string;
+}
+
+/** A store's range rows as block entries -- the ONE `RangeRow` -> `BlockEntry`
+ * seam. The `dataType` column is copied VERBATIM and never compared here. */
+export function blocksFromStore(rows: readonly RangeRow[]): BlockEntry[] {
+  return rows.map((row) => ({ start_address: row.start, end_address: row.endInclusive, type: row.dataType }));
 }
 
 /**

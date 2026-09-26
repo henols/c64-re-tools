@@ -5,12 +5,11 @@
 // surface. The `AnnoToolDefinition`s themselves (`ANNO_TOOL_DEFINITIONS`), the
 // allow-list DERIVED from them (`CURATED_ANNO_TOOLS`), its enforcement
 // (`assertAnnoTool()`) together with the per-verb argument validators that gate
-// shares with the batch verb, the caller-supplied store-path validation, and
-// the runner (`runAnnoTool()`) that opens the owned annotation store, answers
-// exactly one call against it, and closes it again. No other module may
-// hand-list a curated `anno_*` name, hand-validate an `anno_*` store path, or
-// reach `anno-store.ts` on behalf of an MCP call -- `vice-proxy.ts` imports
-// `ANNO_TOOL_DEFINITIONS` and `runAnnoTool` from here and nothing else.
+// shares with the batch verb, and the engine entry (`runAnnoToolOnHandle()`)
+// that answers exactly one call against a handle its caller opened. No other
+// module may hand-list a curated `anno_*` name or dispatch an `anno_*` call.
+// The client half -- resolving paths, reading the files, opening the store --
+// is `anno-call-client.ts`.
 //
 // WHY THIS FILE EXISTS, in the words of the decisions that shaped it:
 //
@@ -19,13 +18,17 @@
 //   registration loop in `vice-proxy.ts` was SUBSTITUTED, not appended to, so
 //   an agent never has to choose between two surfaces over the same subject.
 //
-//   OPEN/CLOSE PER CALL, EXPLICIT `store` ON EVERY VERB. This module
-//   holds NO module-level store handle and no ambient "current store" -- every
-//   verb takes `store` as an argument, `runAnnoTool()` opens it, and the
-//   `finally` below closes it on every path including the throwing one. That
-//   is why there is no session to crash, no revision to go stale between
-//   calls, and nothing for a second concurrent caller to corrupt: the store is
-//   open for the duration of one tool call and not one instruction longer.
+//   ONE HANDLE PER CALL. This module holds NO module-level store handle and
+//   no ambient "current store": its caller opens a handle bound to one
+//   project, this module answers one call against it, and the caller closes
+//   it. There is no session to crash and nothing for a second concurrent
+//   caller to corrupt.
+//
+//   NO PATH REACHES THIS MODULE. It runs where the store lives, which is not
+//   where the caller's files live. A file argument (`image`, `export_path`)
+//   arrives as a staged reference -- `{ $file: "<slot>" }` -- naming bytes the
+//   client read and sent beside the call; a plain string in its place is
+//   refused, never opened.
 //
 //   EVERY DERIVED READ NAMES ITS OWN IMAGE. The store holds
 //   annotations, never program bytes. Every verb that derives an answer FROM
@@ -106,17 +109,14 @@
 //     and CLOSED here: inside the `try`, a refusal RESOLVES `{isError:true}`
 //     like every other failure instead of REJECTING the returned promise, so
 //     the caller has one shape to handle rather than two.
-//   - Never resolve a store or image path with `resolve()` + `startsWith`.
-//     Containment goes through `storePathWithinWorkspace()`, which resolves the
-//     deepest EXISTING ancestor's realpath (WR-01) -- a not-yet-existing leaf
-//     under a directory symlink escaped the naive form entirely.
-//   - Never hold the handle beyond the call, and never open a store outside a
-//     `try`/`finally` that closes it (T-29-03).
+//   - Never read, stat or delete a file here. A file argument is a staged
+//     reference; the client confines the path and reads the bytes.
+//   - Never open or close a store here, and never echo a store path: the
+//     caller owns the handle, and its path is not the caller's to know.
 //   - Never collapse a failure into a bare string. The runner's catch names
 //     the error CLASS, so a caller can tell an `AnnoStoreCorruptError` from an
 //     `AnnoStorePathError` from the text alone (T-29-04, D18-12).
 //
-import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname } from "node:path";
 
 import {
@@ -125,7 +125,6 @@ import {
   applyEnumUsage,
   applyWrite,
   clearEnumUsage,
-  closeStore,
   createProjectEnum,
   currentRevision,
   deleteExecObservationsForRun,
@@ -140,7 +139,6 @@ import {
   listRanges,
   listScopes,
   listXrefs,
-  openStore,
   removeExcludedRange,
   removeScope,
   setComment,
@@ -152,7 +150,6 @@ import type { AnnoStoreHandle } from "./anno-store.ts";
 import {
   AnnoRevisionArgumentError,
   AnnoStoreError,
-  AnnoStorePathError,
   AnnoStoreStaleRevisionError,
   assertCommentText,
   assertCommentType,
@@ -163,7 +160,6 @@ import {
   assertRangeShape,
   parseStoreAddress,
   parseVariantKey,
-  storePathWithinWorkspace,
 } from "./anno-types.ts";
 import type { AnnoStoreErrorOptions, CommentRow, EnumUsageRow, LabelRow, ProjectEnumRow } from "./anno-types.ts";
 import { crossReferencesTo, searchAnnotations } from "./anno-derive.ts";
@@ -196,7 +192,7 @@ import { reconcileObservedExecution } from "./evid-reconcile.ts";
 // below is a CALLER-side change and nothing more.
 import { buildHazardReport } from "./anno-hazard-report.ts";
 import { flatImageOrigin, parsePrg } from "./prg-image.ts";
-import { repoRoot } from "./repo-root.ts";
+import { blocksFromStore } from "./block-class.ts";
 
 // ---------------------------------------------------------------------------
 // The wire shapes this module produces/consumes. Deliberately NOT imported
@@ -221,7 +217,7 @@ export interface AnnoToolDefinition {
   [key: string]: unknown;
 }
 
-interface ToolCallResult {
+export interface ToolCallResult {
   content: { type: "text"; text: string }[];
   isError: boolean;
 }
@@ -236,6 +232,16 @@ function okText(text: string): ToolCallResult {
 
 function errText(text: string): ToolCallResult {
   return { content: [{ type: "text", text }], isError: true };
+}
+
+/** The one spelling of a failed call, named by class (D18-12), so a caller can
+ * tell an `AnnoStoreCorruptError` from an `AnnoToolArgumentError` from the
+ * text alone. Shared with `anno-call-client.ts`, whose own refusals must read
+ * the same. */
+export function toolFailure(name: string, err: unknown): ToolCallResult {
+  const errName = err instanceof Error ? err.name : "Error";
+  const errMessage = err instanceof Error ? err.message : String(err);
+  return errText(`${name} failed: [${errName}] ${errMessage}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -308,23 +314,6 @@ function whereOf(batchIndex?: number): string {
 
 function refuseArg(name: string, argument: string, detail: string, batchIndex?: number): never {
   throw new AnnoToolArgumentError(`${name} refused${whereOf(batchIndex)}: ${detail}`, { toolName: name, argument, batchIndex });
-}
-
-/** Narrows the universally-required `store` argument to a non-empty string.
- * Path CONTAINMENT is a separate concern and lives in `resolveWorkspacePath()`
- * below; this only establishes that there is a path to contain. */
-function assertStoreArg(name: string, args: unknown, batchIndex?: number): string {
-  const bag = argBag(args);
-  if (typeof bag.store !== "string" || bag.store.trim() === "") {
-    refuseArg(
-      name,
-      "store",
-      '"store" must be a non-empty string naming an annotation store -- every anno_* verb names its own store (D-06), ' +
-        "because there is no ambient current store to inherit.",
-      batchIndex,
-    );
-  }
-  return bag.store as string;
 }
 
 /** Narrows `max_results` to a positive integer. Required, with no default:
@@ -430,10 +419,11 @@ function assertLegalLabelArg(name: string, args: unknown, batchIndex?: number): 
 // ---------------------------------------------------------------------------
 // The curated tool definitions.
 //
-// `store` is on EVERY definition and is always required (D-06). There is no
-// "current store" for a verb to inherit, which is what makes a call's effect a
-// function of its own arguments alone. Each description is written for an
-// AGENT: what the verb answers, what it costs, and what it will refuse.
+// No definition carries a store: the handle is bound to one project before
+// the call arrives. A property marked `clientFile: true` names a file the
+// CLIENT reads; the engine receives it as a staged reference. Each description
+// is written for an AGENT: what the verb answers, what it costs, and what it
+// will refuse.
 // ---------------------------------------------------------------------------
 
 /** How deep a nested `anno_batch_execute` may go before the payload is refused
@@ -442,24 +432,17 @@ function assertLegalLabelArg(name: string, args: unknown, batchIndex?: number): 
  * chosen to be obviously sufficient rather than tuned. */
 export const ANNO_MAX_BATCH_DEPTH = 4;
 
-const STORE_PROPERTY = {
-  store: {
-    type: "string",
-    description:
-      "Absolute or workspace-relative path to the .annostore annotation store. Refused if it resolves outside the " +
-      "workspace root, including via a symlink. REQUIRED on every verb: there is no ambient 'current store'.",
-  },
-} as const;
-
 const IMAGE_PROPERTY = {
   image: {
     type: "string",
+    clientFile: true,
     description:
       "Absolute or workspace-relative path to the program image this answer is DERIVED from -- a .prg (2-byte " +
       "little-endian load address plus payload) or an exactly-65536-byte flat capture (.raw/.bin, dispatched by " +
       "extension before any length check). REQUIRED on every derived read (D-07): the store holds annotations and " +
       "never bytes, so an omitted image would read as a plausible success against whatever was recorded last. " +
-      "Refused if it resolves outside the workspace root, including via a symlink.",
+      "The client reads the file and sends its bytes; refused if it resolves outside the workspace root, including " +
+      "via a symlink.",
   },
 } as const;
 
@@ -487,7 +470,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         address: {
           description:
             "The address to name. An integer 0..65535, a \"$hex\" string, or a \"0x\" string; an unprefixed numeric " +
@@ -508,7 +490,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "address", "name"],
+      required: ["address", "name"],
     },
   },
   {
@@ -524,7 +506,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         address: { description: "The address to comment. Integer, \"$hex\" or \"0x\" string; an unprefixed numeric string is refused." },
         comment: { type: "string", description: "The comment text, without the ';' prefix." },
         type: {
@@ -534,7 +515,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "address", "comment", "type"],
+      required: ["address", "comment", "type"],
     },
   },
   {
@@ -552,7 +533,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         start_address: { description: "Start of the range, INCLUSIVE. Integer, \"$hex\" or \"0x\" string." },
         end_address: { description: "End of the range, INCLUSIVE. A one-byte range has end_address === start_address." },
         data_type: {
@@ -582,7 +562,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "start_address", "end_address", "data_type"],
+      required: ["start_address", "end_address", "data_type"],
     },
   },
   {
@@ -597,12 +577,11 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         start_address: { description: "Start of the scope, INCLUSIVE. Integer, \"$hex\" or \"0x\" string." },
         end_address: { description: "End of the scope, INCLUSIVE." },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "start_address", "end_address"],
+      required: ["start_address", "end_address"],
     },
   },
   {
@@ -616,12 +595,11 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         start_address: { description: "Start of the scope to remove, INCLUSIVE. Must match the stored start exactly." },
         end_address: { description: "End of the scope to remove, INCLUSIVE. Must match the stored end exactly." },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "start_address", "end_address"],
+      required: ["start_address", "end_address"],
     },
   },
   {
@@ -638,7 +616,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         start_address: { description: "Start of the excluded span, INCLUSIVE. Integer, \"$hex\" or \"0x\" string." },
         end_address: { description: "End of the excluded span, INCLUSIVE." },
         reason: {
@@ -649,7 +626,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "start_address", "end_address", "reason"],
+      required: ["start_address", "end_address", "reason"],
     },
   },
   {
@@ -662,12 +639,11 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         start_address: { description: "Start of the exclusion to remove, INCLUSIVE. Must match the stored start exactly." },
         end_address: { description: "End of the exclusion to remove, INCLUSIVE. Must match the stored end exactly." },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "start_address", "end_address"],
+      required: ["start_address", "end_address"],
     },
   },
   {
@@ -680,7 +656,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         max_results: {
           type: "integer",
           description:
@@ -698,7 +673,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
             "start_address.",
         },
       },
-      required: ["store", "max_results"],
+      required: ["max_results"],
     },
   },
   {
@@ -712,7 +687,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         max_results: { type: "integer", description: "Maximum number of comments to return. REQUIRED -- no default on this surface." },
         addresses: {
           type: "array",
@@ -722,7 +696,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         end_address: { description: "Optional upper bound (inclusive) of the address window." },
         type: { type: "string", enum: ["line", "side"], description: "Optional placement filter." },
       },
-      required: ["store", "max_results"],
+      required: ["max_results"],
     },
   },
   {
@@ -737,7 +711,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         max_results: { type: "integer", description: "Maximum number of ranges to return. REQUIRED -- no default on this surface." },
         block_type: {
           type: "string",
@@ -751,7 +724,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
             "collections are small by construction), so they are not governed by max_results.",
         },
       },
-      required: ["store", "max_results"],
+      required: ["max_results"],
     },
   },
   {
@@ -766,7 +739,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         name: { type: "string", description: "Unique identifier: a letter or underscore, then letters/digits/underscores. Refused, never sanitized." },
         variants: {
           type: "object",
@@ -775,7 +747,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         description: { type: "string", description: "Optional summary explaining the enum's purpose." },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "name", "variants"],
+      required: ["name", "variants"],
     },
   },
   {
@@ -790,14 +762,13 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         name: { type: "string", description: "Existing name of the enum to update." },
         new_name: { type: "string", description: "Optional new name. Same identifier rule; refused, never sanitized." },
         variants: { type: "object", description: "Optional COMPLETE replacement variants mapping. Omit to leave the mapping alone." },
         description: { type: "string", description: "Optional replacement description." },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "name"],
+      required: ["name"],
     },
   },
   {
@@ -813,12 +784,11 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         address: { description: "The instruction address. Integer, \"$hex\" or \"0x\" string; an unprefixed numeric string is refused." },
         name: { type: "string", description: "The enum to apply. OMIT, or pass an empty string, to CLEAR the association at this address." },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "address"],
+      required: ["address"],
     },
   },
   {
@@ -833,8 +803,8 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       "inferring it from an empty success.",
     inputSchema: {
       type: "object",
-      properties: { ...STORE_PROPERTY },
-      required: ["store"],
+      properties: {},
+      required: [],
     },
   },
   {
@@ -856,7 +826,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         ...IMAGE_PROPERTY,
         address: {
           description:
@@ -869,7 +838,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
             "whichever comes first).",
         },
       },
-      required: ["store", "image", "address"],
+      required: ["image", "address"],
     },
   },
   {
@@ -885,7 +854,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         ...IMAGE_PROPERTY,
         start_address: { description: "Start of the range, INCLUSIVE. Integer, \"$hex\" or \"0x\" string." },
         end_address: { description: "End of the range, INCLUSIVE." },
@@ -895,7 +863,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
           description: "'disasm' = rendered 6510 source. 'hexdump' = raw hex bytes. Omitted defaults to 'disasm'.",
         },
       },
-      required: ["store", "image", "start_address", "end_address"],
+      required: ["image", "start_address", "end_address"],
     },
   },
   {
@@ -910,8 +878,8 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       "is REFUSED by name.",
     inputSchema: {
       type: "object",
-      properties: { ...STORE_PROPERTY, ...IMAGE_PROPERTY },
-      required: ["store", "image"],
+      properties: { ...IMAGE_PROPERTY },
+      required: ["image"],
     },
   },
   {
@@ -927,12 +895,11 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         ...IMAGE_PROPERTY,
         address: { description: "The target address to find references TO. Integer, \"$hex\" or \"0x\" string." },
         max_results: { type: "integer", description: "Maximum number of referencing addresses to return. REQUIRED -- no default." },
       },
-      required: ["store", "image", "address", "max_results"],
+      required: ["image", "address", "max_results"],
     },
   },
   {
@@ -950,7 +917,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         ...IMAGE_PROPERTY,
         query: { type: "string", description: "The substring to find. Case-sensitive and byte-exact. An empty query is refused -- that is a listing, not a search." },
         max_results: { type: "integer", description: "Maximum number of hits to return. REQUIRED -- no default on this surface." },
@@ -958,7 +924,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         search_comments: { type: "boolean", description: "Search the comment-text corpus. Defaults to true." },
         search_instructions: { type: "boolean", description: "Search the rendered instruction corpus. Defaults to true. This is the expensive one: it decodes every code range." },
       },
-      required: ["store", "image", "query", "max_results"],
+      required: ["image", "query", "max_results"],
     },
   },
   {
@@ -974,11 +940,10 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         ...IMAGE_PROPERTY,
         address: { description: "The address to inspect. Integer, \"$hex\" or \"0x\" string." },
       },
-      required: ["store", "image", "address"],
+      required: ["image", "address"],
     },
   },
   {
@@ -986,9 +951,9 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     description:
       "Executes several curated anno_* calls against ONE store, in order, inside one open/close pair. Use it for a " +
       "multi-edit pass -- marking many regions, renaming many labels -- and not for calls that depend on each other's " +
-      "results. The store (and the image, when the inner calls need one) is named ONCE at the top level and every " +
-      "inner call inherits it, INCLUDING through nesting -- a batch inside a batch inherits it too, and so does that " +
-      "batch's own inner calls; an inner `store` is overridden at every depth, never honoured. TWO PHASES, and the difference matters " +
+      "results. The image, when the inner calls need one, is named ONCE at the top level and every inner call " +
+      "inherits it, INCLUDING through nesting -- a batch inside a batch inherits it too, and so do that batch's own " +
+      "inner calls. TWO PHASES, and the difference matters " +
       "when you read the answer. FIRST, the whole payload is pre-validated before anything is opened: a malformed " +
       "payload, an EMPTY calls array, a malformed entry, an inner name outside the curated set at any depth, an " +
       "illegal label name, or an over-cap region range refuses the WHOLE batch by index, and nothing executes. " +
@@ -1000,9 +965,9 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         image: {
           type: "string",
+          clientFile: true,
           description:
             "Optional program image, inherited by every inner call that derives an answer from bytes. Required only " +
             "if the batch contains such a call.",
@@ -1013,14 +978,14 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
             type: "object",
             properties: {
               name: { type: "string", description: "The curated anno_* verb to run. An uncurated name refuses the WHOLE batch." },
-              arguments: { type: "object", description: "That verb's own arguments, minus store (and image), which the batch supplies." },
+              arguments: { type: "object", description: "That verb's own arguments, minus the image, which the batch supplies." },
             },
             required: ["name", "arguments"],
           },
           description: "The calls to run, in order. Must be a NON-EMPTY array: an empty batch is refused, never run as a zero-length success.",
         },
       },
-      required: ["store", "calls"],
+      required: ["calls"],
     },
   },
   {
@@ -1043,9 +1008,9 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         export_path: {
           type: "string",
+          clientFile: true,
           description:
             "Absolute or workspace-relative path to the host-written transfer file. CONSUMED AND DELETED by a " +
             "successful call -- refused if it resolves outside the workspace root, including via a symlink.",
@@ -1059,7 +1024,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "export_path"],
+      required: ["export_path"],
     },
   },
   {
@@ -1081,7 +1046,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         ...IMAGE_PROPERTY,
         ...BASE_REVISION_PROPERTY,
         const_writes: {
@@ -1110,7 +1074,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
             "derived map count REFUSES the whole call rather than silently clamping or picking a default.",
         },
       },
-      required: ["store", "image"],
+      required: ["image"],
     },
   },
   {
@@ -1129,7 +1093,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         memmap_text: {
           type: "string",
           description:
@@ -1156,7 +1119,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "memmap_text", "image_sha256", "argv", "seed"],
+      required: ["memmap_text", "image_sha256", "argv", "seed"],
     },
   },
   {
@@ -1181,7 +1144,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         max_results: {
           type: "integer",
           description:
@@ -1210,7 +1172,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
             "Required alongside image_sha256/argv_digest when filtering by run identity.",
         },
       },
-      required: ["store"],
+      required: [],
     },
   },
   {
@@ -1224,9 +1186,8 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
       },
-      required: ["store"],
+      required: [],
     },
   },
   {
@@ -1243,7 +1204,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         image_sha256: {
           type: "string",
           description:
@@ -1264,7 +1224,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         },
         ...BASE_REVISION_PROPERTY,
       },
-      required: ["store", "image_sha256", "argv", "seed"],
+      required: ["image_sha256", "argv", "seed"],
     },
   },
   {
@@ -1287,7 +1247,6 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        ...STORE_PROPERTY,
         ...IMAGE_PROPERTY,
         max_results: {
           type: "integer",
@@ -1297,7 +1256,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
             "positive integer.",
         },
       },
-      required: ["store", "image"],
+      required: ["image"],
     },
   },
 ];
@@ -1319,7 +1278,6 @@ export const CURATED_ANNO_TOOLS: readonly string[] = ANNO_TOOL_DEFINITIONS.map((
  * `0xd020` and `53280` are accepted or refused here exactly as the store
  * itself would accept or refuse them, never by a second, divergent rule. */
 function assertGetSymbolsArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_get_symbols", args, batchIndex);
   assertMaxResults("anno_get_symbols", args, batchIndex);
   const bag = argBag(args);
   if (bag.start_address !== undefined) parseStoreAddress(bag.start_address, { what: "start_address" });
@@ -1327,7 +1285,6 @@ function assertGetSymbolsArgs(args: unknown, batchIndex?: number): void {
 }
 
 function assertSetLabelArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_set_label_name", args, batchIndex);
   assertAddressArg("anno_set_label_name", args, "address", batchIndex);
   assertLegalLabelArg("anno_set_label_name", args, batchIndex);
   const bag = argBag(args);
@@ -1336,7 +1293,6 @@ function assertSetLabelArgs(args: unknown, batchIndex?: number): void {
 }
 
 function assertSetCommentArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_set_comment", args, batchIndex);
   assertAddressArg("anno_set_comment", args, "address", batchIndex);
   const bag = argBag(args);
   if (bag.comment === undefined) refuseArg("anno_set_comment", "comment", '"comment" is required and was not supplied.', batchIndex);
@@ -1350,7 +1306,6 @@ function assertSetCommentArgs(args: unknown, batchIndex?: number): void {
 }
 
 function assertSetDataTypeArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_set_data_type", args, batchIndex);
   // ORDERING IS LOAD-BEARING, and it is the store's own: the data type is
   // narrowed FIRST because `assertRangeShape` needs it to decide whether the
   // even-byte-count rule applies at all.
@@ -1360,7 +1315,6 @@ function assertSetDataTypeArgs(args: unknown, batchIndex?: number): void {
 }
 
 function assertScopeArgs(name: string, args: unknown, batchIndex?: number): void {
-  assertStoreArg(name, args, batchIndex);
   // "byte" selects the two shape rules that DO apply to a scope (both ends
   // inside the address space; the end not below the start) and none of the
   // ones that do not -- a scope is not a table, so a three-byte routine is a
@@ -1380,7 +1334,6 @@ function assertScopeArgs(name: string, args: unknown, batchIndex?: number): void
  * vocabulary at write time (T-46-01) -- this is not a second, divergent rule,
  * only an earlier gate on the same three malformed shapes. */
 function assertExcludedRangeArgs(name: string, args: unknown, batchIndex?: number): void {
-  assertStoreArg(name, args, batchIndex);
   assertSpanArgs(name, args, "byte", batchIndex);
   if (name === "anno_exclude_range") {
     const reason = argBag(args).reason;
@@ -1397,7 +1350,6 @@ function assertExcludedRangeArgs(name: string, args: unknown, batchIndex?: numbe
 }
 
 function assertGetCommentsArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_get_comments", args, batchIndex);
   assertMaxResults("anno_get_comments", args, batchIndex);
   const bag = argBag(args);
   if (bag.addresses !== undefined) {
@@ -1414,7 +1366,6 @@ function assertGetCommentsArgs(args: unknown, batchIndex?: number): void {
 const BLOCK_INCLUDES: readonly string[] = Object.freeze(["scopes", "enums", "enum_usage"]);
 
 function assertGetBlocksArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_get_blocks", args, batchIndex);
   assertMaxResults("anno_get_blocks", args, batchIndex);
   const bag = argBag(args);
   if (bag.block_type !== undefined) assertDataType(bag.block_type);
@@ -1446,7 +1397,6 @@ function assertEnumNameArg(name: string, args: unknown, key: string, batchIndex?
 }
 
 function assertCreateEnumArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_create_project_enum", args, batchIndex);
   assertEnumNameArg("anno_create_project_enum", args, "name", batchIndex);
   const bag = argBag(args);
   if (!isPlainObject(bag.variants)) {
@@ -1457,7 +1407,6 @@ function assertCreateEnumArgs(args: unknown, batchIndex?: number): void {
 }
 
 function assertUpdateEnumArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_update_project_enum", args, batchIndex);
   assertEnumNameArg("anno_update_project_enum", args, "name", batchIndex);
   const bag = argBag(args);
   if (bag.new_name !== undefined) assertEnumNameArg("anno_update_project_enum", args, "new_name", batchIndex);
@@ -1478,20 +1427,17 @@ function isEnumUsageClear(args: unknown): boolean {
 }
 
 function assertApplyEnumUsageArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_apply_enum_usage", args, batchIndex);
   assertAddressArg("anno_apply_enum_usage", args, "address", batchIndex);
   if (!isEnumUsageClear(args)) assertEnumNameArg("anno_apply_enum_usage", args, "name", batchIndex);
   assertBaseRevisionArg("anno_apply_enum_usage", args, batchIndex);
 }
 
 function assertSaveProjectArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_save_project", args, batchIndex);
 }
 
 function assertImportGhidraExportArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_import_ghidra_export", args, batchIndex);
   const bag = argBag(args);
-  if (typeof bag.export_path !== "string" || bag.export_path.trim() === "") {
+  if (!isAnnoFileRef(bag.export_path) && (typeof bag.export_path !== "string" || bag.export_path.trim() === "")) {
     refuseArg("anno_import_ghidra_export", "export_path", '"export_path" is required and must be a non-empty string.', batchIndex);
   }
   if (bag.sha256 !== undefined && (typeof bag.sha256 !== "string" || bag.sha256.trim() === "")) {
@@ -1565,7 +1511,6 @@ function assertGraphicsMapIndexArg(name: string, args: unknown, batchIndex?: num
 }
 
 function assertJoinMemmapArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_join_memmap", args, batchIndex);
   assertImageArg("anno_join_memmap", args, batchIndex);
   assertBaseRevisionArg("anno_join_memmap", args, batchIndex);
   assertConstWritesArg("anno_join_memmap", args, batchIndex);
@@ -1586,7 +1531,6 @@ const EVID_DIGEST_RE = /^[0-9a-f]{64}$/;
  * lowercase hex characters, an `argv` that is not a non-empty array of
  * strings, and a `seed` that is not a non-empty string (T-43-21). */
 function assertEvidIngestArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_evid_ingest", args, batchIndex);
   assertBaseRevisionArg("anno_evid_ingest", args, batchIndex);
   const bag = argBag(args);
   if (typeof bag.memmap_text !== "string" || bag.memmap_text.trim() === "") {
@@ -1624,7 +1568,6 @@ function assertEvidIngestArgs(args: unknown, batchIndex?: number): void {
  * identity would silently widen the match to every run sharing the supplied
  * field, which is not what "filter by run identity" means. */
 function assertEvidDisagreementsArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_evid_disagreements", args, batchIndex);
   assertOptionalMaxResults("anno_evid_disagreements", args, batchIndex);
   const bag = argBag(args);
   const filterFieldsGiven = [bag.image_sha256, bag.argv_digest, bag.seed].filter((v) => v !== undefined).length;
@@ -1663,7 +1606,6 @@ function assertEvidDisagreementsArgs(args: unknown, batchIndex?: number): void {
 /** `anno_evid_runs`'s own argument assertion (plan 43-06): just the
  * universal `store` argument, since this verb takes no other input. */
 function assertEvidRunsArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_evid_runs", args, batchIndex);
 }
 
 /** `anno_evid_reset`'s own argument assertion (plan 43-06), the SAME shape
@@ -1672,7 +1614,6 @@ function assertEvidRunsArgs(args: unknown, batchIndex?: number): void {
  * hex characters, an `argv` that is not a non-empty array of strings, and a
  * `seed` that is not a non-empty string. */
 function assertEvidResetArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_evid_reset", args, batchIndex);
   assertBaseRevisionArg("anno_evid_reset", args, batchIndex);
   const bag = argBag(args);
   if (typeof bag.image_sha256 !== "string" || !EVID_DIGEST_RE.test(bag.image_sha256)) {
@@ -1700,7 +1641,6 @@ function assertEvidResetArgs(args: unknown, batchIndex?: number): void {
  * image and optional-max-results assertions rather than inlining a fourth
  * check -- this verb has no argument shape of its own beyond those three. */
 function assertHazardReportArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_hazard_report", args, batchIndex);
   assertImageArg("anno_hazard_report", args, batchIndex);
   assertOptionalMaxResults("anno_hazard_report", args, batchIndex);
 }
@@ -1799,10 +1739,11 @@ function assertWithinRegionCap(name: string, start: number, end: number, batchIn
 }
 
 /** Narrows the universally-required `image` argument (D-07) to a non-empty
- * string. Containment is `resolveWorkspacePath()`'s concern, exactly as for the
- * store path. */
-function assertImageArg(name: string, args: unknown, batchIndex?: number): string {
+ * path (as the client sees it) or a staged reference (as this engine does).
+ * Containment and reading are the client's. */
+function assertImageArg(name: string, args: unknown, batchIndex?: number): void {
   const bag = argBag(args);
+  if (isAnnoFileRef(bag.image)) return;
   if (typeof bag.image !== "string" || bag.image.trim() === "") {
     refuseArg(
       name,
@@ -1812,7 +1753,6 @@ function assertImageArg(name: string, args: unknown, batchIndex?: number): strin
       batchIndex,
     );
   }
-  return bag.image as string;
 }
 
 function assertQueryArg(name: string, args: unknown, batchIndex?: number): void {
@@ -1829,7 +1769,6 @@ function assertQueryArg(name: string, args: unknown, batchIndex?: number): void 
 }
 
 function assertDisassembleArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_disassemble", args, batchIndex);
   assertImageArg("anno_disassemble", args, batchIndex);
   const start = assertAddressArg("anno_disassemble", args, "address", batchIndex);
   const bag = argBag(args);
@@ -1841,7 +1780,6 @@ function assertDisassembleArgs(args: unknown, batchIndex?: number): void {
 }
 
 function assertReadRegionArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_read_region", args, batchIndex);
   assertImageArg("anno_read_region", args, batchIndex);
   const { start, end } = assertSpanArgs("anno_read_region", args, "byte", batchIndex);
   assertWithinRegionCap("anno_read_region", start, end, batchIndex);
@@ -1852,26 +1790,22 @@ function assertReadRegionArgs(args: unknown, batchIndex?: number): void {
 }
 
 function assertBinaryInfoArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_get_binary_info", args, batchIndex);
   assertImageArg("anno_get_binary_info", args, batchIndex);
 }
 
 function assertCrossReferencesArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_get_cross_references", args, batchIndex);
   assertImageArg("anno_get_cross_references", args, batchIndex);
   assertAddressArg("anno_get_cross_references", args, "address", batchIndex);
   assertMaxResults("anno_get_cross_references", args, batchIndex);
 }
 
 function assertSearchArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_search", args, batchIndex);
   assertImageArg("anno_search", args, batchIndex);
   assertQueryArg("anno_search", args, batchIndex);
   assertMaxResults("anno_search", args, batchIndex);
 }
 
 function assertAddressDetailsArgs(args: unknown, batchIndex?: number): void {
-  assertStoreArg("anno_get_address_details", args, batchIndex);
   assertImageArg("anno_get_address_details", args, batchIndex);
   assertAddressArg("anno_get_address_details", args, "address", batchIndex);
 }
@@ -1974,10 +1908,8 @@ export function assertAnnoBatch(args: unknown, depth = 0): void {
       // recursed on `batchArgumentsFor(bag, call)`; phase one used to recurse
       // on `call.arguments`. The two phases therefore disagreed about what the
       // inner payload WAS, and a nested batch written the documented way (the
-      // store named ONCE at the top, every inner call inheriting it) was
-      // refused whole at every depth -- with a message saying there is no
-      // ambient store to inherit, the exact opposite of this verb's own
-      // description. Read this line as a pair with the executor's recursion:
+      // image named ONCE at the top, every inner call inheriting it) was
+      // refused whole at every depth. Read this line as a pair with the executor's recursion:
       // one function, `batchArgumentsFor()`, defines an inner call's effective
       // arguments, and both phases ask it.
       assertAnnoBatch(batchArgumentsFor(args, call), depth + 1);
@@ -1987,14 +1919,10 @@ export function assertAnnoBatch(args: unknown, depth = 0): void {
   });
 }
 
-/** An inner call's effective arguments. The batch names the store ONCE, at the
- * top level, and every inner call inherits it -- an inner call that named its
- * own store would be a different store for one entry of a batch that reads as
- * one transaction's worth of work, which is a shape nothing here wants. An
- * inner `store` is therefore OVERRIDDEN by the batch's own, never merged with
- * it and never silently honoured. */
+/** An inner call's effective arguments: its own, plus the batch's image when
+ * the batch names one, which overrides an inner image. */
 function batchArgumentsFor(batchArgs: Record<string, unknown>, call: Record<string, unknown>): Record<string, unknown> {
-  return { ...argBag(call.arguments), store: batchArgs.store, ...(batchArgs.image !== undefined ? { image: batchArgs.image } : {}) };
+  return { ...argBag(call.arguments), ...(batchArgs.image !== undefined ? { image: batchArgs.image } : {}) };
 }
 
 /**
@@ -2062,58 +1990,10 @@ export function assertAnnoTool(name: string, args?: unknown): void {
   assertVerbArgs(name, args);
 }
 
-// ---------------------------------------------------------------------------
-// Workspace path validation (T-29-01). The same posture `anno-tools.ts` took
-// for a caller-supplied project path and `stock-symbols.ts` takes for a `.lbl`
-// file: an LLM-supplied path reaching the filesystem. Resolved against
-// `repoRoot()` through `storePathWithinWorkspace()`, which carries WR-01's
-// finding -- containment is enforced against the deepest EXISTING ancestor's
-// realpath, so a not-yet-existing leaf under a directory symlink cannot slip
-// past by way of an ENOENT fallback to the literal path.
-//
-// The STORE path and the IMAGE path go through the SAME helper. They are two
-// LLM-supplied paths with one containment rule, and giving the image its own
-// rule would be a second answer to the one question this function answers once.
-//
-// `repoRoot()` is called at DISPATCH time, never frozen at module load, for
-// the same reason the region cap's override is read at call time: one
-// `node --test` process can then point several different workspace roots at
-// this code within a single run.
-// ---------------------------------------------------------------------------
-
-function resolveWorkspacePath(raw: string): string {
-  return storePathWithinWorkspace(raw, repoRoot());
-}
-
-function resolveStoreArg(name: string, args: unknown): string {
-  return resolveWorkspacePath(assertStoreArg(name, args));
-}
-
-// ---------------------------------------------------------------------------
-// "GONE" AND "EMPTY" MUST NOT READ THE SAME, ON THE WRITE PATH TOO.
-//
-// `openStore`'s `mustExist` option bundles two inseparable halves -- refuse an
-// absent path, AND open the connection `readOnly` -- because it exists to judge
-// a file the caller is about to install, and a judge that can modify what it
-// judges is not a judge. That bundling is right for its purpose and wrong for
-// this one: a write verb needs the refusal WITHOUT the read-only open, and
-// there is no third state to ask `openStore` for.
-//
-// So the refusal is made HERE, by name, before the connection is constructed,
-// and the residual window that `mustExist`'s read-only open would otherwise
-// have closed is closed by INODE IDENTITY instead. The window is real: between
-// the existence check and the constructor the file can be unlinked, after
-// which a writable open CREATES it and the verb writes into a store it
-// invented, reporting success. Comparing the inode across the open detects
-// exactly that -- an unlinked-and-recreated file is a different inode -- and
-// turns an invented store into a named refusal.
-// ---------------------------------------------------------------------------
-
-/** The verbs that only READ. They get `openStore`'s `mustExist` (and therefore
- * its read-only connection), which is strictly the safer open; every other verb
- * takes the existence-check-plus-inode-guard route below. Derived from nothing
- * -- it is a hand-listed property of each verb, and a verb missing from here is
- * merely opened writably, never wrongly refused. */
+/** The verbs that only READ. A caller may open a read-only connection for
+ * them, which is strictly the safer open. Derived from nothing -- it is a
+ * hand-listed property of each verb, and a verb missing from here is merely
+ * opened writably, never wrongly refused. */
 export const READ_ONLY_ANNO_VERBS: readonly string[] = Object.freeze([
   "anno_get_symbols",
   "anno_get_comments",
@@ -2130,37 +2010,9 @@ export const READ_ONLY_ANNO_VERBS: readonly string[] = Object.freeze([
   "anno_hazard_report",
 ]);
 
-/** Refuses an absent store BY NAME, returning the inode the later guard
- * compares against. A write verb must never CREATE the file it was asked to
- * annotate: "the annotations are gone" and "there are no annotations" are
- * different facts and must not read the same. */
-function assertStorePresent(name: string, storePath: string): number {
-  if (!existsSync(storePath)) {
-    throw new AnnoStorePathError(
-      `${name} refused: no annotation store exists at ${JSON.stringify(storePath)} -- refusing to CREATE one, because "the ` +
-        'annotations are gone" and "there are no annotations" must not read the same. Create the store deliberately first.',
-      { path: storePath },
-    );
-  }
-  return statSync(storePath).ino;
-}
-
-/** Closes the window between the existence check and the open. */
-function assertSameFile(name: string, storePath: string, inodeBefore: number): void {
-  if (statSync(storePath).ino !== inodeBefore) {
-    throw new AnnoStorePathError(
-      `${name} refused: the file at ${JSON.stringify(storePath)} was replaced between the existence check and the open, so this ` +
-        "call would have written into a store it created itself rather than the one it was asked to annotate. Nothing was written.",
-      { path: storePath },
-    );
-  }
-}
-
 // ---------------------------------------------------------------------------
 // The dispatch table. Each dispatcher receives an ALREADY-OPEN handle it does
-// not own: opening and closing are `runAnnoTool`'s job and only
-// `runAnnoTool`'s, so there is exactly one `finally` in this module to get
-// right rather than one per verb.
+// not own: opening and closing are the caller's job.
 //
 // Every dispatcher surfaces `changed` from its `AnnoWriteResult` and NEVER maps
 // `changed: false` to an error.
@@ -2182,7 +2034,7 @@ function dispatchGetSymbols(handle: AnnoStoreHandle, args: unknown): unknown {
   // `truncated` is reported rather than left for the caller to infer from a
   // count that happens to equal its own ceiling -- the ceiling being hit and
   // the answer being complete-at-exactly-the-ceiling are different facts.
-  return { store: handle.path, symbols, returned: symbols.length, matched: matched.length, truncated: matched.length > symbols.length };
+  return { symbols, returned: symbols.length, matched: matched.length, truncated: matched.length > symbols.length };
 }
 
 function dispatchSetLabelName(handle: AnnoStoreHandle, args: unknown): unknown {
@@ -2195,7 +2047,7 @@ function dispatchSetLabelName(handle: AnnoStoreHandle, args: unknown): unknown {
     kind: bag.kind === undefined ? "User" : bag.kind,
     baseRevision: assertBaseRevisionArg("anno_set_label_name", args),
   });
-  return { store: handle.path, address: parseStoreAddress(bag.address, { what: "address" }), name: bag.name, kind: bag.kind ?? "User", ...written };
+  return { address: parseStoreAddress(bag.address, { what: "address" }), name: bag.name, kind: bag.kind ?? "User", ...written };
 }
 
 function dispatchSetComment(handle: AnnoStoreHandle, args: unknown): unknown {
@@ -2206,7 +2058,7 @@ function dispatchSetComment(handle: AnnoStoreHandle, args: unknown): unknown {
     text: bag.comment,
     baseRevision: assertBaseRevisionArg("anno_set_comment", args),
   });
-  return { store: handle.path, address: parseStoreAddress(bag.address, { what: "address" }), type: bag.type, ...written };
+  return { address: parseStoreAddress(bag.address, { what: "address" }), type: bag.type, ...written };
 }
 
 function dispatchSetDataType(handle: AnnoStoreHandle, args: unknown): unknown {
@@ -2223,7 +2075,6 @@ function dispatchSetDataType(handle: AnnoStoreHandle, args: unknown): unknown {
   // of a field it has to know to look for. This is 28-VERIFICATION.md's F-4
   // obligation, discharged at the layer the human actually reads.
   return {
-    store: handle.path,
     start_address: parseStoreAddress(bag.start_address, { what: "start_address" }),
     end_address: parseStoreAddress(bag.end_address, { what: "end_address" }),
     data_type: bag.data_type,
@@ -2243,7 +2094,6 @@ function dispatchScope(name: string, handle: AnnoStoreHandle, args: unknown): un
   };
   const written = name === "anno_add_scope" ? addScope(handle, span) : removeScope(handle, span);
   return {
-    store: handle.path,
     start_address: parseStoreAddress(bag.start_address, { what: "start_address" }),
     end_address: parseStoreAddress(bag.end_address, { what: "end_address" }),
     ...written,
@@ -2268,7 +2118,6 @@ function dispatchExcludedRange(name: string, handle: AnnoStoreHandle, args: unkn
       ? addExcludedRange(handle, { ...span, reason: bag.reason as string })
       : removeExcludedRange(handle, span);
   return {
-    store: handle.path,
     start_address: parseStoreAddress(bag.start_address, { what: "start_address" }),
     end_address: parseStoreAddress(bag.end_address, { what: "end_address" }),
     ...written,
@@ -2294,7 +2143,7 @@ function dispatchGetComments(handle: AnnoStoreHandle, args: unknown): unknown {
     return true;
   });
   const comments = matched.slice(0, maxResults);
-  return { store: handle.path, comments, returned: comments.length, matched: matched.length, truncated: matched.length > comments.length };
+  return { comments, returned: comments.length, matched: matched.length, truncated: matched.length > comments.length };
 }
 
 function dispatchGetBlocks(handle: AnnoStoreHandle, args: unknown): unknown {
@@ -2306,7 +2155,6 @@ function dispatchGetBlocks(handle: AnnoStoreHandle, args: unknown): unknown {
   const matched = listRanges(handle).filter((row) => blockType === undefined || row.dataType === blockType);
   const blocks = matched.slice(0, maxResults);
   return {
-    store: handle.path,
     blocks,
     returned: blocks.length,
     matched: matched.length,
@@ -2325,7 +2173,7 @@ function dispatchCreateProjectEnum(handle: AnnoStoreHandle, args: unknown): unkn
     description: bag.description,
     baseRevision: assertBaseRevisionArg("anno_create_project_enum", args),
   });
-  return { store: handle.path, name: bag.name, ...written, enums: listProjectEnums(handle) };
+  return { name: bag.name, ...written, enums: listProjectEnums(handle) };
 }
 
 function dispatchUpdateProjectEnum(handle: AnnoStoreHandle, args: unknown): unknown {
@@ -2337,7 +2185,7 @@ function dispatchUpdateProjectEnum(handle: AnnoStoreHandle, args: unknown): unkn
     description: bag.description,
     baseRevision: assertBaseRevisionArg("anno_update_project_enum", args),
   });
-  return { store: handle.path, name: bag.new_name ?? bag.name, ...written, enums: listProjectEnums(handle) };
+  return { name: bag.new_name ?? bag.name, ...written, enums: listProjectEnums(handle) };
 }
 
 function dispatchApplyEnumUsage(handle: AnnoStoreHandle, args: unknown): unknown {
@@ -2348,7 +2196,6 @@ function dispatchApplyEnumUsage(handle: AnnoStoreHandle, args: unknown): unknown
     ? clearEnumUsage(handle, { address: bag.address as number | string, baseRevision })
     : applyEnumUsage(handle, { address: bag.address as number | string, name: bag.name, baseRevision });
   return {
-    store: handle.path,
     address: parseStoreAddress(bag.address, { what: "address" }),
     name: cleared ? null : bag.name,
     cleared,
@@ -2374,7 +2221,6 @@ function dispatchApplyEnumUsage(handle: AnnoStoreHandle, args: unknown): unknown
 function dispatchSaveProject(handle: AnnoStoreHandle): unknown {
   const revision = currentRevision(handle);
   return {
-    store: handle.path,
     revision,
     wrote: false,
     note:
@@ -2404,41 +2250,22 @@ function assertNotStale(name: string, handle: AnnoStoreHandle, baseRevision: num
   }
 }
 
-function dispatchImportGhidraExport(handle: AnnoStoreHandle, args: unknown): unknown {
+function dispatchImportGhidraExport(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): unknown {
   const bag = argBag(args);
   const baseRevision = assertBaseRevisionArg("anno_import_ghidra_export", args);
   assertNotStale("anno_import_ghidra_export", handle, baseRevision);
-  const exportPath = resolveExportPathArg(bag.export_path as string);
+  const exportFile = stagedFile("anno_import_ghidra_export", "export_path", bag.export_path, inputs);
   return importGhidraExport(handle, {
-    exportPath,
+    exportName: exportFile.name,
+    exportBytes: exportFile.bytes,
     expectedSha256: bag.sha256 as string | undefined,
   });
 }
 
-/** `resolveWorkspacePath()` itself, never a second hand-rolled resolve-and-
- * prefix-test (T-37-01) -- but its underlying `AnnoStorePathError` message
- * says "store path ... is outside the workspace root", unaware of which
- * higher-level argument it was protecting, because `store` and `image` both
- * reuse the same generic wording. Wrapped here so a refusal on `export_path`
- * NAMES the argument rather than reading identically to a `store` refusal. */
-function resolveExportPathArg(raw: string): string {
-  try {
-    return resolveWorkspacePath(raw);
-  } catch (err) {
-    if (err instanceof AnnoStorePathError) {
-      throw new AnnoStorePathError(`anno_import_ghidra_export refused: export_path ${err.message}`, {
-        path: err.path,
-        workspaceRoot: err.workspaceRoot,
-      });
-    }
-    throw err;
-  }
-}
-
-function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown): unknown {
+function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): unknown {
   const baseRevision = assertBaseRevisionArg("anno_join_memmap", args);
   assertNotStale("anno_join_memmap", handle, baseRevision);
-  const image = loadImage("anno_join_memmap", args);
+  const image = loadImage("anno_join_memmap", args, inputs);
   // CR-01 fix: `const_writes`/`graphics_map_index` are threaded into
   // `runMemmapJoin()` exactly as its own `RunMemmapJoinArgs` documents --
   // OMISSION (not `[]`) is what keeps every pre-existing call (no
@@ -2509,7 +2336,6 @@ function dispatchEvidIngest(handle: AnnoStoreHandle, args: unknown): unknown {
   if (ingested.observations.length === 0) {
     const { revision } = applyWrite(handle, () => false, { baseRevision });
     return {
-      store: handle.path,
       revision,
       changed: false,
       observationsWritten: 0,
@@ -2536,7 +2362,6 @@ function dispatchEvidIngest(handle: AnnoStoreHandle, args: unknown): unknown {
   });
 
   return {
-    store: handle.path,
     revision: written.revision,
     changed: written.changed,
     observationsWritten: written.insertedCount,
@@ -2553,13 +2378,8 @@ function dispatchEvidIngest(handle: AnnoStoreHandle, args: unknown): unknown {
  * store to open itself; that pure module's own header states it must never
  * fetch either side.
  *
- * The byte-derived ranges are mapped through `blocksFromStore()`, reached by
- * a LAZY `await import("./anno-cli.ts")` -- the same lazy pattern
- * `vice-proxy.ts:307` already uses to reach `runAnnoCli`, so this file's own
- * static import graph (and therefore the MCP server's startup cost) is
- * unchanged: `anno-cli.ts` drags in `anno-coverage.ts`, `anno-memmap-render.ts`
- * and `anno-export-asm.ts`, none of which this verb needs. The mapping
- * itself is NOT re-implemented here: a second `RangeRow` -> `BlockEntry` site
+ * The byte-derived ranges are mapped through `blocksFromStore()`
+ * (`block-class.ts`). The mapping itself is NOT re-implemented here: a second `RangeRow` -> `BlockEntry` site
  * would be a second answer to "what class is this address", which is
  * exactly the boundary `block-class.ts` (and `blocksFromStore()`'s own
  * comment) exists to keep at one.
@@ -2570,7 +2390,7 @@ function dispatchEvidIngest(handle: AnnoStoreHandle, args: unknown): unknown {
  * `reconciliation`'s own key order is preserved by spreading it before
  * re-assigning `disagreements`: JS does not move an existing key to the end
  * of an object literal on reassignment, so `disagreements` stays the FIRST
- * key after `store` (EVID-03).
+ * key of the answer (EVID-03).
  */
 async function dispatchEvidDisagreements(handle: AnnoStoreHandle, args: unknown): Promise<unknown> {
   const maxResults = assertOptionalMaxResults("anno_evid_disagreements", args);
@@ -2580,14 +2400,10 @@ async function dispatchEvidDisagreements(handle: AnnoStoreHandle, args: unknown)
     handle,
     hasRunFilter ? { imageSha256: bag.image_sha256, argvDigest: bag.argv_digest, seed: bag.seed } : {},
   );
-  // Lazy, deliberately: see this function's own doc comment above for why a
-  // static top-level import of anno-cli.ts must never appear in this file.
-  const { blocksFromStore } = await import("./anno-cli.ts");
   const blocks = blocksFromStore(listRanges(handle));
   const reconciliation = reconcileObservedExecution({ blocks, observations });
   const disagreements = maxResults === undefined ? reconciliation.disagreements : reconciliation.disagreements.slice(0, maxResults);
   return {
-    store: handle.path,
     ...reconciliation,
     disagreements,
     returned: disagreements.length,
@@ -2601,7 +2417,7 @@ async function dispatchEvidDisagreements(handle: AnnoStoreHandle, args: unknown)
  * reported exactly as that function computed it, never re-derived here. */
 function dispatchEvidRuns(handle: AnnoStoreHandle, args: unknown): unknown {
   void args; // this verb takes no argument beyond the universal `store`
-  return { store: handle.path, ...listObservedRuns(handle) };
+  return { ...listObservedRuns(handle) };
 }
 
 /**
@@ -2639,7 +2455,6 @@ function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
     baseRevision,
   });
   return {
-    store: handle.path,
     revision: written.revision,
     changed: written.changed,
     observationsRemoved: existing.length,
@@ -2673,6 +2488,56 @@ function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
 // extensions.
 // ---------------------------------------------------------------------------
 
+/** A file argument as the engine receives it: a reference to bytes the client
+ * staged beside the call, never a path. */
+export interface AnnoFileRef {
+  $file: string;
+}
+
+/** One staged file: the name the client gave it (echoed in answers, and the
+ * source of the extension an image is dispatched on) and its bytes. */
+export interface AnnoInputFile {
+  name: string;
+  bytes: Uint8Array;
+}
+
+/** The staged files of one call, by slot. */
+export type AnnoInputs = ReadonlyMap<string, AnnoInputFile>;
+
+export function isAnnoFileRef(value: unknown): value is AnnoFileRef {
+  return isPlainObject(value) && typeof value.$file === "string" && value.$file !== "" && Object.keys(value).length === 1;
+}
+
+/** The argument keys of `name`'s definition that name a client file. The batch
+ * verb's `calls` carry their own verbs' keys; see `anno-call-client.ts`. */
+export function clientFileKeys(name: string): readonly string[] {
+  const definition = ANNO_TOOL_DEFINITIONS.find((d) => d.name === name);
+  if (definition === undefined) return [];
+  return Object.entries(definition.inputSchema.properties)
+    .filter(([, schema]) => isPlainObject(schema) && schema.clientFile === true)
+    .map(([key]) => key);
+}
+
+/** Resolves a file argument to its staged bytes. A plain string is refused: it
+ * is a path, and a path never reaches this module. */
+function stagedFile(name: string, key: string, value: unknown, inputs: AnnoInputs): AnnoInputFile {
+  if (!isAnnoFileRef(value)) {
+    throw new AnnoToolArgumentError(
+      `${name} refused: "${key}" did not arrive as a staged file -- this engine reads only bytes the client staged beside the ` +
+        "call, never a path, so the client must read the file and send it.",
+      { toolName: name, argument: key },
+    );
+  }
+  const file = inputs.get(value.$file);
+  if (file === undefined) {
+    throw new AnnoToolArgumentError(`${name} refused: "${key}" names staged file ${JSON.stringify(value.$file)}, which was not sent with the call.`, {
+      toolName: name,
+      argument: key,
+    });
+  }
+  return file;
+}
+
 interface LoadedImage {
   path: string;
   kind: "prg" | "flat";
@@ -2681,17 +2546,10 @@ interface LoadedImage {
   totalBytes: number;
 }
 
-function loadImage(name: string, args: unknown): LoadedImage {
-  const raw = assertImageArg(name, args);
-  const path = resolveWorkspacePath(raw);
-  if (!existsSync(path)) {
-    throw new AnnoStorePathError(
-      `${name} refused: no image exists at ${JSON.stringify(path)} -- a derived read names the bytes it derives from (D-07), ` +
-        "and an image that is not there is a different fact from an image with nothing in it.",
-      { path },
-    );
-  }
-  const bytes = new Uint8Array(readFileSync(path));
+function loadImage(name: string, args: unknown, inputs: AnnoInputs): LoadedImage {
+  const file = stagedFile(name, "image", argBag(args).image, inputs);
+  const path = file.name;
+  const bytes = file.bytes;
   const ext = extname(path).toLowerCase();
   try {
     if (ext === ".raw" || ext === ".bin") {
@@ -2955,8 +2813,8 @@ function renderDisassembleListing(handle: AnnoStoreHandle, instructions: readonl
   return lines.join("\n");
 }
 
-function dispatchDisassemble(handle: AnnoStoreHandle, args: unknown): unknown {
-  const image = loadImage("anno_disassemble", args);
+function dispatchDisassemble(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): unknown {
+  const image = loadImage("anno_disassemble", args, inputs);
   const bag = argBag(args);
   const start = parseStoreAddress(bag.address, { what: "address" });
   const cap = currentReadRegionMaxBytes();
@@ -2990,19 +2848,13 @@ function dispatchDisassemble(handle: AnnoStoreHandle, args: unknown): unknown {
  * byte-derived ranges, labels, comments, cross-references, execution
  * observations and the image bytes -- and hands them to `buildHazardReport()`
  * exactly once; the pure module itself never fetches any of it (see its own
- * header). The byte-derived ranges are mapped through `blocksFromStore()`,
- * reached by the SAME lazy `await import("./anno-cli.ts")`
- * `dispatchEvidDisagreements()` already uses above, so this file's own static
- * import graph -- and therefore the MCP server's startup cost -- stays
- * unchanged: `anno-cli.ts` drags in `anno-coverage.ts`, `anno-memmap-render.ts`
- * and `anno-export-asm.ts`, none of which this verb needs either. The mapping
- * itself is NOT re-implemented here, for the same reason `dispatchEvidDisagreements`
- * states for itself.
+ * header). The byte-derived ranges are mapped through `blocksFromStore()`
+ * (`block-class.ts`), for the same reason `dispatchEvidDisagreements` states
+ * for itself.
  */
-async function dispatchHazardReport(handle: AnnoStoreHandle, args: unknown): Promise<unknown> {
+async function dispatchHazardReport(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): Promise<unknown> {
   const maxResults = assertOptionalMaxResults("anno_hazard_report", args);
-  const image = loadImage("anno_hazard_report", args);
-  const { blocksFromStore } = await import("./anno-cli.ts");
+  const image = loadImage("anno_hazard_report", args, inputs);
   const ranges = blocksFromStore(listRanges(handle));
   const symbols = listLabels(handle);
   const comments = listComments(handle);
@@ -3019,7 +2871,6 @@ async function dispatchHazardReport(handle: AnnoStoreHandle, args: unknown): Pro
   });
   const findings = maxResults === undefined ? report.findings : report.findings.slice(0, maxResults);
   return {
-    store: handle.path,
     image: image.path,
     ...report,
     findings,
@@ -3029,8 +2880,8 @@ async function dispatchHazardReport(handle: AnnoStoreHandle, args: unknown): Pro
   };
 }
 
-function dispatchReadRegion(args: unknown): unknown {
-  const image = loadImage("anno_read_region", args);
+function dispatchReadRegion(args: unknown, inputs: AnnoInputs): unknown {
+  const image = loadImage("anno_read_region", args, inputs);
   const bag = argBag(args);
   const start = parseStoreAddress(bag.start_address, { what: "start_address" });
   const end = parseStoreAddress(bag.end_address, { what: "end_address" });
@@ -3054,8 +2905,8 @@ function dispatchReadRegion(args: unknown): unknown {
   };
 }
 
-function dispatchBinaryInfo(args: unknown): unknown {
-  const image = loadImage("anno_get_binary_info", args);
+function dispatchBinaryInfo(args: unknown, inputs: AnnoInputs): unknown {
+  const image = loadImage("anno_get_binary_info", args, inputs);
   const entropy = shannonEntropy(image.body);
   return {
     image: image.path,
@@ -3069,14 +2920,13 @@ function dispatchBinaryInfo(args: unknown): unknown {
   };
 }
 
-function dispatchCrossReferences(handle: AnnoStoreHandle, args: unknown): unknown {
-  const image = loadImage("anno_get_cross_references", args);
+function dispatchCrossReferences(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): unknown {
+  const image = loadImage("anno_get_cross_references", args, inputs);
   const maxResults = assertMaxResults("anno_get_cross_references", args);
   const bag = argBag(args);
   const union = crossReferencesTo(handle, image.body, image.origin, bag.address as number | string);
   const callers = union.callers.slice(0, maxResults);
   return {
-    store: handle.path,
     image: image.path,
     to: union.to,
     callers,
@@ -3086,8 +2936,8 @@ function dispatchCrossReferences(handle: AnnoStoreHandle, args: unknown): unknow
   };
 }
 
-function dispatchSearch(handle: AnnoStoreHandle, args: unknown): unknown {
-  const image = loadImage("anno_search", args);
+function dispatchSearch(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): unknown {
+  const image = loadImage("anno_search", args, inputs);
   const bag = argBag(args);
   // THE CALLER'S OWN BAG IS PASSED THROUGH, not reconstructed from the three
   // keys this layer knows about. `searchAnnotations` detects a corpus this
@@ -3118,13 +2968,13 @@ function dispatchSearch(handle: AnnoStoreHandle, args: unknown): unknown {
       corpora: result.corpora,
     };
   }
-  return { store: handle.path, image: image.path, ...result };
+  return { image: image.path, ...result };
 }
 
-function dispatchAddressDetails(handle: AnnoStoreHandle, args: unknown): unknown {
-  const image = loadImage("anno_get_address_details", args);
+function dispatchAddressDetails(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): unknown {
+  const image = loadImage("anno_get_address_details", args, inputs);
   const bag = argBag(args);
-  return { store: handle.path, image: image.path, ...composeAddressDetails(handle, image.body, image.origin, bag.address as number | string) };
+  return { image: image.path, ...composeAddressDetails(handle, image.body, image.origin, bag.address as number | string) };
 }
 
 
@@ -3133,7 +2983,7 @@ function dispatchAddressDetails(handle: AnnoStoreHandle, args: unknown): unknown
  * failure. Pre-validation has already refused every batch that should not have
  * been sent, so a failure here is genuinely about one call rather than about
  * the payload. */
-async function dispatchBatchExecute(handle: AnnoStoreHandle, args: unknown): Promise<unknown> {
+async function dispatchBatchExecute(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): Promise<unknown> {
   const bag = argBag(args);
   const calls = bag.calls as Record<string, unknown>[];
   const results: Record<string, unknown>[] = [];
@@ -3141,7 +2991,7 @@ async function dispatchBatchExecute(handle: AnnoStoreHandle, args: unknown): Pro
     const name = call.name as string;
     const innerArgs = batchArgumentsFor(bag, call);
     try {
-      const value = name === "anno_batch_execute" ? await dispatchBatchExecute(handle, innerArgs) : await dispatch(name, innerArgs, handle);
+      const value = name === "anno_batch_execute" ? await dispatchBatchExecute(handle, innerArgs, inputs) : await dispatch(name, innerArgs, handle, inputs);
       results.push({ index, name, status: "success", result: value });
     } catch (err) {
       // NAMED BY CLASS, exactly as the outer boundary names it, so a per-item
@@ -3153,7 +3003,6 @@ async function dispatchBatchExecute(handle: AnnoStoreHandle, args: unknown): Pro
   }
   const failed = results.filter((entry) => entry.status === "error").length;
   return {
-    store: handle.path,
     results,
     executed: results.length,
     succeeded: results.length - failed,
@@ -3165,7 +3014,7 @@ async function dispatchBatchExecute(handle: AnnoStoreHandle, args: unknown): Pro
   };
 }
 
-async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): Promise<unknown> {
+async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle, inputs: AnnoInputs): Promise<unknown> {
   if (name === "anno_get_symbols") return dispatchGetSymbols(handle, args);
   if (name === "anno_set_label_name") return dispatchSetLabelName(handle, args);
   if (name === "anno_set_comment") return dispatchSetComment(handle, args);
@@ -3178,20 +3027,20 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
   if (name === "anno_update_project_enum") return dispatchUpdateProjectEnum(handle, args);
   if (name === "anno_apply_enum_usage") return dispatchApplyEnumUsage(handle, args);
   if (name === "anno_save_project") return dispatchSaveProject(handle);
-  if (name === "anno_import_ghidra_export") return dispatchImportGhidraExport(handle, args);
-  if (name === "anno_join_memmap") return dispatchJoinMemmap(handle, args);
+  if (name === "anno_import_ghidra_export") return dispatchImportGhidraExport(handle, args, inputs);
+  if (name === "anno_join_memmap") return dispatchJoinMemmap(handle, args, inputs);
   if (name === "anno_evid_ingest") return dispatchEvidIngest(handle, args);
   if (name === "anno_evid_disagreements") return dispatchEvidDisagreements(handle, args);
   if (name === "anno_evid_runs") return dispatchEvidRuns(handle, args);
   if (name === "anno_evid_reset") return dispatchEvidReset(handle, args);
-  if (name === "anno_disassemble") return dispatchDisassemble(handle, args);
-  if (name === "anno_hazard_report") return dispatchHazardReport(handle, args);
-  if (name === "anno_read_region") return dispatchReadRegion(args);
-  if (name === "anno_get_binary_info") return dispatchBinaryInfo(args);
-  if (name === "anno_get_cross_references") return dispatchCrossReferences(handle, args);
-  if (name === "anno_search") return dispatchSearch(handle, args);
-  if (name === "anno_get_address_details") return dispatchAddressDetails(handle, args);
-  if (name === "anno_batch_execute") return dispatchBatchExecute(handle, args);
+  if (name === "anno_disassemble") return dispatchDisassemble(handle, args, inputs);
+  if (name === "anno_hazard_report") return dispatchHazardReport(handle, args, inputs);
+  if (name === "anno_read_region") return dispatchReadRegion(args, inputs);
+  if (name === "anno_get_binary_info") return dispatchBinaryInfo(args, inputs);
+  if (name === "anno_get_cross_references") return dispatchCrossReferences(handle, args, inputs);
+  if (name === "anno_search") return dispatchSearch(handle, args, inputs);
+  if (name === "anno_get_address_details") return dispatchAddressDetails(handle, args, inputs);
+  if (name === "anno_batch_execute") return dispatchBatchExecute(handle, args, inputs);
   // Unreachable: `assertAnnoTool()` above has already refused every name
   // outside `CURATED_ANNO_TOOLS`, and every curated name has an arm here. It
   // refuses BY NAME anyway rather than returning a plausible-looking empty
@@ -3205,43 +3054,20 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
 }
 
 /**
- * Runs one curated `anno_*` tool call. THE NEVER-THROW BOUNDARY: every failure
- * -- an uncurated name, a malformed argument, a path outside the workspace, a
- * corrupt store, a bug in a dispatcher -- resolves as `{isError:true}` text
- * naming the error CLASS. Nothing rejects the returned promise.
+ * Answers one curated `anno_*` call against `handle`, which the caller opened
+ * and closes. THE NEVER-THROW BOUNDARY: every failure -- an uncurated name, a
+ * malformed argument, an unstaged file, a corrupt store, a bug in a dispatcher
+ * -- resolves as `{isError:true}` text naming the error CLASS. Nothing rejects
+ * the returned promise.
  *
- * `assertAnnoTool` is INSIDE the `try`, deliberately and unlike
- * `anno-tools.ts`'s `runAnnoTool`, whose gate sits outside it so a refusal
- * REJECTS instead of resolving. That asymmetry is WR-02, recorded as out of
- * scope at `anno-tools.ts:772-774`; it is closed here.
- *
- * NO VERB EVER CREATES THE STORE IT WAS ASKED TO USE (D-06): "the annotations
- * are gone" and "there are no annotations" must not read the same. A read-only
- * verb gets that through `openStore`'s own `mustExist`; a writing verb gets it
- * through `assertStorePresent()` plus the inode guard above, because
- * `mustExist` also forces a read-only connection and there is no third state to
- * ask for. `closeStore` runs in a `finally`, so the handle is released on the
- * throwing path exactly as on the succeeding one (T-29-03).
+ * `assertAnnoTool` is INSIDE the `try`, so a refusal RESOLVES like every other
+ * failure instead of rejecting (WR-02).
  */
-export async function runAnnoTool(name: string, args: unknown): Promise<ToolCallResult> {
+export async function runAnnoToolOnHandle(handle: AnnoStoreHandle, name: string, args: unknown, inputs: AnnoInputs): Promise<ToolCallResult> {
   try {
     assertAnnoTool(name, args);
-    const storePath = resolveStoreArg(name, args);
-    const inodeBefore = assertStorePresent(name, storePath);
-    const handle = openStore(storePath, { workspaceRoot: repoRoot(), mustExist: READ_ONLY_ANNO_VERBS.includes(name) });
-    try {
-      assertSameFile(name, storePath, inodeBefore);
-      return okText(JSON.stringify(await dispatch(name, args, handle)));
-    } finally {
-      closeStore(handle);
-    }
+    return okText(JSON.stringify(await dispatch(name, args, handle, inputs)));
   } catch (err) {
-    // Named by class (D18-12: a mid-window failure must surface a named,
-    // distinguishable error, never a silent success) -- a caller can tell
-    // AnnoStoreCorruptError apart from AnnoStorePathError etc. from this text
-    // alone, without re-parsing loose message wording.
-    const errName = err instanceof Error ? err.name : "Error";
-    const errMessage = err instanceof Error ? err.message : String(err);
-    return errText(`${name} failed: [${errName}] ${errMessage}`);
+    return toolFailure(name, err);
   }
 }

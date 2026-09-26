@@ -87,6 +87,7 @@
     "anno-store.ts",
     "anno-store-export.ts",
     "anno-tools.ts",
+    "anno-call-client.ts",
     "anno-derive.ts",
     "anno-details.ts",
     "anno-register.ts",

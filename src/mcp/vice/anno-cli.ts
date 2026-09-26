@@ -146,7 +146,7 @@ import { buildCoverageReport, coverageFindings, loadProjectImage, AUTO_NAME_PREF
 import type { CoverageReport, LoadedProject, AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.ts";
 // The store's block-entry shape comes from the boundary that owns its
 // vocabulary, not from the census -- see `block-class.ts`.
-import type { BlockEntry } from "./block-class.ts";
+import { blocksFromStore, type BlockEntry } from "./block-class.ts";
 import { openStore, closeStore, listLabels, listComments, listRanges, listExecObservations, listObservedRuns, listXrefs } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
 // The shared 6502/6510 decoder. `decomp-completeness`'s
@@ -181,7 +181,8 @@ import { repoRoot } from "./repo-root.ts";
 // dynamic `import("./anno-cli.ts")` above the server path, so this file's
 // own static dependency on `anno-tools.ts` never becomes part of the
 // server's startup cost.
-import { runAnnoTool, CURATED_ANNO_TOOLS } from "./anno-tools.ts";
+import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
+import { runAnnoTool } from "./anno-call-client.ts";
 // The three comment-text conventions, declared once in
 // anno-store-export.ts and imported everywhere they are matched -- never
 // restated as a second literal.
@@ -910,12 +911,8 @@ export function commentsFromStore(rows: readonly CommentRow[]): AnnoComment[] {
   return rows.map((row) => ({ address: row.address, type: row.commentType, comment: row.text }));
 }
 
-/** `RangeRow[]` as the census's block shape. The `dataType` column is copied
- * VERBATIM and never compared here -- `block-class.ts` is the only place in
- * this tree allowed to interpret it. */
-export function blocksFromStore(rows: readonly RangeRow[]): BlockEntry[] {
-  return rows.map((row) => ({ start_address: row.start, end_address: row.endInclusive, type: row.dataType }));
-}
+/** `RangeRow[]` as the census's block shape -- `block-class.ts`'s one seam. */
+export { blocksFromStore };
 
 /**
  * The census's fourth input, derived in ONE pass over the store and the image

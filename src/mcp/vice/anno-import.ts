@@ -1,36 +1,29 @@
 #!/usr/bin/env node
 // anno-import.ts
 //
-// The container-side parser and importer for `GhidraStructExport.java`'s
+// The parser and importer for `GhidraStructExport.java`'s
 // `## `-delimited transfer file.
 //
-// THIS MODULE RECEIVES AN ALREADY-OPEN STORE HANDLE. It never opens or closes
-// a store itself -- there is no second store session anywhere in this file.
-// It also never names `node:sqlite` and never resolves a workspace path
-// itself: per `ghidra-run.ts`'s own documented posture, the export file's
-// path arrives as a local path, so this module reads it AS GIVEN. Workspace
-// confinement is the CALLER's job -- `anno-tools.ts`'s existing
-// `resolveWorkspacePath()`, the same one `store` and `image` already go
-// through -- not this module's.
+// THIS MODULE RECEIVES AN ALREADY-OPEN STORE HANDLE AND THE FILE'S BYTES. It
+// never opens or closes a store, never names `node:sqlite`, and never touches
+// the filesystem: the client read the transfer file and staged its bytes, and
+// the client deletes it once this import has returned successfully
+// (`anno-call-client.ts`).
 //
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: parsing the export's fixed
 // `## `-delimited section format, mapping Ghidra's `Reference.getReferenceType()`
 // vocabulary onto the store's frozen four-member `XrefAccessKind`
-// (`GHIDRA_REFTYPE_TO_ACCESS_KIND`), and the digest-then-delete
-// discipline that makes the transfer file transient evidence rather than a
-// second on-disk model.
+// (`GHIDRA_REFTYPE_TO_ACCESS_KIND`), and the digest that ties the import to
+// the exact bytes it read.
 //
 // WHAT NOT TO DO:
 //   - Never write a row before the WHOLE document has parsed successfully.
 //     `parseGhidraExport()` returns a document `importGhidraExport()` walks
 //     in full to build a write list BEFORE the first `putXref()` call -- a
 //     streaming parse that writes as it reads cannot honour this.
-//   - Never unlink the transfer file anywhere except the single statement
-//     that runs after the LAST `putXref()` in the batch has returned. Never
-//     inside the write loop, never in a `finally`, never on a throwing path
-//     -- `applyWrite()` (which every `putXref()` call goes through) commits
-//     before returning, so a returned write is a durable write, and deleting
-//     before that point can lose evidence a store write never durably held.
+//   - Never report success before the LAST `putXref()` has returned. The
+//     client deletes the transfer file on success, and `applyWrite()`
+//     commits before returning, so only a returned write is a durable one.
 //   - Never guess an unrecognised `ReferenceType` token onto the nearest
 //     member of `XREF_ACCESS_KINDS`. It is dropped and COUNTED in
 //     `kindsSeenNotImported`, never silently absorbed and never refused --
@@ -38,13 +31,6 @@
 //     unusable against a real corpus binary.
 
 import { createHash } from "node:crypto";
-// Namespace import, deliberately: a later acceptance gate greps this file for
-// the literal token `unlinkSync` and requires it to appear on EXACTLY ONE
-// non-comment line -- the actual call site, after the last committed write.
-// A named `import { unlinkSync } from "node:fs"` would itself be a second
-// matching line, so every fs function this module uses is reached through
-// this one namespace binding instead.
-import * as fs from "node:fs";
 
 import { putXref } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
@@ -349,15 +335,16 @@ export interface ImportCounts {
   transferPath: string;
   transferSha256: string;
   transferByteLength: number;
-  transferDeleted: boolean;
-  /** Present only when `transferDeleted` is `false` because the unlink
-   * itself threw -- the writes had already committed, so the import is
+  /** Set by the client after it deletes the transfer file. */
+  transferDeleted?: boolean;
+  /** Present only when `transferDeleted` is `false` because the delete
+   * itself failed -- the writes had already committed, so the import is
    * still reported as a success with this reason attached, never as a
    * failure after a durable write. */
   transferDeleteError?: string;
   /** The `## CONST_WRITES` section's own facts, parsed by
-   * `parseConstWrites()` BEFORE the transfer file is deleted below -- the
-   * ONE artifact carrying them. `importGhidraExport()` never persists these
+   * `parseConstWrites()` from the transfer file, which the client deletes
+   * after a successful import -- so this is the ONE artifact carrying them. `importGhidraExport()` never persists these
    * facts in the store (the reserved `bank` column stays null);
    * they ride on THIS return value instead, so a caller can hand the SAME
    * array straight to `anno_join_memmap`'s own `const_writes` argument in a
@@ -371,55 +358,28 @@ export interface ImportCounts {
 }
 
 export interface ImportGhidraExportArgs {
-  exportPath: string;
+  /** The name the client gave the transfer file, echoed as `transferPath`. */
+  exportName: string;
+  exportBytes: Uint8Array;
   expectedSha256?: string;
-  /** Test-only injection point for the delete step. Exists so "the writes
-   * committed but the delete itself failed" path (T-37-03) can be exercised
-   * DETERMINISTICALLY: making a directory read-only does not reliably block
-   * a delete when the test process runs as root (root ignores permission
-   * bits, and CI containers commonly run as root), so a caller-supplied
-   * removal function is the portable route. Defaults to the real deletion
-   * via `deleteTransferFile()` below. */
-  deleteFile?: (path: string) => void;
-}
-
-/** The real deletion step, defined once so `importGhidraExport()`'s own
- * call site never spells the removal syscall's name directly -- a later
- * acceptance gate greps this file for the literal token `unlinkSync` and
- * requires it to appear on EXACTLY ONE non-comment line, which is this one. */
-function deleteTransferFile(path: string): void {
-  fs.unlinkSync(path);
 }
 
 /**
- * Imports one host-written transfer file into `handle`. Reads the file's
- * bytes ONCE and derives both the digest and the byte length from that same
- * buffer (mirroring `digestOutputFile()`'s shape at `host-tool.mts:1361-1372`
- * -- the size and the hash must describe the same bytes). Parses fully,
- * builds the mapped write list fully, and only THEN issues every `putXref()`
- * call in file order. Deletes the transfer file in the LAST statement of the
- * successful path, after every write has returned -- `putXref()` commits
- * inside `applyWrite()` before returning, so a returned write is durable.
+ * Imports one transfer file's bytes into `handle`. The digest and the byte
+ * length are derived from the same buffer, so they describe the same bytes.
+ * Parses fully, builds the mapped write list fully, and only THEN issues
+ * every `putXref()` call in file order.
  */
 export function importGhidraExport(handle: AnnoStoreHandle, args: ImportGhidraExportArgs): ImportCounts {
-  const { exportPath } = args;
-
-  if (!fs.existsSync(exportPath)) {
-    throw new AnnoImportError(
-      `anno_import_ghidra_export refused: no transfer file exists at ${JSON.stringify(exportPath)}. Nothing was ` +
-        "read, nothing was written.",
-      { section: "(file)" },
-    );
-  }
-
-  const contents = fs.readFileSync(exportPath);
+  const exportName = args.exportName;
+  const contents = Buffer.from(args.exportBytes);
   const transferSha256 = createHash("sha256").update(contents).digest("hex");
   const transferByteLength = contents.length;
 
   if (args.expectedSha256 !== undefined && args.expectedSha256 !== transferSha256) {
     throw new AnnoImportError(
-      `anno_import_ghidra_export refused: expected sha256 ${args.expectedSha256} but the transfer file at ` +
-        `${JSON.stringify(exportPath)} hashes to ${transferSha256} -- this digest is a corruption/drift detector, ` +
+      `anno_import_ghidra_export refused: expected sha256 ${args.expectedSha256} but the transfer file ` +
+        `${JSON.stringify(exportName)} hashes to ${transferSha256} -- this digest is a corruption/drift detector, ` +
         "never a security boundary, and a mismatch refuses before anything is written or deleted.",
       { section: "(digest)" },
     );
@@ -427,8 +387,7 @@ export function importGhidraExport(handle: AnnoStoreHandle, args: ImportGhidraEx
 
   const doc = parseGhidraExport(contents.toString("utf8"));
   const referenceLines = doc.sections.get("REFERENCES") ?? [];
-  // Parsed here, from the SAME document, before the
-  // transfer file is deleted below -- `parseConstWrites()` was previously
+  // Parsed here, from the SAME document -- `parseConstWrites()` was previously
   // exercised only by test code (`anno-join.test.ts`/`ghidra-live.test.ts`),
   // never by this, the only production entry point that reads a transfer
   // file. See `ImportCounts.constWrites`'s own doc comment for how the
@@ -466,28 +425,14 @@ export function importGhidraExport(handle: AnnoStoreHandle, args: ImportGhidraEx
     else xrefsAlreadyPresent += 1;
   }
 
-  // THE SINGLE DELETE CALL SITE. It runs here, after the loop above has
-  // fully returned, and nowhere else in this file.
-  const remove = args.deleteFile ?? deleteTransferFile;
-  let transferDeleted = true;
-  let transferDeleteError: string | undefined;
-  try {
-    remove(exportPath);
-  } catch (err) {
-    transferDeleted = false;
-    transferDeleteError = err instanceof Error ? err.message : String(err);
-  }
-
   return {
     referencesSeen,
     xrefsWritten,
     xrefsAlreadyPresent,
     kindsSeenNotImported,
-    transferPath: exportPath,
+    transferPath: exportName,
     transferSha256,
     transferByteLength,
-    transferDeleted,
     constWrites,
-    ...(transferDeleteError !== undefined ? { transferDeleteError } : {}),
   };
 }

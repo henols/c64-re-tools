@@ -94,6 +94,31 @@ from all 28 `anno call` tools and all 6 report verbs.
   - New `anno-project-scope.test.ts`: a pragma-driven structure check, an
     isolation check and a generic round trip, each with a planted proof.
 
+- **Staged file references (step 2a).**
+  - A file argument reaches the engine as `{ "$file": "<slot>" }`, and the
+    bytes travel in a slot map beside the call. Each slot carries the client's
+    name for the file.
+  - That name is echoed as `image` and `transferPath`, and it drives the
+    extension-first image dispatch.
+  - `clientFileKeys(name)` reads the `clientFile: true` markers off the
+    definitions.
+- **An unreadable file refuses the whole call, a batch included.** Its bytes
+  travel with the call, so a missing file means the call cannot be sent. Before
+  this change a missing inner image failed only its own batch entry.
+- **The client deletes a consumed Ghidra transfer file.** It does so only after
+  the engine's answer shows that import succeeded, and it walks the batch
+  results to find nested imports.
+  - It then records `transferDeleted` (and `transferDeleteError` when the
+    delete fails) on that answer.
+  - `importGhidraExport` now takes `{exportName, exportBytes}` and touches no
+    file.
+- **Engine answers carry no `store`.** The broker's database path must never
+  cross the socket, and a client-side prepend could not reach nested batch
+  answers.
+  - `anno_evid_disagreements` keeps `disagreements` as its first key.
+- **Step 2a scaffolding:** until the cutover, the client still takes `store`,
+  opens it through the shim, and strips the argument before calling the engine.
+
 ## Context
 
 - **Visuals:** none.

@@ -36,7 +36,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { closeStore, openStore, setDataType } from "./anno-store.ts";
-import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
+import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.ts";
+import { runAnnoTool } from "./anno-call-client.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OWN_FILENAME = "evid-report-keys.test.ts";

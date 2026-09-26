@@ -55,7 +55,7 @@ import { decodeRawData } from "./prg-image.ts";
 // image loader agree. `loadImage()` is module-private, so the comparison runs
 // through its published face, `anno_get_binary_info`.
 import { openStore, closeStore } from "./anno-store.ts";
-import { runAnnoTool } from "./anno-tools.ts";
+import { runAnnoTool } from "./anno-call-client.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = join(HERE, "fixtures", "coverage");
