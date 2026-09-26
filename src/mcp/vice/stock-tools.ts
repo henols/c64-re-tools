@@ -15,7 +15,7 @@
 import type { ToolInfo } from "./vice-errors.ts";
 import { isErrorText, stockAnswer, type StockToolResult, type StockSessionHandler, type DerivedPureHandler } from "./stock-handler.ts";
 import { runBinary, runPure, type StockSessionDeps } from "./stock-session.ts";
-import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks, handleProgramLoad } from "./stock-memory.ts";
+import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks } from "./stock-memory.ts";
 import { handleRegistersGet, handleRegistersSet, handleRegistersAvailable } from "./stock-registers.ts";
 import {
   handleCheckpointAdd,
@@ -26,7 +26,7 @@ import {
   handleWatchAdd,
 } from "./stock-checkpoints.ts";
 import { handleExecutionPause, handleExecutionRun, handleExecutionStep, handleExecutionUntilReturn } from "./stock-execution.ts";
-import { handleMachineReset, handleAutostart, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
+import { handleMachineReset, handleAutostart, handleProgramLoad, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
 import { handleKeyboardType, handleKeyboardPetscii, handleJoystickSet } from "./stock-input.ts";
 import { handleDisassemble } from "./stock-disassemble.ts";
 import { handleMemorySearch, handleMemoryCompare } from "./stock-memory-search.ts";

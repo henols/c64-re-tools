@@ -17,6 +17,8 @@ broker:
 global:
   atomic-state-files:
     description: Temp-chmod-rename writes and untrusted read-back of state files
+  files-travel-as-bytes:
+    description: Tools take a client path, read it, and stream bytes; no path crosses the socket
   injectable-deps:
     description: Optional XDeps objects for side-effecting modules and tests
   module-header:

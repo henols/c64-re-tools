@@ -82,8 +82,9 @@
 - The input paths of every host tool bind by a handle that the broker creates.
 - No request or reply names a path the other side must open. The grant carries
   coordinates only; the reconnect epoch is read from the broker's `status`
-  reply for the instance the grant owns. `vice_program_load` writes the PRG
-  bytes through the binary monitor, and the text monitor has no `load` verb.
+  reply for the instance the grant owns. `vice_program_load` takes a path,
+  reads the PRG on the client and writes its bytes through the binary monitor;
+  the text monitor has no `load` verb. Rule: `agent-os/standards/global/files-travel-as-bytes.md`.
 - Ghidra projects live on a broker-side root with no dot-prefixed segment.
 - The old host/container seam is gone from production code: `hostpath.ts`,
   `containerpath.ts`, `stock-paths.ts`, `broker.json` and the Ghidra symlink

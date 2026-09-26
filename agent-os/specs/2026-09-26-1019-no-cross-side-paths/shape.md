@@ -80,3 +80,8 @@ it, but nothing reads it.
 - **global/module-header:** the new `hazard-subjects.ts` gets the short header.
 - **mcp/tool-answers:** the new handler answers through `stockAnswer` and
   refuses through `isErrorText`/`convertWireError`.
+- **Path argument, not a subject list (owner correction).** The first cut kept
+  the closed table of five hazard-subject fixtures, so the tool could not load
+  an arbitrary program and failed for npm installs. It now takes `path`, reads
+  the file on the client and sends the bytes. `hazard-subjects.ts` is deleted,
+  and the rule is written down as `standards/global/files-travel-as-bytes.md`.

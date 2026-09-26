@@ -2,9 +2,9 @@
 // stock-memory.ts
 //
 // THE memory half of Family A on the stock backend (D-03/DIRECT-01/
-// DIRECT-09): vice_memory_read, vice_memory_write, vice_memory_banks and
-// vice_program_load, as StockSessionHandler-shaped exports, plus the
-// per-session bank catalog they share.
+// DIRECT-09): vice_memory_read, vice_memory_write, and vice_memory_banks,
+// as StockSessionHandler-shaped exports, plus the per-session bank catalog
+// all three share.
 //
 // WHY THIS FILE EXISTS: this is the first half of phase success criterion
 // 1 -- reads must be side-effect-free by default and must not force a
@@ -39,13 +39,10 @@
 //     where the emulator enumerated 6, and made resolveRequiredBank()'s
 //     refusal tell an agent a working bank name did not exist. Anything
 //     agent-facing reads `entries`, the verbatim wire list.
-import { readFileSync } from "node:fs";
-
 import { CommandType, memGetBody, memSetBody } from "./stock-protocol.ts";
 import { parseAddress, parseByteCount } from "./stock-address.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import { HAZARD_SUBJECT_IDS, hazardSubjectPrgPath, isHazardSubjectId, type HazardSubjectId } from "./hazard-subjects.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches vice.ts's own isPlainObject() predicate exactly -- the
@@ -402,67 +399,4 @@ export const handleMemoryWrite: StockSessionHandler = async (args, session, _dep
     bank: bankResolution.name !== undefined ? { id: bankResolution.id, name: bankResolution.name } : bankResolution.id,
     memspace: "main",
   });
-};
-
-// ---------------------------------------------------------------------------
-// vice_program_load
-// ---------------------------------------------------------------------------
-
-/** The subject loaded when the caller names none. */
-const DEFAULT_SUBJECT: HazardSubjectId = "original";
-
-/**
- * `vice_program_load` -- puts ONE committed hazard-subject PRG into RAM at
- * the load address in its own two-byte header. The subject is an id looked
- * up in hazard-subjects.ts's closed table, never a path. This process reads
- * the file and sends its bytes with MEM_SET, so no path crosses to the
- * broker or the emulator. Measured against stock VICE 3.9: the text
- * monitor's `load "<prg>" 0`, which this replaces, changes no byte outside
- * the payload range, so the two leave identical RAM.
- */
-export const handleProgramLoad: StockSessionHandler = async (args, session, _deps) => {
-  const raw = isPlainObject(args) ? args.subject : undefined;
-  const subject = raw === undefined ? DEFAULT_SUBJECT : isHazardSubjectId(raw) ? raw : null;
-  if (subject === null) {
-    return isErrorText(
-      `vice_program_load: "subject" must be one of ${HAZARD_SUBJECT_IDS.map((id) => JSON.stringify(id)).join(", ")} ` +
-        `(got ${JSON.stringify(raw)}); this tool never accepts a filename`,
-    );
-  }
-
-  let prg: Buffer;
-  try {
-    prg = readFileSync(hazardSubjectPrgPath(subject));
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code ?? String(err);
-    return isErrorText(
-      `vice_program_load: cannot read the committed PRG for subject "${subject}" (${code}); the hazard-subject fixtures ship only in a source checkout, so run the MCP server from one`,
-    );
-  }
-  if (prg.length < 3) {
-    return isErrorText(`vice_program_load: the PRG for subject "${subject}" is ${prg.length} bytes; a PRG needs a two-byte load address and at least one data byte`);
-  }
-  const loadAddress = prg.readUInt16LE(0);
-  const payload = prg.subarray(2);
-  const endAddress = loadAddress + payload.length - 1;
-  if (endAddress > 0xffff) {
-    return isErrorText(
-      `vice_program_load: the PRG for subject "${subject}" loads at 0x${loadAddress.toString(16)} with ${payload.length} bytes, which runs past 0xffff`,
-    );
-  }
-
-  const body = memSetBody({ start: loadAddress, end: endAddress, memspace: 0x00, bank: 0x0000, data: payload });
-  let response;
-  try {
-    response = await session.client.send(CommandType.MemorySet, body);
-  } catch (err) {
-    return convertWireError("vice_program_load", err);
-  }
-  if (response.type !== "unknown") {
-    return isErrorText(
-      `vice_program_load: the binary monitor replied with an unexpected response type ("${response.type}"), expected an acknowledgement`,
-    );
-  }
-
-  return stockAnswer(session.client, { subject, loadAddress, endAddress, byteLength: payload.length });
 };

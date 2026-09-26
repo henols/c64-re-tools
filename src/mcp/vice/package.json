@@ -40,7 +40,6 @@
     "stock-petscii.ts",
     "stock-input.ts",
     "stock-memory.ts",
-    "hazard-subjects.ts",
     "stock-registers.ts",
     "stock-checkpoints.ts",
     "stock-execution.ts",

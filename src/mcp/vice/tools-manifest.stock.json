@@ -4385,28 +4385,24 @@
     },
     {
       "name": "vice_program_load",
-      "description": "Writes ONE committed hazard-subject PRG into RAM at the load address in its own two-byte header, through the binary monitor. The subject is named by id from a closed table of fixtures under fixtures/hazard-subject/; this tool never accepts a filename. The MCP server reads the file itself and sends its bytes, so no path reaches the broker or the emulator. Only the payload bytes change: no BASIC pointer is touched and the machine is not reset or started. Halts the machine for the duration of the write, like every binary-monitor command.",
+      "description": "Loads a PRG file into RAM at the load address in its own two-byte header, without resetting or starting the machine. The MCP server reads the file at `path` and streams its bytes to the emulator through the broker; the path itself never crosses the socket. Use vice_autostart instead to reset, load and run. Halts the machine for the duration of the write, like every binary-monitor command.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "subject": {
+          "path": {
             "type": "string",
-            "enum": [
-              "original",
-              "regressed",
-              "modified",
-              "rebuild",
-              "exported-edit"
-            ],
-            "description": "OPTIONAL. Which hazard subject to load, by id, never by path. Defaults to \"original\", the tracer-slice subject. \"regressed\" is its three-single-bit-regression twin. \"modified\" has one behaviour removed and one added, made by hand in the fixture source. \"rebuild\" is the original re-produced from its own committed annotation store. \"exported-edit\" is the same removed/added pair as \"modified\", made instead in a file exportAsmTree() emitted."
+            "description": "Path to the .prg file on the MCP server's side. Relative paths resolve against the MCP server's working directory."
           }
         },
+        "required": [
+          "path"
+        ],
         "additionalProperties": false
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "subject": {
+          "path": {
             "type": "string"
           },
           "loadAddress": {
@@ -4428,7 +4424,7 @@
           }
         },
         "required": [
-          "subject",
+          "path",
           "loadAddress",
           "endAddress",
           "byteLength",

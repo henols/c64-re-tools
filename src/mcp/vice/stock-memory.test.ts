@@ -8,10 +8,8 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { readFileSync } from "node:fs";
 
-import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks, handleProgramLoad, bankCatalogFor, resetBankCatalogsForTest, resolveRequiredBank } from "./stock-memory.ts";
-import { HAZARD_SUBJECT_IDS, hazardSubjectPrgPath } from "./hazard-subjects.ts";
+import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks, bankCatalogFor, resetBankCatalogsForTest, resolveRequiredBank } from "./stock-memory.ts";
 import { CommandType, ErrorCode, StockProtocolError } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
@@ -390,66 +388,4 @@ test("WR-01 resolveRequiredBank: the refusal's available-banks list names every 
   assert.match(text, /default/);
   assert.match(text, /cpu/, "the refusal must not omit an alias -- it would deny a name that resolves");
   assert.match(text, /ram/);
-});
-
-// ---------------------------------------------------------------------------
-// handleProgramLoad -- a committed PRG's bytes go through MEM_SET; no path
-// crosses the socket.
-// ---------------------------------------------------------------------------
-
-test("handleProgramLoad: each subject sends ONE MEM_SET whose range is the PRG header's load address and whose data is the payload", async () => {
-  for (const subject of HAZARD_SUBJECT_IDS) {
-    const prg = readFileSync(hazardSubjectPrgPath(subject));
-    const loadAddress = prg.readUInt16LE(0);
-    const payload = prg.subarray(2);
-    const { session, calls } = makeSession(() => ackReply());
-    const result = await handleProgramLoad({ subject }, session, DEPS);
-    assert.equal(result.isError, false, `subject ${subject}: ${JSON.stringify(result)}`);
-    assert.equal(calls.length, 1, `subject ${subject}: exactly one send`);
-    const [commandType, body] = calls[0]!;
-    assert.equal(commandType, CommandType.MemorySet);
-    assert.equal(body.readUInt16LE(1), loadAddress, "MEM_SET start is the header's load address");
-    assert.equal(body.readUInt16LE(3), loadAddress + payload.length - 1, "MEM_SET end covers the whole payload");
-    assert.equal(body.readUInt16LE(6), 0x0000, "the CPU view bank, as the text monitor's load used");
-    assert.ok(body.subarray(8).equals(payload), "MEM_SET data is the PRG payload, without its header");
-    const answer = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-    assert.deepEqual(
-      { subject: answer.subject, loadAddress: answer.loadAddress, endAddress: answer.endAddress, byteLength: answer.byteLength },
-      { subject, loadAddress, endAddress: loadAddress + payload.length - 1, byteLength: payload.length },
-    );
-    assert.ok("runState" in answer);
-    assert.doesNotMatch(result.content[0]!.text, /\.prg|fixtures/, "the answer names no path");
-  }
-});
-
-test("handleProgramLoad: no subject loads the original", async () => {
-  const { session } = makeSession(() => ackReply());
-  const result = await handleProgramLoad({}, session, DEPS);
-  assert.equal(result.isError, false);
-  assert.equal((JSON.parse(result.content[0]!.text) as Record<string, unknown>).subject, "original");
-});
-
-test("handleProgramLoad: an unknown subject, a path or a prototype name is refused by name with zero sends", async () => {
-  for (const subject of ["misaligned", "/etc/passwd", "../hazard-subject.prg", "__proto__", "constructor", 1, null]) {
-    const { session, calls } = makeSession(() => ackReply());
-    const result = await handleProgramLoad({ subject }, session, DEPS);
-    assert.equal(result.isError, true, `subject ${JSON.stringify(subject)} must be refused`);
-    assert.match(result.content[0]!.text, /^vice_program_load: "subject" must be one of/);
-    assert.match(result.content[0]!.text, /never accepts a filename/);
-    assert.equal(calls.length, 0, `subject ${JSON.stringify(subject)}: zero sends`);
-  }
-});
-
-test("handleProgramLoad: a send() rejection is converted, and a non-ack reply is refused", async () => {
-  const rejected = makeSession(() => {
-    throw new StockProtocolError("bad memspace", { errorCode: ErrorCode.InvalidMemspace });
-  });
-  const r1 = await handleProgramLoad({}, rejected.session, DEPS);
-  assert.equal(r1.isError, true);
-  assert.match(r1.content[0]!.text, /^vice_program_load:/);
-
-  const wrongShape = makeSession(() => memoryGetReply([0]));
-  const r2 = await handleProgramLoad({}, wrongShape.session, DEPS);
-  assert.equal(r2.isError, true);
-  assert.match(r2.content[0]!.text, /unexpected response type/);
 });

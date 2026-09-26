@@ -865,7 +865,7 @@ conformanceTest("vice_program_load", async () => {
     throw new Error(`vice_program_load: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await callStockTool("vice_program_load", {}, deps);
+  const result = await callStockTool("vice_program_load", { path: join(HERE, "fixtures", "hazard-subject", "hazard-subject.prg") }, deps);
   assertAnswerConforms("vice_program_load", result);
 });
 
