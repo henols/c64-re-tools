@@ -7,7 +7,7 @@ different machine.
 Every `node scripts/…` command cited below is relative to **this skill's own
 directory** (`src/skills/c64-ram-capture/`), not to the repository root. From
 the repo root, use the `$S`-derived variables `SKILL.md`'s quick-reference
-block defines — `node $V slice …` rather than `node scripts/vsf-slice.mjs
+block defines — `node $V slice …` rather than `node scripts/vsf-slice.ts
 slice …`. Stated once here because five rows use the shorthand, and
 `scripts/` resolves from neither cwd by accident.
 
@@ -17,11 +17,11 @@ slice …`. Stated once here because five rows use the shorthand, and
 |---|---|---|
 | image path | `recovery/<release>/dumps/<name>.bin` | — |
 | size | `65536` bytes | must be exact. Anything else is not a full image |
-| sha256 | `<64 hex chars>` | `node scripts/compare.mjs digest <name>.bin` |
-| binary sha256 | `<64 hex chars>` | `sha256sum <release>.d64` (or `.prg`), or `node scripts/compare.mjs digest <release>.d64`. This identifies the release by its **bytes**, never by its filename |
+| sha256 | `<64 hex chars>` | `node scripts/compare.ts digest <name>.bin` |
+| binary sha256 | `<64 hex chars>` | `sha256sum <release>.d64` (or `.prg`), or `node scripts/compare.ts digest <release>.d64`. This identifies the release by its **bytes**, never by its filename |
 | argv digest | `<64 hex chars>` | `argvDigest()` in `src/mcp/vice/capture-predicate.ts` — sha256 over the **exact spawn argv array joined by a single NUL byte**. **Order-sensitive by construction**, which is the whole reason it is a field of its own. It refuses an empty argv array rather than digesting the empty string, so a blank here is a blank and never a plausible-looking digest |
 | seed | `4242` | the `-seed` value the broker set when it launched the instance — `STOCK_DETERMINISM_SEED` in `src/mcp/vice/broker-launch.mts`. Cite the constant, not a loose number |
-| capture route | `memory-read` \| `snapshot` | `memory-read` = the sixteen `vice_memory_read` calls, transcribed. `snapshot` = `node scripts/vsf-slice.mjs slice <run>.vsf --out <run>.bin`. **This row decides which volatility rule applies to this record** — see the closing note |
+| capture route | `memory-read` \| `snapshot` | `memory-read` = the sixteen `vice_memory_read` calls, transcribed. `snapshot` = `node scripts/vsf-slice.ts slice <run>.vsf --out <run>.bin`. **This row decides which volatility rule applies to this record** — see the closing note |
 | checkpoint / trigger address | `$____` | the address armed for this capture |
 | release | the registry id this capture belongs to | — |
 | run | `<N>` of `<total>` | three runs is this project's minimum for a verified capture |
@@ -70,8 +70,8 @@ and keep the voided artifacts on disk.
 
 ## Comparison against sibling runs
 
-`node scripts/compare.mjs compare <a>.bin <b>.bin` for each pairing, and
-`node scripts/compare.mjs floor <a>.bin <b>.bin <c>.bin` across the set.
+`node scripts/compare.ts compare <a>.bin <b>.bin` for each pairing, and
+`node scripts/compare.ts floor <a>.bin <b>.bin <c>.bin` across the set.
 
 | Pairing | volatile | drift (1 bit) | divergence (2+ bits) | verdict |
 |---|---|---|---|---|

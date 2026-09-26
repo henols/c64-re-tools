@@ -81,11 +81,7 @@ test("placeholder consistency: every derived version string in the tree equals D
 
   assert.equal(vicePkg.version, DEV_PLACEHOLDER, "src/mcp/vice/package.json .version");
   assert.equal(installerPkg.version, DEV_PLACEHOLDER, "installer/package.json .version");
-  assert.equal(
-    installerPkg.dependencies["@henols/vice-mcp"],
-    DEV_PLACEHOLDER,
-    "installer/package.json .dependencies[@henols/vice-mcp]"
-  );
+  assert.equal(installerPkg.dependencies, undefined, "installer/package.json declares no dependencies: it never installs the MCP server");
   assert.equal(pluginJson.version, DEV_PLACEHOLDER, ".claude-plugin/plugin.json .version");
   assert.equal(marketplaceJson.version, DEV_PLACEHOLDER, ".claude-plugin/marketplace.json .version");
   assert.equal(

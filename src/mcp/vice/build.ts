@@ -297,6 +297,90 @@ export function build({ outDir = "resources" }: BuildOptions = {}): void {
   }
 }
 
+// ------------------------------------------------------- entry artifacts
+
+/** The repository root: this file lives at src/mcp/vice/. */
+export const REPO_ROOT = resolvePath(HERE, "..", "..", "..");
+
+/** Entry points that run from node_modules (a package bin), where Node never
+ * strips types. Each .mts source is compiled to a .mjs BESIDE itself, never
+ * into resources/: these are not host-bound, and install-resources must
+ * never deploy them. Paths are relative to REPO_ROOT. tsconfig.entry.json's
+ * `include` lists the same sources; buildEntries() fails on any mismatch. */
+export const ENTRY_ARTIFACTS: ReadonlyArray<{ source: string; emitted: string }> = [
+  { source: "src/mcp/vice/vice-cli.mts", emitted: "src/mcp/vice/vice-cli.mjs" },
+  { source: "installer/bin/cli.mts", emitted: "installer/bin/cli.mjs" },
+];
+
+/** The banner for an entry artifact. It goes AFTER the shebang line, which
+ * must stay line 1 for the file to run as a bin. */
+export function ENTRY_BANNER(relSourcePath: string): string {
+  return (
+    "// GENERATED FILE -- DO NOT EDIT.\n" +
+    `// Compiled by \`tsc\` from ${relSourcePath}. Edit the TypeScript source and run\n` +
+    "// `node build.ts` in src/mcp/vice; entry-sync.test.ts reds on drift.\n"
+  );
+}
+
+/** Inserts `banner` after a leading shebang line, or at the top when there is none. */
+function withBannerAfterShebang(content: string, banner: string): string {
+  if (!content.startsWith("#!")) return banner + content;
+  const eol = content.indexOf("\n");
+  return content.slice(0, eol + 1) + banner + content.slice(eol + 1);
+}
+
+export interface EntryBuildOptions {
+  /** Root the emitted paths are placed under (default REPO_ROOT). A test
+   * builds into a scratch root through this exact code path. */
+  outRoot?: string;
+}
+
+/** Compiles ENTRY_ARTIFACTS with tsconfig.entry.json into a staging
+ * directory, asserts the emitted set is exactly ENTRY_ARTIFACTS, inserts the
+ * banner after the shebang while still staged, then renames each file into
+ * place. Same staging and atomic-rename discipline as build(). */
+export function buildEntries({ outRoot = REPO_ROOT }: EntryBuildOptions = {}): void {
+  const outRootAbs = resolvePath(outRoot);
+  mkdirSync(outRootAbs, { recursive: true });
+  const stagingDir = mkdtempSync(join(resolveStagingParent(outRootAbs), ".build-tmp-" + process.pid + "-"));
+  try {
+    const tscBin = join(HERE, "node_modules", ".bin", "tsc");
+    execFileSync(tscBin, ["-p", join(HERE, "tsconfig.entry.json"), "--outDir", stagingDir], {
+      cwd: HERE,
+      stdio: "inherit",
+    });
+
+    const emitted = emittedMjsFilesUnder(stagingDir);
+    const expected = ENTRY_ARTIFACTS.map((a) => a.emitted).sort();
+    if (JSON.stringify(emitted) !== JSON.stringify(expected)) {
+      throw new Error(
+        "buildEntries: emitted file set does not match ENTRY_ARTIFACTS.\n" +
+          `  expected: ${JSON.stringify(expected)}\n` +
+          `  emitted:  ${JSON.stringify(emitted)}`
+      );
+    }
+
+    for (const { source, emitted: rel } of ENTRY_ARTIFACTS) {
+      const staged = join(stagingDir, rel);
+      writeFileSync(staged, withBannerAfterShebang(readFileSync(staged, "utf8"), ENTRY_BANNER(source)));
+    }
+
+    for (const { emitted: rel } of ENTRY_ARTIFACTS) {
+      const from = join(stagingDir, rel);
+      const to = join(outRootAbs, rel);
+      mkdirSync(dirname(to), { recursive: true });
+      try {
+        renameSync(from, to);
+      } catch (e) {
+        const detail = (e as NodeJS.ErrnoException).code === "EXDEV" ? " (EXDEV: staging dir and outRoot are on different filesystems)" : "";
+        throw new Error(`buildEntries: failed to move staged artifact into place: ${from} -> ${to}${detail}`, { cause: e });
+      }
+    }
+  } finally {
+    rmSync(stagingDir, { recursive: true, force: true });
+  }
+}
+
 // -------------------------------------------------------------------- CLI
 function parseCliArgs(argv: string[]): BuildOptions {
   let outDir: string | undefined;
@@ -315,6 +399,10 @@ if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.met
     build(opts);
     const outDirAbs = resolveOutDirAbs(opts.outDir ?? "resources");
     process.stderr.write(`build: wrote ${HOST_BOUND_ARTIFACTS.length} artifact(s) and ${HOST_BOUND_DATA_FILES.length} data file(s) to ${outDirAbs}\n`);
+    if (!opts.outDir) {
+      buildEntries();
+      process.stderr.write(`build: wrote ${ENTRY_ARTIFACTS.length} entry artifact(s): ${ENTRY_ARTIFACTS.map((a) => a.emitted).join(", ")}\n`);
+    }
   } catch (e) {
     process.stderr.write(`build: FAILED -- ${(e as Error).message}\n`);
     process.exitCode = 1;

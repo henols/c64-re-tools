@@ -165,7 +165,7 @@ const runHostTool: typeof hostTool.runHostTool = (raw, deps) =>
 
 /** 34-08 (CR-01): a SEPARATELY-typed alias to the SAME runtime function --
  * oracle.probe/oracle.run's response shapes (`{ available, command, version,
- * reason }` / `{ ok, stdout, reason }`, mirroring packer-finding.mjs's own
+ * reason }` / `{ ok, stdout, reason }`, mirroring packer-finding.ts's own
  * pre-existing contracts) are deliberately NOT folded into `runHostTool`'s
  * shared return type above: that type's generic `tool: string` envelope
  * member would then satisfy every oracle-shaped narrowing check too (a wide

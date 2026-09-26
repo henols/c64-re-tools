@@ -1,117 +1,72 @@
 #!/usr/bin/env node
-// @henols/c64-re-tools installer.
+// GENERATED FILE -- DO NOT EDIT.
+// Compiled by `tsc` from installer/bin/cli.mts. Edit the TypeScript source and run
+// `node build.ts` in src/mcp/vice; entry-sync.test.ts reds on drift.
+// cli.mts
 //
-// Installs the C64 reverse-engineering skills and wires the VICE MCP server into
-// a target project:
-//   npx @henols/c64-re-tools [targetDir] [--force] [--dry-run] [--vendor]
+// WHY THIS FILE EXISTS: the @henols/c64-re-tools installer. It copies the
+// bundled skills into <target>/.claude/skills/ and nothing else:
+//   npx @henols/c64-re-tools [targetDir] [--force] [--dry-run]
+// It runs from node_modules (npx), where Node never strips types, so
+// build.ts compiles it to cli.mjs beside this file.
 //
-//   * copies the bundled skills into <target>/.claude/skills/
-//   * merges a `vice` server entry into <target>/.mcp.json (never clobbering
-//     other servers), launching it via `npx -y @henols/vice-mcp`
-//   * with --vendor, also `npm install`s @henols/vice-mcp into the project and
-//     wires .mcp.json to the local copy (pinned/offline use)
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+// WHAT NOT TO DO:
+//   - Never install anything and never spawn npm or npx. The VICE MCP server
+//     comes from the Claude Code plugin; this CLI only says so.
+//   - Never write or edit a consumer's .mcp.json.
+//   - Never import a package-local .ts: only node: builtins, because this
+//     package ships only the compiled cli.mjs and targets Node >= 18.
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-// Entry-point dispatch guard (see the bottom of this file): the same idiom
-// `src/skills/c64-memory-mapping/scripts/driver.mjs` already uses, so a bare
-// `import` from a test file does not also execute the CLI.
-import {
-  existsSync,
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  readdirSync,
-  cpSync,
-} from "node:fs";
-
+import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url)); // installer/bin (packed) or repo installer/bin (dev)
 const PKG_ROOT = dirname(HERE);
 const SKILLS_SRC = join(PKG_ROOT, "skills");
-
-// The single version-resolution seam this repo maintains is
-// `src/mcp/vice/version.ts` -- one algorithm for resolving a VERSION
-// template against a published version, kept in exactly one place after
-// this repo once carried several independent copies of it. This package
-// deliberately does NOT import it: it ships without the seam file (its
-// `files[]` is `bin/`, `skills/`, `README.md`) and targets node >= 18, which
-// cannot type-strip the seam's `.ts` the way the vice-mcp package's own
-// node >= 24 runtime can. What follows is exactly the seam's own
-// precedence step 1 -- "read my own package.json's `.version`, trust it
-// when it is a real published number" -- not a second, independent
-// implementation of the resolution algorithm; there is no template/`-`
-// handling here because this package is never resolved from `VERSION`,
-// only ever published with a concrete version already stamped in. That
-// number is PRODUCED elsewhere: `npm version` writes the
-// working-tree placeholder, and CI's `npm version` writes the real one at
-// publish time. Do not reimplement the seam's own VERSION-template
-// parsing and prefix-resolution rules here.
-const SELF = readJson(join(PKG_ROOT, "package.json")) ?? {};
-const SELF_VERSION = typeof SELF.version === "string" ? SELF.version : "0.0.0";
-const MCP_PKG = "@henols/vice-mcp";
-// The dev placeholder every derived, publishable version string carries in
-// the working tree outside a stamped release. Defined authoritatively as
-// `DEV_PLACEHOLDER` in `src/mcp/vice/version.ts` -- repeated here as a
-// literal, NOT imported, because this package deliberately ships without
-// that seam file (see the comment above) and targets node >= 18, which
-// cannot type-strip a `.ts` import the way the vice-mcp package's own
-// node >= 24 runtime can. This is the same disclosed divergence as
-// `SELF_VERSION` above: one literal, kept in sync by hand, documented here
-// so a future edit to the seam's placeholder is not missed.
-const MCP_DEV_PLACEHOLDER = "0.0.0-dev";
-// Wire the project to the exact vice-mcp version this installer was built
-// against -- EXCEPT when run from an unstamped dev checkout:
-// `installer/package.json`'s dependency pin is the permanent working-tree
-// placeholder outside a CI-stamped publish job, and `@henols/vice-mcp` at
-// that literal version will never exist on the npm registry. Silently
-// writing it into a consumer's .mcp.json would 404 every time Claude Code
-// tries to launch the server, with no error until the user actually tries
-// to use it -- strictly worse than falling back to "latest". Fall back AND
-// warn loudly, so a developer testing the installer locally knows their
-// .mcp.json is unpinned rather than discovering it via a silent 404 later.
-const MCP_VERSION_RAW =
-  SELF.dependencies && typeof SELF.dependencies[MCP_PKG] === "string"
-    ? SELF.dependencies[MCP_PKG].replace(/^[\^~]/, "")
-    : SELF_VERSION;
-if (MCP_VERSION_RAW === MCP_DEV_PLACEHOLDER) {
-  console.error(
-    `c64-re-tools: WARNING -- running from an unstamped dev checkout (installer/package.json pins ` +
-      `${MCP_PKG}@${MCP_DEV_PLACEHOLDER}, the dev placeholder, not a real published version). ` +
-      `Falling back to "${MCP_PKG}@latest" in the generated .mcp.json instead of writing an ` +
-      `unresolvable pin. If you intended to test against a specific version, pass --vendor or fix ` +
-      `installer/package.json's dependency pin before packaging a release.`
-  );
-}
-const MCP_VERSION = MCP_VERSION_RAW === MCP_DEV_PLACEHOLDER ? "latest" : MCP_VERSION_RAW;
-
-function readJson(path) {
-  try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch {
-    return undefined;
-  }
-}
-
-function parseArgs(argv) {
-  const opts = { force: false, dryRun: false, vendor: false, help: false, target: undefined };
-  for (const arg of argv) {
-    if (arg === "--force") opts.force = true;
-    else if (arg === "--dry-run" || arg === "-n") opts.dryRun = true;
-    else if (arg === "--vendor") opts.vendor = true;
-    else if (arg === "--help" || arg === "-h") opts.help = true;
-    else if (arg.startsWith("-")) {
-      console.error(`c64-re-tools: unknown flag ${JSON.stringify(arg)} (try --help)`);
-      process.exit(2);
-    } else if (opts.target === undefined) opts.target = arg;
-    else {
-      console.error(`c64-re-tools: unexpected extra argument ${JSON.stringify(arg)} (try --help)`);
-      process.exit(2);
+/** Where the MCP server comes from, named in the help, the summary and the
+ * refusal of a removed flag. */
+export const MCP_SERVER_REMEDY = "The VICE MCP server is not installed by this tool. Enable it through the Claude Code plugin: " +
+    "`/plugin marketplace add henols/c64-re-tools`, then `/plugin install c64-re-tools@c64-re-tools`.";
+/** Flags this installer used to accept and now refuses by name. */
+const REMOVED_FLAGS = {
+    "--vendor": "--vendor is removed: this installer never installs packages.",
+};
+function readVersion() {
+    try {
+        const pkg = JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8"));
+        if (typeof pkg === "object" && pkg !== null && "version" in pkg && typeof pkg.version === "string") {
+            return pkg.version;
+        }
     }
-  }
-  return opts;
+    catch {
+        // fall through: an unreadable manifest only affects the banner line
+    }
+    return "0.0.0";
 }
-
-const HELP = `c64-re-tools -- install the C64 reverse-engineering skills + VICE MCP server into a project
+function refuse(message) {
+    console.error(`c64-re-tools: ${message}`);
+    process.exit(2);
+}
+function parseArgs(argv) {
+    const opts = { force: false, dryRun: false, help: false, target: undefined };
+    for (const arg of argv) {
+        if (arg === "--force")
+            opts.force = true;
+        else if (arg === "--dry-run" || arg === "-n")
+            opts.dryRun = true;
+        else if (arg === "--help" || arg === "-h")
+            opts.help = true;
+        else if (Object.hasOwn(REMOVED_FLAGS, arg))
+            refuse(`${REMOVED_FLAGS[arg]} ${MCP_SERVER_REMEDY}`);
+        else if (arg.startsWith("-"))
+            refuse(`unknown flag ${JSON.stringify(arg)} (try --help)`);
+        else if (opts.target === undefined)
+            opts.target = arg;
+        else
+            refuse(`unexpected extra argument ${JSON.stringify(arg)} (try --help)`);
+    }
+    return opts;
+}
+const HELP = `c64-re-tools -- install the C64 reverse-engineering skills into a project
 
 Usage:
   npx @henols/c64-re-tools [targetDir] [options]
@@ -120,164 +75,75 @@ Arguments:
   targetDir            Project to install into (default: current directory)
 
 Options:
-  --force              Overwrite existing skills and an existing 'vice' MCP entry
-  --vendor             Also 'npm install -D ${MCP_PKG}' into the project and wire
-                       .mcp.json to the local copy (pinned/offline), instead of npx
+  --force              Overwrite existing skills
   --dry-run, -n        Show what would change without writing anything
   --help, -h           Show this help
 
 What it does:
-  1. Copies bundled skills into <target>/.claude/skills/
-  2. Adds a 'vice' server to <target>/.mcp.json (other servers are preserved)
+  Copies bundled skills into <target>/.claude/skills/. Nothing else is written
+  and nothing is installed.
 
-Requires Node >= 24 to RUN the vice MCP server (this installer runs on Node >= 18).`;
+${MCP_SERVER_REMEDY}
 
-function viceServerEntry(vendor) {
-  return {
-    command: "npx",
-    args: vendor ? [MCP_PKG] : ["-y", `${MCP_PKG}@${MCP_VERSION}`],
-    timeout: 150000,
-    env: { MASTRA_TELEMETRY_DISABLED: "1" },
-  };
-}
-
+The skill scripts run on Node >= 24 (this installer runs on Node >= 18).`;
 function installSkills(target, { force, dryRun }) {
-  if (!existsSync(SKILLS_SRC)) {
-    console.error(
-      `c64-re-tools: FAIL -- bundled skills not found at ${SKILLS_SRC}. ` +
-        `(In a dev checkout, run 'node scripts/sync-skills.mjs' first.)`
-    );
-    process.exit(1);
-  }
-  const names = readdirSync(SKILLS_SRC, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name)
-    .sort();
-  const destRoot = join(target, ".claude", "skills");
-  const installed = [];
-  const skipped = [];
-  for (const name of names) {
-    const dest = join(destRoot, name);
-    if (existsSync(dest) && !force) {
-      skipped.push(name);
-      continue;
+    if (!existsSync(SKILLS_SRC)) {
+        console.error(`c64-re-tools: FAIL -- bundled skills not found at ${SKILLS_SRC}. ` +
+            `(In a dev checkout, run 'node scripts/sync-skills.ts' first.)`);
+        process.exit(1);
     }
-    if (!dryRun) {
-      mkdirSync(destRoot, { recursive: true });
-      cpSync(join(SKILLS_SRC, name), dest, { recursive: true, force: true });
+    const names = readdirSync(SKILLS_SRC, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name)
+        .sort();
+    const destRoot = join(target, ".claude", "skills");
+    const installed = [];
+    const skipped = [];
+    for (const name of names) {
+        const dest = join(destRoot, name);
+        if (existsSync(dest) && !force) {
+            skipped.push(name);
+            continue;
+        }
+        if (!dryRun) {
+            mkdirSync(destRoot, { recursive: true });
+            cpSync(join(SKILLS_SRC, name), dest, { recursive: true, force: true });
+        }
+        installed.push(name);
     }
-    installed.push(name);
-  }
-  return { destRoot, installed, skipped, total: names.length };
+    return { destRoot, installed, skipped, total: names.length };
 }
-
-function wireMcp(target, { force, dryRun, vendor }) {
-  const mcpPath = join(target, ".mcp.json");
-  let config = { mcpServers: {} };
-  if (existsSync(mcpPath)) {
-    const parsed = readJson(mcpPath);
-    if (parsed === undefined) {
-      console.error(
-        `c64-re-tools: FAIL -- ${mcpPath} exists but is not valid JSON. ` +
-          `Refusing to overwrite it; fix or remove it and re-run.`
-      );
-      process.exit(1);
-    }
-    config = parsed;
-    if (typeof config !== "object" || config === null || Array.isArray(config)) {
-      console.error(`c64-re-tools: FAIL -- ${mcpPath} is not a JSON object.`);
-      process.exit(1);
-    }
-    if (typeof config.mcpServers !== "object" || config.mcpServers === null) {
-      config.mcpServers = {};
-    }
-  }
-  const existed = Object.prototype.hasOwnProperty.call(config.mcpServers, "vice");
-  let action;
-  if (existed && !force) {
-    action = "kept"; // leave the user's existing entry alone
-  } else {
-    action = existed ? "updated" : "added";
-    if (!dryRun) {
-      config.mcpServers.vice = viceServerEntry(vendor);
-      mkdirSync(dirname(mcpPath), { recursive: true });
-      writeFileSync(mcpPath, JSON.stringify(config, null, 2) + "\n");
-    }
-  }
-  return { mcpPath, action };
-}
-
-function vendorInstall(target, { dryRun }) {
-  const spec = `${MCP_PKG}@${MCP_VERSION}`;
-  if (dryRun) return { ran: false, spec };
-  const res = spawnSync("npm", ["install", "--save-dev", spec], {
-    cwd: target,
-    stdio: "inherit",
-  });
-  if (res.status !== 0) {
-    console.error(
-      `c64-re-tools: WARN -- 'npm install --save-dev ${spec}' exited ${res.status}. ` +
-        `Skills and .mcp.json were still written; install the package manually if needed.`
-    );
-    return { ran: true, ok: false, spec };
-  }
-  return { ran: true, ok: true, spec };
-}
-
 function main() {
-  const opts = parseArgs(process.argv.slice(2));
-  if (opts.help) {
-    console.log(HELP);
-    return;
-  }
-  const target = resolve(opts.target ?? process.cwd());
-  if (!existsSync(target)) {
-    console.error(`c64-re-tools: FAIL -- target directory does not exist: ${target}`);
-    process.exit(1);
-  }
-
-  console.error(`c64-re-tools ${SELF_VERSION} -> ${target}${opts.dryRun ? "  (dry run)" : ""}`);
-
-  const skills = installSkills(target, opts);
-  if (opts.vendor) vendorInstall(target, opts);
-  const mcp = wireMcp(target, opts);
-
-  // Summary
-  console.error("");
-  console.error(`  skills  -> ${skills.destRoot}`);
-  console.error(
-    `            ${skills.installed.length} installed${
-      opts.force ? "" : `, ${skills.skipped.length} already present (use --force to overwrite)`
-    } of ${skills.total}`
-  );
-  if (skills.installed.length) console.error(`            + ${skills.installed.join(", ")}`);
-  if (skills.skipped.length && !opts.force)
-    console.error(`            = ${skills.skipped.join(", ")} (kept)`);
-  console.error(`  mcp     -> ${mcp.mcpPath}`);
-  if (mcp.action === "kept") {
-    console.error(`            'vice' already configured -- kept (use --force to overwrite)`);
-  } else {
-    console.error(
-      `            'vice' ${mcp.action}${
-        opts.vendor ? ` (local ${MCP_PKG})` : ` (npx -y ${MCP_PKG}@${MCP_VERSION})`
-      }`
-    );
-  }
-  console.error("");
-  if (opts.dryRun) {
-    console.error("Dry run -- nothing was written.");
-  } else {
-    console.error("Done. Restart Claude Code in this project so it picks up the skills and MCP server.");
-    console.error("Note: running the vice MCP server requires Node >= 24.");
-  }
+    const opts = parseArgs(process.argv.slice(2));
+    if (opts.help) {
+        console.log(HELP);
+        return;
+    }
+    const target = resolve(opts.target ?? process.cwd());
+    if (!existsSync(target)) {
+        console.error(`c64-re-tools: FAIL -- target directory does not exist: ${target}`);
+        process.exit(1);
+    }
+    console.error(`c64-re-tools ${readVersion()} -> ${target}${opts.dryRun ? "  (dry run)" : ""}`);
+    const skills = installSkills(target, opts);
+    console.error("");
+    console.error(`  skills  -> ${skills.destRoot}`);
+    console.error(`            ${skills.installed.length} installed${opts.force ? "" : `, ${skills.skipped.length} already present (use --force to overwrite)`} of ${skills.total}`);
+    if (skills.installed.length)
+        console.error(`            + ${skills.installed.join(", ")}`);
+    if (skills.skipped.length && !opts.force)
+        console.error(`            = ${skills.skipped.join(", ")} (kept)`);
+    console.error("");
+    console.error(MCP_SERVER_REMEDY);
+    console.error("");
+    if (opts.dryRun) {
+        console.error("Dry run -- nothing was written.");
+    }
+    else {
+        console.error("Done. Restart Claude Code in this project so it picks up the skills.");
+        console.error("Note: the skill scripts require Node >= 24.");
+    }
 }
-
-// Only dispatch when this module is the process entry point -- i.e. run as
-// `node bin/cli.mjs ...` or via the `c64-re-tools` bin shim -- not when
-// imported by a test (installer/wire-mcp.test.mjs imports `wireMcp`/`readJson`
-// below and must not trigger a real install as a side effect).
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main();
+    main();
 }
-
-export { wireMcp, readJson };

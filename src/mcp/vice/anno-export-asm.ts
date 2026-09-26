@@ -821,7 +821,7 @@ const ALIAS_MARKER_PREFIX = "  ; ALIAS: this address also carries ";
  * are: a second wording makes it ungreppable for the only reader it exists
  * for.
  *
- * THIS SPELLING WAS CHOSEN, NOT INHERITED. `diff-images.mjs`'s own
+ * THIS SPELLING WAS CHOSEN, NOT INHERITED. `diff-images.ts`'s own
  * `renderLedger()` header prose mentions `; PROVENANCE:` once, as an
  * unwired, forward-looking remark about THIS PROJECT'S OWN documentation
  * provenance conventions -- it names no writer, no reader and no format, and

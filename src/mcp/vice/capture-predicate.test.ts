@@ -203,7 +203,7 @@ test("argvDigest is order-sensitive and refuses an empty array by name", () => {
 //    path-translation seam nor each other
 // ---------------------------------------------------------------------------
 
-test("the report vocabulary is carried across in kind: hex4, hex2, bin8 and popcount behave as compare.mjs's do", () => {
+test("the report vocabulary is carried across in kind: hex4, hex2, bin8 and popcount behave as compare.ts's do", () => {
   assert.equal(hex4(0x1000), "$1000");
   assert.equal(hex4(0x00ff), "$00FF");
   assert.equal(hex2(0x2f), "$2F");
@@ -270,7 +270,7 @@ test("compareStopIdentity refuses a stop record missing a term, naming the term 
 // 7. D-25's corpus-free half: the planted ONE-BIT control, with its clean
 //    control in the same test
 //
-// The plant is one bit and not one byte, deliberately. `compare.mjs` -- the
+// The plant is one bit and not one byte, deliberately. `compare.ts` -- the
 // vocabulary ancestor this predicate replaces -- classifies a one-bit
 // difference as "drift" and lets it PASS anywhere. A control planting a whole
 // byte would go green against that inherited rule and prove nothing, which is

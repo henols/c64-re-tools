@@ -64,8 +64,19 @@
   tool, in this order: environment variable, then `.c64-re-tools/tools.json`, then
   `$PATH` or a sibling of `x64sc`. Every refusal quotes the remedy from that file,
   and the README install tables are generated from it.
-- The project installs through npm/npx or as a Claude Code plugin. CI publishes
-  both packages through OIDC from `v*` tags.
+- The Claude Code plugin carries the MCP server and the skills. The npm
+  installer (`npx @henols/c64-re-tools`) copies the skills only: it writes no
+  `.mcp.json`, never runs `npm` or `npx`, refuses the removed `--vendor`,
+  and declares no dependencies. No shipped remedy text uses `npx -y`; the
+  broker is started with `node <plugin-root>/src/mcp/vice/vice-cli.mjs broker`.
+  CI publishes both packages through OIDC from `v*` tags.
+- TypeScript only. No hand-written JavaScript remains: skill scripts are
+  plain `.ts` (each skill's `scripts/` has a `{"type":"module"}`
+  `package.json`), repo-only tools and fixture generators are `.ts`, and the
+  two package bins (`vice-cli`, the installer CLI) are `.mts` sources that
+  `build.ts` compiles beside themselves (`ENTRY_ARTIFACTS`).
+  `no-handwritten-mjs.test.ts` fails on any other `.mjs`/`.js`. Spec:
+  `agent-os/specs/2026-09-26-1946-mjs-to-ts-no-auto-install/`.
 
 **One broker, one socket (v2.0.0)**
 - Clients find the broker at fixed TCP port 19510 and dial `127.0.0.1`, then
@@ -110,6 +121,10 @@
   against a primary release note.
 
 **Known defects and gaps**
+- An npm-installed `@henols/vice-mcp` cannot start the server or `anno`:
+  `vice-cli.mjs` imports `vice-proxy.ts`, and Node never strips types under
+  `node_modules`. The plugin (or a checkout) is the supported route. Fixing
+  it means compiling the server's whole import graph.
 - The text-monitor command timeout does nothing. `TextMonitorClient.command()`
   ignores `timeoutMs`, so a VICE that does not respond can hang while it holds
   the channel lock.
@@ -124,13 +139,6 @@
   the text monitor now provides an instrument for it.
 
 **Cleanup**
-- Convert the remaining hand-written JavaScript (`.mjs`) to TypeScript: the
-  installer, the skill scripts under `src/skills/*/scripts/`, and the `.mjs`
-  entry files in `src/mcp/vice/`. Skill scripts become plain `.ts` on Node ≥ 24.
-  The installer CLI, and anything loaded from `node_modules`, go through the
-  `build.ts` compile step.
-- Enforce never-auto-install. The installer still writes an `npx -y` line into a
-  consumer's `.mcp.json` and still has the `--vendor` npm-install route.
 - Remove byte-identical assertions from the tests. The owner has decided this;
   its requirements are not written yet.
 - Optionally, move the colocated tests into a dedicated test folder.

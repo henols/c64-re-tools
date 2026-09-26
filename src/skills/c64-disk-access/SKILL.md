@@ -9,7 +9,7 @@ Read-only. Six capabilities, one script, one binary (`c1541`) reached only
 through the host-tool execution seam:
 
 ```bash
-S=src/skills/c64-disk-access/scripts/c1541.mjs   # from the repo root
+S=src/skills/c64-disk-access/scripts/c1541.ts   # from the repo root
 
 node $S bam   --image path/to/image.d64                    # block allocation map
 node $S dir   --image path/to/image.d64                    # what's on the disk

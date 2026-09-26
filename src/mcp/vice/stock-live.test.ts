@@ -34,7 +34,7 @@
 // CI has no VICE. SKIP_REASON is computed once, and EVERY test in this file
 // passes it through node:test's own `{ skip }` option -- this file must
 // never fail or hang where no stock binary is available. It is registered
-// in test-gate.mjs's MANUAL_ONLY_TESTS (the ONE list -- see that file's own
+// in test-gate.ts's MANUAL_ONLY_TESTS (the ONE list -- see that file's own
 // header) as the fourth manual-only file, so `npm run test:automated` never
 // runs it either.
 //

@@ -7,7 +7,7 @@ registers plus a bank. Read the bank, read `$D018`, read the mode bits, read `$D
 sprite pointer block, and you have located every byte of graphics on screen. Searching memory for
 something the hardware will tell you the address of is the single largest time sink in graphics RE.
 
-`node derive.mjs vic` and `node derive.mjs sprites` do the arithmetic. For what any individual bit
+`node derive.ts vic` and `node derive.ts sprites` do the arithmetic. For what any individual bit
 *means*, use `c64-memory-mapping` — it carries the full `$D018` and `$DD00` value tables, and this
 file deliberately does not restate them.
 
@@ -35,7 +35,7 @@ file deliberately does not restate them.
 **The character ROM shadow.** The VIC sees character ROM at `$1000-$1FFF` (bank 0) and
 `$9000-$9FFF` (bank 2) **regardless of the `$01` banking the CPU sees**. If CB resolves into
 either window, the game is using ROM characters and there is no charset in RAM to extract.
-`derive.mjs vic` flags this explicitly. Check it before dumping anything.
+`derive.ts vic` flags this explicitly. Check it before dumping anything.
 
 ## Colour is not banked
 
@@ -69,7 +69,7 @@ hardware registers are what the game uses.
 ## Sprite decoding
 
 `vice_sprite_get` / `vice_sprite_inspect` do the pointer arithmetic and the multicolor bit-pair
-unpacking. Check what they return once against a hand-resolved pointer — `derive.mjs sprites`
+unpacking. Check what they return once against a hand-resolved pointer — `derive.ts sprites`
 gives you that hand resolution — then trust them.
 
 On stock, `vice_vicii_get_state`'s `$D018` pointers come back **bank-relative**.

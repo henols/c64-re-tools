@@ -30,7 +30,7 @@
 // ---------------------------------------------------------------------------
 // WHAT NOT TO DO
 // ---------------------------------------------------------------------------
-//   - Never import `src/skills/routine-queue-walker/scripts/completeness-report.mjs`.
+//   - Never import `src/skills/routine-queue-walker/scripts/completeness-report.ts`.
 //     `src/mcp/vice/**` and `src/skills/**` publish as SEPARATE npm packages
 //     and cannot import each other (`acme-verify.ts`'s own header states this
 //     constraint; `skill-acme-build-cli.test.ts` is the sanctioned pattern
@@ -44,7 +44,7 @@
 //   - Never spawn an emulator, `dxa`, Ghidra or ACME. Every input this file
 //     needs is already committed; a live tool dependency here would turn a
 //     regression into a re-run.
-//   - Never add this file to `test-gate.mjs`'s `MANUAL_ONLY_TESTS` -- it
+//   - Never add this file to `test-gate.ts`'s `MANUAL_ONLY_TESTS` -- it
 //     needs no emulator and belongs in the automated set.
 //   - Never default the disagreement input to an empty array anywhere in
 //     this file's own helpers. The non-vacuity control at the bottom exists
@@ -67,10 +67,10 @@ const FIXTURES_DIR = join(HERE, "fixtures");
 const MANIFEST_PATH = join(FIXTURES_DIR, "decomp-execution-manifest.json");
 
 // `src/mcp/vice/` -> `src/` -> `src/skills/routine-queue-walker/scripts/` --
-// computed from THIS file's own location, matching `mcp-module.mjs`'s own
+// computed from THIS file's own location, matching `mcp-module.ts`'s own
 // "computed hop count, never a fixed count" discipline (see that module's
 // header on the stale-offset incident this project has already had).
-const COMPLETENESS_SCRIPT = join(HERE, "..", "..", "skills", "routine-queue-walker", "scripts", "completeness-report.mjs");
+const COMPLETENESS_SCRIPT = join(HERE, "..", "..", "skills", "routine-queue-walker", "scripts", "completeness-report.ts");
 
 interface FixtureSpec {
   readonly dir: string;
@@ -217,7 +217,7 @@ interface DecompCompletenessJson {
 /** Runs `decomp-completeness --store ... --disagreements ... --manifest ...
  * --json` through the REAL `cmdDecompCompleteness()` dispatch, in-process.
  * Returns the structured report -- the SAME document
- * `completeness-report.mjs`'s own `buildCompletenessReport()` normalises --
+ * `completeness-report.ts`'s own `buildCompletenessReport()` normalises --
  * used here for the four NAMED zero-count assertions this task requires
  * (an exit code alone tells you it passed; these tell you WHAT passed). */
 async function realCompletenessJson(storePath: string, disagreementsPath: string, manifestPath: string): Promise<DecompCompletenessJson> {

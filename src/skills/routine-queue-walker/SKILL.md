@@ -349,7 +349,7 @@ nothing" must never read the same.
 
 **The stop condition is a measured exit code, not a belief.** The walk
 described in Phases 2-4 above finishes for a fixture when `node
-src/skills/routine-queue-walker/scripts/completeness-report.mjs --store
+src/skills/routine-queue-walker/scripts/completeness-report.ts --store
 <fixture>.annostore --disagreements <fixture>-disagreements.json --manifest
 src/mcp/vice/fixtures/decomp-execution-manifest.json` **exits 0**. It never
 finishes just because the agent believes the queue is empty. A non-zero exit

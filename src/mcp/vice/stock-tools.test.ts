@@ -1406,7 +1406,7 @@ conformanceTest("vice_cia_get_state", async () => {
 });
 
 /** The same $DD00=193 (0xC1) / $D018=0x31 pair 05-05's own stock-sprites.test.ts
- * verifies against dump-artifacts.mjs's committed fixture, so the pointer
+ * verifies against dump-artifacts.ts's committed fixture, so the pointer
  * table (36856) and sprite 0's data address (40960) are the SAME constants in
  * two independent test files -- a drift in the arithmetic fails both. */
 function spriteConformanceFixtures(): { vicii: number[]; dd00: number[]; pointers: number[]; data: number[] } {

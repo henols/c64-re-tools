@@ -9,7 +9,7 @@ Look up what a C64 address means, and document a 6502 listing by resolving every
 address it touches. One script does both, offline, anywhere Node ≥18 runs:
 
 ```bash
-D=src/skills/c64-memory-mapping/scripts/driver.mjs   # relative to the repo root
+D=src/skills/c64-memory-mapping/scripts/driver.ts   # relative to the repo root
 
 node $D lookup '$D011' '$FFD2'      # what lives at an address
 node $D annotate --file game.asm    # document a listing or .asm file
@@ -148,7 +148,7 @@ Weigh a comment by the region it describes:
   means "the four tables do not name this exact address", not "this address is
   unmapped". It differs from the genuine zero-hit case, where `lookup` prints
   `(not in memory map)` because nothing at all covers the address
-  (driver.mjs:485-487). Checked directly against the committed table (a scan of
+  (driver.ts:485-487). Checked directly against the committed table (a scan of
   `memmap.json`, not a `memmap` rebuild): every address `$0000`-`$FFFF` is
   covered by at least one entry as of this build, so `(not in memory map)` is
   not reachable for any valid address today — the branch exists for a future
@@ -174,12 +174,12 @@ The built table is committed alongside the script, so `lookup` and `annotate` ne
 only Node. Rebuild when a source publishes a correction. `lookup`'s `<src>` tags
 show which table any given claim came from.
 
-`memmap` overwrites the committed, git-tracked `memmap.json` (driver.mjs:270 —
+`memmap` overwrites the committed, git-tracked `memmap.json` (driver.ts:270 —
 235,925 bytes as of 2026-08-04, check with `wc -c`) **in place, with no backup
 and no diff.** `memmap` gets one of the four sources (`http://unusedino.de/…`,
-driver.mjs:33) over plain HTTP with no TLS. The only guard against a bad rebuild
+driver.ts:33) over plain HTTP with no TLS. The only guard against a bad rebuild
 is a per-source emptiness check plus a 600-entry floor across all sources
-combined (driver.mjs:262, 268). A partially-reachable or partially-changed source
+combined (driver.ts:262, 268). A partially-reachable or partially-changed source
 set can therefore silently replace good tracked data with less of it. Rebuild, then
 run `git diff --stat` on `memmap.json` before accepting the result, and
 `git checkout` the file if the diff is not explainable as the correction you
@@ -637,5 +637,5 @@ still readable even though the store cannot format it.
 | The output is mostly header | `--no-header`. |
 | `lookup` printed only wide region lines and no specific name | Nothing in the four tables names that address. This answer is normal for the game's own code. Take the region and name the address from what the code does with it. |
 | `lookup` printed `(not in memory map)` | Nothing covers it. Check the address parsed as intended, since a bare `1234` reads as decimal. |
-| `no memmap.json; run: node driver.mjs memmap` | Restore the committed table with `git checkout` rather than rebuilding. The rebuild needs network and overwrites tracked data. |
+| `no memmap.json; run: node driver.ts memmap` | Restore the committed table with `git checkout` rather than rebuilding. The rebuild needs network and overwrites tracked data. |
 | `memmap` rewrote `memmap.json` and the diff is large or negative | A source was unreachable or changed. `git checkout` the file. |

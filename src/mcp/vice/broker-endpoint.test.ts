@@ -609,13 +609,14 @@ function makeFailure(overrides: Partial<DialFailure> & { rank: DialFailure["rank
   };
 }
 
-test("BROKER_START_COMMAND is the D-01 npx invocation, one literal with no interpolation", () => {
-  assert.equal(BROKER_START_COMMAND, "npx -y @henols/vice-mcp broker");
+test("BROKER_START_COMMAND is the plugin-root invocation, one literal with no interpolation and no npx", () => {
+  assert.equal(BROKER_START_COMMAND, "node <plugin-root>/src/mcp/vice/vice-cli.mjs broker");
+  assert.doesNotMatch(BROKER_START_COMMAND, /npx/);
 });
 
 test("the start-command literal appears in broker-endpoint.mts between 1 and 3 times -- one definition, never a hand-copied second string", () => {
   const source = readFileSync(BROKER_ENDPOINT_TS, "utf8");
-  const count = (source.match(/npx -y @henols\/vice-mcp broker/g) ?? []).length;
+  const count = (source.match(/node <plugin-root>\/src\/mcp\/vice\/vice-cli\.mjs broker/g) ?? []).length;
   assert.ok(count >= 1 && count <= 3, `expected the literal to appear 1-3 times, found ${count}`);
 });
 

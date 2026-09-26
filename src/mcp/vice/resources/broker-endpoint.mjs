@@ -342,9 +342,9 @@ export async function dialBrokerEndpoint(options = {}) {
  * machine-level bin) both produce a path the refusing client has no way to
  * compute.
  *
- * This is an INVOCATION, not an install -- the same carve-out CLAUDE.md
- * already grants this project's documented `npx -y @henols/vice-mcp anno
- * <verb>` route out of the never-auto-install rule.
+ * It names the plugin (or checkout) tree with a `<plugin-root>` placeholder
+ * the reader fills in, never a computed path, and never an `npx` form:
+ * never-auto-install binds shipped remedy text too, and `npx -y` installs.
  *
  * README.md's "Starting the broker" section quotes this exact string;
  * change both in the SAME change.
@@ -356,7 +356,7 @@ export async function dialBrokerEndpoint(options = {}) {
  * real failed dial) would add pre-flight-flavoured indirection for no
  * benefit (RESEARCH.md's own Deferred Question, answered "no, inline the
  * constant instead"). */
-export const BROKER_START_COMMAND = "npx -y @henols/vice-mcp broker";
+export const BROKER_START_COMMAND = "node <plugin-root>/src/mcp/vice/vice-cli.mjs broker";
 /** D-05's supporting fact: CI derives both packages' versions from the same
  * `v*` tag and publishes them together, so a major-version skew is only
  * possible when a user updates one side (the broker, or this client's own

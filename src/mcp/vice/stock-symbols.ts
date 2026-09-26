@@ -15,7 +15,7 @@
 //
 // The confirmed input format is a VICE label file, one `al C:xxxx .Name`
 // line per symbol, verified against ACME's `--vicelabels` output via
-// acme-build/scripts/acme.mjs's own parser (curateLabels(),
+// acme-build/scripts/acme.ts's own parser (curateLabels(),
 // `/^al\s+C:[0-9a-f]+\s+\.(\S+)/i`). VERIFIED (Phase 9, ANNO-16(c)):
 // the external analyser 0.9.20's `--export_lbl` was run against the
 // probe-illegal.prg-derived fixture and emitted `al C:0810 .init_screen`,
@@ -64,7 +64,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * the hex address (1-4 digits, either case); group 2 is the symbol name.
  * Anchored at line start -- leading whitespace is trimmed off each line
  * before matching. Deliberately case-sensitive on the literal `al`/`C:`
- * text (unlike acme.mjs's own `/i` parser) since every producer this repo
+ * text (unlike acme.ts's own `/i` parser) since every producer this repo
  * has verified emits exactly that casing; only the hex digits themselves
  * accept either case. */
 const VICE_LABEL_LINE_RE = /^al\s+C:([0-9a-fA-F]{1,4})\s+\.(\S+)/;

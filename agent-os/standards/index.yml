@@ -12,7 +12,7 @@ anno:
 
 broker:
   host-bound-modules:
-    description: Which modules compile to resources/*.mjs and their import rules
+    description: Which modules compile to resources/*.mjs (and entry artifacts), and their import rules
 
 global:
   atomic-state-files:

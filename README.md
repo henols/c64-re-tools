@@ -30,16 +30,16 @@ From the project you want to set up:
 npx @henols/c64-re-tools
 ```
 
-This copies the eight skills into `<project>/.claude/skills/` and wires the
-`vice` MCP server into `<project>/.mcp.json` (launched via `npx -y @henols/vice-mcp`).
-Existing servers and skills are preserved; pass `--force` to overwrite, `--dry-run`
-to preview, `--vendor` to install the server locally instead of via `npx`. The MCP
-server and the skill scripts require **Node ≥ 24** as the `node` on `PATH`.
+This copies the eight skills into `<project>/.claude/skills/` and nothing else.
+It writes no `.mcp.json` and installs nothing: the `vice` MCP server comes from
+the Claude Code plugin (B below). Existing skills are preserved; pass `--force` to
+overwrite, `--dry-run` to preview. The skill scripts require **Node ≥ 24** as the
+`node` on `PATH`.
 
 The two published packages:
 
 - [`@henols/vice-mcp`](https://www.npmjs.com/package/@henols/vice-mcp) — the MCP server.
-- [`@henols/c64-re-tools`](https://www.npmjs.com/package/@henols/c64-re-tools) — this installer (bundles the skills, depends on the server).
+- [`@henols/c64-re-tools`](https://www.npmjs.com/package/@henols/c64-re-tools) — this installer (bundles the skills; no dependencies).
 
 ### B. Claude Code plugin
 
@@ -202,12 +202,12 @@ it is wedged, then restart the broker.
 
 The `vice` MCP server does not start the broker for you, and does not install
 anything to make that happen — it **detects, then refuses by name with the
-remedy**. The remedy is the same everywhere: this project's own published
-package, invoked (never installed) as a foreground command. This works on
-any platform with no setup at all:
+remedy**. The remedy is the same everywhere: run the broker from the plugin (or
+a checkout of this repository) as a foreground command, where `<plugin-root>`
+is that directory:
 
 ```
-npx -y @henols/vice-mcp broker
+node <plugin-root>/src/mcp/vice/vice-cli.mjs broker
 ```
 
 **One broker per machine** means every project and every Claude Code session

@@ -63,7 +63,8 @@ state) and keep working when the emulator misbehaves.
   plausible wrong answer.
 - **Never auto-install.** External tools are detected, never installed. When one
   is missing, the refusal names the tool and gives the remedy for the user to
-  run.
+  run. This binds our own packages too: the installer copies skills and never
+  runs `npm` or `npx`, and no shipped remedy text uses `npx -y`.
 
 ## Key Constraints
 

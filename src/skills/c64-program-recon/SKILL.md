@@ -13,7 +13,7 @@ Build a network of checked facts. Once you know the vectors, the IRQ handler, th
 the major tables, everything else classifies far more easily.
 
 ```bash
-D=src/skills/c64-program-recon/scripts/derive.mjs   # from the repo root
+D=src/skills/c64-program-recon/scripts/derive.ts   # from the repo root
 
 node $D vectors dump.bin                                # $01 + six vectors, which pair is live
 node $D vic --dd00 3E --d018 18 --d011 1B --d016 C8     # bank, screen, charset, mode
@@ -95,8 +95,8 @@ Tracing a decruncher is the same wasted work as tracing a loader, and every labe
 packed image is thrown away the moment the real image is recovered.
 
 ```bash
-node src/skills/c64-program-recon/scripts/packer-finding.mjs game.prg      # from the repo root
-node src/skills/c64-program-recon/scripts/packer-finding.mjs game.prg --entropy 7.83
+node src/skills/c64-program-recon/scripts/packer-finding.ts game.prg      # from the repo root
+node src/skills/c64-program-recon/scripts/packer-finding.ts game.prg --entropy 7.83
 ```
 
 Pass `--entropy` when you already have the number from `anno call anno_get_binary_info`. Otherwise the
@@ -115,7 +115,7 @@ established four independent ways, and the acceptance bar a future first-party i
 have to clear was set at the same time. So there is no code path here that can write a packer
 name from entropy, from a decompression address, or from a byte pattern. If you want a name and the finding does not give
 you one, install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it in
-the environment the host broker process sees — do not infer it. `packer-finding.mjs` never spawns
+the environment the host broker process sees — do not infer it. `packer-finding.ts` never spawns
 that identifier itself: it reaches it only through the host-tool execution
 seam (`src/mcp/vice/host-tool.mts`'s `oracle.probe`/`oracle.run` allowlist entries), because this
 script runs container-side and there is no container PATH to a host binary on. **The container-side
@@ -315,7 +315,7 @@ here regresses. This sentence is meant for **consuming projects**, which do have
 
 **This playbook itself has a generated twin, and it is not the one to edit.**
 `installer/skills/c64-program-recon/` is a gitignored COPY of this directory, rebuilt from it by
-`installer/scripts/sync-skills.mjs` on the installer package's `prepack` and by
+`installer/scripts/sync-skills.ts` on the installer package's `prepack` and by
 `npm --prefix installer run sync-skills`. Edit THIS file. Never edit the twin. A hand-edit there is
 overwritten by the next sync and is not independently covered either — the gates that scan the
 shipped tree run the sync before they scan it, so the sync REMOVES a change made only in the twin
@@ -705,7 +705,7 @@ what was actually known when it was written.
 |---|---|
 | `$0314` holds something that is not a plausible address | Check HIRAM. With the KERNAL banked out the RAM vectors are uninitialised. Read `$FFFE/$FFFF`. |
 | Every graphics pointer is wrong, with no error | `$DD00` bits 0-1 are **inverted**. Re-derive the bank first. Everything else hangs off it. |
-| The charset at the computed address is garbage | CB may resolve into the char-ROM shadow (`$1000`/`$9000`, banks 0/2). `derive.mjs vic` flags it — there is no charset in RAM to extract. |
+| The charset at the computed address is garbage | CB may resolve into the char-ROM shadow (`$1000`/`$9000`, banks 0/2). `derive.ts vic` flags it — there is no charset in RAM to extract. |
 | A sprite decodes as noise | Check `$D015` first. A disabled sprite's registers are stale. Then check MCM — multicolor decoded as hires comes out twice as wide. |
 | Computed mode is "INVALID — screen goes black" | You caught the registers mid-update inside a raster split. Re-read. |
 | The emulator looks dead | Enumerate armed checkpoints before anything else. See hazard 2. |

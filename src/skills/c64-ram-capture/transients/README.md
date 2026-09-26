@@ -1,7 +1,7 @@
 # Per-release transient allow-lists
 
 One committed JSON artifact per release, written by
-`../scripts/derive-transients.mjs derive`. Nothing in this directory is
+`../scripts/derive-transients.ts derive`. Nothing in this directory is
 inherited, hand-edited or carried across releases.
 
 **What carries forward is the method below and the script that implements it.
@@ -39,10 +39,10 @@ Verbatim, because this is the part that is meant to survive:
 S=src/skills/c64-ram-capture/scripts      # from the repo root
 T=src/skills/c64-ram-capture/transients
 
-node $S/derive-transients.mjs derive --release <id> \
+node $S/derive-transients.ts derive --release <id> \
   --out $T/<id>.json run1.bin run2.bin run3.bin
 
-node $S/derive-transients.mjs check --allow-list $T/<id>.json runA.bin runB.bin
+node $S/derive-transients.ts check --allow-list $T/<id>.json runA.bin runB.bin
 ```
 
 ## The artifact shape

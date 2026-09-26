@@ -1,13 +1,13 @@
 {
   "name": "@henols/c64-re-tools",
   "version": "0.0.0-dev",
-  "description": "Installer that adds the C64 reverse-engineering skills and the VICE emulator MCP server (@henols/vice-mcp) to a project.",
+  "description": "Installer that adds the C64 reverse-engineering skills to a project.",
   "type": "module",
   "bin": {
     "c64-re-tools": "bin/cli.mjs"
   },
   "files": [
-    "bin/",
+    "bin/cli.mjs",
     "skills/",
     "README.md",
     "THIRD-PARTY-NOTICES.md"
@@ -44,12 +44,9 @@
     "claude",
     "installer"
   ],
-  "dependencies": {
-    "@henols/vice-mcp": "0.0.0-dev"
-  },
   "scripts": {
-    "sync-skills": "node scripts/sync-skills.mjs",
-    "prepack": "node scripts/sync-skills.mjs",
-    "test": "node --test '*.test.mjs'"
+    "sync-skills": "node scripts/sync-skills.ts",
+    "prepack": "node scripts/sync-skills.ts",
+    "test": "node --test '*.test.ts'"
   }
 }

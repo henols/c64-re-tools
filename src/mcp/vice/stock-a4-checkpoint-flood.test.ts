@@ -48,7 +48,7 @@
 //     `withBrokerHarness()` shape (copied below, not imported -- none of
 //     that file's harness helpers are exported).
 //
-// DEFAULT-SKIP IS MANDATORY, exactly like every sibling in test-gate.mjs's
+// DEFAULT-SKIP IS MANDATORY, exactly like every sibling in test-gate.ts's
 // MANUAL_ONLY_TESTS list (this file is the NINTH entry -- see that file's
 // header). `npm test` globs this file via `*.test.*`, and CI has no VICE.
 //
@@ -65,7 +65,7 @@
 //     firing -- poll the wire hit count and the autoDisables report.
 //   - Never retry a stalled wait indefinitely -- a deadline expiry is an
 //     OBSERVATION (record it), not a reason to loop again.
-//   - Never edit stock-checkpoints.ts, probe-binmon.mjs, or any other
+//   - Never edit stock-checkpoints.ts, probe-binmon.ts, or any other
 //     production source from this file -- this plan's own instruction (and
 //     15-10-PLAN.md's <verification>) is that no source file changes here.
 import { test } from "node:test";

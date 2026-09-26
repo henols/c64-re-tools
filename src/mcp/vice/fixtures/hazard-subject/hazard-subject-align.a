@@ -28,7 +28,7 @@
 ; with no runtime state involved anywhere in the chain.
 ;
 ; Regenerate with:
-;   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs
+;   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts
 
 ; The KERNAL's own default screen offset within a VIC bank ($0400), named
 ; here so the VIC memory-control derivation below reads from a label rather

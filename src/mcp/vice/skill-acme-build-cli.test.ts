@@ -1,13 +1,13 @@
-// Coverage for src/skills/acme-build/scripts/acme.mjs -- the acme-build
+// Coverage for src/skills/acme-build/scripts/acme.ts -- the acme-build
 // skill's ACME driver (new/build/sym verbs).
 //
-// acme.mjs's `VERBS[cmd](rest)` dispatch sits unconditionally at module
-// scope (no entry-point guard, unlike driver.mjs), so importing it would
+// acme.ts's `VERBS[cmd](rest)` dispatch sits unconditionally at module
+// scope (no entry-point guard, unlike driver.ts), so importing it would
 // also run it. Every case here is therefore a subprocess: an argument
 // vector of `process.execPath` + [scriptPath, verb, ...flags], never a
 // shell string.
 //
-// This file lives in src/mcp/vice/, not next to acme.mjs, for the same
+// This file lives in src/mcp/vice/, not next to acme.ts, for the same
 // non-recursive-discovery reason as its two siblings (see
 // skill-program-recon-cli.test.ts's header).
 //
@@ -51,7 +51,7 @@ import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRIPT_PATH = join(HERE, "..", "..", "skills", "acme-build", "scripts", "acme.mjs");
+const SCRIPT_PATH = join(HERE, "..", "..", "skills", "acme-build", "scripts", "acme.ts");
 
 /** Computed once, by the shared seam -- never a second hand-rolled probe. */
 const SKIP_REASON: string | false = acmeSkipReasonFor("skill-acme-build-cli.test.ts");
@@ -60,12 +60,12 @@ test("ACME availability gate (mirrors disasm-roundtrip.test.ts's D-08 gate) -- a
   assertAcmeRequiredIfEnvSet(assert);
 });
 
-test("acme.mjs is resolved at the expected relative path", () => {
-  assert.ok(existsSync(SCRIPT_PATH), `expected acme.mjs at ${SCRIPT_PATH}`);
+test("acme.ts is resolved at the expected relative path", () => {
+  assert.ok(existsSync(SCRIPT_PATH), `expected acme.ts at ${SCRIPT_PATH}`);
 });
 
 // ---------------------------------------------------------------------------
-// Subprocess helper. acme.mjs reaches ACME only through the broker's fixed
+// Subprocess helper. acme.ts reaches ACME only through the broker's fixed
 // endpoint, so the assembling cases run against this file's OWN harness
 // broker (never a machine broker), started once when ACME is available. The
 // broker runs with ACME="" so its own <...>-include library lookup comes up
@@ -106,13 +106,13 @@ function withTempDir<T>(fn: (dir: string) => T): T {
 test("no arguments: prints usage and exits 0", () => {
   const r = runAcme([]);
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /usage: node .*acme\.mjs <command>/);
+  assert.match(r.stdout, /usage: node .*acme\.ts <command>/);
 });
 
 test("an unknown verb: prints usage and exits 1", () => {
   const r = runAcme(["bogus-verb"]);
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /usage: node .*acme\.mjs <command>/);
+  assert.match(r.stdout, /usage: node .*acme\.ts <command>/);
 });
 
 test("the build verb with a missing source path: exits 1 with the documented message", () => {
@@ -155,12 +155,12 @@ test("the scaffold verb writes a `; Build:` line naming the consumer's installed
     const content = readFileSync(target, "utf8");
     assert.match(
       content,
-      /; Build:.*\.claude\/skills\/acme-build\/scripts\/acme\.mjs/,
+      /; Build:.*\.claude\/skills\/acme-build\/scripts\/acme\.ts/,
       "the scaffold's Build: line must name the consumer-installed script path"
     );
     assert.doesNotMatch(
       content,
-      /src\/skills\/acme-build\/scripts\/acme\.mjs/,
+      /src\/skills\/acme-build\/scripts\/acme\.ts/,
       "the scaffold must never name this repository's source-tree script path"
     );
   });
@@ -211,7 +211,7 @@ test(
       const bytes = readFileSync(prgPath);
       assert.ok(bytes.length > 2, "expected a non-empty program beyond the 2-byte load header");
       // template.a's BASIC program area starts at $0801 -- ACME's `cbm`
-      // output format (acme.mjs's default -f) prepends the 2-byte
+      // output format (acme.ts's default -f) prepends the 2-byte
       // little-endian load address, so byte 0 = $01, byte 1 = $08.
       assert.equal(bytes[0], 0x01);
       assert.equal(bytes[1], 0x08);

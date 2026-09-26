@@ -9,7 +9,7 @@ One capability, one script, one binary (`petcat`) reached only through the
 host-tool execution seam:
 
 ```bash
-S=src/skills/c64-petcat/scripts/petcat.mjs   # from the repo root
+S=src/skills/c64-petcat/scripts/petcat.ts   # from the repo root
 
 node $S decode --image path/to/program.prg   # detokenize + resolve the SYS handover
 ```

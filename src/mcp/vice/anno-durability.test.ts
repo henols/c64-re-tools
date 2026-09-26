@@ -59,7 +59,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The spawned, never-imported child. Its name deliberately does not match the
  * `*.test.*` glob -- collected as a test it would SIGKILL the runner. */
-const MUTATOR_FILENAME = "anno-durability-mutator.mjs";
+const MUTATOR_FILENAME = "store-durability-mutator.ts";
 const MUTATOR = join(HERE, MUTATOR_FILENAME);
 
 /** The mutator's fourth mode, and the one argv token it needs beyond the store
@@ -472,7 +472,7 @@ test("the mutator is test-only: absent from package.json files[], and its filena
   // The glob claim, asserted rather than stated. Collected as a test, this file
   // would run `process.kill(process.pid, "SIGKILL")` inside the runner's own
   // process -- so the name is the only thing between the glob and a suite that
-  // kills itself. This is the exact predicate `test-gate.mjs` uses.
+  // kills itself. This is the exact predicate `test-gate.ts` uses.
   assert.equal(
     /\.test\.[a-zA-Z0-9]+$/.test(MUTATOR_FILENAME),
     false,

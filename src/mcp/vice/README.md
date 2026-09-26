@@ -6,18 +6,21 @@ A stdio [MCP](https://modelcontextprotocol.io) server that exposes a running
 to a **host** VICE MCP server, and on first use deploys the host launcher scripts
 it needs into `<project>/tools/`.
 
-This package is normally installed for you by the
+The supported way to run it is the Claude Code plugin, which carries this
+server and the matching skills. The
 [`@henols/c64-re-tools`](https://www.npmjs.com/package/@henols/c64-re-tools)
-installer, which also drops the matching skills into your project. It is published
-separately so it can be launched directly by an MCP client.
+installer copies the skills only; it does not install or wire this server.
 
 ## Requirements
 
 - **Node.js ≥ 24**. The server ships as TypeScript and runs under
   Node's native type-stripping — no build step, no flags. Older Node needs
   `--experimental-strip-types` and is unsupported.
+- **Run it from the Claude Code plugin or a checkout, not from `node_modules`.**
+  Node refuses to strip types from any `.ts` under `node_modules`, so an
+  npm-installed copy cannot start the server today (a known defect).
 - A **host** with VICE (`x64sc`) and a running broker
-  (`npx -y @henols/vice-mcp broker`, started by hand). The server
+  (`node <plugin-root>/src/mcp/vice/vice-cli.mjs broker`, started by hand). The server
   reaches the broker on TCP port 19510, dialling `127.0.0.1` and then
   `host.docker.internal`, so the same configuration works on the host and inside a
   container. Nothing is read from disk to find it.
@@ -30,8 +33,8 @@ Add it to your MCP client configuration and let the client launch it:
 {
   "mcpServers": {
     "vice": {
-      "command": "npx",
-      "args": ["-y", "@henols/vice-mcp"],
+      "command": "node",
+      "args": ["<plugin-root>/src/mcp/vice/vice-proxy.ts"],
       "timeout": 150000,
       "env": { "MASTRA_TELEMETRY_DISABLED": "1" }
     }
@@ -93,7 +96,7 @@ real emulator run only when their `VICE_LIVE_*` variable is set, and suites
 that need a host tool skip with a named reason when it is missing.
 
 `npm run test:automated` is the subset of `npm test` that excludes the
-manual-only files (see `test-gate.mjs`'s own header).
+manual-only files (see `test-gate.ts`'s own header).
 
 ```sh
 npm ci

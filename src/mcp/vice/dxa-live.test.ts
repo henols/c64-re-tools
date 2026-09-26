@@ -4,7 +4,7 @@
 // OPT-IN, MANUAL-ONLY. Drives `dxa-run.ts`'s end-to-end path against a REAL,
 // locally-built vendored `dxa` binary (`vendor/dxa/dxa`) -- the one path
 // this repository's automated suite (`npm run test:automated`) never
-// exercises, because no CI runner has a built `dxa` (test-gate.mjs's own
+// exercises, because no CI runner has a built `dxa` (test-gate.ts's own
 // header). This file BUILDS NOTHING ITSELF: it requires the vendored binary
 // to already exist (`bash vendor/dxa/build.bash build`) and skips with a
 // named reason otherwise -- proving the WHOLE stack (fixture -> host-tool
@@ -15,7 +15,7 @@
 // CI has no built dxa binary. SKIP_REASON is computed once, and EVERY test
 // in this file passes it through node:test's own `{ skip }` option -- never
 // a hand-rolled early return, which would report a false PASS rather than a
-// SKIP. It is registered in test-gate.mjs's MANUAL_ONLY_TESTS (the ONE list
+// SKIP. It is registered in test-gate.ts's MANUAL_ONLY_TESTS (the ONE list
 // -- see that file's own header) as the TENTH manual-only file, so
 // `npm run test:automated` never runs it either.
 //
@@ -313,8 +313,8 @@ const CORPUS_SKIP_REASON: string | false =
 /** The smallest common ancestor directory of two absolute paths -- computed,
  * never a fixed guess, so the seam request's `repoRoot` for THIS call is
  * always exactly big enough to contain both the corpus image and the
- * scratch output directory, and no bigger. Mirrors `c1541.mjs`'s own
- * `commonAncestorDir()` (`src/skills/c64-disk-access/scripts/c1541.mjs`),
+ * scratch output directory, and no bigger. Mirrors `c1541.ts`'s own
+ * `commonAncestorDir()` (`src/skills/c64-disk-access/scripts/c1541.ts`),
  * duplicated here rather than imported -- this file must never reach into a
  * skill script (D-36-12's own container/host-side split; a skill script
  * additionally ships in the OTHER npm package). Duplicated a further two

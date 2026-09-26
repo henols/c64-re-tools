@@ -46,9 +46,9 @@ test("package.json files[] ships every anno-* production module on disk and no a
   // anno-* module). The property this assertion has always been about is NOT
   // "there are exactly three modules" -- it is "files[] ships every anno-*
   // PRODUCTION module and nothing else anno-prefixed": no test file, and no
-  // test-only spawned helper such as anno-durability-mutator.mjs. Deriving the
+  // test-only spawned helper such as store-durability-mutator.ts. Deriving the
   // expectation from disk keeps both of those teeth (a listed test file or a
-  // listed .mjs helper appears in `annoEntries` and in neither expected set,
+  // listed anno-* helper appears in `annoEntries` and in neither expected set,
   // so the deepEqual still reddens) while letting the module count grow
   // without a hand edit that a future plan would have to remember to make.
   const annoEntries = pkg.files.filter((entry) => entry.startsWith("anno-")).sort();
@@ -62,8 +62,10 @@ test("package.json files[] ships every anno-* production module on disk and no a
   // read as an illegitimate entry, and the cheap fix under that pressure is
   // to drop it from files[], which silently unships it. Both teeth survive
   // unchanged: `.test.` files are still excluded by the filter below, and
-  // anno-durability-mutator.mjs / anno-schema-v2-fixture.mjs are still `.mjs`
-  // and still land in neither set, so listing either still reddens this.
+  // the test-only spawned helpers (store-durability-mutator.ts,
+  // store-schema-v2-fixture.ts) carry no `anno-` prefix, so they land in
+  // neither set. Never rename one to `anno-*`: this derivation would then
+  // demand it in files[] and the helper would ship.
   const annoProductionModulesOnDisk = readdirSync(HERE)
     .filter((name) => /^anno-.*\.(ts|mts|json)$/.test(name))
     .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name))

@@ -15,10 +15,10 @@ and name the offending address when it is wrong.
 
 ```bash
 S=src/skills/c64-ram-capture/scripts    # from the repo root
-A=$S/dump-artifacts.mjs
-C=$S/compare.mjs     L=$S/releases.mjs
-CX=$S/compare-cross-binary.mjs           # different-binary comparison (see below)
-T=$S/derive-transients.mjs               V=$S/vsf-slice.mjs
+A=$S/dump-artifacts.ts
+C=$S/compare.ts     L=$S/releases.ts
+CX=$S/compare-cross-binary.ts           # different-binary comparison (see below)
+T=$S/derive-transients.ts               V=$S/vsf-slice.ts
 TD=src/skills/c64-ram-capture/transients # the derived allow-lists live here
 
 node $A assemble  --chunks chunks.json           # size + digest, writes nothing
@@ -42,7 +42,7 @@ node $V digest run1.vsf                          # sha256 + size, writing no fil
 Every module above reads only committed files and the JSON **you** wrote from
 your own `mcp__plugin_c64-re-tools_vice__*` calls. They contact nothing.
 
-**Prerequisite: a resolvable project root.** `scripts/project-paths.mjs` uses
+**Prerequisite: a resolvable project root.** `scripts/project-paths.ts` uses
 `C64RE_PROJECT_ROOT` when you set it, and otherwise walks up from the toolkit's
 own location for the nearest ancestor directory containing a `.git` entry. A
 scratch project has neither by default, so `git init` it first or set the
@@ -208,7 +208,7 @@ What that leaves you:
 
 ## Compare two captures
 
-Do not classify differences by hand — `scripts/compare.mjs` applies the rules
+Do not classify differences by hand — `scripts/compare.ts` applies the rules
 identically every time, and exits 1 on a FAIL so a script can gate on it:
 
 ```bash
@@ -270,9 +270,9 @@ floor, not a complete set — more captures can only widen it.
 
 ## Compare two different binaries
 
-`compare.mjs` is for two captures of the **same** binary. When the two
+`compare.ts` is for two captures of the **same** binary. When the two
 captures are of **different** binaries — original versus rebuilt, original
-versus modified — use its sibling instead, `scripts/compare-cross-binary.mjs`:
+versus modified — use its sibling instead, `scripts/compare-cross-binary.ts`:
 
 ```bash
 node $CX cross original.bin rebuild.bin \
@@ -280,33 +280,33 @@ node $CX cross original.bin rebuild.bin \
   --allowlist allow.json --checkpoint hazard_raster_entry
 ```
 
-Three rules depart from `compare.mjs`, each because the same-binary
+Three rules depart from `compare.ts`, each because the same-binary
 assumptions above are wrong across two different binaries:
 
 - **No drift bucket.** A one-bit difference is a real difference here, not
   sampling noise — `drift` exists to absorb two runs of the *same* binary,
   and applied across binaries it would absorb a real one-bit regression
   (e.g. `lda #$02` becoming `lda #$03`) whole.
-- **Narrowed I/O mask.** `compare.mjs` masks the whole of `$D000`-`$DFFF`.
-  `compare-cross-binary.mjs` masks only the specific registers and ranges
+- **Narrowed I/O mask.** `compare.ts` masks the whole of `$D000`-`$DFFF`.
+  `compare-cross-binary.ts` masks only the specific registers and ranges
   that genuinely cannot be stable — `$D011`, `$D012`, `$D019`, `$D01E`-`$D01F`,
   `$D400`-`$D7FF`, `$D800`-`$DBFF`, `$DC00`-`$DCFF`, `$DD00`-`$DDFF`,
   `$DE00`-`$DFFF` — so `$D015`, `$D018` and `$D020` stay visible to the
   verdict.
 - **Route awareness.** A capture declares its `route` (`snapshot` or
-  `memory-read`) in its state sidecar. `compare-cross-binary.mjs` refuses to
+  `memory-read`) in its state sidecar. `compare-cross-binary.ts` refuses to
   compare a snapshot-route capture against a memory-read-route capture — see
   "Slice the image out of a snapshot instead of transcribing it" above for why
   those two routes disagree about what `$D000`-`$DFFF` even is.
 
 You resolve a real difference with the `--allowlist` document, never by widening
 the mask: each entry names a `start`/`endInclusive` range, a `domain`
-(`image` or `register`), and a non-empty `why`. `compare-cross-binary.mjs`
+(`image` or `register`), and a non-empty `why`. `compare-cross-binary.ts`
 refuses by name an entry overlapping a masked span, or one lacking a `why`.
 `--no-allowlist` is the allowlist's own red control — the same pair must fail
 without it, or the allowlist is doing no work.
 
-`compare-cross-binary.mjs` prints byte-identity as `BYTE_IDENTICAL: yes`/`no`,
+`compare-cross-binary.ts` prints byte-identity as `BYTE_IDENTICAL: yes`/`no`,
 but it is a recorded extra, never the verdict — it always runs the full
 classification, even when the two images are byte-for-byte equal, because a
 chip-state-only regression (e.g. a differing `$D020`) can exist under
@@ -314,7 +314,7 @@ byte-identical images. The `VERDICT:` line is the only line to gate on.
 
 ## Derive a per-release transient allow-list
 
-`scripts/derive-transients.mjs` is the named, repeatable derivation. **The
+`scripts/derive-transients.ts` is the named, repeatable derivation. **The
 method is what carries forward between releases. No address set ever does.** Two
 verbs:
 
@@ -350,13 +350,13 @@ afterwards from an honestly derived one.
 re-deriving it, printing `CHECK_VERDICT: equivalent | not-equivalent` and exiting
 1 when not equivalent. Note what it does **not** carry: no address range is a
 volatile span, and there is no bit-count tolerance at any address — a one-bit
-difference outside the list fails. Those two rules belong to `compare.mjs` and
+difference outside the list fails. Those two rules belong to `compare.ts` and
 are deliberately not inherited. `src/skills/c64-ram-capture/transients/README.md`
 holds the artifact shape, the committed method and the cap's reasoning.
 
 ## Slice the image out of a snapshot instead of transcribing it
 
-`scripts/vsf-slice.mjs` produces the flat 64K image by slicing a VICE `.vsf`
+`scripts/vsf-slice.ts` produces the flat 64K image by slicing a VICE `.vsf`
 snapshot's memory module body. Two verbs:
 
 ```bash
@@ -386,11 +386,11 @@ resolves rather than falling back to a second copy of the layout.
 
 `c64-program-recon`'s generated memory map (`node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap`,
 or `node src/mcp/vice/vice-proxy.ts anno render-memmap` in an in-repo checkout) takes a small provenance
-sidecar as input, and this skill supplies one of its fields: `scripts/compare.mjs digest`'s `sha256`
+sidecar as input, and this skill supplies one of its fields: `scripts/compare.ts digest`'s `sha256`
 and `size` become the sidecar's `captureSha256`, proving which image the rendered map describes. The
 sidecar's other run-scoped keys (`port01`, `dd00`, `vicBank`, `screenRam`, `charsetOrBitmap`, `mode`,
 `liveVectorPair`, `vectorHandler`, `rasterPositions`) come from `c64-program-recon`'s own
-`derive.mjs` — **this skill does not emit the sidecar itself.** The sidecar is hand-authored from
+`derive.ts` — **this skill does not emit the sidecar itself.** The sidecar is hand-authored from
 those two skills' outputs. The renderer checks it and throws, naming every missing or
 malformed key at once, rather than rendering a document that silently carries a placeholder.
 
@@ -411,7 +411,7 @@ This one owns the image and its identity. It does not restate what the others ca
 
 ## Release registry shape
 
-`scripts/releases.mjs` is the only module that reads a release id out of the
+`scripts/releases.ts` is the only module that reads a release id out of the
 registry — every other module takes the id as an argument. Its shape:
 
 | Field | Level | Required | For |
@@ -422,7 +422,7 @@ registry — every other module takes the id as an argument. Its shape:
 | `id` | per-release | yes | The `--release` argument every other script takes. |
 | `canonical` | per-release | — | A boolean on one entry, not "the canonical image" — there are N releases. |
 | `disk_image` | per-release | yes | Project-relative path to the release's `.d64`. |
-| `dumps` | per-release | **yes, as an array** | Per-capture records written by `write-set`. **Must be an array, never omitted** — `releases.mjs`'s `list` command reads `r.dumps.length` with no guard (`releases.mjs:98`), so a missing `dumps` throws `TypeError: Cannot read properties of undefined` instead of listing anything. An empty array (`[]`) is fine. An absent key is not. `releases.mjs` itself imposes no per-entry shape. `scripts/watch-loads.mjs` (a different reader) looks up an entry by `label` and reads its `range_manifest`, which the example below follows. |
+| `dumps` | per-release | **yes, as an array** | Per-capture records written by `write-set`. **Must be an array, never omitted** — `releases.ts`'s `list` command reads `r.dumps.length` with no guard (`releases.ts:98`), so a missing `dumps` throws `TypeError: Cannot read properties of undefined` instead of listing anything. An empty array (`[]`) is fine. An absent key is not. `releases.ts` itself imposes no per-entry shape. `scripts/watch-loads.ts` (a different reader) looks up an entry by `label` and reads its `range_manifest`, which the example below follows. |
 
 The registry lives at `<project root>/recovery/RELEASES.json` by default —
 override the whole path with `C64RE_REGISTRY`, or just the containing
@@ -438,13 +438,13 @@ split: the workflow fits in one file, which is the right call when it does.
 
 | Path | Covers |
 |---|---|
-| `scripts/compare.mjs` | Difference classification and the drift floor. Pure logic over captures you already have — `node $C` with no arguments prints the rules. |
-| `scripts/compare-cross-binary.mjs` | `cross` — for two DIFFERENT binaries. No drift bucket. A narrowed `$Dxxx` mask. Route awareness, an intentional-difference allowlist, and per-binary logical checkpoints. Covered by `scripts/compare-cross-binary.test.mjs`. |
-| `scripts/vsf-slice.mjs` | `slice` / `digest` — the flat 64K image sliced out of a `.vsf` snapshot with no transcription step. The layout lives in `vsf-slice.ts` on the MCP side. This wrapper resolves it and refuses by name when it cannot. Covered by `scripts/vsf-slice.test.mjs`. |
-| `scripts/derive-transients.mjs` | `derive` / `check` — the per-release transient allow-list, derived from N ≥ 3 runs as the pairwise union. A committed cap of 64 **voids** it rather than warns. Covered by `scripts/derive-transients.test.mjs`. |
+| `scripts/compare.ts` | Difference classification and the drift floor. Pure logic over captures you already have — `node $C` with no arguments prints the rules. |
+| `scripts/compare-cross-binary.ts` | `cross` — for two DIFFERENT binaries. No drift bucket. A narrowed `$Dxxx` mask. Route awareness, an intentional-difference allowlist, and per-binary logical checkpoints. Covered by `scripts/compare-cross-binary.test.ts`. |
+| `scripts/vsf-slice.ts` | `slice` / `digest` — the flat 64K image sliced out of a `.vsf` snapshot with no transcription step. The layout lives in `vsf-slice.ts` on the MCP side. This wrapper resolves it and refuses by name when it cannot. Covered by `scripts/vsf-slice.test.ts`. |
+| `scripts/derive-transients.ts` | `derive` / `check` — the per-release transient allow-list, derived from N ≥ 3 runs as the pairwise union. A committed cap of 64 **voids** it rather than warns. Covered by `scripts/derive-transients.test.ts`. |
 | `transients/README.md` | The committed derivation method, the artifact shape, and the cap's reasoning with its four measured reference points. No address set is inherited between releases. Its `.gitignore` refuses every image byte form. |
 | `templates/capture-record.template.md` | The per-capture record: identity, including the three-row reproducibility key and the `capture route` row. Also the machine state read in the same paused window, the void checklist, and the per-pairing comparison table. |
-| `scripts/dump-artifacts.mjs` | `assemble` / `chip-state` / `manifest` / `write-set` — the guarded byte work, and the source of every `assembleImage:` message in the table below. |
+| `scripts/dump-artifacts.ts` | `assemble` / `chip-state` / `manifest` / `write-set` — the guarded byte work, and the source of every `assembleImage:` message in the table below. |
 | `RELEASES.json.example` | A copyable release-registry shape — see `## Release registry shape` above. |
 
 Record findings that make RE faster in your own project notes **at the moment you
@@ -463,8 +463,8 @@ grade is only worth anything if it says what you actually knew when you wrote it
 | A fresh `.map.json` says `classification_state: "bucketed"` | Wrong — a fresh capture is `"ranges-only"`. The provenance diff sets `"bucketed"`, nothing else. |
 | The checkpoint never fired | Most state reads pause the emulator. Resume exactly once, at the end, after every read. |
 | Two captures of the same checkpoint differ | Expected. Full-64K identity is impossible in principle. Run `compare` and read the verdict rather than judging by eye. |
-| `compare.mjs`'s `compare` fails on an address in `$D000`-`$DFFF` | It cannot — `compare.mjs` masks that whole range for its own same-binary job. If you are seeing this, you applied the rules by hand. Use `scripts/compare.mjs`. |
-| `compare-cross-binary.mjs`'s `cross` fails on an address in `$D000`-`$DFFF` | Expected — `compare-cross-binary.mjs` narrows the mask on purpose (see "Compare two different binaries" above). A failure here is a real finding, not a misapplied rule. |
+| `compare.ts`'s `compare` fails on an address in `$D000`-`$DFFF` | It cannot — `compare.ts` masks that whole range for its own same-binary job. If you are seeing this, you applied the rules by hand. Use `scripts/compare.ts`. |
+| `compare-cross-binary.ts`'s `cross` fails on an address in `$D000`-`$DFFF` | Expected — `compare-cross-binary.ts` narrows the mask on purpose (see "Compare two different binaries" above). A failure here is a real finding, not a misapplied rule. |
 | `cross` refuses with "capture routes differ" | The two `--state` sidecars declare different `route` values. Re-capture both the same way — both `snapshot` or both `memory-read` — or pass the correct `--route`. |
 | `cross` refuses with "logical checkpoints differ" | The two `--state` sidecars declare different `checkpoint_name` values. Re-capture both at the same named checkpoint, or correct the sidecar. |
 | `compare` fails on `$FAD8` or `$FC51` only | Known and unexplained: RAM under KERNAL ROM, two addresses out of 8192. Record it with the capture rather than voiding a set that is otherwise clean. |

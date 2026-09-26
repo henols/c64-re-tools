@@ -7,7 +7,7 @@ description: Decide whether a byte in a cracked C64 release is original game cod
 
 **A byte that differs between two releases is not a cracker patch.** It is a byte
 that differs. This pipeline exists because the gap between those two statements is
-where confident nonsense gets manufactured — `scripts/diff-images.mjs`'s own header
+where confident nonsense gets manufactured — `scripts/diff-images.ts`'s own header
 calls it "the step most able to produce confident nonsense". Every stage below
 either proves its own precondition or refuses to emit.
 
@@ -15,7 +15,7 @@ either proves its own precondition or refuses to emit.
 `ledger` will not write a verdict the earlier stages did not earn.
 
 ```bash
-D=src/skills/c64-provenance-diff/scripts/diff-images.mjs   # from the repo root
+D=src/skills/c64-provenance-diff/scripts/diff-images.ts   # from the repo root
 
 node $D anchor-search                        # 1. prove the per-release offset  [WRITES]
 node $D diff                                 # 2. N-way byte diff at that offset
@@ -25,7 +25,7 @@ node $D ledger                                # 4. regenerate recovery/PROVENANC
 node $D diff --json                          # machine-readable, with per-range reasons
 node $D diff --gap-tolerance 16              # coalescing width (default shown)
 node $D anchor-search --reference <id>       # pick the reference release
-node src/skills/c64-provenance-diff/scripts/releases.mjs list                 # the release ids in play
+node src/skills/c64-ram-capture/scripts/releases.ts list                     # the release ids in play
 ```
 
 Pure Node over committed files — the `.bin` dumps, their `.map.json` manifests, and
@@ -298,4 +298,4 @@ grade is only worth anything if it says what you actually knew when you wrote it
 | A range's `kind` looks wrong past its start | You resolved `kind` from `start`. Use `splitRangeByManifestKind`. Coalescing does not respect kind boundaries. |
 | A loader range disagrees with `NOTES.md` | `RELEASES.json`'s `loader_ranges` wins because live disassembly evidence earns it. Prose is how `$08F5` got misclassified. |
 | Title-screen text shows up as cracktro | You used a bare printable-run scan. The vocabulary scan exists because `$4771-$4779` is the game's own text. |
-| `unknown release "x" -- known releases: …` | `node src/skills/c64-provenance-diff/scripts/releases.mjs list` for the valid ids. |
+| `unknown release "x" -- known releases: …` | `node src/skills/c64-ram-capture/scripts/releases.ts list` for the valid ids. |

@@ -2,8 +2,8 @@
 // terminates -- it does not hang -- in about 26-27 seconds per run (`node
 // --test vice-proxy.test.ts`, 56 tests / 53 pass / 0 fail / 3 skipped),
 // spawning a real child process per test case. It stays manual-only
-// (test-gate.mjs's MANUAL_ONLY_TESTS list) for that per-run cost, not for
-// any host dependency -- see that file's own header and test-gate.mjs's
+// (test-gate.ts's MANUAL_ONLY_TESTS list) for that per-run cost, not for
+// any host dependency -- see that file's own header and test-gate.ts's
 // disposition rationale for the measured reason. This file asserts ONLY on
 // vice_ping's response shape via stock-session.ts's real
 // callStockTool()/handlePing() -- no broker process, no emulator, no MCP

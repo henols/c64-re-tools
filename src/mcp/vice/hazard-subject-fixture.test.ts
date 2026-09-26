@@ -53,7 +53,7 @@ const ALIGN_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align.a");
 const ALIGN_MISALIGNED_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align-misaligned.a");
 const PRG_PATH = join(FIXTURE_DIR, "hazard-subject.prg");
 const MISALIGNED_PRG_PATH = join(FIXTURE_DIR, "hazard-subject-misaligned.prg");
-const REGENERATOR_PATH = join(FIXTURE_DIR, "make-hazard-subject-fixtures.mjs");
+const REGENERATOR_PATH = join(FIXTURE_DIR, "make-hazard-subject-fixtures.ts");
 
 const SKIP_REASON = acmeSkipReasonFor("hazard-subject-fixture.test.ts");
 
@@ -472,7 +472,7 @@ test("hazard subject: the report over the subject image finds the first self-mod
 // mis-aligned twin.
 // ---------------------------------------------------------------------------
 
-/** Re-derives the SAME text substitution `make-hazard-subject-fixtures.mjs`
+/** Re-derives the SAME text substitution `make-hazard-subject-fixtures.ts`
  * uses to build the mis-aligned twin's root: swap the one `!source
  * "hazard-subject-align.a"` line for the mis-aligned file. Independent of the
  * regenerator's own implementation -- this is a second, separately-written
@@ -579,7 +579,7 @@ test("hazard subject: REGENERATOR AGREEMENT (mis-aligned twin) -- re-deriving th
     [...bytes],
     [...new Uint8Array(readFileSync(MISALIGNED_PRG_PATH))],
     "the synthesized mis-aligned root and hazard-subject-misaligned.prg have drifted apart; regenerate with " +
-      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs`.",
+      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts`.",
   );
 });
 
@@ -602,7 +602,7 @@ test("hazard subject: REGENERATOR AGREEMENT -- re-assembling the root reproduces
     [...fresh],
     [...new Uint8Array(readFileSync(PRG_PATH))],
     "hazard-subject.a (plus its !source parts) and hazard-subject.prg have drifted apart. The committed image is only evidence while it is EXACTLY what its " +
-      "source assembles to; regenerate with `cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs`.",
+      "source assembles to; regenerate with `cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts`.",
   );
 });
 

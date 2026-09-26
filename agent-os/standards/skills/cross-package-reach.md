@@ -14,7 +14,7 @@ spawn(process.execPath, [mod.path, "run", "--tool", tool, "--args", JSON.stringi
   `process.execPath`. That is the only spawn a script makes.
 - A module that may be loaded from `node_modules` must be a compiled
   `resources/*.mjs` file, because Node does not strip types there.
-  Host-tool calls go through `invokeHostTool()` in `mcp-module.mjs`, which
+  Host-tool calls go through `invokeHostTool()` in `mcp-module.ts`, which
   wraps the snippet above.
 - External binaries (petcat, c1541, acme, ...) are reached only through
   the host-tool seam as a typed request. Never spawn one directly, not

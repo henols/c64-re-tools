@@ -9,7 +9,7 @@
 // PROVENANCE (required reading before touching the four geometry
 // functions below): vicBank(), vicBankBase(), screenBase() and
 // spriteDataAddress() are PORTED, NOT RE-DERIVED, from
-// src/skills/c64-ram-capture/scripts/dump-artifacts.mjs's own
+// src/skills/c64-ram-capture/scripts/dump-artifacts.ts's own
 // vicBank()/screenBase()/spriteDataAddresses map, which carries a
 // committed, verified fixture: dd00_raw=193 (0xC1), d018_raw=49 (0x31) ->
 // screen_base=35840. stock-sprites.test.ts re-asserts the SAME fixture as
@@ -106,7 +106,7 @@ export const SERVED_INSPECT_FORMATS = ["ascii", "binary"];
 export const REFUSED_INSPECT_FORMATS = ["png_base64"];
 
 // ---------------------------------------------------------------------------
-// Geometry helpers -- PORTED VERBATIM from dump-artifacts.mjs. Do not change
+// Geometry helpers -- PORTED VERBATIM from dump-artifacts.ts. Do not change
 // any of these four expressions; they are fixture-verified (see the
 // provenance paragraph above) and re-deriving them from the hardware
 // description a second time is exactly the anti-pattern this plan exists to

@@ -81,7 +81,7 @@
 //
 // This file names no `node:sqlite` specifier. It spawns no
 // process and needs no emulator, broker or network, so it needs no
-// `MANUAL_ONLY_TESTS` entry in `test-gate.mjs` and joins `automatedTestFiles()`
+// `MANUAL_ONLY_TESTS` entry in `test-gate.ts` and joins `automatedTestFiles()`
 // automatically. `package.json`'s `files[]` is an explicit list, so it is
 // excluded from the published tarball by construction.
 //

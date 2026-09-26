@@ -186,7 +186,7 @@ directory sector at track 18 sector 1 starts at byte `17*21*256 + 256 =
 2. **Self-referential directory chain.** The directory sector's own
    "next directory T/S" header (the FIRST TWO BYTES of the sector, absolute
    offset `91648`/`91649`, shared by every entry that sector holds — see
-   `c1541.mjs`'s own `parseEntryFields()` comment) changed from `00 FF`
+   `c1541.ts`'s own `parseEntryFields()` comment) changed from `00 FF`
    (end-of-chain) to `18 01` — pointing back at the sector itself. Triggers
    the chain guard.
 
@@ -204,7 +204,7 @@ line, so the seam's own `classifyC1541EntryOutput()` refuses this call
 exactly as it would any other declared-shape-absent output — no separate
 error path was needed. The `audit` subcommand salvages the claimed track/
 sector out of that refusal message's own text (`salvageFirstTsFromRefusal()`
-in `c1541.mjs`) rather than losing the information the moment the entry
+in `c1541.ts`) rather than losing the information the moment the entry
 call itself fails.
 
 ## The real-corpus mitigation (40-04, Task 3, D-25)
@@ -212,7 +212,7 @@ call itself fails.
 `synthetic.d64` and `synthetic-corrupt.d64` were BOTH built by the very
 `c1541` binary this project's `c1541.*` seam calls read back — the
 "acknowledged mild circularity" section above names the resulting risk.
-The mitigation lives in `src/skills/c64-disk-access/scripts/c1541.test.mjs`,
+The mitigation lives in `src/skills/c64-disk-access/scripts/c1541.test.ts`,
 as ONE live-gated test case cross-validating the directory listing, one
 entry's own claimed first track/sector, and that same entry's independently
 walked sector chain against each other, run against Phase 23's own evidence

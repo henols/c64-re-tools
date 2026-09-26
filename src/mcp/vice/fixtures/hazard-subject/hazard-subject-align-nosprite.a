@@ -49,7 +49,7 @@
 ; derivation, the `$d011` store, the character-print store, both `!align`
 ; directives, and all four data tables -- is copied UNCHANGED from
 ; hazard-subject-align.a. Every ACME symbol name
-; `make-hazard-subject-annostore.mjs` looks up is still defined here.
+; `make-hazard-subject-annostore.ts` looks up is still defined here.
 
 align_screen_offset = $0400
 

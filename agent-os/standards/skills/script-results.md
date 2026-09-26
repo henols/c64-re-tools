@@ -1,7 +1,9 @@
 # Skill Script Results
 
-New skill scripts are plain `.ts`, run on Node >= 24. Never hand-write
-new `.mjs`. Existing `.mjs` scripts are legacy.
+Skill scripts are plain `.ts`, run on Node >= 24. Never hand-write
+`.mjs`. Each skill's `scripts/` holds a `package.json` of
+`{ "type": "module" }`, so a consumer project's own `"type"` never
+decides how the installed scripts load.
 
 The last stdout line is one JSON object:
 

@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 // anno-cli.ts -- the thin CLI ergonomics layer over the annotation store.
-// Reached as `vice-mcp anno <verb>` because that bin is the only
-// surface that resolves identically across the Claude Code plugin route and
-// both npm-installer routes: `installer/bin/cli.mjs`'s `viceServerEntry()`
-// always launches this server via `npx` in BOTH npm-installer modes, and
-// neither route places `src/mcp/vice/*.ts` as plain files inside a
-// consuming project for some other filesystem-path-resolving design to find.
+// Reached as `node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>` on
+// the plugin route or an in-repo checkout, the only routes that execute it.
+// No usage line names an `npx` form: never-auto-install binds shipped
+// remedy text, and `npx -y` installs.
 //
 // ---------------------------------------------------------------------------
 // FIVE VERBS. THAT IS THE WHOLE SURFACE -- narrowed to two, then grown back
@@ -189,11 +187,9 @@ import { runAnnoTool, CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 import { DECLINE_COMMENT_PREFIX, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX, AUTHORED_PROVENANCE_COMMENT_PREFIX } from "./anno-store-export.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const NPX_INVOCATION = "npx -y @henols/vice-mcp anno <verb>";
 const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>";
 
-const USAGE = `usage (npm install):    ${NPX_INVOCATION}
-usage (plugin/in-repo): ${PLUGIN_INVOCATION}
+const USAGE = `usage (plugin/in-repo): ${PLUGIN_INVOCATION}
 
 verbs:
   render-memmap <store> --provenance FILE [--out FILE] [--force] [--check]
@@ -2613,7 +2609,7 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
  * beside every count, an explicit sentence stating what absence does NOT
  * prove, and never a percentage, rate or combined figure -- the same rule
  * this CLI applies everywhere else. This is the FALLBACK text renderer for a direct CLI
- * invocation without `--json`; `completeness-report.mjs`'s
+ * invocation without `--json`; `completeness-report.ts`'s
  * `renderCompletenessReport()` is the report the routine-queue-walker skill
  * actually reads, built from this same verb's `--json` answer.
  */
@@ -3135,8 +3131,8 @@ async function cmdCall(rest: string[]): Promise<number> {
 /**
  * Entry point for the `anno` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
- * verb per `acme.mjs`'s own dispatch convention (`src/skills/acme-build/
- * scripts/acme.mjs`), with one deliberate difference: an explicit `--help`
+ * verb per `acme.ts`'s own dispatch convention (`src/skills/acme-build/
+ * scripts/acme.ts`), with one deliberate difference: an explicit `--help`
  * returns 0 (a no-op invocation with no verb also returns 0), while an
  * unrecognised verb returns 1.
  */

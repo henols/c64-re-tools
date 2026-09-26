@@ -139,24 +139,12 @@ import type { StockSessionDeps } from "./stock-session.ts";
 
 // ------------------------------------------------------------ anno subcommand
 //
-// D-06 / RESEARCH.md Open Question #1 (plan 10-04): `vice-mcp anno <verb>` is
-// the ONLY surface that RESOLVES identically across the Claude Code plugin
-// route and both npm-installer routes -- `installer/bin/cli.mjs`'s
-// `viceServerEntry()` always launches this server via `npx` in BOTH
-// npm-installer modes (`--vendor` only pre-resolves the package; it never
-// places `src/mcp/vice/*.ts` as plain files inside a consuming project),
-// so any design resolving a filesystem path to the seam would silently fail
-// to resolve for npm-installed users.
-//
-// AMENDED (D-14, plan 65-02): that claim holds for PATH RESOLUTION only, not
-// for execution on every route. MEASURED (65-RESEARCH.md Critical Finding 1):
-// Node refuses to type-strip any `.ts` file whose path sits under
-// `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, no flag
-// lifts it), so `npx -y @henols/vice-mcp anno <verb>` crashes on an
-// npm-installed copy today. Only the plugin route and an in-repo checkout
-// actually execute this branch; fixing the npm-installed route for this bin
-// is its own, separately tracked follow-up, out of scope here. No SKILL.md
-// line may cite the `npx -y` form as something that runs (D-14).
+// `anno <verb>` runs on the plugin route and an in-repo checkout only. Node
+// refuses to type-strip any `.ts` under `node_modules`
+// (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, no flag lifts it), so an
+// npm-installed copy of this file cannot run at all -- a known roadmap
+// defect. The installer no longer wires this server, and no shipped text
+// names an `npx` form.
 //
 // This branch runs as the first executable statement of the module body,
 // deliberately ABOVE `RESOLVED_BINARY`'s own path resolution (which stats the

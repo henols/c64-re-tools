@@ -167,7 +167,7 @@ export const HOST_TOOL_IDS = Object.freeze([
     "petcat.decode",
 ]);
 /** Per-tool accepted argument-key lists, built with `Object.create(null)`
- * (the same prototype-null idiom vsf-slice.mjs uses) so no prototype key can
+ * (the same prototype-null idiom vsf-slice.ts uses) so no prototype key can
  * ever resolve to a value here even if a future caller indexed it with an
  * untrusted string directly -- belt-and-suspenders alongside the
  * array-membership check above, which is what actually guards the lookup
@@ -1013,8 +1013,8 @@ export function resolveWorkspacePath(repoRoot, relative) {
     // (`resolvePath()`/`realpathSync()` always normalise to a single leading
     // separator), so EVERY candidate under root "/" was wrongly refused as
     // "escaping" a root that in fact contains it. A root this broad is a
-    // legitimate input -- c1541.mjs's own commonAncestorDir() (mirroring
-    // acme.mjs's) collapses to "/" whenever a committed fixture inside the
+    // legitimate input -- c1541.ts's own commonAncestorDir() (mirroring
+    // acme.ts's) collapses to "/" whenever a committed fixture inside the
     // repo and a scratch --out-dir outside it share no smaller ancestor.
     const requiredPrefix = walkedRoot.path === sep ? walkedRoot.path : walkedRoot.path + sep;
     if (walkedCandidate.path !== walkedRoot.path && !walkedCandidate.path.startsWith(requiredPrefix)) {
@@ -1101,7 +1101,7 @@ export function buildHostToolArgv(request, resolved, log, locate) {
         }
         const acmePath = acmeResolved.path;
         // Fixed flags first, in the SAME order src/skills/acme-build/scripts/
-        // acme.mjs's build() uses today, then one -D per define and one -I pair
+        // acme.ts's build() uses today, then one -D per define and one -I pair
         // per include in caller-given order, then --setpc if given, then the
         // resolved source path LAST.
         const argv = [
@@ -1490,7 +1490,7 @@ export function buildHostToolArgv(request, resolved, log, locate) {
  * HOST_TOOL_IDS member has an explicit table entry, but this constant
  * stays exported and consulted as the honest bottom of the resolver's
  * fallback chain. It is also the value acme.build/oracle.probe/oracle.run's
- * own table entries hold today (20s, the same value packer-finding.mjs's
+ * own table entries hold today (20s, the same value packer-finding.ts's
  * own ORACLE_TIMEOUT_MS convention already used) -- no longer the ceiling
  * for EVERY invocation: a single default governing every tool is exactly
  * how a real incident happened -- a number chosen for a stateless
@@ -1581,7 +1581,7 @@ export function hostToolTimeoutMs(tool, override) {
 /** stderrTail's byte cap -- diagnostics only, never a result. */
 const STDERR_TAIL_CAP_BYTES = 64 * 1024;
 /** oracle.run's stdout cap -- the SAME measured bound as
- * packer-finding.mjs's own (unmoved, still exported there) MAX_ORACLE_STDOUT_BYTES.
+ * packer-finding.ts's own (unmoved, still exported there) MAX_ORACLE_STDOUT_BYTES.
  * The executor enforces the bound on what it accumulates; the script keeps
  * exporting the number for its own parser and its own tests -- not a
  * duplicated maintenance burden, the same measured constant on both sides. */
@@ -1941,7 +1941,7 @@ function spawnHostTool(toolPath, argv, timeoutMs, env, cwd, trackChild) {
     });
 }
 // ---------------------------------------------------------------------------
-// The ACME library probe. Moved server-side from acme.mjs's own
+// The ACME library probe. Moved server-side from acme.ts's own
 // findAcmeLib(): the project owner's rule is that a container has no PATH
 // to a host binary, and these candidates are HOST paths -- so probing them
 // belongs on the host side of the seam, not in the container-side skill
@@ -1960,7 +1960,7 @@ function spawnHostTool(toolPath, argv, timeoutMs, env, cwd, trackChild) {
 // SAME `ACME` name from the declaration rather than a literal here.
 // ---------------------------------------------------------------------------
 /** The marker file used to validate a candidate ACME library directory --
- * the layout fact `acme.mjs`'s own troubleshooting hint names. */
+ * the layout fact `acme.ts`'s own troubleshooting hint names. */
 const ACME_LIB_MARKER = join("cbm", "c64", "vic.a");
 // ---------------------------------------------------------------------------
 // The vendored dxa binary probe. This module ships two ways: as unbuilt
@@ -2441,7 +2441,7 @@ export async function runHostTool(raw, deps) {
     const timeoutMs = hostToolTimeoutMs(request.tool, deps.timeoutMs);
     const startedAt = Date.now();
     // acme.build only: inject the probed ACME library directory as the child's
-    // `ACME` env var, exactly as acme.mjs's own removed findAcmeLib() call
+    // `ACME` env var, exactly as acme.ts's own removed findAcmeLib() call
     // used to (T-34's own "same behaviour, moved" requirement) -- undefined
     // when no candidate matched, which spawnHostTool() treats identically to
     // "no override" (inherits the broker's own environment unchanged).
@@ -2579,10 +2579,10 @@ export async function runHostTool(raw, deps) {
     const petcatVerdict = request.tool === "petcat.decode" ? derivePetcatEntrypoint(spawnResult.stdout) : null;
     // acme.build only: ACME's own "for <...> includes..." complaint names no
     // directory it tried -- append a note line (in the plain, non-MSVC shape
-    // acme.mjs's own parseDiagnostics() already treats as a "note" entry)
+    // acme.ts's own parseDiagnostics() already treats as a "note" entry)
     // naming every candidate this probe tried, exactly as the removed
     // client-side hint used to. A line appended here, rather than reported as
-    // a separate field, keeps acme.mjs's diagnostics parsing untouched -- it
+    // a separate field, keeps acme.ts's diagnostics parsing untouched -- it
     // already scans the combined text for exactly this shape.
     let stderrText = spawnResult.stderr;
     if (acmeLib && /ACME.*environment variable/i.test(stderrText)) {
@@ -2593,7 +2593,7 @@ export async function runHostTool(raw, deps) {
     // `-I` tree fails with ACME 0.97's own "Cannot open input file" message,
     // which names the file but never says WHY -- a container-side caller has
     // no local filesystem to inspect and diagnose it against. Append one note
-    // line (in the plain, non-MSVC shape acme.mjs's own parseDiagnostics()
+    // line (in the plain, non-MSVC shape acme.ts's own parseDiagnostics()
     // already treats as a "note" entry, mirroring the $ACME note above)
     // naming the file and the remedy: add its own directory as an -I entry so
     // it uploads as its own tree (D-04's own directory-is-the-unit posture --
@@ -2637,24 +2637,24 @@ export async function runHostTool(raw, deps) {
     };
 }
 // ---------------------------------------------------------------------------
-// oracle.probe / oracle.run. Migrated from packer-finding.mjs's own
+// oracle.probe / oracle.run. Migrated from packer-finding.ts's own
 // probeUnp64()/runUnp64(): everything about the BINARY (locating it, the
 // version-banner probe, the scratch output location, the argument array,
 // the runtime bound) lives here now; the script keeps everything about the
 // FINDING (the name parser, the accepted character set, the caps, the
 // packedness threshold, the never-throw return shapes). Response shapes
 // are NOT the generic `{ ok, tool, exitStatus, results, stderrTail }`
-// envelope above -- they mirror packer-finding.mjs's OWN pre-existing
+// envelope above -- they mirror packer-finding.ts's OWN pre-existing
 // `{ available, command, version, reason }` / `{ ok, stdout, reason }`
 // contracts directly, so the migrated client-side functions can return the
 // seam's response with no field renaming.
 // ---------------------------------------------------------------------------
 /** Default command name when no host-side configuration is present -- the
- * same default packer-finding.mjs's own (removed) DEFAULT_ORACLE_COMMAND
+ * same default packer-finding.ts's own (removed) DEFAULT_ORACLE_COMMAND
  * used. */
 const DEFAULT_ORACLE_COMMAND = "unp64";
 /** The two environment variables the oracle's location is read from, in this
- * order -- the SAME variable order and names packer-finding.mjs's own
+ * order -- the SAME variable order and names packer-finding.ts's own
  * (client-side, container-facing) `ORACLE_ENV_VARS` declares, so a
  * container-side hint naming one of these two variables always describes
  * where this host-side resolver actually looked. */
@@ -2764,7 +2764,7 @@ async function runOracleRun(args, deps) {
     // The oracle's unpacked output goes to a scratch location INSIDE the
     // workspace tree -- never the system temp directory, which cannot be
     // translated back across the container boundary -- removed after this
-    // function returns, mirroring packer-finding.mjs's own (removed)
+    // function returns, mirroring packer-finding.ts's own (removed)
     // "removed before this function returns" property (T-19-24).
     //
     // MOVED 2026-09-08: this used to be `<repoRoot>/tools/oracle-runs/...`.
@@ -2796,7 +2796,7 @@ async function runOracleRun(args, deps) {
             return { ok: false, tool: "oracle.run", stdout: "", reason: "the oracle timed out" };
         }
         deps.log?.(`host_tool tool=oracle.run exit=${spawnResult.exitCode ?? "null"} timeout_ms=${timeoutMs}`);
-        // Capped the same way packer-finding.mjs's own MAX_ORACLE_STDOUT_BYTES
+        // Capped the same way packer-finding.ts's own MAX_ORACLE_STDOUT_BYTES
         // caps it client-side -- the executor enforces the bound on what it
         // accumulates; the script still exports the number for its own parser
         // and its own tests, so the value is not duplicated as a maintained pair,
@@ -2818,7 +2818,7 @@ async function runOracleRun(args, deps) {
         }
         catch {
             // Best effort -- a leftover empty scratch directory is not worth
-            // failing a read-only recon finding over (mirrors packer-finding.mjs's
+            // failing a read-only recon finding over (mirrors packer-finding.ts's
             // own removed comment to the same effect).
         }
     }

@@ -125,7 +125,7 @@ function assembleFreshWithSymbols(rootSourceName: string): { bytes: Uint8Array; 
 }
 
 /** Builds the regressed twin's root text the same way
- * `make-hazard-subject-fixtures.mjs`'s `regressedRootSource()` does, so the
+ * `make-hazard-subject-fixtures.ts`'s `regressedRootSource()` does, so the
  * test's own fresh assembly and the committed generator agree on what root
  * text produces `hazard-subject-regressed.prg`. */
 function regressedRootSourceText(): string {
@@ -232,12 +232,12 @@ test("hazard subject variants: REGENERATOR AGREEMENT (regressed twin) -- re-deri
     [...bytes],
     [...new Uint8Array(readFileSync(REGRESSED_PRG_PATH))],
     "the synthesized regressed root and hazard-subject-regressed.prg have drifted apart; regenerate with " +
-      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs`.",
+      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts`.",
   );
 });
 
-test("hazard subject variants: make-hazard-subject-fixtures.mjs contains exactly one implementation of the !source line substitution", () => {
-  const generatorSource = readFileSync(join(FIXTURE_DIR, "make-hazard-subject-fixtures.mjs"), "utf8");
+test("hazard subject variants: make-hazard-subject-fixtures.ts contains exactly one implementation of the !source line substitution", () => {
+  const generatorSource = readFileSync(join(FIXTURE_DIR, "make-hazard-subject-fixtures.ts"), "utf8");
   const helperDefinitions = generatorSource.match(/function substituteSourceLines\(/g) ?? [];
   assert.equal(helperDefinitions.length, 1, "exactly one substituteSourceLines() implementation must exist");
   const helperCalls = generatorSource.match(/substituteSourceLines\(\[/g) ?? [];
@@ -252,7 +252,7 @@ test("hazard subject variants: make-hazard-subject-fixtures.mjs contains exactly
 // ---------------------------------------------------------------------------
 
 /** Builds the modified subject's root text the same way
- * `make-hazard-subject-fixtures.mjs`'s `modifiedRootSource()` does. */
+ * `make-hazard-subject-fixtures.ts`'s `modifiedRootSource()` does. */
 function modifiedRootSourceText(): string {
   const rootText = readFileSync(join(FIXTURE_DIR, ROOT_SOURCE_NAME), "utf8");
   const alignLine = '!source "hazard-subject-align.a"';
@@ -367,7 +367,7 @@ test("hazard subject variants: REGENERATOR AGREEMENT (modified subject) -- re-de
     [...bytes],
     [...new Uint8Array(readFileSync(MODIFIED_PRG_PATH))],
     "the synthesized modified root and hazard-subject-modified.prg have drifted apart; regenerate with " +
-      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs`.",
+      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts`.",
   );
 });
 
@@ -435,8 +435,8 @@ test(
   },
 );
 
-test("hazard subject variants: make-hazard-subject-annostore.mjs contains exactly one copy of the decomposition arrays, shared by both subjects", () => {
-  const generatorSource = readFileSync(join(FIXTURE_DIR, "make-hazard-subject-annostore.mjs"), "utf8");
+test("hazard subject variants: make-hazard-subject-annostore.ts contains exactly one copy of the decomposition arrays, shared by both subjects", () => {
+  const generatorSource = readFileSync(join(FIXTURE_DIR, "make-hazard-subject-annostore.ts"), "utf8");
   const rangesDeclarations = generatorSource.match(/const ranges = \[/g) ?? [];
   assert.equal(rangesDeclarations.length, 1, "exactly one `ranges` decomposition array must exist");
   const scopesDeclarations = generatorSource.match(/const scopes = \[/g) ?? [];
@@ -449,7 +449,7 @@ test("hazard subject variants: the committed hazard-subject.annostore.json is un
   // This is a REGRESSION guard, not a regeneration -- it reads the
   // committed file as-is and checks internal self-consistency the
   // parameterisation must have preserved (16 ranges / 5 scopes / 22 labels,
-  // the same counts `make-hazard-subject-annostore.mjs`'s own stdout
+  // the same counts `make-hazard-subject-annostore.ts`'s own stdout
   // reports for the first SUBJECTS entry).
   const doc = loadExport(ANNOSTORE_PATH);
   assert.equal(doc.ranges.length, 16, "the committed original export's range count must be unchanged by parameterisation");

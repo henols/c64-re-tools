@@ -22,14 +22,14 @@ provenance can never again be established by omission.
 environment plan 02-02 executed in, so these three were originally generated
 from the normative protocol spec -- the wire layout confirmed against
 VICE's own monitor_binary.c encoder/decoder pair, plus
-`../../probe-binmon.mjs`'s own body layouts -- rather than captured from a
+`../../probe-binmon.ts`'s own body layouts -- rather than captured from a
 live `x64sc -binarymonitor` session. That override is now resolved: the
 external-verification phase re-recorded all three against a real, running
 `x64sc` (the patched, non-upstream fork build at `/usr/local/bin/x64sc` --
 see `CLAUDE.md`'s framing of that binary -- shadowing genuine stock VICE
 earlier on `$PATH` on the host that ran the capture). The override happened
 because no stock VICE binary was reachable from the execution environment
-plan 02-02 ran in, so `probe-binmon.mjs --capture` could not be run there
+plan 02-02 ran in, so `probe-binmon.ts --capture` could not be run there
 at all; explicit user direction on 2026-08-13 accepted spec-derived
 fixtures rather than blocking on hardware that did not exist in that
 environment. See `13-CAPTURE-TRANSCRIPT.md` for the re-capture evidence: frame-by-frame
@@ -64,7 +64,7 @@ build -- see "Bounded by design" below.
 | `cpuhistory-get-unsupported.bin` / `.json` | `cpuhistory-get-unsupported` | **real capture** -- `stock:/usr/bin/x64sc` (INVALID_TYPE error frame; genuine unpatched stock; **needs a 3.9-class build to re-record**) | 3.9.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
 
 **The `capturedFrom` kind token (`fork`/`stock`) is operator-supplied, not
-derived.** `probe-binmon.mjs`'s `runCapture()` builds it from
+derived.** `probe-binmon.ts`'s `runCapture()` builds it from
 `process.env.CAPTURE_BACKEND_KIND`, set by hand at capture time -- nothing
 validates it against which binary actually answered (`VICE_BIN`, recorded in
 the same string). `cpuhistory-get`/`cpuhistory-get-multi` carried a wrong
@@ -90,7 +90,7 @@ Every fixture here is meant to be a **living capture**, not frozen evidence
 each is regenerable at any time by running
 
 ```
-node probe-binmon.mjs --capture <case>
+node probe-binmon.ts --capture <case>
 ```
 
 against a real `x64sc -binarymonitor` build, where `<case>` is one of
@@ -102,7 +102,7 @@ editing a frozen fixture would.
 
 **`--capture all` is version-gated per case.** `cpuhistory-get` and
 `cpuhistory-get-multi` need a **≥ 3.10** target; `cpuhistory-get-unsupported`
-needs a **3.9** one. `probe-binmon.mjs`'s `CAPTURE_REQUIRES_VERSION` refuses the
+needs a **3.9** one. `probe-binmon.ts`'s `CAPTURE_REQUIRES_VERSION` refuses the
 mismatch and writes no `.bin`, so a single `--capture all` run against one build
 can no longer overwrite a fixture with bytes from the wrong VICE version while
 leaving its sidecar's `command` string describing the other (07-REVIEW.md

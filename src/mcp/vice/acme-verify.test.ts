@@ -59,9 +59,9 @@
 // own `acme-gate.ts` probe, paid once per node process and shared with every
 // other ACME-gated file, not billed again here.
 //
-// This file is deliberately never added to `MANUAL_ONLY_TESTS`: `test-gate.mjs`'s
-// `automatedTestFiles()` auto-discovers every on-disk `*.test.*`, and
-// `test-gate.test.ts`'s drift guard fails the build if a file escapes both sets.
+// This file is deliberately never added to `MANUAL_ONLY_TESTS`: `test-gate.ts`'s
+// `automatedTestFiles()` auto-discovers every on-disk `*.test.*`, so it runs in
+// the automated gate.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -97,9 +97,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY_MODULE_PATH = join(HERE, "acme-verify.ts");
 const GATE_MODULE_PATH = join(HERE, "acme-gate.ts");
 // Phase 34, plan 34-04 (SEAM-05): the argv construction this section compares
-// against USED TO be `src/skills/acme-build/scripts/acme.mjs`'s own `args`
+// against USED TO be `src/skills/acme-build/scripts/acme.ts`'s own `args`
 // array literal -- it moved to `host-tool.mts`'s `buildHostToolArgv()` when
-// `acme.mjs` was migrated onto the host-tool execution seam (the skill
+// `acme.ts` was migrated onto the host-tool execution seam (the skill
 // script no longer constructs argv or spawns `acme` at all; it sends a typed
 // request and the executor builds argv server-side). The comparison target
 // below follows the argv construction, not the file that used to hold it.
@@ -517,9 +517,8 @@ interface ChildRun {
  *
  * WHY THE PROBE LIVES UNDER `tmpdir()` AND NOT NEXT TO THIS FILE: a stray
  * `*.test.*` in the module directory would be collected by
- * `node --test '*.test.*'` on the next run and would break
- * `test-gate.test.ts`'s "every on-disk test file lands in exactly one of the
- * automated/manual sets" assertion. The directory is removed in a `finally`, on
+ * `node --test '*.test.*'` and by `test-gate.ts`'s `automatedTestFiles()` on
+ * the next run. The directory is removed in a `finally`, on
  * the FAILURE path too -- this host's `/tmp` is RAM-backed, so a leaked probe
  * directory is leaked memory.
  *

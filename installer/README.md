@@ -1,9 +1,8 @@
 # @henols/c64-re-tools
 
-One-command installer that adds the **C64 reverse-engineering skills** and the
-**VICE emulator MCP server** ([`@henols/vice-mcp`](https://www.npmjs.com/package/@henols/vice-mcp))
-to a project, so an MCP client such as Claude Code can drive a Commodore 64
-emulator for reverse-engineering work.
+One-command installer that adds the **C64 reverse-engineering skills** to a
+project. It installs nothing else: the **VICE emulator MCP server** comes from
+the Claude Code plugin (see below).
 
 ## Usage
 
@@ -13,44 +12,35 @@ From the project you want to set up:
 npx @henols/c64-re-tools
 ```
 
-That will:
-
-1. Copy the bundled skills into `<project>/.claude/skills/`
-2. Add a `vice` server to `<project>/.mcp.json` (existing servers are preserved),
-   launched via `npx -y @henols/vice-mcp`
-
-Then restart Claude Code in that project.
+That copies the bundled skills into `<project>/.claude/skills/`. It writes no
+`.mcp.json` and never runs `npm` or `npx`. Then restart Claude Code in that
+project.
 
 ### Options
 
 | Option | Effect |
 | --- | --- |
 | `[targetDir]` | Install into this directory instead of the current one. |
-| `--force` | Overwrite existing skills and an existing `vice` MCP entry. |
-| `--vendor` | Also `npm install -D @henols/vice-mcp` into the project and wire `.mcp.json` to the local copy (pinned / offline), instead of `npx`. |
+| `--force` | Overwrite existing skills. |
 | `--dry-run`, `-n` | Show what would change without writing anything. |
 | `--help`, `-h` | Show help. |
 
-Re-running is safe: existing skills and an existing `vice` entry are kept unless
-you pass `--force`.
+Re-running is safe: existing skills are kept unless you pass `--force`.
 
 ## What gets installed
 
 - **Skills** — `acme-build`, `c64-disk-access`, `c64-memory-mapping`,
   `c64-petcat`, `c64-program-recon`, `c64-provenance-diff`, `c64-ram-capture`,
   `routine-queue-walker`.
-- **MCP server** — `@henols/vice-mcp`, exposing the `vice` tools.
 
 ## Requirements
 
 - **This installer** runs on Node ≥ 18.
-- **The VICE MCP server** it wires up requires **Node ≥ 24**, and a
-  host with VICE (`x64sc`) reachable from the MCP client. See the
-  [`@henols/vice-mcp`](https://www.npmjs.com/package/@henols/vice-mcp) readme.
+- **The skill scripts** it installs require **Node ≥ 24**.
 
-## Alternative: Claude Code plugin
+## The MCP server: Claude Code plugin
 
-If you use Claude Code, you can instead install everything as a plugin:
+The `vice` MCP server is installed as a Claude Code plugin:
 
 ```
 /plugin marketplace add henols/c64-re-tools

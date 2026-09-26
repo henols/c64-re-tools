@@ -81,7 +81,7 @@ declared in `src/mcp/vice/prerequisites.json`.
 - Three separate parts: the stdio MCP server (`vice-proxy.ts`), one broker per
   machine (`vice-broker.mts`), and the `x64sc` instances that the broker
   launches. The user starts the broker by hand with
-  `npx -y @henols/vice-mcp broker`. No client spawns it, and the project ships
+  `node <plugin-root>/src/mcp/vice/vice-cli.mjs broker`. No client spawns it, and the project ships
   no service definition for it: how the user keeps it running is their business.
 - Endpoint: fixed TCP port 19510, dialled at `127.0.0.1` and then at
   `host.docker.internal`. The first handshake that completes wins, and the

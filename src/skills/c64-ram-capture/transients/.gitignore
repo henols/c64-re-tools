@@ -1,7 +1,7 @@
 # Why this file exists BEFORE the first derivation does.
 #
 # This directory holds the per-release transient allow-lists that
-# `../scripts/derive-transients.mjs derive` writes. It sits beside capture
+# `../scripts/derive-transients.ts derive` writes. It sits beside capture
 # output, and an operator will be writing to it mid-session with a shell full
 # of image paths, so it refuses every image byte form outright.
 #

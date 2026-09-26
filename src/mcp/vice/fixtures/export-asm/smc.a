@@ -36,7 +36,7 @@
 ; address ($01 $08) a real C64 `.prg` has.
 ;
 ; Regenerate with:
-;   cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.mjs
+;   cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.ts
 
 !cpu 6510
 

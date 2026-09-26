@@ -8,7 +8,7 @@ rather than against a substring match on the exporter's own output.
 **These are real assembler outputs, not synthesized bytes.** `smc.prg` is the
 byte-for-byte file ACME 0.97 wrote for `smc.a` under
 `--cpu 6510 -f cbm`. Nothing here was hand-assembled, trimmed, padded or edited
-after capture; `make-export-asm-fixtures.mjs` is the only thing that writes
+after capture; `make-export-asm-fixtures.ts` is the only thing that writes
 `smc.prg`, and `anno-export-asm.test.ts`'s regenerator-agreement test
 re-assembles `smc.a` on every run and byte-compares the result, so the two
 cannot drift apart in silence.
@@ -19,13 +19,13 @@ cannot drift apart in silence.
 |---|---|
 | `smc.a` | The ACME source. Self-modifying by construction -- see below. |
 | `smc.prg` | The assembled image, with the two-byte little-endian load address `$01 $08`. |
-| `make-export-asm-fixtures.mjs` | The regenerator. Refuses rather than writing a partial fixture. |
+| `make-export-asm-fixtures.ts` | The regenerator. Refuses rather than writing a partial fixture. |
 
 ## Provenance table
 
 | File | Produced by | Assembler | Host | Captured at | Requirement anchor |
 |---|---|---|---|---|---|
-| `smc.prg` | `make-export-asm-fixtures.mjs` from `smc.a` | `ACME, release 0.97 ("Zem"), 31 Jan 2021` (`/home/henrik/.local/bin/acme`) | Linux x86-64 (this repo's development host) | 2026-08-30 | `EXPORT-02` (phase 30 criterion 3) |
+| `smc.prg` | `make-export-asm-fixtures.ts` from `smc.a` | `ACME, release 0.97 ("Zem"), 31 Jan 2021` (`/home/henrik/.local/bin/acme`) | Linux x86-64 (this repo's development host) | 2026-08-30 | `EXPORT-02` (phase 30 criterion 3) |
 
 ## The bytes
 
@@ -86,13 +86,13 @@ The authored half is EMPTY (zero labels, zero comments) -- filled by plan
 45-08's own closure pass (D-12). The derived half regenerates
 byte-identically from the same tool versions and route; the authored half,
 once reviewed, is frozen (D-03) -- regenerate the derived half rather than
-hand-editing it, exactly like `make-export-asm-fixtures.mjs`'s own
+hand-editing it, exactly like `make-export-asm-fixtures.ts`'s own
 regenerate-not-hand-edit rule for `smc.prg` itself.
 
 ## Regenerating
 
 ```
-cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.mjs
+cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.ts
 ```
 
 Deterministic: running it twice must leave

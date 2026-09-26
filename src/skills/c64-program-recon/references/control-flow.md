@@ -17,7 +17,7 @@ SP settle into a repeating range across three consecutive batches.
 
 ## 2. Vectors — sweep every block, and `$01` decides which are live
 
-Six pairs is not "all vectors". `node derive.mjs vectors <image.bin>` sweeps all six blocks below.
+Six pairs is not "all vectors". `node derive.ts vectors <image.bin>` sweeps all six blocks below.
 It prints the IRQ/BRK/NMI and hardware blocks by default and takes `--all` for the rest.
 
 | Block | Range | Why it matters |
@@ -44,7 +44,7 @@ the KERNAL path is in use. A jump straight into game code means it is not.
 
 **A garbage-looking `$0314` is not a bug when HIRAM = 0.** With the KERNAL banked out, nothing
 maintains the RAM vectors and they hold whatever was last there — usually the KERNAL's own
-boot-time values, partly overwritten. `derive.mjs` labels each such block `DORMANT` and reports
+boot-time values, partly overwritten. `derive.ts` labels each such block `DORMANT` and reports
 its non-default bytes as *residue*, never as a divert, because reading a hook into residue is the
 fastest way to a confidently-wrong structural claim.
 
@@ -54,7 +54,7 @@ provenance question, not a structural one. Take it to `c64-provenance-diff`.
 ### A target in a ROM window is unresolved until you read it twice
 
 A vector target in `$A000-$BFFF`, `$D000-$DFFF` or `$E000-$FFFF` is *either* ROM *or* the RAM
-underneath, decided by `$01` at the moment the vector is taken. `derive.mjs` marks these
+underneath, decided by `$01` at the moment the vector is taken. `derive.ts` marks these
 `bank-ambiguous` and stops there, because a static image cannot settle it.
 
 Live, it is one extra call: read the target with `mcp__plugin_c64-re-tools_vice__vice_memory_read`'s default bank,
@@ -163,7 +163,7 @@ message. There is no memory-only snapshot producer at all.
 
 ## Verified against this project — 2026-08-04
 
-Running `derive.mjs vectors` cold on both releases' `*-gameentry-run1.bin` returns `$01` = `$40`
+Running `derive.ts vectors` cold on both releases' `*-gameentry-run1.bin` returns `$01` = `$40`
 (LORAM 0, HIRAM 0, CHAREN 0 — KERNAL and BASIC banked out), so the live pair is `$FFFE/$FFFF`,
 holding **`$1103`**, while `$0314/$0315` holds `$0101` — nothing meaningful, exactly as the
 dormant-block rule predicts.

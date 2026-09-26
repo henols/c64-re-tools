@@ -1484,7 +1484,7 @@ test("13-REVIEW.md WR-01 pin: no production .ts/.mjs file in src/mcp/vice interp
   // the ENTIRE derived file set for the forbidden shape (a `"-c"` argument
   // followed by a backtick template literal containing `${`), so a future
   // caller-derived shell command anywhere in this directory trips the same
-  // gate the review's fix (commit f73d0fa) closed for probe-binmon.mjs.
+  // gate the review's fix (commit f73d0fa) closed for probe-binmon.ts.
   const shCInterpolationPattern = /["'`]-c["'`]\s*,\s*`[^`]*\$\{[^`]*`/g;
   const violations: Array<{ file: string; snippet: string }> = [];
   for (const name of topLevelShellScanFiles()) {
@@ -1498,7 +1498,7 @@ test("13-REVIEW.md WR-01 pin: no production .ts/.mjs file in src/mcp/vice interp
     violations,
     [],
     "found a sh -c command string interpolating a template placeholder -- this is the shell-interpolation " +
-      "anti-pattern 13-REVIEW.md WR-01 closed in probe-binmon.mjs's checkCommandAvailable() (commit f73d0fa); " +
+      "anti-pattern 13-REVIEW.md WR-01 closed in probe-binmon.ts's checkCommandAvailable() (commit f73d0fa); " +
       "pass the value as a positional shell argument instead:\n" +
       violations.map((v) => `  ${v.file}: ${v.snippet}`).join("\n"),
   );

@@ -1882,7 +1882,7 @@ test("broker states: nothing listening on the control port and a denied launch e
   assert.notEqual(nothingListeningText, launchFailedText, "the nothing-listening and launch-failed messages must be distinct");
 
   for (const text of [nothingListeningText, launchFailedText]) {
-    assert.ok(text.includes("npx -y @henols/vice-mcp broker"), "every broker-absent message must quote the broker start command");
+    assert.ok(text.includes("node <plugin-root>/src/mcp/vice/vice-cli.mjs broker"), "every broker-absent message must quote the broker start command");
     assert.match(text, /only route/i, "every broker-absent message must state this is the only route");
     assert.doesNotMatch(text, /vice-broker\.sh/, "no broker-absent message may still name the retiring bash broker");
   }

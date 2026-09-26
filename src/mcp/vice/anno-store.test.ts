@@ -2407,7 +2407,7 @@ test("idempotency of open: opening and closing a store twice with no write betwe
 // second process that really commits and really goes away -- an in-process
 // second handle would prove only that one connection can see another's rows.
 //
-// The spawned child is `anno-durability-mutator.mjs` in its commit-and-exit
+// The spawned child is `store-durability-mutator.ts` in its commit-and-exit
 // mode: it writes a DIFFERENT range from the parent's, so the readback can say
 // WHOSE row survived rather than having to infer it from a row either process
 // could have written. That mode exits cleanly, so its status is CHECKED rather
@@ -2416,7 +2416,7 @@ test("idempotency of open: opening and closing a store twice with no write betwe
 // could be something else entirely.
 // ---------------------------------------------------------------------------
 
-const MUTATOR = join(HERE, "anno-durability-mutator.mjs");
+const MUTATOR = join(HERE, "store-durability-mutator.ts");
 
 /** The range the mutator's commit-and-exit mode writes. Restated here so the
  * "whose row survived" assertion is by value against numbers this file names. */
@@ -4563,7 +4563,7 @@ create index anno_xref_to on anno_xref(to_address);
  * serve one fixture. Phase 56 removed that declared-list check; this fixture
  * still runs as a spawned child process rather than naming `node:sqlite`
  * inline in `anno-store.test.ts`. */
-const V2_FIXTURE_WRITER = join(HERE, "anno-schema-v2-fixture.mjs");
+const V2_FIXTURE_WRITER = join(HERE, "store-schema-v2-fixture.ts");
 
 /** Writes a genuine `SCHEMA_VERSION` 2 store file at `path`, in a child
  * process. The frozen DDL is passed IN, so the shape stays declared here beside

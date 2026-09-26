@@ -12,9 +12,21 @@
     "noEmit": true,
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "skipLibCheck": true
   },
-  "include": ["**/*.ts", "**/*.mts"],
-  "exclude": ["node_modules", "resources"]
+  "include": [
+    "**/*.ts",
+    "**/*.mts",
+    "../../skills/*/scripts/*.ts",
+    "../../../installer/bin/*.mts",
+    "../../../installer/scripts/*.ts",
+    "../../../installer/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "resources"
+  ]
 }

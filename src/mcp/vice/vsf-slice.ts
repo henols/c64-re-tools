@@ -29,7 +29,7 @@
 //
 // THIS MODULE MUST BE LISTED IN `package.json`'s `files[]`. Two mechanical
 // reasons: the skill-side route (`src/skills/c64-ram-capture/scripts/
-// vsf-slice.mjs`) resolves this file inside the published tarball on the
+// vsf-slice.ts`) resolves this file inside the published tarball on the
 // npm-installer route, and the structural census over `shippedTsModules()` is
 // derived from `files[]`, so a module absent from that array is outside every
 // structural guard's scanned set entirely.
@@ -415,7 +415,7 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
 //     `node:crypto`, and names this module in comments alone. A repo-wide
 //     grep finds NO non-test module importing it. Today's only non-test
 //     consumers are this module's OWN CLI -- invoked as a subprocess by
-//     `src/skills/c64-ram-capture/scripts/vsf-slice.mjs`, which is a spawn
+//     `src/skills/c64-ram-capture/scripts/vsf-slice.ts`, which is a spawn
 //     and not an import -- and `shippedTsModules()`'s structural census,
 //     which reads the file rather than importing it either.
 //
@@ -473,7 +473,7 @@ function parseCliArgs(argv: string[]): CliArgs {
       // The `startsWith("--")` half is 33 review IN-02. `argv[i + 1]` was
       // taken unconditionally, so `slice a.vsf --out --json` wrote a 64K file
       // literally NAMED `--json` and silently dropped the JSON output the
-      // caller asked for. The sibling parser in derive-transients.mjs already
+      // caller asked for. The sibling parser in derive-transients.ts already
       // refuses exactly this ("needs a value" when the next token starts with
       // `--`); this mirrors it, so the two CLIs answer the same mistake the
       // same way.

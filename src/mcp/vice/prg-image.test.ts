@@ -16,7 +16,7 @@
 // module really is the pure, filesystem/subprocess/network-free thing its
 // header claims. That claim is no longer test-enforced here.
 //
-// Never add this file to `test-gate.mjs`'s MANUAL_ONLY_TESTS: it needs no
+// Never add this file to `test-gate.ts`'s MANUAL_ONLY_TESTS: it needs no
 // external binary, no emulator and no network, so it belongs in the
 // auto-discovered automated set.
 import { test } from "node:test";

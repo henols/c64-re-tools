@@ -112,14 +112,10 @@ import { provenanceForRange, readProvenanceLedger } from "./anno-provenance-ledg
 // preconditions -- non-empty UNKNOWN reasons, agreeing_releases >= 2 for
 // ORIGINAL, and full $0000-$FFFF coverage with no gap or overlap). A TEST
 // importing the skill tree is precedented -- `skill-memory-mapping-cli.test.ts`
-// does exactly this for `c64-memory-mapping`'s own `driver.mjs` -- and tests
+// does exactly this for `c64-memory-mapping`'s own `driver.ts` -- and tests
 // are not in `package.json`'s `files[]`, so the shipped-closure rule this
 // file's own header names is untouched.
-// diff-images.mjs has no declaration file (a plain, unmodified skill script);
-// the single suppression below is scoped to this one import line, never a
-// project-wide relaxation.
-// @ts-expect-error -- diff-images.mjs (a plain skill script, left unmodified) has no .d.mts
-import { renderLedger } from "../../skills/c64-provenance-diff/scripts/diff-images.mjs";
+import { renderLedger } from "../../skills/c64-provenance-diff/scripts/diff-images.ts";
 import {
   addExcludedRange,
   addScope,
@@ -1533,7 +1529,7 @@ test("FIXTURE INTEGRITY: smc.prg genuinely self-modifies -- an `inc` writes to a
     "smc.prg must contain EXACTLY ONE instruction whose absolute write target is another instruction's immediate operand byte. " +
       "If this is 0 the fixture has stopped self-modifying and every test over it is now testing nothing; if it is more than 1 the " +
       "assertions below no longer name a unique write target. Fix smc.a, then regenerate with " +
-      `\`node fixtures/export-asm/make-export-asm-fixtures.mjs\`.\n  decoded: ${instructions.map((i) => `$${i.address.toString(16)} ${i.mnemonic}`).join(", ")}`,
+      `\`node fixtures/export-asm/make-export-asm-fixtures.ts\`.\n  decoded: ${instructions.map((i) => `$${i.address.toString(16)} ${i.mnemonic}`).join(", ")}`,
   );
 
   const writer = selfModifyingWrites[0]!;
@@ -1561,7 +1557,7 @@ test("REGENERATOR AGREEMENT: re-assembling smc.a reproduces the committed smc.pr
     [...new Uint8Array(readFileSync(outPath))],
     [...new Uint8Array(readFileSync(SMC_PRG_PATH))],
     "smc.a and smc.prg have drifted apart. The committed image is only evidence while it is EXACTLY what its source assembles to; " +
-      "regenerate with `cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.mjs`.",
+      "regenerate with `cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.ts`.",
   );
 });
 

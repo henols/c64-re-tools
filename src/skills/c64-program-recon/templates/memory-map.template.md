@@ -41,24 +41,24 @@ one-time, self-clearing banner correction — not a bug, and not a migration.
 
 Some facts belong to the **run** (which capture, which `$01`, which video standard) rather than to
 any address, and the store has no address-keyed shape for them. They are supplied to the
-renderer as a small JSON sidecar, hand-authored from `c64-ram-capture`'s and `derive.mjs`'s own
+renderer as a small JSON sidecar, hand-authored from `c64-ram-capture`'s and `derive.ts`'s own
 outputs and confirmed by the renderer — a missing or malformed key is a named error listing every
 problem at once, never a `<placeholder>` silently rendered into a published document.
 
 | Key | Type | Where it comes from |
 |---|---|---|
 | `capturePath` | string | The path to the captured 64K image, as given to `c64-ram-capture` |
-| `captureSha256` | string, 64 hex chars | `compare.mjs digest`'s `sha256` — proves which image the map describes |
-| `port01` | string | `derive.mjs vectors`' `$01` value |
-| `dd00` | string | `derive.mjs vic`'s `--dd00` input, i.e. the observed `$DD00` |
-| `vicBank` | string | `derive.mjs vic` — VIC bank derived from `$DD00` bits 0-1, inverted |
-| `screenRam` | string | `derive.mjs vic` — screen RAM derived from `$D018` bits 4-7 |
-| `charsetOrBitmap` | string | `derive.mjs vic` — charset/bitmap derived from `$D018` bits 1-3 (note the char-ROM shadow case) |
-| `mode` | string | `derive.mjs vic` — graphics mode derived from `$D011` bits 5-6 and `$D016` bit 4 |
+| `captureSha256` | string, 64 hex chars | `compare.ts digest`'s `sha256` — proves which image the map describes |
+| `port01` | string | `derive.ts vectors`' `$01` value |
+| `dd00` | string | `derive.ts vic`'s `--dd00` input, i.e. the observed `$DD00` |
+| `vicBank` | string | `derive.ts vic` — VIC bank derived from `$DD00` bits 0-1, inverted |
+| `screenRam` | string | `derive.ts vic` — screen RAM derived from `$D018` bits 4-7 |
+| `charsetOrBitmap` | string | `derive.ts vic` — charset/bitmap derived from `$D018` bits 1-3 (note the char-ROM shadow case) |
+| `mode` | string | `derive.ts vic` — graphics mode derived from `$D011` bits 5-6 and `$D016` bit 4 |
 | `videoStandard` | `"PAL"` or `"NTSC"` | Known from the capture's origin/hardware context |
-| `liveVectorPair` | string | `derive.mjs vectors` — the live vector pair (`$0314/$0315` or `$FFFE/$FFFF`) |
+| `liveVectorPair` | string | `derive.ts vectors` — the live vector pair (`$0314/$0315` or `$FFFE/$FFFF`) |
 | `vectorHandler` | string | The address the live vector pair points at, confirmed live at a checkpoint |
-| `rasterPositions` | string array, optional | One entry per observed `$D012` write on the way out of the live IRQ handler. `derive.mjs sprites` where sprite coordinates are relevant |
+| `rasterPositions` | string array, optional | One entry per observed `$D012` write on the way out of the live IRQ handler. `derive.ts sprites` where sprite coordinates are relevant |
 
 A fully-filled example, with plausible values in place of placeholders — copy this shape, never the
 literal values:

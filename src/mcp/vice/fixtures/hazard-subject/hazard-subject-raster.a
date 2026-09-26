@@ -51,7 +51,7 @@
 ; that is the point of planting the variant this way.
 ;
 ; Regenerate with:
-;   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs
+;   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts
 
 ; Zero-page phase flag: 0 while waiting for the raster interrupt, 1 while
 ; waiting for the CIA timer interrupt that follows it. Both interrupt

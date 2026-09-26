@@ -8,7 +8,7 @@
 // FOUR THINGS THIS FILE PROVES, and why each earns its place:
 //
 //   1. THE ARGV SUBCOMMAND MECHANISM, end to end, at the bin. Spawns the real
-//      `vice-proxy.ts` exactly as a consumer would (`smoke.mjs`'s harness
+//      `vice-proxy.ts` exactly as a consumer would (`smoke.ts`'s harness
 //      shape, including VICE_SKIP_RESOURCE_INSTALL=1 and
 //      MASTRA_TELEMETRY_DISABLED=1 in the child env), and asserts no line of
 //      stdout is a JSON-RPC frame -- the proof the subcommand short-circuits
@@ -185,9 +185,9 @@ before(() => {
   unknownVerbResult = spawnCli(["anno", "no-such-verb"]);
 });
 
-test("bin: `vice-mcp anno --help` exits 0, prints both invocation forms, and emits no JSON-RPC frame", () => {
+test("bin: `vice-mcp anno --help` exits 0, prints the plugin invocation and no npx form, and emits no JSON-RPC frame", () => {
   assert.equal(helpResult.status, 0, `stdout: ${helpResult.stdout} stderr: ${helpResult.stderr}`);
-  assert.match(helpResult.stdout, /npx -y @henols\/vice-mcp anno <verb>/);
+  assert.doesNotMatch(helpResult.stdout, /npx/);
   assert.match(helpResult.stdout, /node <plugin-root>\/src\/mcp\/vice\/vice-proxy\.ts anno <verb>/);
 
   // The load-bearing assertion: no line of stdout parses as a JSON object
@@ -297,7 +297,7 @@ test("WR-21: the coverage USAGE no longer claims dispatch is NEVER by byte lengt
 test("bin: `vice-mcp anno no-such-verb` exits non-zero and prints a usage block", () => {
   assert.notEqual(unknownVerbResult.status, 0);
   const combined = `${unknownVerbResult.stdout}${unknownVerbResult.stderr}`;
-  assert.match(combined, /usage \(npm install\)/);
+  assert.match(combined, /usage \(plugin\/in-repo\)/);
 });
 
 test("bin: `vice-mcp anno --help` lists exactly the surviving verbs", () => {

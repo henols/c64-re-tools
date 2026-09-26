@@ -8,7 +8,7 @@ description: Assemble Commodore 64 6510 assembly with the ACME cross assembler. 
 Source in, `.prg` out. Everything goes through one script:
 
 ```bash
-A=src/skills/acme-build/scripts/acme.mjs   # from the repo root
+A=src/skills/acme-build/scripts/acme.ts   # from the repo root
 
 node $A new game.asm          # scaffold a C64 program
 node $A build game.asm        # assemble -> .prg .sym .vs .rep
@@ -16,7 +16,7 @@ node $A sym game.asm          # the symbols the program uses
 ```
 
 The script wraps `acme` and nothing else — **assembling only**. Running
-the result on a C64 belongs to the emulator skills (`acme.mjs:3-4` says so, and the
+the result on a C64 belongs to the emulator skills (`acme.ts:3-4` says so, and the
 absent `run` verb is not an omission). It contacts nothing.
 
 Options: `-o FILE` `--out-dir DIR` `-f FORMAT` `--setpc ADDR` `-DSYM=VAL`
@@ -54,7 +54,7 @@ files land next to the `.prg`, and `--no-report` drops the `.rep`:
 Only address-typed *and* referenced symbols survive into the `.vs` — raw
 `--vicelabels` output lists constants too, and a debugger reading
 `viccolor_WHITE = $1` would relabel the 6510 processor port at `$0001`
-(`curateLabels`, `scripts/acme.mjs`) — hence 4 addresses against 121 total
+(`curateLabels`, `scripts/acme.ts`) — hence 4 addresses against 121 total
 symbols above. Load it with `mcp__plugin_c64-re-tools_vice__vice_symbols_load` (format `vice`), this
 project's only route to the emulator (`.claude/CLAUDE.md` § Version Compatibility
 / § Emulator Access).
@@ -210,7 +210,7 @@ plain `~/.local/bin/acme` build nor the Debian trixie `apt` candidate ships
 one, so a scaffold that depended on it would fail to assemble on a fresh
 install.
 
-**Route:** `scripts/acme.mjs` never spawns `acme` itself
+**Route:** `scripts/acme.ts` never spawns `acme` itself
 and never probes a container PATH for it — a container has no such PATH to
 probe (the project owner's rule of 2026-08-28). The script reaches the
 assembler only through the host-tool execution seam
@@ -228,7 +228,7 @@ the shipped scaffold on every build with `$ACME` cleared (the "Assemble the
 acme-build scaffold (library-free)" step in `.github/workflows/ci.yml`), so
 this claim is re-checkable rather than a one-machine observation.
 
-Copy `acme.mjs` into any project's `.claude/skills/acme-build/scripts/`, and
+Copy `acme.ts` into any project's `.claude/skills/acme-build/scripts/`, and
 `template.a` into `.claude/skills/acme-build/`, to use this elsewhere (the path Claude Code auto-discovers and `installSkills()` deploys to).
 
 ## Which skill does what
@@ -247,7 +247,7 @@ This one turns source into bytes. It does not restate what the others carry.
 
 | File | Covers |
 |---|---|
-| `scripts/acme.mjs` | The driver. Its comments are the contract for every flag above |
+| `scripts/acme.ts` | The driver. Its comments are the contract for every flag above |
 | `template.a` | The scaffold `new` writes: BASIC stub with a computed `SYS`, five local hardware constants (no library needed), no `!to` |
 
 Record findings that make RE faster in your own project notes **at the moment you

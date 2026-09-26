@@ -347,7 +347,7 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
   } else {
     // $DD00 bits 0-1 are the VIC bank number, INVERTED: %00=bank3, %01=bank2,
     // %10=bank1, %11=bank0 -- the same `3 - (raw & 3)` form
-    // dump-artifacts.mjs's own verified vicBank() uses.
+    // dump-artifacts.ts's own verified vicBank() uses.
     const vicBank = 3 - (portARaw & 3);
     portA.vicBank = vicBank;
     portA.vicBankBase = vicBank * 16384;

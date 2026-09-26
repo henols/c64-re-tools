@@ -2,7 +2,7 @@
 // export/import round trip (phase 45, plan 45-02, D-02/D-03).
 //
 // Two tiers, deliberately separated (mirrors this project's own
-// c1541.test.mjs / dxa-live.test.ts convention):
+// c1541.test.ts / dxa-live.test.ts convention):
 //
 //   1. PURE unit tests (Task 2's own six behaviours) against a synthetic
 //      store this file builds itself in a temp directory under the OS temp
@@ -13,7 +13,7 @@
 //      ANNO_STORE_EXPORT_LIVE_STORE naming an existing `.annostore` file on
 //      disk. Default-SKIP with a named reason -- never a hand-rolled early
 //      return, which would report a false PASS rather than a SKIP. This file
-//      is NOT in test-gate.mjs's MANUAL_ONLY_TESTS, so it must never hang or
+//      is NOT in test-gate.ts's MANUAL_ONLY_TESTS, so it must never hang or
 //      fail when the env var is absent: `npm run test:automated` runs it.
 import test from "node:test";
 import assert from "node:assert/strict";

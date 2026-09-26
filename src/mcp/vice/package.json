@@ -134,12 +134,12 @@
   ],
   "scripts": {
     "test": "node --test '*.test.*'",
-    "test:automated": "node test-gate.mjs",
-    "test:manual": "node test-gate.mjs --manual",
+    "test:automated": "node test-gate.ts",
+    "test:manual": "node test-gate.ts --manual",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "node build.ts",
     "generate:readme": "node prereq-readme-gen.ts --write",
-    "smoke": "node smoke.mjs"
+    "smoke": "node smoke.ts"
   },
   "dependencies": {
     "@mastra/mcp": "1.15.0",

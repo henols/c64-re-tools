@@ -34,7 +34,7 @@
 // STRONGER claim: the original decomposition still describes the program
 // after the edit, which is exactly the modifiability claim ROADMAP criterion
 // 4 asks for. No third `SUBJECTS` entry was needed in
-// `make-hazard-subject-annostore.mjs`.
+// `make-hazard-subject-annostore.ts`.
 //
 // THIS FILE MEASURES. IT DOES NOT DECIDE. Every assertion below checks that
 // a printed token is a MEMBER of its declared domain, never that it holds a

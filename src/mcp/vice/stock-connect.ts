@@ -149,7 +149,7 @@ export function clampCpuHistoryCount(count: number): number {
 /** Sends CPUHISTORY_GET (0x86) with memspace=main and a clamped count of 1
  * (the minimum real VICE accepts -- monitor_binary.c:1491-1497 rejects
  * `requested_count < 1` with InvalidParameter, confirmed live in
- * 07-RESEARCH.md Pitfall 8; count=1 is also probe-binmon.mjs's own
+ * 07-RESEARCH.md Pitfall 8; count=1 is also probe-binmon.ts's own
  * already-verified value), and maps the wire outcome to
  * CpuHistoryCapability's three-way answer -- 0x00 OK -> "available", 0x83
  * INVALID_TYPE -> "absent" (the pre-3.10 case), 0x8f CMD_FAILURE ->

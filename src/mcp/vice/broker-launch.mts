@@ -997,7 +997,7 @@ async function defaultHttpProbe(port: number, timeoutMs: number): Promise<boolea
 // host-bound .mts compiled into resources/ by build.ts, and a .mts cannot
 // value-import a .ts module (TS5097). The same constraint already produced
 // hand-copied wire constants in binmon-fixtures.ts and a standalone client in
-// probe-binmon.mjs. What is written here is the minimum a READINESS check needs:
+// probe-binmon.ts. What is written here is the minimum a READINESS check needs:
 // one request header out, one response header in, four bytes checked.
 // ---------------------------------------------------------------------------
 

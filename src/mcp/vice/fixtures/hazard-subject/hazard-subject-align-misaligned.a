@@ -26,7 +26,7 @@
 ; comment merely asserts.
 ;
 ; This file is sourced from its OWN root (synthesized by
-; make-hazard-subject-fixtures.mjs, never committed), which pulls in this
+; make-hazard-subject-fixtures.ts, never committed), which pulls in this
 ; file in place of hazard-subject-align.a -- everything else in the subject
 ; (the SMC construction, the dispatch construction) is shared, unmodified,
 ; with the aligned build.

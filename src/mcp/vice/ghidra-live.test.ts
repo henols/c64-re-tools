@@ -16,7 +16,7 @@
 // analyzeHeadless, then the installed language), and EVERY test in this file
 // passes it through node:test's own `{ skip }` option -- never a hand-rolled
 // early return, which would report a false PASS rather than a SKIP. It is
-// registered in test-gate.mjs's MANUAL_ONLY_TESTS (the ONE list) as the
+// registered in test-gate.ts's MANUAL_ONLY_TESTS (the ONE list) as the
 // ELEVENTH manual-only file, so `npm run test:automated` never runs it.
 //
 // Opt in with:
@@ -1123,8 +1123,8 @@ const CORPUS_ENTRY_POINTS: readonly string[] = ["$081b", "$b70a", "$b74c", "$b7e
 /** The smallest common ancestor directory of two absolute paths -- computed,
  * never a fixed guess, so the seam request's `repoRoot` for THIS call is
  * always exactly big enough to contain both the corpus image and the
- * scratch output directory, and no bigger. Mirrors `c1541.mjs`'s own
- * `commonAncestorDir()` (`src/skills/c64-disk-access/scripts/c1541.mjs`),
+ * scratch output directory, and no bigger. Mirrors `c1541.ts`'s own
+ * `commonAncestorDir()` (`src/skills/c64-disk-access/scripts/c1541.ts`),
  * duplicated here rather than imported -- this file must never reach into a
  * skill script (D-36-12's own container/host-side split; a skill script
  * additionally ships in the OTHER npm package). */

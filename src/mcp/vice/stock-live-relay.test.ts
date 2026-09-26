@@ -711,7 +711,7 @@ test(
 
 // ---------------------------------------------------------------------------
 // GAP PROBE (plan 63-10) -- both cases below are additions to a file already
-// registered manual-only (test-gate.mjs's MANUAL_ONLY_TESTS); they inherit
+// registered manual-only (test-gate.ts's MANUAL_ONLY_TESTS); they inherit
 // SKIP_REASON exactly like the combined proof above and stay opt-in via the
 // SAME VICE_LIVE_RELAY_BIN gate.
 //

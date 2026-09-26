@@ -20,3 +20,7 @@ import type { BrokerState } from "./broker-state.mjs";   // type-only: loads unb
   `resources-sync.test.ts` reds on drift.
 - A new host-bound module goes in both lists. build() fails on any
   mismatch.
+- Entry artifacts (`build.ts` `ENTRY_ARTIFACTS`, `tsconfig.entry.json`)
+  are compiled too, but emitted beside their `.mts` source and never
+  host-bound: package bins that run from `node_modules` (`vice-cli`,
+  the installer CLI). `entry-sync.test.ts` reds on drift.

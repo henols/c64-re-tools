@@ -13,7 +13,7 @@
 // unchanged. This file adds nothing to that analysis: it needs only ONE
 // grant, ONE claim, ONE command, never a second session or a crash respawn.
 //
-// Registered as MANUAL_ONLY_TESTS' THIRTEENTH entry in test-gate.mjs.
+// Registered in test-gate.ts's MANUAL_ONLY_TESTS.
 //
 // Opt in with:
 //   VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test text-monitor-live.test.ts

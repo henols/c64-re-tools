@@ -103,7 +103,7 @@ jobs:
         # a fast dedicated failure is worth the second second.
         #
         # The test file starts its OWN harness broker (broker-harness.ts) and
-        # runs acme.mjs against it over the fixed endpoint, so this step needs
+        # runs acme.ts against it over the fixed endpoint, so this step needs
         # no machine broker and no container environment.
         working-directory: src/mcp/vice
         env:
@@ -113,7 +113,7 @@ jobs:
       # Phase 31 gap closure (31-04, verification gap 1 / code review CR-01):
       # `installer/skills/` is a GENERATED, GITIGNORED tree -- `git ls-files
       # installer/skills` returns 0 -- and its ONE producer is
-      # `installer/scripts/sync-skills.mjs`, the exact command the installer
+      # `installer/scripts/sync-skills.ts`, the exact command the installer
       # package's own `prepack` hook runs. This step reuses that single
       # producer rather than introducing a second sync path.
       #
@@ -126,7 +126,7 @@ jobs:
       # zero skips -- indistinguishable from having scored two.
       - name: Generate the shipped skills tree (scored by the skill guards)
         working-directory: installer
-        run: node scripts/sync-skills.mjs
+        run: node scripts/sync-skills.ts
 
       - name: Test
         working-directory: src/mcp/vice
@@ -145,8 +145,8 @@ jobs:
           #
           # `npm test` (not `npm run test:automated`) is DELIBERATE, decided
           # from run 32517575905 (2026-08-21, GitHub Actions, ubuntu-latest):
-          # its own Test-step log shows every one of test-gate.mjs's
-          # MANUAL_ONLY_TESTS entries (nine as of Phase 15 plan 15-10)
+          # its own Test-step log shows every one of test-gate.ts's
+          # MANUAL_ONLY_TESTS entries (nine at the time of that run)
           # running to completion with zero failures in under two minutes
           # wall-clock, including the suite that provides the stdio proxy's
           # only end-to-end wire proof (BACK-05) and the two suites that hang
@@ -158,10 +158,10 @@ jobs:
           # opt-in behind its own environment variable that CI never sets.
           # CI's set is deliberately wider than `npm run test:automated`,
           # which exists for local/devcontainer ergonomics (avoiding the
-          # local hang), not as CI's contract. `test-gate.test.ts`'s drift
-          # guard remains the single source of truth for which files are
-          # manual-only; this comment names no second list, deliberately
-          # naming zero of them here.
+          # local hang), not as CI's contract. test-gate.ts's
+          # MANUAL_ONLY_TESTS remains the single source of truth for which
+          # files are manual-only; this comment names no second list,
+          # deliberately naming zero of them here.
           VICE_REQUIRE_ACME: "1"
         run: npm test
 
@@ -169,19 +169,17 @@ jobs:
         working-directory: src/mcp/vice
         run: npm run smoke
 
-      # Phase 16 gap closure (16-08, code review WR-01): installer/wire-mcp.test.mjs
-      # (18 tests) pins wireMcp(), the installer's only code that reads, edits and
-      # rewrites a file it does not own (a consumer's .mcp.json), and was committed
-      # this phase with nothing in CI executing it. No `npm ci` step is needed here
-      # -- installer/bin/cli.mjs imports only node: builtins, so the suite runs
-      # against a bare checkout.
+      # installer/cli.test.ts drives the committed, compiled installer/bin/cli.mjs
+      # as a subprocess: it copies skills, writes no .mcp.json, refuses --vendor
+      # and never runs npm/npx. No `npm ci` step is needed -- the CLI imports
+      # only node: builtins, so the suite runs against a bare checkout.
       - name: Test the installer
         working-directory: installer
         run: npm test
 
       # Phase 16 gap closure (16-08, code review WR-01): the four skill suites under
-      # src/skills/*/scripts/ (diff-images.test.mjs, d64-parse.test.mjs,
-      # dump-artifacts.test.mjs, watch-loads.test.mjs; 95 tests, 87 pass, 8 skipped,
+      # src/skills/*/scripts/ (diff-images.test.ts, d64-parse.test.ts,
+      # dump-artifacts.test.ts, watch-loads.test.ts; 95 tests, 87 pass, 8 skipped,
       # 0 fail measured at plan time) were likewise committed and executed by
       # nothing in CI -- the vice-mcp `npm test` glob above is cwd-only and
       # non-recursive, so it structurally cannot reach a suite outside its own
@@ -189,7 +187,7 @@ jobs:
       # half a second to the job. The glob is quoted so Node receives the pattern
       # rather than a shell expansion.
       - name: Test the skills
-        run: node --test 'src/skills/*/scripts/*.test.mjs'
+        run: node --test 'src/skills/*/scripts/*.test.ts'
 
   publish-npm:
     # On a v* tag, publish both npm packages to the public registry via
@@ -233,7 +231,7 @@ jobs:
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           fi
 
-      # Publish the MCP server first: the installer depends on this exact version.
+      # Both packages publish at the same version from the same tag.
       # No NODE_AUTH_TOKEN: npm authenticates to the registry via GitHub OIDC.
       - name: Publish @henols/vice-mcp
         working-directory: src/mcp/vice
@@ -245,7 +243,6 @@ jobs:
         working-directory: installer
         run: |
           npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
-          npm pkg set "dependencies.@henols/vice-mcp=${{ steps.ver.outputs.version }}"
           npm publish
 
   # DECL-02 (phase 58 plan 01): src/mcp/vice/prerequisites.json must parse

@@ -84,7 +84,7 @@
 //   VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test stock-broker-live.test.ts
 //
 // Registered as the SEVENTH and, as of this plan, last MANUAL_ONLY_TESTS
-// entry in test-gate.mjs: spawns a real broker daemon (resources/
+// entry in test-gate.ts: spawns a real broker daemon (resources/
 // vice-broker.mjs, under bare node) AND a real emulator process per test
 // case, default-SKIPs everywhere (never hangs CI), and is opted into
 // exactly like its six siblings.
