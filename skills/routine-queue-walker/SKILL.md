@@ -1,6 +1,6 @@
 ---
 name: routine-queue-walker
-description: Drive an existing C64 annotation store's backlog of undocumented routines and auto-named symbols to closure — build the candidate queue from labels and comments, work it one entry at a time against explicit addresses, rebuild it after every pass, and report every leftover. Use when asked to annotate every remaining routine in a project, document all undocumented subroutines left in an annotation project, rename the leftover auto-generated labels, clear a backlog of unnamed symbols, drive an annotation pass to completion, or list what is still unannotated after a pass.
+description: Drive an existing C64 annotation project's backlog of undocumented routines and auto-named symbols to closure — build the candidate queue from labels and comments, work it one entry at a time against explicit addresses, rebuild it after every pass, and report every leftover. Use when asked to annotate every remaining routine in a project, document all undocumented subroutines left in an annotation project, rename the leftover auto-generated labels, clear a backlog of unnamed symbols, drive an annotation pass to completion, or list what is still unannotated after a pass.
 ---
 
 # Walking the routine and symbol queue to closure
@@ -11,7 +11,7 @@ here is not slow work. It is a pass that *looks* finished while a hundred
 queue first, from data, then walk it to the end.
 
 This playbook assumes block classification has already happened and an
-annotation store already exists. You may not yet know what the program is —
+annotation project already exists. You may not yet know what the program is —
 where it starts, which vector is live, which regions are code. If so, stop
 and run `c64-program-recon` first. That skill answers *what is this
 program*. This one answers *what is still undocumented in it, and how do I
@@ -20,12 +20,12 @@ finish*.
 ## The one rule that makes this different from upstream's version
 
 **Work the queue one entry at a time.** Not as a throughput compromise — as an
-accurate model of the store underneath. One `.annostore` is one writer. Every
-mutating call opens it, commits and closes inside the call, and every one of
-them accepts an optional `base_revision` compare-and-swap. That REFUSES a
-write computed against a revision the store has already moved past. Fanning
-several writers at one store therefore buys **zero** extra throughput and
-costs correctness. The losers come back as named stale-revision refusals you
+accurate model of the project underneath. The broker runs every annotation
+call on one database connection, one at a time. Every mutating call commits
+inside the call, and every one of them accepts an optional `base_revision`
+compare-and-swap. That REFUSES a write computed against a revision the project
+has already moved past. Fanning several writers at one project therefore buys
+**zero** extra throughput and costs correctness. The losers come back as named stale-revision refusals you
 then have to re-derive and replay. Reading fan-out — several agents *thinking*
 over answers they already got — is fine, and its value is reasoning
 bandwidth, never I/O.
@@ -37,12 +37,13 @@ The JSON object carries the same argument names each verb below documents.
 Use `--args-file <path>` for a large object, such as `anno_batch_execute`'s.
 The npm-installed form is `vice-mcp anno call <name> --args '<json>'`.
 
-**Every call names its own store.** There is no ambient "current store" on
-this surface: pass `store` (a `.annostore` path) on every call. Also pass
-`image` on every call that derives its answer from the program's bytes rather
-than from the annotations. Those calls are `anno call anno_get_binary_info`,
+**Every call annotates the workspace's own project.** The broker holds the
+annotations; `.c64-re-tools/project.json` names this workspace's project, and
+the first write creates it. No call takes a `store` argument. Pass `image` on
+every call that derives its answer from the program's bytes rather than from
+the annotations. Those calls are `anno call anno_get_binary_info`,
 `anno call anno_read_region`, `anno call anno_disassemble`, `anno call anno_get_cross_references`,
-`anno call anno_search` and `anno call anno_get_address_details`. The store holds annotations and
+`anno call anno_search` and `anno call anno_get_address_details`. The project holds annotations and
 never bytes, so an omitted image would read as a plausible success against
 whatever was recorded last.
 
@@ -63,7 +64,7 @@ whatever was recorded last.
    Phase 0.
 
 Upstream's in-place `unpack_binary` step is deliberately not carried. It is
-destructive: it clears the comments, labels and blocks already in the store.
+destructive: it clears the comments, labels and blocks already in the project.
 This project has a non-destructive route to the same answer.
 
 ## Phase 1 — make sure blocks are classified
@@ -100,13 +101,13 @@ line comment. That is the only test. Do not guess from the label name.
    when you write up the entry in Phase 2.2. Every one of these targets is a
    routine candidate **regardless of whether it carries any label at all**.
    A real measured derivation run (dxa disassemble, then Ghidra import) found
-   this. A purely dxa/Ghidra-derived store carries ZERO labels of any shape.
+   this. A purely dxa/Ghidra-derived project carries ZERO labels of any shape.
    Derivation writes typed ranges and cross-references, never names. So a
    queue built only from Candidate source B below finds nothing to do on
-   such a store. It silently reports a clean, empty queue on a program
+   such a project. It silently reports a clean, empty queue on a program
    nothing has been named in yet. Source A does not depend on step 1 having
    found anything.
-4. **Candidate source B — the label-prefix path, for a store that DOES carry
+4. **Candidate source B — the label-prefix path, for a project that DOES carry
    externally-imported auto-names.** Keep a label as a routine candidate when
    any of these holds:
    - its name starts with `s_` (an auto-generated subroutine label).
@@ -119,7 +120,7 @@ line comment. That is the only test. Do not guess from the label name.
      candidate rather than pattern-matching specific vector addresses.
    - it is the label named exactly `start`.
 5. **Union sources A and B by address** — a routine reachable both ways counts
-   once. A store may carry either shape, or both, so neither source alone is
+   once. A project may carry either shape, or both, so neither source alone is
    sufficient.
 6. Drop every candidate that already carries a line comment.
 7. What remains is the routine queue.
@@ -143,13 +144,13 @@ one-line summary, and any uncertainty.
 
 ### 2.3 Refresh point
 
-When the queue is empty, read the store's revision with `anno call anno_save_project`.
+When the queue is empty, read the project's revision with `anno call anno_save_project`.
 **It performs no write, and it exists to say so.** Every mutating verb on
 this surface has already committed and fsynced its own write by the time it
 returned. So there is nothing for an explicit save to flush. Record the
 revision — it is the checkpoint you measure this pass from. It is also the
 `base_revision` a later compare-and-swap write would quote. Everything after
-this point re-reads the store, because Phase 2 has just changed the label
+this point re-reads the project, because Phase 2 has just changed the label
 names Phase 3 filters on.
 
 ## Phase 3 — the symbol queue
@@ -173,10 +174,10 @@ register, KERNAL entry point, OS variable).
    referenced from a code range while it does not sit inside one. Every one
    of these is a symbol candidate **regardless of whether it carries any
    label at all**. The same measured derivation run found this. A purely
-   dxa/Ghidra-derived store carries ZERO labels of any shape. So Candidate
-   source B below finds nothing to do on such a store. It silently reports
+   dxa/Ghidra-derived project carries ZERO labels of any shape. So Candidate
+   source B below finds nothing to do on such a project. It silently reports
    a clean, empty queue on a program nothing has been named in yet.
-3. **Candidate source B — the label-prefix path, for a store that DOES carry
+3. **Candidate source B — the label-prefix path, for a project that DOES carry
    externally-imported auto-names.** Keep every label whose name still
    matches an auto-generated pattern. In the zero page, that pattern is
    `zpp_XX`, `zpf_XX` or `zpa_XX`. Outside the zero page, that pattern is
@@ -217,7 +218,7 @@ performed. The writes already landed.
 ## Phase 4 — save and report
 
 1. Read the revision one last time with `anno call anno_save_project` and quote it in
-   the report. This makes the pass attributable to an exact store state.
+   the report. This makes the pass attributable to an exact project state.
 2. Write the report. Four sections, all of them required:
 
 **Regions.** How many regions you classified, grouped by type, plus anything
@@ -248,14 +249,12 @@ A report that says "all routines documented" is a claim about the report, not
 about the program. Measure it. From the repository root:
 
 ```
-node src/mcp/vice/vice-proxy.ts anno coverage game.prg --store game.annostore
+node src/mcp/vice/vice-proxy.ts anno coverage game.prg
 ```
 
-**`--store` is REQUIRED and is a second path, not a spelling of the first.**
-`<program>` supplies the payload bytes and the load origin. `--store` names the
-annotation store holding the labels, comments and typed ranges. The store holds
-annotations and never bytes, so the verb refuses to guess either path from the
-other.
+`<program>` supplies the payload bytes and the load origin. The labels,
+comments and typed ranges come from the workspace's own annotation project,
+which holds annotations and never bytes.
 
 **Dated note, 2026-08-30 — the positional is a program IMAGE, and the command
 above is now correct against the shipped verb.** `<program>` is a `.prg` (a
@@ -276,10 +275,10 @@ Re-capture it, do not rename it.
 
 Add `--out coverage.json` to keep the machine-readable report, `--force` to
 overwrite one, and `--sample N` to widen the reproducibility sample. The verb
-reads the same store every call in this playbook writes to. It exits **0
+reads the same project every call in this playbook writes to. It exits **0
 even when the numbers are bad** — a low measurement is a result, not a
 failure. Non-zero means a caller error, an image it could not read, or a
-store it could not read at all.
+project it could not read at all.
 
 **Run it three times:**
 - once before Phase 2, so the pass has a starting point to be compared
@@ -300,10 +299,10 @@ number also makes the claim unfalsifiable:
   the easily-visible part of the program. The rest was never entered. Go back
   to Phase 0 and find more entry points (chained IRQ vectors, dispatch
   tables), not more labels.
-- **A large divergence means the store and the bytes disagree about what is
-  code.** Bytes the census reached as instructions that the store does not call
+- **A large divergence means the project and the bytes disagree about what is
+  code.** Bytes the census reached as instructions that the project does not call
   `Code` are places where Phase 1's classification is behind the actual control
-  flow. The reverse direction (the store calls it `Code`, the census never
+  flow. The reverse direction (the project calls it `Code`, the census never
   reached it) is ordinary on an image with unreachable filler. Read it, do
   not chase it.
 - **A low distinct-comment ratio means the comments are filler.** Fifty
@@ -319,7 +318,7 @@ never a rating, and there is no number to report as "the coverage".
 
 This is a DIFFERENT, non-overlapping measurement from the `anno coverage`
 call above — neither replaces the other. `anno coverage` is the byte-census
-and label-ratio instrument: a derived-from-bytes census this store's own
+and label-ratio instrument: a derived-from-bytes census this project's own
 block table cannot move. `anno decomp-completeness` is the
 disagreement-gated closure gate. It checks four things:
 - this fixture's byte-derived block classification and its own real,
@@ -332,13 +331,14 @@ The disagreement query itself is a required, non-defaultable input, not an
 optional cross-check.
 
 ```
-node src/mcp/vice/vice-proxy.ts anno decomp-completeness --store <fixture>.annostore --disagreements <fixture>-disagreements.json --manifest src/mcp/vice/fixtures/decomp-execution-manifest.json
+node src/mcp/vice/vice-proxy.ts anno decomp-completeness --fixture <dir>/<fixture>.prg --disagreements <fixture>-disagreements.json --manifest src/mcp/vice/fixtures/decomp-execution-manifest.json
 ```
 
-All three arguments are REQUIRED, and none is derived from another:
-- `--store` names the annotation store.
-- `--disagreements` names the JSON `anno evid-disagreements --store <same
-  store> --json` wrote for THIS store's own run.
+Run it from the workspace whose project holds that fixture's annotations. All
+three arguments are REQUIRED, and none is derived from another:
+- `--fixture` names the fixture, as its manifest entry spells it.
+- `--disagreements` names the JSON `anno evid-disagreements --json` wrote for
+  THIS project's own run.
 - `--manifest` names the committed execution manifest recording which of the
   nine fixtures were actually run under the reproducible-run protocol. It also
   records which fixtures were declared not-executed, and why.
@@ -349,8 +349,8 @@ nothing" must never read the same.
 
 **The stop condition is a measured exit code, not a belief.** The walk
 described in Phases 2-4 above finishes for a fixture when `node
-skills/routine-queue-walker/scripts/completeness-report.ts --store
-<fixture>.annostore --disagreements <fixture>-disagreements.json --manifest
+skills/routine-queue-walker/scripts/completeness-report.ts --fixture
+<dir>/<fixture>.prg --disagreements <fixture>-disagreements.json --manifest
 src/mcp/vice/fixtures/decomp-execution-manifest.json` **exits 0**. It never
 finishes just because the agent believes the queue is empty. A non-zero exit
 names, by address, exactly which measure still fails:
@@ -371,7 +371,7 @@ exit code.
   next one. Report every one of those in the leftovers table.
 - A refused write is not silent and must not be treated as one. Three
   things all come back REFUSED and named, with nothing written:
-  - a stale-revision refusal (a `base_revision` that the store has moved
+  - a stale-revision refusal (a `base_revision` that the project has moved
     past).
   - an illegal label name.
   - a scope that overlaps an existing one.
@@ -386,7 +386,7 @@ exit code.
   fabricated name.** When a referenced address's target is truly
   path-dependent or otherwise cannot be determined, record it with
   `anno call anno_set_comment`. Use the literal prefix `DECLINED:` naming what is
-  unknown and why. `.annostore`'s own importer already uses this same
+  unknown and why. The annotation importer already uses this same
   convention for bank-state declines. This is never a second mechanism. A
   confident wrong label is worse than an absent one.
 - **An accepted disagreement gets a `DISAGREEMENT-ACCEPTED:` comment.** The

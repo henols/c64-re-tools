@@ -138,12 +138,12 @@ into the exported ACME source as an inline comment on the block that range
 overlaps:
 
 ```
-anno export-asm game.prg --store game.annostore --ledger recovery/PROVENANCE.md
+anno export-asm game.prg --out game-src --ledger recovery/PROVENANCE.md
 ```
 
-The `<image>` positional wants one of `.prg`/`.raw`/`.bin`, `--store` an
-`.annostore`/`.store` file, and `--ledger` the `.md` this skill's own `ledger`
-verb writes.
+The `<image>` positional wants one of `.prg`/`.raw`/`.bin`, `--out` the
+directory the tree goes into, and `--ledger` the `.md` this skill's own
+`ledger` verb writes. The annotations are the workspace's own project.
 
 **The flag makes the verdict VISIBLE and decides nothing.** Every byte in
 scope is still emitted, whatever the verdict says — a `CRACKER-PATCH` row does
@@ -163,9 +163,9 @@ form is `vice-mcp anno call <name> --args '<json>'`.
 left out of the rebuild output** — a trainer patch, a cracktro block, anything
 they choose — the round trip runs entirely through the `anno` CLI's `call`
 verb, never by editing the ledger or the export:
-`anno call anno_exclude_range --args '{"store":"game.annostore","start_address":"$1000","end_address":"$10ff","reason":"..."}'`
+`anno call anno_exclude_range --args '{"start_address":"$1000","end_address":"$10ff","reason":"..."}'`
 records the span WITH the reason the operator gave, and
-`anno call anno_include_range --args '{"store":"game.annostore","start_address":"$1000","end_address":"$10ff"}'`
+`anno call anno_include_range --args '{"start_address":"$1000","end_address":"$10ff"}'`
 takes the record back if the decision changes. Recording an exclusion changes nothing about
 which bytes the export emits — the exported block still carries every byte
 of that span, now with a visible marker naming the exclusion and its reason,

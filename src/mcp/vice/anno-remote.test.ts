@@ -3,7 +3,7 @@
 // One harness broker (dynamic port, temp VICE_BROKER_HOME -- never 19510,
 // never the real ~/.c64-re-tools) answers every case. What is proved:
 //   * a project is registered before its first write, a read of an unknown
-//     id is refused as \`unknown_project\`, and two projects stay isolated;
+//     id is refused as `unknown_project`, and two projects stay isolated;
 //   * a staged image is what a derived read decodes, and arguments far past
 //     the broker's 64 KiB line cap still arrive, because they are staged;
 //   * of two parallel writers based on the same revision, one is refused;

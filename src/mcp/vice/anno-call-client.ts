@@ -1,39 +1,60 @@
 #!/usr/bin/env node
 // anno-call-client.ts
 //
-// WHY THIS FILE EXISTS: the client half of one `anno call`. It confines every
-// path the call names to the workspace, reads those files, and hands the
-// engine (`anno-tools.mts`) staged bytes, so the engine never sees a path. It
-// also deletes a Ghidra transfer file once the engine reports that the import
-// consuming it succeeded.
+// WHY THIS FILE EXISTS: the client half of one `anno call`. It validates the
+// call, confines every file it names to the workspace, finds the workspace's
+// annotation project, and runs the call through the broker, which owns the
+// store. It also deletes a Ghidra transfer file once the broker reports that
+// the import consuming it succeeded.
 //
 // WHAT NOT TO DO:
-//   - Never pass a path to the engine. Every argument its definition marks
-//     `clientFile` is replaced by a staged reference before the call leaves.
-//   - Never delete a transfer file before the engine has reported that import's
-//     success: its rows are durable only once the import has returned.
-//   - Never create the store a verb was asked to use. "The annotations are
-//     gone" and "there are no annotations" must not read the same.
-import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
+//   - Never open the store, and never import a module that does: the broker
+//     owns the database, and this module only ever reaches it over the
+//     endpoint.
+//   - Never send a path. Every argument its definition marks `clientFile` is
+//     replaced by a staged reference, and the file travels as bytes.
+//   - Never create a project on a read. A read in a workspace with no
+//     project.json is refused; only a write registers a new project.
+//   - Never delete a transfer file before the broker has reported that
+//     import's success: its rows are durable only once the import returned.
+import { existsSync, unlinkSync } from "node:fs";
 
-import { closeStore, openStore } from "./anno-store.mts";
 import {
   assertAnnoTool,
   clientFileKeys,
   READ_ONLY_ANNO_VERBS,
-  runAnnoToolOnHandle,
   toolFailure,
   AnnoToolArgumentError,
-  type AnnoInputFile,
   type ToolCallResult,
-} from "./anno-tools.mts";
-import { AnnoStorePathError, storePathWithinWorkspace } from "./anno-types.mts";
+} from "./anno-tool-defs.mts";
+import { AnnoProjectError, AnnoStorePathError, storePathWithinWorkspace } from "./anno-types.mts";
+import { mintProjectId, persistProjectId, readProjectId } from "./anno-project.ts";
+import { runAnnoRemote, type AnnoRemoteCall, type AnnoRemoteResult } from "./anno-remote.ts";
 import { repoRoot } from "./repo-root.ts";
+
+/** One annotation call through the broker. Tests replace it with an
+ * in-process runner over a temp database. */
+export type RunAnnoRemote = (call: AnnoRemoteCall) => Promise<AnnoRemoteResult>;
 
 /** Side-effecting leaves a test may replace. */
 export interface AnnoCallDeps {
   /** Deletes a consumed transfer file. Defaults to the real unlink. */
   deleteFile?: (path: string) => void;
+  /** Runs one call. Defaults to the broker's endpoint. */
+  runRemote?: RunAnnoRemote;
+  /** The workspace root. Defaults to `repoRoot()`, read at call time. */
+  workspaceRoot?: string;
+}
+
+/** A refusal from the broker or the route to it, named so a caller can tell
+ * it from an argument error. */
+export class AnnoBrokerError extends Error {
+  code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "AnnoBrokerError";
+    this.code = code;
+  }
 }
 
 /** A transfer file the call consumes, and where its import sits: `[]` for a
@@ -45,7 +66,7 @@ interface ConsumedFile {
 
 interface StagedCall {
   args: Record<string, unknown>;
-  inputs: Map<string, AnnoInputFile>;
+  files: Record<string, string>;
   consumed: ConsumedFile[];
 }
 
@@ -57,30 +78,12 @@ function argBag(args: unknown): Record<string, unknown> {
   return isPlainObject(args) ? args : {};
 }
 
-/** Narrows `store` to a non-empty string; containment is `workspacePath()`'s. */
-function assertStoreArg(name: string, args: unknown): string {
-  const store = argBag(args).store;
-  if (typeof store !== "string" || store.trim() === "") {
-    throw new AnnoToolArgumentError(
-      `${name} refused: "store" must be a non-empty string naming an annotation store -- every anno_* verb names its own store (D-06), ` +
-        "because there is no ambient current store to inherit.",
-      { toolName: name, argument: "store" },
-    );
-  }
-  return store;
-}
-
-/** Confines a caller path to the workspace root, read at call time so one test
- * process can point several roots at this code. */
-function workspacePath(raw: string): string {
-  return storePathWithinWorkspace(raw, repoRoot());
-}
-
-/** Confines and reads one file argument, refusing an absent file by name. */
-function readClientFile(name: string, key: string, raw: string): { path: string; bytes: Uint8Array } {
+/** Confines one file argument to the workspace and refuses an absent file by
+ * name, before anything is sent. */
+function confineClientFile(name: string, key: string, raw: string, workspaceRoot: string): string {
   let path: string;
   try {
-    path = workspacePath(raw);
+    path = storePathWithinWorkspace(raw, workspaceRoot);
   } catch (err) {
     if (err instanceof AnnoStorePathError) {
       throw new AnnoStorePathError(`${name} refused: ${key} ${err.message}`, { path: err.path, workspaceRoot: err.workspaceRoot });
@@ -95,28 +98,28 @@ function readClientFile(name: string, key: string, raw: string): { path: string;
       { path },
     );
   }
-  return { path, bytes: new Uint8Array(readFileSync(path)) };
+  return path;
 }
 
 /**
  * Replaces every client-file argument -- at the top level and inside every
- * batch entry, at any depth -- with a staged reference, reading each distinct
- * file once. A value that is not a non-empty string is left for the engine's
- * own validator to refuse.
+ * batch entry, at any depth -- with a staged reference, one slot per distinct
+ * file. A value that is not a non-empty string is left for the engine's own
+ * validator to refuse.
  */
-function stageClientFiles(name: string, args: unknown): StagedCall {
-  const inputs = new Map<string, AnnoInputFile>();
+function stageClientFiles(name: string, args: unknown, workspaceRoot: string): StagedCall {
+  const files: Record<string, string> = {};
   const slotByPath = new Map<string, string>();
   const consumed: ConsumedFile[] = [];
 
   const stage = (toolName: string, key: string, value: unknown, locator: number[]): unknown => {
     if (typeof value !== "string" || value.trim() === "") return value;
-    const { path, bytes } = readClientFile(toolName, key, value);
+    const path = confineClientFile(toolName, key, value, workspaceRoot);
     let slot = slotByPath.get(path);
     if (slot === undefined) {
-      slot = `f${inputs.size}`;
+      slot = `f${slotByPath.size}`;
       slotByPath.set(path, slot);
-      inputs.set(slot, { name: path, bytes });
+      files[slot] = path;
     }
     if (key === "export_path") consumed.push({ path, locator });
     return { $file: slot };
@@ -135,7 +138,7 @@ function stageClientFiles(name: string, args: unknown): StagedCall {
     return out;
   };
 
-  return { args: walk(name, argBag(args), []), inputs, consumed };
+  return { args: walk(name, argBag(args), []), files, consumed };
 }
 
 /** The import answer a locator names inside a successful result, or undefined
@@ -171,57 +174,83 @@ function settleConsumedFiles(result: ToolCallResult, consumed: readonly Consumed
   return { content: [{ type: "text", text: JSON.stringify(value) }], isError: false };
 }
 
-/** Refuses an absent store BY NAME, returning the inode the later guard
- * compares against. */
-function assertStorePresent(name: string, storePath: string): number {
-  if (!existsSync(storePath)) {
-    throw new AnnoStorePathError(
-      `${name} refused: no annotation store exists at ${JSON.stringify(storePath)} -- refusing to CREATE one, because "the ` +
-        'annotations are gone" and "there are no annotations" must not read the same. Create the store deliberately first.',
-      { path: storePath },
+/** Turns a refusal from the broker or the route to it into the named error it
+ * stands for. */
+export function brokerRefusal(result: Extract<AnnoRemoteResult, { ok: false }>): Error {
+  if (result.code === "unknown_project") {
+    return new AnnoProjectError(
+      `${result.message}. This workspace's .c64-re-tools/project.json names a project the broker does not hold -- its rows are gone ` +
+        "from the broker's database. Import a saved copy with `anno import-project FILE`, or delete project.json to start a new, " +
+        "empty project.",
     );
   }
-  return statSync(storePath).ino;
+  if (/unknown op: anno_run/.test(result.message)) {
+    return new AnnoBrokerError(
+      "the broker answering on this endpoint predates the annotation store it now owns (it does not know anno_run) -- stop it and " +
+        "start the broker from this checkout.",
+      "bad_request",
+    );
+  }
+  return new AnnoBrokerError(result.message, result.code);
 }
 
-/** Closes the window between the existence check and the open: a file
- * unlinked and recreated in between is a different inode. */
-function assertSameFile(name: string, storePath: string, inodeBefore: number): void {
-  if (statSync(storePath).ino !== inodeBefore) {
-    throw new AnnoStorePathError(
-      `${name} refused: the file at ${JSON.stringify(storePath)} was replaced between the existence check and the open, so this ` +
-        "call would have written into a store it created itself rather than the one it was asked to annotate. Nothing was written.",
-      { path: storePath },
+/**
+ * The workspace's project id. A read in a workspace with no project.json is
+ * refused and creates nothing. A write registers a new project with the
+ * broker FIRST and only then persists its id, so project.json never names a
+ * project the broker was never told about; two concurrent first writes agree
+ * on the id that reached the file first.
+ */
+export async function workspaceProject(name: string, mode: "read" | "write", workspaceRoot: string, runRemote: RunAnnoRemote): Promise<string> {
+  const read = readProjectId(workspaceRoot);
+  if (read.present) return read.projectId;
+  if (mode === "read") {
+    throw new AnnoProjectError(
+      `${name} refused: this workspace has no annotation project yet (${read.path} does not exist) -- nothing has been annotated ` +
+        "here, so there is nothing to read. The first write creates the project.",
     );
   }
+  const minted = mintProjectId();
+  const registered = await runRemote({ projectId: minted, kind: "register", name: "", args: {}, files: {} });
+  if (!registered.ok) throw brokerRefusal(registered);
+  return persistProjectId(workspaceRoot, minted);
+}
+
+/** The runner a call uses: the injected one, or the broker's endpoint. */
+export function remoteRunner(deps: { runRemote?: RunAnnoRemote }): RunAnnoRemote {
+  return deps.runRemote ?? ((call) => runAnnoRemote(call));
 }
 
 /**
  * Runs one curated `anno_*` call. THE NEVER-THROW BOUNDARY: every failure --
  * an uncurated name, a malformed argument, a path outside the workspace, a
- * missing file, a corrupt store -- resolves as `{isError:true}` text naming
- * the error CLASS.
+ * missing file, a missing project, a broker that does not answer -- resolves
+ * as `{isError:true}` text naming the error CLASS.
  *
- * The arguments are validated before any file is read, so a call that should
- * not have been sent reads nothing. A file the call names that cannot be read
- * refuses the WHOLE call, a batch included: its bytes are sent with the call,
- * so an unreadable one means the call cannot be sent.
+ * The arguments are validated before any file is read or any project is
+ * touched, so a call that should not have been sent does nothing. A file the
+ * call names that cannot be read refuses the WHOLE call, a batch included:
+ * its bytes travel with the call, so an unreadable one means the call cannot
+ * be sent.
  */
 export async function runAnnoTool(name: string, args: unknown, deps: AnnoCallDeps = {}): Promise<ToolCallResult> {
   try {
-    assertAnnoTool(name, args);
-    const storePath = workspacePath(assertStoreArg(name, args));
-    const inodeBefore = assertStorePresent(name, storePath);
-    const staged = stageClientFiles(name, args);
-    delete staged.args.store;
-    const handle = openStore(storePath, { workspaceRoot: repoRoot(), mustExist: READ_ONLY_ANNO_VERBS.includes(name) });
-    try {
-      assertSameFile(name, storePath, inodeBefore);
-      const result = await runAnnoToolOnHandle(handle, name, staged.args, staged.inputs);
-      return settleConsumedFiles(result, staged.consumed, deps.deleteFile ?? unlinkSync);
-    } finally {
-      closeStore(handle);
+    if (isPlainObject(args) && "store" in args) {
+      throw new AnnoToolArgumentError(
+        `${name} refused: "store" is not an argument -- the broker owns the annotation store, and a call annotates this ` +
+          "workspace's own project, named by .c64-re-tools/project.json. Drop the argument.",
+        { toolName: name, argument: "store" },
+      );
     }
+    assertAnnoTool(name, args);
+    const workspaceRoot = deps.workspaceRoot ?? repoRoot();
+    const staged = stageClientFiles(name, args, workspaceRoot);
+    const runRemote = remoteRunner(deps);
+    const projectId = await workspaceProject(name, READ_ONLY_ANNO_VERBS.includes(name) ? "read" : "write", workspaceRoot, runRemote);
+    const result = await runRemote({ projectId, kind: "tool", name, args: staged.args, files: staged.files });
+    if (!result.ok) throw brokerRefusal(result);
+    if (result.type !== "tool") throw new AnnoBrokerError(`the broker answered a tool call with a ${result.type} answer`, "internal");
+    return settleConsumedFiles(result.result, staged.consumed, deps.deleteFile ?? unlinkSync);
   } catch (err) {
     return toolFailure(name, err);
   }

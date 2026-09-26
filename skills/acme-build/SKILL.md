@@ -157,7 +157,7 @@ discipline exists against read `ACME not found in PATH (skipped)` / `All
 roundtrip verifications passed.` / `EXIT=0` — exit zero, an aggregate line
 reading as a full pass, and the one assembler this project cares about never
 having run. On **2026-08-31 the route returned**, rebuilt over the annotation
-store as `anno export-asm`. It is not a rename of the removed route: its
+project as `anno export-asm`. It is not a rename of the removed route: its
 correctness comes from **assembling the output with a real ACME and diffing
 the bytes against the input** — never from an exit code, and never from a string
 match on the exporter's own output.
@@ -165,16 +165,14 @@ match on the exporter's own output.
 **The live invocation:**
 
 ```bash
-node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore --out game-src
-node src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --out game-src
+node src/mcp/vice/vice-proxy.ts anno export-asm game.prg --out game-src
 ```
 
-`<image>` and `--store` are **two separate arguments, and neither one derives from
-the other** — the image supplies the bytes, the store supplies the names, ranges,
-typed regions and comments, and naming one does not name the other. `--out` names
-a **directory**: the verb writes the whole export into it, defaulting to the image's
-basename stem beside the **store**, not beside the image, because the export is a
-generated view of the annotations. The directory holds a root file that sources
+`<image>` supplies the bytes; the workspace's own annotation project, which the
+broker holds, supplies the names, ranges, typed regions and comments. `--out` is
+required and names a **directory**: the verb writes the whole export into it, and
+there is no default location. The directory holds a root file that sources
 the rest, one file per annotation scope, and an `unscoped.a` for anything inside
 no scope. The verb refuses a non-empty destination rather than overwriting it, unless you
 pass `--force`.

@@ -56,6 +56,8 @@ import { decodeRawData } from "./prg-image.mts";
 // through its published face, `anno_get_binary_info`.
 import { openStore, closeStore } from "./anno-store.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
+import { openTestAnnoBroker } from "./inproc-anno-broker.ts";
+import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = join(HERE, "fixtures", "coverage");
@@ -4018,12 +4020,11 @@ test("CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer id
   // `loadImage()` is module-private; `anno_get_binary_info` is its published
   // face and reports the same origin and body length, so this compares the two
   // views of "what is an image" through the surface that actually ships one.
-  // It runs against a real workspace because `loadImage()` confines its path.
+  // It runs against a real workspace because the client confines the path.
   const ws = mkdtempSync(join(tmpdir(), "anno-coverage-agree-"));
   const previous = process.env.CLAUDE_PROJECT_DIR;
   try {
-    const storePath = join(ws, "project.annostore");
-    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    const broker = openTestAnnoBroker(ws, { dbPath: join(ws, "project.annostore"), projectId: FILE_STORE_PROJECT_ID });
     process.env.CLAUDE_PROJECT_DIR = ws;
 
     for (const [name, bytes, expectOrigin] of [
@@ -4032,7 +4033,7 @@ test("CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer id
     ] as const) {
       const image = writeImageFile(ws, name, bytes);
       const loaded = loadProjectImage(image);
-      const info = await runAnnoTool("anno_get_binary_info", { store: storePath, image });
+      const info = await runAnnoTool("anno_get_binary_info", { image }, { runRemote: broker.runRemote });
       assert.equal(info.isError, false, info.content[0]!.text);
       const toolBody = JSON.parse(info.content[0]!.text) as { origin: number; body_bytes: number };
       assert.equal(loaded.payloadDecoded, true, `${name}: the coverage loader must accept what the tool surface accepts`);
@@ -4040,6 +4041,7 @@ test("CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer id
       assert.equal(loaded.origin, toolBody.origin, `${name}: the two loaders must agree on the origin`);
       assert.equal(loaded.bytes.length, toolBody.body_bytes, `${name}: the two loaders must agree on the body length`);
     }
+    broker.close();
   } finally {
     if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
     else process.env.CLAUDE_PROJECT_DIR = previous;

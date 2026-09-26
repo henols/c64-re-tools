@@ -465,7 +465,6 @@ function renderMemmapReport(handle, args, inputs) {
         handle,
         sidecarText: utf8(sidecar.bytes),
         sidecarLabel: sidecar.name,
-        storeLocation: stringArg("render-memmap", args, "store_location"),
         sidecarLocation: stringArg("render-memmap", args, "sidecar_location"),
     });
     return {
@@ -502,7 +501,7 @@ function exportAsmReport(handle, args, inputs) {
     const ledger = args.ledger === undefined ? undefined : stagedInputFile("export-asm", "ledger", args.ledger, inputs);
     const result = exportAsmFrom({
         handle,
-        storeLabel: stringArg("export-asm", args, "store_label"),
+        storeLabel: `project ${handle.projectId}`,
         image,
         ...(ledger !== undefined ? { ledger: { name: ledger.name, text: () => utf8(ledger.bytes) } } : {}),
     });
@@ -546,7 +545,7 @@ function manifestEntryArg(value) {
 }
 /** decomp-completeness: the completeness gate over one fixture's store. */
 function decompCompletenessReport(handle, args, inputs) {
-    const storeLabel = stringArg("decomp-completeness", args, "store_label");
+    const storeLabel = `project ${handle.projectId}`;
     const manifestEntry = manifestEntryArg(args.manifest_entry);
     const disagreementsFile = stagedInputFile("decomp-completeness", "disagreements", args.disagreements, inputs);
     let disagreementDoc;
@@ -627,7 +626,7 @@ function decompCompletenessReport(handle, args, inputs) {
     const referencedAddresses = buildReferencedAddresses(sortedRanges, loadedImage, xrefs, labels, comments);
     const disagreementResolution = buildDisagreementResolution(disagreementInput.disagreements, comments);
     const report = {
-        store: storeLabel,
+        project: handle.projectId,
         fixture: manifestEntry.path,
         executionDisposition: manifestEntry.execution,
         notExecutedReason: manifestEntry.execution === "not-executed" ? manifestEntry.reason : null,

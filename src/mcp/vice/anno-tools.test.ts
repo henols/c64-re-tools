@@ -55,7 +55,9 @@ import {
   assertAnnoBatch,
   assertAnnoTool,
 } from "./anno-tools.mts";
-import { runAnnoTool } from "./anno-call-client.ts";
+import { runAnnoTool as runAnnoToolWith, type AnnoCallDeps } from "./anno-call-client.ts";
+import { openTestAnnoBroker, type TestAnnoBroker } from "./inproc-anno-broker.ts";
+import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { accessMapRanges, parseAccessMap } from "./textmon-memmap.mts";
 import { execObservationsFrom } from "./evid-ingest.mts";
@@ -71,26 +73,42 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ANNO_TOOLS_SOURCE = readFileSync(join(HERE, "anno-tools.mts"), "utf8");
 const ANNO_CALL_CLIENT_SOURCE = readFileSync(join(HERE, "anno-call-client.ts"), "utf8");
 
+/** The in-process broker the current test's calls reach. Outside `withStore`
+ * there is none, and a call that gets as far as the broker fails loudly --
+ * it never falls through to a real endpoint. */
+let activeBroker: TestAnnoBroker | undefined;
+
+/** Runs one call against the active in-process broker. */
+function runAnnoTool(name: string, args: unknown, deps: AnnoCallDeps = {}): ReturnType<typeof runAnnoToolWith> {
+  return runAnnoToolWith(name, args, {
+    runRemote: activeBroker?.runRemote ?? (async () => ({ ok: false, code: "unreachable", message: "no test broker is active for this call" })),
+    ...deps,
+  });
+}
+
 /** Runs `body` with `CLAUDE_PROJECT_DIR` pointed at a fresh temp workspace
- * holding a store seeded by `seed`, restoring the variable and removing the
- * directory unconditionally. */
+ * whose annotation project is seeded by `seed`, restoring the variable and
+ * removing the directory unconditionally.
+ *
+ * The project lives in an in-process broker whose database is `storePath`,
+ * inside the workspace, under `FILE_STORE_PROJECT_ID` -- so `openStore(storePath)`
+ * opens the very project the client annotates, and a test inspects it directly. */
 async function withStore(
   seed: (handle: ReturnType<typeof openStore>) => void,
   body: (ws: string, storePath: string) => Promise<void>,
 ): Promise<void> {
   const ws = mkdtempSync(join(tmpdir(), "anno-"));
   const previous = process.env.CLAUDE_PROJECT_DIR;
+  const storePath = join(ws, "project.annostore");
+  const broker = openTestAnnoBroker(ws, { dbPath: storePath, projectId: FILE_STORE_PROJECT_ID });
   try {
-    const storePath = join(ws, "project.annostore");
-    const handle = openStore(storePath, { workspaceRoot: ws });
-    try {
-      seed(handle);
-    } finally {
-      closeStore(handle);
-    }
+    seed(broker.handle);
     process.env.CLAUDE_PROJECT_DIR = ws;
+    activeBroker = broker;
     await body(ws, storePath);
   } finally {
+    activeBroker = undefined;
+    broker.close();
     if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
     else process.env.CLAUDE_PROJECT_DIR = previous;
     rmSync(ws, { recursive: true, force: true });
@@ -107,7 +125,7 @@ test("tracer (MCP-05): anno_get_symbols answers a real query against a real stor
       setLabel(handle, { address: 0xc000, name: "irq_handler", kind: "User" });
     },
     async (_ws, storePath) => {
-      const result = await runAnnoTool("anno_get_symbols", { store: storePath, max_results: 50 });
+      const result = await runAnnoTool("anno_get_symbols", { max_results: 50 });
       assert.equal(result.isError, false, `expected a successful result, got: ${result.content[0]?.text}`);
       const body = JSON.parse(result.content[0]!.text) as {
         symbols: { address: number; name: string; kind: string }[];
@@ -135,7 +153,6 @@ test("anno_get_symbols narrows by address range, and reports truncation as a fac
     },
     async (_ws, storePath) => {
       const ranged = await runAnnoTool("anno_get_symbols", {
-        store: storePath,
         max_results: 50,
         start_address: "$c000",
         end_address: 0xcfff,
@@ -148,7 +165,7 @@ test("anno_get_symbols narrows by address range, and reports truncation as a fac
       );
       assert.equal(rangedBody.matched, 2);
 
-      const capped = await runAnnoTool("anno_get_symbols", { store: storePath, max_results: 1 });
+      const capped = await runAnnoTool("anno_get_symbols", { max_results: 1 });
       assert.equal(capped.isError, false);
       const cappedBody = JSON.parse(capped.content[0]!.text) as { returned: number; matched: number; truncated: boolean };
       assert.equal(cappedBody.returned, 1);
@@ -163,45 +180,48 @@ test("anno_get_symbols narrows by address range, and reports truncation as a fac
 // ---------------------------------------------------------------------------
 
 test("WR-02 closed: an uncurated name RESOLVES {isError:true} naming both resolution routes -- it does not reject the promise", async () => {
-  const result = await runAnnoTool("anno_delete_everything", { store: "irrelevant.annostore", max_results: 1 });
+  const result = await runAnnoTool("anno_delete_everything", { max_results: 1 });
   assert.equal(result.isError, true);
   assert.match(result.content[0]!.text, /\[AnnoUncuratedToolError\]/, "the failure must name the error CLASS, never collapse to a bare string");
   assert.match(result.content[0]!.text, /add it to ANNO_TOOL_DEFINITIONS with a named criterion/);
   assert.match(result.content[0]!.text, /remove the caller reference/);
 });
 
-test("a store path outside the workspace root RESOLVES {isError:true} naming AnnoStorePathError (T-29-01)", async () => {
+test("a store argument is refused by name: the broker owns the store, and a call annotates the workspace's own project", async () => {
   await withStore(
     () => {},
-    async (ws) => {
-      const outside = join(dirname(ws), "elsewhere.annostore");
-      const result = await runAnnoTool("anno_get_symbols", { store: outside, max_results: 10 });
+    async () => {
+      const result = await runAnnoTool("anno_get_symbols", { store: "elsewhere.annostore", max_results: 10 });
       assert.equal(result.isError, true);
-      assert.match(result.content[0]!.text, /\[AnnoStorePathError\]/);
-      assert.match(result.content[0]!.text, /outside the workspace root/);
+      assert.match(result.content[0]!.text, /\[AnnoToolArgumentError\]/);
+      assert.match(result.content[0]!.text, /"store" is not an argument/);
     },
   );
 });
 
-test("an absent store is refused, never created -- mustExist is what keeps 'gone' and 'empty' distinguishable", async () => {
-  await withStore(
-    () => {},
-    async (ws) => {
-      const absent = join(ws, "not-here.annostore");
-      const result = await runAnnoTool("anno_get_symbols", { store: absent, max_results: 10 });
-      assert.equal(result.isError, true);
-      assert.match(result.content[0]!.text, /anno_get_symbols failed: \[Anno/);
-    },
-  );
+test("a read in a workspace with no project is refused and creates nothing -- 'gone' and 'empty' stay distinguishable", async () => {
+  const ws = mkdtempSync(join(tmpdir(), "anno-"));
+  const previous = process.env.CLAUDE_PROJECT_DIR;
+  const broker = openTestAnnoBroker(ws, { register: false });
+  try {
+    process.env.CLAUDE_PROJECT_DIR = ws;
+    activeBroker = broker;
+    const result = await runAnnoTool("anno_get_symbols", { max_results: 10 });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /anno_get_symbols failed: \[AnnoProjectError\]/);
+    assert.match(result.content[0]!.text, /has no annotation project yet/);
+    assert.equal(existsSync(join(ws, ".c64-re-tools", "project.json")), false, "a read must not create the project");
+  } finally {
+    activeBroker = undefined;
+    broker.close();
+    if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = previous;
+    rmSync(ws, { recursive: true, force: true });
+  }
 });
 
 test("the transport validates nothing, so a missing required argument is refused HERE and named", async () => {
-  const noStore = await runAnnoTool("anno_get_symbols", { max_results: 10 });
-  assert.equal(noStore.isError, true);
-  assert.match(noStore.content[0]!.text, /\[AnnoToolArgumentError\]/);
-  assert.match(noStore.content[0]!.text, /"store" must be a non-empty string/);
-
-  const noMax = await runAnnoTool("anno_get_symbols", { store: "p.annostore" });
+  const noMax = await runAnnoTool("anno_get_symbols", {});
   assert.equal(noMax.isError, true);
   assert.match(noMax.content[0]!.text, /\[AnnoToolArgumentError\]/);
   assert.match(noMax.content[0]!.text, /"max_results" must be a positive integer/);
@@ -215,7 +235,7 @@ test("an unprefixed numeric address string is refused by the ONE address parser,
   await withStore(
     () => {},
     async (_ws, storePath) => {
-      const result = await runAnnoTool("anno_get_symbols", { store: storePath, max_results: 10, start_address: "1024" });
+      const result = await runAnnoTool("anno_get_symbols", { max_results: 10, start_address: "1024" });
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /\[AnnoAddressError\]/);
     },
@@ -260,22 +280,10 @@ test("anno-tools.mts holds no module-level mutable store handle (D-06)", () => {
   assert.deepEqual(topLevelBindings, [], "no module-scope binding may hold a store handle -- the handle lives for one call and no longer");
 });
 
-test("anno-tools.mts opens no store, and every openStore( in anno-call-client.ts is closed by a closeStore( inside a finally (T-29-03)", () => {
+test("neither the engine nor the client opens a store: the engine is handed one, and the client reaches the broker (T-29-03)", () => {
   const code = (source: string) => source.split("\n").filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"));
   assert.deepEqual(code(ANNO_TOOLS_SOURCE).filter((line) => /\b(openStore|closeStore)\(/.test(line)), [], "the engine never opens or closes a store; its caller owns the handle");
-  const opens = code(ANNO_CALL_CLIENT_SOURCE).filter((line) => line.includes("openStore("));
-  assert.equal(opens.length, 1, `expected exactly one openStore( call site, found ${opens.length}: ${JSON.stringify(opens)}`);
-
-  const start = ANNO_CALL_CLIENT_SOURCE.indexOf("export async function runAnnoTool(");
-  assert.ok(start > 0, "runAnnoTool() must exist");
-  const body = ANNO_CALL_CLIENT_SOURCE.slice(start, ANNO_CALL_CLIENT_SOURCE.indexOf("\n}", start));
-  assert.ok(body.includes("openStore("), "the one openStore( call must live inside runAnnoTool()");
-  const finallyIndex = body.indexOf("} finally {");
-  assert.ok(finallyIndex > body.indexOf("openStore("), "the finally must follow the open");
-  assert.ok(
-    body.slice(finallyIndex).includes("closeStore("),
-    "closeStore( must sit inside the finally, so the handle is released on the throwing path exactly as on the succeeding one",
-  );
+  assert.deepEqual(code(ANNO_CALL_CLIENT_SOURCE).filter((line) => /\b(openStore|closeStore|openAnnoDatabase)\(/.test(line)), [], "the client never opens the store; the broker does");
 });
 
 test("MCP-02 by construction: anno-tools.mts reaches no VICE transport", () => {
@@ -362,7 +370,9 @@ function stripCommentsAndStrings(source: string): string {
   return out.join("");
 }
 
-const ANNO_TOOLS_CODE = stripCommentsAndStrings(ANNO_TOOLS_SOURCE);
+// The surface is two modules -- the definitions and validators, and the
+// dispatch -- so the source guards read both.
+const ANNO_TOOLS_CODE = stripCommentsAndStrings(ANNO_TOOLS_SOURCE + "\n" + readFileSync(join(HERE, "anno-tool-defs.mts"), "utf8"));
 
 function definitionNamed(name: string) {
   return ANNO_TOOL_DEFINITIONS.find((def) => def.name === name);
@@ -399,11 +409,11 @@ test("a repeated identical anno_set_label_name SUCCEEDS reporting changed:false 
   await withStore(
     () => {},
     async (_ws, store) => {
-      const first = await runAnnoTool("anno_set_label_name", { store, address: "$c000", name: "irq_handler" });
+      const first = await runAnnoTool("anno_set_label_name", { address: "$c000", name: "irq_handler" });
       assert.equal(first.isError, false, first.content[0]!.text);
       assert.equal((await body(first)).changed, true);
 
-      const second = await runAnnoTool("anno_set_label_name", { store, address: "$c000", name: "irq_handler" });
+      const second = await runAnnoTool("anno_set_label_name", { address: "$c000", name: "irq_handler" });
       assert.equal(second.isError, false, "a repeated identical edit must SUCCEED, never be refused");
       const secondBody = await body(second);
       assert.equal(secondBody.changed, false, "the second identical write must report no change");
@@ -417,13 +427,13 @@ test("an illegal label name is REJECTED by name with the offending name in the m
     () => {},
     async (ws, store) => {
       const illegal = "irq handler!";
-      const refused = await runAnnoTool("anno_set_label_name", { store, address: "$c000", name: illegal });
+      const refused = await runAnnoTool("anno_set_label_name", { address: "$c000", name: illegal });
       assert.equal(refused.isError, true);
       assert.match(refused.content[0]!.text, /\[AnnoToolArgumentError\]/);
       assert.match(refused.content[0]!.text, /irq handler!/, "the refusal must name the offending value");
       assert.match(refused.content[0]!.text, /never sanitized/i);
 
-      const mnemonic = await runAnnoTool("anno_set_label_name", { store, address: "$c000", name: "lda" });
+      const mnemonic = await runAnnoTool("anno_set_label_name", { address: "$c000", name: "lda" });
       assert.equal(mnemonic.isError, true, "a 6502/6510 mnemonic is refused case-insensitively");
 
       // NOTHING WAS WRITTEN, and in particular nothing that LOOKS like the
@@ -452,16 +462,16 @@ test("comment length is bounded in BYTES by the store's own assertion -- this la
       assert.ok(overByBytes.length < 4096, "the fixture must be under the bound in CODE UNITS for this test to mean anything");
       assert.equal(multiByte, "");
 
-      const refused = await runAnnoTool("anno_set_comment", { store, address: "$c000", comment: overByBytes, type: "line" });
+      const refused = await runAnnoTool("anno_set_comment", { address: "$c000", comment: overByBytes, type: "line" });
       assert.equal(refused.isError, true);
       assert.match(refused.content[0]!.text, /\[AnnoCommentError\]/, "the STORE's assertion is what refuses, not a second rule here");
       assert.match(refused.content[0]!.text, /UTF-8 bytes/);
       assert.match(refused.content[0]!.text, /REFUSED rather than truncated/);
 
       // A multi-byte comment that fits IS accepted, unchanged and unnormalized.
-      const accepted = await runAnnoTool("anno_set_comment", { store, address: "$c000", comment: "résumé of the loop", type: "side" });
+      const accepted = await runAnnoTool("anno_set_comment", { address: "$c000", comment: "résumé of the loop", type: "side" });
       assert.equal(accepted.isError, false, accepted.content[0]!.text);
-      const read = await runAnnoTool("anno_get_comments", { store, max_results: 10 });
+      const read = await runAnnoTool("anno_get_comments", { max_results: 10 });
       const readBody = (await body(read)) as { comments: { text: string }[] };
       assert.deepEqual(
         readBody.comments.map((row) => row.text),
@@ -476,14 +486,14 @@ test("F-4: anno_set_data_type's SUCCESSFUL body carries BOTH contradictedComment
   await withStore(
     () => {},
     async (_ws, store) => {
-      const table = await runAnnoTool("anno_set_data_type", { store, start_address: "$2000", end_address: "$2007", data_type: "lo_hi_address" });
+      const table = await runAnnoTool("anno_set_data_type", { start_address: "$2000", end_address: "$2007", data_type: "lo_hi_address" });
       assert.equal(table.isError, false, table.content[0]!.text);
-      const commented = await runAnnoTool("anno_set_comment", { store, address: "$2002", comment: "[confirmed-code] this executes", type: "line" });
+      const commented = await runAnnoTool("anno_set_comment", { address: "$2002", comment: "[confirmed-code] this executes", type: "line" });
       assert.equal(commented.isError, false, commented.content[0]!.text);
 
       // Retyping two bytes out of the middle of the four-entry split table both
       // FRAGMENTS the table and FALSIFIES a code-asserting comment inside it.
-      const retype = await runAnnoTool("anno_set_data_type", { store, start_address: "$2002", end_address: "$2003", data_type: "byte" });
+      const retype = await runAnnoTool("anno_set_data_type", { start_address: "$2002", end_address: "$2003", data_type: "byte" });
       assert.equal(retype.isError, false, "the disclosure rides on a SUCCESS, never on an error");
       const retypeBody = (await body(retype)) as {
         changed: boolean;
@@ -500,7 +510,7 @@ test("F-4: anno_set_data_type's SUCCESSFUL body carries BOTH contradictedComment
 
       // BOTH FIELDS ARE PRESENT EVEN WHEN EMPTY, so a caller reads them
       // unconditionally rather than guarding on a field's absence.
-      const quiet = await runAnnoTool("anno_set_data_type", { store, start_address: "$3000", end_address: "$300f", data_type: "byte" });
+      const quiet = await runAnnoTool("anno_set_data_type", { start_address: "$3000", end_address: "$300f", data_type: "byte" });
       const quietBody = (await body(quiet)) as Record<string, unknown>;
       assert.deepEqual(quietBody.contradictedComments, []);
       assert.deepEqual(quietBody.reinterpretedSplitTables, []);
@@ -513,27 +523,27 @@ test("F-5: a transposed scope span is refused by the store's overlap rule, and a
     () => {},
     async (_ws, store) => {
       // The mistake 28-REVIEW.md:1788-1814 describes: one transposed end.
-      const transposed = await runAnnoTool("anno_add_scope", { store, start_address: "$1000", end_address: "$ffff" });
+      const transposed = await runAnnoTool("anno_add_scope", { start_address: "$1000", end_address: "$ffff" });
       assert.equal(transposed.isError, false, "the transposed span is ACCEPTED -- that is exactly what makes it dangerous");
 
-      const blocked = await runAnnoTool("anno_add_scope", { store, start_address: "$1000", end_address: "$10ff" });
+      const blocked = await runAnnoTool("anno_add_scope", { start_address: "$1000", end_address: "$10ff" });
       assert.equal(blocked.isError, true, "every later scope above that start is now refused");
       assert.match(blocked.content[0]!.text, /\[AnnoRangeShapeError\]/);
       assert.match(blocked.content[0]!.text, /overlaps the existing scope/);
 
-      const removed = await runAnnoTool("anno_remove_scope", { store, start_address: "$1000", end_address: "$ffff" });
+      const removed = await runAnnoTool("anno_remove_scope", { start_address: "$1000", end_address: "$ffff" });
       assert.equal(removed.isError, false, removed.content[0]!.text);
       const removedBody = (await body(removed)) as { changed: boolean; scopes: unknown[] };
       assert.equal(removedBody.changed, true);
       assert.deepEqual(removedBody.scopes, [], "the inverse removed the scope outright, with no revert and no snapshot spent");
 
-      const retry = await runAnnoTool("anno_add_scope", { store, start_address: "$1000", end_address: "$10ff" });
+      const retry = await runAnnoTool("anno_add_scope", { start_address: "$1000", end_address: "$10ff" });
       assert.equal(retry.isError, false, "the intended scope is addable again -- the refusal was recoverable");
 
       // Removing a scope that is not there SUCCEEDS reporting no change: an
       // inverse that refuses when there is nothing to undo makes "undo this"
       // conditional on knowing whether it was ever done.
-      const noop = await runAnnoTool("anno_remove_scope", { store, start_address: "$4000", end_address: "$40ff" });
+      const noop = await runAnnoTool("anno_remove_scope", { start_address: "$4000", end_address: "$40ff" });
       assert.equal(noop.isError, false);
       assert.equal((await body(noop)).changed, false);
     },
@@ -582,7 +592,7 @@ test("anno_exclude_range records a span with its reason, reporting changed:true 
   await withStore(
     () => {},
     async (_ws, store) => {
-      const first = await runAnnoTool("anno_exclude_range", { store, start_address: "$4000", end_address: "$40ff", reason: "cracker intro" });
+      const first = await runAnnoTool("anno_exclude_range", { start_address: "$4000", end_address: "$40ff", reason: "cracker intro" });
       assert.equal(first.isError, false, first.content[0]!.text);
       const firstBody = (await body(first)) as {
         store: string;
@@ -597,7 +607,7 @@ test("anno_exclude_range records a span with its reason, reporting changed:true 
       assert.equal(firstBody.excludedRanges.length, 1, "the SUCCESSFUL body must carry the full current excludedRanges list");
       assert.equal(firstBody.excludedRanges[0]!.reason, "cracker intro");
 
-      const repeat = await runAnnoTool("anno_exclude_range", { store, start_address: "$4000", end_address: "$40ff", reason: "cracker intro" });
+      const repeat = await runAnnoTool("anno_exclude_range", { start_address: "$4000", end_address: "$40ff", reason: "cracker intro" });
       assert.equal(repeat.isError, false, "an identical repeat must SUCCEED, never be refused");
       const repeatBody = (await body(repeat)) as { changed: boolean; excludedRanges: unknown[] };
       assert.equal(repeatBody.changed, false, "the repeat must report no change");
@@ -610,13 +620,13 @@ test("anno_exclude_range refuses a missing reason at the validation layer, namin
   await withStore(
     () => {},
     async (_ws, store) => {
-      const refused = await runAnnoTool("anno_exclude_range", { store, start_address: "$5000", end_address: "$50ff" });
+      const refused = await runAnnoTool("anno_exclude_range", { start_address: "$5000", end_address: "$50ff" });
       assert.equal(refused.isError, true);
       assert.match(refused.content[0]!.text, /\[AnnoToolArgumentError\]/);
       assert.match(refused.content[0]!.text, /"reason"/, "the refusal must name the offending argument");
 
       // POST-STATE: nothing was written by the refused call.
-      const after = await runAnnoTool("anno_exclude_range", { store, start_address: "$5000", end_address: "$50ff", reason: "now with a reason" });
+      const after = await runAnnoTool("anno_exclude_range", { start_address: "$5000", end_address: "$50ff", reason: "now with a reason" });
       assert.equal(after.isError, false, after.content[0]!.text);
       const afterBody = (await body(after)) as { excludedRanges: unknown[] };
       assert.equal(afterBody.excludedRanges.length, 1, "the refused call must not have left a partial row behind");
@@ -628,7 +638,7 @@ test("anno_exclude_range refuses an empty or whitespace-only reason the same way
   await withStore(
     () => {},
     async (_ws, store) => {
-      const refused = await runAnnoTool("anno_exclude_range", { store, start_address: "$5100", end_address: "$51ff", reason: "   " });
+      const refused = await runAnnoTool("anno_exclude_range", { start_address: "$5100", end_address: "$51ff", reason: "   " });
       assert.equal(refused.isError, true);
       assert.match(refused.content[0]!.text, /\[AnnoToolArgumentError\]/);
       assert.match(refused.content[0]!.text, /"reason"/);
@@ -640,7 +650,7 @@ test("anno_exclude_range with a transposed span (end below start) is refused by 
   await withStore(
     () => {},
     async (_ws, store) => {
-      const refused = await runAnnoTool("anno_exclude_range", { store, start_address: "$6100", end_address: "$6000", reason: "transposed" });
+      const refused = await runAnnoTool("anno_exclude_range", { start_address: "$6100", end_address: "$6000", reason: "transposed" });
       assert.equal(refused.isError, true);
       assert.match(
         refused.content[0]!.text,
@@ -649,7 +659,7 @@ test("anno_exclude_range with a transposed span (end below start) is refused by 
       );
       assert.match(refused.content[0]!.text, /below start/);
 
-      const after = await runAnnoTool("anno_include_range", { store, start_address: "$6000", end_address: "$61ff" });
+      const after = await runAnnoTool("anno_include_range", { start_address: "$6000", end_address: "$61ff" });
       assert.equal(after.isError, false, after.content[0]!.text);
       assert.equal((await body(after)).changed, false, "nothing was recorded by the refused transposed call");
     },
@@ -660,17 +670,17 @@ test("anno_exclude_range surfaces the store's overlap refusal, and two exclusion
   await withStore(
     () => {},
     async (_ws, store) => {
-      const first = await runAnnoTool("anno_exclude_range", { store, start_address: "$7000", end_address: "$70ff", reason: "block one" });
+      const first = await runAnnoTool("anno_exclude_range", { start_address: "$7000", end_address: "$70ff", reason: "block one" });
       assert.equal(first.isError, false, first.content[0]!.text);
 
-      const overlapping = await runAnnoTool("anno_exclude_range", { store, start_address: "$70ff", end_address: "$71ff", reason: "block two" });
+      const overlapping = await runAnnoTool("anno_exclude_range", { start_address: "$70ff", end_address: "$71ff", reason: "block two" });
       assert.equal(overlapping.isError, true, "a one-byte overlap at the boundary must be refused");
       assert.match(overlapping.content[0]!.text, /\[AnnoRangeShapeError\]/, "the STORE's own overlap refusal surfaces through the tool unchanged");
       assert.match(overlapping.content[0]!.text, /overlaps the existing exclusion/);
 
       // TOUCHING (not overlapping): the second span starts exactly one byte
       // past the first's end -- disjoint, and both accepted as two records.
-      const touching = await runAnnoTool("anno_exclude_range", { store, start_address: "$7100", end_address: "$71ff", reason: "block two, adjacent" });
+      const touching = await runAnnoTool("anno_exclude_range", { start_address: "$7100", end_address: "$71ff", reason: "block two, adjacent" });
       assert.equal(touching.isError, false, touching.content[0]!.text);
       const touchingBody = (await body(touching)) as { excludedRanges: unknown[] };
       assert.equal(touchingBody.excludedRanges.length, 2, "touching exclusions stay TWO separate records");
@@ -682,15 +692,15 @@ test("anno_exclude_range refuses the same extent recorded with a DIFFERENT reaso
   await withStore(
     () => {},
     async (_ws, store) => {
-      const first = await runAnnoTool("anno_exclude_range", { store, start_address: "$8000", end_address: "$80ff", reason: "original reason" });
+      const first = await runAnnoTool("anno_exclude_range", { start_address: "$8000", end_address: "$80ff", reason: "original reason" });
       assert.equal(first.isError, false, first.content[0]!.text);
 
-      const conflicting = await runAnnoTool("anno_exclude_range", { store, start_address: "$8000", end_address: "$80ff", reason: "a different reason" });
+      const conflicting = await runAnnoTool("anno_exclude_range", { start_address: "$8000", end_address: "$80ff", reason: "a different reason" });
       assert.equal(conflicting.isError, true);
       assert.match(conflicting.content[0]!.text, /\[AnnoRangeShapeError\]/);
       assert.match(conflicting.content[0]!.text, /DIFFERENT reason/);
 
-      const read = await runAnnoTool("anno_include_range", { store, start_address: "$8000", end_address: "$80ff" });
+      const read = await runAnnoTool("anno_include_range", { start_address: "$8000", end_address: "$80ff" });
       assert.equal(read.isError, false, read.content[0]!.text);
       // The record removed here is the ORIGINAL one -- if the conflicting
       // write had silently overwritten the reason, this would still remove
@@ -706,16 +716,16 @@ test("anno_include_range removes an exact extent reporting changed:true; an exte
   await withStore(
     () => {},
     async (_ws, store) => {
-      const added = await runAnnoTool("anno_exclude_range", { store, start_address: "$9000", end_address: "$90ff", reason: "to be removed" });
+      const added = await runAnnoTool("anno_exclude_range", { start_address: "$9000", end_address: "$90ff", reason: "to be removed" });
       assert.equal(added.isError, false, added.content[0]!.text);
 
-      const removed = await runAnnoTool("anno_include_range", { store, start_address: "$9000", end_address: "$90ff" });
+      const removed = await runAnnoTool("anno_include_range", { start_address: "$9000", end_address: "$90ff" });
       assert.equal(removed.isError, false, removed.content[0]!.text);
       const removedBody = (await body(removed)) as { changed: boolean; excludedRanges: unknown[] };
       assert.equal(removedBody.changed, true);
       assert.deepEqual(removedBody.excludedRanges, [], "the inverse removed the exclusion outright");
 
-      const noop = await runAnnoTool("anno_include_range", { store, start_address: "$a000", end_address: "$a0ff" });
+      const noop = await runAnnoTool("anno_include_range", { start_address: "$a000", end_address: "$a0ff" });
       assert.equal(noop.isError, false, noop.content[0]!.text);
       assert.equal((await body(noop)).changed, false, "removing an exclusion that is not there succeeds reporting no change");
     },
@@ -726,15 +736,15 @@ test("anno_include_range refuses a span that PARTIALLY overlaps a stored exclusi
   await withStore(
     () => {},
     async (_ws, store) => {
-      const added = await runAnnoTool("anno_exclude_range", { store, start_address: "$b000", end_address: "$b0ff", reason: "partial removal target" });
+      const added = await runAnnoTool("anno_exclude_range", { start_address: "$b000", end_address: "$b0ff", reason: "partial removal target" });
       assert.equal(added.isError, false, added.content[0]!.text);
 
-      const partial = await runAnnoTool("anno_include_range", { store, start_address: "$b000", end_address: "$b07f" });
+      const partial = await runAnnoTool("anno_include_range", { start_address: "$b000", end_address: "$b07f" });
       assert.equal(partial.isError, true, "a non-exact span must be refused, never treated as a plain no-op");
       assert.match(partial.content[0]!.text, /\[AnnoRangeShapeError\]/);
       assert.match(partial.content[0]!.text, /does not EXACTLY match/);
 
-      const read = await runAnnoTool("anno_include_range", { store, start_address: "$b000", end_address: "$b0ff" });
+      const read = await runAnnoTool("anno_include_range", { start_address: "$b000", end_address: "$b0ff" });
       assert.equal(read.isError, false, read.content[0]!.text);
       assert.equal((await body(read)).changed, true, "the exact removal still works after the partial one was refused -- nothing was corrupted");
     },
@@ -746,7 +756,6 @@ test("BATCH ROUTE (load-bearing): both anno_exclude_range and anno_include_range
     () => {},
     async (_ws, store) => {
       const result = await runAnnoTool("anno_batch_execute", {
-        store,
         calls: [
           { name: "anno_exclude_range", arguments: { start_address: "$c000", end_address: "$c0ff", reason: "batch entry zero" } },
           { name: "anno_exclude_range", arguments: { start_address: "$c100", end_address: "$c1ff" } }, // missing "reason"
@@ -763,7 +772,7 @@ test("BATCH ROUTE (load-bearing): both anno_exclude_range and anno_include_range
       assert.match(result.content[0]!.text, /calls\[1\]/, "the refusal must name the offending batch index");
 
       // POST-STATE: NOTHING executed, not even the well-formed first entry.
-      const after = await runAnnoTool("anno_include_range", { store, start_address: "$c000", end_address: "$c0ff" });
+      const after = await runAnnoTool("anno_include_range", { start_address: "$c000", end_address: "$c0ff" });
       assert.equal(after.isError, false, after.content[0]!.text);
       assert.equal((await body(after)).changed, false, "the well-formed first entry must not have landed -- pre-validation refuses the WHOLE batch");
     },
@@ -774,7 +783,7 @@ test("a tool name outside CURATED_ANNO_TOOLS is still refused outright by the ou
   await withStore(
     () => {},
     async (_ws, store) => {
-      const refused = await runAnnoTool("anno_exclude_range_v2", { store, start_address: "$d000", end_address: "$d0ff", reason: "not curated" });
+      const refused = await runAnnoTool("anno_exclude_range_v2", { start_address: "$d000", end_address: "$d0ff", reason: "not curated" });
       assert.equal(refused.isError, true);
       assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
     },
@@ -786,20 +795,19 @@ test("anno_apply_enum_usage with an omitted or empty name CLEARS the association
     () => {},
     async (_ws, store) => {
       const created = await runAnnoTool("anno_create_project_enum", {
-        store,
         name: "vic_registers",
         variants: { "$d020": "border_colour", "53281": "background_colour" },
       });
       assert.equal(created.isError, false, created.content[0]!.text);
 
-      const applied = await runAnnoTool("anno_apply_enum_usage", { store, address: "$c000", name: "vic_registers" });
+      const applied = await runAnnoTool("anno_apply_enum_usage", { address: "$c000", name: "vic_registers" });
       assert.equal(applied.isError, false, applied.content[0]!.text);
       const appliedBody = (await body(applied)) as { cleared: boolean; changed: boolean; enum_usage: { address: number; enumName: string }[] };
       assert.equal(appliedBody.cleared, false);
       assert.equal(appliedBody.changed, true);
       assert.deepEqual(appliedBody.enum_usage.map((row) => [row.address, row.enumName]), [[0xc000, "vic_registers"]]);
 
-      const clearedEmpty = await runAnnoTool("anno_apply_enum_usage", { store, address: "$c000", name: "" });
+      const clearedEmpty = await runAnnoTool("anno_apply_enum_usage", { address: "$c000", name: "" });
       assert.equal(clearedEmpty.isError, false, clearedEmpty.content[0]!.text);
       const clearedBody = (await body(clearedEmpty)) as { cleared: boolean; changed: boolean; enum_usage: unknown[] };
       assert.equal(clearedBody.cleared, true);
@@ -808,14 +816,14 @@ test("anno_apply_enum_usage with an omitted or empty name CLEARS the association
 
       // OMITTED is the same clear, and clearing an address that carries none
       // SUCCEEDS reporting no change.
-      const clearedOmitted = await runAnnoTool("anno_apply_enum_usage", { store, address: "$c000" });
+      const clearedOmitted = await runAnnoTool("anno_apply_enum_usage", { address: "$c000" });
       assert.equal(clearedOmitted.isError, false);
       const omittedBody = (await body(clearedOmitted)) as { cleared: boolean; changed: boolean };
       assert.equal(omittedBody.cleared, true);
       assert.equal(omittedBody.changed, false);
 
       // Applying an enum that does not exist is REFUSED, never created implicitly.
-      const missing = await runAnnoTool("anno_apply_enum_usage", { store, address: "$c000", name: "not_an_enum" });
+      const missing = await runAnnoTool("anno_apply_enum_usage", { address: "$c000", name: "not_an_enum" });
       assert.equal(missing.isError, true);
       assert.match(missing.content[0]!.text, /does not exist/);
     },
@@ -826,12 +834,12 @@ test("anno_save_project reports the revision and PERFORMS NO WRITE -- the revisi
   await withStore(
     () => {},
     async (_ws, store) => {
-      const seeded = await runAnnoTool("anno_set_label_name", { store, address: "$c000", name: "irq_handler" });
+      const seeded = await runAnnoTool("anno_set_label_name", { address: "$c000", name: "irq_handler" });
       assert.equal(seeded.isError, false, seeded.content[0]!.text);
       const revisionBefore = (await body(seeded)).revision as number;
       const mtimeBefore = statSync(store).mtimeMs;
 
-      const saved = await runAnnoTool("anno_save_project", { store });
+      const saved = await runAnnoTool("anno_save_project", {});
       assert.equal(saved.isError, false, saved.content[0]!.text);
       const savedBody = (await body(saved)) as { revision: number; wrote: boolean; note: string };
       assert.equal(savedBody.revision, revisionBefore, "the revision must not advance -- this verb writes nothing");
@@ -840,7 +848,7 @@ test("anno_save_project reports the revision and PERFORMS NO WRITE -- the revisi
       assert.match(savedBody.note, /already durable/);
       assert.equal(statSync(store).mtimeMs, mtimeBefore, "the store file must not be touched at all");
 
-      const again = await runAnnoTool("anno_save_project", { store });
+      const again = await runAnnoTool("anno_save_project", {});
       assert.equal(((await body(again)).revision as number), revisionBefore);
       assert.equal(statSync(store).mtimeMs, mtimeBefore);
     },
@@ -854,11 +862,11 @@ test("WR-10: anno_save_project's revision FIELD and the revision named in its ow
       // Seeded so the revision is not whatever an empty store starts at --
       // a pin that only held at revision 0 would hold for the wrong reason.
       for (const [i, name] of ["first_label", "second_label", "third_label"].entries()) {
-        const written = await runAnnoTool("anno_set_label_name", { store, address: 0xc000 + i * 0x10, name });
+        const written = await runAnnoTool("anno_set_label_name", { address: 0xc000 + i * 0x10, name });
         assert.equal(written.isError, false, written.content[0]!.text);
       }
 
-      const saved = await runAnnoTool("anno_save_project", { store });
+      const saved = await runAnnoTool("anno_save_project", {});
       assert.equal(saved.isError, false, saved.content[0]!.text);
       const savedBody = (await body(saved)) as { revision: number; wrote: boolean; note: string };
 
@@ -893,7 +901,7 @@ test("every verb closes the store: no handle is left open and no journal sidecar
     () => {},
     async (ws, store) => {
       for (let i = 0; i < 5; i += 1) {
-        const written = await runAnnoTool("anno_set_comment", { store, address: 0x1000 + i, comment: `pass ${i}`, type: "line" });
+        const written = await runAnnoTool("anno_set_comment", { address: 0x1000 + i, comment: `pass ${i}`, type: "line" });
         assert.equal(written.isError, false, written.content[0]!.text);
         assert.equal(existsSync(`${store}-wal`), false, "no write-ahead sidecar may survive a completed call");
         assert.equal(existsSync(`${store}-journal`), false, "no rollback journal may survive a completed call");
@@ -990,7 +998,7 @@ test("anno_disassemble decodes at an EXPLICIT address, and the surface names no 
     () => {},
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
-      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c006" });
+      const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c006" });
       assert.equal(result.isError, false, result.content[0]!.text);
       const disasmBody = (await body(result)) as { address: number; instructions: number; listing: string };
       assert.equal(disasmBody.address, 0xc000, "decoding starts where the caller said, and nowhere else");
@@ -1023,7 +1031,7 @@ test("D-16/D-17 Test 1: anno_disassemble renders a multi-field register write as
     },
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
-      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c005" });
+      const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
       assert.equal(result.isError, false, result.content[0]!.text);
       const disasmBody = (await body(result)) as { listing: string };
 
@@ -1049,7 +1057,7 @@ test("D-16 Test 2: a range with NO enum usage renders exactly what it renders to
     () => {},
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
-      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c005" });
+      const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
       assert.equal(result.isError, false, result.content[0]!.text);
       const disasmBody = (await body(result)) as { listing: string };
       assert.match(disasmBody.listing, /lda #\$04/, `an unbound write must still render the plain hex literal:\n${disasmBody.listing}`);
@@ -1066,7 +1074,7 @@ test("D-16 Test 3: anno_read_region with view:'disasm' is NOT changed by this ta
     },
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
-      const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$c000", end_address: "$c005", view: "disasm" });
+      const region = await runAnnoTool("anno_read_region", { image, start_address: "$c000", end_address: "$c005", view: "disasm" });
       assert.equal(region.isError, false, region.content[0]!.text);
       const regionBody = (await body(region)) as { listing: string };
       assert.match(
@@ -1110,7 +1118,7 @@ test("D-16 Test 4: an enum usage naming an enum the store does not hold is REFUS
       }
 
       const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
-      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c005" });
+      const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
       assert.equal(result.isError, true, "a dangling enum usage must be REFUSED, never rendered as a silently plain listing");
       assert.match(result.content[0]!.text, /\[AnnoStoreError\]/);
       assert.ok(result.content[0]!.text.includes("D018"), `the refusal names the ENUM: ${result.content[0]!.text}`);
@@ -1145,7 +1153,7 @@ test("CR-01 Fix Test C: a register-shaped enum name for a register anno-regbits.
     },
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", D020_WRITE_PRG);
-      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c005" });
+      const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
       assert.equal(result.isError, false, result.content[0]!.text);
       const disasmBody = (await body(result)) as { listing: string };
 
@@ -1175,7 +1183,7 @@ test("CR-01 Fix Test D: a register PRESENT in the table but not fully covered by
     },
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", DD00_WRITE_PRG);
-      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c005" });
+      const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
       assert.equal(result.isError, true, "a genuinely-lossy decomposition must still refuse, not fall back to a hex literal");
       assert.match(result.content[0]!.text, /\[AnnoStoreError\]/);
       assert.ok(result.content[0]!.text.includes("DD00"), `the refusal names the register/enum: ${result.content[0]!.text}`);
@@ -1202,20 +1210,20 @@ test("ONE cap governs BOTH views, is read at call time, and refuses by name with
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
 
-      const overDefault = await runAnnoTool("anno_read_region", { store, image, start_address: 0, end_address: 4096 });
+      const overDefault = await runAnnoTool("anno_read_region", { image, start_address: 0, end_address: 4096 });
       assert.equal(overDefault.isError, true);
       assert.match(overDefault.content[0]!.text, /\[AnnoRegionRangeError\]/);
       assert.match(overDefault.content[0]!.text, /4097 bytes/, "the message must name the REQUESTED width");
       assert.match(overDefault.content[0]!.text, /cap of 4096/, "the message must name the CAP");
 
       await withRegionCap("8", async () => {
-        const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$c000", end_address: "$c008" });
+        const region = await runAnnoTool("anno_read_region", { image, start_address: "$c000", end_address: "$c008" });
         assert.equal(region.isError, true, "the override is read at CALL time, not frozen at module load");
         assert.match(region.content[0]!.text, /cap of 8/);
 
         // THE SAME CAP GOVERNS THE DISASSEMBLE VIEW -- one cap, both views, so
         // there is no per-view rule to get subtly wrong.
-        const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c008" });
+        const disasm = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c008" });
         assert.equal(disasm.isError, true);
         assert.match(disasm.content[0]!.text, /\[AnnoRegionRangeError\]/);
         assert.match(disasm.content[0]!.text, /cap of 8/);
@@ -1230,14 +1238,14 @@ test("anno_read_region serves both views, and a span outside the image is report
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
 
-      const hex = await runAnnoTool("anno_read_region", { store, image, start_address: "$c000", end_address: "$c002", view: "hexdump" });
+      const hex = await runAnnoTool("anno_read_region", { image, start_address: "$c000", end_address: "$c002", view: "hexdump" });
       assert.equal(hex.isError, false, hex.content[0]!.text);
       const hexBody = (await body(hex)) as { view: string; hexdump: string; bytes: number };
       assert.equal(hexBody.view, "hexdump");
       assert.equal(hexBody.bytes, 3);
       assert.match(hexBody.hexdump, /\$c000 {2}20 10 c0/);
 
-      const outside = await runAnnoTool("anno_read_region", { store, image, start_address: "$c000", end_address: "$c0ff" });
+      const outside = await runAnnoTool("anno_read_region", { image, start_address: "$c000", end_address: "$c0ff" });
       assert.equal(outside.isError, false, "a well-formed question this image cannot answer is not a caller error");
       const outsideBody = (await body(outside)) as { available: boolean; reason: string };
       assert.equal(outsideBody.available, false);
@@ -1279,8 +1287,8 @@ test("CR-01 / MCP-04: both read verbs return the SAME {available:false} verdict 
     async (ws, store) => {
       const image = writeImage(ws, "tiny.prg", TINY_PRG);
 
-      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: OUT_OF_IMAGE });
-      const region = await runAnnoTool("anno_read_region", { store, image, start_address: OUT_OF_IMAGE, end_address: OUT_OF_IMAGE + 16 });
+      const disasm = await runAnnoTool("anno_disassemble", { image, address: OUT_OF_IMAGE });
+      const region = await runAnnoTool("anno_read_region", { image, start_address: OUT_OF_IMAGE, end_address: OUT_OF_IMAGE + 16 });
 
       for (const [name, result] of [
         ["anno_disassemble", disasm],
@@ -1301,7 +1309,7 @@ test("CR-01: the incoherent range is STRUCTURALLY absent -- an out-of-image disa
     () => {},
     async (ws, store) => {
       const image = writeImage(ws, "tiny.prg", TINY_PRG);
-      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: OUT_OF_IMAGE });
+      const disasm = await runAnnoTool("anno_disassemble", { image, address: OUT_OF_IMAGE });
       assert.equal(disasm.isError, false, disasm.content[0]!.text);
       const verdict = await body(disasm);
 
@@ -1327,8 +1335,8 @@ test("CR-01: an inverted span is refused IDENTICALLY by both verbs, and the one 
       // before any byte is indexed. That is a caller error, not an
       // unanswerable question, and both verbs report it the same way -- the
       // agreement CR-01 is about holds at this layer too.
-      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$1003", end_address: "$1001" });
-      const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$1003", end_address: "$1001" });
+      const disasm = await runAnnoTool("anno_disassemble", { image, address: "$1003", end_address: "$1001" });
+      const region = await runAnnoTool("anno_read_region", { image, start_address: "$1003", end_address: "$1001" });
       for (const [name, result] of [
         ["anno_disassemble", disasm],
         ["anno_read_region", region],
@@ -1345,7 +1353,7 @@ test("CR-01: an inverted span is refused IDENTICALLY by both verbs, and the one 
       // checks pass for this pair (`from` is non-negative, `to` is inside the
       // body) and ONLY the inverted-span condition catches it. This is the
       // exact route the reported `{instructions:0, end_address:4099}` took.
-      const derived = await runAnnoTool("anno_disassemble", { store, image, address: OUT_OF_IMAGE });
+      const derived = await runAnnoTool("anno_disassemble", { image, address: OUT_OF_IMAGE });
       assert.equal(derived.isError, false, derived.content[0]!.text);
       const verdict = (await body(derived)) as { available?: boolean };
       assert.equal(verdict.available, false, "sliceSpan() must be TOTAL -- an inverted span it alone can see is still refused, never subarray'd to nothing");
@@ -1371,7 +1379,7 @@ test("CR-01 over-refusal control: a span WHOLLY INSIDE the image still succeeds 
 
       // Without this control a fix that refused EVERYTHING would pass the
       // three cases above and prove nothing.
-      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$1000", end_address: "$1003" });
+      const disasm = await runAnnoTool("anno_disassemble", { image, address: "$1000", end_address: "$1003" });
       assert.equal(disasm.isError, false, disasm.content[0]!.text);
       const disasmBody = (await body(disasm)) as { available?: boolean; instructions: number; end_address: number; listing: string };
       assert.equal(disasmBody.available, undefined, "a span inside the image is answered, not refused");
@@ -1379,7 +1387,7 @@ test("CR-01 over-refusal control: a span WHOLLY INSIDE the image still succeeds 
       assert.equal(disasmBody.end_address, 0x1003);
       assert.match(disasmBody.listing, /rts/i);
 
-      const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$1000", end_address: "$1003" });
+      const region = await runAnnoTool("anno_read_region", { image, start_address: "$1000", end_address: "$1003" });
       assert.equal(region.isError, false, region.content[0]!.text);
       const regionBody = (await body(region)) as { available?: boolean; bytes: number };
       assert.equal(regionBody.available, undefined);
@@ -1395,7 +1403,7 @@ test("CR-01: an OMITTED end_address still defaults to the image's own bound -- r
       const image = writeImage(ws, "tiny.prg", TINY_PRG);
       const last = 0x1003;
 
-      const disasm = await runAnnoTool("anno_disassemble", { store, image, address: "$1000" });
+      const disasm = await runAnnoTool("anno_disassemble", { image, address: "$1000" });
       assert.equal(disasm.isError, false, disasm.content[0]!.text);
       const disasmBody = (await body(disasm)) as { available?: boolean; instructions: number; end_address: number };
       assert.equal(disasmBody.available, undefined, "an omitted end is derived from the image itself and is inside it by construction");
@@ -1410,7 +1418,7 @@ test("anno_get_binary_info reports the load address, origin and lengths for a re
     () => {},
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
-      const info = await runAnnoTool("anno_get_binary_info", { store, image });
+      const info = await runAnnoTool("anno_get_binary_info", { image });
       assert.equal(info.isError, false, info.content[0]!.text);
       const infoBody = (await body(info)) as { kind: string; origin: number; total_bytes: number; body_bytes: number; entropy: number; likely_packed: boolean };
       assert.equal(infoBody.kind, "prg");
@@ -1421,7 +1429,7 @@ test("anno_get_binary_info reports the load address, origin and lengths for a re
       assert.equal(infoBody.likely_packed, false);
 
       const flat = writeImage(ws, "capture.raw", new Uint8Array(65536));
-      const flatInfo = await runAnnoTool("anno_get_binary_info", { store, image: flat });
+      const flatInfo = await runAnnoTool("anno_get_binary_info", { image: flat });
       assert.equal(flatInfo.isError, false, flatInfo.content[0]!.text);
       const flatBody = (await body(flatInfo)) as { kind: string; origin: number };
       assert.equal(flatBody.kind, "flat");
@@ -1431,13 +1439,13 @@ test("anno_get_binary_info reports the load address, origin and lengths for a re
       // flatImageOrigin's named refusal, never falls through to the .prg parser
       // and gets an origin read backwards out of its own payload bytes.
       const truncated = writeImage(ws, "truncated.raw", new Uint8Array(4096));
-      const truncatedInfo = await runAnnoTool("anno_get_binary_info", { store, image: truncated });
+      const truncatedInfo = await runAnnoTool("anno_get_binary_info", { image: truncated });
       assert.equal(truncatedInfo.isError, true);
       assert.match(truncatedInfo.content[0]!.text, /\[AnnoToolArgumentError\]/);
       assert.match(truncatedInfo.content[0]!.text, /flat 64K capture must be exactly 65536 bytes/);
 
       const tooShort = writeImage(ws, "short.prg", Uint8Array.from([0x00, 0xc0]));
-      const shortInfo = await runAnnoTool("anno_get_binary_info", { store, image: tooShort });
+      const shortInfo = await runAnnoTool("anno_get_binary_info", { image: tooShort });
       assert.equal(shortInfo.isError, true);
       assert.match(shortInfo.content[0]!.text, /short\.prg/, "the refusal names the offending image, not only an internal function");
       assert.match(shortInfo.content[0]!.text, /at least 3 bytes/);
@@ -1450,11 +1458,11 @@ test("anno_get_cross_references returns the derivation module's union, and the s
     () => {},
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
-      const typed = await runAnnoTool("anno_set_data_type", { store, image, start_address: "$c000", end_address: "$c006", data_type: "code" });
+      const typed = await runAnnoTool("anno_set_data_type", { image, start_address: "$c000", end_address: "$c006", data_type: "code" });
       assert.equal(typed.isError, false, typed.content[0]!.text);
 
       const before = readFileSync(store);
-      const xrefs = await runAnnoTool("anno_get_cross_references", { store, image, address: "$c010", max_results: 10 });
+      const xrefs = await runAnnoTool("anno_get_cross_references", { image, address: "$c010", max_results: 10 });
       assert.equal(xrefs.isError, false, xrefs.content[0]!.text);
       const xrefBody = (await body(xrefs)) as { to: number; callers: number[]; total: number; truncated: boolean };
       assert.equal(xrefBody.to, 0xc010);
@@ -1463,7 +1471,7 @@ test("anno_get_cross_references returns the derivation module's union, and the s
       assert.equal(xrefBody.truncated, false);
       assert.deepEqual(readFileSync(store), before, "a derived read must write NOTHING -- a cached derivation is a second on-disk truth");
 
-      const capped = await runAnnoTool("anno_get_cross_references", { store, image, address: "$c010", max_results: 1 });
+      const capped = await runAnnoTool("anno_get_cross_references", { image, address: "$c010", max_results: 1 });
       const cappedBody = (await body(capped)) as { returned: number; total: number; truncated: boolean };
       assert.equal(cappedBody.returned, 1);
       assert.equal(cappedBody.total, 2, "the TRUE total rides beside the truncated list, so truncation is detectable");
@@ -1482,12 +1490,12 @@ test("anno_search: max_results is REQUIRED with no default, and a capped answer 
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
 
-      const noCeiling = await runAnnoTool("anno_search", { store, image, query: "loop" });
+      const noCeiling = await runAnnoTool("anno_search", { image, query: "loop" });
       assert.equal(noCeiling.isError, true, "an implicit default would silently truncate a full-program pass");
       assert.match(noCeiling.content[0]!.text, /\[AnnoToolArgumentError\]/);
       assert.match(noCeiling.content[0]!.text, /"max_results" must be a positive integer/);
 
-      const capped = await runAnnoTool("anno_search", { store, image, query: "loop", max_results: 1 });
+      const capped = await runAnnoTool("anno_search", { image, query: "loop", max_results: 1 });
       assert.equal(capped.isError, false, capped.content[0]!.text);
       const cappedBody = (await body(capped)) as { results: unknown[]; returned: number; total: number; truncated: boolean };
       assert.equal(cappedBody.returned, 1, "one result, because one was asked for");
@@ -1504,7 +1512,7 @@ test("anno_search naming a corpus this surface does not have answers {available:
     },
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
-      const result = await runAnnoTool("anno_search", { store, image, query: "loop", max_results: 10, search_strings: true });
+      const result = await runAnnoTool("anno_search", { image, query: "loop", max_results: 10, search_strings: true });
       assert.equal(result.isError, false, "the request was WELL-FORMED -- an error here teaches an agent to retry what will never work");
       const refusal = (await body(result)) as { available: boolean; reason: string; unanswerable_corpora: string[]; results?: unknown };
       assert.equal(refusal.available, false);
@@ -1523,10 +1531,10 @@ test("anno_get_address_details returns the composition with its composed_from di
     },
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
-      const typed = await runAnnoTool("anno_set_data_type", { store, image, start_address: "$c000", end_address: "$c006", data_type: "code" });
+      const typed = await runAnnoTool("anno_set_data_type", { image, start_address: "$c000", end_address: "$c006", data_type: "code" });
       assert.equal(typed.isError, false, typed.content[0]!.text);
 
-      const details = await runAnnoTool("anno_get_address_details", { store, image, address: "$c010" });
+      const details = await runAnnoTool("anno_get_address_details", { image, address: "$c010" });
       assert.equal(details.isError, false, details.content[0]!.text);
       const detailsBody = (await body(details)) as {
         address: number;
@@ -1556,16 +1564,16 @@ test("an image outside the workspace root, or absent, is refused by name -- the 
     () => {},
     async (ws, store) => {
       const outside = join(dirname(ws), "elsewhere.prg");
-      const escaped = await runAnnoTool("anno_get_binary_info", { store, image: outside });
+      const escaped = await runAnnoTool("anno_get_binary_info", { image: outside });
       assert.equal(escaped.isError, true);
       assert.match(escaped.content[0]!.text, /\[AnnoStorePathError\]/);
 
-      const absent = await runAnnoTool("anno_get_binary_info", { store, image: join(ws, "not-here.prg") });
+      const absent = await runAnnoTool("anno_get_binary_info", { image: join(ws, "not-here.prg") });
       assert.equal(absent.isError, true);
       assert.match(absent.content[0]!.text, /\[AnnoStorePathError\]/);
       assert.match(absent.content[0]!.text, /no image exists at/);
 
-      const missing = await runAnnoTool("anno_get_binary_info", { store });
+      const missing = await runAnnoTool("anno_get_binary_info", {});
       assert.equal(missing.isError, true);
       assert.match(missing.content[0]!.text, /"image" must be a non-empty string/);
     },
@@ -1612,28 +1620,28 @@ test("the six whole-batch refusal shapes, each naming what it refused on", () =>
 
   // 1. A malformed payload -- "calls" is not an array. Payload-level, so there
   //    is no offending INDEX to name; the message says what it says instead.
-  const notArray = batchRefusal({ store: "p.annostore", calls: "not-an-array" });
+  const notArray = batchRefusal({ calls: "not-an-array" });
   assert.equal(notArray.name, "AnnoUncuratedToolError");
   assert.match(notArray.message, /"calls" must be an array/);
   assert.match(notArray.message, /never as an empty batch that passes through/);
-  assert.match(batchRefusal({ store: "p.annostore" }).message, /"calls" must be an array/);
+  assert.match(batchRefusal({}).message, /"calls" must be an array/);
   assert.match(batchRefusal(undefined).message, /"calls" must be an array/);
 
   // 2. An EMPTY calls array -- payload-level too, and NEW here.
-  const empty = batchRefusal({ store: "p.annostore", calls: [] });
+  const empty = batchRefusal({ calls: [] });
   assert.equal(empty.name, "AnnoUncuratedToolError");
   assert.match(empty.message, /"calls" is an EMPTY array/);
   assert.match(empty.message, /plausible-looking zero/);
 
   // 3. An entry missing a string name -- refuses WHOLE, naming its index.
-  const malformed = batchRefusal({ store: "p.annostore", calls: [good, { arguments: {} }] });
+  const malformed = batchRefusal({ calls: [good, { arguments: {} }] });
   assert.equal(malformed.name, "AnnoUncuratedToolError");
   assert.match(malformed.message, /calls\[1\]/);
   assert.match(malformed.message, /refused WHOLE/);
-  assert.match(batchRefusal({ store: "p.annostore", calls: [42] }).message, /calls\[0\]/);
+  assert.match(batchRefusal({ calls: [42] }).message, /calls\[0\]/);
 
   // 4. An uncurated inner name -- refuses WHOLE, naming index AND name.
-  const uncurated = batchRefusal({ store: "p.annostore", calls: [good, { name: "anno_delete_everything", arguments: {} }] });
+  const uncurated = batchRefusal({ calls: [good, { name: "anno_delete_everything", arguments: {} }] });
   assert.equal(uncurated.name, "AnnoUncuratedToolError");
   assert.match(uncurated.message, /calls\[1\]/);
   assert.match(uncurated.message, /anno_delete_everything/);
@@ -1667,7 +1675,7 @@ test("the batch validator recurses: an uncurated name one level down still refus
     calls: [
       {
         name: "anno_batch_execute",
-        arguments: { store: "p.annostore", calls: [{ name: "anno_not_a_verb", arguments: {} }] },
+        arguments: { calls: [{ name: "anno_not_a_verb", arguments: {} }] },
       },
     ],
   });
@@ -1678,8 +1686,8 @@ test("the batch validator recurses: an uncurated name one level down still refus
 
 test("nesting deeper than the declared cap is refused BY NAME rather than walked (T-29-24)", () => {
   function nest(depth: number): Record<string, unknown> {
-    if (depth === 0) return { store: "p.annostore", calls: [{ name: "anno_save_project", arguments: {} }] };
-    return { store: "p.annostore", calls: [{ name: "anno_batch_execute", arguments: nest(depth - 1) }] };
+    if (depth === 0) return { calls: [{ name: "anno_save_project", arguments: {} }] };
+    return { calls: [{ name: "anno_batch_execute", arguments: nest(depth - 1) }] };
   }
   // At the cap the payload is still walked and accepted.
   assert.doesNotThrow(() => assertAnnoTool("anno_batch_execute", nest(ANNO_MAX_BATCH_DEPTH)));
@@ -1694,7 +1702,7 @@ test("NOTHING executes when pre-validation refuses: the revision is unchanged an
   await withStore(
     () => {},
     async (_ws, store) => {
-      const seeded = await runAnnoTool("anno_set_label_name", { store, address: "$c000", name: "first_label" });
+      const seeded = await runAnnoTool("anno_set_label_name", { address: "$c000", name: "first_label" });
       assert.equal(seeded.isError, false, seeded.content[0]!.text);
       const revisionBefore = (await body(seeded)).revision as number;
 
@@ -1702,7 +1710,6 @@ test("NOTHING executes when pre-validation refuses: the revision is unchanged an
       // uncurated. A validator that ran per-call as it executed would have
       // committed the first write before discovering the second.
       const refused = await runAnnoTool("anno_batch_execute", {
-        store,
         calls: [
           { name: "anno_set_label_name", arguments: { address: "$c100", name: "would_have_landed" } },
           { name: "anno_delete_everything", arguments: {} },
@@ -1711,9 +1718,9 @@ test("NOTHING executes when pre-validation refuses: the revision is unchanged an
       assert.equal(refused.isError, true);
       assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
 
-      const after = await runAnnoTool("anno_save_project", { store });
+      const after = await runAnnoTool("anno_save_project", {});
       assert.equal((await body(after)).revision, revisionBefore, "the revision must not have moved -- nothing executed");
-      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 50 });
+      const symbols = await runAnnoTool("anno_get_symbols", { max_results: 50 });
       const symbolsBody = (await body(symbols)) as { symbols: { name: string }[] };
       assert.deepEqual(symbolsBody.symbols.map((row) => row.name), ["first_label"], "no partial write may be visible");
     },
@@ -1727,11 +1734,10 @@ test("execution runs to COMPLETION: a three-call batch whose middle call fails r
       // The middle call is well-FORMED (so pre-validation passes) but fails at
       // EXECUTION: the name is already bound to a different address, which the
       // store refuses rather than rebinding.
-      const bound = await runAnnoTool("anno_set_label_name", { store, address: "$c000", name: "taken_name" });
+      const bound = await runAnnoTool("anno_set_label_name", { address: "$c000", name: "taken_name" });
       assert.equal(bound.isError, false, bound.content[0]!.text);
 
       const result = await runAnnoTool("anno_batch_execute", {
-        store,
         calls: [
           { name: "anno_set_label_name", arguments: { address: "$c100", name: "before_the_failure" } },
           { name: "anno_set_label_name", arguments: { address: "$c200", name: "taken_name" } },
@@ -1756,7 +1762,7 @@ test("execution runs to COMPLETION: a three-call batch whose middle call fails r
 
       // The third call really did land, which is what "runs to completion" is
       // for -- the failure did not cost the calls that came after it.
-      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 50 });
+      const symbols = await runAnnoTool("anno_get_symbols", { max_results: 50 });
       const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
       assert.ok(names.includes("after_the_failure"), "a call after the failing one must still have run");
     },
@@ -1769,14 +1775,13 @@ test("a batch names its store ONCE and every inner call inherits it -- an inner 
     async (ws, store) => {
       const elsewhere = join(dirname(ws), "elsewhere.annostore");
       const result = await runAnnoTool("anno_batch_execute", {
-        store,
         calls: [{ name: "anno_set_label_name", arguments: { store: elsewhere, address: "$c000", name: "inherited" } }],
       });
       assert.equal(result.isError, false, result.content[0]!.text);
       const batchBody = (await body(result)) as { results: { status: string }[] };
       assert.equal(batchBody.results[0]!.status, "success");
 
-      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const symbols = await runAnnoTool("anno_get_symbols", { max_results: 10 });
       const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
       assert.deepEqual(names, ["inherited"], "the write landed in the batch's own store, not the one the inner call named");
       assert.equal(existsSync(elsewhere), false, "the inner call's store was never even reached");
@@ -1809,7 +1814,6 @@ test("CR-06 / MCP-04 positive control: a depth-1 nested batch relying on the DOC
       // caller to write: "the store is named ONCE at the top level and every
       // inner call inherits it".
       const result = await runAnnoTool("anno_batch_execute", {
-        store,
         calls: [
           {
             name: "anno_batch_execute",
@@ -1823,7 +1827,7 @@ test("CR-06 / MCP-04 positive control: a depth-1 nested batch relying on the DOC
       assert.equal(batchBody.results[0]!.status, "success", "the inner batch must have EXECUTED, not merely validated");
 
       // And the write really landed, in the store named once at the top.
-      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const symbols = await runAnnoTool("anno_get_symbols", { max_results: 10 });
       const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
       assert.deepEqual(names, ["nested_label"], "inheritance must reach the LEAF call, two levels down");
     },
@@ -1844,14 +1848,14 @@ test("CR-06 negative control: a chain past the cap is still refused BY NAME, and
         }
         return { calls: [{ name: "anno_batch_execute", arguments: nest(remaining - 1) }] };
       }
-      const refused = await runAnnoTool("anno_batch_execute", { store, ...nest(ANNO_MAX_BATCH_DEPTH + 1) });
+      const refused = await runAnnoTool("anno_batch_execute", { ...nest(ANNO_MAX_BATCH_DEPTH + 1) });
 
       assert.equal(refused.isError, true, "past the cap the payload is refused, not walked");
       assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
       assert.match(refused.content[0]!.text, new RegExp(`deeper than ${ANNO_MAX_BATCH_DEPTH} levels`), "the refusal must NAME the cap's value");
       assert.match(refused.content[0]!.text, /refused BY NAME rather than walked/);
 
-      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const symbols = await runAnnoTool("anno_get_symbols", { max_results: 10 });
       const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
       assert.deepEqual(names, [], "nothing may execute from a batch refused whole");
     },
@@ -1869,7 +1873,6 @@ test("CR-06: an inner store is overridden by the batch's own in BOTH phases, at 
       // different stores -- which is the window propagating effective
       // arguments closes.
       const result = await runAnnoTool("anno_batch_execute", {
-        store,
         calls: [
           {
             name: "anno_batch_execute",
@@ -1884,7 +1887,7 @@ test("CR-06: an inner store is overridden by the batch's own in BOTH phases, at 
       const batchBody = (await body(result)) as { results: { status: string }[] };
       assert.equal(batchBody.results[0]!.status, "success");
 
-      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const symbols = await runAnnoTool("anno_get_symbols", { max_results: 10 });
       const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
       assert.deepEqual(names, ["inherited_at_depth"], "the write must land in the batch's OWN store, never the one an inner call named");
       assert.equal(existsSync(elsewhere), false, "the store the inner calls named was never even reached");
@@ -1897,7 +1900,6 @@ test("CR-06: the recursive allow-list still bites -- an uncurated name TWO level
     () => {},
     async (_ws, store) => {
       const refused = await runAnnoTool("anno_batch_execute", {
-        store,
         calls: [
           { name: "anno_set_label_name", arguments: { address: "$c100", name: "would_have_landed" } },
           {
@@ -1914,7 +1916,7 @@ test("CR-06: the recursive allow-list still bites -- an uncurated name TWO level
       assert.match(refused.content[0]!.text, /refused WHOLE/);
       assert.match(refused.content[0]!.text, /calls\[0\]/, "the refusal names the index of the offending inner call");
 
-      const symbols = await runAnnoTool("anno_get_symbols", { store, max_results: 10 });
+      const symbols = await runAnnoTool("anno_get_symbols", { max_results: 10 });
       const names = ((await body(symbols)) as { symbols: { name: string }[] }).symbols.map((row) => row.name);
       assert.deepEqual(names, [], "the good FIRST call must not have landed -- refusal happens before anything is opened");
     },
@@ -1927,7 +1929,6 @@ test("a batch of derived reads inherits the image too, and the whole batch share
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
       const result = await runAnnoTool("anno_batch_execute", {
-        store,
         image,
         calls: [
           { name: "anno_set_data_type", arguments: { start_address: "$c000", end_address: "$c006", data_type: "code" } },
@@ -1970,7 +1971,7 @@ test("WR-01: anno_import_ghidra_export succeeds through runAnnoTool(), reporting
     () => {},
     async (ws, store) => {
       const transfer = writeGhidraTransfer(ws);
-      const result = await runAnnoTool("anno_import_ghidra_export", { store, export_path: transfer });
+      const result = await runAnnoTool("anno_import_ghidra_export", { export_path: transfer });
       assert.equal(result.isError, false, result.content[0]?.text);
       const importBody = (await body(result)) as {
         referencesSeen: number;
@@ -1997,7 +1998,7 @@ test("WR-01: anno_import_ghidra_export refuses a stale base_revision through run
     async (ws, store) => {
       const transfer = writeGhidraTransfer(ws);
       const staleRevision = 999999;
-      const result = await runAnnoTool("anno_import_ghidra_export", { store, export_path: transfer, base_revision: staleRevision });
+      const result = await runAnnoTool("anno_import_ghidra_export", { export_path: transfer, base_revision: staleRevision });
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /\[AnnoStoreStaleRevisionError\]/);
       assert.equal(existsSync(transfer), true, "a refused call must not delete the transfer file");
@@ -2039,7 +2040,7 @@ test("WR-01: anno_join_memmap succeeds through runAnnoTool(), reporting the full
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
 
-      const unconstrained = await runAnnoTool("anno_join_memmap", { store, image });
+      const unconstrained = await runAnnoTool("anno_join_memmap", { image });
       assert.equal(unconstrained.isError, false, unconstrained.content[0]?.text);
       const unconstrainedBody = (await body(unconstrained)) as unknown as JoinMemmapBody;
       assert.equal(unconstrainedBody.counts.addressesConsidered, 1);
@@ -2066,7 +2067,6 @@ test("WR-01: anno_join_memmap's const_writes argument reaches runMemmapJoin() th
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
       const constrained = await runAnnoTool("anno_join_memmap", {
-        store,
         image,
         const_writes: [{ store_address: 0x0815, target_address: 0x0001, value: 0x34 }],
       });
@@ -2096,7 +2096,6 @@ test("WR-01: anno_join_memmap refuses a malformed const_writes element by name, 
     async (ws, store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
       const result = await runAnnoTool("anno_join_memmap", {
-        store,
         image,
         const_writes: [{ store_address: "not-a-number", target_address: 1, value: 1 }],
       });
@@ -2115,7 +2114,7 @@ test("WR-01: anno_join_memmap refuses a stale base_revision through runAnnoTool(
       const rev = currentRevision(handle);
       closeStore(handle);
 
-      const result = await runAnnoTool("anno_join_memmap", { store, image, base_revision: rev + 1 });
+      const result = await runAnnoTool("anno_join_memmap", { image, base_revision: rev + 1 });
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /\[AnnoStoreStaleRevisionError\]/);
 
@@ -2133,13 +2132,13 @@ test("WR-01: anno_join_memmap's loadImage() error paths -- a missing image and a
   await withStore(
     () => {},
     async (ws, store) => {
-      const missing = await runAnnoTool("anno_join_memmap", { store, image: join(ws, "not-here.prg") });
+      const missing = await runAnnoTool("anno_join_memmap", { image: join(ws, "not-here.prg") });
       assert.equal(missing.isError, true);
       assert.match(missing.content[0]!.text, /\[AnnoStorePathError\]/);
       assert.match(missing.content[0]!.text, /not-here\.prg/);
 
       const notAnImage = writeImage(ws, "tiny.prg", Uint8Array.from([0x00, 0xc0]));
-      const wrongShape = await runAnnoTool("anno_join_memmap", { store, image: notAnImage });
+      const wrongShape = await runAnnoTool("anno_join_memmap", { image: notAnImage });
       assert.equal(wrongShape.isError, true);
       assert.match(wrongShape.content[0]!.text, /\[AnnoToolArgumentError\]/);
     },
@@ -2178,7 +2177,6 @@ test("Task 2 Test 1: anno_evid_ingest writes one row per observed execute bit an
     () => {},
     async (ws, store) => {
       const result = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: SAMPLE_EVID_REPLY,
         image_sha256: VALID_SHA,
         argv: ["x64sc", "-binarymonitor"],
@@ -2211,7 +2209,7 @@ test("Task 2 Test 2: an identical repeat reports changed:false and observationsW
   await withStore(
     () => {},
     async (ws, store) => {
-      const args = { store, memmap_text: SAMPLE_EVID_REPLY, image_sha256: VALID_SHA, argv: ["x64sc"], seed: "seed-1" };
+      const args = { memmap_text: SAMPLE_EVID_REPLY, image_sha256: VALID_SHA, argv: ["x64sc"], seed: "seed-1" };
       const first = await runAnnoTool("anno_evid_ingest", args);
       assert.equal(first.isError, false, first.content[0]?.text);
 
@@ -2231,31 +2229,11 @@ test("Task 2 Test 2: an identical repeat reports changed:false and observationsW
   );
 });
 
-test("Task 2 Test 3: a store path that does not exist refuses by name with the never-create message, and creates no file", async () => {
-  await withStore(
-    () => {},
-    async (ws) => {
-      const absent = join(ws, "not-here.annostore");
-      const result = await runAnnoTool("anno_evid_ingest", {
-        store: absent,
-        memmap_text: SAMPLE_EVID_REPLY,
-        image_sha256: VALID_SHA,
-        argv: ["x64sc"],
-        seed: "seed-1",
-      });
-      assert.equal(result.isError, true);
-      assert.match(result.content[0]!.text, /no annotation store exists/);
-      assert.equal(existsSync(absent), false, "a write verb must never CREATE the store it was asked to annotate");
-    },
-  );
-});
-
 test("Task 2 Test 4: a malformed memmap_text refuses naming the refusal code and the offending line, and writes nothing", async () => {
   await withStore(
     () => {},
     async (ws, store) => {
       const result = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: "addr: IO  ROM RAM\nnot-a-valid-line",
         image_sha256: VALID_SHA,
         argv: ["x64sc"],
@@ -2275,11 +2253,11 @@ test("Task 2 Test 4: a malformed memmap_text refuses naming the refusal code and
   );
 });
 
-test("Task 2 Test 5: an empty argv, a non-array argv, a bad image_sha256, and an absent store each refuse naming the offending argument, and none writes", async () => {
+test("Task 2 Test 5: an empty argv, a non-array argv and a bad image_sha256 each refuse naming the offending argument, and none writes", async () => {
   await withStore(
     () => {},
     async (ws, store) => {
-      const base = { store, memmap_text: SAMPLE_EVID_REPLY, image_sha256: VALID_SHA, argv: ["x64sc"], seed: "seed-1" };
+      const base = { memmap_text: SAMPLE_EVID_REPLY, image_sha256: VALID_SHA, argv: ["x64sc"], seed: "seed-1" };
 
       const emptyArgv = await runAnnoTool("anno_evid_ingest", { ...base, argv: [] });
       assert.equal(emptyArgv.isError, true);
@@ -2293,18 +2271,9 @@ test("Task 2 Test 5: an empty argv, a non-array argv, a bad image_sha256, and an
       assert.equal(badSha.isError, true);
       assert.match(badSha.content[0]!.text, /"image_sha256"/);
 
-      const noStore = await runAnnoTool("anno_evid_ingest", {
-        memmap_text: SAMPLE_EVID_REPLY,
-        image_sha256: VALID_SHA,
-        argv: ["x64sc"],
-        seed: "seed-1",
-      });
-      assert.equal(noStore.isError, true);
-      assert.match(noStore.content[0]!.text, /"store"/);
-
       const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
       try {
-        assert.equal(listExecObservations(handle).length, 0, "none of the four refusals may write anything");
+        assert.equal(listExecObservations(handle).length, 0, "none of the three refusals may write anything");
       } finally {
         closeStore(handle);
       }
@@ -2312,7 +2281,7 @@ test("Task 2 Test 5: an empty argv, a non-array argv, a bad image_sha256, and an
   );
 });
 
-test("Task 2 Test 6: anno_evid_ingest is curated (derived from ANNO_TOOL_DEFINITIONS) and is NOT in READ_ONLY_ANNO_VERBS -- it takes the existence-check-plus-inode-guard route", () => {
+test("Task 2 Test 6: anno_evid_ingest is curated (derived from ANNO_TOOL_DEFINITIONS) and is NOT in READ_ONLY_ANNO_VERBS -- it is a write", () => {
   assert.ok(CURATED_ANNO_TOOLS.includes("anno_evid_ingest"));
   assert.equal(READ_ONLY_ANNO_VERBS.includes("anno_evid_ingest"), false);
 });
@@ -2321,8 +2290,8 @@ test("Task 2 Test 7: runAnnoTool resolves rather than rejects on every anno_evid
   const cases: unknown[] = [
     {},
     { store: "irrelevant.annostore" },
-    { store: "irrelevant.annostore", memmap_text: "", image_sha256: VALID_SHA, argv: ["x64sc"], seed: "s" },
-    { store: "irrelevant.annostore", memmap_text: SAMPLE_EVID_REPLY, image_sha256: "bad", argv: ["x64sc"], seed: "s" },
+    { memmap_text: "", image_sha256: VALID_SHA, argv: ["x64sc"], seed: "s" },
+    { memmap_text: SAMPLE_EVID_REPLY, image_sha256: "bad", argv: ["x64sc"], seed: "s" },
   ];
   for (const args of cases) {
     await assert.doesNotReject(async () => runAnnoTool("anno_evid_ingest", args));
@@ -2341,7 +2310,6 @@ test("Task 3 Test 1 (fused planting, both directions): read+write with no execut
     async (ws, store) => {
       const noExecuteReply = memmapReplyText([{ address: 0x4000, ram: "rw-" }]);
       const noExecuteResult = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: noExecuteReply,
         image_sha256: VALID_SHA,
         argv: ["x64sc"],
@@ -2359,7 +2327,6 @@ test("Task 3 Test 1 (fused planting, both directions): read+write with no execut
 
       const executeReply = memmapReplyText([{ address: 0x4000, ram: "--x" }]);
       const executeResult = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: executeReply,
         image_sha256: VALID_SHA,
         argv: ["x64sc"],
@@ -2397,7 +2364,6 @@ test("Task 3 Test 2: an ingest never touches the byte-derived block table -- lis
 
       const reply = memmapReplyText([{ address: 0x4100, ram: "--x" }]);
       const result = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: reply,
         image_sha256: VALID_SHA,
         argv: ["x64sc"],
@@ -2421,61 +2387,6 @@ test("Task 3 Test 2: an ingest never touches the byte-derived block table -- lis
   );
 });
 
-test("Task 3 Test 3: the store file replaced between the existence check and the open refuses by name, writing nothing", async () => {
-  await withStore(
-    () => {},
-    async (ws, store) => {
-      // A second, valid, EMPTY store the racer swaps in repeatedly -- same
-      // shape as `store` but a fresh inode every swap, so the guard's own
-      // inode comparison has something real to catch.
-      const decoy = join(ws, "decoy.annostore");
-      const decoyHandle = openStore(decoy, { workspaceRoot: ws });
-      closeStore(decoyHandle);
-
-      const racerFile = join(ws, "racer.mjs");
-      writeFileSync(
-        racerFile,
-        [
-          'import { copyFileSync, renameSync } from "node:fs";',
-          "const storePath = process.argv[2];",
-          "const decoyPath = process.argv[3];",
-          'const scratch = storePath + ".racer-scratch";',
-          "const deadline = Date.now() + 5000;",
-          "while (Date.now() < deadline) {",
-          "  try {",
-          "    copyFileSync(decoyPath, scratch);",
-          "    renameSync(scratch, storePath);",
-          "  } catch {}",
-          "}",
-        ].join("\n"),
-      );
-      const child = fork(racerFile, [store, decoy], { stdio: "ignore" });
-      try {
-        let refused = false;
-        const deadline = Date.now() + 5000;
-        while (!refused && Date.now() < deadline) {
-          const result = await runAnnoTool("anno_evid_ingest", {
-            store,
-            memmap_text: SAMPLE_EVID_REPLY,
-            image_sha256: VALID_SHA,
-            argv: ["x64sc"],
-            seed: "seed-race",
-          });
-          if (result.isError && /was replaced between the existence check and the open/.test(result.content[0]!.text)) {
-            refused = true;
-          }
-        }
-        assert.ok(
-          refused,
-          "expected at least one call, against a store under continuous replacement, to observe the inode mismatch and refuse",
-        );
-      } finally {
-        child.kill();
-      }
-    },
-  );
-});
-
 test("Task 3 Test 4: two different run identities coexist, and neither's filtered rows leak into the other's", async () => {
   await withStore(
     () => {},
@@ -2483,7 +2394,6 @@ test("Task 3 Test 4: two different run identities coexist, and neither's filtere
       const replyA = memmapReplyText([{ address: 0x5000, ram: "--x" }]);
       const replyB = memmapReplyText([{ address: 0x6000, ram: "--x" }]);
       const a = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: replyA,
         image_sha256: VALID_SHA,
         argv: ["x64sc", "run-a"],
@@ -2491,7 +2401,6 @@ test("Task 3 Test 4: two different run identities coexist, and neither's filtere
       });
       assert.equal(a.isError, false, a.content[0]?.text);
       const b = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: replyB,
         image_sha256: VALID_SHA,
         argv: ["x64sc", "run-b"],
@@ -2524,7 +2433,6 @@ test("Task 3 Test 5: 0x0000 and 0xffff each ingest to exactly one row -- neither
         { address: 0xffff, io: "--x" },
       ]);
       const result = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: reply,
         image_sha256: VALID_SHA,
         argv: ["x64sc"],
@@ -2689,7 +2597,6 @@ test(
       try {
         process.env.CLAUDE_PROJECT_DIR = annoWs;
         result = await runAnnoTool("anno_evid_ingest", {
-          store,
           memmap_text: rawReply,
           image_sha256: VALID_SHA,
           argv: [binPath, "-default", "-binarymonitor", "-remotemonitor"],
@@ -2761,7 +2668,6 @@ test(
         const rangesBefore = rangesOf(ws, store);
 
         const ingestResult = await runAnnoTool("anno_evid_ingest", {
-          store,
           memmap_text: memmapReplyText([{ address: 0x4000, ram: "--x" }]),
           image_sha256: VALID_SHA,
           argv: ["x64sc"],
@@ -2769,7 +2675,7 @@ test(
         });
         assert.equal(ingestResult.isError, false, ingestResult.content[0]?.text);
 
-        const result = await runAnnoTool("anno_evid_disagreements", { store });
+        const result = await runAnnoTool("anno_evid_disagreements", {});
         assert.equal(result.isError, false, result.content[0]?.text);
         const b = await body(result);
 
@@ -2798,7 +2704,6 @@ test("anno_evid_disagreements: an observation inside a code-classified block is 
     },
     async (ws, store) => {
       const ingestResult = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: memmapReplyText([{ address: 0x5000, ram: "--x" }]),
         image_sha256: VALID_SHA,
         argv: ["x64sc"],
@@ -2806,7 +2711,7 @@ test("anno_evid_disagreements: an observation inside a code-classified block is 
       });
       assert.equal(ingestResult.isError, false, ingestResult.content[0]?.text);
 
-      const result = await runAnnoTool("anno_evid_disagreements", { store });
+      const result = await runAnnoTool("anno_evid_disagreements", {});
       assert.equal(result.isError, false, result.content[0]?.text);
       const b = await body(result);
       assert.equal(b.disagreementCount, 0);
@@ -2823,7 +2728,6 @@ test("anno_evid_disagreements: max_results is OPTIONAL (unlike every other list-
     },
     async (_ws, store) => {
       const ingestResult = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: memmapReplyText([
           { address: 0x6000, ram: "--x" },
           { address: 0x6001, ram: "--x" },
@@ -2834,12 +2738,12 @@ test("anno_evid_disagreements: max_results is OPTIONAL (unlike every other list-
       });
       assert.equal(ingestResult.isError, false, ingestResult.content[0]?.text);
 
-      const unbounded = await body(await runAnnoTool("anno_evid_disagreements", { store }));
+      const unbounded = await body(await runAnnoTool("anno_evid_disagreements", {}));
       assert.equal(unbounded.disagreementCount, 2);
       assert.equal((unbounded.disagreements as unknown[]).length, 2);
       assert.equal(unbounded.truncated, false);
 
-      const bounded = await body(await runAnnoTool("anno_evid_disagreements", { store, max_results: 1 }));
+      const bounded = await body(await runAnnoTool("anno_evid_disagreements", { max_results: 1 }));
       assert.equal((bounded.disagreements as unknown[]).length, 1);
       assert.equal(bounded.matched, 2);
       assert.equal(bounded.returned, 1);
@@ -2855,7 +2759,7 @@ test("anno_evid_disagreements: a run-identity filter requires image_sha256, argv
   await withStore(
     () => {},
     async (_ws, store) => {
-      const result = await runAnnoTool("anno_evid_disagreements", { store, image_sha256: VALID_SHA });
+      const result = await runAnnoTool("anno_evid_disagreements", { image_sha256: VALID_SHA });
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /image_sha256.*argv_digest.*seed together|argv_digest.*seed/i);
     },
@@ -2867,7 +2771,6 @@ test("anno_evid_runs: reports every run identity's observation count beside a de
     () => {},
     async (_ws, store) => {
       const a = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: memmapReplyText([{ address: 0x7000, ram: "--x" }]),
         image_sha256: VALID_SHA,
         argv: ["x64sc", "run-a"],
@@ -2875,7 +2778,7 @@ test("anno_evid_runs: reports every run identity's observation count beside a de
       });
       assert.equal(a.isError, false, a.content[0]?.text);
 
-      const result = await runAnnoTool("anno_evid_runs", { store });
+      const result = await runAnnoTool("anno_evid_runs", {});
       assert.equal(result.isError, false, result.content[0]?.text);
       const b = await body(result);
       assert.equal(typeof b.denominator, "number");
@@ -2935,7 +2838,6 @@ test("contract: every evidence row round-trips through the ONE run-identity path
         const argv = ["x64sc", `run-class-${runClass}`];
         const seed = `seed-${runClass}`;
         const ingestResult = await runAnnoTool("anno_evid_ingest", {
-          store,
           memmap_text: memmapReplyText([{ address: 0x8000, ram: "--x" }]),
           image_sha256: VALID_SHA,
           argv,
@@ -2943,7 +2845,7 @@ test("contract: every evidence row round-trips through the ONE run-identity path
         });
         assert.equal(ingestResult.isError, false, ingestResult.content[0]?.text);
 
-        const runsResult = await runAnnoTool("anno_evid_runs", { store });
+        const runsResult = await runAnnoTool("anno_evid_runs", {});
         assert.equal(runsResult.isError, false, runsResult.content[0]?.text);
         const runsBody = await body(runsResult);
         const runs = runsBody.runs as { imageSha256: string; argvDigest: string; seed: string }[];
@@ -2958,7 +2860,7 @@ test("contract: every evidence row round-trips through the ONE run-identity path
         // Clean up so the next run class's own `anno_evid_runs` read is not
         // confused by an earlier iteration's row -- anno_evid_reset itself,
         // exercised here as ordinary usage rather than as its own test.
-        const reset = await runAnnoTool("anno_evid_reset", { store, image_sha256: VALID_SHA, argv, seed });
+        const reset = await runAnnoTool("anno_evid_reset", { image_sha256: VALID_SHA, argv, seed });
         assert.equal(reset.isError, false, reset.content[0]?.text);
       }
     },
@@ -2973,7 +2875,6 @@ test("anno_evid_reset: reset of identity A leaves identity B's rows readable and
       const argvA = ["x64sc", "run-a"];
       const argvB = ["x64sc", "run-b"];
       const a = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: memmapReplyText([{ address: 0x9000, ram: "--x" }]),
         image_sha256: VALID_SHA,
         argv: argvA,
@@ -2981,7 +2882,6 @@ test("anno_evid_reset: reset of identity A leaves identity B's rows readable and
       });
       assert.equal(a.isError, false, a.content[0]?.text);
       const b = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: memmapReplyText([{ address: 0x9001, ram: "--x" }]),
         image_sha256: VALID_SHA,
         argv: argvB,
@@ -2999,7 +2899,7 @@ test("anno_evid_reset: reset of identity A leaves identity B's rows readable and
       })();
       assert.equal(bRowsBefore.length, 1);
 
-      const reset = await runAnnoTool("anno_evid_reset", { store, image_sha256: VALID_SHA, argv: argvA, seed: "seed-a" });
+      const reset = await runAnnoTool("anno_evid_reset", { image_sha256: VALID_SHA, argv: argvA, seed: "seed-a" });
       assert.equal(reset.isError, false, reset.content[0]?.text);
       const resetBody = await body(reset);
       assert.equal(resetBody.changed, true);
@@ -3023,7 +2923,6 @@ test("anno_evid_reset: resetting a run identity holding no observations reports 
     () => {},
     async (_ws, store) => {
       const result = await runAnnoTool("anno_evid_reset", {
-        store,
         image_sha256: VALID_SHA,
         argv: ["x64sc", "never-ingested"],
         seed: "seed-empty",
@@ -3043,7 +2942,6 @@ test("anno_evid_reset: never touches the byte-derived block table -- listRanges 
     },
     async (ws, store) => {
       const ingestResult = await runAnnoTool("anno_evid_ingest", {
-        store,
         memmap_text: memmapReplyText([{ address: 0xa000, ram: "--x" }]),
         image_sha256: VALID_SHA,
         argv: ["x64sc"],
@@ -3053,7 +2951,6 @@ test("anno_evid_reset: never touches the byte-derived block table -- listRanges 
 
       const rangesBefore = rangesOf(ws, store);
       const reset = await runAnnoTool("anno_evid_reset", {
-        store,
         image_sha256: VALID_SHA,
         argv: ["x64sc"],
         seed: "seed-block-untouched",

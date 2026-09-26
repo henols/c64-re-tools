@@ -6,11 +6,11 @@
 // measure and which address failed.
 //
 // WHY THIS FILE EXISTS: criterion 2's disagreement query and criterion 1's
-// zero-`Undefined` census must be answered TOGETHER, from ONE real store, or
+// zero-`Undefined` census must be answered TOGETHER, from ONE real project, or
 // a completeness claim can hide a weak measure behind a strong one -- exactly
 // the failure `printCoverageReport()`/`printEvidDisagreementsReport()` were
 // each already built to avoid, one verb over. `routine-queue-walker` already
-// exists to drive an annotation store's backlog to closure and report every
+// exists to drive an annotation project's backlog to closure and report every
 // leftover; this script supplies the numeric stop condition it currently
 // lacks.
 //
@@ -21,10 +21,10 @@
 // and exit code from the rendered measures.
 //
 // WHAT NOT TO DO:
-//   - Never derive a completeness measure from the store's block-type
+//   - Never derive a completeness measure from the project's block-type
 //     listing directly in THIS file. `anno-coverage.mts`'s own trap 1 forbids
 //     it there, and extending or re-implementing that module here is
-//     equally forbidden -- this script never reads a store; it renders the fifth CLI
+//     equally forbidden -- this script never reads a project; it renders the fifth CLI
 //     verb's own `--json` answer, which already did the reading.
 //   - Never render without the disagreement-query input. A missing input is
 //     refused by name (`MissingDisagreementInputError`), never defaulted to
@@ -63,9 +63,9 @@ const MCP = await loadSibling(() => import("../../c64-ram-capture/scripts/mcp-mo
 
 /** The MCP-side entry point this script forwards to -- the SAME "node
  * vice-proxy.ts anno <verb>" invocation `routine-queue-walker/SKILL.md`'s
- * skill's own closing `anno coverage` call already uses (no broker, no
- * container-out seam -- the store is `node:sqlite` in-process, and this
- * script's own job is orchestration, never a store read of its own). */
+ * skill's own closing `anno coverage` call already uses. The verb asks the
+ * broker, which holds the workspace's annotation project; this script's own
+ * job is orchestration, never a read of its own. */
 const TARGET_FILE = "vice-proxy.ts";
 
 /** An address as the verb's `--json` answer carries it: a number, or an
@@ -170,7 +170,7 @@ export interface ReferencedAddresses {
 /** A raw `anno decomp-completeness --json` answer. Every field is optional:
  * `buildCompletenessReport()` defaults each one conservatively. */
 export interface CompletenessAnswer {
-  store?: string;
+  project?: string;
   fixture?: string;
   executionDisposition?: string;
   notExecutedReason?: string | null;
@@ -185,7 +185,7 @@ export interface CompletenessAnswer {
 
 /** The normalised shape `buildCompletenessReport()` returns. */
 export interface CompletenessReport {
-  store: string | undefined;
+  project: string | undefined;
   fixture: string | undefined;
   executionDisposition: string | undefined;
   notExecutedReason: string | null;
@@ -218,8 +218,8 @@ export class MissingDisagreementInputError extends Error {
  * nothing populated to positively test against rather than contradicting
  * them. Exported here, separately from the verb's own copy, because this
  * script's own tests must be able to assert on the predicate in isolation,
- * without a live store or a subprocess -- and because this script's own
- * header forbids it from reading a store directly, so it cannot import the
+ * without a live project or a subprocess -- and because this script's own
+ * header forbids it from reading a project directly, so it cannot import the
  * verb's copy through anything but a duplicate literal.
  *
  * WHAT NOT TO DO: if the frozen set in `anno-cli.ts` ever changes, this copy
@@ -227,7 +227,7 @@ export class MissingDisagreementInputError extends Error {
  * what "survivor" means. Never restate `AUTO_NAME_PREFIX_RE`'s eleven
  * prefixes as their own literal strings here -- this predicate matches
  * against a caller-SUPPLIED name (from the verb's own `survivors` answer),
- * never derives a name from a store itself, so there is no store-derived
+ * never derives a name from a project itself, so there is no project-derived
  * value to keep in sync beyond this one regex pair.
  */
 const AUTO_NAME_PREFIX_RE = /^(zpf_|f_|zpa_|a_|p_|zpp_|e_|j_|s_|b_|r_)/;
@@ -245,7 +245,7 @@ export function isSurvivorName(name: string): boolean {
  * header on why a mirror rather than an import) so this script's own test
  * tier can assert the PRECEDENCE explicitly, not merely pass through a
  * verb-computed value. `anno-cli.ts`'s `typedByFor()` is the authoritative
- * copy that actually runs against a real store; this one exists only to be
+ * copy that actually runs against a real project; this one exists only to be
  * unit-tested in isolation, exactly like `isSurvivorName()` above. Evidence
  * beats inference: `observed-executing` (a real execute observation exists
  * inside the range) beats `authored` (an `AUTHORED_PROVENANCE_COMMENT_PREFIX`
@@ -263,7 +263,7 @@ const PURPOSE_ELEMENT_KEYS: readonly (keyof PurposeElements)[] = ["function", "i
 /**
  * Normalises a raw `anno decomp-completeness --json` answer into the report
  * shape this module renders and gates. Pure: no filesystem, no subprocess, no
- * store. Throws a plain `Error` (never `MissingDisagreementInputError`, which
+ * project read. Throws a plain `Error` (never `MissingDisagreementInputError`, which
  * is `renderCompletenessReport()`'s own refusal) when `answer` is not even a
  * plausible answer object -- a caller error, distinct from a missing
  * disagreement input.
@@ -297,7 +297,7 @@ export function buildCompletenessReport(raw: unknown): CompletenessReport {
           denominator: disagreementInput?.disagreementCount ?? 0,
         };
   return {
-    store: answer.store,
+    project: answer.project,
     fixture: answer.fixture,
     executionDisposition: answer.executionDisposition,
     notExecutedReason: answer.notExecutedReason ?? null,
@@ -341,11 +341,11 @@ function addr(a: Address): string {
  * `identity === null` is a THIRD,
  * legitimate value here, mirroring anno-cli.ts's own
  * `validateDisagreementDocumentShape()`/match-check -- the real answer `anno
- * evid-disagreements --json` produces for a store with zero observed runs
+ * evid-disagreements --json` produces for a project with zero observed runs
  * (a non-executed fixture). By the time a report reaches this
  * function, `anno decomp-completeness`'s own server-side check has already
- * proven that null against the store's own evid-runs table (refusing a
- * null identity on a store that DOES carry real runs) -- this function
+ * proven that null against the project's own evid-runs table (refusing a
+ * null identity on a project that DOES carry real runs) -- this function
  * never re-derives that proof, only trusts an already-validated report.
  */
 export function renderCompletenessReport(report: CompletenessReport): string {
@@ -358,12 +358,12 @@ export function renderCompletenessReport(report: CompletenessReport): string {
     throw new MissingDisagreementInputError(
       "renderCompletenessReport: no disagreement input is present on this report -- refusing to render. " +
         "Pass --disagreements to `anno decomp-completeness` (the JSON `anno evid-disagreements --json` wrote " +
-        "for the SAME store); an omitted query and a query that found nothing must never render the same report.",
+        "for the SAME project); an omitted query and a query that found nothing must never render the same report.",
     );
   }
 
   const lines: string[] = [];
-  lines.push(`decomposition completeness: ${report.store ?? "(unknown store)"}`);
+  lines.push(`decomposition completeness: project ${report.project ?? "(unknown project)"}`);
   lines.push(`  FIXTURE: ${report.fixture ?? "(unknown fixture)"}`);
   if (report.executionDisposition === "not-executed") {
     lines.push(`  NOT EXECUTED: ${report.notExecutedReason ?? "(no reason recorded)"}`);
@@ -459,7 +459,7 @@ export function renderCompletenessReport(report: CompletenessReport): string {
 
   lines.push(
     "  Read every figure above against the others, never combined into one -- together they name what this " +
-      "store's block table covers, never what the program actually is.",
+      "project's block table covers, never what the program actually is.",
   );
 
   const failures = computeGateFailures(report);
@@ -550,7 +550,7 @@ export function fetchCompletenessReport(argv: string[]): CompletenessReport {
     throw new Error(
       `completeness-report.ts: ${refusalMessage(TARGET_FILE, resolved.rungs)}\n` +
         `${TARGET_FILE} is where the fifth anno CLI verb lives (${TARGET_PACKAGE}). Refusing rather than ` +
-        "reading a store directly here -- a second copy of that read is exactly the divergence this script's own header forbids.",
+        "reading a project directly here -- a second copy of that read is exactly the divergence this script's own header forbids.",
     );
   }
   const fullArgv = ["anno", "decomp-completeness", ...argv, "--json"];
@@ -573,7 +573,7 @@ export function fetchCompletenessReport(argv: string[]): CompletenessReport {
   return buildCompletenessReport(parsed);
 }
 
-/** CLI entry point: `node completeness-report.ts --store FILE --disagreements FILE --manifest FILE`.
+/** CLI entry point: `node completeness-report.ts --fixture NAME --disagreements FILE --manifest FILE`.
  * Forwards argv verbatim to the resolved verb, renders the result, and
  * returns a process exit code -- never calls `process.exit()` itself, so
  * `main()` stays testable in-process. A thrown `MissingDisagreementInputError`

@@ -279,7 +279,7 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     ],
     requirements: ["EVID-01", "EVID-04"],
     rationale:
-      "EVID-01 requires what the emulator observed executing to become durable, accumulating rows in `.annostore`, " +
+      "EVID-01 requires what the emulator observed executing to become durable, accumulating rows in the annotation project, " +
       "keyed by run identity, so a later session queries the evidence instead of re-running the program. EVID-04 " +
       "requires the write path be unable to state, imply or render that an address is data on the strength of " +
       "never having been observed executing. The manifest's five absorbed upstream procedures predate this store " +

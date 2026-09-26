@@ -168,10 +168,10 @@ same IRQ entry that phase-01 live work established independently (chain `$1103 �
 The method reproduces a known-good result from a static image with no emulator running, and the
 `$1116` pair is new — see `references/control-flow.md` § 2. **Confidence: HIGH** for steps 1-2.
 
-## Writing findings into the annotation store
+## Writing findings into the annotation project
 
 Recon's findings are not memory-map prose written once and left to rot — they are entries in a
-queryable annotation store, and the Markdown memory map is a *generated view* of that store,
+queryable annotation project, and the Markdown memory map is a *generated view* of that project,
 not something you hand-edit yourself.
 
 **How to run an anno verb.** Two forms run today. The plugin form is
@@ -181,19 +181,22 @@ The JSON object carries the same argument names each verb below documents.
 Use `--args-file <path>` for a large object, such as `anno_batch_execute`'s.
 The npm-installed form is `vice-mcp anno call <name> --args '<json>'`.
 
-**There is no bootstrap step, and no bootstrap verb.** The store is created by the first write to
-it: name a `.annostore` path on any mutating call — `anno call anno_set_label_name`, `anno call anno_set_comment`,
-`anno call anno_set_data_type`, `anno call anno_add_scope` — and it is created, committed and closed inside that call.
-A read-only call against a path that does not exist yet is REFUSED by name rather than answering
-against an empty store, so "I read nothing" and "there is nothing to read" stay distinguishable.
+**Where the findings live.** The broker holds one annotation database per machine, and every
+row in it belongs to a project. This workspace's project is the one named by
+`.c64-re-tools/project.json`, which is gitignored: a fresh clone or a new worktree starts with an
+empty project of its own. No call takes a `store` argument, and one that passes it is refused.
 
-Every `anno_*` verb (reached through `anno call`) takes an explicit `store` path — there is no ambient session state
-naming the store, so which store a call touched is always visible in the transcript. Every call
-that derives its answer from the program's **bytes** rather than from the annotations takes an
-`image` path as well — `anno call anno_get_binary_info`, `anno call anno_read_region`, `anno call anno_disassemble`,
-`anno call anno_get_cross_references`, `anno call anno_search` and `anno call anno_get_address_details`. The store holds
-annotations and never bytes, so an omitted image would read as a plausible success against
-whatever was recorded last. `image` is a `.prg` (2-byte little-endian load address plus payload) or
+**There is no bootstrap step, and no bootstrap verb.** The first mutating call — `anno call anno_set_label_name`,
+`anno call anno_set_comment`, `anno call anno_set_data_type`, `anno call anno_add_scope` — registers a project
+with the broker and writes `project.json`. A read before any write is REFUSED by name ("has no
+annotation project yet") rather than answering against an empty project, so "I read nothing" and
+"there is nothing to read" stay distinguishable. Every `anno` call needs the broker running.
+
+Every call that derives its answer from the program's **bytes** rather than from the annotations
+takes an `image` path — `anno call anno_get_binary_info`, `anno call anno_read_region`, `anno call anno_disassemble`,
+`anno call anno_get_cross_references`, `anno call anno_search` and `anno call anno_get_address_details`. The client
+reads the file and sends its bytes with the call. The project holds annotations and never bytes,
+so an omitted image would read as a plausible success against whatever was recorded last. `image` is a `.prg` (2-byte little-endian load address plus payload) or
 an exactly-65536-byte flat capture, dispatched **by extension first**, never by length.
 
 **Write findings with the named tools, not a Markdown row:**
@@ -204,7 +207,7 @@ an exactly-65536-byte flat capture, dispatched **by extension first**, never by 
 | `anno call anno_set_data_type` | Classifying a block (`code`, `byte`, `address`, `petscii`, …) |
 | `anno call anno_add_scope` | Marking a handler's extent as a lexical scope |
 | `anno call anno_set_comment` | Recording the evidence — the carrier for the confidence grade below |
-| `anno call anno_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels, comments and block ranges. One batch is one open, commit, close instead of dozens. You name the store (and the image, when an inner call needs one) ONCE at the top level, and every inner call inherits it. A malformed payload, an empty `calls` array, an uncurated inner name at any depth, or an illegal label name refuses the **whole** batch by index. It executes nothing. Past that gate, execution runs to completion and each entry carries its own status. So an error entry inside a successful result means that one call did not work |
+| `anno call anno_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels, comments and block ranges. One batch is one transaction instead of dozens. You name the image, when an inner call needs one, ONCE at the top level, and every inner call inherits it. A malformed payload, an empty `calls` array, an uncurated inner name at any depth, or an illegal label name refuses the **whole** batch by index. It executes nothing. Past that gate, execution runs to completion and each entry carries its own status. So an error entry inside a successful result means that one call did not work |
 
 **Grade with the confidence prefix.** Lead every evidence comment with exactly one of these five
 bracket tokens (quoted verbatim from `anno-confidence.mts`, the parser's own source of truth):
@@ -218,8 +221,8 @@ its grade in place. Re-check and restate the evidence with a fresh `anno call an
 record of when something stopped being a guess survives.
 
 **Query instead of re-deriving.** `anno call anno_get_symbols`, `anno call anno_get_comments` and `anno call anno_get_blocks`
-answer straight from the store. `anno call anno_get_cross_references` and `anno call anno_search` derive their answers
-from the image bytes plus the store's typed ranges, so they take `image` too. `anno call anno_search` searches
+answer straight from the project. `anno call anno_get_cross_references` and `anno call anno_search` derive their answers
+from the image bytes plus the project's typed ranges, so they take `image` too. `anno call anno_search` searches
 three corpora together — label names, comment text, and the instruction text rendered from every
 range typed `code` — **byte-exact and case-sensitive**, with each corpus named in the answer
 alongside how many entries it held, so a genuine zero over a real corpus stays distinguishable from
@@ -233,14 +236,14 @@ whole workflow exists to make cheap:
 > "Show me everything still `[unknown]`" → `anno call anno_search` with `query: "[unknown]"` and
 > an explicit `max_results` set above your program's comment count.
 
-`anno call anno_get_blocks` is also the read route for the store's other structural annotations: pass
+`anno call anno_get_blocks` is also the read route for the project's other structural annotations: pass
 `include: ["scopes", "enums", "enum_usage"]` to get scope spans (which `anno call anno_remove_scope` must
 match exactly), every project enum with its variants, and every address-to-enum association.
 
 `anno call anno_get_address_details` composes everything known about ONE address — the labels bound there,
 the comments there, the typed range covering it, and the cross-references reaching it. **The call
 discloses the composition:** the body carries `composed_client_side` and a `composed_from` list
-naming all four sources, so a composition is never mistaken for something the store held whole.
+naming all four sources, so a composition is never mistaken for something the project held whole.
 
 ### Take names to the running machine, and bring live findings back
 
@@ -257,19 +260,19 @@ error and no explanation of why.
 The **loop itself is not withdrawn**, only its two automated legs, and the discipline it encodes is
 what to keep doing by hand for as long as they stay gone:
 
-1. **The store is the merge point, not your own notes.** Write a name discovered live —
-   disassembling the running machine, a checkpoint hit — into the store with
+1. **The project is the merge point, not your own notes.** Write a name discovered live —
+   disassembling the running machine, a checkpoint hit — into the project with
    `anno call anno_set_label_name` *first*, before you carry it anywhere else.
 2. **`vice_symbols_load` REPLACES the machine's symbol table rather than merging into it.** Call it
-   **exactly once** per generated `.lbl` file. Loading an older file a second time, after the store
+   **exactly once** per generated `.lbl` file. Loading an older file a second time, after the project
    has moved on, silently discards the newer names.
 3. **Regenerate whole, never patch incrementally.** The round trip regenerated the entire `.lbl`
-   from the store, and any rebuild of it must do the same. A hand-written incremental patch
+   from the project, and any rebuild of it must do the same. A hand-written incremental patch
    reintroduces exactly the drift the single merge point exists to prevent.
 
 Two traps that survive the withdrawal and are part of the specification whoever eventually rebuilds
 this will read: the export carried **USER** labels only — auto-generated `a_D011`/`e_FFD2` externals
-never appeared in the written file — and neither direction ever created a store from a raw input.
+never appeared in the written file — and neither direction ever created a project from a raw input.
 
 `gen-enums` — turning register writes into named enum variants — is **withdrawn on the same terms,
 and no phase currently owns its return either**. The same superseded forecast named a numbered phase
@@ -281,20 +284,21 @@ the by-hand route that stays open.
 filled example live in `templates/memory-map.template.md`), then:
 
 ```bash
-node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
-node src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap --provenance sidecar.json --out memory-map.md
+node src/mcp/vice/vice-proxy.ts anno render-memmap --provenance sidecar.json --out memory-map.md
 ```
 
-Add `--check` to detect drift. `--check` reports drift when, and only when, one of these changed:
+It renders this workspace's own project. `--out` is required: the map goes where you name it, and
+an existing file there is replaced only with `--force`. Add `--check` to detect drift. `--check` reports drift when, and only when, one of these changed:
 
 - the rendered file itself (a hand edit)
-- a store row (a range, a label, a comment, or a comment's confidence grade)
+- a project row (a range, a label, a comment, or a comment's confidence grade)
 - the provenance sidecar's bytes
-- the location of the store or the sidecar **relative to the workspace root**
+- the location of the sidecar **relative to the workspace root**
 - the renderer
 
 **Relocating the checkout is not drift** — the same tree at a different absolute path renders the
-same bytes, because the banner records workspace-relative locations. The rendered file carries a
+same bytes, because the banner records only the sidecar's workspace-relative location. The rendered file carries a
 generated-file banner. Treat it like every other generated artifact in this repo and never
 hand-edit it.
 
@@ -313,28 +317,24 @@ changed from absolute to workspace-relative spellings. Re-run the generator and 
 banner. This repository has no committed rendered `memory-map.md` — only the template — so nothing
 here regresses. This sentence is meant for **consuming projects**, which do have one.
 
-**Dated correction, 2026-08-30 — `render-memmap` reads the annotation store directly, and the note
-that used to stand here was WRONG when it shipped.** This verb was rebuilt over the annotation
-store: its positional is an EXISTING `.annostore`, opened
-with `mustExist` — the call refuses an absent store by name rather than creating one — and nothing
-on the path it reaches consults the retired external analyser. The pre-store project file the
-earlier note named has no producer left in this repository, so there is no route back to the old
-spelling. That earlier note asserted in the PRESENT TENSE that this verb still read a project file.
-It was already false when it shipped, and this page REMOVES it here rather than amends it, so a
-reader comparing two dated claims can tell which one to believe.
+**Dated correction, 2026-09-27 — `render-memmap` takes no positional.** The 2026-08-30 note that
+stood here said its positional was an existing `.annostore`. The broker now holds the annotations,
+so the verb renders the workspace's own project and refuses a positional by name; a workspace with
+no project yet is refused rather than given an empty map. That note is REMOVED here rather than
+amended, so a reader comparing two dated claims can tell which one to believe.
 
 **Importing a Ghidra export, and the mechanical join that follows it.** When a Ghidra harness run
 (a separate, host-side capability) has produced a transfer file, two calls land its findings in the
-store — in this order, and each is one mechanical call, not an agent turn:
+project — in this order, and each is one mechanical call, not an agent turn:
 
 1. **`anno call anno_import_ghidra_export`** reads the transfer file, writes one cross-reference row per
    surviving reference, and REMOVES the transfer file once every write has durably committed. It
    reports `referencesSeen`, `xrefsWritten`, `xrefsAlreadyPresent` (the call deduplicates a
    duplicate reference rather than double-counting it) and `kindsSeenNotImported` — reference kinds
-   outside this store's four-member vocabulary, dropped and counted rather than guessed or refused.
+   outside this project's four-member vocabulary, dropped and counted rather than guessed or refused.
    The call refuses a malformed, truncated or digest-mismatched export by name, naming the section
    and the offending line, and writes nothing.
-2. **`anno call anno_join_memmap`** then reads every cross-reference target the store already holds, skips
+2. **`anno call anno_join_memmap`** then reads every cross-reference target the project already holds, skips
    addresses inside the program's own loaded image (those are code/data addresses, not hardware
    features), and annotates everything else with the narrowest `c64-memory-mapping/memmap.json` entry
    containing it. It reports `addressesConsidered`, `annotated`, `skippedInImage`,
@@ -353,20 +353,19 @@ and has come back as `anno export-asm`, behind a real-ACME byte-diff oracle.** T
 notice rather than removing it, because the withdrawal explains the shape of what returned. The
 removed verb turned a `.prg` or a flat 64K image into ACME source offline and settled its own
 correctness with a transcript parser. What returned is not a rename of it. This project rebuilds it
-over the **annotation store**, and settles its correctness by **assembling the output with a real
+over the **annotation project**, and settles its correctness by **assembling the output with a real
 ACME and diffing the bytes against the input** — never by an exit code and never by a string match
 on the exporter's own output.
 
 ```bash
-node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore --out game-src
-node src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --out game-src
+node src/mcp/vice/vice-proxy.ts anno export-asm game.prg --out game-src
 ```
 
-`<image>` and `--store` are **two separate arguments and neither derives from the other**: the
-image supplies the bytes, the store supplies the names, typed ranges and comments. `--out` names a
-**directory** for the whole export, defaulting to the image's basename stem beside the **store**
-rather than beside the image, and the export refuses a non-empty destination rather than
-overwriting it unless you pass `--force`. The directory holds a root file that sources the rest, one
+`<image>` supplies the bytes; the workspace's own project supplies the names, typed ranges and
+comments. `--out` is required and names a **directory** for the whole export. The export refuses a
+non-empty destination rather than overwriting it unless you pass `--force`, and refuses an `--out`
+that is, or contains, one of its own inputs even with `--force`. The directory holds a root file that sources the rest, one
 file per annotation scope, and an `unscoped.a` for any block that lies inside no scope — open the
 root file first to see how the tree fits together.
 
@@ -415,7 +414,7 @@ two lines are the part you cannot afford to load lazily.
 
 The table at the top of this page finds *where* the structure is. This section
 is what you do once you have picked one routine out of it and want it
-documented properly in the annotation store.
+documented properly in the annotation project.
 
 **Scope, so three skills do not fight over the same job.** This procedure
 handles **one routine, at one explicit address**. Building the backlog of every
@@ -456,7 +455,7 @@ Find the start (the entry point or its label) and the end (`RTS`, `RTI`, or a
 
 ### 3. Read the range
 
-`anno call anno_read_region` over the routine's explicit range, naming the `store` and
+`anno call anno_read_region` over the routine's explicit range, naming
 the `image`, with `view` **omitted** — the disassembly view is that parameter's
 documented default, so the call needs no `view` at all here.
 
@@ -526,7 +525,7 @@ and data reference goes through a symbol, so code can move" — still supplies
 its criterion, and the per-call disposition sits in the manifest named
 in the attribution header above. Until then, recombine the two bytes yourself
 and put the reconstructed target in a side comment on both instructions, so the
-vector setup is readable even though the store cannot format it.
+vector setup is readable even though the project cannot format it.
 
 ### 6. Synthesise, then document
 
@@ -590,7 +589,7 @@ not exist yet, and it is superseded now that it does.
 
 The material below stays as **reference text only**, narrowed to what
 `c64-petcat` does NOT do — write the tokenized bytes' typed ranges and
-comments into this project's annotation store. That is rare in practice: a
+comments into this workspace's annotation project. That is rare in practice: a
 commercial C64 title captured after its loader has run almost universally
 reduces to a one-line `SYS` stub, so most sessions never reach this section at
 all. When one does, use `c64-petcat`'s resolved listing and handover address
@@ -655,7 +654,7 @@ Per line, batched through `anno call anno_batch_execute`:
 Then jump to the next-line pointer and repeat until it reads `$00 $00`, and
 finally mark that `$00 $00` terminator itself as `word`. Nothing needs to be
 "saved": every one of those writes committed and fsynced inside its own call.
-`anno call anno_save_project` performs **no write at all** — it reports the store's current
+`anno call anno_save_project` performs **no write at all** — it reports the project's current
 revision, which is what to quote when you write the pass up.
 
 ## Which skill does what

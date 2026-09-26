@@ -27,8 +27,8 @@ const ANNO_STAGE_REPLY_TIMEOUT_MS = 30_000;
  * never hours. */
 const ANNO_RUN_REPLY_TIMEOUT_MS = 600_000;
 
-/** One annotation call. \`args\` names each input file by slot (\`{ $file }\`);
- * \`files\` maps each slot to the local path it stages, already confined. */
+/** One annotation call. `args` names each input file by slot (`{ $file }`);
+ * `files` maps each slot to the local path it stages, already confined. */
 export interface AnnoRemoteCall {
   projectId: string;
   kind: "register" | "tool" | "report";
@@ -43,9 +43,9 @@ export interface AnnoRemoteFile {
   bytes: Uint8Array;
 }
 
-/** The call's answer. \`code\` on a refusal: \`unreachable\` (no broker
- * answered), \`unknown_project\`, \`refused\` (a complete message), \`failed\` (a
- * message to name after the verb) or \`internal\`. */
+/** The call's answer. `code` on a refusal: `unreachable` (no broker
+ * answered), `unknown_project`, `refused` (a complete message), `failed` (a
+ * message to name after the verb) or `internal`. */
 export type AnnoRemoteResult =
   | { ok: true; type: "register" }
   | { ok: true; type: "tool"; result: ToolCallResult }

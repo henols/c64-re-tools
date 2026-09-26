@@ -1,35 +1,38 @@
 # Memory map generation
 
-**A generator writes the memory map. Nobody hand-authors it.** The store — labels, comments, block
-types and scopes written through the `anno call anno_*` verbs described in `../SKILL.md` — is canonical. This
-file used to be a fill-in-the-rows document. It is now the schema for the one input the generator
-needs beyond the store itself, plus the confidence vocabulary that store comments carry.
+**A generator writes the memory map. Nobody hand-authors it.** The workspace's annotation project —
+labels, comments, block types and scopes written through the `anno call anno_*` verbs described in
+`../SKILL.md` — is canonical. This file used to be a fill-in-the-rows document. It is now the schema
+for the one input the generator needs beyond the project itself, plus the confidence vocabulary
+that project comments carry.
 
-Run the generator once findings are in the store:
+Run the generator once findings are in the project:
 
 ```bash
-node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
-node src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap --provenance sidecar.json --out memory-map.md
+node src/mcp/vice/vice-proxy.ts anno render-memmap --provenance sidecar.json --out memory-map.md
 ```
+
+`--out` is required, and an existing file there is replaced only with `--force`.
 
 Add `--check` to compare the rendered file on disk against a fresh render — it exits non-zero and
 prints the first differing line. `--check` reports drift when, and only when, one of these changed:
 
 - the rendered file itself (a hand edit)
-- a store row (a range, a label, a comment, or a comment's confidence grade)
+- a project row (a range, a label, a comment, or a comment's confidence grade)
 - the provenance sidecar's bytes
-- the location of the store or the sidecar **relative to the workspace root**
+- the location of the sidecar **relative to the workspace root**
 - the renderer
 
 **Relocating the checkout is not drift** — the same tree at a different absolute path renders the
-same bytes, because the banner records workspace-relative locations rather than absolute ones.
+same bytes, because the banner records the sidecar's workspace-relative location rather than an
+absolute one.
 
 There is no way to "fix" drift by editing the rendered file directly: the fix is always to re-run
 the generator (or, if the sidecar itself is stale, fix it and re-run). That remedy is safe to
-follow on any machine — because the banner records workspace-relative locations, re-running in a
+follow on any machine — because the banner records a workspace-relative location, re-running in a
 different checkout or in a worktree does not rewrite the file with that machine's absolute paths.
-The generated file carries a banner naming the store, the sidecar and a content digest — do not
-strip it.
+The generated file carries a banner naming the sidecar and a content digest — do not strip it.
 
 **One-time drift after upgrading, 2026-08-30.** A memory map rendered *before* 2026-08-30 will
 report `drifted` on its first `--check` after this change, exactly once: the banner's `store:` and
@@ -40,7 +43,7 @@ one-time, self-clearing banner correction — not a bug, and not a migration.
 ## The provenance sidecar
 
 Some facts belong to the **run** (which capture, which `$01`, which video standard) rather than to
-any address, and the store has no address-keyed shape for them. They are supplied to the
+any address, and the project has no address-keyed shape for them. They are supplied to the
 renderer as a small JSON sidecar, hand-authored from `c64-ram-capture`'s and `derive.ts`'s own
 outputs and confirmed by the renderer — a missing or malformed key is a named error listing every
 problem at once, never a `<placeholder>` silently rendered into a published document.
@@ -82,7 +85,7 @@ literal values:
 
 ## Confidence vocabulary
 
-Every comment written into the store through `anno call anno_set_comment` that grades a finding leads with
+Every comment written into the project through `anno call anno_set_comment` that grades a finding leads with
 one of these five bracket tokens (the parser in `anno-confidence.mts` throws on anything that is
 close but not exact — a typo never silently degrades into an ungraded comment):
 

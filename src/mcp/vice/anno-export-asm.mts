@@ -86,11 +86,13 @@
 // SCOPE, STILL DELIBERATELY NARROW: code ranges, the twelve typed data ranges,
 // comments, mid-instruction inline labels and immediate-operand enum
 // substitution.
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 
 import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage, listExcludedRanges, listScopes } from "./anno-store.mts";
 import type { AnnoStoreHandle } from "./anno-store.mts";
+import { ROOT_FILE_NAME, SYMBOLS_FILE_NAME, UNSCOPED_FILE_NAME, writeExportAsmTree, type ExportAsmTreeFile, type ExportAsmTreePlan } from "./anno-tree-writer.mts";
+export { ROOT_FILE_NAME, SYMBOLS_FILE_NAME, UNSCOPED_FILE_NAME, writeExportAsmTree, type ExportAsmTreeFile, type ExportAsmTreePlan };
 import { AnnoCommentError, COMMENT_TYPES, DATA_TYPES, assertCommentText, assertDataType, isSplitDataType, parseVariantKey } from "./anno-types.mts";
 import type { CommentRow, DataType, EnumUsageRow, ExcludedRangeRow, LabelRow, ProjectEnumRow, RangeRow, ScopeRow } from "./anno-types.mts";
 import { assertLegalAcmeIdentifier } from "./anno-acme-ident.mts";
@@ -1209,7 +1211,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   try {
     return exportAsmFrom({
       handle,
-      storeLabel: storePath,
+      storeLabel: `the annotation store at "${storePath}"`,
       image: { name: imagePath, bytes: imageBytes },
       ...(ledgerPath !== undefined ? { ledger: { name: ledgerPath, text: () => readProvenanceLedgerText(ledgerPath) } } : {}),
     });
@@ -1254,7 +1256,7 @@ export function exportAsmFrom(source: ExportAsmSource): ExportAsmResult {
 
   if (ranges.length === 0) {
     throw new Error(
-      `exportAsm: the annotation store at "${storePath}" holds no ranges -- refusing to emit an empty ACME source, ` +
+      `exportAsm: ${storePath} holds no ranges -- refusing to emit an empty ACME source, ` +
         `because "nothing is annotated" and "the export produced nothing" must not read the same.`,
     );
   }
@@ -2094,12 +2096,6 @@ export function exportAsmFrom(source: ExportAsmSource): ExportAsmResult {
 // below for the one claim it is NOT allowed to make.
 // ---------------------------------------------------------------------------
 
-/** D47-B: the tree's three fixed file names. DERIVED from nothing but this
- * module's own naming convention -- never from a store row -- so a store's
- * free text can never reach one of these three names. */
-export const ROOT_FILE_NAME = "root.a";
-export const SYMBOLS_FILE_NAME = "symbols.a";
-export const UNSCOPED_FILE_NAME = "unscoped.a";
 
 /**
  * D47-B: the `.a` file name for the scope starting at `start` --
@@ -2263,19 +2259,6 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
   return { ...result, outDir: options.outDir, files: plan.files.map((file) => file.name).sort(), sourceOrder: plan.sourceOrder };
 }
 
-/** One file of a planned tree. */
-export interface ExportAsmTreeFile {
-  name: string;
-  bytes: Uint8Array;
-}
-
-/** A whole tree, planned before anything is written: every file in write
- * order -- `root.a` LAST -- and the `!source` order `root.a` carries. */
-export interface ExportAsmTreePlan {
-  files: ExportAsmTreeFile[];
-  sourceOrder: string[];
-}
-
 /**
  * Plans the tree `exportAsmTree()` writes, as file names and bytes, with no
  * filesystem access. Every block is placed first, so a placement refusal
@@ -2358,60 +2341,4 @@ export function planExportAsmTree(result: ExportAsmResult): ExportAsmTreePlan {
   files.push({ name: ROOT_FILE_NAME, bytes: encoder.encode(`${rootFileLines.join("\n")}\n`) });
 
   return { files, sourceOrder };
-}
-
-/**
- * Writes a planned tree into `outDir`, under the output-directory contract.
- * Two rules, both evaluated BEFORE the first write -- a refusal that has
- * already written half a tree has left an artefact a later assemble might
- * succeed on.
- *
- * Rule one, without `force`: a directory holding ANY entry at all is refused
- * by name, unconditionally. An export writes a whole tree and will not mix its
- * files with whatever the directory already held.
- *
- * Rule two, with `force`: the caller is asking "this directory already holds a
- * tree I exported before, replace it" -- never "remove whatever is in my way".
- * Anything in the directory that is NOT one of the planned names is refused by
- * name; nothing is ever deleted to make room for it.
- *
- * `root.a` is written LAST, through a temp name in the same directory followed
- * by a rename into place, so an interrupted write leaves no root an assembler
- * could start from.
- */
-export function writeExportAsmTree(outDir: string, plan: ExportAsmTreePlan, force: boolean): void {
-  const namesToWrite = plan.files.map((file) => file.name);
-  const existingEntries = existsSync(outDir) ? readdirSync(outDir) : [];
-  if (existingEntries.length > 0) {
-    if (!force) {
-      throw new Error(
-        `exportAsmTree: the output directory "${outDir}" already holds ${existingEntries.length} ` +
-          `${existingEntries.length === 1 ? "entry" : "entries"} -- refusing to write into it. An export writes a whole tree and will ` +
-          `not mix its files with whatever is already there. Pass \`force: true\` to ask for the overwrite explicitly if this directory ` +
-          `holds a previous export of this same store.`,
-      );
-    }
-    const namesToWriteSet = new Set(namesToWrite);
-    const unexpected = existingEntries.filter((entry) => !namesToWriteSet.has(entry));
-    if (unexpected.length > 0) {
-      throw new Error(
-        `exportAsmTree: the output directory "${outDir}" holds ${JSON.stringify(unexpected)}, which this export would NOT write -- ` +
-          `refusing the overwrite. \`force: true\` means "replace the tree I exported here before", never "remove whatever is in my ` +
-          `way": every name this export itself produces may be overwritten, but any other entry is left untouched. Remove it yourself, ` +
-          `or point --out at an empty directory.`,
-      );
-    }
-  }
-  mkdirSync(outDir, { recursive: true });
-
-  for (const file of plan.files) {
-    if (file.name === ROOT_FILE_NAME) continue;
-    writeFileSync(join(outDir, file.name), file.bytes);
-  }
-  const root = plan.files.find((file) => file.name === ROOT_FILE_NAME);
-  if (root !== undefined) {
-    const rootTmpPath = join(outDir, `${ROOT_FILE_NAME}.tmp-${process.pid}`);
-    writeFileSync(rootTmpPath, root.bytes);
-    renameSync(rootTmpPath, join(outDir, ROOT_FILE_NAME));
-  }
 }

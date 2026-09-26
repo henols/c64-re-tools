@@ -45,7 +45,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** A temp directory INSIDE the workspace root, mirroring `anno-cli.test.ts`'s
  * own `withWorkspaceTempDir()` precedent verbatim: `decomp-completeness`
- * confines its `--store`/`--disagreements`/`--manifest` paths with
+ * confines its `--disagreements`/`--manifest` paths with
  * `storePathWithinWorkspace()` against `repoRoot()`, so a system tmpdir path
  * is refused BY DESIGN, not an inconvenience to route around. Cleaned up in
  * a `finally`, exactly like the TypeScript precedent -- nothing this
@@ -66,7 +66,7 @@ async function withWorkspaceTempDir<T>(fn: (dir: string) => Promise<T>): Promise
  * that only cares about one behaviour can override just that field. */
 function completeAnswer(overrides: CompletenessAnswer = {}): CompletenessAnswer {
   return {
-    store: "/workspace/.c64-re-tools/tracer.annostore",
+    project: "3f0c6a1e-5b7d-4c2a-9e81-0d4b2f6a7c19",
     fixture: "dxa/tracer.prg",
     executionDisposition: "executed",
     notExecutedReason: null,
@@ -474,9 +474,9 @@ test("a full survivor list, non-empty entry-point/referenced-address failures an
 // that quietly softens either refusal reds this suite.
 //
 // THIS SPAWNS A REAL SUBPROCESS (`main()` -> `fetchCompletenessReport()` ->
-// the resolved `vice-proxy.ts anno decomp-completeness`), but reaches NO
-// broker and starts NO VICE process (the store is `node:sqlite`
-// in-process) -- both controls are ordinary CI-safe Node subprocess calls.
+// the resolved `vice-proxy.ts anno decomp-completeness`) and starts NO VICE
+// process. Control 1 is refused before any broker is asked; control 2 asks a
+// harness broker of its own (dynamic port, temp home), stopped in a finally.
 // ---------------------------------------------------------------------------
 
 test("PLANTED CONTROL 1 (permanent): omitting --disagreements refuses by name with exit 1, through main()", () => {
@@ -487,11 +487,11 @@ test("PLANTED CONTROL 1 (permanent): omitting --disagreements refuses by name wi
   };
   let exitCode;
   try {
-    // Deliberately a NONEXISTENT store path: control 1's own refusal fires
-    // on the ABSENCE of --disagreements, before any file-existence check --
-    // this reproduces a real captured transcript as a permanent pin. No real
-    // store is needed for THIS control.
-    exitCode = main(["--store", "/nonexistent/whatever.annostore", "--manifest", "/nonexistent/whatever.json"]);
+    // Deliberately a NONEXISTENT manifest: control 1's own refusal fires on
+    // the ABSENCE of --disagreements, before any file-existence check -- this
+    // reproduces a real captured transcript as a permanent pin. No project
+    // and no broker are needed for THIS control.
+    exitCode = main(["--fixture", "scratch/control1.prg", "--manifest", "/nonexistent/whatever.json"]);
   } finally {
     console.error = originalError;
   }
@@ -500,66 +500,77 @@ test("PLANTED CONTROL 1 (permanent): omitting --disagreements refuses by name wi
   assert.match(stderrOutput, /there is no default and no empty-array substitute/, "must carry the refusal's own stated reason");
 });
 
-test("PLANTED CONTROL 2 (permanent, anti-vacuity): a fabricated run identity is refused by name, distinguishing 'no disagreements' from 'the query was never run', through main() against a REAL store", async () => {
-  // This control genuinely needs a REAL, EXISTING annotation store -- the
-  // run-identity mismatch check runs only after existsSync(storePath)
-  // succeeds and the store is actually opened, so control 1's "no store
-  // needed at all" shortcut does not apply here. Built fresh, in-process,
-  // via anno-store.mts's own openStore()/setDataType() -- CI-safe (no VICE,
-  // no broker: the store is node:sqlite
-  // in-process) and non-vacuous: a store with ZERO recorded runs makes
-  // EVERY complete-but-non-matching runIdentity a genuine anti-vacuity
-  // refusal, exactly like this same control's own captured real-store
-  // transcript.
-  const { openStore, closeStore, setDataType } = await import("../../../src/mcp/vice/anno-store.mts");
+test("PLANTED CONTROL 2 (permanent, anti-vacuity): a fabricated run identity is refused by name, distinguishing 'no disagreements' from 'the query was never run', through main() against a REAL project", async () => {
+  // This control genuinely needs a REAL annotation project -- the
+  // run-identity mismatch check runs in the broker, against the project's
+  // own evid-runs table, so control 1's "no project needed at all" shortcut
+  // does not apply here. The project is seeded into a harness broker's own
+  // database -- CI-safe (no VICE) and non-vacuous: a project with ZERO
+  // recorded runs makes EVERY complete-but-non-matching runIdentity a
+  // genuine anti-vacuity refusal, exactly like this same control's own
+  // captured real-store transcript.
+  const { setDataType } = await import("../../../src/mcp/vice/anno-store.mts");
+  const { seedBrokerProject } = await import("../../../src/mcp/vice/inproc-anno-broker.ts");
+  const { startHarnessBroker } = await import("../../../src/mcp/vice/broker-harness.ts");
 
-  await withWorkspaceTempDir(async (dir) => {
-    const storePath = join(dir, "control2.annostore");
-    const handle = openStore(storePath, { workspaceRoot: dir });
-    setDataType(handle, { start: 0x0800, endInclusive: 0x0800, dataType: "byte" });
-    closeStore(handle);
+  const broker = await startHarnessBroker();
+  const saved = { dir: process.env.CLAUDE_PROJECT_DIR, port: process.env.VICE_BROKER_CONTROL_PORT };
+  try {
+    await withWorkspaceTempDir(async (dir) => {
+      seedBrokerProject(broker.home, dir, (project) => setDataType(project, { start: 0x0800, endInclusive: 0x0800, dataType: "byte" }));
+      // main() spawns the CLI with this process's environment: point it at
+      // the workspace and at this control's own broker.
+      process.env.CLAUDE_PROJECT_DIR = dir;
+      process.env.VICE_BROKER_CONTROL_PORT = String(broker.port);
 
-    const manifestPath = join(dir, "manifest.json");
-    writeFileSync(
-      manifestPath,
-      JSON.stringify({ fixtures: [{ path: "scratch/control2.prg", execution: "executed", reason: null, ghidraRoute: "flat64k" }] }),
-    );
+      const manifestPath = join(dir, "manifest.json");
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({ fixtures: [{ path: "scratch/control2.prg", execution: "executed", reason: null, ghidraRoute: "flat64k" }] }),
+      );
 
-    const disagreementsPath = join(dir, "disagreements.json");
-    writeFileSync(
-      disagreementsPath,
-      JSON.stringify({
-        disagreements: [],
-        disagreementCount: 0,
-        agreementCount: 0,
-        blockCoveredNeverObservedCount: 1,
-        observedOutsideAnyBlockCount: 0,
-        observedAtUndefinedBlockCount: 0,
-        denominator: 1,
-        positiveClass: "code",
-        tier: "runtime-observed",
-        // A COMPLETE, well-shaped runIdentity -- the store has recorded
-        // exactly ZERO runs, so this can never match, regardless of its own
-        // values. That absence-of-any-run is exactly what makes this a
-        // genuine anti-vacuity control rather than a special-cased fabricated
-        // digest.
-        runIdentity: { imageSha256: "a".repeat(64), argvDigest: "b".repeat(64), seed: "no-such-run" },
-      }),
-    );
+      const disagreementsPath = join(dir, "disagreements.json");
+      writeFileSync(
+        disagreementsPath,
+        JSON.stringify({
+          disagreements: [],
+          disagreementCount: 0,
+          agreementCount: 0,
+          blockCoveredNeverObservedCount: 1,
+          observedOutsideAnyBlockCount: 0,
+          observedAtUndefinedBlockCount: 0,
+          denominator: 1,
+          positiveClass: "code",
+          tier: "runtime-observed",
+          // A COMPLETE, well-shaped runIdentity -- the project has recorded
+          // exactly ZERO runs, so this can never match, regardless of its own
+          // values. That absence-of-any-run is exactly what makes this a
+          // genuine anti-vacuity control rather than a special-cased fabricated
+          // digest.
+          runIdentity: { imageSha256: "a".repeat(64), argvDigest: "b".repeat(64), seed: "no-such-run" },
+        }),
+      );
 
-    let stderrOutput = "";
-    const originalError = console.error;
-    console.error = (msg) => {
-      stderrOutput += String(msg) + "\n";
-    };
-    let exitCode;
-    try {
-      exitCode = main(["--store", storePath, "--disagreements", disagreementsPath, "--manifest", manifestPath]);
-    } finally {
-      console.error = originalError;
+      let stderrOutput = "";
+      const originalError = console.error;
+      console.error = (msg) => {
+        stderrOutput += String(msg) + "\n";
+      };
+      let exitCode;
+      try {
+        exitCode = main(["--fixture", "scratch/control2.prg", "--disagreements", disagreementsPath, "--manifest", manifestPath]);
+      } finally {
+        console.error = originalError;
+      }
+      assert.equal(exitCode, 1, "a runIdentity matching no row in the project's own evid-runs table must exit 1");
+      assert.match(stderrOutput, /matches no row in .* own evid-runs table/, "must name the unmatched-run-identity refusal");
+      assert.match(stderrOutput, /fabricated or foreign document is refused, never rendered/, "must carry the anti-vacuity reason verbatim");
+    });
+  } finally {
+    for (const [key, value] of [["CLAUDE_PROJECT_DIR", saved.dir], ["VICE_BROKER_CONTROL_PORT", saved.port]] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
     }
-    assert.equal(exitCode, 1, "a runIdentity matching no row in the store's own evid-runs table must exit 1");
-    assert.match(stderrOutput, /matches no row in .* own evid-runs table/, "must name the unmatched-run-identity refusal");
-    assert.match(stderrOutput, /fabricated or foreign document is refused, never rendered/, "must carry the anti-vacuity reason verbatim");
-  });
+    await broker.stop();
+  }
 });

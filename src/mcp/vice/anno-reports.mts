@@ -636,7 +636,6 @@ function renderMemmapReport(handle: AnnoStoreHandle, args: Record<string, unknow
     handle,
     sidecarText: utf8(sidecar.bytes),
     sidecarLabel: sidecar.name,
-    storeLocation: stringArg("render-memmap", args, "store_location"),
     sidecarLocation: stringArg("render-memmap", args, "sidecar_location"),
   });
   return {
@@ -675,7 +674,7 @@ function exportAsmReport(handle: AnnoStoreHandle, args: Record<string, unknown>,
   const ledger: AnnoInputFile | undefined = args.ledger === undefined ? undefined : stagedInputFile("export-asm", "ledger", args.ledger, inputs);
   const result = exportAsmFrom({
     handle,
-    storeLabel: stringArg("export-asm", args, "store_label"),
+    storeLabel: `project ${handle.projectId}`,
     image,
     ...(ledger !== undefined ? { ledger: { name: ledger.name, text: () => utf8(ledger.bytes) } } : {}),
   });
@@ -724,7 +723,7 @@ function manifestEntryArg(value: unknown): DecompExecutionManifestEntry {
 
 /** decomp-completeness: the completeness gate over one fixture's store. */
 function decompCompletenessReport(handle: AnnoStoreHandle, args: Record<string, unknown>, inputs: AnnoInputs): AnnoReportResult {
-  const storeLabel = stringArg("decomp-completeness", args, "store_label");
+  const storeLabel = `project ${handle.projectId}`;
   const manifestEntry = manifestEntryArg(args.manifest_entry);
   const disagreementsFile = stagedInputFile("decomp-completeness", "disagreements", args.disagreements, inputs);
 
@@ -812,7 +811,7 @@ function decompCompletenessReport(handle: AnnoStoreHandle, args: Record<string, 
   const disagreementResolution = buildDisagreementResolution(disagreementInput.disagreements, comments);
 
   const report: DecompCompletenessReport = {
-    store: storeLabel,
+    project: handle.projectId,
     fixture: manifestEntry.path,
     executionDisposition: manifestEntry.execution,
     notExecutedReason: manifestEntry.execution === "not-executed" ? manifestEntry.reason : null,
@@ -830,7 +829,7 @@ function decompCompletenessReport(handle: AnnoStoreHandle, args: Record<string, 
 
 /** The decomp-completeness answer. */
 export interface DecompCompletenessReport {
-  store: string;
+  project: string;
   fixture: string;
   executionDisposition: "executed" | "not-executed";
   notExecutedReason: string | null;

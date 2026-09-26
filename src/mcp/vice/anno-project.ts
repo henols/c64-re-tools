@@ -2,7 +2,7 @@
 // anno-project.ts
 //
 // WHY THIS FILE EXISTS: the one place a project's id is read from and written
-// to \`<project>/.c64-re-tools/project.json\`. The id is minted once, persisted,
+// to `<project>/.c64-re-tools/project.json`. The id is minted once, persisted,
 // and sent on every annotation call; the broker binds it into every read and
 // write, so it is the only thing that names a project's rows.
 //
@@ -64,7 +64,7 @@ export function mintProjectId(): string {
 }
 
 /**
- * Persists \`projectId\` as the workspace's id unless one is already there,
+ * Persists `projectId` as the workspace's id unless one is already there,
  * and returns the id the file holds afterwards. Created atomically and
  * owner-only: the content lands in a temp file first, and a hard link puts it
  * in place only if no file exists yet -- so two concurrent first writes agree

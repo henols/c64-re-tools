@@ -37,7 +37,9 @@ import { fileURLToPath } from "node:url";
 
 import { closeStore, openStore, setDataType } from "./anno-store.mts";
 import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.mts";
-import { runAnnoTool } from "./anno-call-client.ts";
+import { runAnnoTool as runAnnoToolWith } from "./anno-call-client.ts";
+import { openTestAnnoBroker, type TestAnnoBroker } from "./inproc-anno-broker.ts";
+import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OWN_FILENAME = "evid-report-keys.test.ts";
@@ -69,6 +71,7 @@ const FIXTURE_IDENTITY = {
 
 let ws: string;
 let storePath: string;
+let broker: TestAnnoBroker | undefined;
 let previousProjectDir: string | undefined;
 let ANSWERS: {
   ingest: Record<string, unknown>;
@@ -82,20 +85,19 @@ before(async () => {
   previousProjectDir = process.env.CLAUDE_PROJECT_DIR;
   storePath = join(ws, "project.annostore");
 
-  const handle = openStore(storePath, { workspaceRoot: ws });
-  try {
+  broker = openTestAnnoBroker(ws, { dbPath: storePath, projectId: FILE_STORE_PROJECT_ID });
+  const handle = broker.handle;
+  {
     // "byte" maps to the neutral "data" class through block-class.mts's own
     // fallthrough -- planting a disagreement at 0x4000 the same way plan
     // 43-06's own tracer test does, so direction 2's non-vacuity assertion has
     // a real nested disagreement row to visit.
     setDataType(handle, { start: 0x4000, endInclusive: 0x4000, dataType: "byte" });
-  } finally {
-    closeStore(handle);
   }
   process.env.CLAUDE_PROJECT_DIR = ws;
+  const runAnnoTool = (name: string, args: Record<string, unknown>) => runAnnoToolWith(name, args, { runRemote: broker!.runRemote });
 
   const ingestResult = await runAnnoTool("anno_evid_ingest", {
-    store: storePath,
     memmap_text: memmapReplyText([{ address: 0x4000, ram: "--x" }]),
     image_sha256: FIXTURE_IDENTITY.imageSha256,
     argv: FIXTURE_IDENTITY.argv,
@@ -103,14 +105,13 @@ before(async () => {
   });
   assert.equal(ingestResult.isError, false, `fixture setup: anno_evid_ingest failed: ${ingestResult.content[0]?.text}`);
 
-  const disagreementsResult = await runAnnoTool("anno_evid_disagreements", { store: storePath });
+  const disagreementsResult = await runAnnoTool("anno_evid_disagreements", {});
   assert.equal(disagreementsResult.isError, false, `fixture setup: anno_evid_disagreements failed: ${disagreementsResult.content[0]?.text}`);
 
-  const runsResult = await runAnnoTool("anno_evid_runs", { store: storePath });
+  const runsResult = await runAnnoTool("anno_evid_runs", {});
   assert.equal(runsResult.isError, false, `fixture setup: anno_evid_runs failed: ${runsResult.content[0]?.text}`);
 
   const resetResult = await runAnnoTool("anno_evid_reset", {
-    store: storePath,
     image_sha256: FIXTURE_IDENTITY.imageSha256,
     argv: FIXTURE_IDENTITY.argv,
     seed: FIXTURE_IDENTITY.seed,
@@ -126,6 +127,7 @@ before(async () => {
 });
 
 after(() => {
+  broker?.close();
   if (previousProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
   else process.env.CLAUDE_PROJECT_DIR = previousProjectDir;
   rmSync(ws, { recursive: true, force: true });

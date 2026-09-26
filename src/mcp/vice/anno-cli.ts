@@ -129,26 +129,26 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { compareRenderedMemoryMap } from "./anno-memmap-render.mts";
+import { compareRenderedMemoryMap } from "./anno-memmap-check.mts";
 // The tree writer. `acme-verify.ts` -- the module that DOES spawn ACME -- is
 // deliberately NOT imported here and must never be: it is test-only.
-import { writeExportAsmTree } from "./anno-export-asm.mts";
+import { writeExportAsmTree } from "./anno-tree-writer.mts";
 import { coverageFindings } from "./anno-coverage.mts";
 import type { CoverageReport } from "./anno-coverage.mts";
-import { openStore, closeStore } from "./anno-store.mts";
 import type { HazardReport } from "./anno-hazard-report.mts";
 import type { EvidReconciliation } from "./evid-reconcile.mts";
-import { storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.mts";
+import { AnnoProjectError, storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.mts";
 import { repoRoot } from "./repo-root.ts";
 // `call`'s one generic runner. A STATIC import is safe here -- `vice-proxy.ts`
 // reaches this whole module only through its own dynamic import, so it never
 // becomes part of the server's startup cost.
-import { CURATED_ANNO_TOOLS } from "./anno-tools.mts";
-import type { AnnoInputFile } from "./anno-tools.mts";
-import { runAnnoTool } from "./anno-call-client.ts";
+import { CURATED_ANNO_TOOLS } from "./anno-tool-defs.mts";
+import { brokerRefusal, remoteRunner, runAnnoTool, workspaceProject, type RunAnnoRemote } from "./anno-call-client.ts";
+import { AnnoProjectFileError } from "./anno-project.ts";
+import type { AnnoRemoteResult } from "./anno-remote.ts";
 // The report engine: every report is computed there, from the store and the
 // bytes this verb stages. This module confines, reads, writes and prints.
-import { AnnoReportRefusal, runAnnoReportOnHandle, type AnnoReportName, type AnnoReportResult } from "./anno-reports.mts";
+import type { AnnoReportName } from "./anno-reports.mts";
 import type {
   DecompCompletenessReport,
   DecompExecutionManifest,
@@ -161,47 +161,80 @@ import type {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** A file a report reads, as its bytes and the name refusals and echoes use. */
-type ReportInput = AnnoInputFile;
+/** What a verb reaches the broker through, and the workspace it runs in. The
+ * root is read only when a verb needs it, so a verb refused at parsing never
+ * resolves one. */
+interface CliContext {
+  workspaceRoot: () => string;
+  runRemote: RunAnnoRemote;
+}
 
-/** Reads a report input the caller named; the path is already confined. */
-function reportInput(path: string): ReportInput {
-  return { name: path, bytes: new Uint8Array(readFileSync(path)) };
+/** What `runAnnoCli()` reaches the broker through; tests inject an in-process
+ * runner. Defaults to the broker's endpoint and `repoRoot()`. */
+export interface AnnoCliDeps {
+  runRemote?: RunAnnoRemote;
+  workspaceRoot?: string;
+}
+
+/** A report's answer, with the project it answered for. */
+interface ReportAnswer {
+  projectId: string;
+  json: unknown;
+  files: { name: string; bytes: Uint8Array }[];
+}
+
+/** A refusal from the broker or the route to it. */
+class ReportFailure extends Error {
+  readonly failure: Extract<AnnoRemoteResult, { ok: false }>;
+  constructor(failure: Extract<AnnoRemoteResult, { ok: false }>) {
+    super(failure.message);
+    this.failure = failure;
+  }
 }
 
 /**
- * Runs one report against the store at `storePath`. Each file in `files` is
- * staged beside the call under its key, so the report engine receives bytes,
- * never a path.
+ * Runs one report for the workspace's project. Each input in `files` is a
+ * confined local path, staged under its key; the broker receives its bytes,
+ * never the path. A workspace with no project is refused: every report reads.
  */
-async function runReport(
-  storePath: string,
-  workspaceRoot: string,
-  name: AnnoReportName,
-  args: Record<string, unknown>,
-  files: Record<string, ReportInput | undefined>,
-): Promise<AnnoReportResult> {
-  const inputs = new Map<string, AnnoInputFile>();
+async function runReport(ctx: CliContext, name: AnnoReportName, args: Record<string, unknown>, files: Record<string, string | undefined>): Promise<ReportAnswer> {
+  const projectId = await workspaceProject(name, "read", ctx.workspaceRoot(), ctx.runRemote);
   const staged: Record<string, unknown> = { ...args };
-  for (const [key, file] of Object.entries(files)) {
-    if (file === undefined) continue;
-    const slot = `f${inputs.size}`;
-    inputs.set(slot, file);
+  const slots: Record<string, string> = {};
+  for (const [key, path] of Object.entries(files)) {
+    if (path === undefined) continue;
+    const slot = `f${Object.keys(slots).length}`;
+    slots[slot] = path;
     staged[key] = { $file: slot };
   }
-  const handle = openStore(storePath, { workspaceRoot, mustExist: true });
-  try {
-    return await runAnnoReportOnHandle(handle, name, staged, inputs);
-  } finally {
-    closeStore(handle);
-  }
+  const result = await ctx.runRemote({ projectId, kind: "report", name, args: staged, files: slots });
+  if (!result.ok) throw new ReportFailure(result);
+  if (result.type !== "report") throw new Error(`the broker answered a report with a ${result.type} answer`);
+  return { projectId, json: result.json, files: result.files };
 }
 
-/** Prints a report failure: a refusal verbatim, anything else after the verb. */
+/** Prints a report failure: a refusal the engine wrote in full, verbatim;
+ * anything else after the verb. */
 function reportFailure(verb: string, err: unknown): number {
-  console.error(err instanceof AnnoReportRefusal ? err.message : `${verb}: ${errMsg(err)}`);
+  if (err instanceof ReportFailure) {
+    const failure = err.failure;
+    if (failure.code === "refused") console.error(failure.message);
+    else if (failure.code === "failed") console.error(`${verb}: ${failure.message}`);
+    else console.error(`${verb}: ${brokerRefusal(failure).message}`);
+  } else if (err instanceof AnnoProjectError) {
+    // Already names the verb: "<verb> refused: this workspace has no ...".
+    console.error(errMsg(err));
+  } else {
+    console.error(`${verb}: ${errMsg(err)}`);
+  }
   return 1;
 }
+
+/** The project a report answered for, as the reports print it. */
+function projectLabel(projectId: string): string {
+  return `project ${projectId}`;
+}
+
 const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>";
 const NPM_INVOCATION = "vice-mcp anno <verb>";
 
@@ -209,38 +242,32 @@ const USAGE = `usage (plugin/in-repo): ${PLUGIN_INVOCATION}
 usage (npm install):    ${NPM_INVOCATION}
 
 verbs:
-  render-memmap <store> --provenance FILE [--out FILE] [--force] [--check]
-      Generates the Markdown memory map from an annotation store plus a
-      validated provenance sidecar (the store is canonical; this
-      output is a GENERATED VIEW -- never hand-edit it). Without --check,
-      writes --out (default: memory-map.md beside the STORE -- in the
-      store's own directory), refusing to overwrite an existing file there
-      unless --force is passed, and prints the row count, the number of
-      [unknown]-graded rows, and the render digest. That derived default is
-      put through the SAME confinement seam as a caller-supplied --out,
-      rather than trusted because this verb computed it.
-      With --check, re-renders in memory and compares against the file at
-      --out: prints "in sync" and exits 0 when they match, prints the first
-      differing line and exits non-zero on drift, or prints "missing" and
-      exits non-zero when --out does not exist yet. Drift is reported when,
-      and only when, one of these changed: this file itself (a hand edit --
-      which is what --check exists to catch); a store row (a range, a label,
-      a comment, or a comment's confidence grade); the provenance sidecar's
-      bytes; the location of the store or the sidecar RELATIVE TO THE
-      WORKSPACE ROOT; or the renderer. Relocating the checkout is NOT drift --
-      the same tree at a different absolute path renders these same bytes,
-      because the two locations the banner records are workspace-relative.
-      Requires an EXISTING annotation store and an EXISTING --provenance
+  render-memmap --provenance FILE --out FILE [--force] [--check]
+      Generates the Markdown memory map of this workspace's annotation
+      project plus a validated provenance sidecar (the project is canonical;
+      this output is a GENERATED VIEW -- never hand-edit it). Without --check,
+      writes --out, refusing to overwrite an existing file there unless
+      --force is passed, and prints the row count, the number of
+      [unknown]-graded rows, and the render digest.
+      With --check, re-renders and compares against the file at --out: prints
+      "in sync" and exits 0 when they match, prints the first differing line
+      and exits non-zero on drift, or prints "missing" and exits non-zero when
+      --out does not exist yet. Drift is reported when, and only when, one of
+      these changed: this file itself (a hand edit -- which is what --check
+      exists to catch); a row of the project (a range, a label, a comment, or
+      a comment's confidence grade); the provenance sidecar's bytes; the
+      sidecar's location RELATIVE TO THE WORKSPACE ROOT; or the renderer.
+      Relocating the checkout is NOT drift, and neither is a fresh clone: the
+      banner records only the workspace-relative sidecar location.
+      Requires an EXISTING annotation project and an EXISTING --provenance
       sidecar (this verb creates neither).
 
-  coverage <image> --store FILE [--out FILE] [--force] [--sample N]
+  coverage <image> [--out FILE] [--force] [--sample N]
       Measures how far a program has actually been reverse-engineered
-      through anno-coverage.mts. <image> supplies the
-      PAYLOAD BYTES and the load origin; --store names the ANNOTATION STORE
-      holding the labels, comments and typed ranges. Those are two separate
-      files on purpose: the store holds annotations and never bytes, so a
-      derived measure has to be told which bytes it is measuring and this
-      verb refuses to guess one from the other.
+      through anno-coverage.mts. <image> supplies the PAYLOAD BYTES and the
+      load origin; the labels, comments and typed ranges are this workspace's
+      annotation project. The project holds annotations and never bytes, so a
+      derived measure has to be told which bytes it is measuring.
       <image> is dispatched IN THIS ORDER, and the order is load-bearing:
       first, a .raw or .bin is read as a flat capture BY EXTENSION, before
       any length check, so a truncated capture is refused BY NAME instead
@@ -262,7 +289,7 @@ verbs:
       overrides the reproducibility sample size.
       Exits non-zero for a caller error (a missing or malformed argument, a
       path outside the workspace root, a named file that does not exist, or
-      a refused overwrite of an existing --out without --force), for a store
+      a refused overwrite of an existing --out without --force), for a project
       it could not read, for a report it could not write, and for an image
       whose PAYLOAD COULD NOT BE DECODED -- that last is not a low score but
       a measurement taken over nothing, and it is reported AFTER the report
@@ -273,32 +300,24 @@ verbs:
       claim unfalsifiable, because any one weak measure can be hidden by
       averaging it against a strong one.
 
-  export-asm <image> --store FILE [--out DIR] [--ledger FILE] [--force]
-      Writes a TREE of ACME source files for a program from its annotation
-      store into --out, a DIRECTORY (D47-A: one output shape at every layer,
-      never a second one for a store with no scopes). <image> supplies the
-      PAYLOAD BYTES and the load origin; --store names the ANNOTATION STORE
-      holding the ranges, labels, comments and enums. Those are two separate
-      files on purpose, and NEITHER IS DERIVED FROM THE OTHER: the store
-      holds annotations and never bytes, so an exporter has to be told which
-      bytes it is describing and this verb refuses to guess one from the
-      other.
+  export-asm <image> --out DIR [--ledger FILE] [--force]
+      Writes a TREE of ACME source files for a program from this workspace's
+      annotation project into --out, a DIRECTORY (D47-A: one output shape at
+      every layer, never a second one for a project with no scopes). <image>
+      supplies the PAYLOAD BYTES and the load origin; the project holds the
+      ranges, labels, comments and enums, and never bytes, so an exporter has
+      to be told which bytes it is describing.
       The tree's entry point is root.a, which !sources symbols.a (every
       symbol definition) first, then one file per annotation scope, then
-      unscoped.a last for any block that lies inside no scope. A store with
+      unscoped.a last for any block that lies inside no scope. A project with
       no scopes yet still writes this same three-file shape -- root.a,
       symbols.a, unscoped.a -- rather than a second, single-file output.
-      The default --out is a DIRECTORY beside the STORE: the image's basename
-      stem plus a fixed, extension-free suffix (no --out DIR should ever read
-      as a file). That derived default is put through the SAME confinement
-      seam as a caller-supplied --out, rather than trusted because this verb
-      computed it. The directory may not BE, and may not CONTAIN, the store,
-      the image or the ledger -- --force does not lift that refusal any more
-      than it lifts the single-file version of it did. A non-empty
-      destination is otherwise refused unless --force is passed, and --force
-      replaces only the names this export itself produces -- any other entry
-      already in the directory is refused by name, never deleted to make
-      room.
+      --out is REQUIRED: the tree goes where you name it. The directory may
+      not BE, and may not CONTAIN, the image or the ledger -- --force does not
+      lift that refusal. A non-empty destination is otherwise refused unless
+      --force is passed, and --force replaces only the names this export
+      itself produces -- any other entry already in the directory is refused
+      by name, never deleted to make room.
       --ledger names c64-provenance-diff's generated recovery/PROVENANCE.md.
       Supplying it makes the export carry each covered range's recorded
       Verdict and Confidence as inline comments. It is OPTIONAL:
@@ -306,7 +325,7 @@ verbs:
       ONLY -- it never changes which bytes or which blocks are emitted, and a
       range the supplied ledger does not cover is refused by name rather than
       emitted unannotated.
-      Requires an EXISTING annotation store and an EXISTING image, and
+      Requires an EXISTING annotation project and an EXISTING image, and
       creates neither.
       THIS VERB DOES NOT ASSEMBLE ITS OUTPUT. It writes source text and
       nothing more: it starts no assembler, reads no assembler's exit status
@@ -320,30 +339,31 @@ verbs:
       Such an annotation is never silently dropped while this command
       reports success.
 
-  evid-disagreements --store FILE [--json]
-      Answers where the store's byte-derived block classification (its own
-      typed ranges) and the observed-execution evidence (anno_evid_exec rows,
-      written by anno_evid_ingest) DISAGREE -- the SAME reconciliation join
-      the anno_evid_disagreements MCP tool calls, run here against a real
-      store and rendered as three distinguishable states. Disagreements
-      print FIRST, as rows; agreement prints as a single count line, never
-      as rows; an address the block table covers with no observation
-      anywhere prints as its own count line stating plainly that absence
-      proves nothing -- never evidence that the address holds data. Two
-      further count lines name evidence about addresses the block table
-      does not classify as code or data at all, so a reader summing every
-      line gets what the block table covers, never what the program is.
-      No percentage, rate or coverage figure is ever printed. --json prints
-      the raw JSON answer instead of the rendered report.
-      Requires an EXISTING annotation store; creates none and writes
+  evid-disagreements [--json]
+      Answers where this workspace's byte-derived block classification (its
+      own typed ranges) and the observed-execution evidence (anno_evid_exec
+      rows, written by anno_evid_ingest) DISAGREE -- the SAME reconciliation
+      join the anno_evid_disagreements tool calls, rendered as three
+      distinguishable states. Disagreements print FIRST, as rows; agreement
+      prints as a single count line, never as rows; an address the block
+      table covers with no observation anywhere prints as its own count line
+      stating plainly that absence proves nothing -- never evidence that the
+      address holds data. Two further count lines name evidence about
+      addresses the block table does not classify as code or data at all, so
+      a reader summing every line gets what the block table covers, never
+      what the program is. No percentage, rate or coverage figure is ever
+      printed. --json prints the raw JSON answer instead of the rendered
+      report.
+      Requires an EXISTING annotation project; creates none and writes
       nothing.
 
-  decomp-completeness --store FILE --disagreements FILE --manifest FILE [--json]
-      The decomposition-closure completeness answer for ONE
-      per-fixture store. Three REQUIRED arguments, none defaulted from
-      another: --store names the annotation store; --disagreements names the
-      JSON "anno evid-disagreements --store <same store> --json" wrote for
-      THIS store's own run; --manifest names the execution manifest
+  decomp-completeness --fixture NAME --disagreements FILE --manifest FILE [--json]
+      The decomposition-closure completeness answer for ONE fixture, whose
+      annotations are this workspace's project. Three REQUIRED arguments,
+      none defaulted from another: --fixture names the fixture (its manifest
+      path, or just its stem, e.g. "dxa/tracer.prg" or "tracer");
+      --disagreements names the JSON "anno evid-disagreements --json" wrote
+      for this project's own run; --manifest names the execution manifest
       recording which committed fixtures were actually run. Omitting ANY of
       the three refuses BY NAME with exit 1 -- there is no default and no
       empty-array substitute for a missing disagreement input, because an
@@ -352,12 +372,12 @@ verbs:
       The supplied --disagreements document is refused, by name, when it is
       missing any EvidReconciliation field, and when its own recorded
       runIdentity (image_sha256/argv_digest/seed) matches no row in the
-      SAME store's own evid-runs table -- a fabricated or foreign empty
+      SAME project's own evid-runs table -- a fabricated or foreign empty
       document is refused, never rendered as "no disagreements" (RESEARCH.md
       Pitfall 9, anti-vacuity). The supplied --manifest is refused, by name,
-      when it does not list the fixture this store belongs to -- an unlisted
-      fixture is never defaulted to "executed".
-      Reports the store's byte census (per data type, with an explicit
+      when it does not list --fixture -- an unlisted fixture is never
+      defaulted to "executed".
+      Reports the project's byte census (per data type, with an explicit
       denominator and an undefined-byte count that must read zero), the
       survivor search (auto-named labels still sitting in a code region,
       matched by the SAME frozen prefix set routine-queue-walker's own
@@ -367,11 +387,11 @@ verbs:
       Never prints a percentage, rate or combined figure -- the same rule
       this CLI applies to every verb's own report. --json prints the raw
       JSON answer instead of the rendered report.
-      Requires an EXISTING annotation store, an EXISTING --disagreements
+      Requires an EXISTING annotation project, an EXISTING --disagreements
       document and an EXISTING --manifest file; creates none and writes
       nothing.
 
-  hazard-report --store FILE --image FILE [--json]
+  hazard-report --image FILE [--json]
       Enumerates what blocks a program's code or data from being MOVED,
       relocated, rebased or stripped, across the movement-hazard
       constructions this surface can detect from decoded bytes alone. It
@@ -387,15 +407,19 @@ verbs:
       percentage, rate or combined verdict is ever printed; each heading
       prints its own count against the report's own denominator. --json
       prints the raw JSON answer instead of the rendered report.
-      Requires an EXISTING annotation store and an EXISTING image; creates
+      Requires an EXISTING annotation project and an EXISTING image; creates
       neither and writes nothing.
 
   call NAME (--args JSON | --args-file FILE)
-      The name set and the argument shapes are exactly the former anno_* MCP tools' own.
+      The name set and the argument shapes are exactly the former anno_* MCP
+      tools' own. A write in a workspace with no annotation project yet
+      creates it: the broker registers a new project and its id is written to
+      .c64-re-tools/project.json.
 
-Every verb requires inputs that already exist. None creates a project, a
-store or a sidecar, and none derives one path from another -- this CLI
-never guesses.
+Every annotation lives in the broker's database, in this workspace's
+project, named by .c64-re-tools/project.json. Every report verb reads it and
+refuses a workspace with no project; none derives one path from another --
+this CLI never guesses.
 `;
 
 function errMsg(err: unknown): string {
@@ -413,26 +437,23 @@ function errMsg(err: unknown): string {
  * only the options a verb ACTUALLY reads means `checkAcceptedOptions()` below
  * refuses the rest before the verb ever runs.
  *
- * `coverage`'s `--store` is REQUIRED rather than optional, and it is declared
- * here for the same reason as every other entry: the verb reads it. It is not
- * defaulted from `<image>` -- see this file's header on never deriving one
- * caller-supplied path from another. `export-asm`'s `--store` is required on
- * the same terms and for the same reason.
+ * No verb takes a store: every annotation is the workspace's own project,
+ * in the broker's database.
  *
  * `export-asm` deliberately carries NO assembler-facing option. It writes
  * source and runs no assembler, so there is no binary to name, no exit status
  * to surface and no flag that could imply either. `--ledger` does not weaken
  * that claim: it is an EVIDENCE-CARRYING
- * INPUT, exactly like `--store`, never an assembler-facing option -- it names
+ * INPUT, exactly like `<image>`, never an assembler-facing option -- it names
  * a file to READ, not a way to run or configure an assembler.
  */
 export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "render-memmap": ["--provenance", "--out", "--force", "--check"],
-  coverage: ["--store", "--out", "--force", "--sample"],
-  "export-asm": ["--store", "--out", "--ledger", "--force"],
-  "evid-disagreements": ["--store", "--json"],
-  "decomp-completeness": ["--store", "--disagreements", "--manifest", "--json"],
-  "hazard-report": ["--store", "--image", "--json"],
+  coverage: ["--out", "--force", "--sample"],
+  "export-asm": ["--out", "--ledger", "--force"],
+  "evid-disagreements": ["--json"],
+  "decomp-completeness": ["--fixture", "--disagreements", "--manifest", "--json"],
+  "hazard-report": ["--image", "--json"],
   call: ["--args", "--args-file"],
 });
 
@@ -539,9 +560,9 @@ function refuseOverwrite(outPath: string, force: boolean | undefined, verbLabel:
  * helper, each of the SEVEN option-with-a-value sites spelled the test inline
  * as `value === undefined || value.startsWith("--")` -- which refuses a
  * DOUBLE-dash token and accepts a single-dash one. So
- * `anno export-asm g.prg --store -x` took `-x` as the store path, and the run
+ * `anno export-asm g.prg --out -x` took `-x` as the output path, and the run
  * failed downstream as a confinement or not-found error about a file called
- * `-x` rather than as the `--store requires a value` refusal the parser was
+ * `-x` rather than as the `--out requires a value` refusal the parser was
  * written to produce. A single-dash token is exactly the case the mechanism
  * missed.
  *
@@ -558,6 +579,18 @@ function refuseOverwrite(outPath: string, force: boolean | undefined, verbLabel:
 function isMissingOptionValue(value: string | undefined): boolean {
   return value === undefined || value.startsWith("-");
 }
+
+/** Confines one caller path to the workspace, printing the refusal when it
+ * escapes. The ONE confinement seam, for every path every verb takes. */
+function confine(verb: string, raw: string, workspaceRoot: string): string | undefined {
+  try {
+    return storePathWithinWorkspace(raw, workspaceRoot);
+  } catch (err) {
+    console.error(`${verb}: ${errMsg(err)}`);
+    return undefined;
+  }
+}
+
 
 interface RenderMemmapParsedArgs {
   positional: string[];
@@ -622,61 +655,17 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
 }
 
 /**
- * `render-memmap <store> --provenance FILE [--out FILE] [--force] [--check]`
- * -- the generated-view verb, via `anno-memmap-render.mts`'s
- * `renderMemoryMap()`/`checkRenderedMemoryMap()`. Never writes a file when
- * `--check` is given -- that mode only reads and reports.
+ * `render-memmap --provenance FILE --out FILE [--force] [--check]` -- the
+ * generated-view verb. The broker renders the workspace's project with the
+ * staged sidecar; this verb writes the file, or with `--check` compares it,
+ * and never writes on `--check`.
  *
- * ALL THREE OF THIS VERB'S PATHS ARE CONFINED, and the reason each one is
- * named here rather than left to a reader to infer is that two of them were
- * NOT, and shipped that way. An independent verification pass
- * reproduced both on this tree:
- *
- *   - `--out` reached `writeFileSync` as the RAW caller string. Pointed
- *     outside the workspace root it exited 0, printed `wrote /tmp/.../
- *     PRECIOUS.md` and replaced that pre-existing file's bytes. `--force`
- *     was not in this verb's option set at all, so `refuseOverwrite()` --
- *     whose own doc claims the safety is uniform across every verb that
- *     writes an output file -- was never reached from here.
- *   - `--provenance` reached `readFileSync` as the RAW caller string, making
- *     it an arbitrary-file read oracle; the sidecar parse failure then
- *     interpolated Node's own parse error, which carries a snippet of the
- *     file, so the oracle DISCLOSED CONTENT. Confining it here also
- *     confines it for `anno-memmap-render.mts`, which reads it with no check
- *     of its own.
- *
- * Every one of them now goes through the SAME one confinement seam,
- * `storePathWithinWorkspace()` against `repoRoot()` (T-29-51) -- never a
- * second hand-rolled rule, and never a suffix check standing in for a
- * location check. The DEFAULT output path is confined too, deliberately: a
- * derived path is confined by the same rule as a caller-supplied one rather
- * than trusted because it was derived.
- *
- * The predicate was never the weak half -- `anno-confinement.test.ts` proves
- * it fifteen ways. Its CONSUMER SET was unenumerated, and that asymmetry is
- * the whole mechanism by which both findings shipped past a green suite.
- * `anno-cli-path-consumers.test.ts` is what closes it: it enumerates every
- * caller-supplied path argument this CLI accepts -- flags from
- * `VERB_OPTIONS`, positionals from each verb's `--help` synopsis line -- and
- * fails when the inventory and the surface disagree in either direction, or
- * when this file's confinement call sites number fewer than the inventory's
- * entries. It does not associate a particular argument with a particular call
- * site, so six arguments confined once each and five confined with one
- * of them confined twice read the same to it; that limit is named here rather
- * than papered over. A header that asserts a property must point at the
- * mechanism that keeps it, and must claim no more than the mechanism checks.
+ * BOTH OF THIS VERB'S PATHS ARE CONFINED before any filesystem probe, because
+ * an existence check is itself an oracle for a path the seam is about to
+ * refuse. `--out` is required: the map goes where the caller names it.
  */
-async function cmdRenderMemmap(rest: string[]): Promise<number> {
-  const {
-    positional,
-    provenance,
-    provenanceMissingValue,
-    out,
-    outMissingValue,
-    force,
-    check,
-    unknownOption,
-  } = parseRenderMemmapArgs(rest);
+async function cmdRenderMemmap(rest: string[], ctx: CliContext): Promise<number> {
+  const { positional, provenance, provenanceMissingValue, out, outMissingValue, force, check, unknownOption } = parseRenderMemmapArgs(rest);
 
   if (unknownOption) {
     console.error(`render-memmap: unknown option "${unknownOption}"\n`);
@@ -693,29 +682,10 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     console.log(USAGE);
     return 1;
   }
-
-  const store = positional[0];
-  if (!store) {
-    console.error("render-memmap: usage: render-memmap <store> --provenance FILE [--out FILE] [--check]");
-    return 1;
-  }
-
-  // T-29-51 / T-19-22: the ONE confinement seam, the same one `coverage` puts
-  // both of its caller-supplied paths through. `openStore()` downstream is
-  // handed this same workspace root, so its own confinement agrees by
-  // construction rather than by a second rule.
-  const workspaceRoot = repoRoot();
-  let storePath: string;
-  try {
-    storePath = storePathWithinWorkspace(store, workspaceRoot);
-  } catch (err) {
-    console.error(`render-memmap: ${errMsg(err)}`);
-    return 1;
-  }
-  if (!existsSync(storePath)) {
+  if (positional.length > 0) {
     console.error(
-      `render-memmap: annotation store not found: ${storePath} -- refusing to CREATE one, because "the annotations are ` +
-        'gone" and "there are no annotations" must not read the same.',
+      `render-memmap: takes no positional argument, got ${JSON.stringify(positional[0])} -- the annotations are this workspace's own ` +
+        "project; name the sidecar with --provenance and the output with --out.",
     );
     return 1;
   }
@@ -724,41 +694,25 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     console.log(USAGE);
     return 1;
   }
-
-  // The sidecar is confined BEFORE the existence check, so a path
-  // outside the workspace root never reaches the filesystem at all -- not as
-  // an `existsSync` probe (which is itself an oracle: it answers "does this
-  // file exist" for any path the process can stat) and not as the
-  // `readFileSync` inside `renderMemoryMap()`. From here on the RAW caller
-  // string is dead: `provenancePath` is the realpath the seam returned, and
-  // it is what every downstream call receives.
-  let provenancePath: string;
-  try {
-    provenancePath = storePathWithinWorkspace(provenance, workspaceRoot);
-  } catch (err) {
-    console.error(`render-memmap: ${errMsg(err)}`);
+  if (!out) {
+    console.error("render-memmap: --out FILE is required -- the memory map goes where you name it; there is no default.\n");
+    console.log(USAGE);
     return 1;
   }
+
+  const workspaceRoot = ctx.workspaceRoot();
+  const provenancePath = confine("render-memmap", provenance, workspaceRoot);
+  if (provenancePath === undefined) return 1;
   if (!existsSync(provenancePath)) {
     console.error(`render-memmap: provenance sidecar not found: ${provenancePath}`);
     return 1;
   }
+  const outPath = confine("render-memmap", out, workspaceRoot);
+  if (outPath === undefined) return 1;
 
-  // The default is applied FIRST and the result confined AFTER, so the
-  // derived path and a caller-supplied one are confined by the same rule --
-  // rather than the default being trusted because this verb computed it.
-  let outPath: string;
-  try {
-    outPath = storePathWithinWorkspace(out ?? join(dirname(storePath), "memory-map.md"), workspaceRoot);
-  } catch (err) {
-    console.error(`render-memmap: ${errMsg(err)}`);
-    return 1;
-  }
-
-  const renderArgs = {
-    store_location: workspaceRelativePath(storePath, workspaceRoot),
-    sidecar_location: workspaceRelativePath(provenancePath, workspaceRoot),
-  };
+  // The banner records the sidecar's WORKSPACE-RELATIVE location, so a
+  // relocated checkout renders the same bytes.
+  const renderArgs = { sidecar_location: workspaceRelativePath(provenancePath, workspaceRoot) };
 
   if (check) {
     if (!existsSync(outPath)) {
@@ -768,7 +722,7 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     let result: ReturnType<typeof compareRenderedMemoryMap>;
     try {
       const onDisk = readFileSync(outPath, "utf8");
-      const rendered = await runReport(storePath, workspaceRoot, "render-memmap", renderArgs, { sidecar: reportInput(provenancePath) });
+      const rendered = await runReport(ctx, "render-memmap", renderArgs, { sidecar: provenancePath });
       result = compareRenderedMemoryMap(onDisk, new TextDecoder().decode(rendered.files[0]!.bytes));
     } catch (err) {
       return reportFailure("render-memmap", err);
@@ -787,16 +741,15 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // The second half of that same fix. `--check` never writes, so the overwrite refusal
-  // belongs on THIS branch only -- and it runs against the CONFINED path, so
-  // the file it protects is the file that would actually be written.
+  // `--check` never writes, so the overwrite refusal belongs on THIS branch
+  // only, against the CONFINED path.
   if (!refuseOverwrite(outPath, force, "render-memmap")) {
     return 1;
   }
 
-  let rendered: AnnoReportResult;
+  let rendered: ReportAnswer;
   try {
-    rendered = await runReport(storePath, workspaceRoot, "render-memmap", renderArgs, { sidecar: reportInput(provenancePath) });
+    rendered = await runReport(ctx, "render-memmap", renderArgs, { sidecar: provenancePath });
   } catch (err) {
     return reportFailure("render-memmap", err);
   }
@@ -815,8 +768,6 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
 
 interface CoverageParsedArgs {
   positional: string[];
-  store?: string;
-  storeMissingValue?: boolean;
   out?: string;
   outMissingValue?: boolean;
   force?: boolean;
@@ -826,16 +777,14 @@ interface CoverageParsedArgs {
   unknownOption?: string;
 }
 
-/** Fixed, closed option set for coverage -- exactly `--store`, `--out`,
- * `--force` and `--sample`. Same closed-option-set posture as `parseRenderMemmapArgs()`
+/** Fixed, closed option set for coverage -- exactly `--out`, `--force` and
+ * `--sample`. Same closed-option-set posture as `parseRenderMemmapArgs()`
  * above: an unimplemented flag is refused as `unknownOption`, and
- * `--store`/`--out`/`--sample` with a missing or flag-shaped value are refused
+ * `--out`/`--sample` with a missing or flag-shaped value are refused
  * through their own `*MissingValue` fields rather than silently swallowing the
  * next token. */
 function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
   const positional: string[] = [];
-  let store: string | undefined;
-  let storeMissingValue = false;
   let out: string | undefined;
   let outMissingValue = false;
   let force = false;
@@ -845,15 +794,7 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
   let unknownOption: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
-    if (a === "--store") {
-      const value = rest[i + 1];
-      if (isMissingOptionValue(value)) {
-        storeMissingValue = true;
-      } else {
-        store = value;
-        i++;
-      }
-    } else if (a === "--out") {
+    if (a === "--out") {
       const value = rest[i + 1];
       if (isMissingOptionValue(value)) {
         outMissingValue = true;
@@ -878,7 +819,7 @@ function parseCoverageArgs(rest: string[]): CoverageParsedArgs {
       positional.push(a);
     }
   }
-  return { positional, store, storeMissingValue, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption };
+  return { positional, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption };
 }
 
 function hexAddr(address: number): string {
@@ -1017,58 +958,25 @@ function printCoverageReport(report: CoverageReport): void {
 }
 
 /**
- * `coverage <image> --store FILE [--out FILE] [--force] [--sample N]` --
- * This verb's delivery path: the instrument from `anno-coverage.mts`, run against
- * a real program and a real annotation store.
+ * `coverage <image> [--out FILE] [--force] [--sample N]` -- the coverage
+ * instrument, computed by the broker from the workspace's project and the
+ * staged image. The image supplies the bytes; the project holds annotations
+ * and never bytes, so the measure has to be told which bytes it measures.
  *
- * TWO PATHS, NEITHER DERIVED FROM THE OTHER. `<image>` carries the payload
- * bytes and the load origin; `--store` names the annotation store holding the
- * labels, comments and typed ranges. The store holds annotations and never
- * bytes, so a derived measure has to be told which bytes it is measuring, and
- * guessing one path from the other is exactly the auto-pick this file forbids.
- *
- * Two properties this function must keep:
- *   - NO SECOND PATH VALIDATOR (T-19-22 / T-29-28), over ALL THREE of this
- *     verb's caller-supplied paths -- the positional, `--store` and `--out`.
- *     The count is stated because it was WRONG: this doc said "both" and meant
- *     it, while `--out` reached `refuseOverwrite()` and `writeFileSync()` as
- *     the raw caller string. An independent review reproduced the escape --
- *     `coverage <project> --store <store> --out /tmp/...` wrote the report
- *     outside the workspace root. All three now go through
- *     `storePathWithinWorkspace()` against `repoRoot()` -- the one seam, the
- *     same one `anno-tools.mts` puts its own store and image arguments through.
- *     `openStore()` is then handed the same workspace root, so its own
- *     confinement agrees by construction rather than by a second rule. The
- *     enumeration is now mechanical rather than prose:
- *     `anno-cli-path-consumers.test.ts` inventories this verb's path
- *     arguments -- flags from `VERB_OPTIONS`, positionals from the `--help`
- *     synopsis line -- and fails when that inventory and the surface disagree
- *     either way, or when this file's confinement call sites number fewer
- *     than the inventory's entries. It does not associate a given argument
- *     with a given call site, so it cannot tell six arguments
- *     confined once each from five confined with one confined twice.
- *   - THE STORE IS OPENED ONCE, read-only, for the whole verb, and closed in a
- *     `finally`. `mustExist` is what makes "the annotations are gone" and
- *     "there are no annotations" refuse differently instead of reading the
- *     same: without it this verb would CREATE an empty store at the named path
- *     and report a measurement of nothing.
+ * BOTH PATHS ARE CONFINED -- the positional and `--out` -- through the one
+ * seam, before any probe. The report's `project.path` is restored to the
+ * confined path this verb read: the broker saw only the file's name.
  *
  * The exit code is 0 for any report it managed to build, however poor the
  * numbers are -- a bad score is a result, not a failure. Non-zero is reserved
- * for a caller error (bad path, bad option, refused overwrite) and for a store
- * it could not read or a payload it could not decode.
+ * for a caller error (bad path, bad option, refused overwrite), for a project
+ * it could not read, and for a payload it could not decode.
  */
-async function cmdCoverage(rest: string[]): Promise<number> {
-  const { positional, store, storeMissingValue, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption } =
-    parseCoverageArgs(rest);
+async function cmdCoverage(rest: string[], ctx: CliContext): Promise<number> {
+  const { positional, out, outMissingValue, force, sample, sampleRaw, sampleMissingValue, unknownOption } = parseCoverageArgs(rest);
 
   if (unknownOption) {
     console.error(`coverage: unknown option "${unknownOption}"\n`);
-    console.log(USAGE);
-    return 1;
-  }
-  if (storeMissingValue) {
-    console.error("coverage: --store requires a value\n");
     console.log(USAGE);
     return 1;
   }
@@ -1085,15 +993,7 @@ async function cmdCoverage(rest: string[]): Promise<number> {
 
   const project = positional[0];
   if (!project) {
-    console.error("coverage: usage: coverage <image> --store FILE [--out FILE] [--force] [--sample N]");
-    return 1;
-  }
-  if (!store) {
-    console.error(
-      "coverage: --store FILE is required -- the annotation store holds the labels, comments and typed ranges, " +
-        "and this verb will not derive its path from <project>.\n",
-    );
-    console.log(USAGE);
+    console.error("coverage: usage: coverage <image> [--out FILE] [--force] [--sample N]");
     return 1;
   }
   if (sample !== undefined && (!Number.isInteger(sample) || sample <= 0)) {
@@ -1101,31 +1001,13 @@ async function cmdCoverage(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // The ONE confinement seam, for ALL THREE
-  // caller-supplied paths. Never a second hand-rolled one, and never a
-  // different rule for the store than for the program it annotates -- or, as
-  // an earlier review found, no rule at all for the report this verb writes.
-  const workspaceRoot = repoRoot();
-  let projectPath: string;
-  let storePath: string;
-  let outPath: string | undefined;
-  try {
-    projectPath = storePathWithinWorkspace(project, workspaceRoot);
-    storePath = storePathWithinWorkspace(store, workspaceRoot);
-    outPath = out === undefined ? undefined : storePathWithinWorkspace(out, workspaceRoot);
-  } catch (err) {
-    console.error(`coverage: ${errMsg(err)}`);
-    return 1;
-  }
+  const workspaceRoot = ctx.workspaceRoot();
+  const projectPath = confine("coverage", project, workspaceRoot);
+  if (projectPath === undefined) return 1;
+  const outPath = out === undefined ? undefined : confine("coverage", out, workspaceRoot);
+  if (out !== undefined && outPath === undefined) return 1;
   if (!existsSync(projectPath)) {
     console.error(`coverage: project file not found: ${projectPath}`);
-    return 1;
-  }
-  if (!existsSync(storePath)) {
-    console.error(
-      `coverage: annotation store not found: ${storePath} -- refusing to CREATE one, because "the annotations are ` +
-        'gone" and "there are no annotations" must not read the same.',
-    );
     return 1;
   }
 
@@ -1137,10 +1019,9 @@ async function cmdCoverage(rest: string[]): Promise<number> {
 
   let report: CoverageReport;
   try {
-    const result = await runReport(storePath, workspaceRoot, "coverage", sample !== undefined ? { sample_size: sample } : {}, {
-      image: reportInput(projectPath),
-    });
-    report = result.json as CoverageReport;
+    const answer = await runReport(ctx, "coverage", sample !== undefined ? { sample_size: sample } : {}, { image: projectPath });
+    report = answer.json as CoverageReport;
+    report.project.path = projectPath;
   } catch (err) {
     return reportFailure("coverage", err);
   }
@@ -1154,8 +1035,6 @@ async function cmdCoverage(rest: string[]): Promise<number> {
       console.error(`coverage: could not write ${outPath}: ${errMsg(err)}`);
       return 1;
     }
-    // The CONFINED path, so the line names the file that was actually written
-    // rather than whatever the caller typed.
     console.log(`coverage: wrote ${outPath} (schema version ${report.schemaVersion})`);
   }
 
@@ -1171,8 +1050,6 @@ async function cmdCoverage(rest: string[]): Promise<number> {
 
 interface ExportAsmParsedArgs {
   positional: string[];
-  store?: string;
-  storeMissingValue?: boolean;
   out?: string;
   outMissingValue?: boolean;
   /** The ledger `c64-provenance-diff` generates
@@ -1184,17 +1061,15 @@ interface ExportAsmParsedArgs {
   unknownOption?: string;
 }
 
-/** Fixed, closed option set for export-asm -- exactly `--store`, `--out`,
- * `--ledger` and `--force`. The SAME closed-option-set posture, and deliberately the same
+/** Fixed, closed option set for export-asm -- exactly `--out`, `--ledger`
+ * and `--force`. The SAME closed-option-set posture, and deliberately the same
  * SHAPE, as `parseRenderMemmapArgs()` and `parseCoverageArgs()` above rather
  * than a third convention: an unimplemented flag is refused as
- * `unknownOption`, and `--store`/`--out`/`--ledger` with a missing or
+ * `unknownOption`, and `--out`/`--ledger` with a missing or
  * flag-shaped value are refused through their own `*MissingValue` fields
  * rather than silently swallowing the next token. */
 function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
   const positional: string[] = [];
-  let store: string | undefined;
-  let storeMissingValue = false;
   let out: string | undefined;
   let outMissingValue = false;
   let ledger: string | undefined;
@@ -1203,15 +1078,7 @@ function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
   let unknownOption: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
-    if (a === "--store") {
-      const value = rest[i + 1];
-      if (isMissingOptionValue(value)) {
-        storeMissingValue = true;
-      } else {
-        store = value;
-        i++;
-      }
-    } else if (a === "--out") {
+    if (a === "--out") {
       const value = rest[i + 1];
       if (isMissingOptionValue(value)) {
         outMissingValue = true;
@@ -1235,7 +1102,7 @@ function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
       positional.push(a);
     }
   }
-  return { positional, store, storeMissingValue, out, outMissingValue, ledger, ledgerMissingValue, force, unknownOption };
+  return { positional, out, outMissingValue, ledger, ledgerMissingValue, force, unknownOption };
 }
 
 /**
@@ -1286,73 +1153,25 @@ function pathIsOrContains(dir: string, candidate: string): boolean {
 }
 
 /**
- * `export-asm <image> --store FILE [--out DIR] [--ledger FILE] [--force]` --
- * a TREE of ACME source files for a program, emitted from its annotation
- * store by `anno-export-asm.mts`'s `exportAsmTree()` (`--out` promoted from a
- * FILE to a DIRECTORY, a decision made deliberately at a checkpoint rather
- * than left to fall out of implementation).
+ * `export-asm <image> --out DIR [--ledger FILE] [--force]` -- a TREE of ACME
+ * source files for a program, planned by the broker from the workspace's
+ * project and the staged image, and written here.
  *
- * EVERY ONE OF THIS VERB'S PATHS IS CONFINED, and the ORDER each step happens
- * in is the load-bearing part rather than the mere presence of the calls. It
- * follows `cmdRenderMemmap()`'s chain deliberately, because that chain is the
- * corrected shape of three reproduced escapes (an independent verification
- * pass) on exactly the argument shapes this verb
- * has:
+ * EVERY PATH IS CONFINED before any probe, and the RAW CALLER STRING IS DEAD
+ * after it: the confined realpath is what is read, compared and written.
+ * The output directory may not BE, and may not CONTAIN, the image or the
+ * ledger, and `--force` does not lift that refusal: nobody types it meaning
+ * "destroy my input". The directory's own overwrite contract is
+ * `writeExportAsmTree()`'s.
  *
- *   - `<image>` and `--store` go through `storePathWithinWorkspace()` BEFORE
- *     any `existsSync` probe. A stat is itself an oracle -- it answers "does
- *     this file exist" for any path this process can reach -- so probing first
- *     and confining second would leak that answer for a path the seam is about
- *     to refuse.
- *   - `--ledger` joins that SAME confinement
- *     block, on the SAME terms, WHEN SUPPLIED -- it is a third input this run
- *     reads, not a second-class one confined later or not at all.
- *   - `--out`'s DEFAULT is applied FIRST and the result confined AFTER, so a
- *     path this verb computed is confined by the same rule as one a caller
- *     supplied, rather than trusted because this verb computed it.
- *     This is unchanged by the file-to-directory promotion: the confined
- *     result now NAMES A DIRECTORY rather than a file, but it is confined by
- *     the exact same call.
- *   - From each seam call onwards the RAW CALLER STRING IS DEAD.
- *     `storePathWithinWorkspace()` returns the REALPATH, and it is the
- *     realpath that reaches `readFileSync`, `openStore()`, `pathIsOrContains()`
- *     and `exportAsmTree()` -- so every printed line names the file or
- *     directory that is actually on disk.
- *   - The output directory may not BE, and may not CONTAIN, any of the three
- *     inputs -- generalised from the single-file version's plain
- *     equality check, once this verb started writing a directory rather than
- *     a file. `pathIsOrContains()` runs against
- *     the CONFINED destination and each CONFINED input, so what it protects
- *     is the input that would actually be read and the directory that would
- *     actually be written into -- and `--force` does not lift this refusal,
- *     for the same reason the single-file version never let it: nobody
- *     types `--force` meaning "destroy the annotations I spent a month
- *     writing".
- *   - The output-directory's own overwrite question -- does it already hold
- *     something, and may `--force` replace it -- is `exportAsmTree()`'s own
- *     contract, not a second check grown here. This
- *     verb adds no overwrite rule of its own for the directory as a whole.
- *
- * WHAT THIS VERB DOES NOT DO, stated here as well as in `USAGE` because a
- * reader of the code must not have to infer it: it does not assemble. It
- * spawns nothing, reads no assembler's exit status and compares no bytes. The
- * byte-diff oracle that settles whether this source reassembles to the image
- * it came from is test-only and is not importable from here -- a shipped
- * module importing it would drag a test-only module into `package.json`'s
- * `files[]` closure. Nothing this function prints may therefore read as a
- * verification result, and the summary says so in as many words.
+ * THIS VERB DOES NOT ASSEMBLE. It writes source text and nothing it prints
+ * may be read as a verification result.
  */
-async function cmdExportAsm(rest: string[]): Promise<number> {
-  const { positional, store, storeMissingValue, out, outMissingValue, ledger, ledgerMissingValue, force, unknownOption } =
-    parseExportAsmArgs(rest);
+async function cmdExportAsm(rest: string[], ctx: CliContext): Promise<number> {
+  const { positional, out, outMissingValue, ledger, ledgerMissingValue, force, unknownOption } = parseExportAsmArgs(rest);
 
   if (unknownOption) {
     console.error(`export-asm: unknown option "${unknownOption}"\n`);
-    console.log(USAGE);
-    return 1;
-  }
-  if (storeMissingValue) {
-    console.error("export-asm: --store requires a value\n");
     console.log(USAGE);
     return 1;
   }
@@ -1366,48 +1185,21 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
     console.log(USAGE);
     return 1;
   }
-
   if (positional.length !== 1) {
-    console.error("export-asm: usage: export-asm <image> --store FILE [--out DIR] [--ledger FILE] [--force]");
+    console.error("export-asm: usage: export-asm <image> --out DIR [--ledger FILE] [--force]");
     return 1;
   }
-  const image = positional[0]!;
-  if (!store) {
-    console.error(
-      "export-asm: --store FILE is required -- the annotation store holds the ranges, labels, comments and enums, " +
-        "and this verb will not derive its path from <image>.\n",
-    );
+  if (!out) {
+    console.error("export-asm: --out DIR is required -- the tree goes where you name it; there is no default.\n");
     console.log(USAGE);
     return 1;
   }
 
-  // The ONE confinement seam, on both input paths, BEFORE any
-  // filesystem probe. `openStore()` downstream is handed this same workspace
-  // root, so its own confinement agrees by construction rather than by a
-  // second rule. `--ledger` joins this SAME block, WHEN SUPPLIED -- confined
-  // before any probe on the same terms as `<image>` and `--store`, never
-  // confined later or by a second rule.
-  const workspaceRoot = repoRoot();
-  let imagePath: string;
-  let storePath: string;
-  let ledgerPath: string | undefined;
-  try {
-    imagePath = storePathWithinWorkspace(image, workspaceRoot);
-    storePath = storePathWithinWorkspace(store, workspaceRoot);
-    if (ledger !== undefined) {
-      ledgerPath = storePathWithinWorkspace(ledger, workspaceRoot);
-    }
-  } catch (err) {
-    console.error(`export-asm: ${errMsg(err)}`);
-    return 1;
-  }
-  if (!existsSync(storePath)) {
-    console.error(
-      `export-asm: annotation store not found: ${storePath} -- refusing to CREATE one, because "the annotations are ` +
-        'gone" and "there are no annotations" must not read the same.',
-    );
-    return 1;
-  }
+  const workspaceRoot = ctx.workspaceRoot();
+  const imagePath = confine("export-asm", positional[0]!, workspaceRoot);
+  if (imagePath === undefined) return 1;
+  const ledgerPath = ledger === undefined ? undefined : confine("export-asm", ledger, workspaceRoot);
+  if (ledger !== undefined && ledgerPath === undefined) return 1;
   if (!existsSync(imagePath)) {
     console.error(`export-asm: image not found: ${imagePath}`);
     return 1;
@@ -1419,45 +1211,10 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
     );
     return 1;
   }
+  const outPath = confine("export-asm", out, workspaceRoot);
+  if (outPath === undefined) return 1;
 
-  // The default is applied FIRST and the RESULT confined,
-  // so the derived path and a caller-supplied one are confined by the same
-  // rule.
-  let outPath: string;
-  try {
-    outPath = storePathWithinWorkspace(out ?? defaultExportAsmOut(imagePath, dirname(storePath)), workspaceRoot);
-  } catch (err) {
-    console.error(`export-asm: ${errMsg(err)}`);
-    return 1;
-  }
-
-  // THE OUTPUT DIRECTORY MAY NOT BE, AND MAY NOT CONTAIN, AN INPUT, AND
-  // `--force` DOES NOT OVERRIDE THIS (generalising an earlier plain-equality
-  // refusal to containment now that `--out` names a directory
-  // a whole tree is written into). The single-file version of this refusal
-  // existed because `outPath` was confined and overwrite-checked but never
-  // COMPARED to the inputs, so `anno export-asm game.raw --store g.annostore
-  // --out g.annostore --force` overwrote the annotation store with ACME
-  // text. Promoting `--out` to a directory widens the blast radius of the
-  // same mistake from one file to everything the directory would hold, so the
-  // check widens from equality to containment with it: the directory may not
-  // itself BE an input's own path, and no input may live INSIDE it.
-  // `--ledger` joins this SAME check: it is a
-  // THIRD input this run reads, and `--force` must not lift the refusal for
-  // it any more than it lifts it for the store or the image.
-  //
-  // SEPARATE FROM `exportAsmTree()`'s OWN output-directory contract AND
-  // UNCONDITIONAL, deliberately. `--force` means "yes, replace the tree I
-  // exported here before"; it cannot mean "yes, destroy the annotations I
-  // spent a month writing", because nobody types it for that reason. This is
-  // the one refusal in this file `--force` does not lift.
-  //
-  // Every path compared here is a confined realpath by this point
-  // (`pathIsOrContains()`), so the comparison is exact and segment-bounded
-  // rather than a string-shape guess about `..`, symlinks or a sibling
-  // directory name that merely starts the same.
   for (const { path: inputPath, which } of [
-    { path: storePath, which: "annotation store (--store)" },
     { path: imagePath, which: "image (<image>)" },
     { path: ledgerPath, which: "ledger (--ledger)" },
   ]) {
@@ -1471,15 +1228,9 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
     }
   }
 
-  // The output-directory contract itself -- create when missing, refuse a
-  // non-empty directory without `--force`, and with `--force` replace only
-  // the names this export produces -- lives entirely in `writeExportAsmTree()`.
-  // Every refusal -- an uncovered range, an inexpressible enum binding, a
-  // comment with no line to attach to, a range crossing a scope boundary, or
-  // the directory contract -- arrives here already named and is reported as
-  // this verb's own single line.
   let summary: {
     files: string[];
+    sourceOrder: string[];
     blockCount: number;
     symbolCount: number;
     autoNamedSymbolCount: number;
@@ -1489,17 +1240,14 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
     excludedRangeCount: number;
   };
   try {
-    const result = await runReport(storePath, workspaceRoot, "export-asm", { store_label: storePath }, {
-      image: reportInput(imagePath),
-      ledger: ledgerPath === undefined ? undefined : reportInput(ledgerPath),
-    });
-    summary = result.json as typeof summary;
-    writeExportAsmTree(outPath, { files: result.files, sourceOrder: (result.json as { sourceOrder: string[] }).sourceOrder }, force === true);
+    const answer = await runReport(ctx, "export-asm", {}, { image: imagePath, ledger: ledgerPath });
+    summary = answer.json as typeof summary;
+    writeExportAsmTree(outPath, { files: answer.files, sourceOrder: summary.sourceOrder }, force === true);
   } catch (err) {
     return reportFailure("export-asm", err);
   }
   // Every file MINUS the two structural files that are ALWAYS written
-  // (symbols.a, root.a) -- the files that carry this store's own content.
+  // (symbols.a, root.a) -- the files that carry this project's own content.
   const dataFileCount = summary.files.length - 2;
   console.log(
     `export-asm: wrote ${outPath} (${summary.files.length} file(s), ${dataFileCount} data file(s), ${summary.blockCount} block(s), ` +
@@ -1513,35 +1261,21 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
 
 interface EvidDisagreementsParsedArgs {
   positional: string[];
-  store?: string;
-  storeMissingValue?: boolean;
   json?: boolean;
   unknownOption?: string;
 }
 
-/** Fixed, closed option set for evid-disagreements -- exactly `--store` and
- * `--json`. Same closed-option-set posture as every other verb's own parser: an
- * unimplemented flag is refused as `unknownOption`, and `--store` with a
- * missing or flag-shaped value is refused through its own `*MissingValue`
- * field rather than silently swallowing the next token. `--json` is a plain
- * boolean, parsed the same shape `--force`/`--check` already use. */
+/** Fixed, closed option set for evid-disagreements -- exactly `--json`, a
+ * plain boolean parsed the same shape `--force`/`--check` already use. Same
+ * closed-option-set posture as every other verb's own parser: an
+ * unimplemented flag is refused as `unknownOption`. */
 function parseEvidDisagreementsArgs(rest: string[]): EvidDisagreementsParsedArgs {
   const positional: string[] = [];
-  let store: string | undefined;
-  let storeMissingValue = false;
   let json = false;
   let unknownOption: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
-    if (a === "--store") {
-      const value = rest[i + 1];
-      if (isMissingOptionValue(value)) {
-        storeMissingValue = true;
-      } else {
-        store = value;
-        i++;
-      }
-    } else if (a === "--json") {
+    if (a === "--json") {
       json = true;
     } else if (a.startsWith("--")) {
       unknownOption ??= a;
@@ -1549,7 +1283,7 @@ function parseEvidDisagreementsArgs(rest: string[]): EvidDisagreementsParsedArgs
       positional.push(a);
     }
   }
-  return { positional, store, storeMissingValue, json, unknownOption };
+  return { positional, json, unknownOption };
 }
 
 /**
@@ -1562,8 +1296,8 @@ function parseEvidDisagreementsArgs(rest: string[]): EvidDisagreementsParsedArgs
  * figure, a percentage or a rate at the point of display. `denominator`
  * rides beside every count for exactly that reason.
  */
-function printEvidDisagreementsReport(storePath: string, r: EvidReconciliation): void {
-  console.log(`evid-disagreements: ${storePath}`);
+function printEvidDisagreementsReport(label: string, r: EvidReconciliation): void {
+  console.log(`evid-disagreements: ${label}`);
   console.log("");
   console.log(`  DISAGREEMENTS (${r.disagreementCount} of ${r.denominator})`);
   if (r.disagreements.length === 0) {
@@ -1591,81 +1325,50 @@ function printEvidDisagreementsReport(storePath: string, r: EvidReconciliation):
 }
 
 /**
- * `evid-disagreements --store FILE [--json]` -- the CLI route for the
- * disagreement query: the criterion that
- * settles the question is that a planted test needs the disagreement,
- * agreement and silence states rendered as three DIFFERENT pieces of TEXT
- * it can tell apart, which an MCP tool's JSON answer can only be inspected
- * structurally rather than textually.
- *
- * Opens the store READ-ONLY (`mustExist: true` -- this verb creates
- * nothing), fetches both sides itself (`listRanges()`/`listExecObservations()`),
- * maps the ranges through `blocksFromStore()` -- the ONE `RangeRow` ->
- * `BlockEntry` seam, never re-implemented here -- and calls
- * `reconcileObservedExecution()`, the SAME pure join
- * `anno_evid_disagreements` calls. `--json` prints the raw answer; otherwise
- * `printEvidDisagreementsReport()` renders the three states.
+ * `evid-disagreements [--json]` -- where the workspace's typed ranges and its
+ * observed-execution evidence disagree, as the broker's reconciliation
+ * answers it. `--json` prints the raw answer, with the project and the run
+ * identity beside it; otherwise `printEvidDisagreementsReport()` renders the
+ * three states.
  */
-async function cmdEvidDisagreements(rest: string[]): Promise<number> {
-  const { store, storeMissingValue, json, unknownOption } = parseEvidDisagreementsArgs(rest);
+async function cmdEvidDisagreements(rest: string[], ctx: CliContext): Promise<number> {
+  const { positional, json, unknownOption } = parseEvidDisagreementsArgs(rest);
 
   if (unknownOption) {
     console.error(`evid-disagreements: unknown option "${unknownOption}"\n`);
     console.log(USAGE);
     return 1;
   }
-  if (storeMissingValue) {
-    console.error("evid-disagreements: --store requires a value\n");
-    console.log(USAGE);
-    return 1;
-  }
-  if (!store) {
-    console.error("evid-disagreements: --store FILE is required -- this verb answers a question about ONE annotation store.\n");
-    console.log(USAGE);
+  if (positional.length > 0) {
+    console.error(`evid-disagreements: takes no positional argument, got ${JSON.stringify(positional[0])} -- it answers for this workspace's own project.`);
     return 1;
   }
 
-  // T-19-22/T-29-28-shaped confinement, the SAME seam every other verb's
-  // caller-supplied path goes through.
-  const workspaceRoot = repoRoot();
-  let storePath: string;
+  let answer: ReportAnswer;
   try {
-    storePath = storePathWithinWorkspace(store, workspaceRoot);
-  } catch (err) {
-    console.error(`evid-disagreements: ${errMsg(err)}`);
-    return 1;
-  }
-  if (!existsSync(storePath)) {
-    console.error(
-      `evid-disagreements: annotation store not found: ${storePath} -- refusing to CREATE one, because "the ` +
-        'annotations are gone" and "there are no annotations" must not read the same.',
-    );
-    return 1;
-  }
-
-  let runIdentity: { imageSha256: string; argvDigest: string; seed: string } | null;
-  let reconciliation: EvidReconciliation;
-  try {
-    const result = await runReport(storePath, workspaceRoot, "evid-disagreements", {}, {});
-    ({ runIdentity, ...reconciliation } = result.json as { runIdentity: typeof runIdentity } & EvidReconciliation);
+    answer = await runReport(ctx, "evid-disagreements", {}, {});
   } catch (err) {
     return reportFailure("evid-disagreements", err);
   }
+  // `runIdentity` rides beside the reconciliation, `null` unless the project
+  // holds exactly one run, so decomp-completeness can validate this document
+  // against the SAME project's evid-runs table.
+  const { runIdentity, ...reconciliation } = answer.json as { runIdentity: { imageSha256: string; argvDigest: string; seed: string } | null } & EvidReconciliation;
 
   if (json) {
-    console.log(JSON.stringify({ store: storePath, runIdentity, ...reconciliation }, null, 2));
+    console.log(JSON.stringify({ project: answer.projectId, runIdentity, ...reconciliation }, null, 2));
     return 0;
   }
-  printEvidDisagreementsReport(storePath, reconciliation);
+  printEvidDisagreementsReport(projectLabel(answer.projectId), reconciliation);
   return 0;
 }
 
 /** Strips a trailing recognised extension and any leading directory
- * segments, so `dxa/tracer.prg` and `tracer.annostore` both reduce to the
- * bare stem `tracer` -- the ONE fixture-identity comparison this verb makes.
- * Never a full-path comparison: the manifest's paths are fixtures-relative,
- * the store's own path is caller-supplied and workspace-relative, and the
- * two coordinate systems only ever agree on the bare stem. */
+ * segments, so `dxa/tracer.prg` and `tracer` both reduce to the bare stem
+ * `tracer` -- the ONE fixture-identity comparison this verb makes. Never a
+ * full-path comparison: the manifest's paths are fixtures-relative, `--fixture`
+ * is whatever the caller typed, and the two only ever agree on the bare
+ * stem. */
 function fixtureStem(path: string): string {
   const base = basename(path);
   return base.replace(/\.[^./]+$/, "");
@@ -1673,8 +1376,8 @@ function fixtureStem(path: string): string {
 
 interface DecompCompletenessParsedArgs {
   positional: string[];
-  store?: string;
-  storeMissingValue?: boolean;
+  fixture?: string;
+  fixtureMissingValue?: boolean;
   disagreements?: string;
   disagreementsMissingValue?: boolean;
   manifest?: string;
@@ -1689,8 +1392,8 @@ interface DecompCompletenessParsedArgs {
  * discipline. */
 function parseDecompCompletenessArgs(rest: string[]): DecompCompletenessParsedArgs {
   const positional: string[] = [];
-  let store: string | undefined;
-  let storeMissingValue = false;
+  let fixture: string | undefined;
+  let fixtureMissingValue = false;
   let disagreements: string | undefined;
   let disagreementsMissingValue = false;
   let manifest: string | undefined;
@@ -1699,11 +1402,11 @@ function parseDecompCompletenessArgs(rest: string[]): DecompCompletenessParsedAr
   let unknownOption: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
-    if (a === "--store") {
+    if (a === "--fixture") {
       const value = rest[i + 1];
-      if (isMissingOptionValue(value)) storeMissingValue = true;
+      if (isMissingOptionValue(value)) fixtureMissingValue = true;
       else {
-        store = value;
+        fixture = value;
         i++;
       }
     } else if (a === "--disagreements") {
@@ -1728,19 +1431,19 @@ function parseDecompCompletenessArgs(rest: string[]): DecompCompletenessParsedAr
       positional.push(a);
     }
   }
-  return { positional, store, storeMissingValue, disagreements, disagreementsMissingValue, manifest, manifestMissingValue, json, unknownOption };
+  return { positional, fixture, fixtureMissingValue, disagreements, disagreementsMissingValue, manifest, manifestMissingValue, json, unknownOption };
 }
 
 /**
- * `decomp-completeness --store FILE --disagreements FILE --manifest FILE
- * [--json]` -- copies `cmdEvidDisagreements()`'s own shape: parse -> refuse
- * unknown option -> refuse missing value -> refuse missing required argument
- * BY NAME -> `storePathWithinWorkspace()` every caller-supplied path -> open
- * the store `mustExist: true` -> gather -> `--json` branch or rendered
- * branch. Three required arguments, none defaulted from another.
+ * `decomp-completeness --fixture NAME --disagreements FILE --manifest FILE
+ * [--json]` -- the completeness gate for one fixture whose annotations are
+ * the workspace's project. Three required arguments, none defaulted from
+ * another. This verb finds the fixture's manifest entry and stages the
+ * fixture's own image beside it; the broker validates the disagreement
+ * document against the project's own runs and computes every measure.
  */
-async function cmdDecompCompleteness(rest: string[]): Promise<number> {
-  const { store, storeMissingValue, disagreements, disagreementsMissingValue, manifest, manifestMissingValue, json, unknownOption } =
+async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<number> {
+  const { fixture, fixtureMissingValue, disagreements, disagreementsMissingValue, manifest, manifestMissingValue, json, unknownOption } =
     parseDecompCompletenessArgs(rest);
 
   if (unknownOption) {
@@ -1748,8 +1451,8 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
     console.log(USAGE);
     return 1;
   }
-  if (storeMissingValue) {
-    console.error("decomp-completeness: --store requires a value\n");
+  if (fixtureMissingValue) {
+    console.error("decomp-completeness: --fixture requires a value\n");
     console.log(USAGE);
     return 1;
   }
@@ -1763,8 +1466,8 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
     console.log(USAGE);
     return 1;
   }
-  if (!store) {
-    console.error("decomp-completeness: --store FILE is required -- this verb answers a question about ONE annotation store.\n");
+  if (!fixture) {
+    console.error("decomp-completeness: --fixture NAME is required -- this verb answers a question about ONE fixture.\n");
     console.log(USAGE);
     return 1;
   }
@@ -1779,32 +1482,17 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
   if (!manifest) {
     console.error(
       "decomp-completeness: --manifest FILE is required -- a fixture absent from the manifest is refused, " +
-        "never defaulted to \"executed\".\n",
+        'never defaulted to "executed".\n',
     );
     console.log(USAGE);
     return 1;
   }
 
-  const workspaceRoot = repoRoot();
-  let storePath: string;
-  let disagreementsPath: string;
-  let manifestPath: string;
-  try {
-    storePath = storePathWithinWorkspace(store, workspaceRoot);
-    disagreementsPath = storePathWithinWorkspace(disagreements, workspaceRoot);
-    manifestPath = storePathWithinWorkspace(manifest, workspaceRoot);
-  } catch (err) {
-    console.error(`decomp-completeness: ${errMsg(err)}`);
-    return 1;
-  }
-
-  if (!existsSync(storePath)) {
-    console.error(
-      `decomp-completeness: annotation store not found: ${storePath} -- refusing to CREATE one, because "the ` +
-        'annotations are gone" and "there are no annotations" must not read the same.',
-    );
-    return 1;
-  }
+  const workspaceRoot = ctx.workspaceRoot();
+  const disagreementsPath = confine("decomp-completeness", disagreements, workspaceRoot);
+  if (disagreementsPath === undefined) return 1;
+  const manifestPath = confine("decomp-completeness", manifest, workspaceRoot);
+  if (manifestPath === undefined) return 1;
   if (!existsSync(disagreementsPath)) {
     console.error(`decomp-completeness: --disagreements file not found: ${disagreementsPath}`);
     return 1;
@@ -1821,22 +1509,18 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
     console.error(`decomp-completeness: --manifest file is not valid JSON: ${errMsg(err)}`);
     return 1;
   }
-  if (
-    typeof manifestDoc !== "object" ||
-    manifestDoc === null ||
-    !Array.isArray((manifestDoc as Record<string, unknown>).fixtures)
-  ) {
+  if (typeof manifestDoc !== "object" || manifestDoc === null || !Array.isArray((manifestDoc as Record<string, unknown>).fixtures)) {
     console.error(`decomp-completeness: --manifest file does not carry a top-level "fixtures" array: ${manifestPath}`);
     return 1;
   }
   const manifestFixtures = (manifestDoc as DecompExecutionManifest).fixtures;
 
-  const stem = fixtureStem(storePath);
+  const stem = fixtureStem(fixture);
   const manifestEntry = manifestFixtures.find((f) => fixtureStem(f.path) === stem);
   if (!manifestEntry) {
     console.error(
-      `decomp-completeness: no fixture matching store ${JSON.stringify(basename(storePath))} (stem ${JSON.stringify(stem)}) ` +
-        `is listed in the manifest ${manifestPath} -- an unlisted fixture is refused, never defaulted to "executed".`,
+      `decomp-completeness: no fixture matching ${JSON.stringify(fixture)} (stem ${JSON.stringify(stem)}) is listed in the manifest ` +
+        `${manifestPath} -- an unlisted fixture is refused, never defaulted to "executed".`,
     );
     return 1;
   }
@@ -1847,11 +1531,11 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
   const fixtureImagePath = join(HERE, "fixtures", manifestEntry.path);
   let report: DecompCompletenessReport;
   try {
-    const result = await runReport(storePath, workspaceRoot, "decomp-completeness", { store_label: storePath, manifest_entry: manifestEntry }, {
-      disagreements: reportInput(disagreementsPath),
-      fixture_image: existsSync(fixtureImagePath) ? reportInput(fixtureImagePath) : undefined,
+    const answer = await runReport(ctx, "decomp-completeness", { manifest_entry: manifestEntry }, {
+      disagreements: disagreementsPath,
+      fixture_image: existsSync(fixtureImagePath) ? fixtureImagePath : undefined,
     });
-    report = result.json as DecompCompletenessReport;
+    report = answer.json as DecompCompletenessReport;
   } catch (err) {
     return reportFailure("decomp-completeness", err);
   }
@@ -1874,21 +1558,8 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
  * `renderCompletenessReport()` is the report the routine-queue-walker skill
  * actually reads, built from this same verb's `--json` answer.
  */
-function printDecompCompletenessReport(r: {
-  store: string;
-  fixture: string;
-  executionDisposition: "executed" | "not-executed";
-  notExecutedReason: string | null;
-  byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number; undefinedRanges: { start: number; endInclusive: number }[] };
-  survivors: { address: number; name: string }[];
-  rangeProvenance: RangeProvenanceRow[];
-  imageUnavailable: boolean;
-  entryPoints: EntryPointRow[];
-  referencedAddresses: ReferencedAddressesCensus;
-  disagreementInput: DecompDisagreementInput;
-  disagreementResolution: DisagreementResolutionCensus;
-}): void {
-  console.log(`decomp-completeness: ${r.store}`);
+function printDecompCompletenessReport(r: DecompCompletenessReport): void {
+  console.log(`decomp-completeness: ${projectLabel(r.project)}`);
   console.log(`  FIXTURE: ${r.fixture}`);
   if (r.executionDisposition === "not-executed") {
     console.log(`  NOT EXECUTED: ${r.notExecutedReason ?? "(no reason recorded)"}`);
@@ -1991,38 +1662,26 @@ function printDecompCompletenessReport(r: {
 
 interface HazardReportParsedArgs {
   positional: string[];
-  store?: string;
-  storeMissingValue?: boolean;
   image?: string;
   imageMissingValue?: boolean;
   json?: boolean;
   unknownOption?: string;
 }
 
-/** Fixed, closed option set for hazard-report -- exactly `--store`,
- * `--image` and `--json`. Same closed-option-set posture as every other verb's own
+/** Fixed, closed option set for hazard-report -- exactly `--image` and
+ * `--json`. Same closed-option-set posture as every other verb's own
  * parser: an unimplemented flag is refused as `unknownOption`, and an
  * option with a missing or flag-shaped value is refused through its own
  * `*MissingValue` field rather than silently swallowing the next token. */
 function parseHazardReportArgs(rest: string[]): HazardReportParsedArgs {
   const positional: string[] = [];
-  let store: string | undefined;
-  let storeMissingValue = false;
   let image: string | undefined;
   let imageMissingValue = false;
   let json = false;
   let unknownOption: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
-    if (a === "--store") {
-      const value = rest[i + 1];
-      if (isMissingOptionValue(value)) {
-        storeMissingValue = true;
-      } else {
-        store = value;
-        i++;
-      }
-    } else if (a === "--image") {
+    if (a === "--image") {
       const value = rest[i + 1];
       if (isMissingOptionValue(value)) {
         imageMissingValue = true;
@@ -2038,7 +1697,7 @@ function parseHazardReportArgs(rest: string[]): HazardReportParsedArgs {
       positional.push(a);
     }
   }
-  return { positional, store, storeMissingValue, image, imageMissingValue, json, unknownOption };
+  return { positional, image, imageMissingValue, json, unknownOption };
 }
 
 /**
@@ -2052,8 +1711,8 @@ function parseHazardReportArgs(rest: string[]): HazardReportParsedArgs {
  * detection is not evidence that a region is safe to move -- so that
  * sentence is never left to a reader's inference.
  */
-function printHazardReport(storePath: string, imagePath: string, r: HazardReport & { matched: number; returned: number }): void {
-  console.log(`hazard-report: ${storePath}`);
+function printHazardReport(label: string, imagePath: string, r: HazardReport & { matched: number; returned: number }): void {
+  console.log(`hazard-report: ${label}`);
   console.log(`  image: ${imagePath}`);
   console.log("");
   console.log(`  FINDINGS (${r.matched} of ${r.denominator}, ${r.returned} shown${r.truncated ? ", truncated" : ""})`);
@@ -2120,30 +1779,16 @@ function printHazardReport(storePath: string, imagePath: string, r: HazardReport
 }
 
 /**
- * `hazard-report --store FILE --image FILE [--json]` -- the CLI route for
- * the movement-hazard report, run here against a real store and a real
- * image rather than only exposed as an MCP answer (the same reason
- * `evid-disagreements` carries a CLI verb).
- *
- * Opens the store READ-ONLY (`mustExist: true` -- this verb creates
- * nothing), fetches every input itself (`listRanges()`/`listLabels()`/
- * `listComments()`/`listXrefs()`/`listExecObservations()`), maps the ranges
- * through `blocksFromStore()` -- the ONE `RangeRow` -> `BlockEntry` seam,
- * never re-implemented here -- loads the image through `projectImage()`,
- * and calls `buildHazardReport()`, the SAME pure function
- * `anno_hazard_report` calls. `--json` prints the raw answer; otherwise
- * `printHazardReport()` renders it.
+ * `hazard-report --image FILE [--json]` -- the movement-hazard report for the
+ * workspace's project over the staged image, as the broker computes it. It
+ * REPORTS and changes nothing. `--json` prints the raw answer with the
+ * project and the image beside it.
  */
-async function cmdHazardReport(rest: string[]): Promise<number> {
-  const { store, storeMissingValue, image, imageMissingValue, json, unknownOption } = parseHazardReportArgs(rest);
+async function cmdHazardReport(rest: string[], ctx: CliContext): Promise<number> {
+  const { image, imageMissingValue, json, unknownOption } = parseHazardReportArgs(rest);
 
   if (unknownOption) {
     console.error(`hazard-report: unknown option "${unknownOption}"\n`);
-    console.log(USAGE);
-    return 1;
-  }
-  if (storeMissingValue) {
-    console.error("hazard-report: --store requires a value\n");
     console.log(USAGE);
     return 1;
   }
@@ -2152,58 +1797,31 @@ async function cmdHazardReport(rest: string[]): Promise<number> {
     console.log(USAGE);
     return 1;
   }
-  if (!store) {
-    console.error("hazard-report: --store FILE is required -- this verb answers a question about ONE annotation store.\n");
-    console.log(USAGE);
-    return 1;
-  }
   if (!image) {
-    console.error("hazard-report: --image FILE is required -- the store holds annotations, never bytes.\n");
+    console.error("hazard-report: --image FILE is required -- the project holds annotations, never bytes.\n");
     console.log(USAGE);
     return 1;
   }
 
-  const workspaceRoot = repoRoot();
-  let storePath: string;
-  let imagePath: string;
-  try {
-    storePath = storePathWithinWorkspace(store, workspaceRoot);
-    imagePath = storePathWithinWorkspace(image, workspaceRoot);
-  } catch (err) {
-    console.error(`hazard-report: ${errMsg(err)}`);
-    return 1;
-  }
-  if (!existsSync(storePath)) {
-    console.error(
-      `hazard-report: annotation store not found: ${storePath} -- refusing to CREATE one, because "the ` +
-        'annotations are gone" and "there are no annotations" must not read the same.',
-    );
-    return 1;
-  }
+  const imagePath = confine("hazard-report", image, ctx.workspaceRoot());
+  if (imagePath === undefined) return 1;
   if (!existsSync(imagePath)) {
     console.error(`hazard-report: image not found: ${imagePath}`);
     return 1;
   }
 
-  let report: HazardReport & { returned: number; matched: number };
+  let answer: ReportAnswer;
   try {
-    const result = await runReport(storePath, workspaceRoot, "hazard-report", {}, { image: reportInput(imagePath) });
-    report = result.json as typeof report;
+    answer = await runReport(ctx, "hazard-report", {}, { image: imagePath });
   } catch (err) {
     return reportFailure("hazard-report", err);
   }
-
-  // `matched`/`returned` always equal `report.findings.length` here -- this
-  // verb has no `--max-results`/pagination option (unlike the MCP tool's
-  // `anno_hazard_report`, which genuinely slices `report.findings` against
-  // one). They are kept only to mirror that tool's JSON shape; a future
-  // `--max-results` flag on THIS verb would need to make these two diverge
-  // again, the same way the MCP tool's `dispatchHazardReport` already does.
+  const report = answer.json as HazardReport & { returned: number; matched: number };
   if (json) {
-    console.log(JSON.stringify({ store: storePath, image: imagePath, ...report }, null, 2));
+    console.log(JSON.stringify({ project: answer.projectId, image: imagePath, ...report }, null, 2));
     return 0;
   }
-  printHazardReport(storePath, imagePath, report);
+  printHazardReport(projectLabel(answer.projectId), imagePath, report);
   return 0;
 }
 
@@ -2283,7 +1901,7 @@ function parseCallArgs(rest: string[]): CallParsedArgs {
  * ordering): `call some.project --args -x` must refuse "`--args` requires a
  * value", never fall through and report "-x" or "some.project" as anything.
  */
-async function cmdCall(rest: string[]): Promise<number> {
+async function cmdCall(rest: string[], ctx: CliContext): Promise<number> {
   const { positional, args, argsMissingValue, argsFile, argsFileMissingValue } = parseCallArgs(rest);
 
   if (argsMissingValue) {
@@ -2352,7 +1970,7 @@ async function cmdCall(rest: string[]): Promise<number> {
     return 1;
   }
 
-  const result = await runAnnoTool(name, parsed);
+  const result = await runAnnoTool(name, parsed, { runRemote: ctx.runRemote, workspaceRoot: ctx.workspaceRoot() });
   const text = result.content.map((c) => c.text).join("");
   if (result.isError) {
     console.error(text);
@@ -2370,8 +1988,13 @@ async function cmdCall(rest: string[]): Promise<number> {
  * returns 0 (a no-op invocation with no verb also returns 0), while an
  * unrecognised verb returns 1.
  */
-export async function runAnnoCli(argv: string[]): Promise<number> {
+export async function runAnnoCli(argv: string[], deps: AnnoCliDeps = {}): Promise<number> {
   const [verb, ...rest] = argv;
+  let workspaceRoot: string | undefined = deps.workspaceRoot;
+  const ctx: CliContext = {
+    workspaceRoot: () => (workspaceRoot ??= repoRoot()),
+    runRemote: remoteRunner(deps),
+  };
 
   if (!verb || verb === "--help" || verb === "-h") {
     console.log(USAGE);
@@ -2401,19 +2024,19 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
 
     switch (verb) {
       case "render-memmap":
-        return await cmdRenderMemmap(rest);
+        return await cmdRenderMemmap(rest, ctx);
       case "coverage":
-        return await cmdCoverage(rest);
+        return await cmdCoverage(rest, ctx);
       case "export-asm":
-        return await cmdExportAsm(rest);
+        return await cmdExportAsm(rest, ctx);
       case "evid-disagreements":
-        return await cmdEvidDisagreements(rest);
+        return await cmdEvidDisagreements(rest, ctx);
       case "decomp-completeness":
-        return await cmdDecompCompleteness(rest);
+        return await cmdDecompCompleteness(rest, ctx);
       case "hazard-report":
-        return await cmdHazardReport(rest);
+        return await cmdHazardReport(rest, ctx);
       case "call":
-        return await cmdCall(rest);
+        return await cmdCall(rest, ctx);
       default:
         // Corrected 2026-08-30. This prefix read
         // `anno:` -- the subcommand renamed to `anno` on 2026-08-29

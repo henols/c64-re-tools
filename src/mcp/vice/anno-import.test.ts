@@ -20,6 +20,8 @@ import { fileURLToPath } from "node:url";
 import { closeStore, currentRevision, listComments, listXrefs, openStore } from "./anno-store.mts";
 import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
+import { openTestAnnoBroker } from "./inproc-anno-broker.ts";
+import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 import { annoRegisterEntryFor } from "./anno-register.ts";
 import {
   AnnoImportError,
@@ -57,13 +59,18 @@ function importFile(handle: ReturnType<typeof openStore>, path: string, expected
   return importGhidraExport(handle, { exportName: path, exportBytes: new Uint8Array(readFileSync(path)), expectedSha256 });
 }
 
-/** Runs one `anno call` through the client with `dir` as the workspace root. */
+/** Runs one `anno call` through the client with `dir` as the workspace root,
+ * against an in-process broker whose project is the store at
+ * `dir/proj.annostore` -- so `openStore()` on that file reads what the call
+ * wrote. */
 async function callInWorkspace(dir: string, name: string, args: Record<string, unknown>, deps?: Parameters<typeof runAnnoTool>[2]) {
   const previous = process.env.CLAUDE_PROJECT_DIR;
   process.env.CLAUDE_PROJECT_DIR = dir;
+  const broker = openTestAnnoBroker(dir, { dbPath: join(dir, "proj.annostore"), projectId: FILE_STORE_PROJECT_ID });
   try {
-    return await runAnnoTool(name, args, deps);
+    return await runAnnoTool(name, args, { runRemote: broker.runRemote, ...deps });
   } finally {
+    broker.close();
     if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
     else process.env.CLAUDE_PROJECT_DIR = previous;
   }
@@ -91,7 +98,7 @@ test("tracer: import writes an anno_xref row that survives close+reopen, then th
     const transferPath = writeTransfer(dir, SINGLE_WRITE_EXPORT);
     closeStore(openStore(storePath, { workspaceRoot: dir }));
 
-    const result = await callInWorkspace(dir, "anno_import_ghidra_export", { store: storePath, export_path: transferPath });
+    const result = await callInWorkspace(dir, "anno_import_ghidra_export", { export_path: transferPath });
     assert.equal(result.isError, false, result.content[0]!.text);
     const counts = JSON.parse(result.content[0]!.text) as { referencesSeen: number; xrefsWritten: number; xrefsAlreadyPresent: number; kindsSeenNotImported: Record<string, number>; transferDeleted: boolean };
     assert.equal(counts.referencesSeen, 1);
@@ -231,9 +238,9 @@ test("anno_import_ghidra_export: a second call naming the same, now-deleted path
     const storePath = join(dir, "proj.annostore");
     const transferPath = writeTransfer(dir, SINGLE_WRITE_EXPORT);
     closeStore(openStore(storePath, { workspaceRoot: dir }));
-    const first = await callInWorkspace(dir, "anno_import_ghidra_export", { store: storePath, export_path: transferPath });
+    const first = await callInWorkspace(dir, "anno_import_ghidra_export", { export_path: transferPath });
     assert.equal(first.isError, false, first.content[0]!.text);
-    const second = await callInWorkspace(dir, "anno_import_ghidra_export", { store: storePath, export_path: transferPath });
+    const second = await callInWorkspace(dir, "anno_import_ghidra_export", { export_path: transferPath });
     assert.equal(second.isError, true);
     assert.ok(second.content[0]!.text.includes(transferPath), second.content[0]!.text);
   });
@@ -268,7 +275,7 @@ test("anno_import_ghidra_export: when the delete step itself throws, the call st
     const result = await callInWorkspace(
       dir,
       "anno_import_ghidra_export",
-      { store: storePath, export_path: transferPath },
+      { export_path: transferPath },
       {
         deleteFile: () => {
           throw new Error("synthetic unlink failure for the deterministic injection test");

@@ -63,6 +63,9 @@
     "textmon-memmap.mts",
     "vice-errors.mts",
     "anno-worker.mts",
-    "anno-host.mts"
+    "anno-host.mts",
+    "anno-tool-defs.mts",
+    "anno-memmap-check.mts",
+    "anno-tree-writer.mts"
   ]
 }

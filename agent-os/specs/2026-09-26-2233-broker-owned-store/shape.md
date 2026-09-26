@@ -195,6 +195,55 @@ from all 28 `anno call` tools and all 6 report verbs.
   broker's `transfer_complete`, so a default server socket closed that too
   early.
 
+- **The cutover (step 4).** Every verb and every `anno call` goes through
+  `anno_run`. No client module loads `anno-store` or names `node:sqlite`,
+  directly or transitively. `anno-client-boundary.test.ts` proves this by
+  walking each shipped client root's value imports.
+  - The scan's first run found a real leak: an inline
+    `import { type ConstWriteFact }` in `anno-tool-defs.mts`. Once types are
+    stripped that becomes `import {} from`, which still loads
+    `anno-import.mts` and, through it, the store. It is now `import type`,
+    and the scan treats inline type imports as value imports.
+- **`openStore(path)` stays, as an engine and test utility, not a shim to
+  delete.** It is how tests build a database file and how the path wrappers
+  (`exportAsm`, `renderMemoryMap`) that `acme-verify.ts` and the engine tests
+  call open one. No client module reaches it. The in-process test broker
+  serves such a file as a workspace's project under `FILE_STORE_PROJECT_ID`,
+  so a test can populate the project with `openStore` and inspect what the
+  verbs wrote.
+- **decomp-completeness takes `--fixture NAME`**, the fixture's manifest path
+  (or its bare stem). The earlier plan said `--export <fixture>.annostore.json`.
+  But the project already holds the fixture's annotations, so the only thing
+  the verb needs is which manifest entry, and therefore which image, it is
+  answering for. The routine-queue-walker gate script forwards `--fixture`
+  unchanged.
+- **The report answers name the project.** evid-disagreements `--json` and
+  decomp-completeness carry `project` (the id), and the rendered reports head
+  with it. Tool answers carry no `project` echo, because the caller already
+  knows which workspace it called from.
+- **coverage restores the caller's image path client-side.** The broker only
+  sees the staged basename, so the client sets `report.project.path` to the
+  confined path it read. The report reads the same as before the cutover.
+- **The render banner no longer names a store.** It records only the
+  sidecar's workspace-relative location, so a relocated checkout still
+  renders the same bytes, and nothing machine-specific (such as a project id)
+  enters a committed file.
+- **A render sidecar's parse failure names its workspace-relative
+  location**, the only name the broker ever learns, never the client's
+  absolute path.
+- **`--out` is required on render-memmap and export-asm.** The old defaults
+  (beside the store) have no anchor any more. The path-consumer inventory
+  dropped from 17 arguments to 11, and its seam count now credits
+  `anno-cli.ts`'s one `confine()` wrapper, with a check that the wrapper
+  really calls the predicate.
+- **Tests that spawn the real CLI use a harness broker.** A helper,
+  `seedBrokerProject(home, workspace, seed)` in the test-only
+  `inproc-anno-broker.ts`, seeds a project straight into that broker's database.
+  The decomp-closure fixtures and the gate's planted control 2 use it.
+  `anno call` write-then-read and the smoke cases start from an empty
+  workspace, and their first write registers the project. Step 5's `import-project` is the
+  user-facing route for the same thing.
+
 ## Context
 
 - **Visuals:** none.
