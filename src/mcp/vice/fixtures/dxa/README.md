@@ -101,9 +101,8 @@ listing, never from the emitted `-B` file's contents.
 ## `fixture.a`, `fixture.rep`, `fixture.prg` (35-03, DXA-04)
 
 Phase 35, plan 35-03's source-derived ground-truth tier (`partitionSourceDerived()`
-in `dxa-partition.ts`). `fixture.a` is copied UNCHANGED from
-`.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/fixture/fixture.a`
-— the same 279-byte synthetic fixture Phase 23 independently re-derived a
+in `dxa-partition.ts`). `fixture.a` is copied UNCHANGED from the Phase 23
+evidence fixture — the same 279-byte synthetic fixture Phase 23 independently re-derived a
 145-code / 131-data / 3-pad partition for, byte by byte, from ACME's own
 `-r` report (`evidence/fixture/fixture-baseline.txt`, "OUTCOME LINES"
 section and its section-5 transcript). `fixture.rep` and `fixture.prg` are
@@ -219,7 +218,4 @@ the same dxa and Ghidra tool versions this file's own table names above.
 route against a REAL cracked release (Phase 23's corpus, never committed
 here, gitignored per D-04) rather than a fixture -- the release is extracted
 at test time into a `mkdtemp` scratch directory outside this repository, so
-nothing from it ever lands under `fixtures/`. See
-`.planning/phases/35-dxa-vendored-and-parsed/evidence/35-dxa03-real-image.md`
-for the release identity, the extracted entry, the chosen range's basis, and
-both commands' measured classifications.
+nothing from it ever lands under `fixtures/`.

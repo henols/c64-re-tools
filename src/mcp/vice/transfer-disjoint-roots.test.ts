@@ -47,14 +47,13 @@ import { dirname, join } from "node:path";
 
 import { handleAutostart, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
 import { CommandType, type ViceMonitorClient } from "./stock-protocol.ts";
-import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.ts";
+import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.mts";
 import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 import { build } from "./build.ts";
-import { startControlListener, newControlToken } from "./broker-control.mts";
+import { startControlListener } from "./broker-control.mts";
 import type {
   StartControlListenerResult,
   AcquireOutcome,
-  RecycleOutcome,
   StatusInstanceEntry,
   HostStateFields,
   MonitorClaimOutcome,
@@ -67,7 +66,7 @@ import type {
 } from "./broker-control.mts";
 import { createBrokerState, type BrokerState, type InstanceRecord } from "./broker-state.mts";
 import type { StockConnectSession, TransferFileFn, TransferFileRequest, TransferFileResult } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 // vice-broker.mts/broker-transfer.mts are host-bound (.mts, compiled into
 // resources/) -- like vice-broker-staging.test.ts's own load, this file
@@ -94,7 +93,7 @@ const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", HE
 };
 const { handleRelease, handleStageFile, handleFileTransfer } = viceBrokerModule;
 
-const fakeDeps = {} as StockDispatchDeps;
+const fakeDeps = {} as StockSessionDeps;
 
 // ---------------------------------------------------------------------------
 // Broker-state / listener fixtures -- mirrors vice-broker-staging.test.ts's
@@ -142,31 +141,18 @@ async function startDisjointListener(
   state: BrokerState,
   emulatorPort: number,
   getDeps: () => { beforePublish?: () => Promise<void> } = () => ({}),
-): Promise<{ listener: StartControlListenerResult; token: string }> {
-  const token = newControlToken();
+): Promise<{ listener: StartControlListenerResult }> {
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async (): Promise<AcquireOutcome> => ({
       ok: true,
       grant: {
         port: emulatorPort,
         url: `http://127.0.0.1:${emulatorPort}/mcp`,
-        epochFile: "/tmp/transfer-disjoint-roots-epoch.json",
-        supervisorDir: "/tmp/transfer-disjoint-roots",
       },
     }),
     onRelease: (requestId: string) => handleRelease(requestId, state),
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by transfer-disjoint-roots.test.ts",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,
@@ -181,11 +167,10 @@ async function startDisjointListener(
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: false, code: "bad_request" }),
     onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
     onOperation: (): OperationNoteOutcome => ({ ok: true }),
-    onHostTool: async () => ({ ok: false, message: "not exercised by transfer-disjoint-roots.test.ts" }),
     onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
     onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state, getDeps()),
   });
-  return { listener, token };
+  return { listener };
 }
 
 /** Byte-level newline search -- never a whole-buffer string decode,
@@ -239,9 +224,9 @@ async function waitForDisjoint(predicate: () => boolean, deadlineMs: number, pol
  * the SAME control connection an `acquire` already ran on -- ownership
  * (`ownsTarget()`) is gated on that connection identity, broker-side.
  * Composed identically to stock-machine.test.ts's own makeRealStageFile(). */
-function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>) => Promise<Record<string, unknown>> }, token: string) {
+function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>) => Promise<Record<string, unknown>> }) {
   return async (opts: { targetId: string; slot: string }): Promise<{ ok: true; handle: string; emulatorFilename: string } | { ok: false; reason: string }> => {
-    const reply = await control.sendAndRead({ op: "stage_file", target_id: opts.targetId, slot: opts.slot, token });
+    const reply = await control.sendAndRead({ op: "stage_file", target_id: opts.targetId, slot: opts.slot });
     if (reply.kind === "file_staged") {
       return { ok: true, handle: reply.handle as string, emulatorFilename: reply.emulator_filename as string };
     }
@@ -250,7 +235,7 @@ function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>
 }
 
 /** A REAL TransferFileFn dialling this listener via dialFileTransfer()
- * (broker-endpoint.ts) and streaming through the SAME cap-and-digest
+ * (broker-endpoint.mts) and streaming through the SAME cap-and-digest
  * Transform (transfer-hash.mts) the real production defaultTransferFile()
  * (stock-connect.ts) uses. Composed here from the same exported public
  * seams a real caller would use -- defaultTransferFile() itself is not
@@ -468,11 +453,11 @@ test("transfer-disjoint-roots: all four tools complete against a client and a br
   // with no polling, proving transferFile() really does not resolve until
   // the broker has published the bytes.
   const beforePublish = () => new Promise<void>((resolve) => setTimeout(resolve, 300));
-  const { listener, token } = await startDisjointListener(state, emulatorPort, () => ({ beforePublish }));
+  const { listener } = await startDisjointListener(state, emulatorPort, () => ({ beforePublish }));
   const control = makeDisjointControlClient(listener.port);
 
   try {
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
     assert.equal(acquireReply.kind, "grant");
 
     // Source fixture files this CLIENT reads and uploads -- placed under
@@ -552,7 +537,7 @@ test("transfer-disjoint-roots: all four tools complete against a client and a br
     });
 
     session.targetId = grantId;
-    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control, token) } as StockConnectSession["brokerControl"];
+    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control) } as StockConnectSession["brokerControl"];
     session.deps = { ...session.deps, transferFile: makeRealTransferFile(listener.port) };
 
     // --- vice_autostart ---

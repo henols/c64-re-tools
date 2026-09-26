@@ -1,6 +1,6 @@
 // vice-cli.test.ts
 //
-// Covers vice-cli.mjs: the version-arithmetic pure functions directly (no
+// Covers vice-cli (source vice-cli.mts, compiled bin vice-cli.mjs): the version-arithmetic pure functions directly (no
 // process spawn needed for those), and a real spawn only for the cases that
 // genuinely require a real process -- the below-floor refusal (driven via
 // vice-cli.mjs's own test-only simulated-major escape hatch, never by
@@ -15,8 +15,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { HOST_BOUND_ARTIFACTS } from "./build.ts";
-import { floorMajorFromEngineRange, resolveFloorMajor, meetsFloor, brokerArgvFrom, FLOOR_REFUSAL_EXIT_CODE } from "./vice-cli.mjs";
+import { HOST_BOUND_ARTIFACTS, ENTRY_ARTIFACTS } from "./build.ts";
+import { floorMajorFromEngineRange, resolveFloorMajor, meetsFloor, brokerArgvFrom, FLOOR_REFUSAL_EXIT_CODE } from "./vice-cli.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = join(HERE, "vice-cli.mjs");
@@ -176,9 +176,10 @@ test("vice-cli.mjs IS present in package.json's files[] array", () => {
   assert.equal(pkg.files.includes("vice-cli.mjs"), true, "vice-cli.mjs is the package's own binary/main entry and must ship");
 });
 
-test("vice-cli.mjs is NOT a host-bound artifact -- it is hand-authored, never compiled by build.ts", () => {
+test("vice-cli.mjs is NOT a host-bound artifact -- it is an entry artifact, compiled beside its source", () => {
   assert.equal(HOST_BOUND_ARTIFACTS.includes("vice-cli.mjs"), false);
   assert.equal(HOST_BOUND_ARTIFACTS.includes("vice-cli.mts"), false);
+  assert.ok(ENTRY_ARTIFACTS.some((a) => a.source === "src/mcp/vice/vice-cli.mts" && a.emitted === "src/mcp/vice/vice-cli.mjs"));
 });
 
 test("D-04's verdict is recorded, not executed: the per-project deployment module and its module-load side effect are both still present", () => {

@@ -16,7 +16,7 @@
 // analyzeHeadless, then the installed language), and EVERY test in this file
 // passes it through node:test's own `{ skip }` option -- never a hand-rolled
 // early return, which would report a false PASS rather than a SKIP. It is
-// registered in test-gate.mjs's MANUAL_ONLY_TESTS (the ONE list) as the
+// registered in test-gate.ts's MANUAL_ONLY_TESTS (the ONE list) as the
 // ELEVENTH manual-only file, so `npm run test:automated` never runs it.
 //
 // Opt in with:
@@ -26,11 +26,9 @@
 // `mkdtempSync`, copies the committed fixtures (`fixtures/ghidra/bank.prg`)
 // and the committed scripts (`vendor/ghidra-scripts/*.java`) into it, passes
 // that root as `repoRoot`, and removes it in a `finally`. This repository's
-// own `.c64-re-tools/` (and its non-dotted `c64-re-tools` handle, gap
-// G-40-1, plan 40-08/40-09) is never touched -- passing this file's own
-// directory as `repoRoot` would leave an untracked handle-plus-runs tree
-// there, because BOTH `.gitignore` stanzas (`/.c64-re-tools/`, `/c64-re-tools`)
-// are anchored at the repository root, not at this file's directory.
+// own `.c64-re-tools/` is never touched -- passing this file's own directory
+// as `repoRoot` would leave an untracked download tree there, because the
+// `.gitignore` stanza is anchored at the repository root.
 // RE-CHECKED against plan 40-08's own nested-root measurement (its SUMMARY's
 // "git status --porcelain Nested-Root Measurement" section): a full
 // `npm run test:automated` run followed by `git status --porcelain` showed
@@ -51,20 +49,19 @@
 //   - GATE 3 (the run is reproducible from the committed script set with no
 //     click-path, and Ghidra's own installed version is read from the
 //     installation and asserted against a named constant, never assumed).
-// See `.planning/phases/36-the-sleigh-language-and-the-ghidra-harness/
-// evidence/36-04-three-gates.md` for the recorded transcript of all three
-// gates firing.
-import { test } from "node:test";
+import { test, before, after } from "node:test";
+import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
+import { basename, dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runGhidraAnalyze, classifyGhidraRunLog } from "./ghidra-run.ts";
-import { installedLanguageIds, ghidraRunsRealRoot, ghidraRunsRoot, ensureGhidraRunsHandle, resolveGhidraProject, importRouteBaseAddr, GHIDRA_RUNS_HANDLE_NAME } from "./ghidra-project.mts";
+import { installedLanguageIds, resolveGhidraProject, importRouteBaseAddr } from "./ghidra-project.mts";
+import { brokerGhidraDir } from "./broker-home.mts";
 import { repoRoot } from "./repo-root.ts";
 // Phase 37, plan 37-08 (AUTO-07): the derived character-set range is computed
 // from the fixture's own real CONST_WRITES facts, never hard-coded -- the
@@ -92,7 +89,7 @@ const SCRIPTS_DIR = join(HERE, "vendor", "ghidra-scripts");
 const hostToolModule = (await import(new URL("./resources/host-tool.mjs", import.meta.url).href)) as unknown as {
   runHostTool: (
     raw: unknown,
-    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; outputDir?: string },
   ) => Promise<
     | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
     | { ok: false; message: string }
@@ -144,8 +141,37 @@ function computeGhidraSkipReason(): string | false {
 
 const SKIP_REASON: string | false = computeGhidraSkipReason();
 
+// This suite reaches the tool only through the broker's fixed endpoint, so it
+// runs against its OWN harness broker (never a machine broker), started once
+// when the suite is enabled; the in-process client dials it through
+// VICE_BROKER_CONTROL_PORT.
+let harnessBroker: HarnessBroker | null = null;
+let harnessProjectRoot: string | null = null;
+let savedControlPort: string | undefined;
+before(async () => {
+  if (SKIP_REASON) return;
+  // Its own project root, so nothing the broker writes lands in this checkout.
+  harnessProjectRoot = mkdtempSync(join(tmpdir(), "live-broker-project-"));
+  harnessBroker = await startHarnessBroker({ repoRoot: harnessProjectRoot });
+  savedControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(harnessBroker.port);
+});
+after(async () => {
+  if (savedControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+  else process.env.VICE_BROKER_CONTROL_PORT = savedControlPort;
+  await harnessBroker?.stop();
+  if (harnessProjectRoot) rmSync(harnessProjectRoot, { recursive: true, force: true });
+});
+
 interface ScratchWorkspace {
   root: string;
+}
+
+/** Where a run's export lands: the endpoint downloads every result under the
+ * caller's own `.c64-re-tools/runs/ghidra/`, keeping only the basename of the
+ * requested `exportPath`. */
+function exportFileIn(ws: ScratchWorkspace, exportRel: string): string {
+  return join(ws.root, ".c64-re-tools", "runs", "ghidra", basename(exportRel));
 }
 
 /** Builds a fresh temporary workspace root OUTSIDE this repository, copies
@@ -251,9 +277,9 @@ test(
       // and throws before ever returning -- this is the DIRECT assertion the
       // review demanded, replacing the prior manual re-parse of a normally
       // -returned result. The run log and export file are still inspected
-      // below (reconstructed from runId/ghidraRunsRealRoot(), since a thrown
-      // call yields no GhidraRunResult to read a runLogPath off of) to keep
-      // this gate's original file-content assertions intact.
+      // below (read where the endpoint downloaded them, since a thrown call
+      // yields no GhidraRunResult to read a runLogPath off of) to keep this
+      // gate's original file-content assertions intact.
       await assert.rejects(
         () =>
           runGhidraAnalyze(
@@ -274,12 +300,12 @@ test(
         "runGhidraAnalyze must reject when the post-script threw, never return a normal result",
       );
 
-      const runLogPath = join(ghidraRunsRealRoot(ws.root), `${runId}.ghidra-run.log`);
+      const runLogPath = exportFileIn(ws, `${runId}.ghidra-run.log`);
       const logText = readFileSync(runLogPath, "utf8");
       const verdict = classifyGhidraRunLog(logText);
       assert.equal(verdict.scriptThrew, true, "the run log must carry the exact literal thrown-script signal");
 
-      const exportPath = join(ws.root, exportRel);
+      const exportPath = exportFileIn(ws, exportRel);
       if (existsSync(exportPath)) {
         const exportText = readFileSync(exportPath, "utf8");
         assert.equal(
@@ -324,7 +350,8 @@ test(
       const verdict = classifyGhidraRunLog(logText);
       assert.equal(verdict.scriptThrew, false, "no thrown-script signal may appear when the internal assertion succeeds");
 
-      const exportPath = join(ws.root, exportRel);
+      const exportPath = exportFileIn(ws, exportRel);
+      assert.equal(result.exportPath, exportPath, "runGhidraAnalyze() must report where the export was downloaded");
       assert.ok(existsSync(exportPath), "the export file must exist when the script completes");
       const exportText = readFileSync(exportPath, "utf8");
       assert.equal(exportText.includes("## UNRESOLVED_DISPATCH"), true, "the export must carry its final, completed-assertion section");
@@ -374,7 +401,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const { expected, observed } = parseExportClassificationCounts(exportText);
       assert.ok(Number.isInteger(expected) && Number.isInteger(observed), "both classification counts must be exact integers");
       assert.equal(observed, expected, "on the prg route, the observed count must equal the script's own computed block total");
@@ -416,7 +443,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const { expected, observed } = parseExportClassificationCounts(exportText);
       assert.ok(Number.isInteger(expected) && Number.isInteger(observed), "both classification counts must be exact integers");
       assert.equal(observed, expected, "on the flat64k route, the observed count must equal the script's own computed block total");
@@ -469,7 +496,7 @@ test(
           { repoRoot: ws.root },
         );
         assert.equal(result.exitStatus, 0);
-        return readFileSync(join(ws.root, exportRel));
+        return readFileSync(exportFileIn(ws, exportRel));
       }
 
       const exportA = await runOnce("gate3-repro-a", "gate3-repro-a-export.txt");
@@ -743,7 +770,7 @@ test(
       assert.ok(blockCountMatch, "VOLATILE-BLOCK-COUNT line must be present");
       assert.ok(Number(blockCountMatch![1]) >= 2, "the printed volatile-block count must be at least the number of declared volatile ranges (2)");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const referencesText = extractSection(exportText, "## REFERENCES");
       for (const line of WITH_FLAG_REFERENCE_LINES_PRG) {
         assert.ok(referencesText.includes(line), `expected reference line ${JSON.stringify(line)} present in the prg-route with-flag export`);
@@ -799,7 +826,7 @@ test(
       assert.ok(blockCountMatch, "VOLATILE-BLOCK-COUNT line must be present");
       assert.ok(Number(blockCountMatch![1]) >= 2, "the printed volatile-block count must be at least the number of declared volatile ranges (2)");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const referencesText = extractSection(exportText, "## REFERENCES");
       for (const line of WITH_FLAG_REFERENCE_LINES_FLAT64K) {
         assert.ok(referencesText.includes(line), `expected reference line ${JSON.stringify(line)} present in the flat64k-route with-flag export`);
@@ -846,7 +873,7 @@ test(
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "removing the flag must not itself throw -- the carve still completes, just without volatility");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       assert.ok(exportText.includes("## UNRESOLVED_DISPATCH"), "the without-flag export must still carry its completed-assertion section");
       const referenceCountMatch = /## REFERENCE_COUNT (\d+)/.exec(exportText);
       assert.ok(referenceCountMatch && Number(referenceCountMatch[1]) > 0, "the without-flag export must carry a non-trivial reference count");
@@ -903,7 +930,7 @@ test(
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "removing the flag must not itself throw -- the carve still completes, just without volatility");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       assert.ok(exportText.includes("## UNRESOLVED_DISPATCH"), "the without-flag export must still carry its completed-assertion section");
       const referenceCountMatch = /## REFERENCE_COUNT (\d+)/.exec(exportText);
       assert.ok(referenceCountMatch && Number(referenceCountMatch[1]) > 0, "the without-flag export must carry a non-trivial reference count");
@@ -944,10 +971,8 @@ test(
       // CR-01 fix: runGhidraAnalyze() now checks verdict.scriptThrew itself
       // and rejects before ever returning a GhidraRunResult -- mirroring the
       // GATE 1 fix above (this same file, "GATE 1" case). A thrown call
-      // yields no result, so the run log is reconstructed below from
-      // runId/ghidraRunsRealRoot() (the same technique GATE 1 uses) and the
-      // export path is reconstructed from exportRel, which was always
-      // workspace-relative and never depended on the return value. The
+      // yields no result, so the run log and the export are read below where
+      // the endpoint downloaded them (the same technique GATE 1 uses). The
       // exit-status assertion is preserved by reading it out of the
       // rejection's own message, which embeds `response.exitStatus`
       // (ghidra-run.ts:242) -- the only place that value is reachable once
@@ -987,7 +1012,7 @@ test(
         "runGhidraAnalyze must reject when the pre-script threw a genuine MemoryConflictException",
       );
 
-      const runLogPath = join(ghidraRunsRealRoot(ws.root), `${runId}.ghidra-run.log`);
+      const runLogPath = exportFileIn(ws, `${runId}.ghidra-run.log`);
       const logText = readFileSync(runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, true, "the run log must carry the exact literal thrown-script signal");
       assert.match(logText, /MemoryConflictException/, "the thrown exception must be the genuine memory-conflict type, not some other failure");
@@ -1004,7 +1029,7 @@ test(
       // unset is the failure this plan exists to make impossible") -- the
       // failure mode is not merely possible, it is what a naive "did the
       // export complete" check would actually observe on this exact run.
-      const exportPath = join(ws.root, exportRel);
+      const exportPath = exportFileIn(ws, exportRel);
       assert.ok(existsSync(exportPath), "MEASURED finding: the export file DOES exist even though the pre-script threw");
       const exportText = readFileSync(exportPath, "utf8");
       assert.ok(
@@ -1072,15 +1097,8 @@ test(
 // through it.
 // ---------------------------------------------------------------------------
 
-const CORPUS_PATH = join(
-  repoRoot({ from: HERE }),
-  ".planning",
-  "phases",
-  "23-the-real-release-gate-go-degrade-no-go",
-  "evidence",
-  "corpus",
-  "danish.d64",
-);
+/** The corpus image, gitignored under the repository root's `corpus/`. */
+const CORPUS_PATH = join(repoRoot({ from: HERE }), "corpus", "danish.d64");
 
 /** Gated behind BOTH `VICE_LIVE_GHIDRA=1` (this file's own opt-in, above) AND
  * its OWN `VICE_LIVE_GHIDRA_CORPUS=1` -- mirrors
@@ -1092,7 +1110,7 @@ const CORPUS_SKIP_REASON: string | false =
       ? "ghidra-live.test.ts's corpus case is opt-in and default-skipped -- set VICE_LIVE_GHIDRA_CORPUS=1 (in addition to VICE_LIVE_GHIDRA=1) to run it."
       : !existsSync(CORPUS_PATH)
         ? `VICE_LIVE_GHIDRA_CORPUS=1 but the corpus image does not exist at ${CORPUS_PATH} -- this repository never commits it (D-04, ` +
-          `.planning/phases/23-.../evidence/README.md convention 10); obtain the Phase 23 corpus release separately.`
+          `gitignored); obtain the corpus release separately and place it there.`
         : false;
 
 /** The SAME five entry points `ghidra-opcode-live.test.ts`'s own CORPUS case
@@ -1105,8 +1123,8 @@ const CORPUS_ENTRY_POINTS: readonly string[] = ["$081b", "$b70a", "$b74c", "$b7e
 /** The smallest common ancestor directory of two absolute paths -- computed,
  * never a fixed guess, so the seam request's `repoRoot` for THIS call is
  * always exactly big enough to contain both the corpus image and the
- * scratch output directory, and no bigger. Mirrors `c1541.mjs`'s own
- * `commonAncestorDir()` (`src/skills/c64-disk-access/scripts/c1541.mjs`),
+ * scratch output directory, and no bigger. Mirrors `c1541.ts`'s own
+ * `commonAncestorDir()` (`skills/c64-disk-access/scripts/c1541.ts`),
  * duplicated here rather than imported -- this file must never reach into a
  * skill script (D-36-12's own container/host-side split; a skill script
  * additionally ships in the OTHER npm package). */
@@ -1145,9 +1163,9 @@ async function extractCorpusProgram(): Promise<Uint8Array> {
   const scratch = mkdtempSync(join(tmpdir(), "ghidra-live-corpus-"));
   try {
     const root = commonAncestorDir(dirname(CORPUS_PATH), scratch);
-    const baseArgs = { image: toRel(root, CORPUS_PATH), outDir: toRel(root, scratch) };
+    const baseArgs = { image: toRel(root, CORPUS_PATH) };
 
-    const dirResp = await runHostTool({ tool: "c1541.dir", args: baseArgs }, { repoRoot: root });
+    const dirResp = await runHostTool({ tool: "c1541.dir", args: baseArgs }, { repoRoot: root, outputDir: scratch });
     if (!dirResp.ok) throw new Error(`ghidra-live acceptance: c1541.dir refused: ${dirResp.message}`);
     const listingPath = dirResp.results[0]?.path;
     if (!listingPath) throw new Error("ghidra-live acceptance: c1541.dir reported no listing output");
@@ -1156,7 +1174,7 @@ async function extractCorpusProgram(): Promise<Uint8Array> {
     if (!entryMatch) throw new Error("ghidra-live acceptance: the corpus image's directory listing has no entries");
     const entryName = entryMatch[1]!.replace(/\s+$/, "");
 
-    const readResp = await runHostTool({ tool: "c1541.read", args: { ...baseArgs, name: entryName } }, { repoRoot: root });
+    const readResp = await runHostTool({ tool: "c1541.read", args: { ...baseArgs, name: entryName } }, { repoRoot: root, outputDir: scratch });
     if (!readResp.ok) throw new Error(`ghidra-live acceptance: c1541.read refused: ${readResp.message}`);
     const readPath = readResp.results[0]?.path;
     if (!readPath) throw new Error("ghidra-live acceptance: c1541.read reported no output file");
@@ -1299,7 +1317,7 @@ test(
         { repoRoot: ws.root },
       );
       assert.equal(result.exitStatus, 0);
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
 
       // The five fact kinds -- each must carry at least one line (found or
       // not-found); which were found on THIS image is recorded below.
@@ -1397,7 +1415,7 @@ test(
         { repoRoot: ws.root },
       );
       assert.equal(result2.exitStatus, 0);
-      const exportText2 = readFileSync(join(ws.root, exportRel2), "utf8");
+      const exportText2 = readFileSync(exportFileIn(ws, exportRel2), "utf8");
       const digest1 = createHash("sha256").update(exportText).digest("hex");
       const digest2 = createHash("sha256").update(exportText2).digest("hex");
       assert.equal(digest1, digest2, "two acceptance runs under different run ids must produce byte-identical export files");
@@ -1441,7 +1459,7 @@ test(
         { repoRoot: ws.root },
       );
       assert.equal(result.exitStatus, 0);
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const accounting = parseAccounting(exportText);
       assert.equal(accounting.attempted, 0, "a function-less program must report zero attempted functions");
       assert.ok(accounting.zeroFunctions, "a function-less program must carry the explicit DECOMPILE_ZERO_FUNCTIONS true line");
@@ -1491,18 +1509,15 @@ function runGhidraAnalyzeDirectControl(
 ): { exitStatus: number | null; runLogText: string; exportText: string } {
   const ghidraHome = process.env.GHIDRA_HOME!;
   const analyzeHeadlessPath = join(ghidraHome, "support", "analyzeHeadless");
-  // Gap G-40-1 (plan 40-09): this function bypasses resolveGhidraProject()'s
-  // typed seam entirely (it drives analyzeHeadless directly to reach the
-  // DataTypeManager control-mode's third positional script argument, not
-  // yet wired through that seam -- see this function's own header comment
-  // above), so it must mint the SAME broker-owned handle
-  // resolveGhidraProject() would have minted and hand analyzeHeadless the
-  // SAME non-dotted handle path (ghidraRunsRoot()) that seam uses -- never
-  // a dotted literal Ghidra's own dot-segment refusal would reject.
-  const handleResult = ensureGhidraRunsHandle(ws.root);
-  if (!handleResult.ok) throw new Error(`runGhidraAnalyzeDirectControl: ${handleResult.message}`);
-  const projectLocation = join(ghidraRunsRoot(ws.root), opts.runId);
-  mkdirSync(projectLocation, { recursive: true });
+  // This function bypasses resolveGhidraProject()'s typed seam entirely (it
+  // drives analyzeHeadless directly to reach the DataTypeManager
+  // control-mode's third positional script argument, not yet wired through
+  // that seam -- see this function's own header comment above), so it
+  // resolves a project location the same way the seam does: under a runs
+  // root with no dotted segment (the workspace is a plain mkdtemp directory).
+  const projectResolved = resolveGhidraProject({ runsRoot: join(ws.root, "ghidra-projects"), runId: opts.runId });
+  if (!projectResolved.ok) throw new Error(`runGhidraAnalyzeDirectControl: ${projectResolved.message}`);
+  const projectLocation = projectResolved.projectLocation;
   const argv = [
     projectLocation,
     opts.runId,
@@ -1564,7 +1579,7 @@ test(
         { repoRoot: ws.root },
       );
       assert.equal(acceptanceResult.exitStatus, 0);
-      const acceptanceExportText = readFileSync(join(ws.root, acceptanceExportRel), "utf8");
+      const acceptanceExportText = readFileSync(exportFileIn(ws, acceptanceExportRel), "utf8");
       const acceptanceDecompiledLines = countDecompiledTextLines(acceptanceExportText);
 
       // The control: the SAME image, route and language, one argument apart.
@@ -1747,7 +1762,7 @@ test(
       assert.equal(result.exitStatus, 0);
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the flat64k-route CONST_WRITES case must not throw");
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const portWrites = assertConstWritesPortValuesDiffer(exportText);
       assertSharedSubroutineReachedFromDistinctCallers(exportText, portWrites);
     } finally {
@@ -1767,7 +1782,7 @@ test(
       assert.equal(result.exitStatus, 0);
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the prg-route CONST_WRITES case must not throw");
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       assertConstWritesPortValuesDiffer(exportText);
       // The shared-subroutine-reached-from-two-callers assertion is
       // deliberately NOT run on this route -- see this function's own
@@ -1895,7 +1910,7 @@ test(
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the before-run must not throw");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
 
       // The derived range is computed from THIS run's own real CONST_WRITES
       // facts -- never hard-coded, per this plan's own must_haves.truths.
@@ -1953,7 +1968,7 @@ test(
       assert.match(logText, /DataRangeSeed\.java> DATARANGE-OK:/, "DataRangeSeed.java must report a seeded range in the run log");
       assert.match(logText, /DataRangeSeed\.java> DATARANGE-SEED-COUNT: 1/, "DataRangeSeed.java must report exactly one range seeded");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const functions = parseFunctionLines(exportText);
       const after = functionsInRange(functions, charsetPhantomDerivedRange!);
       assert.equal(after.length, 0, `the after-set must be EMPTY -- the derived range's own data-range feedback must suppress every phantom label (got ${JSON.stringify(after)})`);
@@ -1994,7 +2009,7 @@ test(
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the prg-route case must not throw");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const constWrites = parseConstWrites(parseGhidraExport(exportText));
       assert.equal(constWrites.length, 3, "all three VIC register writes must resolve on the prg route too");
       const maps = deriveGraphicsRanges(constWrites);
@@ -2060,30 +2075,18 @@ test(
 );
 
 // ---------------------------------------------------------------------------
-// Gap G-40-1 (plan 40-09, Task 3): the guard .planning/todos/pending/
-// 2026-09-08-guard-ghidra-symlink-project-location.md describes. The
-// symlink route this plan's own Task 1/2 depend on rests on a property of
-// real Ghidra this project does not control: `ProjectLocator` calls
-// `java.io.File.getAbsolutePath()` and never `getCanonicalPath()`, so it
-// never resolves the non-dotted handle -- MEASURED in bytecode against
-// 12.1.3 (.planning/notes/ghidra-dot-path-check-semantics.md). If a future
-// release switches that one call, every ghidra.analyze run breaks at once,
-// silently, 12-16 seconds into a JVM startup, with a dot-segment error
-// naming a path the user never typed. This guard fails at TEST time
-// instead, reproducing both halves of that note's own runs B and C.
-//
-// Two halves, an outcome differential, never a stderr text match:
-//   - POSITIVE (mirrors run C): the PRODUCTION route, driven for real,
-//     lands its project database PHYSICALLY under the dotted root while
-//     the non-dotted tree holds only the handle symlink.
-//   - NEGATIVE (mirrors run B): the SAME real Ghidra, handed a LITERAL
-//     dot-prefixed project location -- bypassing the production resolver
-//     entirely, since going through it would prove this project's OWN
-//     predicate rather than Ghidra's, the precise mistake that created
-//     this gap -- produces NO project database at all.
+// Ghidra's dot-segment refusal, measured on real Ghidra, with the location
+// the production resolver computes. An outcome differential, never a stderr
+// text match:
+//   - POSITIVE: a real import at the location resolveGhidraProject() returns
+//     (under a runs root with no dotted segment) creates a project database.
+//   - NEGATIVE: the SAME real Ghidra, handed a LITERAL dot-prefixed project
+//     location -- bypassing the resolver entirely, since going through it
+//     would prove this project's OWN predicate rather than Ghidra's --
+//     produces NO project database at all.
 // Without the negative half, the positive half passing could mean Ghidra
-// stopped refusing dots entirely, which would make the positive half
-// vacuous rather than reassuring.
+// stopped refusing dots entirely, which would make the dotted-root refusal
+// unnecessary rather than correct.
 // ---------------------------------------------------------------------------
 
 /** Directly invokes `analyzeHeadless` with a LITERAL project location --
@@ -2115,39 +2118,24 @@ function ghidraProjectDatabaseExists(projectDir: string, projectName: string): b
 }
 
 test(
-  "ghidra-live SYMLINK GUARD (positive, mirrors note run C): a real Ghidra import through the handle the production resolver mints lands its project database PHYSICALLY under the dotted root, with only the handle symlink in the non-dotted tree",
+  "ghidra-live DOT GUARD (positive): a real Ghidra import at the location resolveGhidraProject() computes creates a project database there",
   { skip: SKIP_REASON },
   async () => {
     const ws = makeScratchWorkspace();
     try {
-      const runId = "symlink-guard-positive";
-
-      // The handle is minted by the CODE UNDER TEST -- resolveGhidraProject()
-      // (ghidra-project.mts), which calls ensureGhidraRunsHandle() itself as
-      // an idempotent precondition, exactly as the production `ghidra.analyze`
-      // seam (host-tool.mts) does. This test spawns analyzeHeadless directly
-      // at the resolved location -- deliberately WITHOUT the production
-      // seam's own unconditional `-deleteProject` flag
-      // (buildAnalyzeHeadlessArgv(), ghidra-project.mts) -- MEASURED at plan
-      // time: the full production route (runGhidraAnalyze()) really does
-      // create the project through the handle (its own run log carries
-      // "Creating project:" and "REPORT: Import succeeded" naming the
-      // handle path), but `-deleteProject` then removes every artifact this
-      // guard exists to inspect, leaving an empty physical directory. Same
-      // precedent this file's own runGhidraAnalyzeDirectControl() already
-      // uses one section up: drive real analyzeHeadless directly to observe
-      // Ghidra's own filesystem behaviour, not merely its exit status.
-      const projectResolved = resolveGhidraProject({ repoRoot: ws.root, runId });
+      const runId = "dot-guard-positive";
+      // Spawned directly, WITHOUT the production seam's own -deleteProject
+      // flag, so the project database this guard inspects survives the run.
+      const projectResolved = resolveGhidraProject({ runsRoot: join(ws.root, "ghidra-projects"), runId });
       assert.equal(projectResolved.ok, true, projectResolved.ok ? "" : (projectResolved as { ok: false; message: string }).message);
       if (!projectResolved.ok) return;
 
       const analyzeHeadlessPath = join(process.env.GHIDRA_HOME!, "support", "analyzeHeadless");
-      const importPathAbs = join(ws.root, "bank.prg");
       const argv = [
         projectResolved.projectLocation,
         projectResolved.projectName,
         "-import",
-        importPathAbs,
+        join(ws.root, "bank.prg"),
         "-processor",
         NMOS_LANGUAGE_ID,
         "-loader",
@@ -2158,25 +2146,12 @@ test(
       ];
       const spawned = spawnSync(analyzeHeadlessPath, argv, { encoding: "utf8" });
       const runLog = (spawned.stdout ?? "") + (spawned.stderr ?? "");
-      assert.equal(spawned.status, 0, `production-computed-location run's own exit status must be 0 -- run log tail: ${runLog.slice(-500)}`);
-      assert.match(runLog, /REPORT: Import succeeded/, "the import itself must have succeeded through the handle path");
-
-      // The non-dotted tree holds ONLY the handle symlink -- lstat (never
-      // stat, which would follow the link) reports a symbolic link at
-      // exactly the handle path this file's own root gets.
-      const handlePath = join(ws.root, GHIDRA_RUNS_HANDLE_NAME);
-      const handleStat = lstatSync(handlePath);
-      assert.ok(handleStat.isSymbolicLink(), `expected ${handlePath} to be a symbolic link (the broker-minted handle); if it is now a real directory, Ghidra may have started resolving symlinks in the project location`);
-
-      // The project database landed PHYSICALLY under the dotted root --
-      // reached through ghidraRunsRealRoot(), never the handle.
-      const physicalProjectDir = join(ghidraRunsRealRoot(ws.root), runId);
+      assert.equal(spawned.status, 0, `the resolver-computed location's run must exit 0 -- run log tail: ${runLog.slice(-500)}`);
+      assert.match(runLog, /REPORT: Import succeeded/);
       assert.ok(
-        ghidraProjectDatabaseExists(physicalProjectDir, runId),
-        `SYMLINK GUARD REGRESSION: expected a Ghidra project database (${runId}.gpr) physically under the dotted root at ${physicalProjectDir} -- if absent, Ghidra now appears to resolve symlinks in the project location (ProjectLocator switching from getAbsolutePath() to getCanonicalPath()), so the dotted runs root is no longer reachable through the handle and every ghidra.analyze call is about to fail. See .planning/notes/ghidra-dot-path-check-semantics.md.`,
+        ghidraProjectDatabaseExists(projectResolved.projectLocation, runId),
+        `expected a Ghidra project database (${runId}.gpr) at ${projectResolved.projectLocation}`,
       );
-      const repEntries = existsSync(join(physicalProjectDir, `${runId}.rep`)) ? readdirSync(join(physicalProjectDir, `${runId}.rep`)) : [];
-      assert.ok(repEntries.length > 0, `expected the project's own .rep/ directory to carry real content physically under ${physicalProjectDir}`);
     } finally {
       removeScratchWorkspace(ws);
     }
@@ -2184,12 +2159,39 @@ test(
 );
 
 test(
-  "ghidra-live SYMLINK GUARD (negative control, mirrors note run B): a directly-spawned run with a LITERAL dot-prefixed project location produces NO project database",
+  "ghidra-live: a broker whose home is dot-prefixed (like the default ~/.c64-re-tools) still runs ghidra.analyze -- the projects root is independent of the broker home",
+  { skip: SKIP_REASON },
+  async () => {
+    const ws = makeScratchWorkspace();
+    // No VICE_BROKER_GHIDRA_DIR: the broker must fall back to its default
+    // projects root, exactly as a broker started the documented way does.
+    const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+    delete env.VICE_BROKER_GHIDRA_DIR;
+    const dottedBroker = await startHarnessBroker({ repoRoot: harnessProjectRoot!, homeSegment: ".dotted-home", env });
+    const ghidraDir = brokerGhidraDir({ env: {} });
+    try {
+      assert.ok(dottedBroker.home.includes(`${sep}.dotted-home`), "precondition: this broker's home must carry a dot-prefixed segment");
+      const result = await runGhidraAnalyze(
+        { runId: "dotted-home", importPath: "bank.prg", processor: NMOS_LANGUAGE_ID, importRoute: "prg", noanalysis: true },
+        { repoRoot: ws.root, port: dottedBroker.port },
+      );
+      assert.equal(result.exitStatus, 0);
+      const leftovers = existsSync(ghidraDir) ? readdirSync(ghidraDir).filter((name) => name.startsWith("dotted-home-")) : [];
+      assert.deepEqual(leftovers, [], `the run's project directory must be gone from ${ghidraDir} once the run ends`);
+    } finally {
+      await dottedBroker.stop();
+      removeScratchWorkspace(ws);
+    }
+  },
+);
+
+test(
+  "ghidra-live DOT GUARD (negative control): a directly-spawned run with a LITERAL dot-prefixed project location produces NO project database",
   { skip: SKIP_REASON },
   async () => {
     const ws = makeScratchWorkspace();
     try {
-      const runId = "symlink-guard-negative";
+      const runId = "dot-guard-negative";
       // A literal, dot-prefixed location -- built by hand, deliberately
       // bypassing resolveGhidraProject()/buildAnalyzeHeadlessArgv(), which
       // would refuse this themselves before Ghidra is ever reached. This
@@ -2203,7 +2205,7 @@ test(
 
       assert.ok(
         !ghidraProjectDatabaseExists(dottedProjectDir, runId),
-        `SYMLINK GUARD CONTROL REGRESSION: a project database (${runId}.gpr) was found at the LITERAL dot-prefixed location ${dottedProjectDir} -- Ghidra appears to have stopped refusing dot-prefixed segments, which makes the broker-minted handle unnecessary rather than broken, and means this guard's positive half is no longer meaningful on its own. Exit status was ${control.exitStatus}.`,
+        `DOT GUARD CONTROL REGRESSION: a project database (${runId}.gpr) was found at the LITERAL dot-prefixed location ${dottedProjectDir} -- Ghidra appears to have stopped refusing dot-prefixed segments, which makes the dotted-root refusal unnecessary rather than correct. Exit status was ${control.exitStatus}.`,
       );
     } finally {
       removeScratchWorkspace(ws);

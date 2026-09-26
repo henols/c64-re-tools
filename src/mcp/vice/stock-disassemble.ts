@@ -4,10 +4,8 @@
 // vice_disassemble -- a DERIVED tool (DERIV-07, DISASM-01): its answer is
 // computed CLIENT-SIDE from bytes MEM_GET returned (disasm-decoder.ts's
 // decode() + disasm-renderer.ts's render()), never answered by one
-// binary-monitor opcode the way a direct tool's answer is. Registered
-// through withDerivedTool() in stock-dispatch.ts, never withStockSession()
-// (D-01/D-03) -- this is the first and largest consumer of the derived-tool
-// seam 04-02 built.
+// binary-monitor opcode the way a direct tool's answer is. Listed in
+// stock-tools.ts as a "binary" tool (it reads memory over the session).
 //
 // WHY THIS FILE EXISTS: DISASM-01 is criterion 2's own sentence -- "a user
 // can disassemble a memory range on the stock backend" -- and the binary
@@ -18,11 +16,9 @@
 // asked for reads the wrong code).
 //
 // WHAT NOT TO DO:
-//   - Never import hostpath.ts or vice-proxy.ts, and never call the
-//     fork-forwarding function's rewriteArguments() -- hostpath-consumers.test.ts
-//     gates this file's absence from the closed host-path consumer set
-//     (D-02). This tool takes no path argument at all; the surface is empty
-//     by construction.
+//   - Never import vice-proxy.ts, and never call the fork-forwarding
+//     function's rewriteArguments(). This tool takes no path argument at
+//     all; the surface is empty by construction.
 //   - Never issue an unrequested resume (Phase 3 D-05) -- this handler sends
 //     MEM_GET and nothing else. `runState` on the answer (via stockAnswer())
 //     reports the halt honestly.

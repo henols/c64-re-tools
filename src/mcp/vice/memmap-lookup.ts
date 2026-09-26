@@ -5,8 +5,7 @@
 // for `c64-memory-mapping`'s own `memmap.json`, its content digest, and
 // narrowest-containing-range selection over its 959 entries.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts` OR `containerpath.ts` -- every
-// path here is repo-relative and derived from this module's own location, the
+// Every path here is repo-relative and derived from this module's own location, the
 // same posture `anno-regbits-gen.ts` and `dxa-blocks.ts` take for themselves.
 // It also NEVER NAMES `node:sqlite` and NEVER OPENS THE ANNOTATION STORE:
 // `anno-store.ts` is the one module permitted to name that
@@ -27,10 +26,13 @@
 // resolves through. `anno-join.ts` calls this module; nothing else needs to.
 //
 // WHAT NOT TO DO:
-//   - Never re-derive `MEMMAP_PATH` from a different relative offset. This
-//     formula has already broken once when the skills tree moved (plan
-//     16-01's own deviation note) -- one HERE-relative constant, copied
-//     verbatim in shape from `anno-regbits-gen.ts:62`.
+//   - Never re-derive `MEMMAP_PATH`'s repo candidate from a different
+//     relative offset. This formula has already broken once when the skills
+//     tree moved (plan 16-01's own deviation note) -- one HERE-relative
+//     constant, copied verbatim in shape from `anno-regbits-gen.ts:62`.
+//     The package-local candidate checked first is the copy build.ts's
+//     buildServer() places beside the compiled module in dist/: the npm
+//     package does not carry the skills tree.
 //   - Never mutate the cached entries array. `loadMemmap()` returns the same
 //     frozen array on every call after the first; a caller that needs a
 //     filtered view copies it.
@@ -40,16 +42,20 @@
 //     bank-condition field, only free prose inside `desc`.
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** The `HERE`-relative path to `c64-memory-mapping`'s `memmap.json`, using the
+/** Where `c64-memory-mapping`'s `memmap.json` is read from: a package-local
+ * copy beside this module first (dist/memmap.json in the npm package, copied
+ * there by build.ts's buildServer()), else the repo skill path, using the
  * SAME five-hop formula `anno-regbits-gen.ts:62` uses. Copied, not imported
  * (D-37-03). */
-export const MEMMAP_PATH = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
+const PACKAGE_MEMMAP_PATH = join(HERE, "memmap.json");
+const REPO_MEMMAP_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
+export const MEMMAP_PATH = existsSync(PACKAGE_MEMMAP_PATH) ? PACKAGE_MEMMAP_PATH : REPO_MEMMAP_PATH;
 
 /** One entry as `memmap.json` holds it. MEASURED at plan time: 959 entries,
  * `start`/`end` are INCLUSIVE integers with no length field, and `sym` is

@@ -1,8 +1,7 @@
 # vendor/ghidra-scripts -- provenance
 
 Two committed, function-named Ghidra scripts, promoted from throwaway
-evidence written earlier in this project's exploration
-(`.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/`).
+evidence written earlier in this project's exploration.
 Both are reached through `-scriptPath` (`ghidra.analyze`'s own `scriptPath`
 field): Ghidra resolves script filenames against that path, and a script
 loaded this way is compiled in the default package -- neither file below

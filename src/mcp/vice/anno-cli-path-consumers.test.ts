@@ -67,8 +67,7 @@
 //     `CLI_PATH_ARGUMENTS.length`. A floor computed from the thing it guards
 //     can never fail -- `n >= n` is a guard re-pointed at a subject that
 //     cannot fail -- and it discards the entire non-vacuity the floor exists
-//     to provide. `hostpath-consumers.test.ts` records the same prohibition
-//     over `ANNO_MODULE_FLOOR` for the same reason.
+//     to provide.
 //   - Never widen `NON_PATH_OPTIONS` to silence a failing test. Every widening
 //     is a claim that a new option carries no path, and it must be true rather
 //     than convenient.
@@ -80,7 +79,7 @@
 import test, { before } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -189,6 +188,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
   { verb: "decomp-completeness", argument: "--manifest", kind: "flag" },
   { verb: "hazard-report", argument: "--store", kind: "flag" },
   { verb: "hazard-report", argument: "--image", kind: "flag" },
+  { verb: "call", argument: "--args-file", kind: "flag" },
 ];
 
 /**
@@ -202,7 +202,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
  * to the CLI without a confinement call reds HERE, BY NAME, instead of being
  * reviewed.
  */
-const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "--json"];
+const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "--json", "--args"];
 
 /**
  * MEASURED, NOT COPIED: nine caller-supplied path arguments across the three
@@ -236,6 +236,12 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * `cmdHazardReport()`; the verb has no positional and no `--out`, so it
  * contributes exactly two to this floor.
  *
+ * RAISED 16 -> 17, in the commit that added `call` (D-12, plan 65-02). Its
+ * ONE path argument, `--args-file`, is confined by the same seam in
+ * `cmdCall()`; the positional (the curated tool NAME) is not a path and
+ * carries no confinement call, so `call` contributes exactly one to this
+ * floor, not two.
+ *
  * HAND-PINNED AS AN INTEGER LITERAL, AND IT MUST STAY THAT WAY. Deriving it
  * from `CLI_PATH_ARGUMENTS.length` (or from disk) would make it unfailable and
  * would discard the entire non-vacuity it exists to provide: a truncated or
@@ -243,7 +249,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * trivially. Raise it when a verb genuinely grows a path argument; never lower
  * it to fit.
  */
-const CLI_PATH_ARGUMENT_FLOOR = 16;
+const CLI_PATH_ARGUMENT_FLOOR = 17;
 
 // ---------------------------------------------------------------------------
 // 1. The inventory is declared and complete.
@@ -530,8 +536,7 @@ test("non-vacuity floor: CLI_PATH_ARGUMENTS has at least CLI_PATH_ARGUMENT_FLOOR
 // two passing a bare "node": the `--help` capture in this file (added by plan
 // 29-20) and `anno-cli.test.ts`'s `spawnCli()` (pre-existing). Both were fixed
 // in one commit, because leaving one behind is what made the other look like a
-// precedent -- `scripts/check-skill-cli-invocations.mjs`, edited in the same
-// round as the new site, already used `process.execPath`.
+// precedent.
 //
 // The guard is a source scan rather than a count, so it names the offending
 // file and line instead of reporting a number that moved. It is deliberately
@@ -541,9 +546,16 @@ test("non-vacuity floor: CLI_PATH_ARGUMENTS has at least CLI_PATH_ARGUMENT_FLOOR
 // ---------------------------------------------------------------------------
 
 test("WR-20: no Node child is spawned as a bare \"node\" -- every site passes process.execPath", () => {
-  // `scripts/lib/` was removed with the two checkers that were its only
-  // consumers, so it is no longer a root to scan -- scandir would throw ENOENT.
-  const roots = [HERE, join(HERE, "..", "..", "..", "scripts")];
+  // This directory, every skill's `scripts/` -- the skill scripts are the
+  // other tree that spawns Node children (the host-tool endpoint client) --
+  // and every test/skills/<skill>/ folder holding those scripts' tests.
+  const skillsDir = join(HERE, "..", "..", "..", "skills");
+  const skillTestsDir = join(HERE, "..", "..", "..", "test", "skills");
+  const subdirs = (root: string, leaf: string) =>
+    readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(join(root, d.name, leaf)))
+      .map((d) => join(root, d.name, leaf));
+  const roots = [HERE, ...subdirs(skillsDir, "scripts"), ...subdirs(skillTestsDir, ".")];
   const offenders: string[] = [];
   let scanned = 0;
   for (const root of roots) {

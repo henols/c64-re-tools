@@ -1,9 +1,5 @@
 // The ONE shared place every module in this directory resolves the repo
-// root through (D-2). Everything else in this module tree -- vice.mjs's
-// EPOCH_FILE, vice-broker-client.mjs's brokerRootDir() (and, before their
-// 2026-08-02 deletion, vice-pool.mjs's poolDir() and vice-session.mjs's
-// sessionFilePath()) -- derives its `.vice-supervisor` path through
-// supervisorDir() below, so there is exactly one definition of both "where
+// root through (D-2), so there is exactly one definition of both "where
 // is the repo root" and "what is the shared state directory called".
 //
 // WHY THIS FILE EXISTS AT ALL: originally, each of the three modules
@@ -52,6 +48,14 @@
 // branches 1-3's depth-independence and branch 4's fixed hop count would not
 // survive). See repo-root.test.ts's own standing caution for that
 // distinction, drawn explicitly there for the first time by this move.
+//
+// COMPILED COPY (npm package): build.ts's buildServer() compiles this module
+// into dist/, one level below the package directory. Branch 4 therefore
+// counts its three hops from the PACKAGE directory, not blindly from
+// `from`: `from` itself when it holds a package.json, else `from`'s parent
+// when that one does (the dist/ case), else `from` unchanged. The marker
+// check keeps the hop count a property of the package directory's depth,
+// which is what the paragraph above pins.
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, sep } from "node:path";
@@ -90,6 +94,18 @@ function isInside(child: string, parent: string): boolean {
   const c = resolve(child);
   const p = resolve(parent);
   return c === p || c.startsWith(p.endsWith(sep) ? p : p + sep);
+}
+
+/** The package directory branch 4 counts its hops from: `from` when it
+ * holds a package.json, else `from`'s parent when that one does (the
+ * compiled copy in dist/), else `from` unchanged. See the header's
+ * "COMPILED COPY" paragraph. */
+function packageDirFor(from: string, exists: (path: string) => boolean): string {
+  const here = resolve(from);
+  if (exists(join(here, "package.json"))) return here;
+  const parent = dirname(here);
+  if (exists(join(parent, "package.json"))) return parent;
+  return here;
 }
 
 /**
@@ -170,43 +186,36 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
     return resolve(cwp);
   }
 
+  const packageDir = packageDirFor(from, exists);
+  const fallback = resolve(packageDir, "..", "..", "..");
   if (!warnedNoMarkerFound) {
     warnedNoMarkerFound = true;
-    const fallback = resolve(from, "..", "..", "..");
     console.error(
       `warn: could not find a .git ancestor above ${from} and CONTAINER_WORKSPACE_PATH is not set -- ` +
         `falling back to three levels up (${fallback}), the shape <root>/src/mcp/<server>/ implies. ` +
         `This is a last resort; if it's wrong, set CONTAINER_WORKSPACE_PATH or run from inside a git repo.`
     );
   }
-  return resolve(from, "..", "..", "..");
+  return fallback;
 }
 
 /** The ONE definition of the tool-written root every writer in this codebase
  * ultimately derives its location from (D-33, 2026-09-08 clean-break
  * consolidation): `join(repoRoot(...), ".c64-re-tools")`.
  *
- * CORRECTED 2026-09-08 (gap `G-40-1`; see
- * .planning/notes/ghidra-dot-path-check-semantics.md): this comment used to
+ * CORRECTED 2026-09-08 (gap `G-40-1`): this comment used to
  * claim (a) that the Ghidra runs directory was among the writers resolving
  * through THIS function, and (b) that the literal string below had exactly
  * one non-comment occurrence in the codebase. Both were false when written,
  * and neither was ever measured before being written down. The corrected
  * picture:
  *
- *   - FOUR files call `toolsDir()`/`supervisorDir()` directly, across FOUR
- *     distinct subdirectories: incident-record.ts (`incidents`),
- *     stock-paths.ts (`snapshots`), vice-proxy.ts (`bin`, reading back the
- *     deployed launcher path), and vice.ts, via `supervisorDir()`
- *     (`supervisor`, the broker state directory). CORRECTED (Phase 64, plan
- *     64-10, G-64-1): vice-broker-client.ts's brokerRootDir() used to be a
- *     second `supervisorDir()` caller here, alongside vice.ts -- that was
- *     G-64-1's secondary cause, because the documented machine-level start
- *     route never writes to a directory THIS function resolves (a directory
- *     inside whichever project checkout happens to be current). It now
- *     imports broker-home.mts's `brokerStateDir()` instead, sharing the
- *     broker's own machine-level resolver, and calls this function not at
- *     all.
+ *   - TWO files call `toolsDir()` directly: transfer-paths.ts
+ *     (`snapshots` and the per-kind result directories) and vice-proxy.ts
+ *     (the bare root, handed to backend-detect.mts's resolvedBackend()).
+ *     No production module calls `supervisorDir()` any more: the epoch
+ *     file it located is read by the broker only. The broker state directory
+ *     is broker-home.mts's `brokerStateDir()`, never this function.
  *   - FIVE files cannot import this container-side module at all, so each
  *     joins `".c64-re-tools"` with its own trailing segment(s) directly,
  *     matching this function's shape by CONVENTION, never by shared code:
@@ -218,22 +227,20 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  *     longer joins the literal itself, and calls broker-home.mts's
  *     `brokerStateDir()` unconditionally when no explicit `--state-dir` is
  *     given, whatever `--repo-root` says), host-tool.mts's
- *     `oracle.run` scratch directory (`runs/oracle` -- host-bound),
- *     ghidra-project.mts's `ghidraRunsRoot()`/`ghidraRunsRealRoot()`
- *     (`runs/ghidra` -- host-bound, reached through a symlinked alias
- *     handle, see below), and backend-detect.mts's `resolvedBackend()`
+ *     `oracle.run` scratch directory (`runs/oracle` -- host-bound), and
+ *     backend-detect.mts's `resolvedBackend()`
  *     cwd-relative fallback (the bare root -- host-bound, and the ONE place
  *     the emulator binary's own location is resolved, Phase 60 LOC-01/LOC-02).
- *     Every one of these five must keep its literal
+ *     Every one of these must keep its literal
  *     equal to `join(toolsDir(...), <same segments>)`, by convention, or the
  *     two halves of this codebase silently disagree on where the root is.
  *
- * The Ghidra runs root is emphatically NOT, and never was, one of the five
- * files that call this function directly -- it is host-bound
- * (ghidra-project.mts) and cannot import this file at all.
+ * Ghidra projects do not live under this root at all: Ghidra refuses a
+ * project location with a dot-prefixed segment, so the broker keeps them
+ * under broker-home.mts's `brokerGhidraDir()` instead.
  *
- * The literal string ".c64-re-tools" therefore has exactly 10 non-comment
- * occurrences in this codebase, across 8 files. repo-root.test.ts's census
+ * The literal string ".c64-re-tools" therefore has exactly 9 non-comment
+ * occurrences in this codebase, across 7 files. repo-root.test.ts's census
  * gate reads BOTH the count and this file list straight out of this
  * sentence and the bullet list below -- never duplicated by hand a second
  * time in the test -- and compares both against the real tree, with a
@@ -249,8 +256,6 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  *     G-64-1): that branch is gone, and `parseArgs()` now calls
  *     broker-home.mts's `brokerStateDir()` unconditionally whenever no
  *     explicit `--state-dir` was given, joining no literal of its own.
- *   - ghidra-project.mts -- `GHIDRA_RUNS_HANDLE_TARGET`, the alias handle's
- *     relative symlink target (1)
  *   - host-tool.mts -- `oracle.run`'s scratch-directory join (1), plus
  *     Phase 60 (LOC-01, plan 60-03)'s `HostToolLocator` plumbing:
  *     `locatorFrom()`'s `process.cwd()`-derived fallback (1) and
@@ -268,26 +273,6 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  *     (the same unbuilt-import constraint), so it joins the literal
  *     directly by the same convention as every file above (1)
  *
- * The Ghidra alias handle: a non-dotted sibling of this root
- * (`<repoRoot>/c64-re-tools`, no leading dot), a symlink whose RELATIVE
- * target is this root's own directory name, minted host-side by the broker
- * at startup (vice-broker.mts) and re-asserted, idempotently, as a
- * precondition by ghidra-project.mts's `ensureGhidraRunsHandle()` on every
- * resolve -- refused BY NAME, never repaired, when something unexpected
- * already sits at the handle path. It exists because Ghidra's own
- * project-location refusal binds the ABSOLUTIZED path argument it is
- * handed (`ProjectLocator` calls `java.io.File.getAbsolutePath()`, never
- * `getCanonicalPath()` -- MEASURED from the class's own bytecode -- so it
- * absolutizes a relative argument but does not resolve a symlink), so a
- * tool that refuses a dot-prefixed segment in the path it is HANDED can
- * still be pointed, indirectly, at bytes that live physically inside this
- * one root. The superseded method that produced the original overstated
- * claim was running this project's OWN dot-segment-refusal check
- * (`hasDotPrefixedSegment()`) against a synthetic string -- which observes
- * this project, never Ghidra. See
- * .planning/notes/ghidra-dot-path-check-semantics.md for the full live
- * measurement against real Ghidra 12.1.3.
- *
  * This is a clean break, not a migration: no code path falls back to any of
  * the five previous locations when the new one is absent, and there is no
  * opt-back-in environment variable. A pre-existing tree at one of the old
@@ -297,7 +282,15 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * their respective resolved default, exactly as before; only the DEFAULT
  * moved. */
 export function toolsDir(opts: RepoRootOptions = {}): string {
-  return join(repoRoot(opts), ".c64-re-tools");
+  return toolsDirUnder(repoRoot(opts));
+}
+
+/** The same tool-written root, under an explicit `root` rather than one
+ * found by walking up for `.git` -- for callers (dxa-run.ts, ghidra-run.ts)
+ * that are handed their root. Shares this file's single occurrence of the
+ * directory name. */
+export function toolsDirUnder(root: string): string {
+  return join(root, ".c64-re-tools");
 }
 
 /** The one shared directory name every module in this skill reads/writes
@@ -322,8 +315,18 @@ export function supervisorDir(opts: RepoRootOptions = {}): string {
 // install-resources.ts's own header describes ("Cannot access 'HERE' before
 // initialization") -- install-resources.ts takes the repo root as an
 // argument specifically so it never needs to import this file back.
+//
+// SKIPPED UNDER node_modules: an npm-installed copy (the compiled dist/
+// build) never deploys. The deploy copies the obsolete launcher, and with
+// no project marker above a global install, repoRoot() would resolve inside
+// <prefix>/lib and the deploy would write there. The plugin and a checkout
+// never run from under node_modules, so they still deploy as before.
+function runsUnderNodeModules(dir: string): boolean {
+  return resolve(dir).split(sep).includes("node_modules");
+}
+
 try {
-  ensureResourcesInstalled({ root: repoRoot() });
+  if (!runsUnderNodeModules(HERE)) ensureResourcesInstalled({ root: repoRoot() });
 } catch {
   // ensureResourcesInstalled() already never throws (D-3) -- this catch is
   // belt-and-suspenders against a future change to that contract, not a

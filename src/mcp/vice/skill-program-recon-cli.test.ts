@@ -1,19 +1,19 @@
-// Coverage for src/skills/c64-program-recon/scripts/derive.mjs -- the
+// Coverage for skills/c64-program-recon/scripts/derive.ts -- the
 // c64-program-recon skill's CLI, which derives VIC banking/mode, sprite
 // pointers and reset/IRQ vector state from register values and a RAM image.
 // It has no external dependency (pure arithmetic, no assembler, no
 // emulator), which is what makes it the one script of the three PKG-02
 // subjects whose every verb can be specified exhaustively.
 //
-// derive.mjs's `main(process.argv.slice(2))` call sits unconditionally at
+// derive.ts's `main(process.argv.slice(2))` call sits unconditionally at
 // module scope (no entry-point guard), so importing it would also run it.
 // Every case here is therefore a subprocess: an argument vector of
 // `process.execPath` + [scriptPath, verb, ...flags], never a shell string.
 //
-// This file lives in src/mcp/vice/ -- not next to derive.mjs -- because test
-// discovery here (this package's `npm test` glob and `test-gate.mjs`'s
+// This file lives in src/mcp/vice/ -- not next to derive.ts -- because test
+// discovery here (this package's `npm test` glob and `test-gate.ts`'s
 // enumeration) is a non-recursive listing of ONE directory. A test file
-// under src/skills/c64-program-recon/scripts/ would never be discovered by
+// under skills/c64-program-recon/scripts/ would never be discovered by
 // either gate. The script itself is reached by a relative path computed
 // from this file's own URL, joined outward into the sibling skills tree.
 //
@@ -36,14 +36,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // Two levels up out of src/mcp/vice/, back down into the sibling skills
 // tree -- see this file's own header for why this hop, not a colocated
 // test, is the only route discovery actually exercises.
-const SCRIPT_PATH = join(HERE, "..", "..", "skills", "c64-program-recon", "scripts", "derive.mjs");
+const SCRIPT_PATH = join(HERE, "..", "..", "..", "skills", "c64-program-recon", "scripts", "derive.ts");
 
 const REQUIRED_IMAGE_SIZE = 65536;
 
-test("derive.mjs is resolved at the expected relative path (a wrong path here would silently skip every case below)", () => {
+test("derive.ts is resolved at the expected relative path (a wrong path here would silently skip every case below)", () => {
   assert.ok(
     existsSync(SCRIPT_PATH),
-    `expected derive.mjs at ${SCRIPT_PATH} -- this suite depends on that relative hop staying correct`,
+    `expected derive.ts at ${SCRIPT_PATH} -- this suite depends on that relative hop staying correct`,
   );
 });
 
@@ -65,7 +65,7 @@ function withTempDir<T>(fn: (dir: string) => T): T {
   }
 }
 
-const USAGE_MARKER = "derive.mjs vic";
+const USAGE_MARKER = "derive.ts vic";
 
 // ---------------------------------------------------------------------------
 // Dispatch: no args / --help / -h / unknown verb -- three distinct exit
@@ -98,7 +98,7 @@ test("an unknown verb: prints usage and exits 2 -- a different code from the no-
 
 // ---------------------------------------------------------------------------
 // vic verb -- decode assertions against the script's own usage example,
-// hand-derived from its published bank/mode/charset formulas (derive.mjs's
+// hand-derived from its published bank/mode/charset formulas (derive.ts's
 // bankOf(), modeOf(), the charset/bitmap branch in vic()) and pinned as
 // literals so a formula change fails this test rather than the test
 // following the change.

@@ -112,14 +112,10 @@ import { provenanceForRange, readProvenanceLedger } from "./anno-provenance-ledg
 // preconditions -- non-empty UNKNOWN reasons, agreeing_releases >= 2 for
 // ORIGINAL, and full $0000-$FFFF coverage with no gap or overlap). A TEST
 // importing the skill tree is precedented -- `skill-memory-mapping-cli.test.ts`
-// does exactly this for `c64-memory-mapping`'s own `driver.mjs` -- and tests
+// does exactly this for `c64-memory-mapping`'s own `driver.ts` -- and tests
 // are not in `package.json`'s `files[]`, so the shipped-closure rule this
 // file's own header names is untouched.
-// diff-images.mjs has no declaration file (a plain, unmodified skill script);
-// the single suppression below is scoped to this one import line, never a
-// project-wide relaxation.
-// @ts-expect-error -- diff-images.mjs (a plain skill script, left unmodified) has no .d.mts
-import { renderLedger } from "../../skills/c64-provenance-diff/scripts/diff-images.mjs";
+import { renderLedger } from "../../../skills/c64-provenance-diff/scripts/diff-images.ts";
 import {
   addExcludedRange,
   addScope,
@@ -1533,7 +1529,7 @@ test("FIXTURE INTEGRITY: smc.prg genuinely self-modifies -- an `inc` writes to a
     "smc.prg must contain EXACTLY ONE instruction whose absolute write target is another instruction's immediate operand byte. " +
       "If this is 0 the fixture has stopped self-modifying and every test over it is now testing nothing; if it is more than 1 the " +
       "assertions below no longer name a unique write target. Fix smc.a, then regenerate with " +
-      `\`node fixtures/export-asm/make-export-asm-fixtures.mjs\`.\n  decoded: ${instructions.map((i) => `$${i.address.toString(16)} ${i.mnemonic}`).join(", ")}`,
+      `\`node fixtures/export-asm/make-export-asm-fixtures.ts\`.\n  decoded: ${instructions.map((i) => `$${i.address.toString(16)} ${i.mnemonic}`).join(", ")}`,
   );
 
   const writer = selfModifyingWrites[0]!;
@@ -1561,7 +1557,7 @@ test("REGENERATOR AGREEMENT: re-assembling smc.a reproduces the committed smc.pr
     [...new Uint8Array(readFileSync(outPath))],
     [...new Uint8Array(readFileSync(SMC_PRG_PATH))],
     "smc.a and smc.prg have drifted apart. The committed image is only evidence while it is EXACTLY what its source assembles to; " +
-      "regenerate with `cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.mjs`.",
+      "regenerate with `cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.ts`.",
   );
 });
 
@@ -3790,7 +3786,7 @@ const FILTERED_VERDICT = "CRACKER-PATCH";
 /**
  * The planted range's own text: printable PETSCII (space, digits, and
  * uppercase letters share the same byte values as ASCII in unshifted PETSCII
- * text mode -- `src/skills/c64-petcat/SKILL.md`) reading as crack-credit
+ * text mode -- `skills/c64-petcat/SKILL.md`) reading as crack-credit
  * text -- exactly the shape a plausible heuristic would reach for and drop.
  */
 const PLANTED_TEXT = "CRACKED BY GRP";
@@ -4252,7 +4248,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "real ACME must exit 0 when its cwd is the tree's own directory");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced .prg bytes must be octet-identical to bytes taken from the image");
   },
@@ -4355,7 +4351,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "real ACME must exit 0 assembling the multi-scope-plus-unscoped tree");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
   },
@@ -4866,7 +4862,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "a tree carrying an external_file block must assemble cleanly");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
   },
@@ -5225,7 +5221,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "a forward cross-file reference must assemble at exit 0");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the forward cross-file reference must reassemble byte-identically");
   },
@@ -5246,7 +5242,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "a backward cross-file reference must assemble at exit 0");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the backward cross-file reference must reassemble byte-identically");
   },
@@ -5604,7 +5600,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "a paired-symbol split-address table must assemble cleanly");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
   },
@@ -5628,7 +5624,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "a hi_lo_address paired-symbol table must assemble cleanly");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
   },
@@ -5903,7 +5899,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "the relocated tree must still assemble cleanly");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, afterResult.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the moved image");
     assert.ok(after.storePath.length > 0, "precondition: the 'after' fixture must actually exist");

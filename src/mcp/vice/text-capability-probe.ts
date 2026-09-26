@@ -21,9 +21,8 @@
 //
 // D-42-2 (locked): the cache is IN-PROCESS ONLY, keyed by the backend kind
 // plus a RESOLVED absolute binary path, and the key is never operator-
-// supplied -- it is built from the identity StockDispatchDeps already
-// threads down from the dispatch layer's single resolvedBackend() call
-// (stock-dispatch.ts's own header comment), cross-checked against the
+// supplied -- it is built from the identity StockSessionDeps already
+// threads down from vice-proxy.ts's single resolvedBackend() call, cross-checked against the
 // broker's own hostState() report when the broker reports one. A build
 // capability is a property of a BINARY FILE; a persisted answer would
 // outlive the VICE rebuild that invalidated it, which is worse than no
@@ -192,7 +191,7 @@ const IO_CHIP_DEGRADATION_STRINGS: readonly string[] = Object.freeze(["No detail
  * with `resolved` stating whether that path is a real resolved absolute
  * path (as opposed to a bare configured name like "x64sc" that resolution
  * failed on -- WR-05's own distinction, threaded down unchanged from
- * `StockDispatchDeps.resolvedBinaryPath`/`resolvedBinaryPathIsResolved`). */
+ * `StockSessionDeps.resolvedBinaryPath`/`resolvedBinaryPathIsResolved`). */
 export interface TextCapabilityIdentity {
   readonly backend: LegacyViceBackend;
   readonly binPath: string;

@@ -1,23 +1,22 @@
 #!/usr/bin/env node
 // anno-bank.ts
 //
-// Phase 37, plan 37-06 (AUTO-04/AUTO-05): the processor-port bit decode, the
-// per-range banked-region resolution, and the region-to-map-entry
-// consistency table `anno-join.ts`'s candidate-constraint step calls BEFORE
-// `selectMemmapEntry()` ever runs. This is the phase's highest-risk
-// requirement pair -- both are recorded UNVALIDATED, not narrowed, and a
-// measured survey found no prior art to copy (SVD-Loader, radare2's
-// device-description import, IDA's device definitions all annotate
-// unconditionally, because their domain has no path-dependent address
-// meaning). Resolve bank state BEFORE the address; decline with a reason
-// where the program itself does not determine one.
+// This module holds the processor-port bit decode, the per-range
+// banked-region resolution, and the region-to-map-entry consistency table
+// `anno-join.ts`'s candidate-constraint step calls BEFORE `selectMemmapEntry()`
+// ever runs. Resolving bank state before the address, and declining with a
+// reason rather than guessing when the program itself does not determine
+// one, is the highest-risk annotation behaviour this project ships -- both
+// recorded UNVALIDATED, not narrowed, because a measured survey found no
+// prior art to copy (SVD-Loader, radare2's device-description import, IDA's
+// device definitions all annotate unconditionally, because their domain has
+// no path-dependent address meaning).
 //
-// THIS MODULE NEVER NAMES THE PERSISTENCE DEPENDENCY, NEVER OPENS THE STORE,
-// and NEVER IMPORTS `hostpath.ts`/`containerpath.ts` -- the same posture
-// `memmap-lookup.ts` takes. It takes plain data (a raw `$01` value, a
+// THIS MODULE NEVER NAMES THE PERSISTENCE DEPENDENCY and NEVER OPENS THE
+// STORE -- the same posture `memmap-lookup.ts` takes. It takes plain data (a raw `$01` value, a
 // `MemmapEntry`) and returns plain data.
 //
-// WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: D-37-21's bit arithmetic
+// WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: the bit arithmetic
 // (`decodeBankState`), the not-applicable-outside-the-three-ranges rule
 // (`resolveBankedRegion`), the address-is-bank-conditional-at-all membership
 // test (`isBankConditionalAddress`), and the region-to-map-entry consistency
@@ -25,7 +24,7 @@
 //
 // The REACHING-VALUES SET computation -- which recovered processor-port
 // value(s) reach a given program point, over the recovered const-write facts
-// and the stored cross-reference graph (D-37-24) -- lives in `anno-join.ts`
+// and the stored cross-reference graph -- lives in `anno-join.ts`
 // itself, not here. This module only ever decodes a SINGLE already-resolved
 // value; it has no notion of "which value(s) reach this address" and never
 // will (that is the join's own responsibility, since it alone holds the
@@ -33,8 +32,11 @@
 //
 // WHAT NOT TO DO:
 //   - Never derive "is this region io/basic/kernal/character-rom" from
-//     memmap.json's `desc` field by regex (37-RESEARCH.md Pitfall 2 /
-//     `BANK_CONDITIONAL_RANGES`'s own header comment in `memmap-lookup.ts`).
+//     memmap.json's `desc` field by regex (see `BANK_CONDITIONAL_RANGES`'s own
+//     header comment in `memmap-lookup.ts`: the map carries the bank
+//     condition only as free text in a handful of description fields, with
+//     no structured field marking it, so a regex there is fragile in exactly
+//     the way this file's structured-field match below is not).
 //     `regionAdmitsEntry()` below matches against the STRUCTURED `section`
 //     field (plus one whole-word "RAM" label fallback, since no committed
 //     section names RAM specifically within any of the three ranges) --
@@ -43,20 +45,24 @@
 //     caller (`anno-join.ts`) declines instead; this module only ever
 //     returns a decoded/resolved answer or the explicit "not applicable"
 //     member -- it never invents a fallback of its own.
-//   - Never write the store's reserved `bank` column (D-37-25). This module
-//     does not touch the store at all, so that prohibition is satisfied by
-//     construction here -- restated because this is the plan that would be
-//     tempted.
+//   - Never write the store's reserved `bank` column: this project's own
+//     requirements exclude bank-qualified addressing as a modelled store
+//     feature, and the store's own test asserts every row has a null bank
+//     column with no branch, comparison or arithmetic on it anywhere in the
+//     store module. This module does not touch the store at all, so that
+//     prohibition is satisfied by construction here -- restated because this
+//     is the module that would be tempted.
 
 import { BANK_CONDITIONAL_RANGES } from "./memmap-lookup.ts";
 import type { MemmapEntry } from "./memmap-lookup.ts";
 
 /**
- * D-37-21: what a bank-conditional range currently contains. `not_applicable`
+ * What a bank-conditional range currently contains. `not_applicable`
  * exists so a caller can tell "this address is outside all three
  * bank-conditional ranges" from "the constraint resolved to RAM" -- collapsing
  * the two would make an out-of-range address silently RAM-constrained, which
- * is exactly the confident-wrong-comment failure `AUTO-04` exists to prevent.
+ * is exactly the confident-wrong-comment failure this module's bank
+ * resolution exists to prevent.
  */
 export type BankedRegion = "io_area" | "character_rom" | "ram" | "basic_rom" | "kernal_rom" | "not_applicable";
 
@@ -72,7 +78,7 @@ export interface BankState {
 }
 
 /**
- * D-37-21's bit arithmetic, stated as bit tests rather than left for a reader
+ * The bit arithmetic, stated as bit tests rather than left for a reader
  * to re-derive from `bank.a`'s own inline comment -- which mislabels the
  * all-RAM value's own bit 2 as clear (it is SET; the RAM outcome it states is
  * right anyway, because the RAM case never depends on bit 2). Masks to bits
@@ -104,7 +110,7 @@ export function decodeBankState(value: number): BankState {
  * regardless of the current `$01` value? The join uses this to decide
  * whether the whole reaching-values/decline machinery applies to an address
  * at all -- outside these three ranges, bank state is irrelevant and the
- * candidate set stays unconstrained (D-37-22). */
+ * candidate set stays unconstrained. */
 export function isBankConditionalAddress(address: number): boolean {
   for (const range of BANK_CONDITIONAL_RANGES) {
     if (address >= range.start && address <= range.end) return true;
@@ -113,7 +119,7 @@ export function isBankConditionalAddress(address: number): boolean {
 }
 
 /**
- * D-37-22: resolves a single address against an already-decoded `state`,
+ * Resolves a single address against an already-decoded `state`,
  * returning the NOT-APPLICABLE member for any address outside all three
  * `BANK_CONDITIONAL_RANGES` -- never RAM. The three ranges are disjoint by
  * construction (each a fixed, hand-maintained, non-overlapping span), so the
@@ -130,12 +136,13 @@ export function resolveBankedRegion(address: number, state: BankState): BankedRe
 }
 
 /**
- * The region-to-map-entry consistency table (D-37-22's candidate constraint,
- * T-37-29's mitigation). Matches the STRUCTURED `section` field, never
- * `desc` (Pitfall 2) -- a small, explicit, hand-maintained keyword set per
- * region, cross-checked against the real committed `memmap.json`'s own
- * section vocabulary (37-RESEARCH.md §C; MEASURED this plan against the
- * real file's `$D000-$DFFF` overlap).
+ * The region-to-map-entry consistency table (the candidate constraint used
+ * above, and the reason this consistency check is an explicit region-to-label
+ * mapping rather than a free-form text search). Matches the STRUCTURED
+ * `section` field, never `desc` -- a small, explicit, hand-maintained keyword
+ * set per region, cross-checked against the real committed `memmap.json`'s
+ * own section vocabulary (MEASURED against the real file's `$D000-$DFFF`
+ * overlap).
  *
  * RAM has NO dedicated `section` anywhere in the three bank-conditional
  * ranges -- there is nothing chip-specific to document about plain program
@@ -162,7 +169,7 @@ const RAM_LABEL_WORD = /\bRAM\b/;
  * join only calls this once a real bank-conditional region has been
  * resolved for a specific address. An entry matching NO region member
  * returns `false`, so the caller's candidate-narrowing EXCLUDES it rather
- * than silently admitting it (D-37-22's own prohibition).
+ * than silently admitting it.
  */
 export function regionAdmitsEntry(entry: MemmapEntry, region: Exclude<BankedRegion, "not_applicable">): boolean {
   if (region === "ram") return RAM_LABEL_WORD.test(entry.label);

@@ -49,7 +49,7 @@ import { TextMonitorClient } from "./text-protocol.ts";
 import { ViceError } from "./vice-errors.ts";
 import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-connect.ts";
 import { MonitorOwnershipError, type MonitorClaimChannel } from "./vice-broker-client.ts";
-import { dialMonitorRelay } from "./broker-endpoint.ts";
+import { dialMonitorRelay } from "./broker-endpoint.mts";
 import type { Socket } from "node:net";
 
 // ---------------------------------------------------------------------------

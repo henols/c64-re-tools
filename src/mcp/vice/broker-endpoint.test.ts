@@ -3,7 +3,7 @@
 // Plan 62-01, task 1: the genuine end-to-end case (a real listener, a real
 // dial, a completed handshake), plus the structural assertions that keep
 // this module's own written-down contract honest -- no filesystem access,
-// no import of the legacy discovery-record client, and the two mirrored
+// no import of vice-broker-client.ts, and the two mirrored
 // magic-string literals in byte-identical agreement.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connect, createServer, Socket, type Server } from "node:net";
 
-import { startControlListener, bindControlListener, HELLO_PROTOCOL_MAGIC as SERVER_HELLO_PROTOCOL_MAGIC, newControlToken } from "./broker-control.mts";
+import { startControlListener, bindControlListener, HELLO_PROTOCOL_MAGIC as SERVER_HELLO_PROTOCOL_MAGIC } from "./broker-control.mts";
 import {
   dialBrokerEndpoint,
   classifyHelloReply,
@@ -29,18 +29,18 @@ import {
   type BrokerEndpointConnectFn,
   type DialFailure,
   type DialFileTransferResult,
-} from "./broker-endpoint.ts";
+} from "./broker-endpoint.mts";
 import type { FileTransferOutcome, FileTransferRequest, StartControlListenerOptions } from "./broker-control.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BROKER_ENDPOINT_TS = join(HERE, "broker-endpoint.ts");
+const BROKER_ENDPOINT_TS = join(HERE, "broker-endpoint.mts");
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
 /** Strips `//` line comments and `/* ... *\/` block comments -- the same
- * stripCommentLines() idiom hostpath-consumers.test.ts and
- * tool-location-consumers.test.ts already use for exactly this reason: this
- * module's own header comments NAME the forbidden fs calls and the legacy
- * client module (explaining what NOT to do), so a naive raw-source
+ * stripCommentLines() idiom tool-location-consumers.test.ts already uses
+ * for exactly this reason: this module's own header comments NAME the
+ * forbidden fs calls and vice-broker-client.ts (explaining what NOT to do),
+ * so a naive raw-source
  * substring check would trip on its own prose rather than on real code. */
 function stripCommentLines(src: string): string {
   const out: string[] = [];
@@ -80,14 +80,11 @@ function stripCommentLines(src: string): string {
 // ---------------------------------------------------------------------------
 
 test("dialBrokerEndpoint completes a real handshake end to end against a real listener on an ephemeral port", async () => {
-  const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0, // ephemeral -- never the production port literal
-    token,
     onAcquire: async () => ({ ok: false, reason: "internal" }),
     onRelease: () => {},
-    onRecycle: async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "n/a", reason: "no stub configured" }),
     onStatus: () => [],
     onHostState: () => ({
       pid: process.pid,
@@ -102,7 +99,6 @@ test("dialBrokerEndpoint completes a real handshake end to end against a real li
     onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onOperation: () => ({ ok: false, code: "bad_request" as const }),
-    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
   });
   try {
     const result = await dialBrokerEndpoint({ port: listener.port, candidates: ["127.0.0.1"] });
@@ -130,8 +126,7 @@ test("DIAL_CANDIDATES is exactly the two fixed hosts, loopback first", () => {
 // Plan 64-08 (G-64-1 gap closure, Task 1): resolveEndpointPort() -- the one
 // default-port resolver every fixed-endpoint dial in this module now uses,
 // closing the latent "relay always dials 19510" defect the G-64-1 diagnosis
-// recorded (.planning/debug/vice-proxy-control-token-handshake.md, Evidence
-// 16:42).
+// recorded.
 // ---------------------------------------------------------------------------
 
 test("resolveEndpointPort: absent, empty, non-integer, out-of-range and zero all fall back to 19510", () => {
@@ -161,14 +156,11 @@ test("resolveEndpointPort: defaults to process.env when no env option is supplie
 });
 
 test("dialBrokerEndpoint with no port option reaches a hello-answering listener on the port named by VICE_BROKER_CONTROL_PORT", async () => {
-  const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
     onRelease: () => {},
-    onRecycle: async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "n/a", reason: "n/a" }),
     onStatus: () => [],
     onHostState: () => ({
       pid: process.pid,
@@ -183,7 +175,6 @@ test("dialBrokerEndpoint with no port option reaches a hello-answering listener 
     onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onOperation: () => ({ ok: false, code: "bad_request" as const }),
-    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
   });
   const prev = process.env.VICE_BROKER_CONTROL_PORT;
   try {
@@ -201,24 +192,24 @@ test("dialBrokerEndpoint with no port option reaches a hello-answering listener 
 });
 
 // ---------------------------------------------------------------------------
-// Structural assertions: no filesystem access, no legacy-client import.
+// Structural assertions: no filesystem access, no vice-broker-client import.
 // ---------------------------------------------------------------------------
 
-test("broker-endpoint.ts never touches the filesystem and never imports the legacy discovery-record client", () => {
+test("broker-endpoint.mts never touches the filesystem and never imports vice-broker-client.ts", () => {
   // readFileSync, not a shell grep -- four source files in this tree carry
   // NUL bytes that a shell grep silently skips (see this repo's own
   // documented gotcha); readFileSync with "utf8" never truncates on one.
   // Comment-stripped, because this module's own header comments NAME the
-  // forbidden calls and the legacy module while explaining why they are
+  // forbidden calls and vice-broker-client.ts while explaining why they are
   // forbidden -- a raw substring check would trip on that prose, not on
   // real code.
   const source = stripCommentLines(readFileSync(BROKER_ENDPOINT_TS, "utf8"));
-  for (const forbidden of ["readFileSync(", "existsSync(", "readFile(", "broker.json", "vice-broker-client"]) {
-    assert.ok(!source.includes(forbidden), `broker-endpoint.ts must not contain ${JSON.stringify(forbidden)} outside of comments`);
+  for (const forbidden of ["readFileSync(", "existsSync(", "readFile(", "vice-broker-client"]) {
+    assert.ok(!source.includes(forbidden), `broker-endpoint.mts must not contain ${JSON.stringify(forbidden)} outside of comments`);
   }
 });
 
-test("the mirrored HELLO_PROTOCOL_MAGIC literal in broker-endpoint.ts is byte-identical to broker-control.mts's own definition", () => {
+test("the mirrored HELLO_PROTOCOL_MAGIC literal in broker-endpoint.mts is byte-identical to broker-control.mts's own definition", () => {
   assert.equal(HELLO_PROTOCOL_MAGIC, SERVER_HELLO_PROTOCOL_MAGIC);
 
   // Belt and braces: read both literals directly out of source, not just
@@ -228,7 +219,7 @@ test("the mirrored HELLO_PROTOCOL_MAGIC literal in broker-endpoint.ts is byte-id
   const serverSource = readFileSync(BROKER_CONTROL_MTS, "utf8");
   const clientMatch = clientSource.match(/export const HELLO_PROTOCOL_MAGIC = "([^"]+)"/);
   const serverMatch = serverSource.match(/export const HELLO_PROTOCOL_MAGIC = "([^"]+)"/);
-  assert.ok(clientMatch, "broker-endpoint.ts must export HELLO_PROTOCOL_MAGIC as a string literal");
+  assert.ok(clientMatch, "broker-endpoint.mts must export HELLO_PROTOCOL_MAGIC as a string literal");
   assert.ok(serverMatch, "broker-control.mts must export HELLO_PROTOCOL_MAGIC as a string literal");
   assert.equal(clientMatch![1], serverMatch![1]);
 });
@@ -244,14 +235,11 @@ test("the mirrored HELLO_PROTOCOL_MAGIC literal in broker-endpoint.ts is byte-id
  * every acquire/release/etc callback is a harmless no-op refusal, since no
  * task-2 test exercises the lease-bearing ops. */
 async function startHealthyListener(overrides: { helloVersion?: string } = {}) {
-  const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
     onRelease: () => {},
-    onRecycle: async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "n/a", reason: "n/a" }),
     onStatus: () => [],
     onHostState: () => ({
       pid: process.pid,
@@ -266,10 +254,9 @@ async function startHealthyListener(overrides: { helloVersion?: string } = {}) {
     onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onOperation: () => ({ ok: false, code: "bad_request" as const }),
-    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
     helloVersion: overrides.helloVersion,
   });
-  return { listener, token };
+  return { listener };
 }
 
 /** Binds a real listener, reads back its kernel-chosen port, then closes it
@@ -622,13 +609,14 @@ function makeFailure(overrides: Partial<DialFailure> & { rank: DialFailure["rank
   };
 }
 
-test("BROKER_START_COMMAND is the D-01 npx invocation, one literal with no interpolation", () => {
-  assert.equal(BROKER_START_COMMAND, "npx -y @henols/vice-mcp broker");
+test("BROKER_START_COMMAND names the npm bin and the plugin-root invocation, one literal with no interpolation and no npx", () => {
+  assert.equal(BROKER_START_COMMAND, "vice-mcp broker (npm install) or node <plugin-root>/src/mcp/vice/vice-cli.mjs broker (plugin or checkout)");
+  assert.doesNotMatch(BROKER_START_COMMAND, /npx/);
 });
 
-test("the start-command literal appears in broker-endpoint.ts between 1 and 3 times -- one definition, never a hand-copied second string", () => {
+test("the start-command literal appears in broker-endpoint.mts between 1 and 3 times -- one definition, never a hand-copied second string", () => {
   const source = readFileSync(BROKER_ENDPOINT_TS, "utf8");
-  const count = (source.match(/npx -y @henols\/vice-mcp broker/g) ?? []).length;
+  const count = (source.match(/vice-mcp broker \(npm install\) or node <plugin-root>\/src\/mcp\/vice\/vice-cli\.mjs broker \(plugin or checkout\)/g) ?? []).length;
   assert.ok(count >= 1 && count <= 3, `expected the literal to appear 1-3 times, found ${count}`);
 });
 
@@ -657,7 +645,7 @@ test("rank 3: states the listener is an older broker that must be restarted from
   assert.match(message, /older than v2\.0\.0|older broker|stale/i);
 });
 
-test("rank 4: names both package names, both observed versions, and which side is behind", () => {
+test("rank 4: names the package, both observed versions, and which side is behind", () => {
   const failure = makeFailure({
     rank: 4,
     clientVersion: "5.0.0",
@@ -668,7 +656,7 @@ test("rank 4: names both package names, both observed versions, and which side i
   });
   const message = describeDialFailure(failure);
   assert.ok(message.includes("@henols/vice-mcp"), "must name the server package");
-  assert.ok(message.includes("@henols/c64-re-tools"), "must name the skills/installer package");
+  assert.ok(!message.includes("@henols/c64-re-tools"), "the retired installer package must not be named");
   assert.ok(message.includes("5.0.0"), "must name the client's own observed version");
   assert.ok(message.includes("6.0.0"), "must name the broker's observed version");
 });
@@ -734,15 +722,12 @@ test("all four ranks produce distinct message text", () => {
  * a hand-rolled fixture, for every case except the two load-bearing
  * byte-level ones below (which need to control the exact bytes of a single
  * socket write, something no callback signature can express). */
-async function startTransferCapableListener(onFileTransfer: NonNullable<StartControlListenerOptions["onFileTransfer"]>, sharedToken?: string) {
-  const token = sharedToken ?? newControlToken();
+async function startTransferCapableListener(onFileTransfer: NonNullable<StartControlListenerOptions["onFileTransfer"]>) {
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
     onRelease: () => {},
-    onRecycle: async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "n/a", reason: "n/a" }),
     onStatus: () => [],
     onHostState: () => ({
       pid: process.pid,
@@ -757,10 +742,9 @@ async function startTransferCapableListener(onFileTransfer: NonNullable<StartCon
     onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onOperation: () => ({ ok: false, code: "bad_request" as const }),
-    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
     onFileTransfer,
   });
-  return { listener, token };
+  return { listener };
 }
 
 /** A raw, hand-written fixture (no broker-control.mts involved at all) that
@@ -826,11 +810,10 @@ test("dialFileTransfer: races the same two candidates on the fixed control port,
     socket.write(`${JSON.stringify({ kind: "transfer_payload", byteLength: 0, sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" })}\n`);
     return { ok: true };
   };
-  // A SHARED token: both candidate listeners must accept the SAME dial, and
-  // the race can legitimately settle on either one.
-  const sharedToken = newControlToken();
-  const { listener: a } = await startTransferCapableListener(answerEmptyDownload, sharedToken);
-  const { listener: b } = await startTransferCapableListener(answerEmptyDownload, sharedToken);
+  // Both candidate listeners accept the SAME dial, so the race can
+  // legitimately settle on either one.
+  const { listener: a } = await startTransferCapableListener(answerEmptyDownload);
+  const { listener: b } = await startTransferCapableListener(answerEmptyDownload);
   try {
     const connectFn = makeCandidateConnect({ "cand-a": a.port, "cand-b": b.port });
     const result: DialFileTransferResult = await dialFileTransfer({
@@ -1000,13 +983,11 @@ test("dialFileTransfer: every failure mode resolves rather than rejecting, and t
 });
 
 // ============================================================================
-// Plan 64-09 (G-64-1): the wire proves what the types promise. Plan 64-08
-// moved attach/transfer dispatch ahead of the per-boot control-token gate on
-// the broker side; this plan deleted the client-side credential field these
-// two dials used to write. These three tests capture a REAL request line
-// from a REAL dial and assert its exact key set -- a behavioural observation
-// of the wire, never a scan of source text (D-17, 260914-poo D-1) -- so a
-// later edit that adds a credential key back onto either line goes red here.
+// Plan 64-09 (G-64-1): the wire proves what the types promise. These three
+// tests capture a REAL request line from a REAL dial and assert its exact
+// key set -- a behavioural observation of the wire, never a scan of source
+// text (D-17, 260914-poo D-1) -- so a later edit that adds a credential key
+// onto either line goes red here.
 // ============================================================================
 
 /** A raw, hand-written fixture (no broker-control.mts involved at all) that

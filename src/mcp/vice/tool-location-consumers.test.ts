@@ -10,9 +10,8 @@
 // claim resting on care -- this file is that assertion: after this phase, no
 // production module under src/mcp/vice may name one of the four declared
 // tool-location environment variables, except the one declared exception
-// below. It is the same closed-consumer-set idiom hostpath-consumers.test.ts
-// already established for hostpath.ts's own consumer set (SEAM-06's own
-// header), copied here over a different token set.
+// below. It is a closed-consumer-set assertion over the four variable
+// names.
 //
 // THE ONE DECLARED EXCEPTION (PD-10): acme-gate.ts reads
 // process.env.ACME_BIN directly. It is TEST-ONLY -- its own header says so,
@@ -45,8 +44,8 @@ import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Strips `//` line comments and `/* ... *\/` block comments, returning the
- * comment-stripped source as ONE newline-joined string. Copied VERBATIM from
- * `hostpath-consumers.test.ts` (its own WR-02 fix, 10-REVIEW.md) rather than
+ * comment-stripped source as ONE newline-joined string. The WR-02 fix
+ * (10-REVIEW.md), copied verbatim into its siblings rather than
  * re-derived -- there is exactly one comment stripper in this tree's test
  * suite, not a second copy that can drift from the first. */
 function stripCommentLines(src: string): string {
@@ -85,8 +84,7 @@ function stripCommentLines(src: string): string {
 }
 
 /** The complete top-level module list this repo ships: every `*.ts`/`*.mts`
- * directly under `src/mcp/vice`, excluding `*.test.*` files. Copied VERBATIM
- * from `hostpath-consumers.test.ts`. */
+ * directly under `src/mcp/vice`, excluding `*.test.*` files. */
 function topLevelProductionModules(dir: string = HERE): string[] {
   return readdirSync(dir)
     .filter((name) => /\.(ts|mts)$/.test(name))

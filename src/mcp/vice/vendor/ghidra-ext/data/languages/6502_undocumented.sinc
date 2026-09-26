@@ -2,9 +2,9 @@
 #
 # Phase 36, plan 36-01 (OPC-01, OPC-04). Sourced from
 # docs/undocumented-opcodes-ghidra.md's fenced implementation, with the
-# eight sized-local fixes applied (MEASURED,
-# .planning/phases/36-the-sleigh-language-and-the-ghidra-harness/36-RESEARCH.md
-# "The 8 failing SLEIGH constructors and the verified fix"): a raw token
+# eight sized-local fixes applied (MEASURED
+# during Phase 36's research, which found
+# the 8 failing SLEIGH constructors and verified the fix): a raw token
 # field (imm8/imm16) passed directly as a userop/macro argument, or
 # dereferenced directly, does not resolve its own size in this SLEIGH
 # compiler -- an explicitly sized local introduced first and used in its

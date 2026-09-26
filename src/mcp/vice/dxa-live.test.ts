@@ -4,7 +4,7 @@
 // OPT-IN, MANUAL-ONLY. Drives `dxa-run.ts`'s end-to-end path against a REAL,
 // locally-built vendored `dxa` binary (`vendor/dxa/dxa`) -- the one path
 // this repository's automated suite (`npm run test:automated`) never
-// exercises, because no CI runner has a built `dxa` (test-gate.mjs's own
+// exercises, because no CI runner has a built `dxa` (test-gate.ts's own
 // header). This file BUILDS NOTHING ITSELF: it requires the vendored binary
 // to already exist (`bash vendor/dxa/build.bash build`) and skips with a
 // named reason otherwise -- proving the WHOLE stack (fixture -> host-tool
@@ -15,7 +15,7 @@
 // CI has no built dxa binary. SKIP_REASON is computed once, and EVERY test
 // in this file passes it through node:test's own `{ skip }` option -- never
 // a hand-rolled early return, which would report a false PASS rather than a
-// SKIP. It is registered in test-gate.mjs's MANUAL_ONLY_TESTS (the ONE list
+// SKIP. It is registered in test-gate.ts's MANUAL_ONLY_TESTS (the ONE list
 // -- see that file's own header) as the TENTH manual-only file, so
 // `npm run test:automated` never runs it either.
 //
@@ -37,7 +37,8 @@
 // content this repository does not ship. It is gated behind its OWN
 // opt-in, VICE_LIVE_DXA_CORPUS=1, in addition to VICE_LIVE_DXA=1 -- see
 // CORPUS_SKIP_REASON.
-import { test } from "node:test";
+import { test, before, after } from "node:test";
+import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -66,7 +67,7 @@ const DXA_BIN_PATH = join(HERE, "vendor", "dxa", "dxa");
 const hostToolModule = (await import(new URL("./resources/host-tool.mjs", import.meta.url).href)) as unknown as {
   runHostTool: (
     raw: unknown,
-    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; outputDir?: string },
   ) => Promise<
     | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
     | { ok: false; message: string }
@@ -85,13 +86,40 @@ const SKIP_REASON: string | false = process.env.VICE_LIVE_DXA !== "1"
       `"bash vendor/dxa/build.bash build" first.`
     : false;
 
+// This suite reaches the tool only through the broker's fixed endpoint, so it
+// runs against its OWN harness broker (never a machine broker), started once
+// when the suite is enabled; the in-process client dials it through
+// VICE_BROKER_CONTROL_PORT.
+let harnessBroker: HarnessBroker | null = null;
+let harnessProjectRoot: string | null = null;
+let savedControlPort: string | undefined;
+before(async () => {
+  if (SKIP_REASON) return;
+  // Its own project root, so nothing the broker writes lands in this checkout.
+  harnessProjectRoot = mkdtempSync(join(tmpdir(), "live-broker-project-"));
+  harnessBroker = await startHarnessBroker({ repoRoot: harnessProjectRoot });
+  savedControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(harnessBroker.port);
+});
+/** Where this suite's downloads land -- inside the harness project root,
+ * never this checkout. */
+function liveToolsRoot(): string | undefined {
+  return harnessProjectRoot ? join(harnessProjectRoot, ".c64-re-tools") : undefined;
+}
+after(async () => {
+  if (savedControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+  else process.env.VICE_BROKER_CONTROL_PORT = savedControlPort;
+  await harnessBroker?.stop();
+  if (harnessProjectRoot) rmSync(harnessProjectRoot, { recursive: true, force: true });
+});
+
 test(
   "dxa-live END TO END: runDxaDisassemble against fixtures/dxa/tracer.prg produces the MEASURED byte-level code/data map",
   { skip: SKIP_REASON },
   async () => {
     // HERE (this file's own directory, src/mcp/vice/) is passed explicitly
     // as repoRoot -- the fixture and the vendored binary both live directly
-    // under it. The DEFAULT ladder dxa-run.ts/host-tool-client.ts fall back
+    // under it. The DEFAULT ladder dxa-run.ts falls back
     // to (repoRoot({ from: HERE }), repo-root.ts) walks up to the whole git
     // checkout's top level, which is the right default for a CONSUMING
     // project but not for this repository's own fixtures.
@@ -100,7 +128,7 @@ test(
     try {
       const result = await runDxaDisassemble(
         { image: "fixtures/dxa/tracer.prg", imageKind: "prg", entrypointsPath: "fixtures/dxa/tracer.entrypoints" },
-        { repoRoot: root },
+        { toolsRoot: liveToolsRoot(), repoRoot: root },
       );
 
       // The four MEASURED literals (fixtures/dxa/README.md's own recorded
@@ -140,7 +168,7 @@ test(
       // (the entry point's own three-instruction body) as code.
       const withoutRange = await runDxaDisassemble(
         { image: "fixtures/dxa/tracer.prg", imageKind: "prg", entrypointsPath: "fixtures/dxa/tracer.entrypoints" },
-        { repoRoot: root },
+        { toolsRoot: liveToolsRoot(), repoRoot: root },
       );
       assert.equal(withoutRange.map.codeBytes, 6, "without a known-data range, dxa classifies $0810-$0815 as code");
       assert.equal(withoutRange.map.dataBytes, 15, "without a known-data range, data bytes are $0801-$080f");
@@ -155,7 +183,7 @@ test(
           entrypointsPath: "fixtures/dxa/tracer.entrypoints",
           knownDataRows: [{ start: 0x0810, endInclusive: 0x0815, dataType: "byte" }],
         },
-        { repoRoot: root },
+        { toolsRoot: liveToolsRoot(), repoRoot: root },
       );
       assert.equal(withRange.map.codeBytes, 0, "the named range's six bytes no longer classify as code");
       assert.equal(withRange.map.dataBytes, 21, "all 21 accounted bytes now classify as data");
@@ -194,7 +222,7 @@ test(
       // listing satisfying that exact one-byte window -- this case is about
       // the CONSTRUCTED REQUEST, never about the parsed map, so no real
       // fixture bytes are needed here.
-      { repoRoot: HERE, run, imageBytes: new Uint8Array([0x01, 0x08, 0x00]), listingText: "0801 00 \t.byt $00\n" },
+      { toolsRoot: liveToolsRoot(), repoRoot: HERE, run, imageBytes: new Uint8Array([0x01, 0x08, 0x00]), listingText: "0801 00 \t.byt $00\n" },
     );
 
     assert.ok(capturedArgs !== undefined, "the injected run() must have been called");
@@ -234,7 +262,7 @@ test(
       image[65535] = 0xeb;
       writeFileSync(join(scratch, "boundary.bin"), image);
 
-      const result = await runDxaDisassemble({ image: "boundary.bin", imageKind: "flat64k" }, { repoRoot: scratch });
+      const result = await runDxaDisassemble({ image: "boundary.bin", imageKind: "flat64k" }, { toolsRoot: liveToolsRoot(), repoRoot: scratch });
 
       assert.equal(result.map.covered.size, 65536, "the full [0, 65536) window is accounted for despite the over-read");
       assert.ok(result.outOfWindow.length > 0, "the top-of-memory over-read line must be REPORTED, never silently dropped");
@@ -264,15 +292,8 @@ test(
 // failure. `evidence/35-dxa03-real-image.md` records the release identity,
 // the extracted entry and the chosen range's provenance in full; this file
 // only asserts the exclusion, relatively, from dxa's own classification.
-const CORPUS_PATH = join(
-  repoRoot({ from: HERE }),
-  ".planning",
-  "phases",
-  "23-the-real-release-gate-go-degrade-no-go",
-  "evidence",
-  "corpus",
-  "danish.d64",
-);
+/** The corpus image, gitignored under the repository root's `corpus/`. */
+const CORPUS_PATH = join(repoRoot({ from: HERE }), "corpus", "danish.d64");
 
 /** Gated behind BOTH VICE_LIVE_DXA=1 (this file's own opt-in, above) AND its
  * OWN VICE_LIVE_DXA_CORPUS=1 -- the corpus image is gitignored (D-04) and
@@ -286,14 +307,14 @@ const CORPUS_SKIP_REASON: string | false =
       ? "dxa-live.test.ts's corpus case is opt-in and default-skipped -- set VICE_LIVE_DXA_CORPUS=1 (in addition to VICE_LIVE_DXA=1) to run it."
       : !existsSync(CORPUS_PATH)
         ? `VICE_LIVE_DXA_CORPUS=1 but the corpus image does not exist at ${CORPUS_PATH} -- this repository never commits it (D-04, ` +
-          `.planning/phases/23-.../evidence/README.md convention 10); obtain the Phase 23 corpus release separately.`
+          `gitignored); obtain the corpus release separately and place it there.`
         : false;
 
 /** The smallest common ancestor directory of two absolute paths -- computed,
  * never a fixed guess, so the seam request's `repoRoot` for THIS call is
  * always exactly big enough to contain both the corpus image and the
- * scratch output directory, and no bigger. Mirrors `c1541.mjs`'s own
- * `commonAncestorDir()` (`src/skills/c64-disk-access/scripts/c1541.mjs`),
+ * scratch output directory, and no bigger. Mirrors `c1541.ts`'s own
+ * `commonAncestorDir()` (`skills/c64-disk-access/scripts/c1541.ts`),
  * duplicated here rather than imported -- this file must never reach into a
  * skill script (D-36-12's own container/host-side split; a skill script
  * additionally ships in the OTHER npm package). Duplicated a further two
@@ -327,9 +348,9 @@ async function extractCorpusProgram(): Promise<Uint8Array> {
   const scratch = mkdtempSync(join(tmpdir(), "dxa-live-corpus-dir-"));
   try {
     const root = commonAncestorDir(dirname(CORPUS_PATH), scratch);
-    const baseArgs = { image: toRel(root, CORPUS_PATH), outDir: toRel(root, scratch) };
+    const baseArgs = { image: toRel(root, CORPUS_PATH) };
 
-    const dirResp = await runHostTool({ tool: "c1541.dir", args: baseArgs }, { repoRoot: root });
+    const dirResp = await runHostTool({ tool: "c1541.dir", args: baseArgs }, { repoRoot: root, outputDir: scratch });
     if (!dirResp.ok) throw new Error(`dxa-live CORPUS: c1541.dir refused: ${dirResp.message}`);
     const listingPath = dirResp.results[0]?.path;
     if (!listingPath) throw new Error("dxa-live CORPUS: c1541.dir reported no listing output");
@@ -338,7 +359,7 @@ async function extractCorpusProgram(): Promise<Uint8Array> {
     if (!entryMatch) throw new Error("dxa-live CORPUS: the corpus image's directory listing has no entries");
     const entryName = entryMatch[1]!.replace(/\s+$/, "");
 
-    const readResp = await runHostTool({ tool: "c1541.read", args: { ...baseArgs, name: entryName } }, { repoRoot: root });
+    const readResp = await runHostTool({ tool: "c1541.read", args: { ...baseArgs, name: entryName } }, { repoRoot: root, outputDir: scratch });
     if (!readResp.ok) throw new Error(`dxa-live CORPUS: c1541.read refused: ${readResp.message}`);
     const readPath = readResp.results[0]?.path;
     if (!readPath) throw new Error("dxa-live CORPUS: c1541.read reported no output file");
@@ -370,7 +391,7 @@ test(
 
       const withoutRange = await runDxaDisassemble(
         { image: "release.prg", imageKind: "prg", entrypointsPath: "release.entrypoints" },
-        { repoRoot: scratch },
+        { toolsRoot: liveToolsRoot(), repoRoot: scratch },
       );
       for (let addr = RANGE_START; addr <= RANGE_END; addr++) {
         assert.ok(withoutRange.map.code.has(addr), `without a known-data range, dxa classifies 0x${addr.toString(16)} as code`);
@@ -383,7 +404,7 @@ test(
           entrypointsPath: "release.entrypoints",
           knownDataRows: [{ start: RANGE_START, endInclusive: RANGE_END, dataType: "byte" }],
         },
-        { repoRoot: scratch },
+        { toolsRoot: liveToolsRoot(), repoRoot: scratch },
       );
       for (let addr = RANGE_START; addr <= RANGE_END; addr++) {
         assert.ok(!withRange.map.code.has(addr), `with the known-data range, 0x${addr.toString(16)} no longer classifies as code`);

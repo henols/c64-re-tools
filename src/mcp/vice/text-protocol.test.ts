@@ -43,14 +43,8 @@ import {
   PROMPT_RE,
   TEXT_COMMAND_ALLOWLIST,
   TEXT_COMMAND_PARAM_SPECS,
-  HAZARD_SUBJECT_PRG_PATH,
-  HAZARD_SUBJECT_IDS,
-  HAZARD_SUBJECT_PRG_BASENAMES,
-  HAZARD_SUBJECT_PRG_RELPATHS,
-  hazardSubjectPrgPath,
-  hazardSubjectLoadVerb,
-  isHazardSubjectId,
   isAllowlistedTextCommand,
+  buildStagedLoadCommand,
   buildTextCommand,
   isDialableTextCommandForVerb,
   TextFramingError,
@@ -121,130 +115,30 @@ test("isAllowlistedTextCommand: accepts every TEXT_COMMAND_ALLOWLIST entry and r
   for (const cmd of TEXT_COMMAND_ALLOWLIST) {
     assert.ok(isAllowlistedTextCommand(cmd), `expected ${JSON.stringify(cmd)} to be allowlisted`);
   }
-  // Narrowed, not deleted (plan 50-04, 2026-09-15, developer decision
-  // "route-d": widen the allowlist for `load`, recorded in
-  // .planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md).
-  // An ARBITRARY load command, with a caller-chosen filename, must still
-  // never be allowlisted -- this is exactly what the string below is: a
-  // *different* file ("foo") and a *different* device (8) than the one
-  // narrow, fixed `load "<HAZARD_SUBJECT_PRG_PATH>"` verb this project
-  // deliberately added to TEXT_COMMAND_PARAM_SPECS (see that entry's own
-  // comment). Only that one reviewed verb, with its own bounded device
-  // parameter, is dialable -- proven by the companion positive assertion
-  // immediately below.
-  assert.ok(!isAllowlistedTextCommand("load \"foo\" 8 1"), "an arbitrary load command naming a different, caller-chosen file must never be allowlisted");
-  assert.ok(!isAllowlistedTextCommand(`load "${HAZARD_SUBJECT_PRG_PATH}" 8 1`), "even the reviewed fixture path is refused with a stray extra address argument the spec does not offer");
   assert.ok(!isAllowlistedTextCommand("device c"), "the colon is required -- device c (no colon) is a different, non-allowlisted string");
-
-  // Positive control (plan 50-04): the ONE narrow load verb this project
-  // did widen for IS dialable, with its own bounded device parameter --
-  // proving the refusal above is a real refusal of a DIFFERENT string, not
-  // a refusal of "load" as a substring.
-  const widenedLoad = buildTextCommand(`load "${HAZARD_SUBJECT_PRG_PATH}"`, 0);
-  assert.ok(widenedLoad.ok, "the reviewed load verb with device 0 must build");
-  assert.ok(widenedLoad.ok && isAllowlistedTextCommand(widenedLoad.command), "the reviewed load verb's own canonical rendering must be allowlisted");
-
-  // NARROWED AGAIN, not deleted (plan 50-05): the single frozen `load` verb
-  // became one frozen verb per member of the closed
-  // HAZARD_SUBJECT_PRG_BASENAMES table, because the red control had to load
-  // a DIFFERENT committed subject. Growing the set is only acceptable while
-  // the set stays CLOSED, so that is what is asserted here -- both
-  // directions, in the same test.
-  for (const id of HAZARD_SUBJECT_IDS) {
-    const built = buildTextCommand(hazardSubjectLoadVerb(id), 0);
-    assert.ok(built.ok, `the reviewed load verb for subject ${JSON.stringify(id)} must build`);
-    assert.ok(
-      built.ok && isAllowlistedTextCommand(built.command),
-      `subject ${JSON.stringify(id)}'s own canonical rendering must be allowlisted`,
-    );
-  }
-
-  // THE CLOSED-SET PROOF. `hazard-subject-misaligned.prg` is a real,
-  // committed fixture sitting in the very same directory as all three
-  // dialable subjects -- and it is deliberately NOT in the table, because
-  // nothing loads it into a running emulator. If the widening had drifted
-  // into "any file under fixtures/hazard-subject", this assertion is what
-  // fails. A directory is not the boundary; the reviewed table is.
-  const misalignedPath = HAZARD_SUBJECT_PRG_PATH.replace(/hazard-subject\.prg$/, "hazard-subject-misaligned.prg");
-  assert.notEqual(misalignedPath, HAZARD_SUBJECT_PRG_PATH, "the misaligned path must really differ from the original's");
-  assert.ok(
-    !isAllowlistedTextCommand(`load "${misalignedPath}" 0`),
-    "a committed fixture the closed table does not name must never be dialable, even from the same directory",
-  );
 });
 
-test("HAZARD_SUBJECT_PRG_RELPATHS (plan 50-05, rows generalised plan 50-06): the loadable subject set is closed, every member resolves to a real file on disk, and only a table id passes the membership test", () => {
-  // Every id resolves to a file that actually exists. A row naming a path
-  // that is not there would refuse only at load time, inside the emulator,
-  // where the failure reads as an emulator problem rather than a table typo.
-  for (const id of HAZARD_SUBJECT_IDS) {
-    const path = hazardSubjectPrgPath(id);
-    assert.ok(existsSync(path), `subject ${JSON.stringify(id)} must resolve to a real file on disk (${path})`);
-    assert.ok(path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path), `subject ${JSON.stringify(id)}'s path must be absolute`);
-    assert.ok(path.endsWith(HAZARD_SUBJECT_PRG_BASENAMES[id]), "the resolved path must end in the table's own derived basename");
+/** VICE's host-file load verbs: `load`, `bload` and the `l` alias. */
+const LOAD_VERB_RE = /^\s*(load|bload|l)\b/;
+
+test("the only dialable `load` is a broker-staged file: no allowlist or spec entry loads, and an arbitrary path is refused", () => {
+  // vice_program_load streams the file to the broker and loads the staged
+  // copy with VICE's own `load`. A caller's path must never reach it.
+  const allDialableVerbStrings = [...TEXT_COMMAND_ALLOWLIST, ...Object.keys(TEXT_COMMAND_PARAM_SPECS)];
+  for (const cmd of allDialableVerbStrings) {
+    assert.doesNotMatch(cmd, LOAD_VERB_RE, `${JSON.stringify(cmd)} must not be a host-file load verb`);
   }
-
-  // THE ROW SHAPE, pinned (plan 50-06). A row is now a whole repo-relative
-  // path rather than a basename joined onto one fixed directory, because
-  // plan 50-06's rebuild `.prg` is a build artifact under the phase evidence
-  // directory rather than a committed fixture. That generalisation is only
-  // safe while every segment stays a REVIEWED LITERAL that cannot climb out
-  // of the repository, so that is asserted here rather than assumed: no
-  // empty segment, no `.` or `..`, no separator inside a segment, and no
-  // absolute segment. A caller supplies none of this -- the whole table is
-  // spelled in text-protocol.ts -- but a future editor adding a row is who
-  // this assertion is for.
-  for (const id of HAZARD_SUBJECT_IDS) {
-    const segments = HAZARD_SUBJECT_PRG_RELPATHS[id];
-    assert.ok(Array.isArray(segments) && segments.length > 0, `subject ${JSON.stringify(id)} must carry a non-empty segment list`);
-    assert.ok(Object.isFrozen(segments), `subject ${JSON.stringify(id)}'s segment list must be frozen`);
-    for (const segment of segments) {
-      assert.equal(typeof segment, "string", `every segment of ${JSON.stringify(id)} must be a string`);
-      assert.notEqual(segment, "", `no segment of ${JSON.stringify(id)} may be empty`);
-      assert.notEqual(segment, ".", `no segment of ${JSON.stringify(id)} may be "."`);
-      assert.notEqual(segment, "..", `no segment of ${JSON.stringify(id)} may be ".." -- a row must never climb out of the repository`);
-      assert.ok(!segment.includes("/") && !segment.includes("\\"), `no segment of ${JSON.stringify(id)} may carry a path separator (${segment})`);
-    }
+  for (const cmd of ['load "foo" 0', 'load "foo" 8', 'load "/tmp/x.prg" 0', `load "/s/${"a".repeat(32)}" 8`, `load "/s/${"A".repeat(32)}" 0`, `load "/s/\"/${"a".repeat(32)}" 0`, `bload "/s/${"a".repeat(32)}" 0`]) {
+    assert.ok(!isAllowlistedTextCommand(cmd), `${JSON.stringify(cmd)} must never be allowlisted`);
   }
-  // The derived basename table is derived, not spelled twice.
-  assert.deepEqual(
-    Object.keys(HAZARD_SUBJECT_PRG_BASENAMES).sort(),
-    [...HAZARD_SUBJECT_IDS].sort(),
-    "the derived basename table must carry exactly the source table's own ids",
-  );
-
-  // The rebuild row is the one member that is NOT under the fixture
-  // directory, and that is the whole reason the rows were generalised --
-  // asserted rather than left as prose, so a later edit that quietly moves
-  // it back into fixtures/ fails here instead of silently narrowing the
-  // table's reach.
-  assert.ok(
-    hazardSubjectPrgPath("rebuild").includes(join(".planning", "phases", "50-equivalence-and-modifiability", "evidence")),
-    "the rebuild subject must resolve under the phase evidence directory, not the fixture directory",
-  );
-  assert.ok(
-    hazardSubjectPrgPath("original").includes(join("src", "mcp", "vice", "fixtures", "hazard-subject")),
-    "the original subject must still resolve under the committed fixture directory",
-  );
-
-  // The membership test admits exactly the table's own keys, and nothing
-  // reachable through the prototype chain -- the reason it is written
-  // against Object.keys rather than a property lookup.
-  for (const id of HAZARD_SUBJECT_IDS) assert.ok(isHazardSubjectId(id));
-  for (const notAnId of ["misaligned", "constructor", "__proto__", "toString", "", "ORIGINAL", 0, null, undefined, {}]) {
-    assert.equal(isHazardSubjectId(notAnId), false, `${JSON.stringify(notAnId)} must not pass as a subject id`);
-  }
-
-  // One spec entry per subject, and no `load` spec that is not one of them.
-  const loadVerbs = Object.keys(TEXT_COMMAND_PARAM_SPECS).filter((verb) => verb.startsWith("load "));
-  assert.deepEqual(
-    [...loadVerbs].sort(),
-    HAZARD_SUBJECT_IDS.map((id) => hazardSubjectLoadVerb(id)).sort(),
-    "the dialable `load` verbs must be exactly the closed table's members -- no more, no fewer",
-  );
+  const built = buildTextCommand('load "foo"', 0);
+  assert.equal(built.ok, false, "buildTextCommand must refuse a load verb -- no spec entry exists for one");
+  // Planted violation: the same predicate does fire on a load verb, so the
+  // loop above cannot pass vacuously.
+  assert.match('load "foo"', LOAD_VERB_RE);
 });
 
-test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the eleven named verbs, and every allowlisted or parameterized verb (including the plan 50-04 `load` widening) still refuses a file-WRITING monitor verb (T-41-02)", () => {
+test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the eleven named verbs, and every allowlisted or parameterized verb still refuses a file-WRITING monitor verb (T-41-02)", () => {
   // Widened to ten in plan 42-09 (a conscious, measured widening, not a
   // speculative one, per this constant's own header comment): `prof on`/
   // `prof off` were added so the live opt-in suite can toggle VICE's own
@@ -258,31 +152,12 @@ test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the eleven named ver
   // nothing. The file-writing sibling `memmapsave` was considered and
   // rejected -- it touches a host file and this test's own save regex
   // below refuses it by name.
-  //
-  // Plan 50-04 (2026-09-15) narrows the RULE this test enforces, not just
-  // its regex: the invariant was never "no `load` or `save` anywhere", it
-  // is "no verb that WRITES a host file". `load` READS a host file and was
-  // deliberately, narrowly widened into TEXT_COMMAND_PARAM_SPECS (never
-  // into TEXT_COMMAND_ALLOWLIST itself -- see that entry's own comment for
-  // why). TEXT_COMMAND_ALLOWLIST therefore stays exactly these eleven
-  // entries, unchanged; what changes here is that the save-refusal check
-  // below now also covers every TEXT_COMMAND_PARAM_SPECS key, so the
-  // widening's own new entry is exercised by this test too, not merely
-  // left unvisited because it lives in a different table.
   const expected = ["device c:", "warp on", "warp off", "memmapshow", "prof flat", "chis", "bt", "io", "prof on", "prof off", "memmapzap"];
   assert.deepEqual([...TEXT_COMMAND_ALLOWLIST].sort(), [...expected].sort());
   const allDialableVerbStrings = [...TEXT_COMMAND_ALLOWLIST, ...Object.keys(TEXT_COMMAND_PARAM_SPECS)];
   for (const cmd of allDialableVerbStrings) {
     assert.doesNotMatch(cmd, /\bsave\b/, `${JSON.stringify(cmd)} must never be a file-WRITING verb`);
   }
-  // The load widening is real, not vacuous: prove it is actually present
-  // among the dialable verb strings above (a hypothetical revert of the
-  // TEXT_COMMAND_PARAM_SPECS entry would still pass every check above it,
-  // since removing a key can never make it match /\bsave\b/).
-  assert.ok(
-    allDialableVerbStrings.some((cmd) => /\bload\b/.test(cmd)),
-    "expected the plan 50-04 `load` widening to be present among the dialable verb strings",
-  );
 });
 
 // ---------------------------------------------------------------------------
@@ -306,32 +181,6 @@ test("buildTextCommand: the three canonical renderings match the exact command s
   const ioResult = buildTextCommand("io", 53280); // 53280 == 0xd020
   assert.equal(ioResult.ok, true);
   assert.equal(ioResult.ok && ioResult.command, io.provenance.command);
-});
-
-test("buildTextCommand [load, plan 50-04]: renders the exact command form VICE's own upstream grammar documents for device 0, host-filesystem read", () => {
-  // Unlike the three fixtures above (captured on a real wire against a
-  // genuinely running stock instance), this widening was authored WITHOUT a
-  // live capture (the developer's decision explicitly widens the allowlist
-  // ahead of any live proof -- LOAD-ROUTE.md records that). So this
-  // assertion is sourced from VICE's own committed upstream source instead
-  // of a fixtures/textmon/*.json capture: `doc/vice.texi` ("load
-  // \"<filename>\" <device> [<address>]" / "If device is 0, the file is
-  // read from the file system") and `src/monitor/mon_parse.y`'s
-  // `disk_rules: CMD_LOAD filename device_num opt_address` grammar rule,
-  // both read directly from a vendored VICE 3.8 checkout this session. The
-  // live task that actually dials this against a real emulator (plan
-  // 50-04's Task 2, out of this executor's scope) is what turns this from
-  // "matches the documented grammar" into "matches a captured fixture",
-  // exactly like the other three entries once were before their own first
-  // live capture.
-  const built = buildTextCommand(`load "${HAZARD_SUBJECT_PRG_PATH}"`, 0);
-  assert.equal(built.ok, true);
-  assert.equal(built.ok && built.command, `load "${HAZARD_SUBJECT_PRG_PATH}" 0`);
-  // The path itself must be absolute -- never a bare repo-relative string
-  // (see HAZARD_SUBJECT_PRG_PATH's own comment for why: broker-launch.mts
-  // spawns x64sc with no explicit cwd).
-  assert.ok(HAZARD_SUBJECT_PRG_PATH.startsWith("/") || /^[A-Za-z]:[\\/]/.test(HAZARD_SUBJECT_PRG_PATH), "HAZARD_SUBJECT_PRG_PATH must be absolute");
-  assert.ok(HAZARD_SUBJECT_PRG_PATH.endsWith(join("src", "mcp", "vice", "fixtures", "hazard-subject", "hazard-subject.prg")));
 });
 
 test("buildTextCommand: refuses a non-integer, a negative, a NaN, an Infinity, a numeric string, and an out-of-range value -- each naming the verb and the accepted range", () => {
@@ -365,10 +214,6 @@ test("isDialableTextCommandForVerb / isAllowlistedTextCommand: accept every cano
     ["chis", 4],
     ["prof flat", 5],
     ["io", 53280],
-    [`load "${HAZARD_SUBJECT_PRG_PATH}"`, 0], // plan 50-04
-    [hazardSubjectLoadVerb("regressed"), 0], // plan 50-05
-    [hazardSubjectLoadVerb("modified"), 0], // plan 50-05
-    [hazardSubjectLoadVerb("rebuild"), 0], // plan 50-06
   ];
   for (const [verb, value] of cases) {
     const built = buildTextCommand(verb, value);
@@ -1069,4 +914,21 @@ test("this file's own fixture directory resolves via TEXTMON_FIXTURE_DIR and eve
     const fixture = loadTextFixture(c);
     assert.ok(fixture.buffer.length >= 0);
   }
+});
+
+test("buildStagedLoadCommand: builds VICE's load for a broker-staged file, with an optional address, and refuses anything else", () => {
+  const handle = "0123456789abcdef0123456789abcdef";
+  const staged = `/home/u/.c64-re-tools/staging/grant-1/${handle}`;
+  const plain = buildStagedLoadCommand(staged, handle);
+  assert.ok(plain.ok && plain.command === `load "${staged}" 0`);
+  assert.ok(plain.ok && isAllowlistedTextCommand(plain.command));
+  const withAddress = buildStagedLoadCommand(staged, handle, 0xc000);
+  assert.ok(withAddress.ok && withAddress.command === `load "${staged}" 0 $c000`);
+  assert.ok(withAddress.ok && isAllowlistedTextCommand(withAddress.command));
+
+  assert.equal(buildStagedLoadCommand(`/home/u/other/${"f".repeat(32)}`, handle).ok, false, "the name must end in the handle it was staged under");
+  assert.equal(buildStagedLoadCommand(`/home/u/"x/${handle}`, handle).ok, false, "a quote in the name is refused");
+  assert.equal(buildStagedLoadCommand(`relative/${handle}`, handle).ok, false, "a relative name is refused");
+  assert.equal(buildStagedLoadCommand(staged, "not-a-handle").ok, false);
+  assert.equal(buildStagedLoadCommand(staged, handle, 0x10000).ok, false);
 });

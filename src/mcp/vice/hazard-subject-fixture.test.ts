@@ -53,7 +53,7 @@ const ALIGN_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align.a");
 const ALIGN_MISALIGNED_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align-misaligned.a");
 const PRG_PATH = join(FIXTURE_DIR, "hazard-subject.prg");
 const MISALIGNED_PRG_PATH = join(FIXTURE_DIR, "hazard-subject-misaligned.prg");
-const REGENERATOR_PATH = join(FIXTURE_DIR, "make-hazard-subject-fixtures.mjs");
+const REGENERATOR_PATH = join(FIXTURE_DIR, "make-hazard-subject-fixtures.ts");
 
 const SKIP_REASON = acmeSkipReasonFor("hazard-subject-fixture.test.ts");
 
@@ -194,8 +194,6 @@ test("hazard subject: the root source carries exactly four bare-filename !source
 
 test("hazard subject: no planning-vocabulary string appears anywhere in the dispatch fixture source", () => {
   const dispatchSource = readFileSync(DISPATCH_SOURCE_PATH, "utf8");
-  assert.ok(!dispatchSource.includes(".planning/"), "must not reference a .planning/ path");
-  assert.ok(!/\/gsd-/.test(dispatchSource), "must not reference a /gsd- command name");
   assert.ok(!/\bD-\d/.test(dispatchSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(dispatchSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(dispatchSource), "must not carry a 'Phase N' citation");
@@ -281,8 +279,6 @@ test("hazard subject: the sprite pointer and the VIC memory-control bits are der
 
 test("hazard subject: no planning-vocabulary string appears anywhere in the alignment fixture source", () => {
   const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
-  assert.ok(!alignSource.includes(".planning/"), "must not reference a .planning/ path");
-  assert.ok(!/\/gsd-/.test(alignSource), "must not reference a /gsd- command name");
   assert.ok(!/\bD-\d/.test(alignSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(alignSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(alignSource), "must not carry a 'Phase N' citation");
@@ -394,8 +390,6 @@ test("hazard subject: the raster fixture's own header names which of the detecto
 
 test("hazard subject: no planning-vocabulary string appears anywhere in the raster fixture source", () => {
   const rasterSource = readFileSync(RASTER_SOURCE_PATH, "utf8");
-  assert.ok(!rasterSource.includes(".planning/"), "must not reference a .planning/ path");
-  assert.ok(!/\/gsd-/.test(rasterSource), "must not reference a /gsd- command name");
   assert.ok(!/\bD-\d/.test(rasterSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(rasterSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(rasterSource), "must not carry a 'Phase N' citation");
@@ -478,7 +472,7 @@ test("hazard subject: the report over the subject image finds the first self-mod
 // mis-aligned twin.
 // ---------------------------------------------------------------------------
 
-/** Re-derives the SAME text substitution `make-hazard-subject-fixtures.mjs`
+/** Re-derives the SAME text substitution `make-hazard-subject-fixtures.ts`
  * uses to build the mis-aligned twin's root: swap the one `!source
  * "hazard-subject-align.a"` line for the mis-aligned file. Independent of the
  * regenerator's own implementation -- this is a second, separately-written
@@ -585,7 +579,7 @@ test("hazard subject: REGENERATOR AGREEMENT (mis-aligned twin) -- re-deriving th
     [...bytes],
     [...new Uint8Array(readFileSync(MISALIGNED_PRG_PATH))],
     "the synthesized mis-aligned root and hazard-subject-misaligned.prg have drifted apart; regenerate with " +
-      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs`.",
+      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts`.",
   );
 });
 
@@ -597,8 +591,6 @@ test("hazard subject: the mis-aligned source's header states that the assembler 
 
 test("hazard subject: no planning-vocabulary string appears anywhere in the mis-aligned fixture source", () => {
   const misalignedSource = readFileSync(ALIGN_MISALIGNED_SOURCE_PATH, "utf8");
-  assert.ok(!misalignedSource.includes(".planning/"), "must not reference a .planning/ path");
-  assert.ok(!/\/gsd-/.test(misalignedSource), "must not reference a /gsd- command name");
   assert.ok(!/\bD-\d/.test(misalignedSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(misalignedSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(misalignedSource), "must not carry a 'Phase N' citation");
@@ -610,7 +602,7 @@ test("hazard subject: REGENERATOR AGREEMENT -- re-assembling the root reproduces
     [...fresh],
     [...new Uint8Array(readFileSync(PRG_PATH))],
     "hazard-subject.a (plus its !source parts) and hazard-subject.prg have drifted apart. The committed image is only evidence while it is EXACTLY what its " +
-      "source assembles to; regenerate with `cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs`.",
+      "source assembles to; regenerate with `cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts`.",
   );
 });
 

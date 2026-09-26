@@ -1,7 +1,7 @@
 // node:test coverage of stock-registers.ts. Every "client" below is a
 // two-method-shaped stub object (only `.send` is ever called) cast via
 // `as unknown as ViceMonitorClient` -- never a real socket, matching this
-// module tree's own DI-stubbing convention (stock-dispatch.test.ts's own
+// module tree's own DI-stubbing convention (stock-session.test.ts's own
 // header comment). Synthetic replies are returned DIRECTLY from the spy as
 // already-parsed shapes (ResolvedResponse), not built through
 // binmon-fixtures.ts's encodeResponseFrame() -- these tests assert catalog

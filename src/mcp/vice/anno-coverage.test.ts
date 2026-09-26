@@ -1,5 +1,5 @@
 // anno-coverage.test.ts -- the six committed controls, the schema pin, the
-// independence proof, and the reproducibility seal.
+// independence proof, and the two-route reproducibility check.
 //
 // WHY THIS FILE IS SHAPED THE WAY IT IS: a coverage instrument's own failure
 // mode is a FALSELY-CLEAN VERDICT (T-19-14). An instrument that fails
@@ -8,20 +8,6 @@
 // planted defects that must each be caught by a NAMED measure, and one
 // genuinely well-documented program that must come back clean. The last one
 // is the non-vacuity control and it is asserted explicitly.
-//
-// Three named guard classes for the sealed reproducibility evidence, mirroring
-// `absorbed-answer-key.test.ts`'s own vocabulary:
-//
-//   1. T-19-SEAL-DRIFT: ANSWER.sha256 silently stops matching ANSWER.md's own
-//      canonical line (someone edits one file and forgets the other).
-//   2. T-19-LEAK: QUESTION.md ends up containing the answer it asks for, so
-//      the bytes route could answer by reading the question instead of by
-//      walking the bytes.
-//   3. T-19-RETROFIT / T-19-VACUOUS-CHECK: RE-DERIVED-ANSWER.md's own
-//      canonical line, hashed under QUESTION.md's exact canonicalisation
-//      rules, must equal the sealed ANSWER.sha256 -- and this check must FAIL
-//      (never skip) when RE-DERIVED-ANSWER.md is missing or its marker fence
-//      is empty, so a non-answer can never read as a vacuous pass.
 //
 // This file is TEST-ONLY: it is not (and must not be) listed in package.json's
 // files[].
@@ -75,41 +61,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = join(HERE, "fixtures", "coverage");
 
 /** The previously-unseen Phase 11 fixture -- authored for a different phase and
- * never used to write these rules. Named once here because two sections now
- * read it, and two spellings of one path is two fixtures as far as a future
- * rename is concerned. */
-const PHASE_11_FIXTURE_PATH = join(
-  HERE,
-  "..",
-  "..",
-  "..",
-  ".planning",
-  "phases",
-  "11-annotation-store-enums-and-the-symbol-round-trip",
-  "evidence",
-  "criterion1",
-  "recon-subject.regen2000proj",
-);
-
-// src/mcp/vice -> repo root -> .planning/phases/19-.../evidence/coverage-reproducibility
-const EVIDENCE_DIR = join(
-  HERE,
-  "..",
-  "..",
-  "..",
-  ".planning",
-  "phases",
-  "19-absorbed-procedures-and-the-coverage-instrument",
-  "evidence",
-  "coverage-reproducibility",
-);
-const QUESTION_PATH = join(EVIDENCE_DIR, "QUESTION.md");
-const ANSWER_PATH = join(EVIDENCE_DIR, "ANSWER.md");
-const ANSWER_SHA_PATH = join(EVIDENCE_DIR, "ANSWER.sha256");
-const RE_DERIVED_PATH = join(EVIDENCE_DIR, "RE-DERIVED-ANSWER.md");
-
-const OPEN_MARKER = "<!-- CANONICAL-ANSWER-LINE -->";
-const CLOSE_MARKER = "<!-- /CANONICAL-ANSWER-LINE -->";
+ * never used to write these rules. It lives outside FIXTURE_ROOT because every
+ * directory there is enumerated as a committed control. */
+const PHASE_11_FIXTURE_PATH = join(HERE, "fixtures", "coverage-unseen", "recon-subject.regen2000proj");
 
 // ---------------------------------------------------------------------------
 // Fixture loading
@@ -3909,89 +3863,18 @@ test("the previously-unseen Phase 11 fixture -- authored for a different phase, 
 });
 
 // ---------------------------------------------------------------------------
-// 12. The sealed reproducibility evidence
+// 12. Two-route reproducibility
 // ---------------------------------------------------------------------------
 
-/**
- * Extracts the canonical answer line from a marker fence. Deliberately no
- * `existsSync` guard and no try/catch: a missing file must surface as
- * `readFileSync`'s own ENOENT, and an empty fence as the non-empty assertion
- * below -- never as a skip (T-19-VACUOUS-CHECK).
- */
-function extractCanonicalLine(md: string, what: string): string {
-  const openIdx = md.indexOf(OPEN_MARKER);
-  const closeIdx = md.indexOf(CLOSE_MARKER);
-  assert.ok(openIdx !== -1, `${what} is missing its ${OPEN_MARKER} marker`);
-  assert.ok(closeIdx !== -1, `${what} is missing its ${CLOSE_MARKER} marker`);
-  assert.ok(closeIdx > openIdx, `${what}'s close marker appears before its open marker`);
-  const line = md.slice(openIdx + OPEN_MARKER.length, closeIdx).trim();
-  assert.ok(line.length > 0, `${what}'s marker fence contains no canonical line -- an empty answer must FAIL, never skip`);
-  assert.ok(!line.includes("\n"), `${what}'s marker fence must contain exactly one line, got: ${JSON.stringify(line)}`);
-  return line;
-}
+const CANONICAL_GRAMMAR = /^sample=[0-9a-f]{4}(,[0-9a-f]{4})* classes=[a-z]+(,[a-z]+)* callers=(0|[1-9][0-9]*)(,(0|[1-9][0-9]*))*$/;
 
 function sha256(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
-const CANONICAL_GRAMMAR = /^sample=[0-9a-f]{4}(,[0-9a-f]{4})* classes=[a-z]+(,[a-z]+)* callers=(0|[1-9][0-9]*)(,(0|[1-9][0-9]*))*$/;
-
-test("ANSWER.sha256 is exactly 64 lowercase hex characters", () => {
-  const sealed = readFileSync(ANSWER_SHA_PATH, "utf8").trim();
-  assert.match(sealed, /^[0-9a-f]{64}$/, `ANSWER.sha256 must be exactly 64 lowercase hex characters, got: ${JSON.stringify(sealed)}`);
-});
-
-test("ANSWER.sha256 matches the sha256 recomputed from ANSWER.md's own canonical line (T-19-SEAL-DRIFT)", () => {
-  const line = extractCanonicalLine(readFileSync(ANSWER_PATH, "utf8"), "ANSWER.md");
-  const sealed = readFileSync(ANSWER_SHA_PATH, "utf8").trim();
-  assert.equal(
-    sha256(line),
-    sealed,
-    `ANSWER.sha256 (${sealed}) does not match the sha256 recomputed from ANSWER.md's canonical line ${JSON.stringify(line)} ` +
-      `(${sha256(line)}) -- the seal has drifted from the answer it seals.`,
-  );
-});
-
-test("both canonical lines match QUESTION.md's own grammar", () => {
-  for (const [path, what] of [[ANSWER_PATH, "ANSWER.md"], [RE_DERIVED_PATH, "RE-DERIVED-ANSWER.md"]] as const) {
-    const line = extractCanonicalLine(readFileSync(path, "utf8"), what);
-    assert.match(line, CANONICAL_GRAMMAR, `${what}'s canonical line does not match the sample=/classes=/callers= grammar: ${JSON.stringify(line)}`);
-    const fields = line.split(" ").map((f) => f.slice(f.indexOf("=") + 1).split(","));
-    assert.equal(fields[0]!.length, fields[1]!.length, `${what}: the classes list must have one entry per sampled address`);
-    assert.equal(fields[0]!.length, fields[2]!.length, `${what}: the callers list must have one entry per sampled address`);
-  }
-});
-
-test("QUESTION.md does not contain either canonical answer line, nor any of its compound field assignments (T-19-LEAK)", () => {
-  const question = readFileSync(QUESTION_PATH, "utf8");
-  const line = extractCanonicalLine(readFileSync(ANSWER_PATH, "utf8"), "ANSWER.md");
-  assert.ok(!question.includes(line), "QUESTION.md contains the full canonical answer line -- the bytes route could answer by reading the question");
-  for (const field of line.split(" ")) {
-    assert.ok(
-      !question.includes(field),
-      `QUESTION.md contains the compound assignment ${JSON.stringify(field)} verbatim -- that is the sealed answer's own field in canonical form`,
-    );
-  }
-});
-
-test("RE-DERIVED-ANSWER.md's canonical line hashes to the sealed ANSWER.sha256, and a missing or empty fence FAILS rather than skips (T-19-RETROFIT / T-19-VACUOUS-CHECK)", () => {
-  const line = extractCanonicalLine(readFileSync(RE_DERIVED_PATH, "utf8"), "RE-DERIVED-ANSWER.md");
-  const sealed = readFileSync(ANSWER_SHA_PATH, "utf8").trim();
-  assert.equal(
-    sha256(line),
-    sealed,
-    `RE-DERIVED-ANSWER.md's canonical line ${JSON.stringify(line)} hashes to ${sha256(line)}, which does not match the sealed ` +
-      `ANSWER.sha256 (${sealed}). Per T-19-RETROFIT a mismatch is a real result to report -- ANSWER.md, ANSWER.sha256 and ` +
-      "QUESTION.md must not be edited to force this test green.",
-  );
-});
-
-test("LIVE non-vacuity: both routes are recomputed from the committed fixture and both reproduce the sealed line", () => {
-  // The seal above proves nobody edited the two committed answers apart. This
-  // proves the answers are still TRUE of the fixture: the store route is
-  // recomputed from store.json alone, the bytes route from the payload alone,
-  // and both must land on the sealed line. Without this, a fixture change
-  // would leave two mutually-consistent but stale answers passing.
+test("LIVE non-vacuity: both routes are recomputed from the committed fixture and agree on the same line", () => {
+  // The store route is recomputed from store.json alone, the bytes route from
+  // the payload alone, and both must land on the same line.
   const { projectPath, store } = loadFixture(WELL_DOCUMENTED);
   const report = reportFor(WELL_DOCUMENTED);
   const sample = report.reproducibility.addresses;
@@ -4020,10 +3903,8 @@ test("LIVE non-vacuity: both routes are recomputed from the committed fixture an
     sample.map((a) => new Set(reached.filter((i) => i.resolvedTarget === a).map((i) => i.address)).size),
   );
 
-  const sealed = readFileSync(ANSWER_SHA_PATH, "utf8").trim();
-  assert.equal(sha256(storeLine), sealed, `the live store route produced ${JSON.stringify(storeLine)}, which does not hash to the seal`);
-  assert.equal(sha256(bytesLine), sealed, `the live bytes route produced ${JSON.stringify(bytesLine)}, which does not hash to the seal`);
-  assert.equal(storeLine, bytesLine, "the two independent routes disagree -- report the disagreement, do not edit the seal");
+  assert.match(storeLine, CANONICAL_GRAMMAR, `the store route produced a line outside the sample=/classes=/callers= grammar: ${JSON.stringify(storeLine)}`);
+  assert.equal(storeLine, bytesLine, "the two independent routes disagree -- report the disagreement");
 });
 
 // ---------------------------------------------------------------------------

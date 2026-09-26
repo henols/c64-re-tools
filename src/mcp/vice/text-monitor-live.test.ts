@@ -13,7 +13,7 @@
 // unchanged. This file adds nothing to that analysis: it needs only ONE
 // grant, ONE claim, ONE command, never a second session or a crash respawn.
 //
-// Registered as MANUAL_ONLY_TESTS' THIRTEENTH entry in test-gate.mjs.
+// Registered in test-gate.ts's MANUAL_ONLY_TESTS.
 //
 // Opt in with:
 //   VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test text-monitor-live.test.ts
@@ -81,13 +81,16 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connect } from "node:net";
+import { connect, createServer } from "node:net";
 
 import { build } from "./build.ts";
-import { openBrokerControl, type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
+import { epochPathFor } from "./broker-epoch.mts";
+import { dialBrokerEndpoint } from "./broker-endpoint.mts";
+import { dialControlSession, type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
 import { textConnect, textDisconnect } from "./text-connect.ts";
 import { TEXT_COMMAND_ALLOWLIST, withTextChannelLock, buildTextCommand } from "./text-protocol.ts";
-import { dispatchStock, clearHeldStockSession, ensureStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { clearHeldStockSession, ensureStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
 import { resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";
 import { CommandType, checkpointSetBody, CheckpointOperation, cpNumBody } from "./stock-protocol.ts";
@@ -125,12 +128,6 @@ const SKIP_REASON: string | false = !VICE_LIVE_STOCK_BIN_ENV
       "VICE binary at that absolute path (e.g. /usr/bin/x64sc). A bare \"x64sc\" on PATH would resolve to the " +
       "fork build instead of genuine stock."
     : false;
-
-// This file's own dial knob -- every openBrokerControl() call below resolves
-// to the loopback control listener this test's OWN spawned broker binds,
-// never the bridge alias resolveControlTarget() would otherwise fall back
-// to. Matches stock-live-broker-monitor.test.ts's own precedent exactly.
-process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
 
 // ---------------------------------------------------------------------------
 // Small shared helpers -- copied from stock-live-broker-monitor.test.ts's own
@@ -187,13 +184,13 @@ interface BrokerHandle {
   stderr: string;
 }
 
-function startBroker(stateDir: string, viceBinPath: string, scratchDir: string): BrokerHandle {
+function startBroker(stateDir: string, viceBinPath: string, scratchDir: string, controlPort: number): BrokerHandle {
   const merged: Record<string, string | undefined> = {
     ...process.env,
     VICE_SUPERVISOR_ALLOW_CONTAINER: undefined,
     VICE_BIN: viceBinPath,
     VICE_ARGS: undefined,
-    VICE_BROKER_CONTROL_PORT: "0",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
     VICE_BROKER_MAX: "1",
     VICE_BROKER_POLL_MS: "250",
     VICE_RESTART_BACKOFF_S: "1",
@@ -203,7 +200,6 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     // this harness's own mkdtempSync scratchDir, never the real
     // machine-level ~/.c64-re-tools.
     VICE_BROKER_HOME: scratchDir,
-    VICE_BROKER_CONTROL_DIAL_HOST: undefined,
   };
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(merged)) {
@@ -234,11 +230,26 @@ async function stopBroker(handle: BrokerHandle): Promise<boolean> {
   return waitFor(() => handle.child.exitCode !== null || handle.child.signalCode !== null, 3000);
 }
 
-async function waitForBrokerJson(stateDir: string, deadlineMs = 10000): Promise<Record<string, unknown>> {
-  const path = join(stateDir, "broker.json");
-  const appeared = await waitFor(() => existsSync(path) && typeof JSON.parse(readFileSync(path, "utf8")).control_port === "number", deadlineMs);
-  assert.ok(appeared, "broker.json with a control_port did not appear within deadline");
-  return JSON.parse(readFileSync(path, "utf8"));
+/** A loopback port nothing listens on yet, for this suite's own broker --
+ * never the fixed default (19510), which a real broker may hold. */
+async function allocateControlPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+/** Bounded-waits for the broker to answer a hello on `port`. */
+async function waitForBrokerReady(port: number, deadlineMs = 10000): Promise<void> {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    const dialed = await dialBrokerEndpoint({ port, candidates: ["127.0.0.1"] });
+    if (dialed.ok) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.fail(`the broker never answered a hello on 127.0.0.1:${port} within ${deadlineMs}ms`);
 }
 
 interface HarnessReport {
@@ -314,12 +325,20 @@ function pidsMatchingCommandLine(needle: string): number[] {
   }
 }
 
-async function withBrokerHarness(viceBinPath: string, fn: (ctx: { stateDir: string; recordPid: (pid: number) => void; host: string }) => Promise<void>): Promise<HarnessReport> {
+async function withBrokerHarness(
+  viceBinPath: string,
+  fn: (ctx: { stateDir: string; controlPort: number; recordPid: (pid: number) => void; host: string }) => Promise<void>,
+): Promise<HarnessReport> {
   build(); // ensure resources/ is a fresh build of the current TypeScript source
   const scratchDir = mkdtempSync(join(tmpdir(), "text-monitor-live-"));
   const stateDir = join(scratchDir, "state");
   const recordedPids = new Set<number>();
-  const handle = startBroker(stateDir, viceBinPath, scratchDir);
+  const controlPort = await allocateControlPort();
+  const handle = startBroker(stateDir, viceBinPath, scratchDir, controlPort);
+  // The monitor relay and file transfers dial the fixed endpoint, which this
+  // process resolves from VICE_BROKER_CONTROL_PORT -- point it at this broker.
+  const previousControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(controlPort);
   // Captured immediately after startBroker() returns, before anything else
   // can fail -- this is the pid the teardown half below is responsible for.
   const brokerPid: number | null = typeof handle.child.pid === "number" ? handle.child.pid : null;
@@ -327,9 +346,11 @@ async function withBrokerHarness(viceBinPath: string, fn: (ctx: { stateDir: stri
   let strayPidsMatchingScratch: number[] = [];
   let scratchDirRemoved = false;
   try {
-    await waitForBrokerJson(stateDir);
-    await fn({ stateDir, recordPid: (pid: number) => recordedPids.add(pid), host: "127.0.0.1" });
+    await waitForBrokerReady(controlPort);
+    await fn({ stateDir, controlPort, recordPid: (pid: number) => recordedPids.add(pid), host: "127.0.0.1" });
   } finally {
+    if (previousControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = previousControlPort;
     const brokerExitedCleanly = await stopBroker(handle);
     if (!brokerExitedCleanly && brokerPid !== null) {
       try {
@@ -441,9 +462,9 @@ test(
   async () => {
     const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -463,7 +484,7 @@ test(
         `grant.remote_monitor_port must be an integer in 1..65535, got: ${remoteMonitorPort}`,
       );
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       // A cold acquire's grant is handed back the instant the process is
@@ -525,9 +546,9 @@ test(
   async () => {
     const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -538,7 +559,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -618,7 +639,7 @@ interface KernalIrqAddress {
 }
 
 function readKernalIrqAddress(): KernalIrqAddress {
-  const memmapPath = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
+  const memmapPath = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
   const parsed = JSON.parse(readFileSync(memmapPath, "utf8")) as { entries: Array<Record<string, unknown>> };
   const raw = parsed.entries;
   assert.ok(Array.isArray(raw), `${memmapPath} must carry an "entries" array`);
@@ -632,7 +653,7 @@ function readKernalIrqAddress(): KernalIrqAddress {
   return { address: parseInt(m![1]!, 16), addressHex: `$${m![1]!.toUpperCase()}` };
 }
 
-/** Parses a dispatchStock() answer's JSON payload, asserting it is NOT an
+/** Parses a callStockTool() answer's JSON payload, asserting it is NOT an
  * error result first -- copied from stock-a4-checkpoint-flood.test.ts's own
  * parseOkPayload() (module-local, not exported there either). */
 function parseOkPayload(result: { content: { type: "text"; text: string }[]; isError: boolean }): Record<string, unknown> {
@@ -650,9 +671,9 @@ test(
     const kernalIrq = readKernalIrqAddress();
     console.log(`text-monitor-live (criterion 3): armed address = ${kernalIrq.addressHex} (${kernalIrq.address})`);
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -663,7 +684,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -674,10 +695,9 @@ test(
         port: grant.port,
         targetId: grant.id,
         brokerControl: session,
-        epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
         connect: (opts: StockConnectOptions) => stockConnect(opts),
       };
@@ -685,7 +705,7 @@ test(
       const textSession = await textConnect({ host, remoteMonitorPort, targetId: grant.id, brokerControl: session });
 
       try {
-        const addResult = await dispatchStock("vice_checkpoint_add", { start: kernalIrq.addressHex, stop: true }, deps);
+        const addResult = await callStockTool("vice_checkpoint_add", { start: kernalIrq.addressHex, stop: true }, deps);
         const addPayload = parseOkPayload(addResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const checkpointId = addPayload.id as number;
         assert.equal(addPayload.enabled, true, `expected the freshly added checkpoint to report enabled:true, got: ${JSON.stringify(addPayload)}`);
@@ -708,9 +728,9 @@ test(
         const deadline = Date.now() + 20000;
         let hitEntry: Record<string, unknown> | null = null;
         while (Date.now() < deadline && !hitEntry) {
-          await dispatchStock("vice_execution_run", {}, deps);
+          await callStockTool("vice_execution_run", {}, deps);
           await new Promise((r) => setTimeout(r, 100));
-          const listResult = await dispatchStock("vice_checkpoint_list", {}, deps);
+          const listResult = await callStockTool("vice_checkpoint_list", {}, deps);
           const listPayload = parseOkPayload(listResult as { content: { type: "text"; text: string }[]; isError: boolean });
           const checkpoints = (listPayload.checkpoints as Array<Record<string, unknown>>) ?? [];
           const found = checkpoints.find((c) => c.id === checkpointId) ?? null;
@@ -779,9 +799,9 @@ test(
     resetChannelLockForTests();
     const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -792,7 +812,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -803,10 +823,9 @@ test(
         port: grant.port,
         targetId: grant.id,
         brokerControl: session,
-        epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
         connect: (opts: StockConnectOptions) => stockConnect(opts),
       };
@@ -820,13 +839,13 @@ test(
         // session and reaches withChannelLockHeld() almost immediately,
         // rather than racing an unpredictable first-connect handshake cost
         // against the head-start delay below.
-        await dispatchStock("vice_ping", {}, deps);
+        await callStockTool("vice_ping", {}, deps);
 
         // $9000 is ordinary, unused RAM on a freshly booted, unmodified
         // machine -- never executed as code within this test's own bounded
         // window, so vice_run_until genuinely spans its full timeout_ms,
         // giving ample window for the concurrent text-lock attempt below.
-        const runUntilPromise = dispatchStock("vice_run_until", { address: "$9000", timeout_ms: 5000 }, deps);
+        const runUntilPromise = callStockTool("vice_run_until", { address: "$9000", timeout_ms: 5000 }, deps);
 
         // Give the binary side a head start to acquire channel-lock.ts's
         // mutex before the concurrent text acquire is attempted.
@@ -870,117 +889,6 @@ test(
         console.log(
           `text-monitor-live: MEASURED interleaving refusal during a held binary wait -- refusal: ${JSON.stringify(refusalMessage)}, ` +
             `run_until outcome: ${JSON.stringify(payload)}`,
-        );
-      } finally {
-        await textDisconnect(textSession);
-      }
-
-      await session.release();
-    });
-
-    assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
-    assert.deepEqual(
-      report.strayPidsMatchingScratch,
-      [],
-      `stray process(es) matching this harness's own scratch path survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`,
-    );
-    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
-  },
-);
-
-// ---------------------------------------------------------------------------
-// Plan 41-04 (CHAN-05, D-09/D-10/D-11): a live text-channel hold reads as
-// CONTENTION, not a wedge -- vice_diagnose called concurrently, through the
-// REAL dispatchStock() path, must answer live/bracketsRun:0/channel:"text"
-// while the hold is live, and channelContention.held:false with a real
-// bracket run once released.
-// ---------------------------------------------------------------------------
-
-test(
-  "text-monitor-live (CHAN-05): vice_diagnose observes a live text-channel hold as contention (live, bracketsRun:0, channel:text), then a real bracket runs once released",
-  { skip: SKIP_REASON, timeout: 60000 },
-  async () => {
-    clearHeldStockSession();
-    resetChannelLockForTests();
-    const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
-
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
-      if (!opened.ok) return;
-      const session: BrokerControlSession = opened.session;
-
-      const acquired = await session.acquire();
-      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
-      if (!acquired.ok) return;
-      const grant = acquired.grant;
-      assert.equal(typeof grant.remote_monitor_port, "number");
-      const remoteMonitorPort = grant.remote_monitor_port as number;
-
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
-      recordPid(epochBefore.pid);
-
-      const binmonReady = await waitForPortOpen(host, grant.port, 30000);
-      assert.ok(binmonReady, `the cold-launched instance's binmon port ${grant.port} never accepted a connection within 30s`);
-
-      const lease: HeldLease = {
-        host,
-        port: grant.port,
-        targetId: grant.id,
-        brokerControl: session,
-        epochFile: grant.epoch_file,
-        supervisorDir: stateDir,
-      };
-      const deps: StockDispatchDeps = {
-        ensureLease: async () => ({ ok: true as const, lease }),
-        connect: (opts: StockConnectOptions) => stockConnect(opts),
-      };
-
-      const textSession = await textConnect({ host, remoteMonitorPort, targetId: grant.id, brokerControl: session });
-
-      try {
-        // Hold the text channel's own halt authority across a real command,
-        // and call vice_diagnose CONCURRENTLY, through the REAL dispatchStock()
-        // path, WHILE the lock is still held -- this is the actual proof:
-        // vice_diagnose must observe the foreign hold and answer contention,
-        // never resuming a machine the text channel is holding. Returned from
-        // the callback (rather than assigned to an outer `let`) so TypeScript
-        // never has to narrow a closure-reassigned variable.
-        const diagnoseDuringHold = await withTextChannelLock("device c:", async () => {
-          const response = await textSession.client.command("device c:");
-          assert.ok(response.length > 0, `device c: response must be non-empty, got: ${JSON.stringify(response)}`);
-
-          const result = await dispatchStock("vice_diagnose", {}, deps);
-          return parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
-        });
-
-        assert.equal(diagnoseDuringHold.verdict, "live", "D-11: a contended instance is healthy, not wedged");
-        const evidenceDuringHold = diagnoseDuringHold.evidence as Record<string, unknown>;
-        assert.equal(evidenceDuringHold.bracketsRun, 0, "no bracket was run while contended -- the machine was never resumed");
-        const contentionDuringHold = evidenceDuringHold.channelContention as Record<string, unknown>;
-        assert.equal(contentionDuringHold.held, true);
-        assert.equal(contentionDuringHold.channel, "text");
-        assert.equal(contentionDuringHold.operation, "device c:");
-        assert.equal(typeof contentionDuringHold.heldMs, "number");
-        console.log(
-          `text-monitor-live: MEASURED CHAN-05 contention on ${viceBinPath} -- verdict=${diagnoseDuringHold.verdict}, ` +
-            `evidence=${JSON.stringify(evidenceDuringHold)}`,
-        );
-
-        // The hold is released now (withTextChannelLock's own finally already
-        // ran) -- re-call vice_diagnose and confirm a REAL bracket runs and
-        // channelContention reports held:false.
-        const afterResult = await dispatchStock("vice_diagnose", {}, deps);
-        const afterPayload = parseOkPayload(afterResult as { content: { type: "text"; text: string }[]; isError: boolean });
-        const afterEvidence = afterPayload.evidence as Record<string, unknown>;
-        assert.equal((afterEvidence.channelContention as Record<string, unknown>).held, false, "the hold must be released by now");
-        assert.ok(
-          (afterEvidence.bracketsRun as number) > 0,
-          `expected a real bracket to run once uncontended, got bracketsRun=${afterEvidence.bracketsRun}`,
-        );
-        console.log(
-          `text-monitor-live: MEASURED post-release vice_diagnose on ${viceBinPath} -- verdict=${afterPayload.verdict}, ` +
-            `evidence=${JSON.stringify(afterEvidence)}`,
         );
       } finally {
         await textDisconnect(textSession);
@@ -1048,9 +956,9 @@ test(
 
     let skipReason: string | null = null;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -1061,7 +969,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -1072,10 +980,9 @@ test(
         port: grant.port,
         targetId: grant.id,
         brokerControl: session,
-        epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
         connect: (opts: StockConnectOptions) => stockConnect(opts),
       };
@@ -1148,7 +1055,7 @@ test(
         const deadline = Date.now() + 15000;
         try {
           while (Date.now() < deadline && checkpointHits.length === 0) {
-            await dispatchStock("vice_execution_run", {}, deps);
+            await callStockTool("vice_execution_run", {}, deps);
             await new Promise((r) => setTimeout(r, 150));
           }
         } finally {
@@ -1170,7 +1077,7 @@ test(
 
         // Ground truth: main-CPU PC via vice_registers_get, which always
         // sends an explicit memspace:0x00 -- immune to contamination.
-        const regsBeforeResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsBeforeResult = await callStockTool("vice_registers_get", {}, deps);
         const regsBefore = parseOkPayload(regsBeforeResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const pcBefore = (regsBefore.registers as Record<string, number>).PC;
         assert.equal(typeof pcBefore, "number", `expected a numeric main-CPU PC before stepping, got: ${JSON.stringify(regsBefore)}`);
@@ -1178,10 +1085,10 @@ test(
         // vice_execution_step's own ADVANCE_INSTRUCTIONS request has NO
         // memspace field (CLAUDE.md's cited fact) -- contaminated, it steps
         // whichever CPU default_memspace currently names, silently.
-        const stepDuringContaminationResult = await dispatchStock("vice_execution_step", { count: 1 }, deps);
+        const stepDuringContaminationResult = await callStockTool("vice_execution_step", { count: 1 }, deps);
         const stepDuringContamination = parseOkPayload(stepDuringContaminationResult as { content: { type: "text"; text: string }[]; isError: boolean });
 
-        const regsAfterStepResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsAfterStepResult = await callStockTool("vice_registers_get", {}, deps);
         const regsAfterStep = parseOkPayload(regsAfterStepResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const pcAfterContaminatedStep = (regsAfterStep.registers as Record<string, number>).PC;
 
@@ -1239,9 +1146,9 @@ test(
         console.log(`text-monitor-live (criterion 5): MEASURED device c: remedy response (${remedyResponse.length} bytes): ${JSON.stringify(remedyResponseLogSnippet)}`);
 
         // Confirm the remedy: main-CPU stepping must now work again.
-        const stepAfterRemedyResult = await dispatchStock("vice_execution_step", { count: 1 }, deps);
+        const stepAfterRemedyResult = await callStockTool("vice_execution_step", { count: 1 }, deps);
         parseOkPayload(stepAfterRemedyResult as { content: { type: "text"; text: string }[]; isError: boolean });
-        const regsAfterRemedyResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsAfterRemedyResult = await callStockTool("vice_registers_get", {}, deps);
         const regsAfterRemedy = parseOkPayload(regsAfterRemedyResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const pcAfterRemedy = (regsAfterRemedy.registers as Record<string, number>).PC;
 
@@ -1282,8 +1189,8 @@ test(
 
 // ---------------------------------------------------------------------------
 // Plan 41-06 (D-04): the warp on/warp off re-probe, WITH THE CHANNEL OPEN,
-// issued through the real vice_warp_set tool (needsSession:false --
-// dispatchStock() reaches text-tools.ts's handleWarpSet() directly).
+// issued through the real vice_warp_set tool ("pure" --
+// callStockTool() reaches text-tools.ts's handleWarpSet() directly).
 // ---------------------------------------------------------------------------
 
 test(
@@ -1294,9 +1201,9 @@ test(
     resetChannelLockForTests();
     const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -1307,13 +1214,13 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
       assert.ok(binmonReady, `the cold-launched instance's binmon port ${grant.port} never accepted a connection within 30s`);
 
-      // vice_warp_set is needsSession:false (text-tools.ts) -- it resolves
+      // vice_warp_set is "pure" (text-tools.ts) -- it resolves
       // its own lease via deps.ensureLease() and dials the text channel
       // itself through textConnect(); no binary session is opened by this
       // test at all, and remoteMonitorPort MUST be on the lease this time
@@ -1324,15 +1231,14 @@ test(
         port: grant.port,
         targetId: grant.id,
         brokerControl: session,
-        epochFile: grant.epoch_file,
         supervisorDir: stateDir,
         remoteMonitorPort,
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
       };
 
-      const onResult = await dispatchStock("vice_warp_set", { enabled: true }, deps);
+      const onResult = await callStockTool("vice_warp_set", { enabled: true }, deps);
       const onPayload = parseOkPayload(onResult as { content: { type: "text"; text: string }[]; isError: boolean });
       assert.equal(onPayload.requested, true);
       assert.ok(
@@ -1341,7 +1247,7 @@ test(
       );
       console.log(`text-monitor-live (D-04): MEASURED vice_warp_set(true) on ${viceBinPath}: ${JSON.stringify(onPayload.response)}`);
 
-      const offResult = await dispatchStock("vice_warp_set", { enabled: false }, deps);
+      const offResult = await callStockTool("vice_warp_set", { enabled: false }, deps);
       const offPayload = parseOkPayload(offResult as { content: { type: "text"; text: string }[]; isError: boolean });
       assert.equal(offPayload.requested, false);
       assert.ok(
@@ -1392,9 +1298,9 @@ test(
     resetTextCapabilityCache();
     const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -1405,7 +1311,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -1426,16 +1332,15 @@ test(
       // A binary-channel lease/deps pair -- needed only to resume real
       // execution briefly before dialing `prof flat` (see that section
       // below), mirroring the "criterion 3"/"criterion 5" tests' own
-      // HeldLease/StockDispatchDeps construction earlier in this file.
+      // HeldLease/StockSessionDeps construction earlier in this file.
       const lease: HeldLease = {
         host,
         port: grant.port,
         targetId: grant.id,
         brokerControl: session,
-        epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
         connect: (opts: StockConnectOptions) => stockConnect(opts),
       };
@@ -1542,7 +1447,7 @@ test(
 
         const sessionOutcome = await ensureStockSession(deps);
         assert.ok(sessionOutcome.ok, `ensureStockSession failed: ${JSON.stringify(sessionOutcome)}`);
-        await dispatchStock("vice_execution_run", {}, deps);
+        await callStockTool("vice_execution_run", {}, deps);
         await new Promise((r) => setTimeout(r, 500));
 
         // MEASURED (this plan, live): resuming the CPU and then halting it
@@ -1723,6 +1628,76 @@ test(
       [],
       `stray process(es) matching this harness's own scratch path survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`,
     );
+    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
+  },
+);
+
+// ---------------------------------------------------------------------------
+// vice_program_load: the client streams the file to the broker, and VICE's own
+// text-monitor `load` loads the staged copy -- at the header address, and at an
+// overriding address.
+// ---------------------------------------------------------------------------
+
+test(
+  "text-monitor-live: vice_program_load streams a PRG to the broker and VICE's own load puts it in RAM, at its header address and at an override",
+  { skip: SKIP_REASON, timeout: 60000 },
+  async () => {
+    clearHeldStockSession();
+    resetChannelLockForTests();
+    const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
+    const prgPath = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "hazard-subject", "hazard-subject.prg");
+    const prg = readFileSync(prgPath);
+    const headerAddress = prg.readUInt16LE(0);
+    const payload = Array.from(prg.subarray(2));
+
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
+      if (!opened.ok) return;
+      const session: BrokerControlSession = opened.session;
+      const acquired = await session.acquire();
+      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+      if (!acquired.ok) return;
+      const grant = acquired.grant;
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
+      recordPid(epochBefore.pid);
+      assert.ok(await waitForPortOpen(host, grant.port, 30000), `binmon port ${grant.port} never opened`);
+
+      const lease: HeldLease = {
+        host,
+        port: grant.port,
+        targetId: grant.id,
+        brokerControl: session,
+        supervisorDir: stateDir,
+        remoteMonitorPort: grant.remote_monitor_port as number,
+      };
+      const deps: StockSessionDeps = {
+        ensureLease: async () => ({ ok: true as const, lease }),
+        connect: (opts: StockConnectOptions) => stockConnect(opts),
+      };
+      const readRam = async (address: number) => {
+        const r = await callStockTool("vice_memory_read", { address, size: payload.length, encoding: "array" }, deps);
+        return parseOkPayload(r as { content: { type: "text"; text: string }[]; isError: boolean }).bytes as number[];
+      };
+
+      const loaded = parseOkPayload((await callStockTool("vice_program_load", { path: prgPath }, deps)) as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(`text-monitor-live (program_load): MEASURED ${JSON.stringify(loaded)}`);
+      assert.equal(loaded.loadAddress, headerAddress);
+      assert.equal(loaded.byteLength, payload.length);
+      assert.doesNotMatch(JSON.stringify(loaded), /staging/, "the broker's staged path must not reach the caller");
+      assert.deepEqual(await readRam(headerAddress), payload, "RAM at the header address must equal the PRG payload");
+
+      const override = 0xc000;
+      const moved = parseOkPayload((await callStockTool("vice_program_load", { path: prgPath, address: override }, deps)) as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(`text-monitor-live (program_load, address): MEASURED ${JSON.stringify(moved)}`);
+      assert.equal(moved.loadAddress, override);
+      assert.deepEqual(await readRam(override), payload, "RAM at the override address must equal the PRG payload");
+
+      await session.release();
+    });
+
+    assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+    assert.deepEqual(report.strayPidsMatchingScratch, [], `stray processes survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`);
     assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
   },
 );

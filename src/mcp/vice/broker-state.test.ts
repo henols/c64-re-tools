@@ -35,7 +35,7 @@ import {
 // (native type stripping), entirely outside tsconfig.build.json's compile
 // program. Deliberately NOT imported by broker-state.mts itself: a direct
 // import from a host-bound .mts source pulls vice-broker-client.ts's own
-// transitive dependents (repo-root.ts, install-resources.ts, hostpath.ts)
+// transitive dependents (repo-root.ts, install-resources.ts)
 // into the SAME tsc build program (verified empirically, this plan) --
 // tsconfig.build.json's allowImportingTsExtensions:false then fails to
 // compile THEIR OWN internal ".ts"-suffixed imports, and even if that flag

@@ -61,7 +61,8 @@ import { accessMapRanges, parseAccessMap } from "./textmon-memmap.ts";
 import { execObservationsFrom } from "./evid-ingest.ts";
 import { argvDigest } from "./capture-predicate.ts";
 import * as annoTypesModule from "./anno-types.ts";
-import { dispatchStock, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { type StockSessionDeps } from "./stock-session.ts";
 import type { BrokerControlSession } from "./vice-broker-client.ts";
 import { textConnect, textDisconnect } from "./text-connect.ts";
 import { withTextChannelLock } from "./text-protocol.ts";
@@ -274,11 +275,11 @@ test("every openStore( in anno-tools.ts is closed by a closeStore( inside a fina
   );
 });
 
-test("MCP-02 by construction: anno-tools.ts reaches no VICE transport and no host-path seam", () => {
+test("MCP-02 by construction: anno-tools.ts reaches no VICE transport", () => {
   const code = ANNO_TOOLS_SOURCE.split("\n")
     .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"))
     .join("\n");
-  for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments", "hostpath"]) {
+  for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments"]) {
     assert.ok(!code.includes(forbidden), `anno-tools.ts must not reach ${forbidden} -- that is what makes the anno_* family's backend-independence sound`);
   }
 });
@@ -2630,7 +2631,7 @@ test(
       const ready = await evidWaitForPortOpen("127.0.0.1", textPort, 10000);
       assert.ok(ready, "expected the text-monitor port to accept connections within 10s");
 
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({
           ok: true,
           lease: {
@@ -2638,7 +2639,6 @@ test(
             port: binPort,
             targetId: "anno-tools-evid-ingest-live",
             brokerControl: EVID_LIVE_BROKER_CONTROL,
-            epochFile: "",
             supervisorDir: "",
             remoteMonitorPort: textPort,
           },
@@ -2646,12 +2646,12 @@ test(
       };
 
       // Proves the real MCP-facing seam dials successfully against genuine
-      // stock VICE -- dispatchStock() is the SAME entry point vice-proxy.ts
+      // stock VICE -- callStockTool() is the SAME entry point vice-proxy.ts
       // calls.
-      const showResult = await dispatchStock("vice_memmap_show", {}, deps);
+      const showResult = await callStockTool("vice_memmap_show", {}, deps);
       assert.equal(showResult.isError, false, `expected vice_memmap_show to succeed: ${JSON.stringify(showResult)}`);
 
-      // dispatchStock()'s own answer is already-parsed JSON (ranges,
+      // callStockTool()'s own answer is already-parsed JSON (ranges,
       // addressesQueried, executeCounts) -- anno_evid_ingest needs the RAW
       // reply, so a second, direct text-monitor session dials the identical
       // allowlisted "memmapshow" command over the SAME stub brokerControl.

@@ -19,8 +19,6 @@ import { build } from "./build.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_INCIDENT_ARTIFACT_URL = new URL("./resources/broker-incident.mjs", import.meta.url).href;
-const INCIDENT_RECORD_TS = join(HERE, "incident-record.ts");
-const BROKER_INCIDENT_MTS = join(HERE, "broker-incident.mts");
 
 interface BrokerIncidentModule {
   BROKER_INCIDENT_VERSION: number;
@@ -45,8 +43,7 @@ function withTempDir<T>(fn: (dir: string) => T): T {
 }
 
 // ---------------------------------------------------------------------------
-// brokerIncidentStem()/brokerIncidentPath() -- the naming shape, mirroring
-// incident-record.ts's own incidentAssetStem()/incidentRecordPath().
+// brokerIncidentStem()/brokerIncidentPath() -- the naming shape.
 // ---------------------------------------------------------------------------
 
 test("brokerIncidentStem() builds <UTC-compact>-port<N>-epoch<M> from only the timestamp/port/epoch inputs", async () => {
@@ -203,24 +200,6 @@ test("writeBrokerIncident(): a filesystem failure propagates rather than being s
     const dir = join(blockerPath, "incidents");
     assert.throws(() => writeBrokerIncident({ port: 1, epoch_before: 1, reason: "must not swallow" }, { dir }));
   });
-});
-
-// ---------------------------------------------------------------------------
-// Vocabulary sync (must_have): the field names this module shares with
-// incident-record.ts must be spelled identically on both sides -- reds this
-// test if a rename on either side is not mirrored on the other.
-// ---------------------------------------------------------------------------
-
-const SHARED_FIELD_NAMES = ["version", "at", "port", "epoch_before", "reason"];
-
-test("vocabulary sync: the shared field names (version/at/port/epoch_before/reason) appear, spelled identically, in both incident-record.ts and broker-incident.mts", () => {
-  const incidentRecordSource = readFileSync(INCIDENT_RECORD_TS, "utf8");
-  const brokerIncidentSource = readFileSync(BROKER_INCIDENT_MTS, "utf8");
-  for (const field of SHARED_FIELD_NAMES) {
-    const pattern = new RegExp(`\\b${field}\\??:\\s*unknown\\b`);
-    assert.match(incidentRecordSource, pattern, `incident-record.ts must declare "${field}?: unknown" on its own input interface`);
-    assert.match(brokerIncidentSource, pattern, `broker-incident.mts must declare "${field}?: unknown" on its own input interface`);
-  }
 });
 
 // ---------------------------------------------------------------------------

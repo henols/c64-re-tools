@@ -29,7 +29,7 @@
 //   - Never interpolate the rendered listing (or any test input) into a
 //     shell command string. `assemble()` below writes it to a file and
 //     spawns `acme` with an argv array (T-04-06-01) -- the same convention
-//     `src/skills/acme-build/scripts/acme.mjs` already uses for the one
+//     `skills/acme-build/scripts/acme.ts` already uses for the one
 //     other place this repo shells out to ACME.
 //   - Never hardcode a static "known unassemblable" list for Suite C. Every
 //     assertion in that suite is driven from `disasm-opcodes.ts`'s own
@@ -50,7 +50,8 @@ import { join } from "node:path";
 import { OPCODES, type OpcodeEntry, type AddressingMode } from "./disasm-opcodes.ts";
 import { decode } from "./disasm-decoder.ts";
 import { render } from "./disasm-renderer.ts";
-import { dispatchStock, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { type StockSessionDeps } from "./stock-session.ts";
 import { CommandType } from "./stock-protocol.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
@@ -104,8 +105,8 @@ after(() => {
 });
 
 // ---------------------------------------------------------------------------
-// A minimal StockConnectSession/StockDispatchDeps pair -- the same shape
-// stock-dispatch.test.ts's own buildConformanceSession()/buildConformanceDeps()
+// A minimal StockConnectSession/StockSessionDeps pair -- the same shape
+// stock-tools.test.ts's own buildConformanceSession()/buildConformanceDeps()
 // use (not imported from there: that file exports nothing, per its own
 // module-local convention). `sendImpl` decides what every client.send() call
 // resolves to; this file only ever needs to answer MemoryGet.
@@ -138,7 +139,7 @@ function buildRoundtripSession(targetId: string, sendImpl: (commandType: number,
   } as unknown as StockConnectSession;
 }
 
-function buildRoundtripDeps(session: StockConnectSession): StockDispatchDeps {
+function buildRoundtripDeps(session: StockConnectSession): StockSessionDeps {
   return {
     ensureLease: async () => ({
       ok: true as const,
@@ -147,7 +148,6 @@ function buildRoundtripDeps(session: StockConnectSession): StockDispatchDeps {
         port: session.port,
         targetId: session.targetId,
         brokerControl: session.brokerControl,
-        epochFile: "",
         supervisorDir: "",
       } as HeldLease,
     }),
@@ -231,7 +231,7 @@ test("Suite A: full 256-opcode round-trip through vice_disassemble's own listing
   const listings: string[] = [];
   let address = BASE_ADDRESS;
   for (let page = 0; page < 10; page++) {
-    const result = await dispatchStock("vice_disassemble", { address: toHexArg(address), end: toHexArg(corpusEnd) }, deps);
+    const result = await callStockTool("vice_disassemble", { address: toHexArg(address), end: toHexArg(corpusEnd) }, deps);
     assert.equal(result.isError, false, `Suite A: vice_disassemble refused at address ${toHexArg(address)}: ${JSON.stringify((result as { content: unknown }).content)}`);
     const answer = JSON.parse((result as { content: { text: string }[] }).content[0]!.text) as {
       listing: string;
@@ -255,7 +255,7 @@ test("Suite A: full 256-opcode round-trip through vice_disassemble's own listing
 // Suite B: a realistic fragment -- forward/backward branches, a
 // page-crossing branch, the D-11 shrink hazard, the D-10 page-wrap note,
 // jsr, and three illegal-but-ACME-expressible opcodes. Exercised directly
-// through decode()/render() (Suite A already exercises the dispatchStock()
+// through decode()/render() (Suite A already exercises the callStockTool()
 // path; this suite is about the renderer's specific edge cases).
 // ---------------------------------------------------------------------------
 
@@ -373,7 +373,7 @@ test("Suite C: the acmeExpressible substitution table is byte-faithful in BOTH d
   assert.deepEqual(overSubstituted, [], `Suite C (over-substitution): these acmeExpressible:true entries do not faithfully reassemble to their own opcode byte and must be flipped to false:\n${overSubstituted.join("\n")}`);
   assert.deepEqual(underSubstituted, [], `Suite C (under-substitution): these acmeExpressible:false entries ARE byte-faithful and must be flipped to true:\n${underSubstituted.join("\n")}`);
 
-  // Greppable, stable membership-set dump for 04-07's docs/stock-vice-parity.md.
+  // Greppable, stable membership-set dump.
   console.log(
     "DISASM-03 !byte substitution set (acmeExpressible=false, verified against installed ACME):",
     byteSubstitutionSet.map((op) => `$${op.toString(16).padStart(2, "0").toUpperCase()}`).join(", "),

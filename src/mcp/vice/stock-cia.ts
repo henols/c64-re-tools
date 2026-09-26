@@ -4,9 +4,8 @@
 // vice_cia_get_state -- a DERIVED tool (DERIV-05): its answer is computed
 // CLIENT-SIDE by decoding the bytes one MEM_GET per CIA returns, never
 // answered by a binary-monitor opcode -- the monitor has no CIA command at
-// all. Registered through withDerivedTool("vice_cia_get_state",
-// { needsSession: true }, handleCiaGetState) in stock-dispatch.ts, never
-// withStockSession(). This is stock-vicii.ts's sibling, not a second
+// all. Listed in stock-tools.ts as a "binary" tool. This is stock-vicii.ts's
+// sibling, not a second
 // template -- both follow the exact same "one sidefx:false MEM_GET, decode
 // client-side, wrap unreadable fields" shape.
 //
@@ -23,7 +22,7 @@
 // field naming the sharing address.
 //
 // Bit-field names below were transcribed ONCE from
-// `src/skills/c64-memory-mapping/memmap.json`'s entries for $DC00,
+// `skills/c64-memory-mapping/memmap.json`'s entries for $DC00,
 // $DC01, $DC02, $DC03, $DC08-$DC0F, $DD00, $DD01 and $DD0D, and
 // cross-checked at write time -- the same "committed literal, cross-checked
 // once, no automated drift check" posture Phase 4's D-06 already accepted
@@ -36,7 +35,7 @@
 //   - This is NOT a keyboard-matrix read. $DC00/$DC01 expose only the
 //     current column selection and row result; the full matrix is
 //     `vice_keyboard_matrix`, which is provably unrecoverable on stock
-//     (`docs/stock-vice-parity.md` SS A item 2) -- the wire protocol has no matrix command, and `KEYBOARD_FEED` (0x72) injects buffer text only.
+//     -- the wire protocol has no matrix command, and `KEYBOARD_FEED` (0x72) injects buffer text only.
 //   - WR-02 (2026-08-17): the port A/B joystick bits share their PINS with
 //     the keyboard matrix's column-select ($DC00) and row-read ($DC01), and
 //     a stock read halts the machine at an arbitrary PC -- often inside the
@@ -61,10 +60,8 @@
 //     whole-port or DDR-only predicate.
 //
 // WHAT NOT TO DO:
-//   - Never import hostpath.ts or vice-proxy.ts -- this tool takes no path
-//     argument at all; the host-facing surface is empty by construction
-//     (hostpath-consumers.test.ts's closed five-member consumer list must
-//     stay exactly five).
+//   - Never import vice-proxy.ts -- this tool takes no path argument at
+//     all; the host-facing surface is empty by construction.
 //   - Never turn the MEM_GET body's side-effect flag on. `sidefx` is
 //     hardcoded `false` below with NO argument to override it, because
 //     $DC0D/$DD0D clear their interrupt-status bits ON READ in hardware --
@@ -350,7 +347,7 @@ export function decodeCia(chip: 1 | 2, bytes: Uint8Array): Record<string, unknow
   } else {
     // $DD00 bits 0-1 are the VIC bank number, INVERTED: %00=bank3, %01=bank2,
     // %10=bank1, %11=bank0 -- the same `3 - (raw & 3)` form
-    // dump-artifacts.mjs's own verified vicBank() uses.
+    // dump-artifacts.ts's own verified vicBank() uses.
     const vicBank = 3 - (portARaw & 3);
     portA.vicBank = vicBank;
     portA.vicBankBase = vicBank * 16384;

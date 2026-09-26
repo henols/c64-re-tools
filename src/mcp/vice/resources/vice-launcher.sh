@@ -139,10 +139,10 @@ BROKER_ARTIFACT="$SELF_DIR/vice-broker.mjs"
 # WHY THIS EXISTS: this launcher used to `exec node ...`, trusting whatever
 # `node` a shell's PATH resolved first. On a development host with several
 # Node majors installed side by side that is an accident waiting to happen,
-# and a service environment (a systemd unit's own PATH, carrying no
-# interactive-shell version-manager entry) resolves a DIFFERENT one than an
-# interactive shell -- the same script started two different ways running
-# two different interpreters, with no record of which. Nothing spawns this
+# and a non-interactive environment (carrying no interactive-shell
+# version-manager entry) resolves a DIFFERENT one than an interactive
+# shell -- the same script started two different ways running two
+# different interpreters, with no record of which. Nothing spawns this
 # script (the broker never spawns itself; the only thing that ever prints
 # this path is a message telling a HUMAN to run it), so there is no parent
 # process whose own interpreter this launcher could inherit or receive as an

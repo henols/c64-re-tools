@@ -26,16 +26,16 @@ of.
 | `hazard-subject-align.a` | The page-alignment construction: a VIC-II hardware alignment dependency on a sprite shape and a character set, plus a level table and a music table. |
 | `hazard-subject-align-misaligned.a` | A deliberately mis-aligned twin of the file above -- the same routine, differing in exactly two filler bytes, so the alignment class has a real, observable negative control rather than only a written claim. |
 | `hazard-subject-raster.a` | The cycle-exact-raster construction, in its non-canonical, timer-based form. |
-| `make-hazard-subject-fixtures.mjs` | The only writer of the two committed program images. Refuses rather than writing a partial fixture. |
+| `make-hazard-subject-fixtures.ts` | The only writer of the two committed program images. Refuses rather than writing a partial fixture. |
 | `hazard-subject.prg` | The assembled, committed program image. |
 | `hazard-subject-misaligned.prg` | The assembled, committed mis-aligned twin image. |
 | `hazard-subject.annostore.json` | The committed decomposition of the program image -- every byte typed, every routine scoped, every reference named -- that the multi-file export and reassembly path reads. |
-| `make-hazard-subject-annostore.mjs` | The only writer of the committed decomposition above. |
+| `make-hazard-subject-annostore.ts` | The only writer of the committed decomposition above. |
 
 ## Provenance
 
 Both committed images are real assembler output, never hand-written or
-hand-edited bytes. `make-hazard-subject-fixtures.mjs` assembles the source
+hand-edited bytes. `make-hazard-subject-fixtures.ts` assembles the source
 files above with a real ACME 0.97 ("Zem") and writes the result only after a
 clean exit and a produced file; it refuses, rather than writing a partial
 fixture, if the assembler cannot be found or the assembly fails. Running it
@@ -43,7 +43,7 @@ twice leaves nothing to commit -- the committed images are a pure function of
 the committed sources, and a suite that re-runs it on every pass re-derives
 both images from source and byte-compares them against what is committed, so
 the two can never silently drift apart. The committed decomposition follows
-the identical discipline: `make-hazard-subject-annostore.mjs` assembles the
+the identical discipline: `make-hazard-subject-annostore.ts` assembles the
 program, reads the real assembler's own symbol table, and decomposes the
 result into a fresh store through the same public write verbs any caller of
 the annotation tools would use -- never raw, hand-written rows.

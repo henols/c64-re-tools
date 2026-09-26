@@ -6,7 +6,7 @@
 // rebuild.
 // broker-control.mts
 //
-// The framing, the token gate, acquire/release, recycle, status,
+// The framing, acquire/release, status,
 // host_state, the arrival-ordered pending-acquire structure, and the
 // kernel-enforced singleton guard's low-level bind primitive. Also adds
 // `monitor_claim`/`monitor_release`: exclusive ownership of an instance's
@@ -21,27 +21,15 @@
 //
 // Wire format confirmed at a blocking checkpoint decision (2026-08-03,
 // `as-specified`, no amendments), which accepted some residual risk and
-// considered and rejected a unix-domain-socket alternative. Auth: `hello`
-// (plan 62-01) answers UNCONDITIONALLY, to any caller that can reach a
-// bound address, with no credential of any kind -- `attach` and `transfer`
-// (Phase 64 gap G-64-1, owner decision 5, REQUIREMENTS.md) now answer
-// BEFORE the token gate too, by their broker-minted per-claim/per-stage
-// handle alone; see .planning/phases/64-files-as-bytes-both-directions/
-// evidence/64-g641-handle-only-authority.md for the full reversal record.
-// This drops the "every op requires the token" absolute the very first
-// version of this comment stated, but does not drop the credential
-// itself: monitor_claim (which mints an attach handle) and stage_file
-// (which mints a transfer handle) are BOTH still token-gated, and every
-// other op -- acquire, release, recycle, status, host_state,
-// monitor_claim, monitor_release, host_tool, operation -- still gates on
-// the SAME per-boot capability token compared constant-time, checked
-// BEFORE any state read or write, until Phase 66 (RM-02) deletes
-// broker.json, the token's only distribution channel. That is what makes
-// the bind set below the FIRST line of defence now (v2.0.0) for attach and
-// transfer as well, not merely a convenience narrowing sitting on top of a
-// credential every caller already needs: a wildcard bind would let any
-// network peer complete a handshake and learn this broker's protocol and
-// version for free, and now attach/transfer a session for free too. Bind:
+// considered and rejected a unix-domain-socket alternative. Auth: there is
+// no token. Every op is answered to any caller that can reach a bound
+// address. What protects a session is, first, the bind set below (never the
+// wildcard address); then the per-connection ownership predicate
+// (ownsTarget()), which confines every target-naming op to the grant the
+// connection itself holds; and the broker-minted per-claim/per-stage handles
+// that `attach` and `transfer` present on their own connections. A wildcard
+// bind would let any network peer acquire an emulator and attach to it, so
+// the bind set is the first line of defence. Bind:
 // loopback plus every enumerated bridge gateway address from an
 // interface-name allowlist (BRIDGE_INTERFACE_ALLOWLIST below), enumerated
 // exactly once at startup, never the wildcard address and never a
@@ -52,23 +40,24 @@
 // default via VICE_BROKER_CONTROL_PORT.
 import { createServer } from "node:net";
 import { networkInterfaces as osNetworkInterfaces } from "node:os";
-import { timingSafeEqual, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-/** 32 cryptographically random bytes rendered as hex -- the per-boot
- * capability token. Held in memory only by the caller; written once into
- * broker.json and never logged, never included in an error message
- * (T-01.6.2-02). */
-export function newControlToken() {
-    return randomBytes(32).toString("hex");
-}
 const MAX_LINE_BYTES = 65536;
+// Phase 65 (plan 65-03, D-11): exported as a SEPARATE statement, never
+// folded into the declaration above -- host-tool-transport.test.ts parses
+// that exact `const MAX_LINE_BYTES = <n>;` line by regex, off this module's
+// own source text, and an `export const` form would break that parse.
+// host-tool-endpoint.mts's own HOST_TOOL_STAGE_LINE_MAX_BYTES (a mirrored,
+// duplicated constant -- this module is host-bound and that one is not, per
+// this file's own leaf-module posture) is kept at or under this value by a
+// relation test that imports both modules directly.
+export { MAX_LINE_BYTES };
 /** Plan 63-04 Task 2 (SESS-04) DEFAULT, mirrored -- NOT imported -- from
  * broker-relay.mts's own DEFAULT_RELAY_KEEPALIVE_MS. Keeping the two
  * literal values in agreement is this module's own job, same as the
  * `HELLO_PROTOCOL_MAGIC` string mirrored a few lines below from
- * broker-endpoint.ts: a byte-identical sync test is what actually holds
+ * broker-endpoint.mts: a byte-identical sync test is what actually holds
  * the agreement together, not a shared import. */
 const DEFAULT_RELAY_KEEPALIVE_MS_LOCAL = 30000;
 /** DUPLICATES broker-relay.mts's own resolveRelayKeepAliveMs() rather than
@@ -90,7 +79,7 @@ function resolveRelayKeepAliveMsLocal() {
 /** The magic string identifying THIS project's own handshake protocol on
  * the wire -- specific enough that a bare TCP accept by an unrelated
  * service can never be mistaken for it. This is the one authoritative
- * definition (plan 62-01, D-06); `broker-endpoint.ts`, the container-side
+ * definition (plan 62-01, D-06); `broker-endpoint.mts`, the container-side
  * dialling client, MIRRORS this literal rather than importing it (this
  * module is host-bound and compiled into `resources/`, so a container-side
  * source file cannot value-import it) -- broker-endpoint.test.ts asserts
@@ -109,8 +98,8 @@ export const HELLO_PROTOCOL_MAGIC = "vice-mcp-broker-hello-v1";
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** The placeholder a git checkout (or a resolve/parse failure) reports as
  * this broker's own handshake version. Mirrored, not imported, from
- * version.ts's own `DEV_PLACEHOLDER` -- that module is container-side and
- * this one is host-bound, compiled away from it (see version.ts's own
+ * version.mts's own `DEV_PLACEHOLDER` -- that module is container-side and
+ * this one is host-bound, compiled away from it (see version.mts's own
  * header for why importing it here is forbidden). Kept byte-identical to
  * that constant so a published client reads the same placeholder string on
  * either side of the boundary. */
@@ -281,32 +270,15 @@ export function resolveControlPort(override) {
     const n = Number(raw);
     return Number.isFinite(n) ? n : 19510;
 }
-/** Constant-time token comparison over EQUAL-LENGTH buffers -- an
- * unequal-length comparison is refused without ever calling
- * timingSafeEqual (which throws on a length mismatch), so the length check
- * itself leaks nothing beyond what a fixed-length comparison already
- * would not avoid. */
-function tokensMatch(candidate, expected) {
-    const a = Buffer.from(candidate, "utf8");
-    const b = Buffer.from(expected, "utf8");
-    if (a.length !== b.length)
-        return false;
-    return timingSafeEqual(a, b);
-}
 function writeLine(socket, obj) {
     if (socket.writable) {
         socket.write(`${JSON.stringify(obj)}\n`);
     }
 }
-/** Writes a `host_tool` SUCCESS response line -- the object host-tool.mts's
- * runHostTool() produced, whatever shape that is (`{ ok: true, ... }` or
- * its own `{ ok: false, message }` refusal). This is deliberately NOT
- * `writeLine()`/`ControlResponse`: the host-tool response shape is
- * host-tool.mts's own contract, not one more `ControlResponse` variant this
- * module would otherwise have to keep in sync with a sibling module's
- * allowlist. A REJECTED onHostTool() promise never reaches this function --
- * it is answered through the ordinary `writeLine()`/`error` path instead,
- * so every protocol-level failure still goes through one shape. */
+/** Writes a `host_tool_run` response line: the object host-tool.mts's
+ * runHostTool() produced (`{ ok: true, ... }` or `{ ok: false, message }`).
+ * Deliberately not `writeLine()`/`ControlResponse`, because that shape is
+ * host-tool.mts's own contract. */
 function writeHostToolLine(socket, obj) {
     if (socket.writable) {
         socket.write(`${JSON.stringify(obj)}\n`);
@@ -425,7 +397,7 @@ export function enumerateBindHosts(opts = {}) {
     }
     return ordered;
 }
-/** Binds a bare TCP listener with NO protocol wired up -- no token check, no
+/** Binds a bare TCP listener with NO protocol wired up -- no
  * request handling, nothing. `startControlListener()` below calls this
  * internally and then attaches the real protocol; a test wanting to occupy
  * a control port with "something that is not a broker" (the loud singleton
@@ -442,8 +414,8 @@ export function bindControlListener(host, port) {
         });
     });
 }
-/** Attaches the newline-delimited-JSON protocol (framing, token gate, all
- * five request kinds) to an ALREADY-BOUND server. Split out of
+/** Attaches the newline-delimited-JSON protocol (framing and every
+ * request kind) to an ALREADY-BOUND server. Split out of
  * startControlListener() so the bind step and the protocol-wiring step are
  * two separately callable primitives -- the real broker still calls
  * startControlListener() as one step (this function is not part of its own
@@ -487,6 +459,13 @@ function attachControlProtocol(server, opts, pendingAcquires) {
         // `JSON.parse()` call, never the accumulator as a whole.
         let carry = Buffer.alloc(0);
         let requestIdForThisConnection = null;
+        // Phase 65 (SEAM-01, D-03/D-09): the request key `host_tool_stage`
+        // minted and bound to THIS connection -- `null` until a stage succeeds,
+        // never re-read from a later `host_tool_run` line's own `request`
+        // field (T-65-04). Mirrors `requestIdForThisConnection`'s own shape one
+        // line above, for the same reason: connection close IS the cleanup
+        // signal (see the close handler below).
+        let hostToolRequestKey = null;
         // Set by the `attach` dispatch arm below, BEFORE onRelayAttach() is
         // ever called -- once true, this socket's OWN "data" listener becomes
         // a no-op forever: every further byte belongs to
@@ -531,6 +510,15 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 requestIdForThisConnection = null;
                 opts.onRelease(id);
             }
+            // Phase 65 (D-09): the SAME connection-close-is-the-cleanup-signal
+            // posture as the release above, for a `host_tool_stage` request's own
+            // per-request scratch -- fires on an explicit close and on a bare
+            // socket death (SIGKILL) alike, since "close" always fires either way.
+            if (hostToolRequestKey) {
+                const key = hostToolRequestKey;
+                hostToolRequestKey = null;
+                opts.onHostToolEnd?.(key);
+            }
         });
         socket.on("error", () => {
             // Per-connection error handling isolates one peer's failure from
@@ -538,13 +526,11 @@ function attachControlProtocol(server, opts, pendingAcquires) {
         });
         /**
          * THE per-connection ownership predicate every target-naming op is
-         * gated on -- the same rule `recycle` has enforced since this
-         * protocol's earliest version, now shared rather than copied.
+         * gated on, shared rather than copied.
          *
          * Before this existed, `monitor_claim`/`monitor_release` took `target_id`
          * from the request and passed it straight through, so any connection
-         * holding the per-boot control token (which every container-side proxy
-         * sharing this broker does) could name ANOTHER session's grant id.
+         * could name ANOTHER session's grant id.
          * vice-broker.mts's handleMonitorClaim() uses that id as BOTH the target
          * and the claiming identity, and handleMonitorRelease()'s "only the
          * holder may release" check compared the request against itself -- so
@@ -622,8 +608,6 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                         id: requestId,
                         port: outcome.grant.port,
                         url: outcome.grant.url,
-                        epoch_file: outcome.grant.epochFile,
-                        supervisor_dir: outcome.grant.supervisorDir,
                         // Key omitted entirely when absent -- the fork case only now.
                         // A stock grant whose second (text-monitor) port allocation
                         // failed never reaches this line at all:
@@ -672,21 +656,10 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 return;
             }
             const req = parsed;
-            // Answered UNCONDITIONALLY, ahead of the token gate below -- BY
-            // DESIGN, per D-06/ENDPOINT-03. The handshake carries no credential,
-            // so an arm placed after tokensMatch() would always answer
-            // `unauthorized`, indistinguishable from this module's own
-            // stale-broker signature (a pre-v2.0.0 broker's token check runs
-            // ahead of dispatch too). `hello` is no longer the ONLY op this
-            // listener answers before the gate -- `attach` and `transfer`, below,
-            // now join it (Phase 64 gap G-64-1, owner decision 5; see this file's
-            // own header "Auth:" paragraph). Every other op -- including
-            // `host_tool`, dispatched first in the POST-gate chain below -- keeps
-            // requiring the token, untouched. The reply's key set is fixed to
-            // exactly four fields and carries no token, username, hostname, home
+            // Answered to any caller (D-06/ENDPOINT-03). The reply's key set is
+            // fixed to exactly four fields and carries no username, hostname, home
             // directory, absolute path or per-instance detail, because it is
-            // answered to any caller that can reach a bound address (see this
-            // plan's own privacy prohibition and STRIDE entry T-62-02).
+            // answered to any caller that can reach a bound address (T-62-02).
             if (req.op === "hello") {
                 const tag = typeof req.tag === "string" && req.tag !== "" ? req.tag : "control";
                 writeLine(socket, {
@@ -697,14 +670,9 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 });
                 return;
             }
-            // Phase 63 (SESS-02), REVERSED by Phase 64 gap G-64-1 (owner decision
-            // 5, REQUIREMENTS.md; see .planning/phases/64-files-as-bytes-both-
-            // directions/evidence/64-g641-handle-only-authority.md for the full
-            // record). Dispatched HERE, ahead of the token gate below, by the
-            // broker-minted per-claim handle ALONE -- see this file's own header
-            // "Auth:" paragraph and ControlRequestKind's own comment on `attach`.
-            // `hello` above is no longer the ONLY op this listener answers before
-            // the gate; `attach` and `transfer` (below) now join it. Deliberately
+            // Phase 63 (SESS-02): authorised by the broker-minted per-claim handle
+            // ALONE -- see this file's own header "Auth:" paragraph and
+            // ControlRequestKind's own comment on `attach`. Deliberately
             // NOT gated by ownsTarget(): this connection is a brand-new relay
             // socket, never the one that ran monitor_claim, so
             // requestIdForThisConnection is null on it -- the per-claim `handle`
@@ -776,10 +744,8 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 });
                 return;
             }
-            // Phase 64 (XFER-04, D-01/D-02), REVERSED by gap G-64-1 (owner
-            // decision 5) the SAME way `attach` above was -- dispatched HERE,
-            // ahead of the token gate, beside `attach`, by the broker-minted
-            // per-stage handle ALONE (D-01: the payload is authorised by the
+            // Phase 64 (XFER-04, D-01/D-02): authorised, like `attach` above, by
+            // the broker-minted per-stage handle ALONE (D-01: the payload is authorised by the
             // handle the broker minted, not by the connection presenting it).
             // Deliberately NOT gated by ownsTarget(): this connection is a
             // brand-new transfer socket, never the one that ran stage_file, so
@@ -838,41 +804,95 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 // (see FileTransferOutcome's own header comment).
                 return;
             }
-            // Token check BEFORE any state is read or written, for every op
-            // below -- absence or mismatch is refused, the connection is
-            // destroyed, and nothing is allocated, spawned or signalled
-            // (T-01.6.2-01, T-01.6.2-03). `attach` and `transfer` above no longer
-            // reach this check (G-64-1, owner decision 5); every other op still
-            // does, unchanged, until Phase 66 (RM-02) deletes broker.json, the
-            // token's only distribution channel.
-            const token = typeof req.token === "string" ? req.token : "";
-            if (!tokensMatch(token, opts.token)) {
-                writeLine(socket, { kind: "error", code: "unauthorized", message: "missing or invalid control token" });
-                socket.destroy();
+            // Phase 65 (SEAM-01, D-03) -- see ControlRequestKind's own
+            // comment on `host_tool_stage`/`host_tool_run` for the full reasoning.
+            // Never touches relayMode: this op answers on the ordinary line
+            // reader, it never hands the connection to a splice.
+            if (req.op === "host_tool_stage") {
+                if (hostToolRequestKey !== null) {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "bad_request",
+                        message: "host_tool_stage: a stage request is already bound to this connection",
+                    });
+                    return;
+                }
+                const filesRaw = req.files;
+                if (!Array.isArray(filesRaw)) {
+                    writeLine(socket, { kind: "error", code: "bad_request", message: "host_tool_stage requires files (array)" });
+                    return;
+                }
+                const files = [];
+                for (const rawEntry of filesRaw) {
+                    if (typeof rawEntry !== "object" || rawEntry === null || Array.isArray(rawEntry)) {
+                        writeLine(socket, {
+                            kind: "error",
+                            code: "bad_request",
+                            message: "host_tool_stage: each files[] entry must be an object {tree, rel, byteLength}",
+                        });
+                        return;
+                    }
+                    const entry = rawEntry;
+                    const tree = entry.tree;
+                    const rel = entry.rel;
+                    const byteLength = entry.byteLength;
+                    if (typeof tree !== "number" || !Number.isSafeInteger(tree) || tree < 0 || typeof rel !== "string" || typeof byteLength !== "number") {
+                        writeLine(socket, {
+                            kind: "error",
+                            code: "bad_request",
+                            message: "host_tool_stage: each files[] entry must be {tree: non-negative integer, rel: string, byteLength: number}",
+                        });
+                        return;
+                    }
+                    files.push({ tree, rel, byteLength });
+                }
+                if (!opts.onHostToolStage) {
+                    writeLine(socket, { kind: "error", code: "internal", message: "host_tool_stage is not wired on this broker" });
+                    return;
+                }
+                const stageOutcome = opts.onHostToolStage(files);
+                if (!stageOutcome.ok) {
+                    writeLine(socket, { kind: "error", code: stageOutcome.code, message: stageOutcome.message });
+                    return;
+                }
+                hostToolRequestKey = stageOutcome.requestKey;
+                writeHostToolLine(socket, {
+                    kind: "host_tool_staged",
+                    request: stageOutcome.requestKey,
+                    trees: stageOutcome.treeHandles,
+                    files: stageOutcome.fileHandles,
+                });
                 return;
             }
-            // Dispatched FIRST in the chain, before "acquire" -- so the ordering
-            // reads clearly. Dispatch here is on EXACT STRING EQUALITY, never
-            // fallthrough, so branch order does not itself change which requests
-            // reach attemptAcquire() -- what actually makes this branch unable to
-            // touch lease state is that opts.onHostTool is its OWN callback (see
-            // StartControlListenerOptions' own comment), never composed from
-            // onAcquire/onRelease/onRecycle/onStatus/onHostState/onMonitorClaim/
-            // onMonitorRelease.
-            if (req.op === "host_tool") {
+            if (req.op === "host_tool_run") {
+                const presentedRequest = typeof req.request === "string" ? req.request : "";
+                if (hostToolRequestKey === null || presentedRequest === "" || presentedRequest !== hostToolRequestKey) {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "denied",
+                        message: "host_tool_run: no matching host_tool_stage request is bound to this connection",
+                    });
+                    return;
+                }
+                if (!opts.onHostToolRun) {
+                    writeLine(socket, { kind: "error", code: "internal", message: "host_tool_run is not wired on this broker" });
+                    return;
+                }
+                const boundRequestKey = hostToolRequestKey;
                 opts
-                    .onHostTool(req)
+                    .onHostToolRun(boundRequestKey, req)
                     .then((result) => {
                     if (!socket.destroyed)
                         writeHostToolLine(socket, result);
                 })
                     .catch(() => {
                     if (!socket.destroyed) {
-                        writeLine(socket, { kind: "error", code: "internal", message: "host_tool threw" });
+                        writeLine(socket, { kind: "error", code: "internal", message: "host_tool_run threw" });
                     }
                 });
+                return;
             }
-            else if (req.op === "acquire") {
+            if (req.op === "acquire") {
                 const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("req");
                 // Narrow BEFORE attemptAcquire, so a malformed profile never
                 // reaches onAcquire and therefore never reaches the port allocator,
@@ -912,44 +932,6 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     opts.onRelease(id);
                 }
                 writeLine(socket, { kind: "released" });
-            }
-            else if (req.op === "recycle") {
-                const recycleId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("recycle");
-                const targetId = typeof req.target_id === "string" ? req.target_id : "";
-                // T-01.6.2-31: a connection may only recycle the grant IT ITSELF
-                // holds. This check happens here, before onRecycle() is ever
-                // called, so a mismatched target never reaches the kill discipline
-                // and never signals anything -- an injected signal recorder stays
-                // empty for this case. Now expressed through the SAME ownsTarget()
-                // predicate monitor_claim/monitor_release use, so the three
-                // target-naming ops cannot drift apart.
-                if (!ownsTarget(targetId)) {
-                    writeLine(socket, {
-                        kind: "error",
-                        code: "denied",
-                        message: "recycle may only target the grant this connection itself holds",
-                    });
-                    return;
-                }
-                opts
-                    .onRecycle(targetId)
-                    .then((result) => {
-                    writeLine(socket, {
-                        kind: "recycle_ack",
-                        id: recycleId,
-                        target_id: targetId,
-                        port: result.port,
-                        x64sc_pid: result.pid,
-                        vice_bin: result.viceBin,
-                        kill_stage: result.killStage,
-                        epoch_before: result.epochBefore,
-                        outcome: result.outcome,
-                        reason: result.reason,
-                    });
-                })
-                    .catch(() => {
-                    writeLine(socket, { kind: "error", code: "internal", message: "recycle threw" });
-                });
             }
             else if (req.op === "status") {
                 writeLine(socket, { kind: "status", instances: opts.onStatus() });
@@ -1098,7 +1080,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
             }
             else if (req.op === "stage_file") {
                 // Phase 64 (XFER-04, D-01). Gated on the SAME ownsTarget() predicate
-                // monitor_claim/monitor_release/recycle/operation already share --
+                // monitor_claim/monitor_release/operation already share --
                 // dispatched on this connection's ORDINARY line reader; never
                 // touches relayMode.
                 const targetId = typeof req.target_id === "string" ? req.target_id : "";
@@ -1140,7 +1122,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
 }
 /** Starts the TCP control listener: binds (bindControlListener()), then
  * attaches the full newline-delimited-JSON protocol (attachControlProtocol()
- * above) -- all five request kinds, the token gate, and the arrival-ordered
+ * above) -- every request kind and the arrival-ordered
  * pending-acquire queue this listener instance owns. Frames inbound bytes as
  * newline-delimited JSON: buffers, splits on "\n", parses each line with
  * the never-throw posture this codebase already uses for untrusted input --

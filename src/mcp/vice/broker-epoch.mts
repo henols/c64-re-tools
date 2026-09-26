@@ -5,8 +5,7 @@
 // was deleted. Ports write_epoch()'s exact field shape and its atomic
 // tmp-sibling-then-rename discipline -- the tmp file is created empty, mode
 // tightened to owner-read-write BEFORE any content reaches it, content
-// written, then renamed -- matching writeBrokerRecord()'s own choke point in
-// vice-broker.mts exactly.
+// written, then renamed.
 //
 // Plan 03, Task 1 completes this module: the path derivations
 // (epochPathFor/instanceLogDirFor, both built on the SAME private
@@ -108,8 +107,7 @@ export function writeEpochRecord({ supervisorDir, record }: WriteEpochOptions): 
 /** The epoch-increment derivation the per-child supervisor calls on every
  * respawn (and on an instance's very first launch): reads supervisorDir's
  * current epoch.json if one is present, using the SAME never-throw posture
- * already established for untrusted reads elsewhere in this codebase
- * (readBrokerRecordMaybe() in vice-broker.mts, readEpoch() in vice.ts) --
+ * already established for untrusted reads elsewhere in this codebase --
  * absence, an unreadable file, malformed JSON, a non-object shape, or a
  * non-integer `epoch` field are ALL treated as "no usable prior record"
  * rather than an error. A fresh instance must be able to start over an

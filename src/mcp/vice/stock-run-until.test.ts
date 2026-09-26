@@ -1,7 +1,7 @@
 // node:test coverage of stock-run-until.ts. Every client is a bare
 // EventEmitter with a spy `send()` -- no broker, no real socket, no
 // emulator (matching this repo's established DI-stub convention,
-// stock-checkpoints.test.ts:1-56 / stock-dispatch.test.ts:1-133).
+// stock-checkpoints.test.ts:1-56 / stock-session.test.ts:1-133).
 //
 // 07-PATTERNS.md is explicit that vice-sync.ts's "deliberately not
 // unit-tested" disposition does NOT carry over to this file: that
@@ -29,7 +29,7 @@ import {
 import { attachRunStateTracker, resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { MachineRestartedError } from "./vice-errors.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 // ---------------------------------------------------------------------------
 // DI stub helpers
@@ -76,7 +76,7 @@ function makeSession(client: ViceMonitorClient, targetId = "target-1"): StockCon
   return { client, targetId } as unknown as StockConnectSession;
 }
 
-const FAKE_DEPS = {} as unknown as StockDispatchDeps;
+const FAKE_DEPS = {} as unknown as StockSessionDeps;
 
 function fakeCheckpoint(overrides: Partial<ParsedCheckpoint> = {}): ParsedCheckpoint {
   return {
@@ -525,7 +525,7 @@ test("run_until: WR-01 a StockConnectionClosedError on the cleanup delete does N
   assert.equal(payload.cleanup, "delete_failed");
   assert.equal(payload.machineHalted, false, "a dead socket cannot establish that the machine is halted");
   assert.match(payload.machineHaltedNote as string, /could NOT be established/);
-  assert.match(payload.machineHaltedNote as string, /vice_diagnose/);
+  assert.match(payload.machineHaltedNote as string, /vice_execution_pause/);
   assert.doesNotMatch(
     payload.explanation as string,
     /needs vice_execution_run to resume/,

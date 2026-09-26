@@ -4,7 +4,7 @@
 // OPT-IN, MANUAL-ONLY. The FIRST test in this tree that launches genuine
 // stock VICE through the REAL spawned broker artifact (resources/
 // vice-broker.mjs) and dispatches vice_disk_attach / vice_autostart through
-// dispatchStock() against the instance it granted -- so both buildViceArgs()
+// callStockTool() against the instance it granted -- so both buildViceArgs()
 // AND the production makeLoggingSpawn() + withCrashSupervision() daemon
 // composition are in the call path, not merely a hand-built argv string.
 //
@@ -84,7 +84,7 @@
 //   VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test stock-broker-live.test.ts
 //
 // Registered as the SEVENTH and, as of this plan, last MANUAL_ONLY_TESTS
-// entry in test-gate.mjs: spawns a real broker daemon (resources/
+// entry in test-gate.ts: spawns a real broker daemon (resources/
 // vice-broker.mjs, under bare node) AND a real emulator process per test
 // case, default-SKIPs everywhere (never hangs CI), and is opted into
 // exactly like its six siblings.
@@ -98,11 +98,8 @@
 //     the .d64 or post-fix .prg cases -- that bypasses vice-broker.mts
 //     entirely and would validate I-1's config isolation seam without ever
 //     touching the real makeLoggingSpawn()/withCrashSupervision()
-//     composition a production broker uses. Those two cases MUST launch
-//     through the spawned resources/vice-broker.mjs artifact. Only the
-//     pre-fix .prg baseline (Task 2) uses the in-process tryLaunchOne()
-//     route, and only because a static VICE_ARGS cannot interpolate a
-//     daemon-allocated port -- see that test's own inline comment.
+//     composition a production broker uses. Every case MUST launch
+//     through the spawned resources/vice-broker.mjs artifact.
 //   - Never acquire a child process, socket, or scratch directory outside a
 //     try/finally whose finally SIGTERMs-then-SIGKILLs the emulator and
 //     rmSync()s every scratch dir -- stock VICE's binary monitor services
@@ -124,12 +121,14 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 
 import { build } from "./build.ts";
-import { openBrokerControl, type BrokerControlSession, type HeldLease, type AcquireGrant } from "./vice-broker-client.ts";
-import { dispatchStock, clearHeldStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
-import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
-import { tryLaunchOne, probeReady } from "./broker-launch.mts";
-import { createBrokerState } from "./broker-state.mts";
-import { snapshotPathFor, snapshotMetaPathFor } from "./stock-paths.ts";
+import { epochPathFor } from "./broker-epoch.mts";
+import { dialBrokerEndpoint } from "./broker-endpoint.mts";
+import { dialControlSession, type BrokerControlSession, type HeldLease, type AcquireGrant } from "./vice-broker-client.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
+import { stockConnect, stockReconnect, type StockConnectOptions, type StockConnectSession } from "./stock-connect.ts";
+import { probeReady } from "./broker-launch.mts";
+import { snapshotPathFor, snapshotMetaPathFor } from "./transfer-paths.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
@@ -229,7 +228,7 @@ function writeD64Fixture(dir: string, prgPath: string): string {
 
 // ---------------------------------------------------------------------------
 // Real-broker-artifact spawn/teardown -- stock-live-broker-monitor.test.ts's
-// own startBroker()/stopBroker()/waitForBrokerJson() shape, trimmed to what
+// own startBroker()/stopBroker() shape, trimmed to what
 // this file needs (no crash-respawn machinery).
 // ---------------------------------------------------------------------------
 
@@ -238,7 +237,7 @@ interface BrokerHandle {
   stderr: string;
 }
 
-function startBroker(stateDir: string, viceBinPath: string, scratchDir: string): BrokerHandle {
+function startBroker(stateDir: string, viceBinPath: string, scratchDir: string, controlPort: number): BrokerHandle {
   const merged: Record<string, string | undefined> = {
     ...process.env,
     // Deliberately omitted -- this genuinely runs on the host.
@@ -248,7 +247,7 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     // argv override in buildViceArgs() and would bypass it entirely, which
     // is exactly the gap this file exists to close.
     VICE_ARGS: undefined,
-    VICE_BROKER_CONTROL_PORT: "0",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
     VICE_BROKER_MAX: "1",
     VICE_BROKER_POLL_MS: "250",
     VICE_RESTART_BACKOFF_S: "1",
@@ -289,11 +288,26 @@ async function stopBroker(handle: BrokerHandle): Promise<void> {
   if (!exited) handle.child.kill("SIGKILL");
 }
 
-async function waitForBrokerJson(stateDir: string, deadlineMs = 10000): Promise<Record<string, unknown>> {
-  const path = join(stateDir, "broker.json");
-  const appeared = await waitFor(() => existsSync(path) && typeof JSON.parse(readFileSync(path, "utf8")).control_port === "number", deadlineMs);
-  assert.ok(appeared, "broker.json with a control_port did not appear within deadline");
-  return JSON.parse(readFileSync(path, "utf8"));
+/** A loopback port nothing listens on yet, for this suite's own broker --
+ * never the fixed default (19510), which a real broker may hold. */
+async function allocateControlPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+/** Bounded-waits for the broker to answer a hello on `port`. */
+async function waitForBrokerReady(port: number, deadlineMs = 10000): Promise<void> {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    const dialed = await dialBrokerEndpoint({ port, candidates: ["127.0.0.1"] });
+    if (dialed.ok) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.fail(`the broker never answered a hello on 127.0.0.1:${port} within ${deadlineMs}ms`);
 }
 
 function isAlive(pid: number): boolean {
@@ -320,18 +334,17 @@ async function waitForStockReady(port: number, deadlineMs = 30000): Promise<bool
   return false;
 }
 
-/** Builds a REAL, production-shaped StockDispatchDeps for one grant --
+/** Builds a REAL, production-shaped StockSessionDeps for one grant --
  * `ensureLease` hands back the lease this grant already holds (never
  * re-acquiring), and `connect` is a thin pass-through to the real
  * stockConnect(). Mirrors stock-live-broker-monitor.test.ts's own
  * depsFor(). */
-function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerControlSession, stateDir: string): StockDispatchDeps {
+function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerControlSession, stateDir: string): StockSessionDeps {
   const lease: HeldLease = {
     host,
     port: grant.port,
     targetId: grant.id,
     brokerControl: controlSession,
-    epochFile: grant.epoch_file,
     supervisorDir: stateDir,
   };
   return {
@@ -358,15 +371,15 @@ interface PollResult {
  * run time almost entirely -- confirmed empirically while writing this
  * file. Never a fixed sleep alone: this polls until either the expected
  * bytes appear or `deadlineMs` elapses. */
-async function pollUntilBytesMatch(deps: StockDispatchDeps, address: number, expected: readonly number[], deadlineMs: number, intervalMs = 500): Promise<PollResult> {
+async function pollUntilBytesMatch(deps: StockSessionDeps, address: number, expected: readonly number[], deadlineMs: number, intervalMs = 500): Promise<PollResult> {
   const deadline = Date.now() + deadlineMs;
   let attempts = 0;
   let lastObserved: number[] | null = null;
   while (Date.now() < deadline) {
     attempts++;
-    await dispatchStock("vice_execution_run", {}, deps);
+    await callStockTool("vice_execution_run", {}, deps);
     await new Promise((r) => setTimeout(r, intervalMs));
-    const memResult = await dispatchStock(
+    const memResult = await callStockTool(
       "vice_memory_read",
       { address: `$${address.toString(16)}`, size: expected.length, encoding: "array", sideEffects: false },
       deps,
@@ -389,16 +402,25 @@ interface HarnessReport {
   pidsAliveAfterTeardown: number[];
 }
 
-async function withBrokerHarness(fn: (ctx: { stateDir: string; scratchDir: string; recordPid: (pid: number) => void }) => Promise<void>): Promise<HarnessReport> {
+async function withBrokerHarness(
+  fn: (ctx: { stateDir: string; scratchDir: string; controlPort: number; recordPid: (pid: number) => void }) => Promise<void>,
+): Promise<HarnessReport> {
   build(); // ensure resources/ is a fresh build of the current TypeScript source
   const scratchDir = mkdtempSync(join(tmpdir(), "stock-broker-live-"));
   const stateDir = join(scratchDir, "state");
   const recordedPids = new Set<number>();
-  const handle = startBroker(stateDir, resolvedBinPath, scratchDir);
+  const controlPort = await allocateControlPort();
+  const handle = startBroker(stateDir, resolvedBinPath, scratchDir, controlPort);
   let pidsAliveAfterTeardown: number[] = [];
+  // The monitor relay and file transfers dial the fixed endpoint, which this
+  // process resolves from VICE_BROKER_CONTROL_PORT -- point it at this broker.
+  const previousControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(controlPort);
   try {
-    await fn({ stateDir, scratchDir, recordPid: (pid: number) => recordedPids.add(pid) });
+    await fn({ stateDir, scratchDir, controlPort, recordPid: (pid: number) => recordedPids.add(pid) });
   } finally {
+    if (previousControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = previousControlPort;
     await stopBroker(handle);
     for (const pid of recordedPids) {
       try {
@@ -471,18 +493,15 @@ test(
   async () => {
     clearHeldStockSession();
     let report: HarnessReport | null = null;
-    report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
+    report = await withBrokerHarness(async ({ stateDir, scratchDir, controlPort, recordPid }) => {
       const { prgPath } = writePrgFixture(scratchDir);
       const d64Path = writeD64Fixture(scratchDir, prgPath);
 
-      const brokerJson = await waitForBrokerJson(stateDir);
+      await waitForBrokerReady(controlPort);
       const host = "127.0.0.1";
-      const controlPort = Number(brokerJson.control_port);
-      const token = String(brokerJson.control_token);
-      assert.ok(Number.isFinite(controlPort) && token.length > 0, `broker.json must carry a real control_port/control_token, got: ${JSON.stringify(brokerJson)}`);
 
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const controlSession = opened.session;
 
@@ -491,7 +510,7 @@ test(
       if (!acquired.ok) return;
       const grant = acquired.grant;
 
-      const pid = await readGrantPid(grant.epoch_file);
+      const pid = await readGrantPid(epochPathFor(stateDir, grant.port));
       recordPid(pid);
 
       // --- The non-bypassable proof for I-2: read the ACTUAL argv this
@@ -516,11 +535,11 @@ test(
 
       const deps = depsFor(host, grant, controlSession, stateDir);
 
-      const diskAttachResult = await dispatchStock("vice_disk_attach", { unit: 8, path: d64Path }, deps);
+      const diskAttachResult = await callStockTool("vice_disk_attach", { unit: 8, path: d64Path }, deps);
       const diskAttachPayload = parseOkPayload(diskAttachResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (.d64): vice_disk_attach -> ${JSON.stringify(diskAttachPayload)}`);
 
-      const autostartResult = await dispatchStock("vice_autostart", { path: d64Path, run: true }, deps);
+      const autostartResult = await callStockTool("vice_autostart", { path: d64Path, run: true }, deps);
       const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (.d64): vice_autostart -> ${JSON.stringify(autostartPayload)}`);
 
@@ -556,14 +575,14 @@ test(
 // program's own verified payload region must STILL match afterwards (proves
 // the load restored THIS machine, not some other one).
 //
-// NOTE on scratch-directory placement: stock-paths.ts's snapshotPathFor()/
-// snapshotMetaPathFor() are FIXED to <repoRoot()>/.vice-snapshots/<name>.{vsf,json}
+// NOTE on scratch-directory placement: transfer-paths.ts's snapshotPathFor()/
+// snapshotMetaPathFor() are FIXED to <toolsDir()>/snapshots/<name>.{vsf,json}
 // -- there is no override to redirect a save/load into this harness's own
 // mkdtempSync() scratch directory (by design: T-3-05, keeping every
-// snapshot inside the workspace's hostpath.ts-translatable tree). This test
-// therefore cleans up its own snapshot artifacts explicitly in a finally
-// block, rather than relying on withBrokerHarness's scratchDir teardown --
-// .vice-snapshots/ is gitignored, but an orphaned .vsf left behind is still
+// snapshot inside the workspace tree). This test therefore cleans up its
+// own snapshot artifacts explicitly in a finally block, rather than relying
+// on withBrokerHarness's scratchDir teardown -- the tools dir is
+// gitignored, but an orphaned .vsf left behind is still
 // exactly the kind of scratch-directory leak this plan's must-haves forbid.
 // ---------------------------------------------------------------------------
 
@@ -584,16 +603,15 @@ test(
     const snapshotMetaPath = snapshotMetaPathFor(SNAPSHOT_ROUND_TRIP_NAME);
     try {
       let report: HarnessReport | null = null;
-      report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
+      report = await withBrokerHarness(async ({ stateDir, scratchDir, controlPort, recordPid }) => {
         const { prgPath } = writePrgFixture(scratchDir);
         const d64Path = writeD64Fixture(scratchDir, prgPath);
 
-        const brokerJson = await waitForBrokerJson(stateDir);
+        await waitForBrokerReady(controlPort);
         const host = "127.0.0.1";
-        assert.ok(Number(brokerJson.control_port) > 0, `broker.json must carry a real control_port, got: ${JSON.stringify(brokerJson)}`);
 
-        const opened = await openBrokerControl(stateDir);
-        assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+        const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+        assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
         if (!opened.ok) return;
         const controlSession = opened.session;
 
@@ -602,7 +620,7 @@ test(
         if (!acquired.ok) return;
         const grant = acquired.grant;
 
-        const pid = await readGrantPid(grant.epoch_file);
+        const pid = await readGrantPid(epochPathFor(stateDir, grant.port));
         recordPid(pid);
 
         const ready = await waitForStockReady(grant.port);
@@ -610,11 +628,11 @@ test(
 
         const deps = depsFor(host, grant, controlSession, stateDir);
 
-        const diskAttachResult = await dispatchStock("vice_disk_attach", { unit: 8, path: d64Path }, deps);
+        const diskAttachResult = await callStockTool("vice_disk_attach", { unit: 8, path: d64Path }, deps);
         const diskAttachPayload = parseOkPayload(diskAttachResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-broker-live (snapshot round trip): vice_disk_attach -> ${JSON.stringify(diskAttachPayload)}`);
 
-        const autostartResult = await dispatchStock("vice_autostart", { path: d64Path, run: true }, deps);
+        const autostartResult = await callStockTool("vice_autostart", { path: d64Path, run: true }, deps);
         const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-broker-live (snapshot round trip): vice_autostart -> ${JSON.stringify(autostartPayload)}`);
 
@@ -629,7 +647,7 @@ test(
         // this is exactly what vice_snapshot_save below captures, and
         // exactly what vice_snapshot_load must restore. Never assumed to be
         // zero or any other fixed value -- whatever it genuinely is.
-        const baselineRead = await dispatchStock(
+        const baselineRead = await callStockTool(
           "vice_memory_read",
           { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, size: SNAPSHOT_PERTURB_BYTES.length, encoding: "array", sideEffects: false },
           deps,
@@ -638,18 +656,18 @@ test(
         const baselineBytes = baselinePayload.bytes as number[];
         console.log(`stock-broker-live (snapshot round trip): baseline $${SNAPSHOT_SCRATCH_ADDRESS.toString(16)} bytes = ${JSON.stringify(baselineBytes)}`);
 
-        const saveResult = await dispatchStock("vice_snapshot_save", { name: SNAPSHOT_ROUND_TRIP_NAME }, deps);
+        const saveResult = await callStockTool("vice_snapshot_save", { name: SNAPSHOT_ROUND_TRIP_NAME }, deps);
         const savePayload = parseOkPayload(saveResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-broker-live (snapshot round trip): vice_snapshot_save -> ${JSON.stringify(savePayload)}`);
 
-        const perturbResult = await dispatchStock(
+        const perturbResult = await callStockTool(
           "vice_memory_write",
           { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, data: [...SNAPSHOT_PERTURB_BYTES] },
           deps,
         );
         parseOkPayload(perturbResult as { content: { type: "text"; text: string }[]; isError: boolean });
 
-        const perturbedRead = await dispatchStock(
+        const perturbedRead = await callStockTool(
           "vice_memory_read",
           { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, size: SNAPSHOT_PERTURB_BYTES.length, encoding: "array", sideEffects: false },
           deps,
@@ -663,13 +681,13 @@ test(
           `the perturbation write must stick before the round trip proves anything: expected ${JSON.stringify(SNAPSHOT_PERTURB_BYTES)}, got ${JSON.stringify(perturbedBytes)}`,
         );
 
-        const loadResult = await dispatchStock("vice_snapshot_load", { name: SNAPSHOT_ROUND_TRIP_NAME }, deps);
+        const loadResult = await callStockTool("vice_snapshot_load", { name: SNAPSHOT_ROUND_TRIP_NAME }, deps);
         const loadPayload = parseOkPayload(loadResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-broker-live (snapshot round trip): vice_snapshot_load -> ${JSON.stringify(loadPayload)}`);
 
         // --- Half 1: the perturbed region must have RETURNED to its
         // pre-perturbation bytes -- proves the load restored state.
-        const restoredRead = await dispatchStock(
+        const restoredRead = await callStockTool(
           "vice_memory_read",
           { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, size: SNAPSHOT_PERTURB_BYTES.length, encoding: "array", sideEffects: false },
           deps,
@@ -686,7 +704,7 @@ test(
 
         // --- Half 2: the program's own verified payload region must STILL
         // match -- proves the load restored THIS machine, not some other.
-        const payloadRead = await dispatchStock(
+        const payloadRead = await callStockTool(
           "vice_memory_read",
           { address: `$${VERIFIED_PAYLOAD_ADDRESS.toString(16)}`, size: VERIFIED_PAYLOAD.length, encoding: "array", sideEffects: false },
           deps,
@@ -723,14 +741,14 @@ test(
   async () => {
     clearHeldStockSession();
     let report: HarnessReport | null = null;
-    report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
+    report = await withBrokerHarness(async ({ stateDir, scratchDir, controlPort, recordPid }) => {
       const { prgPath } = writePrgFixture(scratchDir);
 
-      const brokerJson = await waitForBrokerJson(stateDir);
+      await waitForBrokerReady(controlPort);
       const host = "127.0.0.1";
 
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const controlSession = opened.session;
 
@@ -739,7 +757,7 @@ test(
       if (!acquired.ok) return;
       const grant = acquired.grant;
 
-      const pid = await readGrantPid(grant.epoch_file);
+      const pid = await readGrantPid(epochPathFor(stateDir, grant.port));
       recordPid(pid);
       // Post-fix confirmation, same discriminator as Task 1 (not the
       // primary point of THIS test, but free to check and worth recording).
@@ -752,7 +770,7 @@ test(
 
       // NO vice_disk_attach at all -- the whole question is what a BARE
       // .prg autostart does with no disk ever in the loop.
-      const autostartResult = await dispatchStock("vice_autostart", { path: prgPath, run: true }, deps);
+      const autostartResult = await callStockTool("vice_autostart", { path: prgPath, run: true }, deps);
       const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (post-fix .prg): vice_autostart -> ${JSON.stringify(autostartPayload)}`);
 
@@ -772,144 +790,6 @@ test(
 
     assert.ok(report !== null, "withBrokerHarness must have returned a report");
     assert.deepEqual(report!.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report!.pidsAliveAfterTeardown)} (recorded: ${JSON.stringify(report!.recordedPids)})`);
-  },
-);
-
-test(
-  "stock-broker-live: PRE-FIX baseline -- with Drive8Type=0 (the pre-08.2-02 argv, reproduced via the VICE_ARGS static override, in-process tryLaunchOne) a bare .prg autostart is refused at the wire and the payload never lands -- settles the blast-radius verdict as MEASURED, not inferred",
-  { skip: SKIP_REASON, timeout: 60000 },
-  async () => {
-    clearHeldStockSession();
-    // --- Pre-fix case, deliberately the IN-PROCESS tryLaunchOne() route,
-    // not the spawned broker artifact. Rationale, per this plan's own
-    // instruction (stated here, not just in the plan text, so a future
-    // reader meets it at the exact place it matters): VICE_ARGS is a
-    // STATIC STRING and cannot interpolate a port the daemon allocates
-    // later at request time, so a daemon-routed pre-fix case is not
-    // expressible -- the port must be known BEFORE the override string is
-    // built, which only the in-process route allows. This case's only job
-    // is to establish what a Drive8Type=0 instance does with a bare .prg --
-    // an emulator-behaviour question, not a code-path question (the .d64
-    // and post-fix .prg cases above already prove the code path). This case
-    // therefore asserts NOTHING about XDG_CONFIG_HOME: the in-process route
-    // bypasses the real daemon's makeLoggingSpawn()/withCrashSupervision()
-    // composition entirely, and any such assertion here would be exactly
-    // the kind of false green plan 08.2-06 exists to eliminate.
-    const scratchDir = mkdtempSync(join(tmpdir(), "stock-broker-live-prefix-"));
-    const prevViceArgs = process.env.VICE_ARGS;
-    let childPid: number | null = null;
-    try {
-      const { prgPath } = writePrgFixture(scratchDir);
-
-      const port = await new Promise<number>((resolve, reject) => {
-        const srv = createServer();
-        srv.once("error", reject);
-        srv.listen(0, "127.0.0.1", () => {
-          const address = srv.address();
-          const p = typeof address === "object" && address ? address.port : null;
-          srv.close(() => (p === null ? reject(new Error("no ephemeral port")) : resolve(p)));
-        });
-      });
-
-      // The static, pre-fix argv -- byte-identical in shape to what
-      // buildViceArgs()'s stock branch emitted BEFORE plan 08.2-02: no
-      // -default, no -drive8type. This is the supported VICE_ARGS
-      // full-override mechanism (broker-launch.mts's buildViceArgs(),
-      // checked first, ahead of either backend branch) -- reproducing the
-      // pre-fix shape WITHOUT reverting the real fix anywhere in source.
-      process.env.VICE_ARGS = `-binarymonitor -binarymonitoraddress ip4://127.0.0.1:${port}`;
-
-      const supervisorDir = join(scratchDir, "state", String(port));
-      const epochFile = join(supervisorDir, "epoch.json");
-      const state = createBrokerState();
-      const record = tryLaunchOne("pre-fix-baseline", port, {
-        state,
-        supervisorDir,
-        epochFile,
-        viceBin: resolvedBinPath,
-        // backend: "stock" here governs ONLY spawnAndRecordInstance()'s own
-        // XDG_CONFIG_HOME scratch-dir computation (still applied, since
-        // that computation happens at this exact seam regardless of the
-        // VICE_ARGS override deciding the argv) -- it keeps this pre-fix
-        // launch from touching the operator's real vicerc and colliding
-        // with the 3.9-vs-3.10 version-mismatch modal, even though (per
-        // this test's own rationale above) nothing here ASSERTS on it.
-        backend: "stock",
-        // deps.spawn deliberately left undefined -- spawnAndRecordInstance()
-        // falls back to a bare nodeSpawn(cmd, args, options) wrapper, which
-        // still honours the options argument (this is what the "widened
-        // default wrapper" dead-code note in broker-launch.mts refers to).
-      });
-      assert.ok(record, "tryLaunchOne must have returned a record for the pre-fix baseline launch");
-      childPid = record!.pid;
-      assert.ok(childPid, "the pre-fix baseline launch must have a real pid");
-
-      const argv = record!.viceArgs;
-      assert.equal(argv.indexOf("-drive8type"), -1, `PRE-FIX baseline argv must contain no -drive8type, got: ${JSON.stringify(argv)}`);
-
-      const ready = await waitForStockReady(port);
-      assert.ok(ready, `the pre-fix baseline instance at port ${port} never answered a binary-monitor probe within the deadline`);
-
-      const CONFORMANCE_BROKER_CONTROL = {
-        claimMonitor: async () => ({ ok: true as const }),
-        releaseMonitor: async () => ({ ok: true as const }),
-      } as unknown as BrokerControlSession;
-      const lease: HeldLease = {
-        host: "127.0.0.1",
-        port,
-        targetId: "pre-fix-baseline",
-        brokerControl: CONFORMANCE_BROKER_CONTROL,
-        epochFile: "",
-        supervisorDir: "",
-      };
-      const deps: StockDispatchDeps = {
-        ensureLease: async () => ({ ok: true as const, lease }),
-        connect: (opts: StockConnectOptions) => stockConnect(opts),
-      };
-
-      // NO vice_disk_attach -- bare .prg autostart, same as the post-fix
-      // case above, so the two are directly comparable.
-      const autostartResult = await dispatchStock("vice_autostart", { path: prgPath, run: true }, deps);
-      console.log(`stock-broker-live (pre-fix .prg): vice_autostart -> ${JSON.stringify(autostartResult)}`);
-
-      // MEASURED, not asserted-then-explained: this run's own AUTOSTART
-      // call is refused OUTRIGHT at the wire (isError:true, CmdFailure/0x8f)
-      // -- Drive8Type=0 means no unit 8 answers at all, so the KERNAL-level
-      // load never begins. This is the direct, load-bearing discriminator
-      // for the blast-radius verdict: VERDICT = "all program loads" (a bare
-      // .prg autostart hits the SAME wall a .d64 load does; it does not
-      // bypass the drive). Established by THIS run, on 2026-08-19, against
-      // /usr/bin/x64sc (VICE 3.9) -- see 08.2-BROKER-LIVE-EVIDENCE.md for
-      // the full transcript this comment summarises.
-      assert.equal(
-        (autostartResult as { isError: boolean }).isError,
-        true,
-        `PRE-FIX baseline: expected vice_autostart to be refused at the wire with Drive8Type=0, got: ${JSON.stringify(autostartResult)}`,
-      );
-
-      // Defensive, non-primary corroboration: the payload region must also
-      // never become byte-equal (short bounded poll -- the wire-level
-      // refusal above is already the primary, load-bearing proof, so this
-      // does not need the full 20s budget the success-path cases use).
-      const poll = await pollUntilBytesMatch(deps, VERIFIED_PAYLOAD_ADDRESS, VERIFIED_PAYLOAD, 6000);
-      console.log(
-        `stock-broker-live (pre-fix .prg): expected=${JSON.stringify(VERIFIED_PAYLOAD)} observed=${JSON.stringify(poll.lastObserved)} ` +
-          `(${poll.attempts} attempts, matched=${poll.matched})`,
-      );
-      assert.equal(poll.matched, false, `PRE-FIX baseline: the payload must never land with Drive8Type=0, but it matched after ${poll.attempts} attempts`);
-    } finally {
-      if (prevViceArgs === undefined) delete process.env.VICE_ARGS;
-      else process.env.VICE_ARGS = prevViceArgs;
-      if (childPid !== null) {
-        try {
-          process.kill(childPid, "SIGKILL");
-        } catch {
-          // already gone -- best effort.
-        }
-        await waitFor(() => !isAlive(childPid!), 3000);
-      }
-      rmSync(scratchDir, { recursive: true, force: true });
-    }
   },
 );
 
@@ -993,16 +873,15 @@ test(
   async () => {
     clearHeldStockSession();
     let report: HarnessReport | null = null;
-    report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
+    report = await withBrokerHarness(async ({ stateDir, scratchDir, controlPort, recordPid }) => {
       const { prgPath, acmeVersion } = assembleReactingProgram(scratchDir);
       console.log(`stock-broker-live (scenario 2, keyboard): acme --version -> ${acmeVersion}`);
 
-      const brokerJson = await waitForBrokerJson(stateDir);
+      await waitForBrokerReady(controlPort);
       const host = "127.0.0.1";
-      assert.ok(Number(brokerJson.control_port) > 0, `broker.json must carry a real control_port, got: ${JSON.stringify(brokerJson)}`);
 
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const controlSession = opened.session;
 
@@ -1011,7 +890,7 @@ test(
       if (!acquired.ok) return;
       const grant = acquired.grant;
 
-      const pid = await readGrantPid(grant.epoch_file);
+      const pid = await readGrantPid(epochPathFor(stateDir, grant.port));
       recordPid(pid);
 
       const ready = await waitForStockReady(grant.port);
@@ -1021,7 +900,7 @@ test(
 
       // NO vice_disk_attach -- bare .prg autostart, same shape as Task 2's
       // POST-FIX case above; this test needs no disk at all.
-      const autostartResult = await dispatchStock("vice_autostart", { path: prgPath, run: true }, deps);
+      const autostartResult = await callStockTool("vice_autostart", { path: prgPath, run: true }, deps);
       const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (scenario 2, keyboard): vice_autostart -> ${JSON.stringify(autostartPayload)}`);
 
@@ -1032,9 +911,9 @@ test(
       let lastRegisters: Record<string, number> | null = null;
       let confirmedPc: number | null = null;
       for (let attempt = 0; attempt < 10 && !confirmedRunning; attempt++) {
-        await dispatchStock("vice_execution_run", {}, deps);
+        await callStockTool("vice_execution_run", {}, deps);
         await new Promise((r) => setTimeout(r, 500));
-        const regsResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsResult = await callStockTool("vice_registers_get", {}, deps);
         const regsPayload = parseOkPayload(regsResult as { content: { type: "text"; text: string }[]; isError: boolean });
         lastRegisters = regsPayload.registers as Record<string, number>;
         const pcKey = Object.keys(lastRegisters).find((k) => k.toUpperCase() === "PC");
@@ -1058,17 +937,17 @@ test(
       // observation cell -- before AND after quoted, per this plan's own
       // instruction never to summarise "input was observed".
       const injectedByte = 0x41;
-      const beforeInjectRead = await dispatchStock("vice_memory_read", { address: "$0400", size: 1, encoding: "array", sideEffects: false }, deps);
+      const beforeInjectRead = await callStockTool("vice_memory_read", { address: "$0400", size: 1, encoding: "array", sideEffects: false }, deps);
       const beforeInjectPayload = parseOkPayload(beforeInjectRead as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (scenario 2, keyboard): $0400 before injection = ${JSON.stringify(beforeInjectPayload.bytes)}`);
 
-      const petsciiResult = await dispatchStock("vice_keyboard_petscii", { data: [injectedByte] }, deps);
+      const petsciiResult = await callStockTool("vice_keyboard_petscii", { data: [injectedByte] }, deps);
       const petsciiPayload = parseOkPayload(petsciiResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (scenario 2, keyboard): vice_keyboard_petscii([0x${injectedByte.toString(16)}]) -> ${JSON.stringify(petsciiPayload)}`);
 
-      await dispatchStock("vice_execution_run", {}, deps);
+      await callStockTool("vice_execution_run", {}, deps);
       await new Promise((r) => setTimeout(r, 800));
-      const afterInjectRead = await dispatchStock("vice_memory_read", { address: "$0400", size: 1, encoding: "array", sideEffects: false }, deps);
+      const afterInjectRead = await callStockTool("vice_memory_read", { address: "$0400", size: 1, encoding: "array", sideEffects: false }, deps);
       const afterInjectPayload = parseOkPayload(afterInjectRead as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (scenario 2, keyboard): $0400 after injection (byte 0x${injectedByte.toString(16)}) = ${JSON.stringify(afterInjectPayload.bytes)}`);
 
@@ -1077,6 +956,87 @@ test(
         [injectedByte],
         `expected the injected PETSCII byte 0x${injectedByte.toString(16)} to land in the observation cell, got ${JSON.stringify(afterInjectPayload.bytes)}`,
       );
+
+      await controlSession.release();
+    });
+
+    assert.ok(report !== null, "withBrokerHarness must have returned a report");
+    assert.deepEqual(report!.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report!.pidsAliveAfterTeardown)} (recorded: ${JSON.stringify(report!.recordedPids)})`);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// v2.0.0 step 4: the reconnect epoch comes from the broker over the control
+// session, not from a file. A plain relay drop must reconnect cleanly (the
+// case that was falsely refused whenever the epoch file could not be read),
+// and a real crash-respawn must be refused.
+// ---------------------------------------------------------------------------
+
+test(
+  "stock-broker-live: a dropped relay reconnects on the broker-reported epoch, and a crash-respawn is refused as a different machine",
+  { skip: SKIP_REASON, timeout: 90000 },
+  async () => {
+    clearHeldStockSession();
+    let report: HarnessReport | null = null;
+    report = await withBrokerHarness(async ({ stateDir, controlPort, recordPid }) => {
+      await waitForBrokerReady(controlPort);
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
+      if (!opened.ok) return;
+      const controlSession = opened.session;
+      const acquired = await controlSession.acquire();
+      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+      if (!acquired.ok) return;
+      const grant = acquired.grant;
+      const epochFile = epochPathFor(stateDir, grant.port);
+      const pid = await readGrantPid(epochFile);
+      recordPid(pid);
+      assert.ok(await waitForStockReady(grant.port), `instance at port ${grant.port} never answered a binary-monitor probe`);
+
+      let lastSession: StockConnectSession | null = null;
+      const deps: StockSessionDeps = {
+        ...depsFor("127.0.0.1", grant, controlSession, stateDir),
+        connect: async (opts: StockConnectOptions) => (lastSession = await stockConnect(opts)),
+        // The real stockReconnect(), wrapped only to observe the session it returns.
+        reconnect: async (session, options) => (lastSession = await stockReconnect(session, options)),
+      };
+      const read = () => callStockTool("vice_memory_read", { address: "$0400", size: 1, encoding: "array" }, deps);
+
+      parseOkPayload((await read()) as { content: { type: "text"; text: string }[]; isError: boolean });
+      const first = lastSession as StockConnectSession | null;
+      assert.ok(first !== null, "the first call must have connected");
+      const baseline = JSON.parse(readFileSync(epochFile, "utf8")).epoch as number;
+      assert.equal(first.baselineEpoch, baseline, "the baseline must be the epoch the broker wrote, read over the socket");
+
+      // A plain relay drop, emulator untouched: the next call must reconnect.
+      await first.client.disconnect();
+      parseOkPayload((await read()) as { content: { type: "text"; text: string }[]; isError: boolean });
+      const second = lastSession as StockConnectSession | null;
+      assert.ok(second !== null && second !== first, "a dropped relay must be replaced by a fresh session");
+      assert.equal(second.baselineEpoch, baseline, "the reconnect proves the same epoch");
+
+      // A crash-respawn: the next call must be refused.
+      process.kill(pid, "SIGKILL");
+      const respawned = await waitFor(() => {
+        try {
+          const rec = JSON.parse(readFileSync(epochFile, "utf8")) as { epoch: number; pid: number };
+          if (rec.epoch > baseline && rec.pid !== pid && isAlive(rec.pid)) {
+            recordPid(rec.pid);
+            return true;
+          }
+        } catch {
+          // mid-write -- poll again.
+        }
+        return false;
+      }, 20000);
+      assert.ok(respawned, "the broker must respawn the killed emulator with an advanced epoch");
+      assert.ok(await waitFor(() => !second.client.connected, 10000), "the respawn must drop the old relay connection");
+
+      const refused = (await read()) as { content: { type: "text"; text: string }[]; isError: boolean };
+      console.log(`stock-broker-live (epoch): after respawn -> ${refused.content[0]?.text}`);
+      assert.equal(refused.isError, true, "a call after a crash-respawn must be refused");
+      assert.match(refused.content[0]!.text, /identity could not be proven across a reconnect/);
+      assert.match(refused.content[0]!.text, new RegExp(`baseline epoch ${baseline}\\b`));
 
       await controlSession.release();
     });

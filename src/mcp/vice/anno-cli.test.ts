@@ -8,7 +8,7 @@
 // FOUR THINGS THIS FILE PROVES, and why each earns its place:
 //
 //   1. THE ARGV SUBCOMMAND MECHANISM, end to end, at the bin. Spawns the real
-//      `vice-proxy.ts` exactly as a consumer would (`smoke.mjs`'s harness
+//      `vice-proxy.ts` exactly as a consumer would (`smoke.ts`'s harness
 //      shape, including VICE_SKIP_RESOURCE_INSTALL=1 and
 //      MASTRA_TELEMETRY_DISABLED=1 in the child env), and asserts no line of
 //      stdout is a JSON-RPC frame -- the proof the subcommand short-circuits
@@ -43,6 +43,7 @@ import {
   blocksFromStore,
   crossReferencesFromStore,
 } from "./anno-cli.ts";
+import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 import {
   openStore,
   closeStore,
@@ -81,10 +82,12 @@ const REMOVED_VERBS = ["bootstrap", "verify", "gen-enums", "export-lbl", "import
 /** The verbs the CLI really dispatches. Same reasoning, opposite polarity.
  * Grew from two to three on 2026-08-31 with `export-asm`, from three to
  * four with `evid-disagreements` -- the CLI route for the disagreement
- * query -- from four to five with `decomp-completeness`, and from five to
+ * query -- from four to five with `decomp-completeness`, from five to
  * six with `hazard-report` -- the CLI route for the movement-hazard
- * report. */
-const SURVIVING_VERBS = ["render-memmap", "coverage", "export-asm", "evid-disagreements", "decomp-completeness", "hazard-report"];
+ * report -- and from six to seven with `call` (D-12, plan 65-02) -- the
+ * ONE generic route for the other nineteen former `anno_*` MCP tools,
+ * added in the same change that removes all 25 from `tools/list` (D-13). */
+const SURVIVING_VERBS = ["render-memmap", "coverage", "export-asm", "evid-disagreements", "decomp-completeness", "hazard-report", "call"];
 
 /** A fully-filled provenance sidecar -- `parseProvenanceHeader()` refuses a
  * missing or placeholder key by name, so any test that renders for real needs
@@ -182,9 +185,9 @@ before(() => {
   unknownVerbResult = spawnCli(["anno", "no-such-verb"]);
 });
 
-test("bin: `vice-mcp anno --help` exits 0, prints both invocation forms, and emits no JSON-RPC frame", () => {
+test("bin: `vice-mcp anno --help` exits 0, prints the plugin invocation and no npx form, and emits no JSON-RPC frame", () => {
   assert.equal(helpResult.status, 0, `stdout: ${helpResult.stdout} stderr: ${helpResult.stderr}`);
-  assert.match(helpResult.stdout, /npx -y @henols\/vice-mcp anno <verb>/);
+  assert.doesNotMatch(helpResult.stdout, /npx/);
   assert.match(helpResult.stdout, /node <plugin-root>\/src\/mcp\/vice\/vice-proxy\.ts anno <verb>/);
 
   // The load-bearing assertion: no line of stdout parses as a JSON object
@@ -294,7 +297,7 @@ test("WR-21: the coverage USAGE no longer claims dispatch is NEVER by byte lengt
 test("bin: `vice-mcp anno no-such-verb` exits non-zero and prints a usage block", () => {
   assert.notEqual(unknownVerbResult.status, 0);
   const combined = `${unknownVerbResult.stdout}${unknownVerbResult.stderr}`;
-  assert.match(combined, /usage \(npm install\)/);
+  assert.match(combined, /usage \(plugin\/in-repo\)/);
 });
 
 test("bin: `vice-mcp anno --help` lists exactly the surviving verbs", () => {
@@ -777,7 +780,7 @@ test("the cross-reference adapter answers over the WHOLE population, with no cei
 test("the verb-options map agrees with USAGE's own per-verb option lists, for every verb (IN-06)", () => {
   const usage = helpResult.stdout;
   const verbs = Object.keys(VERB_OPTIONS);
-  assert.equal(verbs.length, 6, `expected exactly 6 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
+  assert.equal(verbs.length, 7, `expected exactly 7 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
 
   for (const verb of verbs) {
     const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
@@ -2142,12 +2145,12 @@ test("evid-disagreements: --help documents exactly --store and --json, and names
   assert.match(helpResult.stdout, /^ {2}evid-disagreements --store FILE \[--json\]$/m);
 });
 
-test("hazard-report: the unknown-verb refusal now names SIX verbs, not five", async () => {
+test("call: the unknown-verb refusal now names SEVEN verbs, not six", async () => {
   const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["not-a-real-verb"]));
   assert.notEqual(code, 0);
   assert.match(
     stderr,
-    /this CLI has exactly six: render-memmap, coverage, export-asm, evid-disagreements, decomp-completeness and hazard-report/,
+    /this CLI has exactly seven: render-memmap, coverage, export-asm, evid-disagreements, decomp-completeness, hazard-report and call/,
   );
 });
 
@@ -2354,5 +2357,125 @@ test("evid-disagreements: a missing annotation store is refused rather than CREA
     assert.notEqual(code, 0);
     assert.match(stderr, /annotation store not found/);
     assert.equal(existsSync(absentStore), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `call` (D-12, plan 65-02): the one generic route for the 28 (MEASURED)
+// former `anno_*` MCP tools this CLI has no bare verb for. Six behaviours,
+// per this plan's own Task 1 must_haves.
+// ---------------------------------------------------------------------------
+
+/** `--args`'s JSON string, single-quoted at the shell in the plan's own
+ * prose but built here as a plain JS string -- these tests call `runAnnoCli()`
+ * / spawn the bin directly, never a shell, so no shell-quoting is involved. */
+function setLabelArgsJson(storePath: string, address: number, name: string): string {
+  return JSON.stringify({ store: storePath, address, name });
+}
+function getSymbolsArgsJson(storePath: string, maxResults = 10): string {
+  return JSON.stringify({ store: storePath, max_results: maxResults });
+}
+
+test("call, Test 1: write-then-read against a real store with no x64sc on PATH (spawned, CLAUDE_PROJECT_DIR set)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = join(ws, "call-test1.annostore");
+    // Every anno_* verb (including a "writer") REFUSES a store path that does
+    // not already exist (assertStorePresent(), D-06) -- there is no implicit
+    // bootstrap on first write. Create it deliberately first.
+    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    const env = { ...CLI_ENV, CLAUDE_PROJECT_DIR: ws };
+
+    const setResult = spawnSync(
+      process.execPath,
+      [VICE_PROXY, "anno", "call", "anno_set_label_name", "--args", setLabelArgsJson(storePath, 0xc000, "call_test1_label")],
+      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
+    );
+    assert.equal(setResult.status, 0, `anno_set_label_name via call must exit 0: stdout=${setResult.stdout} stderr=${setResult.stderr}`);
+
+    const getResult = spawnSync(
+      process.execPath,
+      [VICE_PROXY, "anno", "call", "anno_get_symbols", "--args", getSymbolsArgsJson(storePath)],
+      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
+    );
+    assert.equal(getResult.status, 0, `anno_get_symbols via call must exit 0: stdout=${getResult.stdout} stderr=${getResult.stderr}`);
+    assert.match(getResult.stdout, /call_test1_label/, "the label just set must round-trip back out through call");
+  });
+});
+
+test("call, Test 2: an unknown tool name is refused, naming the verb and at least one real CURATED_ANNO_TOOLS name", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["call", "anno_not_a_verb", "--args", "{}"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /anno_not_a_verb/, "the refusal must name the verb the caller typed");
+  assert.ok(
+    CURATED_ANNO_TOOLS.some((name) => stderr.includes(name)),
+    `the refusal must list at least one real accepted name from CURATED_ANNO_TOOLS; stderr=${stderr}`,
+  );
+});
+
+test("call, Test 3: malformed JSON and a non-object value are each refused, naming the flag or 'object'", async () => {
+  const malformed = await withCapturedConsole(() => runAnnoCli(["call", "anno_get_symbols", "--args", "{not json"]));
+  assert.notEqual(malformed.result, 0);
+  assert.match(malformed.stderr, /--args/, "the parse-failure refusal must name the flag");
+
+  const nonObject = await withCapturedConsole(() => runAnnoCli(["call", "anno_get_symbols", "--args", "[1]"]));
+  assert.notEqual(nonObject.result, 0);
+  assert.match(nonObject.stderr, /object/i, "the non-object refusal must name 'object'");
+});
+
+test("call, Test 4: --args together with --args-file is refused, naming both flags", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runAnnoCli(["call", "anno_get_symbols", "--args", "{}", "--args-file", "some-file.json"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--args/);
+  assert.match(stderr, /--args-file/);
+});
+
+test("call, Test 5: --args-file outside the workspace root is refused through storePathWithinWorkspace(); an in-workspace file succeeds", async () => {
+  const outsideResult = await withTempDir(async (outsideDir) => {
+    const argsFile = join(outsideDir, "outside-args.json");
+    writeFileSync(argsFile, getSymbolsArgsJson(join(outsideDir, "whatever.annostore")), "utf8");
+    return withCapturedConsole(() => runAnnoCli(["call", "anno_get_symbols", "--args-file", argsFile]));
+  });
+  assert.notEqual(outsideResult.result, 0, "an --args-file outside the workspace root must be refused");
+  assert.match(outsideResult.stderr, /outside the workspace root/);
+
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = join(ws, "call-test5.annostore");
+    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    const setArgsFile = join(ws, "set-args.json");
+    writeFileSync(setArgsFile, setLabelArgsJson(storePath, 0xc010, "call_test5_label"), "utf8");
+    const setResult = await withCapturedConsole(() => runAnnoCli(["call", "anno_set_label_name", "--args-file", setArgsFile]));
+    assert.equal(setResult.result, 0, `an in-workspace --args-file must succeed: stderr=${setResult.stderr}`);
+
+    const getArgsFile = join(ws, "get-args.json");
+    writeFileSync(getArgsFile, getSymbolsArgsJson(storePath), "utf8");
+    const getResult = await withCapturedConsole(() => runAnnoCli(["call", "anno_get_symbols", "--args-file", getArgsFile]));
+    assert.equal(getResult.result, 0);
+    assert.match(getResult.stdout, /call_test5_label/);
+  });
+});
+
+test("call, Test 6: Test 1's write-then-read pair still succeeds with PATH narrowed to only process.execPath's own directory (no x64sc reachable)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = join(ws, "call-test6.annostore");
+    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    const narrowPath = dirname(process.execPath);
+    const env = { ...CLI_ENV, CLAUDE_PROJECT_DIR: ws, PATH: narrowPath };
+
+    const setResult = spawnSync(
+      process.execPath,
+      [VICE_PROXY, "anno", "call", "anno_set_label_name", "--args", setLabelArgsJson(storePath, 0xc020, "call_test6_label")],
+      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
+    );
+    assert.equal(setResult.status, 0, `must succeed with no x64sc reachable on PATH: stdout=${setResult.stdout} stderr=${setResult.stderr}`);
+
+    const getResult = spawnSync(
+      process.execPath,
+      [VICE_PROXY, "anno", "call", "anno_get_symbols", "--args", getSymbolsArgsJson(storePath)],
+      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
+    );
+    assert.equal(getResult.status, 0, `must succeed with no x64sc reachable on PATH: stdout=${getResult.stdout} stderr=${getResult.stderr}`);
+    assert.match(getResult.stdout, /call_test6_label/);
   });
 });

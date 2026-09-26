@@ -6,11 +6,9 @@
 //
 // THIS MODULE RECEIVES AN ALREADY-OPEN STORE HANDLE. It never opens or closes
 // a store itself -- there is no second store session anywhere in this file.
-// It also never names `node:sqlite`, never imports `hostpath.ts` or
-// `containerpath.ts`, and never resolves a workspace path itself: per
-// `ghidra-run.ts`'s own documented posture, the export file's path arrives
-// ALREADY TRANSLATED upstream (by `containerPath()` inside
-// `runHostToolFromContainer()`), so this module reads it AS GIVEN. Workspace
+// It also never names `node:sqlite` and never resolves a workspace path
+// itself: per `ghidra-run.ts`'s own documented posture, the export file's
+// path arrives as a local path, so this module reads it AS GIVEN. Workspace
 // confinement is the CALLER's job -- `anno-tools.ts`'s existing
 // `resolveWorkspacePath()`, the same one `store` and `image` already go
 // through -- not this module's.

@@ -3,8 +3,7 @@
 //
 // Phase 35, plan 35-01 (DXA-02, A-04): the ONE parser that turns a `dxa -a
 // dump` listing (as text) into a byte-level code/data map. Ported from
-// `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/
-// dxa-listing-parse.mjs`'s ONE line-matching regular expression and its
+// the Phase 23 evidence script's ONE line-matching regular expression and its
 // `.byt`/`.word` text-prefix classifier, UNCHANGED -- it is already proven
 // against the rebuilt 279-byte fixture from that phase.
 //
@@ -21,11 +20,8 @@
 // line is recorded in the returned `outOfWindow[]` and is never silently
 // dropped.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts` (mirrors host-tool-client.ts's
-// own stated rule for itself, :29-38): it receives an already
-// container-translated path from its caller (`dxa-run.ts`) and performs NO
-// filesystem or network I/O of its own -- every function here takes a
-// string and returns values, exactly as `prg-image.ts` states of itself for
+// THIS MODULE PERFORMS NO FILESYSTEM OR NETWORK I/O of its own -- every
+// function here takes a string and returns values, exactly as `prg-image.ts` states of itself for
 // the same reason (path resolution and path-boundary hazards stay entirely
 // out of this module's threat surface).
 //

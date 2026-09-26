@@ -93,7 +93,7 @@
 // control.
 //
 // THE TWO DEFECTS THIS PROMOTION FIXES, RELATIVE TO ITS DIRECT ANCESTOR
-// (`.planning/phases/23-.../evidence/ExportAnalysis23.java`):
+// (the Phase 23 evidence script `ExportAnalysis23.java`):
 //
 //   1. THE CLASSIFICATION EXPECTATION IS NOW THE SCRIPT'S OWN BLOCK TOTAL,
 //      NEVER THE IMAGE SIZE. The ancestor compared the observed

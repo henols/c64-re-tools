@@ -66,7 +66,7 @@ async function loadModules(): Promise<{ broker: BrokerModule; launch: LaunchModu
 }
 
 function createState(): BrokerState {
-  return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map() };
+  return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map(), children: new Map(), childListener: null, shuttingDown: false };
 }
 
 /** A fully-controlled stand-in ChildProcess -- a real EventEmitter (so the
@@ -240,141 +240,42 @@ test("structural: every superviseDepsFor() call site in vice-broker.mts passes t
 });
 
 // ===========================================================================
-// Gap G-40-1, requirement R2 (plan 40-09): THE BROKER (not a container-side
-// caller) mints/verifies the Ghidra runs-root handle at startup -- after the
-// unconditional startup reap and BEFORE the control listener accepts a
-// single connection. This is a structural check because the ordering claim
-// is about SOURCE POSITION, not runtime behaviour a unit test could observe
-// any other way; the live proof that a real process actually does this
-// lives in this plan's own Task 1 `<verify>` command, not here.
+// The Ghidra projects root is swept like the staging root: only by a broker
+// that has won the control-port bind, right after it, before any request can
+// be served. Structural, because the claim is about source position.
 // ===========================================================================
 
-/** The two anchor strings bracketing THE handle-minting block vice-broker.mts
- * inserts between the backend-resolution stderr line and the control
- * listener bind. Both are unique, single-occurrence literal substrings of
- * the real source -- used to EXTRACT the block for the planted-violation
- * copies below, never to assert anything by themselves. */
-const GHIDRA_HANDLE_BLOCK_START =
-  "  // THE BROKER mints/verifies the";
-const GHIDRA_HANDLE_BLOCK_END =
-  "  // The singleton guarantee holds only while the control port keeps its default";
-
-/** Extracts the handle-minting block (comment + code) from a source string
- * carrying both anchors, or null if either anchor is missing or out of
- * order -- callers use null to mean "nothing to move/remove", never throw. */
-function extractGhidraHandleBlock(source: string): { block: string; withoutBlock: string } | null {
-  const startIdx = source.indexOf(GHIDRA_HANDLE_BLOCK_START);
-  const endIdx = source.indexOf(GHIDRA_HANDLE_BLOCK_END);
-  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return null;
-  const block = source.slice(startIdx, endIdx);
-  const withoutBlock = source.slice(0, startIdx) + source.slice(endIdx);
-  return { block, withoutBlock };
-}
-
-/** THE predicate the real assertions AND the planted-violation controls
- * below both drive -- return-don't-assert, following docs-linerefs.test.ts's
- * own shape, so a synthetic copy of the source exercises exactly the same
- * code the real assertions do. Operates on the COMMENT-STRIPPED source so a
- * doc comment naming any of these three function calls can never inflate
- * the count or fake an ordering. */
-function findGhidraHandleOrdering(source: string): {
-  callCount: number;
-  handleOffset: number | null;
-  reapOffset: number | null;
-  listenerOffset: number | null;
-  mintedAfterReap: boolean | null;
-  mintedBeforeListener: boolean | null;
-  consumedWithoutThrowOrReturn: boolean;
-} {
+/** Offsets, in the comment-stripped source, of the bind, the staging sweep
+ * and the Ghidra projects sweep -- the one predicate the real assertion and
+ * its planted-violation control share. */
+function findGhidraSweepOrdering(source: string): { ghidraSweeps: number; bind: number; stagingSweep: number; ghidraSweep: number } {
   const stripped = stripComments(source);
-  const callOffsets = [...stripped.matchAll(/ensureGhidraRunsHandle\(/g)].map((m) => m.index ?? -1);
-  const callCount = callOffsets.length;
-  const handleOffset = callCount > 0 ? (callOffsets[0] as number) : null;
-  const reapMatch = stripped.match(/reapOrphanedInstances\(/);
-  const reapOffset = reapMatch ? (reapMatch.index ?? null) : null;
-  // 62-03: the single-host startControlListener() call was replaced by the
-  // multi-address startControlListenerOnHosts() (BROKER-03) -- this ordering
-  // predicate follows that rename rather than the old literal.
-  const listenerMatch = stripped.match(/startControlListenerOnHosts\(/);
-  const listenerOffset = listenerMatch ? (listenerMatch.index ?? null) : null;
-
-  const mintedAfterReap = handleOffset !== null && reapOffset !== null ? handleOffset > reapOffset : null;
-  const mintedBeforeListener = handleOffset !== null && listenerOffset !== null ? handleOffset < listenerOffset : null;
-
-  // The immediate handling window: everything from the call site up to the
-  // NEXT occurrence of "D-18" (the comment marker vice-broker.mts places
-  // right after the real handle-handling if/else) -- or, absent that
-  // marker (a planted copy may have deleted it), a generous fixed window
-  // wide enough to cover the real if/else without reaching into
-  // startControlListener()'s own body.
-  let consumedWithoutThrowOrReturn = false;
-  if (handleOffset !== null) {
-    const boundaryMatch = stripped.slice(handleOffset).match(/D-18/);
-    const windowEnd = boundaryMatch && boundaryMatch.index !== undefined ? handleOffset + boundaryMatch.index : handleOffset + 700;
-    const window = stripped.slice(handleOffset, windowEnd);
-    const hasThrow = /\bthrow\b/.test(window);
-    const hasBareReturn = /\breturn\s*;/.test(window);
-    const hasStderrWrite = /process\.stderr\.write/.test(window);
-    consumedWithoutThrowOrReturn = hasStderrWrite && !hasThrow && !hasBareReturn;
-  }
-
-  return { callCount, handleOffset, reapOffset, listenerOffset, mintedAfterReap, mintedBeforeListener, consumedWithoutThrowOrReturn };
+  const ghidraMatches = [...stripped.matchAll(/sweepOrphanedStaging\(\{ root: brokerGhidraDir\(\)/g)];
+  return {
+    ghidraSweeps: ghidraMatches.length,
+    bind: stripped.indexOf("startControlListenerOnHosts("),
+    stagingSweep: stripped.indexOf("sweepOrphanedStaging({ root: brokerStagingDir() })"),
+    ghidraSweep: ghidraMatches[0]?.index ?? -1,
+  };
 }
 
-test("structural (R2, gap G-40-1): vice-broker.mts mints the Ghidra runs handle exactly once, after the unconditional startup reap and before the control listener binds", () => {
+test("structural: vice-broker.mts sweeps the Ghidra projects root exactly once, after the control-port bind and the staging sweep, and mints no alias handle", () => {
   const brokerSource = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
-  const result = findGhidraHandleOrdering(brokerSource);
-
-  assert.equal(result.callCount, 1, `expected exactly one ensureGhidraRunsHandle( call site in vice-broker.mts, found ${result.callCount}`);
-  assert.ok(result.reapOffset !== null, "expected to find reapOrphanedInstances( in vice-broker.mts -- has the startup reap moved or been renamed?");
-  assert.ok(result.listenerOffset !== null, "expected to find startControlListenerOnHosts( in vice-broker.mts -- has the control listener bind moved or been renamed?");
-  assert.equal(
-    result.mintedAfterReap,
-    true,
-    "R2 REGRESSION: the Ghidra runs handle must be minted AFTER the unconditional startup reap completes",
-  );
-  assert.equal(
-    result.mintedBeforeListener,
-    true,
-    "R2 REGRESSION: the Ghidra runs handle must be minted BEFORE the control listener binds -- that ordering is the entire point of R2 being the broker's own job, not resolveGhidraProject()'s idempotent precondition",
-  );
+  const result = findGhidraSweepOrdering(brokerSource);
+  assert.equal(result.ghidraSweeps, 1, `expected exactly one Ghidra projects sweep, found ${result.ghidraSweeps}`);
+  assert.ok(result.bind >= 0 && result.stagingSweep >= 0, "expected to find the bind and the staging sweep in vice-broker.mts");
+  assert.ok(result.ghidraSweep > result.bind, "the Ghidra projects sweep must run only after the broker has won the control-port bind");
+  assert.ok(result.ghidraSweep > result.stagingSweep, "the Ghidra projects sweep must sit beside, after, the staging sweep");
+  assert.doesNotMatch(stripComments(brokerSource), /ensureGhidraRunsHandle/, "the broker must no longer mint a Ghidra alias handle");
 });
 
-test("structural (R2): a Ghidra runs handle refusal is consumed into a stderr write, never a throw or an early return", () => {
+test("planted-violation: the SAME predicate reports a Ghidra sweep moved ahead of the bind", () => {
   const brokerSource = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
-  const result = findGhidraHandleOrdering(brokerSource);
-
-  assert.ok(
-    result.consumedWithoutThrowOrReturn,
-    "R2 REGRESSION: the broker serves twelve allowlisted tool ids and only one (ghidra.analyze) needs this handle -- a refusal must be written to stderr and run() must continue, never throw out of run() or return early. " +
-      "The authoritative refusal for ghidra.analyze itself stays at resolveGhidraProject().",
-  );
-});
-
-test("planted-violation (R2): the SAME ordering predicate reports a removed call site as zero, and a call site relocated after the listener as no-longer-before it", () => {
-  const brokerSource = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
-  const extracted = extractGhidraHandleBlock(brokerSource);
-  assert.ok(extracted, "could not locate the handle-minting block's start/end anchors in vice-broker.mts -- the anchors themselves must be kept in sync with the real source");
-  const { block, withoutBlock } = extracted as { block: string; withoutBlock: string };
-
-  // Control A: the call site removed entirely. Without this control, the
-  // real assertion's "exactly one call site" could pass vacuously on an
-  // empty match set (zero call sites is not one, but a looser predicate
-  // asserting merely "at most one" would miss this).
-  const removedResult = findGhidraHandleOrdering(withoutBlock);
-  assert.equal(removedResult.callCount, 0, "planted violation A (call site removed): the predicate must report zero call sites, not fall back to reporting success");
-
-  // Control B: the call site relocated to AFTER the control listener bind
-  // -- proving the offset COMPARISON itself drives the real assertion,
-  // not merely whether the call site is present somewhere in the file.
-  const listenerAnchor = "const bindResult = await startControlListenerOnHosts(bindHosts, {";
-  assert.ok(brokerSource.includes(listenerAnchor), "expected to find the control listener assignment anchor in vice-broker.mts");
-  const moved = withoutBlock.replace(listenerAnchor, `${listenerAnchor}\n${block}`);
-  const movedResult = findGhidraHandleOrdering(moved);
-  assert.equal(movedResult.callCount, 1, "planted violation B (call site relocated): expected the relocated call site to still be found exactly once");
-  assert.equal(
-    movedResult.mintedBeforeListener,
-    false,
-    "planted violation B (call site relocated after the listener): the predicate must report mintedBeforeListener: false -- if it still reports true, the ordering comparison itself is broken, not merely untested",
-  );
+  const call = 'sweepOrphanedStaging({ root: brokerGhidraDir(), label: "ghidra projects sweep" });';
+  const bindAnchor = "const bindResult = await startControlListenerOnHosts(bindHosts, {";
+  assert.ok(brokerSource.includes(call) && brokerSource.includes(bindAnchor), "the planted copy's anchors must match the real source");
+  const planted = brokerSource.replace(call, "").replace(bindAnchor, `${call}\n    ${bindAnchor}`);
+  const result = findGhidraSweepOrdering(planted);
+  assert.equal(result.ghidraSweeps, 1);
+  assert.ok(result.ghidraSweep < result.bind, "planted violation: the predicate must see the moved sweep ahead of the bind");
 });

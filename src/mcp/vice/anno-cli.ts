@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 // anno-cli.ts -- the thin CLI ergonomics layer over the annotation store.
-// Reached as `vice-mcp anno <verb>` because that bin is the only
-// surface that resolves identically across the Claude Code plugin route and
-// both npm-installer routes: `installer/bin/cli.mjs`'s `viceServerEntry()`
-// always launches this server via `npx` in BOTH npm-installer modes, and
-// neither route places `src/mcp/vice/*.ts` as plain files inside a
-// consuming project for some other filesystem-path-resolving design to find.
+// Reached as `node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>` on
+// the plugin route or an in-repo checkout, and as `vice-mcp anno <verb>`
+// from the npm package (which runs the compiled dist/ copy).
+// No usage line names an `npx` form: never-auto-install binds shipped
+// remedy text, and `npx -y` installs.
 //
 // ---------------------------------------------------------------------------
 // FIVE VERBS. THAT IS THE WHOLE SURFACE -- narrowed to two, then grown back
@@ -19,6 +18,18 @@
 // raise of the count DELIBERATELY SUPERSEDES the prior "THAT IS THE WHOLE
 // SURFACE" framing rather than silently reopening it -- this is the second
 // raise over that framing, not the first.
+//
+// A SEVENTH VERB, `call`, landed 2026-09-25 (D-12, plan 65-02) for a
+// different reason than the first six: D-13 deletes the whole `anno_*` MCP
+// tool family from `tools/list` in the same change. `CURATED_ANNO_TOOLS`
+// (anno-tools.ts) MEASURED at 28 names at this commit -- the plan that
+// authored this verb estimated 25 and named exactly two as colliding with a
+// CLI verb name (hazard-report, evid-disagreements); the measured count is
+// higher, but the same two are still the only ones that collide, so 26 of
+// the 28 had no CLI route before this verb. `call` is the ONE generic route
+// for the other twenty-six -- it takes a curated tool name and one JSON
+// argument object and hands both to `runAnnoTool()` unchanged, so none of
+// the 28 is reimplemented here a second time.
 // ---------------------------------------------------------------------------
 // This file used to carry eight. Six were removed in one commit because they
 // were delivery paths for the retired external analyser this project used to
@@ -44,7 +55,7 @@
 //     the symbol round trip still has NO route at all. That is recorded as a
 //     withdrawal in this project's own capability record rather than left for
 //     a reader to discover by running it. The exact wording of those
-//     withdrawal notices across both skill trees is kept in exactly one
+//     withdrawal notices across the skill docs is kept in exactly one
 //     place; this file states the code fact and does not restate their text,
 //     so the two edits cannot contradict each other.
 //
@@ -114,13 +125,6 @@
 // `console.log`/`console.error` -- never a thrown stack trace for an
 // expected, user-facing failure (missing file, unreadable store, refused
 // overwrite): each of those produces a single actionable line instead.
-//
-// Import nothing from `hostpath.ts` or `containerpath.ts`. Every path this
-// CLI handles is already container-side, and translating any of these
-// arguments would be the mirror image of a screenshot-path trap this project
-// hit before, where a client-side-derived path was wrongly translated a
-// second time. This absence is asserted structurally by
-// `hostpath-consumers.test.ts`, not merely stated here.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -172,17 +176,23 @@ import { crossReferencesTo } from "./anno-derive.ts";
 import { storePathWithinWorkspace, isSplitDataType } from "./anno-types.ts";
 import type { CommentRow, LabelRow, RangeRow, DataType } from "./anno-types.ts";
 import { repoRoot } from "./repo-root.ts";
+// D-12 (plan 65-02): `call`'s one generic runner. A STATIC import is safe
+// here -- `vice-proxy.ts` reaches this whole module only through its own
+// dynamic `import("./anno-cli.ts")` above the server path, so this file's
+// own static dependency on `anno-tools.ts` never becomes part of the
+// server's startup cost.
+import { runAnnoTool, CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 // The three comment-text conventions, declared once in
 // anno-store-export.ts and imported everywhere they are matched -- never
 // restated as a second literal.
 import { DECLINE_COMMENT_PREFIX, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX, AUTHORED_PROVENANCE_COMMENT_PREFIX } from "./anno-store-export.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const NPX_INVOCATION = "npx -y @henols/vice-mcp anno <verb>";
 const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>";
+const NPM_INVOCATION = "vice-mcp anno <verb>";
 
-const USAGE = `usage (npm install):    ${NPX_INVOCATION}
-usage (plugin/in-repo): ${PLUGIN_INVOCATION}
+const USAGE = `usage (plugin/in-repo): ${PLUGIN_INVOCATION}
+usage (npm install):    ${NPM_INVOCATION}
 
 verbs:
   render-memmap <store> --provenance FILE [--out FILE] [--force] [--check]
@@ -366,6 +376,9 @@ verbs:
       Requires an EXISTING annotation store and an EXISTING image; creates
       neither and writes nothing.
 
+  call NAME (--args JSON | --args-file FILE)
+      The name set and the argument shapes are exactly the former anno_* MCP tools' own.
+
 Every verb requires inputs that already exist. None creates a project, a
 store or a sidecar, and none derives one path from another -- this CLI
 never guesses.
@@ -406,6 +419,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
   "evid-disagreements": ["--store", "--json"],
   "decomp-completeness": ["--store", "--disagreements", "--manifest", "--json"],
   "hazard-report": ["--store", "--image", "--json"],
+  call: ["--args", "--args-file"],
 });
 
 /**
@@ -1386,10 +1400,10 @@ function defaultExportAsmOut(imagePath: string, storeDir: string): string {
 }
 
 /**
- * Whether `containerPath` (a directory `--out` is about to become, or
+ * Whether `dir` (a directory `--out` is about to become, or
  * already is) either equals `candidate` exactly, or genuinely CONTAINS it.
  * Compared by PATH SEGMENT via a trailing separator, never by string prefix
- * (T-47-14) -- `candidate.startsWith(containerPath)` alone would also match a
+ * (T-47-14) -- `candidate.startsWith(dir)` alone would also match a
  * SIBLING whose name merely starts with the same characters (`game-src2`
  * beside `game-src`), which is exactly the false positive a segment boundary
  * rules out.
@@ -1399,9 +1413,9 @@ function defaultExportAsmOut(imagePath: string, storeDir: string): string {
  * before either ever reaches here); this function performs no confinement of
  * its own and compares the two strings it is given.
  */
-function pathIsOrContains(containerPath: string, candidate: string): boolean {
-  if (candidate === containerPath) return true;
-  const withTrailingSep = containerPath.endsWith(sep) ? containerPath : containerPath + sep;
+function pathIsOrContains(dir: string, candidate: string): boolean {
+  if (candidate === dir) return true;
+  const withTrailingSep = dir.endsWith(sep) ? dir : dir + sep;
   return candidate.startsWith(withTrailingSep);
 }
 
@@ -2018,7 +2032,10 @@ const HARDWARE_CHIP_RANGES: readonly { start: number; endInclusive: number }[] =
   { start: 0xdd00, endInclusive: 0xddff }, // CIA#2
 ]);
 
-const REGBITS_PATH_FOR_HARDWARE_CHECK = join(HERE, "anno-regbits.json");
+// Beside this module (the package root), else one directory up (the
+// compiled dist/ copy, one level below the package root).
+const REGBITS_PATH_FOR_HARDWARE_CHECK =
+  [join(HERE, "anno-regbits.json"), join(HERE, "..", "anno-regbits.json")].find((c) => existsSync(c)) ?? join(HERE, "anno-regbits.json");
 
 let cachedHardwareRegBitsAddresses: ReadonlySet<number> | undefined;
 
@@ -2598,7 +2615,7 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
  * beside every count, an explicit sentence stating what absence does NOT
  * prove, and never a percentage, rate or combined figure -- the same rule
  * this CLI applies everywhere else. This is the FALLBACK text renderer for a direct CLI
- * invocation without `--json`; `completeness-report.mjs`'s
+ * invocation without `--json`; `completeness-report.ts`'s
  * `renderCompletenessReport()` is the report the routine-queue-walker skill
  * actually reads, built from this same verb's `--json` answer.
  */
@@ -2962,11 +2979,166 @@ async function cmdHazardReport(rest: string[]): Promise<number> {
   return 0;
 }
 
+interface CallParsedArgs {
+  positional: string[];
+  args?: string;
+  argsMissingValue?: boolean;
+  argsFile?: string;
+  argsFileMissingValue?: boolean;
+}
+
+/** Fixed, closed option set for `call` -- exactly `--args` and `--args-file`.
+ * Uses the SAME `isMissingOptionValue()` predicate the other three parsers
+ * share (30-REVIEW WR-09), so `call anno_get_symbols --args --args-file` (a
+ * flag where a value was expected) is refused as a missing value rather than
+ * silently taking the next flag as `--args`'s value. */
+function parseCallArgs(rest: string[]): CallParsedArgs {
+  const positional: string[] = [];
+  let args: string | undefined;
+  let argsMissingValue = false;
+  let argsFile: string | undefined;
+  let argsFileMissingValue = false;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "--args") {
+      const value = rest[i + 1];
+      if (isMissingOptionValue(value)) {
+        argsMissingValue = true;
+      } else {
+        args = value;
+        i++;
+      }
+    } else if (a === "--args-file") {
+      const value = rest[i + 1];
+      if (isMissingOptionValue(value)) {
+        argsFileMissingValue = true;
+      } else {
+        argsFile = value;
+        i++;
+      }
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, args, argsMissingValue, argsFile, argsFileMissingValue };
+}
+
+/**
+ * `call <anno_tool_name> (--args JSON | --args-file FILE)` -- D-12's one
+ * generic verb. It refuses a name outside `CURATED_ANNO_TOOLS`, reads the
+ * argument object from exactly one of `--args`/`--args-file`, and hands both
+ * straight to `runAnnoTool()` UNCHANGED -- there is no second implementation
+ * of any of the 28 former MCP verbs here, and `anno-tools.ts` is not edited
+ * by this change. The name set and the argument shapes are exactly the
+ * former `anno_*` MCP tools' own, so a skill's existing argument
+ * documentation for those tools stays valid against this verb.
+ *
+ * USAGE spells the positional `NAME`, not `<anno_tool_name>` -- deliberately
+ * NOT angle-bracketed, unlike every other verb's positional. Every other
+ * `<...>`-shaped synopsis token on this CLI is a caller-supplied PATH, and
+ * `anno-cli-path-consumers.test.ts`'s own positional direction reads any
+ * `<...>` token as exactly that: a path argument requiring its own
+ * `storePathWithinWorkspace()` call site. A tool NAME is not a path and is
+ * never confined, so bracketing it would misclassify it as one and desync
+ * the path-consumers seam count from its own inventory.
+ *
+ * `--args-file`'s path IS a caller-supplied path and goes through the SAME
+ * ONE confinement seam every other path this CLI accepts uses,
+ * `storePathWithinWorkspace()` against `repoRoot()` -- read BEFORE the file
+ * is opened, so a path outside the workspace root never reaches
+ * `readFileSync` at all. A JSON parse failure never echoes the file's bytes
+ * back (the CR-03 posture this file's header names): the refusal names only
+ * the flag, never the content that failed to parse.
+ *
+ * Every missing-value check runs BEFORE `positional[0]` is read, matching
+ * the other three parsers' own discipline (see `cmdRenderMemmap()`'s own
+ * ordering): `call some.project --args -x` must refuse "`--args` requires a
+ * value", never fall through and report "-x" or "some.project" as anything.
+ */
+async function cmdCall(rest: string[]): Promise<number> {
+  const { positional, args, argsMissingValue, argsFile, argsFileMissingValue } = parseCallArgs(rest);
+
+  if (argsMissingValue) {
+    console.error("call: --args requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (argsFileMissingValue) {
+    console.error("call: --args-file requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (args !== undefined && argsFile !== undefined) {
+    console.error("call: --args and --args-file may not both be given -- pick exactly one\n");
+    console.log(USAGE);
+    return 1;
+  }
+
+  const name = positional[0];
+  if (!name) {
+    console.error("call: usage: call NAME (--args JSON | --args-file FILE)");
+    return 1;
+  }
+  if (!CURATED_ANNO_TOOLS.includes(name)) {
+    console.error(`call: unknown anno tool "${name}" -- accepted names: ${CURATED_ANNO_TOOLS.join(", ")}`);
+    return 1;
+  }
+  if (args === undefined && argsFile === undefined) {
+    console.error("call: one of --args JSON or --args-file FILE is required\n");
+    console.log(USAGE);
+    return 1;
+  }
+
+  let raw: string;
+  if (argsFile !== undefined) {
+    const workspaceRoot = repoRoot();
+    let argsFilePath: string;
+    try {
+      argsFilePath = storePathWithinWorkspace(argsFile, workspaceRoot);
+    } catch (err) {
+      console.error(`call: ${errMsg(err)}`);
+      return 1;
+    }
+    try {
+      raw = readFileSync(argsFilePath, "utf8");
+    } catch (err) {
+      console.error(`call: could not read --args-file: ${errMsg(err)}`);
+      return 1;
+    }
+  } else {
+    raw = args!;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Never echo `raw` back -- the same CR-03 posture `cmdRenderMemmap()`'s
+    // own confinement gives `--provenance`, applied here to the parse
+    // failure itself rather than to a path.
+    console.error(`call: --args${argsFile !== undefined ? "-file" : ""} did not parse as JSON`);
+    return 1;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    console.error(`call: --args${argsFile !== undefined ? "-file" : ""} must decode to a JSON object`);
+    return 1;
+  }
+
+  const result = await runAnnoTool(name, parsed);
+  const text = result.content.map((c) => c.text).join("");
+  if (result.isError) {
+    console.error(text);
+    return 1;
+  }
+  console.log(text);
+  return 0;
+}
+
 /**
  * Entry point for the `anno` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
- * verb per `acme.mjs`'s own dispatch convention (`src/skills/acme-build/
- * scripts/acme.mjs`), with one deliberate difference: an explicit `--help`
+ * verb per `acme.ts`'s own dispatch convention (`skills/acme-build/
+ * scripts/acme.ts`), with one deliberate difference: an explicit `--help`
  * returns 0 (a no-op invocation with no verb also returns 0), while an
  * unrecognised verb returns 1.
  */
@@ -3012,6 +3184,8 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
         return await cmdDecompCompleteness(rest);
       case "hazard-report":
         return await cmdHazardReport(rest);
+      case "call":
+        return await cmdCall(rest);
       default:
         // Corrected 2026-08-30. This prefix read
         // `anno:` -- the subcommand renamed to `anno` on 2026-08-29
@@ -3020,8 +3194,8 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
         // keeps its current name, so no consumer, test or record entry moves
         // with it.
         console.error(
-          `anno: unknown verb "${verb}" -- this CLI has exactly six: render-memmap, coverage, export-asm, ` +
-            "evid-disagreements, decomp-completeness and hazard-report\n",
+          `anno: unknown verb "${verb}" -- this CLI has exactly seven: render-memmap, coverage, export-asm, ` +
+            "evid-disagreements, decomp-completeness, hazard-report and call\n",
         );
         console.log(USAGE);
         return 1;

@@ -18,7 +18,7 @@
 ; this file, never a restructure of what is already here.
 ;
 ; Regenerate with:
-;   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs
+;   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts
 
 !cpu 6510
 

@@ -21,17 +21,15 @@
 //
 // SESSION LIFECYCLE -- MEASURED, not this plan's assumed default (Rule 1
 // deviation, see SUMMARY): StockConnectSession (stock-connect.ts) carries no
-// text session at all, and ensureStockSession()/withStockSession() never
+// text session at all, and ensureStockSession()/runBinary() never
 // call textConnect() -- as of this plan, textConnect()/textDisconnect() are
 // invoked ONLY from test code. So there is no session-lifetime-held text
 // session anywhere in production code to reuse. Each call below is its OWN
 // textConnect()/textDisconnect() pair -- the ONLY acquisition path these two
 // tools have, not a second one competing with a first.
 //
-// ADAPTER CHOICE -- MEASURED, deviates from this plan's literal instruction
-// (Rule 1 deviation, see SUMMARY): withStockSession() and
-// withDerivedTool(..., { needsSession: true }, ...) (stock-dispatch.ts) both
-// wrap the ENTIRE delegated handler call in withChannelLockHeld(), which
+// ADAPTER CHOICE -- MEASURED: stock-session.ts's runBinary() wraps the
+// ENTIRE delegated handler call in withChannelLockHeld(), which
 // acquires channel-lock.ts's SINGLE, cross-channel mutex for `channel:
 // "binary"` for the whole call. A handler reached through either adapter
 // that then called withTextChannelLock() internally would be a SECOND
@@ -41,11 +39,9 @@
 // inner acquire would queue behind itself and could only ever resolve by
 // expiring CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS (630s by default) and erroring: a
 // de facto deadlock, not a working call. Neither handler below needs a
-// binary session or the binary channel's authority at all, so both are
-// registered in stock-dispatch.ts with
-// `withDerivedTool(toolName, { needsSession: false }, handler)` instead --
-// the SAME existing adapter configuration `vice_diagnose`/
-// `vice_symbols_load` already use, never a third adapter. Each handler
+// binary session or the binary channel's authority at all, so every tool in
+// this file is listed in stock-tools.ts as "pure" and runs through
+// runPure(), the same runner `vice_symbols_load` uses. Each handler
 // resolves the lease through `deps.ensureLease()` itself (free to call
 // repeatedly -- ensureStockSession()'s own header comment) and takes ONLY
 // the text channel's own lock, via withTextChannelLock(), around its one
@@ -55,9 +51,9 @@
 //   - Never accept a caller-supplied, free-text command string anywhere in
 //     this module's public surface (D-01).
 //   - Never call TextMonitorClient.command() outside withTextChannelLock().
-//   - Never register either handler through withStockSession() or
-//     withDerivedTool(..., { needsSession: true }, ...) -- see the ADAPTER
-//     CHOICE comment above for the self-deadlock this would cause.
+//   - Never list a handler here as a "binary" tool in stock-tools.ts --
+//     see the ADAPTER CHOICE comment above for the self-deadlock this would
+//     cause.
 //   - Never dial a raw host/port or open a second broker lease -- both
 //     handlers obtain lease coordinates through deps.ensureLease() (the SAME
 //     provider ensureStockSession() itself calls) and dial only through
@@ -66,7 +62,7 @@
 //     and convertWireError() (stock-handler.ts) exactly as every other stock
 //     handler does; a ChannelLockTimeoutError is passed through verbatim
 //     (its own `.message` IS channelLockRefusalMessage()'s output), matching
-//     withChannelLockHeld()'s own discipline in stock-dispatch.ts.
+//     withChannelLockHeld()'s own discipline in stock-session.ts.
 //   - Never embed a phase number in any string or template literal here.
 //   - Never declare an operation on the grant before the shared cross-channel
 //     mutex is actually held, and never clear one outside that same locked
@@ -77,10 +73,7 @@ import { textConnect, textDisconnect } from "./text-connect.ts";
 import {
   withTextChannelLock,
   buildTextCommand,
-  hazardSubjectLoadVerb,
-  isHazardSubjectId,
-  HAZARD_SUBJECT_IDS,
-  type HazardSubjectId,
+  buildStagedLoadCommand,
   type TextMonitorClient,
 } from "./text-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
@@ -100,11 +93,15 @@ import {
   type TextCapabilityIdentity,
   type TextCapabilityBrokerIdentity,
 } from "./text-capability-probe.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 import type { HeldLease } from "./vice-broker-client.ts";
+import { resolve } from "node:path";
+import { transferFileOverEndpoint } from "./transfer-client.mts";
+import { checkLocalFileReadable } from "./stock-machine.ts";
+import { parseAddress } from "./stock-address.ts";
 
 /**
- * Phase 63 (SESS-05): the text-channel counterpart of `stock-dispatch.ts`'s
+ * Phase 63 (SESS-05): the text-channel counterpart of `stock-session.ts`'s
  * own `declareOperation()` -- same shape, same discipline, over the LEASE'S
  * OWN control session rather than a locally-derived one. Both calls below
  * are written WITHOUT being awaited: a declaration must never add latency to
@@ -126,8 +123,8 @@ function declareTextOperation(lease: HeldLease, name: string | null): void {
  */
 async function withTextTool(
   toolName: string,
-  deps: StockDispatchDeps,
-  fn: (client: TextMonitorClient) => Promise<StockToolResult>,
+  deps: StockSessionDeps,
+  fn: (client: TextMonitorClient, lease: HeldLease) => Promise<StockToolResult>,
 ): Promise<StockToolResult> {
   const leaseOutcome = await deps.ensureLease();
   if (!leaseOutcome.ok) {
@@ -166,7 +163,7 @@ async function withTextTool(
 
   // Phase 63 (SESS-05), corrected: the declaration is made ONLY once the
   // shared cross-channel mutex is actually held, never before -- symmetric
-  // with stock-dispatch.ts's withChannelLockHeld()/declareOperation()
+  // with stock-session.ts's withChannelLockHeld()/declareOperation()
   // ordering (acquire, THEN declare) on the binary side. GrantRecord.operation
   // (vice-broker.mts's handleOperationNote()) is a SINGLE field per grant,
   // valid only if every caller declares after it holds channel-lock.ts's
@@ -184,7 +181,7 @@ async function withTextTool(
       async () => {
         declareTextOperation(lease, toolName);
         try {
-          return await fn(session.client);
+          return await fn(session.client, lease);
         } finally {
           declareTextOperation(lease, null);
         }
@@ -195,7 +192,7 @@ async function withTextTool(
     // ChannelLockTimeoutError's own `.message` IS
     // channelLockRefusalMessage()'s output -- passed through verbatim below,
     // never routed through convertWireError(), matching
-    // withChannelLockHeld()'s (stock-dispatch.ts) own discipline for the
+    // withChannelLockHeld()'s (stock-session.ts) own discipline for the
     // binary side. A timeout here means the lock was never granted, so
     // declareTextOperation() above never ran -- this call declares nothing
     // and clears nothing, leaving whichever operation genuinely holds the
@@ -226,7 +223,7 @@ async function withTextTool(
  * acquisition to the hottest binary-side path to defend a route nothing
  * currently opens.
  */
-export async function handleDeviceConsole(_args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleDeviceConsole(_args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   return withTextTool("vice_device_console", deps, async (client) => {
     const response = await client.command("device c:");
     return derivedAnswer({
@@ -248,7 +245,7 @@ export async function handleDeviceConsole(_args: Record<string, unknown>, deps: 
  * warp requested at launch time is a separate mechanism -- this tool changes
  * neither of those facts.
  */
-export async function handleWarpSet(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleWarpSet(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const enabled = args.enabled;
   if (typeof enabled !== "boolean") {
     return isErrorText(
@@ -318,7 +315,7 @@ function executeCounts(map: AccessMap): { io: number; rom: number; ram: number }
  * `isErrorText` naming the tool, the refusal code, and the offending
  * line/lineNumber -- never a partial or best-effort access map.
  */
-export async function handleMemmapShow(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleMemmapShow(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { startAddress, endAddress, maxRanges } = args;
 
   if (startAddress !== undefined && !isValidAddressArg(startAddress)) {
@@ -440,7 +437,7 @@ export async function handleMemmapShow(args: Record<string, unknown>, deps: Stoc
  * to narrow it) plus the same `executeCounts` triple `handleMemmapShow`
  * reports.
  */
-export async function handleMemmapZap(_args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleMemmapZap(_args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
   const identityWarning = textCapabilityIdentityWarning(identity, brokerIdentity);
 
@@ -498,9 +495,9 @@ export async function handleMemmapZap(_args: Record<string, unknown>, deps: Stoc
  * attributed to (D-42-2), used by all five text tools in this file.
  * `identity` comes from `deps.resolvedBinaryPath`/
  * `deps.resolvedBinaryPathIsResolved` -- the SAME single dispatch-layer
- * resolution `stock-dispatch.ts`'s own `StockDispatchDeps` doc comment
+ * resolution `stock-session.ts`'s own `StockSessionDeps` doc comment
  * documents, never re-resolved here. Every tool registered in this file
- * runs ONLY on the stock backend (STOCK_DERIVED_TOOLS), so `backend` is
+ * runs ONLY on the stock backend, so `backend` is
  * always the "stock" literal -- never invented for a caller this module
  * could not actually be talking to.
  *
@@ -513,7 +510,7 @@ export async function handleMemmapZap(_args: Record<string, unknown>, deps: Stoc
  * treatment of an omitted broker identity.
  */
 async function capabilityIdentityFor(
-  deps: StockDispatchDeps,
+  deps: StockSessionDeps,
 ): Promise<{ identity: TextCapabilityIdentity; brokerIdentity?: TextCapabilityBrokerIdentity }> {
   const identity: TextCapabilityIdentity = {
     backend: "stock",
@@ -559,7 +556,7 @@ function withIdentityWarning(text: string, warning: string): string {
  * is named by capability, command, binary and remedy -- never a parser
  * refusal.
  */
-export async function handleCpuHistory(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleCpuHistory(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { count } = args;
   let command = "chis";
   if (count !== undefined) {
@@ -611,7 +608,7 @@ export async function handleCpuHistory(args: Record<string, unknown>, deps: Stoc
  * an indeterminate (empty/unframeable) reply is a named state rather than a
  * silent empty success.
  */
-export async function handleProfileFlat(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleProfileFlat(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { count } = args;
   let command = "prof flat";
   if (count !== undefined) {
@@ -689,7 +686,7 @@ function isValidBacktraceDepthArg(value: unknown): value is number {
  * `bt` carries no build-time guard; classified before parsing anyway so an
  * indeterminate reply is a named state.
  */
-export async function handleBacktrace(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleBacktrace(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { depth } = args;
   if (depth !== undefined && !isValidBacktraceDepthArg(depth)) {
     return isErrorText(
@@ -767,7 +764,7 @@ export async function handleBacktrace(args: Record<string, unknown>, deps: Stock
  * in text-capability-probe.ts) so this handler could not reach it that way
  * even by accident.
  */
-export async function handleIoRegisters(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleIoRegisters(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { address } = args;
   if (address === undefined) {
     return isErrorText(
@@ -840,98 +837,67 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
 }
 
 // ---------------------------------------------------------------------------
-// Plan 50-04 (route-d): the tool that reaches text-protocol.ts's widened
-// `load` verb. See TEXT_COMMAND_ALLOWLIST's own `load` paragraph and
-// TEXT_COMMAND_PARAM_SPECS's own `load` entry (both text-protocol.ts) for
-// the full rationale this handler leans on without repeating it.
+// vice_program_load -- VICE's own text-monitor `load`, on a staged file.
 // ---------------------------------------------------------------------------
 
-/**
- * The subject loaded when the caller names none. Plan 50-04's behaviour,
- * unchanged: an omitted `subject` dials exactly the path that plan's single
- * frozen entry dialed.
- */
-const DEFAULT_SUBJECT: HazardSubjectId = "original";
+/** Kept apart from vice_autostart's "autostart" slot so one never replaces
+ * the other's staged file. */
+const PROGRAM_LOAD_STAGE_SLOT = "program";
+
+/** VICE's reply to a successful `load`: "Loading '<file>' from 0801 to 10E7 (08E7 bytes)". */
+const LOAD_REPLY_RE = /from ([0-9a-fA-F]{4}) to ([0-9a-fA-F]{4})/;
 
 /**
- * Resolve the caller's `subject` argument to one of text-protocol.ts's own
- * frozen ids, or to `null` for anything else.
- *
- * WHY THIS IS NOT A FILENAME PARAMETER, AND MUST NEVER BECOME ONE. The value
- * a caller supplies here is an ID, checked for exact membership in
- * HAZARD_SUBJECT_IDS and then used only as a LOOKUP KEY -- it is never
- * concatenated into a command string, never joined onto a path, and never
- * reaches the socket in any form. The dialed verb is built by
- * hazardSubjectLoadVerb() from the reviewed literal text-protocol.ts's own
- * closed table carries. So the set of host files this tool can ever load is
- * exactly that table, whatever a caller sends. An unrecognised id is refused
- * BY NAME before any text-monitor byte is written, the same way
- * buildTextCommand() refuses an out-of-bounds device.
+ * `vice_program_load` -- loads a program with VICE's own text-monitor
+ * `load "<file>" 0 [<address>]`, without resetting or starting the machine.
+ * THIS client reads the file at `path` and streams its bytes to the broker
+ * (stage_file + transfer, exactly as vice_autostart does); the text command
+ * names only the broker's staged file. `path` is resolved to an absolute
+ * path and not confined to the workspace (D-14). An optional `address`
+ * overrides the load address in the file's two-byte header, as VICE's own
+ * command allows.
  */
-function resolveSubjectId(raw: unknown): HazardSubjectId | null {
-  if (raw === undefined) return DEFAULT_SUBJECT;
-  return isHazardSubjectId(raw) ? raw : null;
-}
-
-/**
- * `vice_program_load` -- the shipped tool that reaches plan 50-04's widened
- * `load` verb (route-d, `.planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md`).
- * Dials VICE's text-monitor `load "<file>" <device>` command for ONE member
- * of text-protocol.ts's closed HAZARD_SUBJECT_PRG_RELPATHS table, each
- * baked into its own frozen allowlist identity -- this handler takes NO
- * filename argument at all, so there is nothing here for a caller to
- * inject; the loaded path can never be anything other than a reviewed
- * literal that table already carries.
- *
- * Takes two OPTIONAL parameters. `subject` is an enumerated id from that
- * table ("original", "regressed", "modified", "rebuild"). It defaults to
- * "original", which is exactly plan 50-04's behaviour, and an id the table
- * does not carry is refused by name (see resolveSubjectId() above for why an
- * id is not a filename). "rebuild" (plan 50-06) is the one id whose row
- * resolves outside the fixture directory -- a build artifact under the phase
- * evidence directory -- which is why the table's rows carry a whole
- * repo-relative path. `device`: an omitted device defaults
- * to 0 ("the file is read from the file system", VICE Manual ch. 12).
- * `buildTextCommand()` alone validates and bounds the device (0 through 11,
- * TEXT_COMMAND_PARAM_SPECS's own entry for this verb) -- this handler
- * duplicates no bound, mirroring `handleCpuHistory()`'s own discipline of
- * never re-stating a spec's own bound in a second place.
- *
- * No address argument is offered, and none ever will be through this tool:
- * omitting it makes VICE use the load address embedded in the `.prg` file's
- * own two-byte header, which is exactly what a committed machine-code
- * fixture needs -- text-protocol.ts's own `load` entry documents this same
- * choice and why a second numeric slot is not worth bounding for no present
- * use.
- */
-export async function handleProgramLoad(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
-  const { device, subject } = args;
-  const subjectId = resolveSubjectId(subject);
-  if (subjectId === null) {
-    return isErrorText(
-      `vice_program_load: "subject" must be one of ${HAZARD_SUBJECT_IDS.map((id) => JSON.stringify(id)).join(", ")} ` +
-        `(got ${JSON.stringify(subject)}) -- refusing before any text-monitor byte is written; this tool never accepts a filename`,
-    );
+export async function handleProgramLoad(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
+  const path = args.path;
+  if (typeof path !== "string" || path.length === 0) {
+    return isErrorText("vice_program_load: path is required and must be a non-empty string");
   }
-  const resolvedDevice = device === undefined ? 0 : device;
-  const built = buildTextCommand(hazardSubjectLoadVerb(subjectId), resolvedDevice);
-  if (!built.ok) {
-    return isErrorText(`vice_program_load: ${built.message} -- refusing before any text-monitor byte is written`);
+  let address: number | undefined;
+  if (args.address !== undefined) {
+    try {
+      address = parseAddress(args.address, { what: "address" });
+    } catch (err) {
+      return isErrorText(`vice_program_load: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
-  const command = built.command;
+  const localPath = resolve(path);
+  const readError = checkLocalFileReadable("vice_program_load", localPath);
+  if (readError !== null) return isErrorText(readError);
 
-  return withTextTool("vice_program_load", deps, async (client) => {
-    const response = await client.command(command);
-    return derivedAnswer({
-      command,
-      device: resolvedDevice,
-      subject: subjectId,
-      response,
-      note:
-        `loads the reviewed Phase 50 hazard subject "${subjectId}", baked into this verb's own frozen ` +
-        "identity (plan 50-04 route-d; one frozen verb per subject since plan 50-05) -- no filename is ever " +
-        "caller-supplied, only an enumerated subject id; the load address comes from the .prg file's own " +
-        "two-byte header, since no address argument is offered",
-    });
+  return withTextTool("vice_program_load", deps, async (client, lease) => {
+    const staged = await lease.brokerControl.stageFile({ targetId: lease.targetId, slot: PROGRAM_LOAD_STAGE_SLOT });
+    if (!staged.ok) {
+      return isErrorText(`vice_program_load: staging the program slot was refused (${staged.reason})`);
+    }
+    const transferFile = deps.transferFile ?? transferFileOverEndpoint;
+    const upload = await transferFile({ direction: "upload", handle: staged.handle, sourcePath: localPath });
+    if (!upload.ok) {
+      return isErrorText(`vice_program_load: uploading the program failed (${upload.reason})`);
+    }
+    const built = buildStagedLoadCommand(staged.emulatorFilename, staged.handle, address);
+    if (!built.ok) {
+      return isErrorText(`vice_program_load: ${built.message} -- refusing before any text-monitor byte is written`);
+    }
+    // VICE echoes the file name; the broker's staged path stays on the broker.
+    const response = (await client.command(built.command)).split(staged.emulatorFilename).join("<staged file>");
+    const loaded = LOAD_REPLY_RE.exec(response);
+    if (!loaded) {
+      return isErrorText(`vice_program_load: VICE did not load the program: ${response.trim()}`);
+    }
+    const loadAddress = parseInt(loaded[1]!, 16);
+    const endAddress = parseInt(loaded[2]!, 16);
+    // A fresh connection can prefix leftover prompts; report VICE's own line.
+    const line = response.slice(response.lastIndexOf("Loading") >= 0 ? response.lastIndexOf("Loading") : 0).trim();
+    return derivedAnswer({ path: localPath, loadAddress, endAddress, byteLength: endAddress - loadAddress + 1, response: line });
   });
 }

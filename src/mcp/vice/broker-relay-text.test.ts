@@ -17,10 +17,8 @@ import { join } from "node:path";
 
 import {
   startControlListener,
-  newControlToken,
   type StartControlListenerResult,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type MonitorClaimOutcome,
@@ -28,7 +26,7 @@ import {
   type RelayAttachOutcome,
 } from "./broker-control.mts";
 import { createBrokerState, type BrokerState, type InstanceRecord, type MonitorChannel } from "./broker-state.mts";
-import { dialMonitorRelay, HELLO_PROTOCOL_MAGIC, RELAY_TAG_TEXT, type DialMonitorRelayResult } from "./broker-endpoint.ts";
+import { dialMonitorRelay, HELLO_PROTOCOL_MAGIC, RELAY_TAG_TEXT, type DialMonitorRelayResult } from "./broker-endpoint.mts";
 import { TextMonitorClient, withTextChannelLock } from "./text-protocol.ts";
 import { resetChannelLockForTests } from "./channel-lock.ts";
 import { build } from "./build.ts";
@@ -201,7 +199,6 @@ function setupTextBrokerState(remoteMonitorPort: number | undefined, targetId: s
 interface RelayTestBrokerContext {
   listener: StartControlListenerResult;
   listenerPort: number;
-  token: string;
   state: BrokerState;
   /** See broker-relay.test.ts's own identical field for why this exists --
    * absent when the caller supplied its own `deps`. */
@@ -222,29 +219,18 @@ interface RelayTestBrokerContext {
 async function startRelayListenerForState(
   state: BrokerState,
   relayDeathDeps?: TestHandleRelayDeathDeps,
-): Promise<{ listener: StartControlListenerResult; token: string; incidentsDir: string | null }> {
+): Promise<{ listener: StartControlListenerResult; incidentsDir: string | null }> {
   let incidentsDir: string | null = null;
   let deps = relayDeathDeps;
   if (!deps) {
     incidentsDir = mkdtempSync(join(tmpdir(), "vice-relay-text-incidents-"));
     deps = { writeIncident: (record) => writeBrokerIncident(record, { dir: incidentsDir as string }) };
   }
-  const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async (): Promise<AcquireOutcome> => ({ ok: false, reason: "internal" }),
     onRelease: () => {},
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by broker-relay-text.test.ts",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,
@@ -262,9 +248,8 @@ async function startRelayListenerForState(
     // as of this plan -- not exercised by this suite (broker-control.test.ts
     // is the home for `operation` coverage).
     onOperation: () => ({ ok: true }),
-    onHostTool: async () => ({ ok: false, message: "not exercised by broker-relay-text.test.ts" }),
   });
-  return { listener, token, incidentsDir };
+  return { listener, incidentsDir };
 }
 
 async function withRelayTestBroker<T>(
@@ -274,9 +259,9 @@ async function withRelayTestBroker<T>(
   relayDeathDeps?: TestHandleRelayDeathDeps,
 ): Promise<T> {
   const state = setupTextBrokerState(remoteMonitorPort, targetId);
-  const { listener, token, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
+  const { listener, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
   try {
-    return await fn({ listener, listenerPort: listener.port, token, state, incidentsDir });
+    return await fn({ listener, listenerPort: listener.port, state, incidentsDir });
   } finally {
     listener.server.close();
     if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });

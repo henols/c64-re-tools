@@ -12,9 +12,8 @@
 // after seeing which flatters a result (A-07):
 //
 //   PARTITION_SOURCE_DERIVED -- for a fixture-class input where an ACME
-//   source and its `-r` report exist. Ported from
-//   `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/
-//   fixture/fixture-baseline.mjs`'s four-step ground-truth method, UNCHANGED:
+//   source and its `-r` report exist. Ported from the Phase 23 evidence
+//   fixture baseline's four-step ground-truth method, UNCHANGED:
 //   read every report line that emitted bytes; recover a truncated byte
 //   column's length from the directive itself; classify an emission as data
 //   iff its source text's first token is one of the ten ACME data
@@ -51,8 +50,7 @@
 // denominator refuses by name (`formatPercent` throws) rather than
 // rendering `0.00`, `NaN` or `100.00`.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts` (mirrors `dxa-listing.ts`'s
-// own stated rule for itself) and MUST NEVER CALL `node:child_process`
+// THIS MODULE MUST NEVER CALL `node:child_process`
 // (mirrors `dxa-listing.ts` and `dxa-run.ts`'s SEAM-05 discipline) -- ground
 // truth here is read from a report and from raw bytes the caller already
 // has; it is never derived by running anything.

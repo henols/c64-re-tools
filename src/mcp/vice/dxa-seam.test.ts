@@ -72,7 +72,7 @@ function censusAbsoluteValue(): string {
   return "/etc/passwd";
 }
 
-const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"] as const;
+const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath"] as const;
 
 // ---------------------------------------------------------------------------
 // FIXTURE: the one plant idiom this file uses for every case that needs a
@@ -112,7 +112,7 @@ const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath
  * SOURCE vendor tree), a different directory tree entirely, not
  * `resources/vendor/dxa/`. No committed test file's own walk reads this exact
  * path and branches on its presence, so -- unlike the fixed-name scratch file
- * in `src/skills/acme-build/` -- this site has no currently-measured
+ * in `skills/acme-build/` -- this site has no currently-measured
  * concurrent-scanner hazard. */
 function plantFakeDxaBinary(): { binPath: string; cleanupDir: string } {
   const vendorDir = join(HERE, "resources", "vendor", "dxa");

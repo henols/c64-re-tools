@@ -5,7 +5,7 @@
 //
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// `make-exported-edit.mjs` is a driver, not a test: it writes a committed
+// `make-exported-edit.ts` is a driver, not a test: it writes a committed
 // fixture and a committed evidence record as a side effect of running once.
 // This file is what proves that fixture is reproducible from committed
 // inputs alone, and that the driver's five named refusal conditions each
@@ -13,7 +13,7 @@
 // case here runs the driver as a REAL subprocess (`spawnSync(process.execPath,
 // [...])`) against a scratch copy of the manifest, on the same
 // subprocess-not-import pattern `reassembly-gate-modified-run.test.ts`'s own
-// header states for `compare-cross-binary.mjs`: the driver's own single
+// header states for `compare-cross-binary.ts`: the driver's own single
 // real-assembler call still goes through `acme-verify.ts` and nothing here
 // adds a second launch site of its own.
 //
@@ -35,7 +35,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SKIP_REASON = acmeSkipReasonFor("hazard-subject-exported-edit.test.ts");
 
 const FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");
-const DRIVER = join(FIXTURE_DIR, "make-exported-edit.mjs");
+const DRIVER = join(FIXTURE_DIR, "make-exported-edit.ts");
 const MANIFEST_PATH = join(FIXTURE_DIR, "exported-edit.manifest.json");
 const STORE_PATH = join(FIXTURE_DIR, "hazard-subject.annostore.json");
 const IMAGE_PATH = join(FIXTURE_DIR, "hazard-subject.prg");
@@ -178,7 +178,7 @@ test("refusal: a second file mutated behind the driver's back is refused", { ski
   const dir = freshDir("second-file-mutated");
   // The committed manifest is unmodified for this case -- only the
   // test-only `--test-corrupt-file` seam introduces the out-of-band
-  // mutation `make-exported-edit.mjs`'s own header documents.
+  // mutation `make-exported-edit.ts`'s own header documents.
   const run = runDriver(dir, MANIFEST_PATH, ["--test-corrupt-file", "symbols.a"]);
   assert.notEqual(run.status, 0, "expected the driver to refuse when a non-target file drifted from the pristine export");
   assert.match(

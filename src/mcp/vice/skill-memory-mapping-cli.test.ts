@@ -1,4 +1,4 @@
-// Coverage for src/skills/c64-memory-mapping/scripts/driver.mjs -- the
+// Coverage for skills/c64-memory-mapping/scripts/driver.ts -- the
 // c64-memory-mapping skill's address-lookup and listing-annotation driver.
 //
 // The script guards its CLI dispatch behind an entry-point check
@@ -9,7 +9,7 @@
 // export, so it is driven as a subprocess with an argument vector, exactly
 // like the other two PKG-02 test files.
 //
-// driver.mjs's `lookup <addr>...` verb parses address STRINGS through an
+// driver.ts's `lookup <addr>...` verb parses address STRINGS through an
 // internal `parseAddr()` helper that is NOT exported (only `lookup(addr:
 // number)` is). Every case below that needs string-form address parsing --
 // the documented-form equivalence, the overflow messages, and the
@@ -18,7 +18,7 @@
 // below for the one behaviour this leaves unreachable
 // (`parseAddr`'s `s == null` branch).
 //
-// This file lives in src/mcp/vice/, not next to driver.mjs, for the same
+// This file lives in src/mcp/vice/, not next to driver.ts, for the same
 // non-recursive-discovery reason as its two siblings (see
 // skill-program-recon-cli.test.ts's header). It never invokes the `memmap`
 // verb: that verb fetches four upstream pages over the network and
@@ -33,15 +33,8 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-// driver.mjs has no declaration file (it is a plain, unmodified skill
-// script -- editing it is out of scope for this plan). Under strict mode
-// this import would otherwise fail with TS7016 ("implicitly has an 'any'
-// type"); the single suppression below is scoped to this one import line,
-// not a project-wide relaxation, and every later use of `lookup`'s return
-// value is explicitly typed (see MemMapEntry below) so the suppression
-// buys untyped IMPORT resolution only, not untyped usage.
-// @ts-expect-error -- driver.mjs (a plain skill script, left unmodified) has no .d.mts
-import { lookup } from "../../skills/c64-memory-mapping/scripts/driver.mjs";
+// driver.ts is a typed skill script, checked by this package's typecheck.
+import { lookup } from "../../../skills/c64-memory-mapping/scripts/driver.ts";
 
 interface MemMapEntry {
   start: number;
@@ -55,11 +48,11 @@ interface MemMapEntry {
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRIPT_PATH = join(HERE, "..", "..", "skills", "c64-memory-mapping", "scripts", "driver.mjs");
-const MEMMAP_JSON_PATH = join(HERE, "..", "..", "skills", "c64-memory-mapping", "memmap.json");
+const SCRIPT_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "scripts", "driver.ts");
+const MEMMAP_JSON_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
 
-test("driver.mjs is resolved at the expected relative path", () => {
-  assert.ok(existsSync(SCRIPT_PATH), `expected driver.mjs at ${SCRIPT_PATH}`);
+test("driver.ts is resolved at the expected relative path", () => {
+  assert.ok(existsSync(SCRIPT_PATH), `expected driver.ts at ${SCRIPT_PATH}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -108,14 +101,14 @@ function withTempDir<T>(fn: (dir: string) => T): T {
 test("the CLI with no arguments prints usage and exits 0", () => {
   const r = runDriver([]);
   assert.equal(r.status, 0);
-  // driver.mjs prints its usage via console.error -- on stderr, not stdout.
-  assert.match(r.stderr, /usage: node driver\.mjs <command>/);
+  // driver.ts prints its usage via console.error -- on stderr, not stdout.
+  assert.match(r.stderr, /usage: node driver\.ts <command>/);
 });
 
 test("the CLI with an unknown verb prints usage and exits 1", () => {
   const r = runDriver(["bogus-verb"]);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /usage: node driver\.mjs <command>/);
+  assert.match(r.stderr, /usage: node driver\.ts <command>/);
 });
 
 test("lookup accepts every documented address form for $D020 -- dollar-prefixed hex, 0x-prefixed hex, trailing-h hex, binary and decimal -- and all resolve to the same result", () => {

@@ -2,18 +2,16 @@
 // BROKER-02's "never invoked automatically" promises MECHANICAL rather than
 // aspirational (D-15).
 //
-// WHY THIS FILE EXISTS: plan 62-05 ships two committed service definitions
-// (src/mcp/vice/service/vice-broker.service, a systemd USER unit, and
-// src/mcp/vice/service/com.henols.vice-broker.plist, a launchd agent) that a
-// user installs BY HAND, following the README. Nothing in this repository
-// may ever apply either one for them -- that is BROKER-05's whole point, and
-// a promise like that decays silently unless something asserts it. This file
-// is that assertion, copying the closed-consumer-set idiom
-// `hostpath-consumers.test.ts` and `tool-location-consumers.test.ts` already
-// established (comment-stripped source, a `readdirSync` walk over this
+// WHY THIS FILE EXISTS: the user starts the broker by hand, and how they keep
+// it running is their business. This project ships no service definition
+// (systemd unit, launchd agent), never invokes a service manager, and never
+// spawns the broker from a client. A promise like that decays silently
+// unless something asserts it. This file is that assertion, copying the closed-consumer-set idiom
+// `tool-location-consumers.test.ts` already established (comment-stripped
+// source, a `readdirSync` walk over this
 // package's own top-level modules, a closed-set assertion, one named
 // predicate shared by the real scan and its own planted-violation proof) --
-// over a THIRD token set: subprocess-invocation arguments, not import
+// over a different token set: subprocess-invocation arguments, not import
 // statements or env-var names.
 //
 // TWO SEPARATE PREDICATES, TWO SEPARATE REQUIREMENTS:
@@ -53,20 +51,15 @@
 // sources already covered here) or `node_modules/`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { BROKER_START_COMMAND } from "./broker-endpoint.ts";
-
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SERVICE_DIR = join(HERE, "service");
-const SERVICE_UNIT_PATH = join(SERVICE_DIR, "vice-broker.service");
-const LAUNCHD_PLIST_PATH = join(SERVICE_DIR, "com.henols.vice-broker.plist");
 
 /** Strips `//` line comments and `/* ... *\/` block comments, returning the
  * comment-stripped source as ONE newline-joined string. Copied VERBATIM from
- * `hostpath-consumers.test.ts` (its own WR-02 fix, 10-REVIEW.md) rather than
+ * `tool-location-consumers.test.ts` (the WR-02 fix, 10-REVIEW.md) rather than
  * re-derived -- there is exactly one comment stripper in this tree's test
  * suite, not a second copy that can drift from the first. */
 function stripCommentLines(src: string): string {
@@ -238,50 +231,16 @@ function brokerSpawners(): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// The two committed definitions themselves.
+// No service definition ships.
 // ---------------------------------------------------------------------------
 
-test("both service definitions contain the exported BROKER_START_COMMAND byte-identically", () => {
-  for (const path of [SERVICE_UNIT_PATH, LAUNCHD_PLIST_PATH]) {
-    const text = readSourceText(path);
-    assert.ok(text.includes(BROKER_START_COMMAND), `${path} must contain "${BROKER_START_COMMAND}" byte-for-byte`);
-  }
-});
-
-/** A path beginning with one of these prefixes is a real, machine-specific
- * filesystem location -- exactly what neither definition may embed. The
- * single named exception, `/usr/bin/env` in the systemd unit's `ExecStart`,
- * is the environment-resolver mechanism the plan requires so the unit needs
- * no absolute INTERPRETER path -- it is universal POSIX plumbing, identical
- * on every machine, not the kind of path this check exists to forbid. */
-const SYSTEM_BIN_PATH_RE = /\/(?:usr|bin|sbin|opt|Applications)\/[^\s"'<>]*/;
-const ALLOWED_SYSTEM_PATHS = new Set(["/usr/bin/env"]);
-
-function systemBinPathViolations(text: string): string[] {
-  const violations: string[] = [];
-  for (const line of text.split("\n")) {
-    const match = SYSTEM_BIN_PATH_RE.exec(line);
-    if (match && !ALLOWED_SYSTEM_PATHS.has(match[0])) {
-      violations.push(line);
-    }
-  }
-  return violations;
-}
-
-test("neither service definition embeds a machine-specific absolute path outside the env-resolver exception", () => {
-  for (const path of [SERVICE_UNIT_PATH, LAUNCHD_PLIST_PATH]) {
-    assert.deepEqual(systemBinPathViolations(readSourceText(path)), [], `${path} must embed no system-directory path other than /usr/bin/env`);
-  }
-});
-
-test("the Linux unit's interpreter-pinning variable is present, and every line naming it is commented out", () => {
-  const lines = readSourceText(SERVICE_UNIT_PATH)
-    .split("\n")
-    .filter((line) => line.includes("VICE_BROKER_NODE"));
-  assert.ok(lines.length > 0, "VICE_BROKER_NODE must be named somewhere in the unit file");
-  for (const line of lines) {
-    assert.ok(line.trimStart().startsWith("#"), `every line naming VICE_BROKER_NODE must be commented out, found: ${line}`);
-  }
+test("no service definition ships: no service/ directory and no systemd unit or launchd plist in the package tree", () => {
+  assert.equal(existsSync(join(HERE, "service")), false, "src/mcp/vice/service/ must not exist");
+  const shipped = readdirSync(HERE, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.(service|plist)$/.test(entry.name))
+    .filter((entry) => !entry.parentPath.includes("node_modules"))
+    .map((entry) => join(entry.parentPath, entry.name));
+  assert.deepEqual(shipped, []);
 });
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 // stock-live.test.ts
 //
 // OPT-IN, MANUAL-ONLY. Turns 03-UAT.md test 5's ad-hoc live probe into a
-// committed, repeatable gate: dispatches through the REAL dispatchStock()
+// committed, repeatable gate: dispatches through the REAL callStockTool()
 // seam -- the same one vice-proxy.ts calls -- against a REAL stock VICE
 // binary's binary monitor, over a REAL ViceMonitorClient socket. No stub
 // anywhere in the path except `ensureLease`/`connect`, which hand back the
@@ -34,7 +34,7 @@
 // CI has no VICE. SKIP_REASON is computed once, and EVERY test in this file
 // passes it through node:test's own `{ skip }` option -- this file must
 // never fail or hang where no stock binary is available. It is registered
-// in test-gate.mjs's MANUAL_ONLY_TESTS (the ONE list -- see that file's own
+// in test-gate.ts's MANUAL_ONLY_TESTS (the ONE list -- see that file's own
 // header) as the fourth manual-only file, so `npm run test:automated` never
 // runs it either.
 //
@@ -60,9 +60,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, connect as netConnect } from "node:net";
 
-import { dispatchStock, clearHeldStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { ViceMonitorClient, CommandType } from "./stock-protocol.ts";
-import { stockConnect, stockDisconnect, type StockConnectSession } from "./stock-connect.ts";
+import { stockConnect, stockDisconnect, type StockConnectSession, type DialMonitorSocketFn } from "./stock-connect.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import { attachRunStateTracker, runStateFor } from "./stock-runstate.ts";
 
@@ -89,21 +90,37 @@ const SKIP_REASON: string | false = !process.env.VICE_LIVE_STOCK_BIN
 
 // ---------------------------------------------------------------------------
 // Lifecycle: spawn a real stock VICE, connect a real ViceMonitorClient,
-// build the same StockConnectSession/StockDispatchDeps shape
-// stock-dispatch.test.ts's own buildConformanceSession()/buildConformanceDeps()
+// build the same StockConnectSession/StockSessionDeps shape
+// stock-tools.test.ts's own buildConformanceSession()/buildConformanceDeps()
 // use for the conformance harness -- but with a REAL client substituted for
 // the stub, and REAL live coordinates instead of a broker grant.
 // ---------------------------------------------------------------------------
 
-const CONFORMANCE_BROKER_CONTROL = {
-  claimMonitor: async () => ({ ok: true as const }),
-  releaseMonitor: async () => ({ ok: true as const }),
-} as unknown as BrokerControlSession;
+/** A complete broker-control stub for suites that talk to a real VICE with no
+ * broker in between. Typed as the full session, so a method added to the
+ * session is a compile error here rather than a `... is not a function` at
+ * run time. Everything the monitor path calls answers ok; the broker-only
+ * requests refuse. */
+function liveBrokerControlStub(): BrokerControlSession {
+  const refused = { ok: false as const, kind: "internal" as const, message: "not exercised by this live suite" };
+  return {
+    acquire: async () => refused,
+    release: async () => ({ ok: true as const }),
+    status: async () => refused,
+    hostState: async () => refused,
+    claimMonitor: async () => ({ ok: true as const, handle: "live-stub" }),
+    releaseMonitor: async () => ({ ok: true as const }),
+    noteOperation: async () => ({ ok: true as const }),
+    stageFile: async () => ({ ok: false as const, reason: "internal" as const }),
+  };
+}
+
+const CONFORMANCE_BROKER_CONTROL = liveBrokerControlStub();
 
 interface LiveFixture {
   child: ChildProcess;
   client: ViceMonitorClient;
-  deps: StockDispatchDeps;
+  deps: StockSessionDeps;
   scratchDir: string;
 }
 
@@ -183,10 +200,24 @@ const SKIP_REASON_310: string | false = !process.env.VICE_LIVE_STOCK_BIN_310
  * broker-level contention (Task 3's contention is at the SOCKET, not the
  * broker claim; see that test's own header comment on what it does NOT
  * prove). */
-const STOCK_LIVE_1313_BROKER_CONTROL = {
-  claimMonitor: async () => ({ ok: true as const }),
-  releaseMonitor: async () => ({ ok: true as const }),
-} as unknown as BrokerControlSession;
+const STOCK_LIVE_1313_BROKER_CONTROL = liveBrokerControlStub();
+
+/** stockConnect() normally reaches the monitor through the broker's relay.
+ * This suite runs a bare VICE with no broker, so it dials the instance's
+ * binary monitor directly instead. */
+const directDialMonitorSocket: DialMonitorSocketFn = ({ host, port }) =>
+  new Promise((resolve, reject) => {
+    const socket = netConnect({ host, port });
+    socket.once("connect", () => {
+      socket.removeListener("error", reject);
+      resolve({ socket, pending: Buffer.alloc(0) });
+    });
+    socket.once("error", reject);
+  });
+
+/** stockConnect() with the direct dial above. */
+const directStockConnect: typeof stockConnect = (opts) =>
+  stockConnect({ ...opts, deps: { ...opts.deps, dialMonitorSocket: directDialMonitorSocket } });
 
 /**
  * Spawns `binPath` as its OWN, independent stock VICE instance -- never the
@@ -210,7 +241,7 @@ const STOCK_LIVE_1313_BROKER_CONTROL = {
  */
 async function withOwnStockInstance<T>(binPath: string, fn: (info: { port: number; binPath: string }) => Promise<T>): Promise<T> {
   const port = await freeEphemeralPort();
-  const scratchDir = mkdtempSync(join(tmpdir(), "gsd-0713-vicerc-"));
+  const scratchDir = mkdtempSync(join(tmpdir(), "stock-live-vicerc-"));
   const child = spawn(
     binPath,
     ["-default", "-binarymonitor", "-binarymonitoraddress", `ip4://127.0.0.1:${port}`],
@@ -241,7 +272,7 @@ before(async () => {
   if (SKIP_REASON) return;
 
   const port = await freeEphemeralPort();
-  const scratchDir = mkdtempSync(join(tmpdir(), "gsd-0316-vicerc-"));
+  const scratchDir = mkdtempSync(join(tmpdir(), "stock-live-vicerc-"));
   // Bind 127.0.0.1 only (T-03-16-01) -- the binary monitor is unauthenticated
   // full machine control; XDG_CONFIG_HOME silences the shared-vicerc version
   // mismatch dialog (T-03-16-04) without ever touching the real config.
@@ -278,7 +309,7 @@ before(async () => {
     baselineEpoch: null,
   } as unknown as StockConnectSession;
 
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => ({
       ok: true as const,
       lease: {
@@ -286,7 +317,6 @@ before(async () => {
         port: session.port,
         targetId: session.targetId,
         brokerControl: session.brokerControl,
-        epochFile: "",
         supervisorDir: "",
       } as HeldLease,
     }),
@@ -317,7 +347,7 @@ after(async () => {
   rmSync(scratchDir, { recursive: true, force: true });
 });
 
-function liveDeps(): StockDispatchDeps {
+function liveDeps(): StockSessionDeps {
   if (!fixture) {
     throw new Error("stock-live.test.ts: fixture is not initialised -- SKIP_REASON should have prevented this test from running at all");
   }
@@ -352,7 +382,7 @@ test(
   "stock-live: vice_registers_available reports a non-empty catalog with every width in {8,16} bits (never 1 or 2)",
   { skip: SKIP_REASON },
   async () => {
-    const result = await dispatchStock("vice_registers_available", {}, liveDeps());
+    const result = await callStockTool("vice_registers_available", {}, liveDeps());
     const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
     const registers = payload.registers as Array<{ id: number; name: string; sizeBits: number }>;
 
@@ -390,7 +420,7 @@ test(
   async () => {
     // --- WIDTH CATALOG (also logged by Task 1's own test above; re-fetched
     //     here from the SAME cached session, so this is a free call) ---
-    const availableResult = await dispatchStock("vice_registers_available", {}, liveDeps());
+    const availableResult = await callStockTool("vice_registers_available", {}, liveDeps());
     const availablePayload = parseOkPayload(availableResult as { content: { type: "text"; text: string }[]; isError: boolean });
     const catalog = availablePayload.registers as Array<{ id: number; name: string; sizeBits: number }>;
     assert.equal(availablePayload.runState, "stopped", "vice_registers_available's runState must be stopped");
@@ -408,38 +438,38 @@ test(
     console.log(`stock-live: this build's status register is "${statusEntry!.name}"`);
 
     // --- THE BLOCKER, LIVE: an ordinary 8-bit register write round-trips ---
-    const preGetResult = await dispatchStock("vice_registers_get", {}, liveDeps());
+    const preGetResult = await callStockTool("vice_registers_get", {}, liveDeps());
     const prePayload = parseOkPayload(preGetResult as { content: { type: "text"; text: string }[]; isError: boolean });
     const preRegisters = prePayload.registers as Record<string, number>;
     const preA = preRegisters.A;
     console.log(`stock-live: A's pre-write value is ${preA}`);
 
-    const setAResult = await dispatchStock("vice_registers_set", { register: "A", value: 42 }, liveDeps());
+    const setAResult = await callStockTool("vice_registers_set", { register: "A", value: 42 }, liveDeps());
     const setAPayload = parseOkPayload(setAResult as { content: { type: "text"; text: string }[]; isError: boolean });
     console.log(`stock-live: vice_registers_set({register:"A", value:42}) -> ${JSON.stringify(setAPayload)}`);
     assert.equal(setAPayload.observedValue, 42, `vice_registers_set({register:"A", value:42}) must echo observedValue:42, got ${JSON.stringify(setAPayload)}`);
     assert.equal(setAPayload.runState, "stopped", "vice_registers_set's runState must be stopped");
 
-    const postGetResult = await dispatchStock("vice_registers_get", {}, liveDeps());
+    const postGetResult = await callStockTool("vice_registers_get", {}, liveDeps());
     const postPayload = parseOkPayload(postGetResult as { content: { type: "text"; text: string }[]; isError: boolean });
     const postRegisters = postPayload.registers as Record<string, number>;
     assert.equal(postRegisters.A, 42, `vice_registers_get must independently show A===42 after the write, got ${postRegisters.A}`);
 
     // --- 16-BIT PATH: PC round-trips through the same width-derived check ---
-    const setPcResult = await dispatchStock("vice_registers_set", { register: "PC", value: 0xc000 }, liveDeps());
+    const setPcResult = await callStockTool("vice_registers_set", { register: "PC", value: 0xc000 }, liveDeps());
     const setPcPayload = parseOkPayload(setPcResult as { content: { type: "text"; text: string }[]; isError: boolean });
     console.log(`stock-live: vice_registers_set({register:"PC", value:0xC000}) -> ${JSON.stringify(setPcPayload)}`);
     assert.equal(setPcPayload.observedValue, 0xc000, `vice_registers_set({register:"PC", value:0xC000}) must echo observedValue:0xC000, got ${JSON.stringify(setPcPayload)}`);
 
     // --- RANGE REFUSAL: an out-of-range 8-bit value is refused, and NO
     //     write reaches the emulator (A must still read 42 from above) ---
-    const rangeResult = await dispatchStock("vice_registers_set", { register: "A", value: 256 }, liveDeps());
+    const rangeResult = await callStockTool("vice_registers_set", { register: "A", value: 256 }, liveDeps());
     assert.equal(rangeResult.isError, true, "vice_registers_set({register:\"A\", value:256}) must be refused");
     const rangeText = (rangeResult as { content: { type: "text"; text: string }[] }).content[0]!.text;
     console.log(`stock-live: range refusal message -> ${rangeText}`);
     assert.match(rangeText, /0\.\.0xff/, `range refusal must name the 0..0xff range, got: ${rangeText}`);
 
-    const afterRangeGetResult = await dispatchStock("vice_registers_get", {}, liveDeps());
+    const afterRangeGetResult = await callStockTool("vice_registers_get", {}, liveDeps());
     const afterRangePayload = parseOkPayload(afterRangeGetResult as { content: { type: "text"; text: string }[]; isError: boolean });
     const afterRangeRegisters = afterRangePayload.registers as Record<string, number>;
     assert.equal(afterRangeRegisters.A, 42, `A must still read 42 after a refused out-of-range write reached no wire command, got ${afterRangeRegisters.A}`);
@@ -448,13 +478,13 @@ test(
     // Read the status register's value once before the loop, and assert it
     // is unchanged after: the refusal branch returns before REGISTERS_SET is
     // ever sent, so nothing in this loop may perturb it.
-    const beforeFlagsGetResult = await dispatchStock("vice_registers_get", {}, liveDeps());
+    const beforeFlagsGetResult = await callStockTool("vice_registers_get", {}, liveDeps());
     const beforeFlagsPayload = parseOkPayload(beforeFlagsGetResult as { content: { type: "text"; text: string }[]; isError: boolean });
     const beforeFlagsRegisters = beforeFlagsPayload.registers as Record<string, number>;
     const statusBefore = beforeFlagsRegisters[statusEntry!.name];
 
     for (const [flagName, bitPosition] of Object.entries(FLAG_BIT_POSITIONS)) {
-      const flagResult = await dispatchStock("vice_registers_set", { register: flagName, value: 1 }, liveDeps());
+      const flagResult = await callStockTool("vice_registers_set", { register: flagName, value: 1 }, liveDeps());
       assert.equal(flagResult.isError, true, `vice_registers_set({register:"${flagName}", value:1}) must be refused`);
       const flagText = (flagResult as { content: { type: "text"; text: string }[] }).content[0]!.text;
       console.log(`stock-live: flag-bit refusal for "${flagName}" -> ${flagText}`);
@@ -475,7 +505,7 @@ test(
       );
     }
 
-    const afterFlagsGetResult = await dispatchStock("vice_registers_get", {}, liveDeps());
+    const afterFlagsGetResult = await callStockTool("vice_registers_get", {}, liveDeps());
     const afterFlagsPayload = parseOkPayload(afterFlagsGetResult as { content: { type: "text"; text: string }[]; isError: boolean });
     const afterFlagsRegisters = afterFlagsPayload.registers as Record<string, number>;
     assert.equal(
@@ -522,14 +552,14 @@ let bootedOnce = false;
 
 async function ensureBooted(): Promise<void> {
   if (bootedOnce) return;
-  const resetResult = await dispatchStock("vice_machine_reset", { mode: "hard", run_after: true }, liveDeps());
+  const resetResult = await callStockTool("vice_machine_reset", { mode: "hard", run_after: true }, liveDeps());
   assert.equal(resetResult.isError, false, `vice_machine_reset({mode:"hard",run_after:true}) must succeed, got: ${JSON.stringify(resetResult)}`);
   // Real-time emulation, no -warp -- 3s comfortably covers the KERNAL's
   // boot sequence reaching the ready prompt (empirically confirmed against
   // this build: border/background were still unset at connect-time and
   // took a few real seconds of run time to reach their KERNAL defaults).
   await new Promise((resolve) => setTimeout(resolve, 3000));
-  const pauseResult = await dispatchStock("vice_execution_pause", {}, liveDeps());
+  const pauseResult = await callStockTool("vice_execution_pause", {}, liveDeps());
   assert.equal(pauseResult.isError, false, `vice_execution_pause() must succeed, got: ${JSON.stringify(pauseResult)}`);
   await waitForStoppedRunState();
   bootedOnce = true;
@@ -537,7 +567,7 @@ async function ensureBooted(): Promise<void> {
 
 test("stock-live (05-09, CR-01): default banking -- vice_vicii_get_state reports the io bank and the KERNAL-default border/background colours", { skip: SKIP_REASON }, async () => {
   await ensureBooted();
-  const result = await dispatchStock("vice_vicii_get_state", {}, liveDeps());
+  const result = await callStockTool("vice_vicii_get_state", {}, liveDeps());
   const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
   const bank = payload.bank as { id: number; name: string };
   console.log(`stock-live: vice_vicii_get_state resolved bank ${JSON.stringify(bank)}, registersHex=${payload.registersHex}`);
@@ -555,21 +585,21 @@ test(
     await ensureBooted();
 
     // --- 1. Pre-condition control: read $D020 both ways before the banking change ---
-    const preCpuRead = await dispatchStock("vice_memory_read", { address: "$d020", size: 1, encoding: "array" }, liveDeps());
+    const preCpuRead = await callStockTool("vice_memory_read", { address: "$d020", size: 1, encoding: "array" }, liveDeps());
     const preCpuPayload = parseOkPayload(preCpuRead as { content: { type: "text"; text: string }[]; isError: boolean });
-    const preIoRead = await dispatchStock("vice_memory_read", { address: "$d020", size: 1, encoding: "array", bank: "io" }, liveDeps());
+    const preIoRead = await callStockTool("vice_memory_read", { address: "$d020", size: 1, encoding: "array", bank: "io" }, liveDeps());
     const preIoPayload = parseOkPayload(preIoRead as { content: { type: "text"; text: string }[]; isError: boolean });
     console.log(`stock-live: pre-write $D020 -- cpu bank: ${JSON.stringify(preCpuPayload.bytes)}, io bank: ${JSON.stringify(preIoPayload.bytes)}`);
 
     try {
       // --- 2. MEM_SET $01 = $34 -- bank I/O out, exposing RAM underneath $D000-$DFFF to the CPU view ---
-      const writeResult = await dispatchStock("vice_memory_write", { address: 1, data: [0x34] }, liveDeps());
+      const writeResult = await callStockTool("vice_memory_write", { address: 1, data: [0x34] }, liveDeps());
       assert.equal(writeResult.isError, false, `vice_memory_write({address:1, data:[0x34]}) must succeed, got: ${JSON.stringify(writeResult)}`);
 
       // --- 3. Non-vacuity control: prove the banking manipulation actually took effect ---
-      const postCpuRead = await dispatchStock("vice_memory_read", { address: "$d020", size: 1, encoding: "array" }, liveDeps());
+      const postCpuRead = await callStockTool("vice_memory_read", { address: "$d020", size: 1, encoding: "array" }, liveDeps());
       const postCpuPayload = parseOkPayload(postCpuRead as { content: { type: "text"; text: string }[]; isError: boolean });
-      const postIoRead = await dispatchStock("vice_memory_read", { address: "$d020", size: 1, encoding: "array", bank: "io" }, liveDeps());
+      const postIoRead = await callStockTool("vice_memory_read", { address: "$d020", size: 1, encoding: "array", bank: "io" }, liveDeps());
       const postIoPayload = parseOkPayload(postIoRead as { content: { type: "text"; text: string }[]; isError: boolean });
       const postCpuByte = (postCpuPayload.bytes as number[])[0];
       const postIoByte = (postIoPayload.bytes as number[])[0];
@@ -588,7 +618,7 @@ test(
       );
 
       // --- 4. THE FIX, LIVE: vice_vicii_get_state must still report true chip registers ---
-      const viciiResult = await dispatchStock("vice_vicii_get_state", {}, liveDeps());
+      const viciiResult = await callStockTool("vice_vicii_get_state", {}, liveDeps());
       const viciiPayload = parseOkPayload(viciiResult as { content: { type: "text"; text: string }[]; isError: boolean });
       const viciiBank = viciiPayload.bank as { id: number; name: string };
       console.log(`stock-live: with $01=$34, vice_vicii_get_state -> bank=${JSON.stringify(viciiBank)}, borderColour=${viciiPayload.borderColour}, backgroundColour=${viciiPayload.backgroundColour}`);
@@ -599,7 +629,7 @@ test(
       assert.ok(!/^f+$/.test(registersHex), `registersHex must not be all "f" characters (the CPU-view symptom) with I/O banked out, got ${registersHex}`);
 
       // --- 5. THE FIX, LIVE: vice_cia_get_state must still report true chip registers ---
-      const ciaResult = await dispatchStock("vice_cia_get_state", { cia: 1 }, liveDeps());
+      const ciaResult = await callStockTool("vice_cia_get_state", { cia: 1 }, liveDeps());
       const ciaPayload = parseOkPayload(ciaResult as { content: { type: "text"; text: string }[]; isError: boolean });
       const ciaBank = ciaPayload.bank as { id: number; name: string };
       const cia1 = (ciaPayload.cias as Record<string, unknown>[])[0]!;
@@ -612,9 +642,9 @@ test(
     } finally {
       // --- 6. Restore $01 -- a mid-test failure must not leave the shared
       //        fixture's emulator banked out for the cases that follow. ---
-      const restoreResult = await dispatchStock("vice_memory_write", { address: 1, data: [0x37] }, liveDeps());
+      const restoreResult = await callStockTool("vice_memory_write", { address: 1, data: [0x37] }, liveDeps());
       assert.equal(restoreResult.isError, false, `restoring $01=$37 must succeed, got: ${JSON.stringify(restoreResult)}`);
-      const restoredCpuRead = await dispatchStock("vice_memory_read", { address: "$d020", size: 1, encoding: "array" }, liveDeps());
+      const restoredCpuRead = await callStockTool("vice_memory_read", { address: "$d020", size: 1, encoding: "array" }, liveDeps());
       const restoredCpuPayload = parseOkPayload(restoredCpuRead as { content: { type: "text"; text: string }[]; isError: boolean });
       const restoredByte = (restoredCpuPayload.bytes as number[])[0];
       assert.notEqual(restoredByte, 255, `the CPU-view $D020 read must no longer be 255 after restoring $01=$37, got ${restoredByte}`);
@@ -623,7 +653,7 @@ test(
 );
 
 test("stock-live (05-09, CR-01): the refusal path's premise is reachable -- the live BANKS_AVAILABLE catalog names both io and ram", { skip: SKIP_REASON }, async () => {
-  const result = await dispatchStock("vice_memory_banks", {}, liveDeps());
+  const result = await callStockTool("vice_memory_banks", {}, liveDeps());
   const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
   const banks = payload.banks as Array<{ id: number; name: string }>;
   console.log(`stock-live: live BANKS_AVAILABLE catalog: ${JSON.stringify(banks)}`);
@@ -646,7 +676,7 @@ test(
     async function readByte(address: string, bank?: string): Promise<number> {
       const args: Record<string, unknown> = { address, size: 1, encoding: "array" };
       if (bank !== undefined) args.bank = bank;
-      const result = await dispatchStock("vice_memory_read", args, liveDeps());
+      const result = await callStockTool("vice_memory_read", args, liveDeps());
       const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
       return (payload.bytes as number[])[0]!;
     }
@@ -666,7 +696,7 @@ test(
     async function search(pattern: number, bank?: string): Promise<Record<string, unknown>> {
       const args: Record<string, unknown> = { start: "$e000", end: "$e000", pattern: [pattern] };
       if (bank !== undefined) args.bank = bank;
-      const result = await dispatchStock("vice_memory_search", args, liveDeps());
+      const result = await callStockTool("vice_memory_search", args, liveDeps());
       return parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
     }
 
@@ -686,7 +716,7 @@ test(
     assert.deepEqual(ramHit.matches, [0xe000], "the RAM-under-ROM byte IS findable through the ram bank -- previously unreachable");
 
     // vice_memory_compare reports the same view fields, applied to both ranges.
-    const compare = await dispatchStock(
+    const compare = await callStockTool(
       "vice_memory_compare",
       { mode: "ranges", range1_start: "$e000", range1_end: "$e00f", range2_start: "$e010", bank: "ram" },
       liveDeps(),
@@ -713,7 +743,7 @@ test(
     }
 
     async function readCia1(): Promise<Record<string, unknown>> {
-      const result = await dispatchStock("vice_cia_get_state", { cia: 1 }, liveDeps());
+      const result = await callStockTool("vice_cia_get_state", { cia: 1 }, liveDeps());
       return parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
     }
 
@@ -738,7 +768,7 @@ test(
     //        The same five booleans now carry confounded:true for `up` only. ---
     const originalPra = (cia1.portA as { raw: number }).raw;
     try {
-      const write = await dispatchStock("vice_memory_write", { address: "$dc00", data: [0xfe], bank: "io" }, liveDeps());
+      const write = await callStockTool("vice_memory_write", { address: "$dc00", data: [0xfe], bank: "io" }, liveDeps());
       assert.equal(write.isError, false, `driving $DC00 = 0xfe must succeed, got: ${JSON.stringify(write)}`);
 
       const driven = joysticksOf(await readCia1());
@@ -749,7 +779,7 @@ test(
       assert.match(String(driven.j2.confoundedReason), /up/);
       assert.equal(driven.notes.length, 1);
     } finally {
-      const restore = await dispatchStock("vice_memory_write", { address: "$dc00", data: [originalPra], bank: "io" }, liveDeps());
+      const restore = await callStockTool("vice_memory_write", { address: "$dc00", data: [originalPra], bank: "io" }, liveDeps());
       assert.equal(restore.isError, false, `restoring $DC00 = 0x${originalPra.toString(16)} must succeed, got: ${JSON.stringify(restore)}`);
     }
   },
@@ -759,7 +789,7 @@ test(
   "stock-live (WR-01): vice_memory_banks reports the emulator's WHOLE enumeration -- aliases sharing a wire id included, and every reported name resolves",
   { skip: SKIP_REASON },
   async () => {
-    const result = await dispatchStock("vice_memory_banks", {}, liveDeps());
+    const result = await callStockTool("vice_memory_banks", {}, liveDeps());
     const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
     const banks = payload.banks as Array<{ id: number; name: string }>;
 
@@ -782,7 +812,7 @@ test(
     // feeds resolveRequiredBank()'s "available banks: ..." refusal, so a name
     // reported here that refuses would be the WR-01 defect from the other end.
     for (const bank of banks) {
-      const read = await dispatchStock("vice_memory_read", { address: "$1000", size: 1, bank: bank.name }, liveDeps());
+      const read = await callStockTool("vice_memory_read", { address: "$1000", size: 1, bank: bank.name }, liveDeps());
       const readPayload = parseOkPayload(read as { content: { type: "text"; text: string }[]; isError: boolean });
       const reportedBank = readPayload.bank as { id: number; name: string };
       assert.equal(reportedBank.id, bank.id, `bank "${bank.name}" must resolve to the wire id the catalog reported`);
@@ -806,7 +836,7 @@ test(
     await ensureBooted();
 
     // --- 1. Baseline: vice_sprite_get on the default-booted machine ---
-    const preResult = await dispatchStock("vice_sprite_get", {}, liveDeps());
+    const preResult = await callStockTool("vice_sprite_get", {}, liveDeps());
     const prePayload = parseOkPayload(preResult as { content: { type: "text"; text: string }[]; isError: boolean });
     console.log(
       `stock-live: pre-write vice_sprite_get -> vicBank=${prePayload.vicBank}, screenBase=${prePayload.screenBase}, ` +
@@ -829,11 +859,11 @@ test(
 
     try {
       // --- 2. Bank I/O out ---
-      const writeResult = await dispatchStock("vice_memory_write", { address: 1, data: [0x34] }, liveDeps());
+      const writeResult = await callStockTool("vice_memory_write", { address: 1, data: [0x34] }, liveDeps());
       assert.equal(writeResult.isError, false, `vice_memory_write({address:1, data:[0x34]}) must succeed, got: ${JSON.stringify(writeResult)}`);
 
       // --- 3. Re-run vice_sprite_get -- the CR-02 regression ---
-      const postResult = await dispatchStock("vice_sprite_get", {}, liveDeps());
+      const postResult = await callStockTool("vice_sprite_get", {}, liveDeps());
       const postPayload = parseOkPayload(postResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(
         `stock-live: post-write ($01=0x34) vice_sprite_get -> vicBank=${postPayload.vicBank}, screenBase=${postPayload.screenBase}, ` +
@@ -861,10 +891,10 @@ test(
       );
 
       // --- 4. Non-vacuity control: prove the banking manipulation actually took effect ---
-      const defaultReadResult = await dispatchStock("vice_memory_read", { address: "$dd00", size: 1, encoding: "array" }, liveDeps());
+      const defaultReadResult = await callStockTool("vice_memory_read", { address: "$dd00", size: 1, encoding: "array" }, liveDeps());
       const defaultReadPayload = parseOkPayload(defaultReadResult as { content: { type: "text"; text: string }[]; isError: boolean });
       const defaultByte = (defaultReadPayload.bytes as number[])[0];
-      const ioReadResult = await dispatchStock("vice_memory_read", { address: "$dd00", size: 1, encoding: "array", bank: "io" }, liveDeps());
+      const ioReadResult = await callStockTool("vice_memory_read", { address: "$dd00", size: 1, encoding: "array", bank: "io" }, liveDeps());
       const ioReadPayload = parseOkPayload(ioReadResult as { content: { type: "text"; text: string }[]; isError: boolean });
       const ioByte = (ioReadPayload.bytes as number[])[0];
       console.log(`stock-live: non-vacuity control -- default-bank $dd00: ${defaultByte}, io-bank $dd00: ${ioByte}, reported cia2PortARaw: ${preCia2PortARaw}`);
@@ -881,7 +911,7 @@ test(
     } finally {
       // --- 5. Restore $01 -- a mid-test failure must not leave the shared
       //        fixture's emulator banked out for the cases that follow. ---
-      const restoreResult = await dispatchStock("vice_memory_write", { address: 1, data: [0x37] }, liveDeps());
+      const restoreResult = await callStockTool("vice_memory_write", { address: 1, data: [0x37] }, liveDeps());
       assert.equal(restoreResult.isError, false, `restoring $01=$37 must succeed, got: ${JSON.stringify(restoreResult)}`);
     }
   },
@@ -889,7 +919,7 @@ test(
 
 test("stock-live (05-10): the hi-res legend, live -- sprite 0's legend names only '.' and '#', never '@' or '%'", { skip: SKIP_REASON }, async () => {
   await ensureBooted();
-  const result = await dispatchStock("vice_sprite_inspect", { sprite_number: 0, format: "ascii" }, liveDeps());
+  const result = await callStockTool("vice_sprite_inspect", { sprite_number: 0, format: "ascii" }, liveDeps());
   const payload = parseOkPayload(result as { content: { type: "text"; text: string }[]; isError: boolean });
   const legend = payload.legend as string;
   const rows = payload.rows as string[];
@@ -925,7 +955,7 @@ test(
         port,
         targetId: "stock-live-1313-connect-39",
         brokerControl: STOCK_LIVE_1313_BROKER_CONTROL,
-        deps: {},
+        deps: { dialMonitorSocket: directDialMonitorSocket },
       });
       try {
         assert.ok(session.client, "stockConnect() must resolve with a client");
@@ -960,7 +990,7 @@ test(
         port,
         targetId: "stock-live-1313-connect-310",
         brokerControl: STOCK_LIVE_1313_BROKER_CONTROL,
-        deps: {},
+        deps: { dialMonitorSocket: directDialMonitorSocket },
       });
       try {
         assert.ok(session.client, "stockConnect() must resolve with a client -- CR-01's whole point: this used to REJECT");
@@ -989,7 +1019,7 @@ test(
 
 // ---------------------------------------------------------------------------
 // 07-13 Task 2: measure a real bracket on genuine VICE 3.10 through the
-// real dispatchStock() seam -- Route A ("cpu_history"), the Manual-Only
+// real callStockTool() seam -- Route A ("cpu_history"), the Manual-Only
 // "Route A stopwatch on a >= 3.10 build" row 07-VALIDATION.md leaves
 // outstanding. `deps.connect` is the REAL stockConnect (not the file's
 // hardcoded-absent-capability before()/after() stub session, which would
@@ -997,12 +1027,12 @@ test(
 // ---------------------------------------------------------------------------
 
 test(
-  "stock-live (07-13 Task 2, Manual-Only Route A stopwatch): a real ~500ms bracket on genuine VICE 3.10 measures an exact, non-zero, plausible cycle count via route cpu_history, through the real dispatchStock() seam",
+  "stock-live (07-13 Task 2, Manual-Only Route A stopwatch): a real ~500ms bracket on genuine VICE 3.10 measures an exact, non-zero, plausible cycle count via route cpu_history, through the real callStockTool() seam",
   { skip: SKIP_REASON_310 },
   async () => {
     await withOwnStockInstance(resolvedBin310Path, async ({ port }) => {
       const targetId = "stock-live-1313-routeA-310";
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({
           ok: true as const,
           lease: {
@@ -1014,12 +1044,12 @@ test(
             supervisorDir: "",
           } as HeldLease,
         }),
-        connect: stockConnect,
+        connect: directStockConnect,
       };
       try {
         // 1. reset -- also proves Route A was actually selected (can only
         //    hold if 07-12's parser decodes a real CPUHISTORY_GET reply).
-        const resetResult = await dispatchStock("vice_cycles_stopwatch", { action: "reset" }, deps);
+        const resetResult = await callStockTool("vice_cycles_stopwatch", { action: "reset" }, deps);
         const resetPayload = parseOkPayload(resetResult as { content: { type: "text"; text: string }[]; isError: boolean });
         assert.equal(
           resetPayload.route,
@@ -1028,7 +1058,7 @@ test(
         );
 
         // 2. one resume.
-        const runResult = await dispatchStock("vice_execution_run", {}, deps);
+        const runResult = await callStockTool("vice_execution_run", {}, deps);
         assert.equal(runResult.isError, false, `vice_execution_run must succeed, got: ${JSON.stringify(runResult)}`);
 
         // 3. a real wall-clock wait with NO calls at all -- 07-CONTEXT.md's
@@ -1037,7 +1067,7 @@ test(
         await new Promise((resolve) => setTimeout(resolve, 500));
 
         // 4. read.
-        const readResult = await dispatchStock("vice_cycles_stopwatch", { action: "read" }, deps);
+        const readResult = await callStockTool("vice_cycles_stopwatch", { action: "read" }, deps);
         const readPayload = parseOkPayload(readResult as { content: { type: "text"; text: string }[]; isError: boolean });
         assert.equal(readPayload.route, "cpu_history", `expected route "cpu_history" on read, got "${readPayload.route}"`);
         assert.equal(readPayload.measurable, true, `expected measurable:true, got: ${JSON.stringify(readPayload)}`);
@@ -1080,7 +1110,7 @@ test(
         // baseline, EXACTLY UNCHANGED from the first read's figure, not a
         // "small" number close to zero. An anti-fabrication bug would show
         // up as a DIFFERENT (especially larger) or negative figure here.
-        const secondReadResult = await dispatchStock("vice_cycles_stopwatch", { action: "read" }, deps);
+        const secondReadResult = await callStockTool("vice_cycles_stopwatch", { action: "read" }, deps);
         const secondReadPayload = parseOkPayload(secondReadResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-live: second immediate read (no resume, no wait) -> ${JSON.stringify(secondReadPayload)}`);
         if (secondReadPayload.measurable === true) {
@@ -1106,93 +1136,6 @@ test(
           );
         }
       } finally {
-        clearHeldStockSession();
-      }
-    });
-  },
-);
-
-// ---------------------------------------------------------------------------
-// 07-13 Task 3: prove the diagnostician stays bounded when a second client
-// holds the monitor (Gap 3 / Gap 4, 07-VERIFICATION.md human_verification
-// item 2). Deliberately VICE 3.9 -- isolates the contention behaviour from
-// anything version-gated.
-//
-// WHAT THIS TEST DOES NOT PROVE: the BROKER-MEDIATED monitor_held_elsewhere
-// path via a real claimMonitor() refusal from a second broker-managed
-// session still requires the host broker control plane running two real
-// sessions, which this file's dispatch-level harness does not stand up.
-// That half stays recorded as unit-proven only (see stock-diagnose.test.ts)
-// -- this test proves only the SOCKET-level contention bound, via a real
-// second stockConnect() dial against an already-held single-client monitor.
-// ---------------------------------------------------------------------------
-
-test(
-  "stock-live (07-13 Task 3, Gap 3/Gap 4): vice_diagnose settles within its own bound when a second real client dials a monitor already held by a first",
-  { skip: SKIP_REASON_39 },
-  async () => {
-    await withOwnStockInstance(resolvedBin39Path, async ({ port }) => {
-      // --- 1. Open and hold a first raw socket -- the "other client"
-      //        already occupying stock VICE's single-client monitor slot. ---
-      const holdingSocket = netConnect({ host: "127.0.0.1", port });
-      await new Promise<void>((resolve, reject) => {
-        holdingSocket.once("connect", () => resolve());
-        holdingSocket.once("error", reject);
-      });
-
-      const originalTimeout = process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
-      process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = "1500";
-      try {
-        const targetId = "stock-live-1313-contention-39";
-        const deps: StockDispatchDeps = {
-          ensureLease: async () => ({
-            ok: true as const,
-            lease: {
-              host: "127.0.0.1",
-              port,
-              targetId,
-              brokerControl: STOCK_LIVE_1313_BROKER_CONTROL,
-              epochFile: "",
-              supervisorDir: "",
-            } as HeldLease,
-          }),
-          // The REAL stockConnect -- this is the second connect() that will
-          // sit unserviced behind the holding socket above.
-          connect: stockConnect,
-        };
-        clearHeldStockSession();
-
-        const startedAt = Date.now();
-        const result = await dispatchStock("vice_diagnose", {}, deps);
-        const elapsedMs = Date.now() - startedAt;
-        console.log(`stock-live: vice_diagnose under second-client contention settled in ${elapsedMs}ms (bound: 1500ms)`);
-        assert.ok(
-          elapsedMs < 5000,
-          `vice_diagnose must settle well inside its bound -- expected < 5000ms for a 1500ms configured bound, took ${elapsedMs}ms`,
-        );
-
-        const text = (result as { content: { type: "text"; text: string }[] }).content[0]!.text;
-        let observedOutcome: "monitor_held_elsewhere" | "diagnosis_unavailable_timeout" | "neither" = "neither";
-        if (result.isError === false) {
-          const payload = JSON.parse(text) as Record<string, unknown>;
-          if (payload.verdict === "monitor_held_elsewhere") observedOutcome = "monitor_held_elsewhere";
-          assert.notEqual(payload.verdict, "live", "vice_diagnose must not answer the live verdict under second-client contention");
-        } else if (/^vice_diagnose: diagnosis_unavailable \(monitor_acquisition_timeout\)/.test(text)) {
-          observedOutcome = "diagnosis_unavailable_timeout";
-        }
-        console.log(`stock-live: observed contention outcome -- ${observedOutcome}`);
-        assert.notEqual(
-          observedOutcome,
-          "neither",
-          `vice_diagnose must answer either the monitor_held_elsewhere verdict or an isError:true ` +
-            `"diagnosis_unavailable (monitor_acquisition_timeout)" text under contention -- which of the two depends ` +
-            `on whether the contention is detected at the broker claim or at the socket, and both are correct, ` +
-            `documented outcomes; got isError=${result.isError}, text: ${text}`,
-        );
-      } finally {
-        if (originalTimeout === undefined) delete process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS;
-        else process.env.VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS = originalTimeout;
-        holdingSocket.destroy();
         clearHeldStockSession();
       }
     });

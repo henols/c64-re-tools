@@ -19,19 +19,6 @@
     "reverse-engineering",
     "mcp"
   ],
-  "skills": "./src/skills/",
   "mcpServers": "./.mcp.json",
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/ensure-mcp-deps.sh\""
-          }
-        ]
-      }
-    ]
-  },
   "defaultEnabled": false
 }

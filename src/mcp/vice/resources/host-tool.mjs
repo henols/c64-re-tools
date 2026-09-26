@@ -6,11 +6,11 @@
 // rebuild.
 // host-tool.mts
 //
-// This is the host-bound executor for the host-tool control op. A
-// container-side caller (host-tool-client.ts) reaches this module over
-// broker-control.mts's `host_tool` op -- never directly -- and this module is
-// the ONE place that turns an untrusted wire request into a real child
-// process on the HOST, outside any container. Motivated by the project
+// This is the host-bound executor for the host-tool control ops. A
+// container-side caller (host-tool-endpoint.mts) reaches this module over
+// the broker's `host_tool_stage`/`host_tool_run` ops -- never directly --
+// and this module is the ONE place that turns an untrusted wire request
+// into a real child process on the HOST, outside any container. Motivated by the project
 // owner's own rule, recorded once a skill script's own binaries (acme, and
 // later dxa/Ghidra/c1541/petcat/cartconv) turned out to need to live
 // host-side: a skill script runs container-side and there is no container
@@ -49,7 +49,7 @@
 //     it, satisfying the prefix check lexically while a real write through
 //     it landed outside the root. This covers EVERY path-bearing wire field
 //     on every tool, not only the ones present when this file was first
-//     written: acme.build's source/outDir AND each entry of its includes
+//     written: acme.build's source AND each entry of its includes
 //     array, and ghidra.analyze's importPath AND its preScript/postScript.
 //     Two residuals recorded beside the guarantee, not hidden past it: the
 //     check-then-open window between this decision and the child process's
@@ -59,16 +59,14 @@
 //     comparison is byte-wise over the resolved strings with no Unicode
 //     normalisation, so two spellings differing only in normalisation form
 //     are two distinct paths here (same residual anno-confinement.test.ts
-//     records for the same comparison). A third residual, recorded rather
-//     than hidden: because the return value is now the REAL path, on a
-//     host whose workspace root is itself reached through a symlink the
-//     response `path` need not match any member of hostRootCandidates(),
-//     and containerPath() throws rather than passing an untranslatable
-//     path through -- HOST_WORKSPACE_PATH naming the real root is the
-//     pre-existing mitigation; this is a recorded limit, not a widened
-//     hostpath.ts consumer set.
+//     records for the same comparison).
 //   - No inline byte payload on a host-tool response, at any result size --
-//     every result crosses as `{ path, sha256, byteLength }`, never bytes.
+//     no bytes ever ride a host-tool response line (D-10). The
+//     `host_tool_run` op answers each result as
+//     `{ name, handle, sha256, byteLength }` -- a download handle the caller
+//     redeems over its own `transfer` connection, never a broker-side path.
+//     The bytes themselves ride a SEPARATE transfer connection, never this
+//     line.
 //   - No second copy of a tool's argv construction -- buildHostToolArgv() is
 //     the one place.
 //   - No synchronous child-process call on any path reachable from the
@@ -109,13 +107,9 @@ import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment, 
 // where the sibling binary is actually resolved, inside this process.
 // resolvedBackend() is itself memoised at module scope (backend-detect.mts's
 // own `memoisedResult`) and this project's broker already calls it once at
-// startup before the control listener binds (vice-broker.mts's run()) -- for
-// the control-plane route this call below is therefore always a cache hit,
-// never a second probe. The host route (no broker in the loop) has no such
-// warm memo and pays one `--help` probe per invocation, mirroring the
-// existing, already-accepted cost vice-broker.mts's own startup call pays
-// once per broker lifetime -- never re-probed per c1541.* call within the
-// SAME process, per findSiblingBinary()'s own memo below.
+// startup before the control listener binds (vice-broker.mts's run()) -- in
+// the broker this call below is therefore always a cache hit, never a
+// second probe.
 import { resolvedBackend } from "./backend-detect.mjs";
 // This module's THIRD sibling import, and its own use of the `.mjs`-extension
 // rule for a host-bound sibling -- the same form the `backend-detect.mjs`
@@ -124,7 +118,7 @@ import { resolvedBackend } from "./backend-detect.mjs";
 // `toolLocationSeam()` uses. That dance exists ONLY for a module that ships
 // two ways -- unbuilt, imported directly by a real no-build-step entry point,
 // AND compiled -- and `host-tool.mts` does not: every real consumer (this
-// project's own broker, the direct host-spawn route, and every test file
+// project's own broker, and every test file
 // that reaches `runHostTool()`) imports the COMPILED `resources/host-tool.mjs`
 // artifact only, exactly like the `ghidra-project.mjs` import above already
 // does; the unbuilt `.mts` source is never loaded as a live ESM module by
@@ -144,6 +138,13 @@ import { resolvedBackend } from "./backend-detect.mjs";
 // SECOND of Phase 59 `D-02`'s three coexisting `$PATH`-walk copies to
 // collapse (plan 60-01 collapsed the first, inside `backend-detect.mts`).
 import { resolveTool, remedyTextsFor, resolveOnPath } from "./tool-location.mjs";
+// This module's FOURTH sibling import, the SAME value-import-of-a-compiled-
+// artifact convention every import above already uses. Phase 65 (SEAM-01,
+// D-03): bindStagedInputs()'s own output-name binding (below) validates a
+// bare output name (e.g. ghidra.analyze's exportPath) with the SAME
+// refuse-not-sanitise segment check broker-transfer.mts's own staging slots
+// already get, rather than duplicating that ordered-checks shape here.
+import { refuseUnsafeSegment } from "./broker-transfer.mjs";
 // This module's own directory, used ONLY to compute the vendored dxa
 // binary's fixed path. Never an environment-variable override: dxa is
 // vendored AND built by this project (unlike ACME_BIN/GHIDRA_HOME, which
@@ -166,7 +167,7 @@ export const HOST_TOOL_IDS = Object.freeze([
     "petcat.decode",
 ]);
 /** Per-tool accepted argument-key lists, built with `Object.create(null)`
- * (the same prototype-null idiom vsf-slice.mjs uses) so no prototype key can
+ * (the same prototype-null idiom vsf-slice.ts uses) so no prototype key can
  * ever resolve to a value here even if a future caller indexed it with an
  * untrusted string directly -- belt-and-suspenders alongside the
  * array-membership check above, which is what actually guards the lookup
@@ -179,8 +180,8 @@ export const HOST_TOOL_IDS = Object.freeze([
  * `runId` is a bare name, never a path, and flows through
  * `resolveGhidraProject()`'s own per-run-directory resolution; `importPath`,
  * `preScript` and `postScript` each flow through `resolveWorkspacePath()` --
- * the SAME workspace-boundary resolver `acme.build`'s `source`/`outDir`/
- * `includes` use -- before any of the four ever reaches argv.
+ * the SAME workspace-boundary resolver `acme.build`'s `source`/`includes`
+ * use -- before any of the four ever reaches argv.
  * `buildAnalyzeHeadlessArgv()` (ghidra-project.mts) also independently
  * re-checks `preScript`/`postScript` for a parent-directory path segment,
  * exactly as it already re-checks `projectLocation` for a dot-prefixed
@@ -192,12 +193,11 @@ export const HOST_TOOL_IDS = Object.freeze([
  * REQUIRED, non-path, language-id string. It is deliberately absent from
  * `HOST_TOOL_PATH_ARG_KEYS` below and never flows through
  * `resolveWorkspacePath()`; it is validated against `LANGUAGE_ID_PATTERN`
- * instead (ghidra-project.mts). `ghidra.installExtension`'s two keys:
- * `sourceDir` (workspace-relative, path-bearing) and `moduleName` (a
- * non-path name validated against `RUN_ID_PATTERN`'s anchored shape, exactly
+ * instead (ghidra-project.mts). `ghidra.installExtension`'s one key:
+ * `moduleName` (a non-path name validated against `RUN_ID_PATTERN`'s anchored shape, exactly
  * like `ghidra.analyze`'s own `runId`). */
 export const HOST_TOOL_ARG_KEYS = Object.freeze(Object.assign(Object.create(null), {
-    "acme.build": Object.freeze(["source", "outDir", "format", "setpc", "defines", "includes", "noReport"]),
+    "acme.build": Object.freeze(["source", "format", "setpc", "defines", "includes", "noReport"]),
     // Seven new fields close a measured seam-argv surface gap -- importRoute
     // (required), loaderBaseAddr, noanalysis, scriptPath, entrypointsPath,
     // exportPath, expectedClassificationLines.
@@ -230,25 +230,22 @@ export const HOST_TOOL_ARG_KEYS = Object.freeze(Object.assign(Object.create(null
     // Frozen exactly as originally specified -- five path-bearing keys plus
     // the one enum key (`imageKind`), never re-derived from
     // ResolvedDxaDisassemblePaths below.
-    "dxa.disassemble": Object.freeze(["image", "imageKind", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"]),
-    // `sourceDir` is the vendored extension tree; `moduleName` names the
-    // install target directory under <GHIDRA_HOME>/Ghidra/Extensions/.
-    "ghidra.installExtension": Object.freeze(["sourceDir", "moduleName"]),
-    // `image` is the `.d64` these five capabilities read; `outDir` defaults
-    // to `dirname(imagePath)`, exactly as `dxa.disassemble`'s own default
-    // does. `name` (entry/chain/read) is a CBM filename or glob pattern --
+    "dxa.disassemble": Object.freeze(["image", "imageKind", "entrypointsPath", "datablocksPath", "labelsPath"]),
+    // `moduleName` names the install target directory under <GHIDRA_HOME>/Ghidra/Extensions/.
+    "ghidra.installExtension": Object.freeze(["moduleName"]),
+    // `image` is the `.d64` these five capabilities read. `name` (entry/chain/read) is a CBM filename or glob pattern --
     // never a path, never resolved through `resolveWorkspacePath()` (see
     // HOST_TOOL_PATH_ARG_KEYS below).
-    "c1541.bam": Object.freeze(["image", "outDir"]),
-    "c1541.dir": Object.freeze(["image", "outDir"]),
-    "c1541.entry": Object.freeze(["image", "name", "outDir"]),
-    "c1541.chain": Object.freeze(["image", "name", "outDir"]),
-    "c1541.read": Object.freeze(["image", "name", "outDir"]),
+    "c1541.bam": Object.freeze(["image"]),
+    "c1541.dir": Object.freeze(["image"]),
+    "c1541.entry": Object.freeze(["image", "name"]),
+    "c1541.chain": Object.freeze(["image", "name"]),
+    "c1541.read": Object.freeze(["image", "name"]),
     // No dialect key here or anywhere else in this module -- the BASIC
     // dialect is a fixed literal inside buildHostToolArgv()'s own
     // petcat.decode branch, never a wire field. A caller has no way to
     // request one, let alone a wrong one.
-    "petcat.decode": Object.freeze(["image", "outDir"]),
+    "petcat.decode": Object.freeze(["image"]),
 }));
 /** The answer to ONE question -- which accepted argument keys, per tool,
  * name a filesystem path and therefore MUST pass `resolveWorkspacePath()`
@@ -271,14 +268,14 @@ export const HOST_TOOL_ARG_KEYS = Object.freeze(Object.assign(Object.create(null
  *
  * `ghidra.analyze`'s `processor` is deliberately NOT listed here -- it is a
  * language-id string, not a path, and is validated against
- * `LANGUAGE_ID_PATTERN` instead. `ghidra.installExtension`'s `sourceDir` IS
- * path-bearing; `moduleName` is deliberately absent for the same reason
+ * `LANGUAGE_ID_PATTERN` instead. `ghidra.installExtension` has no
+ * path-bearing key; `moduleName` is deliberately absent for the same reason
  * `ghidra.analyze`'s own `runId` is: a validated opaque name
  * (`RUN_ID_PATTERN`) turned into a path segment only inside
  * `runHostTool()`'s own resolution branch below, never through
  * `resolveWorkspacePath()`. */
 export const HOST_TOOL_PATH_ARG_KEYS = Object.freeze(Object.assign(Object.create(null), {
-    "acme.build": Object.freeze(["source", "outDir", "includes"]),
+    "acme.build": Object.freeze(["source", "includes"]),
     // scriptPath/entrypointsPath/exportPath join the pre-existing three --
     // each resolved through resolveWorkspacePath() in runHostTool()'s ghidra
     // branch, exactly like importPath/preScript/postScript already are.
@@ -291,23 +288,23 @@ export const HOST_TOOL_PATH_ARG_KEYS = Object.freeze(Object.assign(Object.create
     // `imageKind` is deliberately absent -- it is a two-member enum, not a
     // path, and is the one key HOST_TOOL_ARG_KEYS_REMAINDER (host-tool.test.ts)
     // classifies for this tool.
-    "dxa.disassemble": Object.freeze(["image", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"]),
-    "ghidra.installExtension": Object.freeze(["sourceDir"]),
-    // `image`/`outDir` are path-bearing on all five ids; `name`
+    "dxa.disassemble": Object.freeze(["image", "entrypointsPath", "datablocksPath", "labelsPath"]),
+    "ghidra.installExtension": Object.freeze([]),
+    // `image` is path-bearing on all five ids; `name`
     // (entry/chain/read) is deliberately absent here -- it is a CBM
     // filename/glob, not a path, and is the one key each of those three
     // tools' own `HOST_TOOL_ARG_KEYS_REMAINDER` entry (host-tool.test.ts)
     // classifies. `c1541.bam`/`c1541.dir` have no non-path keys at all, so
     // their own remainder entries are empty.
-    "c1541.bam": Object.freeze(["image", "outDir"]),
-    "c1541.dir": Object.freeze(["image", "outDir"]),
-    "c1541.entry": Object.freeze(["image", "outDir"]),
-    "c1541.chain": Object.freeze(["image", "outDir"]),
-    "c1541.read": Object.freeze(["image", "outDir"]),
+    "c1541.bam": Object.freeze(["image"]),
+    "c1541.dir": Object.freeze(["image"]),
+    "c1541.entry": Object.freeze(["image"]),
+    "c1541.chain": Object.freeze(["image"]),
+    "c1541.read": Object.freeze(["image"]),
     // Both of `petcat.decode`'s accepted keys are path-bearing -- there is
     // no non-path key at all, so its own HOST_TOOL_ARG_KEYS_REMAINDER entry
     // (host-tool.test.ts) is empty.
-    "petcat.decode": Object.freeze(["image", "outDir"]),
+    "petcat.decode": Object.freeze(["image"]),
 }));
 const HOST_TOOL_SHAPE = `an object with a "tool" field naming one of ${HOST_TOOL_IDS.map((t) => JSON.stringify(t)).join(", ")}, and an optional "args" object`;
 function isPlainObject(value) {
@@ -321,6 +318,163 @@ function describe(value) {
     catch {
         return String(value);
     }
+}
+// ---------------------------------------------------------------------------
+// Phase 65 (SEAM-01, D-03): the fixed-endpoint route's own input-binding
+// site. `stage_file`/`stage_hostTool_run`'s own request never carries a raw
+// path at all -- every path-bearing key on the wire is instead an UPLOAD
+// HANDLE minted by `host_tool_stage`, and `bindStagedInputs()` is THE ONE
+// PLACE that handle is turned into the scratch-relative path
+// `resolveWorkspacePath()` (this module's own pre-existing confinement
+// site) then resolves. This function does NOT call `resolveWorkspacePath()`
+// itself -- `runHostTool()`'s existing per-tool branches already do that,
+// unchanged, against whatever `bindStagedInputs()` wrote into `args`; this
+// function's own job stops at producing a request whose path-bearing keys
+// are relative strings instead of handles.
+//
+// WHAT NOT TO DO:
+//   - Never bind `includes`/`scriptPath`/`exportPath`. Each names either a
+//     LIST of paths or a not-yet-supported single path on this route; both
+//     are refused BY NAME rather than accepted and silently dropped.
+// ---------------------------------------------------------------------------
+/** Phase 65 (plan 65-03, D-04): the frozen per-tool table of path-bearing
+ * keys this route binds to a DIRECTORY TREE handle rather than a single
+ * FILE handle -- `acme.build`'s `includes` (an array of tree handles, one
+ * per `-I` directory) and `ghidra.analyze`'s `scriptPath` (Ghidra's own
+ * `-scriptPath` flag names a directory, never a file). Every other tool id
+ * carries no tree-bearing key at all. Mirrors `host-tool-endpoint.mts`'s own
+ * `HOST_TOOL_TREE_INPUT_KEYS` (the CLIENT side of this same seam) -- the two
+ * tables are independently declared (this module is host-bound and never
+ * imports a container-side sibling) but must agree in practice;
+ * `host-tool.test.ts`'s own both-directions census is what proves they do. */
+export const HOST_TOOL_TREE_ARG_KEYS = Object.freeze(Object.assign(Object.create(null), {
+    "acme.build": Object.freeze(["includes"]),
+    "ghidra.analyze": Object.freeze(["scriptPath"]),
+    "oracle.probe": Object.freeze([]),
+    "oracle.run": Object.freeze([]),
+    "dxa.disassemble": Object.freeze([]),
+    "ghidra.installExtension": Object.freeze([]),
+    "c1541.bam": Object.freeze([]),
+    "c1541.dir": Object.freeze([]),
+    "c1541.entry": Object.freeze([]),
+    "c1541.chain": Object.freeze([]),
+    "c1541.read": Object.freeze([]),
+    "petcat.decode": Object.freeze([]),
+}));
+/** Phase 65 (plan 65-03, D-03): the frozen per-tool table of path-bearing
+ * keys this route binds to a bare OUTPUT NAME rather than an upload handle
+ * -- `ghidra.analyze`'s `exportPath` names a file the POST-SCRIPT WRITES,
+ * never one the caller uploads (D-03's own "exportPath is an output, not an
+ * input" constraint). The value bound here is `out/<name>`, a
+ * scratch-relative path `runHostTool()`'s own (unchanged)
+ * `resolveWorkspacePath()` site resolves under `<scratch>/out/`, which
+ * `vice-broker.mts`'s `handleHostToolRun()` creates before every run. Mirrors
+ * `host-tool-endpoint.mts`'s own `HOST_TOOL_OUTPUT_NAME_KEYS`. */
+export const HOST_TOOL_OUTPUT_NAME_ARG_KEYS = Object.freeze(Object.assign(Object.create(null), {
+    "acme.build": Object.freeze([]),
+    "ghidra.analyze": Object.freeze(["exportPath"]),
+    "oracle.probe": Object.freeze([]),
+    "oracle.run": Object.freeze([]),
+    "dxa.disassemble": Object.freeze([]),
+    "ghidra.installExtension": Object.freeze([]),
+    "c1541.bam": Object.freeze([]),
+    "c1541.dir": Object.freeze([]),
+    "c1541.entry": Object.freeze([]),
+    "c1541.chain": Object.freeze([]),
+    "c1541.read": Object.freeze([]),
+    "petcat.decode": Object.freeze([]),
+}));
+/**
+ * Rewrites a `host_tool_run` request's path-bearing wire keys from upload
+ * handles into scratch-relative paths, per `HOST_TOOL_PATH_ARG_KEYS[tool]`.
+ * Every OTHER field on `args` (a non-path key, or a path-bearing key absent
+ * from this particular request) passes through unchanged. Refuses BY NAME,
+ * never silently drops or coerces: an unknown `tool`, a non-string handle
+ * value or an unknown handle. This is a REQUEST TRANSFORM ONLY -- it
+ * does not itself call `resolveWorkspacePath()`; `runHostTool()`'s own
+ * per-tool branches do that, unchanged, against whatever this function
+ * wrote into `args`.
+ *
+ * Three binding shapes, per key classification (Phase 65, plan 65-03,
+ * D-03/D-04): a plain path key (absent from BOTH tables below) binds a
+ * single upload handle via `lookup.fileHandle()`; a `HOST_TOOL_TREE_ARG_KEYS`
+ * key binds EITHER a single tree handle (`scriptPath`) or an ARRAY of tree
+ * handles (`includes`) via `lookup.treeHandle()`, one call per element; a
+ * `HOST_TOOL_OUTPUT_NAME_ARG_KEYS` key carries no handle at all -- it is a
+ * bare output NAME, refused-not-sanitised through `refuseUnsafeSegment()`
+ * (broker-transfer.mts) and rewritten to `out/<name>`.
+ */
+export function bindStagedInputs(raw, lookup) {
+    if (!isPlainObject(raw)) {
+        return { ok: false, message: `bindStagedInputs: request must be a plain object; got ${describe(raw)}` };
+    }
+    const toolRaw = raw.tool;
+    if (typeof toolRaw !== "string" || !HOST_TOOL_IDS.includes(toolRaw)) {
+        return { ok: false, message: `bindStagedInputs: unknown or missing "tool"; got ${describe(toolRaw)}` };
+    }
+    const tool = toolRaw;
+    const argsRaw = raw.args;
+    if (argsRaw !== undefined && !isPlainObject(argsRaw)) {
+        return { ok: false, message: `bindStagedInputs: "args" must be a plain object or absent; got ${describe(argsRaw)}` };
+    }
+    const args = { ...(argsRaw ?? {}) };
+    const pathKeys = HOST_TOOL_PATH_ARG_KEYS[tool] ?? [];
+    const treeKeys = HOST_TOOL_TREE_ARG_KEYS[tool] ?? [];
+    const outputNameKeys = HOST_TOOL_OUTPUT_NAME_ARG_KEYS[tool] ?? [];
+    for (const key of pathKeys) {
+        if (!(key in args))
+            continue;
+        if (treeKeys.includes(key)) {
+            const rawValue = args[key];
+            if (Array.isArray(rawValue)) {
+                const boundEntries = [];
+                for (const element of rawValue) {
+                    if (typeof element !== "string" || element === "") {
+                        return { ok: false, message: `bindStagedInputs: each entry of "${key}" must be a non-empty string tree handle; got ${describe(element)}` };
+                    }
+                    const boundPath = lookup.treeHandle(element);
+                    if (boundPath === undefined) {
+                        return { ok: false, message: `bindStagedInputs: unknown tree handle for "${key}"` };
+                    }
+                    boundEntries.push(boundPath);
+                }
+                args[key] = boundEntries;
+            }
+            else {
+                if (typeof rawValue !== "string" || rawValue === "") {
+                    return { ok: false, message: `bindStagedInputs: "${key}" must be a non-empty string tree handle; got ${describe(rawValue)}` };
+                }
+                const boundPath = lookup.treeHandle(rawValue);
+                if (boundPath === undefined) {
+                    return { ok: false, message: `bindStagedInputs: unknown tree handle for "${key}"` };
+                }
+                args[key] = boundPath;
+            }
+            continue;
+        }
+        if (outputNameKeys.includes(key)) {
+            const value = args[key];
+            if (typeof value !== "string" || value === "") {
+                return { ok: false, message: `bindStagedInputs: "${key}" must be a non-empty string output name; got ${describe(value)}` };
+            }
+            const nameCheck = refuseUnsafeSegment(value, key);
+            if (!nameCheck.ok) {
+                return { ok: false, message: `bindStagedInputs: ${nameCheck.reason}` };
+            }
+            args[key] = `out/${value}`;
+            continue;
+        }
+        const value = args[key];
+        if (typeof value !== "string" || value === "") {
+            return { ok: false, message: `bindStagedInputs: "${key}" must be a non-empty string upload handle; got ${describe(value)}` };
+        }
+        const boundPath = lookup.fileHandle(value);
+        if (boundPath === undefined) {
+            return { ok: false, message: `bindStagedInputs: unknown upload handle for "${key}"` };
+        }
+        args[key] = boundPath;
+    }
+    return { ok: true, request: { tool, args } };
 }
 /** THIS IS THE ONE PLACE a `host_tool` request is narrowed. Never throws;
  * answers a discriminated result naming the offending value or key AND the
@@ -359,13 +513,6 @@ export function normaliseHostToolRequest(raw) {
             return { ok: false, message: `host_tool "acme.build" requires a non-empty string "source"; got ${describe(source)}` };
         }
         const args = { source };
-        if ("outDir" in argsObj) {
-            const outDir = argsObj.outDir;
-            if (typeof outDir !== "string" || outDir === "") {
-                return { ok: false, message: `host_tool "acme.build" args.outDir must be a non-empty string; got ${describe(outDir)}` };
-            }
-            args.outDir = outDir;
-        }
         if ("format" in argsObj) {
             const format = argsObj.format;
             if (typeof format !== "string" || format === "") {
@@ -620,20 +767,9 @@ export function normaliseHostToolRequest(raw) {
             }
             args.labelsPath = labelsPath;
         }
-        if ("outDir" in argsObj) {
-            const outDir = argsObj.outDir;
-            if (typeof outDir !== "string" || outDir === "") {
-                return { ok: false, message: `host_tool "dxa.disassemble" args.outDir must be a non-empty string; got ${describe(outDir)}` };
-            }
-            args.outDir = outDir;
-        }
         return { ok: true, request: { tool, args } };
     }
     if (tool === "ghidra.installExtension") {
-        const sourceDir = argsObj.sourceDir;
-        if (typeof sourceDir !== "string" || sourceDir === "") {
-            return { ok: false, message: `host_tool "ghidra.installExtension" requires a non-empty string "sourceDir"; got ${describe(sourceDir)}` };
-        }
         const moduleName = argsObj.moduleName;
         if (typeof moduleName !== "string" || moduleName === "" || !RUN_ID_PATTERN.test(moduleName)) {
             return {
@@ -641,7 +777,7 @@ export function normaliseHostToolRequest(raw) {
                 message: `host_tool "ghidra.installExtension" requires a non-empty "moduleName" string matching ${RUN_ID_PATTERN.source} (alphanumeric-first, alphanumeric/dash/underscore only, no separator, no dot, length-capped); got ${describe(moduleName)}`,
             };
         }
-        return { ok: true, request: { tool, args: { sourceDir, moduleName } } };
+        return { ok: true, request: { tool, args: { moduleName } } };
     }
     if (tool === "c1541.bam" || tool === "c1541.dir") {
         const image = argsObj.image;
@@ -649,13 +785,6 @@ export function normaliseHostToolRequest(raw) {
             return { ok: false, message: `host_tool "${tool}" requires a non-empty string "image"; got ${describe(image)}` };
         }
         const args = { image };
-        if ("outDir" in argsObj) {
-            const outDir = argsObj.outDir;
-            if (typeof outDir !== "string" || outDir === "") {
-                return { ok: false, message: `host_tool "${tool}" args.outDir must be a non-empty string; got ${describe(outDir)}` };
-            }
-            args.outDir = outDir;
-        }
         return { ok: true, request: { tool, args } };
     }
     if (tool === "c1541.entry" || tool === "c1541.chain" || tool === "c1541.read") {
@@ -679,13 +808,6 @@ export function normaliseHostToolRequest(raw) {
             };
         }
         const args = { image, name };
-        if ("outDir" in argsObj) {
-            const outDir = argsObj.outDir;
-            if (typeof outDir !== "string" || outDir === "") {
-                return { ok: false, message: `host_tool "${tool}" args.outDir must be a non-empty string; got ${describe(outDir)}` };
-            }
-            args.outDir = outDir;
-        }
         return { ok: true, request: { tool, args } };
     }
     if (tool === "petcat.decode") {
@@ -694,13 +816,6 @@ export function normaliseHostToolRequest(raw) {
             return { ok: false, message: `host_tool "petcat.decode" requires a non-empty string "image"; got ${describe(image)}` };
         }
         const args = { image };
-        if ("outDir" in argsObj) {
-            const outDir = argsObj.outDir;
-            if (typeof outDir !== "string" || outDir === "") {
-                return { ok: false, message: `host_tool "petcat.decode" args.outDir must be a non-empty string; got ${describe(outDir)}` };
-            }
-            args.outDir = outDir;
-        }
         return { ok: true, request: { tool, args } };
     }
     // Unreachable while HOST_TOOL_IDS has exactly twelve members -- kept so a
@@ -744,14 +859,6 @@ export function normaliseHostToolRequest(raw) {
 // appended and applies no Unicode normalisation, so two spellings differing
 // only in normalisation form are two distinct paths here (the same residual
 // anno-confinement.test.ts records for the same comparison).
-//
-// A recorded residual: because the return value is now the REAL path, on a
-// host whose workspace root is itself reached through a symlink the
-// response `path` need not match any member of hostRootCandidates()
-// (containerpath.ts), and containerPath() throws rather than passing an
-// untranslatable path through -- HOST_WORKSPACE_PATH naming the real root
-// is the pre-existing mitigation. This is a recorded limit, not a widened
-// hostpath.ts consumer set.
 // ---------------------------------------------------------------------------
 /**
  * The maximum number of DANGLING-symlink hops `realpathOfNearestExisting`
@@ -906,8 +1013,8 @@ export function resolveWorkspacePath(repoRoot, relative) {
     // (`resolvePath()`/`realpathSync()` always normalise to a single leading
     // separator), so EVERY candidate under root "/" was wrongly refused as
     // "escaping" a root that in fact contains it. A root this broad is a
-    // legitimate input -- c1541.mjs's own commonAncestorDir() (mirroring
-    // acme.mjs's) collapses to "/" whenever a committed fixture inside the
+    // legitimate input -- c1541.ts's own commonAncestorDir() (mirroring
+    // acme.ts's) collapses to "/" whenever a committed fixture inside the
     // repo and a scratch --out-dir outside it share no smaller ancestor.
     const requiredPrefix = walkedRoot.path === sep ? walkedRoot.path : walkedRoot.path + sep;
     if (walkedCandidate.path !== walkedRoot.path && !walkedCandidate.path.startsWith(requiredPrefix)) {
@@ -993,8 +1100,8 @@ export function buildHostToolArgv(request, resolved, log, locate) {
             };
         }
         const acmePath = acmeResolved.path;
-        // Fixed flags first, in the SAME order src/skills/acme-build/scripts/
-        // acme.mjs's build() uses today, then one -D per define and one -I pair
+        // Fixed flags first, in the SAME order skills/acme-build/scripts/
+        // acme.ts's build() uses today, then one -D per define and one -I pair
         // per include in caller-given order, then --setpc if given, then the
         // resolved source path LAST.
         const argv = [
@@ -1028,14 +1135,20 @@ export function buildHostToolArgv(request, resolved, log, locate) {
             argv.push("--setpc", args.setpc);
         argv.push(sourcePath);
         // The directory holding the resolved ROOT SOURCE, never `outDirPath`:
-        // `outDir` governs where the `.prg` lands and a caller may point it
-        // elsewhere, while `!source` resolution is about where the SOURCES live,
+        // `outDirPath` governs where the `.prg` lands and may be elsewhere, while `!source` resolution is about where the SOURCES live,
         // beside `sourcePath` itself. See `BuildHostToolArgvResult.cwd`'s own
         // doc-comment for the measured reason this field exists at all.
-        return { ok: true, toolPath: acmePath, argv, outputs: [prg], cwd: dirname(sourcePath) };
+        // `.prg` stays outputs[0]; the symbol list, the VICE label file and (unless
+        // suppressed) the report are real outputs too, and on the endpoint route
+        // only declared outputs cross back to the caller. A missing one is
+        // skipped by the digest loop, never an error.
+        const outputs = [prg, `${stem}.sym`, `${stem}.vs`];
+        if (!args.noReport)
+            outputs.push(`${stem}.rep`);
+        return { ok: true, toolPath: acmePath, argv, outputs, cwd: dirname(sourcePath) };
     }
     if (request.tool === "ghidra.analyze") {
-        const { importPath, projectLocation, projectName, preScriptPath, postScriptPath, scriptPathResolved, entrypointsPathResolved, exportPathResolved, dataRangesPathResolved, } = resolved;
+        const { importPath, projectLocation, projectName, runLogDir, preScriptPath, postScriptPath, scriptPathResolved, entrypointsPathResolved, exportPathResolved, dataRangesPathResolved, } = resolved;
         // Resolved through the seam (LOC-01) -- env (GHIDRA_HOME) -> tools.json
         // -> no $PATH probe at all (a `directory`-kind id gets no probe layer,
         // D-15) -- never a guessed install location and never this repository's
@@ -1135,13 +1248,13 @@ export function buildHostToolArgv(request, resolved, log, locate) {
         const built = buildAnalyzeHeadlessArgv(argvInput);
         if (!built.ok)
             return { ok: false, message: built.message };
-        // outputs[0] is ALWAYS the run log for ghidra.analyze -- a SIBLING of
-        // the reserved project directory (never a child of it), because
-        // -deleteProject operates INSIDE projectLocation. runHostTool()'s
-        // ghidra.analyze branch below writes the child's stdout followed by its
-        // stderr here, before the digest loop runs (MEASURED:
-        // analyzeHeadless's "Using Language/Compiler:" line arrives on stdout).
-        const runLogPath = join(dirname(projectLocation), `${projectName}.ghidra-run.log`);
+        // outputs[0] is ALWAYS the run log for ghidra.analyze -- in runLogDir,
+        // never inside the project directory, which -deleteProject empties and
+        // runHostTool() removes. runHostTool()'s ghidra.analyze branch below
+        // writes the child's stdout followed by its stderr here, before the
+        // digest loop runs (MEASURED: analyzeHeadless's "Using
+        // Language/Compiler:" line arrives on stdout).
+        const runLogPath = join(runLogDir, `${projectName}.ghidra-run.log`);
         // When exportPath is present, it is a SECOND outputs[] entry --
         // digested by the existing digestOutputFile() loop with no new digest
         // code. outputs[0] stays the run log unconditionally.
@@ -1377,7 +1490,7 @@ export function buildHostToolArgv(request, resolved, log, locate) {
  * HOST_TOOL_IDS member has an explicit table entry, but this constant
  * stays exported and consulted as the honest bottom of the resolver's
  * fallback chain. It is also the value acme.build/oracle.probe/oracle.run's
- * own table entries hold today (20s, the same value packer-finding.mjs's
+ * own table entries hold today (20s, the same value packer-finding.ts's
  * own ORACLE_TIMEOUT_MS convention already used) -- no longer the ceiling
  * for EVERY invocation: a single default governing every tool is exactly
  * how a real incident happened -- a number chosen for a stateless
@@ -1407,7 +1520,7 @@ export const HOST_TOOL_TIMEOUT_MS = Object.freeze(Object.assign(Object.create(nu
     // DEFAULT_HOST_TOOL_TIMEOUT_MS, justified from a measurement rather
     // than a round guess -- the pinned dxa disassembles a full 65,536-byte
     // image in 21ms wall-clock (MEASURED), a 950x headroom against this 20s
-    // ceiling. host-tool-client.ts's request-deadline table gains NO entry
+    // ceiling. host-tool-endpoint.mts's request-deadline table gains NO entry
     // for this tool, because DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000)
     // already exceeds this value -- the cross-seam ordering test stays
     // satisfied by construction.
@@ -1415,7 +1528,7 @@ export const HOST_TOOL_TIMEOUT_MS = Object.freeze(Object.assign(Object.create(nu
     // DEFAULT_HOST_TOOL_TIMEOUT_MS, justified from a measurement rather
     // than a round guess -- `support/sleigh` compiled this extension's
     // whole vendored tree in 1763ms wall-clock (MEASURED, a scratch run),
-    // an ~11x headroom against this 20s ceiling. host-tool-client.ts's
+    // an ~11x headroom against this 20s ceiling. host-tool-endpoint.mts's
     // request-deadline table gains NO entry for this tool, for the same
     // reason dxa.disassemble's own comment above states:
     // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
@@ -1425,7 +1538,7 @@ export const HOST_TOOL_TIMEOUT_MS = Object.freeze(Object.assign(Object.create(nu
     // than a round guess -- `c1541 -attach fixtures/c1541/synthetic.d64
     // -dir` completed in 15ms wall-clock (MEASURED, a scratch run against
     // the committed fixture), a >1300x headroom against this 20s ceiling.
-    // host-tool-client.ts's request-deadline table gains NO entry for this
+    // host-tool-endpoint.mts's request-deadline table gains NO entry for this
     // tool, for the same reason dxa.disassemble's own comment above states:
     // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
     // value.
@@ -1435,7 +1548,7 @@ export const HOST_TOOL_TIMEOUT_MS = Object.freeze(Object.assign(Object.create(nu
     // fixtures/c1541/synthetic.d64 -bam`, `-entry basicstub`, `-chain
     // basicstub` and `-read basicstub <out>` completed in 14-16ms
     // wall-clock (MEASURED, a scratch run against the committed fixture),
-    // a >1200x headroom against this 20s ceiling. host-tool-client.ts's
+    // a >1200x headroom against this 20s ceiling. host-tool-endpoint.mts's
     // request-deadline table gains NO entry for any of these, for the same
     // reason c1541.dir's own comment above states.
     "c1541.bam": DEFAULT_HOST_TOOL_TIMEOUT_MS,
@@ -1445,7 +1558,7 @@ export const HOST_TOOL_TIMEOUT_MS = Object.freeze(Object.assign(Object.create(nu
     // DEFAULT_HOST_TOOL_TIMEOUT_MS, justified from a measurement rather
     // than a round guess -- `petcat -2` completed in 1-2ms wall-clock
     // against both committed fixtures (MEASURED, a scratch run), a
-    // >10000x headroom against this 20s ceiling. host-tool-client.ts's
+    // >10000x headroom against this 20s ceiling. host-tool-endpoint.mts's
     // request-deadline table gains NO entry for this tool, for the same
     // reason c1541.dir's own comment above states:
     // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
@@ -1468,7 +1581,7 @@ export function hostToolTimeoutMs(tool, override) {
 /** stderrTail's byte cap -- diagnostics only, never a result. */
 const STDERR_TAIL_CAP_BYTES = 64 * 1024;
 /** oracle.run's stdout cap -- the SAME measured bound as
- * packer-finding.mjs's own (unmoved, still exported there) MAX_ORACLE_STDOUT_BYTES.
+ * packer-finding.ts's own (unmoved, still exported there) MAX_ORACLE_STDOUT_BYTES.
  * The executor enforces the bound on what it accumulates; the script keeps
  * exporting the number for its own parser and its own tests -- not a
  * duplicated maintenance burden, the same measured constant on both sides. */
@@ -1743,7 +1856,25 @@ function tailBytes(text, capBytes) {
  * existing default shape; only `acme.build` passes one, and every other
  * tool's spawn is therefore byte-identical to before this parameter
  * existed. */
-function spawnHostTool(toolPath, argv, timeoutMs, env, cwd) {
+/** SIGKILLs the whole process group a tool leads, falling back to its pid. */
+function killToolGroup(pid) {
+    if (typeof pid !== "number")
+        return;
+    try {
+        process.kill(-pid, "SIGKILL");
+        return;
+    }
+    catch {
+        // not a group leader
+    }
+    try {
+        process.kill(pid, "SIGKILL");
+    }
+    catch {
+        // already gone
+    }
+}
+function spawnHostTool(toolPath, argv, timeoutMs, env, cwd, trackChild) {
     return new Promise((resolvePromise) => {
         let settled = false;
         let timedOut = false;
@@ -1751,7 +1882,10 @@ function spawnHostTool(toolPath, argv, timeoutMs, env, cwd) {
         let stderr = "";
         let child;
         try {
-            child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
+            // Its own process group: a tool that forks (analyzeHeadless starts a
+            // JVM) is stopped as a whole, by the timeout below or a broker stop.
+            child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], detached: true, ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
+            trackChild?.(child);
         }
         catch (e) {
             resolvePromise({
@@ -1765,7 +1899,7 @@ function spawnHostTool(toolPath, argv, timeoutMs, env, cwd) {
         }
         const timer = setTimeout(() => {
             timedOut = true;
-            child.kill("SIGKILL");
+            killToolGroup(child.pid);
         }, timeoutMs);
         if (typeof timer.unref === "function")
             timer.unref();
@@ -1807,7 +1941,7 @@ function spawnHostTool(toolPath, argv, timeoutMs, env, cwd) {
     });
 }
 // ---------------------------------------------------------------------------
-// The ACME library probe. Moved server-side from acme.mjs's own
+// The ACME library probe. Moved server-side from acme.ts's own
 // findAcmeLib(): the project owner's rule is that a container has no PATH
 // to a host binary, and these candidates are HOST paths -- so probing them
 // belongs on the host side of the seam, not in the container-side skill
@@ -1826,7 +1960,7 @@ function spawnHostTool(toolPath, argv, timeoutMs, env, cwd) {
 // SAME `ACME` name from the declaration rather than a literal here.
 // ---------------------------------------------------------------------------
 /** The marker file used to validate a candidate ACME library directory --
- * the layout fact `acme.mjs`'s own troubleshooting hint names. */
+ * the layout fact `acme.ts`'s own troubleshooting hint names. */
 const ACME_LIB_MARKER = join("cbm", "c64", "vic.a");
 // ---------------------------------------------------------------------------
 // The vendored dxa binary probe. This module ships two ways: as unbuilt
@@ -1843,6 +1977,19 @@ const ACME_LIB_MARKER = join("cbm", "c64", "vic.a");
 // source, one level up for the compiled artifact. Mirrors findAcmeLib()'s
 // own "candidate list, first existing wins" idiom, immediately below.
 // ---------------------------------------------------------------------------
+/** Locates this package's vendored Ghidra extension tree beside the running
+ * module -- `HERE/vendor/ghidra-ext` when loaded from source, then
+ * `HERE/../vendor/ghidra-ext` when loaded as the compiled
+ * `resources/host-tool.mjs` -- the same two-candidate lookup findDxaBinary()
+ * makes. */
+export function findGhidraExtension(here) {
+    const tried = [join(here, "vendor", "ghidra-ext"), join(here, "..", "vendor", "ghidra-ext")];
+    for (const candidate of tried) {
+        if (existsSync(join(candidate, "extension.properties")) || existsSync(join(candidate, "Module.manifest")))
+            return { path: candidate, tried };
+    }
+    return { path: null, tried };
+}
 export function findDxaBinary(here) {
     const tried = [join(here, "vendor", "dxa", "dxa"), join(here, "..", "vendor", "dxa", "dxa")];
     for (const candidate of tried) {
@@ -2027,39 +2174,35 @@ export async function runHostTool(raw, deps) {
     if (request.tool === "oracle.run")
         return runOracleRun(request.args, deps);
     const repoRootAbs = resolvePath(deps.repoRoot);
-    // Built ONCE, from the already-computed repoRootAbs (PD-06), and passed as
-    // the fourth argument to every buildHostToolArgv() call site below plus
+    // `projectRoot` defaults to `repoRoot`, so a caller that supplies
+    // `repoRoot` alone resolves to the SAME value `repoRootAbs` above does.
+    // Only the fixed-endpoint route's own `handleHostToolRun()`
+    // (vice-broker.mts) supplies a DIFFERENT one -- see
+    // `HostToolDeps.projectRoot`'s own doc comment.
+    const projectRootAbs = resolvePath(deps.projectRoot ?? deps.repoRoot);
+    // Built ONCE, from the already-computed projectRootAbs (PD-06), and passed
+    // as the fourth argument to every buildHostToolArgv() call site below plus
     // findAcmeLib() and ghidra.installExtension's own pre-materialisation
     // resolution -- one locator, not a per-branch re-derivation. `here` is
     // `deps.here`, always undefined in production (HostToolDeps.here's own
-    // doc comment).
-    const hostToolLocator = { toolsDir: join(repoRootAbs, ".c64-re-tools"), projectRoot: repoRootAbs, here: deps.here };
+    // doc comment). Deliberately `projectRootAbs`, NOT `repoRootAbs` -- the
+    // `tools.json` locator layer (toolsDir/projectRoot) must keep reading the
+    // SAME location it always has, never the per-request scratch.
+    const hostToolLocator = { toolsDir: join(projectRootAbs, ".c64-re-tools"), projectRoot: projectRootAbs, here: deps.here };
     let built;
     let acmeLib = null;
-    // resolveGhidraProject() (below, in the ghidra.analyze branch) RESERVES
-    // the run directory (creates it on disk) before buildHostToolArgv()'s own
-    // GHIDRA_HOME/launcher/language preflight checks ever run -- those checks
-    // can still fail for a completely ordinary, fixable reason (unset
-    // GHIDRA_HOME, processor not yet installed). Recorded here so the shared
-    // `!built.ok` check below can clean up the orphaned reservation rather
-    // than burning the runId permanently.
+    // resolveGhidraProject() (below, in the ghidra.analyze branch) creates the
+    // run's project directory before buildHostToolArgv()'s own preflight checks
+    // run. Recorded here so it is removed on every path: a preflight refusal
+    // below, and after the spawn.
     let ghidraReservedProjectLocation;
     if (request.tool === "acme.build") {
         const sourceResolved = resolveWorkspacePath(repoRootAbs, request.args.source);
         if (!sourceResolved.ok)
             return { ok: false, message: sourceResolved.message };
-        let outDirPath;
-        if (request.args.outDir !== undefined) {
-            const outDirResolved = resolveWorkspacePath(repoRootAbs, request.args.outDir);
-            if (!outDirResolved.ok)
-                return { ok: false, message: outDirResolved.message };
-            outDirPath = outDirResolved.path;
-        }
-        else {
-            outDirPath = dirname(sourceResolved.path);
-        }
+        const outDirPath = deps.outputDir ?? dirname(sourceResolved.path);
         // Every `includes` entry resolved through the SAME
-        // resolveWorkspacePath() site source/outDir just used. The FIRST
+        // resolveWorkspacePath() site source just used. The FIRST
         // refusal returns unchanged -- the whole request fails, the offending
         // entry is never dropped and the remaining entries are never resolved
         // (no partial-success degradation). An absent or empty `includes`
@@ -2143,7 +2286,12 @@ export async function runHostTool(raw, deps) {
                 return { ok: false, message: dataRangesPathResult.message };
             dataRangesPathResolved = dataRangesPathResult.path;
         }
-        const projectResolved = resolveGhidraProject({ repoRoot: repoRootAbs, runId: request.args.runId });
+        // The project directory lives under the broker's Ghidra root, never the
+        // per-request scratch (HostToolDeps.ghidraProjectsRoot's own doc comment).
+        if (deps.ghidraProjectsRoot === undefined) {
+            return { ok: false, message: `host_tool "ghidra.analyze" refuses: no Ghidra projects root was configured for this executor` };
+        }
+        const projectResolved = resolveGhidraProject({ runsRoot: deps.ghidraProjectsRoot, runId: request.args.runId });
         if (!projectResolved.ok)
             return { ok: false, message: projectResolved.message };
         ghidraReservedProjectLocation = projectResolved.projectLocation;
@@ -2151,6 +2299,7 @@ export async function runHostTool(raw, deps) {
             importPath: importResolved.path,
             projectLocation: projectResolved.projectLocation,
             projectName: projectResolved.projectName,
+            runLogDir: deps.outputDir ?? repoRootAbs,
             preScriptPath,
             postScriptPath,
             scriptPathResolved,
@@ -2162,22 +2311,12 @@ export async function runHostTool(raw, deps) {
     else if (request.tool === "dxa.disassemble") {
         // (35-01, item 7). `image` and each present optional path resolved
         // through the SAME resolveWorkspacePath() site acme.build's `source`
-        // uses; `outDir` defaults to dirname(imagePath) exactly as acme.build's
-        // own default does. The FIRST refusal returns unchanged -- no
+        // uses; outputs land in deps.outputDir, or beside the image. The FIRST refusal returns unchanged -- no
         // partial-success degradation, no dropped key.
         const imageResolved = resolveWorkspacePath(repoRootAbs, request.args.image);
         if (!imageResolved.ok)
             return { ok: false, message: imageResolved.message };
-        let outDirPath;
-        if (request.args.outDir !== undefined) {
-            const outDirResolved = resolveWorkspacePath(repoRootAbs, request.args.outDir);
-            if (!outDirResolved.ok)
-                return { ok: false, message: outDirResolved.message };
-            outDirPath = outDirResolved.path;
-        }
-        else {
-            outDirPath = dirname(imageResolved.path);
-        }
+        const outDirPath = deps.outputDir ?? dirname(imageResolved.path);
         let entrypointsPath;
         if (request.args.entrypointsPath !== undefined) {
             const entrypointsResolved = resolveWorkspacePath(repoRootAbs, request.args.entrypointsPath);
@@ -2208,35 +2347,22 @@ export async function runHostTool(raw, deps) {
         }, undefined, hostToolLocator);
     }
     else if (request.tool === "ghidra.installExtension") {
-        // `sourceDir`
-        // resolved through the SAME resolveWorkspacePath() site every other
-        // tool's path argument uses. The materialisation side effects (create
-        // the install directory, copy the vendored tree, copy the three stock
-        // 6502 language files) happen HERE, in the resolution branch -- mirroring
+        // The extension tree is this broker's OWN vendored copy, found beside
+        // this module the way findDxaBinary() finds dxa -- never a path a caller
+        // names. The materialisation side effects (create the install
+        // directory, copy the vendored tree, copy the three stock 6502 language
+        // files) happen HERE, in the resolution branch -- mirroring
         // resolveGhidraProject()'s own "reservation" side effect above -- so
         // buildHostToolArgv() stays the one place argv/outputs are DERIVED from
-        // already-materialised, typed fields (never the place a filesystem
-        // mutation happens).
-        const sourceDirResolved = resolveWorkspacePath(repoRootAbs, request.args.sourceDir);
-        if (!sourceDirResolved.ok)
-            return { ok: false, message: sourceDirResolved.message };
-        // `sourceDir` is otherwise accepted as ANY workspace-relative directory
-        // and copied wholesale (via cpSync below) into
-        // `<GHIDRA_HOME>/Ghidra/Extensions/<moduleName>/` -- a shared, host-wide
-        // location outside this project's own workspace. Refuse by name unless
-        // it resolves to exactly this project's own vendored extension tree,
-        // mirroring the "checked, non-materialising preflight" discipline
-        // ghidra.analyze's own language check already applies (never a
-        // materialising fix, only a refusal).
-        const vendoredGhidraExtResolved = resolveWorkspacePath(repoRootAbs, join("src", "mcp", "vice", "vendor", "ghidra-ext"));
-        if (!vendoredGhidraExtResolved.ok || sourceDirResolved.path !== vendoredGhidraExtResolved.path) {
+        // already-materialised, typed fields.
+        const vendoredExt = findGhidraExtension(HERE);
+        if (vendoredExt.path === null) {
             return {
                 ok: false,
-                message: `host_tool "ghidra.installExtension" refuses: "sourceDir" must resolve to this project's own vendored ` +
-                    `extension tree (src/mcp/vice/vendor/ghidra-ext), which is copied wholesale into a shared, host-wide Ghidra ` +
-                    `installation; got ${JSON.stringify(request.args.sourceDir)}, which resolves to ${sourceDirResolved.path}`,
+                message: `host_tool "ghidra.installExtension" refuses: no vendored Ghidra extension tree found (tried: ${vendoredExt.tried.join(", ")})`,
             };
         }
+        const sourceDirResolved = { path: vendoredExt.path };
         const ghidraResolvedPre = resolveTool("ghidra", {
             toolsDir: hostToolLocator.toolsDir,
             projectRoot: hostToolLocator.projectRoot,
@@ -2285,8 +2411,8 @@ export async function runHostTool(raw, deps) {
         // request.tool is one of the five c1541.* ids or petcat.decode -- every
         // remaining id resolves the SAME two fields, so this one branch covers
         // all six. `image` resolved through the SAME resolveWorkspacePath()
-        // site every other tool's path argument uses; `outDir` defaults to
-        // dirname(imagePath) exactly as dxa.disassemble's own default does.
+        // site every other tool's path argument uses; outputs land in
+        // deps.outputDir, or beside the image.
         // `name` (c1541.entry/chain/read only) is NOT resolved here -- it is a
         // validated, non-path CBM filename/glob, read straight from
         // request.args by buildHostToolArgv() (mirrors ghidra.analyze's own
@@ -2294,27 +2420,13 @@ export async function runHostTool(raw, deps) {
         const imageResolved = resolveWorkspacePath(repoRootAbs, request.args.image);
         if (!imageResolved.ok)
             return { ok: false, message: imageResolved.message };
-        let outDirPath;
-        if (request.args.outDir !== undefined) {
-            const outDirResolved = resolveWorkspacePath(repoRootAbs, request.args.outDir);
-            if (!outDirResolved.ok)
-                return { ok: false, message: outDirResolved.message };
-            outDirPath = outDirResolved.path;
-        }
-        else {
-            outDirPath = dirname(imageResolved.path);
-        }
+        const outDirPath = deps.outputDir ?? dirname(imageResolved.path);
         built = buildHostToolArgv(request, { imagePath: imageResolved.path, outDirPath }, deps.log, hostToolLocator);
     }
     if (!built.ok) {
         // buildHostToolArgv()'s own GHIDRA_HOME/launcher/language preflight
-        // checks can still fail here even though resolveGhidraProject() already
-        // reserved (created) the run directory above -- clean it up,
-        // best-effort, so a caller who retries the same runId after fixing the
-        // underlying problem (setting GHIDRA_HOME, running
-        // ghidra.installExtension) gets a fresh reservation instead of
-        // resolveGhidraProject()'s unrelated "refuses to reuse an existing run
-        // directory" refusal.
+        // checks can still fail here after resolveGhidraProject() created the
+        // run directory above -- remove it, best-effort.
         if (ghidraReservedProjectLocation !== undefined) {
             try {
                 rmSync(ghidraReservedProjectLocation, { recursive: true, force: true });
@@ -2329,7 +2441,7 @@ export async function runHostTool(raw, deps) {
     const timeoutMs = hostToolTimeoutMs(request.tool, deps.timeoutMs);
     const startedAt = Date.now();
     // acme.build only: inject the probed ACME library directory as the child's
-    // `ACME` env var, exactly as acme.mjs's own removed findAcmeLib() call
+    // `ACME` env var, exactly as acme.ts's own removed findAcmeLib() call
     // used to (T-34's own "same behaviour, moved" requirement) -- undefined
     // when no candidate matched, which spawnHostTool() treats identically to
     // "no override" (inherits the broker's own environment unchanged).
@@ -2354,7 +2466,35 @@ export async function runHostTool(raw, deps) {
             // classifyC1541ReadOutput() still digests whatever c1541 produces.
         }
     }
-    const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv, built.cwd);
+    // Phase 65 (plan 65-03, D-08): the fixed-endpoint route's own
+    // generalisation of the c1541.read-only unlink immediately above -- EVERY
+    // declared output, for EVERY tool, best-effort unlinked before the spawn,
+    // so a stale file already sitting at a declared output path can never be
+    // mistaken for a fresh success when the tool fails to (re)write it. Only
+    // set true by vice-broker.mts's handleHostToolRun(); every other caller
+    // leaves this undefined and keeps relying on the c1541.read-only unlink
+    // above alone, unchanged.
+    if (deps.clearDeclaredOutputs) {
+        for (const outputPath of built.outputs) {
+            try {
+                rmSync(outputPath, { force: true });
+            }
+            catch {
+                // Best-effort only, exactly like the c1541.read-only unlink above.
+            }
+        }
+    }
+    const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv, built.cwd, deps.trackChild);
+    // The Ghidra project is never an output -- remove its directory now, on
+    // every outcome, so nothing accumulates under the Ghidra root.
+    if (ghidraReservedProjectLocation !== undefined) {
+        try {
+            rmSync(ghidraReservedProjectLocation, { recursive: true, force: true });
+        }
+        catch {
+            // Best-effort only -- the next broker start sweeps the Ghidra root.
+        }
+    }
     const elapsedMs = Date.now() - startedAt;
     if (spawnResult.spawnErrorMessage !== null) {
         deps.log?.(`host_tool tool=${request.tool} exit=spawn_error elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs} bin=${built.toolPath}`);
@@ -2439,14 +2579,33 @@ export async function runHostTool(raw, deps) {
     const petcatVerdict = request.tool === "petcat.decode" ? derivePetcatEntrypoint(spawnResult.stdout) : null;
     // acme.build only: ACME's own "for <...> includes..." complaint names no
     // directory it tried -- append a note line (in the plain, non-MSVC shape
-    // acme.mjs's own parseDiagnostics() already treats as a "note" entry)
+    // acme.ts's own parseDiagnostics() already treats as a "note" entry)
     // naming every candidate this probe tried, exactly as the removed
     // client-side hint used to. A line appended here, rather than reported as
-    // a separate field, keeps acme.mjs's diagnostics parsing untouched -- it
+    // a separate field, keeps acme.ts's diagnostics parsing untouched -- it
     // already scans the combined text for exactly this shape.
     let stderrText = spawnResult.stderr;
     if (acmeLib && /ACME.*environment variable/i.test(stderrText)) {
         stderrText += `\nfor <...> includes, set $ACME to the directory holding ${ACME_LIB_MARKER} (looked in: ${acmeLib.tried.join(", ")})`;
+    }
+    // Phase 65 (plan 65-03, D-04): acme.build only -- a `!source`/`!binary`
+    // reference to a file outside the uploaded source tree AND every uploaded
+    // `-I` tree fails with ACME 0.97's own "Cannot open input file" message,
+    // which names the file but never says WHY -- a container-side caller has
+    // no local filesystem to inspect and diagnose it against. Append one note
+    // line (in the plain, non-MSVC shape acme.ts's own parseDiagnostics()
+    // already treats as a "note" entry, mirroring the $ACME note above)
+    // naming the file and the remedy: add its own directory as an -I entry so
+    // it uploads as its own tree (D-04's own directory-is-the-unit posture --
+    // never a client-side scan of the source to find it automatically).
+    // MEASURED against real ACME 0.97 "Zem": `Error - File src.a, line 3
+    // (Zone <untitled>): Cannot open input file "missing-subfile.a".`
+    if (request.tool === "acme.build") {
+        const missingInputMatch = /Cannot open input file "([^"]+)"/.exec(stderrText);
+        if (missingInputMatch) {
+            const missingFile = missingInputMatch[1];
+            stderrText += `\n${missingFile} is outside the uploaded source tree and every uploaded -I tree; add its own directory as an includes (-I) entry so it uploads as its own tree`;
+        }
     }
     // The two verdict fields attach ONLY to petcat.decode's own response,
     // never to the shared envelope below -- every other tool id's response
@@ -2478,24 +2637,24 @@ export async function runHostTool(raw, deps) {
     };
 }
 // ---------------------------------------------------------------------------
-// oracle.probe / oracle.run. Migrated from packer-finding.mjs's own
+// oracle.probe / oracle.run. Migrated from packer-finding.ts's own
 // probeUnp64()/runUnp64(): everything about the BINARY (locating it, the
 // version-banner probe, the scratch output location, the argument array,
 // the runtime bound) lives here now; the script keeps everything about the
 // FINDING (the name parser, the accepted character set, the caps, the
 // packedness threshold, the never-throw return shapes). Response shapes
 // are NOT the generic `{ ok, tool, exitStatus, results, stderrTail }`
-// envelope above -- they mirror packer-finding.mjs's OWN pre-existing
+// envelope above -- they mirror packer-finding.ts's OWN pre-existing
 // `{ available, command, version, reason }` / `{ ok, stdout, reason }`
 // contracts directly, so the migrated client-side functions can return the
 // seam's response with no field renaming.
 // ---------------------------------------------------------------------------
 /** Default command name when no host-side configuration is present -- the
- * same default packer-finding.mjs's own (removed) DEFAULT_ORACLE_COMMAND
+ * same default packer-finding.ts's own (removed) DEFAULT_ORACLE_COMMAND
  * used. */
 const DEFAULT_ORACLE_COMMAND = "unp64";
 /** The two environment variables the oracle's location is read from, in this
- * order -- the SAME variable order and names packer-finding.mjs's own
+ * order -- the SAME variable order and names packer-finding.ts's own
  * (client-side, container-facing) `ORACLE_ENV_VARS` declares, so a
  * container-side hint naming one of these two variables always describes
  * where this host-side resolver actually looked. */
@@ -2546,7 +2705,7 @@ async function runOracleProbe(deps) {
     }
     const command = resolved.command;
     const timeoutMs = hostToolTimeoutMs("oracle.probe", deps.timeoutMs);
-    const spawnResult = await spawnHostTool(command, ["--version"], timeoutMs);
+    const spawnResult = await spawnHostTool(command, ["--version"], timeoutMs, undefined, undefined, deps.trackChild);
     if (spawnResult.spawnErrorMessage !== null) {
         deps.log?.(`host_tool tool=oracle.probe exit=spawn_error timeout_ms=${timeoutMs}`);
         return {
@@ -2605,7 +2764,7 @@ async function runOracleRun(args, deps) {
     // The oracle's unpacked output goes to a scratch location INSIDE the
     // workspace tree -- never the system temp directory, which cannot be
     // translated back across the container boundary -- removed after this
-    // function returns, mirroring packer-finding.mjs's own (removed)
+    // function returns, mirroring packer-finding.ts's own (removed)
     // "removed before this function returns" property (T-19-24).
     //
     // MOVED 2026-09-08: this used to be `<repoRoot>/tools/oracle-runs/...`.
@@ -2618,20 +2777,6 @@ async function runOracleRun(args, deps) {
     // `join(toolsDir(), "runs", "oracle")`, the same convention
     // install-resources.ts's installTargetDir() uses.
     //
-    // CORRECTED 2026-09-08: this used to also describe ghidra-project.mts's
-    // runs root as following "the same convention", full stop. That is now
-    // true of the PHYSICAL location -- both this directory and the Ghidra
-    // runs root land under the same `.c64-re-tools/runs/<subdir>` shape --
-    // but it is NOT true of how the location is REACHED. This scratch
-    // directory is joined DIRECTLY, exactly as written above. The Ghidra
-    // runs root is joined the same way internally (`ghidraRunsRealRoot()`),
-    // but Ghidra itself is never handed that direct path -- it is handed a
-    // path through `ghidraRunsRoot()`'s non-dotted ALIAS HANDLE
-    // (`<repoRoot>/c64-re-tools`, a symlink to `.c64-re-tools`), because
-    // Ghidra's own project-location check refuses a dot-prefixed segment in
-    // the path it is handed, while this scratch directory's caller (this
-    // project's own oracle spawn) has no such refusal and is handed the
-    // direct path unchanged.
     const scratchDir = join(repoRootAbs, ".c64-re-tools", "runs", "oracle", `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     try {
         // A fix: scratch-directory creation moved INSIDE this try block -- a
@@ -2641,7 +2786,7 @@ async function runOracleRun(args, deps) {
         mkdirSync(scratchDir, { recursive: true });
         const scratchOut = join(scratchDir, "unpacked.out");
         const timeoutMs = hostToolTimeoutMs("oracle.run", deps.timeoutMs);
-        const spawnResult = await spawnHostTool(resolvedCommand.command, [sourceResolved.path, scratchOut], timeoutMs);
+        const spawnResult = await spawnHostTool(resolvedCommand.command, [sourceResolved.path, scratchOut], timeoutMs, undefined, undefined, deps.trackChild);
         if (spawnResult.spawnErrorMessage !== null) {
             deps.log?.(`host_tool tool=oracle.run exit=spawn_error timeout_ms=${timeoutMs}`);
             return { ok: false, tool: "oracle.run", stdout: "", reason: "the oracle could not be run against the input file" };
@@ -2651,7 +2796,7 @@ async function runOracleRun(args, deps) {
             return { ok: false, tool: "oracle.run", stdout: "", reason: "the oracle timed out" };
         }
         deps.log?.(`host_tool tool=oracle.run exit=${spawnResult.exitCode ?? "null"} timeout_ms=${timeoutMs}`);
-        // Capped the same way packer-finding.mjs's own MAX_ORACLE_STDOUT_BYTES
+        // Capped the same way packer-finding.ts's own MAX_ORACLE_STDOUT_BYTES
         // caps it client-side -- the executor enforces the bound on what it
         // accumulates; the script still exports the number for its own parser
         // and its own tests, so the value is not duplicated as a maintained pair,
@@ -2673,85 +2818,8 @@ async function runOracleRun(args, deps) {
         }
         catch {
             // Best effort -- a leftover empty scratch directory is not worth
-            // failing a read-only recon finding over (mirrors packer-finding.mjs's
+            // failing a read-only recon finding over (mirrors packer-finding.ts's
             // own removed comment to the same effect).
-        }
-    }
-}
-// ---------------------------------------------------------------------------
-// CLI entry point (guarded on being the process entry point, the
-// entry-point idiom the retired tarball checker also used). Needed for the
-// host-local route (no broker in the loop). `node resources/host-tool.mjs
-// run --repo-root <path> --request <json>` prints the response as one JSON
-// line on stdout and exits non-zero on a refusal.
-// ---------------------------------------------------------------------------
-function parseCliArgs(argv) {
-    let repoRoot;
-    let request;
-    for (let i = 0; i < argv.length; i++) {
-        if (argv[i] === "--repo-root") {
-            repoRoot = argv[i + 1];
-            i++;
-        }
-        else if (argv[i] === "--request") {
-            request = argv[i + 1];
-            i++;
-        }
-    }
-    return { repoRoot, request };
-}
-const IS_ENTRY_POINT = process.argv[1] !== undefined && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url);
-if (IS_ENTRY_POINT) {
-    const [, , cliCommand, ...cliRest] = process.argv;
-    if (cliCommand !== "run") {
-        process.stderr.write("usage: host-tool.mjs run --repo-root <path> --request <json>\n");
-        process.exitCode = 1;
-    }
-    else {
-        const { repoRoot, request } = parseCliArgs(cliRest);
-        if (!repoRoot || !request) {
-            process.stderr.write("usage: host-tool.mjs run --repo-root <path> --request <json>\n");
-            process.exitCode = 1;
-        }
-        else {
-            let raw;
-            try {
-                raw = JSON.parse(request);
-            }
-            catch {
-                raw = null;
-            }
-            // TEST-ONLY escape hatch for the CLI's own promise-rejection
-            // handling (host-tool.test.ts): every fs call reachable from
-            // runHostTool()'s real business logic is deliberately guarded, so
-            // there is no organic wire input that makes the real function reject
-            // its promise today -- proving that is a GOOD thing, not a gap, but
-            // it also means the CLI's own `.catch()` below has no
-            // naturally-reachable trigger to regression-test against. This reads
-            // the BROKER PROCESS'S OWN environment, never a wire value, mirroring
-            // `resolveOracleCommand()`'s own "broker env, never wire" convention
-            // above -- a caller can never reach this by shaping `--request`.
-            // Unset in every real invocation; only host-tool.test.ts's own
-            // spawned subprocess ever sets it.
-            const runHostToolOrForcedRejectForTest = process.env.HOST_TOOL_TEST_FORCE_CLI_REJECT === "1"
-                ? Promise.reject(new Error("HOST_TOOL_TEST_FORCE_CLI_REJECT: simulated runHostTool() rejection for CLI never-throw regression testing"))
-                : runHostTool(raw, { repoRoot });
-            runHostToolOrForcedRejectForTest
-                .then((response) => {
-                process.stdout.write(`${JSON.stringify(response)}\n`);
-                process.exitCode = response.ok ? 0 : 1;
-            })
-                // A rejection from runHostTool() used to become an unhandled
-                // rejection with NO stdout at all, surfacing to the caller as the
-                // opaque "host-tool.mjs produced no output on stdout",
-                // indistinguishable from a hang. Mirrors host-tool-client.ts's own
-                // never-reject CLI entry point field-for-field: same envelope shape
-                // ({ ok: false, message }), same stdout-not-stderr destination, same
-                // non-zero exit-code convention.
-                .catch((err) => {
-                process.stdout.write(`${JSON.stringify({ ok: false, message: err instanceof Error ? err.message : String(err) })}\n`);
-                process.exitCode = 1;
-            });
         }
     }
 }

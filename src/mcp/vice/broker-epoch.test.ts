@@ -1,10 +1,10 @@
 // broker-epoch.test.ts
 //
 // Task 1 (this file, this commit): frozen-contract assertions against the
-// three fixtures captured live from the running bash broker in
-// `fixtures/README.md`, BEFORE `vice-supervisor.sh`'s `write_epoch()` and
-// `vice-broker.sh`'s `write_broker_json()` are deleted. These assertions
-// pin down the "before" shape of both records so a later plan's TypeScript
+// two epoch fixtures captured live from the running bash broker in
+// `fixtures/README.md`, BEFORE `vice-supervisor.sh`'s `write_epoch()` is
+// deleted. These assertions pin down the "before" shape of the epoch record
+// so a later plan's TypeScript
 // writer (`broker-epoch.mts`, plan 03) can be held to it with something
 // concrete to diff against.
 //
@@ -17,9 +17,7 @@
 // Plan 03, Task 1 extends this further: the mode check (T-01.6.2-18), the
 // path derivations for a known port, the epoch-increment derivation
 // (fresh/second/malformed-record cases), the concurrent write-and-read
-// atomicity assertion (T-01.6.2-19), and a round trip through the
-// UNCHANGED container-side reader (readEpoch(), vice.ts) over a record this
-// writer produced.
+// atomicity assertion (T-01.6.2-19).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, statSync } from "node:fs";
@@ -29,7 +27,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { writeEpochRecord, epochPathFor, instanceLogDirFor, nextEpochFor, type EpochRecord } from "./broker-epoch.mts";
-import { readEpoch } from "./vice-errors.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures");
@@ -105,28 +102,6 @@ for (const { file, port } of EPOCH_FIXTURES) {
     assert.ok(!(parsed.log as string).startsWith("/"), "log must be a relative path, not absolute");
   });
 }
-
-test("frozen broker fixture bash-broker.json: carries the fields readBrokerLiveness() reads, plus its writer field", () => {
-  const parsed = readFixtureJson("bash-broker.json") as Record<string, unknown>;
-  const keys = new Set(Object.keys(parsed));
-
-  // readBrokerLiveness() (vice-broker-client.ts) reads `pid` and
-  // `heartbeat_at` to classify never_started / stale / alive.
-  assert.ok(keys.has("pid"), "must carry pid");
-  assert.ok(keys.has("heartbeat_at"), "must carry heartbeat_at");
-
-  // The field naming the record's writer.
-  assert.ok(keys.has("written_by"), "must carry written_by");
-});
-
-test("frozen broker fixture bash-broker.json: written_by is the retiring bash daemon's filename (D-26 'before' half)", () => {
-  const parsed = readFixtureJson("bash-broker.json") as Record<string, unknown>;
-
-  // This is the pre-change record: the bash daemon's own filename, which is
-  // false the moment the new broker exists (D-26). This assertion is
-  // EXPECTED TO CHANGE in task 3, once the new writer names itself instead.
-  assert.equal(parsed.written_by, "vice-broker.sh");
-});
 
 test("broker-epoch.mts's writeEpochRecord() round-trips a record built from the 6510 fixture's own values, matching key set and value types exactly", () => {
   const fixture = readFixtureJson("bash-epoch-6510.json") as Record<string, unknown>;
@@ -300,33 +275,6 @@ test("a concurrent write-and-read loop over the epoch file never observes a part
 
     await Promise.all([writer, reader]);
     assert.ok(observedReads > 0, "the concurrent reader must have observed at least one read during the write loop");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("broker-epoch.mts's writeEpochRecord() round-trips through the UNCHANGED container-side readEpoch() (vice.ts), returning a present result with a finite integer epoch", () => {
-  const fixture = JSON.parse(readFileSync(join(FIXTURES_DIR, "bash-epoch-6510.json"), "utf8")) as Record<string, unknown>;
-  const dir = mkdtempSync(join(tmpdir(), "broker-epoch-readEpoch-roundtrip-"));
-  try {
-    const record: EpochRecord = {
-      epoch: fixture.epoch as number,
-      spawned_at: fixture.spawned_at as string,
-      pid: fixture.pid as number,
-      supervisor_pid: fixture.supervisor_pid as number,
-      vice_bin: fixture.vice_bin as string,
-      vice_args: fixture.vice_args as string[],
-      log: fixture.log as string,
-      dry_run: fixture.dry_run as boolean,
-    };
-    const path = writeEpochRecord({ supervisorDir: dir, record });
-
-    const result = readEpoch(path);
-    assert.equal(result.present, true, "the container-side reader must report this writer's record as present");
-    assert.ok(Number.isInteger(result.epoch), "the container-side reader must return a finite integer epoch");
-    assert.equal(result.epoch, fixture.epoch);
-    assert.equal(result.pid, fixture.pid);
-    assert.equal(result.spawned_at, fixture.spawned_at);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

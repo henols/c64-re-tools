@@ -2,12 +2,12 @@
 // terminates -- it does not hang -- in about 26-27 seconds per run (`node
 // --test vice-proxy.test.ts`, 56 tests / 53 pass / 0 fail / 3 skipped),
 // spawning a real child process per test case. It stays manual-only
-// (test-gate.mjs's MANUAL_ONLY_TESTS list) for that per-run cost, not for
-// any host dependency -- see that file's own header and test-gate.mjs's
+// (test-gate.ts's MANUAL_ONLY_TESTS list) for that per-run cost, not for
+// any host dependency -- see that file's own header and test-gate.ts's
 // disposition rationale for the measured reason. This file asserts ONLY on
-// vice_ping's response shape via stock-dispatch.ts's real
-// dispatchStock()/handlePing() -- no broker process, no emulator, no MCP
-// server -- matching stock-dispatch.test.ts's own offline convention.
+// vice_ping's response shape via stock-session.ts's real
+// callStockTool()/handlePing() -- no broker process, no emulator, no MCP
+// server -- matching stock-session.test.ts's own offline convention.
 //
 // WHY THIS FILE EXISTS (2026-08-19 finding, closed Phase 15 plan 15-09):
 // `vice_ping`'s `resolvedBinaryPath` field is a one-time, MCP-server-startup
@@ -23,7 +23,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
-import { dispatchStock, clearHeldStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 
@@ -39,7 +40,6 @@ function makeLease(opts: { host: string; port: number; targetId: string }): Held
     port: opts.port,
     targetId: opts.targetId,
     brokerControl: STUB_BROKER_CONTROL,
-    epochFile: "",
     supervisorDir: "",
   };
 }
@@ -64,17 +64,17 @@ function fakeSession(opts: { host: string; port: number; targetId: string }): St
   };
 }
 
-async function pingPayload(deps: Partial<StockDispatchDeps> = {}): Promise<Record<string, unknown>> {
+async function pingPayload(deps: Partial<StockSessionDeps> = {}): Promise<Record<string, unknown>> {
   clearHeldStockSession();
   const lease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-scope" });
-  const fullDeps: StockDispatchDeps = {
+  const fullDeps: StockSessionDeps = {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => fakeSession(opts),
     resolvedBinaryPath: "/opt/vice/bin/x64sc",
     resolvedBinaryPathIsResolved: true,
     ...deps,
   };
-  const result = await dispatchStock("vice_ping", {}, fullDeps);
+  const result = await callStockTool("vice_ping", {}, fullDeps);
   assert.equal(result.isError, false, "vice_ping must not error against a stubbed session");
   return JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
 }

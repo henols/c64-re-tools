@@ -1,0 +1,74 @@
+# SID and CIA: music, effects, the RNG, input, timing
+
+Graded 2026-08-01, **MEDIUM**, doc-derived, except where marked. Per-register bit detail lives in
+`c64-memory-mapping`. This file carries the idioms and the order.
+
+## SID — separating the player from the game logic
+
+Voice 1 at `$D400`, voice 2 at `$D407`, voice 3 at `$D40E`, seven bytes each: frequency lo/hi,
+pulse width lo/hi, control (gate bit 0, then sync/ring/test and the waveform bits), attack/decay,
+sustain/release. Then `$D415`-`$D418` for filter and volume. Write-only but for the last four:
+`$D419`/`$D41A` paddles, `$D41B` voice 3 oscillator, `$D41C` voice 3 envelope.
+
+**Watch `$D404` to land directly on the play routine.** Voice 1's control register gates on every
+note, so a write watch there hits the player without reading the IRQ handler line by line.
+Separating the two entry points follows immediately:
+
+> `init` is called **once** from the main code. `play` is called **once per frame** from the IRQ.
+
+Pulling the music driver out early removes a large amount of apparent complexity from everything
+else — it is often the single biggest block of code that has nothing to do with gameplay.
+
+### Two idioms worth recognising on sight
+
+- **`$D41B` read is the random number generator, not audio.** Reading voice 3's oscillator is *the*
+  C64 RNG idiom. Code reading `$D41B` is almost never doing sound — it is enemy AI, spawn
+  placement, or a title-screen effect. Filing it as sound code sends the AI hunt in the wrong
+  direction. Corollary: `$D418` bit 7 (voice 3 disconnect) is often set **precisely because** voice
+  3 is the RNG rather than a voice.
+- **`$D418` hammered alone at high frequency is 4-bit sample playback**, not music. It is a
+  separate subsystem from the player and usually runs off a **fast CIA timer** rather than the
+  frame IRQ — so finding it also explains a CIA timer you could not otherwise account for.
+
+## CIA — two chips, identical layouts, different jobs
+
+Confusing them is a frequent early error.
+
+| | CIA#1 `$DC00` — keyboard, joysticks, **IRQ** | CIA#2 `$DD00` — VIC bank, serial, user port, **NMI** |
+|---|---|---|
+| Port A | `$DC00` keyboard **column** select. Joystick port 2 | `$DD00` VIC bank (bits 0-1, inverted). Serial ATN/CLK/DATA |
+| Port B | `$DC01` keyboard **row** read. Joystick port 1 | `$DD01` user port / RS-232 |
+| Timers | `$DC04-$DC07`, control at `$DC0E`/`$DC0F` | `$DD04-$DD07`, `$DD0E`/`$DD0F` — these drive **NMI** |
+| Interrupt | `$DC0D` | `$DD0D`, same bit layout |
+
+**The timebase question closes in one read.** A game that never touches `$DC0D` is on a raster IRQ.
+One that programs `$DC04-$DC07` and enables timer A runs its own timebase.
+
+## Three CIA hazards
+
+- **`$DD00` is dual-purpose.** The same register carries the VIC bank *and* the serial bus lines,
+  so a write during disk access also moves the VIC's view of memory unless the code masks
+  carefully. **Check the mask** before concluding a `$DD00` write is a bank switch — loader code
+  writing `$DD00` is usually talking to the drive.
+- **`$DC0D`/`$DD0D` clear the interrupt flags on read**, the same shape as `$D01E`/`$D01F`. Reading
+  one steals an interrupt the game was about to service. Prefer `vice_cia_get_state`. The VICE
+  monitor's exact behaviour here is **unverified** — check, don't assume. On stock,
+  `vice_cia_get_state` reports the **read** side of `$xx0D` as `interruptStatus` and marks the
+  write-side enable mask `unavailable` — the two share one address with different meanings, so a
+  reader looking for "which interrupts are enabled" is not silently handed the flags that have
+  fired.
+- **Direct `$DC00`/`$DC01` polling is the norm, and it defeats `vice_keyboard_type`.**
+  **Evidence: live, established on this project during recovery work. Confidence: HIGH. Cost: an
+  afternoon.** Games and cracks bypass the KERNAL keyboard buffer and read the matrix directly.
+  Assume it until shown otherwise. **`vice_keyboard_matrix` is permanently unavailable** — the
+  binary monitor's `KEYBOARD_FEED` only injects PETSCII buffer text and cannot drive the raw
+  matrix. Use `vice_keyboard_type` / `vice_keyboard_petscii` when
+  the gate reads the KERNAL buffer, or `vice_joystick_set` when it polls the matrix directly.
+  Buffer injection stays invisible to a program polling `$DC00`/`$DC01` itself.
+
+## Finding input handling from the observable side
+
+Watch reads of `$DC00`/`$DC01` to find the input routine, then trace forward to what it stores.
+The joystick bits are active-low: bit 4 is fire, bits 0-3 up/down/left/right. A routine that reads
+`$DC01`, masks one bit and branches is the input decoder. The variable it writes is the one to
+name first.

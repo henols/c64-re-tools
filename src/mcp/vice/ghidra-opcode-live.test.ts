@@ -24,12 +24,13 @@
 // TWO DIFFERENT languages in their own run logs, asserted by BYTE-EXACT
 // comparison. Later plans in this phase (36-06, opcode sweep) expand this
 // file with OPC-01/OPC-02/OPC-03's own live cases.
-import { test } from "node:test";
+import { test, before, after } from "node:test";
+import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
+import { basename, dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runGhidraAnalyze } from "./ghidra-run.ts";
@@ -56,7 +57,7 @@ const FIXTURES_DIR = join(HERE, "fixtures", "ghidra");
 const hostToolModule = (await import(new URL("./resources/host-tool.mjs", import.meta.url).href)) as unknown as {
   runHostTool: (
     raw: unknown,
-    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; outputDir?: string },
   ) => Promise<
     | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
     | { ok: false; message: string }
@@ -102,8 +103,37 @@ function computeGhidraSkipReason(): string | false {
 
 const SKIP_REASON: string | false = computeGhidraSkipReason();
 
+// This suite reaches the tool only through the broker's fixed endpoint, so it
+// runs against its OWN harness broker (never a machine broker), started once
+// when the suite is enabled; the in-process client dials it through
+// VICE_BROKER_CONTROL_PORT.
+let harnessBroker: HarnessBroker | null = null;
+let harnessProjectRoot: string | null = null;
+let savedControlPort: string | undefined;
+before(async () => {
+  if (SKIP_REASON) return;
+  // Its own project root, so nothing the broker writes lands in this checkout.
+  harnessProjectRoot = mkdtempSync(join(tmpdir(), "live-broker-project-"));
+  harnessBroker = await startHarnessBroker({ repoRoot: harnessProjectRoot });
+  savedControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(harnessBroker.port);
+});
+after(async () => {
+  if (savedControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+  else process.env.VICE_BROKER_CONTROL_PORT = savedControlPort;
+  await harnessBroker?.stop();
+  if (harnessProjectRoot) rmSync(harnessProjectRoot, { recursive: true, force: true });
+});
+
 interface ScratchWorkspace {
   root: string;
+}
+
+/** Where a run's export lands: the endpoint downloads every result under the
+ * caller's own `.c64-re-tools/runs/ghidra/`, keeping only the basename of the
+ * requested `exportPath`. */
+function exportFileIn(ws: ScratchWorkspace, exportRel: string): string {
+  return join(ws.root, ".c64-re-tools", "runs", "ghidra", basename(exportRel));
 }
 
 /** Duplicated from ghidra-live.test.ts's own identically-shaped helper --
@@ -431,7 +461,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const classification = parseClassificationByAddress(exportText);
       const observed = new Map<number, ClassificationKind>();
       for (const b of UNDOCUMENTED_BYTE_SET) {
@@ -476,7 +506,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const classification = parseClassificationByAddress(exportText);
       const observed = new Map<number, ClassificationKind>();
       for (const b of UNDOCUMENTED_BYTE_SET) {
@@ -605,7 +635,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const decompiledText = extractSection(exportText, "## DECOMPILED_TEXT");
 
       for (const r of UNSTABLE_REPRESENTATIVES) {
@@ -753,7 +783,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const classification = parseClassificationByAddress(exportText);
       const decompiledText = extractSection(exportText, "## DECOMPILED_TEXT");
 
@@ -804,20 +834,12 @@ test(
 // rather than failing.
 // ---------------------------------------------------------------------------
 
-const CORPUS_PATH = join(
-  repoRoot({ from: HERE }),
-  ".planning",
-  "phases",
-  "23-the-real-release-gate-go-degrade-no-go",
-  "evidence",
-  "corpus",
-  "danish.d64",
-);
+/** The corpus image, gitignored under the repository root's `corpus/`. */
+const CORPUS_PATH = join(repoRoot({ from: HERE }), "corpus", "danish.d64");
 
 /** Gated behind BOTH `VICE_LIVE_GHIDRA=1` (this file's own opt-in, above) AND
  * its OWN `VICE_LIVE_GHIDRA_CORPUS=1` -- the corpus image is gitignored
- * (D-04, `.planning/phases/23-.../evidence/README.md` convention 10) and
- * absent on every machine but the one that separately fetched it. */
+ * (D-04) and absent on every machine but the one that separately fetched it. */
 const CORPUS_SKIP_REASON: string | false =
   SKIP_REASON !== false
     ? SKIP_REASON
@@ -825,7 +847,7 @@ const CORPUS_SKIP_REASON: string | false =
       ? "ghidra-opcode-live.test.ts's corpus case is opt-in and default-skipped -- set VICE_LIVE_GHIDRA_CORPUS=1 (in addition to VICE_LIVE_GHIDRA=1) to run it."
       : !existsSync(CORPUS_PATH)
         ? `VICE_LIVE_GHIDRA_CORPUS=1 but the corpus image does not exist at ${CORPUS_PATH} -- this repository never commits it (D-04, ` +
-          `.planning/phases/23-.../evidence/README.md convention 10); obtain the Phase 23 corpus release separately.`
+          `gitignored); obtain the corpus release separately and place it there.`
         : false;
 
 /** The `.prg` route's own fixed default base address (`importRouteBaseAddr("prg")`,
@@ -902,8 +924,8 @@ function corpusBodyOffsetForAddress(address: number, bodyLength: number): number
 /** The smallest common ancestor directory of two absolute paths -- computed,
  * never a fixed guess, so the seam request's `repoRoot` for THIS call is
  * always exactly big enough to contain both the corpus image and the
- * scratch output directory, and no bigger. Mirrors `c1541.mjs`'s own
- * `commonAncestorDir()` (`src/skills/c64-disk-access/scripts/c1541.mjs`),
+ * scratch output directory, and no bigger. Mirrors `c1541.ts`'s own
+ * `commonAncestorDir()` (`skills/c64-disk-access/scripts/c1541.ts`),
  * duplicated here rather than imported -- this file must never reach into a
  * skill script (D-36-12's own container/host-side split; a skill script
  * additionally ships in the OTHER npm package). Duplicated a second time in
@@ -944,9 +966,9 @@ async function extractCorpusProgram(): Promise<{ bytes: Uint8Array; name: string
   const scratch = mkdtempSync(join(tmpdir(), "ghidra-opcode-live-corpus-"));
   try {
     const root = commonAncestorDir(dirname(CORPUS_PATH), scratch);
-    const baseArgs = { image: toRel(root, CORPUS_PATH), outDir: toRel(root, scratch) };
+    const baseArgs = { image: toRel(root, CORPUS_PATH) };
 
-    const dirResp = await runHostTool({ tool: "c1541.dir", args: baseArgs }, { repoRoot: root });
+    const dirResp = await runHostTool({ tool: "c1541.dir", args: baseArgs }, { repoRoot: root, outputDir: scratch });
     if (!dirResp.ok) throw new Error(`ghidra-opcode-live CORPUS: c1541.dir refused: ${dirResp.message}`);
     const listingPath = dirResp.results[0]?.path;
     if (!listingPath) throw new Error("ghidra-opcode-live CORPUS: c1541.dir reported no listing output");
@@ -955,7 +977,7 @@ async function extractCorpusProgram(): Promise<{ bytes: Uint8Array; name: string
     if (!entryMatch) throw new Error("ghidra-opcode-live CORPUS: the corpus image's directory listing has no entries");
     const entryName = entryMatch[1]!.replace(/\s+$/, "");
 
-    const readResp = await runHostTool({ tool: "c1541.read", args: { ...baseArgs, name: entryName } }, { repoRoot: root });
+    const readResp = await runHostTool({ tool: "c1541.read", args: { ...baseArgs, name: entryName } }, { repoRoot: root, outputDir: scratch });
     if (!readResp.ok) throw new Error(`ghidra-opcode-live CORPUS: c1541.read refused: ${readResp.message}`);
     const readPath = readResp.results[0]?.path;
     if (!readPath) throw new Error("ghidra-opcode-live CORPUS: c1541.read reported no output file");
@@ -1018,7 +1040,7 @@ test(
           { repoRoot: ws.root },
         );
         assert.equal(result.exitStatus, 0, `${runId}: analyzeHeadless's own exit status must be 0`);
-        const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+        const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
         return parseClassificationByAddress(exportText);
       }
 

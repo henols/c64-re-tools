@@ -26,7 +26,7 @@
 //   - Never add vice_joystick_tap. A tap needs the machine to RUN for a
 //     measured interval -- an unrequested EXIT (forbidden by D-05) plus a
 //     frame/cycle measurement stock's wire protocol has no route for at
-//     all (docs/stock-vice-parity.md section A item 7). This exclusion is
+//     all. This exclusion is
 //     permanent, not pending: vice_joystick_set (hold/release/centre)
 //     satisfies DIRECT-07's joystick half instead.
 //   - Never construct an ok-answer outside stockAnswer(). Every successful
@@ -49,8 +49,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 // vice_keyboard_type / vice_keyboard_petscii
 // ---------------------------------------------------------------------------
 
-/** Halted-machine note every keyboard answer carries -- docs/stock-vice-parity.md
- * section A item 7's recorded divergence: input lands in the buffer of a
+/** Halted-machine note every keyboard answer carries -- stock's recorded
+ * divergence: input lands in the buffer of a
  * machine now halted (D-05: any command halts it), and nothing consumes the
  * buffer until the agent explicitly resumes. */
 const KEYBOARD_HALTED_NOTE =
@@ -161,10 +161,8 @@ export const handleKeyboardPetscii: StockSessionHandler = async (args, session) 
  * JOYPORT_SET's `value` bit layout. **[ASSUMED]** -- RESEARCH.md
  * Assumptions Log row A3: derived from general VICE joystick-driver
  * knowledge, never confirmed against the manual or a probe run against a
- * real binary. Probe debt filed at
- * .planning/todos/pending/2026-08-14-probe-phase3-assumed-wire-details.md.
- * Do not remove the [ASSUMED] label until that todo's acceptance check
- * closes it -- do not write a comment claiming this mapping is verified.
+ * real binary. Do not remove the [ASSUMED] label until a live probe
+ * confirms it -- do not write a comment claiming this mapping is verified.
  *
  * Exported as a single named constant so a future probe session has
  * exactly one place to correct it -- joyportSetBody() itself deliberately
@@ -189,8 +187,8 @@ function isValidDirection(value: string): value is JoystickDirection {
  * vice_joystick_tap is deliberately absent from this module (and the whole
  * stock manifest), permanently -- a tap needs the machine to run for a
  * measured interval, which is an unrequested EXIT (forbidden by D-05) plus
- * a frame/cycle measurement stock's wire protocol has no route for at all
- * (docs/stock-vice-parity.md section A item 7). Do not approximate it with
+ * a frame/cycle measurement stock's wire protocol has no route for at all.
+ * Do not approximate it with
  * a sleep; do not implement it here.
  */
 export const handleJoystickSet: StockSessionHandler = async (args, session) => {

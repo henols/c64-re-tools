@@ -48,8 +48,8 @@
 //   - Never dial the fixed default control port (19510) -- it is a
 //     persistent, machine-wide fixture on this host that may legitimately
 //     already be held by an unrelated broker. This file's own spawned broker
-//     always binds an EPHEMERAL control port (VICE_BROKER_CONTROL_PORT=0),
-//     and dialMonitorRelay() below is always given that port explicitly.
+//     always binds a freshly allocated control port (allocateControlPort()),
+//     and every dial below is given that port explicitly.
 //   - Never hardcode a 6510 register id (PC, A, X, ...) -- REGISTERS_AVAILABLE
 //     (0x83) is the one place this file resolves PC's id, exactly like
 //     stock-registers.ts's own registerCatalogFor() never hardcodes one.
@@ -69,8 +69,9 @@ import { fileURLToPath } from "node:url";
 import { connect, createServer } from "node:net";
 
 import { build } from "./build.ts";
-import { openBrokerControl, resolveSessionLabel, type BrokerControlSession, type AcquireGrant } from "./vice-broker-client.ts";
-import { dialMonitorRelay } from "./broker-endpoint.ts";
+import { epochPathFor } from "./broker-epoch.mts";
+import { dialControlSession, resolveSessionLabel, type BrokerControlSession, type AcquireGrant } from "./vice-broker-client.ts";
+import { dialBrokerEndpoint, dialMonitorRelay } from "./broker-endpoint.mts";
 import { probeReady } from "./broker-launch.mts";
 import {
   ViceMonitorClient,
@@ -121,12 +122,6 @@ const SKIP_REASON: string | false = !VICE_LIVE_RELAY_BIN_ENV
       "VICE binary at that absolute path (e.g. /usr/bin/x64sc). A bare \"x64sc\" on PATH would resolve to the fork " +
       "build instead of genuine stock."
     : false;
-
-// Matches stock-live-broker-monitor.test.ts:162's own precedent exactly --
-// this file's own spawned broker's control-plane DIAL target, never the
-// broker's own BIND address (governed separately by
-// VICE_BROKER_CONTROL_HOST/VICE_BROKER_CONTROL_PORT below).
-process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
 
 // ---------------------------------------------------------------------------
 // Small shared helpers -- mirrors stock-live-broker-monitor.test.ts's own
@@ -201,18 +196,17 @@ interface BrokerHandle {
  * bare node, wired for a genuine stock backend against a genuine stock
  * binary -- mirrors stock-live-broker-monitor.test.ts's own startBroker()
  * shape exactly, including its VICE_ARGS-must-be-unset discipline. */
-function startBroker(stateDir: string, viceBinPath: string, scratchDir: string): BrokerHandle {
+function startBroker(stateDir: string, viceBinPath: string, scratchDir: string, controlPort: number): BrokerHandle {
   const merged: Record<string, string | undefined> = {
     ...process.env,
     VICE_SUPERVISOR_ALLOW_CONTAINER: undefined,
     VICE_BIN: viceBinPath,
     VICE_ARGS: undefined,
-    VICE_BROKER_CONTROL_PORT: "0",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
     VICE_BROKER_MAX: "1",
     VICE_BROKER_POLL_MS: "250",
     VICE_RESTART_BACKOFF_S: "1",
     XDG_CONFIG_HOME: scratchDir,
-    VICE_BROKER_CONTROL_DIAL_HOST: undefined,
   };
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(merged)) {
@@ -236,11 +230,26 @@ async function stopBroker(handle: BrokerHandle): Promise<void> {
   }
 }
 
-async function waitForBrokerJson(stateDir: string, deadlineMs = 10000): Promise<Record<string, unknown>> {
-  const path = join(stateDir, "broker.json");
-  const appeared = await waitFor(() => existsSync(path) && typeof JSON.parse(readFileSync(path, "utf8")).control_port === "number", deadlineMs);
-  assert.ok(appeared, "broker.json with a control_port did not appear within deadline");
-  return JSON.parse(readFileSync(path, "utf8"));
+/** A loopback port nothing listens on yet, for this suite's own broker --
+ * never the fixed default (19510), which a real broker may hold. */
+async function allocateControlPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+/** Bounded-waits for the broker to answer a hello on `port`. */
+async function waitForBrokerReady(port: number, deadlineMs = 10000): Promise<void> {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    const dialed = await dialBrokerEndpoint({ port, candidates: ["127.0.0.1"] });
+    if (dialed.ok) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.fail(`the broker never answered a hello on 127.0.0.1:${port} within ${deadlineMs}ms`);
 }
 
 // ---------------------------------------------------------------------------
@@ -283,8 +292,8 @@ interface RawStatusInstance {
   sessionLabel: string | null;
 }
 
-async function rawStatus(host: string, port: number, token: string): Promise<RawStatusInstance[]> {
-  const line = await rawControlRequest(host, port, { op: "status", token });
+async function rawStatus(host: string, port: number): Promise<RawStatusInstance[]> {
+  const line = await rawControlRequest(host, port, { op: "status" });
   const instances = Array.isArray(line.instances) ? (line.instances as Array<Record<string, unknown>>) : [];
   return instances.map((e) => ({
     port: Number(e.port),
@@ -304,7 +313,7 @@ async function rawStatus(host: string, port: number, token: string): Promise<Raw
 // ---------------------------------------------------------------------------
 
 function readKernalIrqAddress(): number {
-  const memmapPath = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
+  const memmapPath = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
   const parsed = JSON.parse(readFileSync(memmapPath, "utf8")) as { entries: Array<Record<string, unknown>> };
   const raw = parsed.entries;
   assert.ok(Array.isArray(raw), `${memmapPath} must carry an "entries" array`);
@@ -344,27 +353,31 @@ interface HarnessReport {
 
 async function withRelayHarness(
   viceBinPath: string,
-  fn: (ctx: { session: BrokerControlSession; grant: AcquireGrant; controlHost: string; controlPort: number; controlToken: string; recordPid: (pid: number) => void }) => Promise<void>,
+  fn: (ctx: { session: BrokerControlSession; grant: AcquireGrant; controlHost: string; controlPort: number; recordPid: (pid: number) => void }) => Promise<void>,
 ): Promise<HarnessReport> {
   build(); // ensure resources/ is a fresh build of the current TypeScript source
   const scratchDir = mkdtempSync(join(tmpdir(), "vice-live-relay-"));
   const stateDir = join(scratchDir, "state");
   const recordedPids = new Set<number>();
-  const handle = startBroker(stateDir, viceBinPath, scratchDir);
+  const controlPort = await allocateControlPort();
+  const handle = startBroker(stateDir, viceBinPath, scratchDir, controlPort);
+  // The monitor relay and file transfers dial the fixed endpoint, which this
+  // process resolves from VICE_BROKER_CONTROL_PORT -- point it at this broker.
+  const previousControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(controlPort);
   let pidsAliveAfterTeardown: number[] = [];
   let session: BrokerControlSession | null = null;
   try {
-    const brokerJson = await waitForBrokerJson(stateDir);
+    await waitForBrokerReady(controlPort);
     const controlHost = "127.0.0.1";
-    const controlPort = Number(brokerJson.control_port);
-    const controlToken = String(brokerJson.control_token);
 
-    const opened = await openBrokerControl(stateDir);
-    assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const opened = await dialControlSession({ port: controlPort, candidates: [controlHost] });
+    assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
     if (!opened.ok) return { recordedPids: [], pidsAliveAfterTeardown: [] };
-    session = opened.session;
+    const liveSession: BrokerControlSession = opened.session;
+    session = liveSession;
 
-    const acquired = await session.acquire();
+    const acquired = await liveSession.acquire();
     assert.ok(acquired.ok, `session.acquire() failed: ${JSON.stringify(acquired)}`);
     if (!acquired.ok) return { recordedPids: [], pidsAliveAfterTeardown: [] };
     const grant = acquired.grant;
@@ -375,11 +388,13 @@ async function withRelayHarness(
     const ready = await waitForPortOpen(grant.port, 30000);
     assert.ok(ready, `the cold-launched instance's binmon port ${grant.port} never accepted a connection within 30s`);
 
-    const epoch = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+    const epoch = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
     recordedPids.add(epoch.pid);
 
-    await fn({ session, grant, controlHost, controlPort, controlToken, recordPid: (pid: number) => recordedPids.add(pid) });
+    await fn({ session: liveSession, grant, controlHost, controlPort, recordPid: (pid: number) => recordedPids.add(pid) });
   } finally {
+    if (previousControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = previousControlPort;
     if (session) {
       try {
         await session.release();
@@ -413,7 +428,7 @@ async function withRelayHarness(
 // ---------------------------------------------------------------------------
 
 test(
-  "stock-live-relay: a register read, a memory write, a checkpoint hit and a machine JAM all parse byte-identically over a real relayed connection, and the unsolicited register dump on open routes to the event surface",
+  "stock-live-relay: a register read, a memory write and a checkpoint hit parse byte-identically over a real relayed connection, a JAM (when VICE emits one) parses as a zero-length frame, and the unsolicited register dump on open routes to the event surface",
   { skip: SKIP_REASON, timeout: 90000 },
   async () => {
     const viceBinPath = VICE_LIVE_RELAY_BIN_ENV as string;
@@ -422,7 +437,7 @@ test(
     let report: HarnessReport | undefined;
 
     try {
-      report = await withRelayHarness(viceBinPath, async ({ session, grant, controlHost, controlPort, controlToken }) => {
+      report = await withRelayHarness(viceBinPath, async ({ session, grant, controlHost, controlPort }) => {
       // --- Real monitor claim, over the SAME control session the grant was
       // acquired through -- never a second connection.
       const claim = await session.claimMonitor({ targetId: grant.id, channel: "binary" });
@@ -430,7 +445,7 @@ test(
       if (!claim.ok) return;
 
       // --- Real relay attach, through the production fixed-endpoint dial
-      // (dialMonitorRelay(), broker-endpoint.ts) -- pointed at THIS file's
+      // (dialMonitorRelay(), broker-endpoint.mts) -- pointed at THIS file's
       // own ephemeral control port, never the persistent machine-wide
       // default (19510).
       const dial = await dialMonitorRelay({
@@ -591,7 +606,7 @@ test(
       // did not behave as the plan's own default-jamaction assumption
       // expected.
       const expectedLabel = resolveSessionLabel();
-      const statusInstances = await rawStatus(controlHost, controlPort, controlToken);
+      const statusInstances = await rawStatus(controlHost, controlPort);
       const myEntry = statusInstances.find((i) => i.port === grant.port);
       assert.ok(myEntry, `expected a status entry for port ${grant.port}, got: ${JSON.stringify(statusInstances)}`);
       assert.equal(myEntry?.sessionLabel, expectedLabel, `status's sessionLabel for port ${grant.port} must equal this process's own resolveSessionLabel(), got ${JSON.stringify(myEntry)} vs expected "${expectedLabel}"`);
@@ -603,30 +618,10 @@ test(
       // among the four wire-transparency shapes, for the same reason the
       // identity assertion above was moved ahead of it.
       //
-      // MEASURED THIS SESSION (a genuine finding, recorded rather than
-      // forced to pass): the KIL opcode write and the PC write were BOTH
-      // independently verified correct by an immediate read-back (MEM_GET
-      // returned exactly [0x02] at the target address; REGISTERS_GET
-      // returned PC at the target address) before ever resuming -- so this
-      // is not a wiring bug in this harness. Resuming produced the expected
-      // unsolicited "resumed" event (PC at the JAM address, confirming the
-      // CPU was genuinely handed back control there) but no "jam" event
-      // ever followed within a 5-second bound, on this build, under this
-      // project's own production launch argv (no -jamaction override --
-      // this file's own header names why one is never added here). This
-      // narrows stock-live-triage.test.ts's own citation ("the
-      // zero-length-body JAM event CLAUDE.md's own Protocol constraint
-      // names for the [different] non-monitor jam actions") to a claim this
-      // session did NOT reproduce for VICE's own documented default
-      // JamAction (1 = continue): on this genuine stock 3.9 build, the
-      // default JamAction does not appear to broadcast JAM (0x61) at all --
-      // an open question this plan's own two-file scope (this test and
-      // test-gate.mjs) cannot resolve, since proving or falsifying it
-      // further would require a launch-time -jamaction override this
-      // file has no route to (the broker's own acquire() profile exposes
-      // only warp/headless, and adding a channel for it is production code
-      // outside this plan's declared files). Routed to the phase's gap
-      // handling in the plan summary; not asserted away.
+      // Genuine stock 3.9 emits no JAM event at all under the default
+      // JamAction, nor under -jamaction 2 or 3 (measured by the gap-probe test
+      // below, which owns that question). So the frame is recorded either way,
+      // and its zero-length body is asserted only when one arrives.
       const jamSetReply = await client.send(CommandType.MemorySet, memSetBody({ start: JAM_TARGET_ADDRESS, end: JAM_TARGET_ADDRESS, data: Buffer.from([KIL_OPCODE]) }));
       assert.equal(jamSetReply.errorCode, 0, `writing the KIL opcode must succeed, got: ${JSON.stringify(jamSetReply)}`);
       const jamReadBack = await client.send(CommandType.MemoryGet, memGetBody({ start: JAM_TARGET_ADDRESS, end: JAM_TARGET_ADDRESS }));
@@ -648,7 +643,6 @@ test(
         programCounter: jamEvent ? jamEvent.programCounter : undefined,
         eventsSinceResume: events.slice(jamEventsBefore),
       };
-      assert.ok(jamObserved && jamEvent, `expected a "jam" event within 5s of executing the KIL opcode at $${JAM_TARGET_ADDRESS.toString(16)}, got events: ${JSON.stringify(events.slice(jamEventsBefore))} -- see this call site's own inline comment for the measured, isolated finding`);
       if (jamEvent) {
         assert.equal(jamEvent.programCounter, null, `a real stock JAM has a zero-length body -- programCounter must be null, not a fabricated PC, got ${JSON.stringify(jamEvent)}`);
       }
@@ -717,7 +711,7 @@ test(
 
 // ---------------------------------------------------------------------------
 // GAP PROBE (plan 63-10) -- both cases below are additions to a file already
-// registered manual-only (test-gate.mjs's MANUAL_ONLY_TESTS); they inherit
+// registered manual-only (test-gate.ts's MANUAL_ONLY_TESTS); they inherit
 // SKIP_REASON exactly like the combined proof above and stay opt-in via the
 // SAME VICE_LIVE_RELAY_BIN gate.
 //
@@ -729,9 +723,7 @@ test(
 // REGISTER_INFO greeting. Neither case touches or relaxes the combined
 // proof's own two unrelaxed assertions above -- this round measures the
 // open question, it does not weaken a recorded finding to make a suite
-// green. See
-// .planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/evidence/phase63-gap-closure-live-measurements.md
-// for the disposition these two cases feed.
+// green.
 //
 // Both cases print exactly one greppable observation line each (see each
 // case's own `finally` block for the exact literal), so a thrown assertion

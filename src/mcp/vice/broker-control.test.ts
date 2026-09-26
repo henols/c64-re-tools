@@ -1,10 +1,10 @@
 // broker-control.test.ts
 //
-// Plan 05: the complete control-plane message set (acquire/release/recycle/
+// Plan 05: the complete control-plane message set (acquire/release/
 // status/host_state), the arrival-ordered pending-acquire structure, and the
 // kernel-enforced singleton guard's two distinct outcomes. Most tests here
 // drive a REAL listener bound on port zero, in this test's own process,
-// against injected onAcquire/onRelease/onRecycle/onStatus/onHostState
+// against injected onAcquire/onRelease/onStatus/onHostState
 // stubs -- no real emulator, no real spawn, no test opens a connection to
 // the host VICE. The singleton-guard tests (task 3) additionally spawn the
 // real, BUILT broker artifact behind the escape hatch, exactly like
@@ -28,14 +28,12 @@ import {
   bindControlListener,
   enqueueAcquire,
   drainPendingAcquires,
-  newControlToken,
   HELLO_PROTOCOL_MAGIC,
   resolveBrokerVersion,
   BRIDGE_INTERFACE_ALLOWLIST,
   enumerateBindHosts,
   type StartControlListenerResult,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type PendingAcquireQueue,
@@ -47,6 +45,8 @@ import {
   type StageFileOutcome,
   type FileTransferRequest,
   type FileTransferOutcome,
+  type HostToolStageFileSpec,
+  type HostToolStageOutcome,
   sanitiseSessionLabel,
 } from "./broker-control.mts";
 import type { Socket } from "node:net";
@@ -57,7 +57,6 @@ import type { MonitorChannel } from "./broker-state.mts";
 // here would let these assertions pass against a boundary that accepts
 // something else.
 import type { LaunchProfile } from "./broker-launch.mts";
-import { readBrokerLiveness } from "./vice-broker-client.ts";
 import { build } from "./build.ts";
 import { createBrokerState, type BrokerState, type InstanceRecord } from "./broker-state.mts";
 
@@ -188,7 +187,6 @@ interface StubDeps {
    * parameter carrying the already-sanitised session label. */
   onAcquire?: (id: string, profile?: LaunchProfile, label?: string | null) => Promise<AcquireOutcome>;
   onRelease?: (id: string) => void;
-  onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
   onHostState?: () => HostStateFields;
   onMonitorClaim?: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorClaimOutcome;
@@ -211,7 +209,14 @@ interface StubDeps {
   onStageFile?: (targetId: string, slot: string) => StageFileOutcome;
   /** Phase 64, plan 64-02 (XFER-04): same optionality as onStageFile above. */
   onFileTransfer?: (request: FileTransferRequest, socket: Socket, pending: Buffer) => FileTransferOutcome;
-  onHostTool?: (raw: unknown) => Promise<unknown>;
+  /** Phase 65, plan 65-01 (SEAM-01): OPTIONAL on StartControlListenerOptions
+   * itself (vice-broker.mts wires all three), and absent by default here
+   * too -- a `host_tool_stage`/`host_tool_run` request against a listener
+   * started with no stub is refused `internal` by the dispatch arm's own
+   * not-wired check, mirroring onStageFile/onFileTransfer above. */
+  onHostToolStage?: (files: HostToolStageFileSpec[]) => HostToolStageOutcome;
+  onHostToolRun?: (requestKey: string, raw: unknown) => Promise<unknown>;
+  onHostToolEnd?: (requestKey: string) => void;
   /** Plan 62-01: the `hello` reply's injectable version override, passed
    * straight through to StartControlListenerOptions.helloVersion. Absent by
    * default -- pre-existing tests never exercise `hello` and are unaffected. */
@@ -220,9 +225,7 @@ interface StubDeps {
 
 async function startTestListener(deps: StubDeps = {}): Promise<{
   listener: StartControlListenerResult;
-  token: string;
   releases: string[];
-  recycleCalls: string[];
   monitorClaimCalls: string[];
   monitorReleaseCalls: string[];
   // Plan 41-03 (D-14): the channel each monitor_claim/monitor_release call
@@ -241,10 +244,16 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
   // StartControlListenerOptions' own optionality for these two callbacks.
   stageFileCalls: Array<{ targetId: string; slot: string }>;
   fileTransferCalls: FileTransferRequest[];
+  // Phase 65, plan 65-01 (SEAM-01): every host_tool_stage/host_tool_run/
+  // connection-close call this listener actually forwarded to a supplied
+  // stub, in arrival order. Empty when the test supplies no
+  // onHostToolStage/onHostToolRun stub, mirroring stageFileCalls/
+  // fileTransferCalls above.
+  hostToolStageCalls: HostToolStageFileSpec[][];
+  hostToolRunCalls: Array<{ requestKey: string; raw: unknown }>;
+  hostToolEndCalls: string[];
 }> {
-  const token = newControlToken();
   const releases: string[] = [];
-  const recycleCalls: string[] = [];
   const monitorClaimCalls: string[] = [];
   const monitorReleaseCalls: string[] = [];
   const monitorClaimChannels: MonitorChannel[] = [];
@@ -252,21 +261,17 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
   const operationCalls: Array<{ targetId: string; channel: MonitorChannel; name: string | null }> = [];
   const stageFileCalls: Array<{ targetId: string; slot: string }> = [];
   const fileTransferCalls: FileTransferRequest[] = [];
+  const hostToolStageCalls: HostToolStageFileSpec[][] = [];
+  const hostToolRunCalls: Array<{ requestKey: string; raw: unknown }> = [];
+  const hostToolEndCalls: string[] = [];
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: deps.onAcquire ?? (async () => ({ ok: false, reason: "internal" }) as AcquireOutcome),
     onRelease: (id) => {
       releases.push(id);
       deps.onRelease?.(id);
     },
-    onRecycle:
-      deps.onRecycle ??
-      (async (targetId) => {
-        recycleCalls.push(targetId);
-        return { port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "grant_lookup_failed", reason: "no stub configured" };
-      }),
     onStatus: deps.onStatus ?? (() => []),
     onHostState:
       deps.onHostState ??
@@ -287,11 +292,6 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
       operationCalls.push({ targetId, channel, name });
       return deps.onOperation?.(targetId, channel, name) ?? ({ ok: true } as OperationNoteOutcome);
     },
-    // Phase 34, plan 34-01: a required field on StartControlListenerOptions
-    // as of this plan -- no existing test in this file exercises host_tool
-    // yet (task 2 adds that coverage), so this default is a no-op refusal,
-    // never called by any pre-existing case here.
-    onHostTool: deps.onHostTool ?? (async () => ({ ok: false, message: "no onHostTool stub configured" })),
     helloVersion: deps.helloVersion,
     // Phase 64, plan 64-02 (XFER-04): CONDITIONALLY wired, unlike every
     // callback above -- StartControlListenerOptions' own `onStageFile`/
@@ -311,12 +311,28 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
           return deps.onFileTransfer!(request, socket, pending);
         }
       : undefined,
+    onHostToolStage: deps.onHostToolStage
+      ? (files: HostToolStageFileSpec[]) => {
+          hostToolStageCalls.push(files);
+          return deps.onHostToolStage!(files);
+        }
+      : undefined,
+    onHostToolRun: deps.onHostToolRun
+      ? (requestKey: string, raw: unknown) => {
+          hostToolRunCalls.push({ requestKey, raw });
+          return deps.onHostToolRun!(requestKey, raw);
+        }
+      : undefined,
+    onHostToolEnd: deps.onHostToolEnd
+      ? (requestKey: string) => {
+          hostToolEndCalls.push(requestKey);
+          deps.onHostToolEnd!(requestKey);
+        }
+      : undefined,
   });
   return {
     listener,
-    token,
     releases,
-    recycleCalls,
     monitorClaimCalls,
     monitorReleaseCalls,
     monitorClaimChannels,
@@ -324,137 +340,25 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
     operationCalls,
     stageFileCalls,
     fileTransferCalls,
+    hostToolStageCalls,
+    hostToolRunCalls,
+    hostToolEndCalls,
   };
 }
 
 // ============================================================================
-// Task 1: recycle, status, host_state, and the arrival-ordered pending queue.
+// Task 1: status, host_state, and the arrival-ordered pending queue.
 // ============================================================================
 
-test("recycle: a grant this connection holds resolves, kills identity-verified, and answers an ack carrying the stage word and outcome", async () => {
-  let calledWith: string | null = null;
-  const { listener, token } = await startTestListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } }),
-    onRecycle: async (targetId) => {
-      calledWith = targetId;
-      return { port: 6600, pid: 4242, viceBin: "x64sc", killStage: "sigterm", epochBefore: 3, outcome: "ok", reason: "" };
-    },
-  });
+test("recycle is not an op: a recycle request is answered bad_request as an unknown op", async () => {
+  const { listener } = await startTestListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-1", token });
-    const grant = await client.next();
-    assert.equal(grant.kind, "grant");
-
-    client.send({ op: "recycle", id: "recycle-1", target_id: "req-1", token });
-    const ack = await client.next();
-    assert.equal(ack.kind, "recycle_ack");
-    assert.equal(ack.target_id, "req-1");
-    assert.equal(ack.kill_stage, "sigterm");
-    assert.equal(ack.outcome, "ok");
-    assert.equal(ack.x64sc_pid, 4242);
-    assert.equal(ack.epoch_before, 3);
-    assert.equal(calledWith, "req-1");
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-// The recycle acknowledgement's field set, read from
-// resources/vice-broker.sh's own write_recycle_ack() ($1=id $2=target_id
-// $3=port $4=x64sc_pid $5=vice_bin $6=kill_stage $7=epoch_before $8=outcome
-// $9=reason) -- `version` and `acked_at` are file-envelope fields with no
-// equivalent need on a live connection and are deliberately dropped; `kind`
-// is this module's own wire-format discriminator, not a business field.
-const BASH_RECYCLE_ACK_FIELDS = ["id", "target_id", "port", "x64sc_pid", "vice_bin", "kill_stage", "epoch_before", "outcome", "reason"];
-
-test("recycle ack: the key set (minus the wire-format 'kind' discriminator) is deep-equal to the bash acknowledgement writer's own field list", async () => {
-  const { listener, token } = await startTestListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } }),
-    onRecycle: async () => ({ port: 6600, pid: 1, viceBin: "x64sc", killStage: "sigterm", epochBefore: 1, outcome: "ok", reason: "" }),
-  });
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "acquire", id: "req-1", token });
-    await client.next();
-    client.send({ op: "recycle", id: "recycle-1", target_id: "req-1", token });
-    const ack = await client.next();
-    const keys = Object.keys(ack).filter((k) => k !== "kind");
-    assert.deepEqual(keys.sort(), [...BASH_RECYCLE_ACK_FIELDS].sort());
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-// The container-side outcome renderer's own switch cases
-// (vice-proxy.ts's recycleAckOutcomeMessage(), read directly from source at
-// the time this test was written): identity_refused, target_lookup_failed,
-// grant_lookup_failed, epoch_lookup_failed, pid_lookup_failed, plus a
-// default fallback for anything else. This broker's recycle path never
-// needs to produce every one of these (target_lookup_failed has no
-// equivalent here -- an unowned target is answered `denied` at the
-// control-plane level, never as a recycle_ack outcome at all) -- the
-// values it CAN produce are a SUBSET, not a bijection.
-const CONTAINER_RENDERER_OUTCOME_CASES = ["identity_refused", "target_lookup_failed", "grant_lookup_failed", "epoch_lookup_failed", "pid_lookup_failed"];
-
-test("recycle outcome vocabulary: every outcome value this broker's recycle path can produce is a member of the container renderer's own switch cases", () => {
-  const producedByThisBroker = ["ok", "identity_refused", "grant_lookup_failed", "epoch_lookup_failed", "pid_lookup_failed"];
-  const nonOkValues = producedByThisBroker.filter((v) => v !== "ok");
-  for (const v of nonOkValues) {
-    assert.ok(CONTAINER_RENDERER_OUTCOME_CASES.includes(v), `outcome "${v}" must be one of the renderer's own switch cases: ${JSON.stringify(CONTAINER_RENDERER_OUTCOME_CASES)}`);
-  }
-});
-
-test("recycle: a kill returning the identity-refused stage word leaves the target alive and answers an outcome naming the refusal", async () => {
-  const { listener, token } = await startTestListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } }),
-    onRecycle: async () => ({ port: 6600, pid: 999, viceBin: "x64sc", killStage: "identity_refused", epochBefore: 1, outcome: "identity_refused", reason: "mismatch" }),
-  });
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "acquire", id: "req-1", token });
-    await client.next();
-    client.send({ op: "recycle", id: "recycle-1", target_id: "req-1", token });
-    const ack = await client.next();
-    assert.equal(ack.kill_stage, "identity_refused");
-    assert.equal(ack.outcome, "identity_refused");
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-test("recycle: naming a grant this connection does not hold answers the denied error code, and onRecycle is never invoked", async () => {
-  const { listener, token, recycleCalls } = await startTestListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } }),
-  });
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "acquire", id: "req-1", token });
-    await client.next();
-    // Recycle names SOME OTHER id -- one this connection never acquired.
-    client.send({ op: "recycle", id: "recycle-1", target_id: "req-someone-elses", token });
+    client.send({ op: "recycle", id: "recycle-1", target_id: "anything" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
-    assert.equal(resp.code, "denied");
-    assert.deepEqual(recycleCalls, [], "onRecycle (and therefore any kill/signal it might issue) must never be invoked");
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-test("recycle: a connection holding NO grant at all answers denied for any target_id", async () => {
-  const { listener, token, recycleCalls } = await startTestListener();
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "recycle", id: "recycle-1", target_id: "anything", token });
-    const resp = await client.next();
-    assert.equal(resp.kind, "error");
-    assert.equal(resp.code, "denied");
-    assert.deepEqual(recycleCalls, []);
+    assert.equal(resp.code, "bad_request");
+    assert.match(String(resp.message), /unknown op: recycle/);
   } finally {
     client.close();
     listener.server.close();
@@ -466,10 +370,10 @@ test("status: one entry per instance, carrying port, url, state, reason, epoch a
     { port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: 1, hasMonitorClient: false, sessionLabel: null, grantId: null, operation: null },
     { port: 6601, url: "http://127.0.0.1:6601/mcp", state: "granted", reason: "acquire", epoch: 2, hasMonitorClient: true, sessionLabel: "my-session-1234", grantId: "req-1", operation: null },
   ];
-  const { listener, token } = await startTestListener({ onStatus: () => entries });
+  const { listener } = await startTestListener({ onStatus: () => entries });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "status", token });
+    client.send({ op: "status" });
     const resp = await client.next();
     assert.equal(resp.kind, "status");
     assert.deepEqual(resp.instances, entries);
@@ -480,12 +384,12 @@ test("status: one entry per instance, carrying port, url, state, reason, epoch a
 });
 
 test("host_state: carries the broker pid, node version, resolved emulator binary, instance ceiling and band base", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onHostState: () => ({ pid: 12345, startedAt: "2026-08-04T00:00:00Z", nodeVersion: "v24.0.0", viceBin: "/usr/bin/x64sc", maxInstances: 16, basePort: 6600, backend: "stock" as const }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "host_state", token });
+    client.send({ op: "host_state" });
     const resp = await client.next();
     assert.equal(resp.kind, "host_state");
     assert.equal(resp.pid, 12345);
@@ -507,7 +411,7 @@ test("host_state: carries the broker pid, node version, resolved emulator binary
 
 test("WR-04 host_state: carries the broker's OWN backend verdict on the wire", async () => {
   const backend = "stock" as const;
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onHostState: () => ({
       pid: 12345,
       startedAt: "2026-08-13T00:00:00Z",
@@ -520,29 +424,10 @@ test("WR-04 host_state: carries the broker's OWN backend verdict on the wire", a
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "host_state", token });
+    client.send({ op: "host_state" });
     const resp = await client.next();
     assert.equal(resp.kind, "host_state");
     assert.equal(resp.backend, backend, "the wire must carry the verdict that actually decided the emulator's launch argv");
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-test("neither the status nor the host_state response ever carries the token value", async () => {
-  const { listener, token } = await startTestListener({
-    onStatus: () => [{ port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: 1, hasMonitorClient: false, sessionLabel: null, grantId: null, operation: null }],
-  });
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "status", token });
-    const statusResp = await client.next();
-    assert.ok(!JSON.stringify(statusResp).includes(token), "status response must never contain the token string");
-
-    client.send({ op: "host_state", token });
-    const hostResp = await client.next();
-    assert.ok(!JSON.stringify(hostResp).includes(token), "host_state response must never contain the token string");
   } finally {
     client.close();
     listener.server.close();
@@ -554,7 +439,7 @@ test("neither the status nor the host_state response ever carries the token valu
 // against injected onMonitorClaim/onMonitorRelease stubs (the real ownership
 // logic -- comparing grantId, idempotency, clearing -- is vice-broker.mts's
 // own handleMonitorClaim()/handleMonitorRelease(), unit-tested directly
-// there; this section proves only the framing, the token gate, the
+// there; this section proves only the framing, the
 // PER-CONNECTION ownership gate (CR-03) and the response envelope this
 // listener owns).
 //
@@ -569,26 +454,26 @@ test("neither the status nor the host_state response ever carries the token valu
 /** The grant-issuing stub every monitor-op test below acquires through, so
  * `target_id: "req-a"` is a grant THIS connection actually holds. */
 function grantingAcquire(): (id: string) => Promise<AcquireOutcome> {
-  return async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } });
+  return async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } });
 }
 
 /** Acquires grant `id` over `client` and asserts the grant arrived, so every
  * monitor-op test starts from a connection that owns what it names. */
-async function acquireGrant(client: ReturnType<typeof makeClient>, token: string, id: string): Promise<void> {
-  client.send({ op: "acquire", id, token });
+async function acquireGrant(client: ReturnType<typeof makeClient>, id: string): Promise<void> {
+  client.send({ op: "acquire", id });
   const grant = await client.next();
   assert.equal(grant.kind, "grant", `precondition: the connection must hold grant ${id}`);
 }
 
 test("monitor_claim: an ok stub answers the monitor_claimed response kind", async () => {
-  const { listener, token, monitorClaimCalls } = await startTestListener({
+  const { listener, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a" });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_claimed");
     assert.deepEqual(monitorClaimCalls, ["req-a"]);
@@ -599,7 +484,7 @@ test("monitor_claim: an ok stub answers the monitor_claimed response kind", asyn
 });
 
 test("monitor_claim: a monitor_owned stub answers an error carrying code monitor_owned and the holder's own grantId/claimedAt/pid/channel, worded as an ownership conflict", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-a", claimedAt: 111, pid: 4242, channel: "binary" } }),
   });
@@ -608,8 +493,8 @@ test("monitor_claim: a monitor_owned stub answers an error carrying code monitor
     // This connection legitimately holds req-b; the instance behind it is
     // already claimed by a DIFFERENT grant (req-a). That is the genuine
     // ownership conflict, distinct from CR-03's spoofing case below.
-    await acquireGrant(client, token, "req-b");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b", token });
+    await acquireGrant(client, "req-b");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "monitor_owned");
@@ -627,7 +512,7 @@ test("monitor_claim: a monitor_owned stub answers an error carrying code monitor
 // ============================================================================
 
 test("monitor_claim (D-14): claiming 'text' on an instance whose 'binary' channel is held by a DIFFERENT grant succeeds -- the two channels are independent", async () => {
-  const { listener, token, monitorClaimChannels } = await startTestListener({
+  const { listener, monitorClaimChannels } = await startTestListener({
     onAcquire: grantingAcquire(),
     // The stub models a real per-channel map: "binary" is already held by
     // "req-a", "text" has no holder at all yet.
@@ -640,8 +525,8 @@ test("monitor_claim (D-14): claiming 'text' on an instance whose 'binary' channe
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-b");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b", channel: "text", token });
+    await acquireGrant(client, "req-b");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b", channel: "text" });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_claimed");
     assert.deepEqual(monitorClaimChannels, ["text"]);
@@ -652,14 +537,14 @@ test("monitor_claim (D-14): claiming 'text' on an instance whose 'binary' channe
 });
 
 test("monitor_claim (D-14): a 'text' claim from a second grant while a first grant holds 'text' is refused monitor_owned, naming the first grant's id and the text channel, with no wedge/hang/frozen/stuck/unresponsive vocabulary", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-first", claimedAt: 222, pid: 4242, channel: "text" } }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-second");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-second", channel: "text", token });
+    await acquireGrant(client, "req-second");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-second", channel: "text" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "monitor_owned");
@@ -674,14 +559,14 @@ test("monitor_claim (D-14): a 'text' claim from a second grant while a first gra
 });
 
 test("monitor_claim (D-14): an unrecognised non-empty channel value is bad_request, naming both accepted values", async () => {
-  const { listener, token, monitorClaimCalls } = await startTestListener({
+  const { listener, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", channel: "drive", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", channel: "drive" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -695,14 +580,14 @@ test("monitor_claim (D-14): an unrecognised non-empty channel value is bad_reque
 });
 
 test("monitor_claim (D-14): no channel field at all behaves exactly as channel: 'binary' -- the backward-compatibility case", async () => {
-  const { listener, token, monitorClaimChannels } = await startTestListener({
+  const { listener, monitorClaimChannels } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a" });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_claimed");
     assert.deepEqual(monitorClaimChannels, ["binary"]);
@@ -713,14 +598,14 @@ test("monitor_claim (D-14): no channel field at all behaves exactly as channel: 
 });
 
 test("monitor_release (D-14): no channel field at all behaves exactly as channel: 'binary'", async () => {
-  const { listener, token, monitorReleaseChannels } = await startTestListener({
+  const { listener, monitorReleaseChannels } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorRelease: () => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a" });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_released");
     assert.deepEqual(monitorReleaseChannels, ["binary"]);
@@ -731,14 +616,14 @@ test("monitor_release (D-14): no channel field at all behaves exactly as channel
 });
 
 test("monitor_release (D-14): an unrecognised non-empty channel value is bad_request, naming both accepted values", async () => {
-  const { listener, token, monitorReleaseCalls } = await startTestListener({
+  const { listener, monitorReleaseCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorRelease: () => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a", channel: "drive", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a", channel: "drive" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -753,10 +638,10 @@ test("monitor_release (D-14): an unrecognised non-empty channel value is bad_req
 
 test("status (D-14): hasMonitorClient is true when only the text channel is claimed", async () => {
   const entries: StatusInstanceEntry[] = [{ port: 6600, url: "http://127.0.0.1:6600/mcp", state: "granted", reason: "acquire", epoch: 1, hasMonitorClient: true, sessionLabel: null, grantId: null, operation: null }];
-  const { listener, token } = await startTestListener({ onStatus: () => entries });
+  const { listener } = await startTestListener({ onStatus: () => entries });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "status", token });
+    client.send({ op: "status" });
     const resp = await client.next();
     assert.equal(resp.kind, "status");
     assert.deepEqual((resp.instances as StatusInstanceEntry[])[0]?.hasMonitorClient, true);
@@ -767,18 +652,18 @@ test("status (D-14): hasMonitorClient is true when only the text channel is clai
 });
 
 test("monitor_claim: a repeated claim from the same grant id is idempotent -- the stub answers ok both times, no conflict", async () => {
-  const { listener, token, monitorClaimCalls } = await startTestListener({
+  const { listener, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorClaim: (_requestId, targetId) => (targetId === "req-a" ? { ok: true, handle: "test-handle" } : { ok: false, code: "internal" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a" });
     const first = await client.next();
     assert.equal(first.kind, "monitor_claimed");
 
-    client.send({ op: "monitor_claim", id: "claim-2", target_id: "req-a", token });
+    client.send({ op: "monitor_claim", id: "claim-2", target_id: "req-a" });
     const second = await client.next();
     assert.equal(second.kind, "monitor_claimed");
 
@@ -790,14 +675,14 @@ test("monitor_claim: a repeated claim from the same grant id is idempotent -- th
 });
 
 test("monitor_claim: a target_id this connection holds but the broker cannot resolve answers bad_request via the stub's own outcome, not internal", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: false, code: "bad_request" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "no-such-grant");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "no-such-grant", token });
+    await acquireGrant(client, "no-such-grant");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "no-such-grant" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -812,14 +697,14 @@ test("monitor_claim: a target_id this connection holds but the broker cannot res
 // --------------------------------------------------------------------------
 
 test("CR-03 monitor_claim: a connection holding grant A is DENIED when it names grant B, and the callback never runs", async () => {
-  const { listener, token, monitorClaimCalls } = await startTestListener({
+  const { listener, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "grant-a");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "grant-b", token });
+    await acquireGrant(client, "grant-a");
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "grant-b" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "denied");
@@ -833,14 +718,14 @@ test("CR-03 monitor_claim: a connection holding grant A is DENIED when it names 
 });
 
 test("CR-03 monitor_release: a connection holding grant A is DENIED when it tries to release grant B -- releasing another session's live claim is not possible", async () => {
-  const { listener, token, monitorReleaseCalls } = await startTestListener({
+  const { listener, monitorReleaseCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorRelease: () => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "grant-a");
-    client.send({ op: "monitor_release", id: "release-1", target_id: "grant-b", token });
+    await acquireGrant(client, "grant-a");
+    client.send({ op: "monitor_release", id: "release-1", target_id: "grant-b" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "denied");
@@ -852,18 +737,18 @@ test("CR-03 monitor_release: a connection holding grant A is DENIED when it trie
 });
 
 test("CR-03: a connection that never acquired anything is DENIED both monitor ops, whatever target_id it names", async () => {
-  const { listener, token, monitorClaimCalls, monitorReleaseCalls } = await startTestListener({
+  const { listener, monitorClaimCalls, monitorReleaseCalls } = await startTestListener({
     onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
     onMonitorRelease: () => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b", token });
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b" });
     const claimResp = await client.next();
     assert.equal(claimResp.kind, "error");
     assert.equal(claimResp.code, "denied");
 
-    client.send({ op: "monitor_release", id: "release-1", target_id: "req-b", token });
+    client.send({ op: "monitor_release", id: "release-1", target_id: "req-b" });
     const releaseResp = await client.next();
     assert.equal(releaseResp.kind, "error");
     assert.equal(releaseResp.code, "denied");
@@ -877,18 +762,18 @@ test("CR-03: a connection that never acquired anything is DENIED both monitor op
 });
 
 test("CR-03: an explicit `release` drops the connection's grant, after which its own monitor ops are denied too", async () => {
-  const { listener, token, monitorClaimCalls } = await startTestListener({
+  const { listener, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "grant-a");
-    client.send({ op: "release", token });
+    await acquireGrant(client, "grant-a");
+    client.send({ op: "release" });
     const released = await client.next();
     assert.equal(released.kind, "released");
 
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "grant-a", token });
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: "grant-a" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "denied");
@@ -900,10 +785,10 @@ test("CR-03: an explicit `release` drops the connection's grant, after which its
 });
 
 test("monitor_claim: a missing target_id is refused bad_request before the callback is ever invoked", async () => {
-  const { listener, token, monitorClaimCalls } = await startTestListener();
+  const { listener, monitorClaimCalls } = await startTestListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "monitor_claim", id: "claim-1", token });
+    client.send({ op: "monitor_claim", id: "claim-1" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -914,36 +799,15 @@ test("monitor_claim: a missing target_id is refused bad_request before the callb
   }
 });
 
-test("monitor_claim/monitor_release: both ops are refused unauthorized when the token is wrong, before the callback is ever invoked", async () => {
-  const { listener, monitorClaimCalls, monitorReleaseCalls } = await startTestListener();
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "monitor_claim", id: "c-1", target_id: "req-a", token: "wrong" });
-    const claimResp = await client.next();
-    assert.equal(claimResp.kind, "error");
-    assert.equal(claimResp.code, "unauthorized");
-
-    client.send({ op: "monitor_release", id: "r-1", target_id: "req-a", token: "wrong" });
-    // The connection was already destroyed by the first unauthorized
-    // request (matching every other op's own token-gate behaviour) -- no
-    // second response is expected; assert only that neither callback ran.
-    assert.deepEqual(monitorClaimCalls, []);
-    assert.deepEqual(monitorReleaseCalls, []);
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
 test("monitor_release: an ok stub answers the monitor_released response kind", async () => {
-  const { listener, token, monitorReleaseCalls } = await startTestListener({
+  const { listener, monitorReleaseCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorRelease: () => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a" });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_released");
     assert.deepEqual(monitorReleaseCalls, ["req-a"]);
@@ -954,7 +818,7 @@ test("monitor_release: an ok stub answers the monitor_released response kind", a
 });
 
 test("monitor_release: a broker-side non-holder outcome answers a refusal, not silent success", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: grantingAcquire(),
     onMonitorRelease: () => ({ ok: false, code: "denied" }),
   });
@@ -963,8 +827,8 @@ test("monitor_release: a broker-side non-holder outcome answers a refusal, not s
     // The connection legitimately holds req-b -- the refusal here comes from
     // the BROKER's own holder comparison, not from the control-plane
     // ownership gate CR-03 added (which is covered separately above).
-    await acquireGrant(client, token, "req-b");
-    client.send({ op: "monitor_release", id: "release-1", target_id: "req-b", token });
+    await acquireGrant(client, "req-b");
+    client.send({ op: "monitor_release", id: "release-1", target_id: "req-b" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "denied");
@@ -976,8 +840,8 @@ test("monitor_release: a broker-side non-holder outcome answers a refusal, not s
 
 // ============================================================================
 // Phase 63, plan 63-03 (SESS-05): the `operation` op -- wire-level dispatch
-// (token gate, the SAME ownsTarget() predicate as monitor_claim/
-// monitor_release/recycle, the channel resolver, the sanitiser) against the
+// (the SAME ownsTarget() predicate as monitor_claim/
+// monitor_release, the channel resolver, the sanitiser) against the
 // injected onOperation stub. The actual grant-storage behaviour (what
 // handleOperationNote() does once called) is unit-tested directly in
 // vice-broker-acquire.test.ts, mirroring this file's own header comment
@@ -985,13 +849,13 @@ test("monitor_release: a broker-side non-holder outcome answers a refusal, not s
 // ============================================================================
 
 test("operation: a declaration from a connection that owns the named grant is accepted, and the callback observes the ALREADY-SANITISED name", async () => {
-  const { listener, token, operationCalls } = await startTestListener({
+  const { listener, operationCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_run_until", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_run_until" });
     const resp = await client.next();
     assert.equal(resp.kind, "operation_noted");
     assert.deepEqual(operationCalls, [{ targetId: "req-a", channel: "binary", name: "vice_run_until" }]);
@@ -1001,12 +865,12 @@ test("operation: a declaration from a connection that owns the named grant is ac
   }
 });
 
-test("operation: a declaration naming a grant this connection does NOT hold is refused denied, with the SAME ownership wording monitor_claim/monitor_release/recycle share, and the callback never runs", async () => {
-  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+test("operation: a declaration naming a grant this connection does NOT hold is refused denied, with the SAME ownership wording monitor_claim/monitor_release share, and the callback never runs", async () => {
+  const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-b");
-    client.send({ op: "operation", id: "op-1", target_id: "someone-elses-grant", name: "vice_ping", token });
+    await acquireGrant(client, "req-b");
+    client.send({ op: "operation", id: "op-1", target_id: "someone-elses-grant", name: "vice_ping" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "denied");
@@ -1019,10 +883,10 @@ test("operation: a declaration naming a grant this connection does NOT hold is r
 });
 
 test("operation: a missing target_id is refused bad_request before the callback is ever invoked", async () => {
-  const { listener, token, operationCalls } = await startTestListener();
+  const { listener, operationCalls } = await startTestListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "operation", id: "op-1", name: "vice_ping", token });
+    client.send({ op: "operation", id: "op-1", name: "vice_ping" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -1034,11 +898,11 @@ test("operation: a missing target_id is refused bad_request before the callback 
 });
 
 test("operation: an unrecognised non-empty channel value is bad_request, naming both accepted values, and the callback never runs", async () => {
-  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", channel: "video", name: "vice_ping", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", channel: "video", name: "vice_ping" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -1052,11 +916,11 @@ test("operation: an unrecognised non-empty channel value is bad_request, naming 
 });
 
 test("operation: no channel field at all behaves exactly as channel: 'binary'", async () => {
-  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_ping", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_ping" });
     await client.next();
     assert.deepEqual(operationCalls, [{ targetId: "req-a", channel: "binary", name: "vice_ping" }]);
   } finally {
@@ -1066,11 +930,11 @@ test("operation: no channel field at all behaves exactly as channel: 'binary'", 
 });
 
 test("operation: name null clears -- the callback observes null verbatim, never an empty string", async () => {
-  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: null, token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: null });
     const resp = await client.next();
     assert.equal(resp.kind, "operation_noted");
     assert.deepEqual(operationCalls, [{ targetId: "req-a", channel: "binary", name: null }]);
@@ -1081,11 +945,11 @@ test("operation: name null clears -- the callback observes null verbatim, never 
 });
 
 test("operation: a name that is neither a string nor null is refused bad_request, naming the offending value, before the callback runs", async () => {
-  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: 42, token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: 42 });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -1098,32 +962,17 @@ test("operation: a name that is neither a string nor null is refused bad_request
 });
 
 test("operation: a broker-side bad_request outcome (the should-be-unreachable missing-grant race) is forwarded verbatim, not internal", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: grantingAcquire(),
     onOperation: () => ({ ok: false, code: "bad_request" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_ping", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_ping" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-test("operation: unauthorized when the token is wrong, before the callback is ever invoked", async () => {
-  const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_ping", token: "wrong" });
-    const resp = await client.next();
-    assert.equal(resp.kind, "error");
-    assert.equal(resp.code, "unauthorized");
-    assert.deepEqual(operationCalls, []);
   } finally {
     client.close();
     listener.server.close();
@@ -1138,24 +987,24 @@ test("operation: unauthorized when the token is wrong, before the callback is ev
 // ---------------------------------------------------------------------------
 
 test("operation: Task 3 ordering proof -- a declare, the wrapped work, then a clear are all issued without ever awaiting either reply, and the broker still observes them in order", async () => {
-  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
+    await acquireGrant(client, "req-a");
 
     let wrappedWorkDone = false;
     // Fire the declare WITHOUT awaiting its reply -- mirrors
-    // stock-dispatch.ts's declareOperation()/text-tools.ts's own
+    // stock-session.ts's declareOperation()/text-tools.ts's own
     // fire-and-forget discipline exactly: neither reads a response before
     // moving on.
-    client.send({ op: "operation", id: "op-declare", target_id: "req-a", name: "vice_run_until", token });
+    client.send({ op: "operation", id: "op-declare", target_id: "req-a", name: "vice_run_until" });
     // The "wrapped work" a real tool call performs happens HERE,
     // synchronously, before this test ever reads a response line --
     // proving the calling code is never blocked on the declaration's own
     // reply (T-63-13).
     wrappedWorkDone = true;
     // Clear, also without awaiting.
-    client.send({ op: "operation", id: "op-clear", target_id: "req-a", name: null, token });
+    client.send({ op: "operation", id: "op-clear", target_id: "req-a", name: null });
 
     assert.equal(wrappedWorkDone, true, "the wrapped work must complete without ever waiting for the declaration's reply");
 
@@ -1190,14 +1039,14 @@ test("operation: Task 3 ordering proof -- a declare, the wrapped work, then a cl
 // ============================================================================
 
 test("stage_file: a request from a non-owning connection is refused denied, and the onStageFile callback is never invoked", async () => {
-  const { listener, token, stageFileCalls } = await startTestListener({
+  const { listener, stageFileCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onStageFile: () => ({ ok: true, handle: "should-never-be-minted", emulatorFilename: "/never/reached" }),
   });
   const client = makeClient(listener.port);
   try {
     // This connection holds NO grant at all -- req-a belongs to nobody it owns.
-    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart", token });
+    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "denied");
@@ -1209,20 +1058,20 @@ test("stage_file: a request from a non-owning connection is refused denied, and 
 });
 
 test("stage_file: a request missing target_id or slot is refused bad_request, and the callback is never invoked", async () => {
-  const { listener, token, stageFileCalls } = await startTestListener({
+  const { listener, stageFileCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onStageFile: () => ({ ok: true, handle: "unused", emulatorFilename: "/unused" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
+    await acquireGrant(client, "req-a");
 
-    client.send({ op: "stage_file", id: "stage-missing-slot", target_id: "req-a", token });
+    client.send({ op: "stage_file", id: "stage-missing-slot", target_id: "req-a" });
     const missingSlot = await client.next();
     assert.equal(missingSlot.kind, "error");
     assert.equal(missingSlot.code, "bad_request");
 
-    client.send({ op: "stage_file", id: "stage-missing-target", slot: "autostart", token });
+    client.send({ op: "stage_file", id: "stage-missing-target", slot: "autostart" });
     const missingTarget = await client.next();
     assert.equal(missingTarget.kind, "error");
     assert.equal(missingTarget.code, "bad_request");
@@ -1235,14 +1084,14 @@ test("stage_file: a request missing target_id or slot is refused bad_request, an
 });
 
 test("stage_file: a request from the owning connection is answered file_staged, with a handle and emulator_filename the request did not supply", async () => {
-  const { listener, token, stageFileCalls } = await startTestListener({
+  const { listener, stageFileCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onStageFile: (targetId, slot) => ({ ok: true, handle: `handle-for-${targetId}-${slot}`, emulatorFilename: `/staging/${targetId}/${slot}.bin` }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart" });
     const resp = await client.next();
     assert.equal(resp.kind, "file_staged");
     assert.equal(resp.handle, "handle-for-req-a-autostart");
@@ -1255,14 +1104,14 @@ test("stage_file: a request from the owning connection is answered file_staged, 
 });
 
 test("stage_file: a callback refusal is forwarded verbatim as an error naming the callback's own code", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: grantingAcquire(),
     onStageFile: () => ({ ok: false, code: "internal" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "internal");
@@ -1273,17 +1122,17 @@ test("stage_file: a callback refusal is forwarded verbatim as an error naming th
 });
 
 test("stage_file: against a listener with NO onStageFile stub configured, the request is refused internal rather than crashing the connection", async () => {
-  const { listener, token } = await startTestListener({ onAcquire: grantingAcquire() });
+  const { listener } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
-    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart", token });
+    await acquireGrant(client, "req-a");
+    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "internal");
     // Prove the connection is still alive and answering ordinary requests --
     // a crash would have destroyed the socket rather than merely refusing.
-    client.send({ op: "status", token });
+    client.send({ op: "status" });
     const statusResp = await client.next();
     assert.equal(statusResp.kind, "status");
   } finally {
@@ -1293,19 +1142,19 @@ test("stage_file: against a listener with NO onStageFile stub configured, the re
 });
 
 test("transfer: a request with an empty or missing handle is refused bad_request, and the connection's own line reader is left running", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "", token });
+    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "" });
     const missingHandle = await client.next();
     assert.equal(missingHandle.kind, "error");
     assert.equal(missingHandle.code, "bad_request");
 
     // The line reader must still be running -- a well-formed request
     // afterwards is dispatched normally.
-    client.send({ op: "status", token });
+    client.send({ op: "status" });
     const statusResp = await client.next();
     assert.equal(statusResp.kind, "status");
   } finally {
@@ -1315,12 +1164,12 @@ test("transfer: a request with an empty or missing handle is refused bad_request
 });
 
 test("transfer: a request naming a direction other than upload or download is refused bad_request by name", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "transfer", id: "t-1", direction: "sideways", handle: "some-handle", token });
+    client.send({ op: "transfer", id: "t-1", direction: "sideways", handle: "some-handle" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -1332,12 +1181,12 @@ test("transfer: a request naming a direction other than upload or download is re
 });
 
 test("transfer: an upload missing byteLength or sha256 is refused bad_request before the callback runs", async () => {
-  const { listener, token, fileTransferCalls } = await startTestListener({
+  const { listener, fileTransferCalls } = await startTestListener({
     onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "transfer", id: "t-1", direction: "upload", handle: "some-handle", token });
+    client.send({ op: "transfer", id: "t-1", direction: "upload", handle: "some-handle" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -1349,17 +1198,17 @@ test("transfer: an upload missing byteLength or sha256 is refused bad_request be
 });
 
 test("transfer: a valid handle flips this connection out of line-reading mode BEFORE the callback runs -- a well-formed second JSON line afterwards is NOT dispatched", async () => {
-  const { listener, token, fileTransferCalls } = await startTestListener({
+  const { listener, fileTransferCalls } = await startTestListener({
     onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "a-valid-handle", token });
+    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "a-valid-handle" });
     // No reply is written on success (the callback owns every further reply
     // line) -- prove the second line is never dispatched by sending an
     // ordinary op that WOULD answer if the reader were still running, then
     // racing it against a short timer.
-    client.send({ op: "status", token });
+    client.send({ op: "status" });
     let sawStatus = false;
     const raced = await Promise.race([
       client.next(1000).then((resp) => {
@@ -1378,12 +1227,12 @@ test("transfer: a valid handle flips this connection out of line-reading mode BE
 });
 
 test("transfer: a callback refusal restores the connection's line reader -- a well-formed second request line afterwards IS dispatched", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onFileTransfer: (): FileTransferOutcome => ({ ok: false, code: "denied", message: "vice: no staged file for this handle" }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "an-unknown-handle", token });
+    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "an-unknown-handle" });
     const refusal = await client.next();
     assert.equal(refusal.kind, "error");
     assert.equal(refusal.code, "denied");
@@ -1391,7 +1240,7 @@ test("transfer: a callback refusal restores the connection's line reader -- a we
 
     // The line reader must have resumed -- a well-formed request afterwards
     // is dispatched normally, on the SAME connection.
-    client.send({ op: "status", token });
+    client.send({ op: "status" });
     const statusResp = await client.next();
     assert.equal(statusResp.kind, "status");
   } finally {
@@ -1401,13 +1250,13 @@ test("transfer: a callback refusal restores the connection's line reader -- a we
 });
 
 test("transfer: ownsTarget() is never consulted -- a valid handle succeeds over a connection that holds no grant at all", async () => {
-  const { listener, token, fileTransferCalls } = await startTestListener({
+  const { listener, fileTransferCalls } = await startTestListener({
     onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
     // This connection never sent `acquire` at all -- it holds no grant.
-    client.send({ op: "transfer", id: "t-1", direction: "upload", handle: "a-valid-handle", byteLength: 1024, sha256: "a".repeat(64), token });
+    client.send({ op: "transfer", id: "t-1", direction: "upload", handle: "a-valid-handle", byteLength: 1024, sha256: "a".repeat(64) });
 
     // No reply on success; prove the callback ran with the correctly
     // narrowed upload request rather than being refused for lack of a grant.
@@ -1420,15 +1269,15 @@ test("transfer: ownsTarget() is never consulted -- a valid handle succeeds over 
 });
 
 test("transfer: against a listener with NO onFileTransfer stub configured, the request is refused internal rather than crashing the connection, and the line reader is left running", async () => {
-  const { listener, token } = await startTestListener();
+  const { listener } = await startTestListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "some-handle", token });
+    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "some-handle" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "internal");
 
-    client.send({ op: "status", token });
+    client.send({ op: "status" });
     const statusResp = await client.next();
     assert.equal(statusResp.kind, "status");
   } finally {
@@ -1437,79 +1286,138 @@ test("transfer: against a listener with NO onFileTransfer stub configured, the r
   }
 });
 
-test("stage_file: unauthorized when the token is wrong, before the callback is ever invoked", async () => {
-  const { listener, stageFileCalls } = await startTestListener({
-    onAcquire: grantingAcquire(),
-    onStageFile: () => ({ ok: true, handle: "x", emulatorFilename: "/x" }),
+// ============================================================================
+// Phase 65, plan 65-01 (SEAM-01): host_tool_stage/host_tool_run bind to
+// their own connection and clean up on close (Task 2, behaviours 2-5).
+// Behaviours 6-10 live in
+// host-tool-endpoint.test.ts, against the real, compiled broker (a harness
+// broker), because they need a real transfer connection.
+// ============================================================================
+
+test("Test 2: host_tool_stage is answered host_tool_staged, and host_tool_run on the bound request reaches onHostToolRun", async () => {
+  const { listener, hostToolStageCalls, hostToolRunCalls } = await startTestListener({
+    onHostToolStage: (files) => ({ ok: true, requestKey: "ht-test-2", treeHandles: files.map((_, i) => `tree-${i}`), fileHandles: files.map((_, i) => `file-${i}`) }),
+    onHostToolRun: async () => ({ ok: false, message: "no real tool run in this test" }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart", token: "wrong-token" });
+    client.send({ op: "host_tool_stage", files: [{ tree: 0, rel: "a.a", byteLength: 4 }] });
     const stageResp = await client.next();
-    assert.equal(stageResp.kind, "error");
-    assert.equal(stageResp.code, "unauthorized");
-    assert.deepEqual(stageFileCalls, []);
+    assert.equal(stageResp.kind, "host_tool_staged");
+    assert.equal(stageResp.request, "ht-test-2");
+    assert.deepEqual(hostToolStageCalls, [[{ tree: 0, rel: "a.a", byteLength: 4 }]]);
+
+    client.send({ op: "host_tool_run", tool: "acme.build", args: {}, request: "ht-test-2" });
+    const runResp = await client.next();
+    assert.equal(runResp.ok, false);
+    assert.equal(hostToolRunCalls.length, 1);
+    assert.equal(hostToolRunCalls[0]!.requestKey, "ht-test-2");
   } finally {
     client.close();
     listener.server.close();
   }
 });
 
-// Plan 64-08 (G-64-1 gap closure, Task 2): SPLIT off the `transfer` half of
-// the test above -- `transfer` no longer sits after the token gate (route
-// (b), owner decision 5), so a wrong token, or no token at all, must reach
-// onFileTransfer exactly as a correct one would; the token is neither
-// required nor read for this op any more.
-test("transfer: a wrong token, and a request with no token field at all, both still reach onFileTransfer -- G-64-1 route (b), the token is neither required nor read for this op", async () => {
-  const { listener, fileTransferCalls } = await startTestListener({
-    onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
+test("Test 3: host_tool_run on a fresh connection with no prior stage answers denied; a request minted on connection A is refused denied when presented on connection B", async () => {
+  let stageCounter = 0;
+  const { listener, hostToolRunCalls } = await startTestListener({
+    onHostToolStage: () => ({ ok: true, requestKey: `ht-test-3-${stageCounter++}`, treeHandles: [], fileHandles: [] }),
+    onHostToolRun: async () => ({ ok: false, message: "must never be reached" }),
   });
 
-  const wrongTokenClient = makeClient(listener.port);
+  const freshClient = makeClient(listener.port);
   try {
-    wrongTokenClient.send({ op: "transfer", id: "t-wrong-token", direction: "download", handle: "handle-wrong-token", token: "wrong-token" });
-    const sawWrongToken = await waitFor(() => fileTransferCalls.some((c) => "handle" in c && c.handle === "handle-wrong-token"), 1000);
-    assert.ok(sawWrongToken, "a transfer line carrying a wrong token must still reach onFileTransfer -- the token is not read for this op");
+    freshClient.send({ op: "host_tool_run", tool: "acme.build", args: {}, request: "whatever" });
+    const resp = await freshClient.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "denied");
   } finally {
-    wrongTokenClient.close();
+    freshClient.close();
   }
 
-  const noTokenClient = makeClient(listener.port);
+  const connectionA = makeClient(listener.port);
+  const connectionB = makeClient(listener.port);
   try {
-    noTokenClient.send({ op: "transfer", id: "t-no-token", direction: "download", handle: "handle-no-token" });
-    const sawNoToken = await waitFor(() => fileTransferCalls.some((c) => "handle" in c && c.handle === "handle-no-token"), 1000);
-    assert.ok(sawNoToken, "a transfer line with no token field at all must still reach onFileTransfer");
+    connectionA.send({ op: "host_tool_stage", files: [] });
+    const stageRespA = await connectionA.next();
+    assert.equal(stageRespA.kind, "host_tool_staged");
+    const mintedKeyA = stageRespA.request as string;
+
+    // B has NO stage of its own -- presenting A's key must still be denied.
+    connectionB.send({ op: "host_tool_run", tool: "acme.build", args: {}, request: mintedKeyA });
+    const crossRespNoStage = await connectionB.next();
+    assert.equal(crossRespNoStage.kind, "error");
+    assert.equal(crossRespNoStage.code, "denied", "a request key minted on connection A must be refused denied on connection B, which never staged");
+
+    // B now stages its OWN request -- presenting A's key must STILL be
+    // denied, proving the check is against B's own bound key, not merely
+    // "did B ever stage anything".
+    connectionB.send({ op: "host_tool_stage", files: [] });
+    const stageRespB = await connectionB.next();
+    assert.equal(stageRespB.kind, "host_tool_staged");
+    const mintedKeyB = stageRespB.request as string;
+    assert.notEqual(mintedKeyB, mintedKeyA, "the two connections must mint distinct request keys");
+
+    connectionB.send({ op: "host_tool_run", tool: "acme.build", args: {}, request: mintedKeyA });
+    const crossRespOwnStage = await connectionB.next();
+    assert.equal(crossRespOwnStage.kind, "error");
+    assert.equal(crossRespOwnStage.code, "denied", "connection B's own bound key must not accept connection A's key");
+
+    assert.deepEqual(hostToolRunCalls, [], "onHostToolRun must never be invoked for any denied case in this test");
   } finally {
-    noTokenClient.close();
+    connectionA.close();
+    connectionB.close();
     listener.server.close();
   }
 });
 
-test("after a refused attach and a refused transfer on one connection, a token-less status line on that SAME connection is still answered unauthorized -- a pre-gate refusal never unlocks a gated op", async () => {
-  const { listener } = await startTestListener({
-    onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "denied" }),
-    onFileTransfer: (): FileTransferOutcome => ({ ok: false, code: "denied", message: "vice: no staged file for this handle" }),
+test("Test 4: a second host_tool_stage on the same connection is refused by name", async () => {
+  const { listener, hostToolStageCalls } = await startTestListener({
+    onHostToolStage: () => ({ ok: true, requestKey: "ht-test-4", treeHandles: [], fileHandles: [] }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "attach", target_id: "req-a", channel: "binary", handle: "wrong-handle" });
-    const attachResp = await client.next();
-    assert.equal(attachResp.kind, "error");
-    assert.equal(attachResp.code, "denied");
+    client.send({ op: "host_tool_stage", files: [] });
+    const first = await client.next();
+    assert.equal(first.kind, "host_tool_staged");
 
-    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "wrong-handle" });
-    const transferResp = await client.next();
-    assert.equal(transferResp.kind, "error");
-    assert.equal(transferResp.code, "denied");
+    client.send({ op: "host_tool_stage", files: [] });
+    const second = await client.next();
+    assert.equal(second.kind, "error");
+    assert.equal(second.code, "bad_request");
+    assert.match(String(second.message), /already bound/i);
 
-    client.send({ op: "status" });
-    const statusResp = await client.next();
-    assert.equal(statusResp.kind, "error");
-    assert.equal(
-      statusResp.code,
-      "unauthorized",
-      "a pre-gate refusal on this connection must never unlock a gated op -- the token gate still runs per line, for every op except attach/transfer",
-    );
+    assert.equal(hostToolStageCalls.length, 1, "onHostToolStage must be invoked only once -- the second stage is refused before the callback runs");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("Test 5: a stage entry whose rel is unsafe is refused bad_request, and onHostToolStage sees it (the validator itself lives in broker-transfer.mts, exercised end to end in host-tool-endpoint.test.ts)", async () => {
+  // This connection's own onHostToolStage stub simulates the SAME refusal
+  // stageHostToolRequest() (broker-transfer.mts) produces for an unsafe
+  // rel -- broker-control.mts's own dispatch arm narrows shape only
+  // (tree/rel/byteLength types), never path safety; see this file's own
+  // "Where the cap is enforced" constraint. The real validator's own
+  // per-case refusals (../x, /abs, a\\b, a/../b, "", NUL) are proven end to
+  // end against the real broker in host-tool-endpoint.test.ts's Test 5
+  // case, because the validator itself lives in a host-bound module this
+  // file cannot import unbuilt.
+  const seen: HostToolStageFileSpec[][] = [];
+  const { listener } = await startTestListener({
+    onHostToolStage: (files) => {
+      seen.push(files);
+      return { ok: false, code: "bad_request", message: "vice: rel segment is '..'" };
+    },
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "host_tool_stage", files: [{ tree: 0, rel: "../x", byteLength: 1 }] });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+    assert.deepEqual(seen, [[{ tree: 0, rel: "../x", byteLength: 1 }]]);
   } finally {
     client.close();
     listener.server.close();
@@ -1520,10 +1428,8 @@ test("after a refused attach and a refused transfer on one connection, a token-l
 // handleRelayAttach() (the compiled artifact, per this file's own header
 // comment above g6408SetupBrokerState()) so the second-attach refusal
 // observed here is the genuine broker-side one, not a fabricated test
-// double -- and reached with NO token presented at all, proving the
-// pre-existing second-attach refusal (T-63-01, now handle-only per G-64-1)
-// is untouched by moving the dispatch arm ahead of the gate.
-test("attach: a channel already attached is refused by the REAL handleRelayAttach(), reached with no token at all", async () => {
+// double.
+test("attach: a channel already attached is refused denied by the REAL handleRelayAttach()", async () => {
   const stubEmulator = createServer((socket) => {
     socket.on("data", () => {});
   });
@@ -1557,12 +1463,8 @@ test("attach: a channel already attached is refused by the REAL handleRelayAttac
     try {
       secondClient.send({ op: "attach", target_id: targetId, channel: "binary", handle: claim.handle });
       const secondResp = await secondClient.next();
-      assert.equal(secondResp.kind, "error", "a second attach on an already-attached channel must be refused, even with no token presented");
-      assert.notEqual(
-        secondResp.code,
-        "unauthorized",
-        "the refusal observed must be the real handler's own second-attach refusal, never the token gate -- this line carried no token field at all",
-      );
+      assert.equal(secondResp.kind, "error", "a second attach on an already-attached channel must be refused");
+      assert.equal(secondResp.code, "denied", "the refusal observed must be the real handler's own second-attach refusal");
     } finally {
       secondClient.close();
     }
@@ -1586,12 +1488,12 @@ test("sanitiseSessionLabel: strips every C0 control character (including both li
 });
 
 test("operation: a name carrying a line terminator and 200 characters is recorded stripped and truncated to at most 64 characters, never rejected outright", async () => {
-  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, token, "req-a");
+    await acquireGrant(client, "req-a");
     const hostile = `${"x".repeat(199)}\n`; // 200 chars total, trailing line terminator
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: hostile, token });
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: hostile });
     const resp = await client.next();
     assert.equal(resp.kind, "operation_noted");
     assert.equal(operationCalls.length, 1);
@@ -1694,7 +1596,7 @@ test("structural (D-14): no halting-path module reads monitorClients -- the only
 
 test("an unknown request kind answers the bad_request error code, and no callback is invoked", async () => {
   let acquireCalled = false;
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: async () => {
       acquireCalled = true;
       return { ok: false, reason: "internal" };
@@ -1702,7 +1604,7 @@ test("an unknown request kind answers the bad_request error code, and no callbac
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "no_such_op", token });
+    client.send({ op: "no_such_op" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -1714,12 +1616,12 @@ test("an unknown request kind answers the bad_request error code, and no callbac
 });
 
 test("an acquire at the instance ceiling answers the at_capacity error code", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: async () => ({ ok: false, reason: "at_capacity" }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-1", token });
+    client.send({ op: "acquire", id: "req-1" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "at_capacity");
@@ -1730,12 +1632,12 @@ test("an acquire at the instance ceiling answers the at_capacity error code", as
 });
 
 test("an acquire with no free port answers the no_free_port error code", async () => {
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: async () => ({ ok: false, reason: "no_free_port" }),
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-1", token });
+    client.send({ op: "acquire", id: "req-1" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "no_free_port");
@@ -1748,18 +1650,18 @@ test("an acquire with no free port answers the no_free_port error code", async (
 test("three acquires arriving while a launch is in flight are all present in the pending structure and all eventually answered", async () => {
   let inFlight = true;
   let calls = 0;
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: async (id) => {
       calls++;
       if (inFlight) return { ok: false, reason: "launch_in_flight" };
-      return { ok: true, grant: { port: 6600, url: `http://127.0.0.1:6600/mcp`, epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } };
+      return { ok: true, grant: { port: 6600, url: `http://127.0.0.1:6600/mcp` } };
     },
   });
   const clients = [makeClient(listener.port), makeClient(listener.port), makeClient(listener.port)];
   try {
-    clients[0].send({ op: "acquire", id: "req-a", token });
-    clients[1].send({ op: "acquire", id: "req-b", token });
-    clients[2].send({ op: "acquire", id: "req-c", token });
+    clients[0].send({ op: "acquire", id: "req-a" });
+    clients[1].send({ op: "acquire", id: "req-b" });
+    clients[2].send({ op: "acquire", id: "req-c" });
 
     // Give the event loop a turn so every "acquire" line above is parsed
     // and its first (blocked) attempt has run.
@@ -1794,7 +1696,7 @@ test("three acquires arriving while a launch is in flight are all present in the
 
 test("attemptAcquire: a queued entry whose socket is already destroyed never calls the launch callback at all", async () => {
   let calls = 0;
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: async () => {
       calls++;
       return { ok: false, reason: "launch_in_flight" };
@@ -1810,7 +1712,7 @@ test("attemptAcquire: a queued entry whose socket is already destroyed never cal
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-1", token });
+    client.send({ op: "acquire", id: "req-1" });
     await waitFor(() => listener.pendingAcquires.length === 1, 2000);
     assert.equal(calls, 1, "the first (blocked) attempt must have called the launch callback once");
 
@@ -1826,7 +1728,7 @@ test("attemptAcquire: a queued entry whose socket is already destroyed never cal
 
 test("attemptAcquire: a grant that settles after its own socket was destroyed is released through the release callback, not silently dropped", async () => {
   let resolveLaunch: ((outcome: AcquireOutcome) => void) | null = null;
-  const { listener, token, releases } = await startTestListener({
+  const { listener, releases } = await startTestListener({
     onAcquire: () =>
       new Promise<AcquireOutcome>((resolvePromise) => {
         resolveLaunch = resolvePromise;
@@ -1844,13 +1746,13 @@ test("attemptAcquire: a grant that settles after its own socket was destroyed is
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-1", token });
+    client.send({ op: "acquire", id: "req-1" });
     await waitFor(() => resolveLaunch !== null, 2000);
 
     client.close();
     await waitFor(() => serverSocket !== null && serverSocket.destroyed, 2000);
 
-    resolveLaunch!({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } });
+    resolveLaunch!({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } });
     await waitFor(() => releases.includes("req-1"), 2000);
 
     assert.deepEqual(releases, ["req-1"], "the release callback must be invoked with the same request id as the late grant");
@@ -1863,16 +1765,16 @@ test("attemptAcquire: a grant that settles after its own socket was destroyed is
 test("attemptAcquire: a queued entry whose socket is still connected behaves exactly as today -- the launch callback is invoked, the grant is written, and the entry settles", async () => {
   let inFlight = true;
   let calls = 0;
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: async () => {
       calls++;
       if (inFlight) return { ok: false, reason: "launch_in_flight" };
-      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } };
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } };
     },
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-1", token });
+    client.send({ op: "acquire", id: "req-1" });
     await waitFor(() => listener.pendingAcquires.length === 1, 2000);
     assert.equal(calls, 1);
 
@@ -1925,28 +1827,13 @@ test("structural: attemptAcquire()'s own comment names which half bounds which f
   assert.match(comment, /does NOT eliminate that race/i);
 });
 
-test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02, A-01/D-06/D-01): now exactly thirteen members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op, attach is plan 63-01's post-token-gate relay handshake op, operation is plan 63-03's post-token-gate declaration op, stage_file/transfer are plan 64-02's file-transfer ops (XFER-04)", () => {
+test("ControlRequestKind: exactly thirteen members, and a new host tool is a HOST_TOOL_IDS entry, never a new member", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const match = source.match(/export type ControlRequestKind = ([^;]+);/);
   assert.ok(match, "ControlRequestKind's own type declaration must be found");
-  // Plan 34-01 (A-01) is the ONE deliberate per-tool-adjacent widening --
-  // the eighth member, "host_tool", is the WHOLE host-tool subsystem: a
-  // second tool (dxa, Ghidra, c1541, petcat, cartconv, ...) is a new entry
-  // in host-tool.mts's own HOST_TOOL_IDS allowlist, never a further
-  // ControlRequestKind member -- this union is not widened again per-tool.
-  // Plan 62-01 (D-06/ENDPOINT-03) adds the ninth member: "hello", the
-  // pre-token-gate handshake op -- see handleLine()'s own dispatch-order
-  // comment for why it is answered BEFORE tokensMatch(). Plan 63-01
-  // (SESS-02) adds the tenth member: "attach", UNLIKE hello dispatched
-  // AFTER the token gate, in the same post-gate chain as every other
-  // target-naming op. Plan 63-03 (SESS-05) adds the eleventh member:
-  // "operation", gated on the SAME ownsTarget() predicate as
-  // monitor_claim/monitor_release/recycle. Plan 64-02 (XFER-04, D-01) adds
-  // the twelfth and thirteenth members: "stage_file" (gated by ownsTarget(),
-  // like operation) and "transfer" (deliberately NOT gated, like attach).
   assert.equal(match![1].trim(),
-    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer"',
-    "the union must be exactly the prior eleven members plus plan 64-02's stage_file and transfer (XFER-04)",
+    '"acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run"',
+    "the union must be exactly these thirteen members (recycle went with vice_recycle, host_tool with the legacy client)",
   );
 });
 
@@ -2111,44 +1998,6 @@ test("structural: broker-control.mts's pending-acquire queue region contains no 
 });
 
 // ============================================================================
-// Task 2: broker.json's liveness classification round trip -- proving the
-// field THIS broker writes is the field the UNCHANGED container-side
-// classifier reads.
-// ============================================================================
-
-test("liveness round trip: the existing container-side classifier reads a running broker's record as alive, and a stale-heartbeat record as stale", async () => {
-  build();
-  const stateDir = mkdtempSync(join(tmpdir(), "broker-control-liveness-"));
-  const child = spawn(process.execPath, [BROKER_ARTIFACT, "--repo-root", "/tmp/fake-repo-root-liveness", "--state-dir", stateDir], {
-    // G-64-6: confined to this test's own mkdtempSync stateDir -- with no
-    // VICE_BROKER_HOME this spawned broker would resolve the machine-level
-    // ~/.c64-re-tools and its own startup staging sweep would run against
-    // real, possibly-live staging on this host.
-    env: { ...process.env, VICE_SUPERVISOR_ALLOW_CONTAINER: "1", VICE_BIN: "/bin/sleep", VICE_ARGS: "600", VICE_BROKER_CONTROL_PORT: "0", VICE_BROKER_HOME: stateDir },
-  }) as ChildProcessWithoutNullStreams;
-  try {
-    const recordPath = join(stateDir, "broker.json");
-    const appeared = await waitFor(() => existsSync(recordPath), 5000);
-    assert.ok(appeared, "broker.json did not appear within deadline");
-
-    const alive = readBrokerLiveness(recordPath);
-    assert.equal(alive.state, "alive", "a freshly-started, running broker's own record must classify as alive");
-
-    // Hand-build a record with a stale heartbeat, sharing the SAME live pid
-    // (liveness of the pid itself is not what distinguishes alive/stale --
-    // only heartbeat_at's age does).
-    const record = JSON.parse(readFileSync(recordPath, "utf8"));
-    const stalePath = join(stateDir, "broker-stale.json");
-    writeFileSync(stalePath, JSON.stringify({ ...record, heartbeat_at: "2020-01-01T00:00:00Z" }));
-    const stale = readBrokerLiveness(stalePath);
-    assert.equal(stale.state, "stale", "a record whose heartbeat is far older than the stale threshold must classify as stale");
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    rmSync(stateDir, { recursive: true, force: true });
-  }
-});
-
-// ============================================================================
 // Task 3: the kernel-enforced singleton guard and its two distinct outcomes
 // (criterion K, D-17, D-18).
 // ============================================================================
@@ -2172,18 +2021,24 @@ async function stopRealBroker(child: ChildProcessWithoutNullStreams): Promise<vo
   if (!exited) child.kill("SIGKILL");
 }
 
+/** Resolves with the control port named on the broker's `vice-broker: ready`
+ * stderr line, or null if the line does not appear before the deadline. */
+async function waitForReadyPort(child: ChildProcessWithoutNullStreams, deadlineMs = 5000): Promise<number | null> {
+  let stderr = "";
+  child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
+  const ready = /vice-broker: ready \(.*\); control listener bound on \S+:(\d+)/;
+  await waitFor(() => ready.test(stderr) || child.exitCode !== null, deadlineMs);
+  const match = ready.exec(stderr);
+  return match ? Number(match[1]) : null;
+}
+
 test("singleton: a second broker started against a live first broker's control port exits quietly (status 0), naming itself a second instance", { timeout: 20000 }, async () => {
   build();
   const stateDir = mkdtempSync(join(tmpdir(), "broker-control-singleton-live-"));
   const first = startRealBroker(stateDir, { VICE_BROKER_CONTROL_PORT: "0" });
-  let firstStderr = "";
-  first.stderr.on("data", (d: Buffer) => (firstStderr += d.toString("utf8")));
   try {
-    const recordPath = join(stateDir, "broker.json");
-    await waitFor(() => existsSync(recordPath), 5000);
-    const before = readFileSync(recordPath, "utf8");
-    const bound = JSON.parse(before).control_port as number;
-    assert.ok(Number.isInteger(bound) && bound > 0);
+    const bound = await waitForReadyPort(first);
+    assert.ok(bound !== null && Number.isInteger(bound) && bound > 0, "the first broker never printed its ready line");
 
     const second = startRealBroker(stateDir, { VICE_BROKER_CONTROL_PORT: String(bound) });
     let secondStderr = "";
@@ -2192,58 +2047,31 @@ test("singleton: a second broker started against a live first broker's control p
     assert.ok(exited, `second broker never exited; stderr so far:\n${secondStderr}`);
     assert.equal(second.exitCode, 0, `second broker must exit quietly (status 0); stderr:\n${secondStderr}`);
     assert.match(secondStderr, /second instance/i);
-
-    const after = readFileSync(recordPath, "utf8");
-    assert.equal(after, before, "the discovery record must be byte-identical before and after the losing second broker's attempt");
+    assert.equal(first.exitCode, null, "the first, live broker must still be running");
   } finally {
     await stopRealBroker(first);
     rmSync(stateDir, { recursive: true, force: true });
   }
 });
 
-test("singleton: a broker started against a port held by a plain non-broker listener, with a stale discovery record present, exits loudly (non-zero) naming the port and what to check", { timeout: 20000 }, async () => {
+test("singleton: a broker started against a port held by a plain non-broker listener exits loudly (non-zero) naming the port and what to check", { timeout: 20000 }, async () => {
   build();
-  const stateDir = mkdtempSync(join(tmpdir(), "broker-control-singleton-stale-"));
-  const recordPath = join(stateDir, "broker.json");
-  // A stale discovery record: a plausible-looking pid, but a heartbeat far
-  // older than the stale threshold.
-  writeFileSync(
-    recordPath,
-    JSON.stringify({
-      version: 1,
-      written_by: "vice-broker.mjs",
-      pid: 999999999,
-      started_at: "2020-01-01T00:00:00Z",
-      heartbeat_at: "2020-01-01T00:00:00Z",
-      node_version: process.version,
-      control_host: "0.0.0.0",
-      control_port: 0,
-      control_token: "0".repeat(64),
-      max_instances: 16,
-      base_port: 6600,
-      poll_ms: 500,
-      dry_run: false,
-    }),
-  );
-  const before = readFileSync(recordPath, "utf8");
+  const stateDir = mkdtempSync(join(tmpdir(), "broker-control-singleton-squat-"));
 
   // A plain, non-broker listener holding a real port -- bindControlListener()
   // itself is a bare TCP bind with no protocol wired up, standing in exactly
-  // for "something that is not a broker" (it never speaks this module's own
-  // wire format).
+  // for "something that is not a broker" (it never answers a hello).
   const squatter = await bindControlListener("127.0.0.1", 0);
   try {
     const child = startRealBroker(stateDir, { VICE_BROKER_CONTROL_PORT: String(squatter.port) });
     let stderr = "";
     child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
-    const exited = await waitFor(() => child.exitCode !== null, 5000);
+    const exited = await waitFor(() => child.exitCode !== null, 10000);
     assert.ok(exited, `broker never exited; stderr so far:\n${stderr}`);
     assert.notEqual(child.exitCode, 0, `must exit non-zero when the port is squatted; stderr:\n${stderr}`);
     assert.match(stderr, new RegExp(String(squatter.port)));
+    assert.match(stderr, /does not answer as a compatible broker/i);
     assert.match(stderr, /check/i);
-
-    const after = readFileSync(recordPath, "utf8");
-    assert.equal(after, before, "the stale record must be byte-identical before and after the loud-failure attempt");
   } finally {
     squatter.server.close();
     rmSync(stateDir, { recursive: true, force: true });
@@ -2255,7 +2083,7 @@ test("singleton: a broker started against a port held by a plain non-broker list
 // never remove a live broker's active staging, whether a second, losing
 // broker process exits quietly or loudly -- and the sweep that DOES run, in
 // the process that actually wins the control-port bind, must still remove
-// genuine crash residue before that broker's discovery record exists. Uses
+// genuine crash residue before that broker prints its ready line. Uses
 // the SAME startRealBroker()/stopRealBroker() helpers as the `singleton:`
 // tests directly above, so every spawned broker here is confined to a
 // temporary VICE_BROKER_HOME the same way.
@@ -2283,15 +2111,11 @@ test("singleton staging (G-64-6): a losing second broker leaves a live first bro
   const home = mkdtempSync(join(tmpdir(), "broker-control-g646-live-"));
   const first = startRealBroker(home, { VICE_BROKER_CONTROL_PORT: "0", VICE_BROKER_CONTROL_HOST: "127.0.0.1" });
   try {
-    const recordPath = join(home, "broker.json");
-    const appeared = await waitFor(() => existsSync(recordPath), 5000);
-    assert.ok(appeared, "the first broker's broker.json did not appear within deadline");
-    const bound = JSON.parse(readFileSync(recordPath, "utf8")).control_port as number;
-    assert.ok(Number.isInteger(bound) && bound > 0);
+    const bound = await waitForReadyPort(first);
+    assert.ok(bound !== null && Number.isInteger(bound) && bound > 0, "the first broker never printed its ready line");
 
-    // Only NOW, after the live first broker has already bound and published
-    // its record, does this test create the session directory its own sweep
-    // must never reach.
+    // Only NOW, after the live first broker is ready, does this test create
+    // the session directory its own sweep must never reach.
     const { dir: sessionDir, filePath, sha256: sha256Before } = seedStagingSession(home, "req-live-1-aaaaaaaa");
 
     const second = startRealBroker(home, { VICE_BROKER_CONTROL_PORT: String(bound), VICE_BROKER_CONTROL_HOST: "127.0.0.1" });
@@ -2316,28 +2140,6 @@ test("singleton staging (G-64-6): a losing second broker leaves a live first bro
 test("singleton staging (G-64-6): a broker that fails loudly on a squatted control port leaves the staging root untouched", { timeout: 20000 }, async () => {
   build();
   const stateDir = mkdtempSync(join(tmpdir(), "broker-control-g646-squat-"));
-  const recordPath = join(stateDir, "broker.json");
-  // A stale discovery record, copied from the squatted-port test directly
-  // above -- a plausible-looking pid, but a heartbeat far older than the
-  // stale threshold.
-  writeFileSync(
-    recordPath,
-    JSON.stringify({
-      version: 1,
-      written_by: "vice-broker.mjs",
-      pid: 999999998,
-      started_at: "2020-01-01T00:00:00Z",
-      heartbeat_at: "2020-01-01T00:00:00Z",
-      node_version: process.version,
-      control_host: "0.0.0.0",
-      control_port: 0,
-      control_token: "0".repeat(64),
-      max_instances: 16,
-      base_port: 6600,
-      poll_ms: 500,
-      dry_run: false,
-    }),
-  );
 
   const { dir: sessionDir, filePath, sha256: sha256Before } = seedStagingSession(stateDir, "req-squat-1-dddddddd");
 
@@ -2349,7 +2151,7 @@ test("singleton staging (G-64-6): a broker that fails loudly on a squatted contr
     const child = startRealBroker(stateDir, { VICE_BROKER_CONTROL_PORT: String(squatter.port), VICE_BROKER_CONTROL_HOST: "127.0.0.1" });
     let stderr = "";
     child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
-    const exited = await waitFor(() => child.exitCode !== null, 5000);
+    const exited = await waitFor(() => child.exitCode !== null, 10000);
     assert.ok(exited, `broker never exited; stderr so far:\n${stderr}`);
     assert.notEqual(child.exitCode, 0, `must exit non-zero when the port is squatted; stderr:\n${stderr}`);
     assert.match(stderr, new RegExp(String(squatter.port)));
@@ -2363,7 +2165,7 @@ test("singleton staging (G-64-6): a broker that fails loudly on a squatted contr
   }
 });
 
-test("startup staging sweep (G-64-6): a broker that wins the control-port bind has removed a crashed broker's staging residue by the time its discovery record exists", { timeout: 20000 }, async () => {
+test("startup staging sweep (G-64-6): a broker that wins the control-port bind has removed a crashed broker's staging residue by the time it prints its ready line", { timeout: 20000 }, async () => {
   build();
   const home = mkdtempSync(join(tmpdir(), "broker-control-g646-crash-"));
   try {
@@ -2377,12 +2179,9 @@ test("startup staging sweep (G-64-6): a broker that wins the control-port bind h
 
     const child = startRealBroker(home, { VICE_BROKER_CONTROL_PORT: "0", VICE_BROKER_CONTROL_HOST: "127.0.0.1" });
     try {
-      const recordPath = join(home, "broker.json");
-      const appeared = await waitFor(() => existsSync(recordPath), 5000);
-      assert.ok(appeared, "broker.json did not appear within deadline");
-      // No `await` between the existsSync() above and these two assertions:
-      // the sweep and the record write are both synchronous within run(),
-      // so nothing else can interleave once the record is known to exist.
+      const bound = await waitForReadyPort(child);
+      assert.ok(bound !== null, "the broker never printed its ready line");
+      // The sweep runs synchronously before the ready line is written.
       assert.equal(existsSync(crashedWithFile), false, "the crashed session directory holding a staged file must be gone");
       assert.equal(existsSync(crashedEmpty), false, "the empty, interrupted-removal-shaped crashed session directory must be gone");
     } finally {
@@ -2394,21 +2193,20 @@ test("startup staging sweep (G-64-6): a broker that wins the control-port bind h
 });
 
 test("the two singleton messages are textually distinct, and neither is a substring of the other", () => {
-  const quiet = "vice-broker: another broker is already running and holds this control port -- exiting quietly as a second instance";
-  const loud = 'vice-broker: FATAL -- control port is held by something that does not answer as a broker (discovery record classified "stale")';
+  const quiet = "vice-broker: another broker (version 1.0.0) is already running and holds control port 19510 -- exiting quietly as a second instance";
+  const loud = "vice-broker: FATAL -- control port 19510 is held by something that does not answer as a compatible broker.";
   assert.notEqual(quiet, loud);
   assert.ok(!quiet.includes(loud) && !loud.includes(quiet));
 });
 
-test("structural: the bind call precedes the record write in vice-broker.mts's own startup sequence", () => {
+test("structural: the bind call precedes the staging sweep and the ready line in vice-broker.mts's own startup sequence", () => {
   const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
-  // 62-03: the single-host startControlListener() call was replaced by the
-  // multi-address startControlListenerOnHosts() (BROKER-03) -- this
-  // structural check follows that rename rather than the old literal.
   const bindIdx = source.indexOf("await startControlListenerOnHosts(bindHosts, {");
-  const writeIdx = source.indexOf("writeBrokerRecordFile(args.stateDir, record);");
-  assert.ok(bindIdx !== -1 && writeIdx !== -1);
-  assert.ok(bindIdx < writeIdx, "the control listener must bind BEFORE the discovery record is written");
+  const sweepIdx = source.indexOf("sweepOrphanedStaging({ root: brokerStagingDir() });");
+  const readyIdx = source.indexOf("`vice-broker: ready (");
+  assert.ok(bindIdx !== -1 && sweepIdx !== -1 && readyIdx !== -1);
+  assert.ok(bindIdx < sweepIdx, "the control listener must bind BEFORE the staging sweep runs");
+  assert.ok(sweepIdx < readyIdx, "the staging sweep must run BEFORE the ready line is written");
 });
 
 test("structural: vice-broker.mts or broker-control.mts states in a comment that the singleton guarantee holds only while the control port keeps its default", () => {
@@ -2420,12 +2218,7 @@ test("structural: vice-broker.mts or broker-control.mts states in a comment that
 });
 
 // ============================================================================
-// 01.6.2-13-PLAN.md, Task 2: the release and recycle handlers must set the
-// deliberate-death marker BEFORE their own kill call, with OPPOSITE
-// respawn-after-kill answers -- held here by a region-scoped source-order
-// structural gate, following the SAME region-scoping technique the two
-// structural tests above already use for this file, rather than inventing a
-// second one.
+// Source-region helpers for the structural gates in this file.
 // ============================================================================
 
 /** Strips both `/* ... *\/` (including JSDoc) block comments and whole `//`
@@ -2451,50 +2244,6 @@ function extractSourceRegion(source: string, startMarker: string, endMarker: str
   return source.slice(startIdx, endIdx);
 }
 
-test("structural: the release and recycle handlers both set the deliberate-death marker before their own kill call, and set opposite respawn-after-kill answers", () => {
-  const source = stripCommentsForStructuralGate(readFileSync(join(HERE, "vice-broker.mts"), "utf8"));
-
-  const recycleRegion = extractSourceRegion(
-    source,
-    "export async function handleRecycleForRealBroker(targetId: string, state: BrokerState, deps: HandleRecycleDeps = {}): Promise<RecycleOutcome> {",
-    // Plan 41-05 (folded todo): the end marker is RENAMED, not deleted --
-    // the retired maintainWarmFloorForRealBroker() this used to bound the
-    // region against is replaced by promoteLaunchingForRealBroker(), the
-    // next function declared after handleRecycleForRealBroker() in source
-    // order.
-    "function promoteLaunchingForRealBroker(state: BrokerState, backend: ViceBackend): Promise<void> {",
-  );
-  const releaseRegion = extractSourceRegion(
-    source,
-    // Plan 63-04 Task 3: the marker is UPDATED, not deleted -- the handler
-    // gained an optional `deps: HandleReleaseDeps = {}` parameter, and this
-    // region-scoping marker must track its real signature or this whole
-    // gate would silently stop finding the function at all.
-    "export function handleRelease(requestId: string, state: BrokerState, deps: HandleReleaseDeps = {}): void {",
-    "async function run(args: ParsedArgs): Promise<void> {",
-  );
-
-  const recycleMarkerIdx = recycleRegion.indexOf("markDeliberateDeath(");
-  const recycleKillIdx = recycleRegion.indexOf("verifiedKill(");
-  assert.ok(recycleMarkerIdx !== -1, "the recycle handler must call the shared marker-and-intent setter");
-  assert.ok(recycleKillIdx !== -1, "the recycle handler must call verifiedKill()");
-  assert.ok(recycleMarkerIdx < recycleKillIdx, "the recycle handler must set the marker BEFORE its own kill call");
-
-  const releaseMarkerIdx = releaseRegion.indexOf("markDeliberateDeath(");
-  const releaseKillIdx = releaseRegion.indexOf("verifiedKill(");
-  assert.ok(releaseMarkerIdx !== -1, "the release handler must call the shared marker-and-intent setter");
-  assert.ok(releaseKillIdx !== -1, "the release handler must call verifiedKill()");
-  assert.ok(releaseMarkerIdx < releaseKillIdx, "the release handler must set the marker BEFORE its own kill call");
-
-  const recycleCall = recycleRegion.match(/markDeliberateDeath\([^)]*\)/);
-  const releaseCall = releaseRegion.match(/markDeliberateDeath\([^)]*\)/);
-  assert.ok(recycleCall, "the recycle handler's setter call must be matchable");
-  assert.ok(releaseCall, "the release handler's setter call must be matchable");
-  assert.notEqual(recycleCall![0], releaseCall![0], "the two call sites must pass opposite respawn-after-kill answers");
-  assert.match(recycleCall![0], /\btrue\b/, "the recycle handler must pass a TRUE respawn-after-kill answer");
-  assert.match(releaseCall![0], /\bfalse\b/, "the release handler must pass a FALSE respawn-after-kill answer");
-});
-
 test("a bind failure whose cause is NOT address-in-use produces its own loud failure, distinct from either singleton path", async () => {
   build();
   const stateDir = mkdtempSync(join(tmpdir(), "broker-control-bind-other-failure-"));
@@ -2509,7 +2258,7 @@ test("a bind failure whose cause is NOT address-in-use produces its own loud fai
     assert.ok(exited, `broker never exited; stderr so far:\n${stderr}`);
     assert.notEqual(child.exitCode, 0);
     assert.doesNotMatch(stderr, /second instance/i);
-    assert.doesNotMatch(stderr, /does not answer as a broker/i);
+    assert.doesNotMatch(stderr, /does not answer as a compatible broker/i);
     assert.match(stderr, /failed to start control listener/i);
   } finally {
     rmSync(stateDir, { recursive: true, force: true });
@@ -2542,14 +2291,13 @@ test("a bind failure whose cause is NOT address-in-use produces its own loud fai
  * hardcoded below rather than left as a parameter with one legal value. */
 async function startProfileRecordingListener(): Promise<{
   listener: StartControlListenerResult;
-  token: string;
   received: Array<LaunchProfile | undefined>;
 }> {
   const received: Array<LaunchProfile | undefined> = [];
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: async (id: string, profile?: LaunchProfile) => {
       received.push(profile);
-      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } } as AcquireOutcome;
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } } as AcquireOutcome;
     },
     onHostState: () => ({
       pid: process.pid,
@@ -2561,10 +2309,10 @@ async function startProfileRecordingListener(): Promise<{
       backend: "stock",
     }),
   });
-  return { listener, token, received };
+  return { listener, received };
 }
 
-test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02, A-01/D-06/D-01): now exactly thirteen members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, attach is plan 63-01's reviewed tenth op, operation is plan 63-03's reviewed eleventh op, stage_file/transfer are plan 64-02's twelfth/thirteenth ops (XFER-04), and this union is never widened again PER-TOOL", () => {
+test("ControlRequestKind: the message set is exactly thirteen reviewed members, and this union is never widened PER-TOOL", () => {
   // Read off the type's own declaration in the source rather than a
   // hand-maintained list here: a second list would be the very drift this
   // asserts against. The union is a single line by convention in this file.
@@ -2576,32 +2324,18 @@ test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02, A-01/D-06/D-01): now ex
     .map((s) => s.trim().replace(/^"|"$/g, ""))
     .filter((s) => s !== "");
   assert.deepEqual(members,
-    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach", "operation", "stage_file", "transfer"],
-    "the message set must be exactly the prior eleven plus plan 64-02's stage_file and transfer (XFER-04) -- a " +
-      "genuinely reviewed widening, not a per-tool one: a second host tool is still a new HOST_TOOL_IDS entry in " +
-      "host-tool.mts, never a fourteenth ControlRequestKind member",
-  );
-});
-
-test("structural (34-01, SEAM-01): StartControlListenerOptions declares onHostTool, and the host_tool dispatch branch in handleLine() appears BEFORE the acquire branch -- routed before any lease-bearing path", () => {
-  const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
-  assert.match(source, /onHostTool:\s*\(raw: unknown\) => Promise<unknown>/, "StartControlListenerOptions must declare onHostTool");
-  const hostToolDispatchIdx = source.indexOf('req.op === "host_tool"');
-  const acquireDispatchIdx = source.indexOf('req.op === "acquire"');
-  assert.ok(hostToolDispatchIdx !== -1, "the host_tool dispatch branch must exist in handleLine()");
-  assert.ok(acquireDispatchIdx !== -1, "the acquire dispatch branch must exist in handleLine()");
-  assert.ok(
-    hostToolDispatchIdx < acquireDispatchIdx,
-    "the host_tool dispatch branch must appear at a LOWER character index than the acquire comparison -- routed " +
-      "before any lease-bearing path",
+    ["acquire", "release", "status", "host_state", "monitor_claim", "monitor_release", "hello", "attach", "operation", "stage_file", "transfer", "host_tool_stage", "host_tool_run"],
+    "the message set must be exactly these thirteen members " +
+      "(SEAM-01) -- a genuinely reviewed widening, not a per-tool one: a second host tool is still a new " +
+      "HOST_TOOL_IDS entry in host-tool.mts, never a further ControlRequestKind member",
   );
 });
 
 test("acquire profile (33-06, D-15, tracer): {op:'acquire', profile:{warp:true}} arrives at onAcquire as {warp:true}, over a REAL control-plane round trip", async () => {
-  const { listener, token, received } = await startProfileRecordingListener();
+  const { listener, received } = await startProfileRecordingListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-profile-1", token, profile: { warp: true } });
+    client.send({ op: "acquire", id: "req-profile-1", profile: { warp: true } });
     const grant = await client.next();
     assert.equal(grant.kind, "grant", `expected a grant, got ${JSON.stringify(grant)}`);
     assert.equal(received.length, 1, "onAcquire must have been called exactly once");
@@ -2613,10 +2347,10 @@ test("acquire profile (33-06, D-15, tracer): {op:'acquire', profile:{warp:true}}
 });
 
 test("acquire profile (33-06, D-15): both knobs together arrive as {warp:true, headless:true}, and a both-false profile arrives as {warp:false, headless:false} -- never coerced away", async () => {
-  const { listener, token, received } = await startProfileRecordingListener();
+  const { listener, received } = await startProfileRecordingListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-profile-both", token, profile: { warp: true, headless: true } });
+    client.send({ op: "acquire", id: "req-profile-both", profile: { warp: true, headless: true } });
     assert.equal((await client.next()).kind, "grant");
     assert.deepEqual(received[0], { warp: true, headless: true });
   } finally {
@@ -2627,7 +2361,7 @@ test("acquire profile (33-06, D-15): both knobs together arrive as {warp:true, h
   const second = await startProfileRecordingListener();
   const client2 = makeClient(second.listener.port);
   try {
-    client2.send({ op: "acquire", id: "req-profile-false", token: second.token, profile: { warp: false, headless: false } });
+    client2.send({ op: "acquire", id: "req-profile-false", profile: { warp: false, headless: false } });
     assert.equal((await client2.next()).kind, "grant");
     assert.deepEqual(second.received[0], { warp: false, headless: false }, "explicit false must survive narrowing as false -- the eligibility rule, not this boundary, is what makes false and absent equivalent");
   } finally {
@@ -2637,10 +2371,10 @@ test("acquire profile (33-06, D-15): both knobs together arrive as {warp:true, h
 });
 
 test("acquire profile (33-06, edge: empty): an acquire with NO profile key reaches onAcquire with `undefined`, and its wire line is byte-identical to the pre-33-06 line", async () => {
-  const { listener, token, received } = await startProfileRecordingListener();
+  const { listener, received } = await startProfileRecordingListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-no-profile", token });
+    client.send({ op: "acquire", id: "req-no-profile" });
     assert.equal((await client.next()).kind, "grant");
     assert.equal(received.length, 1);
     assert.equal(received[0], undefined, "an absent profile must arrive as undefined -- never as {} and never as a default");
@@ -2660,24 +2394,23 @@ test("acquire profile (33-06, edge: empty): an acquire with NO profile key reach
 
 async function startLabelRecordingListener(): Promise<{
   listener: StartControlListenerResult;
-  token: string;
   received: Array<string | null | undefined>;
 }> {
   const received: Array<string | null | undefined> = [];
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: async (_id: string, _profile?: LaunchProfile, label?: string | null) => {
       received.push(label);
-      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } } as AcquireOutcome;
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } } as AcquireOutcome;
     },
   });
-  return { listener, token, received };
+  return { listener, received };
 }
 
 test("acquire session label (63-05, SESS-06): {op:'acquire', label:'my-session'} arrives at onAcquire's third argument as 'my-session'", async () => {
-  const { listener, token, received } = await startLabelRecordingListener();
+  const { listener, received } = await startLabelRecordingListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-label-1", token, label: "my-session" });
+    client.send({ op: "acquire", id: "req-label-1", label: "my-session" });
     assert.equal((await client.next()).kind, "grant");
     assert.equal(received.length, 1);
     assert.equal(received[0], "my-session");
@@ -2688,10 +2421,10 @@ test("acquire session label (63-05, SESS-06): {op:'acquire', label:'my-session'}
 });
 
 test("acquire session label (63-05, edge: empty): an acquire with NO label key reaches onAcquire's third argument as null, never fabricated", async () => {
-  const { listener, token, received } = await startLabelRecordingListener();
+  const { listener, received } = await startLabelRecordingListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-label-none", token });
+    client.send({ op: "acquire", id: "req-label-none" });
     assert.equal((await client.next()).kind, "grant");
     assert.equal(received.length, 1);
     assert.equal(received[0], null, "an absent label must arrive as null, never as an empty string or undefined-turned-truthy value");
@@ -2702,11 +2435,11 @@ test("acquire session label (63-05, edge: empty): an acquire with NO label key r
 });
 
 test("acquire session label (63-05, SESS-06): a label carrying a line terminator and 200 characters arrives stripped and truncated to at most 64 characters", async () => {
-  const { listener, token, received } = await startLabelRecordingListener();
+  const { listener, received } = await startLabelRecordingListener();
   const client = makeClient(listener.port);
   const hostile = `evil\nlabel${"x".repeat(195)}`;
   try {
-    client.send({ op: "acquire", id: "req-label-hostile", token, label: hostile });
+    client.send({ op: "acquire", id: "req-label-hostile", label: hostile });
     assert.equal((await client.next()).kind, "grant");
     assert.equal(received.length, 1);
     const got = received[0];
@@ -2720,10 +2453,10 @@ test("acquire session label (63-05, SESS-06): a label carrying a line terminator
 });
 
 test("acquire session label (63-05): a non-string label (a number) is refused the same way a hostile string is -- collapsed to null, never coerced to a string", async () => {
-  const { listener, token, received } = await startLabelRecordingListener();
+  const { listener, received } = await startLabelRecordingListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-label-number", token, label: 12345 });
+    client.send({ op: "acquire", id: "req-label-number", label: 12345 });
     assert.equal((await client.next()).kind, "grant");
     assert.equal(received[0], null);
   } finally {
@@ -2744,10 +2477,10 @@ test("acquire session label (63-05): a non-string label (a number) is refused th
 // ---------------------------------------------------------------------------
 
 test("acquire profile: profile.warp/profile.headless are accepted and arrive at onAcquire unchanged", async () => {
-  const { listener, token, received } = await startProfileRecordingListener();
+  const { listener, received } = await startProfileRecordingListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-warp", token, profile: { warp: true, headless: true } });
+    client.send({ op: "acquire", id: "req-warp", profile: { warp: true, headless: true } });
     assert.equal((await client.next()).kind, "grant");
     assert.deepEqual(received[0], { warp: true, headless: true }, "the profile arrives unchanged");
   } finally {
@@ -2757,10 +2490,10 @@ test("acquire profile: profile.warp/profile.headless are accepted and arrive at 
 });
 
 test("acquire profile (33-06, T-33-03): `profile: null` is accepted as profile-less rather than refused", async () => {
-  const { listener, token, received } = await startProfileRecordingListener();
+  const { listener, received } = await startProfileRecordingListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-null-profile", token, profile: null });
+    client.send({ op: "acquire", id: "req-null-profile", profile: null });
     assert.equal((await client.next()).kind, "grant", "null must be tolerated as 'no profile', matching an absent key");
     assert.equal(received[0], undefined);
   } finally {
@@ -2792,10 +2525,10 @@ const MALFORMED_PROFILES: Array<{ label: string; profile: unknown; names: string
 
 for (const { label, profile, names } of MALFORMED_PROFILES) {
   test(`acquire profile (33-06, T-33-03): ${label} is refused bad_request naming the offending value, and onAcquire is never called`, async () => {
-    const { listener, token, received } = await startProfileRecordingListener();
+    const { listener, received } = await startProfileRecordingListener();
     const client = makeClient(listener.port);
     try {
-      client.send({ op: "acquire", id: "req-malformed", token, profile } as Record<string, unknown>);
+      client.send({ op: "acquire", id: "req-malformed", profile } as Record<string, unknown>);
       const resp = await client.next();
       assert.equal(resp.kind, "error", `expected an error line, got ${JSON.stringify(resp)}`);
       assert.equal(resp.code, "bad_request", "malformed profiles reuse the EXISTING bad_request code -- no new error code was added");
@@ -2812,12 +2545,12 @@ for (const { label, profile, names } of MALFORMED_PROFILES) {
 }
 
 test("acquire profile (33-06, T-33-03): a bad_request refusal does not enqueue the request -- the pending-acquire queue length is unchanged", async () => {
-  const { listener, token, received } = await startProfileRecordingListener();
+  const { listener, received } = await startProfileRecordingListener();
   const client = makeClient(listener.port);
   try {
     const before = listener.pendingAcquires.length;
     assert.equal(before, 0, "this test's own precondition: the queue starts empty");
-    client.send({ op: "acquire", id: "req-no-enqueue", token, profile: { turbo: true } } as Record<string, unknown>);
+    client.send({ op: "acquire", id: "req-no-enqueue", profile: { turbo: true } } as Record<string, unknown>);
     const resp = await client.next();
     assert.equal(resp.code, "bad_request");
     // The enqueue decision is made synchronously in the same tick the
@@ -2838,12 +2571,12 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
   // present the SAME profile.
   const received: Array<LaunchProfile | undefined> = [];
   let attempts = 0;
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: async (_id: string, profile?: LaunchProfile) => {
       attempts++;
       received.push(profile);
       if (attempts === 1) return { ok: false, reason: "launch_in_flight" } as AcquireOutcome;
-      return { ok: true, grant: { port: 6601, url: "http://127.0.0.1:6601/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6601" } } as AcquireOutcome;
+      return { ok: true, grant: { port: 6601, url: "http://127.0.0.1:6601/mcp" } } as AcquireOutcome;
     },
     // Stock, because a `{warp:true}` acquire is only coherent there (33
     // review WR-03): on fork the boundary now refuses it rather than
@@ -2861,7 +2594,7 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
   });
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-queued-profile", token, profile: { warp: true } });
+    client.send({ op: "acquire", id: "req-queued-profile", profile: { warp: true } });
     const queued = await waitFor(() => listener.pendingAcquires.length === 1, 2000);
     assert.ok(queued, "the launch_in_flight outcome must have queued the request");
     await drainPendingAcquires(listener.pendingAcquires);
@@ -2876,15 +2609,12 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
 });
 
 // ============================================================================
-// Plan 62-01, task 1: the `hello` handshake op and its pre-token-gate
-// dispatch. See this module's own handleLine() comment for why the arm's
-// PLACEMENT (before tokensMatch(), not one more arm of the existing chain)
-// is load-bearing, not incidental.
+// Plan 62-01, task 1: the `hello` handshake op.
 // ============================================================================
 
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
-test("the ControlRequestKind union has exactly thirteen members including hello, attach, operation, stage_file and transfer, and the hello arm's dispatch sits before the tokensMatch() call", () => {
+test("the ControlRequestKind union has exactly thirteen members including hello, attach, operation, stage_file, transfer, host_tool_stage and host_tool_run", () => {
   const source = readFileSync(BROKER_CONTROL_MTS, "utf8");
 
   const unionMatch = source.match(/export type ControlRequestKind = ([^;]+);/);
@@ -2899,18 +2629,11 @@ test("the ControlRequestKind union has exactly thirteen members including hello,
   assert.ok(members.includes('"operation"'), `operation must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"stage_file"'), `stage_file must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"transfer"'), `transfer must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
-
-  const helloArmOffset = source.indexOf('req.op === "hello"');
-  const tokensMatchCallOffset = source.indexOf("tokensMatch(token, opts.token)");
-  assert.ok(helloArmOffset >= 0, "hello dispatch (req.op === \"hello\") not found in source");
-  assert.ok(tokensMatchCallOffset >= 0, "tokensMatch(token, opts.token) call not found in source");
-  assert.ok(
-    helloArmOffset < tokensMatchCallOffset,
-    `hello arm (offset ${helloArmOffset}) must be dispatched BEFORE tokensMatch() (offset ${tokensMatchCallOffset}) -- a future refactor moved the arm below the gate`,
-  );
+  assert.ok(members.includes('"host_tool_stage"'), `host_tool_stage must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
+  assert.ok(members.includes('"host_tool_run"'), `host_tool_run must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
 });
 
-test("a raw hello line with NO token field returns a handshake reply, never unauthorized", async () => {
+test("a raw hello line returns a handshake reply", async () => {
   const { listener } = await startTestListener();
   const client = makeClient(listener.port);
   try {
@@ -2925,21 +2648,7 @@ test("a raw hello line with NO token field returns a handshake reply, never unau
   }
 });
 
-test("a raw status line with NO token field still returns the unauthorized error code, proving the eight existing ops' gate is unchanged", async () => {
-  const { listener } = await startTestListener();
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "status" });
-    const reply = await client.next();
-    assert.equal(reply.kind, "error");
-    assert.equal(reply.code, "unauthorized");
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-test("the hello reply's key set is exactly kind/protocol/version/tag -- no token, path, hostname or instance detail may be added without this test going red", async () => {
+test("the hello reply's key set is exactly kind/protocol/version/tag -- no path, hostname or instance detail may be added without this test going red", async () => {
   const { listener } = await startTestListener();
   const client = makeClient(listener.port);
   try {
@@ -2994,7 +2703,7 @@ test("hello's version uses the injected helloVersion override when supplied, and
 });
 
 test("resolveBrokerVersion() degrades to the dev placeholder when no package.json is found at either candidate", () => {
-  const version = resolveBrokerVersion("/tmp/gsd-62-01-nonexistent-dir-for-resolveBrokerVersion-test");
+  const version = resolveBrokerVersion("/tmp/nonexistent-dir-for-resolveBrokerVersion-test");
   assert.equal(version, "0.0.0-dev");
 });
 
@@ -3120,24 +2829,13 @@ test("enumerateBindHosts: calls the injected networkInterfaces() exactly once pe
 
 test("startControlListenerOnHosts: two listeners on two different bound addresses share exactly one pending-acquire queue, serving two acquires in arrival order", async () => {
   let inFlight = true;
-  const token = newControlToken();
   const listenerOpts = {
     port: 0,
-    token,
     onAcquire: async (): Promise<AcquireOutcome> => {
       if (inFlight) return { ok: false, reason: "launch_in_flight" };
-      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } };
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } };
     },
     onRelease: () => {},
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by this test",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,
@@ -3152,7 +2850,6 @@ test("startControlListenerOnHosts: two listeners on two different bound addresse
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: true }),
     onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
     onOperation: (): OperationNoteOutcome => ({ ok: true }),
-    onHostTool: async () => ({ ok: false, message: "not exercised by this test" }),
   };
 
   // Two distinct loopback addresses -- both bindable without extra
@@ -3168,9 +2865,9 @@ test("startControlListenerOnHosts: two listeners on two different bound addresse
     const clientA = makeClient(listeners[0].port, listeners[0].host);
     const clientB = makeClient(listeners[1].port, listeners[1].host);
     try {
-      clientA.send({ op: "acquire", id: "req-A", token });
+      clientA.send({ op: "acquire", id: "req-A" });
       await waitFor(() => pendingAcquires.length === 1, 2000);
-      clientB.send({ op: "acquire", id: "req-B", token });
+      clientB.send({ op: "acquire", id: "req-B" });
       await waitFor(() => pendingAcquires.length === 2, 2000);
 
       assert.deepEqual(
@@ -3217,10 +2914,10 @@ test("attachControlProtocol: every accepted connection gets a keepalive delay --
     return original.call(this, enable, ms);
   } as typeof original;
   try {
-    const { listener, token } = await startTestListener();
+    const { listener } = await startTestListener();
     try {
       const client = makeClient(listener.port);
-      client.send({ op: "status", token });
+      client.send({ op: "status" });
       await client.next();
       client.close();
       await waitFor(() => calls.length > 0, 2000);
@@ -3265,11 +2962,11 @@ test("two sessions, one broker: two connections declaring two labels each acquir
   // for the resulting grants is delivered to the wire unchanged.
   const grants = new Map<string, { port: number; label: string | null }>();
   let nextPort = 16700;
-  const { listener, token, releases } = await startTestListener({
+  const { listener, releases } = await startTestListener({
     onAcquire: async (id: string, _profile?: LaunchProfile, label?: string | null) => {
       const port = nextPort++;
       grants.set(id, { port, label: label ?? null });
-      return { ok: true, grant: { port, url: `http://127.0.0.1:${port}/mcp`, epochFile: `/tmp/${port}/epoch.json`, supervisorDir: `/tmp/${port}` } };
+      return { ok: true, grant: { port, url: `http://127.0.0.1:${port}/mcp` } };
     },
     onStatus: (): StatusInstanceEntry[] =>
       Array.from(grants.entries()).map(([grantId, g]) => ({
@@ -3287,15 +2984,15 @@ test("two sessions, one broker: two connections declaring two labels each acquir
   const clientA = makeClient(listener.port);
   const clientB = makeClient(listener.port);
   try {
-    clientA.send({ op: "acquire", id: "grant-a", token, label: "session-a" });
+    clientA.send({ op: "acquire", id: "grant-a", label: "session-a" });
     const grantA = await clientA.next();
     assert.equal(grantA.kind, "grant", `expected a grant for A, got ${JSON.stringify(grantA)}`);
 
-    clientB.send({ op: "acquire", id: "grant-b", token, label: "session-b" });
+    clientB.send({ op: "acquire", id: "grant-b", label: "session-b" });
     const grantB = await clientB.next();
     assert.equal(grantB.kind, "grant", `expected a grant for B, got ${JSON.stringify(grantB)}`);
 
-    clientA.send({ op: "status", token });
+    clientA.send({ op: "status" });
     const status1 = await clientA.next();
     const entries1 = status1.instances as StatusInstanceEntry[];
     assert.equal(entries1.length, 2, "both live grants must be named");
@@ -3314,7 +3011,7 @@ test("two sessions, one broker: two connections declaring two labels each acquir
     assert.deepEqual(releases, ["grant-a"], "closing A must release only A's own grant id -- B's is untouched");
     grants.delete("grant-a");
 
-    clientB.send({ op: "status", token });
+    clientB.send({ op: "status" });
     const status2 = await clientB.next();
     const entries2 = status2.instances as StatusInstanceEntry[];
     assert.equal(entries2.length, 1, "only B's grant remains");
@@ -3337,12 +3034,17 @@ test("two sessions, one broker: two connections declaring two labels each acquir
 // on a DIFFERENT connection than the one that named a target_id, except
 // `transfer` never reads target_id at all, so it cannot be exercised by
 // this test's target_id-substitution shape.
-const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "host_tool", "hello", "transfer"]);
+// `host_tool_stage`/`host_tool_run` (Phase 65, SEAM-01) join this set too:
+// neither reads `target_id` at all -- `host_tool_stage` carries only
+// `files`, `host_tool_run` carries `tool`/`args`/`request` (a request KEY,
+// never a target id), and both are gated on a per-connection BOUND request
+// key, never on `ownsTarget()`.
+const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "hello", "transfer", "host_tool_stage", "host_tool_run"]);
 // The set this invariant test actually EXERCISES below -- every op whose
 // dispatch arm reads `req.target_id` and resolves it against a grant.
 // `stage_file` (Phase 64, XFER-04) joins this set: gated by the SAME
-// ownsTarget() predicate as monitor_claim/monitor_release/recycle/operation.
-const TARGET_NAMING_OPS_UNDER_TEST = ["monitor_claim", "monitor_release", "recycle", "attach", "operation", "stage_file"];
+// ownsTarget() predicate as monitor_claim/monitor_release/operation.
+const TARGET_NAMING_OPS_UNDER_TEST = ["monitor_claim", "monitor_release", "attach", "operation", "stage_file"];
 
 test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session's declared label used as a target id, byte-identically to a bare unrelated garbage target id, and the refusal never quotes the label back; the covered op set is asserted against ControlRequestKind so a future target-naming op reds this test until it is listed", async () => {
   // Structural half FIRST: read ControlRequestKind's own live declaration
@@ -3376,7 +3078,7 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
   // target id. The two responses must be byte-identical -- proving the
   // label is never resolved to anything, treated exactly like any other
   // unrecognised string.
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: grantingAcquire(),
     onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "denied" }),
   });
@@ -3384,16 +3086,16 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
   const clientB = makeClient(listener.port);
   const aLabel = "agent-session-a-declared-label";
   try {
-    clientA.send({ op: "acquire", id: "grant-a", token, label: aLabel });
+    clientA.send({ op: "acquire", id: "grant-a", label: aLabel });
     const grantA = await clientA.next();
     assert.equal(grantA.kind, "grant", `precondition: A must hold a grant; got ${JSON.stringify(grantA)}`);
 
-    await acquireGrant(clientB, token, "grant-b");
+    await acquireGrant(clientB, "grant-b");
 
     const garbageId = "totally-unrelated-garbage-id-12345";
 
     for (const op of TARGET_NAMING_OPS_UNDER_TEST) {
-      const baseRequest: Record<string, unknown> = { op, token, channel: "binary" };
+      const baseRequest: Record<string, unknown> = { op, channel: "binary" };
       if (op === "attach") baseRequest.handle = "bogus-handle-b-does-not-hold";
       if (op === "operation") baseRequest.name = "vice_ping";
       if (op === "stage_file") baseRequest.slot = "autostart";
@@ -3417,10 +3119,10 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
     }
 
     // A's own grant must be entirely untouched by every attempt above --
-    // prove it can still recycle itself through its own connection.
-    clientA.send({ op: "recycle", id: "recycle-a-still-alive", target_id: "grant-a", token });
-    const recycleResp = await clientA.next();
-    assert.equal(recycleResp.kind, "recycle_ack", "A's own grant must be unaffected by every refused attempt against its label");
+    // prove it can still declare an operation on it through its own connection.
+    clientA.send({ op: "operation", id: "op-a-still-alive", target_id: "grant-a", name: "vice_ping" });
+    const ownResp = await clientA.next();
+    assert.equal(ownResp.kind, "operation_noted", "A's own grant must be unaffected by every refused attempt against its label");
   } finally {
     clientA.close();
     clientB.close();
@@ -3430,32 +3132,27 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
 
 // ============================================================================
 // Plan 63-05, Task 3 (SESS-01): the behavioural half of "a stateless call
-// binds no lease". The stateless call shape already ships (host-tool-
-// client.ts's hostToolOverControlPlane()) and its own callback (onHostTool)
-// is declared separately from every lease callback, so the dispatch branch
-// structurally cannot reach lease state -- see StartControlListenerOptions'
-// own onHostTool comment. What this proves is the OBSERVATION a reader of
+// binds no lease". The host-tool callbacks are declared separately from
+// every lease callback, so the dispatch arms structurally cannot reach lease
+// state. What this proves is the OBSERVATION a reader of
 // status would actually rely on: the broker's state is unchanged across
 // such a call, not merely "the callback is declared separately" as a claim
 // read out of a comment.
 // ============================================================================
 
-test("stateless call (63-05, SESS-01): a host_tool request never fires an acquire, release, recycle, monitor-claim, monitor-release, attach or operation callback, the closed connection's own close triggers no release, and status is unchanged across ten sequential calls", async () => {
-  const calls = { acquire: 0, release: 0, recycle: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 };
+test("stateless call (63-05, SESS-01): a host_tool_stage/host_tool_run pair never fires an acquire, release, monitor-claim, monitor-release, attach or operation callback, the closed connection's own close triggers no release, and status is unchanged across ten sequential calls", async () => {
+  const calls = { acquire: 0, release: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 };
+  let stageCounter = 0;
   const fixedStatus: StatusInstanceEntry[] = [
     { port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: null, hasMonitorClient: false, sessionLabel: null, grantId: null, operation: null },
   ];
-  const { listener, token } = await startTestListener({
+  const { listener } = await startTestListener({
     onAcquire: async () => {
       calls.acquire++;
       return { ok: false, reason: "internal" } as AcquireOutcome;
     },
     onRelease: () => {
       calls.release++;
-    },
-    onRecycle: async () => {
-      calls.recycle++;
-      return { port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "grant_lookup_failed", reason: "" };
     },
     onStatus: () => fixedStatus,
     onMonitorClaim: () => {
@@ -3474,19 +3171,23 @@ test("stateless call (63-05, SESS-01): a host_tool request never fires an acquir
       calls.operation++;
       return { ok: true };
     },
-    onHostTool: async () => ({ ok: true, tool: "acme.build", exitStatus: 0, results: [], stderrTail: "" }),
+    onHostToolStage: () => ({ ok: true, requestKey: `stateless-${stageCounter++}`, treeHandles: [], fileHandles: [] }),
+    onHostToolRun: async () => ({ ok: true, tool: "acme.build", exitStatus: 0, results: [], stderrTail: "" }),
   });
 
   const observer = makeClient(listener.port);
   try {
-    observer.send({ op: "status", token });
+    observer.send({ op: "status" });
     const snapshotBefore = await observer.next();
 
     for (let i = 0; i < 10; i++) {
       const stateless = makeClient(listener.port);
-      stateless.send({ op: "host_tool", id: `stateless-${i}`, token, tool: "acme.build", args: {} });
+      stateless.send({ op: "host_tool_stage", files: [] });
+      const staged = (await stateless.next()) as { kind: string; request: string };
+      assert.equal(staged.kind, "host_tool_staged", `stateless stage ${i} must succeed against the stubbed onHostToolStage`);
+      stateless.send({ op: "host_tool_run", tool: "acme.build", args: {}, request: staged.request });
       const reply = (await stateless.next()) as { ok: boolean };
-      assert.equal(reply.ok, true, `stateless call ${i} must succeed against the stubbed onHostTool`);
+      assert.equal(reply.ok, true, `stateless call ${i} must succeed against the stubbed onHostToolRun`);
       stateless.close();
       // Let the "close" event on THIS connection actually fire and run
       // through attachControlProtocol()'s own close handler before moving
@@ -3495,14 +3196,14 @@ test("stateless call (63-05, SESS-01): a host_tool request never fires an acquir
       await waitFor(() => true, 10);
     }
 
-    observer.send({ op: "status", token });
+    observer.send({ op: "status" });
     const snapshotAfter = await observer.next();
 
     assert.deepEqual(snapshotAfter, snapshotBefore, "status must be byte-identical before and after ten stateless calls");
     assert.deepEqual(
       calls,
-      { acquire: 0, release: 0, recycle: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 },
-      "no lease-bearing callback may ever fire for a stateless host_tool call, across any of the ten repetitions",
+      { acquire: 0, release: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 },
+      "no lease-bearing callback may ever fire for a stateless host-tool call, across any of the ten repetitions",
     );
   } finally {
     observer.close();

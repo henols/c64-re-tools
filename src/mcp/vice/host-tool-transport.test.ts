@@ -31,29 +31,19 @@ import {
   startControlListener,
   type StartControlListenerResult,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type MonitorClaimOutcome,
   type MonitorReleaseOutcome,
+  MAX_LINE_BYTES,
 } from "./broker-control.mts";
-import { hostToolOverControlPlane } from "./host-tool-client.ts";
-import { brokerJsonPath } from "./vice-broker-client.ts";
 import { build } from "./build.ts";
-
-// This file's cases dial a control-plane listener THIS test file itself
-// started moments earlier, on loopback -- so loopback is the only address
-// that can ever be right for them. Without this pin, resolveControlTarget()
-// falls through to mcpHost()'s bridge-alias default, and an ambient
-// devcontainer workspace variable (CONTAINER_WORKSPACE_PATH/
-// HOST_WORKSPACE_PATH, settable from a genuine devcontainer or a developer's
-// own exported shell) makes isInsideContainer() report true, so the client
-// resolves the container-side bridge alias instead of loopback and the case
-// dies in DNS resolution (`getaddrinfo ENOTFOUND host.docker.internal`)
-// before any assertion runs. This is not a CI-only accommodation: the pin is
-// unconditional and was measured green with the workspace variables both set
-// and unset. Mirrors the existing, committed idiom at broker-e2e.test.ts:47.
-process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
+// Phase 65 (plan 65-03, D-11, Task 2 Test 6): the CLIENT-side mirrored
+// stage-line budget -- kept at or under MAX_LINE_BYTES above by the relation
+// case near CAP's own tests below. A container-side module, imported
+// directly by its own .mts source (host-tool-endpoint.mts carries no
+// host-bound APIs and ships no build step).
+import { HOST_TOOL_STAGE_LINE_MAX_BYTES } from "./host-tool-endpoint.mts";
 
 // ---------------------------------------------------------------------------
 // The cap, read from the module under test -- never a hand-written literal
@@ -81,26 +71,26 @@ test("the parsed cap is a positive integer read from broker-control.mts's own so
   assert.ok(CAP > 0);
 });
 
+test("the exported MAX_LINE_BYTES binding matches the source-parsed cap above -- proving the export is the same value, not a second, drifted copy", () => {
+  assert.equal(MAX_LINE_BYTES, CAP);
+});
+
+test("Phase 65-03 Task 2 Test 6: HOST_TOOL_STAGE_LINE_MAX_BYTES (host-tool-endpoint.mts) is at or below broker-control.mts's own exported MAX_LINE_BYTES", () => {
+  assert.ok(
+    HOST_TOOL_STAGE_LINE_MAX_BYTES <= MAX_LINE_BYTES,
+    `HOST_TOOL_STAGE_LINE_MAX_BYTES (${HOST_TOOL_STAGE_LINE_MAX_BYTES}) must not exceed broker-control.mts's own MAX_LINE_BYTES (${MAX_LINE_BYTES}) -- a client-side manifest line the broker itself would destroy the connection over must never be dialled in the first place`,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // A real listener with all seven pre-existing VICE callbacks stubbed to
 // refuse -- this file's subject is the framing/cap behaviour and the
-// host_tool result shape, not lease semantics (already proven by plan
-// 34-01's own spy assertion). `onHostTool` defaults to a no-op refusal so
-// the cap-boundary cases below never need one.
+// host-tool result shape, not lease semantics.
 // ---------------------------------------------------------------------------
-function baseListenerOptions(onHostTool: (raw: unknown) => Promise<unknown>) {
+function baseListenerOptions() {
   return {
     onAcquire: async (): Promise<AcquireOutcome> => ({ ok: false, reason: "internal" }) as AcquireOutcome,
     onRelease: (): void => {},
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "no stub configured",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,
@@ -123,28 +113,22 @@ function baseListenerOptions(onHostTool: (raw: unknown) => Promise<unknown>) {
     // narrow to the `ok: false` branch.
     onRelayAttach: () => ({ ok: false as const, code: "internal" as const }),
     onOperation: () => ({ ok: true as const }),
-    onHostTool,
   };
 }
 
-async function startTransportListener(
-  onHostTool: (raw: unknown) => Promise<unknown> = async () => ({ ok: false, message: "no onHostTool stub configured" }),
-): Promise<StartControlListenerResult> {
+async function startTransportListener(): Promise<StartControlListenerResult> {
   return startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token: "host-tool-transport-test-token",
-    ...baseListenerOptions(onHostTool),
+    ...baseListenerOptions(),
   });
 }
 
 // ---------------------------------------------------------------------------
 // Raw-socket probe for the cap-boundary cases. Dials, writes ONE line with NO
 // trailing newline, and races a `close` event against a short, `unref()`ed
-// bounded timer -- the same "connection stayed open" idiom
-// `acquireOverControlPlane()`'s own connect timer uses, so a hung case can
-// never wedge the test runner. Always `destroy()`s the socket in `finish()`,
-// win or lose the race.
+// bounded timer, so a hung case can never wedge the test runner. Always
+// `destroy()`s the socket in `finish()`, win or lose the race.
 // ---------------------------------------------------------------------------
 interface RawProbeOutcome {
   /** True once a `close` event actually fired before the bounded wait
@@ -361,17 +345,6 @@ const hostToolModule = (await import(new URL("./resources/host-tool.mjs", import
 };
 const { runHostTool } = hostToolModule;
 
-async function startHostToolListener(repoRoot: string): Promise<{ listener: StartControlListenerResult; token: string }> {
-  const token = "host-tool-transport-result-shape-token";
-  const listener = await startControlListener({
-    host: "127.0.0.1",
-    port: 0,
-    token,
-    ...baseListenerOptions((raw: unknown) => runHostTool(raw, { repoRoot })),
-  });
-  return { listener, token };
-}
-
 test("a host_tool response carries no byte payload at any field, asserted by recursive key enumeration, and each result entry's key set is exactly path/sha256/byteLength", async () => {
   await withTempDir(async (dir) => {
     const fakeAcme = writeFakeAcme(dir, "normal");
@@ -405,41 +378,6 @@ test("a zero-byte produced output crosses as byteLength: 0 with the sha256 of th
   });
 });
 
-test("two host_tool requests issued over the real control plane without awaiting the first resolve to distinct output paths, each sha256 matching an independent digest of its own file on disk", async () => {
-  await withTempDir(async (dir) => {
-    writeFileSync(join(dir, "a.a"), "; test source A\n", "utf8");
-    writeFileSync(join(dir, "b.a"), "; test source B\n", "utf8");
-    const fakeAcme = writeFakeAcme(dir, "normal");
-    await withFakeAcme(fakeAcme, async () => {
-      const { listener, token } = await startHostToolListener(dir);
-      try {
-        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-transport-broker-json-"));
-        try {
-          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-          const [responseA, responseB] = await Promise.all([
-            hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", noReport: true }),
-            hostToolOverControlPlane(stateDir, "acme.build", { source: "b.a", noReport: true }),
-          ]);
-          assert.equal(responseA.ok, true);
-          assert.equal(responseB.ok, true);
-          if (!responseA.ok || !responseB.ok) return;
-          assert.equal(responseA.results.length, 1);
-          assert.equal(responseB.results.length, 1);
-          assert.notEqual(responseA.results[0].path, responseB.results[0].path);
-          const digestA = createHash("sha256").update(readFileSync(responseA.results[0].path)).digest("hex");
-          const digestB = createHash("sha256").update(readFileSync(responseB.results[0].path)).digest("hex");
-          assert.equal(responseA.results[0].sha256, digestA);
-          assert.equal(responseB.results[0].sha256, digestB);
-        } finally {
-          rmSync(stateDir, { recursive: true, force: true });
-        }
-      } finally {
-        listener.server.close();
-      }
-    });
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Phase 63, plan 63-05, Task 3 (SESS-01): the structural half of "a stateless
 // call binds no lease". The behavioural half (the broker's own observable
@@ -450,45 +388,3 @@ test("two host_tool requests issued over the real control plane without awaiting
 // one connection, one request line, no acquire line, no module-level
 // session handle to leak across calls.
 // ---------------------------------------------------------------------------
-
-test("structural (63-05, SESS-01): host-tool-client.ts's container route opens exactly one connection and writes exactly one request line, never an acquire line, and holds no module-level session handle", () => {
-  const source = readFileSync(new URL("./host-tool-client.ts", import.meta.url), "utf8");
-
-  // Exactly one connect() call in the whole module -- the ONE TCP connection
-  // hostToolOverControlPlane() opens per request. The host route
-  // (hostToolOverHostRoute()) spawns a child process instead and opens no
-  // socket of its own, so this count must not creep to two.
-  const connectCalls = [...source.matchAll(/\bconnect\(/g)];
-  assert.equal(connectCalls.length, 1, `expected exactly one connect() call in host-tool-client.ts; found ${connectCalls.length}`);
-
-  // Exactly one socket.write() call -- one request line per connection,
-  // never a second write reusing the same socket for a follow-up request.
-  const writeCalls = [...source.matchAll(/\bsocket\.write\(/g)];
-  assert.equal(writeCalls.length, 1, `expected exactly one socket.write() call in host-tool-client.ts; found ${writeCalls.length}`);
-
-  // The one request line this module ever writes carries `op: "host_tool"`
-  // -- never `op: "acquire"`. SESS-01's whole point is that this call shape
-  // binds no lease; writing an acquire line would be exactly that.
-  assert.match(source, /op: "host_tool"/, "host-tool-client.ts must write the host_tool op");
-  assert.doesNotMatch(
-    source,
-    /op: "acquire"/,
-    "host-tool-client.ts must never write an acquire line -- a stateless call acquires no grant",
-  );
-
-  // No module-level (column-zero) declaration holds a socket or a session
-  // across calls -- every connect()-produced socket is a LOCAL variable
-  // scoped to hostToolOverControlPlane()'s own Promise executor, destroyed
-  // before that function's promise ever settles. Tied to identifiers (any
-  // top-level declaration whose name reads as a socket or session) rather
-  // than to prose, so a rewrite that renames the function but preserves the
-  // property keeps passing, and one that introduces a persistent handle
-  // fails regardless of what it is called internally.
-  const topLevelDecls = [...source.matchAll(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z0-9_]+)/gm)].map((m) => m[1]!);
-  const sessionLikeNames = topLevelDecls.filter((name) => /ocket|ession/i.test(name));
-  assert.deepEqual(
-    sessionLikeNames,
-    [],
-    `no module-level declaration may hold a socket or session handle across calls; found: ${JSON.stringify(sessionLikeNames)}`,
-  );
-});

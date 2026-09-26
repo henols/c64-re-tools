@@ -435,17 +435,17 @@ test("gate run: the four in-process gate inputs, measured for real against the M
 // each committed subject's own payload is lifted into a fresh, zero-filled
 // 65536-byte buffer at its own load address, and the SAME cross-binary
 // comparison instrument plan 50-01 committed
-// (`compare-cross-binary.mjs`) is run over the pair through its own CLI.
+// (`compare-cross-binary.ts`) is run over the pair through its own CLI.
 //
-// A SUBPROCESS, NEVER AN IMPORT: `src/mcp/vice/**` and `src/skills/**`
+// A SUBPROCESS, NEVER AN IMPORT: `src/mcp/vice/**` and `skills/**`
 // publish as separate npm packages and cannot import each other
 // (`acme-verify.ts`'s own header states the identical constraint for
 // `ACME_VERIFY_ARGV_FLAGS`). `skill-acme-build-cli.test.ts` already
 // establishes this exact pattern -- a `src/mcp/vice/` test file driving a
-// sibling `src/skills/` script via `spawnSync(process.execPath, [...])` --
-// for `src/skills/acme-build/scripts/acme.mjs`; this is the same pattern
-// applied to `compare-cross-binary.mjs`. This is NOT a second real-assembler
-// launch site: `compare-cross-binary.mjs` never spawns anything and
+// sibling `skills/` script via `spawnSync(process.execPath, [...])` --
+// for `skills/acme-build/scripts/acme.ts`; this is the same pattern
+// applied to `compare-cross-binary.ts`. This is NOT a second real-assembler
+// launch site: `compare-cross-binary.ts` never spawns anything and
 // contacts nothing (its own header states this), so `T-50-09`'s "the one
 // sanctioned assembler launch" is unaffected -- the assembler is reached
 // only through `verifyAcmeAssemblesTree()`, above, exactly as Task 1 left
@@ -453,7 +453,7 @@ test("gate run: the four in-process gate inputs, measured for real against the M
 // ---------------------------------------------------------------------------
 
 const ALLOWLIST_PATH = join(FIXTURE_DIR, "hazard-subject-modified.allowlist.json");
-const CROSS_BINARY_SCRIPT = join(HERE, "..", "..", "skills", "c64-ram-capture", "scripts", "compare-cross-binary.mjs");
+const CROSS_BINARY_SCRIPT = join(HERE, "..", "..", "..", "skills", "c64-ram-capture", "scripts", "compare-cross-binary.ts");
 
 interface AllowlistEntry {
   start: number;
@@ -473,11 +473,11 @@ function loadAllowlistDoc(): AllowlistDoc {
   return JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8")) as AllowlistDoc;
 }
 
-/** A minimal duplicate of `compare-cross-binary.mjs`'s own `IO_VOLATILE`
+/** A minimal duplicate of `compare-cross-binary.ts`'s own `IO_VOLATILE`
  * register mask and `IMAGE_VOLATILE` image mask, for the two static
  * mask-overlap assertions below. This file cannot import the real tables --
  * see this section's own header for why a subprocess, not an import, is
- * this file's only route to `src/skills/**` at all. This is the SAME
+ * this file's only route to `skills/**` at all. This is the SAME
  * deliberate second-implementation pattern `acme-verify.ts`'s
  * `ACME_VERIFY_ARGV_FLAGS`/`MSVC` already carry across the identical
  * package boundary, kept minimal and matched address-for-address against
@@ -550,7 +550,7 @@ test("allowlist: every register-domain entry names an address outside the narrow
 /** Lifts a committed `.prg`'s own payload into a fresh, zero-filled
  * 65536-byte buffer at its own load address -- never the raw `.prg` bytes,
  * which carry a two-byte little-endian load-address header
- * `compare-cross-binary.mjs` does not expect. */
+ * `compare-cross-binary.ts` does not expect. */
 function prgToImageBuffer(path: string): Buffer {
   const raw = readFileSync(path);
   const origin = raw[0]! | (raw[1]! << 8);

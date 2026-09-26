@@ -8,7 +8,7 @@
 // standing, because it made a reassembly claim nothing verified: it produced
 // something that looked like ACME source and asserted, in effect, that
 // assembling it would reproduce the program. No assembler ever ran. Withdrawing
-// it was the right call and the withdrawal notices in both skill trees are the
+// it was the right call and the withdrawal notices in the skill docs are the
 // record that the capability was missing.
 //
 // This module is the rebuild, over this project's own annotation store, and it is
@@ -64,11 +64,6 @@
 //     this tree allowed to INTERPRET that column -- what the data means -- and
 //     everywhere else here the string is copied VERBATIM onto the emitted
 //     block and its trailing comment.
-//   - Never import this tree's host/container path-translation modules
-//     (`hostpath.ts` / `containerpath.ts`). Their consumer set is a closed,
-//     mechanically asserted list of named modules and an exporter has no reason
-//     to join it -- the failure would surface as a test about something else
-//     entirely.
 //   - Never interpolate a read file's own bytes into an error message. A path,
 //     an address and a length are facts ABOUT a file; its contents are not, and
 //     an error text that quotes them turns a refusal into a content-disclosure
@@ -826,7 +821,7 @@ const ALIAS_MARKER_PREFIX = "  ; ALIAS: this address also carries ";
  * are: a second wording makes it ungreppable for the only reader it exists
  * for.
  *
- * THIS SPELLING WAS CHOSEN, NOT INHERITED. `diff-images.mjs`'s own
+ * THIS SPELLING WAS CHOSEN, NOT INHERITED. `diff-images.ts`'s own
  * `renderLedger()` header prose mentions `; PROVENANCE:` once, as an
  * unwired, forward-looking remark about THIS PROJECT'S OWN documentation
  * provenance conventions -- it names no writer, no reader and no format, and

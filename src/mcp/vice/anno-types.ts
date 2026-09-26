@@ -38,7 +38,7 @@
 //   1. NEVER re-spell, re-order, add to or remove from the twelve members of
 //      `DATA_TYPES`. They are the `anno_set_data_type` schema's own strings in
 //      the schema's own order (`anno-tools.ts:291-304`), and
-//      `src/skills/c64-memory-mapping/SKILL.md` already names all four split
+//      `skills/c64-memory-mapping/SKILL.md` already names all four split
 //      variants verbatim -- a re-spelling breaks a shipped playbook and buys
 //      nothing. Narrowing the vocabulary once a project file exists is not a
 //      migration; it is data loss.
@@ -429,7 +429,7 @@ export type CommentType = (typeof COMMENT_TYPES)[number];
  *
  * THE CAPITALISATION IS A DECIDED ASYMMETRY, not an oversight. `DATA_TYPES` is
  * lowercase because it is read off `anno_set_data_type`'s own schema and is
- * named verbatim in `src/skills/c64-memory-mapping/SKILL.md`, so a re-spelling
+ * named verbatim in `skills/c64-memory-mapping/SKILL.md`, so a re-spelling
  * would break a shipped playbook. `LABEL_KINDS` is capitalised because its only
  * mechanical consumer is the coverage census, which already spells it
  * `"User"`/`"Auto"`/`"System"` at four sites (`anno-coverage.ts:206` for the
@@ -1427,11 +1427,8 @@ function realpathOfNearestExisting(p: string): string {
  * This is the ONE export in this module that is a function of its arguments AND
  * the filesystem; see the narrowed trap 3 in the header.
  *
- * The path is deliberately NOT routed through either host/container
- * path-translation seam -- see trap 7 in `anno-store.ts`'s header for what a
- * translated store path would do. `node:fs` is a Node builtin, not a seam, and
- * `hostpath-consumers.test.ts`'s closed consumer set still excludes this
- * module.
+ * The path is deliberately NOT translated -- see trap 7 in `anno-store.ts`'s
+ * header for what a translated store path would do.
  */
 export function storePathWithinWorkspace(path: string, workspaceRoot: string): string {
   const resolvedRoot = realpathOfNearestExisting(workspaceRoot);

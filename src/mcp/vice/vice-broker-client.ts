@@ -1,67 +1,26 @@
 #!/usr/bin/env node
-// Container-side half of the on-demand broker protocol. This module used to
-// write the request/lease files resources/vice-broker.sh read and read the
-// grant/denial/broker files that script wrote, all on the SAME
-// .vice-supervisor/ bind mount tools/vice-supervisor.sh's epoch.json already
-// used. That whole file protocol is now deleted wholesale (six mechanisms
-// retiring together -- startHeartbeat()/the mtime-as-heartbeat
-// convention/touchLease()/pollGrant()/pollRecycleAck()/the request-grant-
-// denial-lease-recycle-ack directory tree) now that vice-proxy.ts's
-// acquisition, release AND recycle all run over the TCP control plane
-// (openBrokerControl()/BrokerControlSession below) instead. What survives:
-// the request-id primitives (the new client's own acquire()/recycle() still
-// mint ids with newRequestId()), brokerRootDir()/brokerJsonPath() (the
-// discovery record's own location -- the machine-level root broker-home.mts
-// resolves, not any project's tree; see brokerRootDir()'s own comment below,
-// G-64-1), and readBrokerLiveness() (unchanged classification, still reading
-// the SAME broker.json openBrokerControl() reads for its control_host/
-// control_port/control_token).
+// The client half of the broker control plane. dialControlSession() dials
+// the fixed endpoint (broker-endpoint.mts's dialControlSocket(), a hello
+// race with nothing read from disk) and wraps the winning socket in a
+// BrokerControlSession: newline-delimited JSON requests, answered in FIFO
+// order, over one connection held for the session's lifetime. The
+// connection is the lease: closing it releases the grant.
 //
-// Every read of broker.json is still untrusted input: parse in try/catch, a
-// malformed or half-written file is "not there yet" or "absent", never a
-// thrown exception -- the never-throw, never-cache-a-negative-result
-// posture this module holds throughout.
-//
-// MUST NOT import hostpath.ts: the host-path consumer set is closed to
-// exactly four production modules (containerpath.ts, install-resources.ts,
-// stock-paths.ts, vice-proxy.ts), pinned by hostpath-consumers.test.ts, and
-// host-path message text stays in vice-proxy.ts, which is already on that
-// list.
-import { readFileSync } from "node:fs";
+// Never throws toward the caller. Every broker reply is untrusted input:
+// parsed in try/catch and type-checked field by field.
 import { randomUUID } from "node:crypto";
-import { basename, join } from "node:path";
-import { connect, type Socket } from "node:net";
+import { basename } from "node:path";
+import type { Socket } from "node:net";
 
-// A VALUE import of the machine-level state resolver (Phase 64, plan 64-10,
-// G-64-1's secondary cause) -- broker-home.mts carries only `node:` imports,
-// so it loads unbuilt from this container-side module exactly as
-// stock-connect.ts's own value import of backend-detect.mts does. See
-// brokerRootDir() below for why this replaced repo-root.ts's supervisorDir().
-import { brokerStateDir } from "./broker-home.mts";
-// TYPE-ONLY, and IMPORTED rather than
-// redeclared. broker-launch.mts is the one definition of the profile shape and
-// the module that turns a profile into argv; a second local shape here is how
-// a client would start requesting a knob the host cannot honour. Type-only, so
-// the container-side bundle never resolves the host-bound module at runtime.
+import { dialControlSocket, type DialControlSocketOptions } from "./broker-endpoint.mts";
+// TYPE-ONLY, and IMPORTED rather than redeclared. broker-launch.mts is the
+// one definition of the profile shape and the module that turns a profile
+// into argv; a second local shape here is how a client would start
+// requesting a knob the host cannot honour.
 import type { LaunchProfile } from "./broker-launch.mts";
-// backend-detect.mts is ViceBackend's one home (narrowed to a single literal
-// now that the fork backend has been removed entirely). Type-only, same
-// discipline as the import above.
+// backend-detect.mts is ViceBackend's one home. Type-only, same discipline.
 import type { ViceBackend } from "./backend-detect.mts";
-// The module tree's ONE definition of the container-visible host alias
-// (vice.ts:49), carrying its own VICE_MCP_HOST override -- consumed below by
-// resolveControlTarget() rather than a fourth `host.docker.internal` literal
-// (vice.ts:35-48 names the three duplicate copies that predated that
-// function; this file must not become a fourth). Deliberately NOT
-// `containerpath.ts`'s `containerHost()`: that function rewrites URL
-// *strings*, not bare hostnames; its own loopback matcher structurally
-// EXCLUDES `0.0.0.0` (a wildcard bind is not loopback, so the very address
-// at fault here would pass through it untouched); `containerpath.ts:32-37`
-// states outright that it does not know the container-visible host alias;
-// and importing it would pull `hostpath.ts` into this module, which this
-// file's own header (lines 23-26) forbids and which the host-path
-// consumer-set assertion polices.
-import { mcpHost, ViceError } from "./vice-errors.ts";
+import { ViceError } from "./vice-errors.ts";
 
 // -------------------------------------------------------------- request ids
 //
@@ -88,250 +47,15 @@ export function isValidRequestId(id: unknown): id is string {
   return typeof id === "string" && REQUEST_ID_PATTERN.test(id);
 }
 
-// -------------------------------------------------------------- directories
-//
-// G-64-1's secondary cause: this function used to resolve repo-root.ts's
-// supervisorDir() -- a directory INSIDE whichever project checkout happens
-// to be current. That is wrong for a machine-level broker: none of the
-// documented start routes (`npx -y @henols/vice-mcp broker`, the committed
-// systemd unit, the committed launchd agent) run with a project argument at
-// all, so the broker itself never wrote anything there -- only
-// vice-launcher.sh's `--repo-root` pin (the one route that DOES have a
-// project) ever made the two agree, and that agreement came at the cost of
-// putting broker state inside one project's tree, which BROKER-06 forbids.
-// This function now delegates to broker-home.mts's brokerStateDir(), the
-// SAME resolver the broker itself calls (vice-broker.mts's parseArgs()),
-// so client and broker can no longer drift apart on where broker.json
-// lives -- one resolver, imported on both sides, never recomputed here.
-// brokerStateDir() already honours VICE_POOL_DIR first, so that override's
-// meaning is unchanged. The five sibling directory helpers this function
-// used to anchor (requestsDir/grantsDir/denialsDir/brokerLeasesDir/
-// recycleAcksDir) and the lease path helper (leasePathFor) are GONE, not
-// merely unused -- their directories cease to exist now that the file
-// protocol is retired; only brokerJsonPath() below survives, since
-// broker.json itself is not part of the retiring protocol.
-export function brokerRootDir(): string {
-  return brokerStateDir();
-}
-
-export function brokerJsonPath(dir: string = brokerRootDir()): string {
-  return join(dir, "broker.json");
-}
-
-/** True iff `value` is a well-formed, generic JSON object -- not null, not
- * an array. Shared by readJsonMaybe()'s parse step, matching
- * vice-broker.mts's readBrokerRecordMaybe()'s own isPlainObject() predicate
- * exactly (that file's own doc comment states it matches this module's
- * posture). */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Read and JSON.parse `path`, treating any failure (missing file, partial
- * write, malformed JSON, non-object shape) as "not there yet" rather than
- * throwing -- matches the posture vice-pool.mjs's readRegistry() used
- * before its 2026-08-02 deletion. Two nested try/catch layers, one for the
- * read and one for the parse -- never collapsed into one, never replaced by
- * a thrown error (T-01.6.1-01). */
-function readJsonMaybe(path: string): Record<string, unknown> | null {
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return null;
-  }
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return isPlainObject(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-// writeRequest/createLease/touchLease/releaseLease/pollGrant/pollRecycleAck
-// and their record interfaces (RequestRecord, RecycleRequestRecord,
-// LeaseRecord, PollOptions, PollGrantResult, PollRecycleAckResult) are GONE:
-// the whole file-messaging protocol they implemented is replaced
-// wholesale by the TCP control plane below. GRANT_POLL_TIMEOUT_MS/
-// GRANT_POLL_INTERVAL_MS/RECYCLE_ACK_TIMEOUT_MS/RECYCLE_ACK_POLL_INTERVAL_MS
-// (the retiring polls' own timeout/interval constants) and sleepMs() (their
-// shared poll-delay helper) are gone with them -- nothing here polls a
-// filesystem for a deadline any more.
-
-export interface BrokerLivenessResult {
-  state: "never_started" | "stale" | "alive";
-  pid: number | null;
-  heartbeatAt: string | null;
-  path: string;
-}
-
-// --------------------------------------------------------- readBrokerLiveness
-//
-// Classifies broker.json as never_started / stale / alive against
-// BROKER_STALE_MS. Plan 04 consumes the three states for its diagnostics;
-// this task only needs the classification to exist and be correct.
-export const BROKER_STALE_MS: number = Number(process.env.VICE_BROKER_STALE_MS || 180000);
-
-/** Pure classification over an ALREADY-PARSED record (or null for "no file
- * read anything back") -- factored out of readBrokerLiveness() below so
- * openBrokerControl() (plan 06) can classify liveness against the SAME
- * broker.json read it already performed for control_host/control_port/
- * control_token, rather than re-reading the file a second time via a second
- * readBrokerLiveness() call. readBrokerLiveness()'s own exported behaviour is
- * unchanged by this split -- it still takes a path and returns the same
- * shape; this is purely an internal refactor. */
-function classifyLivenessFromRecord(parsed: Record<string, unknown> | null, path: string): BrokerLivenessResult {
-  if (parsed === null) {
-    return { state: "never_started", pid: null, heartbeatAt: null, path };
-  }
-  const pid = typeof parsed.pid === "number" && Number.isFinite(parsed.pid) ? parsed.pid : null;
-  const heartbeatAt = typeof parsed.heartbeat_at === "string" ? parsed.heartbeat_at : null;
-  const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : NaN;
-  if (!Number.isFinite(heartbeatMs)) {
-    return { state: "never_started", pid, heartbeatAt, path };
-  }
-  const state: BrokerLivenessResult["state"] = Date.now() - heartbeatMs > BROKER_STALE_MS ? "stale" : "alive";
-  return { state, pid, heartbeatAt, path };
-}
-
-export function readBrokerLiveness(path: string = brokerJsonPath()): BrokerLivenessResult {
-  const parsed = readJsonMaybe(path);
-  return classifyLivenessFromRecord(parsed, path);
-}
-
-// StartHeartbeatOptions/HEARTBEAT_MS/startHeartbeat() are GONE -- the
-// lease-heartbeat interval (one of the six retiring mechanisms named above)
-// has no successor. Nothing needs touching to prove a TCP connection is alive; it
-// either is, or the broker's own "close" handler has already reclaimed the
-// instance.
-
-// -------------------------------------------------------- dial resolution
-//
-// `broker.json`'s `control_host` field is the broker's BIND address
-// (vice-broker.mts:782 writes `listener.host` into it). The rule as settled
-// for v2.0.0 (D-09, D-11): the broker binds IPv4 loopback plus the
-// enumerated bridge-gateway addresses it finds at startup from an
-// interface-name allowlist (`docker0`, `br-*`, `podman*`, `cni-*`), and
-// never the wildcard address. A bind address is still not a dial address:
-// `control_host` is one member of that enumerated set, and the recorded
-// value flows through below as diagnostic text only, never as a candidate
-// dial target. Both connect sites below (the tracer's own
-// acquireOverControlPlane() and openBrokerControl() further down) resolve
-// their target through resolveControlTarget() and never read `control_host`
-// as anything but diagnostic text. This narrowing IS the broker's access
-// control now, not a convenience -- the per-boot capability token is
-// dropped under the new dial model (the `hello` handshake, plan 62-01), so a
-// bind address only the intended network can reach is the mechanism
-// standing in its place.
-//
-// `VICE_BROKER_CONTROL_DIAL_HOST` is a NEW variable, deliberately not a
-// homonym of the EXISTING `VICE_BROKER_CONTROL_HOST` (the broker's own BIND
-// host, set on the HOST side -- vice-broker.mts:671, broker-control.mts:507,
-// driven in broker-control.test.ts:949). Collapsing the two into one
-// variable would reproduce this exact defect in env-var form: one name
-// cannot correctly answer both "what should I bind" and "what should I
-// dial", for the same reason `control_host` itself cannot -- those are two
-// different consumers wanting two different addresses.
-export interface ResolvedControlTarget {
-  host: string;
-  port: number;
-  source: "dial_override" | "bridge_alias";
-  /** The record's OWN `control_host` value -- carried through for the
-   * diagnostic only. Never a candidate dial target. */
-  recorded: string;
-}
-
-export type ResolveControlTargetResult =
-  | { ok: true; target: ResolvedControlTarget }
-  | { ok: false; kind: "unreachable_control_plane"; message: string; target: string };
-
-const IPV4_LOOPBACK_RE = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-// Fully-expanded IPv6 "::" (all eight groups zero) and "::1" (seven zero
-// groups then 1) -- the WHATWG URL parser's own bracketed short forms are
-// matched as literals below; this regex pair only needs to catch the
-// long-hand spellings a bare hostname string might still carry.
-const IPV6_ALL_ZEROS_RE = /^(0{1,4}:){7}0{1,4}$/;
-const IPV6_LOOPBACK_FULL_RE = /^(0{1,4}:){7}0{0,3}1$/;
-
-function stripBrackets(host: string): string {
-  return host.replace(/^\[/, "").replace(/\]$/, "");
-}
-
-function isWildcardBindHost(host: string): boolean {
-  const bare = stripBrackets(host);
-  return bare === "0.0.0.0" || bare === "::" || IPV6_ALL_ZEROS_RE.test(bare);
-}
-
-function isLoopbackConnectHost(host: string): boolean {
-  const bare = stripBrackets(host);
-  return bare === "localhost" || bare === "::1" || IPV4_LOOPBACK_RE.test(bare) || IPV6_LOOPBACK_FULL_RE.test(bare);
-}
-
-/** Classifies a bare hostname (never a full URL) the same way
- * `containerpath.ts`'s `isLoopbackHostname()` classifies loopback --
- * matched STRUCTURALLY, whole address classes rather than single literals,
- * deliberately RE-STATED here rather than imported (see this section's own
- * header comment for why `containerpath.ts` is off-limits to this module).
- * `wildcard_bind` covers the IPv4/IPv6 "listen on everything" addresses in
- * their bracketed, unbracketed and fully-expanded spellings; `loopback`
- * covers the whole 127.0.0.0/8 block, `localhost`, and IPv6 loopback in the
- * same three spellings; everything else is `routable`. */
-export function classifyConnectHost(host: string): "wildcard_bind" | "loopback" | "routable" {
-  if (isWildcardBindHost(host)) return "wildcard_bind";
-  if (isLoopbackConnectHost(host)) return "loopback";
-  return "routable";
-}
-
-/** Resolves the address this process will actually DIAL for the control
- * plane -- never the record's own `control_host`, which flows through only
- * as `recorded`, never as a candidate target. Precedence:
- * `VICE_BROKER_CONTROL_DIAL_HOST` when set and non-empty (`source:
- * "dial_override"`), otherwise `mcpHost()` (`source: "bridge_alias"`) --
- * the SAME default source `vice-proxy.test.ts` already configures via
- * `VICE_MCP_HOST` at ~30 call sites, which is exactly why that source was
- * chosen: every one of those fixtures stays green with zero edits.
- *
- * Refuses -- before any connect is attempted -- when the resolved host
- * classifies as `wildcard_bind`: that class is an address to listen on,
- * never one to dial. Does NOT refuse `loopback`: an explicitly configured
- * loopback host is a statement that the listener lives inside THIS
- * container, which is the only topology the project's hard rule (nothing
- * may dial the real host directly) permits a test to exercise -- and a
- * loopback value can now only ever arrive from explicit configuration,
- * never from the record, since the record's own value is never treated as
- * a candidate. */
-export function resolveControlTarget(record: Record<string, unknown>, port: number): ResolveControlTargetResult {
-  const recorded = typeof record.control_host === "string" ? record.control_host : "";
-  const override = process.env.VICE_BROKER_CONTROL_DIAL_HOST;
-  const useOverride = typeof override === "string" && override.length > 0;
-  const host = useOverride ? override : mcpHost();
-  const source: "dial_override" | "bridge_alias" = useOverride ? "dial_override" : "bridge_alias";
-
-  if (classifyConnectHost(host) === "wildcard_bind") {
-    return {
-      ok: false,
-      kind: "unreachable_control_plane",
-      message:
-        `openBrokerControl: the resolved dial target ${host}:${port} is a wildcard-bind address -- ` +
-        `it is valid to listen on but structurally impossible to dial. Refusing to attempt a connection.`,
-      target: `${host}:${port}`,
-    };
-  }
-  return { ok: true, target: { host, port, source, recorded } };
-}
-
 // ---------------------------------------------------- TCP control plane
 //
 // The container-side half of the TCP control plane (broker-control.mts is
-// the host-side half). Wire format confirmed at an early blocking
-// decision checkpoint (2026-08-03, `as-specified`): newline-delimited JSON,
-// per-boot capability token, connection open = claim / close = release.
+// the host-side half): newline-delimited JSON, connection open = claim /
+// close = release.
 export interface AcquireGrant {
   id: string;
   port: number;
   url: string;
-  epoch_file: string;
-  supervisor_dir: string;
   /** The broker-allocated port stock's `-remotemonitor` text monitor binds,
    * mandatory in fact once a stock acquire without one was made to fail
    * outright rather than degrade.
@@ -353,14 +77,6 @@ function parseOptionalRemoteMonitorPort(value: unknown): number | undefined {
   return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : undefined;
 }
 
-export interface AcquireOverControlPlaneHandle {
-  grant: AcquireGrant;
-  /** Closes the connection -- the connection IS the lease, so this alone
-   * is the release; the broker's own "close" handler tears the instance
-   * down (broker-control.mts). */
-  release: () => void;
-}
-
 /** Default raised from 25000 to 120000. The
  * knob (VICE_BROKER_ACQUIRE_TIMEOUT_MS) is unchanged -- an explicitly
  * configured value keeps working exactly as before.
@@ -378,7 +94,7 @@ export interface AcquireOverControlPlaneHandle {
 export const CONTROL_ACQUIRE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER_ACQUIRE_TIMEOUT_MS || 120000);
 
 /** The request-side launch profile.
- * Optional and absent by default at BOTH acquire write sites in this file.
+ * Optional and absent by default.
  *
  * ONE RULE, and it is the whole reason this shape is named rather than
  * inlined: the `profile` key must be OMITTED ENTIRELY when no profile was
@@ -389,18 +105,11 @@ export const CONTROL_ACQUIRE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER
  * one this client has always written. The spread idiom below is what makes
  * that structural rather than incidental.
  *
- * The SECOND rule, which cost this plan its own dedicated must-have: the
- * profile has to be written at BOTH sites. This file has two independent
- * acquire writers -- acquireOverControlPlane()'s raw `socket.write` below and
- * openBrokerControl()'s `sendAndAwaitLine` further down. A field added to only
- * one of them silently never arrives for callers on the other path, which is
- * the same defect class as a tool argument that is accepted and dropped.
- *
  * CONSUMER STATUS: SUBSTRATE, NOT YET WIRED. The profile
  * threads client -> wire -> narrowing -> eligibility -> argv -> record with
  * tests at every hop, but NO production call site passes one yet:
- * `acquireOverControlPlane()` and `BrokerControlSession.acquire()` are only
- * ever invoked without `opts.profile`, so `-warp` and `-console` are
+ * `BrokerControlSession.acquire()` is only ever invoked without
+ * `opts.profile`, so `-warp` and `-console` are
  * unreachable in production. That is deliberate -- the chain was built
  * ahead of the callers that will use it -- and is recorded here rather than
  * left for a reader to discover, because a fully-tested chain reads as a
@@ -415,18 +124,14 @@ export interface AcquireProfileOptions {
 }
 
 /** Builds the `profile` fragment of an acquire request line -- the ONE place
- * this client decides whether the key appears at all, so the two write sites
- * cannot drift apart on that decision. Returns an empty object (no key) when
+ * this client decides whether the key appears at all. Returns an empty object (no key) when
  * no profile was requested. */
 function acquireProfileFragment(profile?: LaunchProfile): { profile?: LaunchProfile } {
   return profile === undefined ? {} : { profile };
 }
 
 /** The agent-session identity environment variable this resolver treats as
- * authoritative when set -- the SAME variable stock-recycle.ts's own
- * incident-record `session_id` field already reads (`process.env.
- * CLAUDE_CODE_SESSION_ID`, stock-recycle.ts:496) -- the one existing
- * precedent in this tree for "which agent session is this". Named as its
+ * authoritative when set (`process.env.CLAUDE_CODE_SESSION_ID`). Named as its
  * own constant so a reader does not have to hunt resolveSessionLabel()'s
  * body for the literal string. */
 const SESSION_LABEL_ENV_VAR = "CLAUDE_CODE_SESSION_ID";
@@ -434,7 +139,7 @@ const SESSION_LABEL_ENV_VAR = "CLAUDE_CODE_SESSION_ID";
 /** Injectable overrides for resolveSessionLabel(), in this project's
  * standard env/time/spawning/I-O injection register -- a test never depends
  * on the real process's environment, working directory or pid. Production
- * callers (both acquire write sites below) omit every field and let each
+ * callers (the acquire request below) omit every field and let each
  * default to the real process. */
 export interface ResolveSessionLabelOptions {
   env?: NodeJS.ProcessEnv;
@@ -474,8 +179,7 @@ export function resolveSessionLabel(opts: ResolveSessionLabelOptions = {}): stri
 
 /** Builds the `label` fragment of an acquire request line -- the SAME
  * key-omitted-when-absent idiom acquireProfileFragment() above already
- * establishes, so the two write sites' decision of whether the key appears
- * at all never has to be made twice. resolveSessionLabel() never returns an
+ * establishes. resolveSessionLabel() never returns an
  * empty string against the real process, so this branch exists for
  * structural completeness (an injected override CAN produce one) rather
  * than for a case production ever reaches -- broker-control.mts's own
@@ -486,139 +190,11 @@ function acquireLabelFragment(label: string): { label?: string } {
   return label === "" ? {} : { label };
 }
 
-/** Reads broker.json ONCE for control_host/control_port/control_token,
- * opens ONE TCP connection, sends a single `acquire` request framed as one
- * JSON line, and awaits the grant line against
- * CONTROL_ACQUIRE_TIMEOUT_MS. Rejects (never throws synchronously) on any
- * failure: broker.json absent/unreadable/missing the control fields, a
- * connection error, an `error` response, or a timeout.
- *
- * Additionally takes an optional `profile` (see
- * AcquireProfileOptions above). Omitting it writes the exact wire line this
- * function has always written. */
-export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: AcquireProfileOptions = {}): Promise<AcquireOverControlPlaneHandle> {
-  return new Promise((resolvePromise, reject) => {
-    const broker = readJsonMaybe(brokerJsonPath(dir));
-    if (broker === null) {
-      reject(new Error("acquireOverControlPlane: broker.json not present or unreadable"));
-      return;
-    }
-    const controlHost = typeof broker.control_host === "string" ? broker.control_host : null;
-    const port = typeof broker.control_port === "number" ? broker.control_port : null;
-    const token = typeof broker.control_token === "string" ? broker.control_token : null;
-    if (controlHost === null || port === null || token === null) {
-      reject(new Error("acquireOverControlPlane: broker.json missing control_host/control_port/control_token"));
-      return;
-    }
-
-    const targetResult = resolveControlTarget(broker, port);
-    if (!targetResult.ok) {
-      reject(new Error(targetResult.message));
-      return;
-    }
-    const { host } = targetResult.target;
-
-    const socket = connect({ host, port });
-    let buffer = "";
-    let settled = false;
-
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      socket.destroy();
-      reject(new Error(`acquireOverControlPlane: no grant within ${CONTROL_ACQUIRE_TIMEOUT_MS}ms`));
-    }, CONTROL_ACQUIRE_TIMEOUT_MS);
-    if (typeof timer.unref === "function") timer.unref();
-
-    socket.on("connect", () => {
-      const requestId = newRequestId();
-      // Write site ONE of two (see
-      // acquireProfileFragment()'s own comment) -- the key is absent entirely
-      // when no profile was requested, so this line stays byte-identical to
-      // what it always was for a profile-less acquire.
-      //
-      // The session label (Phase 63, SESS-06) is resolved with NO overrides
-      // here -- production always attaches the real process's own label;
-      // only a direct call to resolveSessionLabel() itself (unit-tested
-      // separately) ever supplies injected overrides.
-      socket.write(
-        `${JSON.stringify({ op: "acquire", id: requestId, token, ...acquireProfileFragment(opts.profile), ...acquireLabelFragment(resolveSessionLabel()) })}\n`,
-      );
-    });
-
-    socket.on("data", (chunk: Buffer) => {
-      if (settled) return;
-      buffer += chunk.toString("utf8");
-      const newlineIdx = buffer.indexOf("\n");
-      if (newlineIdx === -1) return;
-      const line = buffer.slice(0, newlineIdx);
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        settled = true;
-        clearTimeout(timer);
-        socket.destroy();
-        reject(new Error("acquireOverControlPlane: malformed response line"));
-        return;
-      }
-      if (typeof parsed !== "object" || parsed === null) {
-        settled = true;
-        clearTimeout(timer);
-        socket.destroy();
-        reject(new Error("acquireOverControlPlane: response line is not a JSON object"));
-        return;
-      }
-      const resp = parsed as Record<string, unknown>;
-      if (resp.kind === "grant") {
-        settled = true;
-        clearTimeout(timer);
-        const remoteMonitorPort = parseOptionalRemoteMonitorPort(resp.remote_monitor_port);
-        const grant: AcquireGrant = {
-          id: String(resp.id),
-          port: Number(resp.port),
-          url: String(resp.url),
-          epoch_file: String(resp.epoch_file),
-          supervisor_dir: String(resp.supervisor_dir),
-          ...(remoteMonitorPort === undefined ? {} : { remote_monitor_port: remoteMonitorPort }),
-        };
-        resolvePromise({
-          grant,
-          release: () => {
-            socket.destroy();
-          },
-        });
-      } else if (resp.kind === "error") {
-        settled = true;
-        clearTimeout(timer);
-        socket.destroy();
-        reject(new Error(`acquireOverControlPlane: ${String(resp.code)}: ${String(resp.message)}`));
-      }
-      // any other kind: not a terminal response to THIS request -- ignored,
-      // matching pollGrant()'s own "keep waiting" posture above.
-    });
-
-    socket.on("error", (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
-}
-
 // ---------------------------------------------------------------------------
 // BROKER-CONTROL-CLIENT REGION START
 //
-// The file protocol beside it is now gone.
-// openBrokerControl() is the container-side half of the TCP control plane:
-// session shape, all five request kinds, one discovery-record read, real
-// per-request deadlines, and a distinct broker-gone outcome. Lives alongside
-// acquireOverControlPlane() above (an early tracer, kept unchanged and
-// still used by broker-e2e.test.ts/broker-kill.test.ts as their own one-shot
-// acquire helper for exercising the SERVER side) -- the file protocol this
-// region's own predecessor sat beside is gone entirely.
+// dialControlSession() and the session it returns: all request kinds, real
+// per-request deadlines, and a distinct broker-gone outcome.
 //
 // Deliberately never REJECTS a promise: every failure -- deadline, a
 // refused connection, a malformed line, the broker going away mid-request --
@@ -634,8 +210,7 @@ export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: Acq
 // authority for "is this lease alive."
 // ---------------------------------------------------------------------------
 
-/** Same value as the tracer's own CONTROL_ACQUIRE_TIMEOUT_MS above --
- * referenced directly (not re-computed from the env var a second time) so
+/** Same value as CONTROL_ACQUIRE_TIMEOUT_MS above -- referenced directly (not re-computed from the env var a second time) so
  * the two can never drift apart. This is the relocated value of the
  * retiring grant-poll timeout (VICE_BROKER_ACQUIRE_TIMEOUT_MS, default now
  * 120000, raised from 25000 against the measured tool-call
@@ -643,27 +218,12 @@ export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: Acq
  * CONTROL_ACQUIRE_TIMEOUT_MS's own declaration above). */
 export const ACQUIRE_TIMEOUT_MS: number = CONTROL_ACQUIRE_TIMEOUT_MS;
 
-/** The recycle bound. An earlier revision referenced the (now-deleted)
- * retiring pollRecycleAck()'s own RECYCLE_ACK_TIMEOUT_MS directly, so the
- * two could never drift apart while both existed; that predecessor is gone
- * entirely, so this reads the SAME environment variable directly -- the
- * value itself is unchanged (VICE_BROKER_RECYCLE_TIMEOUT_MS, default
- * 30000). Final tuning remains a future item. */
-export const RECYCLE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER_RECYCLE_TIMEOUT_MS || 30000);
-
-/** Genuinely NEW: the file protocol never "connected" anywhere, so there is
- * no retiring value to carry forward for this one. A conservative bound for
- * a TCP connect over the docker bridge to a broker broker.json has already
- * classified alive (never_started/stale are refused before a connection is
- * ever attempted) -- deliberately not read from an environment variable,
- * since no new environment variable was wanted beyond the two deadline
- * variables named above. Final tuning remains a future item, same as the
- * other two. */
+/** The control dial's connect timeout, per candidate. Deliberately not read
+ * from an environment variable. */
 export const CONTROL_CONNECT_TIMEOUT_MS = 5000;
 
 /** Every way a session-level request can fail to produce its expected
- * success line: the two pre-connect liveness refusals, a refused TCP
- * connection, a per-request deadline, the broker dropping the connection
+ * success line: no broker answering the dial, a refused TCP connection, a per-request deadline, the broker dropping the connection
  * mid-request, a malformed/non-object response line, and the broker's own
  * ControlErrorCode vocabulary (broker-control.mts's own type, duplicated
  * here as a plain string-literal union rather than imported -- this client
@@ -672,14 +232,10 @@ export const CONTROL_CONNECT_TIMEOUT_MS = 5000;
  * AcquireGrant below already duplicates the wire's own field names rather
  * than importing a shared interface). */
 export type ControlFailureKind =
-  | "never_started"
-  | "stale"
-  | "unreachable_control_plane"
   | "connect_refused"
   | "deadline"
   | "broker_gone"
   | "protocol"
-  | "unauthorized"
   | "bad_request"
   | "denied"
   | "no_free_port"
@@ -696,20 +252,14 @@ export type ControlAcquireResult = { ok: true; grant: AcquireGrant } | { ok: fal
 
 export type ControlReleaseResult = { ok: true };
 
-interface ControlRecycleAck {
-  outcome: string;
-  kill_stage: string;
-  reason: string;
-}
-
-export type ControlRecycleResult = { ok: true; ack: ControlRecycleAck } | { ok: false; kind: ControlFailureKind; message: string };
-
-interface ControlStatusInstanceEntry {
+export interface ControlStatusInstanceEntry {
   port: number;
   url: string;
   state: string;
   reason: string;
   epoch: number | null;
+  /** The grant that owns this instance, or null when none does. */
+  grantId: string | null;
 }
 
 export type ControlStatusResult =
@@ -797,9 +347,9 @@ export type ClaimMonitorOutcome =
   // "internal", where a wiring bug would be indistinguishable from a broker
   // fault. Kept strictly distinct from "monitor_owned", which is a conflict
   // between two LEGITIMATE holders.
-  | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
+  | { ok: false; reason: "timeout" | "bad_request" | "denied" | "internal" };
 
-export type ReleaseMonitorOutcome = { ok: true } | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
+export type ReleaseMonitorOutcome = { ok: true } | { ok: false; reason: "timeout" | "bad_request" | "denied" | "internal" };
 
 /** Phase 64 (XFER-04, D-01). `slot` is an open-ended string, not a closed
  * union -- `"autostart"`, `"disk8"` and `"snapshot"` are what this phase
@@ -819,7 +369,7 @@ export interface StageFileOptions {
  * ClaimMonitorOutcome's own posture on a missing `handle`. */
 export type StageFileOutcome =
   | { ok: true; handle: string; emulatorFilename: string }
-  | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
+  | { ok: false; reason: "timeout" | "bad_request" | "denied" | "internal" };
 
 /** Phase 63 (SESS-05). `name: null` clears; anything else is the raw name to
  * declare -- sent to the broker VERBATIM, never sanitised on this side. The
@@ -841,7 +391,7 @@ export interface NoteOperationOptions {
  * CONFLICT between two legitimate holders (T-63-11's gate is "is this
  * connection's own grant", not "who else holds this"), so there is nothing
  * to name beyond the refusal `reason` itself. */
-export type NoteOperationOutcome = { ok: true } | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
+export type NoteOperationOutcome = { ok: true } | { ok: false; reason: "timeout" | "bad_request" | "denied" | "internal" };
 
 export interface MonitorOwnershipErrorOptions {
   holderGrantId?: string;
@@ -857,8 +407,7 @@ export interface MonitorOwnershipErrorOptions {
  * grant already holds this instance's monitor socket. Names the holding
  * grant and the port plainly, as an ownership
  * conflict -- a state the broker itself enforced, distinct from an emulator
- * that has stopped answering, and NOT a state the vice-wedge-triage skill's
- * opening move should ever be misdirected by.
+ * that has stopped answering.
  *
  * The claim this error reports on a refusal is made BEFORE any binmon
  * connect() is ever attempted: stock VICE services exactly one binmon
@@ -893,7 +442,7 @@ export interface ControlDeadlineOptions {
   timeoutMs?: number;
 }
 
-/** The session opened by openBrokerControl(): one TCP connection, held for
+/** The session opened by dialControlSession(): one TCP connection, held for
  * the session's lifetime -- the connection IS the lease (the tolerance
  * decision recorded in broker-control-plane-over-tcp.md). Each method sends
  * exactly one request line and resolves against its own deadline; none of
@@ -904,7 +453,6 @@ export interface BrokerControlSession {
    * every pre-existing call. */
   acquire(opts?: ControlDeadlineOptions & AcquireProfileOptions): Promise<ControlAcquireResult>;
   release(): Promise<ControlReleaseResult>;
-  recycle(targetId: string, opts?: ControlDeadlineOptions): Promise<ControlRecycleResult>;
   status(opts?: ControlDeadlineOptions): Promise<ControlStatusResult>;
   hostState(opts?: ControlDeadlineOptions): Promise<ControlHostStateResult>;
   /** Claims exclusive ownership of an instance's monitor socket BEFORE any
@@ -913,7 +461,7 @@ export interface BrokerControlSession {
    * the only way this refusal can ever be distinguishable from a wedge. */
   claimMonitor(opts: ClaimMonitorOptions): Promise<ClaimMonitorOutcome>;
   /** Releases a previously claimed monitor socket. Tolerates a broker that
-   * has already cleared the record (release/recycle/process-exit all clear
+   * has already cleared the record (release/process-exit both clear
    * it broker-side) -- a second release is `ok: true`, not an error. */
   releaseMonitor(opts: ReleaseMonitorOptions): Promise<ReleaseMonitorOutcome>;
   /** Declares (or, with `opts.name: null`, clears) the operation THIS
@@ -922,7 +470,7 @@ export interface BrokerControlSession {
    * second connection. Built on the same `sendAndAwaitLine()` every other
    * method uses, so it registers its own pending-response entry and never
    * throws; callers are expected to call this WITHOUT awaiting the returned
-   * promise (stock-dispatch.ts's and text-tools.ts's own channel-lock
+   * promise (stock-session.ts's and text-tools.ts's own channel-lock
    * wrappers do exactly that) -- a declaration must never add latency to,
    * or fail, the tool call that triggered it (T-63-13). The un-awaited
    * pending entry this method registers is exactly what makes that safe:
@@ -930,36 +478,27 @@ export interface BrokerControlSession {
    * settles a promise nothing is blocking on. */
   noteOperation(opts: NoteOperationOptions): Promise<NoteOperationOutcome>;
   /** Stages a file slot on the broker's own disk (Phase 64, XFER-04, D-01),
-   * sent as `{ op: "stage_file", id, target_id, slot, token }` over this
+   * sent as `{ op: "stage_file", id, target_id, slot }` over this
    * SAME session -- never a second connection. Mints no path or filename
    * itself: the broker chooses both and returns them (`handle`,
    * `emulatorFilename`) in the reply. Gated broker-side by the SAME
-   * ownsTarget() predicate `claimMonitor`/`releaseMonitor`/`recycle` are, so
+   * ownsTarget() predicate `claimMonitor`/`releaseMonitor` are, so
    * this connection can only stage against the grant it itself holds. */
   stageFile(opts: StageFileOptions): Promise<StageFileOutcome>;
 }
 
-export interface OpenBrokerControlOptions {
-  connectTimeoutMs?: number;
-}
-
-export type OpenBrokerControlOutcome =
-  | { ok: true; session: BrokerControlSession }
-  | { ok: false; kind: ControlFailureKind; message: string; target?: string };
-
 /** The backend-agnostic coordinate set a session which ALREADY holds a
  * broker grant hands to anything that needs to dial the instance that grant
  * names. Declared here, beside
- * BrokerControlSession and openBrokerControl(), because it is
+ * BrokerControlSession and dialControlSession(), because it is
  * backend-agnostic -- the fork path does not consume it only because
  * forwardToVice() reads activeInstance() from the same module (vice.ts)
  * that owns the state, not because this shape is stock-specific.
  *
- * `targetId` is the GRANT ID, not the port -- the exact same value
- * vice-proxy.ts's own `controlSession.recycle(grantId)` call site passes.
+ * `targetId` is the GRANT ID, not the port.
  * `brokerControl` is the SAME control session the grant was acquired
  * through; a stock handler must claim its monitor socket on this session,
- * never on one it opened itself (see stock-dispatch.ts's own
+ * never on one it opened itself (see stock-session.ts's own
  * ensureStockSession() header comment for why a second acquisition would
  * break the claim-before-dial guarantee this type exists to preserve). */
 export interface HeldLease {
@@ -967,35 +506,19 @@ export interface HeldLease {
   port: number;
   targetId: string;
   brokerControl: BrokerControlSession;
-  /** THIS instance's own epoch.json, in the CONSUMER's view of the
-   * filesystem (i.e. already containerized -- vice-proxy.ts fills it from
-   * activeInstance().epochFile, which adoptGrant() set from the containerized
-   * grant). This is the reconnect-identity baseline stock-connect.ts's
-   * stockReconnect() proves machine identity against. NOT optional: with it
-   * absent, stockReconnect() reports a FALSE MachineRestartedError on every
-   * transient socket drop ("treat every result since the previous call as
-   * void"), because identity that cannot be proven is treated as not proven.
-   * Empty string means genuinely no epoch evidence exists, which is that same
-   * unprovable case stated explicitly rather than by omission. */
-  epochFile: string;
-  /** The TOP-LEVEL supervisor directory -- the one holding
-   * `backend.json`, i.e. the same directory `broker.json` is read from
-   * (brokerRootDir()). Deliberately NOT the grant's own per-instance
-   * `supervisor_dir` (`<stateDir>/<port>`), which holds epoch.json and would
-   * make backend-detect.mts's capability cache look in a directory that never
-   * has a record in it -- a silent permanent miss. Empty string disables the
-   * capability cache (every connect re-probes), matching
-   * backend-detect.mts's own documented degradation for an omitted
-   * supervisorDir. */
+  /** The directory holding this process's own capability cache
+   * (`backend.json`), resolved on THIS side. Never a broker-side path: the
+   * grant names none. Empty string disables the capability cache (every
+   * connect re-probes), matching backend-detect.mts's own documented
+   * degradation for an omitted supervisorDir. */
   supervisorDir: string;
   /** THIS
    * instance's own text-monitor port, read by text-connect.ts's
    * textConnect() to dial the `-remotemonitor` channel. MANDATORY on a
    * stock grant, ABSENT on a fork grant -- the fork never launches with
    * `-remotemonitor` and advertises no text tools. Its absence on a stock
-   * lease is a real defect, not a tolerated state (mirrors epochFile's own
-   * "NOT optional" discipline above): the mechanism that makes this true is
-   * broker-launch.mts's acquirePortAndLaunch(), which now FAILS THE WHOLE
+   * lease is a real defect, not a tolerated state: the mechanism that
+   * makes this true is broker-launch.mts's acquirePortAndLaunch(), which now FAILS THE WHOLE
    * ACQUIRE when the text-port allocation fails (`no_free_text_port`)
    * rather than degrading to a portless launch -- there is no longer a code
    * path that produces a stock grant, and therefore a HeldLease, without
@@ -1030,7 +553,7 @@ type RawLineOutcome = { ok: true; line: Record<string, unknown> } | { ok: false;
 /** Never-throw extraction of a `holder` payload from untrusted wire input --
  * absent or malformed input answers `undefined`, never a partially-filled
  * object (this module's own never-throw-on-untrusted-input posture, matching
- * this file's own header comment on broker.json reads). `channel`
+ * this file's own header comment). `channel`
  * defaults to `requestedChannel` -- THE channel this request
  * itself named -- when the wire omits it or sends something unrecognised;
  * never fabricated as a plausible value, in the same register the
@@ -1049,7 +572,7 @@ function extractHolder(raw: unknown, requestedChannel: MonitorClaimChannel): Mon
  * attachControlProtocol() uses on the host side) and the broker-gone
  * settlement on "close"/"error", then exposes the five typed request
  * methods over it. */
-function createSession(socket: Socket, token: string): BrokerControlSession {
+function createSession(socket: Socket): BrokerControlSession {
   let buffer = "";
   let closed = false;
   const pending: PendingLineEntry[] = [];
@@ -1087,7 +610,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
   socket.on("close", settleAllBrokerGone);
   socket.on("error", settleAllBrokerGone);
 
-  /** Sends one JSON line carrying `token` and awaits the matching response,
+  /** Sends one JSON line and awaits the matching response,
    * settling a typed failure rather than throwing on every failure mode:
    * deadline, broker-gone, a malformed line, or the broker's own `error`
    * response (whose `code` is forwarded verbatim as this outcome's `kind`).
@@ -1098,7 +621,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
   function sendAndAwaitLine(payload: Record<string, unknown>, timeoutMs: number): Promise<RawLineOutcome> {
     return new Promise((resolvePromise) => {
       if (closed) {
-        resolvePromise({ ok: false, kind: "broker_gone", message: "openBrokerControl: session already closed" });
+        resolvePromise({ ok: false, kind: "broker_gone", message: "vice-broker-client: session already closed" });
         return;
       }
       let settled = false;
@@ -1111,12 +634,12 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
             resolvePromise({
               ok: false,
               kind: "broker_gone",
-              message: "openBrokerControl: the broker closed the connection while this request was in flight",
+              message: "vice-broker-client: the broker closed the connection while this request was in flight",
             });
             return;
           }
           if (line === null) {
-            resolvePromise({ ok: false, kind: "protocol", message: "openBrokerControl: malformed or non-object response line" });
+            resolvePromise({ ok: false, kind: "protocol", message: "vice-broker-client: malformed or non-object response line" });
             return;
           }
           if (line.kind === "error") {
@@ -1134,7 +657,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
             resolvePromise({
               ok: false,
               kind: code,
-              message: typeof line.message === "string" ? line.message : "openBrokerControl: broker reported an error",
+              message: typeof line.message === "string" ? line.message : "vice-broker-client: broker reported an error",
               holder,
             });
             return;
@@ -1147,7 +670,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
         settled = true;
         const idx = pending.indexOf(entry);
         if (idx !== -1) pending.splice(idx, 1);
-        resolvePromise({ ok: false, kind: "deadline", message: `openBrokerControl: no response within ${timeoutMs}ms` });
+        resolvePromise({ ok: false, kind: "deadline", message: `vice-broker-client: no response within ${timeoutMs}ms` });
       }, timeoutMs);
       if (typeof timer.unref === "function") timer.unref();
 
@@ -1158,35 +681,29 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
 
   async function acquire(opts: ControlDeadlineOptions & AcquireProfileOptions = {}): Promise<ControlAcquireResult> {
     const requestId = newRequestId();
-    // Write site TWO of two (see
-    // acquireProfileFragment()'s own comment for why both matter) -- same
-    // key-omitted-when-absent discipline as acquireOverControlPlane()'s raw
-    // socket.write above. Same no-overrides resolveSessionLabel() call as
-    // write site one.
+    // The profile and label keys are omitted when absent (see
+    // acquireProfileFragment()); the label is resolved with no overrides.
     const raw = await sendAndAwaitLine(
-      { op: "acquire", id: requestId, token, ...acquireProfileFragment(opts.profile), ...acquireLabelFragment(resolveSessionLabel()) },
+      { op: "acquire", id: requestId, ...acquireProfileFragment(opts.profile), ...acquireLabelFragment(resolveSessionLabel()) },
       opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS,
     );
     if (!raw.ok) return raw;
     const line = raw.line;
     if (line.kind !== "grant") {
-      return { ok: false, kind: "protocol", message: `openBrokerControl: acquire got unexpected response kind ${String(line.kind)}` };
+      return { ok: false, kind: "protocol", message: `vice-broker-client: acquire got unexpected response kind ${String(line.kind)}` };
     }
     const remoteMonitorPort = parseOptionalRemoteMonitorPort(line.remote_monitor_port);
     const grant: AcquireGrant = {
       id: String(line.id),
       port: Number(line.port),
       url: String(line.url),
-      epoch_file: String(line.epoch_file),
-      supervisor_dir: String(line.supervisor_dir),
       ...(remoteMonitorPort === undefined ? {} : { remote_monitor_port: remoteMonitorPort }),
     };
     return { ok: true, grant };
   }
 
   /** The connection IS the lease -- closing it is the ENTIRE release, no
-   * wire round trip needed (matches acquireOverControlPlane()'s own
-   * release() above). socket.destroy() is itself idempotent, so a second
+   * wire round trip needed. socket.destroy() is itself idempotent, so a second
    * release() call is a silent no-op, matching the idempotent posture the
    * retiring file-based releaseLease() already had. */
   async function release(): Promise<ControlReleaseResult> {
@@ -1195,39 +712,17 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     return { ok: true };
   }
 
-  async function recycle(targetId: string, opts: ControlDeadlineOptions = {}): Promise<ControlRecycleResult> {
-    const requestId = newRequestId();
-    const raw = await sendAndAwaitLine({ op: "recycle", id: requestId, target_id: targetId, token }, opts.timeoutMs ?? RECYCLE_TIMEOUT_MS);
-    if (!raw.ok) return raw;
-    const line = raw.line;
-    if (line.kind !== "recycle_ack") {
-      return { ok: false, kind: "protocol", message: `openBrokerControl: recycle got unexpected response kind ${String(line.kind)}` };
-    }
-    // Exactly the key set vice-proxy.ts's recycleAckOutcomeMessage() (lines
-    // 584-611) plus its caller (lines 707-713) read from the ack: outcome,
-    // kill_stage, reason -- documented at the point of use here rather than
-    // only in the plan, since this IS the point of use.
-    return {
-      ok: true,
-      ack: {
-        outcome: typeof line.outcome === "string" ? line.outcome : "unknown",
-        kill_stage: typeof line.kill_stage === "string" ? line.kill_stage : "unknown",
-        reason: typeof line.reason === "string" ? line.reason : "",
-      },
-    };
-  }
-
   async function status(opts: ControlDeadlineOptions = {}): Promise<ControlStatusResult> {
     // Reuses ACQUIRE_TIMEOUT_MS as a shared bound -- status is a synchronous,
     // in-memory read on the broker side (no launch, no kill involved), so it
     // needs no timeout of its own scale; introducing a distinct constant (or
     // environment variable) for it would be exactly the kind of new knob
     // this module deliberately declines to add.
-    const raw = await sendAndAwaitLine({ op: "status", token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    const raw = await sendAndAwaitLine({ op: "status" }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
     if (!raw.ok) return raw;
     const line = raw.line;
     if (line.kind !== "status") {
-      return { ok: false, kind: "protocol", message: `openBrokerControl: status got unexpected response kind ${String(line.kind)}` };
+      return { ok: false, kind: "protocol", message: `vice-broker-client: status got unexpected response kind ${String(line.kind)}` };
     }
     const rawInstances = Array.isArray(line.instances) ? line.instances : [];
     const instances: ControlStatusInstanceEntry[] = rawInstances.map((rawEntry) => {
@@ -1238,6 +733,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
         state: typeof e.state === "string" ? e.state : "",
         reason: typeof e.reason === "string" ? e.reason : "",
         epoch: typeof e.epoch === "number" ? e.epoch : null,
+        grantId: typeof e.grantId === "string" ? e.grantId : null,
       };
     });
     return { ok: true, instances };
@@ -1245,11 +741,11 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
 
   async function hostState(opts: ControlDeadlineOptions = {}): Promise<ControlHostStateResult> {
     // Same shared-bound reasoning as status() above.
-    const raw = await sendAndAwaitLine({ op: "host_state", token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    const raw = await sendAndAwaitLine({ op: "host_state" }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
     if (!raw.ok) return raw;
     const line = raw.line;
     if (line.kind !== "host_state") {
-      return { ok: false, kind: "protocol", message: `openBrokerControl: host_state got unexpected response kind ${String(line.kind)}` };
+      return { ok: false, kind: "protocol", message: `vice-broker-client: host_state got unexpected response kind ${String(line.kind)}` };
     }
     return {
       ok: true,
@@ -1271,8 +767,8 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
   }
 
   /** Claims exclusive ownership of `opts.targetId`'s monitor socket, sending
-   * `{ op: "monitor_claim", id, target_id, channel, token }` through the SAME
-   * `sendAndAwaitLine()` path -- the same session, the same token, the same
+   * `{ op: "monitor_claim", id, target_id, channel }` through the SAME
+   * `sendAndAwaitLine()` path -- the same session and the same
    * newline-delimited JSON discipline every other op uses; no second
    * control connection is ever opened, and this function never dials the
    * binmon port itself, on success OR on failure -- see
@@ -1284,7 +780,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
   async function claimMonitor(opts: ClaimMonitorOptions): Promise<ClaimMonitorOutcome> {
     const requestId = newRequestId();
     const channel: MonitorClaimChannel = opts.channel ?? "binary";
-    const raw = await sendAndAwaitLine({ op: "monitor_claim", id: requestId, target_id: opts.targetId, channel, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    const raw = await sendAndAwaitLine({ op: "monitor_claim", id: requestId, target_id: opts.targetId, channel }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
     if (!raw.ok) {
       if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
       // The `monitor_owned` REASON survives even when the wire's own
@@ -1302,7 +798,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
       if (raw.kind === "monitor_owned") {
         return { ok: false, reason: "monitor_owned", holder: raw.holder ?? { grantId: "unknown", claimedAt: 0, pid: null, channel } };
       }
-      if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
+      if (raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
       return { ok: false, reason: "internal" };
     }
     if (raw.line.kind !== "monitor_claimed") {
@@ -1321,7 +817,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
   }
 
   /** Releases a previously claimed monitor socket, sending
-   * `{ op: "monitor_release", id, target_id, channel, token }` over the SAME
+   * `{ op: "monitor_release", id, target_id, channel }` over the SAME
    * session. Tolerates a broker that has already cleared the record (the
    * broker's own onMonitorRelease answers `ok: true` for an already-cleared
    * target) -- this function never retries and never opens a second
@@ -1330,10 +826,10 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
   async function releaseMonitor(opts: ReleaseMonitorOptions): Promise<ReleaseMonitorOutcome> {
     const requestId = newRequestId();
     const channel: MonitorClaimChannel = opts.channel ?? "binary";
-    const raw = await sendAndAwaitLine({ op: "monitor_release", id: requestId, target_id: opts.targetId, channel, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    const raw = await sendAndAwaitLine({ op: "monitor_release", id: requestId, target_id: opts.targetId, channel }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
     if (!raw.ok) {
       if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
-      if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
+      if (raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
       return { ok: false, reason: "internal" };
     }
     if (raw.line.kind !== "monitor_released") {
@@ -1343,19 +839,19 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
   }
 
   /** Declares/clears the in-flight operation, sending
-   * `{ op: "operation", id, target_id, channel, name, token }` over the SAME
+   * `{ op: "operation", id, target_id, channel, name }` over the SAME
    * session. See NoteOperationOptions'/BrokerControlSession.noteOperation's
    * own header comments for why callers are expected NOT to await this. */
   async function noteOperation(opts: NoteOperationOptions): Promise<NoteOperationOutcome> {
     const requestId = newRequestId();
     const channel: MonitorClaimChannel = opts.channel ?? "binary";
     const raw = await sendAndAwaitLine(
-      { op: "operation", id: requestId, target_id: opts.targetId, channel, name: opts.name, token },
+      { op: "operation", id: requestId, target_id: opts.targetId, channel, name: opts.name },
       opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS,
     );
     if (!raw.ok) {
       if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
-      if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
+      if (raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
       return { ok: false, reason: "internal" };
     }
     if (raw.line.kind !== "operation_noted") {
@@ -1365,30 +861,25 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
   }
 
   /** Stages a file slot on the broker's own disk, sending
-   * `{ op: "stage_file", id, target_id, slot, token }` through the SAME
+   * `{ op: "stage_file", id, target_id, slot }` through the SAME
    * `sendAndAwaitLine()` path every other op uses -- the same session, the
-   * same token, no second control connection is ever opened. Mirrors
+   * no second control connection is ever opened. Mirrors
    * claimMonitor()'s own shape: a deadline maps to `timeout`, distinctly
-   * from a refusal; `unauthorized`/`bad_request`/`denied` are each reported
+   * from a refusal; `bad_request`/`denied` are each reported
    * under their own reason; a missing or non-string `handle`/
    * `emulator_filename` on a success reply is a protocol failure, never
    * fabricated -- the broker always sends both on success, so their
    * absence means the two sides disagree about the wire shape.
    *
-   * Does NOT touch this module's two legacy UTF-8 string framers
-   * (see this file's own header comment on that legacy discovery-record
-   * dial path). D-03 declined converting them deliberately: that path is
-   * legacy, broker-endpoint.ts's header forbids importing it, and RM-02
-   * deletes it in Phase 66 -- and the transfer this op sets up rides
-   * broker-endpoint.ts, which accumulates as a Buffer, so no payload byte
-   * can reach a string framer by construction. A later reader must not
-   * "fix" them on this function's account. */
+   * The transfer this op sets up rides broker-endpoint.mts, which
+   * accumulates as a Buffer, so no payload byte reaches this session's
+   * string framer. */
   async function stageFile(opts: StageFileOptions): Promise<StageFileOutcome> {
     const requestId = newRequestId();
-    const raw = await sendAndAwaitLine({ op: "stage_file", id: requestId, target_id: opts.targetId, slot: opts.slot, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    const raw = await sendAndAwaitLine({ op: "stage_file", id: requestId, target_id: opts.targetId, slot: opts.slot }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
     if (!raw.ok) {
       if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
-      if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
+      if (raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
       return { ok: false, reason: "internal" };
     }
     if (raw.line.kind !== "file_staged") {
@@ -1402,100 +893,24 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     return { ok: true, handle, emulatorFilename };
   }
 
-  return { acquire, release, recycle, status, hostState, claimMonitor, releaseMonitor, noteOperation, stageFile };
+  return { acquire, release, status, hostState, claimMonitor, releaseMonitor, noteOperation, stageFile };
 }
 
-/** Opens ONE session against the control plane: reads broker.json ONCE for
- * control_host/control_port/control_token (and, from that SAME read,
- * classifies liveness -- never a second file read for the same record),
- * refuses to even attempt a connection when that classification is
- * never_started or stale, then opens ONE TCP connection and holds it for
- * the caller. Every failure mode resolves a typed `{ ok: false, kind,
- * message }` outcome rather than rejecting -- see this region's own header
- * comment for why. */
-export function openBrokerControl(dir: string = brokerRootDir(), opts: OpenBrokerControlOptions = {}): Promise<OpenBrokerControlOutcome> {
-  const connectTimeoutMs = opts.connectTimeoutMs ?? CONTROL_CONNECT_TIMEOUT_MS;
-  return new Promise((resolvePromise) => {
-    const path = brokerJsonPath(dir);
-    const parsed = readJsonMaybe(path); // the ONE read of the discovery record for this whole session
-    const liveness = classifyLivenessFromRecord(parsed, path);
-    if (liveness.state === "never_started" || liveness.state === "stale") {
-      resolvePromise({
-        ok: false,
-        kind: liveness.state,
-        message: `openBrokerControl: broker.json classifies ${liveness.state} (${path}) -- refusing to attempt a connection`,
-      });
-      return;
-    }
-    if (parsed === null) {
-      // Unreachable in practice -- classifyLivenessFromRecord() only ever
-      // answers "alive" when it was handed a non-null record -- but keeps
-      // the branch below soundly typed rather than asserting past the
-      // compiler.
-      resolvePromise({ ok: false, kind: "never_started", message: "openBrokerControl: broker.json unexpectedly absent" });
-      return;
-    }
-    const controlHost = typeof parsed.control_host === "string" ? parsed.control_host : null;
-    const port = typeof parsed.control_port === "number" ? parsed.control_port : null;
-    const token = typeof parsed.control_token === "string" ? parsed.control_token : null;
-    if (controlHost === null || port === null || token === null) {
-      resolvePromise({
-        ok: false,
-        kind: "protocol",
-        message: "openBrokerControl: broker.json missing control_host/control_port/control_token",
-      });
-      return;
-    }
+export type DialControlSessionOptions = DialControlSocketOptions;
 
-    const targetResult = resolveControlTarget(parsed, port);
-    if (!targetResult.ok) {
-      resolvePromise({ ok: false, kind: targetResult.kind, message: targetResult.message, target: targetResult.target });
-      return;
-    }
-    const { host } = targetResult.target;
+export type DialControlSessionOutcome =
+  | { ok: true; session: BrokerControlSession }
+  | { ok: false; kind: ControlFailureKind; message: string };
 
-    let settled = false;
-    const socket = connect({ host, port });
-
-    const connectTimer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      socket.removeListener("connect", onConnect);
-      socket.removeListener("error", onError);
-      socket.destroy();
-      resolvePromise({
-        ok: false,
-        kind: "connect_refused",
-        message: `openBrokerControl: no connection to ${host}:${port} within ${connectTimeoutMs}ms`,
-        target: `${host}:${port}`,
-      });
-    }, connectTimeoutMs);
-    if (typeof connectTimer.unref === "function") connectTimer.unref();
-
-    function onConnect(): void {
-      if (settled) return;
-      settled = true;
-      clearTimeout(connectTimer);
-      socket.removeListener("error", onError);
-      resolvePromise({ ok: true, session: createSession(socket, token as string) });
-    }
-
-    function onError(err: Error): void {
-      if (settled) return;
-      settled = true;
-      clearTimeout(connectTimer);
-      socket.removeListener("connect", onConnect);
-      resolvePromise({
-        ok: false,
-        kind: "connect_refused",
-        message: `openBrokerControl: connection to ${host}:${port} failed -- ${err.message}`,
-        target: `${host}:${port}`,
-      });
-    }
-
-    socket.once("connect", onConnect);
-    socket.once("error", onError);
-  });
+/** Opens ONE session on the fixed endpoint: a hello race over the dial
+ * candidates (broker-endpoint.mts's dialControlSocket()), then the winning
+ * connection held for the caller. A failed dial resolves `connect_refused`
+ * carrying describeDialFailure()'s ranked text, which names the start
+ * command. Never rejects. */
+export async function dialControlSession(opts: DialControlSessionOptions = {}): Promise<DialControlSessionOutcome> {
+  const dialed = await dialControlSocket({ connectTimeoutMs: CONTROL_CONNECT_TIMEOUT_MS, ...opts });
+  if (!dialed.ok) return { ok: false, kind: "connect_refused", message: dialed.reason };
+  return { ok: true, session: createSession(dialed.socket) };
 }
 
 // ---------------------------------------------------------------------------

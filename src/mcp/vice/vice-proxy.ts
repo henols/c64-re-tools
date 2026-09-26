@@ -20,7 +20,7 @@
 // §B6's HIGH-confidence recommendation to stay fully hand-rolled. The
 // ROADMAP rates this adoption "reversible but costly -- not one-way": the
 // ~88-94% of hand-rolled logic below (broker leasing, epoch/liveness,
-// recycle/diagnose, deny-list enforcement, path rewriting, incident
+// deny-list enforcement, path rewriting, incident
 // capture, the ten broker-state message builders -- enumerated exhaustively
 // in 01.6-PATTERNS.md's "Pattern: The D-01 Seam") never moved and is not
 // part of what a rollback touches.
@@ -51,7 +51,7 @@
 //        deleted them) and its parent (the last commit where they still
 //        existed).
 //     2. Re-point every tool's dispatch: each tool's `execute` body
-//        (`stockDispatch.dispatchStock(def.name, args, ...)` as of the
+//        (`runStockTool(tool, args, ...)` as of the
 //        fork-backend removal -- UNCHANGED by this rollback either way, it
 //        predates and outlives the swap) currently runs inside the
 //        `CallToolRequestSchema` override's per-tool lookup; re-wire that
@@ -85,62 +85,26 @@
 // tool call too) live in vice-errors.ts. The fork's own HTTP/JSON-RPC
 // transport module (its outer-name refusal array, the session-identity
 // apparatus, `call()`/`callTool`, `serverInfo()`) is gone entirely: every
-// remaining tool dispatch in this file goes through stockDispatch, never
+// remaining tool dispatch in this file goes through stock-tools.ts, never
 // through a fork transport.
-import { activeInstance, useInstance, mcpHost, type ActiveInstance, type ToolInfo } from "./vice-errors.ts";
+import { activeInstance, useInstance, type ActiveInstance, type ToolInfo } from "./vice-errors.ts";
 import { repoRoot, toolsDir } from "./repo-root.ts";
 // The single version-resolution seam (quick-260819-tsz, D-5) -- PROXY_VERSION
-// below is the only consumer in this file; see version.ts's own header for
+// below is the only consumer in this file; see version.mts's own header for
 // why this file must never re-derive any part of the algorithm itself.
-import { runtimeVersion } from "./version.ts";
-import { hostPath, SET_ENV_HINT } from "./hostpath.ts";
-// The INVERSE direction (host -> container), for inverting a broker grant's
-// own host-local coordinates before useInstance() ever adopts them (this
-// task, quick-260801-ccn). Consuming this from the proxy -- rather than
-// hand-translating a host path here -- is what keeps the host-path consumer
-// set closed to a fixed, traced list of exactly four production modules
-// (containerpath.ts, install-resources.ts, stock-paths.ts, vice-proxy.ts),
-// pinned by hostpath-consumers.test.ts.
-import { containerizeRecord } from "./containerpath.ts";
-// The container-side half of the on-demand broker protocol (Phase 01.2).
-// This module deliberately does NOT import hostpath.mjs itself -- the
-// host-path consumer set stays closed to exactly four production modules
-// (containerpath.ts, install-resources.ts, stock-paths.ts, vice-proxy.ts),
-// pinned by hostpath-consumers.test.ts, and this file is
-// already on that list, so any broker-related host path text is built HERE.
-// Tasks 1+2 (this plan) swap acquisition, release AND recycle onto the TCP
-// control session (openBrokerControl()/BrokerControlSession, plan 06's
-// completed client) -- writeRequest/createLease/touchLease/releaseLease/
-// pollGrant/startHeartbeat/requestsDir/newRequestId/writeRecycleRequest/
-// pollRecycleAck are no longer imported: their whole job (write a request,
-// create a lease file, heartbeat its mtime, poll for a grant or an
-// acknowledgement, unlink on release) is now "send one request over the
-// connection already held". RECYCLE_TIMEOUT_MS (the client's own recycle
-// deadline, task 3's renamed successor to the now-deleted
-// RECYCLE_ACK_TIMEOUT_MS) is reused below as the bound the post-kill
-// epoch-and-readiness poll uses -- a concern this swap does not touch.
-// RECYCLE_TIMEOUT_MS is no longer imported here: the fork-only generic
-// forwarding function and its own wedge-evidence gatherer that used it for
-// their post-kill epoch/readiness poll are deleted -- vice_recycle's
-// stock implementation (stock-recycle.ts, reached via stockDispatch) owns
-// that timeout itself now. The incident-record import (writeIncidentRecord,
-// finaliseIncidentRecord, incidentAssetPath, incidentAssetStem,
-// IncidentEvidence, IncidentAssetStemOptions) is gone for the same reason:
-// its only caller was the fork-only handleRecycle() body that wrote a
-// pre-kill incident record over call() -- stock-recycle.ts's own
-// handleRecycleStock() does this natively now, never through this file.
+import { runtimeVersion, DEV_PLACEHOLDER } from "./version.mts";
+// The client half of the broker protocol. Acquisition and release go over
+// the TCP control session (dialControlSession()/BrokerControlSession).
 import {
-  readBrokerLiveness,
-  brokerRootDir,
-  openBrokerControl,
-  type BrokerLivenessResult,
+  dialControlSession,
   type BrokerControlSession,
-  type ControlFailureKind,
   type HeldLease,
 } from "./vice-broker-client.ts";
-import { readFileSync } from "node:fs";
+import { brokerStateDir } from "./broker-home.mts";
+import { BROKER_START_COMMAND } from "./broker-endpoint.mts";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 // The wire-layer replacement (this plan, D-01): MCPServer owns tools/list's
 // schema-conversion dispatch; the CallToolRequestSchema override installed
 // below (immediately after startStdio(), see that call site's own comment)
@@ -153,36 +117,34 @@ import { dirname, join, resolve } from "node:path";
 import { MCPServer } from "@mastra/mcp";
 import { createTool, noopObserve } from "@mastra/core/tools";
 import type { StandardSchemaWithJSON } from "@mastra/core/schema";
-// A real, already-resolved transitive dependency of @mastra/mcp (Plan 01's
-// Task 2 note) -- deliberately NOT added to package.json directly.
+// Declared in package.json's dependencies at the exact version @mastra/mcp
+// resolves, because this file imports it directly.
 import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-// Plan 02-10: this file's own backend-detection and stock-dispatch consumer
+// Plan 02-10: this file's own backend-detection and stock-tools consumer
 // edits. Both are namespace imports, deliberately -- keeps every reference to
 // their exported members's names down to the ONE call site each below (this
 // file's own grep-gated single-occurrence acceptance criteria), rather than a
 // named import whose binding is textually repeated at both the import line
 // and every call site.
 import * as backendDetect from "./backend-detect.mts";
-import * as stockDispatch from "./stock-dispatch.ts";
-// Plan 29-01: the curated anno_* tool surface's DEFINITIONS, imported
-// STATICALLY -- registration below happens synchronously at module scope, so
-// a dynamic import cannot serve it. This costs nothing at module load: no
-// store file is opened here. The owned SQLite annotation store stays behind
-// anno-tools.ts's own runAnnoTool(), which opens it, answers exactly one call
-// against it and closes it again (D-06), reached only when a tool is called.
-import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
+import { stockToolDefinitions, runStockTool } from "./stock-tools.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
+// D-13 (plan 65-02) removed the anno_* family's registration -- the whole
+// per-tool registration loop over the curated definitions, and the static
+// import feeding it, both of which used to sit here -- from tools/list.
+// Annotation now runs as a stateless, client-local CLI (D-12,
+// `vice-mcp anno call <name> --args JSON`, anno-cli.ts), with no route back
+// onto this file's own tool registry. See anno-cli.ts's own header for the
+// full reasoning; this file no longer imports anything from anno-tools.ts.
 
 // ------------------------------------------------------------ anno subcommand
 //
-// D-06 / RESEARCH.md Open Question #1 (plan 10-04): `vice-mcp anno <verb>` is
-// the ONLY surface that resolves identically across the Claude Code plugin
-// route and both npm-installer routes -- `installer/bin/cli.mjs`'s
-// `viceServerEntry()` always launches this server via `npx` in BOTH
-// npm-installer modes (`--vendor` only pre-resolves the package; it never
-// places `src/mcp/vice/*.ts` as plain files inside a consuming project),
-// so any design resolving a filesystem path to the seam would silently fail
-// to resolve for npm-installed users. This bin is the one surface proven to
-// work in all three routes.
+// `anno <verb>` runs on every route: the plugin and an in-repo checkout run
+// this file type-stripped, and the npm package runs its compiled copy,
+// dist/vice-proxy.js (build.ts's buildServer(), run by `prepack`), because
+// Node refuses to type-strip any `.ts` under `node_modules`
+// (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`). No shipped text names an
+// `npx` form.
 //
 // This branch runs as the first executable statement of the module body,
 // deliberately ABOVE `RESOLVED_BINARY`'s own path resolution (which stats the
@@ -291,6 +253,17 @@ if (process.argv[2] === "anno") {
 
 const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 
+/** The first of `fileName` beside this module or one directory up that
+ * exists, else the beside-this-module path. The compiled copy runs from
+ * dist/, one level below the package root that holds the data files; the
+ * source runs from the package root itself. Same two-candidate idiom as
+ * broker-endpoint.mts's CLIENT_VERSION and tool-location.mts's
+ * readDeclaration(). */
+function packageFile(fileName: string): string {
+  const candidates = [join(HERE_DIR, fileName), join(HERE_DIR, "..", fileName)];
+  return candidates.find((c) => existsSync(c)) ?? candidates[0];
+}
+
 // FORKRM-01 (plan 52-06): there is one backend now, so there is nothing left
 // to select between here -- this used to settle a backend verdict constant
 // once, at module scope, for the manifest selection, the tools construction
@@ -301,7 +274,7 @@ const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 // instead of a backend-shaped object.
 //
 // `RESOLVED_BINARY.binPath` is what `vice_ping`'s `resolvedBinaryPath` field
-// reports (see stock-dispatch.ts's `handlePing()`). It is resolved exactly
+// reports (see stock-tools.ts's `handlePing()`). It is resolved exactly
 // ONCE here, at MCP-server process startup -- Phase 60 (LOC-01/LOC-02) routes
 // that resolution through the tool-location seam (a `.c64-re-tools/tools.json`
 // entry for `x64sc`, then a bare `x64sc` `$PATH` probe, in THIS process's own
@@ -391,13 +364,18 @@ process.stdout.on("error", (err) => {
 // no longer survives as a hand-edited literal (quick-260819-tsz, D-4/D-5):
 // it used to say "0.1.0" while npm's actual `latest` was twelve patches
 // ahead, because nothing updated it. It is now derived through
-// `runtimeVersion()` (the ONE seam, `./version.ts`), which reads this
+// `runtimeVersion()` (the ONE seam, `./version.mts`), which reads this
 // package's own `package.json` first (the published-tarball path, where
 // `npm version` already stamped a real number) and falls back to the
 // repo-root `VERSION` template -- rendered as `<resolved>-dev` -- only in a
 // git checkout, degrading to `0.0.0-dev` if neither is available. Reused,
 // unchanged, as MCPServer's own `version` field below.
-const PROXY_VERSION = runtimeVersion({ pkgJsonPath: join(HERE_DIR, "package.json") });
+// Reads package.json beside this module, then one directory up (the
+// compiled dist/ copy), so the npm package never reports the dev placeholder.
+const PROXY_VERSION =
+  [join(HERE_DIR, "package.json"), join(HERE_DIR, "..", "package.json")]
+    .map((pkgJsonPath) => runtimeVersion({ pkgJsonPath }))
+    .find((v) => v !== DEV_PLACEHOLDER) ?? DEV_PLACEHOLDER;
 
 // --------------------------------------------------------------- tools/list
 //
@@ -501,102 +479,26 @@ const RESULT_CONTINUE_TOOL: ToolDefinition = {
   },
 };
 
-// The recycle tool (plan 01.3-01, task 1): the only new HOST-SIDE ACTION
-// this phase adds. Served entirely proxy-local -- like RESULT_CONTINUE_TOOL
-// above, it is never in tools-manifest.stock.json (RESEARCH Key Finding 3),
-// so a manifest edit can never drop it. Deliberately split from
-// vice_diagnose (D-03): this tool NEVER gates on a verdict, so there is no
-// "confirm"/"mode" argument and no shared state between the two tools to
-// keep in sync -- the separation itself is the safety.
-const RECYCLE_TOOL: ToolDefinition = {
-  name: "vice_recycle",
-  description:
-    "DESTRUCTIVE. Kills and respawns THIS session's own emulator in place, on the same port, via " +
-    "the host supervisor's existing respawn loop -- the same instance, not a different one. The " +
-    "restart epoch changes, so any run in flight is void and must be resumed from the last recorded " +
-    'milestone snapshot. A self-inflicted checkpoint stop (the emulator merely paused at an armed ' +
-    "checkpoint) is NOT a wedge and must not be recycled. Requires a non-empty \"reason\" naming why " +
-    "this recycle is happening; that reason is written to a permanent, repo-tracked incident record " +
-    "BEFORE anything is killed.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      reason: {
-        type: "string",
-        description: "Why this recycle is happening -- written verbatim into the incident record.",
-      },
-    },
-    required: ["reason"],
-  },
-};
-
-// The diagnose tool (plan 01.3-02): the read-mostly companion to
-// RECYCLE_TOOL above, served in the same proxy-local synthetic slot. D-03
-// keeps the two structurally unlinked -- no shared verdict/confirm state,
-// and recycle never reads a diagnose verdict.
-const DIAGNOSE_TOOL: ToolDefinition = {
-  name: "vice_diagnose",
-  description:
-    "Read-mostly. Answers which of five states this session's emulator is in -- restarted, " +
-    "checkpoint_trap, wedged, stale_read_path, or live -- with the evidence that produced the " +
-    "verdict. It may resume the machine once or twice to measure a cycle bracket, so it is never " +
-    "something to call reflexively; when it runs a bracket it leaves the machine PAUSED afterward -- " +
-    'resuming is your own next call. A "checkpoint_trap" verdict means the machine stopped ITSELF at ' +
-    "an armed checkpoint and must NOT be recycled -- recycling a self-inflicted stop destroys a " +
-    "healthy instance.",
-  inputSchema: {
-    type: "object",
-    properties: {},
-  },
-};
-
-// Edit 1 (plan 02-10): delegates to stock-dispatch.ts's own selector function
-// -- the ONE manifest site this file keeps. FORKRM-01: always resolves the
-// stock manifest now, since there is nothing else to select between; the
-// existing malformed-manifest fallbacks in readManifestTools() below are
-// untouched: a missing or unreadable stock manifest still answers tools/list
-// with an empty array rather than crashing the server.
-function manifestPath(): string {
-  return stockDispatch.manifestPathForBackend(HERE_DIR, process.env.VICE_TOOLS_MANIFEST);
-}
-
+// The committed manifest in the package root is the only source of the
+// advertised schemas. A missing or malformed manifest is a packaging bug, so
+// reading it throws and the server fails at startup rather than advertising
+// a partial tool surface.
 function readManifestTools(): ToolInfo[] {
-  const path = manifestPath();
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch (e) {
-    console.error(
-      `vice-proxy: tools-manifest not readable at ${path} (${(e as Error).message}) -- answering tools/list with an empty tools array`
-    );
-    return [];
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    console.error(
-      `vice-proxy: tools-manifest at ${path} is not valid JSON (${(e as Error).message}) -- answering tools/list with an empty tools array`
-    );
-    return [];
-  }
+  const path = packageFile("tools-manifest.stock.json");
+  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
   const shapeOk =
     isPlainObject(parsed) &&
     Array.isArray(parsed.tools) &&
     parsed.tools.every((t: unknown) => isPlainObject(t) && typeof t.name === "string");
   if (!shapeOk) {
-    console.error(
-      `vice-proxy: tools-manifest at ${path} has an unexpected shape ("tools" must be an array of objects ` +
-        `each carrying a string "name") -- answering tools/list with an empty tools array`
-    );
-    return [];
+    throw new Error(`the tools manifest at ${path} has an unexpected shape ("tools" must be an array of objects each carrying a string "name")`);
   }
   return (parsed as { tools: ToolInfo[] }).tools;
 }
 
 // --------------------------------------------------------------- tools/call
 //
-// Every advertised tool dispatches through stockDispatch.dispatchStock(),
+// Every advertised tool runs through stock-tools.ts's runStockTool(),
 // which owns its own reconnect and epoch-drift handling (stock-connect.ts).
 // This proxy layer performs no per-call epoch re-check of its own -- the
 // generic forwarding function that once needed one here is gone. Malformed
@@ -609,9 +511,8 @@ function readManifestTools(): ToolInfo[] {
 // this line may memoise "the broker is absent" as a fact that outlives a
 // single tools/call. There is no cached probe verdict, no sticky "last known
 // unreachable" flag, and no early-return short-circuit keyed off a PREVIOUS
-// failure -- ensureBrokerLease()'s readBrokerLiveness() call reads
-// broker.json fresh every time it is reached, never memoised at module
-// scope. This is deliberate and easy to break by a later, performance-minded
+// failure -- ensureBrokerLease() dials the endpoint fresh every time it is
+// reached, never memoised at module scope. This is deliberate and easy to break by a later, performance-minded
 // edit ("let's remember the broker was absent last call so we don't bother
 // checking again") -- don't. A cached negative here is exactly the "quiet
 // wrong answer" failure class this codebase rejects elsewhere
@@ -628,8 +529,7 @@ function isErrorText(text: string): ErrorTextResult {
 }
 
 /** The shape every tools/call outcome takes (Pattern 2): success or failure,
- * never a JSON-RPC `error` object. Shared by handleRecycle(), handleDiagnose(),
- * handleResultContinue(), wrapPossiblyChunked() and the CallToolRequestSchema
+ * never a JSON-RPC `error` object. Shared by handleResultContinue(), wrapPossiblyChunked() and the CallToolRequestSchema
  * override itself (near the bottom of this file). */
 interface OkTextResult {
   content: { type: "text"; text: string }[];
@@ -637,75 +537,21 @@ interface OkTextResult {
 }
 type ToolCallResult = ErrorTextResult | OkTextResult;
 
-// -------------------------------------------------------- dispatchStockFor
+// ----------------------------------------------------------- stockDeps
 //
-// The one place every stock tool call's shared deps object is built -- used
-// by the manifest loop below and by handleRecycle()/handleDiagnose() alike,
-// so there is exactly one definition of "what dispatchStock needs" rather
-// than three copies that could drift apart. Kept as a single-line-callable
-// helper (not inlined at each call site) so every registration reads as one
-// source line -- vice-proxy.test.ts's own registration scanner keys each
-// `tools[...] = ...;` line by its raw captured text and expects one
-// registration per line.
-function dispatchStockFor(name: string, args: Record<string, unknown>): Promise<ToolCallResult> {
-  return stockDispatch.dispatchStock(name, args, {
+// The one place every stock tool call's shared deps object is built.
+function stockDeps(): StockSessionDeps {
+  return {
     ensureLease: ensureBrokerLease,
     resolvedBinaryPath: RESOLVED_BINARY.binPath,
     resolvedBinaryPathIsResolved: RESOLVED_BINARY.binPathResolved,
-  });
-}
-
-// ------------------------------------------------------------ vice_recycle
-//
-// vice_recycle and vice_diagnose (below) are registered as this file's own
-// proxy-local synthetic tools (RECYCLE_TOOL/DIAGNOSE_TOOL above). Before
-// plan 52-04, each ALSO carried its own fork-only implementation here --
-// evidence gathered over call()'s HTTP transport, its own incident-record
-// writes -- reachable only on the (now-deleted) fork backend. The
-// (already-active) stock arm never ran that body at all: it dispatched
-// straight through stockDispatch.dispatchStock() to handleRecycleStock()/
-// handleDiagnoseStock() (stock-recycle.ts/stock-diagnose.ts), which own a
-// complete stock-native evidence gatherer and incident-record write of
-// their own (built for exactly this reason -- see stock-recycle.ts's own
-// header). That fork-only body is deleted, not merely emptied:
-// handleRecycle()/handleDiagnose() SURVIVE as named functions --
-// RECYCLE_TOOL/DIAGNOSE_TOOL's own registration still wires them in by name
-// (a structural oracle in vice-proxy.test.ts asserts handleRecycle's own
-// declaration form) -- but their bodies now do exactly what the stock arm
-// already did, unconditionally, rather than re-deriving a second copy of
-// stock-recycle.ts/stock-diagnose.ts's own logic here.
-const handleRecycle: (args: Record<string, unknown>) => Promise<ToolCallResult> = async function handleRecycle(args) {
-  return dispatchStockFor(RECYCLE_TOOL.name, args);
-}
-
-// ----------------------------------------------------------- vice_diagnose
-//
-// See vice_recycle's own header comment immediately above: handleDiagnose()
-// SURVIVES as a named function (DIAGNOSE_TOOL's own registration still wires
-// it in by name) but its fork-only evidence-gathering body (the epoch/
-// checkpoint-trap/cycle-bracket walk, all reached over call()'s HTTP
-// transport) is deleted. The stock arm never ran that body -- it already
-// dispatched straight through stockDispatch.dispatchStock() to
-// handleDiagnoseStock() (stock-diagnose.ts), which owns a complete
-// stock-native five-verdict diagnosis of its own. This is that delegation
-// made unconditional, rather than a second copy of stock-diagnose.ts's own
-// logic living here.
-async function handleDiagnose(args: Record<string, unknown>): Promise<ToolCallResult> {
-  return dispatchStockFor(DIAGNOSE_TOOL.name, args);
+  };
 }
 
 // --------------------------------------------------- unreachable diagnostics
 //
-// ONLY_ROUTE_NOTE and brokerHostPath() below are the shared vocabulary the
-// broker-absent diagnostics family (immediately below) uses to name the one
-// route back to a working emulator. The host-unreachable triple that used
-// to live in this section (never-started/dead-or-hung/alive-but-failed,
-// classifying a failed pre-flight liveness check over the fork's own HTTP
-// transport) is deleted along with the fork-only generic forwarding
-// function and its liveness-probe module: stock has no equivalent
-// probe-then-classify step of its own, and stockDispatch's own
-// session/lease handling reports unreachability through its own vocabulary
-// instead.
+// ONLY_ROUTE_NOTE below is the shared vocabulary the broker-absent
+// diagnostics use to name the one route back to a working emulator.
 //
 // This MCP tool surface is the only route to the emulator -- never named
 // together with a CLI verb here, since plan 01.1-04 installs a durable gate
@@ -715,82 +561,30 @@ const ONLY_ROUTE_NOTE =
   "the human to start it on the host -- falling back to a direct shell invocation of the underlying " +
   "transport is not an available workaround.";
 
-/** The absolute path of the command a human should run on the HOST to
- * start/restart access to the emulator -- computed via hostPath() over the
- * deployed launcher's container path, degrading to the container path plus
- * SET_ENV_HINT exactly as install-resources.ts's hostLaunchInstructions()
- * does, so a translation failure still yields something to act on rather
- * than an empty message. Recomputed fresh every call -- never cached (see
- * the never-cache-a-negative-result invariant above, near tools/call).
- * Points at resources/vice-launcher.sh's deployed copy -- the one surviving
- * host script (01.6.2-09). Every message in this file that used to name
- * either the retiring per-instance supervisor (vice-supervisor.sh) or the
- * retiring bash broker (vice-broker.sh) now names THIS launcher instead: its
- * own broker performs both the acquire-on-demand job the bash broker did and
- * the launch/supervise/respawn-with-backoff job the bash supervisor did. */
-function brokerHostPath(): string {
-  const root = repoRoot();
-  // Moved 2026-09-08 (D-33): was join(root, "tools", "vice-launcher.sh"),
-  // matching installTargetDir()'s pre-consolidation value. Now derived from
-  // repo-root.ts's own toolsDir() -- this module is container-side, unlike
-  // install-resources.ts, so it CAN import that resolver directly rather
-  // than joining the literal a second time -- matching installTargetDir()'s
-  // new `<root>/.c64-re-tools/bin` value exactly.
-  const target = join(toolsDir(), "bin", "vice-launcher.sh");
-  try {
-    return hostPath(target, { workspaceRoot: root });
-  } catch {
-    return `${target}\n  (host path could not be determined -- ${SET_ENV_HINT})`;
-  }
-}
-
 // ------------------------------------------------- broker-absent diagnostics
 //
-// Plan 01.2-03 task 1 / must_have C10. A missing broker answers exactly one
-// generic message two times out of three sends the reader to the wrong fix.
-// Every message here quotes brokerHostPath() (an absolute HOST path,
-// recomputed fresh -- see that function's own comment) and the single
-// shared ONLY_ROUTE_NOTE definition; no message below writes its own second
-// only-route sentence.
+// Plan 01.2-03 task 1 / must_have C10: each broker-absent shape gets its own
+// message and fix. Every message here names the broker start command and the
+// single shared ONLY_ROUTE_NOTE; no message writes its own second only-route
+// sentence.
 
-/** State: readBrokerLiveness() found no broker.json at all -- the broker has
- * never been started on this host. Nothing on the other side would ever
- * read a request, so ensureBrokerLease() returns this BEFORE writing one. */
-function brokerNeverStartedMessage(): string {
-  return (
-    `vice: the on-demand VICE broker has never been started on this host -- no broker.json ` +
-    `record exists at all. Start it on the host with:\n` +
-    `  ${brokerHostPath()}\n` +
-    ONLY_ROUTE_NOTE
-  );
+/** State: no dial candidate completed a hello. `reason` is
+ * describeDialFailure()'s ranked text (nothing listening, a foreign
+ * listener, a stale pre-v2.0.0 broker, or a version mismatch), which already
+ * names BROKER_START_COMMAND. */
+function brokerUnreachableMessage(reason: string): string {
+  return `${reason}\n${ONLY_ROUTE_NOTE}`;
 }
 
-/** State: broker.json exists but its heartbeat is older than the stale
- * threshold -- the broker process is dead or hung. Quotes the recorded pid
- * (readBrokerLiveness()'s own field), since checking that pid is the first
- * thing a human does on the host. */
-function brokerDeadOrHungMessage(liveness: BrokerLivenessResult): string {
-  const pidNote = liveness && liveness.pid != null ? ` (pid ${liveness.pid})` : "";
-  return (
-    `vice: the on-demand VICE broker appears to be dead or hung${pidNote} -- its last recorded ` +
-    `heartbeat is older than the stale threshold. Restart it on the host with:\n` +
-    `  ${brokerHostPath()}\n` +
-    ONLY_ROUTE_NOTE
-  );
-}
-
-/** State: the broker is alive and a request was polled, but it wrote a
- * denial rather than a grant. Relays the denial's own `reason` field
- * VERBATIM -- never paraphrased -- and deliberately carries no RESTART
- * instruction: restarting something that is answering correctly is the
- * wrong fix. Still names an absolute path (the running broker's own
- * launcher, purely as a reference) and the only-route sentence, both
- * required of every broker-absent-adjacent message this proxy emits. */
+/** State: the broker answered, but with a denial rather than a grant.
+ * Relays the denial's own `reason` field VERBATIM -- never paraphrased --
+ * and deliberately carries no RESTART instruction: restarting something
+ * that is answering correctly is the wrong fix. Still names the start
+ * command (purely as a reference) and the only-route sentence. */
 function brokerLaunchFailedMessage(reason: string): string {
-  const hostRef = brokerHostPath().split("\n")[0];
   return (
-    `vice: the on-demand VICE broker (running via the host-side launcher at ${hostRef}) declined ` +
-    `to grant an instance for this session: ${reason} ${ONLY_ROUTE_NOTE}`
+    `vice: the on-demand VICE broker declined to grant an instance for this session: ${reason} ` +
+    `The broker is started with: ${BROKER_START_COMMAND}. ${ONLY_ROUTE_NOTE}`
   );
 }
 
@@ -809,48 +603,6 @@ function brokerWarmingMessage(elapsedMs: number): string {
   );
 }
 
-/** State: readBrokerLiveness() just classified broker.json as `alive` (a
- * FRESH heartbeat), yet openBrokerControl() still failed -- a control-plane
- * CONNECTIVITY failure, never a dead or hung broker. This is the fix for
- * the exact incident recorded in
- * .planning/todos/pending/2026-08-04-proxy-reports-a-live-broker-as-stale-blocking-all-emulator-access.md:
- * `broker.json` is read from the shared filesystem, not over the control
- * connection, so the freshness computation had a perfectly good timestamp
- * and would have returned `alive` -- the failure was one layer later, at
- * the connect (dialing the broker's own recorded bind address, from
- * inside this container). Reporting that connect failure with the
- * heartbeat/stale-threshold wording sent the reader chasing a threshold
- * that was never exceeded, costing that session roughly a dozen tool
- * calls. This message names the address and port instead: from
- * `opened.target` when the outcome resolved one (every connect-adjacent
- * failure kind sets it), degrading to the outcome's own `message` for a
- * kind that never got that far (missing broker.json fields). States
- * plainly that `broker.json`'s own `control_host` field is the broker's
- * BIND address -- loopback or one of its enumerated bridge-gateway
- * addresses (D-09), valid on the host where the broker wrote it,
- * structurally undialable from inside this container -- so a reader is
- * pointed at the connectivity problem, never at broker health. Carries NO
- * secret: not
- * `control_token`, not any other field of the record, only the resolved
- * target and the fixed prose below. Follows the broker-absent family's own
- * stated conventions (quotes `brokerHostPath()` purely as a reference, the
- * shared `ONLY_ROUTE_NOTE`, never a second only-route sentence) -- mirroring
- * brokerLaunchFailedMessage() above rather than the never-started/
- * dead-or-hung pair, since (like a launch denial) the broker here is
- * alive and answering correctly; restarting it would be the wrong fix. */
-function brokerControlUnreachableMessage(opened: { kind: ControlFailureKind; message: string; target?: string }, liveness: BrokerLivenessResult): string {
-  const pidNote = liveness && liveness.pid != null ? ` (pid ${liveness.pid})` : "";
-  const hostRef = brokerHostPath().split("\n")[0];
-  const targetNote = opened.target ?? opened.message;
-  return (
-    `vice: the on-demand VICE broker${pidNote} (running via the host-side launcher at ${hostRef}) has ` +
-    `a fresh, healthy heartbeat -- this is NOT a dead or hung broker. This MCP tool surface could not ` +
-    `reach the control plane at ${targetNote}. broker.json's own control_host field records the broker's BIND ` +
-    `address, valid on the host where the broker wrote it and structurally undialable from inside this ` +
-    `container -- a control-plane connectivity failure, not a broker health problem. ${ONLY_ROUTE_NOTE}`
-  );
-}
-
 // removeRequestFile() (requests/<id>.json cleanup on a denial or a warming
 // timeout) is GONE, not merely unused -- its subject directory ceases to
 // exist under the control-plane acquisition below. There is nothing left to
@@ -866,36 +618,8 @@ function brokerControlUnreachableMessage(opened: { kind: ControlFailureKind; mes
 // instance stopped answering the fork-only generic forwarding function's own
 // pre-flight liveness check -- their only caller. Deleted along with that
 // forwarding function; stock has no equivalent probe-then-replace step at
-// this proxy layer, and a dead lease surfaces through stockDispatch's own
+// this proxy layer, and a dead lease surfaces through stock-session.ts's own
 // error handling instead.
-
-// ------------------------------------------------------------ path rewriting
-//
-// isInsideWorkspace() below is the ONE survivor of what used to be a larger
-// container->host path-translation seam here (decision D-G, plan 01.1-03
-// task 3): the per-call argument path-rewriter and its recursive value
-// walker, along with their own refusal classes
-// (PathOutOfWorkspaceError/PathTranslationError), were the fork-only
-// per-forwarded-call rewriter the fork-only generic forwarding function ran
-// before delegating to the fork transport's own dispatch call -- deleted
-// along with it. isInsideWorkspace() itself SURVIVES
-// because it has a second, backend-agnostic consumer: containerizeGrant()
-// (further down this file) re-checks a broker grant's translated
-// epoch_file/supervisor_dir fields against the workspace boundary before
-// trusting them. Stock's OWN emulator-side path translation
-// (stock-paths.ts's withEmulatorSidePath()/STOCK_EMULATOR_SIDE_PATH_TOOLS)
-// is a separate, still-untouched mechanism -- see that file's own header.
-//
-// STATED RESIDUAL, unchanged from before this deletion: this check is
-// lexical, not physical -- a symlink inside the workspace whose target lives
-// outside it still translates. realpathSync() would catch that but requires
-// the file to already exist, which is wrong for the write-side tools
-// (snapshot_save and friends name a path that does not exist yet). Lexical
-// normalization is the part that can be enforced for both directions
-// without breaking writes.
-function isInsideWorkspace(absPath: string, root: string): boolean {
-  return absPath === root || absPath.startsWith(root.endsWith("/") ? root : root + "/");
-}
 
 // ------------------------------------------------------- oversized results
 //
@@ -1017,6 +741,45 @@ function handleResultContinue(args: Record<string, unknown>): ToolCallResult {
   };
 }
 
+// ------------------------------------------------------- test fixture tool
+//
+// D-13 (plan 65-02) removed the anno_* family from tools/list. Before that
+// removal, vice-proxy.test.ts's own oversized-result/continuation coverage
+// drove wrapPossiblyChunked()/handleResultContinue() above through a real
+// anno_* tool call (anno_get_symbols against a seeded local store) --
+// precisely because it needed a real, wire-registered tool with no
+// emulator, no broker and no stand-in server, a property that has nothing
+// to do with anno itself. This fixture reproduces that SAME property with
+// no dependency on anno-tools.ts at all: a real registered tool, answered
+// proxy-locally, fully deterministic from one integer argument.
+//
+// NEVER wire-visible outside a test process: registered only when
+// VICE_TEST_FIXTURE_TOOL is set, which no real invocation sets -- mirrors
+// this file's own VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES hatch above (the
+// `anno` subcommand's test-only stdout-fill escape hatch), applied here to
+// the tools/list registry instead of to the CLI's exit path.
+const TEST_FIXTURE_TOOL_ENABLED = process.env.VICE_TEST_FIXTURE_TOOL === "1";
+
+const TEST_FIXTURE_TOOL: ToolDefinition = {
+  name: "vice_test_fixture_result",
+  description:
+    "TEST-ONLY. Never advertised outside a test process. Returns `count` deterministic, " +
+    "chunking-sized entries with no emulator, broker or stand-in server involved.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      count: { type: "integer", description: "how many entries to generate" },
+    },
+    required: ["count"],
+  },
+};
+
+function testFixtureResult(args: Record<string, unknown>): OkTextResult {
+  const count = typeof args.count === "number" && Number.isInteger(args.count) && args.count >= 0 ? args.count : 0;
+  const entries = Array.from({ length: count }, (_, i) => ({ address: 0xc000 + i, name: `label_${i}_${"x".repeat(20)}` }));
+  return { content: [{ type: "text", text: JSON.stringify({ symbols: entries }) }], isError: false };
+}
+
 // -------------------------------------------------------------- broker lease
 //
 // On-demand acquisition (Phase 01.2): deferred to the FIRST forwarded
@@ -1047,111 +810,35 @@ let grantId: string | null = null;
 // above it -- never cached past a replacement acquisition.
 let grantRemoteMonitorPort: number | null = null;
 
-// ----------------------------------------------------- grant containerization
+// ------------------------------------------------------- grant validation
 //
-// Quick task 260801-ccn (the inverse of Phase 01.1 criterion 9). The broker
-// runs on the HOST, legitimately resolves its own repo root, and writes a
-// grant carrying host-local coordinates: a loopback `url`, and
-// `epoch_file`/`supervisor_dir` paths rooted at the host's own checkout --
-// entirely correct from where the broker stands. Nothing inverted them
-// before this task: loopback meant the CONTAINER's own loopback
-// (ECONNREFUSED, since nothing listens there) and the host-rooted epoch
-// path simply never resolved, so every broker-granted instance was silently
-// unreachable. containerizeGrant() is the seam that fixes this -- called in
-// ensureBrokerLease() below between session.acquire() returning a grant and
-// useInstance() adopting it, since that is the LAST point before the
-// coordinates become the session's identity (D-1).
-function containerizeGrant(grant: Record<string, unknown>): Record<string, unknown> {
-  const grantId = grant && typeof grant.id === "string" ? grant.id : "(no id)";
-  const port = Number(grant && grant.port);
+// The grant is adopted as received: the broker names only ports and a URL,
+// never a path this side must translate. Two checks stay, because nothing
+// downstream can be trusted without them: `port` must be a valid integer
+// port, and `url`'s own port must equal it. A mismatched or unparseable
+// `url` is replaced by one derived from the validated port and reported on
+// stderr, never silently.
+function checkGrant(grant: Record<string, unknown>): Record<string, unknown> {
+  const grantId = typeof grant.id === "string" ? grant.id : "(no id)";
+  const port = Number(grant.port);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    // T-mef-01's rule, reused here: nothing downstream can be trusted
-    // without a validated port, so no translation is even attempted --
-    // useInstance() fails on its own terms, exactly as it would have before
-    // this function existed.
-    console.error(
-      `vice-proxy: containerizeGrant ${grantId}: grant.port (${grant && grant.port}) is not a valid integer ` +
-        `port -- skipping translation entirely.`
-    );
+    console.error(`vice-proxy: grant ${grantId}: grant.port (${grant.port}) is not a valid integer port.`);
     return grant;
   }
-
-  const alias = mcpHost();
-  // containerizeRecord() (containerpath.ts) does the translation itself:
-  // `url` through the loopback-rewrite (D-4), `epoch_file`/`supervisor_dir`
-  // through the host->container path inverse (D-2 -- all three fields). An
-  // already container-shaped record (every pre-existing broker test's
-  // tmpdir-rooted VICE_POOL_DIR) matches no known host root and comes back
-  // byte-identical -- D-7's whole point.
-  const { record, changes } = containerizeRecord(grant, {
-    pathFields: ["epoch_file", "supervisor_dir"],
-    urlFields: ["url"],
-    alias,
-  });
-
-  // Safety net (T-ccn-01, T-ccn-02), mirroring the outbound seam's own
-  // posture: never open/connect to an unvalidated string read out of a
-  // grant file. On either failure below, substitute the coordinate DERIVED
-  // FROM THE VALIDATED PORT instead (instanceFor()'s own T-mef-01 rule,
-  // reused here) and report the substitution -- never silently.
-  const root = repoRoot();
-  const fallbackDir = join(brokerRootDir(), String(port));
-  const fallbackEpochFile = join(fallbackDir, "epoch.json");
-  const fallbackUrl = `http://${alias}:${port}/mcp`;
-  const changedFields = new Set(changes.map((c) => c.field));
-  const substituted: Record<string, boolean> = { url: false, epoch_file: false, supervisor_dir: false };
-
-  // T-ccn-01: only a field that was ACTUALLY TRANSLATED (its host root
-  // matched) is re-checked for workspace containment -- an already
-  // container-shaped path was never translated at all (D-7's passthrough)
-  // and is trusted exactly as every pre-existing broker test already relies
-  // on. A translated path escaping the workspace (a lexical ".." sequence
-  // in the grant's own host-rooted field) is exactly what this check
-  // catches.
-  if (changedFields.has("epoch_file") && !isInsideWorkspace(resolve(record.epoch_file as string), root)) {
-    record.epoch_file = fallbackEpochFile;
-    substituted.epoch_file = true;
-  }
-  if (changedFields.has("supervisor_dir") && !isInsideWorkspace(resolve(record.supervisor_dir as string), root)) {
-    record.supervisor_dir = fallbackDir;
-    substituted.supervisor_dir = true;
-  }
-
-  // T-ccn-02: the FINAL url's port must equal the validated grant port,
-  // checked UNCONDITIONALLY (translated or not) -- a grant could simply
-  // declare a mismatched port from the start, translation aside, and that
-  // is exactly the spoofing shape this check exists to catch.
   let urlPortOk = false;
-  if (typeof record.url === "string") {
+  if (typeof grant.url === "string") {
     try {
-      urlPortOk = Number(new URL(record.url).port) === port;
+      urlPortOk = Number(new URL(grant.url).port) === port;
     } catch {
       urlPortOk = false;
     }
   }
-  if (!urlPortOk) {
-    record.url = fallbackUrl;
-    substituted.url = true;
-  }
-
-  // Exactly ONE stderr line, naming every field's before/after (or
-  // "unchanged") -- this is the signal whose absence made the original bug
-  // invisible; it must never become a line per field (D-2's own reporting
-  // requirement).
-  const parts = ["url", "epoch_file", "supervisor_dir"].map((field) => {
-    const original = grant ? grant[field] : undefined;
-    const final = record[field];
-    if (substituted[field]) {
-      return `${field}: SUBSTITUTED ${JSON.stringify(original)} -> ${JSON.stringify(final)} (port-derived fallback)`;
-    }
-    if (final === original) {
-      return `${field}: unchanged (${JSON.stringify(final)})`;
-    }
-    return `${field}: ${JSON.stringify(original)} -> ${JSON.stringify(final)}`;
-  });
-  console.error(`vice-proxy: containerized grant ${grantId} -- ${parts.join("; ")}`);
-
-  return record;
+  if (urlPortOk) return grant;
+  const fallbackUrl = `http://127.0.0.1:${port}/mcp`;
+  console.error(
+    `vice-proxy: grant ${grantId}: url ${JSON.stringify(grant.url)} does not name port ${port} -- using ${fallbackUrl}`,
+  );
+  return { ...grant, url: fallbackUrl };
 }
 
 /**
@@ -1186,46 +873,31 @@ type BrokerLeaseResult = { ok: true; lease: HeldLease | null } | { ok: false; me
  * call -- activeInstance() and grantId -- never memoised here:
  * handleGrantedInstanceUnreachable() overwrites both on a replacement
  * acquisition, and a cached lease would keep pointing at the retired
- * instance. `host` is the hostname of the active instance's ALREADY
- * containerized `url` (containerizeGrant()'s own loopback rewrite already
- * owns host/container translation -- reading its result here is reuse, not
- * re-derivation). `port` is activeInstance().port (the broker allocates one
+ * instance. `host` is the hostname of the active instance's `url`; the
+ * monitor dial itself goes through the broker endpoint's relay, not to this
+ * host. `port` is activeInstance().port (the broker allocates one
  * port per instance and passes it to -binarymonitoraddress on the stock
- * backend, per plan 02-03). `targetId` is grantId -- the same value
- * controlSession.recycle(grantId) already sends on the wire. Called only
+ * backend, per plan 02-03). `targetId` is grantId. Called only
  * from the two success returns below that hold a control session.
  */
 function buildHeldLease(session: BrokerControlSession): HeldLease {
-  const { url, port, epochFile } = activeInstance();
+  const { url, port } = activeInstance();
   // WR-06: `new URL(url).hostname` returns a BRACKETED literal for IPv6
   // ("[::1]"), which net.connect() will not accept -- so the brackets are
   // stripped here, at the one place the dial host is derived, rather than by
   // every eventual consumer. Deliberately not a general URL-parsing helper: the
   // bracket form is the single documented WHATWG-URL quirk this seam meets.
   const host = new URL(url).hostname.replace(/^\[(.+)\]$/, "$1");
-  // CR-06: `epochFile` and `supervisorDir` are what make the stock handshake's
-  // two BACK-04/reconnect mechanisms actually live on the real path -- before
-  // this, no production call ever passed StockConnectDeps, so `baselineEpoch`
-  // was always null (making stockReconnect() throw a FALSE
-  // MachineRestartedError on every transient drop) and the capability cache
-  // was never read or written.
-  //
-  // Two DIFFERENT directories, deliberately, and not interchangeable:
-  //   - epochFile is THIS instance's own `<stateDir>/<port>/epoch.json`, read
-  //     fresh from activeInstance() like every other field here (adoptGrant()
-  //     put the CONTAINERIZED path there, so it is already in this process's
-  //     view of the filesystem -- no second translation here).
-  //   - supervisorDir is the TOP-LEVEL `.c64-re-tools/supervisor`, where backend.json
-  //     lives, resolved through brokerRootDir() -- the SAME resolver
-  //     broker.json is read from, never a locally re-derived path (the
-  //     "re-deriving a cross-cutting seam locally" anti-pattern).
+  // `supervisorDir` is where this process keeps its own capability cache
+  // (`backend.json`), resolved through broker-home.mts's brokerStateDir()
+  // on THIS side. The reconnect epoch is not here: stock-session.ts asks the
+  // broker for it over `brokerControl`, because the grant names no path.
   return {
     host,
     port,
     targetId: grantId ?? "",
     brokerControl: session,
-    epochFile,
-    supervisorDir: brokerRootDir(),
+    supervisorDir: brokerStateDir(),
     // Plan 41-01 (D-15): read fresh off the module-level variable
     // adoptGrant() stashed, exactly like every other field here -- `null`
     // becomes `undefined` on the lease (HeldLease.remoteMonitorPort is
@@ -1238,50 +910,13 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
   if (controlSession) return { ok: true, lease: buildHeldLease(controlSession) };
   if (process.env.VICE_MCP_URL) return { ok: true, lease: null }; // explicit override -- broker never contacted, nothing to claim a monitor socket through
 
-  // Classify liveness FIRST, before ever opening a connection (C10).
-  // never_started and stale both return their message immediately, with no
-  // connection attempted -- there is nothing on the other side to answer
-  // one, so attempting it would only delay the diagnosis. readBrokerLiveness()
-  // re-reads broker.json fresh on every call (see its own implementation in
-  // vice-broker-client.ts); nothing here memoises the verdict, so this is the
-  // broker-path instance of the same never-cache-a-negative-result invariant
-  // stated near tools/call above -- the call after a human starts the
-  // broker just works, with no session restart required. openBrokerControl()
-  // performs this SAME classification
-  // again internally (over its own read of broker.json) before it ever
-  // connects -- a second, independent read, not a second answer to trust
-  // instead of this one; fetching liveness here first is what gives the
-  // diagnoses below (dead-or-hung's own pid) something to quote.
-  const liveness = readBrokerLiveness();
-  if (liveness.state === "never_started") {
-    return { ok: false, message: brokerNeverStartedMessage() };
-  }
-  if (liveness.state === "stale") {
-    return { ok: false, message: brokerDeadOrHungMessage(liveness) };
-  }
-
+  // Dial the fixed endpoint. Nothing is read from disk, and a failed dial is
+  // never cached: the call after a human starts the broker just works, with
+  // no session restart required.
   const acquireStartedAt = Date.now();
-  const opened = await openBrokerControl();
+  const opened = await dialControlSession();
   if (!opened.ok) {
-    // openBrokerControl() re-classifies liveness from its OWN read of
-    // broker.json before ever connecting -- never_started/stale here means
-    // that SECOND read found a genuine race (the broker died between the
-    // classification above and this one), so both route to their usual two
-    // messages, unchanged. EVERY other kind (unreachable_control_plane,
-    // connect_refused, protocol, broker_gone, ...) is reached only when that
-    // second read agreed the broker is alive -- reading those as
-    // dead-or-hung was the exact mis-attribution this plan closes (see
-    // brokerControlUnreachableMessage()'s own header comment for the full
-    // incident record): a connect failure against a healthy heartbeat is a
-    // control-plane CONNECTIVITY problem, not a broker liveness one, so it
-    // gets its own message naming the address and port instead.
-    if (opened.kind === "never_started") {
-      return { ok: false, message: brokerNeverStartedMessage() };
-    }
-    if (opened.kind === "stale") {
-      return { ok: false, message: brokerDeadOrHungMessage(liveness) };
-    }
-    return { ok: false, message: brokerControlUnreachableMessage(opened, liveness) };
+    return { ok: false, message: brokerUnreachableMessage(opened.message) };
   }
   const session = opened.session;
 
@@ -1316,7 +951,7 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
   // coordinates (D-1, quick task 260801-ccn) and adopts them as this
   // session's active instance -- the LAST point before the coordinates
   // become the session's identity: the endpoint every later tool call is
-  // sent to, and the path the epoch guard opens. Plan 08 (D-13) reuses this
+  // sent to. Plan 08 (D-13) reuses this
   // EXACT function for a replacement acquisition too (see
   // handleGrantedInstanceUnreachable() below) -- one code path for adopting
   // an instance, never a second one for a replacement.
@@ -1326,8 +961,8 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
 }
 
 /**
- * The ONE adoption seam (D-13): containerize a grant's host-local
- * coordinates and adopt them as this session's active instance, recording
+ * The ONE adoption seam (D-13): check a grant (checkGrant()) and adopt it
+ * as this session's active instance, recording
  * the grant id. Called by ensureBrokerLease() above for an ORDINARY
  * acquisition and by handleGrantedInstanceUnreachable() below for BOTH of
  * its replacement acquisitions (the same-session retry and the
@@ -1336,16 +971,13 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
  */
 function adoptGrant(grant: Record<string, unknown>): void {
   grantId = typeof grant.id === "string" ? grant.id : null;
-  const containerized = containerizeGrant({ ...grant });
+  const granted = checkGrant({ ...grant });
 
-  // Plan 41-01 (D-15): validate before stashing. `containerizeGrant()` never
-  // translates this field (a port number needs no host<->container path or
-  // URL rewrite), so `containerized.remote_monitor_port` is exactly the raw
-  // wire value. A value that is not an integer in 1..65535 is rejected,
-  // grantRemoteMonitorPort is left null, and a one-line stderr warning names
-  // the observed value -- never a silent coercion, matching
-  // containerizeGrant()'s own posture for an invalid grant.port.
-  const rawRemoteMonitorPort = containerized.remote_monitor_port;
+  // Plan 41-01 (D-15): validate before stashing. A value that is not an
+  // integer in 1..65535 is rejected, grantRemoteMonitorPort is left null, and
+  // a one-line stderr warning names the observed value -- never a silent
+  // coercion, matching checkGrant()'s own posture for an invalid grant.port.
+  const rawRemoteMonitorPort = granted.remote_monitor_port;
   if (rawRemoteMonitorPort === undefined) {
     grantRemoteMonitorPort = null;
   } else {
@@ -1361,9 +993,8 @@ function adoptGrant(grant: Record<string, unknown>): void {
   }
 
   useInstance({
-    port: containerized.port as number,
-    url: containerized.url as string,
-    epochFile: containerized.epoch_file as string,
+    port: granted.port as number,
+    url: granted.url as string,
     pooled: true,
   });
 }
@@ -1380,14 +1011,14 @@ function adoptGrant(grant: Record<string, unknown>): void {
 // replace-and-report mechanism existed to handle a granted instance failing
 // that forwarding function's own pre-flight liveness check (a fork-only
 // HTTP round trip) -- its only caller. The D-16 mechanism has no other
-// caller either, and stock-dispatch.ts's own per-tool handlers have no
+// caller either, and stock-tools.ts's per-tool handlers have no
 // equivalent hook today. Every advertised tool now registers straight
-// through buildViceTool() to stockDispatch.dispatchStock() (see the
+// through buildViceTool() to runStockTool() (see the
 // registration loop below) -- there is no surviving generic-dispatch
 // surface for a derived tool to slip behind, matching this plan's own
 // prohibition against re-opening the nested-argument hazard an outer-name
 // refusal array used to close. Stock has no equivalent probe-then-replace
-// step at this proxy layer; a dead lease surfaces through stockDispatch's
+// step at this proxy layer; a dead lease surfaces through stock-session.ts's
 // own error handling instead.
 
 // -------------------------------------------------------------- teardown
@@ -1464,7 +1095,7 @@ warnOnceAboutOutputLimit(); // D-1.2-H -- one stderr line, at most once per proc
 // ------------------------------------------------------- @mastra/mcp seam
 //
 // D-01: the wire layer is MCPServer + startStdio(), with each registered
-// tool's own runner (stockDispatch.dispatchStock(), or a proxy-local
+// tool's own runner (runStockTool(), or a proxy-local
 // handler for the synthetic/anno_* tools, above) doing the actual dispatch
 // work -- only the top-level caller changed from the original hand-rolled
 // framing. See this plan's PLAN.md "Ground truth" section (read directly
@@ -1537,76 +1168,27 @@ function buildViceTool(def: ToolDefinition, run: (args: Record<string, unknown>)
   });
 }
 
-// This loop registers every tool the active manifest advertises. It used
-// to skip a fixed outer-name refusal array covering the fork HTTP server's
-// own generic-surface meta-tools (`tools_call`/`tools_list`/`initialize`/
-// `notifications_initialized`, all of which the fork's manifest advertised
-// as ordinary forwardable tools) plus `vice_disk_list` (a tool known to
-// crash that same server). Both the fork manifest and the refusal array are
-// gone: the manifest this loop reads never advertised any of those names,
-// so there is nothing left to skip -- every entry registers unconditionally.
-// tools/list is served entirely by MCPServer's own ListToolsRequestSchema
-// handler (unmodified, not overridden), reading from this SAME `tools`
-// object. A manifest hot-reload mid-session is not picked up until the
-// proxy restarts; the manifest is regenerated by a manual, rare build step,
-// never mid-session in practice.
-//
-// The per-backend registration seam this section used to describe
-// (D-09, CR-07) is deleted: every tool this file
-// registers now dispatches through stockDispatch.dispatchStock()
-// unconditionally, which either has a table entry for the name or REFUSES
-// BY NAME. There is no third path and no fall-through -- D-09's whole
-// point, true by construction now rather than by a runtime backend check.
+// Registers every tool in the manifest, in manifest order (the tools/list
+// order), each paired with its entry in stock-tools.ts's STOCK_TOOLS.
+// stockToolDefinitions() throws if the two disagree. tools/list is served by
+// MCPServer's own ListToolsRequestSchema handler, reading this SAME object.
 const tools: Record<string, ReturnType<typeof buildViceTool>> = {};
-// Read ONCE and reused below for both the manifest loop and the two
-// synthetic registrations' own resolveAdvertisedToolDefinition() calls --
-// never re-read per registration (WR-07, plan 07-16).
-const manifestTools = readManifestTools();
-for (const def of manifestTools) {
-  tools[def.name] = buildViceTool(def, (args) => dispatchStockFor(def.name, args));
+for (const { def, tool } of stockToolDefinitions(readManifestTools())) {
+  tools[def.name] = buildViceTool(def, (args) => runStockTool(tool, args, stockDeps()));
 }
 // Backend-INDEPENDENT by construction: handleResultContinue() is served
 // entirely from this proxy's own CONTINUATION_STORE and opens no socket of any
-// kind, so it is correct on either backend and is deliberately NOT routed
-// through dispatchStock (which would refuse the continuation mechanism itself).
+// kind, so it is deliberately NOT one of the stock tools.
 tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) => Promise.resolve(handleResultContinue(args)));
-// vice_recycle/vice_diagnose keep their own dedicated handlers
-// (handleRecycle()/handleDiagnose(), declared above) rather than going
-// through the manifest loop's own inline dispatchStock() call -- both
-// handlers delegate to dispatchStock() themselves now, so the observable
-// behaviour is identical either way, but the named handlers stay the
-// registration point so they remain independently locatable and testable.
-// WR-07 (plan 07-16): resolveAdvertisedToolDefinition() picks the corrected
-// stock manifest entry when one exists, falling back to the synthetic
-// RECYCLE_TOOL/DIAGNOSE_TOOL definition otherwise, so the advertised
-// tools/list entry stays correct even if the manifest is ever missing or
-// malformed.
-tools[RECYCLE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(RECYCLE_TOOL, manifestTools), (args) => handleRecycle(args));
-tools[DIAGNOSE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(DIAGNOSE_TOOL, manifestTools), (args) => handleDiagnose(args));
-// Backend-INDEPENDENT by construction (plan 29-01): the anno_* family never
-// touches VICE at all -- it reaches a PROXY-LOCAL SQLite annotation store
-// this repo owns, opened and closed inside the runner itself, so there is no
-// fork/stock distinction to make. The family is deliberately absent from
-// tools-manifest.stock.json, which records what a live HOST VICE server
-// answers and never a proxy-local store file. Registering the family here,
-// rather than listing it there, keeps that manifest an honest record of the
-// emulator surface.
-// Registered here via buildViceTool() directly (the SAME pattern
-// RESULT_CONTINUE_TOOL above uses), so no anno_* runner ever reaches
-// stockDispatch: there is no generic-dispatch surface left anywhere in this
-// file for a derived tool's runner to slip behind, so this exemption cannot
-// be violated by omission the way it could when a fork-only forwarding path
-// still existed.
-// Deliberately NOT named `def` (the manifest loop's own loop variable,
-// above): `stock-dispatch.test.ts`'s `proxyToolRegistrations()` regex-scans
-// this file's own `tools[...] = ...;` lines and keys each one by its raw
-// captured text, so an identically-named loop variable here would make this
-// registration textually indistinguishable from the manifest loop's -- a
-// distinct name (`annoDef`) keeps the anno_* family's own registration from
-// ever being confused with, or accidentally merged into, the manifest
-// loop's.
-for (const annoDef of ANNO_TOOL_DEFINITIONS) {
-  tools[annoDef.name] = buildViceTool(annoDef, (args) => runAnnoTool(annoDef.name, args));
+// D-13 (plan 65-02): the anno_* registration loop that used to sit here --
+// 25 tools, imported from anno-tools.ts's own curated definitions -- is
+// deleted outright, not narrowed. Annotation is a stateless, client-local
+// CLI now (D-12, `vice-mcp anno call <name> --args JSON`), reached with no
+// route back onto this proxy's own tool registry at all. This is a one-way
+// removal (D-13's own reversibility note): restoring any anno_* tool to
+// tools/list after release would be a second breaking change.
+if (TEST_FIXTURE_TOOL_ENABLED) {
+  tools[TEST_FIXTURE_TOOL.name] = buildViceTool(TEST_FIXTURE_TOOL, (args) => Promise.resolve(testFixtureResult(args)));
 }
 
 const server = new MCPServer({ name: "vice", version: PROXY_VERSION, tools });
@@ -1648,9 +1230,8 @@ server.getServer().setRequestHandler(CallToolRequestSchema, async (request) => {
     // Restores wrapPossiblyChunked()'s only call site. buildViceTool() stamps
     // OUTPUT_CHAR_CAP onto EVERY tool's `_meta` unconditionally, so the
     // ceiling has to be honoured for every tool -- and this override is the
-    // one place all four registration families (the manifest loop,
-    // vice_recycle/vice_diagnose, the anno_* loop, and vice_result_continue
-    // itself) converge on a single result before it reaches the wire. A
+    // one place every registration (the manifest loop and
+    // vice_result_continue itself) converges on a single result before it reaches the wire. A
     // previous edit deleted this function's only caller and left the
     // function itself in place: for the whole life of one release a
     // registered continuation tool could only ever refuse an unknown token,

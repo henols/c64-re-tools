@@ -9,11 +9,7 @@
 // snapshot pair, then `vice_autostart`/`vice_disk_attach` in plan 64-06)
 // injects a recording `stageFile` and a recording `transferFile` through
 // `StockConnectBrokerControl`/`StockConnectDeps` -- the two seams plan 64-02
-// added -- so every handler test still runs without a socket. No handler
-// under test reaches the host/container translation seam any more (D-18:
-// this file no longer imports stock-paths.ts at all), so this file's own
-// former `setIsInsideContainerForTest()` stub is gone too -- stubbing a
-// function the module under test no longer calls would itself be a defect.
+// added -- so every handler test still runs without a socket.
 // The single exception to "no socket" is the round-trip test at the bottom
 // of this file, which deliberately drives a REAL control listener and REAL
 // staged files (mirrors vice-broker-staging.test.ts's own fixture) to prove
@@ -57,15 +53,14 @@ import { CommandType, ErrorCode, StockProtocolError } from "./stock-protocol.ts"
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockConnectSession, TransferFileFn, TransferFileRequest, TransferFileResult } from "./stock-connect.ts";
 import type { ViceMonitorClient } from "./stock-protocol.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
-import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
+import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.mts";
 import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 import { build } from "./build.ts";
-import { startControlListener, newControlToken } from "./broker-control.mts";
+import { startControlListener } from "./broker-control.mts";
 import type {
   StartControlListenerResult,
   AcquireOutcome,
-  RecycleOutcome,
   StatusInstanceEntry,
   HostStateFields,
   MonitorClaimOutcome,
@@ -299,7 +294,7 @@ function assertNoLeak(payload: Record<string, unknown>, forbiddenDir: string, fo
   }
 }
 
-const fakeDeps = {} as StockDispatchDeps;
+const fakeDeps = {} as StockSessionDeps;
 
 beforeEach(() => {
   resetRunStateTrackersForTest();
@@ -983,26 +978,15 @@ async function startRoundTripListener(
   state: BrokerState,
   emulatorPort: number,
   getDeps: () => { beforePublish?: () => Promise<void> } = () => ({}),
-): Promise<{ listener: StartControlListenerResult; token: string }> {
-  const token = newControlToken();
+): Promise<{ listener: StartControlListenerResult }> {
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async (): Promise<AcquireOutcome> => ({
       ok: true,
-      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/stock-machine-roundtrip-epoch.json", supervisorDir: "/tmp/stock-machine-roundtrip" },
+      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` },
     }),
     onRelease: (requestId: string) => handleRelease(requestId, state),
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by stock-machine.test.ts",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,
@@ -1017,11 +1001,10 @@ async function startRoundTripListener(
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: false, code: "bad_request" }),
     onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
     onOperation: (): OperationNoteOutcome => ({ ok: true }),
-    onHostTool: async () => ({ ok: false, message: "not exercised by stock-machine.test.ts" }),
     onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
     onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state, getDeps()),
   });
-  return { listener, token };
+  return { listener };
 }
 
 /** Byte-level newline search -- never a whole-buffer string decode, matching
@@ -1074,9 +1057,9 @@ async function waitForRoundTrip(predicate: () => boolean, deadlineMs: number, po
 /** A REAL StockConnectBrokerControl.stageFile(), sending `stage_file` over
  * the SAME control connection an `acquire` already ran on -- ownership
  * (`ownsTarget()`) is gated on that connection identity, broker-side. */
-function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>) => Promise<Record<string, unknown>> }, token: string) {
+function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>) => Promise<Record<string, unknown>> }) {
   return async (opts: { targetId: string; slot: string }): Promise<{ ok: true; handle: string; emulatorFilename: string } | { ok: false; reason: string }> => {
-    const reply = await control.sendAndRead({ op: "stage_file", target_id: opts.targetId, slot: opts.slot, token });
+    const reply = await control.sendAndRead({ op: "stage_file", target_id: opts.targetId, slot: opts.slot });
     if (reply.kind === "file_staged") {
       return { ok: true, handle: reply.handle as string, emulatorFilename: reply.emulator_filename as string };
     }
@@ -1085,7 +1068,7 @@ function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>
 }
 
 /** A REAL TransferFileFn dialling the round trip's own control listener via
- * dialFileTransfer() (broker-endpoint.ts) and streaming through the SAME
+ * dialFileTransfer() (broker-endpoint.mts) and streaming through the SAME
  * cap-and-digest Transform (transfer-hash.mts) the real production
  * defaultTransferFile() (stock-connect.ts) uses -- composed here from the
  * same exported public seams a real caller would use, since
@@ -1208,10 +1191,10 @@ test("vice_snapshot_save/vice_snapshot_load round trip (publish lands late, G-64
   // file SYNCHRONOUSLY, with no polling, proving transferFile() really does
   // not resolve until the broker has published the bytes.
   const beforePublish = () => new Promise<void>((resolve) => setTimeout(resolve, 300));
-  const { listener, token } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
+  const { listener } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
   const control = makeRoundTripControlClient(listener.port);
   try {
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
     assert.equal(acquireReply.kind, "grant");
 
     const payload = fullByteRangeRoundTripPayload();
@@ -1244,7 +1227,7 @@ test("vice_snapshot_save/vice_snapshot_load round trip (publish lands late, G-64
       return undefined;
     });
     session.targetId = grantId;
-    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control, token) } as StockConnectSession["brokerControl"];
+    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control) } as StockConnectSession["brokerControl"];
     session.deps = { ...session.deps, transferFile: makeRealTransferFile(listener.port) };
 
     const saveResult = await handleSnapshotSave({ name: "roundtrip_1" }, session, fakeDeps);
@@ -1305,10 +1288,10 @@ test("vice_snapshot_load refusal (G-64-3, plan 64-13): a publish that fails befo
   // Armed to a REJECTING hook only right before the load's own upload,
   // below, so the save can succeed first and produce a real local snapshot.
   let beforePublish: (() => Promise<void>) | undefined;
-  const { listener, token } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
+  const { listener } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
   const control = makeRoundTripControlClient(listener.port);
   try {
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
     assert.equal(acquireReply.kind, "grant");
 
     const payload = fullByteRangeRoundTripPayload();
@@ -1328,7 +1311,7 @@ test("vice_snapshot_load refusal (G-64-3, plan 64-13): a publish that fails befo
       return undefined;
     });
     session.targetId = grantId;
-    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control, token) } as StockConnectSession["brokerControl"];
+    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control) } as StockConnectSession["brokerControl"];
     session.deps = { ...session.deps, transferFile: makeRealTransferFile(listener.port) };
 
     const saveResult = await handleSnapshotSave({ name: "refusal_1" }, session, fakeDeps);
@@ -1378,10 +1361,10 @@ test("vice_snapshot_load refusal on a real fs fault (CR-01, G-64-5): the staging
   // Armed to a REAL-fault hook only right before the load's own upload,
   // below, so the save can succeed first and produce a real local snapshot.
   let beforePublish: (() => Promise<void>) | undefined;
-  const { listener, token } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
+  const { listener } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
   const control = makeRoundTripControlClient(listener.port);
   try {
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
     assert.equal(acquireReply.kind, "grant");
 
     const payload = fullByteRangeRoundTripPayload();
@@ -1401,7 +1384,7 @@ test("vice_snapshot_load refusal on a real fs fault (CR-01, G-64-5): the staging
       return undefined;
     });
     session.targetId = grantId;
-    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control, token) } as StockConnectSession["brokerControl"];
+    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control) } as StockConnectSession["brokerControl"];
     // Wrap makeRealTransferFile() so this test can inspect the upload's own
     // result directly -- the recorded `reason` is the completion reply's
     // own message, i.e. the broker's wireReason, forwarded verbatim by

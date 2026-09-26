@@ -6,28 +6,20 @@
 // rebuild.
 // vice-broker.mts
 //
-// The long-lived host broker entry point. Extends an earlier write-once
-// tracer script in place rather than replacing it: parseArgs(),
-// readBrokerRecordMaybe() and the atomic tmp-sibling-then-rename write
-// discipline all survive; main() grows a real control listener, a
-// heartbeat and a real acquire/release path spawning a real child.
-//
-// heartbeat_at is now MANDATORY, refreshed on a recurring timer for as long
-// as this process lives. The tracer's own header comment used to forbid it
-// ("DELIBERATELY OMITS heartbeat_at") because a heartbeat-less record from a
-// write-once tracer that immediately exits would strand every later
-// session's readBrokerLiveness() classification at never_started forever.
-// That reasoning does not apply here: this broker is genuinely long-lived,
-// so omitting heartbeat_at would instead make a REAL, RUNNING broker read
-// as never_started -- exactly the failure this field exists to prevent.
+// The long-lived host broker entry point: one per machine, on the fixed
+// control port. It binds the control listener (loopback plus the enumerated
+// bridge gateways, never the wildcard address), serves acquire/release over
+// that one endpoint, and launches and supervises the emulator instances it
+// grants. Clients find it by dialling the port and completing a `hello`;
+// nothing is written to disk for them to read.
 //
 // Imports node: builtins ONLY plus this phase's own sibling modules --
 // mcp__vice__* stays the only route to the emulator; nothing here opens a
 // connection to it.
-import { readFileSync, mkdirSync, openSync, writeFileSync, chmodSync, renameSync, existsSync } from "node:fs";
-import { join, basename, resolve as resolvePath } from "node:path";
+import { mkdirSync, openSync, existsSync } from "node:fs";
+import { join, basename, dirname, relative, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn as nodeSpawn } from "node:child_process";
+import { spawn as nodeSpawn, fork } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { containerGuardReport, containerGuardEnforce } from "./container-guard.mjs";
 // countReady/countTotal/countLaunching are DROPPED from this import -- they
@@ -64,6 +56,7 @@ import { spliceRelay, resolveRelayChannelTarget, relaySessionKey, resolveRelayId
 // HOST_BOUND_ARTIFACTS). handleRelayDeath() below is this module's one and
 // only production call site -- see that function's own header comment.
 import { writeBrokerIncident } from "./broker-incident.mjs";
+import { trackChild, stopAllChildren, killAllChildrenNow } from "./broker-children.mjs";
 // resolvedBackend() resolves the emulator binary's identity -- ViceBackend's
 // own definition lives in backend-detect.mts too (narrowed to a single
 // literal now that the fork backend has been removed entirely), so
@@ -83,14 +76,8 @@ import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor } from 
 // "./host-tool.mjs" is compiled into that same directory by the same build.ts
 // pass (host-tool.mts is added to HOST_BOUND_ARTIFACTS/tsconfig.build.json's
 // include[] in this same commit).
-import { runHostTool } from "./host-tool.mjs";
-// A VALUE import of the same handle-minting function for the SAME reason as
-// the host-tool.mjs import immediately above -- this file is always run
-// from its own compiled resources/ form, and "./ghidra-project.mjs" is
-// compiled into that same directory by the same build.ts pass (both source
-// and target are already listed in HOST_BOUND_ARTIFACTS).
-import { ensureGhidraRunsHandle } from "./ghidra-project.mjs";
-import { startControlListenerOnHosts, enumerateBindHosts, newControlToken, drainPendingAcquires, resolveControlPort, } from "./broker-control.mjs";
+import { runHostTool, bindStagedInputs } from "./host-tool.mjs";
+import { startControlListenerOnHosts, enumerateBindHosts, drainPendingAcquires, resolveControlPort, } from "./broker-control.mjs";
 // A VALUE import of the machine-level state resolver (plan 62-02) -- safe
 // here for the SAME reason every other sibling value import above is: this
 // file is ALWAYS run from its own compiled resources/ form, and
@@ -101,7 +88,9 @@ import { startControlListenerOnHosts, enumerateBindHosts, newControlToken, drain
 // below -- it answers only when no explicit --state-dir, no VICE_POOL_DIR,
 // and no --repo-root apply, which is exactly BROKER-01/BROKER-06's "no
 // project argument at all" case (D-13).
-import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir } from "./broker-home.mjs";
+import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir, brokerGhidraDir } from "./broker-home.mjs";
+// The endpoint dialler, for the hello probe that arbitrates a busy control port.
+import { dialBrokerEndpoint, describeDialFailure } from "./broker-endpoint.mjs";
 // A VALUE import of the staging/transfer primitives (Phase 64, plan 64-03,
 // XFER-04/XFER-07) -- safe here for the SAME reason every other sibling
 // value import above is: this file is ALWAYS run from its own compiled
@@ -111,7 +100,7 @@ import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir } from "./brok
 // handleFileTransfer() below are this module's own callers; neither
 // re-implements the directory layout, the handle minting or the byte
 // movement broker-transfer.mts already owns.
-import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile, } from "./broker-transfer.mjs";
+import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile, stageHostToolRequest, listHostToolUploads, registerHostToolResult, resolveHostToolTree, } from "./broker-transfer.mjs";
 const USAGE = "usage: vice-broker.mjs [--repo-root <path>] [--state-dir <path>] [--check-container] [--dry-run]";
 /** `--repo-root` is now OPTIONAL (BROKER-01/BROKER-06, D-13): the per-project
  * binding it used to enforce is exactly what a machine-level broker removes,
@@ -125,9 +114,8 @@ const USAGE = "usage: vice-broker.mjs [--repo-root <path>] [--state-dir <path>] 
  * onto whatever project was named, and `vice-launcher.sh` always passes
  * `--repo-root`, so that pin was silently pulling broker state into one
  * project's tree on the ONE route that used it -- exactly what BROKER-06
- * forbids -- while every other documented start route (`npx -y
- * @henols/vice-mcp broker`, the systemd unit, the launchd agent, none of
- * which pass `--repo-root` at all) wrote to the machine-level root instead.
+ * forbids -- while the documented start route (`vice-mcp broker` /
+ * `vice-cli.mjs broker`, which pass no `--repo-root`) wrote to the machine-level root instead.
  * The client read the machine-level root unconditionally, so only the
  * launcher route ever agreed with it. `--repo-root` is still parsed and
  * still returned on `ParsedArgs.repoRoot` -- it keeps anchoring the Ghidra
@@ -178,10 +166,6 @@ export function parseArgs(argv) {
     const resolvedStateDir = stateDir ?? brokerStateDir();
     return { repoRoot: repoRoot ?? "", stateDir: resolvedStateDir, checkContainer, dryRun };
 }
-/** The deployed JavaScript broker artifact's own name. This field used to
- * read "vice-broker.sh" (the retiring bash daemon), which was false the
- * moment a real TypeScript broker existed. It now names itself. */
-export const WRITTEN_BY = "vice-broker.mjs";
 // ---------------------------------------------------------------------------
 // Small, locally-duplicated env-var reader (plan 05) -- the SAME pattern
 // broker-kill.mts's own resolveBasePortForReap()/resolveViceBinForReap()
@@ -191,8 +175,8 @@ export const WRITTEN_BY = "vice-broker.mjs";
 // exporting it would widen broker-launch.mts's own surface for a one-line
 // env-var read this file can duplicate exactly as cheaply). Mirrors
 // broker-launch.mts's own default precisely (VICE_BROKER_MAX/16) so
-// broker.json's config echo and host_state's own answer can never disagree
-// with what atCapacity() itself actually enforces. This used to be a PAIR
+// host_state's own answer can never disagree with what atCapacity() itself
+// actually enforces. This used to be a PAIR
 // with resolveWarmFloorForRecord() (VICE_BROKER_WARM_FLOOR/1), kept in
 // lockstep with broker-launch.mts's own matching pair so the two numbers
 // could never disagree. The warm-floor half of that pair is RETIRED along
@@ -207,80 +191,17 @@ function resolveCeilingForRecord() {
     const n = Number(raw);
     return Number.isFinite(n) ? n : 16;
 }
-/** Duplicates vice-broker-client.ts's readBrokerLiveness() classification
- * logic (never_started / stale / alive against BROKER_STALE_MS) rather than
- * importing it -- confirmed empirically (plan 02's own SUMMARY) that
- * importing vice-broker-client.ts into a HOST-BOUND module pulls its
- * transitive dependents (repo-root.ts, install-resources.ts, hostpath.ts)
- * into the SAME tsc build program, which either fails to compile under
- * tsconfig.build.json's allowImportingTsExtensions:false or forces those
- * container-side files to be committed under resources/ as if host-bound.
- * This is the SAME classification a test can drive the REAL
- * readBrokerLiveness() over (broker-control.test.ts does exactly that,
- * against records this function's own caller writes), proving the two never
- * diverge -- this module only needs the classification NAME (never_started
- * / stale / alive), never the pid/heartbeatAt fields readBrokerLiveness()
- * also returns. */
-const BROKER_STALE_MS = Number(process.env.VICE_BROKER_STALE_MS || 180000);
-function classifyBrokerLivenessLocal(path) {
-    const parsed = readBrokerRecordMaybe(path);
-    if (parsed === null)
-        return "never_started";
-    const heartbeatAt = typeof parsed.heartbeat_at === "string" ? parsed.heartbeat_at : null;
-    const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : NaN;
-    if (!Number.isFinite(heartbeatMs))
-        return "never_started";
-    return Date.now() - heartbeatMs > BROKER_STALE_MS ? "stale" : "alive";
-}
 /** Classifies a bare hostname as a wildcard bind address, in the IPv4 and
  * IPv6 "listen on everything" spellings this project cares about --
  * DELIBERATELY RE-STATED here rather than imported from
  * vice-broker-client.ts's own `isWildcardBindHost()`: that module is
- * container-side and this one is host-bound, compiled away from it, the
- * SAME boundary classifyBrokerLivenessLocal()'s own comment above explains
- * for readBrokerLiveness(). Used ONLY to refuse an explicitly-set
+ * container-side and this one is host-bound, compiled away from it. Used ONLY to refuse an explicitly-set
  * VICE_BROKER_CONTROL_HOST value before ever attempting to bind it (D-09) --
  * never applied to an enumerated host, which can never be a wildcard by
  * construction. */
 function isWildcardBindHostLocal(host) {
     const bare = host.replace(/^\[/, "").replace(/\]$/, "");
     return bare === "0.0.0.0" || bare === "::" || /^(0{1,4}:){7}0{1,4}$/.test(bare);
-}
-function isPlainObject(value) {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-/** Read and parse a broker record, treating anything short of a
- * well-formed object as "not there yet" -- missing file, unreadable file,
- * partial write, malformed JSON, non-object shape. Never throws. */
-export function readBrokerRecordMaybe(path) {
-    let raw;
-    try {
-        raw = readFileSync(path, "utf8");
-    }
-    catch {
-        return null;
-    }
-    try {
-        const parsed = JSON.parse(raw);
-        return isPlainObject(parsed) ? parsed : null;
-    }
-    catch {
-        return null;
-    }
-}
-/** Atomic tmp-sibling -> mode-tighten -> content -> rename, the same
- * choke-point discipline the tracer's own writeBrokerRecord() used, now
- * shared by both the initial write and every heartbeat refresh -- mode
- * stays owner-read-write on EVERY write, refresh included. */
-function writeBrokerRecordFile(stateDir, record) {
-    mkdirSync(stateDir, { recursive: true });
-    const finalPath = join(stateDir, "broker.json");
-    const tmpPath = `${finalPath}.tmp-${process.pid}-${Date.now()}`;
-    writeFileSync(tmpPath, "");
-    chmodSync(tmpPath, 0o600);
-    writeFileSync(tmpPath, JSON.stringify(record, null, 2) + "\n");
-    renameSync(tmpPath, finalPath);
-    return finalPath;
 }
 /** Builds a spawn function that redirects the child's stdout/stderr into a
  * FRESH per-launch log file under logDir (so per-instance boot/crash logs
@@ -340,10 +261,39 @@ function writeEpochForLaunch(record, logRelPath) {
     // The in-memory record's own epoch field must carry the SAME value the
     // epoch record was just written with -- without this, every
     // first-generation instance reports an absent epoch to the status
-    // response and an absent epoch-before in a recycle acknowledgement,
-    // making a later respawn's advance unobservable at the one place a
-    // caller reads it (handleStatus(), handleRecycleForRealBroker()).
+    // response, making a later respawn's advance unobservable at the one
+    // place a caller reads it (handleStatus()).
     record.epoch = epochRecord.epoch;
+}
+/** broker-watchdog.mjs, compiled next to this artifact. */
+const WATCHDOG_ARTIFACT = join(dirname(fileURLToPath(import.meta.url)), "broker-watchdog.mjs");
+/** VICE_BROKER_KILL_WAIT_S in ms (default 5 s): how long a stop waits after
+ * SIGTERM before SIGKILL. */
+function resolveKillWaitMs() {
+    const n = Number(process.env.VICE_BROKER_KILL_WAIT_S);
+    return (Number.isFinite(n) && n >= 0 ? n : 5) * 1000;
+}
+/** Forks the watchdog (broker-watchdog.mts) in its own process group and
+ * forwards every child track/untrack to it over IPC. If this broker is
+ * killed with SIGKILL, the channel closes and the watchdog stops every group
+ * it still holds. */
+function startWatchdog(state) {
+    const watchdog = fork(WATCHDOG_ARTIFACT, [], { detached: true, stdio: ["ignore", "ignore", "ignore", "ipc"] });
+    const send = (event) => {
+        if (!watchdog.connected)
+            return;
+        try {
+            watchdog.send(event);
+        }
+        catch {
+            // the watchdog is gone; the shutdown handlers still stop every child
+        }
+    };
+    watchdog.on("error", (e) => process.stderr.write(`vice-broker: watchdog error: ${e.message}\n`));
+    process.stderr.write(`vice-broker: watchdog pid ${String(watchdog.pid)}\n`);
+    state.childListener = send;
+    for (const pid of state.children.keys())
+        send({ op: "track", pid });
 }
 /** Builds the supervision dependency object for withCrashSupervision(),
  * once per launch, so the real launch path (handleAcquire's own cold arm,
@@ -364,8 +314,7 @@ function writeEpochForLaunch(record, logRelPath) {
  * optional field a call site may quietly omit. Before this, both real call
  * sites built their deps here WITHOUT it, so `spawnAndRecordInstance()`'s own
  * unset-parameter default silently took over the moment crash supervision
- * replaced an instance -- a stock instance's crash-respawn or `vice_recycle`
- * could relaunch it with a different backend's argv shape than the one it
+ * replaced an instance -- a stock instance's crash-respawn could relaunch it with a different backend's argv shape than the one it
  * was actually launched with, leaving a pool member that can never be
  * reached over the binary monitor again while still counting toward
  * countReady()/countTotal(). Making it positional and required is what makes
@@ -397,29 +346,25 @@ function superviseDepsFor(stateDir, state, backend, viceBin, binmonHost) {
         backend,
         viceBin,
         binmonHost,
+        trackChild: (child) => trackChild(state, child, "emulator"),
     };
 }
 /** Exported ONLY so a test can install withCrashSupervision() through the
  * REAL deps object this module actually uses in production, rather than a
  * hand-built SuperviseChildDeps that can (and did) diverge from it -- the
  * exact blind spot the backend-argv bug above lived in: broker-launch.test.ts's
- * own respawn/recycle tests each construct their deps inline and therefore pass
+ * own respawn tests each construct their deps inline and therefore pass
  * `backend: "stock"` directly, so the production builder's missing field was
  * invisible to the whole suite. Same discipline as broker-kill.mts's
  * `_HANDLED_SIGNALS`: an underscore-prefixed alias, never called by any
  * production code path in this module. */
 export const _superviseDepsFor = superviseDepsFor;
-/** Sets the deliberate-death marker and its respawn-after-kill answer
- * TOGETHER -- the single place in this module that ever writes either
- * field, so a call site can never set one and forget the other, which is
- * the exact shape of the defect this closes (T-01.6.2-80). Called BEFORE
- * any signal reaches the target child in both handlers below, never after:
- * the exit handler (broker-launch.mts) runs on the child's OWN exit event,
- * so a marker set after the signal arrives too late to be read
- * (T-01.6.2-84). */
-function markDeliberateDeath(instance, respawnAfterKill) {
+/** Sets the deliberate-death marker. Called BEFORE any signal reaches the
+ * target child, never after: the exit handler (broker-launch.mts) runs on
+ * the child's OWN exit event, so a marker set after the signal arrives too
+ * late to be read (T-01.6.2-84). */
+function markDeliberateDeath(instance) {
     instance.deliberateKill = true;
-    instance.respawnAfterKill = respawnAfterKill;
 }
 // ---------------------------------------------------------------------------
 // THE WARM-INSTANCE PROFILE-ELIGIBILITY RULE.
@@ -536,7 +481,7 @@ async function selectWarmInstance(state, deps) {
         // An ineligible miss falls through EXACTLY as a "no warm instance" miss
         // does: to the caller's own cold arm, which records the one and only
         // grant. It opens no second `state.grants.set()` call, and it never
-        // kills, recycles or re-warps the mismatched instance (see
+        // kills or re-warps the mismatched instance (see
         // profileEligible()'s own banner for why those are excluded by design).
         if (!profileEligible(record, deps.requestedProfile))
             continue;
@@ -558,15 +503,14 @@ async function selectWarmInstance(state, deps) {
         // concurrent sibling's own probe on this same candidate resolves. The
         // fire-and-forget kill below only changes what happens to the kill's
         // own PROMISE next, never this ordering.
-        markDeliberateDeath(record, false);
+        markDeliberateDeath(record);
         // Dropping a record is also where its second
         // (`-remotemonitor`) port stops being spoken for -- deleteInstanceRecord()
         // is the ONE place both mutations happen together, so a drop can never
         // leak a port out of the fixed allocation band.
         deleteInstanceRecord(state, record.port);
         // Distinct wording from shutdown()'s own "shutdown complete" line
-        // (broker-kill.mts) and from handleRecycleForRealBroker's own log-free
-        // path -- the standing constraint that a lifecycle decision must be
+        // (broker-kill.mts) -- the standing constraint that a lifecycle decision must be
         // reconstructable from the log after an incident (both 2026-08-01 and
         // 2026-08-02 were diagnosed from broker log lines). Logged BEFORE the
         // kill settles: the walk does not wait for deps.kill(...) to
@@ -634,6 +578,10 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
     // a bare process.kill().
     const kill = deps.kill ?? ((opts) => verifiedKill(opts));
     const log = deps.log ?? ((line) => process.stderr.write(`${line}\n`));
+    if (state.shuttingDown) {
+        log(`vice-broker: refusing acquire ${requestId} -- the broker is shutting down`);
+        return { ok: false, reason: "internal" };
+    }
     const winner = await selectWarmInstance(state, { probe, kill, log, requestedProfile: deps.profile });
     let record;
     if (winner) {
@@ -676,6 +624,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
             // makes "a dedicated instance for that grant" true rather than
             // aspirational.
             profile: deps.profile,
+            trackChild: (child) => trackChild(state, child, "emulator"),
             spawnFactory: deps.buildColdSpawnFactory ??
                 ((port) => {
                     const supervisorDir = join(stateDir, String(port));
@@ -740,8 +689,6 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
         grant: {
             port: record.port,
             url: record.url,
-            epochFile: record.epochFile,
-            supervisorDir: record.supervisorDir,
             // Key omitted entirely when the record has none --
             // the fork case, and (until a later plan closes the port-allocation
             // degrade path) a stock instance whose second port allocation itself
@@ -758,7 +705,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
  * instance's CURRENT pid. Scanning by (port, pid) rather than merely by
  * port is what keeps a stale grant from reporting IDENTITY for an instance
  * whose port occupant has since been replaced by an unrelated launch (a
- * crash-respawn, a recycle onto a fresh pid, a give-up) -- exactly the same
+ * crash-respawn or a give-up) -- exactly the same
  * gap handleRelease()'s own header comment describes for the kill
  * discipline, now applied to what status DISPLAYS rather than what a
  * release KILLS. Returns `null` when no grant currently matches, which the
@@ -797,7 +744,7 @@ export function handleStatus(state) {
     });
 }
 /** Resolves a monitor_claim/monitor_release target the SAME way
- * handleRelease() and handleRecycleForRealBroker() already resolve theirs:
+ * handleRelease() already resolves its own:
  * `targetId` is a grant id, looked up in state.grants for its port, then
  * the instance at that port. Returns `null` for an unknown target_id/port
  * so callers answer `bad_request`, never `internal`. */
@@ -813,7 +760,7 @@ function resolveInstanceForMonitorTarget(targetId, state) {
  * before any second `connect()` is ever attempted -- the one state stock
  * VICE cannot report and no client-side heuristic can diagnose. `targetId`
  * doubles as both "which instance" (resolved via the SAME grant lookup
- * handleRelease()/handleRecycleForRealBroker() already use) and "the
+ * handleRelease() already uses) and "the
  * requesting grant's own identity" -- the claim IS the grant, so there is
  * no separate identity to carry. A repeated claim from the SAME grant on
  * the SAME channel is idempotent (`ok: true`, no second holder created); a
@@ -831,8 +778,7 @@ export function handleMonitorClaim(requestId, targetId, channel, state) {
     if (!existing) {
         // Phase 63 (SESS-02): mints the per-claim handle a relay connection's
         // `attach` will later have to present -- 16 random bytes rendered as
-        // hex, the SAME rendering newControlToken() already uses for the
-        // per-boot control token, at a size chosen only for the constant-time
+        // hex, at a size chosen only for the constant-time
         // comparison's own length gate (handleRelayAttach() below), not for
         // any wire-format reason.
         const handle = randomBytes(16).toString("hex");
@@ -933,6 +879,20 @@ export function handleFileTransfer(request, socket, pending, state, deps = {}) {
         clearTransferInFlight(request.handle);
         return { ok: false, code: "denied", message: "vice: transfer failed: the staged file does not exist yet" };
     }
+    // Phase 65 (SEAM-01, D-11): a host-tool upload slot declares its own
+    // byteLength at `host_tool_stage` time (`StagedFileEntry.declaredByteLength`,
+    // broker-transfer.mts) -- a `stageFileSlot()` entry (a monitor upload)
+    // never carries one, so this check is a no-op for every pre-existing
+    // caller. Refused BEFORE `transfer_ready` is ever written and before any
+    // payload byte moves, exactly like every other upload refusal above.
+    if (request.direction === "upload" && entry.declaredByteLength !== undefined && entry.declaredByteLength !== request.byteLength) {
+        clearTransferInFlight(request.handle);
+        return {
+            ok: false,
+            code: "denied",
+            message: `vice: transfer failed: declared byteLength ${request.byteLength} does not match the staged manifest's declared byteLength ${entry.declaredByteLength}`,
+        };
+    }
     const settle = () => {
         clearTransferInFlight(request.handle);
         if (!socket.destroyed)
@@ -979,6 +939,132 @@ export function handleFileTransfer(request, socket, pending, state, deps = {}) {
     }
     return { ok: true };
 }
+// ---------------------------------------------------------------------------
+// host_tool_stage / host_tool_run / host_tool_end (Phase 65, SEAM-01,
+// D-03/D-07/D-09/D-10). The fixed-endpoint route's own three broker-side
+// handlers -- a brand-new request key per host-tool request, never gated by
+// `ownsTarget()` (a skill call holds no acquire-level grant at all,
+// RESEARCH.md Critical Finding 2). Delegates every path-and-handle decision
+// to `broker-transfer.mts`'s own staging primitives, exactly like
+// `handleStageFile()`/`handleFileTransfer()` above already do for a monitor
+// upload; this module orchestrates, it does not choose a path or mint a
+// handle itself.
+// ---------------------------------------------------------------------------
+/** Answers `host_tool_stage`: delegates to `stageHostToolRequest()`
+ * (broker-transfer.mts) unchanged, and reports a staging refusal as
+ * `bad_request` with the (already path-free) reason that function
+ * produced. */
+export function handleHostToolStage(files) {
+    const staged = stageHostToolRequest({ files });
+    if (!staged.ok) {
+        return { ok: false, code: "bad_request", message: staged.reason };
+    }
+    return { ok: true, requestKey: staged.requestKey, treeHandles: staged.treeHandles, fileHandles: staged.fileHandles };
+}
+/** The fixed token every reply string field is scrubbed to once it has
+ * matched the request's own scratch root (D-10) -- so no broker-side
+ * filesystem path ever reaches the wire on this route, mirroring
+ * `broker-transfer.mts`'s own `formatPathFreeFault()` posture of naming a
+ * fixed replacement rather than attempting to scrub an unbounded shape. */
+const STAGED_REQUEST_TOKEN = "<staged-request>";
+/** The same, for the broker's Ghidra projects root (brokerGhidraDir()). */
+const GHIDRA_PROJECTS_TOKEN = "<ghidra-projects>";
+function redactScratchRoot(value, scratchRoot, ghidraRoot) {
+    return value.split(scratchRoot).join(STAGED_REQUEST_TOKEN).split(ghidraRoot).join(GHIDRA_PROJECTS_TOKEN);
+}
+/** Answers `host_tool_run`: verifies every staged upload for this request
+ * has actually finished transferring (D-09's own "not every declared file
+ * has arrived yet" case), binds every path-bearing wire key to its
+ * scratch-relative path via `bindStagedInputs()` (host-tool.mts), runs
+ * `runHostTool()` against the REQUEST'S OWN scratch root (never this
+ * broker's own `--repo-root`) for `repoRoot`, while `projectRoot` IS this
+ * broker's own `--repo-root` (`args.repoRoot` at the call site below), so the
+ * `tools.json` locator layer keeps resolving where it always has, and
+ * `ghidraProjectsRoot` is brokerGhidraDir(). `clearDeclaredOutputs: true` generalises
+ * the c1541.read-only stale-output unlink to every tool (D-08). Then
+ * rewrites the response: every `results[]` entry becomes a download handle
+ * via `registerHostToolResult()` (D-07's first live producer), and every
+ * remaining string field is scrubbed of the scratch root (D-10, T-65-06).
+ * Never rejects -- every failure resolves `{ ok: false, message }`,
+ * mirroring `runHostTool()`'s own contract. */
+export async function handleHostToolRun(requestKey, raw, projectRoot, deps = {}) {
+    if (deps.state?.shuttingDown) {
+        return { ok: false, message: "vice: host_tool_run: the broker is shutting down" };
+    }
+    const uploads = listHostToolUploads(requestKey);
+    for (const upload of uploads) {
+        if (!existsSync(upload.path)) {
+            return { ok: false, message: "vice: host_tool_run: not every staged upload has finished transferring yet" };
+        }
+    }
+    const scratchRoot = join(brokerStagingDir(), requestKey);
+    // Phase 65 (plan 65-03, D-03): created BEFORE the run, unconditionally --
+    // ghidra.analyze's own exportPath output-name binding (host-tool.mts's
+    // bindStagedInputs()) resolves to "out/<name>" under this directory, and
+    // `resolveWorkspacePath()`'s own ancestor-realpath walk requires SOME
+    // existing ancestor to walk from. A tool with no output-name key stages
+    // an empty, harmless directory here.
+    mkdirSync(join(scratchRoot, "out"), { recursive: true });
+    const lookup = {
+        fileHandle: (handle) => {
+            const resolved = resolveStagedFile(handle);
+            if (!resolved.ok || resolved.entry.grantId !== requestKey)
+                return undefined;
+            return relative(scratchRoot, resolved.entry.path);
+        },
+        // Phase 65 (plan 65-03, D-04): a tree handle resolves to its own tree
+        // INDEX (resolveHostToolTree()), never a path -- the relative directory
+        // it names is always `in/<tree>`, the SAME layout
+        // stageHostToolRequest() (broker-transfer.mts) already wrote every
+        // manifest entry for that tree under.
+        treeHandle: (handle) => {
+            const resolved = resolveHostToolTree(requestKey, handle);
+            if (!resolved.ok)
+                return undefined;
+            return join("in", String(resolved.tree));
+        },
+    };
+    const bound = bindStagedInputs(raw, lookup);
+    if (!bound.ok) {
+        return { ok: false, message: bound.message };
+    }
+    const ghidraRoot = brokerGhidraDir();
+    const response = await runHostTool(bound.request, {
+        repoRoot: scratchRoot,
+        projectRoot,
+        ghidraProjectsRoot: ghidraRoot,
+        clearDeclaredOutputs: true,
+        outputDir: join(scratchRoot, "out"),
+        log: deps.log,
+        ...(deps.state ? { trackChild: (child) => trackChild(deps.state, child, "host-tool") } : {}),
+    });
+    const responseObj = response;
+    if (!response.ok) {
+        const message = typeof responseObj.message === "string" ? responseObj.message : "vice: the host tool refused";
+        return { ok: false, message: redactScratchRoot(message, scratchRoot, ghidraRoot) };
+    }
+    const rewritten = { ...responseObj };
+    const results = responseObj.results;
+    if (Array.isArray(results)) {
+        rewritten.results = results.map((result, index) => {
+            const handle = registerHostToolResult({ requestKey, path: result.path, index });
+            return { name: basename(result.path), handle, sha256: result.sha256, byteLength: result.byteLength };
+        });
+    }
+    for (const key of ["message", "stderrTail", "reason", "entrypointReason"]) {
+        const value = rewritten[key];
+        if (typeof value === "string") {
+            rewritten[key] = redactScratchRoot(value, scratchRoot, ghidraRoot);
+        }
+    }
+    return rewritten;
+}
+/** Answers the connection close that ends a `host_tool_stage` request
+ * (D-09): reuses `clearStagingForSession()` unchanged, exactly like
+ * `handleRelease()` already does for an `acquire` grant's own release. */
+export function handleHostToolEnd(requestKey) {
+    clearStagingForSession(requestKey);
+}
 /**
  * Answers a relay connection's own death (Phase 63, SESS-03/05) -- the ONE
  * place this broker ever writes an incident record for a dropped monitor
@@ -986,7 +1072,7 @@ export function handleFileTransfer(request, socket, pending, state, deps = {}) {
  * removed from `state.relaySessions` -- the other being
  * tearDownRelaySessionForChannel() below (whose whole-grant caller,
  * tearDownRelaySessionsForGrant(), and handleMonitorRelease() -- Phase 63,
- * gap closure plan 63-11 -- are wired into every deliberate release/recycle
+ * gap closure plan 63-11 -- are wired into every deliberate release
  * path BEFORE the process or channel they own is signalled), using the
  * same delete-before-close order this function itself uses (see that
  * function's own header comment for why the order is load-bearing). Called
@@ -1135,8 +1221,7 @@ export function tearDownRelaySessionForChannel(targetId, channel, state) {
  * delete-before-close implementation both this function and
  * handleMonitorRelease() share (see that function's own header comment for
  * the full delete-before-close rationale). Called from BOTH of
- * handleRelease()'s branches below, and from handleRecycleForRealBroker(),
- * strictly BEFORE the process this grant owns is signalled.
+ * handleRelease()'s branches below, strictly BEFORE the process this grant owns is signalled.
  *
  * Returns the array of channels that actually held a live session -- an
  * empty array is the ordinary case (most grants never attach a relay at
@@ -1176,11 +1261,10 @@ export function tearDownRelaySessionsForGrant(targetId, state) {
  * emulator leg connected" -- spliceRelay() dialled the emulator itself and
  * spliced immediately, with no wait for the TCP connect to succeed, which
  * is what let a cold session's first PING die under an ECONNREFUSED relay
- * (see .planning/debug/cold-launch-relay-attach-race.md for the measured
- * mechanism). This function now marks the channel `attached` synchronously
- * (so a concurrent second attach is still refused immediately) and THEN
- * awaits the bounded dial (broker-relay.mjs's dialEmulatorLeg()) before
- * ever reporting success -- the emulator leg is guaranteed connected by
+ * (a measured mechanism). This function now marks the channel `attached`
+ * synchronously (so a concurrent second attach is still refused
+ * immediately) and THEN awaits the bounded dial (broker-relay.mjs's
+ * dialEmulatorLeg()) before ever reporting success -- the emulator leg is guaranteed connected by
  * the time this function's promise resolves `ok: true`.
  *
  * The client leg is paused for the duration of that wait (see the
@@ -1208,7 +1292,7 @@ export function tearDownRelaySessionsForGrant(targetId, state) {
  * On a dial that is ABANDONED (the client leg closed, or the instance/holder
  * identity this attach validated no longer matches the broker's live state):
  * the holder's `attached` marker is cleared -- but ONLY if that holder is
- * still the current one (a release or a recycle that already ran has its
+ * still the current one (a release or a respawn that already ran has its
  * own holder, or none, and must never be perturbed by a stale dial's own
  * cleanup) -- and this function answers a generic `denied`, writing no
  * incident and never splicing. On a dial that GENUINELY FAILS (its own
@@ -1269,7 +1353,7 @@ export async function handleRelayAttach(targetId, channel, presentedHandle, clie
     // stale. `instance`/`holder` here are the EXACT objects validated above --
     // re-resolving the instance for `targetId` and re-reading the channel's
     // current holder and comparing by IDENTITY (never by value) is what
-    // catches a recycle respawn (a brand new InstanceRecord object at the
+    // catches a respawn (a brand new InstanceRecord object at the
     // same or a different port) and a release (the SAME instance object, but
     // a cleared or replaced holder) alike.
     const isAbandoned = () => {
@@ -1291,7 +1375,7 @@ export async function handleRelayAttach(targetId, channel, presentedHandle, clie
     });
     if (!dial.ok) {
         // G-64-4 Task 2: cleared ONLY if this holder is still the CURRENT one --
-        // a release or a recycle that already ran has its own holder (or none
+        // a release or a respawn that already ran has its own holder (or none
         // at all) and must never be perturbed by a stale dial's own cleanup.
         if (instance.monitorClients[channel] === holder)
             holder.attached = false;
@@ -1319,7 +1403,7 @@ export async function handleRelayAttach(targetId, channel, presentedHandle, clie
     }
     // Connected -- re-check the SAME three conditions once more before ever
     // splicing (T-64-G4-02): an instance that reused this exact port after a
-    // kill/recycle while this dial was in flight must never be spliced to as
+    // kill or respawn while this dial was in flight must never be spliced to as
     // if it were still this attach's own original target.
     if (isAbandoned()) {
         if (!dial.socket.destroyed)
@@ -1450,63 +1534,6 @@ export function handleOperationNote(targetId, channel, name, state, opts = {}) {
     }
     return { ok: true };
 }
-export async function handleRecycleForRealBroker(targetId, state, deps = {}) {
-    const grant = state.grants.get(targetId);
-    if (!grant) {
-        return {
-            port: null,
-            pid: null,
-            viceBin: null,
-            killStage: "no_signal",
-            epochBefore: null,
-            outcome: "grant_lookup_failed",
-            reason: `no grant record found for target ${targetId}`,
-        };
-    }
-    const instance = state.instances.get(grant.port);
-    if (!instance) {
-        return {
-            port: grant.port,
-            pid: null,
-            viceBin: null,
-            killStage: "no_signal",
-            epochBefore: null,
-            outcome: "epoch_lookup_failed",
-            reason: `no resolvable epoch record for target ${targetId} (port ${grant.port})`,
-        };
-    }
-    if (instance.pid === null) {
-        return {
-            port: instance.port,
-            pid: null,
-            viceBin: instance.viceBin,
-            killStage: "no_signal",
-            epochBefore: typeof instance.epoch === "number" ? instance.epoch : null,
-            outcome: "pid_lookup_failed",
-            reason: `epoch record carries no pid for target ${targetId}`,
-        };
-    }
-    const epochBefore = typeof instance.epoch === "number" ? instance.epoch : null;
-    markDeliberateDeath(instance, true);
-    // Plan 05: a recycle clears monitor-client ownership as a side effect --
-    // the respawned record the exit handler creates is a BRAND NEW
-    // InstanceRecord object (broker-launch.mts's spawnAndRecordInstance())
-    // that never carries this field forward regardless, but clearing it here
-    // too keeps the CURRENT (pre-kill) record's own state honest for the
-    // window between this call and that respawn.
-    clearMonitorClient(instance);
-    // Plan 63-07 Task 2 (SESS-05 gap closure): torn down BEFORE the kill --
-    // see this function's own header comment for why the order matters.
-    const tornDown = tearDownRelaySessionsForGrant(targetId, state);
-    if (tornDown.length > 0) {
-        process.stderr.write(`vice-broker: recycle on target ${targetId} tore down live relay session(s) on channel(s) ${tornDown.join(", ")} ahead of the kill\n`);
-    }
-    const kill = deps.kill ?? ((opts) => verifiedKill(opts));
-    const killStage = await kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
-    const outcome = killStage === "identity_refused" ? "identity_refused" : "ok";
-    const reason = killStage === "identity_refused" ? "process identity did not match the recorded emulator binary -- the target was NOT signalled and is still running" : "";
-    return { port: instance.port, pid: instance.pid, viceBin: instance.viceBin, killStage, epochBefore, outcome, reason };
-}
 /** The second concern of the fixed-order evaluation pass, RENAMED from the
  * retired warm-floor maintenance function this replaces (the projection
  * write is dropped, and the grant sweep does not appear -- the connection
@@ -1567,7 +1594,7 @@ export function handleRelease(requestId, state, deps = {}) {
         if (tornDown.length > 0) {
             process.stderr.write(`vice-broker: release on target ${requestId} tore down live relay session(s) on channel(s) ${tornDown.join(", ")} ahead of the kill\n`);
         }
-        markDeliberateDeath(instance, false);
+        markDeliberateDeath(instance);
         // Plan 05: releasing clears monitor-client ownership (every channel) as
         // a side effect -- redundant with the instance-map deletion two lines
         // below (the WHOLE record, monitorClients included, is going away), but
@@ -1618,27 +1645,23 @@ export function handleRelease(requestId, state, deps = {}) {
         `and the current occupant was left untouched${mismatchSuffix}\n`);
 }
 async function run(args) {
-    const finalPath = join(args.stateDir, "broker.json");
-    // An early tracer-era "refuse to overwrite
-    // a record naming a currently-live pid" pre-check is GONE -- REPLACED by
-    // the bind-before-write singleton guard below, not merely extended
-    // alongside it (this phase's own plan-time note is explicit: the
-    // refuse-to-clobber heuristic is replaced, not extended). That old check
-    // read broker.json's OWN recorded pid and asked "is that process alive" --
-    // a heuristic that can never tell "a live broker legitimately holds this
-    // port" apart from "a live but unrelated process happens to share a pid
-    // number with a stale record" (pids get reused). The kernel-enforced bind
-    // below asks the ONLY question that actually matters -- "is the control
-    // port itself already held" -- and broker.json becomes a pure ARBITER of
-    // that question's two possible causes, never a gate in its own right.
+    // The singleton guard is the kernel-enforced bind below: a control port
+    // cannot be bound twice. A failed bind is then arbitrated by dialling the
+    // port and asking for a `hello`.
     //
     // The mandatory start-time banner, printed unconditionally and
     // BEFORE anything else in this function runs -- an operator must be told
     // what a Ctrl-C costs before there is anything running for them to Ctrl-C.
     process.stderr.write(`${startupBanner()}\n`);
+    // Without its watchdog a SIGKILL of this broker would leave every child
+    // running, so a broken install refuses to start rather than run unguarded.
+    if (!existsSync(WATCHDOG_ARTIFACT)) {
+        process.stderr.write(`vice-broker: FATAL -- ${WATCHDOG_ARTIFACT} is missing; reinstall @henols/vice-mcp (or run \`node build.ts\` in a checkout)\n`);
+        process.exitCode = 1;
+        return;
+    }
     const state = createBrokerState();
-    const token = newControlToken();
-    const startedAt = new Date().toISOString(); // FIXED across every heartbeat refresh -- see writeBrokerRecordFile()'s callers below
+    const startedAt = new Date().toISOString();
     const pollMs = Number(process.env.VICE_BROKER_POLL_MS) || 500;
     const controlPort = resolveControlPort();
     // Resolve the bind set (BROKER-03/D-09/D-10). An explicitly-set
@@ -1772,41 +1795,12 @@ async function run(args) {
     if (backendResult.locationRefusal !== null) {
         process.stderr.write(`vice-broker: ${backendResult.locationRefusal}\n`);
     }
-    // THE BROKER mints/verifies the
-    // Ghidra runs-root handle here -- after the unconditional startup reap
-    // above, and BEFORE the control listener below accepts a single
-    // connection -- so a container-side MCP server with no host tooling of
-    // its own still finds the handle in place the moment it can reach this
-    // broker at all. This is deliberately NOT the only call site:
-    // resolveGhidraProject() (ghidra-project.mts) calls the same function as
-    // an idempotent precondition, because two host-side routes never involve
-    // a broker at all -- the direct spawn of resources/host-tool.mjs from
-    // host-tool-client.ts:269-273 (the everyday route on a host with no
-    // devcontainer, and the route CI uses), and tests importing that
-    // artifact directly. Both callers write the identical relative-target
-    // link, so a race between them is a benign EEXIST, not a conflict (see
-    // ensureGhidraRunsHandle()'s own header). The negative rule: container-
-    // side code must NEVER mint this handle -- the link target is relative
-    // and correct only when written from the host's view of the workspace.
-    //
-    // Handled WITHOUT throwing: run() has no try/catch around this region and
-    // the broker must start regardless of the outcome here -- it serves
-    // twelve allowlisted tool ids and only one of them (ghidra.analyze) needs
-    // this handle. A refusal is surfaced as ONE stderr line naming the
-    // consequence; every other tool id is unaffected.
-    const ghidraHandleResult = ensureGhidraRunsHandle(args.repoRoot);
-    if (ghidraHandleResult.ok) {
-        process.stderr.write(`vice-broker: ghidra runs handle ${ghidraHandleResult.handle} -> ${ghidraHandleResult.target}\n`);
-    }
-    else {
-        process.stderr.write(`vice-broker: ghidra runs handle refused: ${ghidraHandleResult.message} -- ghidra.analyze will refuse by name until this is fixed by hand; every other tool id is unaffected\n`);
-    }
     // The singleton guarantee holds only while the control port keeps its default -- two brokers deliberately configured onto different ports are two brokers, and no code prevents that.
     let listener;
+    let controlServers = [];
     {
         const bindResult = await startControlListenerOnHosts(bindHosts, {
             port: controlPort,
-            token,
             onAcquire: (requestId, profile, label) => handleAcquire(requestId, args.stateDir, state, {
                 backend,
                 // The ONCE-resolved `resolvedViceBin` local from this function's
@@ -1841,25 +1835,7 @@ async function run(args) {
                 sessionLabel: label,
             }),
             onRelease: (requestId) => handleRelease(requestId, state),
-            onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),
             onStatus: () => handleStatus(state),
-            // Its OWN callback, wired alongside
-            // (never derived from) the other six above -- handed only
-            // `args.repoRoot` and a stderr logger, never this broker's `state` map,
-            // so it structurally cannot reach lease state through this closure.
-            // Deliberately supplies no timeout, and that is
-            // authoritative here, not an omission -- the per-tool budget table
-            // inside runHostTool()/hostToolTimeoutMs() (host-tool.mts) is the ONE
-            // place a budget is decided, and no wire field carries one across the
-            // seam at all (the `deps.timeoutMs` this callback could pass is an
-            // in-process test seam, not something a caller's request ever
-            // supplies). A reader arriving here from the artifact this plan's
-            // completeness case checks should find this comment as the answer,
-            // not an apparent gap.
-            onHostTool: (raw) => runHostTool(raw, {
-                repoRoot: args.repoRoot,
-                log: (line) => process.stderr.write(`${line}\n`),
-            }),
             onMonitorClaim: (requestId, targetId, channel) => handleMonitorClaim(requestId, targetId, channel, state),
             onMonitorRelease: (requestId, targetId, channel) => handleMonitorRelease(requestId, targetId, channel, state),
             onRelayAttach: (targetId, channel, presentedHandle, socket, pending) => handleRelayAttach(targetId, channel, presentedHandle, socket, pending, state),
@@ -1869,6 +1845,17 @@ async function run(args) {
             // listener.
             onStageFile: (targetId, slot) => handleStageFile(targetId, slot, state),
             onFileTransfer: (request, socket, pendingBytes) => handleFileTransfer(request, socket, pendingBytes, state),
+            // Phase 65 (SEAM-01): wired in the SAME options object as the two
+            // staging callbacks immediately above, never as a second listener.
+            // Deliberately handed no `state` reference: this route reaches
+            // only the request's own per-request scratch subtree under
+            // brokerStagingDir(), never this broker's acquire/release map.
+            onHostToolStage: (files) => handleHostToolStage(files),
+            onHostToolRun: (requestKey, raw) => handleHostToolRun(requestKey, raw, args.repoRoot, {
+                log: (line) => process.stderr.write(`${line}\n`),
+                state,
+            }),
+            onHostToolEnd: (requestKey) => handleHostToolEnd(requestKey),
             onHostState: () => ({
                 pid: process.pid,
                 startedAt,
@@ -1905,34 +1892,20 @@ async function run(args) {
             process.stderr.write(`vice-broker: bridge address ${failure.host} failed to bind (${err.code ?? err.message}) -- continuing on the reduced set; ` +
                 `this address will not be reachable until the broker is restarted (D-10)\n`);
         }
-        // Loopback failing to bind is ALWAYS fatal (D-09) -- routed through the
-        // SAME EADDRINUSE/liveness classification this startup has always used.
-        // The singleton race closes here. A well-known TCP port cannot be bound
-        // twice, so EADDRINUSE is the kernel enforcing the singleton -- but the
-        // guarantee holds only while the control port keeps its default (two
-        // brokers deliberately configured onto DIFFERENT ports are two brokers,
-        // and no code here or anywhere else prevents that). On EADDRINUSE,
-        // broker.json arbitrates via the SAME never_started/stale/alive
-        // classification vice-broker-client.ts's readBrokerLiveness() uses
-        // (duplicated locally above -- see classifyBrokerLivenessLocal()'s own
-        // header comment for why this cannot be a value import), and takes
-        // exactly one of two DISTINCT paths: a record classified alive means
-        // this process lost a genuine race against a live broker -- exit
-        // quietly, status 0, as designed. A record classified stale or
-        // never_started means the port is held by something that does not
-        // answer as a broker at all -- fail loudly, naming the port and what to
-        // check. Conflating these two would let a squatted port masquerade as a
+        // Loopback failing to bind is ALWAYS fatal (D-09). The singleton race
+        // closes here: a well-known TCP port cannot be bound twice, so
+        // EADDRINUSE is the kernel enforcing the singleton -- but the guarantee
+        // holds only while the control port keeps its default (two brokers
+        // deliberately configured onto DIFFERENT ports are two brokers, and no
+        // code here or anywhere else prevents that). On EADDRINUSE this process
+        // dials the port and asks for a `hello`, and takes exactly one of two
+        // DISTINCT paths: a completed handshake means it lost a genuine race
+        // against a live broker -- exit quietly, status 0, as designed. Anything
+        // else means the port is held by something that does not answer as a
+        // compatible broker -- fail loudly, naming the port and what to check.
+        // Conflating these two would let a squatted port masquerade as a
         // healthy singleton, permanently and silently (T-01.6.2-34). Neither
-        // path writes the discovery record, launches an instance, or reaps
-        // again -- both simply exit.
-        //
-        // NOTE for a future reader: this classification reads broker.json (the
-        // discovery file) to decide "alive" vs "stale" -- fine to keep for now
-        // since broker.json is untouched this phase, but it is exactly the file
-        // the milestone's end state (Phase 66) removes. A future phase's
-        // EADDRINUSE refusal will need to reclassify by dialling the port that
-        // just failed to bind and checking whether a valid, version-compatible
-        // `hello` answers instead. Not this phase's problem to solve.
+        // path launches an instance or sweeps staging -- both simply exit.
         if (loopbackFailure) {
             // A bridge address can bind successfully even when loopback itself
             // fails (they are independent sockets) -- every such listener MUST be
@@ -1946,14 +1919,15 @@ async function run(args) {
                 bound.server.close();
             const err = loopbackFailure.error;
             if (err.code === "EADDRINUSE") {
-                const liveness = classifyBrokerLivenessLocal(finalPath);
-                if (liveness === "alive") {
-                    process.stderr.write(`vice-broker: another broker is already running and holds control port ${controlPort} -- exiting quietly as a second instance (record: ${finalPath})\n`);
+                const probe = await dialBrokerEndpoint({ port: controlPort, candidates: [loopbackBindHost] });
+                if (probe.ok) {
+                    process.stderr.write(`vice-broker: another broker (version ${probe.version}) is already running and holds control port ${controlPort} -- exiting quietly as a second instance\n`);
                     process.exitCode = 0;
                     return;
                 }
-                process.stderr.write(`vice-broker: FATAL -- control port ${controlPort} is held by something that does not answer as a broker (discovery record classified "${liveness}"). ` +
-                    `Check what is bound to port ${controlPort} on the host (e.g. \`lsof -i :${controlPort}\` or \`ss -ltnp\`) before restarting. Record: ${finalPath}\n`);
+                process.stderr.write(`vice-broker: FATAL -- control port ${controlPort} is held by something that does not answer as a compatible broker. ` +
+                    `${describeDialFailure(probe)}\n` +
+                    `Check what is bound to port ${controlPort} on the host (e.g. \`lsof -i :${controlPort}\` or \`ss -ltnp\`) before restarting.\n`);
                 process.exitCode = 1;
                 return;
             }
@@ -1982,18 +1956,16 @@ async function run(args) {
             process.exitCode = 1;
             return;
         }
-        // Auditability: an operator can see exactly what is listening without
-        // reading the discovery record, which only ever carries the loopback
-        // address in its own control_host field (see the record write below)
-        // -- this is the property the whole security posture rests on now that
-        // `hello` answers with no credential at all (see this module's own
-        // header comment).
+        // Auditability: an operator can see exactly what is listening -- the
+        // bind set is what the whole security posture rests on, since every op
+        // is answered with no credential at all (see broker-control.mts's
+        // header "Auth:" paragraph).
         process.stderr.write(`vice-broker: bound control listener on: ${bindResult.listeners.map((l) => l.host).join(", ")} (port ${loopbackListener.port})\n`);
         // Auditability for D-13's machine-level fallback (BROKER-01/BROKER-06):
-        // an operator can see where THIS broker is writing without reading the
-        // discovery record, which carries no field naming the machine root (the
-        // record's field set stays frozen -- see the interface above).
+        // an operator can see where THIS broker is writing.
         process.stderr.write(`vice-broker: state directory: ${args.stateDir}\n`);
+        process.stderr.write(`vice-broker: ghidra projects directory: ${brokerGhidraDir()}\n`);
+        controlServers = bindResult.listeners;
         listener = { host: loopbackListener.host, port: loopbackListener.port, pendingAcquires: bindResult.pendingAcquires };
     }
     // The one place this broker calls the staging sweep. A second broker
@@ -2006,18 +1978,16 @@ async function run(args) {
     // singleton loss) returns before this line is ever reached, so a process
     // that does not own the control port never runs this sweep at all.
     //
-    // This process's OWN sessions cannot be caught by it either: `acquire`
-    // and `stage_file` are both gated on the control token (see
-    // broker-control.mts's token check), and that token has no distribution
-    // channel until the FIRST writeBrokerRecordFile() call below publishes
-    // it. Nothing can hold this process's token yet, so nothing can have
-    // created a staging directory this sweep might find.
+    // This process's OWN sessions cannot be caught by it either. The listener
+    // is already accepting, but the sweep is synchronous and nothing between
+    // the bind resolving and this line awaits, so no connection handler --
+    // and therefore no `acquire` or `stage_file` -- can run before the sweep
+    // has finished.
     //
     // Never move this call back above the bind -- that reintroduces the
-    // defect above. Never move it below the record write -- once that line
-    // runs, a client can hold the token, call `acquire` and `stage_file`, and
-    // this sweep would remove the very file it just staged. Never add a
-    // timer (D-07): the sweep runs once, here, in the process that has just
+    // defect above. Never put an `await` between the bind and this call --
+    // that would let a client stage a file this sweep then removes. Never add
+    // a timer (D-07): the sweep runs once, here, in the process that has just
     // confirmed it won the bind.
     //
     // The residual this does NOT cover: a broker deliberately configured onto
@@ -2027,57 +1997,37 @@ async function run(args) {
     // scope limit the singleton comment above the bind states for the
     // singleton guarantee itself.
     sweepOrphanedStaging({ root: brokerStagingDir() });
+    // The Ghidra projects root, by the same reasoning: a run's project
+    // directory outlives its run only when a broker died mid-run, and no run of
+    // this process can have started yet.
+    sweepOrphanedStaging({ root: brokerGhidraDir(), label: "ghidra projects sweep" });
     // Every catchable shutdown path (SIGTERM/SIGINT/SIGHUP, an uncaught
     // exception, an unhandled rejection, normal exit) converges on ONE
     // re-entrant-safe teardown that identity-verified-kills every instance
     // this broker launched and clears the map unconditionally
     // (kill-never-recycle). Registered once the listener is up, since there is
     // nothing to tear down before that point.
-    registerShutdownHandlers({ state });
-    // A successful bind writes the record UNCONDITIONALLY, overwriting
-    // whatever was there -- the bind itself is the proof of singleton status.
-    // The fourteen-field set (narrowed to thirteen once the warm floor was
-    // retired, then widened back to fourteen to add node_exec_path): the
-    // lease time-to-live field the bash original carried is gone -- the
-    // connection is the lease now, so there is no separate expiry left to
-    // track -- `warm_floor` is likewise gone (there is no warm floor left to
-    // echo a configured value for) -- and every other config-echo field survives
-    // even though no consumer parses it beyond a status message, because a
-    // human reading this file by hand benefits from the full echo.
-    //
-    // node_exec_path is process.execPath, not something threaded in from
-    // outside: exec() replaces the process image, so whatever interpreter the
-    // launcher resolved and gated IS this process's own execPath by the time
-    // this line runs -- the record tells the truth without either side having
-    // to pass anything, and it stays truthful even when this broker was
-    // started directly, bypassing the launcher entirely.
-    let record = {
-        version: 1,
-        written_by: WRITTEN_BY,
-        pid: process.pid,
-        started_at: startedAt,
-        heartbeat_at: new Date().toISOString(),
-        node_version: process.version,
-        node_exec_path: process.execPath,
-        control_host: listener.host,
-        control_port: listener.port,
-        control_token: token, // never logged -- T-01.6.2-02
-        max_instances: resolveCeilingForRecord(),
-        base_port: resolveBasePort(),
-        poll_ms: pollMs,
-        dry_run: args.dryRun,
-    };
-    writeBrokerRecordFile(args.stateDir, record);
-    process.stderr.write(`vice-broker: wrote ${finalPath} (node ${record.node_version} at ${record.node_exec_path}); control listener bound on ${listener.host}:${listener.port}\n`);
-    const heartbeatMs = Number(process.env.VICE_BROKER_HEARTBEAT_MS) || 30000;
-    setInterval(() => {
-        // The refresh path goes through the SAME atomic tmp-then-rename choke
-        // point as the initial write (writeBrokerRecordFile() itself), and the
-        // mode is tightened to owner-read-write on EVERY write, refresh
-        // included -- never only on the first.
-        record = { ...record, heartbeat_at: new Date().toISOString() };
-        writeBrokerRecordFile(args.stateDir, record);
-    }, heartbeatMs);
+    // The watchdog first, so every child from here on is reported to it; then
+    // the shutdown handlers. Nothing between the bind and this point awaits,
+    // so no acquire or host-tool run can have spawned anything yet.
+    startWatchdog(state);
+    let passTimer = null;
+    registerShutdownHandlers({
+        state,
+        stopIntake: () => {
+            if (passTimer !== null)
+                clearInterval(passTimer);
+            for (const bound of controlServers)
+                bound.server.close();
+        },
+        stopChildren: (s) => stopAllChildren(s, { killWaitMs: resolveKillWaitMs() }),
+        killChildrenNow: (s) => killAllChildrenNow(s),
+    });
+    // The readiness line. node_exec_path is process.execPath: exec() replaces
+    // the process image, so whatever interpreter the launcher resolved IS this
+    // process's own execPath by now, and the line stays truthful even when
+    // this broker was started directly, bypassing the launcher.
+    process.stderr.write(`vice-broker: ready (node ${process.version} at ${process.execPath}, max ${resolveCeilingForRecord()} instances, base port ${resolveBasePort()}, poll ${pollMs}ms${args.dryRun ? ", dry run" : ""}); control listener bound on ${listener.host}:${listener.port}\n`);
     // The fixed-order evaluation pass (runBrokerPass, broker-launch.mts):
     // serve pending acquires, then promote launching -> ready -- mirroring
     // the retiring bash daemon's own broker_once() ordering (the warm floor
@@ -2090,12 +2040,11 @@ async function run(args) {
     // (an early stubbed `serveAcquires: () => {}` comment reserved exactly
     // this room) -- an acquire queued because a launch was
     // already in flight is retried here, on the SAME pass that also promotes
-    // any newly-ready instance, so a stalled pass shows up as a stale record
-    // rather than a silently wrong one. Re-entrancy guarded: a pass that is
+    // any newly-ready instance. Re-entrancy guarded: a pass that is
     // still running (e.g. a slow readiness probe against a genuinely slow
     // host) is never overlapped by the next tick.
     let passInFlight = false;
-    setInterval(() => {
+    passTimer = setInterval(() => {
         if (passInFlight)
             return;
         passInFlight = true;

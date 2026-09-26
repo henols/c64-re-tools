@@ -59,6 +59,12 @@ const brokerTransferModule = (await import(new URL("./resources/broker-transfer.
   clearTransferInFlight: (handle: string) => void;
   clearStagingForSession: (grantId: string) => void;
   resetStagingForTest: () => void;
+  // Phase 65 (plan 65-03, D-11, Task 2 Test 5): the host-tool manifest
+  // stager's own aggregate-cap enforcement.
+  stageHostToolRequest: (opts: {
+    files: Array<{ tree: number; rel: string; byteLength: number }>;
+    now?: () => number;
+  }) => { ok: true; requestKey: string; treeHandles: string[]; fileHandles: string[] } | { ok: false; reason: string };
 };
 const {
   writeTransferHeader,
@@ -72,6 +78,7 @@ const {
   clearTransferInFlight,
   clearStagingForSession,
   resetStagingForTest,
+  stageHostToolRequest,
 } = brokerTransferModule;
 
 /** Runs `fn` with `VICE_BROKER_HOME` pointed at a fresh `mkdtempSync`
@@ -975,5 +982,46 @@ test("resolveStagedFile: refuses an unknown handle, never revealing a staging pa
     if (!result.ok) {
       assert.doesNotMatch(result.reason, /staging|\/tmp\//);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 65, plan 65-03, Task 2 Test 5 (D-11): stageHostToolRequest()'s own
+// AGGREGATE cap -- summed across every manifest entry, independently of the
+// per-file check each entry already gets.
+// ---------------------------------------------------------------------------
+
+test("stageHostToolRequest: refuses a manifest whose declared aggregate exceeds TRANSFER_MAX_BYTES, names 16777216, and creates no directory", async () => {
+  await withStagingFixture(async (home) => {
+    const stagingRoot = join(home, "staging");
+    let before: string[] = [];
+    try {
+      before = readdirSync(stagingRoot);
+    } catch {
+      before = [];
+    }
+
+    // Two entries, each individually WITHIN the per-file cap, whose SUM
+    // exceeds it -- proving this is the aggregate check, not a duplicate of
+    // the per-file one immediately above it.
+    const half = Math.floor(TRANSFER_MAX_BYTES / 2) + 1;
+    const result = stageHostToolRequest({
+      files: [
+        { tree: 0, rel: "a.a", byteLength: half },
+        { tree: 0, rel: "b.a", byteLength: half },
+      ],
+    });
+    assert.equal(result.ok, false, "a manifest whose declared aggregate exceeds the cap must be refused");
+    if (!result.ok) {
+      assert.match(result.reason, /16777216/, "the refusal must name the cap");
+    }
+
+    let after: string[] = [];
+    try {
+      after = readdirSync(stagingRoot);
+    } catch {
+      after = [];
+    }
+    assert.deepEqual(after, before, "a refused stage request must create no directory at all");
   });
 });

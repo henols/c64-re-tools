@@ -25,12 +25,12 @@
 ; from hazard-subject-align.a.
 ;
 ; WHY THIS FILE EXISTS: it is a RED CONTROL for the cross-binary comparison
-; instrument (compare-cross-binary.mjs, plan 50-01), the same role
+; instrument (compare-cross-binary.ts, plan 50-01), the same role
 ; hazard-subject-dispatch-regressed.a plays for $D020. Under the narrowed
 ; mask this phase committed first, $D015 and $D018 stay deliberately
 ; visible to the verdict, so these two planted single-bit regressions must
 ; make the comparison FAIL. This file is never assembled on its own -- it
-; is pulled into a synthesized root by make-hazard-subject-fixtures.mjs's
+; is pulled into a synthesized root by make-hazard-subject-fixtures.ts's
 ; third FIXTURES entry, in place of hazard-subject-align.a.
 
 align_screen_offset = $0400

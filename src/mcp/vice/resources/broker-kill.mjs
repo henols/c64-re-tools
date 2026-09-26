@@ -57,7 +57,17 @@ const defaultReadProcessArgs = (pid) => {
         return "";
     }
 };
+/** Signals the process group the pid leads (every broker child is spawned
+ * as its own group leader), so descendants go too; falls back to the pid
+ * alone for a process that leads no group. */
 const defaultKill = (pid, signal) => {
+    try {
+        process.kill(-pid, signal);
+        return;
+    }
+    catch {
+        // not a group leader -- signal the pid itself
+    }
     try {
         process.kill(pid, signal);
     }
@@ -148,17 +158,31 @@ export async function verifiedKill({ pid, expectedIdentity, deps = {} }) {
  * removal IS the kill-never-recycle structural guarantee: the only way an
  * instance becomes grantable again is a fresh launch, never a reset of this
  * entry (mirrors teardown()'s own header comment in the bash original).
+ * Before any of that, the broker stops taking work (deps.stopIntake) and sets
+ * state.shuttingDown, so no acquire, host-tool run or crash respawn starts
+ * mid-shutdown. The instance kills run in parallel. Afterwards every group
+ * still in the child registry is stopped (deps.stopChildren): host tools, and
+ * emulators whose record a release had already removed. Nothing the broker
+ * started is left running.
  * Never throws past an individual kill failure -- one instance's kill
  * rejecting must not stop every other instance from being torn down. */
 export async function shutdown(deps) {
     const kill = deps.kill ?? verifiedKill;
     const log = deps.log ?? defaultLog;
+    // No new acquire, host-tool run or respawn may start from here on.
+    deps.state.shuttingDown = true;
+    try {
+        deps.stopIntake?.();
+    }
+    catch (e) {
+        log(`vice-broker: shutdown -- stopping intake threw: ${e.message}`);
+    }
     const instances = Array.from(deps.state.instances.values());
     for (const instance of instances) {
         instance.deliberateKill = true;
     }
     let killed = 0;
-    for (const instance of instances) {
+    await Promise.all(instances.map(async (instance) => {
         try {
             const stage = await kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
             if (stage === "sigterm" || stage === "sigkill")
@@ -170,8 +194,17 @@ export async function shutdown(deps) {
         finally {
             deps.state.instances.delete(instance.port);
         }
+    }));
+    let children = 0;
+    if (deps.stopChildren) {
+        try {
+            children = await deps.stopChildren(deps.state);
+        }
+        catch (e) {
+            log(`vice-broker: shutdown -- stopping child processes threw: ${e.message}`);
+        }
     }
-    log(`vice-broker: shutdown complete -- ${instances.length} instance(s) processed, ${killed} signalled`);
+    log(`vice-broker: shutdown complete -- ${instances.length} instance(s) processed, ${killed} signalled, ${children} child process group(s) stopped`);
 }
 /** The six catchable entry points every real broker process registers
  * shutdown() against. Not exported: registerShutdownHandlers() below is the
@@ -209,12 +242,9 @@ export const _HANDLED_SIGNALS = HANDLED_SIGNALS;
  * The 'exit' listener is registered identically to the other five, but
  * carries an honest limitation worth stating rather than hiding: Node's
  * 'exit' event fires synchronously and cannot keep the event loop alive for
- * pending async work, so on a REAL process exit only shutdown()'s
- * synchronous prefix (marking every instance deliberately-killed, issuing
- * the initial SIGTERM to each) is guaranteed to run before the process is
- * actually gone -- the SIGTERM-wait-then-SIGKILL escalation's own polling
- * cannot complete there. This is a real Node platform limitation, not a gap
- * in this module; it is why the 'exit' path is exercised in this module's
+ * pending async work. So the 'exit' listener first SIGKILLs every tracked
+ * process group synchronously (deps.killChildrenNow), and only then starts
+ * shutdown(), whose asynchronous part cannot complete there. It is why the 'exit' path is exercised in this module's
  * own tests via the injectable `proc` seam (a plain EventEmitter, which CAN
  * await async work in its own listeners) rather than a real process exit.
  *
@@ -284,7 +314,12 @@ export function registerShutdownHandlers(deps) {
         log(`vice-broker: unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`);
         run("unhandledRejection", 1);
     });
-    register("exit", () => run("exit", 0));
+    register("exit", () => {
+        // Nothing asynchronous runs after 'exit': kill every group now.
+        deps.state.shuttingDown = true;
+        deps.killChildrenNow?.(deps.state);
+        run("exit", 0);
+    });
     return () => {
         const p = proc;
         if (typeof p.removeListener === "function") {
@@ -299,9 +334,8 @@ export function registerShutdownHandlers(deps) {
  * interrupt or a closed terminal destroys. On 2026-08-02 a `^C` produced
  * "reap saw 4 recorded instance(s), terminated 4" and killed a live
  * session -- the incident was not caused by missing machinery, it was
- * caused by nobody being told. Detaching stays the operator's own
- * nohup/setsid/systemd choice -- this banner names that choice
- * rather than offering a flag; the launcher stays thin.
+ * caused by nobody being told. The broker offers no way to detach itself;
+ * how the user runs it is not this project's business.
  *
  * The one place naming the retired
  * warm-floor environment variable does not weaken the clean break made when
@@ -322,8 +356,6 @@ export function startupBanner() {
         "vice-broker: accumulated context.",
         "vice-broker: a broker that dies voids every session it was serving -- there is no",
         "vice-broker: reconnect. A session whose broker dies must be restarted, not resumed.",
-        "vice-broker: to run this broker outside the current terminal session, use your own",
-        "vice-broker: nohup/setsid/systemd -- this launcher does not offer a --detach flag.",
     ];
     if (process.env.VICE_BROKER_SPARES !== undefined) { // banner-only presence check -- never reads the value
         lines.push(
@@ -630,13 +662,12 @@ function defaultRemoveStagingSessionDir(root, dirName) {
  * connection closing (SESS-03/SESS-04's handleRelease(), already wired).
  *
  * This function may be called only by a broker that has won the
- * control-port bind, and only BEFORE that broker publishes its control
- * token (vice-broker.mts's own call site sits between the confirmed bind
- * and the first writeBrokerRecordFile()). Given that precondition, and only
- * then, every directory still present under the staging root is residue a
+ * control-port bind, and only before it serves a single request
+ * (vice-broker.mts calls it synchronously, with no `await` between the
+ * confirmed bind and the call). Given that precondition, and only then,
+ * every directory still present under the staging root is residue a
  * crashed broker left -- no broker that shut down cleanly leaves one
- * behind, and this process's own sessions cannot exist yet because nothing
- * can hold its token. Every directory found is removed unconditionally and
+ * behind, and this process's own sessions cannot exist yet. Every directory found is removed unconditionally and
  * recursively.
  *
  * The defect this precondition exists to prevent: a second broker
@@ -667,9 +698,11 @@ export function sweepOrphanedStaging(options) {
             removed++;
         }
         catch (e) {
-            log(`vice-broker: staging sweep -- ${dirName} threw during removal: ${e.message}`);
+            log(`vice-broker: ${options.label ?? "staging sweep"} -- ${dirName} threw during removal: ${e.message}`);
         }
     }
-    log(`vice-broker: staging sweep found ${found} session director(y/ies), removed ${removed}`);
+    log(options.label === undefined
+        ? `vice-broker: staging sweep found ${found} session director(y/ies), removed ${removed}`
+        : `vice-broker: ${options.label} found ${found} director(y/ies), removed ${removed}`);
     return { found, removed };
 }

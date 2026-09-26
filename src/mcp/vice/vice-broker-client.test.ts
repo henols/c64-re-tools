@@ -1,14 +1,9 @@
 // node:test coverage of vice-broker-client.ts in ISOLATION -- no broker
-// script and no proxy involved, matching vice-pool.test.mjs's own
-// in-process, synthetic-temp-dir style (mkdtempSync fixtures, no subprocess
-// needed for pure function coverage). Every exported function here reads
-// its target directory from VICE_POOL_DIR (per the plan's own documented
-// signatures, none of which take a `dir` parameter), so each test sets and
-// restores that env var around its own temp directory.
+// script and no proxy involved. Every session is dialed over loopback at an
+// in-process listener's kernel-chosen port.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer, type Server, type Socket } from "node:net";
@@ -17,27 +12,16 @@ import {
   REQUEST_ID_PATTERN,
   newRequestId,
   isValidRequestId,
-  brokerJsonPath,
-  readBrokerLiveness,
-  openBrokerControl,
-  acquireOverControlPlane,
-  classifyConnectHost,
-  resolveControlTarget,
-  CONTROL_CONNECT_TIMEOUT_MS,
+  dialControlSession,
   MonitorOwnershipError,
   resolveSessionLabel,
   type BrokerControlSession,
 } from "./vice-broker-client.ts";
-// The bridge alias itself (quick-260805-9ha) -- used only to assert
-// resolveControlTarget()'s default answer against the SAME function it
-// delegates to, never a second, hand-derived expectation of what that
-// answer should be.
-import { mcpHost } from "./vice-errors.ts";
+import { BROKER_START_COMMAND, HELLO_PROTOCOL_MAGIC } from "./broker-endpoint.mts";
+import { runtimeVersion } from "./version.mts";
 import {
   startControlListener,
-  newControlToken,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type MonitorClaimOutcome,
@@ -57,59 +41,11 @@ import * as viceBrokerClient from "./vice-broker-client.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-// quick-260805-9ha: every listener THIS FILE starts (startFullBrokerListener()/
-// startRawSocketServer() below) is bound on 127.0.0.1, inside this
-// container. openBrokerControl()/acquireOverControlPlane() no longer dial
-// broker.json's own `control_host` field (that is the broker's BIND
-// address, never a dial target -- see vice-broker-client.ts's own "dial
-// resolution" section header). Without this override, every one of this
-// file's connect-driving tests would instead resolve the real bridge alias
-// (mcpHost(), "host.docker.internal" by default) and either hang or fail
-// against a host nothing here has ever bound -- which is also exactly the
-// hard rule this project enforces: nothing under this module tree's tests
-// may dial the real host. Setting it once, at module scope, is the seam
-// that keeps this whole suite in-container.
-process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
-
-const tmpPoolDir = (): string => mkdtempSync(join(tmpdir(), "vice-broker-client-test-"));
-
-/** Runs `fn` with VICE_POOL_DIR pointed at a fresh temp directory, restoring
- * the prior value (or deleting the var entirely) afterwards regardless of
- * how `fn` exits -- every exported function under test reads this env var
- * at call time, so this is the isolation seam for in-process testing. */
-async function withPoolDir(fn: (dir: string) => Promise<void> | void): Promise<void> {
-  const dir = tmpPoolDir();
-  const prev = process.env.VICE_POOL_DIR;
-  process.env.VICE_POOL_DIR = dir;
-  try {
-    await fn(dir);
-  } finally {
-    if (prev === undefined) delete process.env.VICE_POOL_DIR;
-    else process.env.VICE_POOL_DIR = prev;
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
+/** Dials a session at a listener THIS file started on loopback. The only
+ * candidate is 127.0.0.1, so no test here ever dials the bridge alias. */
+const dialLoopback = (port: number) => dialControlSession({ port, candidates: ["127.0.0.1"] });
 
 const sleepMs = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
-/** Temporarily sets or deletes `process.env[key]` for the duration of `fn`,
- * restoring the prior value (or absence) afterwards regardless of how `fn`
- * exits -- the same finally-restore discipline withPoolDir() above uses,
- * scoped to a single env var. `value: undefined` deletes the key entirely
- * (needed by the tests below that must prove resolveControlTarget()'s
- * DEFAULT behaviour with the module-scope override above deliberately
- * absent). */
-async function withEnv(key: string, value: string | undefined, fn: () => Promise<void> | void): Promise<void> {
-  const prev = process.env[key];
-  if (value === undefined) delete process.env[key];
-  else process.env[key] = value;
-  try {
-    await fn();
-  } finally {
-    if (prev === undefined) delete process.env[key];
-    else process.env[key] = prev;
-  }
-}
 
 // -------------------------------------------------------------- request ids
 
@@ -130,174 +66,30 @@ test("newRequestId()/isValidRequestId(): accepts its own output and rejects a ho
   }
 });
 
-// writeRequest()/createLease()/touchLease()/releaseLease()/pollGrant() and
-// their ten tests above (plan 06's disposition table rows 2-11) are DELETED
-// in this plan (01.6.2-07, criterion F/D-12), in the SAME commit as their
-// own subjects' deletion from vice-broker-client.ts: the file-messaging
-// protocol they exercised retires wholesale, replaced by the TCP control
-// plane below. Six of those ten rows (releaseLease() x2, pollGrant() x4)
-// already have a named RE-OBSERVED replacement test in this file (added by
-// plan 06, listed in that plan's own disposition table) -- nothing here is
-// a silent drop.
+/** The version a raw stub reports in its hello reply: the same package.json
+ * lookup the dialing client resolves its own version from, so the major
+ * versions always agree. */
+const STUB_HELLO_VERSION = runtimeVersion({ pkgJsonPath: join(HERE, "package.json") });
 
-// -------------------------------------------------------------- readBrokerLiveness
-
-test("readBrokerLiveness(): classifies an absent broker.json as never_started", async () => {
-  await withPoolDir(async (dir) => {
-    const result = readBrokerLiveness(brokerJsonPath(dir));
-    assert.equal(result.state, "never_started");
-    assert.equal(result.pid, null);
-  });
-});
-
-test("readBrokerLiveness(): classifies a fresh heartbeat as alive", async () => {
-  await withPoolDir(async (dir) => {
-    const path = brokerJsonPath(dir);
-    writeFileSync(path, JSON.stringify({ version: 1, pid: 4242, heartbeat_at: new Date().toISOString() }));
-    const result = readBrokerLiveness(path);
-    assert.equal(result.state, "alive");
-    assert.equal(result.pid, 4242);
-  });
-});
-
-test("readBrokerLiveness(): classifies a stale heartbeat as stale", async () => {
-  await withPoolDir(async (dir) => {
-    const path = brokerJsonPath(dir);
-    const longAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // 10 minutes ago
-    writeFileSync(path, JSON.stringify({ version: 1, pid: 4242, heartbeat_at: longAgo }));
-    const result = readBrokerLiveness(path);
-    assert.equal(result.state, "stale");
-  });
-});
-
-// =============================================================================
-// quick-260805-9ha: dial resolution -- classifyConnectHost()/
-// resolveControlTarget(). `broker.json`'s own `control_host` field is the
-// broker's BIND address (vice-broker.mts:782 writes `listener.host` into
-// it, which is deliberately `0.0.0.0`); dialing it from inside THIS
-// container reaches this container's own network stack, where nothing
-// listens. These two functions are the fix -- see vice-broker-client.ts's
-// own "dial resolution" section header for the full rationale.
-// =============================================================================
-
-test("resolveControlTarget(): a record carrying 0.0.0.0 never yields it as the dial target -- with no override set, resolves to the bridge alias", async () => {
-  await withEnv("VICE_BROKER_CONTROL_DIAL_HOST", undefined, () => {
-    const result = resolveControlTarget({ control_host: "0.0.0.0" }, 6600);
-    assert.equal(result.ok, true, `must resolve ok against an alive-classified port: ${JSON.stringify(result)}`);
-    if (!result.ok) return;
-    assert.notEqual(result.target.host, "0.0.0.0");
-    assert.equal(result.target.host, mcpHost(), "the resolved host must be exactly what mcpHost() answers");
-    assert.equal(result.target.source, "bridge_alias");
-    assert.equal(result.target.recorded, "0.0.0.0", "the record's own control_host is carried through for diagnostics only");
-  });
-});
-
-test("resolveControlTarget(): neither 127.0.0.1 nor localhost in the record is ever TRUSTED as the dial target, with no override set", async () => {
-  await withEnv("VICE_BROKER_CONTROL_DIAL_HOST", undefined, () => {
-    for (const recordedHost of ["127.0.0.1", "localhost"]) {
-      const result = resolveControlTarget({ control_host: recordedHost }, 6600);
-      assert.equal(result.ok, true, `must resolve ok for recorded host ${recordedHost}: ${JSON.stringify(result)}`);
-      if (!result.ok) return;
-      // `source` is the guard-removal-sensitive assertion here, NOT a string
-      // comparison against the recorded host: it proves the value came from
-      // alias resolution rather than from the record. On a bare host mcpHost()
-      // legitimately IS 127.0.0.1, so a `notEqual(host, recordedHost)` check
-      // fails there for a correct implementation -- it only ever held because
-      // this suite assumed it ran inside the devcontainer.
-      assert.equal(result.target.source, "bridge_alias", `${recordedHost} must be resolved via the bridge alias, never echoed from the record`);
-      assert.equal(result.target.host, mcpHost(), "the resolved host must be exactly what mcpHost() answers");
-      assert.equal(result.target.recorded, recordedHost, "the record's own control_host is carried through for diagnostics only");
-      // Where the environment's alias genuinely differs from the recorded
-      // value (any container), additionally prove it never surfaces verbatim.
-      if (mcpHost() !== recordedHost) {
-        assert.notEqual(result.target.host, recordedHost, `the recorded value ${recordedHost} must never become the dial target`);
-      }
-    }
-  });
-});
-
-test("classifyConnectHost(): classifies a corpus of wildcard-bind, loopback and routable hosts structurally", () => {
-  const wildcardBind = ["0.0.0.0", "::", "[::]"];
-  const loopback = ["127.0.0.1", "127.1.2.3", "localhost", "[::1]"];
-  const routable = ["host.docker.internal", "172.17.0.1", "203.0.113.1"];
-  for (const host of wildcardBind) {
-    assert.equal(classifyConnectHost(host), "wildcard_bind", `expected wildcard_bind for ${host}`);
-  }
-  for (const host of loopback) {
-    assert.equal(classifyConnectHost(host), "loopback", `expected loopback for ${host}`);
-  }
-  for (const host of routable) {
-    assert.equal(classifyConnectHost(host), "routable", `expected routable for ${host}`);
-  }
-});
-
-test("resolveControlTarget(): the env override is honoured verbatim, regardless of what the record says", async () => {
-  await withEnv("VICE_BROKER_CONTROL_DIAL_HOST", "127.0.0.1", () => {
-    const result = resolveControlTarget({ control_host: "0.0.0.0" }, 6600);
-    assert.equal(result.ok, true);
-    if (!result.ok) return;
-    assert.equal(result.target.host, "127.0.0.1");
-    assert.equal(result.target.source, "dial_override");
-    assert.equal(result.target.recorded, "0.0.0.0");
-  });
-});
-
-test("openBrokerControl(): a wildcard-bind dial target is refused before any connect is attempted, naming the address and port", async () => {
-  await withPoolDir(async (dir) => {
-    await withEnv("VICE_BROKER_CONTROL_DIAL_HOST", "0.0.0.0", async () => {
-      writeBrokerJson(dir, {
-        version: 1,
-        pid: process.pid,
-        heartbeat_at: new Date().toISOString(),
-        control_host: "0.0.0.0",
-        control_port: 6600,
-        control_token: "unused",
-      });
-      const startedAt = Date.now();
-      const result = await openBrokerControl(dir);
-      const elapsed = Date.now() - startedAt;
-      assert.equal(result.ok, false);
-      if (result.ok) return;
-      assert.equal(result.kind, "unreachable_control_plane");
-      assert.match(result.message, /0\.0\.0\.0:6600/, `message must name the address and port: ${result.message}`);
-      assert.equal(result.target, "0.0.0.0:6600");
-      assert.ok(
-        elapsed < CONTROL_CONNECT_TIMEOUT_MS,
-        `must resolve well inside the connect timeout without ever attempting a connect, took ${elapsed}ms (bound ${CONTROL_CONNECT_TIMEOUT_MS}ms)`
-      );
-    });
-  });
-});
-
-// =============================================================================
-// Plan 06, Task 1: openBrokerControl() -- the session-based TCP control-plane
-// client. RETIRING REGION NOTE: everything ABOVE this section tests the
-// file-messaging protocol (writeRequest/createLease/touchLease/releaseLease/
-// pollGrant/pollRecycleAck/startHeartbeat), which retires wholesale under
-// D-12 when plan 07 swaps the proxy onto this session client and deletes the
-// file half. readBrokerLiveness() (tested just above) is the one function
-// from that region that SURVIVES unchanged. See this plan's own SUMMARY for
-// the full per-test disposition table (plan 06, task 2, criterion A's
-// second half).
-// =============================================================================
-
-function writeBrokerJson(dir: string, fields: Record<string, unknown>): void {
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(brokerJsonPath(dir), JSON.stringify(fields));
-}
-
-/** A bare TCP listener with NO protocol wired up -- just enough to accept a
- * connection and hand the test its own raw socket to drive. Used for the
- * scenarios broker-control.mts's own real protocol can't produce on demand
- * (a connection that never answers, a malformed line, chunked framing, a
- * server hanging up mid-request) -- structurally the same "bind first,
- * attach behaviour after" split bindControlListener()/attachControlProtocol()
- * already use on the host side. */
+/** A bare TCP listener with NO protocol wired up beyond the hello -- just
+ * enough to accept a connection, answer the dial's hello, and hand the test
+ * its own raw socket to drive. Used for the scenarios broker-control.mts's
+ * own real protocol can't produce on demand (a connection that never
+ * answers, a malformed line, chunked framing, a server hanging up
+ * mid-request). A socket joins `sockets` only once its hello is answered. */
 function startRawSocketServer(): Promise<{ server: Server; port: number; sockets: Socket[] }> {
   return new Promise((resolvePromise) => {
     const sockets: Socket[] = [];
     const server = createServer((socket) => {
-      sockets.push(socket);
+      let buf = "";
+      const onData = (chunk: Buffer): void => {
+        buf += chunk.toString("utf8");
+        if (buf.indexOf("\n") === -1) return;
+        socket.removeListener("data", onData);
+        socket.write(`${JSON.stringify({ kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: STUB_HELLO_VERSION, tag: "control" })}\n`);
+        sockets.push(socket);
+      };
+      socket.on("data", onData);
     });
     server.listen(0, "127.0.0.1", () => {
       const addr = server.address();
@@ -315,7 +107,6 @@ interface FullBrokerDeps {
    * THIRD parameter carrying the already-sanitised session label. */
   onAcquire?: (id: string, profile?: LaunchProfile, label?: string | null) => Promise<AcquireOutcome>;
   onRelease?: (id: string) => void;
-  onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
   onHostState?: () => HostStateFields;
   onMonitorClaim?: (requestId: string, targetId: string) => MonitorClaimOutcome;
@@ -336,25 +127,17 @@ interface FullBrokerDeps {
  * broker-control.test.ts's own startTestListener() uses for the SERVER
  * side's own tests. `rawLines` taps the SAME "connection" event (Node
  * EventEmitters support multiple listeners) purely to observe the bytes
- * actually sent, without altering the real protocol's own behaviour --
- * this is what lets a test assert on `.token` without stubbing the socket. */
+ * actually sent, without altering the real protocol's own behaviour. */
 async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
   server: Server;
   port: number;
-  token: string;
   rawLines: Record<string, unknown>[];
-  dir: string;
 }> {
-  const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: deps.onAcquire ?? (async () => ({ ok: false, reason: "internal" }) as AcquireOutcome),
     onRelease: deps.onRelease ?? (() => {}),
-    onRecycle:
-      deps.onRecycle ??
-      (async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "grant_lookup_failed", reason: "no stub configured" })),
     onStatus: deps.onStatus ?? (() => []),
     onHostState:
       deps.onHostState ??
@@ -370,7 +153,6 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
     // Phase 34, plan 34-01: a required field on StartControlListenerOptions
     // as of this plan -- this client-focused fixture never exercises
     // host_tool itself, so this stub exists only to satisfy the type.
-    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
     // Phase 64, plan 64-02 (XFER-04): OPTIONAL on StartControlListenerOptions
     // -- conditionally wired, so a test that supplies no stub sees the real
     // "not wired" refusal the dispatch arm itself produces.
@@ -397,33 +179,18 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
     });
   });
 
-  const dir = tmpPoolDir();
-  writeBrokerJson(dir, {
-    version: 1,
-    pid: process.pid,
-    heartbeat_at: new Date().toISOString(),
-    control_host: "127.0.0.1",
-    control_port: listener.port,
-    control_token: token,
-  });
-
-  return { server: listener.server, port: listener.port, token, rawLines, dir };
+  return { server: listener.server, port: listener.port, rawLines };
 }
 
-// ------------------------------------------------- openBrokerControl(): happy path
+// ------------------------------------------------- dialControlSession(): happy path
 
-test("openBrokerControl(): opens a session and drives all five request kinds, every one carrying the discovery record's token", async () => {
-  let recycleCalledWith: string | null = null;
-  const { server, dir, rawLines } = await startFullBrokerListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } }),
-    onRecycle: async (targetId) => {
-      recycleCalledWith = targetId;
-      return { port: 6600, pid: 4242, viceBin: "x64sc", killStage: "sigterm", epochBefore: 3, outcome: "ok", reason: "" };
-    },
+test("dialControlSession(): opens a session and drives all four request kinds, and no request line carries a token", async () => {
+  const { server, port, rawLines } = await startFullBrokerListener({
+    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } }),
   });
   try {
-    const opened = await openBrokerControl(dir);
-    assert.equal(opened.ok, true, `openBrokerControl must succeed against a real listener: ${JSON.stringify(opened)}`);
+    const opened = await dialLoopback(port);
+    assert.equal(opened.ok, true, `dialControlSession must succeed against a real listener: ${JSON.stringify(opened)}`);
     if (!opened.ok) return;
     const session = opened.session;
 
@@ -445,43 +212,29 @@ test("openBrokerControl(): opens a session and drives all five request kinds, ev
     // boundary to the one known value or null.
     assert.equal(hostStateResult.hostState.backend, "stock");
 
-    const recycled = await session.recycle(acquired.grant.id);
-    assert.equal(recycled.ok, true, `recycle must succeed: ${JSON.stringify(recycled)}`);
-    if (!recycled.ok) return;
-    assert.equal(recycled.ack.outcome, "ok");
-    assert.equal(recycled.ack.kill_stage, "sigterm");
-    assert.equal(recycleCalledWith, acquired.grant.id);
-
     const released = await session.release();
     assert.equal(released.ok, true);
 
-    assert.ok(rawLines.length >= 4, `expected at least 4 request lines observed, saw ${rawLines.length}`);
-    // Every observed request line carries a `token` field equal to the
-    // discovery record's own control_token -- asserted against the SAME
-    // token startFullBrokerListener() minted and wrote into broker.json.
-    const brokerRecord = JSON.parse(readFileSync(brokerJsonPath(dir), "utf8"));
+    assert.ok(rawLines.length >= 3, `expected at least 3 request lines observed, saw ${rawLines.length}`);
     for (const line of rawLines) {
-      assert.equal(line.token, brokerRecord.control_token, `every request line must carry the discovery record's token: ${JSON.stringify(line)}`);
+      assert.equal(Object.prototype.hasOwnProperty.call(line, "token"), false, `no request line may carry a token: ${JSON.stringify(line)}`);
     }
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
-// ------------------------------------------------- openBrokerControl(): key sets
+// ------------------------------------------------- dialControlSession(): key sets
 
-// containerizeGrant() (vice-proxy.ts lines 1963-2054, read directly from
-// source at the time this test was written) reads exactly these fields off
-// a raw grant record before translating url/epoch_file/supervisor_dir.
-const CONTAINERIZE_GRANT_FIELDS = ["id", "port", "url", "epoch_file", "supervisor_dir"];
+// The grant carries coordinates only -- never a broker-side path.
+const CONTAINERIZE_GRANT_FIELDS = ["id", "port", "url"];
 
 test("acquire result: the grant object has exactly the key set containerizeGrant() reads", async () => {
-  const { server, dir } = await startFullBrokerListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6601, url: "http://127.0.0.1:6601/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6601" } }),
+  const { server, port } = await startFullBrokerListener({
+    onAcquire: async () => ({ ok: true, grant: { port: 6601, url: "http://127.0.0.1:6601/mcp" } }),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const acquired = await opened.session.acquire();
@@ -491,40 +244,6 @@ test("acquire result: the grant object has exactly the key set containerizeGrant
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// vice-proxy.ts's recycleAckOutcomeMessage() (lines 584-611) plus its caller
-// (lines 707-713, `ack.kill_stage`/`ack.outcome`) -- the ONLY fields the
-// proxy ever reads off a recycle ack, read directly from source at the time
-// this test was written. This is deliberately narrower than the wire's full
-// nine-field recycle_ack response (broker-control.mts's own RecycleOutcome);
-// `port`/`x64sc_pid`/`vice_bin`/`epoch_before`/`id`/`target_id` have no
-// reader on the proxy side and are dropped here, matching plan 05's own
-// "documented SUBSET, never a bijection" precedent for this same ack.
-const OUTCOME_RENDERER_FIELDS = ["outcome", "kill_stage", "reason"];
-
-test("recycle result: the ack object has exactly the key set the proxy's outcome renderer reads", async () => {
-  const { server, dir } = await startFullBrokerListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6602, url: "http://127.0.0.1:6602/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6602" } }),
-    onRecycle: async () => ({ port: 6602, pid: 1, viceBin: "x64sc", killStage: "sigterm", epochBefore: 1, outcome: "ok", reason: "" }),
-  });
-  try {
-    const opened = await openBrokerControl(dir);
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const acquired = await opened.session.acquire();
-    assert.equal(acquired.ok, true);
-    if (!acquired.ok) return;
-    const recycled = await opened.session.recycle(acquired.grant.id);
-    assert.equal(recycled.ok, true);
-    if (!recycled.ok) return;
-    assert.deepEqual(Object.keys(recycled.ack).sort(), [...OUTCOME_RENDERER_FIELDS].sort());
-    await opened.session.release();
-  } finally {
-    server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -538,11 +257,11 @@ test("recycle result: the ack object has exactly the key set the proxy's outcome
 // "pollGrant(): resolves granted:false and surfaces the denial's reason
 // verbatim" test (see this plan's SUMMARY disposition table, row 9).
 test("acquire: resolves a typed failure carrying the broker's own error code and message when the broker answers an error", async () => {
-  const { server, dir } = await startFullBrokerListener({
+  const { server, port } = await startFullBrokerListener({
     onAcquire: async () => ({ ok: false, reason: "at_capacity" }) as AcquireOutcome,
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const acquired = await opened.session.acquire();
@@ -553,121 +272,31 @@ test("acquire: resolves a typed failure carrying the broker's own error code and
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
-// ------------------------------------------------- openBrokerControl(): liveness precheck
+// ------------------------------------------------- dialControlSession(): connection failures
 
-test("openBrokerControl(): a never-started record (missing heartbeat_at) returns a typed failure fast, without attempting a connection", async () => {
-  await withPoolDir(async (dir) => {
-    // control_host/control_port point at a TEST-NET-1 address (RFC 5737,
-    // guaranteed unallocated/unroutable) -- if the implementation attempted
-    // a connection despite the never_started classification, the promise
-    // would hang for the OS's own SYN-retransmit timeout (tens of seconds at
-    // minimum) rather than resolve promptly. Resolving well under that gives
-    // real evidence "the instrumented connect function is never called",
-    // not just an assertion on the returned `kind`.
-    writeBrokerJson(dir, { version: 1, pid: 4242, control_host: "203.0.113.1", control_port: 1, control_token: "unused" });
-    const startedAt = Date.now();
-    const result = await openBrokerControl(dir);
-    const elapsed = Date.now() - startedAt;
-    assert.equal(result.ok, false);
-    if (result.ok) return;
-    assert.equal(result.kind, "never_started");
-    assert.ok(elapsed < 500, `must resolve without attempting a connection, took ${elapsed}ms`);
-  });
+test("dialControlSession(): a port nothing listens on returns a typed connect_refused failure naming the start command", async () => {
+  // Bind a listener, read back its kernel-chosen port, then close it
+  // immediately -- the port is now refusing connections on loopback,
+  // deterministically (no reliance on a hardcoded port being free).
+  const probe = await startRawSocketServer();
+  const deadPort = probe.port;
+  await new Promise<void>((r) => probe.server.close(() => r()));
+
+  const result = await dialLoopback(deadPort);
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.kind, "connect_refused");
+  assert.ok(result.message.includes(BROKER_START_COMMAND), `the message must name the start command: ${result.message}`);
 });
-
-test("openBrokerControl(): a stale record returns a typed failure fast, without attempting a connection", async () => {
-  await withPoolDir(async (dir) => {
-    const longAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    writeBrokerJson(dir, { version: 1, pid: 4242, heartbeat_at: longAgo, control_host: "203.0.113.1", control_port: 1, control_token: "unused" });
-    const startedAt = Date.now();
-    const result = await openBrokerControl(dir);
-    const elapsed = Date.now() - startedAt;
-    assert.equal(result.ok, false);
-    if (result.ok) return;
-    assert.equal(result.kind, "stale");
-    assert.ok(elapsed < 500, `must resolve without attempting a connection, took ${elapsed}ms`);
-  });
-});
-
-test("openBrokerControl(): reads broker.json exactly once -- deleting it after the session opens does not affect five subsequent requests", async () => {
-  const { server, dir } = await startFullBrokerListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6603, url: "http://127.0.0.1:6603/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6603" } }),
-    onRecycle: async () => ({ port: 6603, pid: 1, viceBin: "x64sc", killStage: "sigterm", epochBefore: 1, outcome: "ok", reason: "" }),
-  });
-  try {
-    const opened = await openBrokerControl(dir);
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-
-    // The ONE read already happened inside openBrokerControl() above --
-    // deleting the record now proves nothing downstream re-reads it: if a
-    // future regression added a per-request re-read, every call below would
-    // start failing the moment the file disappears.
-    rmSync(brokerJsonPath(dir));
-
-    const acquired = await opened.session.acquire();
-    assert.equal(acquired.ok, true, `acquire after deletion must still succeed: ${JSON.stringify(acquired)}`);
-    if (!acquired.ok) return;
-    const statusResult = await opened.session.status();
-    assert.equal(statusResult.ok, true, `status after deletion must still succeed: ${JSON.stringify(statusResult)}`);
-    const hostStateResult = await opened.session.hostState();
-    assert.equal(hostStateResult.ok, true, `hostState after deletion must still succeed: ${JSON.stringify(hostStateResult)}`);
-    const recycled = await opened.session.recycle(acquired.grant.id);
-    assert.equal(recycled.ok, true, `recycle after deletion must still succeed: ${JSON.stringify(recycled)}`);
-    const released = await opened.session.release();
-    assert.equal(released.ok, true, `release after deletion must still succeed`);
-  } finally {
-    server.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// ------------------------------------------------- openBrokerControl(): connection failures
-
-test("openBrokerControl(): a refused connection returns a typed connect_refused failure naming the refusal", async () => {
-  await withPoolDir(async (dir) => {
-    // Bind a listener, read back its kernel-chosen port, then close it
-    // immediately -- the port is now refusing connections on loopback,
-    // deterministically (no reliance on a hardcoded port being free).
-    const probe = await startRawSocketServer();
-    const deadPort = probe.port;
-    await new Promise<void>((r) => probe.server.close(() => r()));
-
-    writeBrokerJson(dir, {
-      version: 1,
-      pid: process.pid,
-      heartbeat_at: new Date().toISOString(),
-      control_host: "127.0.0.1",
-      control_port: deadPort,
-      control_token: "unused",
-    });
-    const result = await openBrokerControl(dir);
-    assert.equal(result.ok, false);
-    if (result.ok) return;
-    assert.equal(result.kind, "connect_refused");
-    assert.match(result.message, /connect_refused|connection failed|ECONNREFUSED/i);
-  });
-});
-
 // ------------------------------------------------- session: deadlines, framing, broker-gone, malformed lines
 
 test("acquire: resolves a typed deadline failure within its own bound and does not hang, using a short bound injected for the test", async () => {
   const { server, port, sockets } = await startRawSocketServer();
-  const dir = tmpPoolDir();
-  writeBrokerJson(dir, {
-    version: 1,
-    pid: process.pid,
-    heartbeat_at: new Date().toISOString(),
-    control_host: "127.0.0.1",
-    control_port: port,
-    control_token: "tok-deadline",
-  });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     // The raw server accepts the connection but never writes a response --
@@ -683,23 +312,13 @@ test("acquire: resolves a typed deadline failure within its own bound and does n
   } finally {
     for (const s of sockets) s.destroy();
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("session: the broker closing the connection mid-request settles it with a distinct broker_gone outcome, never a request-level error", async () => {
   const { server, port, sockets } = await startRawSocketServer();
-  const dir = tmpPoolDir();
-  writeBrokerJson(dir, {
-    version: 1,
-    pid: process.pid,
-    heartbeat_at: new Date().toISOString(),
-    control_host: "127.0.0.1",
-    control_port: port,
-    control_token: "tok-gone",
-  });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const acquirePromise = opened.session.acquire({ timeoutMs: 5000 });
@@ -725,23 +344,13 @@ test("session: the broker closing the connection mid-request settles it with a d
   } finally {
     for (const s of sockets) s.destroy();
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("session: two responses arriving in one chunk are both delivered", async () => {
   const { server, port, sockets } = await startRawSocketServer();
-  const dir = tmpPoolDir();
-  writeBrokerJson(dir, {
-    version: 1,
-    pid: process.pid,
-    heartbeat_at: new Date().toISOString(),
-    control_host: "127.0.0.1",
-    control_port: port,
-    control_token: "tok-chunk",
-  });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
 
@@ -757,7 +366,7 @@ test("session: two responses arriving in one chunk are both delivered", async ()
     const first = opened.session.acquire({ timeoutMs: 3000 });
     const second = opened.session.status({ timeoutMs: 3000 });
     await sleepMs(50); // let both request lines actually reach the server
-    const grantLine = JSON.stringify({ kind: "grant", id: "req-x", port: 6604, url: "http://127.0.0.1:6604/mcp", epoch_file: "/tmp/e.json", supervisor_dir: "/tmp/6604" });
+    const grantLine = JSON.stringify({ kind: "grant", id: "req-x", port: 6604, url: "http://127.0.0.1:6604/mcp" });
     const statusLine = JSON.stringify({ kind: "status", instances: [] });
     serverSocket.write(`${grantLine}\n${statusLine}\n`); // BOTH responses in ONE chunk
 
@@ -768,23 +377,13 @@ test("session: two responses arriving in one chunk are both delivered", async ()
   } finally {
     for (const s of sockets) s.destroy();
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("session: one response split across two chunks is delivered exactly once", async () => {
   const { server, port, sockets } = await startRawSocketServer();
-  const dir = tmpPoolDir();
-  writeBrokerJson(dir, {
-    version: 1,
-    pid: process.pid,
-    heartbeat_at: new Date().toISOString(),
-    control_host: "127.0.0.1",
-    control_port: port,
-    control_token: "tok-split",
-  });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
 
@@ -795,7 +394,7 @@ test("session: one response split across two chunks is delivered exactly once", 
 
     const acquirePromise = opened.session.acquire({ timeoutMs: 3000 });
     await sleepMs(50);
-    const line = `${JSON.stringify({ kind: "grant", id: "req-y", port: 6605, url: "http://127.0.0.1:6605/mcp", epoch_file: "/tmp/e.json", supervisor_dir: "/tmp/6605" })}\n`;
+    const line = `${JSON.stringify({ kind: "grant", id: "req-y", port: 6605, url: "http://127.0.0.1:6605/mcp" })}\n`;
     const splitAt = Math.floor(line.length / 2);
     serverSocket.write(line.slice(0, splitAt));
     await sleepMs(20);
@@ -809,28 +408,18 @@ test("session: one response split across two chunks is delivered exactly once", 
   } finally {
     for (const s of sockets) s.destroy();
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("session: a malformed response line settles the pending request as a protocol failure, and no unhandled rejection occurs", async () => {
   const { server, port, sockets } = await startRawSocketServer();
-  const dir = tmpPoolDir();
-  writeBrokerJson(dir, {
-    version: 1,
-    pid: process.pid,
-    heartbeat_at: new Date().toISOString(),
-    control_host: "127.0.0.1",
-    control_port: port,
-    control_token: "tok-malformed",
-  });
   let unhandledRejectionFired = false;
   const onUnhandled = () => {
     unhandledRejectionFired = true;
   };
   process.on("unhandledRejection", onUnhandled);
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
 
@@ -853,16 +442,15 @@ test("session: a malformed response line settles the pending request as a protoc
     process.removeListener("unhandledRejection", onUnhandled);
     for (const s of sockets) s.destroy();
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("session: a second release() resolves without throwing", async () => {
-  const { server, dir } = await startFullBrokerListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6606, url: "http://127.0.0.1:6606/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6606" } }),
+  const { server, port } = await startFullBrokerListener({
+    onAcquire: async () => ({ ok: true, grant: { port: 6606, url: "http://127.0.0.1:6606/mcp" } }),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     await opened.session.acquire();
@@ -874,7 +462,6 @@ test("session: a second release() resolves without throwing", async () => {
     });
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -902,7 +489,7 @@ test("session: a second release() resolves without throwing", async () => {
  * grant id, so `grant.id` is exactly the grant that connection holds. */
 const GRANTING_ACQUIRE = async (): Promise<AcquireOutcome> => ({
   ok: true,
-  grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" },
+  grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" },
 });
 
 /** Acquires over `session` and returns the grant id, so a following
@@ -915,12 +502,12 @@ async function heldGrantId(session: BrokerControlSession): Promise<string> {
 }
 
 test("monitor_claim: claimMonitor() against a stub answering ok resolves a success outcome, and never dials a second socket", async () => {
-  const { server, dir, rawLines } = await startFullBrokerListener({
+  const { server, port, rawLines } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -933,7 +520,6 @@ test("monitor_claim: claimMonitor() against a stub answering ok resolves a succe
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -942,12 +528,12 @@ test("monitor_claim: claimMonitor() against a stub answering ok resolves a succe
 // ---------------------------------------------------------------------------
 
 test("monitor_claim (D-14): claimMonitor() with no channel puts 'binary' on the wire", async () => {
-  const { server, dir, rawLines } = await startFullBrokerListener({
+  const { server, port, rawLines } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -958,17 +544,16 @@ test("monitor_claim (D-14): claimMonitor() with no channel puts 'binary' on the 
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("monitor_claim (D-14): claimMonitor({ channel: 'text' }) puts 'text' on the wire", async () => {
-  const { server, dir, rawLines } = await startFullBrokerListener({
+  const { server, port, rawLines } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -979,17 +564,16 @@ test("monitor_claim (D-14): claimMonitor({ channel: 'text' }) puts 'text' on the
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("monitor_release (D-14): releaseMonitor() with no channel puts 'binary' on the wire; releaseMonitor({channel:'text'}) puts 'text'", async () => {
-  const { server, dir, rawLines } = await startFullBrokerListener({
+  const { server, port, rawLines } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorRelease: () => ({ ok: true }),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1001,17 +585,16 @@ test("monitor_release (D-14): releaseMonitor() with no channel puts 'binary' on 
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("monitor_claim: claimMonitor() against a stub answering monitor_owned resolves a discriminated ownership-conflict outcome carrying the holder's grantId/claimedAt -- never throws, never retries", async () => {
-  const { server, dir } = await startFullBrokerListener({
+  const { server, port } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 12345, pid: 4242, channel: "binary" } }),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1024,17 +607,16 @@ test("monitor_claim: claimMonitor() against a stub answering monitor_owned resol
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("monitor_claim ownership conflict: the failure outcome's own message, and MonitorOwnershipError's message, name the holding grant and never use the words wedged, hung or unresponsive", async () => {
-  const { server, dir } = await startFullBrokerListener({
+  const { server, port } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 12345, pid: 4242, channel: "binary" } }),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1058,13 +640,12 @@ test("monitor_claim ownership conflict: the failure outcome's own message, and M
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("WR-04: a broker that reports no backend, or an unrecognised one, is parsed as null -- absent evidence, never silent agreement", async () => {
   for (const wireValue of [undefined, "banana", 42, null]) {
-    const { server, dir } = await startFullBrokerListener({
+    const { server, port } = await startFullBrokerListener({
       onHostState: () =>
         ({
           pid: 1,
@@ -1078,7 +659,7 @@ test("WR-04: a broker that reports no backend, or an unrecognised one, is parsed
         }) as unknown as HostStateFields,
     });
     try {
-      const opened = await openBrokerControl(dir);
+      const opened = await dialLoopback(port);
       assert.equal(opened.ok, true);
       if (!opened.ok) return;
       const result = await opened.session.hostState();
@@ -1088,13 +669,12 @@ test("WR-04: a broker that reports no backend, or an unrecognised one, is parsed
       await opened.session.release();
     } finally {
       server.close();
-      rmSync(dir, { recursive: true, force: true });
     }
   }
 });
 
 test("WR-08: a monitor_owned refusal whose holder payload is malformed keeps the ownership-conflict REASON, with the holder fields defaulted", async () => {
-  const { server, dir } = await startFullBrokerListener({
+  const { server, port } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     // A holder shape extractHolder() rejects outright (claimedAt is not a
     // number), so the wire carries `kind: "monitor_owned"` with no usable
@@ -1103,7 +683,7 @@ test("WR-08: a monitor_owned refusal whose holder payload is malformed keeps the
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: "not-a-number", pid: null } } as unknown as MonitorClaimOutcome),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1118,17 +698,16 @@ test("WR-08: a monitor_owned refusal whose holder payload is malformed keeps the
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("WR-08: a monitor_owned refusal with NO holder field at all still reports reason monitor_owned, not internal", async () => {
-  const { server, dir } = await startFullBrokerListener({
+  const { server, port } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned" } as unknown as MonitorClaimOutcome),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1139,13 +718,12 @@ test("WR-08: a monitor_owned refusal with NO holder field at all still reports r
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("monitor_claim: claimMonitor() never dials the binmon port itself, on success or on failure -- only the control-plane socket is ever touched", async () => {
   let acceptedConnections = 0;
-  const { server, dir } = await startFullBrokerListener({
+  const { server, port } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: () => ({ ok: false, code: "monitor_owned", holder: { grantId: "req-holder", claimedAt: 1, pid: null, channel: "binary" } }),
   });
@@ -1153,29 +731,28 @@ test("monitor_claim: claimMonitor() never dials the binmon port itself, on succe
     acceptedConnections++;
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
     await opened.session.claimMonitor({ targetId });
-    // Exactly one connection: the control-plane session openBrokerControl()
+    // Exactly one connection: the control-plane session dialControlSession()
     // itself opened. claimMonitor() must never open a second one, on
     // success or on failure.
     assert.equal(acceptedConnections, 1);
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("monitor_release: releaseMonitor() sends monitor_release and tolerates a broker that has already cleared the record", async () => {
-  const { server, dir, rawLines } = await startFullBrokerListener({
+  const { server, port, rawLines } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorRelease: () => ({ ok: true }), // the broker's own tolerance for an already-cleared target
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1185,17 +762,16 @@ test("monitor_release: releaseMonitor() sends monitor_release and tolerates a br
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("monitor_release: releaseMonitor() against a non-holder refusal from the broker resolves a distinct failure outcome, not a silent success", async () => {
-  const { server, dir } = await startFullBrokerListener({
+  const { server, port } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorRelease: () => ({ ok: false, code: "denied" }),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     // The session genuinely holds this grant, so the `denied` below is the
@@ -1206,14 +782,13 @@ test("monitor_release: releaseMonitor() against a non-holder refusal from the br
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("CR-03: claimMonitor()/releaseMonitor() naming a grant this connection does NOT hold are refused `denied` by the control plane, before the broker callback runs", async () => {
   const claimCalls: string[] = [];
   const releaseCalls: string[] = [];
-  const { server, dir } = await startFullBrokerListener({
+  const { server, port } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: (_requestId, targetId) => {
       claimCalls.push(targetId);
@@ -1225,7 +800,7 @@ test("CR-03: claimMonitor()/releaseMonitor() naming a grant this connection does
     },
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     await heldGrantId(opened.session); // this connection holds its OWN grant
@@ -1241,7 +816,6 @@ test("CR-03: claimMonitor()/releaseMonitor() naming a grant this connection does
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -1251,17 +825,8 @@ test("monitor_claim: claimMonitor() a control-plane timeout during claim is repo
   // "acquire: resolves a typed deadline failure" test above does for
   // acquire().
   const { server, port, sockets } = await startRawSocketServer();
-  const dir = tmpPoolDir();
-  writeBrokerJson(dir, {
-    version: 1,
-    pid: process.pid,
-    heartbeat_at: new Date().toISOString(),
-    control_host: "127.0.0.1",
-    control_port: port,
-    control_token: "tok-claim-deadline",
-  });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const result = await opened.session.claimMonitor({ targetId: "req-a", timeoutMs: 150 });
@@ -1269,18 +834,16 @@ test("monitor_claim: claimMonitor() a control-plane timeout during claim is repo
   } finally {
     for (const s of sockets) s.destroy();
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 // ============================================================================
 // Phase 64, plan 64-02 (XFER-04): stageFile() -- sends through the SAME
-// sendAndAwaitLine() path, the same session and the same token every other
-// op uses; no second control connection is ever opened.
+// sendAndAwaitLine() path and the same session every other op uses; no second control connection is ever opened.
 // ============================================================================
 
 test("stage_file: stageFile() against a stub answering ok resolves a success outcome carrying the broker-minted handle and emulator_filename, and never opens a second socket", async () => {
-  const { server, dir } = await startFullBrokerListener({
+  const { server, port } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onStageFile: (targetId, slot) => ({ ok: true, handle: `handle-${targetId}-${slot}`, emulatorFilename: `/staging/${targetId}/${slot}.bin` }),
   });
@@ -1289,7 +852,7 @@ test("stage_file: stageFile() against a stub answering ok resolves a success out
     connectionCount += 1;
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1305,7 +868,6 @@ test("stage_file: stageFile() against a stub answering ok resolves a success out
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -1314,12 +876,12 @@ test("stage_file: a success reply missing handle or emulator_filename is reporte
     { ok: true, handle: "", emulatorFilename: "/staging/x/autostart.bin" },
     { ok: true, handle: "real-handle", emulatorFilename: "" },
   ] as const) {
-    const { server, dir } = await startFullBrokerListener({
+    const { server, port } = await startFullBrokerListener({
       onAcquire: GRANTING_ACQUIRE,
       onStageFile: () => badReply as unknown as ServerStageFileOutcome,
     });
     try {
-      const opened = await openBrokerControl(dir);
+      const opened = await dialLoopback(port);
       assert.equal(opened.ok, true);
       if (!opened.ok) return;
       const targetId = await heldGrantId(opened.session);
@@ -1328,24 +890,14 @@ test("stage_file: a success reply missing handle or emulator_filename is reporte
       await opened.session.release();
     } finally {
       server.close();
-      rmSync(dir, { recursive: true, force: true });
     }
   }
 });
 
 test("stage_file: a deadline is reported as reason timeout, distinctly from a refusal", async () => {
   const { server, port, sockets } = await startRawSocketServer();
-  const dir = tmpPoolDir();
-  writeBrokerJson(dir, {
-    version: 1,
-    pid: process.pid,
-    heartbeat_at: new Date().toISOString(),
-    control_host: "127.0.0.1",
-    control_port: port,
-    control_token: "tok-stage-deadline",
-  });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const result = await opened.session.stageFile({ targetId: "req-a", slot: "autostart", timeoutMs: 150 });
@@ -1353,18 +905,17 @@ test("stage_file: a deadline is reported as reason timeout, distinctly from a re
   } finally {
     for (const s of sockets) s.destroy();
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("stage_file: unauthorized, bad_request and denied are each reported under their own reason", async () => {
-  for (const code of ["unauthorized", "bad_request", "denied"] as const) {
-    const { server, dir } = await startFullBrokerListener({
+test("stage_file: bad_request and denied are each reported under their own reason", async () => {
+  for (const code of ["bad_request", "denied"] as const) {
+    const { server, port } = await startFullBrokerListener({
       onAcquire: GRANTING_ACQUIRE,
       onStageFile: () => ({ ok: false, code }),
     });
     try {
-      const opened = await openBrokerControl(dir);
+      const opened = await dialLoopback(port);
       assert.equal(opened.ok, true);
       if (!opened.ok) return;
       const targetId = await heldGrantId(opened.session);
@@ -1373,15 +924,14 @@ test("stage_file: unauthorized, bad_request and denied are each reported under t
       await opened.session.release();
     } finally {
       server.close();
-      rmSync(dir, { recursive: true, force: true });
     }
   }
 });
 
 test("stage_file: against a REAL broker (no onStageFile stub configured), the not-wired refusal is reported as reason internal", async () => {
-  const { server, dir } = await startFullBrokerListener({ onAcquire: GRANTING_ACQUIRE });
+  const { server, port } = await startFullBrokerListener({ onAcquire: GRANTING_ACQUIRE });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1390,7 +940,6 @@ test("stage_file: against a REAL broker (no onStageFile stub configured), the no
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -1400,13 +949,13 @@ test("stage_file: against a REAL broker (no onStageFile stub configured), the no
 // method above uses, over the SAME session/socket a grant was acquired
 // through -- these tests assert the outcome mapping (the caller-visible
 // contract), never that a caller must await it; that "never await" contract
-// is stock-dispatch.ts's/text-tools.ts's own, proven in Task 3's own
+// is stock-session.ts's/text-tools.ts's own, proven in Task 3's own
 // broker-control.test.ts case.
 // ============================================================================
 
 test("operation: noteOperation() against a stub answering ok resolves { ok: true }, naming target_id/channel/name on the wire", async () => {
   const observed: Array<{ targetId: string; channel: MonitorChannel; name: string | null }> = [];
-  const { server, dir, rawLines } = await startFullBrokerListener({
+  const { server, port, rawLines } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onOperation: (targetId, channel, name) => {
       observed.push({ targetId, channel, name });
@@ -1414,7 +963,7 @@ test("operation: noteOperation() against a stub answering ok resolves { ok: true
     },
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1428,14 +977,13 @@ test("operation: noteOperation() against a stub answering ok resolves { ok: true
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("operation: noteOperation({ channel: 'text' }) puts 'text' on the wire", async () => {
-  const { server, dir, rawLines } = await startFullBrokerListener({ onAcquire: GRANTING_ACQUIRE, onOperation: () => ({ ok: true }) });
+  const { server, port, rawLines } = await startFullBrokerListener({ onAcquire: GRANTING_ACQUIRE, onOperation: () => ({ ok: true }) });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1446,14 +994,13 @@ test("operation: noteOperation({ channel: 'text' }) puts 'text' on the wire", as
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("operation: noteOperation({ name: null }) sends a literal null on the wire -- a clear, not an empty string", async () => {
-  const { server, dir, rawLines } = await startFullBrokerListener({ onAcquire: GRANTING_ACQUIRE, onOperation: () => ({ ok: true }) });
+  const { server, port, rawLines } = await startFullBrokerListener({ onAcquire: GRANTING_ACQUIRE, onOperation: () => ({ ok: true }) });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1464,17 +1011,16 @@ test("operation: noteOperation({ name: null }) sends a literal null on the wire 
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("operation: noteOperation() against a denied/bad_request/unauthorized refusal resolves that SAME reason verbatim, never collapsed to internal", async () => {
-  const { server, dir } = await startFullBrokerListener({
+test("operation: noteOperation() against a bad_request refusal resolves that SAME reason verbatim, never collapsed to internal", async () => {
+  const { server, port } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
     onOperation: () => ({ ok: false, code: "bad_request" }),
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
@@ -1483,23 +1029,13 @@ test("operation: noteOperation() against a denied/bad_request/unauthorized refus
     await opened.session.release();
   } finally {
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("operation: noteOperation() resolves a typed { ok: false, reason: 'internal' } outcome for a broker that closes mid-request, and never rejects", async () => {
   const { server, port, sockets } = await startRawSocketServer();
-  const dir = tmpPoolDir();
-  writeBrokerJson(dir, {
-    version: 1,
-    pid: process.pid,
-    heartbeat_at: new Date().toISOString(),
-    control_host: "127.0.0.1",
-    control_port: port,
-    control_token: "tok-operation-gone",
-  });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const notePromise = opened.session.noteOperation({ targetId: "req-a", name: "vice_ping", timeoutMs: 5000 });
@@ -1519,23 +1055,13 @@ test("operation: noteOperation() resolves a typed { ok: false, reason: 'internal
   } finally {
     for (const s of sockets) s.destroy();
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test("operation: noteOperation() a control-plane timeout is reported as reason timeout", async () => {
   const { server, port, sockets } = await startRawSocketServer();
-  const dir = tmpPoolDir();
-  writeBrokerJson(dir, {
-    version: 1,
-    pid: process.pid,
-    heartbeat_at: new Date().toISOString(),
-    control_host: "127.0.0.1",
-    control_port: port,
-    control_token: "tok-operation-deadline",
-  });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const result = await opened.session.noteOperation({ targetId: "req-a", name: "vice_ping", timeoutMs: 150 });
@@ -1543,7 +1069,6 @@ test("operation: noteOperation() a control-plane timeout is reported as reason t
   } finally {
     for (const s of sockets) s.destroy();
     server.close();
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -1565,15 +1090,9 @@ test("structural: the new control-client region (between the plan-06 marker pair
 
 // ------------------------------------------------- structural: the surviving export surface
 //
-// Plan 01.6.2-07, task 3: the client module's export list is exactly the
-// surviving surface named in this plan's own action text -- the request-id
-// pattern, its validator, the id generator, the state-directory resolver,
-// the discovery-record path helper, the liveness classifier and its
-// staleness threshold, plus the control session surface plan 06 added.
 // Comparing the module's own live `Object.keys()` (a namespace import, not
-// a destructured subset) against this expected list means a retiring export
-// left behind by accident, OR a surviving export silently dropped, both
-// fail this test -- not just the retiring set task 3 is scoped to remove.
+// a destructured subset) against this expected list means a stray export
+// left behind, OR a surviving export silently dropped, both fail this test.
 
 test("the client module's export list is exactly the surviving surface", () => {
   const actualKeys = Object.keys(viceBrokerClient).sort();
@@ -1581,22 +1100,13 @@ test("the client module's export list is exactly the surviving surface", () => {
     "REQUEST_ID_PATTERN",
     "newRequestId",
     "isValidRequestId",
-    "brokerRootDir",
-    "brokerJsonPath",
-    "BROKER_STALE_MS",
-    "readBrokerLiveness",
     "CONTROL_ACQUIRE_TIMEOUT_MS",
-    "acquireOverControlPlane",
     "ACQUIRE_TIMEOUT_MS",
-    "RECYCLE_TIMEOUT_MS",
     "CONTROL_CONNECT_TIMEOUT_MS",
-    "openBrokerControl",
-    // quick-260805-9ha: the dial-resolution layer's own two runtime exports.
-    "classifyConnectHost",
-    "resolveControlTarget",
-    // Plan 05 (BROK-02/PROTO-08): the one new runtime export -- a caller
-    // that prefers to raise on a monitor-ownership conflict rather than
-    // branch on ClaimMonitorOutcome constructs this directly.
+    "dialControlSession",
+    // Plan 05 (BROK-02/PROTO-08): a caller that prefers to raise on a
+    // monitor-ownership conflict rather than branch on ClaimMonitorOutcome
+    // constructs this directly.
     "MonitorOwnershipError",
     // Phase 63, plan 63-05 (SESS-06): the session-label resolver, exported
     // so a test (or a future non-agent caller wanting the SAME resolution
@@ -1607,7 +1117,7 @@ test("the client module's export list is exactly the surviving surface", () => {
   assert.deepEqual(
     actualKeys,
     expectedKeys,
-    `the module's live export set drifted from the surviving surface this plan defines: actual=${JSON.stringify(actualKeys)} expected=${JSON.stringify(expectedKeys)}`
+    `the module's live export set drifted from the surviving surface: actual=${JSON.stringify(actualKeys)} expected=${JSON.stringify(expectedKeys)}`
   );
 });
 
@@ -1692,40 +1202,30 @@ test("structural: none of the six retiring D-12 mechanisms exists anywhere in th
 
 // =============================================================================
 // Phase 33, plan 33-06 (REPRO-05, D-15): the profile reaches the broker from
-// BOTH acquire write sites.
+// the session's acquire write site, asserted on the BYTES that actually left
+// the client (`rawLines`) and on the value that arrived at the host's own
+// onAcquire.
 //
-// This file's client has TWO independent acquire writers -- the raw
-// `socket.write` inside acquireOverControlPlane() and the `sendAndAwaitLine`
-// inside openBrokerControl()'s session. A field added to only one of them
-// silently never arrives for callers on the other path, which is the same
-// defect class as a tool argument that is accepted and dropped. Both are
-// asserted here, on the BYTES that actually left the client (`rawLines`) and
-// on the value that arrived at the host's own onAcquire.
-//
-// The second property, asserted separately for both sites: a profile-less
-// acquire's wire line carries NO `profile` key at all. That is what makes an
-// absent profile byte-identical to the pre-33-06 line rather than merely
-// equivalent in meaning.
+// The second property: a profile-less acquire's wire line carries NO
+// `profile` key at all. That is what makes an absent profile byte-identical
+// to the pre-33-06 line rather than merely equivalent in meaning.
 // =============================================================================
 
 const ALWAYS_GRANT = async (): Promise<AcquireOutcome> => ({
   ok: true,
-  grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" },
+  grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" },
 });
 
-test("acquire profile (33-06, write site 1 of 2): acquireOverControlPlane() puts {warp:true} on the wire and it arrives at the broker's onAcquire", async () => {
+test("acquire profile (33-06): session.acquire({profile}) puts {warp:true, headless:true} on the wire and it arrives at the broker's onAcquire", async () => {
   const received: Array<LaunchProfile | undefined> = [];
-  const { server, dir, rawLines } = await startFullBrokerListener({
+  const { server, port, rawLines } = await startFullBrokerListener({
     onAcquire: async (_id: string, profile?: LaunchProfile) => {
       received.push(profile);
       return ALWAYS_GRANT();
     },
     // Stock, because the profile maps to stock-only launch flags: on fork the
-    // control plane now REFUSES a warp/headless profile rather than accepting
-    // a knob the argv cannot carry (33 review WR-03). The property under test
-    // here is that the profile reaches the wire and the host from each of this
-    // client's two acquire writers, which is backend-independent -- but it
-    // needs a backend on which a profile-bearing acquire is granted at all.
+    // control plane REFUSES a warp/headless profile rather than accepting a
+    // knob the argv cannot carry (33 review WR-03).
     onHostState: () => ({
       pid: process.pid,
       startedAt: "2026-01-01T00:00:00Z",
@@ -1738,95 +1238,31 @@ test("acquire profile (33-06, write site 1 of 2): acquireOverControlPlane() puts
     }),
   });
   try {
-    const handle = await acquireOverControlPlane(dir, { profile: { warp: true } });
-    handle.release();
-    const acquireLine = rawLines.find((l) => l.op === "acquire");
-    assert.ok(acquireLine, `an acquire line must have been written; saw ${JSON.stringify(rawLines)}`);
-    assert.deepEqual(acquireLine!.profile, { warp: true }, "the raw BYTES leaving the client must carry the profile");
-    assert.deepEqual(received[0], { warp: true }, "and it must arrive at the broker's own onAcquire");
-  } finally {
-    server.close();
-  }
-});
-
-test("acquire profile (33-06, write site 1 of 2, edge: empty): acquireOverControlPlane() with no profile writes a line with NO profile key -- byte-identical to the pre-33-06 line", async () => {
-  const received: Array<LaunchProfile | undefined> = [];
-  const { server, dir, rawLines } = await startFullBrokerListener({
-    onAcquire: async (_id: string, profile?: LaunchProfile) => {
-      received.push(profile);
-      return ALWAYS_GRANT();
-    },
-  });
-  try {
-    const handle = await acquireOverControlPlane(dir);
-    handle.release();
-    const acquireLine = rawLines.find((l) => l.op === "acquire");
-    assert.ok(acquireLine);
-    assert.equal(
-      Object.prototype.hasOwnProperty.call(acquireLine!, "profile"),
-      false,
-      "the key must be OMITTED, not written as null or {} -- this is what keeps a profile-less acquire's wire line byte-identical",
-    );
-    // Phase 63 (SESS-06): a `label` key now ALWAYS joins the wire line
-    // (resolveSessionLabel() always produces a non-empty string against the
-    // real process) -- the profile-less line is byte-identical on every OTHER
-    // key, but "the three keys it always was" is no longer true of the full
-    // set, so this asserts the widened set explicitly rather than reverting
-    // to the pre-63-05 three.
-    assert.deepEqual(Object.keys(acquireLine!).sort(), ["id", "label", "op", "token"], "the profile-less line's key set must be exactly id/label/op/token");
-    assert.equal(typeof acquireLine!.label, "string");
-    assert.notEqual(acquireLine!.label, "", "the label must never be sent as an empty string");
-    assert.equal(received[0], undefined);
-  } finally {
-    server.close();
-  }
-});
-
-test("acquire profile (33-06, write site 2 of 2): openBrokerControl().acquire({profile}) puts {warp:true, headless:true} on the wire and it arrives at the broker's onAcquire", async () => {
-  const received: Array<LaunchProfile | undefined> = [];
-  const { server, dir, rawLines } = await startFullBrokerListener({
-    onAcquire: async (_id: string, profile?: LaunchProfile) => {
-      received.push(profile);
-      return ALWAYS_GRANT();
-    },
-    // Stock, for the same reason as write site 1 above (33 review WR-03).
-    onHostState: () => ({
-      pid: process.pid,
-      startedAt: "2026-01-01T00:00:00Z",
-      nodeVersion: process.version,
-      viceBin: "x64sc",
-      warmFloor: 3,
-      maxInstances: 16,
-      basePort: 6600,
-      backend: "stock" as const,
-    }),
-  });
-  try {
-    const opened = await openBrokerControl(dir);
-    assert.equal(opened.ok, true, `openBrokerControl must succeed: ${JSON.stringify(opened)}`);
+    const opened = await dialLoopback(port);
+    assert.equal(opened.ok, true, `dialControlSession must succeed: ${JSON.stringify(opened)}`);
     if (!opened.ok) return;
     const acquired = await opened.session.acquire({ profile: { warp: true, headless: true } });
     assert.equal(acquired.ok, true, `acquire must succeed: ${JSON.stringify(acquired)}`);
     const acquireLine = rawLines.find((l) => l.op === "acquire");
     assert.ok(acquireLine, `an acquire line must have been written; saw ${JSON.stringify(rawLines)}`);
-    assert.deepEqual(acquireLine!.profile, { warp: true, headless: true });
-    assert.deepEqual(received[0], { warp: true, headless: true });
+    assert.deepEqual(acquireLine!.profile, { warp: true, headless: true }, "the raw BYTES leaving the client must carry the profile");
+    assert.deepEqual(received[0], { warp: true, headless: true }, "and it must arrive at the broker's own onAcquire");
     await opened.session.release();
   } finally {
     server.close();
   }
 });
 
-test("acquire profile (33-06, write site 2 of 2, edge: empty): openBrokerControl().acquire() with no profile writes a line with NO profile key, and a timeout-only options object does not introduce one", async () => {
+test("acquire profile (33-06, edge: empty): session.acquire() with no profile writes a line with NO profile key, and a timeout-only options object does not introduce one", async () => {
   const received: Array<LaunchProfile | undefined> = [];
-  const { server, dir, rawLines } = await startFullBrokerListener({
+  const { server, port, rawLines } = await startFullBrokerListener({
     onAcquire: async (_id: string, profile?: LaunchProfile) => {
       received.push(profile);
       return ALWAYS_GRANT();
     },
   });
   try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     // A deadline-only options object is the shape every pre-33-06 caller
@@ -1835,12 +1271,17 @@ test("acquire profile (33-06, write site 2 of 2, edge: empty): openBrokerControl
     assert.equal(acquired.ok, true, `acquire must succeed: ${JSON.stringify(acquired)}`);
     const acquireLine = rawLines.find((l) => l.op === "acquire");
     assert.ok(acquireLine);
-    assert.equal(Object.prototype.hasOwnProperty.call(acquireLine!, "profile"), false);
-    // Phase 63 (SESS-06): see write site 1's own "edge: empty" test above for
-    // why the key set is now id/label/op/token rather than the pre-63-05
-    // three.
-    assert.deepEqual(Object.keys(acquireLine!).sort(), ["id", "label", "op", "token"]);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(acquireLine!, "profile"),
+      false,
+      "the key must be OMITTED, not written as null or {} -- this is what keeps a profile-less acquire's wire line byte-identical",
+    );
+    // Phase 63 (SESS-06): a `label` key ALWAYS joins the wire line
+    // (resolveSessionLabel() always produces a non-empty string against the
+    // real process).
+    assert.deepEqual(Object.keys(acquireLine!).sort(), ["id", "label", "op"], "the profile-less line's key set must be exactly id/label/op");
     assert.equal(typeof acquireLine!.label, "string");
+    assert.notEqual(acquireLine!.label, "", "the label must never be sent as an empty string");
     assert.equal(received[0], undefined);
     await opened.session.release();
   } finally {
@@ -1871,50 +1312,26 @@ test("resolveSessionLabel(): with no overrides at all, returns a non-empty strin
   assert.notEqual(label, "");
 });
 
-test("acquire label (63-05, write site 1 of 2): acquireOverControlPlane() puts a resolved session label on the wire and it arrives at the broker's onAcquire's third argument", async () => {
+test("acquire label (63-05): session.acquire() puts a resolved session label on the wire and it arrives at the broker's onAcquire's third argument", async () => {
   const receivedLabels: Array<string | null | undefined> = [];
-  const { server, dir, rawLines } = await startFullBrokerListener({
+  const { server, port, rawLines } = await startFullBrokerListener({
     onAcquire: async (_id: string, _profile?: LaunchProfile, label?: string | null) => {
       receivedLabels.push(label);
       return ALWAYS_GRANT();
     },
   });
   const savedEnv = process.env.CLAUDE_CODE_SESSION_ID;
-  process.env.CLAUDE_CODE_SESSION_ID = "test-session-write-site-1";
+  process.env.CLAUDE_CODE_SESSION_ID = "test-session-write-site";
   try {
-    const handle = await acquireOverControlPlane(dir);
-    handle.release();
-    const acquireLine = rawLines.find((l) => l.op === "acquire");
-    assert.ok(acquireLine);
-    assert.equal(acquireLine!.label, "test-session-write-site-1", "the raw BYTES leaving the client must carry the resolved label");
-    assert.equal(receivedLabels[0], "test-session-write-site-1", "and it must arrive at the broker's own onAcquire, sanitised but unchanged");
-  } finally {
-    if (savedEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
-    else process.env.CLAUDE_CODE_SESSION_ID = savedEnv;
-    server.close();
-  }
-});
-
-test("acquire label (63-05, write site 2 of 2): openBrokerControl().acquire() puts a resolved session label on the wire and it arrives at the broker's onAcquire's third argument", async () => {
-  const receivedLabels: Array<string | null | undefined> = [];
-  const { server, dir, rawLines } = await startFullBrokerListener({
-    onAcquire: async (_id: string, _profile?: LaunchProfile, label?: string | null) => {
-      receivedLabels.push(label);
-      return ALWAYS_GRANT();
-    },
-  });
-  const savedEnv = process.env.CLAUDE_CODE_SESSION_ID;
-  process.env.CLAUDE_CODE_SESSION_ID = "test-session-write-site-2";
-  try {
-    const opened = await openBrokerControl(dir);
+    const opened = await dialLoopback(port);
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const acquired = await opened.session.acquire();
     assert.equal(acquired.ok, true);
     const acquireLine = rawLines.find((l) => l.op === "acquire");
     assert.ok(acquireLine);
-    assert.equal(acquireLine!.label, "test-session-write-site-2");
-    assert.equal(receivedLabels[0], "test-session-write-site-2");
+    assert.equal(acquireLine!.label, "test-session-write-site", "the raw BYTES leaving the client must carry the resolved label");
+    assert.equal(receivedLabels[0], "test-session-write-site", "and it must arrive at the broker's own onAcquire, sanitised but unchanged");
     await opened.session.release();
   } finally {
     if (savedEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
@@ -1923,42 +1340,18 @@ test("acquire label (63-05, write site 2 of 2): openBrokerControl().acquire() pu
   }
 });
 
-test("structural (63-05): BOTH acquire write sites in vice-broker-client.ts include the label fragment -- the same 'a field added to only one would silently never arrive' risk the profile fragment's own structural test polices", () => {
+test("structural (33-06, 63-05): the one acquire write site in vice-broker-client.ts spreads both the profile and the label fragment, each declared exactly once", () => {
   const source = readFileSync(join(HERE, "vice-broker-client.ts"), "utf8");
   const acquireWriteSites = [...source.matchAll(/op: "acquire"[^\n]*/g)].map((m) => m[0]);
-  assert.equal(acquireWriteSites.length, 2, `expected exactly two acquire write sites; found ${acquireWriteSites.length}: ${JSON.stringify(acquireWriteSites)}`);
-  for (const site of acquireWriteSites) {
-    assert.match(site, /acquireLabelFragment\(/, `every acquire write site must spread the shared label fragment; this one does not: ${site}`);
-  }
-  assert.equal(
-    [...source.matchAll(/function acquireLabelFragment\(/g)].length,
-    1,
-    "acquireLabelFragment() must be declared exactly once -- it is the single decision site for whether the key appears at all",
-  );
-});
-
-test("structural (33-06): BOTH acquire write sites in vice-broker-client.ts include the profile fragment -- a field added to only one would silently never arrive for callers on the other path", () => {
-  const source = readFileSync(join(HERE, "vice-broker-client.ts"), "utf8");
-  // The two writers are structurally different (a raw socket.write of a
-  // JSON.stringify, and a sendAndAwaitLine payload object), so they are
-  // located by their shared `op: "acquire"` literal and each checked for the
-  // shared fragment helper. Counting is what makes "both" an assertion
-  // rather than "at least one".
-  const acquireWriteSites = [...source.matchAll(/op: "acquire"[^\n]*/g)].map((m) => m[0]);
-  assert.equal(acquireWriteSites.length, 2, `expected exactly two acquire write sites; found ${acquireWriteSites.length}: ${JSON.stringify(acquireWriteSites)}`);
-  for (const site of acquireWriteSites) {
-    assert.match(
-      site,
-      /acquireProfileFragment\(/,
-      `every acquire write site must spread the shared profile fragment; this one does not: ${site}`,
+  assert.equal(acquireWriteSites.length, 1, `expected exactly one acquire write site; found ${acquireWriteSites.length}: ${JSON.stringify(acquireWriteSites)}`);
+  assert.match(acquireWriteSites[0], /acquireProfileFragment\(/, `the acquire write site must spread the shared profile fragment: ${acquireWriteSites[0]}`);
+  assert.match(acquireWriteSites[0], /acquireLabelFragment\(/, `the acquire write site must spread the shared label fragment: ${acquireWriteSites[0]}`);
+  // Each fragment is the one place its omit-when-absent decision is made.
+  for (const fn of ["acquireProfileFragment", "acquireLabelFragment"]) {
+    assert.equal(
+      [...source.matchAll(new RegExp(`function ${fn}\\(`, "g"))].length,
+      1,
+      `${fn}() must be declared exactly once -- it is the single decision site for whether its key appears at all`,
     );
   }
-  // And the fragment itself must be the one place the omit-when-absent
-  // decision is made -- a second inline `profile:` spelling at a write site
-  // would be a second copy of that decision.
-  assert.equal(
-    [...source.matchAll(/function acquireProfileFragment\(/g)].length,
-    1,
-    "acquireProfileFragment() must be declared exactly once -- it is the single decision site for whether the key appears at all",
-  );
 });

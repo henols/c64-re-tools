@@ -36,8 +36,8 @@
 //     kind itself, even though parseConditionString() and conditionFromJson()
 //     also validate on the way in.
 //   - GAIN-06's raster-semantics extension (finer-grained raster/cycle
-//     conditions) was cut with the whole of Stock-Only Gains, 2026-08-17
-//     (see docs/stock-vice-parity.md's dated cut record). Widening this AST
+//     conditions) was cut with the whole of Stock-Only Gains, 2026-08-17.
+//     Widening this AST
 //     is unclaimed scope with no owner -- grow these types, never fork them.
 //
 // This module has no handlers and no dispatch entries -- a later plan

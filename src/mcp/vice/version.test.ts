@@ -1,4 +1,4 @@
-// Coverage of version.ts's runtime precedence and the invariants around it.
+// Coverage of version.mts's runtime precedence and the invariants around it.
 //
 // This file used to also cover a bespoke version-RESOLUTION algorithm (a
 // `VERSION` template resolved against the published version under four named
@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEV_PLACEHOLDER, runtimeVersion } from "./version.ts";
+import { DEV_PLACEHOLDER, runtimeVersion } from "./version.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -75,17 +75,10 @@ test("placeholder consistency: every derived version string in the tree equals D
   const readJson = (rel: string) => JSON.parse(readFileSync(join(root, rel), "utf8"));
 
   const vicePkg = readJson("src/mcp/vice/package.json");
-  const installerPkg = readJson("installer/package.json");
   const pluginJson = readJson(".claude-plugin/plugin.json");
   const marketplaceJson = readJson(".claude-plugin/marketplace.json");
 
   assert.equal(vicePkg.version, DEV_PLACEHOLDER, "src/mcp/vice/package.json .version");
-  assert.equal(installerPkg.version, DEV_PLACEHOLDER, "installer/package.json .version");
-  assert.equal(
-    installerPkg.dependencies["@henols/vice-mcp"],
-    DEV_PLACEHOLDER,
-    "installer/package.json .dependencies[@henols/vice-mcp]"
-  );
   assert.equal(pluginJson.version, DEV_PLACEHOLDER, ".claude-plugin/plugin.json .version");
   assert.equal(marketplaceJson.version, DEV_PLACEHOLDER, ".claude-plugin/marketplace.json .version");
   assert.equal(

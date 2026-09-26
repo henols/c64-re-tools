@@ -6,6 +6,10 @@
 // `node build.ts` (native type stripping, no tsc needed to run THIS file --
 // only to run the compiler it shells out to).
 //
+// It also compiles the entry artifacts (vice-cli.mjs, see ENTRY_ARTIFACTS)
+// on a plain run, and, only with `--server`, the whole MCP server graph
+// into the gitignored dist/ that the npm package runs from (buildServer()).
+//
 // This file itself must stay inside erasableSyntaxOnly's restrictions (no
 // enum/namespace/constructor parameter properties) so it can run unflagged
 // under bare `node`, exactly like vice-broker.mts.
@@ -57,6 +61,12 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "broker-incident.mjs",
   "transfer-hash.mjs",
   "broker-transfer.mjs",
+  "version.mjs",
+  "broker-endpoint.mjs",
+  "transfer-client.mjs",
+  "host-tool-endpoint.mjs",
+  "broker-children.mjs",
+  "broker-watchdog.mjs",
 ];
 
 /** A plain data file that travels WITH the compiled artifacts above, never
@@ -71,8 +81,7 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
  * `src/mcp/vice/prerequisites.json`) -- once `vice-broker.mts` started
  * resolving `x64sc` through the seam at STARTUP (Plan 60-01), a real
  * deployment into a consuming project's `.c64-re-tools/bin/` (where
- * neither candidate exists) made the broker throw before it ever wrote
- * `broker.json`. Copying it into `resources/` here, alongside every
+ * neither candidate exists) made the broker throw at startup. Copying it into `resources/` here, alongside every
  * compiled artifact, makes `install-resources.ts`'s own generic recursive
  * walk of `resources/` deploy it automatically -- no separate deploy-side
  * code needed -- and gives `readDeclaration()`'s FIRST candidate ("beside
@@ -292,6 +301,210 @@ export function build({ outDir = "resources" }: BuildOptions = {}): void {
   }
 }
 
+// ------------------------------------------------------- entry artifacts
+
+/** The repository root: this file lives at src/mcp/vice/. */
+export const REPO_ROOT = resolvePath(HERE, "..", "..", "..");
+
+/** Entry points that run from node_modules (a package bin), where Node never
+ * strips types. Each .mts source is compiled to a .mjs BESIDE itself, never
+ * into resources/: these are not host-bound, and install-resources must
+ * never deploy them. Paths are relative to REPO_ROOT. tsconfig.entry.json's
+ * `include` lists the same sources; buildEntries() fails on any mismatch. */
+export const ENTRY_ARTIFACTS: ReadonlyArray<{ source: string; emitted: string }> = [
+  { source: "src/mcp/vice/vice-cli.mts", emitted: "src/mcp/vice/vice-cli.mjs" },
+];
+
+/** The banner for an entry artifact. It goes AFTER the shebang line, which
+ * must stay line 1 for the file to run as a bin. */
+export function ENTRY_BANNER(relSourcePath: string): string {
+  return (
+    "// GENERATED FILE -- DO NOT EDIT.\n" +
+    `// Compiled by \`tsc\` from ${relSourcePath}. Edit the TypeScript source and run\n` +
+    "// `node build.ts` in src/mcp/vice; entry-sync.test.ts reds on drift.\n"
+  );
+}
+
+/** Inserts `banner` after a leading shebang line, or at the top when there is none. */
+function withBannerAfterShebang(content: string, banner: string): string {
+  if (!content.startsWith("#!")) return banner + content;
+  const eol = content.indexOf("\n");
+  return content.slice(0, eol + 1) + banner + content.slice(eol + 1);
+}
+
+export interface EntryBuildOptions {
+  /** Root the emitted paths are placed under (default REPO_ROOT). A test
+   * builds into a scratch root through this exact code path. */
+  outRoot?: string;
+}
+
+/** Compiles ENTRY_ARTIFACTS with tsconfig.entry.json into a staging
+ * directory, asserts the emitted set is exactly ENTRY_ARTIFACTS, inserts the
+ * banner after the shebang while still staged, then renames each file into
+ * place. Same staging and atomic-rename discipline as build(). */
+export function buildEntries({ outRoot = REPO_ROOT }: EntryBuildOptions = {}): void {
+  const outRootAbs = resolvePath(outRoot);
+  mkdirSync(outRootAbs, { recursive: true });
+  const stagingDir = mkdtempSync(join(resolveStagingParent(outRootAbs), ".build-tmp-" + process.pid + "-"));
+  try {
+    const tscBin = join(HERE, "node_modules", ".bin", "tsc");
+    execFileSync(tscBin, ["-p", join(HERE, "tsconfig.entry.json"), "--outDir", stagingDir], {
+      cwd: HERE,
+      stdio: "inherit",
+    });
+
+    const emitted = emittedMjsFilesUnder(stagingDir);
+    const expected = ENTRY_ARTIFACTS.map((a) => a.emitted).sort();
+    if (JSON.stringify(emitted) !== JSON.stringify(expected)) {
+      throw new Error(
+        "buildEntries: emitted file set does not match ENTRY_ARTIFACTS.\n" +
+          `  expected: ${JSON.stringify(expected)}\n` +
+          `  emitted:  ${JSON.stringify(emitted)}`
+      );
+    }
+
+    for (const { source, emitted: rel } of ENTRY_ARTIFACTS) {
+      const staged = join(stagingDir, rel);
+      writeFileSync(staged, withBannerAfterShebang(readFileSync(staged, "utf8"), ENTRY_BANNER(source)));
+    }
+
+    for (const { emitted: rel } of ENTRY_ARTIFACTS) {
+      const from = join(stagingDir, rel);
+      const to = join(outRootAbs, rel);
+      mkdirSync(dirname(to), { recursive: true });
+      try {
+        renameSync(from, to);
+      } catch (e) {
+        const detail = (e as NodeJS.ErrnoException).code === "EXDEV" ? " (EXDEV: staging dir and outRoot are on different filesystems)" : "";
+        throw new Error(`buildEntries: failed to move staged artifact into place: ${from} -> ${to}${detail}`, { cause: e });
+      }
+    }
+  } finally {
+    rmSync(stagingDir, { recursive: true, force: true });
+  }
+}
+
+// ------------------------------------------------------- server (dist/)
+
+/** The roots of the compiled server graph, as source -> emitted pairs
+ * relative to this directory. tsconfig.server.json's `files` lists the same
+ * sources; buildServer() fails when a root's artifact is missing.
+ *
+ * `tool-location.mts` is a root because backend-detect.mts reaches it only
+ * through `createRequire()`, which no import scan follows. Without it as a
+ * root, dist/ would lack the file and backend-detect would fall back to the
+ * `.mts` specifier, which Node refuses under node_modules. */
+export const SERVER_ROOTS: ReadonlyArray<{ source: string; emitted: string }> = [
+  { source: "vice-proxy.ts", emitted: "vice-proxy.js" },
+  { source: "vsf-slice.ts", emitted: "vsf-slice.js" },
+  { source: "tool-location.mts", emitted: "tool-location.mjs" },
+];
+
+/** Data files the compiled graph reads beside itself that cannot be found
+ * one directory up, in the package root. `from` is relative to REPO_ROOT,
+ * `to` is relative to the server outDir. memmap.json lives in the
+ * c64-memory-mapping skill, outside this package, so the package carries a
+ * copy (memmap-lookup.ts reads it beside itself first). Every other data
+ * file (package.json, tools-manifest.stock.json, anno-regbits.json,
+ * prerequisites.json, resources/) sits in the package root and is found by
+ * a two-candidate `[HERE, HERE/..]` lookup, so it is not copied. */
+export const SERVER_DATA_FILES: ReadonlyArray<{ from: string; to: string }> = [
+  { from: "skills/c64-memory-mapping/memmap.json", to: "memmap.json" },
+];
+
+/** Every regular file under `dir`, as sorted posix relative paths. */
+function allFilesUnder(dir: string, base = ""): string[] {
+  if (!existsSync(dir)) return [];
+  const out: string[] = [];
+  for (const dirent of readdirSync(dir, { withFileTypes: true })) {
+    const rel = base ? `${base}/${dirent.name}` : dirent.name;
+    const abs = join(dir, dirent.name);
+    if (dirent.isDirectory()) {
+      out.push(...allFilesUnder(abs, rel));
+    } else if (dirent.isFile()) {
+      out.push(rel);
+    }
+  }
+  return out.sort();
+}
+
+export interface ServerBuildOptions {
+  /** Output directory, absolute or relative to this module's directory
+   * (default "dist"). A test can build into a scratch directory through
+   * this exact code path. */
+  outDir?: string;
+}
+
+/**
+ * Compiles the MCP server graph (SERVER_ROOTS and everything they import)
+ * with tsconfig.server.json into a staging directory, then moves it into
+ * `outDir` (default "dist"). The npm package runs from this output: Node
+ * refuses to strip types under node_modules, so the published bin loads
+ * dist/vice-proxy.js instead of vice-proxy.ts.
+ *
+ * Same discipline as build() and buildEntries(): stage on outDir's own
+ * filesystem (resolveStagingParent), assert the emitted set while staged,
+ * then rename each finished file into place, so no reader ever sees a
+ * partial file. The asserts: every SERVER_ROOTS artifact exists, and every
+ * emitted file is `.js` or `.mjs` (a `.ts`/`.mts` in the output would fail
+ * under node_modules). SERVER_DATA_FILES are copied into the staging
+ * directory and moved the same way. Files in `outDir` that the new build
+ * did not produce are removed afterwards: `outDir` is wholly build-owned
+ * and gitignored, and a stale module left there could still be imported.
+ *
+ * Plain `node build.ts` never calls this. `node build.ts --server` does,
+ * and the package's `prepack` script runs that.
+ */
+export function buildServer({ outDir = "dist" }: ServerBuildOptions = {}): string[] {
+  const outDirAbs = resolveOutDirAbs(outDir);
+  mkdirSync(outDirAbs, { recursive: true });
+  const stagingDir = mkdtempSync(join(resolveStagingParent(outDirAbs), ".build-tmp-" + process.pid + "-"));
+  try {
+    const tscBin = join(HERE, "node_modules", ".bin", "tsc");
+    execFileSync(tscBin, ["-p", join(HERE, "tsconfig.server.json"), "--outDir", stagingDir], {
+      cwd: HERE,
+      stdio: "inherit",
+    });
+
+    const emitted = allFilesUnder(stagingDir);
+    const missingRoots = SERVER_ROOTS.map((r) => r.emitted).filter((f) => !emitted.includes(f));
+    const notJs = emitted.filter((f) => !/\.m?js$/.test(f));
+    if (missingRoots.length > 0 || notJs.length > 0) {
+      throw new Error(
+        "buildServer: emitted file set is wrong.\n" +
+          `  missing roots:  ${JSON.stringify(missingRoots)}\n` +
+          `  not JavaScript: ${JSON.stringify(notJs)}`
+      );
+    }
+
+    for (const { from, to } of SERVER_DATA_FILES) {
+      const staged = join(stagingDir, to);
+      mkdirSync(dirname(staged), { recursive: true });
+      copyFileSync(join(REPO_ROOT, from), staged);
+    }
+
+    const produced = allFilesUnder(stagingDir);
+    for (const rel of produced) {
+      const from = join(stagingDir, rel);
+      const to = join(outDirAbs, rel);
+      mkdirSync(dirname(to), { recursive: true });
+      try {
+        renameSync(from, to);
+      } catch (e) {
+        const detail = (e as NodeJS.ErrnoException).code === "EXDEV" ? " (EXDEV: staging dir and outDir are on different filesystems)" : "";
+        throw new Error(`buildServer: failed to move staged file into place: ${from} -> ${to}${detail}`, { cause: e });
+      }
+    }
+
+    for (const rel of allFilesUnder(outDirAbs)) {
+      if (!produced.includes(rel)) rmSync(join(outDirAbs, rel), { force: true });
+    }
+    return produced;
+  } finally {
+    rmSync(stagingDir, { recursive: true, force: true });
+  }
+}
+
 // -------------------------------------------------------------------- CLI
 function parseCliArgs(argv: string[]): BuildOptions {
   let outDir: string | undefined;
@@ -304,12 +517,24 @@ function parseCliArgs(argv: string[]): BuildOptions {
   return outDir ? { outDir } : {};
 }
 
-if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url) && process.argv.includes("--server")) {
+  try {
+    const produced = buildServer();
+    process.stderr.write(`build: wrote ${produced.length} server file(s) to ${resolveOutDirAbs("dist")}\n`);
+  } catch (e) {
+    process.stderr.write(`build: FAILED -- ${(e as Error).message}\n`);
+    process.exitCode = 1;
+  }
+} else if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const opts = parseCliArgs(process.argv.slice(2));
   try {
     build(opts);
     const outDirAbs = resolveOutDirAbs(opts.outDir ?? "resources");
     process.stderr.write(`build: wrote ${HOST_BOUND_ARTIFACTS.length} artifact(s) and ${HOST_BOUND_DATA_FILES.length} data file(s) to ${outDirAbs}\n`);
+    if (!opts.outDir) {
+      buildEntries();
+      process.stderr.write(`build: wrote ${ENTRY_ARTIFACTS.length} entry artifact(s): ${ENTRY_ARTIFACTS.map((a) => a.emitted).join(", ")}\n`);
+    }
   } catch (e) {
     process.stderr.write(`build: FAILED -- ${(e as Error).message}\n`);
     process.exitCode = 1;

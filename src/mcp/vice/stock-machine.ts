@@ -10,16 +10,13 @@
 // the filename each send carries is a broker-MINTED name from
 // `session.brokerControl.stageFile()`, never a path this client translated
 // or constructed, and the bytes themselves cross the socket through
-// `session.deps.transferFile` rather than a shared bind mount. Plan 64-06
-// migrated the last two (`vice_autostart`/`vice_disk_attach`) and, with them,
-// removed this file's import of `stock-paths.ts` entirely (D-18) -- this is
-// the mechanism that moves the milestone's convergence metric.
+// `session.deps.transferFile` rather than a shared bind mount.
 //
 // WHAT NOT TO DO:
 //   - Never gate or deny vice_machine_reset's hard mode. CLAUDE.md's
 //     power-cycle warning is about RESOURCE_SET (0x52) writes to
 //     MachineVideoStandard/VICIIModel/MachinePowerFrequency -- the CUT
-//     vice_machine_config_get/set pair's resources (docs/stock-vice-parity.md), a DIFFERENT opcode entirely. RESET (0xcc) is a distinct
+//     vice_machine_config_get/set pair's resources, a DIFFERENT opcode entirely. RESET (0xcc) is a distinct
 //     command, and an agent-requested hard reset via RESET is exactly what
 //     DIRECT-06 asks for. It needs no deny-list (RESEARCH.md Pitfall 1).
 //   - Never look for a per-unit disk-attach route mid-implementation.
@@ -27,16 +24,15 @@
 //     a protocol gap, not a code bug you can fix by looking harder
 //     (RESEARCH.md Pitfall 2).
 //   - Never add a disk-detach handler here. D-13's vice_disk_detach was
-//     CUT from scope 2026-08-17 (docs/stock-vice-parity.md) -- grep-gated
+//     CUT from scope 2026-08-17 -- grep-gated
 //     to zero occurrences of its name in this file's own acceptance criteria.
 //   - Never build a broker-side path inside ANY handler in this file
 //     (handleAutostart/handleDiskAttach/handleSnapshotSave/
 //     handleSnapshotLoad). The broker mints the handle and the emulator
 //     filename via `stageFile()`; every handler here only relays what the
 //     reply names, verbatim, into the AUTOSTART/DUMP/UNDUMP request body,
-//     and never opens it. Never fall back to a shared-filesystem route (the
-//     deleted `withEmulatorSidePath()`) when a stage or transfer call
-//     fails -- a retained fallback would falsify this milestone's own exit
+//     and never opens it. Never fall back to a shared-filesystem route
+//     when a stage or transfer call fails -- a retained fallback would falsify this milestone's own exit
 //     hypothesis; refuse by name instead.
 //   - Never confine vice_autostart's or vice_disk_attach's `path` to the
 //     workspace. D-14 is a deliberate, accepted owner decision: this tree's
@@ -68,10 +64,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * unreadable path is refused with zero staging calls and zero sends,
  * matching handleSnapshotLoad's own existsSync-before-anything-else
  * ordering read in the other direction. Used by handleAutostart and
- * handleDiskAttach; handleSnapshotSave/handleSnapshotLoad have their own
- * existing existsSync check for the SAME reason and are unchanged here.
+ * handleDiskAttach, and by text-tools.ts's vice_program_load;
+ * handleSnapshotSave/handleSnapshotLoad have their own existing existsSync
+ * check for the SAME reason and are unchanged here.
  */
-function checkLocalFileReadable(toolName: string, path: string): string | null {
+export function checkLocalFileReadable(toolName: string, path: string): string | null {
   try {
     accessSync(path, fsConstants.R_OK);
     return null;
@@ -86,7 +83,7 @@ function checkLocalFileReadable(toolName: string, path: string): string | null {
 
 /**
  * `mode` defaults to "soft"; `run_after` defaults to **false** on stock --
- * the divergence docs/stock-vice-parity.md records. RESET has no run-after
+ * stock's recorded divergence. RESET has no run-after
  * field on the wire at all, so honouring `run_after: true` means sending a
  * follow-up EXIT -- fine when the agent explicitly asked for it (D-05
  * licenses this: the agent's own argument IS the request, not an
@@ -191,9 +188,9 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
 
   // D-14: resolved to an absolute path, and NOT confined to the workspace --
   // any absolute path the client can read is accepted and uploaded.
-  const containerPath = resolve(path);
+  const localPath = resolve(path);
 
-  const readError = checkLocalFileReadable("vice_autostart", containerPath);
+  const readError = checkLocalFileReadable("vice_autostart", localPath);
   if (readError !== null) return isErrorText(readError);
 
   // Step 1: stage a slot on the broker's own disk for this grant. A refusal
@@ -218,7 +215,7 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
   if (!transferFile) {
     return isErrorText("vice_autostart: internal error -- no transferFile implementation is available on this session");
   }
-  const uploadResult = await transferFile({ direction: "upload", handle: stageOutcome.handle, sourcePath: containerPath });
+  const uploadResult = await transferFile({ direction: "upload", handle: stageOutcome.handle, sourcePath: localPath });
   if (!uploadResult.ok) {
     return isErrorText(`vice_autostart: uploading the program failed (${uploadResult.reason})`);
   }
@@ -235,7 +232,7 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
     return convertWireError("vice_autostart", err, { cmdFailureText: AUTOSTART_CMD_FAILURE_TEXT });
   }
 
-  return stockAnswer(session.client, { path: containerPath, handle: stageOutcome.handle, run, index });
+  return stockAnswer(session.client, { path: localPath, handle: stageOutcome.handle, run, index });
 };
 
 // ---------------------------------------------------------------------------
@@ -247,15 +244,13 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
  * refused, never silently retargeted to unit 8 -- AUTOSTART is the only wire
  * route to attaching an image and its request body has NO drive-unit field
  * at all, so an agent told "attached to unit 9" when the image landed on
- * unit 8 would debug the wrong drive. See docs/stock-vice-parity.md's D-14
- * entry.
+ * unit 8 would debug the wrong drive.
  *
  * The returned `approximation` string names BOTH real side effects Phase 13
  * plan 13-03's live A5 probe observed against real fork VICE 3.10: a full
  * machine reset AND a program load, not "attach without disturbing machine
  * state." Exported so the pinning test derives its expectation from this
- * constant rather than re-typing the sentence, so the two cannot drift. See
- * `.planning/phases/13-external-verification/13-PROBE-RESULTS.md` § A5.
+ * constant rather than re-typing the sentence, so the two cannot drift.
  */
 export const DISK_ATTACH_APPROXIMATION =
   "AUTOSTART (D-14): performs a full machine reset and loads a program from the image; " +
@@ -307,8 +302,7 @@ export const DISK_ATTACH_WRITE_LOSS =
  * 0x8f here means it accepted none of them -- never a checkpoint-condition
  * parse failure (that generic gloss, in `stock-handler.ts`'s own
  * `WIRE_ERROR_TEXT`, is what pointed plan 64-11's diagnosis at checkpoints
- * when the real cause was a missing/unpublished file --
- * `.planning/debug/vice-0x8f-disk-attach-snapshot-load.md`). Exported, like
+ * when the real cause was a missing/unpublished file). Exported, like
  * `DISK_ATTACH_APPROXIMATION`/`DISK_ATTACH_WRITE_LOSS` above, so a test
  * derives its own expectation from this constant rather than re-typing the
  * sentence -- the two cannot drift.
@@ -347,15 +341,15 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
       `vice_disk_attach: unit ${unit} cannot be targeted on the stock backend -- AUTOSTART (0xdd) is the only wire ` +
         "route to attaching a disk image on the stock binary monitor and its request body has no drive-unit field at " +
         "all, so units 9-11 cannot be targeted. Only unit 8 is reachable; the call was refused rather than silently " +
-        "retargeted to unit 8 so you do not debug the wrong drive. See docs/stock-vice-parity.md's D-14 entry.",
+        "retargeted to unit 8 so you do not debug the wrong drive.",
     );
   }
 
   // D-14: resolved to an absolute path, and NOT confined to the workspace --
   // any absolute path the client can read is accepted and uploaded.
-  const containerPath = resolve(path);
+  const localPath = resolve(path);
 
-  const readError = checkLocalFileReadable("vice_disk_attach", containerPath);
+  const readError = checkLocalFileReadable("vice_disk_attach", localPath);
   if (readError !== null) return isErrorText(readError);
 
   // Step 1: stage a slot on the broker's own disk for this grant. A refusal
@@ -380,7 +374,7 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
   if (!transferFile) {
     return isErrorText("vice_disk_attach: internal error -- no transferFile implementation is available on this session");
   }
-  const uploadResult = await transferFile({ direction: "upload", handle: stageOutcome.handle, sourcePath: containerPath });
+  const uploadResult = await transferFile({ direction: "upload", handle: stageOutcome.handle, sourcePath: localPath });
   if (!uploadResult.ok) {
     return isErrorText(`vice_disk_attach: uploading the disk image failed (${uploadResult.reason})`);
   }
@@ -399,7 +393,7 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
 
   return stockAnswer(session.client, {
     unit: 8,
-    path: containerPath,
+    path: localPath,
     handle: stageOutcome.handle,
     approximation: DISK_ATTACH_APPROXIMATION,
     writeLoss: DISK_ATTACH_WRITE_LOSS,
@@ -422,11 +416,9 @@ const SNAPSHOT_STAGE_SLOT = "snapshot";
 
 /**
  * `name` is sanitised through transfer-paths.ts's validateSnapshotName()
- * directly (D-18: this file no longer imports stock-paths.ts at all) into a
- * workspace-internal path -- never treated as a path fragment; this rule is
+ * directly into a workspace-internal path -- never treated as a path fragment; this rule is
  * UNCHANGED by Phase 64 (D-13). The client-side metadata sidecar
- * (docs/stock-vice-parity.md item 6: "DUMP writes state; JSON metadata is
- * our own bookkeeping") is written ONLY after the download from the broker
+ * ("DUMP writes state; JSON metadata is our own bookkeeping") is written ONLY after the download from the broker
  * succeeds, so a failed save never leaves a sidecar claiming a snapshot that
  * does not exist; a sidecar WRITE failure is reported in the answer as
  * `metadataWritten: false` with a reason, never thrown -- the snapshot
@@ -444,8 +436,7 @@ const SNAPSHOT_STAGE_SLOT = "snapshot";
  * asserts none of them names the staged path or its containing directory.
  * `handle` preserves the one thing `sentPath` was informally used for --
  * the only correlation thread between a tool result and broker-side
- * diagnostics the vice-wedge-triage skill depends on -- without leaking a
- * path. Its named, accepted cost: an opaque token now appears in a result
+ * diagnostics -- without leaking a path. Its named, accepted cost: an opaque token now appears in a result
  * and an agent may be tempted to reuse it as an argument elsewhere; no tool
  * in this file accepts a handle-shaped argument, so there is nothing here
  * for such a value to be silently accepted by.
@@ -516,8 +507,7 @@ export const handleSnapshotSave: StockSessionHandler = async (args, session) => 
     // The atomic publish (temp write, rename only after digest/length
     // verify, temp removed on every failure path) lives entirely inside the
     // transfer layer (plan 64-01) -- nothing here reimplements it, and
-    // nothing here falls back to withEmulatorSidePath()'s old shared-mount
-    // route.
+    // nothing here falls back to a shared-mount route.
     return isErrorText(`vice_snapshot_save: downloading the saved snapshot failed (${downloadResult.reason})`);
   }
 

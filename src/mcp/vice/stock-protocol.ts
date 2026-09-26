@@ -22,7 +22,7 @@
 // porting: the vendor's DisplayGet case computes imageBytes starting at
 // `infoLength + 4`, which is the same offset its own imageLength field
 // occupies -- it should start after that 4-byte field, at
-// `infoLength + 4 + 4`. This repo's own probe-binmon.mjs:parseDisplayGet()
+// `infoLength + 4 + 4`. This repo's own probe-binmon.ts's parseDisplayGet()
 // already derives this correctly (see its "never hardcoded to 17/21"
 // comment); this module follows that already-tested reference instead of
 // the vendor's off-by-four slice (Rule 1 auto-fix, not one of D-16's three
@@ -57,7 +57,7 @@ export const REQUEST_HEADER_LEN = 11;
 // frame is a DISPLAY_GET of the full debug screen (504*312 = 157,248 bytes
 // at 8bpp plus its info block), so 4 MiB is far above anything real while
 // still refusing an arbitrary 32-bit value read out of a desynced stream.
-// Same rationale as probe-binmon.mjs:73-77's MAX_BODY_LEN.
+// Same rationale as probe-binmon.ts's MAX_BODY_LEN.
 export const MAX_BODY_LEN = 4 * 1024 * 1024;
 
 /**
@@ -403,7 +403,7 @@ export function encodeRequestHeader({ commandType, requestId, body = Buffer.allo
 // stock-machine.ts, plans 03-06..03-11) must never hand-assemble a body
 // Buffer itself. Five of the sixteen encoders below (memGetBody,
 // memSetBody, checkpointSetBody, cpNumBody, conditionSetBody) are ported
-// near-verbatim from probe-binmon.mjs:268-332 -- an already offline-tested
+// near-verbatim from probe-binmon.ts's body builders -- an already offline-tested
 // reference implementation (see that file's own --selftest mode) --
 // converted to a TypeScript options-object signature matching
 // encodeRequestHeader()'s own style above. The rest are derived fresh from
@@ -418,7 +418,7 @@ export function encodeRequestHeader({ commandType, requestId, body = Buffer.allo
 // args, matching stock-connect.ts's own convention), validates its
 // arguments and throws StockEncodingError BEFORE writing any bytes, and
 // returns a Buffer ready for ViceMonitorClient.send(commandType, body) --
-// the single exception is cpNumBody(), which mirrors probe-binmon.mjs's own
+// the single exception is cpNumBody(), which mirrors probe-binmon.ts's own
 // bare-number signature since it has nothing else to validate or name.
 // ---------------------------------------------------------------------------
 
@@ -482,7 +482,7 @@ export interface MemGetBodyOptions {
 /**
  * MEM_GET (0x01) request body -- ALWAYS EXACTLY 8 BYTES:
  * `sidefx(1) start(u16LE) end(u16LE) memspace(1) bank(u16LE)`.
- * [VERIFIED against probe-binmon.mjs:268-276, this repo's own
+ * [VERIFIED against probe-binmon.ts's memGetBody(), this repo's own
  * offline-tested reference, and against the field layout read directly
  * out of monitor_binary.c's own MEM_GET request decoder]
  *
@@ -520,7 +520,7 @@ export interface MemSetBodyOptions {
  * MEM_SET (0x02) request body -- the same 8-byte header as memGetBody(),
  * with `sidefx` forced to `0x00` (MEM_SET has no side-effect flag on the
  * wire), then `data` appended at offset 8.
- * [VERIFIED probe-binmon.mjs:278-287, and against monitor_binary.c's own
+ * [VERIFIED probe-binmon.ts's memSetBody(), and against monitor_binary.c's own
  * MEM_SET request decoder, which reads the identical 8-byte header before
  * the variable-length data that follows it]
  */
@@ -550,9 +550,9 @@ export function memSetBody({ start, end, memspace, bank = 0x0000, data }: MemSet
 /**
  * Shared 4-byte `checkpointNum(u32LE)` body for CHECKPOINT_GET (0x11) and
  * CHECKPOINT_DELETE (0x13). Not an options object (matching
- * probe-binmon.mjs:314-318's own bare-number signature) since it has
+ * probe-binmon.ts's cpNumBody() bare-number signature) since it has
  * nothing else to validate offline.
- * [VERIFIED probe-binmon.mjs:314-318, and against monitor_binary.c's own
+ * [VERIFIED probe-binmon.ts's cpNumBody(), and against monitor_binary.c's own
  * CHECKPOINT_GET/CHECKPOINT_DELETE request decoder, which reads exactly
  * this 4-byte checkpoint number and nothing else]
  */
@@ -582,7 +582,7 @@ export interface CheckpointSetBodyOptions {
  * CHECKPOINT_SET (0x12) request body -- 8 bytes, or 9 when `memspace` is
  * supplied: `start(u16LE) end(u16LE) stop(1) enabled(1) operation(1)
  * temporary(1) [memspace(1)]`.
- * [VERIFIED probe-binmon.mjs:290-309, and against monitor_binary.c's own
+ * [VERIFIED probe-binmon.ts's checkpointSetBody(), and against monitor_binary.c's own
  * CHECKPOINT_SET request decoder, which only reads the ninth memspace byte
  * when the declared body length says it is present]
  */
@@ -641,7 +641,7 @@ export interface ConditionSetBodyOptions {
 /**
  * CONDITION_SET (0x22) request body -- `checkpointNum(u32LE) exprLen(1)
  * expr(ASCII, NOT NUL-terminated)`.
- * [VERIFIED probe-binmon.mjs:320-332, including its own >255-byte guard,
+ * [VERIFIED probe-binmon.ts's conditionSetBody(), including its own >255-byte guard,
  * ported verbatim, and against monitor_binary.c's own CONDITION_SET request
  * decoder, which reads exprLen as a single uint8 immediately before the
  * expression bytes]
@@ -651,7 +651,7 @@ export interface ConditionSetBodyOptions {
  * stock-condition.ts's `emitCondition()`, never from a raw caller string
  * (D-09/D-10). Throws BEFORE encoding, never truncates: an expression over
  * 255 bytes would silently truncate `exprLen`, desyncing the stream this
- * connection's demux depends on (probe-binmon.mjs's own comment frames
+ * connection's demux depends on (probe-binmon.ts's own comment frames
  * this as an ASVS V5 input-validation control). Also refuses an empty
  * expression and any non-ASCII byte, naming the offending character index
  * -- the condition lexer is ASCII-only, and a multi-byte UTF-8 character
@@ -748,8 +748,7 @@ export function registersSetBody({ memspace, items }: RegistersSetBodyOptions): 
 // unconfirmed -- A3 stayed INCONCLUSIVE (no observable signal either way)
 // and A5 was CONTRADICTED (still pending its correction) -- and each of
 // those two encoders' own JSDoc, below, still carries its own [ASSUMED]
-// naming that row and pointing at .planning/todos/pending/ for the
-// remaining probe debt.
+// naming that row.
 // ---------------------------------------------------------------------------
 
 export interface AdvanceInstructionsBodyOptions {
@@ -761,7 +760,7 @@ export interface AdvanceInstructionsBodyOptions {
  * ADVANCE_INSTRUCTIONS (0x71) request body -- 3 bytes, `stepOver(1)
  * count(u16LE)`, confirmed byte-for-byte against monitor_binary.c's own
  * decoder and, for the stepOver=0 case, exercised live against genuine
- * stock VICE by probe-binmon.mjs's async-events check (the check that
+ * stock VICE by probe-binmon.ts's async-events check (the check that
  * proved STOPPED/RESUMED events arrive interleaved with the command
  * response rather than only after it).
  *
@@ -1158,9 +1157,7 @@ export interface ParsedUndumpResponse extends ParsedBaseResponse {
  * (`monitor_binary.c:1452-1620`) and verified against the real committed
  * captures `fixtures/binmon/cpuhistory-get.bin` and `cpuhistory-get-multi.bin`
  * (plan 07-12). The PREVIOUS layout this comment cited was disproven live
- * against a genuine VICE 3.10 build -- see
- * `.planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md`,
- * "Route A (CPUHISTORY_GET) live decode mismatch" -- do not re-trust it.
+ * against a genuine VICE 3.10 build -- do not re-trust it.
  */
 export interface ParsedCpuHistoryEntry {
   cycle: bigint;
@@ -1183,9 +1180,8 @@ export interface ParsedCpuHistoryEntry {
  * from `monitor_binary_process_cpuhistory()` (`monitor_binary.c:1452-1620`)
  * and verified against the real captures `fixtures/binmon/cpuhistory-get.bin`
  * (single entry) and `cpuhistory-get-multi.bin` (multi-entry, the stride AND
- * order proof) -- see plan 07-12 and
- * `.planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md` for
- * the disproven earlier layout this replaces.
+ * order proof) -- see plan 07-12 for the disproven earlier layout this
+ * replaces.
  */
 export interface ParsedCpuHistoryResponse extends ParsedBaseResponse {
   type: "cpu_history";
@@ -1418,7 +1414,7 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       // [buflen:u32LE][buffer...]. buflenOff and the pixel-buffer start are
       // DERIVED from infoLength, never hardcoded to 17/21 -- see this file's
       // header comment on the vendor's off-by-four defect, and
-      // probe-binmon.mjs:parseDisplayGet()'s matching, already-tested
+      // probe-binmon.ts's parseDisplayGet()'s matching, already-tested
       // derivation.
       need(body, 4, responseType, requestId);
       const infoLength = body.readUInt32LE(0);
@@ -1484,10 +1480,8 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       // monitor_binary_process_cpuhistory() (monitor_binary.c:1452-1620) and
       // verified against the real captures fixtures/binmon/cpuhistory-get.bin
       // (single entry) and cpuhistory-get-multi.bin (multi-entry, the stride
-      // proof) -- see plan 07-12 and
-      // .planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md's
-      // "Route A (CPUHISTORY_GET) live decode mismatch" for the disproven
-      // earlier layout this replaces (WR-13): that layout was NEVER
+      // proof) -- see plan 07-12 for the disproven earlier layout this
+      // replaces (WR-13): that layout was NEVER
       // confirmed against a real reply and does not match what a genuine
       // VICE >= 3.10 build actually sends.
       //

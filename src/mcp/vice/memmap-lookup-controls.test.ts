@@ -15,12 +15,11 @@
 // dynamic-import-with-cache-buster case (D-37-14), and from
 // `sleigh-compile-gate.test.ts`'s planted-violation shape (assert the
 // specific named signal, tear down in a `finally`, never touch the committed
-// tree). Each case's own committed transcript lives under
-// `.planning/phases/37-the-importer-and-the-automatic-annotation-join/evidence/`.
+// tree).
 //
 // THIS FILE MUST NEVER MUTATE `memmap-lookup.ts` ON DISK. Every mutation
 // happens inside an `mkdtempSync` root, mirroring the real repo shape three
-// levels deep (`src/mcp/vice` next to `src/skills/c64-memory-mapping`, both
+// levels deep (`src/mcp/vice` next to `skills/c64-memory-mapping`, both
 // under one temporary root) so the module's own `HERE`-relative `MEMMAP_PATH`
 // formula resolves the same way there as it does against the real tree.
 import { test } from "node:test";
@@ -35,7 +34,7 @@ import { selectMemmapEntry, loadMemmap } from "./memmap-lookup.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_MODULE_PATH = join(HERE, "memmap-lookup.ts");
-const REAL_MEMMAP_PATH = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
+const REAL_MEMMAP_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
 
 /** `memmap-lookup.ts`'s own `inclusiveWidth()` is unexported (private to the
  * module) -- this test-local copy computes the SAME `end - start` value from
@@ -113,7 +112,7 @@ const COMMITTED_ORDER_STEP =
 // ---------------------------------------------------------------------------
 // Shared scratch-tree helper (D-37-15: three tasks, three transcripts, one
 // shared test-file convenience). Mirrors `anno-regbits.test.ts`'s own
-// mirrored-depth scratch tree: `src/skills/c64-memory-mapping/memmap.json`
+// mirrored-depth scratch tree: `skills/c64-memory-mapping/memmap.json`
 // (the REAL, unmutated bytes -- only the selection CODE is ever mutated)
 // next to `src/mcp/vice/memmap-lookup.ts` (the ONE mutated copy), both under
 // one `mkdtempSync` root that this host's RAM-backed `/tmp` never ages.
@@ -128,7 +127,7 @@ const COMMITTED_ORDER_STEP =
  * path (to dynamically import with a cache-busting query). */
 function buildScratchMemmapModule(mutate: (committedSource: string) => string): { tmpDir: string; modulePath: string } {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "memmap-lookup-controls-"));
-  const skillsDir = path.join(tmpDir, "src", "skills", "c64-memory-mapping");
+  const skillsDir = path.join(tmpDir, "skills", "c64-memory-mapping");
   fs.mkdirSync(skillsDir, { recursive: true });
   const mcpDir = path.join(tmpDir, "src", "mcp", "vice");
   fs.mkdirSync(mcpDir, { recursive: true });

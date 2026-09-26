@@ -1,23 +1,14 @@
 #!/usr/bin/env node
 // ghidra-run.ts
 //
-// Phase 36, plan 36-01 (OPC-04): CONTAINER-SIDE orchestration ONLY for the
-// `ghidra.analyze` host tool. Mirrors dxa-run.ts field-for-field: reaches
-// Ghidra through `runHostToolFromContainer("ghidra.analyze", …)`
-// (host-tool-client.ts) and NEVER `node:child_process` -- a direct spawn
-// here would bypass the one host-tool execution seam this project's own
-// architecture constraint requires every runtime path to cross.
+// Phase 36, plan 36-01 (OPC-04): client-side orchestration ONLY for the
+// `ghidra.analyze` host tool. Mirrors dxa-run.ts: reaches Ghidra through the
+// broker's fixed endpoint (`runHostToolOverEndpoint("ghidra.analyze", …)`,
+// host-tool-endpoint.mts) and NEVER `node:child_process` -- a direct spawn
+// here would bypass the one host-tool route every runtime path crosses.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts` (mirrors dxa-run.ts's own
-// stated rule for itself, and host-tool-client.ts's rule for ITSELF). The
-// run log's path has ALREADY been translated through `containerPath()` by
-// `runHostToolFromContainer()` (host-tool-client.ts's own
-// `translateHostToolResponse()`) before this module ever sees it on the
-// container route; on the host route the two coordinate systems are the
-// same filesystem, so no translation is needed there either. This module
-// therefore reads the run log at the path the response returns AS GIVEN --
-// it never calls `hostPath()` (the wrong direction entirely) and never
-// needs to call `containerPath()` a second time.
+// The endpoint client uploads every input by bytes and downloads every result under this module's own
+// tools root, so the run log's path is a local path read AS GIVEN.
 //
 // Phase 36, plan 36-01 (D-36-05): `HostToolClientResult` carries `results[]`
 // and `stderrTail` and NO stdout field at all, so the run log is
@@ -65,9 +56,13 @@
 // that silently used a different language than the one requested must
 // never be readable as success.
 import { readFileSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { runHostToolFromContainer, type HostToolClientResult, type RunHostToolFromContainerOptions } from "./host-tool-client.ts";
+import { runHostToolOverEndpoint, type HostToolClientResult, type RunHostToolOverEndpointOptions } from "./host-tool-endpoint.mts";
+import { repoRoot as findRepoRoot, toolsDirUnder } from "./repo-root.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Mirrors the extended `GhidraAnalyzeArgs` (host-tool.mts) field-for-field.
  * `processor` is required, exactly as it is on the wire (D-36-01's promote
@@ -98,20 +93,23 @@ export interface GhidraRunArgs {
   dataRangesPath?: string;
 }
 
-/** The function shape `runHostToolFromContainer()` itself has -- named here
- * so `GhidraRunOptions.run` below can be typed without importing a value
- * this module does not otherwise need. Mirrors `DxaRunFn` (dxa-run.ts). */
-export type GhidraRunFn = (tool: string, args: Record<string, unknown>, opts: RunHostToolFromContainerOptions) => Promise<HostToolClientResult>;
+/** The function shape `runHostToolOverEndpoint()` itself has. Mirrors
+ * `DxaRunFn` (dxa-run.ts). */
+export type GhidraRunFn = (tool: string, args: Record<string, unknown>, opts: RunHostToolOverEndpointOptions) => Promise<HostToolClientResult>;
 
 export interface GhidraRunOptions {
   /** Test seam, mirroring `DxaRunOptions.run` (dxa-run.ts): an injectable
-   * runner, defaulting to `runHostToolFromContainer()`. Lets a hermetic
-   * test drive this module with no host process at all. */
+   * runner, defaulting to `runHostToolOverEndpoint()`. Lets a hermetic
+   * test drive this module with no broker at all. */
   run?: GhidraRunFn;
-  /** Passed straight through to the (injected or default) runner's own
-   * `dir`/`repoRoot` options. */
-  dir?: string;
+  /** The local root: relative paths in the args resolve against it, and
+   * every result downloads under `<repoRoot>/.c64-re-tools/`. Defaults to
+   * this checkout's own root. */
   repoRoot?: string;
+  /** Where results download; defaults to `<repoRoot>/.c64-re-tools`. */
+  toolsRoot?: string;
+  /** The broker endpoint port; defaults to the endpoint client's own. */
+  port?: number;
   /** Test seam: injected run-log text, bypassing the filesystem read of the
    * response's run-log path -- mirrors `DxaRunOptions.listingText`. */
   runLogText?: string;
@@ -123,6 +121,11 @@ export interface GhidraRunResult {
   runLogPath: string;
   sha256: string;
   byteLength: number;
+  /** Where the post-script's export was downloaded (`results[1]`, under the
+   * caller's `.c64-re-tools/runs/ghidra/`) -- present only when the request
+   * named an `exportPath`. The export never lands at `exportPath` itself:
+   * that is only the name the broker-side script writes. */
+  exportPath?: string;
   /** `analyzeHeadless`'s own process exit status. Carries NO information
    * about whether a script inside the run threw (MEASURED this session) --
    * surfaced here for completeness, never the basis of a pass/fail
@@ -193,8 +196,7 @@ export function classifyGhidraRunLog(logText: string): GhidraRunLogVerdict {
 
 /**
  * Runs `ghidra.analyze` end to end: calls the host-tool seam, reads the
- * resulting run log AS GIVEN (already container-translated where
- * applicable -- see this module's own header), classifies it, and REFUSES
+ * downloaded run log AS GIVEN, classifies it, and REFUSES
  * (throws) when the parsed language id differs from the requested
  * `processor` by even a single byte -- byte-exact, case-sensitive, never
  * case-folded.
@@ -204,7 +206,7 @@ export function classifyGhidraRunLog(logText: string): GhidraRunLogVerdict {
  *   language id does not byte-exactly match the requested `processor`.
  */
 export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptions = {}): Promise<GhidraRunResult> {
-  const run = opts.run ?? runHostToolFromContainer;
+  const run = opts.run ?? runHostToolOverEndpoint;
 
   const wireArgs: Record<string, unknown> = { runId: args.runId, importPath: args.importPath, processor: args.processor };
   if (args.preScript !== undefined) wireArgs.preScript = args.preScript;
@@ -221,9 +223,9 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
   if (args.expectedClassificationLines !== undefined) wireArgs.expectedClassificationLines = args.expectedClassificationLines;
   if (args.dataRangesPath !== undefined) wireArgs.dataRangesPath = args.dataRangesPath;
 
-  const runOpts: RunHostToolFromContainerOptions = {};
-  if (opts.dir !== undefined) runOpts.dir = opts.dir;
-  if (opts.repoRoot !== undefined) runOpts.repoRoot = opts.repoRoot;
+  const root = opts.repoRoot ?? findRepoRoot({ from: HERE });
+  const runOpts: RunHostToolOverEndpointOptions = { baseDir: root, toolsRoot: opts.toolsRoot ?? toolsDirUnder(root) };
+  if (opts.port !== undefined) runOpts.port = opts.port;
 
   const response = await run("ghidra.analyze", wireArgs, runOpts);
   if (!response.ok) {
@@ -234,10 +236,7 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
     throw new Error("runGhidraAnalyze: ghidra.analyze reported no run-log output");
   }
 
-  // Read at the path the response returns, AS GIVEN -- already
-  // container-translated by runHostToolFromContainer() where applicable;
-  // see this module's own header for why no second translation belongs
-  // here.
+  // Read at the path the response returns, AS GIVEN -- a local download.
   const text = opts.runLogText ?? readFileSync(resolvePath(runLogResult.path), "utf8");
   const verdict = classifyGhidraRunLog(text);
 
@@ -259,10 +258,15 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
     );
   }
 
+  const exportResult = args.exportPath !== undefined ? response.results[1] : undefined;
+  if (args.exportPath !== undefined && exportResult === undefined) {
+    throw new Error(`runGhidraAnalyze: ghidra.analyze reported no export output for exportPath ${JSON.stringify(args.exportPath)}`);
+  }
   return {
     runLogPath: runLogResult.path,
     sha256: runLogResult.sha256,
     byteLength: runLogResult.byteLength,
+    ...(exportResult !== undefined ? { exportPath: exportResult.path } : {}),
     exitStatus: response.exitStatus,
     language: verdict.language,
   };

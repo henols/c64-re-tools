@@ -32,7 +32,7 @@
 Every fixture is generated, never hand-written:
 
 ```sh
-cd src/mcp/vice && node fixtures/coverage/make-coverage-fixtures.mjs
+cd src/mcp/vice && node fixtures/coverage/make-coverage-fixtures.ts
 ```
 
 The generator is deterministic and idempotent — running it twice must leave
@@ -232,10 +232,8 @@ Three invariants are **enforced by the generator, not asserted about**:
 ## These do not ship
 
 The retired tarball checker refused any packed file under
-`fixtures/`, in both tarballs. The filename `make-coverage-fixtures.mjs` deliberately carries no
-test suffix: `ci-suite-coverage.test.ts` derives the set of directories holding committed test
-files from the repository itself and requires a CI step for each, so a `*.test.mjs` here would
-register `fixtures/coverage` as a suite directory no CI step runs.
+`fixtures/`, in both tarballs. The filename `make-coverage-fixtures.ts` deliberately carries no
+test suffix: a `*.test.ts` here would be a suite in a directory no test glob or CI step runs.
 
 Synthetic payloads only — no copyrighted image and no user data, per the milestone's own
 proving-ground bar.

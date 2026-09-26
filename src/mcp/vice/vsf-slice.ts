@@ -28,20 +28,19 @@
 // under `fixtures/vsf/` observed to trigger it.
 //
 // THIS MODULE MUST BE LISTED IN `package.json`'s `files[]`. Two mechanical
-// reasons: the skill-side route (`src/skills/c64-ram-capture/scripts/
-// vsf-slice.mjs`) resolves this file inside the published tarball on the
-// npm-installer route, and the structural census over `shippedTsModules()` is
+// reasons: the skill-side route (`skills/c64-ram-capture/scripts/
+// vsf-slice.ts`) resolves this file (compiled, from `dist/`) inside the
+// published package when the MCP server is npm-installed, and the structural census over `shippedTsModules()` is
 // derived from `files[]`, so a module absent from that array is outside every
 // structural guard's scanned set entirely.
 //
 // WHAT NOT TO DO:
-//   - Never reach `C64MEM` by a fixed byte offset. The already-written
-//     prototype at `.planning/phases/23-the-real-release-gate-go-degrade-no-go/
-//     evidence/vsf-ram-extract.mjs` carries `first_module_offset = 37`, which
-//     is stale: a SECOND magic block (`"VICE Version\x1a"`, 13 bytes, plus 4
-//     version bytes plus a 4-byte SVN dword) follows the 16-byte machine
-//     name, so the real first module offset is 58. Offset 37 lands inside
-//     that second magic block, where the first "module" reads
+//   - Never reach `C64MEM` by a fixed byte offset. The earlier Phase 23
+//     prototype carried `first_module_offset = 37`, which is stale: a
+//     SECOND magic block (`"VICE Version\x1a"`, 13 bytes, plus 4 version
+//     bytes plus a 4-byte SVN dword) follows the 16-byte machine name, so
+//     the real first module offset is 58. Offset 37 lands inside that
+//     second magic block, where the first "module" reads
 //     `size = 1291845632`.
 //   - Never carry that prototype's recovery path, which is the more dangerous
 //     half. It survives the stale offset only by `off++`-rescanning for a
@@ -72,12 +71,8 @@
 //   - Never give any exported function a filesystem PATH parameter. They take
 //     byte arrays, which is what keeps path traversal out of this module's
 //     threat surface entirely rather than merely checked. Snapshot paths come
-//     from `stock-paths.ts`'s `snapshotPathFor()`, which is confined inside
-//     the workspace by construction. For the same reason this module imports
-//     nothing from either of this repo's two host/container path-translation
-//     seams; that absence is asserted structurally by
-//     `hostpath-consumers.test.ts`, whose consumer set is a closed
-//     five-member list.
+//     from `transfer-paths.ts`'s `snapshotPathFor()`, which is confined inside
+//     the workspace by construction.
 //   - Never `subarray` on an unvalidated length. A short `subarray` silently
 //     returns fewer bytes than asked for, which is the exact shape of the
 //     failure this module exists to refuse.
@@ -393,9 +388,9 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
 // WHY THE ENTRY POINT LIVES HERE AT ALL, rather than in a sibling CLI module:
 // the skill-side wrapper needs a route to this layout knowledge across a
 // package boundary. THE CONSTRAINT, MEASURED: the MCP server ships as one
-// npm package whose `files[]` covers only `src/mcp/vice/`, the skills ship
-// in the other package, and a plain cross-package import resolves on
-// neither installer route. This project's own precedent for that exact
+// npm package whose `files[]` covers only `src/mcp/vice/`, each skill is
+// installed on its own by `npx skills add`, and a plain cross-package
+// import resolves from neither side. This project's own precedent for that exact
 // constraint (the MCP-side disk-image reader deleted in Phase 40 plan
 // 40-06, once it moved to the seam that now provides its old capability)
 // answered it with a second, independent copy of a *stable, published*
@@ -420,7 +415,7 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
 //     `node:crypto`, and names this module in comments alone. A repo-wide
 //     grep finds NO non-test module importing it. Today's only non-test
 //     consumers are this module's OWN CLI -- invoked as a subprocess by
-//     `src/skills/c64-ram-capture/scripts/vsf-slice.mjs`, which is a spawn
+//     `skills/c64-ram-capture/scripts/vsf-slice.ts`, which is a spawn
 //     and not an import -- and `shippedTsModules()`'s structural census,
 //     which reads the file rather than importing it either.
 //
@@ -478,7 +473,7 @@ function parseCliArgs(argv: string[]): CliArgs {
       // The `startsWith("--")` half is 33 review IN-02. `argv[i + 1]` was
       // taken unconditionally, so `slice a.vsf --out --json` wrote a 64K file
       // literally NAMED `--json` and silently dropped the JSON output the
-      // caller asked for. The sibling parser in derive-transients.mjs already
+      // caller asked for. The sibling parser in derive-transients.ts already
       // refuses exactly this ("needs a value" when the next token starts with
       // `--`); this mirrors it, so the two CLIs answer the same mistake the
       // same way.

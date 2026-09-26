@@ -12,9 +12,7 @@
 // `datablocksPath`/`labelsPath` arguments `dxa.disassemble`'s allowlist
 // landed in plan 35-01) and to the live tests that read dxa's listing.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts` (mirrors `dxa-listing.ts`'s and
-// `dxa-run.ts`'s own stated rule for themselves) and MUST NEVER CALL
-// `node:child_process` (SEAM-05's `BANNED_COMMAND_SHAPES` already names
+// THIS MODULE MUST NEVER CALL `node:child_process` (SEAM-05's `BANNED_COMMAND_SHAPES` already names
 // `dxa`; nothing here spawns anything). It also NEVER NAMES `node:sqlite` and
 // NEVER OPENS THE STORE FILE ITSELF: `anno-store.ts` is the one module
 // permitted to name that dependency, and this module reads
@@ -211,9 +209,8 @@ export function emitDataBlocks(rows: readonly KnownDataRow[], outputPath: string
 /**
  * Writes every data-bearing row among `rows` that carries a `sym` to
  * `outputPath` as a `-l` xa65-format labels file: `\t{name}\t= ${hex}\n`
- * (lower-case, no leading zeros -- the exact shape
- * `.planning/phases/23-.../evidence/fixture/fixture.lbl` demonstrates for a
- * comment-less row), one line per symbol-bearing row, sorted ascending by
+ * (lower-case, no leading zeros -- the exact shape the Phase 23 evidence
+ * fixture's labels file demonstrates for a comment-less row), one line per symbol-bearing row, sorted ascending by
  * address. Rows with no `sym` are omitted -- never synthesised (see this
  * module's header). A selected row with an inverted or out-of-range address
  * throws BEFORE anything is written, exactly as `emitDataBlocks()` does; no

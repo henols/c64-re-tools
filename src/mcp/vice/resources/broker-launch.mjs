@@ -129,17 +129,13 @@ export const STOCK_DETERMINISM_FLAGS = Object.freeze([
     "0",
     "+autostart-delay-random",
 ]);
-/** Resolves the emulator's own argument vector for the given `backend`. The
- * `VICE_ARGS` full-override short-circuit (matching
- * resources/vice-supervisor.sh's own VICE_ARGS convention exactly) is
- * checked FIRST, ahead of either backend branch, and stays unchanged for
- * both: it exists because this broker's own tests (and an operator's manual
- * dry runs) need to launch a stand-in binary (e.g. /bin/sleep) that
- * understands neither `-mcpserver` nor `-binarymonitor` flags, and that need
- * does not depend on which backend is configured.
+/** Resolves the emulator's own argument vector. The `VICE_ARGS`
+ * full-override short-circuit is checked FIRST: it exists because this
+ * broker's own tests (and an operator's manual dry runs) need to launch a
+ * stand-in binary (e.g. /bin/sleep) that understands no `-binarymonitor`
+ * flag.
  *
- * `backend: "stock"` (the only value `ViceBackend` has, now that the fork
- * backend is gone) returns `-binarymonitor -binarymonitoraddress
+ * Otherwise it returns `-binarymonitor -binarymonitoraddress
  * ip4://<host>:<port>`, the confirmed real-world command line. The host
  * resolves from `binmonHost` or VICE_BROKER_BINMON_HOST, defaulting to
  * `127.0.0.1` -- deliberately narrow, because VICE's binary monitor is
@@ -181,150 +177,145 @@ export const STOCK_DETERMINISM_FLAGS = Object.freeze([
  * absent -- it is the block and not the profile that moves them. The
  * byte-identity claim therefore survives in full only for the `profile`
  * half: an absent profile adds no flag. */
-export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv, remoteMonitorPort, profile, }) {
+export function buildViceArgs(port, { binmonHost, viceArgsEnv, remoteMonitorPort, profile, }) {
     const rawViceArgs = viceArgsEnv ?? process.env.VICE_ARGS;
     if (typeof rawViceArgs === "string" && rawViceArgs.trim() !== "") {
         return rawViceArgs.trim().split(/\s+/);
     }
-    if (backend === "stock") {
-        // Both argv sites below (the binary-monitor address and, further down,
-        // the text-monitor address) read this ONE resolved value -- resolveBinmonHost()
-        // is now the one owner of this precedence, shared with vice-broker.mts's
-        // relay dial (Phase 63, SESS-02), never a second literal.
-        const host = resolveBinmonHost(binmonHost);
-        // Audit item I-2 (§4.2, FINDING-C1): a broker-launched stock x64sc used
-        // to boot with Drive8Type=0 (NONE) -- nothing answers unit 8, so
-        // LOAD"*",8,1 fails ?DEVICE NOT PRESENT ERROR and the entry-point
-        // checkpoint never hits. No stock MCP tool can correct this after boot
-        // (the 38-tool stock manifest has zero resource-set names by design),
-        // so the fix must be a launch-time flag. `-default` MUST be the very
-        // first element: it is VICE's reset-to-compiled-in-defaults instruction,
-        // not an inert "these are the baselines" no-op, so any flag emitted
-        // before it (including -drive8type) is silently clobbered back to its
-        // compiled-in value. `-drive8type 1541` therefore has to come AFTER
-        // `-default` -- not necessarily IMMEDIATELY after -- and -- per
-        // CLAUDE.md's documented constraint -- `-default` also has to come before
-        // `-binarymonitor` or the monitor never binds and the subsequent connect
-        // hangs in the backlog looking exactly like a wedge.
-        //
-        // WORDING CORRECTED. This paragraph used to say "immediately after
-        // `-default`", which the `-console` block below now violates by
-        // construction whenever `profile.headless` is set -- leaving the next
-        // editor to find code contradicting the comment and having to re-derive
-        // which one is authoritative. What is load-bearing is the RELATIVE
-        // ORDER (`-default` precedes everything it resets), not adjacency.
-        //
-        // The `-console` block's own citation was `alive=yes bound=1`, which does
-        // NOT cover this paragraph's property: the failure mode this flag guards
-        // against is Drive8Type silently reverting to 0 (NONE) WHILE THE MONITOR
-        // STILL BINDS FINE, so liveness and boundness cannot tell the good case
-        // from the failure being guarded against. Re-verified against the
-        // resource itself
-        // [VERIFIED: live probe 2026-09-03, genuine unpatched stock
-        // /usr/bin/x64sc (VICE 3.9), DISPLAY and WAYLAND_DISPLAY both unset]:
-        //   [-default -console -drive8type 1541 <determinism> -binarymonitor]
-        //     alive=yes bound=1  Drive8Type=1541  Drive8TrueEmulation=1
-        // read over `RESOURCE_GET` (0x51) with `-console` interposed. So the
-        // citation now covers the RESOURCE and not only liveness. Confirmed
-        // sufficient live in a standalone probe:
-        // `resourceget "Drive8Type"` moved 0 -> 1541 and a `load` over the text
-        // monitor succeeded immediately. Deliberately NOT setting
-        // -drive8truedrive / Drive8TrueEmulation here: this build's own default
-        // already reads Drive8TrueEmulation=1 (same probe), so only
-        // `-drive8type` needs adding.
-        // A different stock build might default Drive8TrueEmulation to 0,
-        // which is read and deliberately not pre-emptively defended against
-        // here; a live test against that build is what would surface it if
-        // this assumption is ever wrong there.
-        //
-        // The headless route is `-console`, and its POSITION is as
-        // load-bearing as `-default`'s. `-console` is handled in the SAME
-        // `main.c` pre-scan as `-default` -- that loop `break`s at the first
-        // option it does not recognise and then strips the prefix it handled
-        // from argv
-        // [CITED: vice-3.8/src/main.c:184-192, 232-238] -- and `console_mode`
-        // gates GTK initialisation at two call sites (`ui_init_with_args`,
-        // `ui_init`) that BOTH run before the late command-line parser
-        // `initcmdline_check_args()` [CITED: vice-3.8/src/main.c:296-345]. A
-        // `-console` seen only by the late parser therefore arrives after GTK has
-        // already tried and failed. MEASURED 2026-09-02 with `DISPLAY` and
-        // `WAYLAND_DISPLAY` both unset:
-        //   [-default -console -binarymonitor]                    alive=yes bound=1
-        //   [-default -drive8type 1541 -console -binarymonitor]   alive=no  bound=0  Gtk-WARNING: cannot open display:
-        //   [-default -console -drive8type 1541 -binarymonitor]   alive=yes bound=1
-        // So `-console` goes immediately after `-default` and BEFORE
-        // `-drive8type` -- which is compatible with the paragraph above as
-        // corrected: that constraint is `-drive8type` AFTER `-default`, not
-        // adjacent to it, and the interposition was re-verified over
-        // `RESOURCE_GET` to leave Drive8Type=1541 rather than only to leave
-        // the monitor bound. It is pinned by an ordering assertion rather than by
-        // this comment -- a bare flag push with no reason is exactly what let the
-        // `-default` ordering constraint be rediscovered by a red CI run last
-        // time.
-        //
-        // The determinism block is emitted UNCONDITIONALLY on stock, never
-        // gated on `profile`. Read over `RESOURCE_GET` (0x51) on this build
-        // under `-default -drive8type 1541`
-        // [VERIFIED: live probe 2026-09-02],
-        // `-raminitrandomchance 0` is the LOAD-BEARING one: the factory value is
-        // **10**, i.e. 0.1% of all RAM bits randomly flipped at power-up, and it is
-        // the dominant term in the divergence this milestone removes. The
-        // `-raminitstartrandom 0` / `-raminitrepeatrandom 0` pair already reads 0
-        // at factory and is DEFENSIVE against an operator `vicerc` -- belt and
-        // braces alongside the scratch `XDG_CONFIG_HOME` threaded in
-        // spawnAndRecordInstance() below.
-        //
-        // `+autostart-delay-random` is a FIFTH flag beyond the determinism
-        // block's own headline text (which names only `-seed` plus the three
-        // `raminit*`), recorded here as a deliberate ADDITION rather than
-        // smuggled in. `AutostartDelayRandom`
-        // ships at **1** on this build [VERIFIED: same probe], it draws an
-        // additional random delay of up to 10 frames
-        // [CITED: vice-3.8/src/autostart.c:1432-1436], and -- the effect that is
-        // easy to miss -- it also SELECTS WHICH keyboard-buffer feed injects `RUN`
-        // (`kbdbuf_feed_runcmd` when set, `kbdbuf_feed` when clear)
-        // [CITED: vice-3.8/src/autostart.c:882-886]. Disabling it is therefore a
-        // behavioural change and not only a timing one. Pin it once; never toggle
-        // it between the two runs of a capture pair.
-        //
-        // `-warp` is position-free (MEASURED 2026-09-02), placed here only so
-        // the argv reads in the order a human would describe it. Launch-time is
-        // the ONLY route on stock: there is no runtime `WarpMode` resource at
-        // all (`RESOURCE_GET` replies `err=0x01` OBJECT_MISSING on 3.9), so no
-        // runtime setter can exist here. Worth roughly **1.97x** on this host
-        // and this launch profile -- 5.23 emulated seconds against 2.65 over
-        // the same 5 s wall clock [MEASURED: evidence/33-wallclock-control.md,
-        // Control B instance 1] -- and NOT the order of magnitude a reader may
-        // assume; `AUTOSTART` additionally turns warp on by itself during the
-        // load whatever argv says, so both loads are warped either way. It is
-        // behaviour-neutral under a frame-anchored protocol (identical registers
-        // and one identical 64K sha256 across a warped and an unwarped run, same
-        // source), which is a precondition for shipping `profile.warp`; it is
-        // NOT neutral for a wall-clock bracket, which it invalidates by 1.76x.
-        const args = ["-default"];
-        if (profile?.headless) {
-            args.push("-console");
-        }
-        args.push("-drive8type", "1541");
-        args.push(...STOCK_DETERMINISM_FLAGS);
-        if (profile?.warp) {
-            args.push("-warp");
-        }
-        args.push("-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`);
-        if (typeof remoteMonitorPort === "number") {
-            if (host !== "127.0.0.1" && !warnedRemoteMonitorBindWidened) {
-                warnedRemoteMonitorBindWidened = true;
-                process.stderr.write(`vice-broker: stock text (-remotemonitor) monitor bind widened to ${host} -- VICE's text monitor ` +
-                    `accepts arbitrary monitor commands and is unauthenticated, exactly like the binary monitor; the ` +
-                    `default of 127.0.0.1 is the safe posture for a host-native install, widen only when the MCP server ` +
-                    `itself runs in a container that must reach the host emulator\n`);
-            }
-            args.push("-remotemonitor", "-remotemonitoraddress", `ip4://${host}:${remoteMonitorPort}`);
-        }
-        return args;
+    // Both argv sites below (the binary-monitor address and, further down,
+    // the text-monitor address) read this ONE resolved value -- resolveBinmonHost()
+    // is now the one owner of this precedence, shared with vice-broker.mts's
+    // relay dial (Phase 63, SESS-02), never a second literal.
+    const host = resolveBinmonHost(binmonHost);
+    // Audit item I-2 (§4.2, FINDING-C1): a broker-launched stock x64sc used
+    // to boot with Drive8Type=0 (NONE) -- nothing answers unit 8, so
+    // LOAD"*",8,1 fails ?DEVICE NOT PRESENT ERROR and the entry-point
+    // checkpoint never hits. No stock MCP tool can correct this after boot
+    // (the 38-tool stock manifest has zero resource-set names by design),
+    // so the fix must be a launch-time flag. `-default` MUST be the very
+    // first element: it is VICE's reset-to-compiled-in-defaults instruction,
+    // not an inert "these are the baselines" no-op, so any flag emitted
+    // before it (including -drive8type) is silently clobbered back to its
+    // compiled-in value. `-drive8type 1541` therefore has to come AFTER
+    // `-default` -- not necessarily IMMEDIATELY after -- and -- per
+    // CLAUDE.md's documented constraint -- `-default` also has to come before
+    // `-binarymonitor` or the monitor never binds and the subsequent connect
+    // hangs in the backlog looking exactly like a wedge.
+    //
+    // WORDING CORRECTED. This paragraph used to say "immediately after
+    // `-default`", which the `-console` block below now violates by
+    // construction whenever `profile.headless` is set -- leaving the next
+    // editor to find code contradicting the comment and having to re-derive
+    // which one is authoritative. What is load-bearing is the RELATIVE
+    // ORDER (`-default` precedes everything it resets), not adjacency.
+    //
+    // The `-console` block's own citation was `alive=yes bound=1`, which does
+    // NOT cover this paragraph's property: the failure mode this flag guards
+    // against is Drive8Type silently reverting to 0 (NONE) WHILE THE MONITOR
+    // STILL BINDS FINE, so liveness and boundness cannot tell the good case
+    // from the failure being guarded against. Re-verified against the
+    // resource itself
+    // [VERIFIED: live probe 2026-09-03, genuine unpatched stock
+    // /usr/bin/x64sc (VICE 3.9), DISPLAY and WAYLAND_DISPLAY both unset]:
+    //   [-default -console -drive8type 1541 <determinism> -binarymonitor]
+    //     alive=yes bound=1  Drive8Type=1541  Drive8TrueEmulation=1
+    // read over `RESOURCE_GET` (0x51) with `-console` interposed. So the
+    // citation now covers the RESOURCE and not only liveness. Confirmed
+    // sufficient live in a standalone probe:
+    // `resourceget "Drive8Type"` moved 0 -> 1541 and a `load` over the text
+    // monitor succeeded immediately. Deliberately NOT setting
+    // -drive8truedrive / Drive8TrueEmulation here: this build's own default
+    // already reads Drive8TrueEmulation=1 (same probe), so only
+    // `-drive8type` needs adding.
+    // A different stock build might default Drive8TrueEmulation to 0,
+    // which is read and deliberately not pre-emptively defended against
+    // here; a live test against that build is what would surface it if
+    // this assumption is ever wrong there.
+    //
+    // The headless route is `-console`, and its POSITION is as
+    // load-bearing as `-default`'s. `-console` is handled in the SAME
+    // `main.c` pre-scan as `-default` -- that loop `break`s at the first
+    // option it does not recognise and then strips the prefix it handled
+    // from argv
+    // [CITED: vice-3.8/src/main.c:184-192, 232-238] -- and `console_mode`
+    // gates GTK initialisation at two call sites (`ui_init_with_args`,
+    // `ui_init`) that BOTH run before the late command-line parser
+    // `initcmdline_check_args()` [CITED: vice-3.8/src/main.c:296-345]. A
+    // `-console` seen only by the late parser therefore arrives after GTK has
+    // already tried and failed. MEASURED 2026-09-02 with `DISPLAY` and
+    // `WAYLAND_DISPLAY` both unset:
+    //   [-default -console -binarymonitor]                    alive=yes bound=1
+    //   [-default -drive8type 1541 -console -binarymonitor]   alive=no  bound=0  Gtk-WARNING: cannot open display:
+    //   [-default -console -drive8type 1541 -binarymonitor]   alive=yes bound=1
+    // So `-console` goes immediately after `-default` and BEFORE
+    // `-drive8type` -- which is compatible with the paragraph above as
+    // corrected: that constraint is `-drive8type` AFTER `-default`, not
+    // adjacent to it, and the interposition was re-verified over
+    // `RESOURCE_GET` to leave Drive8Type=1541 rather than only to leave
+    // the monitor bound. It is pinned by an ordering assertion rather than by
+    // this comment -- a bare flag push with no reason is exactly what let the
+    // `-default` ordering constraint be rediscovered by a red CI run last
+    // time.
+    //
+    // The determinism block is emitted UNCONDITIONALLY on stock, never
+    // gated on `profile`. Read over `RESOURCE_GET` (0x51) on this build
+    // under `-default -drive8type 1541`
+    // [VERIFIED: live probe 2026-09-02],
+    // `-raminitrandomchance 0` is the LOAD-BEARING one: the factory value is
+    // **10**, i.e. 0.1% of all RAM bits randomly flipped at power-up, and it is
+    // the dominant term in the divergence this milestone removes. The
+    // `-raminitstartrandom 0` / `-raminitrepeatrandom 0` pair already reads 0
+    // at factory and is DEFENSIVE against an operator `vicerc` -- belt and
+    // braces alongside the scratch `XDG_CONFIG_HOME` threaded in
+    // spawnAndRecordInstance() below.
+    //
+    // `+autostart-delay-random` is a FIFTH flag beyond the determinism
+    // block's own headline text (which names only `-seed` plus the three
+    // `raminit*`), recorded here as a deliberate ADDITION rather than
+    // smuggled in. `AutostartDelayRandom`
+    // ships at **1** on this build [VERIFIED: same probe], it draws an
+    // additional random delay of up to 10 frames
+    // [CITED: vice-3.8/src/autostart.c:1432-1436], and -- the effect that is
+    // easy to miss -- it also SELECTS WHICH keyboard-buffer feed injects `RUN`
+    // (`kbdbuf_feed_runcmd` when set, `kbdbuf_feed` when clear)
+    // [CITED: vice-3.8/src/autostart.c:882-886]. Disabling it is therefore a
+    // behavioural change and not only a timing one. Pin it once; never toggle
+    // it between the two runs of a capture pair.
+    //
+    // `-warp` is position-free (MEASURED 2026-09-02), placed here only so
+    // the argv reads in the order a human would describe it. Launch-time is
+    // the ONLY route on stock: there is no runtime `WarpMode` resource at
+    // all (`RESOURCE_GET` replies `err=0x01` OBJECT_MISSING on 3.9), so no
+    // runtime setter can exist here. Worth roughly **1.97x** on this host
+    // and this launch profile -- 5.23 emulated seconds against 2.65 over
+    // the same 5 s wall clock [MEASURED: evidence/33-wallclock-control.md,
+    // Control B instance 1] -- and NOT the order of magnitude a reader may
+    // assume; `AUTOSTART` additionally turns warp on by itself during the
+    // load whatever argv says, so both loads are warped either way. It is
+    // behaviour-neutral under a frame-anchored protocol (identical registers
+    // and one identical 64K sha256 across a warped and an unwarped run, same
+    // source), which is a precondition for shipping `profile.warp`; it is
+    // NOT neutral for a wall-clock bracket, which it invalidates by 1.76x.
+    const args = ["-default"];
+    if (profile?.headless) {
+        args.push("-console");
     }
-    const host = mcpHost ?? process.env.VICE_BROKER_MCP_HOST ?? "0.0.0.0";
-    return ["-mcpserver", "-mcpserverhost", host, "-mcpserverport", String(port)];
+    args.push("-drive8type", "1541");
+    args.push(...STOCK_DETERMINISM_FLAGS);
+    if (profile?.warp) {
+        args.push("-warp");
+    }
+    args.push("-binarymonitor", "-binarymonitoraddress", `ip4://${host}:${port}`);
+    if (typeof remoteMonitorPort === "number") {
+        if (host !== "127.0.0.1" && !warnedRemoteMonitorBindWidened) {
+            warnedRemoteMonitorBindWidened = true;
+            process.stderr.write(`vice-broker: stock text (-remotemonitor) monitor bind widened to ${host} -- VICE's text monitor ` +
+                `accepts arbitrary monitor commands and is unauthenticated, exactly like the binary monitor; the ` +
+                `broker relays every monitor connection, so the default of 127.0.0.1 is all any client needs\n`);
+        }
+        args.push("-remotemonitor", "-remotemonitoraddress", `ip4://${host}:${remoteMonitorPort}`);
+    }
+    return args;
 }
 /**
  * Duplicated derivation of broker-home.mts's own brokerConfigScratchDir() --
@@ -403,7 +394,6 @@ function spawnAndRecordInstance(reason, port, deps) {
     }
     const viceArgs = buildViceArgs(port, {
         backend,
-        mcpHost: deps.mcpHost,
         binmonHost: deps.binmonHost,
         remoteMonitorPort: deps.remoteMonitorPort,
         // The ONE place a launch's profile becomes argv. The record built
@@ -470,7 +460,10 @@ function spawnAndRecordInstance(reason, port, deps) {
         logLine += ` (XDG_CONFIG_HOME=${scratchConfigDir})`;
     }
     log(logLine);
-    const child = spawnOptions === undefined ? spawnFn(viceBin, viceArgs) : spawnFn(viceBin, viceArgs, spawnOptions);
+    // Its own process group, so a stop of the broker can signal the whole
+    // group (broker-children.mts) -- never a pid alone.
+    const child = spawnFn(viceBin, viceArgs, { ...(spawnOptions ?? {}), detached: true });
+    deps.trackChild?.(child);
     if (scratchConfigDir !== undefined && typeof child.pid === "number") {
         // Ties the directory to the child's own pid AND this launch's own
         // resolved binary identity (viceBin) -- see ConfigScratchOwnerRecord's
@@ -648,11 +641,11 @@ export async function acquirePortAndLaunch(reason, deps) {
             spawn,
             now: deps.now,
             viceBin: deps.viceBin,
-            mcpHost: deps.mcpHost,
             backend: deps.backend,
             binmonHost: deps.binmonHost,
             remoteMonitorPort,
             profile: deps.profile,
+            trackChild: deps.trackChild,
         });
         return { ok: true, record };
     }
@@ -754,7 +747,7 @@ async function defaultHttpProbe(port, timeoutMs) {
 // host-bound .mts compiled into resources/ by build.ts, and a .mts cannot
 // value-import a .ts module (TS5097). The same constraint already produced
 // hand-copied wire constants in binmon-fixtures.ts and a standalone client in
-// probe-binmon.mjs. What is written here is the minimum a READINESS check needs:
+// probe-binmon.ts. What is written here is the minimum a READINESS check needs:
 // one request header out, one response header in, four bytes checked.
 // ---------------------------------------------------------------------------
 /** Hand-copied from this project's own measured binary-monitor wire format
@@ -1030,23 +1023,9 @@ function resolveCount(envVar, defaultValue, override) {
 }
 /** The exit-driven respawn step. Reads the JUST-crashed record (still in
  * state.instances -- nothing here deletes it before this runs), decides
- * among the four outcomes, and acts:
+ * among the three outcomes, and acts:
  *
- * - deliberateKill set AND respawnAfterKill set -> "recycled": a
- *   broker-ordered death that wants a replacement, relaunched on the SAME
- *   port through launchSupervised() -- but called DIRECTLY, bypassing every
- *   crash-accounting step below (no appended crash timestamp, no give-up
- *   evaluation, no backoff wait, no doubling): a deliberate recycle is not
- *   evidence of instability, and the crash-loop machinery exists for an
- *   UNEXPLAINED exit, not this one. The pre-kill crash history and backoff
- *   are carried forward UNCHANGED, and a pre-kill "granted" state is
- *   restored on the fresh record -- the relaunch primitive always creates a
- *   new record in the "launching" state, and leaving it there (once
- *   promoted to "ready" by the next probe pass) would let a LATER,
- *   UNRELATED acquire's own selectWarmInstance() walk (vice-broker.mts)
- *   mistake a recycled session's own machine for an available candidate to
- *   grant out from under the session that already owns it.
- * - deliberateKill set WITHOUT respawnAfterKill -> "deliberate_teardown":
+ * - deliberateKill set -> "deliberate_teardown":
  *   drop the instance, no respawn. This is T-01.6.2-21's whole point --
  *   without reading this flag, every deliberate teardown would respawn
  *   exactly what it just killed, silently breaking kill-never-recycle (a
@@ -1070,8 +1049,7 @@ async function handleExit(reason, port, deps) {
     }
     const log = deps.log ?? defaultLog;
     // The process behind this instance's monitor sockets has just exited, by
-    // every path this function can take (crash, recycle, or a deliberate
-    // teardown) -- clear EVERY channel's ownership record HERE, once, before
+    // every path this function can take (crash or a deliberate teardown) -- clear EVERY channel's ownership record HERE, once, before
     // any of those paths branch, so a client that died without releasing can
     // never hold this lock forever on any channel. Redundant
     // with the respawn/delete paths below (a fresh InstanceRecord never
@@ -1088,50 +1066,6 @@ async function handleExit(reason, port, deps) {
     // on any channel" is an empty map.
     record.monitorClients = {};
     if (record.deliberateKill) {
-        if (record.respawnAfterKill) {
-            // Recycle. Capture the pre-kill state, crash history and backoff
-            // BEFORE launchSupervised() replaces the map entry at this port key
-            // with a brand new InstanceRecord -- nothing about those three facts
-            // survives once that overwrite happens.
-            const preKillState = record.state;
-            const preKillCrashTimes = record.crashTimes ?? [];
-            const preKillBackoffMs = record.backoffMs ?? resolveMs("VICE_RESTART_BACKOFF_S", 3, deps.initialBackoffMs);
-            // The second (`-remotemonitor`) port is carried forward across the
-            // replacement exactly like the primary port is -- captured BEFORE
-            // launchSupervised() overwrites this port's map entry with a brand
-            // new record, for the same reason the three values above are.
-            const preKillRemoteMonitorPort = record.remoteMonitorPort;
-            // The launch PROFILE is carried forward for exactly the reason the
-            // remote-monitor port is carried forward above, and the failure it
-            // prevents is sharper. Without this, a recycled `{warp:true}`
-            // instance would come back UNWARPED while its fresh record still
-            // claimed `profile:{warp:true}` -- after which profileEligible()
-            // (vice-broker.mts) would happily hand that instance to the next warp
-            // request. That is precisely the undetectable lie this carry-forward
-            // exists to structurally exclude, reintroduced one respawn later.
-            // Captured BEFORE launchSupervised() overwrites this port's map entry
-            // with a brand new record, same as the four values above.
-            const preKillProfile = record.profile;
-            const respawned = launchSupervised(reason, port, deps, preKillCrashTimes, preKillBackoffMs, preKillRemoteMonitorPort, preKillProfile);
-            if (respawned && preKillState === "granted") {
-                respawned.state = "granted";
-            }
-            // Keep the matching grant's own recorded pid in sync with the
-            // respawned record's pid -- the ONE legitimate case where the SAME
-            // grant continues to own a DIFFERENT pid on the SAME port. Without
-            // this, vice-broker.mts's handleRelease() own grant-pid identity
-            // check (T-01.6.2.1-28) would misfire and refuse to tear down the
-            // very instance the grant now legitimately owns.
-            if (respawned) {
-                for (const grant of deps.state.grants.values()) {
-                    if (grant.port === port) {
-                        grant.pid = respawned.pid;
-                    }
-                }
-            }
-            deps.onOutcome?.("recycled", port);
-            return;
-        }
         // A deliberate teardown is the END of this instance -- its
         // remote-monitor port must go back to the allocator with it.
         deleteInstanceRecord(deps.state, port);
@@ -1155,9 +1089,15 @@ async function handleExit(reason, port, deps) {
     const sleepMs = deps.sleepMs ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     const currentBackoffMs = record.backoffMs ?? resolveMs("VICE_RESTART_BACKOFF_S", 3, deps.initialBackoffMs);
     await sleepMs(currentBackoffMs);
+    // A shutdown or a deliberate teardown that happened during the backoff
+    // wins: never start a new emulator for a record that is no longer wanted.
+    if (deps.state.shuttingDown || record.deliberateKill || deps.state.instances.get(port) !== record) {
+        log(`vice-broker: not respawning port ${port} -- the broker is shutting down or the instance was torn down during the backoff`);
+        return;
+    }
     const maxBackoffMs = resolveMs("VICE_RESTART_BACKOFF_MAX_S", 30, deps.maxBackoffMs);
     const nextBackoffMs = Math.min(currentBackoffMs * 2, maxBackoffMs);
-    // Same carry-forward as the recycle branch above -- a crash must not
+    // A crash must not
     // silently strip `-remotemonitor` (and its InstanceRecord field) off the
     // replacement, which would otherwise make the instance record's claim to
     // carry that field stop being true the first time an instance was
@@ -1220,7 +1160,7 @@ export function withCrashSupervision(reason, port, baseSpawn, deps) {
  *
  * `remoteMonitorPort` is threaded the SAME way and for the same reason --
  * it belongs to the instance, not to a single spawn of it. The replacement
- * reuses the port the crashed/recycled process just vacated (already
+ * reuses the port the crashed process just vacated (already
  * reserved in `state.blockedPorts`, so nothing else can have taken it
  * meanwhile), exactly as it reuses the primary `port` argument; this function
  * stays fully synchronous and never allocates. `undefined` is the correct
@@ -1279,12 +1219,12 @@ function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonit
         spawn: wrappedSpawn,
         now: deps.now,
         viceBin: deps.viceBin,
-        mcpHost: deps.mcpHost,
         backend: deps.backend,
         binmonHost: deps.binmonHost,
         remoteMonitorPort,
         profile,
         log: deps.log,
+        trackChild: deps.trackChild,
     });
     if (!record)
         return null;

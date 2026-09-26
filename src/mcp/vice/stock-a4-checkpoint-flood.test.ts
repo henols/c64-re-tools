@@ -5,12 +5,10 @@
 // against a real, broker-launched genuine-stock VICE instance and drives
 // sustained hit pressure past stock-checkpoints.ts's D-11 rate-limit guard
 // (TRACE_HITS_PER_SECOND_LIMIT, currently 20/s) -- the ONE safety-critical
-// probe this milestone's carried debt names and no prior phase armed: A4 of
-// .planning/todos/pending/2026-08-14-probe-phase3-assumed-wire-details.md
+// probe this milestone's carried debt names and no prior phase armed: A4
 // (the `setImmediate()` auto-disable deferral's race-freedom under a real,
-// synchronous CHECKPOINT_INFO flood from inside VICE's own CPU loop) and
-// 03-HUMAN-UAT.md scenario 3 (the same question, framed as a UAT gate) --
-// closed by the SAME experiment; see plan 15-10's own objective.
+// synchronous CHECKPOINT_INFO flood from inside VICE's own CPU loop) and the
+// same question framed as a UAT gate -- closed by the SAME experiment.
 //
 // WHY GENTLE FIRST: CLAUDE.md's own Protocol constraint says a non-stopping
 // checkpoint's CHECKPOINT_INFO hit frame is emitted SYNCHRONOUSLY, over the
@@ -26,9 +24,8 @@
 // fixture, NO ACME, and NO autostart needed. Escalation to a genuinely tight
 // loop (see ESCALATION_PROGRAM_SOURCE below) only happens if the gentle tier
 // does not exceed the limit within its own bounded deadline, and only after
-// this file records the wedge-triage recovery route it would use if the
-// escalated tier stalls (see the console.log immediately before escalation,
-// below).
+// this file records the recovery route it would use if the escalated tier
+// stalls (see the console.log immediately before escalation, below).
 //
 // SAFETY DISCIPLINE (this file's own must-haves, mirrored from
 // 15-10-PLAN.md's <threat_model>):
@@ -43,7 +40,7 @@
 //     paused-state flag. Polling on paused state is the documented wrong
 //     shape this project's own vice-sync.ts invariant forbids.
 //   - Exactly one binary-monitor client is opened against the granted
-//     instance for this entire test (one `openBrokerControl()` +
+//     instance for this entire test (one `dialControlSession()` +
 //     `stockConnect()` pair) -- stock VICE's monitor services exactly one
 //     client, and a second connect is indistinguishable from a wedge.
 //   - Every acquired process/scratch directory is recorded and torn down in
@@ -51,7 +48,7 @@
 //     `withBrokerHarness()` shape (copied below, not imported -- none of
 //     that file's harness helpers are exported).
 //
-// DEFAULT-SKIP IS MANDATORY, exactly like every sibling in test-gate.mjs's
+// DEFAULT-SKIP IS MANDATORY, exactly like every sibling in test-gate.ts's
 // MANUAL_ONLY_TESTS list (this file is the NINTH entry -- see that file's
 // header). `npm test` globs this file via `*.test.*`, and CI has no VICE.
 //
@@ -68,7 +65,7 @@
 //     firing -- poll the wire hit count and the autoDisables report.
 //   - Never retry a stalled wait indefinitely -- a deadline expiry is an
 //     OBSERVATION (record it), not a reason to loop again.
-//   - Never edit stock-checkpoints.ts, probe-binmon.mjs, or any other
+//   - Never edit stock-checkpoints.ts, probe-binmon.ts, or any other
 //     production source from this file -- this plan's own instruction (and
 //     15-10-PLAN.md's <verification>) is that no source file changes here.
 import { test } from "node:test";
@@ -78,10 +75,14 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createServer } from "node:net";
 
 import { build } from "./build.ts";
-import { openBrokerControl, type BrokerControlSession, type AcquireGrant, type HeldLease } from "./vice-broker-client.ts";
-import { dispatchStock, clearHeldStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { epochPathFor } from "./broker-epoch.mts";
+import { dialBrokerEndpoint } from "./broker-endpoint.mts";
+import { dialControlSession, type BrokerControlSession, type AcquireGrant, type HeldLease } from "./vice-broker-client.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
 import { probeReady } from "./broker-launch.mts";
 import { TRACE_HITS_PER_SECOND_LIMIT } from "./stock-checkpoints.ts";
@@ -125,7 +126,7 @@ interface KernalIrqAddress {
 }
 
 function readKernalIrqAddress(): KernalIrqAddress {
-  const memmapPath = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
+  const memmapPath = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
   const parsed = JSON.parse(readFileSync(memmapPath, "utf8")) as { entries: Array<Record<string, unknown>> };
   const raw = parsed.entries;
   assert.ok(Array.isArray(raw), `${memmapPath} must carry an "entries" array -- got shape: ${JSON.stringify(Object.keys(parsed ?? {}))}`);
@@ -190,7 +191,7 @@ function assembleEscalationProgram(dir: string): { prgPath: string; acmeVersion:
 
 // ---------------------------------------------------------------------------
 // Real-broker-artifact spawn/teardown -- copied from stock-broker-live.
-// test.ts's own startBroker()/stopBroker()/waitForBrokerJson()/isAlive()/
+// test.ts's own startBroker()/stopBroker()/waitForBrokerReady()/isAlive()/
 // waitForStockReady()/withBrokerHarness()/readGrantPid()/parseOkPayload()
 // shape (none of that file's helpers are exported, per this plan's own
 // read_first instruction: "Import from it if its helpers are exported;
@@ -204,7 +205,7 @@ interface BrokerHandle {
   stderr: string;
 }
 
-function startBroker(stateDir: string, viceBinPath: string, scratchDir: string): BrokerHandle {
+function startBroker(stateDir: string, viceBinPath: string, scratchDir: string, controlPort: number): BrokerHandle {
   const merged: Record<string, string | undefined> = {
     ...process.env,
     // Deliberately omitted -- this genuinely runs on the host.
@@ -213,7 +214,7 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     // MUST be unset, not merely omitted -- a non-empty VICE_ARGS is a FULL
     // argv override in buildViceArgs() and would bypass the real launch path.
     VICE_ARGS: undefined,
-    VICE_BROKER_CONTROL_PORT: "0",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
     VICE_BROKER_MAX: "1",
     VICE_BROKER_POLL_MS: "250",
     VICE_RESTART_BACKOFF_S: "1",
@@ -249,11 +250,26 @@ async function stopBroker(handle: BrokerHandle): Promise<void> {
   if (!exited) handle.child.kill("SIGKILL");
 }
 
-async function waitForBrokerJson(stateDir: string, deadlineMs = 10000): Promise<Record<string, unknown>> {
-  const path = join(stateDir, "broker.json");
-  const appeared = await waitFor(() => existsSync(path) && typeof JSON.parse(readFileSync(path, "utf8")).control_port === "number", deadlineMs);
-  assert.ok(appeared, "broker.json with a control_port did not appear within deadline");
-  return JSON.parse(readFileSync(path, "utf8"));
+/** A loopback port nothing listens on yet, for this suite's own broker --
+ * never the fixed default (19510), which a real broker may hold. */
+async function allocateControlPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+/** Bounded-waits for the broker to answer a hello on `port`. */
+async function waitForBrokerReady(port: number, deadlineMs = 10000): Promise<void> {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    const dialed = await dialBrokerEndpoint({ port, candidates: ["127.0.0.1"] });
+    if (dialed.ok) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.fail(`the broker never answered a hello on 127.0.0.1:${port} within ${deadlineMs}ms`);
 }
 
 function isAlive(pid: number): boolean {
@@ -276,13 +292,12 @@ async function waitForStockReady(port: number, deadlineMs = 30000): Promise<bool
   return false;
 }
 
-function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerControlSession, stateDir: string): StockDispatchDeps {
+function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerControlSession, stateDir: string): StockSessionDeps {
   const lease: HeldLease = {
     host,
     port: grant.port,
     targetId: grant.id,
     brokerControl: controlSession,
-    epochFile: grant.epoch_file,
     supervisorDir: stateDir,
   };
   return {
@@ -301,16 +316,25 @@ interface HarnessReport {
   pidsAliveAfterTeardown: number[];
 }
 
-async function withBrokerHarness(fn: (ctx: { stateDir: string; scratchDir: string; recordPid: (pid: number) => void }) => Promise<void>): Promise<HarnessReport> {
+async function withBrokerHarness(
+  fn: (ctx: { stateDir: string; scratchDir: string; controlPort: number; recordPid: (pid: number) => void }) => Promise<void>,
+): Promise<HarnessReport> {
   build(); // ensure resources/ is a fresh build of the current TypeScript source
   const scratchDir = mkdtempSync(join(tmpdir(), "stock-a4-checkpoint-flood-"));
   const stateDir = join(scratchDir, "state");
   const recordedPids = new Set<number>();
-  const handle = startBroker(stateDir, resolvedBinPath, scratchDir);
+  const controlPort = await allocateControlPort();
+  const handle = startBroker(stateDir, resolvedBinPath, scratchDir, controlPort);
+  // The monitor relay and file transfers dial the fixed endpoint, which this
+  // process resolves from VICE_BROKER_CONTROL_PORT -- point it at this broker.
+  const previousControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(controlPort);
   let pidsAliveAfterTeardown: number[] = [];
   try {
-    await fn({ stateDir, scratchDir, recordPid: (pid: number) => recordedPids.add(pid) });
+    await fn({ stateDir, scratchDir, controlPort, recordPid: (pid: number) => recordedPids.add(pid) });
   } finally {
+    if (previousControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = previousControlPort;
     await stopBroker(handle);
     for (const pid of recordedPids) {
       try {
@@ -382,7 +406,7 @@ interface FloodPollResult {
 }
 
 async function pollForAutoDisable(
-  deps: StockDispatchDeps,
+  deps: StockSessionDeps,
   checkpointId: number,
   { pollIntervalMs, deadlineMs }: { pollIntervalMs: number; deadlineMs: number },
 ): Promise<FloodPollResult> {
@@ -396,7 +420,7 @@ async function pollForAutoDisable(
     iterations++;
     // Resume -- the CIA1 timer IRQ (or, in the escalated tier, the tight
     // loop) only advances while the machine is actually running.
-    const runResult = await dispatchStock("vice_execution_run", {}, deps);
+    const runResult = await callStockTool("vice_execution_run", {}, deps);
     if ((runResult as { isError: boolean }).isError) {
       console.log(`stock-a4-checkpoint-flood: vice_execution_run reported an error mid-poll (iteration ${iterations}): ${JSON.stringify(runResult)}`);
     }
@@ -405,7 +429,7 @@ async function pollForAutoDisable(
     // Read -- this halts the machine again (every inbound byte does, on
     // stock), which is why the loop resumes again at the top of the next
     // iteration rather than trying to read while running.
-    const listResult = await dispatchStock("vice_checkpoint_list", {}, deps);
+    const listResult = await callStockTool("vice_checkpoint_list", {}, deps);
     if ((listResult as { isError: boolean }).isError) {
       console.log(`stock-a4-checkpoint-flood: vice_checkpoint_list reported an error mid-poll (iteration ${iterations}): ${JSON.stringify(listResult)}`);
       continue;
@@ -469,13 +493,12 @@ test(
       progressPcSamples: [],
     };
 
-    const report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
-      const brokerJson = await waitForBrokerJson(stateDir);
+    const report = await withBrokerHarness(async ({ stateDir, scratchDir, controlPort, recordPid }) => {
+      await waitForBrokerReady(controlPort);
       const host = "127.0.0.1";
-      assert.ok(Number(brokerJson.control_port) > 0, `broker.json must carry a real control_port, got: ${JSON.stringify(brokerJson)}`);
 
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const controlSession = opened.session;
 
@@ -484,7 +507,7 @@ test(
       if (!acquired.ok) return;
       const grant = acquired.grant;
 
-      const pid = await readGrantPid(grant.epoch_file);
+      const pid = await readGrantPid(epochPathFor(stateDir, grant.port));
       recordPid(pid);
 
       const ready = await waitForStockReady(grant.port);
@@ -495,7 +518,7 @@ test(
       // --- Step 1/2: arm the gentle-tier checkpoint on the freshly booted,
       // unmodified machine -- no autostart needed, the KERNAL IRQ fires on
       // its own via the CIA1 timer.
-      const addResult = await dispatchStock(
+      const addResult = await callStockTool(
         "vice_checkpoint_add",
         { start: kernalIrq.addressHex, stop: false, acknowledgeTraceRisk: true },
         deps,
@@ -520,37 +543,29 @@ test(
       if (!outcome.gentleResult.triggered) {
         // --- Escalation, only now, and only after recording the recovery
         // route this file would use if the escalated tier itself stalls:
-        // per vice-wedge-triage/SKILL.md, a bracket that reads exactly zero
-        // twice in a row with no epoch change is `wedged`, and the last
-        // resort is `vice_recycle` with a reason. This harness has no
-        // `vice_recycle` (it drives dispatchStock() directly, not the full
-        // proxy's diagnose/recycle surface) -- its equivalent recovery
-        // action is this test's OWN teardown: withBrokerHarness's `finally`
-        // block SIGTERMs-then-SIGKILLs the granted process regardless of how
-        // this function returns, which is the bounded substitute for
-        // `vice_recycle` in this harness's own scope.
+        // this test's OWN teardown. withBrokerHarness's `finally` block
+        // SIGTERMs-then-SIGKILLs the granted process regardless of how this
+        // function returns.
         console.log(
           "stock-a4-checkpoint-flood: gentle tier did not exceed the rate limit within its deadline -- escalating to a tight loop. " +
             "Recovery route if the escalated tier stalls: this test's own withBrokerHarness() teardown " +
-            "(SIGTERM-then-SIGKILL of the granted process, unconditional in a finally block) is the bounded " +
-            "substitute for vice_recycle in this harness's scope -- there is no vice_diagnose/vice_recycle surface " +
-            "available here, since this file drives dispatchStock() directly rather than the full MCP proxy.",
+            "(SIGTERM-then-SIGKILL of the granted process, unconditional in a finally block).",
         );
         outcome.escalationNeeded = true;
 
         // Delete the gentle-tier checkpoint first so it stops contributing
         // hits (and confusing the payload) once the tight loop is armed.
-        await dispatchStock("vice_checkpoint_delete", { checkpoint_num: gentleCheckpointId }, deps);
+        await callStockTool("vice_checkpoint_delete", { checkpoint_num: gentleCheckpointId }, deps);
 
         const { prgPath, acmeVersion } = assembleEscalationProgram(scratchDir);
         outcome.escalationAcmeVersion = acmeVersion;
         console.log(`stock-a4-checkpoint-flood: escalation -- acme --version -> ${acmeVersion}`);
 
-        const autostartResult = await dispatchStock("vice_autostart", { path: prgPath, run: true }, deps);
+        const autostartResult = await callStockTool("vice_autostart", { path: prgPath, run: true }, deps);
         const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-a4-checkpoint-flood: escalation -- vice_autostart -> ${JSON.stringify(autostartPayload)}`);
 
-        const escAddResult = await dispatchStock(
+        const escAddResult = await callStockTool(
           "vice_checkpoint_add",
           { start: `$${ESCALATION_LOOP_ADDRESS.toString(16)}`, stop: false, acknowledgeTraceRisk: true },
           deps,
@@ -574,7 +589,7 @@ test(
       // response. An entry in the local report with a still-enabled
       // checkpoint on the wire is precisely the A4 race.
       if (activeResult.triggered) {
-        const verifyListResult = await dispatchStock("vice_checkpoint_list", {}, deps);
+        const verifyListResult = await callStockTool("vice_checkpoint_list", {}, deps);
         const verifyPayload = parseOkPayload(verifyListResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const verifyEntry = ((verifyPayload.checkpoints as CheckpointEntry[]) ?? []).find((c) => c.id === activeCheckpointId) ?? null;
         outcome.wireEnabledAfterDisable = verifyEntry?.enabled ?? null;
@@ -601,9 +616,9 @@ test(
       const PROGRESS_CHECK_ATTEMPTS = 5;
       const PROGRESS_CHECK_SLEEP_MS = 400;
       for (let attempt = 0; attempt < PROGRESS_CHECK_ATTEMPTS; attempt++) {
-        await dispatchStock("vice_execution_run", {}, deps);
+        await callStockTool("vice_execution_run", {}, deps);
         await new Promise((r) => setTimeout(r, PROGRESS_CHECK_SLEEP_MS));
-        const regsResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsResult = await callStockTool("vice_registers_get", {}, deps);
         const regsPayload = parseOkPayload(regsResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const pc = findRegister(regsPayload.registers as Record<string, number>, "PC");
         outcome.progressPcSamples.push(pc ?? -1);
@@ -611,7 +626,7 @@ test(
       console.log(`stock-a4-checkpoint-flood: post-flood progress check -- PC samples over ${PROGRESS_CHECK_ATTEMPTS} bounded resume/sleep/read attempts = ${JSON.stringify(outcome.progressPcSamples)}`);
 
       // Clean up whichever checkpoint is still armed.
-      await dispatchStock("vice_checkpoint_delete", { checkpoint_num: activeCheckpointId }, deps);
+      await callStockTool("vice_checkpoint_delete", { checkpoint_num: activeCheckpointId }, deps);
 
       await controlSession.release();
     });

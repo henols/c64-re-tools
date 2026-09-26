@@ -3,13 +3,12 @@
 // Covers the emitted resources/vice-broker.mjs directly, under bare `node`
 // with no node_modules resolvable, plus the hand-authored launcher's flag
 // surface. Phase 01.6.2: the broker stopped being a write-once tracer and
-// became a LONG-LIVED process (a TCP control listener plus a recurring
-// heartbeat), so every success-path test below spawns it asynchronously,
-// polls to a deadline for broker.json to appear, then kills it -- a bare
+// became a LONG-LIVED process (a TCP control listener), so every
+// success-path test below spawns it asynchronously, polls to a deadline for
+// its `vice-broker: ready` stderr line, then kills it -- a bare
 // synchronous spawnSync() would simply hang, since the process never exits
-// on its own. Only the error paths (missing --repo-root, a live-pid
-// refusal, the container guard's own refusal) still exit quickly enough
-// for spawnSync().
+// on its own. Only the error paths (a malformed invocation, the container
+// guard's own refusal) still exit quickly enough for spawnSync().
 //
 // This is a .ts file (not .mts): it tests emitted OUTPUT and authored
 // TypeScript, never imports a .mjs module itself (the convention this group
@@ -17,7 +16,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, execFile, type ChildProcess } from "node:child_process";
-import { mkdtempSync, copyFileSync, mkdirSync, readFileSync, writeFileSync, statSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, copyFileSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,8 +31,8 @@ const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
 const LAUNCHER = join(HERE, "resources", "vice-launcher.sh");
 // Imported by a FRESH child process below, never by this test file itself
 // (this file's own header says it never imports a .mjs module -- a child
-// process importing the .ts source directly keeps that true).
-const BROKER_CLIENT_MODULE_URL = new URL("./vice-broker-client.ts", import.meta.url).href;
+// process importing the .mts source directly keeps that true).
+const BROKER_HOME_MODULE_URL = new URL("./broker-home.mts", import.meta.url).href;
 
 // The four container-guard tests below hand their spawned process ONE
 // simulated container signal instead of inheriting one ambiently. The only
@@ -68,7 +67,7 @@ const SIMULATED_CONTAINER_ENV = { CONTAINER_WORKSPACE_PATH: HERE };
  * compiled module actually runs, and once `vice-broker.mts` started
  * resolving `x64sc` through the seam at startup (Plan 60-01), a
  * deployment with no copy of `prerequisites.json` anywhere near it makes
- * `readDeclaration()` throw before the broker ever writes `broker.json`.
+ * `readDeclaration()` throw before the broker ever binds its listener.
  * `install-resources.ts`'s own real deploy walks the WHOLE `resources/`
  * directory (not just `HOST_BOUND_ARTIFACTS`), so a committed
  * `resources/prerequisites.json` (build.ts now copies it there) already
@@ -103,8 +102,7 @@ interface RunResult {
 // configured emulator binary path, paired only with a port-band check --
 // a short, ubiquitous identity like "/bin/sleep" could therefore let a
 // broker started by this suite SIGTERM/SIGKILL an unrelated process on a
-// developer's host (folded todo
-// `.planning/todos/pending/2026-08-12-broker-orphan-reap-substring-identity-match.md`).
+// developer's host.
 // The reap is now driven entirely by this broker's own on-disk allocation
 // record (broker-kill.mts's reapOrphanedInstances()), so that specific
 // hazard no longer exists -- the unique stub path is kept anyway as
@@ -131,8 +129,7 @@ const VICE_BIN_STUB: Record<string, string> = { VICE_BIN: STUB_VICE_BIN, VICE_AR
 
 /** Runs the deployed artifact SYNCHRONOUSLY under a bare `node` invocation --
  * only valid for a code path that exits promptly on its own (parseArgs
- * failure, the container guard's refusal, or the pre-listener
- * refuse-to-clobber check). Never use this for a code path that reaches the
+ * failure, or the container guard's refusal). Never use this for a code path that reaches the
  * control listener; it would hang. */
 function runBrokerSync(deployDir: string, args: string[], env: Record<string, string> = {}): RunResult {
   const result = spawnSync(process.execPath, [join(deployDir, "vice-broker.mjs"), ...args], {
@@ -173,256 +170,58 @@ async function stopBroker(child: ChildProcess): Promise<void> {
   if (!exited) child.kill("SIGKILL");
 }
 
-/** Computes brokerJsonPath() in a FRESH child `node` process that imports
- * vice-broker-client.ts directly -- the SAME thing a real client process
- * does, never this test file's own already-imported modules (Phase 64, plan
- * 64-10, G-64-1's route-agreement proof). `env` should be the SAME env the
- * sibling broker under test was spawned with, so the two sides answer under
- * identical configuration. `VICE_SKIP_RESOURCE_INSTALL=1` and
- * `CLAUDE_PROJECT_DIR` are added on top: vice-broker-client.ts imports
- * vice-errors.ts, which imports repo-root.ts, whose own bottom-of-module
- * side effect (`ensureResourcesInstalled()`) would otherwise attempt to
- * install launcher scripts into a real repo root computed from this
- * process's own `.git` ancestor walk -- `CLAUDE_PROJECT_DIR` makes
- * `repoRoot()` return immediately without any filesystem walk, and
- * `VICE_SKIP_RESOURCE_INSTALL=1` makes the install call itself a no-op
- * regardless. */
-async function clientBrokerJsonPath(env: Record<string, string | undefined>, projectDirHint: string): Promise<string> {
+/** Waits for the broker's `vice-broker: ready` line, then returns the state
+ * directory it reported on its `vice-broker: state directory:` line (printed
+ * before the ready line). */
+async function waitForReportedStateDir(getStderr: () => string, deadlineMs = 5000): Promise<string> {
+  const ready = await waitFor(() => /vice-broker: ready \(/.test(getStderr()), deadlineMs);
+  assert.ok(ready, `the broker's ready line did not appear within deadline; stderr so far: ${getStderr()}`);
+  const match = /vice-broker: state directory: (.+)\n/.exec(getStderr());
+  assert.ok(match, `the broker must report its state directory on stderr; stderr: ${getStderr()}`);
+  return match[1];
+}
+
+/** Computes brokerStateDir() in a FRESH child `node` process that imports
+ * broker-home.mts directly -- the SAME resolver a real client process uses
+ * for its lease's supervisor directory, never this test file's own
+ * already-imported modules (Phase 64, plan 64-10, G-64-1's route-agreement
+ * proof). `env` should be the SAME env the sibling broker under test was
+ * spawned with, so the two sides answer under identical configuration. */
+async function clientBrokerStateDir(env: Record<string, string | undefined>): Promise<string> {
   const nodeSrc = `
-    import { brokerJsonPath } from ${JSON.stringify(BROKER_CLIENT_MODULE_URL)};
-    console.log(brokerJsonPath());
+    import { brokerStateDir } from ${JSON.stringify(BROKER_HOME_MODULE_URL)};
+    console.log(brokerStateDir());
   `;
   const { stdout } = await execFileP(process.execPath, ["--input-type=module", "-e", nodeSrc], {
-    env: { ...process.env, ...env, VICE_SKIP_RESOURCE_INSTALL: "1", CLAUDE_PROJECT_DIR: projectDirHint },
+    env: { ...process.env, ...env },
   });
   const lines = stdout.trim().split("\n").filter(Boolean);
   return lines[lines.length - 1];
 }
 
-// The fourteen-field discovery-record set (plan 05, D-27, criterion G/K --
-// amended a second time from plan 01's nine-key tracer assertion; NARROWED
-// from fourteen to thirteen by plan 41-05, folded todo; WIDENED BACK to
-// fourteen by the node-interpreter-pinning quick task, which added
-// `node_exec_path`). `ttl_seconds` (the bash fixture's own
-// lease-time-to-live field) is DELETED, not carried forward: it is one of
-// criterion F's six retiring lease mechanisms, and the connection is the
-// lease now. `warm_floor` is likewise DELETED (plan 41-05): the warm floor
-// itself is retired, and a published field whose knob no longer exists is
-// false documentation. `node_exec_path` is the field that widened the set
-// back to fourteen: `node_version` alone does not say WHICH of several
-// installed interpreters a broker actually ran under, and a triage session
-// needs the path to answer that.
-const BROKER_JSON_FOURTEEN_KEYS = [
-  "version",
-  "written_by",
-  "pid",
-  "started_at",
-  "heartbeat_at",
-  "node_version",
-  "node_exec_path",
-  "control_host",
-  "control_port",
-  "control_token",
-  "max_instances",
-  "base_port",
-  "poll_ms",
-  "dry_run",
-];
-
-test("emitted artifact starts a LONG-LIVED broker: writes the fourteen-field discovery record (mode 0600), binds a control listener on loopback (D-09)", async () => {
+test("emitted artifact starts a LONG-LIVED broker: prints its ready line naming the host's node and the defaults, and binds a control listener on loopback (D-09)", async () => {
   const deployDir = freshDeployDir();
-  const { child } = runBrokerAsync(
+  const { child, getStderr } = runBrokerAsync(
     deployDir,
     ["--repo-root", "/tmp/fake-repo-root", "--state-dir", join(deployDir, "state")],
     { VICE_SUPERVISOR_ALLOW_CONTAINER: "1", VICE_BROKER_CONTROL_PORT: "0" },
   );
   try {
-    const recordPath = join(deployDir, "state", "broker.json");
-    const appeared = await waitFor(() => existsSync(recordPath), 5000);
-    assert.ok(appeared, "broker.json did not appear within deadline");
-
-    const record: Record<string, unknown> = JSON.parse(readFileSync(recordPath, "utf8"));
-    assert.deepEqual(
-      Object.keys(record).sort(),
-      [...BROKER_JSON_FOURTEEN_KEYS].sort(),
-      "the long-lived broker's discovery record must carry EXACTLY these fourteen fields, no lease-TTL field and no warm-floor field among them",
-    );
-    assert.ok(!("ttl_seconds" in record), "the lease time-to-live field must be gone -- the connection is the lease now (D-12)");
-    assert.ok(!("warm_floor" in record), "the warm-floor field must be gone -- the warm floor itself is retired (plan 41-05)");
-    assert.equal(record.written_by, "vice-broker.mjs");
-    assert.notEqual(
-      record.written_by,
-      JSON.parse(readFileSync(join(HERE, "fixtures", "bash-broker.json"), "utf8")).written_by,
-      "written_by must differ from the frozen bash fixture's own value -- D-26's whole point",
-    );
-    assert.equal(record.node_version, process.version, "the record must carry the HOST's own process.version");
+    const pattern = /vice-broker: ready \(node (\S+) at (.+), max (\d+) instances, base port (\d+), poll (\d+)ms\); control listener bound on (\S+):(\d+)\n/;
+    const appeared = await waitFor(() => pattern.test(getStderr()), 5000);
+    assert.ok(appeared, `the ready line did not appear within deadline; stderr so far: ${getStderr()}`);
+    const [, nodeVersion, nodeExecPath, maxInstances, basePort, pollMs, host, port] = pattern.exec(getStderr())!;
+    assert.equal(nodeVersion, process.version, "the ready line must carry the HOST's own process.version");
     assert.equal(
-      record.node_exec_path,
+      nodeExecPath,
       process.execPath,
-      "the record must carry the HOST's own process.execPath, so a triage session can tell which of several installed interpreters this broker ran under",
+      "the ready line must carry the HOST's own process.execPath, so a triage session can tell which of several installed interpreters this broker ran under",
     );
-    assert.equal(record.control_host, "127.0.0.1", "the discovery record's control_host must be the loopback address the broker enumerated (D-09/D-12), never the wildcard address");
-    assert.ok(Number.isInteger(record.control_port) && (record.control_port as number) > 0);
-    assert.equal(typeof record.control_token, "string");
-    assert.ok((record.control_token as string).length > 0);
-    assert.ok(!Number.isNaN(Date.parse(record.heartbeat_at as string)), "heartbeat_at must be a parseable timestamp");
-    assert.ok(!Number.isNaN(Date.parse(record.started_at as string)));
-    assert.equal(record.max_instances, 16, "default instance ceiling, unchanged this phase");
-    assert.equal(record.base_port, 6600, "default base port, D-18");
-    assert.equal(record.poll_ms, 500, "default poll interval, unchanged this phase");
-    assert.equal(record.dry_run, false);
-
-    const mode = statSync(recordPath).mode & 0o777;
-    assert.equal(mode, 0o600, `expected mode 0600, got ${mode.toString(8)}`);
-  } finally {
-    await stopBroker(child);
-    rmSync(deployDir, { recursive: true, force: true });
-  }
-});
-
-test("heartbeat_at advances and the mode stays owner-read-write across a REFRESH write, not only the first", async () => {
-  const deployDir = freshDeployDir();
-  const { child } = runBrokerAsync(
-    deployDir,
-    ["--repo-root", "/tmp/fake-repo-root", "--state-dir", join(deployDir, "state")],
-    { VICE_SUPERVISOR_ALLOW_CONTAINER: "1", VICE_BROKER_CONTROL_PORT: "0", VICE_BROKER_HEARTBEAT_MS: "200" },
-  );
-  try {
-    const recordPath = join(deployDir, "state", "broker.json");
-    await waitFor(() => existsSync(recordPath), 5000);
-    const first = JSON.parse(readFileSync(recordPath, "utf8"));
-
-    const advanced = await waitFor(() => {
-      const current = JSON.parse(readFileSync(recordPath, "utf8"));
-      return current.heartbeat_at !== first.heartbeat_at;
-    }, 3000);
-    assert.ok(advanced, "heartbeat_at must advance on the recurring timer");
-
-    const after = JSON.parse(readFileSync(recordPath, "utf8"));
-    assert.equal(after.started_at, first.started_at, "started_at is FIXED at process start -- a refresh must never change it");
-
-    const mode = statSync(recordPath).mode & 0o777;
-    assert.equal(mode, 0o600, `expected mode 0600 after a refresh write, got ${mode.toString(8)}`);
-  } finally {
-    await stopBroker(child);
-    rmSync(deployDir, { recursive: true, force: true });
-  }
-});
-
-test("heartbeat_at advances between two reads taken more than one heartbeat interval apart", async () => {
-  const deployDir = freshDeployDir();
-  const { child } = runBrokerAsync(
-    deployDir,
-    ["--repo-root", "/tmp/fake-repo-root", "--state-dir", join(deployDir, "state")],
-    { VICE_SUPERVISOR_ALLOW_CONTAINER: "1", VICE_BROKER_CONTROL_PORT: "0", VICE_BROKER_HEARTBEAT_MS: "200" },
-  );
-  try {
-    const recordPath = join(deployDir, "state", "broker.json");
-    await waitFor(() => existsSync(recordPath), 5000);
-    const first = JSON.parse(readFileSync(recordPath, "utf8")).heartbeat_at as string;
-
-    const advanced = await waitFor(() => {
-      const current = JSON.parse(readFileSync(recordPath, "utf8")).heartbeat_at as string;
-      return current !== first;
-    }, 3000);
-    assert.ok(advanced, "heartbeat_at must advance on the recurring timer");
-  } finally {
-    await stopBroker(child);
-    rmSync(deployDir, { recursive: true, force: true });
-  }
-});
-
-// Plan 05 (criterion K, D-17): the tracer/plan-04-era "refuse to overwrite a
-// record naming a currently-live pid" pre-check is GONE -- REPLACED by the
-// kernel-enforced bind-before-write singleton guard, not merely extended
-// alongside it. The two former tests here ("refuses to overwrite... live
-// pid... never starts a listener" and its dead-pid counterpart) tested THAT
-// pre-check directly and no longer describe real behaviour: with the
-// pre-check removed, a hand-seeded broker.json naming this test's OWN live
-// pid no longer blocks anything by itself (nothing is actually bound to the
-// control port), so the broker would start normally and never exit --
-// exactly why the FIRST of those two tests used to rely on the pre-check
-// firing to stay spawnSync()-safe, and would hang forever without it. The
-// singleton guard's own two real outcomes (a record naming a genuinely LIVE
-// broker vs. one that is stale/never-started) are now covered by
-// broker-control.test.ts's own singleton tests, which drive a REAL bind
-// conflict rather than a hand-seeded pid string -- the only way to actually
-// exercise the new guard's two distinct paths.
-test("a pre-existing broker.json naming this test's own live pid no longer blocks a restart by itself -- only an actual bind conflict does (criterion K)", async () => {
-  const deployDir = freshDeployDir();
-  const stateDir = join(deployDir, "state");
-  mkdirSync(stateDir, { recursive: true });
-  const recordPath = join(stateDir, "broker.json");
-  // This test process's own pid is guaranteed alive -- if any lingering
-  // pid-liveness pre-check existed, THIS is the fixture that would trip it.
-  const before = JSON.stringify({ pid: process.pid, started_at: "fixture", heartbeat_at: "2020-01-01T00:00:00Z" });
-  writeFileSync(recordPath, before);
-
-  const { child } = runBrokerAsync(deployDir, ["--repo-root", "/tmp/fake-repo-root", "--state-dir", stateDir], {
-    VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
-    VICE_BROKER_CONTROL_PORT: "0",
-  });
-  try {
-    const wroteNewRecord = await waitFor(() => readFileSync(recordPath, "utf8") !== before, 5000);
-    assert.ok(wroteNewRecord, "a record naming this test's own live pid must NOT block a restart -- only a real bind conflict does now");
-
-    const record: Record<string, unknown> = JSON.parse(readFileSync(recordPath, "utf8"));
-    assert.deepEqual(Object.keys(record).sort(), [...BROKER_JSON_FOURTEEN_KEYS].sort());
-    assert.notEqual(record.pid, before, "the new record must name the SPAWNED BROKER's own pid, not the old fixture's");
-  } finally {
-    await stopBroker(child);
-    rmSync(deployDir, { recursive: true, force: true });
-  }
-});
-
-test("overwrites a record naming a DEAD pid -- a stale record on disk never blocks a restart, only a real bind conflict does", async () => {
-  const deployDir = freshDeployDir();
-  const stateDir = join(deployDir, "state");
-  mkdirSync(stateDir, { recursive: true });
-  const recordPath = join(stateDir, "broker.json");
-  // An implausibly large pid: never alive on any real system.
-  const before = JSON.stringify({ pid: 999999999, started_at: "fixture", heartbeat_at: "2020-01-01T00:00:00Z" });
-  writeFileSync(recordPath, before);
-
-  const { child } = runBrokerAsync(deployDir, ["--repo-root", "/tmp/fake-repo-root", "--state-dir", stateDir], {
-    VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
-    VICE_BROKER_CONTROL_PORT: "0",
-  });
-  try {
-    const wroteNewRecord = await waitFor(() => readFileSync(recordPath, "utf8") !== before, 5000);
-    assert.ok(wroteNewRecord, "a dead-pid record (even with heartbeat_at) must be overwritten, not refused");
-
-    const record: Record<string, unknown> = JSON.parse(readFileSync(recordPath, "utf8"));
-    assert.deepEqual(Object.keys(record).sort(), [...BROKER_JSON_FOURTEEN_KEYS].sort());
-    assert.notEqual(record.pid, 999999999, "the new record must name the SPAWNED BROKER's own pid, not the dead fixture pid");
-    assert.ok(Number.isInteger(record.pid) && (record.pid as number) > 0);
-  } finally {
-    await stopBroker(child);
-    rmSync(deployDir, { recursive: true, force: true });
-  }
-});
-
-test("a record file truncated mid-JSON is treated as absent and overwritten rather than throwing", async () => {
-  const deployDir = freshDeployDir();
-  const stateDir = join(deployDir, "state");
-  mkdirSync(stateDir, { recursive: true });
-  const recordPath = join(stateDir, "broker.json");
-  writeFileSync(recordPath, '{"pid": 1, "star');
-
-  const { child } = runBrokerAsync(deployDir, ["--repo-root", "/tmp/fake-repo-root", "--state-dir", stateDir], {
-    VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
-    VICE_BROKER_CONTROL_PORT: "0",
-  });
-  try {
-    const wroteNewRecord = await waitFor(() => {
-      try {
-        const parsed = JSON.parse(readFileSync(recordPath, "utf8"));
-        return Object.keys(parsed).length === BROKER_JSON_FOURTEEN_KEYS.length;
-      } catch {
-        return false;
-      }
-    }, 5000);
-    assert.ok(wroteNewRecord, `a malformed existing record must be treated as "not there yet", not thrown on; stderr so far`);
+    assert.equal(Number(maxInstances), 16, "default instance ceiling");
+    assert.equal(Number(basePort), 6600, "default base port, D-18");
+    assert.equal(Number(pollMs), 500, "default poll interval");
+    assert.equal(host, "127.0.0.1", "the control listener must be bound on the loopback address (D-09), never the wildcard address");
+    assert.ok(Number(port) > 0);
   } finally {
     await stopBroker(child);
     rmSync(deployDir, { recursive: true, force: true });
@@ -432,11 +231,9 @@ test("a record file truncated mid-JSON is treated as absent and overwritten rath
 // D-13/BROKER-01/BROKER-06: "missing --repo-root" used to be a malformed
 // invocation on its own -- the per-project binding had no fallback, so
 // parseArgs() refused with a usage line whenever no project was named. It
-// has one now. The genuinely malformed cases (an unrecognised token, or a
+// has one now. The genuinely malformed cases (an unrecognised argument, or a
 // flag missing its value) still refuse; "no project was named" no longer
-// does, and this is the ONE test file that used to prove the retired
-// behaviour, so it is replaced with both halves of what actually changed
-// rather than deleted outright.
+// does.
 
 test("an unrecognised flag still exits non-zero with a usage line -- the refusal was narrowed, not removed", () => {
   const deployDir = freshDeployDir();
@@ -467,21 +264,21 @@ test("a flag that takes a value but has none following it still exits non-zero w
 // (./container-guard.mjs etc.) only exist beside the COMPILED artifact under
 // resources/, not beside the .mts source -- so each step is proven the same
 // way every other real-behaviour test in this file is: spawn the emitted
-// artifact and observe where broker.json actually lands.
+// artifact and read the state directory it reports on stderr.
 
 test("precedence 1: an explicit --state-dir wins even when VICE_POOL_DIR is ALSO set, exactly as today", async () => {
   const deployDir = freshDeployDir();
   const explicitStateDir = join(deployDir, "explicit-state-dir");
   const decoyPoolDir = join(deployDir, "decoy-pool-dir-must-not-be-used");
-  const { child } = runBrokerAsync(
+  const { child, getStderr } = runBrokerAsync(
     deployDir,
     ["--repo-root", "/tmp/fake-repo-root", "--state-dir", explicitStateDir],
     { VICE_SUPERVISOR_ALLOW_CONTAINER: "1", VICE_BROKER_CONTROL_PORT: "0", VICE_POOL_DIR: decoyPoolDir },
   );
   try {
-    const appeared = await waitFor(() => existsSync(join(explicitStateDir, "broker.json")), 5000);
-    assert.ok(appeared, "broker.json must appear under the EXPLICIT --state-dir");
-    assert.ok(!existsSync(join(decoyPoolDir, "broker.json")), "VICE_POOL_DIR must be ignored when --state-dir is explicit");
+    const stateDir = await waitForReportedStateDir(getStderr);
+    assert.equal(stateDir, explicitStateDir, "the EXPLICIT --state-dir must be the state directory");
+    assert.ok(!existsSync(decoyPoolDir), "VICE_POOL_DIR must be ignored when --state-dir is explicit");
   } finally {
     await stopBroker(child);
     rmSync(deployDir, { recursive: true, force: true });
@@ -491,36 +288,36 @@ test("precedence 1: an explicit --state-dir wins even when VICE_POOL_DIR is ALSO
 test("precedence 2: VICE_POOL_DIR wins when no --state-dir is given, exactly as today", async () => {
   const deployDir = freshDeployDir();
   const poolDir = join(deployDir, "pool-dir");
-  const { child } = runBrokerAsync(deployDir, ["--repo-root", "/tmp/fake-repo-root"], {
+  const { child, getStderr } = runBrokerAsync(deployDir, ["--repo-root", "/tmp/fake-repo-root"], {
     VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
     VICE_BROKER_CONTROL_PORT: "0",
     VICE_POOL_DIR: poolDir,
   });
   try {
-    const appeared = await waitFor(() => existsSync(join(poolDir, "broker.json")), 5000);
-    assert.ok(appeared, "broker.json must appear directly under VICE_POOL_DIR (no --state-dir given)");
+    const stateDir = await waitForReportedStateDir(getStderr);
+    assert.equal(stateDir, poolDir, "VICE_POOL_DIR must be the state directory itself (no --state-dir given)");
   } finally {
     await stopBroker(child);
     rmSync(deployDir, { recursive: true, force: true });
   }
 });
 
-test("precedence 3 INVERTED (Phase 64, plan 64-10, G-64-1): --repo-root alone (no --state-dir, no VICE_POOL_DIR) no longer selects a project-relative directory -- broker.json lands under the machine-level root instead, and nothing is created under the project", async () => {
+test("precedence 3 INVERTED (Phase 64, plan 64-10, G-64-1): --repo-root alone (no --state-dir, no VICE_POOL_DIR) no longer selects a project-relative directory -- the state directory is under the machine-level root instead, and nothing is created under the project", async () => {
   const deployDir = freshDeployDir();
   const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-launch-project-root-"));
   // A scratch HOME -- never this developer's real one, which the default
   // (no VICE_BROKER_HOME) would otherwise resolve to now that --repo-root no
   // longer pins the state directory into the project.
   const machineHome = mkdtempSync(join(tmpdir(), "vice-broker-launch-machine-home-"));
-  const { child } = runBrokerAsync(deployDir, ["--repo-root", projectRoot], {
+  const { child, getStderr } = runBrokerAsync(deployDir, ["--repo-root", projectRoot], {
     VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
     VICE_BROKER_CONTROL_PORT: "0",
     HOME: machineHome,
   });
   try {
-    const expected = join(machineHome, ".c64-re-tools", "supervisor", "broker.json");
-    const appeared = await waitFor(() => existsSync(expected), 5000);
-    assert.ok(appeared, `broker.json must appear under the machine-level root (${expected}), not under --repo-root's project`);
+    const expected = join(machineHome, ".c64-re-tools", "supervisor");
+    const stateDir = await waitForReportedStateDir(getStderr);
+    assert.equal(stateDir, expected, "the state directory must be under the machine-level root, not under --repo-root's project");
     assert.ok(
       !existsSync(join(projectRoot, ".c64-re-tools", "supervisor")),
       "no project's .c64-re-tools/supervisor/ may receive broker state from any start route (BROKER-06)",
@@ -546,14 +343,9 @@ test("no project argument and no state-directory argument starts the broker unde
     VICE_BROKER_HOME: machineHome,
   });
   try {
-    const recordPath = join(machineHome, "supervisor", "broker.json");
-    const appeared = await waitFor(() => existsSync(recordPath), 5000);
-    assert.ok(appeared, `broker.json did not appear under the machine-level root within deadline; stderr so far: ${getStderr()}`);
+    const stateDir = await waitForReportedStateDir(getStderr);
+    assert.equal(stateDir, join(machineHome, "supervisor"), "the state directory must be under the machine-level root");
     assert.doesNotMatch(getStderr(), /usage:/, "starting with no project argument must never print the usage refusal");
-
-    const record: Record<string, unknown> = JSON.parse(readFileSync(recordPath, "utf8"));
-    assert.deepEqual(Object.keys(record).sort(), [...BROKER_JSON_FOURTEEN_KEYS].sort());
-    assert.match(getStderr(), /vice-broker: state directory: /, "the resolved state directory must be reported on stderr (D-13 auditability)");
   } finally {
     await stopBroker(child);
     rmSync(deployDir, { recursive: true, force: true });
@@ -565,19 +357,20 @@ test("no project argument and no state-directory argument starts the broker unde
 //
 // Task 1 (Phase 64, plan 64-10): the whole reason this plan exists. Proves
 // that for each documented start route, a REAL broker process and the
-// client's OWN resolver (a fresh child process importing
-// vice-broker-client.ts) land on the exact same broker.json path, with
-// nothing configured on either side beyond the route's own argv. Every
+// client's OWN resolver (a fresh child process importing broker-home.mts)
+// land on the exact same state directory, with nothing configured on either
+// side beyond the route's own argv. Every
 // spawned broker here runs under a scratch HOME -- never this developer's
 // real one, which the default (no VICE_BROKER_HOME) would otherwise resolve
 // to.
 
-/** Spawns a real broker for one documented route (`argv`/`testEnv`), waits
- * for the CLIENT's own computed path to appear, and optionally asserts a
- * project-local path was never created. `testEnv` is passed identically to
- * both the broker (via runBrokerAsync) and the client child process (via
- * clientBrokerJsonPath) so the two sides answer under the SAME
- * configuration -- the whole point of a route-agreement proof. */
+/** Spawns a real broker for one documented route (`argv`/`testEnv`),
+ * compares the state directory it reports with the CLIENT's own computed
+ * one, and optionally asserts a project-local path was never created.
+ * `testEnv` is passed identically to both the broker (via runBrokerAsync)
+ * and the client child process (via clientBrokerStateDir) so the two sides
+ * answer under the SAME configuration -- the whole point of a
+ * route-agreement proof. */
 async function assertRouteAgreement(
   label: string,
   argv: string[],
@@ -594,12 +387,9 @@ async function assertRouteAgreement(
   };
   const { child, getStderr } = runBrokerAsync(deployDir, argv, testEnv);
   try {
-    const clientPath = await clientBrokerJsonPath(testEnv, homeDir);
-    const appeared = await waitFor(() => existsSync(clientPath), 5000);
-    assert.ok(
-      appeared,
-      `${label}: broker.json did not appear at the client's own resolved path (${clientPath}); stderr so far: ${getStderr()}`,
-    );
+    const clientDir = await clientBrokerStateDir(testEnv);
+    const brokerDir = await waitForReportedStateDir(getStderr);
+    assert.equal(brokerDir, clientDir, `${label}: the broker's state directory must be the client's own resolved one`);
     if (assertProjectUntouched) {
       assert.ok(
         !existsSync(assertProjectUntouched),
@@ -613,11 +403,11 @@ async function assertRouteAgreement(
   }
 }
 
-test("route agreement: no project argument (npx broker / systemd unit / launchd agent) -- broker and client resolve the SAME broker.json under a scratch HOME, no override (G-64-1)", async () => {
+test("route agreement: no project argument (npx broker) -- broker and client resolve the SAME state directory under a scratch HOME, no override (G-64-1)", async () => {
   await assertRouteAgreement("no-argument route", [], {});
 });
 
-test("route agreement: --repo-root <project> (vice-launcher.sh) -- broker and client STILL resolve the SAME machine-level broker.json, and nothing is created under the project (G-64-1)", async () => {
+test("route agreement: --repo-root <project> (vice-launcher.sh) -- broker and client STILL resolve the SAME machine-level state directory, and nothing is created under the project (G-64-1)", async () => {
   const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-launch-project-root-"));
   try {
     await assertRouteAgreement("--repo-root route", ["--repo-root", projectRoot], {}, join(projectRoot, ".c64-re-tools", "supervisor"));
@@ -626,7 +416,7 @@ test("route agreement: --repo-root <project> (vice-launcher.sh) -- broker and cl
   }
 });
 
-test("route agreement, VICE_BROKER_HOME variant: the no-argument route and the client agree on <VICE_BROKER_HOME>/supervisor/broker.json (G-64-1)", async () => {
+test("route agreement, VICE_BROKER_HOME variant: the no-argument route and the client agree on <VICE_BROKER_HOME>/supervisor (G-64-1)", async () => {
   const brokerHome = mkdtempSync(join(tmpdir(), "vice-broker-launch-broker-home-"));
   try {
     await assertRouteAgreement("no-argument route, VICE_BROKER_HOME set", [], { VICE_BROKER_HOME: brokerHome });
@@ -635,7 +425,7 @@ test("route agreement, VICE_BROKER_HOME variant: the no-argument route and the c
   }
 });
 
-test("route agreement, VICE_BROKER_HOME variant: the --repo-root route and the client STILL agree on <VICE_BROKER_HOME>/supervisor/broker.json, and nothing is created under the project (G-64-1)", async () => {
+test("route agreement, VICE_BROKER_HOME variant: the --repo-root route and the client STILL agree on <VICE_BROKER_HOME>/supervisor, and nothing is created under the project (G-64-1)", async () => {
   const brokerHome = mkdtempSync(join(tmpdir(), "vice-broker-launch-broker-home-"));
   const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-launch-project-root-"));
   try {
@@ -764,6 +554,8 @@ const JUSTIFIED_NETWORK_CALLERS: Record<string, string> = {
     "Phase 63, plan 63-01 (SESS-02): this IS the byte-transparent splice -- the one module whose entire purpose is dialling the emulator's binary/text monitor socket (net.connect) and joining it to a relay connection with Socket.prototype.pipe(). This is host-side broker code owning the emulator's lifecycle (the SAME role broker-control.mts's own justification above already covers for its acceptor half); not container-side code reaching the emulator outside mcp__vice__*.",
   "vice-broker.mts":
     "Phase 63, plan 63-01 (SESS-02): a type-only `import type { Socket } from \"node:net\"` for handleRelayAttach()'s own `clientSocket` parameter -- this pattern set matches on the import SPECIFIER textually, not on whether the import is type-only. handleRelayAttach() itself never dials anything (spliceRelay(), in the already-justified broker-relay.mts, is the one call site that does); this file only resolves the emulator host/port and hands the already-accepted socket onward.",
+  "broker-endpoint.mts":
+    "v2.0.0 step 1: the CLIENT side of the fixed broker endpoint (net.connect to 127.0.0.1, then host.docker.internal, on the broker's own control port) -- it dials the broker, never the emulator. It is compiled into resources/ only so skill scripts can load it from node_modules, where Node never strips types; it runs in the caller's process, not the broker's.",
   "broker-transfer.mts":
     "Phase 64, plan 64-01 (D-01/D-02/D-04): a type-only `import type { Socket } from \"node:net\"` for sendPayloadFromFile()'s and receivePayloadToFile()'s own `socket` parameter -- this module never dials a connection or opens a listener itself (no createConnection/createServer call site anywhere in it); it streams an already-established transfer connection's bytes through pipeline(), the same host-side-broker-owns-the-emulator's-lifecycle role broker-relay.mts's own justification above already covers for the relay splice.",
 };

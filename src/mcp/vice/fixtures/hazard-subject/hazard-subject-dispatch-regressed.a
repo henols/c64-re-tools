@@ -10,15 +10,15 @@
 ; copied unchanged from hazard-subject-dispatch.a.
 ;
 ; WHY THIS FILE EXISTS: it is a RED CONTROL for the cross-binary comparison
-; instrument (compare-cross-binary.mjs, plan 50-01). Under the OLD
-; compare.mjs rules a one-bit change to a $Dxxx register would pass twice
+; instrument (compare-cross-binary.ts, plan 50-01). Under the OLD
+; compare.ts rules a one-bit change to a $Dxxx register would pass twice
 ; over -- once under the blanket $D000-$DFFF "volatile" exclusion, and once
 ; again under the one-bit "drift" tolerance even if it were not masked.
 ; Under the narrowed mask this phase committed first, $D020 stays
 ; deliberately visible to the verdict and the one-bit tolerance is gone
 ; entirely for cross-binary comparisons, so this planted regression must
 ; make the comparison FAIL. This file is never assembled on its own -- it
-; is pulled into a synthesized root by make-hazard-subject-fixtures.mjs's
+; is pulled into a synthesized root by make-hazard-subject-fixtures.ts's
 ; third FIXTURES entry, in place of hazard-subject-dispatch.a, the same way
 ; the mis-aligned twin's root substitutes hazard-subject-align.a for
 ; hazard-subject-align-misaligned.a.

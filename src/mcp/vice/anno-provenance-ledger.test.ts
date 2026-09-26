@@ -53,8 +53,7 @@ import {
 // `skill-memory-mapping-cli.test.ts` already establish for a test importing
 // the skill tree. Tests are not in `package.json`'s `files[]`, so the
 // shipped-closure rule is untouched.
-// @ts-expect-error -- diff-images.mjs (a plain skill script, left unmodified) has no .d.mts
-import { renderLedger } from "../../skills/c64-provenance-diff/scripts/diff-images.mjs";
+import { renderLedger } from "../../../skills/c64-provenance-diff/scripts/diff-images.ts";
 
 // ---------------------------------------------------------------------------
 // One temp directory for the whole file, removed in `after()` -- this host's

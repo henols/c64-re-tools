@@ -3,9 +3,8 @@
 //
 // vice_vicii_get_state -- a DERIVED tool (DERIV-05): its answer is computed
 // CLIENT-SIDE from bytes ONE MEM_GET returns, never from a single
-// binary-monitor opcode the way a direct tool's answer is. Registered
-// through withDerivedTool("vice_vicii_get_state", { needsSession: true }, ...)
-// in stock-dispatch.ts (05-07's task), never withStockSession().
+// binary-monitor opcode the way a direct tool's answer is. Listed in
+// stock-tools.ts as a "binary" tool.
 //
 // WHY THIS FILE EXISTS: half of criterion 3 -- "a user can read decoded
 // VIC-II state on the stock backend". The binary monitor has no VIC-II
@@ -55,13 +54,12 @@
 //     never an unrequested resume (Phase 3 D-05). `runState` on the answer
 //     (via stockAnswer()) reports the halt honestly.
 //   - Never build the answer outside stockAnswer() (D-06).
-//   - Never import hostpath.ts or vice-proxy.ts -- this tool takes no path
-//     argument at all, and hostpath-consumers.test.ts gates this file's
-//     absence from the closed host-path consumer set.
+//   - Never import vice-proxy.ts -- this tool takes no path argument at
+//     all.
 //
 // FIELD-NAME PROVENANCE (Assumption A4's mitigation): every bit-field name
 // below was transcribed once from
-// src/skills/c64-memory-mapping/memmap.json's own entries for $D011
+// skills/c64-memory-mapping/memmap.json's own entries for $D011
 // (Screen control register #1 / VIC Control Register), $D012 (raster line),
 // $D016 (Screen control register #2 / VIC Control Register), $D018 (Memory
 // setup register / VIC Memory Control Register), $D019 (Interrupt status

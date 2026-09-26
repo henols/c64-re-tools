@@ -4,29 +4,24 @@
 // vice_sprite_get / vice_sprite_inspect -- DERIVED tools (DERIV-06): the
 // binary monitor has no sprite command at all, so both answers are
 // pointer-chain arithmetic plus bit rendering computed CLIENT-SIDE over
-// MEM_GET reads. Registered through withDerivedTool(..., { needsSession:
-// true }, ...) in stock-dispatch.ts by 05-07 (wave 3) -- THIS PLAN DOES NOT
-// REGISTER EITHER TOOL. No write to stock-dispatch.ts, stock-derived.ts,
-// tools-manifest.stock.json or package.json happens here.
+// MEM_GET reads. Both are listed in stock-tools.ts as "binary" tools.
 //
 // PROVENANCE (required reading before touching the four geometry
 // functions below): vicBank(), vicBankBase(), screenBase() and
 // spriteDataAddress() are PORTED, NOT RE-DERIVED, from
-// src/skills/c64-ram-capture/scripts/dump-artifacts.mjs's own
+// skills/c64-ram-capture/scripts/dump-artifacts.ts's own
 // vicBank()/screenBase()/spriteDataAddresses map, which carries a
 // committed, verified fixture: dd00_raw=193 (0xC1), d018_raw=49 (0x31) ->
 // screen_base=35840. stock-sprites.test.ts re-asserts the SAME fixture as
 // its own cross-check -- do not change any of the four expressions without
 // also updating that committed fixture's provenance. The skill's
-// JavaScript is copied here, never imported at runtime -- src/skills/
+// JavaScript is copied here, never imported at runtime -- skills/
 // is a different package, absent from src/mcp/vice's files[], so a
 // runtime cross-package import would be missing from the published
 // tarball.
 //
 // WHAT NOT TO DO:
-//   - Never import hostpath.ts or vice-proxy.ts -- hostpath-consumers.test.ts
-//     gates this file's absence from the closed host-path consumer set
-//     (D-02). This tool takes no path argument at all.
+//   - Never import vice-proxy.ts. This tool takes no path argument at all.
 //   - Never set sidefx: true on any read. The VIC-II block read includes
 //     $D01E/$D01F, which CLEAR ON READ in hardware -- every read here is
 //     sidefx: false, with no argument anywhere to override it.
@@ -111,7 +106,7 @@ export const SERVED_INSPECT_FORMATS = ["ascii", "binary"];
 export const REFUSED_INSPECT_FORMATS = ["png_base64"];
 
 // ---------------------------------------------------------------------------
-// Geometry helpers -- PORTED VERBATIM from dump-artifacts.mjs. Do not change
+// Geometry helpers -- PORTED VERBATIM from dump-artifacts.ts. Do not change
 // any of these four expressions; they are fixture-verified (see the
 // provenance paragraph above) and re-deriving them from the hardware
 // description a second time is exactly the anti-pattern this plan exists to

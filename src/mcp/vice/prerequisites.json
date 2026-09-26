@@ -11,8 +11,7 @@
       "unblocks": {
         "skills": [
           "c64-program-recon",
-          "c64-ram-capture",
-          "vice-wedge-triage"
+          "c64-ram-capture"
         ],
         "mcp": [
           "c1541.bam",
@@ -280,7 +279,7 @@
             "ecosystem": "generic",
             "text": "Install ACME.",
             "provenance": "carried",
-            "source": "src/skills/acme-build/SKILL.md:254"
+            "source": "skills/acme-build/SKILL.md:254"
           }
         ]
       }
@@ -307,7 +306,7 @@
             "ecosystem": "generic",
             "text": "export ACME=<dir holding cbm/c64/vic.a>.",
             "provenance": "carried",
-            "source": "src/skills/acme-build/SKILL.md:255"
+            "source": "skills/acme-build/SKILL.md:255"
           }
         ]
       }
@@ -383,8 +382,7 @@
           "c64-program-recon",
           "c64-provenance-diff",
           "c64-ram-capture",
-          "routine-queue-walker",
-          "vice-wedge-triage"
+          "routine-queue-walker"
         ],
         "mcp": [
           "acme.build",

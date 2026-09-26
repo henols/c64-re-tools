@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "../../..",
+    "outDir": "entry-out",
+    "allowImportingTsExtensions": false
+  },
+  "include": [
+    "vice-cli.mts"
+  ]
+}

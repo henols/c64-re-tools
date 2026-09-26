@@ -39,7 +39,7 @@
 // `prg-image.ts` and `vsf-slice.ts`'s library region make about themselves.
 //
 // WHY THIS FILE EXISTS, AND WHAT IT IS NOT: the existing
-// `src/skills/c64-ram-capture/scripts/compare.mjs` is a VOCABULARY ANALOG
+// `skills/c64-ram-capture/scripts/compare.ts` is a VOCABULARY ANALOG
 // ONLY. This module is a REPLACEMENT IN KIND for its rules and never an
 // extension of them. Its report vocabulary is kept deliberately -- the
 // `divergence` class, the `pass` verdict field, the `addr`/`a`/`b`/`bits` row
@@ -51,11 +51,11 @@
 //
 // Its two RULES are dropped outright:
 //
-//   * `compare.mjs` excludes four address RANGES covering 4866 addresses
+//   * `compare.ts` excludes four address RANGES covering 4866 addresses
 //     (`$0000-$0001`, `$0100-$01FF`, `$0200-$03FF`, `$D000-$DFFF`). `CAP-02`
 //     requires an ENUMERATED list of addresses, never a range. No range is a
 //     volatile span here, at any address, under any name.
-//   * `compare.mjs` classifies a difference of exactly one bit as "drift" and
+//   * `compare.ts` classifies a difference of exactly one bit as "drift" and
 //     lets it PASS anywhere. There is NO bit-count tolerance here, at any
 //     address, in any form.
 //
@@ -67,7 +67,7 @@
 // and nothing whatever has been proven. A vacuous control is worse than no
 // control, because it is believed.
 //
-// `$D000-$DFFF` IS NOT VOLATILE ON THIS ROUTE. `compare.mjs`'s 4096-address
+// `$D000-$DFFF` IS NOT VOLATILE ON THIS ROUTE. `compare.ts`'s 4096-address
 // exclusion is a property of the memory-READ route, where reading that range
 // samples live I/O registers and two reads can never agree. The `.vsf`
 // `C64MEM` array this predicate compares is `mem_ram[]` -- RAM *under* I/O,
@@ -139,7 +139,7 @@ export class CaptureComparisonError extends Error {
   }
 }
 
-/** Four-digit hex, for an address. One of `compare.mjs`'s four formatting
+/** Four-digit hex, for an address. One of `compare.ts`'s four formatting
  * helpers, copied in kind (see this file's header for why copied, not
  * imported). */
 export const hex4 = (n: number): string => "$" + n.toString(16).toUpperCase().padStart(4, "0");
@@ -188,7 +188,7 @@ export interface TransientAllowList {
   addresses: number[];
 }
 
-/** One differing address, in `compare.mjs`'s row vocabulary. */
+/** One differing address, in `compare.ts`'s row vocabulary. */
 export interface CaptureDifference {
   addr: number;
   a: number;
@@ -210,11 +210,11 @@ export interface CaptureComparison {
    * was taken under rather than leaving a reader to look it up. */
   cap: number;
   allowListSize: number;
-  /** `compare.mjs`'s vocabulary: the divergent rows, in full. */
+  /** `compare.ts`'s vocabulary: the divergent rows, in full. */
   divergence: CaptureDifference[];
   /** The allow-listed rows, in full. */
   allowedDifferences: CaptureDifference[];
-  /** `compare.mjs`'s vocabulary: `true` iff `verdict === "equivalent"`. */
+  /** `compare.ts`'s vocabulary: `true` iff `verdict === "equivalent"`. */
   pass: boolean;
 }
 
@@ -521,11 +521,11 @@ export function compareCaptures(
   };
 }
 
-/** One row, in `compare.mjs`'s exact reporting shape. */
+/** One row, in `compare.ts`'s exact reporting shape. */
 const formatRow = (r: CaptureDifference): string =>
   `  ${hex4(r.addr)}  ${hex2(r.a)} ${bin8(r.a)}  ->  ${hex2(r.b)} ${bin8(r.b)}   ${r.bits} bit${r.bits === 1 ? "" : "s"}`;
 
-/** Render a comparison for a transcript, in `compare.mjs`'s report vocabulary.
+/** Render a comparison for a transcript, in `compare.ts`'s report vocabulary.
  * Returns a string rather than printing: this module writes nothing anywhere,
  * and a caller appending to an evidence file needs the text, not stdout.
  *

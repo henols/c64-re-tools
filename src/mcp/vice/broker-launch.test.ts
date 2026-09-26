@@ -1320,181 +1320,7 @@ test("superviseChild: after a spawn, a file exists inside that instance's logs d
   }
 });
 
-// ===========================================================================
-// 01.6.2-13-PLAN.md, Task 1 (gap closure -- WR-01/D-04): the recycle branch
-// of handleExit() -- a broker-ordered death carrying a TRUE respawnAfterKill
-// answer relaunches on the same port, skipping every crash-accounting step
-// the unexplained-crash path above takes. All four required tests plus the
-// companion invariant test the assumption-delta decision adopted.
-// ===========================================================================
-
-test("superviseChild: a broker-ordered death carrying the respawn-after-kill marker relaunches on the same port, advances the epoch, and reports the recycled outcome", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "supervise-recycle-basic-"));
-  try {
-    const spawnedChildren: ChildProcess[] = [];
-    const outcomes: Array<{ outcome: string; port: number }> = [];
-    const sleepCalls: number[] = [];
-    const deps = makeSuperviseDeps(dir, {
-      sleepMs: async (ms: number) => {
-        sleepCalls.push(ms);
-      },
-      onOutcome: (outcome, port) => outcomes.push({ outcome, port }),
-      spawn: () => {
-        const child = fakeChild();
-        spawnedChildren.push(child);
-        return child;
-      },
-    });
-
-    const record = superviseChild("acquire", 6600, deps, 6650);
-    assert.ok(record, "the initial launch must succeed");
-    assert.equal(record!.epoch, 1, "the first launch records epoch 1");
-
-    // Mark this death as broker-ordered AND wanting a replacement -- BEFORE
-    // the signal, exactly like vice-broker.mts's shared marker-and-intent
-    // setter will do.
-    const before = deps.state.instances.get(6600)!;
-    before.deliberateKill = true;
-    before.respawnAfterKill = true;
-
-    (spawnedChildren[0] as unknown as EventEmitter).emit("exit", null, "SIGTERM");
-    await waitFor(() => (deps.state.instances.get(6600)?.epoch === 2 ? true : null));
-
-    const after = deps.state.instances.get(6600)!;
-    assert.equal(after.epoch, 2, "the epoch must advance by exactly one on recycle");
-    assert.equal(after.port, 6600, "the recycle must relaunch on the SAME port");
-    assert.ok(
-      outcomes.some((o) => o.outcome === "recycled" && o.port === 6600),
-      `expected a "recycled" outcome for port 6600, got: ${JSON.stringify(outcomes)}`,
-    );
-    assert.equal(sleepCalls.length, 0, "a recycle must wait no backoff at all");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("superviseChild: a recycle consumes no crash budget and waits no crash backoff -- more recycles than the give-up threshold still leave the instance present", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "supervise-recycle-budget-"));
-  try {
-    const spawnedChildren: ChildProcess[] = [];
-    const sleepCalls: number[] = [];
-    const deps = makeSuperviseDeps(dir, {
-      maxRestarts: 3,
-      crashWindowMs: 60000,
-      sleepMs: async (ms: number) => {
-        sleepCalls.push(ms);
-      },
-      spawn: () => {
-        const child = fakeChild();
-        spawnedChildren.push(child);
-        return child;
-      },
-    });
-
-    const record = superviseChild("acquire", 6600, deps, 6650);
-    assert.ok(record, "the initial launch must succeed");
-
-    // Recycle more times than maxRestarts(3) -- if a recycle were misread
-    // as a crash, the instance would be given up on well before the fifth
-    // recycle below.
-    for (let i = 0; i < 5; i++) {
-      const current = deps.state.instances.get(6600);
-      assert.ok(current, `instance must still be present before recycle #${i + 1}`);
-      current!.deliberateKill = true;
-      current!.respawnAfterKill = true;
-      const childrenBefore = spawnedChildren.length;
-      (spawnedChildren[spawnedChildren.length - 1] as unknown as EventEmitter).emit("exit", null, "SIGTERM");
-      await waitFor(() => (spawnedChildren.length > childrenBefore ? true : null));
-    }
-
-    assert.ok(deps.state.instances.has(6600), "the instance must still be present after more recycles than the give-up threshold");
-    assert.equal(sleepCalls.length, 0, "no recycle may wait any backoff");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("superviseChild: a recycled instance that was granted comes back granted, never as a ready spare", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "supervise-recycle-granted-"));
-  try {
-    const spawnedChildren: ChildProcess[] = [];
-    const deps = makeSuperviseDeps(dir, {
-      spawn: () => {
-        const child = fakeChild();
-        spawnedChildren.push(child);
-        return child;
-      },
-    });
-
-    const record = superviseChild("acquire", 6600, deps, 6650);
-    assert.ok(record, "the initial launch must succeed");
-
-    // Simulate a grant, exactly like vice-broker.mts's handleAcquire() does
-    // to its own post-launch record.
-    const before = deps.state.instances.get(6600)!;
-    before.state = "granted";
-    before.deliberateKill = true;
-    before.respawnAfterKill = true;
-
-    (spawnedChildren[0] as unknown as EventEmitter).emit("exit", null, "SIGTERM");
-    await waitFor(() => (spawnedChildren.length >= 2 ? true : null));
-
-    const after = deps.state.instances.get(6600)!;
-    assert.equal(after.state, "granted", "a recycled granted instance must come back granted, never launching or ready");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// 01.6.2.1-07-PLAN.md, Task 2 (T-01.6.2.1-28): the recycle branch keeps the
-// matching grant's own recorded pid in sync with the respawned record's pid
-// -- without this, vice-broker.mts's handleRelease() own grant-pid identity
-// check would misfire against a legitimate recycle (the ONE case where the
-// SAME grant continues to own a DIFFERENT pid on the SAME port) and refuse
-// to tear down the very instance the grant now legitimately owns.
-test("superviseChild: a recycle updates the matching grant's own recorded pid to the respawned record's pid, not the pre-recycle pid", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "supervise-recycle-pid-sync-"));
-  try {
-    const spawnedChildren: ChildProcess[] = [];
-    const deps = makeSuperviseDeps(dir, {
-      spawn: () => {
-        const child = fakeChild();
-        spawnedChildren.push(child);
-        return child;
-      },
-    });
-
-    const record = superviseChild("acquire", 6600, deps, 6650);
-    assert.ok(record, "the initial launch must succeed");
-    const preRecyclePid = record!.pid as number;
-
-    // Seed a grant naming the PRE-recycle pid, exactly like
-    // vice-broker.mts's handleAcquire() would have recorded at grant time.
-    deps.state.grants.set("req-recycle-sync", { id: "req-recycle-sync", port: 6600, grantedAt: Date.now(), pid: preRecyclePid, operation: null, sessionLabel: null });
-
-    const before = deps.state.instances.get(6600)!;
-    before.state = "granted";
-    before.deliberateKill = true;
-    before.respawnAfterKill = true;
-
-    (spawnedChildren[0] as unknown as EventEmitter).emit("exit", null, "SIGTERM");
-    // The SAME waitFor(epoch advance) idiom the existing recycle tests
-    // already use.
-    await waitFor(() => (deps.state.instances.get(6600)?.epoch === 2 ? true : null));
-
-    const after = deps.state.instances.get(6600)!;
-    assert.notEqual(after.pid, preRecyclePid, "the respawned record must carry a FRESH pid, distinct from the pre-recycle pid");
-
-    const grant = deps.state.grants.get("req-recycle-sync")!;
-    assert.ok(grant, "the grant must still be present -- a recycle never touches grant bookkeeping beyond its pid field");
-    assert.equal(grant.pid, after.pid, "the grant's own recorded pid must now equal the RESPAWNED record's pid");
-    assert.notEqual(grant.pid, preRecyclePid, "the grant's own recorded pid must no longer equal the pre-recycle pid");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("superviseChild: a broker-ordered death WITHOUT the respawn-after-kill marker drops the instance and never relaunches", async () => {
+test("superviseChild: a broker-ordered death drops the instance and never relaunches", async () => {
   const dir = mkdtempSync(join(tmpdir(), "supervise-final-death-"));
   try {
     const spawnedChildren: ChildProcess[] = [];
@@ -1511,58 +1337,11 @@ test("superviseChild: a broker-ordered death WITHOUT the respawn-after-kill mark
 
     const before = deps.state.instances.get(6600)!;
     before.deliberateKill = true;
-    // respawnAfterKill deliberately left unset -- final death, not a recycle.
 
     (spawnedChildren[0] as unknown as EventEmitter).emit("exit", null, "SIGTERM");
     const gone = await waitFor(() => (deps.state.instances.has(6600) ? null : true));
-    assert.ok(gone, "a broker-ordered death without the respawn-after-kill marker must drop the instance");
+    assert.ok(gone, "a broker-ordered death must drop the instance");
     assert.equal(spawnedChildren.length, 1, "no relaunch may occur for a final death");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// The assumption-delta decision's own companion invariant, adopted so a
-// future re-conflation of the two questions into one boolean goes red rather
-// than landing silently: a replacement follows a broker-ordered death IFF
-// its respawnAfterKill answer says so, asserted for BOTH kinds in one test.
-test("invariant: a replacement follows a broker-ordered death if and only if its respawn-after-kill answer says so, for both kinds", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "supervise-invariant-"));
-  try {
-    // Kind 1: respawnAfterKill true -> a replacement follows.
-    const spawnedA: ChildProcess[] = [];
-    const depsA = makeSuperviseDeps(join(dir, "a"), {
-      spawn: () => {
-        const child = fakeChild();
-        spawnedA.push(child);
-        return child;
-      },
-    });
-    superviseChild("acquire", 6600, depsA, 6650);
-    const recA = depsA.state.instances.get(6600)!;
-    recA.deliberateKill = true;
-    recA.respawnAfterKill = true;
-    (spawnedA[0] as unknown as EventEmitter).emit("exit", null, "SIGTERM");
-    const replaced = await waitFor(() => (spawnedA.length >= 2 ? true : null));
-    assert.ok(replaced, "a true respawn-after-kill answer must produce a replacement");
-    assert.ok(depsA.state.instances.has(6600), "the replacement must be present");
-
-    // Kind 2: respawnAfterKill absent -> no replacement.
-    const spawnedB: ChildProcess[] = [];
-    const depsB = makeSuperviseDeps(join(dir, "b"), {
-      spawn: () => {
-        const child = fakeChild();
-        spawnedB.push(child);
-        return child;
-      },
-    });
-    superviseChild("acquire", 6600, depsB, 6650);
-    const recB = depsB.state.instances.get(6600)!;
-    recB.deliberateKill = true;
-    (spawnedB[0] as unknown as EventEmitter).emit("exit", null, "SIGTERM");
-    const dropped = await waitFor(() => (depsB.state.instances.has(6600) ? null : true));
-    assert.ok(dropped, "an absent respawn-after-kill answer must produce no replacement");
-    assert.equal(spawnedB.length, 1, "no relaunch may occur for the final-death kind");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2167,34 +1946,12 @@ test("CR-02: a crash-respawn keeps the instance's second (-remotemonitor) port, 
   }
 });
 
-test("CR-02: a recycle (deliberate death that wants a replacement) keeps the second port too", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "cr02-recycle-second-port-"));
-  try {
-    const { deps, children, port, remotePort } = bootStockInstanceWithSecondPort(dir);
-    const record = deps.state.instances.get(port)!;
-    record.deliberateKill = true;
-    record.respawnAfterKill = true;
-    children[0]!.emit("exit", 0, "SIGTERM");
-
-    const recycled = await waitFor(() => {
-      const rec = deps.state.instances.get(port);
-      return rec && rec.epoch === 2 ? rec : null;
-    });
-    assert.ok(recycled, "a recycle must produce a replacement instance");
-    assert.equal(recycled!.remoteMonitorPort, remotePort, "CR-02 REGRESSION: a recycled instance lost its second port");
-    assert.ok(recycled!.viceArgs.includes("-remotemonitor"), "a recycled stock instance must still be launched with -remotemonitor");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test("CR-02: a deliberate teardown releases the second port back to the allocator instead of leaking it into blockedPorts", async () => {
   const dir = mkdtempSync(join(tmpdir(), "cr02-teardown-release-"));
   try {
     const { deps, children, port, remotePort } = bootStockInstanceWithSecondPort(dir);
     const record = deps.state.instances.get(port)!;
     record.deliberateKill = true;
-    record.respawnAfterKill = false;
     children[0]!.emit("exit", 0, "SIGTERM");
 
     const gone = await waitFor(() => (deps.state.instances.has(port) ? null : true));

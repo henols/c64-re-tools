@@ -32,9 +32,19 @@ import { promisify } from "node:util";
 const execFileP = promisify(execFile);
 
 import { build } from "./build.ts";
-import { startControlListener, type StartControlListenerResult, type AcquireOutcome, type RecycleOutcome, type StatusInstanceEntry, type HostStateFields, type MonitorClaimOutcome, type MonitorReleaseOutcome } from "./broker-control.mts";
-import { hostToolOverControlPlane, hostToolRequestTimeoutMs } from "./host-tool-client.ts";
-import { brokerJsonPath, CONTROL_CONNECT_TIMEOUT_MS } from "./vice-broker-client.ts";
+import { startControlListener, type StartControlListenerResult, type AcquireOutcome, type StatusInstanceEntry, type HostStateFields, type MonitorClaimOutcome, type MonitorReleaseOutcome } from "./broker-control.mts";
+// The CLIENT side of the endpoint route's cross-seam ordering, imported
+// from its own .mts source.
+import {
+  runHostToolOverEndpoint,
+  hostToolRequestTimeoutMs,
+  walkUploadTree,
+  HOST_TOOL_FILE_INPUT_KEYS,
+  HOST_TOOL_TREE_INPUT_KEYS,
+  HOST_TOOL_OUTPUT_NAME_KEYS,
+  HOST_TOOL_STAGE_LINE_MAX_BYTES,
+} from "./host-tool-endpoint.mts";
+import { DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, type HostToolSession } from "./broker-endpoint.mts";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { dxaSkipReasonFor, assertDxaRequiredIfEnvSet } from "./dxa-gate.ts";
 // FORKRM-01 (plan 52-06): resolvedBackend()'s own environment-variable
@@ -54,7 +64,6 @@ import { dxaSkipReasonFor, assertDxaRequiredIfEnvSet } from "./dxa-gate.ts";
 // non-dotted, broker-minted handle -- imported so this file's own
 // assertions below cannot drift from ghidra-project.mts's one authoritative
 // definition of either path.
-import { ghidraRunsRealRoot, ghidraRunsRoot, ensureGhidraRunsHandle } from "./ghidra-project.mts";
 // 34-10 Task 2 (CR-05): a container-side import into a container-side test
 // file -- legal here, and anno-types.ts names no node:sqlite specifier.
 // Drives the OTHER implementation of the same ancestor-realpath walk for the
@@ -62,21 +71,6 @@ import { ghidraRunsRealRoot, ghidraRunsRoot, ensureGhidraRunsHandle } from "./gh
 import { storePathWithinWorkspace, AnnoStorePathError } from "./anno-types.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-// This file's "END TO END" / "two overlapping ... requests" cases dial a
-// control-plane listener THIS test file itself started moments earlier, on
-// loopback -- so loopback is the only address that can ever be right for
-// them. Without this pin, resolveControlTarget() falls through to
-// mcpHost()'s bridge-alias default, and an ambient devcontainer workspace
-// variable (CONTAINER_WORKSPACE_PATH/HOST_WORKSPACE_PATH, settable from a
-// genuine devcontainer or a developer's own exported shell) makes
-// isInsideContainer() report true, so the client resolves the container-side
-// bridge alias instead of loopback and the case dies in DNS resolution
-// (`getaddrinfo ENOTFOUND host.docker.internal`) before any assertion runs.
-// This is not a CI-only accommodation: the pin is unconditional and was
-// measured green with the workspace variables both set and unset. Mirrors
-// the existing, committed idiom at broker-e2e.test.ts:47.
-process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
 
 // Reach ACME only through the shared seam -- never a second hand-rolled probe.
 const SKIP_REASON: string | false = acmeSkipReasonFor("host-tool.test.ts");
@@ -101,6 +95,16 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
   HOST_TOOL_IDS: readonly string[];
   HOST_TOOL_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
   HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
+  // Phase 65, plan 65-03 (D-03/D-04): the tree/output-name classification
+  // tables -- the SERVER side of the same two-sided census
+  // host-tool-endpoint.mts's own HOST_TOOL_TREE_INPUT_KEYS/
+  // HOST_TOOL_OUTPUT_NAME_KEYS mirror.
+  HOST_TOOL_TREE_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
+  HOST_TOOL_OUTPUT_NAME_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
+  bindStagedInputs: (
+    raw: unknown,
+    lookup: { fileHandle: (handle: string) => string | undefined; treeHandle: (handle: string) => string | undefined },
+  ) => { ok: true; request: { tool: string; args: Record<string, unknown> } } | { ok: false; message: string };
   // 34-09 (CR-04): the server-side per-tool budget table and its resolver.
   HOST_TOOL_TIMEOUT_MS: Readonly<Record<string, number>>;
   hostToolTimeoutMs: (tool: string, override?: number) => number;
@@ -130,7 +134,7 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
     // own doc comment) -- threaded into the HostToolLocator runHostTool()
     // builds internally, so a case can point resolution at a scratch
     // prerequisites.json (DECL-03 non-vacuity) without a mocking library.
-    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; here?: string },
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; here?: string; projectRoot?: string; ghidraProjectsRoot?: string; outputDir?: string; clearDeclaredOutputs?: boolean; trackChild?: (child: import("node:child_process").ChildProcess) => void },
   ) => Promise<
     | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
     | { ok: false; message: string }
@@ -138,9 +142,11 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
 };
 const {
   normaliseHostToolRequest,
+  bindStagedInputs,
+  HOST_TOOL_TREE_ARG_KEYS,
+  HOST_TOOL_OUTPUT_NAME_ARG_KEYS,
   resolveWorkspacePath,
   buildHostToolArgv,
-  runHostTool,
   HOST_TOOL_IDS,
   HOST_TOOL_ARG_KEYS,
   HOST_TOOL_PATH_ARG_KEYS,
@@ -150,9 +156,16 @@ const {
   HOST_TOOL_OUTPUT_CLASSIFIERS,
 } = hostTool;
 
+/** runHostTool() with a Ghidra projects root under the case's own temp
+ * `repoRoot` by default -- the broker sets one in production, and every
+ * ghidra.analyze case here needs one. A case that is about the root itself
+ * passes its own, or calls hostTool.runHostTool directly. */
+const runHostTool: typeof hostTool.runHostTool = (raw, deps) =>
+  hostTool.runHostTool(raw, { ghidraProjectsRoot: join(deps.repoRoot, "ghidra-projects"), ...deps });
+
 /** 34-08 (CR-01): a SEPARATELY-typed alias to the SAME runtime function --
  * oracle.probe/oracle.run's response shapes (`{ available, command, version,
- * reason }` / `{ ok, stdout, reason }`, mirroring packer-finding.mjs's own
+ * reason }` / `{ ok, stdout, reason }`, mirroring packer-finding.ts's own
  * pre-existing contracts) are deliberately NOT folded into `runHostTool`'s
  * shared return type above: that type's generic `tool: string` envelope
  * member would then satisfy every oracle-shaped narrowing check too (a wide
@@ -884,17 +897,6 @@ test("runHostTool: a real symlink planted inside the workspace, pointing outside
   });
 });
 
-test("runHostTool: the same planted link used as acme.build's outDir is REFUSED, and the outside directory is still empty afterwards -- write key, the reproduced defect was a file created OUTSIDE the workspace root", async () => {
-  await withSymlinkFixture(async (ws, outside) => {
-    writeFileSync(join(ws, "a.a"), "; test source\n", "utf8");
-    symlinkSync(outside, join(ws, "escape"), "dir");
-    const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", outDir: "escape" } }, { repoRoot: ws });
-    assert.equal(response.ok, false);
-    if (!response.ok) assert.match(response.message, /escapes the workspace root/);
-    assert.deepEqual(readdirSync(outside), [], "the assertion that carries the finding: outside must still be EMPTY, not merely errored");
-  });
-});
-
 test("runHostTool: a symlink pointing INSIDE the workspace is FOLLOWED -- the request is accepted and the spawned include is the link's REAL location, not the path as written through the link (discriminating case)", async () => {
   await withSymlinkFixture(async (ws, outside) => {
     void outside;
@@ -976,17 +978,6 @@ test("resolveWorkspacePath: a candidate several levels below the deepest existin
     const deep = resolveWorkspacePath(ws, "build/out/deep/a.prg");
     assert.equal(deep.ok, true);
     if (deep.ok) assert.equal(deep.path, join(ws, "build", "out", "deep", "a.prg"));
-  });
-});
-
-test("runHostTool: an acme.build request whose outDir names an uncreated in-workspace directory is still accepted end to end", async () => {
-  await withSymlinkFixture(async (ws) => {
-    writeFileSync(join(ws, "a.a"), "; test source\n", "utf8");
-    const fakeAcme = writeFakeAcme(ws, "zerobyte");
-    await withFakeAcme(fakeAcme, async () => {
-      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", outDir: "not/yet/created" } }, { repoRoot: ws });
-      assert.equal(response.ok, true);
-    });
   });
 });
 
@@ -1118,29 +1109,6 @@ test("resolveWorkspacePath and anno-types.ts's storePathWithinWorkspace() agree:
     }
   });
 });
-
-test(
-  "END TO END: an acme.build request whose includes escapes the workspace root is refused at the container-side caller with ok: false, over the real control-plane route, with all seven VICE callbacks provably uncalled -- no skip option, since nothing is ever spawned",
-  async () => {
-    await withTempDir(async (dir) => {
-      writeFileSync(join(dir, "a.a"), "!cpu 6510\n* = $0801\nlda #$01\nsta $d020\nrts\n", "utf8");
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      try {
-        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-        try {
-          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-          const response = await hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", includes: ["../outside"] });
-          assert.equal(response.ok, false);
-          assertAllSpiesEmpty(spies);
-        } finally {
-          rmSync(stateDir, { recursive: true, force: true });
-        }
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
 
 // ---------------------------------------------------------------------------
 // runHostTool -- exit status, zero-byte digest, byte-vs-character length
@@ -2045,139 +2013,6 @@ test("Plan 60-07 Test 6 (the memo is unchanged): within one module instance, a s
 });
 
 // ---------------------------------------------------------------------------
-// End-to-end: a real control-plane round trip, all seven VICE callbacks
-// provably uncalled (SEAM-01). Skipped with a named reason when ACME is
-// absent; hard-fails under VICE_REQUIRE_ACME via the always-runs gate above.
-// ---------------------------------------------------------------------------
-
-interface CallbackSpies {
-  onAcquire: unknown[];
-  onRelease: unknown[];
-  onRecycle: unknown[];
-  onStatus: unknown[];
-  onHostState: unknown[];
-  onMonitorClaim: unknown[];
-  onMonitorRelease: unknown[];
-}
-
-async function startListenerWithSpies(repoRootForHostTool: string): Promise<{ listener: StartControlListenerResult; token: string; spies: CallbackSpies }> {
-  const spies: CallbackSpies = { onAcquire: [], onRelease: [], onRecycle: [], onStatus: [], onHostState: [], onMonitorClaim: [], onMonitorRelease: [] };
-  const token = "host-tool-test-token";
-  const listener = await startControlListener({
-    host: "127.0.0.1",
-    port: 0,
-    token,
-    onAcquire: async (): Promise<AcquireOutcome> => {
-      spies.onAcquire.push(true);
-      return { ok: false, reason: "internal" };
-    },
-    onRelease: (): void => {
-      spies.onRelease.push(true);
-    },
-    onRecycle: async (): Promise<RecycleOutcome> => {
-      spies.onRecycle.push(true);
-      return { port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "grant_lookup_failed", reason: "spy" };
-    },
-    onStatus: (): StatusInstanceEntry[] => {
-      spies.onStatus.push(true);
-      return [];
-    },
-    onHostState: (): HostStateFields => {
-      spies.onHostState.push(true);
-      return { pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", maxInstances: 1, basePort: 6600, backend: "stock" };
-    },
-    onMonitorClaim: (): MonitorClaimOutcome => {
-      spies.onMonitorClaim.push(true);
-      return { ok: false, code: "internal" };
-    },
-    onMonitorRelease: (): MonitorReleaseOutcome => {
-      spies.onMonitorRelease.push(true);
-      return { ok: false, code: "internal" };
-    },
-    // Phase 63, plan 63-01: a required field on StartControlListenerOptions
-    // as of this plan -- NOT one of this file's own tracked "seven VICE
-    // callbacks" (no host_tool request can ever reach `attach`, so it is
-    // never spied on here; broker-relay.test.ts is the home for `attach`
-    // coverage).
-    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
-    onOperation: () => ({ ok: true as const }),
-    onHostTool: (raw: unknown) => runHostTool(raw, { repoRoot: repoRootForHostTool }),
-  });
-  return { listener, token, spies };
-}
-
-function assertAllSpiesEmpty(spies: CallbackSpies): void {
-  for (const [name, calls] of Object.entries(spies)) {
-    assert.equal(calls.length, 0, `${name} must never be called by a host_tool request -- it recorded ${calls.length} call(s)`);
-  }
-}
-
-test(
-  "END TO END: a real control-plane round trip assembles a real source file with real ACME and returns a response whose sha256 matches an independent digest of the produced .prg, with all seven VICE callbacks provably uncalled",
-  { skip: SKIP_REASON },
-  async () => {
-    await withTempDir(async (dir) => {
-      writeFileSync(join(dir, "a.a"), "!cpu 6510\n* = $0801\nlda #$01\nsta $d020\nrts\n", "utf8");
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      try {
-        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-        try {
-          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-          const response = await hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", noReport: true });
-          assert.equal(response.ok, true);
-          if (!response.ok) return;
-          assert.equal(response.results.length, 1);
-          const producedBytes = statSync(response.results[0].path);
-          assert.ok(producedBytes.size > 0);
-          const independentSha256 = createHash("sha256")
-            .update(readFileSync(response.results[0].path))
-            .digest("hex");
-          assert.equal(response.results[0].sha256, independentSha256);
-          assertAllSpiesEmpty(spies);
-        } finally {
-          rmSync(stateDir, { recursive: true, force: true });
-        }
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
-
-test(
-  "two overlapping host_tool requests on the same listener both resolve, write to distinct output paths, and leave all seven VICE-callback spies at zero calls",
-  { skip: SKIP_REASON },
-  async () => {
-    await withTempDir(async (dir) => {
-      writeFileSync(join(dir, "a.a"), "!cpu 6510\n* = $0801\nlda #$01\nsta $d020\nrts\n", "utf8");
-      writeFileSync(join(dir, "b.a"), "!cpu 6510\n* = $0801\nlda #$02\nsta $d021\nrts\n", "utf8");
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      try {
-        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-        try {
-          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-          const [responseA, responseB] = await Promise.all([
-            hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", noReport: true }),
-            hostToolOverControlPlane(stateDir, "acme.build", { source: "b.a", noReport: true }),
-          ]);
-          assert.equal(responseA.ok, true);
-          assert.equal(responseB.ok, true);
-          if (!responseA.ok || !responseB.ok) return;
-          assert.equal(responseA.results.length, 1);
-          assert.equal(responseB.results.length, 1);
-          assert.notEqual(responseA.results[0].path, responseB.results[0].path);
-          assertAllSpiesEmpty(spies);
-        } finally {
-          rmSync(stateDir, { recursive: true, force: true });
-        }
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
-
-// ---------------------------------------------------------------------------
 // ghidra.analyze -- the second HOST_TOOL_IDS entry (SEAM-04, plan 34-03).
 // Reaches the dot-segment rule and the per-run project location through
 // ghidra-project.mjs, never a copy in host-tool.mts itself.
@@ -2204,7 +2039,7 @@ test(
  * declared" refusal. */
 const FAKE_GHIDRA_HOME_LANGUAGE_ID = "6502:LE:16:default";
 
-async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T, opts: { sleepSeconds?: number } = {}): Promise<T> {
+async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T, opts: { sleepSeconds?: number; forkGrandchild?: boolean } = {}): Promise<T> {
   const previous = process.env.GHIDRA_HOME;
   return withTempDir(async (dir) => {
     const supportDir = join(dir, "support");
@@ -2233,7 +2068,13 @@ async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T,
     // and the sleeping process the SAME pid, so SIGKILL actually terminates
     // the sleep promptly (observed live while writing the kill-on-expiry
     // case below -- the naive `sleep N; exit 0` form measured a ~6s "kill").
-    const launcherBody = opts.sleepSeconds ? `#!/bin/sh\nexec sleep ${opts.sleepSeconds}\n` : "#!/bin/sh\nexit 0\n";
+    // `forkGrandchild` does fork, the way the real analyzeHeadless starts a
+    // JVM: the tool must be stopped as a whole process group.
+    const launcherBody = opts.forkGrandchild
+      ? `#!/bin/sh\nsleep 600 &\necho $! > "${join(dir, "grandchild.pid")}"\nwait\n`
+      : opts.sleepSeconds
+        ? `#!/bin/sh\nexec sleep ${opts.sleepSeconds}\n`
+        : "#!/bin/sh\nexit 0\n";
     writeFileSync(join(supportDir, "analyzeHeadless"), launcherBody, "utf8");
     chmodSync(join(supportDir, "analyzeHeadless"), 0o755);
     process.env.GHIDRA_HOME = dir;
@@ -2361,7 +2202,7 @@ test("Plan 60-03 Task 2 Test 3b: ghidra.installExtension's own runHostTool() pre
     delete process.env.GHIDRA_HOME;
     try {
       const response = await runHostTool(
-        { tool: "ghidra.installExtension", args: { sourceDir: "src/mcp/vice/vendor/ghidra-ext", moduleName: "t2-mod-3b" } },
+        { tool: "ghidra.installExtension", args: { moduleName: "t2-mod-3b" } },
         { repoRoot: realRepoRoot, here: declDir },
       );
       assert.equal(response.ok, false);
@@ -2386,7 +2227,7 @@ test("Plan 60-03 Task 2 Test 3c: ghidra.installExtension's own buildHostToolArgv
     delete process.env.GHIDRA_HOME;
     try {
       const built = buildHostToolArgv(
-        { tool: "ghidra.installExtension", args: { sourceDir: "src/mcp/vice/vendor/ghidra-ext", moduleName: "t2-mod-3c" } },
+        { tool: "ghidra.installExtension", args: { moduleName: "t2-mod-3c" } },
         { sourceDirPath: join(dir, "vendored-ghidra-ext"), moduleName: "t2-mod-3c" },
         undefined,
         { toolsDir: join(dir, ".c64-re-tools"), projectRoot: dir, here: declDir },
@@ -2519,7 +2360,7 @@ test("Plan 60-03 Task 2 Test 6: ghidra's resolution returns the installation dir
     writeToolsJson(dir, { ghidra: ghidraDir });
     const built = buildHostToolArgv(
       { tool: "ghidra.analyze", args: { runId: "t2-r6", importPath: "x.bin", processor: FAKE_GHIDRA_HOME_LANGUAGE_ID, loaderBaseAddr: "0x0" } },
-      { importPath: "/repo/x.bin", projectLocation: "/repo/proj", projectName: "t2-r6" },
+      { importPath: "/repo/x.bin", projectLocation: "/repo/proj", projectName: "t2-r6", runLogDir: "/repo/out" },
       undefined,
       { toolsDir: join(dir, ".c64-re-tools"), projectRoot: dir },
     );
@@ -2591,11 +2432,11 @@ test("runHostTool: ghidra.analyze with GHIDRA_HOME unset is refused by name, nev
 test("buildHostToolArgv: a well-formed ghidra.analyze request produces an argv whose first two elements are the project location and project name and which contains -deleteProject", async () => {
   await withFakeGhidraHome(async () => {
     const request = { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", loaderBaseAddr: "0x0" } };
-    const resolved = { importPath: "/repo/c64-re-tools/runs/ghidra/r1/x.bin", projectLocation: "/repo/c64-re-tools/runs/ghidra/r1", projectName: "r1" };
+    const resolved = { importPath: "/repo/x.bin", projectLocation: "/ghidra-projects/r1-abc123", projectName: "r1", runLogDir: "/repo/out" };
     const built = buildHostToolArgv(request, resolved);
     assert.equal(built.ok, true);
     if (!built.ok) return;
-    assert.equal(built.argv[0], "/repo/c64-re-tools/runs/ghidra/r1");
+    assert.equal(built.argv[0], "/ghidra-projects/r1-abc123");
     assert.equal(built.argv[1], "r1");
     assert.ok(built.argv.includes("-deleteProject"));
     assert.ok(built.toolPath.endsWith(join("support", "analyzeHeadless")));
@@ -2609,43 +2450,6 @@ test("buildHostToolArgv: a well-formed ghidra.analyze request produces an argv w
 // kill-on-expiry backstop that proves raising the budget never removed the
 // bound.
 // ---------------------------------------------------------------------------
-
-test(
-  "END TO END (slow): a ghidra.analyze request whose fake launcher sleeps longer than the connect-timeout constant resolves ok:true over the real control-plane route, with all seven VICE callbacks provably uncalled",
-  async () => {
-    await withTempDir(async (dir) => {
-      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      try {
-        await withFakeGhidraHome(
-          async () => {
-            const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-            try {
-              writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-              const startedAt = Date.now();
-              const response = await hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: "slow-e2e-run", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" });
-              const elapsedMs = Date.now() - startedAt;
-              assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
-              // The exact round trip that could not complete before this
-              // plan: the fake launcher sleeps 6s, comfortably longer than
-              // CONTROL_CONNECT_TIMEOUT_MS (5000ms) -- a measured elapsed
-              // time above that constant is proof the connect timer was
-              // cleared and replaced by the larger request-deadline timer,
-              // not merely reasoned about.
-              assert.ok(elapsedMs > CONTROL_CONNECT_TIMEOUT_MS, `expected elapsed (${elapsedMs}ms) to exceed the connect-timeout constant (${CONTROL_CONNECT_TIMEOUT_MS}ms)`);
-              assertAllSpiesEmpty(spies);
-            } finally {
-              rmSync(stateDir, { recursive: true, force: true });
-            }
-          },
-          { sleepSeconds: 6 },
-        );
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
 
 test("runHostTool: a slow ghidra.analyze launcher killed on expiry names the small budget it was given, and returns well under the launcher's own sleep", async () => {
   await withFakeGhidraHome(
@@ -2667,37 +2471,41 @@ test("runHostTool: a slow ghidra.analyze launcher killed on expiry names the sma
   );
 });
 
-test("hostToolOverControlPlane rejects with a connect-phase message naming the connect-timeout constant when nothing accepts the connection within it", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "host-tool-connect-timeout-"));
-  // 10.255.255.1 is a private-range address with no route configured in
-  // this sandbox -- the TCP handshake never completes and never errors, so
-  // the connect TIMER (not the socket "error" handler) is what settles this
-  // promise. Empirically confirmed to hang (not fail fast) in this
-  // environment before this test was written.
-  const previousDialHost = process.env.VICE_BROKER_CONTROL_DIAL_HOST;
-  process.env.VICE_BROKER_CONTROL_DIAL_HOST = "10.255.255.1";
-  try {
-    writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "10.255.255.1", control_port: 65000, control_token: "unused" }));
-    const startedAt = Date.now();
-    await assert.rejects(hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", noReport: true }), (err: unknown) => {
-      assert.ok(err instanceof Error);
-      assert.match(err.message, /connect phase/);
-      assert.match(err.message, new RegExp(String(CONTROL_CONNECT_TIMEOUT_MS)));
-      return true;
-    });
-    const elapsedMs = Date.now() - startedAt;
-    assert.ok(elapsedMs >= CONTROL_CONNECT_TIMEOUT_MS, `expected at least ${CONTROL_CONNECT_TIMEOUT_MS}ms, took ${elapsedMs}ms`);
-  } finally {
-    if (previousDialHost === undefined) delete process.env.VICE_BROKER_CONTROL_DIAL_HOST;
-    else process.env.VICE_BROKER_CONTROL_DIAL_HOST = previousDialHost;
-    rmSync(stateDir, { recursive: true, force: true });
-  }
-});
-
-test("host-tool-client.ts's connect-phase and request-deadline rejection messages are textually distinct, each naming its own budget", () => {
-  const source = readFileSync(new URL("./host-tool-client.ts", import.meta.url), "utf8");
-  assert.match(source, /no connection within \$\{CONTROL_CONNECT_TIMEOUT_MS\}ms \(connect phase\)/);
-  assert.match(source, /no response within \$\{requestTimeoutMs\}ms \(request deadline\)/);
+test("runHostTool: a tool that forks is stopped as a whole process group on expiry -- its grandchild does not survive, and the tool was handed to trackChild", async () => {
+  await withFakeGhidraHome(
+    async (ghidraHome) => {
+      await withTempDir(async (dir) => {
+        writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+        const tracked: number[] = [];
+        const startedAt = Date.now();
+        const response = await runHostTool(
+          { tool: "ghidra.analyze", args: { runId: "group-kill-run", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
+          { repoRoot: dir, timeoutMs: 500, trackChild: (child) => tracked.push(child.pid ?? -1) },
+        );
+        const elapsedMs = Date.now() - startedAt;
+        assert.equal(response.ok, false);
+        assert.ok(elapsedMs < 3000, `the killed group must release the tool's pipes promptly; took ${elapsedMs}ms`);
+        assert.equal(tracked.length, 1, "the spawned tool must be handed to trackChild exactly once");
+        const grandchild = Number(readFileSync(join(ghidraHome, "grandchild.pid"), "utf8").trim());
+        assert.ok(grandchild > 0);
+        // Killed, it may linger a moment as a zombie until it is reaped.
+        const isAlive = (): boolean => {
+          try {
+            process.kill(grandchild, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        };
+        const deadline = Date.now() + 3000;
+        while (isAlive() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+        const alive = isAlive();
+        if (alive) process.kill(grandchild, "SIGKILL");
+        assert.equal(alive, false, `the tool's grandchild (pid ${grandchild}) must be dead after the tool is killed`);
+      });
+    },
+    { forkGrandchild: true },
+  );
 });
 
 test("hostToolRequestTimeoutMs: every tool id's client request deadline is a positive finite number", () => {
@@ -2720,9 +2528,10 @@ test("buildHostToolArgv: ghidra.analyze reads preScript/postScript from resolved
       args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", loaderBaseAddr: "0x0", preScript: "wire-pre.java", postScript: "wire-post.java" },
     };
     const resolved = {
-      importPath: "/repo/c64-re-tools/runs/ghidra/r1/x.bin",
-      projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
+      importPath: "/repo/x.bin",
+      projectLocation: "/ghidra-projects/r1-abc123",
       projectName: "r1",
+      runLogDir: "/repo/out",
       preScriptPath: "/repo/some/resolved-pre.java",
       postScriptPath: "/repo/some/resolved-post.java",
     };
@@ -2969,8 +2778,8 @@ test("HOST_TOOL_ARG_KEYS/HOST_TOOL_PATH_ARG_KEYS: ghidra.analyze and ghidra.inst
     [...HOST_TOOL_PATH_ARG_KEYS["ghidra.analyze"]].sort(),
     ["dataRangesPath", "entrypointsPath", "exportPath", "importPath", "postScript", "preScript", "scriptPath"].sort(),
   );
-  assert.deepEqual([...HOST_TOOL_ARG_KEYS["ghidra.installExtension"]].sort(), ["moduleName", "sourceDir"].sort());
-  assert.deepEqual([...HOST_TOOL_PATH_ARG_KEYS["ghidra.installExtension"]].sort(), ["sourceDir"]);
+  assert.deepEqual([...HOST_TOOL_ARG_KEYS["ghidra.installExtension"]].sort(), ["moduleName"]);
+  assert.deepEqual([...HOST_TOOL_PATH_ARG_KEYS["ghidra.installExtension"]].sort(), []);
 });
 
 test("runHostTool: a scriptPath/entrypointsPath/exportPath reaching outside the workspace root through a symlink is refused, naming the resolved path and the root", async () => {
@@ -3068,7 +2877,7 @@ test("runHostTool: a full ghidra.analyze invocation reports results[0] naming a 
   });
 });
 
-test("runHostTool: ghidra.analyze running twice with the SAME runId refuses the second time; two different run ids on the same image succeed both times and produce two distinct run-log paths", async () => {
+test("runHostTool: ghidra.analyze running twice with the SAME runId succeeds both times (each run gets its own project directory); two different run ids produce two distinct run-log paths", async () => {
   await withFakeGhidraHome(async () => {
     await withTempDir(async (dir) => {
       writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
@@ -3081,7 +2890,7 @@ test("runHostTool: ghidra.analyze running twice with the SAME runId refuses the 
         { tool: "ghidra.analyze", args: { runId: "idem-run", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
         { repoRoot: dir },
       );
-      assert.equal(second.ok, false, "the SAME run id must be refused the second time");
+      assert.equal(second.ok, true, "the SAME run id must run again -- each run gets its own project directory, so there is nothing to collide with");
 
       const thirdA = await runHostTool(
         { tool: "ghidra.analyze", args: { runId: "idem-run-a", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
@@ -3303,29 +3112,6 @@ test("runHostTool: oracle.run resolves { ok: false } rather than throwing when t
   });
 });
 
-test(
-  'END TO END: an oracle.probe request carrying the retired "command" key is refused at the container-side caller with ok: false naming the key, over the real control-plane route, with all seven VICE callbacks provably uncalled',
-  async () => {
-    await withTempDir(async (dir) => {
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      try {
-        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-        try {
-          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-          const response = await hostToolOverControlPlane(stateDir, "oracle.probe", { command: "/usr/local/bin/unp64" });
-          assert.equal(response.ok, false);
-          if (!response.ok) assert.match(response.message, /command/);
-          assertAllSpiesEmpty(spies);
-        } finally {
-          rmSync(stateDir, { recursive: true, force: true });
-        }
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
-
 // ---------------------------------------------------------------------------
 // HOST_TOOL_PATH_ARG_KEYS -- the census that makes "no argv passthrough
 // anywhere" a mechanism rather than three point fixes (34-08, Task 3).
@@ -3389,7 +3175,7 @@ const HOST_TOOL_MINIMAL_VALID_ARGS: Readonly<Record<string, () => Record<string,
   "oracle.probe": () => ({}),
   "oracle.run": () => ({ source: "a.bin" }),
   "dxa.disassemble": () => ({ image: "x.prg", imageKind: "prg" }),
-  "ghidra.installExtension": () => ({ sourceDir: "ghidra-ext", moduleName: "census-module" }),
+  "ghidra.installExtension": () => ({ moduleName: "census-module" }),
   "c1541.bam": () => ({ image: "x.d64" }),
   "c1541.dir": () => ({ image: "x.d64" }),
   "c1541.entry": () => ({ image: "x.d64", name: "basicstub" }),
@@ -3446,7 +3232,10 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key is a member of that tool'
   // each declare two path-bearing keys (image, outDir) -- 17 + 10 = 27.
   // Phase 40, plan 40-03 raised it from 27 to 29: petcat.decode declares the
   // same two path-bearing keys (image, outDir) -- 27 + 2 = 29.
-  assert.equal(totalDeclared, 29, "the declared path-key total across all tools must be 29 -- a different count means a key was added or dropped without updating this census");
+  // v2.0.0 step 1 lowered it from 29 to 20: outDir left acme.build,
+  // dxa.disassemble, the five c1541.* ids and petcat.decode (8), and
+  // sourceDir left ghidra.installExtension (1).
+  assert.equal(totalDeclared, 20, "the declared path-key total across all tools must be 20 -- a different count means a key was added or dropped without updating this census");
 });
 
 test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value and an absolute value, with the executed-assertion count equal to twice the declared total (non-vacuity)", async () => {
@@ -3482,8 +3271,9 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value
       // (ghidra.analyze's one new path key, dataRangesPath). Phase 40,
       // plan 40-02 raised it from 17 to 27 (the five c1541.* ids' own
       // image/outDir pairs). Phase 40, plan 40-03 raised it from 27 to 29
-      // (petcat.decode's own image/outDir pair).
-      assert.equal(totalDeclared, 29, "sanity: the declared path-key total must still be 29");
+      // (petcat.decode's own image/outDir pair). v2.0.0 step 1 lowered it
+      // from 29 to 20 (outDir and sourceDir removed).
+      assert.equal(totalDeclared, 20, "sanity: the declared path-key total must still be 20");
       assert.equal(executed, totalDeclared * 2, "the executed-assertion count must equal twice the declared total (one escaping + one absolute check per key)");
     });
   } finally {
@@ -3575,7 +3365,7 @@ test("HOST_TOOL_TIMEOUT_MS: every HOST_TOOL_IDS member has a server-side table e
   }
 });
 
-test("cross-seam ordering: for every HOST_TOOL_IDS member, the client-side request deadline (host-tool-client.ts) is strictly greater than the server-side budget (host-tool.mts)", () => {
+test("cross-seam ordering: for every HOST_TOOL_IDS member, the client-side request deadline (host-tool-endpoint.mts) is strictly greater than the server-side budget (host-tool.mts)", () => {
   for (const tool of HOST_TOOL_IDS) {
     const serverBudget = HOST_TOOL_TIMEOUT_MS[tool];
     const clientDeadline = hostToolRequestTimeoutMs(tool);
@@ -3586,98 +3376,12 @@ test("cross-seam ordering: for every HOST_TOOL_IDS member, the client-side reque
   }
 });
 
-test(
-  "two overlapping slow ghidra.analyze host_tool requests over the real control-plane route both resolve ok:true, reserve distinct project locations, and the pair completes in appreciably less than the sum of the two sleeps",
-  async () => {
-    await withTempDir(async (dir) => {
-      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      const sleepSeconds = 3;
-      try {
-        await withFakeGhidraHome(
-          async () => {
-            const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-            try {
-              writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-              const runIdA = "overlap-run-a";
-              const runIdB = "overlap-run-b";
-              const startedAt = Date.now();
-              const [responseA, responseB] = await Promise.all([
-                hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: runIdA, importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" }),
-                hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: runIdB, importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" }),
-              ]);
-              const elapsedMs = Date.now() - startedAt;
-              assert.equal(responseA.ok, true, responseA.ok ? "" : (responseA as { ok: false; message: string }).message);
-              assert.equal(responseB.ok, true, responseB.ok ? "" : (responseB as { ok: false; message: string }).message);
-              // resolveGhidraProject() reserves the run directory as the
-              // LAST step of a successful resolution (ghidra-project.mts) --
-              // its presence on disk is the observable proof the two runs
-              // used distinct project locations, since the response itself
-              // carries no project-location field for ghidra.analyze.
-              assert.ok(statSync(join(ghidraRunsRealRoot(dir), runIdA)).isDirectory());
-              assert.ok(statSync(join(ghidraRunsRealRoot(dir), runIdB)).isDirectory());
-              // Gap G-40-1 (plan 40-09): the SAME directory must also be
-              // reachable through the non-dotted, broker-minted HANDLE --
-              // the path Ghidra was actually handed (ghidraRunsRoot()), not
-              // merely where the bytes physically live. Either assertion
-              // alone permits a regression the other catches: a handle
-              // pointed at the wrong target would still show the physical
-              // directory as present, and a physical-location mistake could
-              // still leave the handle-reachable path looking fine.
-              assert.ok(statSync(join(ghidraRunsRoot(dir), runIdA)).isDirectory());
-              assert.ok(statSync(join(ghidraRunsRoot(dir), runIdB)).isDirectory());
-              assert.ok(
-                elapsedMs < sleepSeconds * 2 * 1000,
-                `expected the overlapping pair to finish well under the summed sleeps (${sleepSeconds * 2}s); took ${elapsedMs}ms`,
-              );
-              assertAllSpiesEmpty(spies);
-            } finally {
-              rmSync(stateDir, { recursive: true, force: true });
-            }
-          },
-          { sleepSeconds },
-        );
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
-
 // ---------------------------------------------------------------------------
-// Gap G-40-1 (plan 40-09): the handle-only invariant. debug/ghidra-run-dir-
-// outside-one-root.md's own Evidence (2026-09-08T00:27:00Z) states it
-// precisely: resolveWorkspacePath() REALPATHS its result (deliberate
-// decision A-16), so a caller-supplied path field routed through the
-// broker-minted handle would silently collapse back to the dotted real
-// path Ghidra refuses. The handle is therefore usable ONLY for the two
-// paths that are never realpath'd -- the computed project location and
-// its sibling run log. Four cases below guard this from four angles: the
-// mechanism (behavioural, non-vacuous), the surface (the typed key set),
-// the structure (a predicate over the source), and a planted-violation
-// control proving that structural predicate is not vacuous.
+// ghidra.analyze's wire surface: every path a request may name is a
+// caller-supplied input or output name, never the project location.
 // ---------------------------------------------------------------------------
 
-test("resolveWorkspacePath() REALPATHS a path routed through the Ghidra runs handle straight back to the dotted root -- the measured mechanism the handle-only invariant exists to guard (gap G-40-1, plan 40-09)", async () => {
-  await withTempDir(async (dir) => {
-    const handleResult = ensureGhidraRunsHandle(dir);
-    assert.equal(handleResult.ok, true, handleResult.ok ? "" : (handleResult as { ok: false; message: string }).message);
-
-    const resolved = hostTool.resolveWorkspacePath(dir, join("c64-re-tools", "runs", "ghidra"));
-    assert.equal(resolved.ok, true, resolved.ok ? "" : (resolved as { ok: false; message: string }).message);
-    if (!resolved.ok) return;
-
-    const dottedRoot = join(dir, ".c64-re-tools", "runs", "ghidra");
-    assert.equal(
-      resolved.path,
-      dottedRoot,
-      `resolveWorkspacePath() must realpath a handle-traversing relative path back to the dotted root (${dottedRoot}); got ${resolved.path} -- if this now returns the non-dotted handle path instead, resolveWorkspacePath() stopped realpathing and the handle-only invariant this file guards is no longer true`,
-    );
-    assert.ok(!resolved.path.includes(`${sep}c64-re-tools${sep}`), `the realpathed result must not carry the non-dotted handle segment anywhere; got ${resolved.path}`);
-  });
-});
-
-test("HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] names exactly the seven caller-supplied path fields, and none of the project-location/name/runs-root/run-id names the handle-only invariant forbids (gap G-40-1, plan 40-09)", () => {
+test("HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] names exactly the seven caller-supplied path fields, and none of them names the project location, its name or the runs root -- those are broker-side and never cross the wire", () => {
   const keys = hostTool.HOST_TOOL_PATH_ARG_KEYS["ghidra.analyze"] ?? [];
   const expected = ["importPath", "preScript", "postScript", "scriptPath", "entrypointsPath", "exportPath", "dataRangesPath"];
   assert.deepEqual(
@@ -3685,136 +3389,12 @@ test("HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] names exactly the seven caller-s
     [...expected].sort(),
     `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] must name exactly the seven caller-supplied path fields, got ${JSON.stringify([...keys].sort())}`,
   );
-  for (const forbidden of ["projectLocation", "projectName", "runsRoot", "runId", "handle"]) {
+  for (const forbidden of ["projectLocation", "projectName", "runsRoot", "runId"]) {
     assert.ok(
       !keys.some((k) => k.toLowerCase() === forbidden.toLowerCase()),
-      `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] must never name ${forbidden} -- no wire field may name the handle in the first place, since routing it through resolveWorkspacePath() would realpath straight back to the dotted root`,
+      `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] must never name ${forbidden} -- the broker chooses the project location, never a request`,
     );
   }
-});
-
-/** Strips block comments and whole-line `//` comments -- this file's own
- * copy of the shape every other structural-gate test file in this tree
- * carries locally (broker-launch.test.ts, vice-broker-supervision.test.ts,
- * acme-verify.test.ts, and others) rather than a shared import. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
-}
-
-/** THE predicate the structural assertion AND its planted-violation control
- * below both drive -- return-don't-assert, following docs-linerefs.test.ts's
- * own shape, so a synthetic copy of host-tool.mts's source exercises
- * exactly the same code the real assertion does.
- *
- * `forbiddenCalls`: every `resolveWorkspacePath(` call site (line-scoped;
- * every real call site in host-tool.mts is single-line) whose second
- * argument text names `project`, a `ghidraRuns*`/`RunsRoot`-shaped
- * identifier, or `handle` -- i.e. anything derived from the resolved
- * project, the runs root, or the handle, rather than a raw wire field.
- *
- * `projectLocationSiblingCount`: how many `dirname(projectLocation)`
- * call sites exist -- the project location's ONE allowed derived sibling
- * path, the run log. */
-function findWorkspacePathInvariantViolations(source: string): { forbiddenCalls: string[]; projectLocationSiblingCount: number } {
-  const stripped = stripComments(source);
-  const forbiddenCalls: string[] = [];
-  const FORBIDDEN_ARG = /\bproject\w*\b|\bghidraRuns\w*\b|\brunsRoot\w*\b|\bhandle\w*\b/i;
-  for (const line of stripped.split("\n")) {
-    const match = line.match(/resolveWorkspacePath\(\s*[^,]+,\s*(.+)\)/);
-    if (!match) continue;
-    const arg = (match[1] ?? "").trim();
-    if (FORBIDDEN_ARG.test(arg)) forbiddenCalls.push(line.trim());
-  }
-  const siblingMatches = stripped.match(/dirname\(\s*projectLocation\s*\)/g) ?? [];
-  return { forbiddenCalls, projectLocationSiblingCount: siblingMatches.length };
-}
-
-test("structural (gap G-40-1, plan 40-09): no resolveWorkspacePath() call site in host-tool.mts receives an argument derived from the resolved project, the runs root, or the handle, and the project location has exactly one derived sibling path (the run log)", () => {
-  const source = readFileSync(join(HERE, "host-tool.mts"), "utf8");
-  const result = findWorkspacePathInvariantViolations(source);
-
-  assert.deepEqual(
-    result.forbiddenCalls,
-    [],
-    `HANDLE-ONLY INVARIANT REGRESSION: found resolveWorkspacePath() call site(s) whose argument names the resolved project, the runs root, or the handle: ${JSON.stringify(result.forbiddenCalls)}. resolveWorkspacePath() realpaths its result (decision A-16) and would collapse a handle-routed path straight back to the dotted root Ghidra refuses.`,
-  );
-  assert.equal(
-    result.projectLocationSiblingCount,
-    1,
-    `expected exactly one dirname(projectLocation) call site (the run log) in host-tool.mts, found ${result.projectLocationSiblingCount} -- the project location must have exactly one derived sibling path`,
-  );
-});
-
-test("planted-violation (gap G-40-1, plan 40-09): the SAME structural predicate reports a synthetic resolveWorkspacePath(repoRootAbs, projectResolved.projectLocation) call site, and reports NOTHING for the real source", () => {
-  const source = readFileSync(join(HERE, "host-tool.mts"), "utf8");
-  const realResult = findWorkspacePathInvariantViolations(source);
-  assert.deepEqual(realResult.forbiddenCalls, [], "the real source must be reported by neither predicate branch before the synthetic violation is even introduced");
-
-  const anchor = "const importResolved = resolveWorkspacePath(repoRootAbs, request.args.importPath);";
-  assert.ok(source.includes(anchor), "expected to find the ghidra.analyze importPath resolution call site to plant a violation next to");
-  const planted = source.replace(
-    anchor,
-    `${anchor}\n    const plantedViolation = resolveWorkspacePath(repoRootAbs, projectResolved.projectLocation);`,
-  );
-  const plantedResult = findWorkspacePathInvariantViolations(planted);
-  assert.equal(
-    plantedResult.forbiddenCalls.length,
-    1,
-    `planted violation: expected the synthetic project-location-derived resolveWorkspacePath() call to be reported exactly once, found ${plantedResult.forbiddenCalls.length} -- without this control, the real assertion above could be passing on a predicate that never fires at all`,
-  );
-});
-
-// ---------------------------------------------------------------------------
-// WR-03 hole 2 regression (D-26, plan 40-01 Task 2): the standalone
-// host-tool.mjs CLI entry point's `runHostTool(...).then(...)` used to have
-// no `.catch()` -- a rejected promise became an unhandled rejection with NO
-// stdout at all, surfacing to a container-side caller as the opaque
-// "host-tool.mjs produced no output on stdout", indistinguishable from a
-// hang. Every fs call reachable from runHostTool()'s real business logic is
-// deliberately guarded (this file's own ghidra.analyze/acme.build/oracle.run
-// cases above all resolve `{ ok: false, ... }` rather than reject, by
-// design), so there is no organic wire input left that makes the CURRENT
-// implementation reject -- this is the never-throw discipline working as
-// intended, not a gap. Regression-testing the CLI's own `.catch()` plumbing
-// therefore uses the file's own documented TEST-ONLY escape hatch,
-// HOST_TOOL_TEST_FORCE_CLI_REJECT=1 (read from the BROKER PROCESS'S OWN
-// environment, exactly like resolveOracleCommand()'s UNP64/UNP64_PATH
-// lookup -- never a wire value, so a caller can never reach it by shaping
-// --request), which swaps in a Promise.reject() ahead of the real
-// runHostTool() call so this test spawns the REAL compiled CLI end-to-end.
-// ---------------------------------------------------------------------------
-
-test("CLI entry point: HOST_TOOL_TEST_FORCE_CLI_REJECT=1 forces runHostTool() to reject, and the standalone host-tool.mjs still prints a parseable { ok: false, message } JSON line to stdout with a non-zero exit code -- never an unhandled rejection with no output", async () => {
-  const hostToolMjsPath = fileURLToPath(new URL("./resources/host-tool.mjs", import.meta.url));
-  await withTempDir(async (dir) => {
-    const request = JSON.stringify({ tool: "oracle.probe", args: {} });
-    let stdout = "";
-    let exitCode: number | null = 0;
-    try {
-      const result = await execFileP(process.execPath, [hostToolMjsPath, "run", "--repo-root", dir, "--request", request], {
-        env: { ...process.env, HOST_TOOL_TEST_FORCE_CLI_REJECT: "1" },
-      });
-      stdout = result.stdout;
-    } catch (e) {
-      // execFile rejects when the child exits non-zero -- exactly the
-      // exit-code convention under test, so the rejection's own stdout/code
-      // fields (not a thrown assertion) are what this test reads.
-      const err = e as NodeJS.ErrnoException & { stdout?: string; code?: number | string };
-      stdout = err.stdout ?? "";
-      exitCode = typeof err.code === "number" ? err.code : 1;
-    }
-    assert.notEqual(exitCode, 0, "a rejected runHostTool() must produce a non-zero exit code, never a silent success");
-    const lastLine = stdout.trim().split("\n").filter(Boolean).at(-1);
-    assert.ok(lastLine, "stdout must carry at least one line -- the exact failure this regression guards against is NO output at all");
-    let parsed: unknown;
-    assert.doesNotThrow(() => {
-      parsed = JSON.parse(lastLine!);
-    }, "stdout's last line must be parseable JSON, not an unhandled-rejection stack trace");
-    const body = parsed as { ok?: unknown; message?: unknown };
-    assert.equal(body.ok, false, "the envelope's ok field must be false");
-    assert.equal(typeof body.message, "string", "the envelope's message field must be a string");
-    assert.ok((body.message as string).length > 0, "the envelope's message field must be non-empty");
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -4078,4 +3658,216 @@ test('petcat.decode: no wire-selectable BASIC dialect field -- HOST_TOOL_ARG_KEY
     false,
     'HOST_TOOL_ARG_KEYS["petcat.decode"] must carry no dialect-selecting key -- the dialect is fixed server-side (D-24)',
   );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 65, plan 65-03, Task 1 (SEAM-01/SEAM-03, D-03/D-04): every input kind
+// binds by handle on both sides, with a two-sided census. Test 6 (the ACME
+// harness case: a source that `!source`s a subdirectory file and uses an
+// `-I` tree) lives in host-tool-endpoint.test.ts -- it exercises the CLIENT
+// side of this seam end to end through a real harness broker, not this
+// file's own direct `runHostTool()` calls.
+// ---------------------------------------------------------------------------
+
+test("Phase 65-03 Task 1 Test 1: HOST_TOOL_PATH_ARG_KEYS minus {outDir, sourceDir} equals the union of the client's file/tree/output-name keys, with no key in two classes; the broker's tree/output-name tables equal the client mirrors, in both directions", () => {
+  for (const tool of HOST_TOOL_IDS) {
+    const pathKeys = new Set(HOST_TOOL_PATH_ARG_KEYS[tool]!.filter((k) => k !== "outDir" && k !== "sourceDir"));
+    const fileKeys = new Set(HOST_TOOL_FILE_INPUT_KEYS[tool] ?? []);
+    const treeKeysClient = new Set(HOST_TOOL_TREE_INPUT_KEYS[tool] ?? []);
+    const outputNameKeysClient = new Set(HOST_TOOL_OUTPUT_NAME_KEYS[tool] ?? []);
+
+    const union = new Set<string>([...fileKeys, ...treeKeysClient, ...outputNameKeysClient]);
+    assert.deepEqual(
+      [...union].sort(),
+      [...pathKeys].sort(),
+      `${tool}: the client's file+tree+output-name keys must equal HOST_TOOL_PATH_ARG_KEYS minus outDir/sourceDir, in both directions`,
+    );
+
+    for (const key of fileKeys) {
+      assert.ok(!treeKeysClient.has(key), `${tool}.${key}: cannot be classified as BOTH a file key and a tree key`);
+      assert.ok(!outputNameKeysClient.has(key), `${tool}.${key}: cannot be classified as BOTH a file key and an output-name key`);
+    }
+    for (const key of treeKeysClient) {
+      assert.ok(!outputNameKeysClient.has(key), `${tool}.${key}: cannot be classified as BOTH a tree key and an output-name key`);
+    }
+
+    const treeKeysServer = new Set(HOST_TOOL_TREE_ARG_KEYS[tool] ?? []);
+    const outputNameKeysServer = new Set(HOST_TOOL_OUTPUT_NAME_ARG_KEYS[tool] ?? []);
+    assert.deepEqual([...treeKeysServer].sort(), [...treeKeysClient].sort(), `${tool}: the broker's HOST_TOOL_TREE_ARG_KEYS must equal the client's HOST_TOOL_TREE_INPUT_KEYS`);
+    assert.deepEqual(
+      [...outputNameKeysServer].sort(),
+      [...outputNameKeysClient].sort(),
+      `${tool}: the broker's HOST_TOOL_OUTPUT_NAME_ARG_KEYS must equal the client's HOST_TOOL_OUTPUT_NAME_KEYS`,
+    );
+  }
+});
+
+test("Phase 65-03 Task 1 Test 2: bindStagedInputs maps acme includes (tree handles) to in/<idx>, ghidra scriptPath (one tree handle) to in/<idx>, and ghidra exportPath (a name) to out/<name>; refuses an unsafe exportPath by name", () => {
+  const lookup = {
+    fileHandle: (handle: string) => (handle === "file-handle" ? "in/0/source.a" : undefined),
+    treeHandle: (handle: string) => {
+      if (handle === "tree-handle-0") return "in/0";
+      if (handle === "tree-handle-1") return "in/1";
+      return undefined;
+    },
+  };
+
+  const includesResult = bindStagedInputs({ tool: "acme.build", args: { source: "file-handle", includes: ["tree-handle-0", "tree-handle-1"] } }, lookup);
+  assert.equal(includesResult.ok, true, includesResult.ok ? "" : includesResult.message);
+  if (includesResult.ok) {
+    assert.deepEqual(includesResult.request.args.includes, ["in/0", "in/1"], "each includes[] tree handle must map to its own in/<idx> directory");
+  }
+
+  const ghidraBaseArgs = { runId: "r", importPath: "file-handle", processor: "6502:LE:16:default", importRoute: "flat64k" };
+
+  const scriptPathResult = bindStagedInputs({ tool: "ghidra.analyze", args: { ...ghidraBaseArgs, scriptPath: "tree-handle-0" } }, lookup);
+  assert.equal(scriptPathResult.ok, true, scriptPathResult.ok ? "" : scriptPathResult.message);
+  if (scriptPathResult.ok) {
+    assert.equal(scriptPathResult.request.args.scriptPath, "in/0", "a single scriptPath tree handle must map to its own in/<idx> directory");
+  }
+
+  const exportPathResult = bindStagedInputs({ tool: "ghidra.analyze", args: { ...ghidraBaseArgs, exportPath: "classify.json" } }, lookup);
+  assert.equal(exportPathResult.ok, true, exportPathResult.ok ? "" : exportPathResult.message);
+  if (exportPathResult.ok) {
+    assert.equal(exportPathResult.request.args.exportPath, "out/classify.json", "exportPath must rewrite to out/<name>, never bind to a handle");
+  }
+
+  let executed = 0;
+  for (const bad of ["a/b", "..", "", "a\u0000b"]) {
+    const refused = bindStagedInputs({ tool: "ghidra.analyze", args: { ...ghidraBaseArgs, exportPath: bad } }, lookup);
+    assert.equal(refused.ok, false, `exportPath ${JSON.stringify(bad)} must be refused`);
+    if (!refused.ok) assert.match(refused.message, /exportPath/, `refusal for ${JSON.stringify(bad)} must name "exportPath"`);
+    executed++;
+  }
+  assert.equal(executed, 4, "non-vacuity: every unsafe exportPath candidate must have been exercised");
+});
+
+test("outDir and sourceDir are not host-tool arguments: every tool refuses both as unknown keys", () => {
+  let executed = 0;
+  for (const tool of HOST_TOOL_IDS) {
+    for (const key of ["outDir", "sourceDir"] as const) {
+      const baseArgs = HOST_TOOL_MINIMAL_VALID_ARGS[tool]();
+      const result = normaliseHostToolRequest({ tool, args: { ...baseArgs, [key]: "anywhere" } });
+      assert.equal(result.ok, false, `${tool}.${key} must be refused`);
+      if (!result.ok) assert.match(result.message, new RegExp(`unknown key\\(s\\) ${key}`), `${tool}.${key} refusal must name the key`);
+      executed++;
+    }
+  }
+  assert.equal(executed, HOST_TOOL_IDS.length * 2, "non-vacuity: every tool must have been exercised for both keys");
+});
+
+test("Phase 65-03 Task 1 Test 4: with clearDeclaredOutputs true, a stale output already on disk before the spawn is not reported when the tool fails to write it", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+
+    const successAcme = writeFakeAcme(dir, "utf8");
+    let stalePath = "";
+    await withFakeAcme(successAcme, async () => {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir });
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+      if (!response.ok) return;
+      assert.equal(response.results.length, 1, "the first, successful run must have produced exactly one output");
+      stalePath = response.results[0]!.path;
+      assert.ok(existsSync(stalePath), "the first run's own output must genuinely exist on disk before the second run");
+    });
+
+    const failAcme = writeFakeAcme(dir, "nonzero");
+    await withFakeAcme(failAcme, async () => {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir, clearDeclaredOutputs: true });
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+      if (!response.ok) return;
+      assert.equal(response.results.length, 0, "with clearDeclaredOutputs true, the stale prior output must not be reported when this run failed to write it");
+      assert.ok(!existsSync(stalePath), "the stale output file itself must have been removed before this run's own spawn");
+    });
+  });
+});
+
+test("ghidra.analyze: the project lives under ghidraProjectsRoot, the run log lands in outputDir, and the project directory is gone once the run ends", async () => {
+  await withFakeGhidraHome(async () => {
+    await withTempDir(async (scratchDir) => {
+      await withTempDir(async (ghidraRoot) => {
+        writeFileSync(join(scratchDir, "x.bin"), "tiny\n", "utf8");
+        const outputDir = join(scratchDir, "out");
+        mkdirSync(outputDir);
+        const runId = "projects-root-run";
+        const response = await hostTool.runHostTool(
+          { tool: "ghidra.analyze", args: { runId, importPath: "x.bin", processor: FAKE_GHIDRA_HOME_LANGUAGE_ID, importRoute: "flat64k" } },
+          { repoRoot: scratchDir, ghidraProjectsRoot: ghidraRoot, outputDir },
+        );
+        assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
+        if (!response.ok) return;
+        assert.equal(response.results[0]?.path, join(outputDir, `${runId}.ghidra-run.log`), "the run log must land in the request's output directory");
+        assert.ok(existsSync(join(outputDir, `${runId}.ghidra-run.log`)));
+        assert.deepEqual(readdirSync(ghidraRoot), [], "the run's project directory must be removed once the run ends");
+      });
+    });
+  });
+});
+
+test("ghidra.analyze: with no ghidraProjectsRoot configured, the executor refuses by name and creates nothing", async () => {
+  await withTempDir(async (scratchDir) => {
+    writeFileSync(join(scratchDir, "x.bin"), "tiny\n", "utf8");
+    const response = await hostTool.runHostTool(
+      { tool: "ghidra.analyze", args: { runId: "no-root", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
+      { repoRoot: scratchDir },
+    );
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.match(response.message, /no Ghidra projects root/);
+    assert.deepEqual(readdirSync(scratchDir), ["x.bin"]);
+  });
+});
+
+test("Phase 65-03 Task 1 Test 7 (RESEARCH Pitfall 4): for every HOST_TOOL_IDS member, the endpoint route's run-reply wait equals hostToolRequestTimeoutMs(tool) and exceeds host-tool.mts's own budget; the stage-reply wait equals DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, which bounds no tool budget", async () => {
+  for (const tool of HOST_TOOL_IDS) {
+    await withTempDir(async (dir) => {
+      // Fixture files matching every name HOST_TOOL_MINIMAL_VALID_ARGS uses,
+      // across every tool id -- the endpoint route's own client-side stat()
+      // calls must succeed before this call ever reaches the (faked) dial.
+      for (const name of ["a.a", "a.bin", "x.bin", "x.d64", "x.prg", "Pre.java", "Post.java"]) {
+        writeFileSync(join(dir, name), "tiny\n", "utf8");
+      }
+
+      const recorded: { stageTimeoutMs?: number; runTimeoutMs?: number } = {};
+      const fakeSession: HostToolSession = {
+        async stage(files, replyTimeoutMs) {
+          recorded.stageTimeoutMs = replyTimeoutMs;
+          return { ok: true, request: "fake-request", trees: [], files: files.map((_, i) => `file-${i}`) };
+        },
+        async run(toolName, _toolArgs, _request, replyTimeoutMs) {
+          recorded.runTimeoutMs = replyTimeoutMs;
+          return { ok: true, response: { ok: true, tool: toolName, exitStatus: 0, results: [], stderrTail: "" } };
+        },
+        close() {},
+      };
+
+      const args = HOST_TOOL_MINIMAL_VALID_ARGS[tool]();
+      const result = await runHostToolOverEndpoint(tool, args, {
+        toolsRoot: join(dir, "tools-root"),
+        baseDir: dir,
+        dialSession: async () => ({ ok: true, session: fakeSession }),
+        // The fake run() reply above declares an EMPTY results[], so no
+        // download ever happens -- this stub only ever sees "upload"
+        // requests, one per staged manifest entry. Computed from the real
+        // local bytes so a real digest still flows through, with no socket.
+        transferFile: async (request) => {
+          if (request.direction !== "upload") return { ok: false, reason: "Test 7's fake transferFile only expects uploads" };
+          const bytes = readFileSync(request.sourcePath);
+          return { ok: true, byteLength: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+        },
+      });
+      assert.equal(result.ok, true, result.ok ? "" : `${tool}: ${(result as { message: string }).message}`);
+
+      assert.equal(
+        recorded.stageTimeoutMs,
+        DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS,
+        `${tool}: the stage-reply wait must equal DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS (bounds no tool budget)`,
+      );
+      assert.equal(recorded.runTimeoutMs, hostToolRequestTimeoutMs(tool), `${tool}: the run-reply wait must equal hostToolRequestTimeoutMs(tool)`);
+      assert.ok(
+        recorded.runTimeoutMs! > hostToolTimeoutMs(tool),
+        `${tool}: the run-reply wait (${recorded.runTimeoutMs}) must strictly exceed host-tool.mts's own budget (${hostToolTimeoutMs(tool)})`,
+      );
+    });
+  }
 });

@@ -110,6 +110,14 @@ test("convertHandshakeError: a MachineRestartedError names both epochs", () => {
   assert.match(text, /current epoch 9/);
 });
 
+test("convertHandshakeError: a MachineRestartedError with no current epoch says why, never \"null\"", () => {
+  const err = new MachineRestartedError("test: restarted", { baselineEpoch: 1, currentEpoch: null });
+  const text = convertHandshakeError("vice_x", err).content[0]!.text;
+  assert.match(text, /baseline epoch 1/);
+  assert.match(text, /no current epoch: the broker reports no running instance owned by this session/);
+  assert.doesNotMatch(text, /null/);
+});
+
 test("convertHandshakeError: still produces the Phase 2 refusal wording for a plain Error", () => {
   const result = convertHandshakeError("vice_x", new Error("something else failed"));
   assert.match(result.content[0]!.text, /vice_x: stock handshake failed \(something else failed\)\./);

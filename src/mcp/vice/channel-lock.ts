@@ -9,14 +9,13 @@
 // the only prior single-flight queue died with the retired analyser and was
 // explicitly not extracted. None of the four pieces this module owns -- the
 // mutex, its FIFO queue, its holder record, its refusal text -- may be
-// re-derived in stock-dispatch.ts, text-protocol.ts or stock-diagnose.ts.
+// re-derived in stock-session.ts or text-protocol.ts.
 //
 // WHY HAND-BUILT RATHER THAN TAKEN FROM A LIBRARY: a generic mutex (e.g.
 // `async-mutex`) grants and releases but exposes no holder record -- it
 // cannot answer "who holds this, since when, doing what". This module's
 // `ChannelLockHolder` is exactly that record, and it is what makes
-// contention readable to `vice_diagnose` (plan 41-04) rather than a bare
-// "something is locked". `async-mutex` was considered and rejected by this
+// contention readable in a refusal rather than a bare "something is locked". `async-mutex` was considered and rejected by this
 // phase's own locked decision; it is never installed, and there is no
 // install task in this plan for a package-legitimacy audit to cover.
 //
@@ -32,7 +31,7 @@
 // WHAT NOT TO DO:
 //   - Never acquire this lock per wire command in a way that lets a foreign
 //     command land between a resume and its checkpoint observation -- the
-//     lock is acquired per LOGICAL OPERATION (see stock-dispatch.ts's
+//     lock is acquired per LOGICAL OPERATION (see stock-session.ts's
 //     withChannelLockHeld() and text-protocol.ts's withTextChannelLock()),
 //     spanning resume -> wait -> observe. A design that preserves the resume
 //     count while destroying what the count protects is a regression, not a
@@ -123,8 +122,7 @@ export const CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS: number = (() => {
 
 /**
  * The ONE refusal wording produced when a caller cannot be granted the lock
- * (either an immediate `tryAcquireChannelLock()` miss reported by a caller,
- * or a `ChannelLockTimeoutError`'s own message). Names the other channel,
+ * (a `ChannelLockTimeoutError`'s own message). Names the other channel,
  * the operation it is running, the hold duration in whole milliseconds, and
  * the holder's grant id (or the literal `unknown` when there is none --
  * never a fabricated id, matching claimMonitor()'s own posture for a
@@ -305,24 +303,6 @@ export function acquireChannelLock(opts: AcquireChannelLockOptions): Promise<Cha
   return admit(opts.channel, opts.operation, opts.grantId ?? null, opts.timeoutMs ?? CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS);
 }
 
-export interface TryAcquireChannelLockOptions {
-  channel: MonitorChannel;
-  operation: string;
-  grantId?: string | null;
-}
-
-/**
- * Fully synchronous, no `await` anywhere: grants and returns a handle when
- * free, returns `null` immediately when held -- never queues. This is the
- * entry point a diagnostic uses so that diagnosing contention never queues
- * behind the holder it is diagnosing (consumed by vice_diagnose, plan
- * 41-04).
- */
-export function tryAcquireChannelLock(opts: TryAcquireChannelLockOptions): ChannelLockHandle | null {
-  if (currentHolder !== null) return null;
-  return grantLock(opts.channel, opts.operation, opts.grantId ?? null);
-}
-
 /** A read-only COPY of the holder record -- never the live object, so a
  * caller cannot mutate module state by holding onto what this returns.
  * `null` when nothing holds the lock. */
@@ -334,7 +314,7 @@ export function currentChannelLockHolder(): ChannelLockHolder | null {
 /**
  * Clears the holder and drains the queue by rejecting every waiter --
  * exists only so a test file can start from a known state, in the register
- * stock-dispatch.ts's own clearHeldStockSession() already establishes.
+ * stock-session.ts's own clearHeldStockSession() already establishes.
  * Never called from production code.
  */
 export function resetChannelLockForTests(): void {

@@ -150,8 +150,7 @@ function renderTargets(targets: readonly number[]): string {
 }
 
 /**
- * THE COLLAPSE PLANTING (inline synthetic-source route, the shape
- * `hostpath-consumers.test.ts:231-262` labels its cases with). A test-local
+ * THE COLLAPSE PLANTING (inline synthetic-source route). A test-local
  * implementation that ignores the orientation axis entirely -- exactly what a
  * single `table` member with a forgotten orientation flag produces.
  *

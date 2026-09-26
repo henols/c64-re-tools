@@ -14,13 +14,13 @@ import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters, handleProgramLoad } from "./text-tools.ts";
-import { dispatchStock } from "./stock-dispatch.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 import type { StockToolResult } from "./stock-handler.ts";
 import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-connect.ts";
 
@@ -31,7 +31,7 @@ import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-con
 // text-monitor server DIRECTLY and resolves an empty pending Buffer,
 // byte-identical handshake behaviour to the pre-relay direct dial this
 // replaces. Threaded into every deps builder below via the new
-// StockDispatchDeps.dialMonitorSocket seam (stock-dispatch.ts, plan 63-02).
+// StockSessionDeps.dialMonitorSocket seam (stock-session.ts, plan 63-02).
 // ---------------------------------------------------------------------------
 
 const directDialMonitorSocket: DialMonitorSocketFn = (opts) =>
@@ -46,7 +46,6 @@ import { loadTextFixture } from "./textmon-fixtures.ts";
 import { CPUHISTORY_DISABLED_STUB, resetTextCapabilityCache } from "./text-capability-probe.ts";
 import { PROFILING_NOT_STARTED_TEXT } from "./textmon-profile.ts";
 import { ViceMonitorClient, CommandType } from "./stock-protocol.ts";
-import { HAZARD_SUBJECT_PRG_PATH, HAZARD_SUBJECT_IDS, hazardSubjectLoadVerb } from "./text-protocol.ts";
 
 beforeEach(() => {
   resetChannelLockForTests();
@@ -153,8 +152,8 @@ function makeStubBrokerControlWithHostState(hostState: {
   } as unknown as StockConnectBrokerControl;
 }
 
-/** Builds StockDispatchDeps.ensureLease() so it resolves a HeldLease pointed
- * at the stub server's port -- mirrors stock-dispatch.test.ts's own
+/** Builds StockSessionDeps.ensureLease() so it resolves a HeldLease pointed
+ * at the stub server's port -- mirrors stock-tools.test.ts's own
  * makeLease() helper, with remoteMonitorPort (D-15) filled in since that is
  * the field these two tools actually read.
  *
@@ -162,13 +161,12 @@ function makeStubBrokerControlWithHostState(hostState: {
  * straight through to makeStubBrokerControl(), so a test can observe every
  * `noteOperation()` call this lease's `brokerControl` receives without
  * touching any other call site. */
-function makeDeps(port: number, overrides: Partial<StockDispatchDeps> = {}, recorder?: Array<string | null>): StockDispatchDeps {
+function makeDeps(port: number, overrides: Partial<StockSessionDeps> = {}, recorder?: Array<string | null>): StockSessionDeps {
   const lease: HeldLease = {
     host: "127.0.0.1",
     port: 6502,
     targetId: "grant-1",
     brokerControl: makeStubBrokerControl(recorder) as unknown as HeldLease["brokerControl"],
-    epochFile: "",
     supervisorDir: "",
     remoteMonitorPort: port,
   };
@@ -179,7 +177,7 @@ function makeDeps(port: number, overrides: Partial<StockDispatchDeps> = {}, reco
   };
 }
 
-/** Plan 42-13 (G3): builds StockDispatchDeps with a resolved binary identity
+/** Plan 42-13 (G3): builds StockSessionDeps with a resolved binary identity
  * (`resolvedBinaryPath`/`resolvedBinaryPathIsResolved`) AND a broker control
  * whose `hostState()` resolves the caller-chosen identity -- so
  * `capabilityIdentityFor()` (text-tools.ts) resolves BOTH identities
@@ -188,13 +186,12 @@ function makeDepsWithBrokerIdentity(
   port: number,
   brokerHostState: { backend: "stock" | null; binPath: string },
   resolvedBinaryPath = "/usr/bin/x64sc",
-): StockDispatchDeps {
+): StockSessionDeps {
   const lease: HeldLease = {
     host: "127.0.0.1",
     port: 6502,
     targetId: "grant-1",
     brokerControl: makeStubBrokerControlWithHostState(brokerHostState) as unknown as HeldLease["brokerControl"],
-    epochFile: "",
     supervisorDir: "",
     remoteMonitorPort: port,
   };
@@ -280,7 +277,7 @@ test("handleWarpSet(false): issues 'warp off'", async () => {
 for (const bad of ["true", 1, null, undefined, {}]) {
   test(`handleWarpSet: refuses a non-boolean enabled (${JSON.stringify(bad)}) by name, no byte written to the socket`, async () => {
     let leaseCalled = false;
-    const deps: StockDispatchDeps = {
+    const deps: StockSessionDeps = {
       ensureLease: async () => {
         leaseCalled = true;
         return { ok: true, lease: null };
@@ -477,32 +474,6 @@ test("withTextTool that times out acquiring the lock declares nothing and clears
   );
 });
 
-test("both channel wrappers declare only after acquiring the shared lock", () => {
-  // A live binary-side drive of dispatchStock() would need a full
-  // binary-monitor stub session harness this file does not have -- the only
-  // existing binary-tool coverage in this file spawns a REAL emulator (the
-  // LIVE case near the end of this file), which is far too heavy to stand up
-  // just to prove a static ordering fact. This is therefore a
-  // source-symmetry assertion instead: in each wrapper's own source, the
-  // line that DECLARES the operation must appear strictly after the line
-  // that ACQUIRES the shared lock.
-  const textSource = readFileSync(join(import.meta.dirname, "text-tools.ts"), "utf8");
-  const textLines = textSource.split("\n");
-  const textAcquireLine = textLines.findIndex((l) => l.includes("withTextChannelLock("));
-  const textDeclareLine = textLines.findIndex((l) => l.includes("declareTextOperation(lease, toolName)"));
-  assert.ok(textAcquireLine >= 0, "expected to find withTextChannelLock( in text-tools.ts");
-  assert.ok(textDeclareLine >= 0, "expected to find declareTextOperation(lease, toolName) in text-tools.ts");
-  assert.ok(textDeclareLine > textAcquireLine, "text-tools.ts must declare strictly AFTER acquiring the shared lock");
-
-  const dispatchSource = readFileSync(join(import.meta.dirname, "stock-dispatch.ts"), "utf8");
-  const dispatchLines = dispatchSource.split("\n");
-  const dispatchAcquireLine = dispatchLines.findIndex((l) => l.includes('acquireChannelLock({ channel: "binary"'));
-  const dispatchDeclareLine = dispatchLines.findIndex((l, i) => i > dispatchAcquireLine && l.includes("declareOperation(session, toolName)"));
-  assert.ok(dispatchAcquireLine >= 0, 'expected to find acquireChannelLock({ channel: "binary" in stock-dispatch.ts');
-  assert.ok(dispatchDeclareLine >= 0, "expected to find declareOperation(session, toolName) in stock-dispatch.ts");
-  assert.ok(dispatchDeclareLine > dispatchAcquireLine, "stock-dispatch.ts must declare strictly AFTER acquiring the shared lock");
-});
-
 // ---------------------------------------------------------------------------
 // handleMemmapShow: issues exactly the frozen "memmapshow" verb and answers
 // the parsed, bounded projection -- Plan 42-01, PARSE-01.
@@ -533,7 +504,7 @@ test("handleMemmapShow: issues exactly 'memmapshow' and returns a parsed, bounde
 
 test("handleMemmapShow: refuses a non-integer startAddress by name, no lease resolved, no byte written", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -547,7 +518,7 @@ test("handleMemmapShow: refuses a non-integer startAddress by name, no lease res
 
 test("handleMemmapShow: refuses startAddress greater than endAddress by name, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -803,7 +774,7 @@ test("handleCpuHistory: a supplied count dials buildTextCommand()'s canonical re
 
 test("handleCpuHistory: refuses an out-of-range count by name, via buildTextCommand's own message, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -890,7 +861,7 @@ test("handleProfileFlat: a supplied count dials buildTextCommand()'s canonical r
 
 test("handleProfileFlat: refuses an out-of-range count by name, via buildTextCommand's own message, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -1035,7 +1006,7 @@ test("handleBacktrace: a depth argument truncates the PARSED frames and reports 
 
 test("handleBacktrace: refuses an out-of-range depth by name, no lease resolved -- depth never reaches the wire", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -1112,7 +1083,7 @@ test("handleIoRegisters: a required address dials buildTextCommand()'s canonical
 
 test("handleIoRegisters: refuses a missing address argument outright -- it is REQUIRED, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -1127,7 +1098,7 @@ test("handleIoRegisters: refuses a missing address argument outright -- it is RE
 
 test("handleIoRegisters: refuses an out-of-range address by name, via buildTextCommand's own message, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -1340,167 +1311,6 @@ test("handleIoRegisters (CR-02): an indeterminate (empty) reply under a RESOLVED
 });
 
 // ---------------------------------------------------------------------------
-// handleProgramLoad (plan 50-04, route-d): reaches text-protocol.ts's
-// widened `load` verb. Takes only an optional, bounded device number --
-// never a filename -- so these tests prove the rendered command, the
-// channel-lock discipline every handler in this file shares, the
-// buildTextCommand()-driven out-of-range refusal, and that no filename-
-// shaped argument the caller supplies ever reaches the dialed command.
-// ---------------------------------------------------------------------------
-
-test("handleProgramLoad: no device argument dials device 0, the exact command buildTextCommand()'s own load spec produces", async () => {
-  const receivedLines: string[] = [];
-  await withStubTextServer(
-    (line, socket) => {
-      receivedLines.push(line);
-      socket.write(PROMPT);
-    },
-    async (port) => {
-      const deps = makeDeps(port);
-      const result = await handleProgramLoad({}, deps);
-      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
-      assert.deepEqual(receivedLines, [`load "${HAZARD_SUBJECT_PRG_PATH}" 0`]);
-      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-      assert.equal(payload.command, `load "${HAZARD_SUBJECT_PRG_PATH}" 0`);
-      assert.equal(payload.device, 0);
-    },
-  );
-});
-
-test("handleProgramLoad: a supplied device dials buildTextCommand()'s canonical rendering for that device", async () => {
-  const receivedLines: string[] = [];
-  await withStubTextServer(
-    (line, socket) => {
-      receivedLines.push(line);
-      socket.write(PROMPT);
-    },
-    async (port) => {
-      const deps = makeDeps(port);
-      const result = await handleProgramLoad({ device: 8 }, deps);
-      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
-      assert.deepEqual(receivedLines, [`load "${HAZARD_SUBJECT_PRG_PATH}" 8`]);
-      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-      assert.equal(payload.device, 8);
-    },
-  );
-});
-
-test("handleProgramLoad: refuses an out-of-range device by name, via buildTextCommand's own message, no lease resolved", async () => {
-  let leaseCalled = false;
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => {
-      leaseCalled = true;
-      return { ok: true, lease: null };
-    },
-  };
-  const result = await handleProgramLoad({ device: 12 }, deps);
-  assert.equal(result.isError, true);
-  assert.match(result.content[0]!.text, /vice_program_load/);
-  assert.match(result.content[0]!.text, /requires an integer between 0 and 11/);
-  assert.equal(leaseCalled, false, "no lease should ever be resolved before buildTextCommand's own bound check runs");
-});
-
-test("handleProgramLoad: holds the text-channel lock for the duration and releases it on success", async () => {
-  let holderDuringCommand: ReturnType<typeof currentChannelLockHolder> = null;
-  await withStubTextServer(
-    (_line, socket) => {
-      holderDuringCommand = currentChannelLockHolder();
-      socket.write(PROMPT);
-    },
-    async (port) => {
-      const deps = makeDeps(port);
-      assert.equal(currentChannelLockHolder(), null, "no lock held before the call");
-      const result = await handleProgramLoad({}, deps);
-      assert.equal(result.isError, false);
-      assert.ok(holderDuringCommand, "expected a holder to be observed while the command was outstanding");
-      assert.equal(holderDuringCommand!.channel, "text");
-      assert.equal(holderDuringCommand!.operation, "vice_program_load");
-      assert.equal(currentChannelLockHolder(), null, "the lock must be released again after the call returns");
-    },
-  );
-});
-
-test("handleProgramLoad: no filename can be injected -- an extraneous filename-shaped argument is ignored, the baked-in fixture path is always dialed", async () => {
-  const receivedLines: string[] = [];
-  await withStubTextServer(
-    (line, socket) => {
-      receivedLines.push(line);
-      socket.write(PROMPT);
-    },
-    async (port) => {
-      const deps = makeDeps(port);
-      const result = await handleProgramLoad(
-        { device: 0, filename: "/etc/passwd", path: "/etc/passwd", file: "../../etc/passwd" } as Record<string, unknown>,
-        deps,
-      );
-      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
-      assert.deepEqual(
-        receivedLines,
-        [`load "${HAZARD_SUBJECT_PRG_PATH}" 0`],
-        "the handler reads no filename-shaped argument at all -- only the baked-in fixture path is ever dialed",
-      );
-    },
-  );
-});
-
-test("handleProgramLoad [plan 50-05]: every subject id in the closed table dials its OWN frozen path, and an omitted subject still dials the original", async () => {
-  for (const id of HAZARD_SUBJECT_IDS) {
-    const receivedLines: string[] = [];
-    await withStubTextServer(
-      (line, socket) => {
-        receivedLines.push(line);
-        socket.write(PROMPT);
-      },
-      async (port) => {
-        const deps = makeDeps(port);
-        const result = await handleProgramLoad({ subject: id }, deps);
-        assert.equal(result.isError, false, `expected success for subject ${id}, got ${JSON.stringify(result)}`);
-        assert.deepEqual(receivedLines, [`${hazardSubjectLoadVerb(id)} 0`], `subject ${id} must dial its own frozen path`);
-        const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-        assert.equal(payload.subject, id, "the answer must name which subject was actually loaded");
-      },
-    );
-  }
-
-  // The default is unchanged from plan 50-04: no subject means the original.
-  // This is what keeps every earlier caller and every earlier captured
-  // command string valid after the table widening.
-  const defaultLines: string[] = [];
-  await withStubTextServer(
-    (line, socket) => {
-      defaultLines.push(line);
-      socket.write(PROMPT);
-    },
-    async (port) => {
-      const result = await handleProgramLoad({}, makeDeps(port));
-      assert.equal(result.isError, false);
-      assert.deepEqual(defaultLines, [`load "${HAZARD_SUBJECT_PRG_PATH}" 0`]);
-    },
-  );
-});
-
-test("handleProgramLoad [plan 50-05]: a subject the closed table does not carry is refused BY NAME, before any lease and any byte -- including a path-shaped one", async () => {
-  // The whole point of an enumerated id rather than a filename: none of
-  // these reaches a command string, and the refusal names the accepted set
-  // rather than failing somewhere inside the emulator.
-  for (const bad of ["misaligned", "/etc/passwd", "../hazard-subject.prg", "", "ORIGINAL", "__proto__", "constructor", 0, null, {}]) {
-    let leaseCalled = false;
-    const deps: StockDispatchDeps = {
-      ensureLease: async () => {
-        leaseCalled = true;
-        return { ok: true, lease: null };
-      },
-    };
-    const result = await handleProgramLoad({ subject: bad } as Record<string, unknown>, deps);
-    assert.equal(result.isError, true, `expected ${JSON.stringify(bad)} to be refused`);
-    assert.match(result.content[0]!.text, /vice_program_load/);
-    assert.match(result.content[0]!.text, /"subject" must be one of/);
-    assert.match(result.content[0]!.text, /never accepts a filename/);
-    assert.equal(leaseCalled, false, "no lease may be resolved for an unrecognised subject id");
-  }
-});
-
-// ---------------------------------------------------------------------------
 // Plan 42-13 (G3): the identity cross-check reaches the caller, on every
 // tool and on both paths -- computed once per handler from the identities
 // capabilityIdentityFor(deps) already resolved, before any dial.
@@ -1568,7 +1378,7 @@ test("handleMemmapShow: an agreeing broker identity carries no identityWarning p
 });
 
 test("all five text tools surface a disagreeing broker identity's warning on their success path -- a future handler cannot silently drop it", async () => {
-  const cases: Array<{ name: string; reply: string; call: (deps: StockDispatchDeps) => Promise<StockToolResult> }> = [
+  const cases: Array<{ name: string; reply: string; call: (deps: StockSessionDeps) => Promise<StockToolResult> }> = [
     {
       name: "vice_memmap_show",
       reply: `addr: IO  ROM RAM\n0000: --- --- rw- (dummy)\n${PROMPT}`,
@@ -1626,13 +1436,12 @@ test("all five text tools surface a disagreeing broker identity's warning on the
 // so this case is skipped by default and reachable deliberately, never a
 // second env var.
 //
-// Construction mirrors stock-dispatch.test.ts's own D-02 conformance
-// harness shape (a StockDispatchDeps whose ensureLease() hands back fixed
+// Construction mirrors stock-tools.test.ts's own D-02 conformance
+// harness shape (a StockSessionDeps whose ensureLease() hands back fixed
 // coordinates, a no-op claimMonitor/releaseMonitor stub) but substitutes a
-// REAL socket to a directly-spawned x64sc for the stubbed client --
-// `.planning/phases/43-.../evidence/evid06-instrumentation-ab.mjs` is plan
-// 43-01's own one-off broker-driven A/B measurement script and stays that
-// way; this is a new, independent, committed live test case.
+// REAL socket to a directly-spawned x64sc for the stubbed client -- plan
+// 43-01's one-off broker-driven A/B measurement script stays that way; this
+// is a new, independent, committed live test case.
 //
 // A stock x64sc launched with `-console` plus a monitor flag starts with
 // the CPU HALTED (MEASURED, `probe-harness.mjs`'s own `resumeExecution()`
@@ -1640,7 +1449,7 @@ test("all five text tools surface a disagreeing broker identity's warning on the
 // monitor -- text-monitor commands are drawn only from TEXT_COMMAND_ALLOWLIST
 // (D-01) and carry no resume verb, so this case opens its own throwaway
 // binary connection purely to issue that one resume, then dials
-// dispatchStock("vice_memmap_show"/"vice_memmap_zap", ...) exactly as
+// callStockTool("vice_memmap_show"/"vice_memmap_zap", ...) exactly as
 // production does. Once resumed the CPU free-runs (recording continuously
 // and unconditionally, per RESEARCH.md's mon_memmap.c citation) until the
 // NEXT monitor command halts it again -- so nothing else is dialed during
@@ -1709,7 +1518,7 @@ test(
     const binPath = VICE_LIVE_STOCK_BIN_ENV as string;
     const binaryPort = await freeEphemeralPort();
     const textPort = await freeEphemeralPort();
-    const scratchDir = mkdtempSync(join(tmpdir(), "gsd-4303-memmapzap-live-"));
+    const scratchDir = mkdtempSync(join(tmpdir(), "memmapzap-live-"));
     const child: ChildProcess = spawn(
       binPath,
       [
@@ -1748,7 +1557,7 @@ test(
         noteOperation: async () => ({ ok: true as const }),
       } as unknown as StockConnectBrokerControl;
 
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({
           ok: true,
           lease: {
@@ -1756,7 +1565,6 @@ test(
             port: binaryPort,
             targetId: "text-tools-live-4303",
             brokerControl: brokerControl as unknown as HeldLease["brokerControl"],
-            epochFile: "",
             supervisorDir: "",
             remoteMonitorPort: textPort,
           } as HeldLease,
@@ -1764,15 +1572,15 @@ test(
       };
 
       // Dialing memmapshow itself halts the CPU again (same as the binary
-      // side) -- this IS the pre-zap read, through the REAL dispatchStock()
+      // side) -- this IS the pre-zap read, through the REAL callStockTool()
       // seam, never the handler called directly.
-      const preResult = await dispatchStock("vice_memmap_show", {}, deps);
+      const preResult = await callStockTool("vice_memmap_show", {}, deps);
       assert.equal(preResult.isError, false, `pre-zap vice_memmap_show failed: ${JSON.stringify(preResult)}`);
       const prePayload = JSON.parse(preResult.content[0]!.text) as Record<string, unknown>;
       const preZap = prePayload.addressesWithRecordedAccess;
       assert.equal(typeof preZap, "number");
 
-      const zapResult = await dispatchStock("vice_memmap_zap", {}, deps);
+      const zapResult = await callStockTool("vice_memmap_zap", {}, deps);
       assert.equal(zapResult.isError, false, `vice_memmap_zap failed: ${JSON.stringify(zapResult)}`);
       const zapPayload = JSON.parse(zapResult.content[0]!.text) as Record<string, unknown>;
       const postZap = zapPayload.addressesWithRecordedAccess;
@@ -1799,3 +1607,138 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// handleProgramLoad: streams the file to the broker, then VICE's own `load`
+// names only the staged file.
+// ---------------------------------------------------------------------------
+
+const PROGRAM_HANDLE = "00112233445566778899aabbccddeeff";
+const PROGRAM_STAGED = `/broker/home/staging/grant-1/${PROGRAM_HANDLE}`;
+
+function programLoadDeps(port: number, calls: { stage: string[]; upload: string[] }, overrides: Partial<StockSessionDeps> = {}): StockSessionDeps {
+  const base = makeDeps(port);
+  return {
+    ...base,
+    ensureLease: async () => {
+      const outcome = await base.ensureLease();
+      if (!outcome.ok || outcome.lease === null) return outcome;
+      const brokerControl = {
+        ...outcome.lease.brokerControl,
+        stageFile: async (opts: { targetId: string; slot: string }) => {
+          calls.stage.push(opts.slot);
+          return { ok: true as const, handle: PROGRAM_HANDLE, emulatorFilename: PROGRAM_STAGED };
+        },
+      } as unknown as HeldLease["brokerControl"];
+      return { ok: true as const, lease: { ...outcome.lease, brokerControl } };
+    },
+    transferFile: async (request) => {
+      if (request.direction === "upload") calls.upload.push(request.sourcePath);
+      return { ok: true, byteLength: 0, sha256: "" };
+    },
+    ...overrides,
+  };
+}
+
+async function withProgramFile<T>(fn: (path: string) => Promise<T>): Promise<T> {
+  const d = mkdtempSync(join(tmpdir(), "text-tools-program-"));
+  const path = join(d, "program.prg");
+  writeFileSync(path, Buffer.from([0x01, 0x08, 0xa9, 0x01, 0x60]));
+  try {
+    return await fn(path);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+test("handleProgramLoad: stages and uploads the file, then dials VICE's load for the staged name only", async () => {
+  await withProgramFile(async (path) => {
+    const lines: string[] = [];
+    const calls = { stage: [] as string[], upload: [] as string[] };
+    await withStubTextServer(
+      (line, socket) => {
+        lines.push(line);
+        socket.write(`Loading '${PROGRAM_STAGED}' from 0801 to 0803 (0003 bytes)\n${PROMPT}`);
+      },
+      async (port) => {
+        const result = await handleProgramLoad({ path }, programLoadDeps(port, calls));
+        assert.equal(result.isError, false, JSON.stringify(result));
+        assert.deepEqual(calls.stage, ["program"]);
+        assert.deepEqual(calls.upload, [path], "the client's own file is what is uploaded");
+        assert.deepEqual(lines, [`load "${PROGRAM_STAGED}" 0`]);
+        const answer = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+        assert.equal(answer.path, path);
+        assert.equal(answer.loadAddress, 0x0801);
+        assert.equal(answer.endAddress, 0x0803);
+        assert.equal(answer.byteLength, 3);
+        assert.doesNotMatch(result.content[0]!.text, /broker\/home/, "the broker's staged path does not reach the caller");
+      },
+    );
+  });
+});
+
+test("handleProgramLoad: an address argument is passed to VICE's load", async () => {
+  await withProgramFile(async (path) => {
+    const lines: string[] = [];
+    await withStubTextServer(
+      (line, socket) => {
+        lines.push(line);
+        socket.write(`Loading '${PROGRAM_STAGED}' from C000 to C002 (0003 bytes)\n${PROMPT}`);
+      },
+      async (port) => {
+        const result = await handleProgramLoad({ path, address: "$c000" }, programLoadDeps(port, { stage: [], upload: [] }));
+        assert.equal(result.isError, false, JSON.stringify(result));
+        assert.deepEqual(lines, [`load "${PROGRAM_STAGED}" 0 $c000`]);
+      },
+    );
+  });
+});
+
+test("handleProgramLoad: VICE's own refusal is passed through, without the broker's staged path", async () => {
+  await withProgramFile(async (path) => {
+    await withStubTextServer(
+      (_line, socket) => socket.write(`Cannot open ${PROGRAM_STAGED}.\n${PROMPT}`),
+      async (port) => {
+        const result = await handleProgramLoad({ path }, programLoadDeps(port, { stage: [], upload: [] }));
+        assert.equal(result.isError, true);
+        assert.match(result.content[0]!.text, /^vice_program_load: VICE did not load the program: Cannot open <staged file>\./);
+      },
+    );
+  });
+});
+
+test("handleProgramLoad: a missing or unreadable path, or a bad address, is refused before any staging or text-monitor byte", async () => {
+  const calls = { stage: [] as string[], upload: [] as string[] };
+  let dialed = false;
+  const deps: StockSessionDeps = { ...programLoadDeps(1, calls), ensureLease: async () => ((dialed = true), { ok: false, message: "no" }) };
+  for (const args of [{}, { path: 5 }, { path: join(tmpdir(), "text-tools-no-such-program.prg") }]) {
+    const result = await handleProgramLoad(args, deps);
+    assert.equal(result.isError, true, JSON.stringify(args));
+    assert.match(result.content[0]!.text, /^vice_program_load: (path is required|cannot read path)/);
+  }
+  await withProgramFile(async (path) => {
+    const result = await handleProgramLoad({ path, address: "$10000" }, deps);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /^vice_program_load: /);
+  });
+  assert.equal(dialed, false);
+  assert.deepEqual(calls, { stage: [], upload: [] });
+});
+
+test("handleProgramLoad: a failed upload sends no load", async () => {
+  await withProgramFile(async (path) => {
+    const lines: string[] = [];
+    await withStubTextServer(
+      (line, socket) => {
+        lines.push(line);
+        socket.write(PROMPT);
+      },
+      async (port) => {
+        const deps = programLoadDeps(port, { stage: [], upload: [] }, { transferFile: async () => ({ ok: false, reason: "cap exceeded" }) });
+        const result = await handleProgramLoad({ path }, deps);
+        assert.match(result.content[0]!.text, /^vice_program_load: uploading the program failed \(cap exceeded\)/);
+        assert.deepEqual(lines, []);
+      },
+    );
+  });
+});

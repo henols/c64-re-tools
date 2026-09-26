@@ -22,14 +22,13 @@ import {
   type StockConnectBrokerControl,
   type StockConnectOptions,
   type DialMonitorSocketFn,
+  type StockConnectDeps,
 } from "./stock-connect.ts";
 import { build } from "./build.ts";
 import {
   startControlListener,
-  newControlToken,
   type StartControlListenerResult,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type MonitorClaimOutcome,
@@ -1038,77 +1037,80 @@ test("stockConnect: ownership -- a claim timeout is reported distinctly from mon
 // Task 2: restart detection reusing MachineRestartedError
 // ===========================================================================
 
-function withTempEpochFile<T>(fn: (epochPath: string, writeEpoch: (epoch: number) => void) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), "stock-connect-epoch-"));
-  const epochPath = join(dir, "epoch.json");
-  const writeEpoch = (epoch: number): void => {
-    writeFileSync(epochPath, JSON.stringify({ epoch, spawned_at: new Date().toISOString(), pid: 1234 }));
-  };
-  return fn(epochPath, writeEpoch).finally(() => rmSync(dir, { recursive: true, force: true }));
+/** A settable stand-in for the broker's epoch for this grant -- the value
+ * stock-session.ts's grantEpochReader() would read from `status`. */
+function epochSource(initial: number | null): { readCurrentEpoch: () => Promise<number | null>; set: (epoch: number | null) => void } {
+  let epoch = initial;
+  return { readCurrentEpoch: async () => epoch, set: (next) => (epoch = next) };
 }
 
-test("stockConnect: a completed handshake records the instance's epoch as its reconnect baseline", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
-    writeEpoch(1);
-    await withStockStubServer(happyPathResponder(), async (port) => {
-      const { brokerControl } = makeStubBrokerControl();
-      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-10", brokerControl, deps: { epochPath } });
-      assert.equal(session.baselineEpoch, 1);
-      await stockDisconnect(session);
-    });
+test("stockConnect: a completed handshake records the grant's epoch as its reconnect baseline", async () => {
+  const source = epochSource(1);
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-10", brokerControl, deps: { readCurrentEpoch: source.readCurrentEpoch } });
+    assert.equal(session.baselineEpoch, 1);
+    await stockDisconnect(session);
   });
 });
 
 test("stockReconnect: an unchanged epoch completes a fresh handshake and returns a usable client", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
-    writeEpoch(1);
-    await withStockStubServer(happyPathResponder(), async (port) => {
-      const { brokerControl } = makeStubBrokerControl();
-      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-11", brokerControl, deps: { epochPath } });
-      const reconnected = await stockReconnect(session);
-      assert.notEqual(reconnected, session);
-      assert.equal(reconnected.versionQuad, "3.9.0.0");
-      assert.equal(reconnected.baselineEpoch, 1);
-      await stockDisconnect(reconnected);
-    });
+  const source = epochSource(1);
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-11", brokerControl, deps: { readCurrentEpoch: source.readCurrentEpoch } });
+    const reconnected = await stockReconnect(session);
+    assert.notEqual(reconnected, session);
+    assert.equal(reconnected.versionQuad, "3.9.0.0");
+    assert.equal(reconnected.baselineEpoch, 1);
+    await stockDisconnect(reconnected);
   });
 });
 
 test("stockReconnect: an advanced epoch rejects with MachineRestartedError carrying the baseline and current epochs", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
-    writeEpoch(1);
-    await withStockStubServer(happyPathResponder(), async (port) => {
-      const { brokerControl } = makeStubBrokerControl();
-      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-12", brokerControl, deps: { epochPath } });
-      writeEpoch(2);
-      await assert.rejects(
-        stockReconnect(session),
-        (err: unknown) => {
-          assert.ok(err instanceof MachineRestartedError);
-          const restartErr = err as MachineRestartedError;
-          assert.equal(restartErr.baselineEpoch, 1);
-          assert.equal(restartErr.currentEpoch, 2);
-          assert.match(String(restartErr.where), /stock-connect/);
-          return true;
-        },
-      );
-    });
+  const source = epochSource(1);
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-12", brokerControl, deps: { readCurrentEpoch: source.readCurrentEpoch } });
+    source.set(2);
+    await assert.rejects(
+      stockReconnect(session),
+      (err: unknown) => {
+        assert.ok(err instanceof MachineRestartedError);
+        const restartErr = err as MachineRestartedError;
+        assert.equal(restartErr.baselineEpoch, 1);
+        assert.equal(restartErr.currentEpoch, 2);
+        assert.match(String(restartErr.where), /stock-connect/);
+        return true;
+      },
+    );
   });
 });
 
 test("stockReconnect: no epoch can be read at all rejects with MachineRestartedError -- identity that cannot be proven is not proven", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "stock-connect-epoch-missing-"));
-  const missingEpochPath = join(dir, "does-not-exist.json");
-  try {
+  const cases: Array<{ title: string; deps: StockConnectDeps }> = [
+    { title: "no epoch source", deps: {} },
+    { title: "the source finds none", deps: { readCurrentEpoch: async () => null } },
+    { title: "the source rejects", deps: { readCurrentEpoch: async () => Promise.reject(new Error("status failed")) } },
+  ];
+  for (const { title, deps } of cases) {
     await withStockStubServer(happyPathResponder(), async (port) => {
       const { brokerControl } = makeStubBrokerControl();
-      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-13", brokerControl, deps: { epochPath: missingEpochPath } });
-      assert.equal(session.baselineEpoch, null);
-      await assert.rejects(stockReconnect(session), (err: unknown) => err instanceof MachineRestartedError);
+      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-13", brokerControl, deps });
+      assert.equal(session.baselineEpoch, null, `${title}: baseline must be null`);
+      await assert.rejects(stockReconnect(session), (err: unknown) => err instanceof MachineRestartedError, `${title}: reconnect must refuse`);
     });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("stockReconnect: an epoch that becomes unreadable after the handshake rejects -- it is never read as a match", async () => {
+  const source = epochSource(1);
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-14", brokerControl, deps: { readCurrentEpoch: source.readCurrentEpoch } });
+    source.set(null);
+    await assert.rejects(stockReconnect(session), (err: unknown) => err instanceof MachineRestartedError && (err as MachineRestartedError).currentEpoch === null);
+  });
 });
 
 test("stockReconnect: MachineRestartedError is distinguishable via instanceof from StockConnectionClosedError and StockRequestTimeoutError", () => {
@@ -1218,8 +1220,7 @@ async function startTransferControlListener(
   state: BrokerState,
   emulatorPort: number,
   getDeps: () => { beforePublish?: () => Promise<void> },
-): Promise<{ listener: StartControlListenerResult; token: string }> {
-  const token = newControlToken();
+): Promise<{ listener: StartControlListenerResult }> {
   const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
     handleRelease: (requestId: string, state: BrokerState) => void;
     handleStageFile: (grantId: string, slot: string, state: BrokerState) => ControlStageFileOutcome;
@@ -1235,21 +1236,11 @@ async function startTransferControlListener(
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async (): Promise<AcquireOutcome> => ({
       ok: true,
-      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/stock-connect-transfer-epoch.json", supervisorDir: "/tmp/stock-connect-transfer" },
+      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` },
     }),
     onRelease: (requestId: string) => handleRelease(requestId, state),
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by stock-connect.test.ts",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,
@@ -1264,11 +1255,10 @@ async function startTransferControlListener(
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: false, code: "bad_request" }),
     onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
     onOperation: (): OperationNoteOutcome => ({ ok: true }),
-    onHostTool: async () => ({ ok: false, message: "not exercised by stock-connect.test.ts" }),
     onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
     onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state, getDeps()),
   });
-  return { listener, token };
+  return { listener };
 }
 
 /** A minimal line-oriented control client -- send() writes one JSON line,
@@ -1335,7 +1325,7 @@ test("stockConnect: publish lands late -- the production upload resolves only on
   // this hook already present but no reply/reader on either side) fails
   // deterministically rather than racing a same-process loopback.
   let beforePublishHook: (() => Promise<void>) | undefined;
-  const { listener, token } = await startTransferControlListener(state, emulatorPort, () => ({ beforePublish: beforePublishHook }));
+  const { listener } = await startTransferControlListener(state, emulatorPort, () => ({ beforePublish: beforePublishHook }));
 
   // The control connection MUST stay open through the whole transfer, not
   // just through staging: `onRelease` (broker-control.mts) fires
@@ -1348,9 +1338,9 @@ test("stockConnect: publish lands late -- the production upload resolves only on
   try {
     let handle: string;
     let emulatorFilename: string;
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
     assert.equal(acquireReply.kind, "grant");
-    const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+    const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
     assert.equal(stageReply.kind, "file_staged");
     handle = stageReply.handle as string;
     emulatorFilename = stageReply.emulator_filename as string;
@@ -1435,8 +1425,8 @@ test('02-REVIEW.md IN-05 pin: every thrown message naming a function via a where
   }
 });
 
-// This repo's own stripCommentLines() convention (hostpath-consumers.test.ts,
-// anno-launch.test.ts) reused verbatim rather than reinvented: strips `//`
+// This repo's own stripCommentLines() convention (anno-launch.test.ts)
+// reused verbatim rather than reinvented: strips `//`
 // and `/* ... */` comments line-by-line, closing a block comment on the
 // FIRST close-token found by position, never by whether the trimmed line
 // happens to end with one, and re-feeding any code trailing a same-line
@@ -1477,8 +1467,8 @@ function stripCommentLinesForShellScan(src: string): string {
 /** The complete top-level shell-scannable module list this repo ships: every
  * `*.ts`/`*.mjs` directly under `src/mcp/vice`, excluding `*.test.*`
  * files (same `readdirSync`-derived, non-recursive convention as
- * hostpath-consumers.test.ts's topLevelProductionModules() -- does not walk
- * into `resources/` or `node_modules/`). Test files are excluded because
+ * tool-location-consumers.test.ts's topLevelProductionModules() -- does not
+ * walk into `resources/` or `node_modules/`). Test files are excluded because
  * they legitimately spawn shells against their own fixed, non-caller-derived
  * fixture paths (e.g. vice-proxy.test.ts's `--help` capture helper); the
  * finding this pin closes (13-REVIEW.md WR-01) is about a caller-derived
@@ -1494,7 +1484,7 @@ test("13-REVIEW.md WR-01 pin: no production .ts/.mjs file in src/mcp/vice interp
   // the ENTIRE derived file set for the forbidden shape (a `"-c"` argument
   // followed by a backtick template literal containing `${`), so a future
   // caller-derived shell command anywhere in this directory trips the same
-  // gate the review's fix (commit f73d0fa) closed for probe-binmon.mjs.
+  // gate the review's fix (commit f73d0fa) closed for probe-binmon.ts.
   const shCInterpolationPattern = /["'`]-c["'`]\s*,\s*`[^`]*\$\{[^`]*`/g;
   const violations: Array<{ file: string; snippet: string }> = [];
   for (const name of topLevelShellScanFiles()) {
@@ -1508,7 +1498,7 @@ test("13-REVIEW.md WR-01 pin: no production .ts/.mjs file in src/mcp/vice interp
     violations,
     [],
     "found a sh -c command string interpolating a template placeholder -- this is the shell-interpolation " +
-      "anti-pattern 13-REVIEW.md WR-01 closed in probe-binmon.mjs's checkCommandAvailable() (commit f73d0fa); " +
+      "anti-pattern 13-REVIEW.md WR-01 closed in probe-binmon.ts's checkCommandAvailable() (commit f73d0fa); " +
       "pass the value as a positional shell argument instead:\n" +
       violations.map((v) => `  ${v.file}: ${v.snippet}`).join("\n"),
   );

@@ -5,8 +5,8 @@
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
 // Nothing in this repository has ever READ the provenance ledger. It has one
-// writer -- `renderLedger()` in `src/skills/c64-provenance-diff/scripts/
-// diff-images.mjs` -- and zero readers, because the requirement governing this
+// writer -- `renderLedger()` in `skills/c64-provenance-diff/scripts/
+// diff-images.ts` -- and zero readers, because the requirement governing this
 // module requires the verdict be READ from the existing ledger, "never
 // re-derived". Recomputing it in-process would force the
 // exporter to import a registry-resolution path it has no other reason to
@@ -73,17 +73,16 @@
 //     not of a reader bug -- accepting it would mean joining a store range
 //     against a table that does not describe the whole address space.
 //
-// This module imports NOTHING from `src/skills/` (the shipped `@henols/
+// This module imports NOTHING from `skills/` (the shipped `@henols/
 // vice-mcp` tarball does not contain that tree, and `anno-join.ts:26` already
-// states the rule for this module family) and nothing from
-// `hostpath.ts`/`containerpath.ts` -- every path this module reads is handed
-// to it already resolved, exactly as `anno-export-asm.ts`'s own `imagePath`
+// states the rule for this module family). Every path this module reads is
+// handed to it already resolved, exactly as `anno-export-asm.ts`'s own `imagePath`
 // is documented: the CALLER owns confinement, this module only reads.
 import { readFileSync } from "node:fs";
 
 /**
  * The seven column names `renderLedger()` writes, in this exact order and
- * spelling (`diff-images.mjs`'s own header row). ONE declaration, one
+ * spelling (`diff-images.ts`'s own header row). ONE declaration, one
  * spelling -- `readProvenanceLedger()` below locates the header row by
  * matching every cell against this array, so a header row that drifted from
  * this exact wording is treated as "no header found" rather than guessed at.

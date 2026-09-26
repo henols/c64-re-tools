@@ -271,7 +271,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "real ACME must exit 0 when its working directory is the tree's own directory");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced .prg bytes must be octet-identical to bytes taken from the image");
   },

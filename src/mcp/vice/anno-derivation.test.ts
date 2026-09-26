@@ -15,7 +15,7 @@
 // that reason, under the class `upstream-audit-manifest-provenance`.
 //
 // WHY THIS EXISTS: `upstream-procedure-manifest.json` is the dated snapshot
-// record for five third-party procedures absorbed into `src/skills/` at one
+// record for five third-party procedures absorbed into `skills/` at one
 // pinned upstream commit. A snapshot record is only worth anything if the
 // three things that make it re-checkable cannot rot:
 //   1. The PIN must be an immutable object. An abbreviated SHA is ambiguous
@@ -42,9 +42,6 @@
 //      hard-FAILs under the opt-in `VICE_REQUIRE_ANNO_UPSTREAM` env var. A
 //      silent pass on a missing oracle is the defect class D-11 exists to
 //      close; do not reintroduce it here.
-//   - Do not import `hostpath.ts` or `containerpath.ts`. Every path here is
-//      repo-side or an operator-supplied clone path; `hostpath-consumers.test.ts`
-//      asserts the anno-side modules stay out of that consumer set.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -67,7 +64,7 @@ import { annoRegisterEntryFor } from "./anno-register.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = resolve(
   HERE,
-  "../../../.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json"
+  "fixtures/upstream-procedure-manifest.json"
 );
 const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
 

@@ -4,26 +4,16 @@
 // own state under, and every directory derived from it (BROKER-06, D-13,
 // D-14). This is HOST-BOUND, compiled by build.ts into resources/, because
 // only the long-lived broker process -- never a per-project client -- may
-// WRITE anywhere under this root: broker.json, epoch records, incidents,
+// WRITE anywhere under this root: epoch records, incidents,
 // staging and config scratch are all written by the broker alone, and that
 // write ownership is BROKER-06's whole content.
 //
-// CORRECTED (Phase 64, plan 64-10, G-64-1's secondary cause): this header
-// used to say no client ever touches this root at all -- that was true only
-// on the ONE route (vice-launcher.sh's `--repo-root` pin) that happened to
-// make the client's own (then project-local) resolver agree with the
-// broker's. Every other documented start route left the two disagreeing.
-// A same-machine client now READS through this exact module -- never writes
-// -- to find broker.json and share its capability record, exactly as
-// vice-launcher.sh's route already shared it: vice-broker-client.ts's
-// brokerRootDir() imports `brokerStateDir()` below directly (a value import;
-// this module carries only `node:` imports, so it loads unbuilt from that
-// container-side caller too), sharing the SAME resolver the broker itself
-// calls rather than recomputing a second answer that could drift. A client
-// inside a devcontainer resolves its OWN home, which is not the host
-// broker's -- an interim limitation with no translation fix (the path lies
-// outside the bind mount), permanently removed once Phase 66's RM-02
-// deletes broker.json and there is no file left for a client to read.
+// A same-machine client READS through this module -- never writes -- to
+// share the broker's capability record: vice-proxy.ts imports
+// `brokerStateDir()` directly (this module carries only `node:` imports, so
+// it loads unbuilt there too) rather than recomputing a second answer that
+// could drift. A client inside a devcontainer resolves its OWN home, which is
+// not the host broker's, so it simply misses that cache.
 //
 // WHY NOT repo-root.ts's toolsDir()/supervisorDir(). Those resolve a
 // directory INSIDE whichever project checkout happens to be current
@@ -73,7 +63,7 @@
 // below is a single recursive, already-exists-tolerant mkdir so two brokers
 // (or two concurrent calls) racing on the same path both succeed.
 import { mkdirSync } from "node:fs";
-import { homedir as osHomedir } from "node:os";
+import { homedir as osHomedir, tmpdir as osTmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 /** The single new environment-variable name naming the machine-level root
@@ -95,6 +85,10 @@ const TOOLS_DIR_NAME = ".c64-re-tools";
 export interface BrokerHomeOptions {
   env?: NodeJS.ProcessEnv;
   homedir?: string;
+  /** Overrides `node:os`'s `tmpdir()`; read only by brokerGhidraDir(). */
+  tmpdir?: string;
+  /** Overrides the process uid; read only by brokerGhidraDir(). */
+  uid?: number;
 }
 
 function resolveEnv(opts: BrokerHomeOptions): NodeJS.ProcessEnv {
@@ -202,6 +196,26 @@ export function brokerConfigScratchDir(opts: BrokerHomeOptions = {}): string {
  * module's root instead. */
 export function brokerRunsDir(kind: string, opts: BrokerHomeOptions = {}): string {
   return join(brokerHome(opts), "runs", kind);
+}
+
+/** The environment variable that places the Ghidra projects root. */
+export const BROKER_GHIDRA_DIR_ENV = "VICE_BROKER_GHIDRA_DIR";
+
+/** Where the broker puts each Ghidra run's project directory. Deliberately
+ * NOT under brokerHome(): Ghidra refuses a project location with any
+ * dot-prefixed path segment, and the default home (`~/.c64-re-tools`) has
+ * one. `VICE_BROKER_GHIDRA_DIR` wins when set (absolutized); otherwise a
+ * per-user directory under the OS temp directory, which carries no dotted
+ * segment on Linux (`/tmp`) or macOS (`/var/folders/.../T`). A run's project
+ * directory is removed when the run ends, so nothing accumulates here.
+ * Whether the resolved path is acceptable to Ghidra is checked at the point
+ * of use (ghidra-project.mts), never here. */
+export function brokerGhidraDir(opts: BrokerHomeOptions = {}): string {
+  const env = resolveEnv(opts);
+  const override = env[BROKER_GHIDRA_DIR_ENV];
+  if (override !== undefined && override !== "") return resolve(override);
+  const uid = opts.uid ?? (typeof process.getuid === "function" ? process.getuid() : undefined);
+  return join(opts.tmpdir ?? osTmpdir(), `c64-re-tools-ghidra-${uid ?? "user"}`);
 }
 
 /** Creates `path` recursively, tolerating it already existing -- a single

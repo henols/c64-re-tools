@@ -21,8 +21,8 @@ import { createServer } from "node:net";
 export const MONITOR_CHANNELS = Object.freeze(["binary", "text"]);
 /** Clears ONE channel's entry when `channel` is passed (an explicit
  * `monitor_release` for that channel), or EVERY channel's entry when it is
- * omitted (the whole record's ownership is going away -- recycle, release,
- * or the instance's own process exit; see InstanceRecord.monitorClients'
+ * omitted (the whole record's ownership is going away -- a release or the
+ * instance's own process exit; see InstanceRecord.monitorClients'
  * own header comment for the exact call sites of each case) -- so a dead or
  * torn-down client can never hold this lock forever, on any channel. The
  * ONE place a holder entry is cleared, apart from broker-launch.mts's
@@ -39,7 +39,15 @@ export function clearMonitorClient(record, channel) {
         delete record.monitorClients[ch];
 }
 export function createBrokerState() {
-    return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map() };
+    return {
+        instances: new Map(),
+        grants: new Map(),
+        blockedPorts: new Set(),
+        relaySessions: new Map(),
+        children: new Map(),
+        childListener: null,
+        shuttingDown: false,
+    };
 }
 /** Deep, plain-object copy of `state` for tests -- a real, typed, named
  * export imported directly by test files, modelled on build.ts's own
@@ -75,10 +83,9 @@ export const DEFAULT_BASE_PORT = 6600;
  * an unbounded scan. */
 const PORT_SCAN_CEILING = 100;
 /** Exported (plan 05): vice-broker.mts's host_state control-plane response
- * and broker.json's own `base_port` field both need the SAME resolved base
- * port this allocator itself uses -- reading it here rather than
- * re-duplicating the env-var lookup a third time keeps the two values
- * structurally unable to disagree. */
+ * and its readiness line both need the SAME resolved base port this
+ * allocator itself uses -- reading it here rather than re-duplicating the
+ * env-var lookup keeps the values structurally unable to disagree. */
 export function resolveBasePort() {
     const raw = process.env.VICE_BROKER_BASE_PORT;
     if (raw === undefined || raw === "")
@@ -138,7 +145,7 @@ export function blockPort(state, port) {
 // process until the ENTIRE scan, spawn and record sequence had already
 // resolved, confirmed with the real production functions in isolation
 // before this fix). That is a real liveness gap independent of this
-// plan's own test -- a release, a recycle or a status request over an
+// plan's own test -- a release or a status request over an
 // UNRELATED connection would be held up for as long as a contended scan
 // takes, not merely a competing acquire. Yielding via setImmediate every
 // few candidates restores that liveness at negligible cost (the scan

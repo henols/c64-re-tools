@@ -51,33 +51,24 @@
 //     outbound command must come from TEXT_COMMAND_ALLOWLIST below;
 //     command() refuses anything else BY NAME, before a single byte reaches
 //     the socket (D-01). The ONE stated, bounded exception (D-42-1, plan
-//     42-04, widened plan 50-04): TEXT_COMMAND_PARAM_SPECS lets exactly
-//     four of the allowlisted verbs also carry a caller-chosen value, but
+//     42-04): TEXT_COMMAND_PARAM_SPECS lets exactly
+//     three of the allowlisted verbs also carry a caller-chosen value, but
 //     that value is always a typed, bounded number -- never a string, never
 //     a rest-of-line passthrough, never a `params` field -- validated and
 //     rendered by buildTextCommand(), the ONE place such a string is built,
 //     and accepted as dialable only when isDialableTextCommandForVerb()'s
 //     own re-render round trip reproduces it byte-for-byte. This does not
 //     widen what "free-text command" means above; it narrows one bounded
-//     numeric slot per verb. Plan 50-04's `load` entry is the sole
-//     exception to "never a string": the FILENAME half of that one entry is
-//     not a caller-supplied string at all -- it is baked into the verb's
-//     own frozen identity, a reviewed literal chosen by this file, never a
-//     value a caller passes in. Only the device NUMBER is the caller's
-//     bounded value, exactly like every other entry in this table. See
-//     TEXT_COMMAND_PARAM_SPECS's own `load` entry below for the full
-//     rationale.
+//     numeric slot per verb.
 //   - Never frame a response by a timeout, a byte count, or any fallback
 //     that hands back a plausible-looking partial payload. A response that
 //     cannot be honestly framed refuses by name (TextFramingError), naming
 //     what was actually observed -- never a guess.
 import { EventEmitter } from "node:events";
 import net from "node:net";
-import { join } from "node:path";
 
 import { ViceError } from "./vice-errors.ts";
 import { acquireChannelLock, currentChannelLockHolder } from "./channel-lock.ts";
-import { repoRoot } from "./repo-root.ts";
 
 // ---------------------------------------------------------------------------
 // The prompt terminator and the closed command allowlist.
@@ -130,34 +121,6 @@ export const PROMPT_RE = /\(C:\$[0-9A-Fa-f]{4}\)\s*$/;
  * same file-touching-WRITE-verb rule `device c:`, `warp on/off`,
  * `memmapshow`, `prof flat`, `chis`, `bt`, `io` and `prof on/off` already
  * satisfy.
- *
- * `load` (plan 50-04, 2026-09-15, a conscious, measured widening, and the
- * FIRST one that reverses part of the load/save refusal rather than adding
- * a fresh always-safe verb): Phase 50 needed a way to get a committed
- * `.prg` into a running stock VICE for a live capture, and the project's
- * only other route -- `vice_autostart` against a bare `.prg` -- was
- * MEASURED to fail with monitor error `0x8f` (see
- * `fixtures/hazard-subject/FIXTURE-DESIGN.md`), with no committed `.d64`
- * writer anywhere in this tree to fall back to. The developer was shown
- * three routes that added no capability, a hand-authored disk image, or a
- * new file-WRITING host-tool capability -- and chose a FOURTH: the text
- * monitor's own `load` command (`load "<filename>" <device> [<address>]`,
- * VICE Manual ch. 12, `mon_parse.y`'s `disk_rules` grammar), because it
- * READS a host file and writes nothing back to the host. That is the
- * load-bearing distinction this widening rests on: this allowlist's own
- * rule above was never "no `load` or `save`" in principle, it was "no verb
- * that touches a host file" -- and `memmapsave`'s rejection above is a
- * WRITE. `load` is a READ, and the developer judged the original rule to
- * have over-reached for the read direction (recorded in
- * `.planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md`).
- * This is NOT a general "load anything" capability: the entry added to
- * TEXT_COMMAND_PARAM_SPECS below bakes in the ONE committed fixture path
- * this phase's tracer plan targets as part of the verb's own frozen
- * identity, never a caller-supplied filename -- and, since plan 50-05, one
- * such frozen entry per member of the closed HAZARD_SUBJECT_PRG_RELPATHS
- * table, still never a caller-supplied filename. See those entries' own
- * comment for why a caller still cannot choose what gets loaded. `save`
- * remains refused exactly as before; only the read direction moved.
  */
 export const TEXT_COMMAND_ALLOWLIST = Object.freeze([
   "device c:",
@@ -176,7 +139,7 @@ export const TEXT_COMMAND_ALLOWLIST = Object.freeze([
 export type TextCommand = (typeof TEXT_COMMAND_ALLOWLIST)[number];
 
 // ---------------------------------------------------------------------------
-// Parameterized commands (D-42-1, plan 42-04, widened plan 50-04). Three of
+// Parameterized commands (D-42-1, plan 42-04). Three of
 // the allowlisted verbs -- "chis", "prof flat", "io" -- were captured on the
 // real wire carrying a caller-chosen value ("chis 4", "prof flat 5",
 // "io $d020" -- see fixtures/textmon/{cpu-history,flat-profile,
@@ -186,14 +149,7 @@ export type TextCommand = (typeof TEXT_COMMAND_ALLOWLIST)[number];
 // here. TEXT_COMMAND_PARAM_SPECS is a SIBLING table describing, for the
 // subset of verbs that take one, the bounded typed value each accepts and
 // the ONE renderer that turns a validated value into the exact command
-// string VICE accepts. Plan 50-04 adds a "load" entry, and plan 50-05 turns
-// that single entry into one DERIVED entry per committed subject (see
-// HAZARD_SUBJECT_PRG_RELPATHS) -- see those entries' own comment below and
-// TEXT_COMMAND_ALLOWLIST's doc comment above for the full
-// rationale; unlike the first three, this one is not sourced from a
-// committed live-captured fixture (no live capture was run to add it -- the
-// syntax is sourced directly from VICE's own upstream grammar and manual,
-// cited on the entry itself).
+// string VICE accepts.
 // ---------------------------------------------------------------------------
 
 /** The parameter kind a spec entry declares. "count" bounds a decimal
@@ -220,210 +176,8 @@ function renderAddressParam(verb: string, value: number): string {
 }
 
 /**
- * The CLOSED set of committed fixtures the `load` widening below may load,
- * as an id -> BASENAME table (plan 50-04 committed the first member; plan
- * 50-05 turned the single constant into this table).
- *
- * WHY A TABLE AND NOT ONE CONSTANT PER SUBJECT. Plan 50-04's own note here
- * said a later plan adding a second committed subject would add "its OWN new
- * constant and its OWN new TEXT_COMMAND_PARAM_SPECS entry". Plan 50-05 is
- * that later plan, and plan 50-06 needs two more. Three hand-copied
- * constants, three hand-copied spec entries and three hand-copied verb
- * strings in text-tools.ts is three chances to mis-copy a path and load the
- * WRONG subject into a capture that then silently becomes evidence for the
- * wrong binary. The table removes that class of mistake: adding a subject is
- * ONE reviewed row here, and every spec entry, every verb string and the
- * tool's own accepted id set are all derived from it.
- *
- * WHAT DID NOT CHANGE, AND MUST NOT. Every path here is still a reviewed
- * literal chosen by THIS file. A caller never supplies a path, a basename or
- * any fragment of one. The tool's `subject` argument (text-tools.ts) is an
- * enumerated ID that is looked up in this frozen table by exact membership
- * and is NEVER concatenated into a command string -- an id this table does
- * not carry is refused BY NAME, so the set of loadable files stays exactly
- * as closed as it was when it held one entry. TextCommandParamKind is
- * likewise untouched: the only caller-supplied VALUE is still the bounded
- * device NUMBER, and no parameter kind in this module accepts a string
- * domain (text-protocol.test.ts pins both facts, at runtime and at source
- * level).
- *
- * WHAT NOT TO DO: do not add a function that builds a path from caller
- * input, and do not widen a row into anything a caller can steer. Every row
- * below is a REVIEWED LITERAL spelled out in this file, whole.
- *
- * WHY THE ROWS CARRY A WHOLE REPO-RELATIVE PATH AND NOT A BARE BASENAME
- * (plan 50-06). Plan 50-05 wrote each row as a basename and joined a single
- * fixed `src/mcp/vice/fixtures/hazard-subject` directory onto it, and said
- * in this very comment that a build artifact outside that directory "gets a
- * reviewed row of its own, spelled out here the same way". Plan 50-06 is the
- * plan with that artifact: its rebuild `.prg` is produced from the committed
- * annotation store and lands under the PHASE EVIDENCE directory, not the
- * fixture directory, because it is an output of this phase rather than a
- * committed fixture. A basename-plus-fixed-directory row cannot spell that,
- * so the row now carries the whole repo-relative path as an array of
- * reviewed segments. Nothing about the CLOSURE changed: the path is still
- * chosen entirely by this file, a caller still supplies no path, no
- * basename, no directory and no fragment of one, and the only thing a
- * caller ever names is an id this table's own keys define.
- *
- * `misaligned` is deliberately ABSENT: `hazard-subject-misaligned.prg` is a
- * committed fixture, but no plan loads it into a running emulator -- it is
- * consumed offline by the hazard-report gate. The set is what is actually
- * dialed, not every fixture that happens to exist, and a committed test
- * asserts it stays undialable so the boundary is this table rather than a
- * directory.
- */
-export const HAZARD_SUBJECT_PRG_RELPATHS = Object.freeze({
-  /** Plan 50-04's tracer-slice subject -- the original. */
-  original: Object.freeze(["src", "mcp", "vice", "fixtures", "hazard-subject", "hazard-subject.prg"]),
-  /** Plan 50-02's regressed twin: three planted single-bit regressions at
-   * the immediates feeding $D020, $D015 and $D018. Plan 50-05's red
-   * control. */
-  regressed: Object.freeze(["src", "mcp", "vice", "fixtures", "hazard-subject", "hazard-subject-regressed.prg"]),
-  /** Plan 50-02's modified subject: one behaviour removed and one added.
-   * Plan 50-06's modifiability observation. */
-  modified: Object.freeze(["src", "mcp", "vice", "fixtures", "hazard-subject", "hazard-subject-modified.prg"]),
-  /** Plan 50-06's REBUILD: the committed subject re-produced from its own
-   * committed annotation store through importStoreDocument() ->
-   * exportAsmTree() -> verifyAcmeAssemblesTree(), recorded in
-   * `.planning/phases/50-equivalence-and-modifiability/evidence/REBUILD.md`.
-   * The only row that is not a committed fixture, and the reason the rows
-   * carry a whole repo-relative path -- see this table's own comment. */
-  rebuild: Object.freeze([
-    ".planning",
-    "phases",
-    "50-equivalence-and-modifiability",
-    "evidence",
-    "hazard-subject-rebuild.prg",
-  ]),
-  /** Plan 50-08's exported-edit subject: the same one-behaviour-removed,
-   * one-behaviour-added pair `modified` carries, made this time in a file
-   * `exportAsmTree()` itself emitted (`scope_087a.a`) rather than in the
-   * hand-written `modified` fixture family, reassembled through the same
-   * single oracle against a pre-registered byte manifest committed at
-   * `fixtures/hazard-subject/exported-edit.manifest.json`. Both the
-   * rebuild and the live-behaviour gate came back acknowledged: the
-   * reassembly reproduced the manifest byte-for-byte and both behaviour
-   * changes were independently confirmed to take effect in a running
-   * genuine stock VICE session via checkpoint-driven RAM captures, not
-   * just in the rebuilt bytes on disk. */
-  "exported-edit": Object.freeze([
-    "src",
-    "mcp",
-    "vice",
-    "fixtures",
-    "hazard-subject",
-    "hazard-subject-exported-edit.prg",
-  ]),
-} as const);
-
-/** The id half of HAZARD_SUBJECT_PRG_RELPATHS -- the only thing a caller
- * ever names, and never a path. */
-export type HazardSubjectId = keyof typeof HAZARD_SUBJECT_PRG_RELPATHS;
-
-/** The frozen id list, in table order. Exported so text-tools.ts can state
- * the accepted set in its refusal message without re-typing it. */
-export const HAZARD_SUBJECT_IDS: readonly HazardSubjectId[] = Object.freeze(
-  Object.keys(HAZARD_SUBJECT_PRG_RELPATHS) as HazardSubjectId[],
-);
-
-/** Each row's own last segment, DERIVED from the table above rather than
- * spelled a second time. Preserved by name because committed tests already
- * bind it, and because "which file does this id name" is a question worth
- * answering without re-walking the path. */
-export const HAZARD_SUBJECT_PRG_BASENAMES: Readonly<Record<HazardSubjectId, string>> = Object.freeze(
-  Object.fromEntries(
-    HAZARD_SUBJECT_IDS.map((id) => {
-      const segments = HAZARD_SUBJECT_PRG_RELPATHS[id];
-      return [id, segments[segments.length - 1]] as const;
-    }),
-  ) as Record<HazardSubjectId, string>,
-);
-
-/** True only for an id this table actually carries. The ONE membership test
- * -- `Object.keys`-derived rather than a prototype lookup, so an inherited
- * name ("constructor", "__proto__", "toString") can never test true. */
-export function isHazardSubjectId(value: unknown): value is HazardSubjectId {
-  return typeof value === "string" && (HAZARD_SUBJECT_IDS as readonly string[]).includes(value);
-}
-
-/**
- * Absolute host path to one member of the closed table above. Three members
- * are committed fixtures; `rebuild` is plan 50-06's own build artifact under
- * the phase evidence directory, which is why the table's rows carry a whole
- * repo-relative path rather than a basename joined onto one fixed directory.
- *
- * Resolved through repoRoot() rather than hard-coded as a relative string:
- * `broker-launch.mts` spawns `x64sc` with no explicit `cwd` (checked
- * directly in this session -- no `cwd` option anywhere in that file), so a
- * repo-relative string would resolve against whatever directory the broker
- * process itself happened to be started from, not necessarily this
- * repository. An absolute path removes that ambiguity. Residual, stated
- * risk (not solved here): this is the CONTAINER-side path as seen by this
- * Node process; on a genuinely containerized deployment (this project has
- * none today -- host-developed, no devcontainer) the host process actually
- * running `x64sc` would need this translated through `hostpath.ts` first.
- * That translation is deliberately NOT added here, matching this project's
- * existing "solve the general host/container case only where it is
- * actually exercised" discipline -- a later plan that runs this widening
- * through a real container split adds it then.
- */
-export function hazardSubjectPrgPath(id: HazardSubjectId): string {
-  return join(repoRoot(), ...HAZARD_SUBJECT_PRG_RELPATHS[id]);
-}
-
-/** THE ONE place a `load "<path>"` verb string is spelled, for any subject.
- * Both the TEXT_COMMAND_PARAM_SPECS keys below and text-tools.ts's own
- * lookup go through this function, so the table key and the dialed verb can
- * never drift apart into two literals that differ by a character. */
-export function hazardSubjectLoadVerb(id: HazardSubjectId): string {
-  return `load "${hazardSubjectPrgPath(id)}"`;
-}
-
-/** Plan 50-04's original constant, preserved by name and by value: it is
- * exactly the `original` member of the table above. Kept because several
- * committed tests and text-tools.ts already bind this name, and because the
- * default subject is still the original. */
-export const HAZARD_SUBJECT_PRG_PATH: string = hazardSubjectPrgPath("original");
-
-/**
- * One frozen `load "<path>"` spec per member of HAZARD_SUBJECT_PRG_RELPATHS,
- * derived from that closed table rather than hand-copied per subject (plan
- * 50-05). Every entry is identical except for the reviewed path baked into
- * its own key: same "count" kind, same 0-11 device bound, same renderer. The
- * DERIVATION is the point -- a hand-copied entry per subject is how a path
- * and its renderer drift apart, and a renderer that disagrees with its own
- * key fails isDialableTextCommandForVerb()'s round trip and refuses the
- * command outright, which is a confusing way to discover a typo.
- */
-const HAZARD_SUBJECT_LOAD_SPECS: Readonly<Record<string, TextCommandParamSpec>> = Object.freeze(
-  Object.fromEntries(
-    HAZARD_SUBJECT_IDS.map((id) => {
-      const verb = hazardSubjectLoadVerb(id);
-      return [
-        verb,
-        Object.freeze({
-          kind: "count",
-          min: 0,
-          max: 11,
-          render: (value: number) => renderCountParam(verb, value),
-        } satisfies TextCommandParamSpec),
-      ] as const;
-    }),
-  ),
-);
-
-/**
  * Frozen, per-verb parameter specs (D-42-1). Keyed by the verb exactly as
- * it appears in TEXT_COMMAND_ALLOWLIST above -- with ONE exception, the
- * `load` family (plan 50-04, one entry per committed subject since plan
- * 50-05), whose keys are full frozen literals that already embed their own
- * filename argument (see below); none of them ever appears in
- * TEXT_COMMAND_ALLOWLIST as a bare entry, because `load "<file>"` with no
- * device number is not valid VICE syntax on its own (`mon_parse.y`'s
- * `disk_rules: CMD_LOAD filename device_num opt_address` requires the
- * device number) -- unlike "chis"/"prof flat"/"io", which ARE independently
- * valid bare and so are also listed in TEXT_COMMAND_ALLOWLIST.
+ * it appears in TEXT_COMMAND_ALLOWLIST above.
  *
  * A verb with no entry here takes no parameter -- it keeps dialing its bare
  * frozen literal, unchanged (the three no-parameter verbs -- "device c:",
@@ -433,30 +187,6 @@ const HAZARD_SUBJECT_LOAD_SPECS: Readonly<Record<string, TextCommandParamSpec>> 
  * CPU-history count lives in on this machine (CPUHISTORY_GET's own count
  * field, monitor_binary.c:1492). The address bound for "io" is 0 through
  * 65535, the full 16-bit machine address space.
- *
- * `load "<one committed subject path>"` (plan 50-04, 2026-09-15; one entry
- * per subject since plan 50-05): the single bounded value is still the
- * DEVICE NUMBER, per VICE's own documented syntax
- * (`load "<filename>" <device> [<address>]`, VICE Manual ch. 12 -- "If
- * device is 0, the file is read from the file system"). The address
- * argument is deliberately never offered here: omitting it makes VICE use
- * the load address embedded in the `.prg` file's own two-byte header, which
- * is exactly what a committed machine-code fixture needs and removes a
- * second numeric slot this project would otherwise have to bound and
- * justify for no present use. This reuses the SAME "count" kind and the
- * SAME `${verb} ${value}` rendering `renderCountParam()` already produces
- * for "chis"/"prof flat" -- no new TextCommandParamKind, no new render
- * shape; only the verb string itself is new, and it is a reviewed literal,
- * never a caller-supplied string, and the SUBJECT is chosen by an
- * enumerated id looked up in that same frozen table, never by a path a
- * caller passes in (see TEXT_COMMAND_ALLOWLIST's own `load` paragraph above
- * and HAZARD_SUBJECT_PRG_RELPATHS). Bound 0 through 11: 0 is the one value this phase
- * exercises (host filesystem, per the manual quote above); 1 through 11
- * spans this project's own documented device-number range elsewhere
- * (CLAUDE.md's wire memspace note: units 8-11 are the four IEC disk
- * drives this codebase ever names) -- a deliberately narrow bound, not the
- * full addressable device range VICE itself accepts, because nothing in
- * this project has a reason to dial anything wider yet.
  */
 export const TEXT_COMMAND_PARAM_SPECS: Readonly<Record<string, TextCommandParamSpec>> = Object.freeze({
   chis: Object.freeze({
@@ -477,7 +207,6 @@ export const TEXT_COMMAND_PARAM_SPECS: Readonly<Record<string, TextCommandParamS
     max: 65535,
     render: (value: number) => renderAddressParam("io", value),
   }),
-  ...HAZARD_SUBJECT_LOAD_SPECS,
 } satisfies Record<string, TextCommandParamSpec>);
 
 function isSafeIntegerNumber(value: unknown): value is number {
@@ -567,8 +296,38 @@ export function isDialableTextCommandForVerb(verb: string, cmd: string): boolean
  * predicate over TextCommand: the dialable set is now larger than that
  * eight-member union, since a parameterized command is a distinct runtime
  * string TextCommand's own literal union does not (and should not) name. */
+/**
+ * The ONE `load` shape the text monitor accepts: VICE's own
+ * `load "<file>" 0 [<address>]` naming a file the broker staged. The client
+ * streamed the bytes to the broker (stage_file + transfer); the broker named
+ * the staged file after its 32-hex handle, and that name is passed back
+ * verbatim. A caller's own path never appears here, device 0 (the emulator
+ * host's filesystem) is the only device, and a name whose last segment is
+ * not a 32-hex handle is refused.
+ */
+const STAGED_LOAD_RE = /^load "(\/[^"\x00-\x1f]*\/[0-9a-f]{32})" 0( \$[0-9a-f]{4})?$/;
+
+/** Builds the staged `load` command, or refuses. `emulatorFilename` and
+ * `handle` are the broker's own stage_file reply; the name must end in
+ * exactly that handle. `address` overrides the PRG's header address. */
+export function buildStagedLoadCommand(emulatorFilename: string, handle: string, address?: number): BuildTextCommandResult {
+  if (!/^[0-9a-f]{32}$/.test(handle) || !emulatorFilename.endsWith(`/${handle}`)) {
+    return { ok: false, message: "the broker's staged file name does not end in its own 32-hex handle" };
+  }
+  if (address !== undefined && !(Number.isInteger(address) && address >= 0 && address <= 0xffff)) {
+    return { ok: false, message: `address must be an integer in 0..0xffff, got ${JSON.stringify(address)}` };
+  }
+  const suffix = address === undefined ? "" : ` $${address.toString(16).padStart(4, "0")}`;
+  const command = `load "${emulatorFilename}" 0${suffix}`;
+  if (!STAGED_LOAD_RE.test(command)) {
+    return { ok: false, message: "the broker's staged file name is not a plain absolute path" };
+  }
+  return { ok: true, command };
+}
+
 export function isAllowlistedTextCommand(cmd: string): boolean {
   if ((TEXT_COMMAND_ALLOWLIST as readonly string[]).includes(cmd)) return true;
+  if (STAGED_LOAD_RE.test(cmd)) return true;
   for (const verb of Object.keys(TEXT_COMMAND_PARAM_SPECS)) {
     if (cmd.startsWith(`${verb} `) && isDialableTextCommandForVerb(verb, cmd)) return true;
   }
@@ -584,9 +343,7 @@ export function isAllowlistedTextCommand(cmd: string): boolean {
  * render() function, or in isDialableTextCommandForVerb()'s own round trip,
  * is now a real way a control character could reach this far, and this
  * check is what still stops it before a single byte is written. It also
- * guards any future allowlist entry the same way it always did. (canon-
- * referral breadcrumb: generic command injection is `/gsd-secure-phase`
- * canon, not re-litigated here). */
+ * guards any future allowlist entry the same way it always did. */
 const FORBIDDEN_COMMAND_CHARS_RE = /[\r\n\x00-\x1f]/;
 
 /**
@@ -687,9 +444,9 @@ export interface WithTextChannelLockOptions {
 /**
  * The text channel's ONE acquire seam for channel-lock.ts's mutex. Acquires
  * `channel: "text"`, runs `fn`, and releases in a `finally` so a throwing
- * `fn` still releases -- matching stock-dispatch.ts's `withChannelLockHeld()`
+ * `fn` still releases -- matching stock-session.ts's `withChannelLockHeld()`
  * on the binary side exactly, and satisfying D-07's requirement that
- * `text-protocol.ts` and `stock-dispatch.ts` both import the one primitive.
+ * `text-protocol.ts` and `stock-session.ts` both import the one primitive.
  *
  * Every real text-monitor command MUST be issued from inside this function:
  * `command()` below refuses, by name, whenever channel-lock.ts's mutex is

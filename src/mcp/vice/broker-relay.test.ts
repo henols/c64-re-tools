@@ -46,10 +46,8 @@ import {
 } from "./broker-relay.mts";
 import {
   startControlListener,
-  newControlToken,
   type StartControlListenerResult,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type MonitorClaimOutcome,
@@ -65,7 +63,7 @@ import {
   DEFAULT_ATTACH_REPLY_TIMEOUT_MS,
   type DialMonitorRelayResult,
   type DialMonitorRelaySuccess,
-} from "./broker-endpoint.ts";
+} from "./broker-endpoint.mts";
 import { ViceMonitorClient, CommandType, ResponseType, ErrorCode, REQUEST_HEADER_LEN, VICE_BROADCAST_REQUEST_ID, encodeRequestHeader } from "./stock-protocol.ts";
 import { encodeResponseFrame, syntheticJamFrame } from "./binmon-fixtures.ts";
 import { build } from "./build.ts";
@@ -108,10 +106,6 @@ interface TestHandleReleaseDeps {
   writeIncident?: (record: BrokerIncidentInput) => string;
   kill?: (opts: { pid: number | null; expectedIdentity: string }) => Promise<string>;
 }
-/** Mirrors vice-broker.mts's own HandleRecycleDeps (Plan 63-07 Task 2). */
-interface TestHandleRecycleDeps {
-  kill?: (opts: { pid: number | null; expectedIdentity: string }) => Promise<string>;
-}
 const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
   handleMonitorClaim: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorClaimOutcome;
   handleMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorReleaseOutcome;
@@ -135,9 +129,6 @@ const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", im
    * handleMonitorRelease() below now both delegate to. See
    * vice-broker.mts's own header comment for the full contract. */
   tearDownRelaySessionForChannel: (targetId: string, channel: MonitorChannel, state: BrokerState) => boolean;
-  /** Plan 63-07 Task 2 (SESS-05 gap closure) -- newly EXPORTED, previously
-   * module-private. See vice-broker.mts's own header comment. */
-  handleRecycleForRealBroker: (targetId: string, state: BrokerState, deps?: TestHandleRecycleDeps) => Promise<RecycleOutcome>;
 };
 const {
   handleMonitorClaim,
@@ -148,7 +139,6 @@ const {
   handleRelease,
   tearDownRelaySessionsForGrant,
   tearDownRelaySessionForChannel,
-  handleRecycleForRealBroker,
 } = viceBrokerModule;
 
 // broker-incident.mts is ALSO host-bound (it value-imports broker-home.mjs),
@@ -333,7 +323,6 @@ function setupMultiGrantBrokerState(grants: Array<{ port: number; targetId: stri
 interface RelayTestBrokerContext {
   listener: StartControlListenerResult;
   listenerPort: number;
-  token: string;
   state: BrokerState;
   /** The scratch directory THIS broker's own handleRelayDeath() writes
    * incidents into -- absent when the caller supplied its own `deps`
@@ -350,7 +339,7 @@ interface RelayTestBrokerContext {
  * shared listener-standup both withRelayTestBroker() (one grant) and
  * withMultiRelayTestBroker() (N grants, Task 3's concurrency case) build
  * on. Every other callback is a no-op stub -- this suite never exercises
- * acquire/release/recycle/status/host_state/host_tool.
+ * acquire/release/status/host_state/host_tool.
  *
  * `relayDeathDeps` (Plan 63-04): threaded straight into every
  * handleRelayAttach() call as its own `deps` argument. When the caller
@@ -364,29 +353,18 @@ interface RelayTestBrokerContext {
 async function startRelayListenerForState(
   state: BrokerState,
   relayDeathDeps?: TestHandleRelayDeathDeps,
-): Promise<{ listener: StartControlListenerResult; token: string; incidentsDir: string | null }> {
+): Promise<{ listener: StartControlListenerResult; incidentsDir: string | null }> {
   let incidentsDir: string | null = null;
   let deps = relayDeathDeps;
   if (!deps) {
     incidentsDir = mkdtempSync(join(tmpdir(), "vice-relay-incidents-"));
     deps = { writeIncident: (record) => writeBrokerIncident(record, { dir: incidentsDir as string }) };
   }
-  const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async (): Promise<AcquireOutcome> => ({ ok: false, reason: "internal" }),
     onRelease: () => {},
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by broker-relay.test.ts",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,
@@ -404,9 +382,8 @@ async function startRelayListenerForState(
     // as of this plan -- not exercised by this suite (broker-control.test.ts
     // is the home for `operation` coverage).
     onOperation: () => ({ ok: true }),
-    onHostTool: async () => ({ ok: false, message: "not exercised by broker-relay.test.ts" }),
   });
-  return { listener, token, incidentsDir };
+  return { listener, incidentsDir };
 }
 
 async function withRelayTestBroker<T>(
@@ -416,9 +393,9 @@ async function withRelayTestBroker<T>(
   relayDeathDeps?: TestHandleRelayDeathDeps,
 ): Promise<T> {
   const state = setupBrokerState(emulatorPort, targetId);
-  const { listener, token, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
+  const { listener, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
   try {
-    return await fn({ listener, listenerPort: listener.port, token, state, incidentsDir });
+    return await fn({ listener, listenerPort: listener.port, state, incidentsDir });
   } finally {
     listener.server.close();
     if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });
@@ -434,9 +411,9 @@ async function withMultiRelayTestBroker<T>(
   relayDeathDeps?: TestHandleRelayDeathDeps,
 ): Promise<T> {
   const state = setupMultiGrantBrokerState(grants);
-  const { listener, token, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
+  const { listener, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
   try {
-    return await fn({ listener, listenerPort: listener.port, token, state, incidentsDir });
+    return await fn({ listener, listenerPort: listener.port, state, incidentsDir });
   } finally {
     listener.server.close();
     if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });
@@ -983,16 +960,17 @@ function happyPathResponder(): (socket: Socket) => void {
   };
 }
 
-/** Mirrors stock-connect.test.ts's own withTempEpochFile() -- a real
- * temp-directory epoch.json, so stockReconnect()'s identity-proof path has
- * genuine evidence to read rather than an injected stub. */
-function withTempEpochFile<T>(fn: (epochPath: string, writeEpoch: (epoch: number) => void) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), "broker-relay-epoch-"));
-  const epochPath = join(dir, "epoch.json");
-  const writeEpoch = (epoch: number) => {
-    writeFileSync(epochPath, JSON.stringify({ epoch, spawned_at: new Date().toISOString(), pid: 1234 }));
-  };
-  return fn(epochPath, writeEpoch).finally(() => rmSync(dir, { recursive: true, force: true }));
+/** A settable stand-in for the broker's epoch for this grant -- what
+ * stock-session.ts's grantEpochReader() reads from `status` -- so
+ * stockReconnect()'s identity-proof path has an epoch to compare. */
+function withEpochSource<T>(fn: (readCurrentEpoch: () => Promise<number | null>, writeEpoch: (epoch: number) => void) => Promise<T>): Promise<T> {
+  let current: number | null = null;
+  return fn(
+    async () => current,
+    (epoch: number) => {
+      current = epoch;
+    },
+  );
 }
 
 /** A StockConnectBrokerControl whose claimMonitor()/releaseMonitor() call
@@ -1037,8 +1015,7 @@ function makeRealBrokerControl(state: BrokerState, targetId: string): StockConne
 // ===========================================================================
 // G-64-4 (plan 64-12), Task 1: the cold-launch relay-attach race. Real
 // x64sc's binary-monitor port binds 55-142ms after spawn while the client's
-// own attach+first-PING lands 17-31ms after spawn (measured,
-// .planning/debug/cold-launch-relay-attach-race.md) -- every PRE-EXISTING
+// own attach+first-PING lands 17-31ms after spawn (measured) -- every PRE-EXISTING
 // stub emulator in this file binds its port SYNCHRONOUSLY, before the attach
 // is ever sent, which is exactly what hid this race from every earlier test.
 // withLateBindingStubEmulatorServer() reverses that: the attach is sent
@@ -1047,7 +1024,7 @@ function makeRealBrokerControl(state: BrokerState, targetId: string): StockConne
 // ===========================================================================
 
 test("emulator binds late: a binary attach sent before the emulator's port is bound is answered only after the bind, and the stock handshake's first PING is answered", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
+  await withEpochSource(async (readCurrentEpoch, writeEpoch) => {
     writeEpoch(7);
     let incidentWrites = 0;
     const relayDeathDeps: TestHandleRelayDeathDeps = {
@@ -1095,7 +1072,7 @@ test("emulator binds late: a binary attach sent before the emulator's port is bo
               port: emulatorPort,
               targetId,
               brokerControl,
-              deps: { dialMonitorSocket, epochPath },
+              deps: { dialMonitorSocket, readCurrentEpoch },
             });
             assert.ok(
               session.client.connected,
@@ -1436,7 +1413,7 @@ test("the client's attach-reply wait for a relay dial exceeds the broker's emula
 });
 
 test("stockConnect: a real never-binding attach's refusal, converted by convertHandshakeError(), names the cause and the retry, and never mentions VICE_BROKER_BINMON_HOST", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
+  await withEpochSource(async (readCurrentEpoch, writeEpoch) => {
     writeEpoch(1);
     const port = await reserveFreePort(); // reserved, then released -- NOTHING is ever bound on it in this test
     const targetId = "grant-g64-4-e2e-never-binds";
@@ -1465,7 +1442,7 @@ test("stockConnect: a real never-binding attach's refusal, converted by convertH
               port,
               targetId,
               brokerControl,
-              deps: { dialMonitorSocket, epochPath },
+              deps: { dialMonitorSocket, readCurrentEpoch },
             }),
           (err: unknown) => {
             const result = convertHandshakeError("vice_ping", err);
@@ -1483,7 +1460,7 @@ test("stockConnect: a real never-binding attach's refusal, converted by convertH
 });
 
 test("stockReconnect: after the binary relay is destroyed, a fresh session establishment dials the relay again and succeeds on a matching epoch", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
+  await withEpochSource(async (readCurrentEpoch, writeEpoch) => {
     writeEpoch(42);
     let emulatorSocket: Socket | null = null;
     let resolveEmulatorAccepted: () => void = () => {};
@@ -1516,7 +1493,7 @@ test("stockReconnect: after the binary relay is destroyed, a fresh session estab
             port: emulatorPort,
             targetId: "grant-reconnect-binary",
             brokerControl,
-            deps: { dialMonitorSocket, epochPath },
+            deps: { dialMonitorSocket, readCurrentEpoch },
           });
           assert.ok(session.client.connected, "the first handshake must dial the relay and connect");
 
@@ -1545,7 +1522,7 @@ test("stockReconnect: after the binary relay is destroyed, a fresh session estab
 });
 
 test("stockReconnect: after the binary relay is destroyed, an advanced epoch rejects with MachineRestartedError rather than reusing the dead relay", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
+  await withEpochSource(async (readCurrentEpoch, writeEpoch) => {
     writeEpoch(1);
     let emulatorSocket: Socket | null = null;
     let resolveEmulatorAccepted: () => void = () => {};
@@ -1578,7 +1555,7 @@ test("stockReconnect: after the binary relay is destroyed, an advanced epoch rej
             port: emulatorPort,
             targetId: "grant-reconnect-restarted",
             brokerControl,
-            deps: { dialMonitorSocket, epochPath },
+            deps: { dialMonitorSocket, readCurrentEpoch },
           });
 
           const clientClosed = new Promise<void>((resolve) => session.client.once("close", () => resolve()));
@@ -2389,56 +2366,6 @@ test("handleRelease: the mismatched-occupant branch also tears the grant's relay
   assert.deepEqual(closeCalls, ["relay_close"], "the stand-in's close() must be called exactly once");
   assert.ok(!state.grants.has("grant-release-mismatch-relay"), "the grant's own bookkeeping must still be retired");
   assert.ok(state.instances.has(16611), "the mismatched occupant's instance record must be left running, untouched");
-});
-
-test("handleRecycleForRealBroker: a recycle with a LIVE relay session tears it down before the kill, writes no record, and leaves the grant and instance standing for the exit handler", async () => {
-  const state = setupBrokerState(16612, "grant-recycle-live-relay");
-  const { session, closeCalls } = makeStandInRelaySession();
-  state.relaySessions.set(relaySessionKey("grant-recycle-live-relay", "binary"), session);
-
-  const order: string[] = [];
-  const originalClose = session.close;
-  (session as { close: (t: RelayDeathTrigger) => void }).close = (trigger: RelayDeathTrigger) => {
-    order.push("close");
-    originalClose(trigger);
-  };
-
-  const outcome = await handleRecycleForRealBroker("grant-recycle-live-relay", state, {
-    kill: async () => {
-      order.push("kill");
-      return "sigterm";
-    },
-  });
-
-  assert.deepEqual(order, ["close", "kill"], "the relay session must be torn down BEFORE the kill is invoked");
-  assert.deepEqual(closeCalls, ["relay_close"]);
-  assert.ok(
-    !state.relaySessions.has(relaySessionKey("grant-recycle-live-relay", "binary")),
-    "the relay session entry must be gone from state.relaySessions",
-  );
-  assert.ok(state.grants.has("grant-recycle-live-relay"), "the grant must still stand for the exit handler's respawn");
-  assert.ok(state.instances.has(16612), "the instance record must still stand for the exit handler's respawn");
-  assert.equal(outcome.outcome, "ok");
-
-  let writeCount = 0;
-  handleRelayDeath("grant-recycle-live-relay", "binary", "relay_close", state, {
-    writeIncident: () => {
-      writeCount += 1;
-      return "/fake.md";
-    },
-  });
-  assert.equal(writeCount, 0, "the kill's later socket close must find the map entry already gone and write nothing");
-});
-
-test("handleRecycleForRealBroker: a recycle with no live relay session behaves byte-identically to before", async () => {
-  const state = setupBrokerState(16613, "grant-recycle-no-relay");
-  const outcome = await handleRecycleForRealBroker("grant-recycle-no-relay", state, {
-    kill: async () => "sigterm",
-  });
-  assert.equal(outcome.outcome, "ok");
-  assert.equal(outcome.port, 16613);
-  assert.ok(state.grants.has("grant-recycle-no-relay"));
-  assert.ok(state.instances.has(16613));
 });
 
 test("tearDownRelaySessionsForGrant enumerates every MONITOR_CHANNELS value, so a third channel could never be silently skipped", () => {

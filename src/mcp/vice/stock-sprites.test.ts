@@ -7,7 +7,7 @@
 // address-computation bug pass, matching stock-disassemble.test.ts's own
 // DI-stub convention (assert WIRING, never a real protocol round trip).
 //
-// The primary fixture reproduces dump-artifacts.mjs's own committed
+// The primary fixture reproduces dump-artifacts.ts's own committed
 // docstring exactly: dd00_raw=193 (0xC1), d018_raw=49 (0x31) ->
 // screen_base=35840 (vicBank=2, vicBankBase=32768, pointerTableAddress=36856).
 import { test, beforeEach } from "node:test";
@@ -30,7 +30,7 @@ import { CommandType, ErrorCode } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 beforeEach(() => {
   resetRunStateTrackersForTest();
@@ -39,7 +39,7 @@ beforeEach(() => {
 
 type SendCall = [number, Buffer];
 
-const DEPS = {} as unknown as StockDispatchDeps;
+const DEPS = {} as unknown as StockSessionDeps;
 
 function memoryGetReply(bytes: number[], requestId = 1) {
   return { type: "memory_get" as const, requestId, errorCode: ErrorCode.Ok, bytes: Buffer.from(bytes), related: [] };
@@ -87,7 +87,7 @@ function parseAnswer(result: { content: { text: string }[] }): Record<string, un
 }
 
 // ---------------------------------------------------------------------------
-// The committed dump-artifacts.mjs fixture: dd00_raw=193, d018_raw=49 ->
+// The committed dump-artifacts.ts fixture: dd00_raw=193, d018_raw=49 ->
 // screen_base=35840. Reproduced here exactly as the cross-check.
 // ---------------------------------------------------------------------------
 
@@ -192,7 +192,7 @@ function makeSpriteSession(
 // vice_sprite_get
 // ---------------------------------------------------------------------------
 
-test("handleSpriteGet: reproduces the committed dump-artifacts.mjs fixture exactly", async () => {
+test("handleSpriteGet: reproduces the committed dump-artifacts.ts fixture exactly", async () => {
   const { session } = makeSpriteSession();
   const result = await handleSpriteGet({}, session, DEPS);
   assert.equal(result.isError, false);

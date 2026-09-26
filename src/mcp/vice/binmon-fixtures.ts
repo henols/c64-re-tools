@@ -16,7 +16,7 @@
 // with neither an emulator nor a display present; the others
 // (display-get, event-interleaved, checkpoint-list, and the three
 // CPUHISTORY_GET cases added by plan 07-12) are LOADED from fixtures/binmon/
-// through loadCapturedFixture() below, which probe-binmon.mjs's --capture mode
+// through loadCapturedFixture() below, which probe-binmon.ts's --capture mode
 // is what normally writes.
 //
 // PROVENANCE -- all six fixtures under fixtures/binmon/ are now real, hardware-recorded captures (`"synthetic": false`).
@@ -146,7 +146,7 @@ export function syntheticDuplicateReplyStream(requestId: number): Buffer {
 }
 
 /** A valid frame, one non-0x02 garbage byte, then a second valid frame --
- * the exact shape probe-binmon.mjs's _onData() resync loop (lines 119-150)
+ * the exact shape probe-binmon.ts's BinMon._onData() resync loop
  * must recover from: drop one byte and keep looking for STX, never trust an
  * arbitrary 32-bit length read at a byte that merely looked like STX. */
 export function syntheticDesyncStream(): Buffer {
@@ -159,7 +159,7 @@ export function syntheticDesyncStream(): Buffer {
 /** DISPLAY_GET (0x84) response for the 504x312 8bpp debug-screen geometry
  * captured live from a genuine stock VICE instance (dw=504 dh=312 xo=136
  * yo=51 iw=320 ih=200 bpp=8). Body layout confirmed against
- * monitor_binary.c's own response encoder and against probe-binmon.mjs's
+ * monitor_binary.c's own response encoder and against probe-binmon.ts's
  * parseDisplayGet(): [info_len:u32LE][dw,dh,xo,yo,iw,ih:
  * u16LE each][bpp:1][buflen:u32LE][buffer...]. Exists so PROTO-07's test is
  * not blocked on host availability; plan 02-02's committed real capture
@@ -231,7 +231,7 @@ export class MissingFixtureError extends Error {
  * `assert.equal(fixture.synthetic, false)` (whose stated purpose is that "a
  * future re-record to a synthesized fallback fails loudly here rather than
  * silently") was satisfied by omission. Requiring the key means provenance is
- * always STATED. probe-binmon.mjs's buildSidecar() emits `synthetic: false`
+ * always STATED. probe-binmon.ts's buildSidecar() emits `synthetic: false`
  * for every live capture; the synthesized fixtures carry `true`. */
 const REQUIRED_PROVENANCE_KEYS = ["capturedFrom", "viceVersion", "capturedAt", "command", "synthetic"] as const;
 
@@ -264,7 +264,7 @@ export function loadCapturedFixture(caseName: string, { dir }: LoadCapturedFixtu
   const baseDir = dir ?? join(HERE, "fixtures", "binmon");
   const binPath = join(baseDir, `${caseName}.bin`);
   const jsonPath = join(baseDir, `${caseName}.json`);
-  const command = `node probe-binmon.mjs --capture ${caseName}`;
+  const command = `node probe-binmon.ts --capture ${caseName}`;
 
   if (!existsSync(binPath) || !existsSync(jsonPath)) {
     throw new MissingFixtureError(

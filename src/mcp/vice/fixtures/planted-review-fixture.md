@@ -14,9 +14,9 @@ exact shape a real `*-REVIEW.md` uses, so the test can prove the parser
 disposition checker (`isDispositioned()`) correctly reports it as
 undispositioned when no disposition source names it.
 
-This file is deliberately NOT placed under `.planning/phases/` and is never
-matched by `scanAllReviewFindings()`'s real scan (which only reads
-`.planning/phases/*/[0-9]*-REVIEW.md`) -- it is read directly, by path, only
+This file is deliberately NOT placed among the phase directories and is never
+matched by `scanAllReviewFindings()`'s real scan (which only reads each
+phase's `[0-9]*-REVIEW.md`) -- it is read directly, by path, only
 from within the test file itself. Committing it here means the real scan's
 "0 undispositioned findings" result is never at risk of including this
 synthetic id.

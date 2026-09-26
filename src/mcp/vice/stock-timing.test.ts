@@ -2,7 +2,7 @@
 // send-only stub object cast via `as unknown as ViceMonitorClient` --
 // never a real socket, matching this module tree's own DI-stubbing
 // convention (stock-registers.test.ts's own header comment,
-// stock-dispatch.test.ts:1-133). Synthetic replies are returned DIRECTLY as
+// stock-session.test.ts:1-133). Synthetic replies are returned DIRECTLY as
 // already-parsed shapes, not built through binmon-fixtures.ts's
 // encodeResponseFrame() -- these tests assert route selection, arithmetic,
 // caching, and every honest-refusal path, never frame decoding (which
@@ -18,9 +18,8 @@ import {
   type ViceMonitorClient,
 } from "./stock-protocol.ts";
 import { MachineRestartedError } from "./vice-errors.ts";
-import { classifyDiagnoseUnavailable } from "./stock-diagnose.ts";
 import type { StockConnectSession, CpuHistoryCapability } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 import {
   VIDEO_STANDARDS,
   resolveVideoStandard,
@@ -153,7 +152,7 @@ function makeFakeSession(options: FakeSessionOptions = {}): { session: StockConn
   return { session, sendCalls };
 }
 
-const FAKE_DEPS = {} as unknown as StockDispatchDeps;
+const FAKE_DEPS = {} as unknown as StockSessionDeps;
 
 function parseAnswer(result: { content: { type: "text"; text: string }[]; isError: boolean }): Record<string, unknown> {
   return JSON.parse(result.content[0]!.text) as Record<string, unknown>;
@@ -161,7 +160,7 @@ function parseAnswer(result: { content: { type: "text"; text: string }[]; isErro
 
 // ---------------------------------------------------------------------------
 // 07-REVIEW.md WR-14: both of this file's targetId-keyed caches survived a
-// stockReconnect() and a vice_recycle respawn, because targetId does. Only
+// stockReconnect() and a broker crash-respawn, because targetId does. Only
 // Route A had a `delta < 0n` guard that caught a machine swap by accident;
 // Route B subtracted two unrelated within-frame positions and answered
 // `measurable: true`. Every case below reuses ONE targetId across two different
@@ -323,10 +322,9 @@ test("forgetTimingForOtherTargets (WR-14): evicts every OTHER target's baseline 
 // 07-REVIEW.md WR-17: resolveVideoStandard()'s catch-all converted EVERYTHING,
 // including typed transport failures, into a PAL result with assumed:true. It
 // is the last wire call inside Route B's readCycleBaseline(), which
-// runStockLivenessBracket() calls -- so a socket that died there could never be
+// liveness-bracket calls -- so a socket that died there could never be
 // classified as 07-15's `connection_lost` or `request_timeout`
-// diagnosis_unavailable reason class (both promised by the stock manifest AND
-// the wedge-triage SKILL). The new classification is only ever as honest as the
+// diagnosis_unavailable reason class. The new classification is only ever as honest as the
 // narrowest catch on the path, and this was it.
 // ---------------------------------------------------------------------------
 
@@ -368,21 +366,7 @@ test("readCycleBaseline (WR-17): a transport failure inside Route B's video-stan
   await assert.rejects(
     readCycleBaseline(session),
     (thrown: unknown) => thrown === err,
-    "Route B's last wire call must not swallow a dead socket -- classifyDiagnoseUnavailable() maps this to connection_lost",
-  );
-});
-
-test("handleDiagnoseStock-side effect of WR-17: classifyDiagnoseUnavailable maps the errors resolveVideoStandard now rethrows", () => {
-  // The point of rethrowing is that the classifier can see them. Asserted here
-  // rather than only in stock-diagnose.test.ts so the two halves of the fix are
-  // visibly connected.
-  assert.equal(
-    classifyDiagnoseUnavailable(new StockConnectionClosedError("closed", { port: 1, abandoned: 0, trigger: "close" })),
-    "connection_lost",
-  );
-  assert.equal(
-    classifyDiagnoseUnavailable(new StockRequestTimeoutError("timed out", { requestId: 1, commandType: CommandType.ResourceGet, elapsedMs: 1 })),
-    "request_timeout",
+    "Route B's last wire call must not swallow a dead socket",
   );
 });
 

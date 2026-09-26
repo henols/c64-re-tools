@@ -98,7 +98,7 @@ async function loadBrokerModule(): Promise<BrokerModule> {
 }
 
 function createState(): BrokerState {
-  return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map() };
+  return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map(), children: new Map(), childListener: null, shuttingDown: false };
 }
 
 function makeReadyInstance(overrides: Partial<InstanceRecord> = {}): InstanceRecord {
@@ -729,8 +729,7 @@ test("handleAcquire: an acquire arriving with one probe-live ready instance avai
   if (outcome.ok) {
     assert.equal(outcome.grant.port, 6600, "the grant must name the PRE-WARMED port, not a freshly allocated one");
     assert.equal(outcome.grant.url, "http://127.0.0.1:6600/mcp");
-    assert.equal(outcome.grant.epochFile, "/tmp/vice-broker-acquire-test/6600/epoch.json");
-    assert.equal(outcome.grant.supervisorDir, "/tmp/vice-broker-acquire-test/6600");
+    assert.ok(!("epochFile" in outcome.grant) && !("supervisorDir" in outcome.grant), "the grant must name no broker-side path");
   }
   assert.equal(state.instances.get(6600)?.state, "granted", "the pre-warmed instance must be marked granted, not left ready");
 });
@@ -1103,7 +1102,7 @@ test("handleAcquire: the grant-time-probe-failure log line is distinct from brok
 });
 
 // ---------------------------------------------------------------------------
-// WR-02 (.planning/todos/pending/2026-08-05-wr-02-*, decision: fix now): the
+// WR-02 (decision: fix now): the
 // grant-time probe failure's kill must be fire-and-forget, matching
 // handleRelease()'s own posture, so the acquiring request never waits up to
 // VICE_BROKER_KILL_WAIT_S per dead candidate before the walk can move on.

@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": ".",
+    "outDir": "dist",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": [],
+  "files": [
+    "vice-proxy.ts",
+    "vsf-slice.ts",
+    "tool-location.mts"
+  ]
+}

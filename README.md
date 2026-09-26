@@ -8,55 +8,84 @@ It provides two things as a single installable unit:
 - **The `vice` MCP server** — tools that drive a host VICE
   emulator (run disks, read/write RAM, checkpoints, save-state capture,
   scripted input) through an on-demand broker.
-- **Six C64 skills:**
+- **Eight C64 skills:**
   - `acme-build` — assemble 6502/6510 source with the ACME cross-assembler.
+  - `c64-disk-access` — read a `.d64` image's directory, BAM and files with c1541.
   - `c64-memory-mapping` — resolve any C64 address; annotate disassembly.
+  - `c64-petcat` — detokenize a BASIC stub and find its machine-code handover.
   - `c64-program-recon` — work out an unknown C64 program's runtime structure.
   - `c64-provenance-diff` — decide what a cracker changed vs. original code.
   - `c64-ram-capture` — capture and compare a running C64's 64K RAM.
-  - `vice-wedge-triage` — diagnose a stuck/wedged VICE and recover safely.
+  - `routine-queue-walker` — drive a store's undocumented routines and symbols to closure.
 
 ## Install
 
-There are two independent ways to install; pick one.
+The skills, the MCP server and the broker install separately. Nothing here
+installs anything for you: every command below is one you run yourself.
 
-### A. npm / npx (any project)
+### Skills — any agent, with the `skills` CLI
 
-From the project you want to set up:
+The eight skills install with the open agent-skills CLI
+([`skills`](https://github.com/vercel-labs/skills), the one `/find-skills` uses).
+It reads them straight from this GitHub repository; nothing has to be published.
 
 ```
-npx @henols/c64-re-tools
+npx skills add henols/c64-re-tools --skill '*'
 ```
 
-This copies the six skills into `<project>/.claude/skills/` and wires the
-`vice` MCP server into `<project>/.mcp.json` (launched via `npx -y @henols/vice-mcp`).
-Existing servers and skills are preserved; pass `--force` to overwrite, `--dry-run`
-to preview, `--vendor` to install the server locally instead of via `npx`. Running
-the MCP server requires **Node ≥ 24**.
+- Install all eight. Several skills use `c64-ram-capture`'s scripts; a skill
+  installed without it refuses by name and gives the command that installs it.
+- `-a claude-code` (or `cursor`, `codex`, …) picks the agent; `-g` installs for
+  your user instead of the project; `--list` shows the skills without installing.
+- `npx skills update` updates them. The CLI sends anonymous telemetry;
+  `DISABLE_TELEMETRY=1` turns it off.
+- The skill scripts need **Node ≥ 24** as the `node` on `PATH`.
 
-The two published packages:
-
-- [`@henols/vice-mcp`](https://www.npmjs.com/package/@henols/vice-mcp) — the MCP server.
-- [`@henols/c64-re-tools`](https://www.npmjs.com/package/@henols/c64-re-tools) — this installer (bundles the skills, depends on the server).
-
-### B. Claude Code plugin
+### MCP server — Claude Code plugin
 
 ```
 /plugin marketplace add henols/c64-re-tools
 /plugin install c64-re-tools@c64-re-tools
 ```
 
-The plugin is `defaultEnabled: false`; enable it in the project where you want
-the C64 tooling. (In plugin mode the tools are namespaced
-`mcp__plugin_c64-re-tools_vice__*`.)
+The plugin carries the `vice` MCP server and the skills. It is
+`defaultEnabled: false`; enable it in the project where you want the C64 tooling.
+In plugin mode the tools are namespaced `mcp__plugin_c64-re-tools_vice__*`.
+The server's npm dependencies are not committed: run
+`npm ci --prefix <plugin-root>/src/mcp/vice` once, and again after an update that
+changes its `package-lock.json` (needs `node` ≥ 24, `npm` and registry access).
+
+### MCP server — any other agent, from npm
+
+```
+npm install -g @henols/vice-mcp
+npx add-mcp vice-mcp --env MASTRA_TELEMETRY_DISABLED=1
+```
+
+[`add-mcp`](https://github.com/neon-solutions/add-mcp) writes the server entry
+(command `vice-mcp`) into Cursor, Codex, VS Code, Claude Code and other agents'
+MCP configs; `-a <agent>` picks one. Or add `"command": "vice-mcp"` to the
+agent's MCP config by hand. Never configure `npx @henols/vice-mcp` as the
+command: that installs the package every time the agent starts the server.
+
+### Broker — started by hand
+
+The MCP server needs one broker per machine, and never starts it for you:
+
+```
+vice-mcp broker                                      # npm install
+node <plugin-root>/src/mcp/vice/vice-cli.mjs broker  # plugin or checkout
+```
+
+See [Starting the broker](#starting-the-broker).
 
 ### Developing this repo: no in-repo autoload
 
-The payload (the six skills under `src/skills/` and the `vice` MCP server) now
-lives under `src/`, which is not a path Claude Code auto-discovers. A Claude Code session opened
-on this repository's own working tree therefore does **not** auto-load the
-skills or the server the way it would if they still sat directly under
-`.claude/`. This is a deliberate tradeoff, not an oversight: with the payload
+The payload (the eight skills under `skills/` and the `vice` MCP server under
+`src/mcp/vice/`) lives outside `.claude/`, so Claude Code does not auto-discover
+it. A Claude Code session opened on this repository's own working tree therefore
+does **not** auto-load the skills or the server the way it would if they sat
+under `.claude/`. This is a deliberate tradeoff, not an oversight: with the payload
 on the auto-discovery path, "it works in the repo" was never real evidence
 that "it works when installed" — an install-path defect (a wrong manifest
 path, a stale packaging literal) was structurally invisible to local
@@ -65,9 +94,9 @@ consumer uses.
 
 Two supported ways to exercise the payload as a consumer does:
 
-- **The npm installer** — `npx @henols/c64-re-tools <dir>`, or from a
-  checkout of this repo, `node installer/bin/cli.mjs <dir>`. Either can be
-  run by an automated agent; neither touches machine-global state.
+- **The skills CLI from this checkout** — `npx skills add ./ --skill '*' --copy`
+  run from a scratch project with this checkout's path in place of `./`. It
+  installs into that project only.
 - **A local-marketplace plugin install** — this repository's own
   `.claude-plugin/marketplace.json` already declares `"source": "./"`, so
   `/plugin marketplace add ./` (run from this checkout) and
@@ -76,14 +105,6 @@ Two supported ways to exercise the payload as a consumer does:
   state, so it is a **human action**, never something an automated agent
   performs.
 
-### Dependencies
-
-The MCP server has real npm dependencies (`@mastra/mcp`, `@mastra/core`). They
-are **not** committed. A `SessionStart` hook (`scripts/ensure-mcp-deps.sh`)
-runs `npm ci` into `src/mcp/vice/node_modules` on first session and after
-any lockfile change, gated on a hash so normal starts are a cheap no-op. This
-needs `node` and `npm` on `PATH` and network access to the npm registry on the
-consumer's machine.
 
 ## Prerequisites at a glance
 
@@ -97,14 +118,14 @@ restates one in prose.
 
 | Prerequisite | Unblocks (skills) | Unblocks (MCP tools) | Remedy | Location override |
 | --- | --- | --- | --- | --- |
-| x64sc | c64-program-recon, c64-ram-capture, vice-wedge-triage | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | See the VICE per-package-manager table. | VICE_BIN |
+| x64sc | c64-program-recon, c64-ram-capture | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | See the VICE per-package-manager table. | VICE_BIN |
 | c1541 | c64-disk-access | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read | See the VICE per-package-manager table. | .c64-re-tools/tools.json |
 | petcat | c64-petcat, c64-program-recon | petcat.decode | See the VICE per-package-manager table. | .c64-re-tools/tools.json |
 | acme | acme-build | acme.build | Install ACME. | ACME_BIN |
 | acme-lib | acme-build | acme.build | export ACME=<dir holding cbm/c64/vic.a>. | ACME |
 | ghidra | c64-program-recon | ghidra.analyze, ghidra.installExtension | Set the GHIDRA_HOME environment variable to name a Ghidra installation directory. | GHIDRA_HOME |
 | dxa | routine-queue-walker | dxa.disassemble | bash vendor/dxa/build.bash build | none |
-| node | acme-build, c64-disk-access, c64-memory-mapping, c64-petcat, c64-program-recon, c64-provenance-diff, c64-ram-capture, routine-queue-walker, vice-wedge-triage | acme.build, ghidra.analyze, oracle.probe, oracle.run, dxa.disassemble, ghidra.installExtension, c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | Install Node >= v24 and put it on PATH, or set VICE_BROKER_NODE to an absolute path to one. | none |
+| node | acme-build, c64-disk-access, c64-memory-mapping, c64-petcat, c64-program-recon, c64-provenance-diff, c64-ram-capture, routine-queue-walker | acme.build, ghidra.analyze, oracle.probe, oracle.run, dxa.disassemble, ghidra.installExtension, c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | Install Node >= v24 and put it on PATH, or set VICE_BROKER_NODE to an absolute path to one. | none |
 
 <!-- prereq-gen:prerequisite-overview:end -->
 
@@ -148,9 +169,8 @@ binary monitor on `127.0.0.1`, so neither is recommended either way.
 No shipped tool in this project refuses on a VICE version. `vice_cpu_history`
 — the exact per-instruction cycle counter — runs over the text channel's
 `chis` command, not the binary monitor's `CPUHISTORY_GET` opcode, so it works
-the same regardless of which VICE version you have installed. The 3.10 floor
-binds `CPUHISTORY_GET` itself, an opcode no shipped tool calls — see
-`.planning/REQUIREMENTS.md` for the measured claim.
+the same regardless of which VICE version you have installed. The measured
+3.10 floor binds `CPUHISTORY_GET` itself, an opcode no shipped tool calls.
 Consequently the prerequisite declaration (`src/mcp/vice/prerequisites.json`)
 carries no VICE version data of any kind — not a floor, and not a dated
 observation.
@@ -159,9 +179,7 @@ observation.
 
 Three capabilities have no route on stock VICE at all — a permanent hardware
 fact, not a gap waiting on a later build. Calling any of these returns an
-error naming the tool and the reason; it fails loudly, not silently. See
-[`docs/stock-hard-losses.md`](docs/stock-hard-losses.md) for the full record
-of what is lost and why.
+error naming the tool and the reason; it fails loudly, not silently.
 
 - **`vice_sid_get_state`** — permanently unavailable. SID `$D400`-`$D418` is
   write-only in hardware and the binary monitor has no SID command; writes
@@ -193,46 +211,28 @@ while the plugin is also driving the same emulator instance. Concrete traps
 that cause this, none of them specific to this project: a stray `nc` session
 against the monitor port, a second Claude Code session pointed at the same
 instance, VICE's own `-remotemonitor` flag, or any other 6502 debugger that
-dials in. This plugin's own annotation route can never cause it: the `anno_*`
-tools and the `anno` CLI open a SQLite annotation store and decode bytes out
-of a file on disk, and there is no emulator connection anywhere on that path
-to contend for the port. If an emulator has gone silent, see the
-`vice-wedge-triage` skill before assuming it is wedged.
+dials in. This plugin's own annotation route can never cause it: the `anno`
+CLI opens a SQLite annotation store and decodes bytes out of a file on disk,
+and there is no emulator connection anywhere on that path to contend for the
+port. If an emulator has gone silent, check for one of these before assuming
+it is wedged, then restart the broker.
 
 ## Starting the broker
 
 The `vice` MCP server does not start the broker for you, and does not install
 anything to make that happen — it **detects, then refuses by name with the
-remedy**. The remedy is the same everywhere: this project's own published
-package, invoked (never installed) as a foreground command. This works on
-any platform with no setup at all:
+remedy**. The remedy is the same everywhere: run the broker as a foreground
+command from the same install the MCP server runs from — the npm package, or
+the plugin (or a checkout of this repository) at `<plugin-root>`:
 
 ```
-npx -y @henols/vice-mcp broker
+vice-mcp broker                                      # npm install
+node <plugin-root>/src/mcp/vice/vice-cli.mjs broker  # plugin or checkout
 ```
-
-Two optional service paths let it survive a logout instead of only running in
-a terminal you keep open. Both are things **you** run — this repository never
-runs either command itself, and `src/mcp/vice/service-no-invoke.test.ts`
-asserts that structurally, with its own planted-violation proof.
-
-**Linux (systemd, per-user, no root needed):**
-
-1. Copy [`src/mcp/vice/service/vice-broker.service`](src/mcp/vice/service/vice-broker.service)
-   to `~/.config/systemd/user/vice-broker.service`.
-2. `systemctl --user daemon-reload`
-3. `systemctl --user enable --now vice-broker.service`
-
-**macOS (launchd, per-user agent):**
-
-1. Copy [`src/mcp/vice/service/com.henols.vice-broker.plist`](src/mcp/vice/service/com.henols.vice-broker.plist)
-   to `~/Library/LaunchAgents/com.henols.vice-broker.plist`.
-2. `launchctl load ~/Library/LaunchAgents/com.henols.vice-broker.plist`
 
 **One broker per machine** means every project and every Claude Code session
-on that machine shares it — restarting it (from either service path, or by
-killing a foreground run) affects all of them at once, not just the one you
-meant to restart.
+on that machine shares it — restarting it affects all of them at once, not
+just the one you meant to restart.
 
 **A bridge appearing later needs a broker restart.** The broker enumerates
 its bind set once at startup and holds it for the life of the process. If you
@@ -256,7 +256,7 @@ MCP route, which this project never used and now cannot.
 
 **What replaced it.** Annotations — labels, comments, typed ranges, scopes and
 enums — live in this project's own SQLite annotation store, reached through the
-`anno_*` MCP tools and the `anno` CLI, with no external process anywhere on the
+`anno` CLI's `call` verb, with no external process anywhere on the
 path. Whole-program ACME export is **withdrawn and returns in Phase 30**,
 rebuilt over that store and settled by assembling the output with a real ACME
 and diffing the bytes against the input. The skill playbooks name that
@@ -277,37 +277,34 @@ file.
 
 ## How it locates the project
 
-At runtime the MCP writes host-synchronised state (`.vice-supervisor/`) and
-deploys its host launcher scripts (`tools/`) under the **project you are
-working in**, not under the plugin's own install directory. It resolves that
-root from `CLAUDE_PROJECT_DIR` (which Claude Code sets), falling back to
+The MCP server writes its per-project results (captures, snapshots, tool
+output) under `.c64-re-tools/` in the **project you are working in**, not under
+the plugin's own install directory. It resolves that root from
+`CLAUDE_PROJECT_DIR` (which Claude Code sets), falling back to
 `CONTAINER_WORKSPACE_PATH` and then a `.git` ancestor walk — see
-`src/mcp/vice/repo-root.ts`. The VICE emulator itself runs on the host and
-is reached only through the `mcp__plugin_c64-re-tools_vice__*` tools.
+`src/mcp/vice/repo-root.ts`. The broker keeps its own state under its
+machine-level home (`VICE_BROKER_HOME`), never inside a project. The VICE
+emulator itself runs on the host, launched by the broker, and is reached only
+through the `mcp__plugin_c64-re-tools_vice__*` tools.
 
 ## Layout
 
 ```
 .claude-plugin/
-  plugin.json        # manifest: skills, mcpServers, deps hook
+  plugin.json        # manifest: mcpServers (skills/ is the default skills location)
   marketplace.json   # single-plugin marketplace, so `marketplace add` works on this repo
 .mcp.json            # vice server, launched via ${CLAUDE_PLUGIN_ROOT}
-src/
-  mcp/vice/          # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/, tests)
-  skills/            # the six skills above (canonical source)
-installer/           # @henols/c64-re-tools — npx installer; bundles the skills, depends on vice-mcp
-docs/
-  stock-hard-losses.md  # the three capabilities with no route on stock, and why (see above)
-scripts/
-  ensure-mcp-deps.sh    # SessionStart dependency provisioning (plugin mode)
+skills/              # the eight skills (canonical source; what `npx skills add` installs)
+src/mcp/vice/        # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/, tests)
+test/skills/         # the skill scripts' tests (kept out of the skill folders so they never ship)
+evidence/            # repo-only measured artifacts that must never ship with a skill
 ```
 
 The payload no longer sits on Claude Code's auto-discovery path — see
 "Developing this repo: no in-repo autoload" above for why that is deliberate.
-What did not change: the MCP server's own test suite resolves paths relative
-to its own module directory (`repo-root.ts`'s depth-based fallback), so
-relocating the payload under `src/` left every test's behavior unchanged even
-though the tree no longer mirrors a consumer's installed `.claude/` layout.
+The MCP server's own test suite resolves paths relative to its own module
+directory (`repo-root.ts`'s depth-based fallback), so it does not depend on the
+tree mirroring a consumer's installed `.claude/` layout.
 
 ## Publishing (maintainers)
 
@@ -320,28 +317,28 @@ git push origin v1.2.3
 ```
 
 That tag triggers the `publish-npm` job, which derives `1.2.3` from the ref,
-stamps it into both `package.json` files with `npm version`, pins the installer's
-`@henols/vice-mcp` dependency to that exact version, and publishes
-`@henols/vice-mcp` first, then `@henols/c64-re-tools`. A manual
+stamps it into `src/mcp/vice/package.json` with `npm version`, and publishes
+`@henols/vice-mcp` (its `prepack` compiles the server into `dist/`). A manual
 `workflow_dispatch` with an explicit version does the same thing without a tag;
 do not use both for one version, or the loser gets a 409.
 
 Merging to `main` publishes nothing. It runs the build job — typecheck, the MCP
-server suite, the installer suite and the skill suites — and stops there.
+server suite, the skill suites and the packed-install smoke test — and stops there.
 
 Every publishable version string in the working tree carries the self-evident
-placeholder `0.0.0-dev`: both `package.json` `.version` fields, the installer's
-`@henols/vice-mcp` pin, and the plugin manifests. `npm version` overwrites the
-first three inside CI's ephemeral checkout at publish time. Never pre-bump one by
-hand — a test asserts they are all still the placeholder. Because the pin is a
-placeholder in the tree, a local `cd installer && npm install` will not resolve
-it; use the published package.
+placeholder `0.0.0-dev`: `src/mcp/vice/package.json` `.version` and the plugin
+manifests. `npm version` overwrites the first inside CI's ephemeral checkout at
+publish time. Never pre-bump one by hand — a test asserts they are all still the
+placeholder.
+
+The skills are not published anywhere: `npx skills add henols/c64-re-tools`
+reads them from this repository.
 
 The plugin itself is **not** distributed as a release artifact. It installs from
 this repository (`/plugin marketplace add henols/c64-re-tools`), so there is no
 zip to build and none is attached to a release.
 
-Publishing uses **npm Trusted Publishing (OIDC)** — no `NPM_TOKEN` secret. Each
+Publishing uses **npm Trusted Publishing (OIDC)** — no `NPM_TOKEN` secret. The
 package has a Trusted Publisher configured on npmjs.com pointing at this repo and
 `ci.yml`; the `publish-npm` job runs with `id-token: write` and authenticates to
 npm directly, and npm records provenance automatically.

@@ -3,34 +3,52 @@
 A stdio [MCP](https://modelcontextprotocol.io) server that exposes a running
 [VICE](https://vice-emu.sourceforge.io/) Commodore 64 emulator to an MCP client
 (such as Claude Code) for reverse-engineering work. It forwards `vice` tool calls
-to a **host** VICE MCP server, and on first use deploys the host launcher scripts
-it needs into `<project>/tools/`.
+to a broker on the **host**, which launches an emulator instance per session.
 
-This package is normally installed for you by the
-[`@henols/c64-re-tools`](https://www.npmjs.com/package/@henols/c64-re-tools)
-installer, which also drops the matching skills into your project. It is published
-separately so it can be launched directly by an MCP client.
+It runs two ways: from the Claude Code plugin (or a checkout of the
+repository), which also carries the matching skills, or as this npm package
+for any other MCP client. The skills install separately with the `skills` CLI
+(`npx skills add henols/c64-re-tools --skill '*'`).
 
 ## Requirements
 
-- **Node.js ≥ 24**. The server ships as TypeScript and runs under
-  Node's native type-stripping — no build step, no flags. Older Node needs
-  `--experimental-strip-types` and is unsupported.
-- A **host** with VICE (`x64sc`) available, reachable from wherever the MCP client
-  runs. The server talks to the host VICE MCP server over HTTP (default
-  `http://host.docker.internal:6510/mcp` in a container, `http://127.0.0.1:6510/mcp`
-  otherwise); override with `VICE_MCP_URL` / `VICE_MCP_HOST`.
+- **Node.js ≥ 24**. The plugin and a checkout run the TypeScript sources under
+  Node's native type stripping, with no build step and no flags. The npm
+  package runs a compiled copy (`dist/`, built when the package is packed),
+  because Node never strips types under `node_modules`.
+- A **host** with VICE (`x64sc`) and a running broker, started by hand from the
+  same install the server runs from:
+
+  ```sh
+  vice-mcp broker                                      # npm install
+  node <plugin-root>/src/mcp/vice/vice-cli.mjs broker  # plugin or checkout
+  ```
+
+  No client starts the broker for you. The server reaches it on TCP port 19510,
+  dialling `127.0.0.1` and then `host.docker.internal`, so the same
+  configuration works on the host and inside a container. Nothing is read from
+  disk to find it.
 
 ## Use as an MCP server
 
-Add it to your MCP client configuration and let the client launch it:
+**Claude Code:** install the plugin, then install the server's dependencies once
+with `npm ci --prefix <plugin-root>/src/mcp/vice`. The plugin wires the server
+itself.
+
+**Other MCP clients:** install the package globally, then register its bin:
+
+```sh
+npm i -g @henols/vice-mcp
+npx add-mcp vice-mcp --env MASTRA_TELEMETRY_DISABLED=1
+```
+
+Or add it to the client configuration by hand:
 
 ```json
 {
   "mcpServers": {
     "vice": {
-      "command": "npx",
-      "args": ["-y", "@henols/vice-mcp"],
+      "command": "vice-mcp",
       "timeout": 150000,
       "env": { "MASTRA_TELEMETRY_DISABLED": "1" }
     }
@@ -38,17 +56,38 @@ Add it to your MCP client configuration and let the client launch it:
 }
 ```
 
+Register the installed `vice-mcp` bin, not the package name: a configuration
+that launches the package through `npx` installs it at launch time.
+
+A checkout runs the source directly:
+
+```json
+{
+  "mcpServers": {
+    "vice": {
+      "command": "node",
+      "args": ["<plugin-root>/src/mcp/vice/vice-proxy.ts"],
+      "timeout": 150000,
+      "env": { "MASTRA_TELEMETRY_DISABLED": "1" }
+    }
+  }
+}
+```
+
+The annotation CLI runs from the same install: `vice-mcp anno <verb>` (npm) or
+`node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>` (plugin or checkout).
+
 The bin (`vice-mcp`) speaks the MCP stdio protocol. `initialize` and `tools/list`
-are answered locally (from `tools-manifest.stock.json`); `tools/call` forwards to the host
-VICE MCP server.
+are answered locally (from `tools-manifest.stock.json`); `tools/call` runs through an
+emulator instance the broker launches for this session.
 
 ## Environment
 
 | Variable | Purpose |
 | --- | --- |
 | `VICE_MCP_URL` | Full host MCP endpoint (overrides host/port derivation). |
-| `VICE_MCP_HOST` | Host to reach the VICE MCP server on. |
-| `VICE_SKIP_RESOURCE_INSTALL=1` | Disable deploying host launcher scripts into `<project>/tools/`. |
+| `VICE_BROKER_CONTROL_PORT` | The broker's control port (default `19510`), for the broker and every client. |
+| `VICE_SKIP_RESOURCE_INSTALL=1` | Disable deploying host launcher scripts into `<project>/.c64-re-tools/bin/` (the npm package never deploys them). |
 | `MASTRA_TELEMETRY_DISABLED=1` | Disable Mastra telemetry. |
 | `VICE_LIVE_STOCK_BIN` | Absolute path to a genuinely unpatched stock VICE binary; opts `stock-live.test.ts` in (default-skipped). |
 | `VICE_BROKER_RELAY_IDLE_MS` | The broker-owned idle deadline (default `300000`, 5 minutes) a monitor-relay connection may sit carrying no traffic in either direction before the broker reclaims that one channel. This is the mechanism the broker actually controls end-to-end (`Socket.setTimeout()`, userspace, needs no cooperation from the OS or the peer); it is suspended for as long as the connection's own grant has a declared operation in flight, so a legitimately long-running capture is never torn down by the clock. An absent, non-numeric, zero or negative value falls back to the default and is logged by name — it is never possible to disable this bound. |
@@ -87,19 +126,12 @@ same authorisation wording a bare, unrecognised target id gets.
 
 ## Development
 
-`npm test` assumes it is running inside the devcontainer. On a bare host, set
-`CONTAINER_WORKSPACE_PATH` (the repo root) and `HOST_WORKSPACE_PATH` (any
-consistent host-side mirror) exactly as `.github/workflows/ci.yml` does, or
-the path-translation and container-guard tests skip with a reason naming
-both variables instead of running:
+`npm test` runs on the host with no extra environment. Suites that drive a
+real emulator run only when their `VICE_LIVE_*` variable is set, and suites
+that need a host tool skip with a named reason when it is missing.
 
-```sh
-export CONTAINER_WORKSPACE_PATH="$(git rev-parse --show-toplevel)"
-export HOST_WORKSPACE_PATH="/host$(git rev-parse --show-toplevel)"
-```
-
-`npm run test:automated` is the subset of `npm test` that excludes the nine
-manual-only files (see `test-gate.mjs`'s own header).
+`npm run test:automated` is the subset of `npm test` that excludes the
+manual-only files (see `test-gate.ts`'s own header).
 
 ```sh
 npm ci
@@ -108,6 +140,7 @@ npm test
 npm run test:automated  # the automated subset (excludes manual-only files)
 npm run smoke     # boots the server and completes an MCP initialize + tools/list handshake
 npm run build     # recompiles the host-bound .mts launchers into resources/
+node smoke-packed.ts  # builds dist/, packs the package, runs it from a scratch node_modules
 ```
 
 ## License

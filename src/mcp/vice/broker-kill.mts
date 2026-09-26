@@ -50,6 +50,7 @@ import { join } from "node:path";
 // resources/vice-broker.mjs form) supplies the real functions at the real
 // wiring site; tests inject their own.
 import type { BrokerState } from "./broker-state.mjs";
+import type { StopAllChildrenOptions } from "./broker-children.mjs";
 import type { EpochRecord } from "./broker-epoch.mjs";
 // SAME type-only reasoning, for the SAME reason -- ConfigScratchOwnerRecord
 // is the pid-liveness record broker-launch.mts's own
@@ -58,12 +59,9 @@ import type { EpochRecord } from "./broker-epoch.mjs";
 // value-imports the module that defines it.
 import type { ConfigScratchOwnerRecord } from "./broker-launch.mjs";
 
-/** The same four-value vocabulary resources/vice-broker.sh's
- * signal_vice_child_pid() already returns -- the recycle ack contract
- * (vice-proxy.ts's recycleAckOutcomeMessage()/successfulKill check) depends
- * on this exact set of words, never a fifth. That renderer is NOT changing,
- * so a renamed or added stage word silently breaks an agent-facing message;
- * this type is pinned to it, not the other way around. */
+/** How an identity-verified kill ended: the target had already exited, its
+ * identity did not match (nothing was signalled), or it died on SIGTERM or
+ * SIGKILL. */
 export type KillStage = "already_exited" | "identity_refused" | "sigterm" | "sigkill";
 
 export interface VerifiedKillDeps {
@@ -97,7 +95,16 @@ const defaultReadProcessArgs = (pid: number): string => {
   }
 };
 
+/** Signals the process group the pid leads (every broker child is spawned
+ * as its own group leader), so descendants go too; falls back to the pid
+ * alone for a process that leads no group. */
 const defaultKill = (pid: number, signal: NodeJS.Signals): void => {
+  try {
+    process.kill(-pid, signal);
+    return;
+  } catch {
+    // not a group leader -- signal the pid itself
+  }
   try {
     process.kill(pid, signal);
   } catch {
@@ -197,6 +204,15 @@ export interface ShutdownDeps {
    * observe call order/timing without spawning real processes. */
   kill?: (opts: VerifiedKillOptions) => Promise<KillStage>;
   log?: (line: string) => void;
+  /** Stops the broker taking new work (closes the control listeners, stops
+   * the evaluation interval). Called first. */
+  stopIntake?: () => void;
+  /** Stops every remaining tracked child's process group
+   * (broker-children.mts's stopAllChildren()); host tools, and emulators whose
+   * record a release already removed, are only reachable through it. */
+  stopChildren?: (state: BrokerState, opts?: StopAllChildrenOptions) => Promise<number>;
+  /** SIGKILLs every tracked group synchronously, for the 'exit' event. */
+  killChildrenNow?: (state: BrokerState) => void;
 }
 
 /** The single shutdown sequence every catchable entry point converges on
@@ -213,11 +229,25 @@ export interface ShutdownDeps {
  * removal IS the kill-never-recycle structural guarantee: the only way an
  * instance becomes grantable again is a fresh launch, never a reset of this
  * entry (mirrors teardown()'s own header comment in the bash original).
+ * Before any of that, the broker stops taking work (deps.stopIntake) and sets
+ * state.shuttingDown, so no acquire, host-tool run or crash respawn starts
+ * mid-shutdown. The instance kills run in parallel. Afterwards every group
+ * still in the child registry is stopped (deps.stopChildren): host tools, and
+ * emulators whose record a release had already removed. Nothing the broker
+ * started is left running.
  * Never throws past an individual kill failure -- one instance's kill
  * rejecting must not stop every other instance from being torn down. */
 export async function shutdown(deps: ShutdownDeps): Promise<void> {
   const kill = deps.kill ?? verifiedKill;
   const log = deps.log ?? defaultLog;
+
+  // No new acquire, host-tool run or respawn may start from here on.
+  deps.state.shuttingDown = true;
+  try {
+    deps.stopIntake?.();
+  } catch (e) {
+    log(`vice-broker: shutdown -- stopping intake threw: ${(e as Error).message}`);
+  }
 
   const instances = Array.from(deps.state.instances.values());
   for (const instance of instances) {
@@ -225,18 +255,29 @@ export async function shutdown(deps: ShutdownDeps): Promise<void> {
   }
 
   let killed = 0;
-  for (const instance of instances) {
+  await Promise.all(
+    instances.map(async (instance) => {
+      try {
+        const stage = await kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
+        if (stage === "sigterm" || stage === "sigkill") killed++;
+      } catch (e) {
+        log(`vice-broker: shutdown -- kill of port ${instance.port} threw: ${(e as Error).message}`);
+      } finally {
+        deps.state.instances.delete(instance.port);
+      }
+    }),
+  );
+
+  let children = 0;
+  if (deps.stopChildren) {
     try {
-      const stage = await kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
-      if (stage === "sigterm" || stage === "sigkill") killed++;
+      children = await deps.stopChildren(deps.state);
     } catch (e) {
-      log(`vice-broker: shutdown -- kill of port ${instance.port} threw: ${(e as Error).message}`);
-    } finally {
-      deps.state.instances.delete(instance.port);
+      log(`vice-broker: shutdown -- stopping child processes threw: ${(e as Error).message}`);
     }
   }
 
-  log(`vice-broker: shutdown complete -- ${instances.length} instance(s) processed, ${killed} signalled`);
+  log(`vice-broker: shutdown complete -- ${instances.length} instance(s) processed, ${killed} signalled, ${children} child process group(s) stopped`);
 }
 
 /** The six catchable entry points every real broker process registers
@@ -301,12 +342,9 @@ export interface RegisterShutdownHandlersDeps extends ShutdownDeps {
  * The 'exit' listener is registered identically to the other five, but
  * carries an honest limitation worth stating rather than hiding: Node's
  * 'exit' event fires synchronously and cannot keep the event loop alive for
- * pending async work, so on a REAL process exit only shutdown()'s
- * synchronous prefix (marking every instance deliberately-killed, issuing
- * the initial SIGTERM to each) is guaranteed to run before the process is
- * actually gone -- the SIGTERM-wait-then-SIGKILL escalation's own polling
- * cannot complete there. This is a real Node platform limitation, not a gap
- * in this module; it is why the 'exit' path is exercised in this module's
+ * pending async work. So the 'exit' listener first SIGKILLs every tracked
+ * process group synchronously (deps.killChildrenNow), and only then starts
+ * shutdown(), whose asynchronous part cannot complete there. It is why the 'exit' path is exercised in this module's
  * own tests via the injectable `proc` seam (a plain EventEmitter, which CAN
  * await async work in its own listeners) rather than a real process exit.
  *
@@ -378,7 +416,12 @@ export function registerShutdownHandlers(deps: RegisterShutdownHandlersDeps): ()
     log(`vice-broker: unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`);
     run("unhandledRejection", 1);
   });
-  register("exit", () => run("exit", 0));
+  register("exit", () => {
+    // Nothing asynchronous runs after 'exit': kill every group now.
+    deps.state.shuttingDown = true;
+    deps.killChildrenNow?.(deps.state);
+    run("exit", 0);
+  });
 
   return () => {
     const p = proc as unknown as { removeListener?: (event: string, listener: (...args: any[]) => void) => void };
@@ -395,9 +438,8 @@ export function registerShutdownHandlers(deps: RegisterShutdownHandlersDeps): ()
  * interrupt or a closed terminal destroys. On 2026-08-02 a `^C` produced
  * "reap saw 4 recorded instance(s), terminated 4" and killed a live
  * session -- the incident was not caused by missing machinery, it was
- * caused by nobody being told. Detaching stays the operator's own
- * nohup/setsid/systemd choice -- this banner names that choice
- * rather than offering a flag; the launcher stays thin.
+ * caused by nobody being told. The broker offers no way to detach itself;
+ * how the user runs it is not this project's business.
  *
  * The one place naming the retired
  * warm-floor environment variable does not weaken the clean break made when
@@ -418,8 +460,6 @@ export function startupBanner(): string {
     "vice-broker: accumulated context.",
     "vice-broker: a broker that dies voids every session it was serving -- there is no",
     "vice-broker: reconnect. A session whose broker dies must be restarted, not resumed.",
-    "vice-broker: to run this broker outside the current terminal session, use your own",
-    "vice-broker: nohup/setsid/systemd -- this launcher does not offer a --detach flag.",
   ];
   if (process.env.VICE_BROKER_SPARES !== undefined) { // banner-only presence check -- never reads the value
     lines.push(
@@ -647,9 +687,8 @@ export async function reapOrphanedInstances(options: ReapOrphanedInstancesOption
 // runs from the SAME unconditional, pre-bind block as reapOrphanedInstances()
 // -- its own mandatory live-pid guard makes that safe even for a process
 // that goes on to lose the singleton race. sweepOrphanedStaging() runs
-// later, only in the process that has actually WON the control-port bind,
-// and only before that process publishes its control token -- see its own
-// call site in vice-broker.mts for why.
+// later, only in the process that has actually WON the control-port bind
+// -- see its own call site in vice-broker.mts for why.
 //
 // The two kinds of broker-owned scratch these reap have OPPOSITE lifetime
 // rules, and that is deliberate, not an oversight to "simplify" later:
@@ -666,10 +705,9 @@ export async function reapOrphanedInstances(options: ReapOrphanedInstancesOption
 //     cleanly. Applying the config rule here -- keep whatever has a live pid
 //     -- is a category error: a staging directory is not itself a process,
 //     so there is no pid to check. Given the precondition above -- this pass
-//     runs only in the process that has won the control-port bind, before it
-//     publishes its token -- every directory still present under the
-//     staging root at that moment is residue the previous, crashed broker
-//     left (D-07's whole argument for a startup-only sweep: this is the one
+//     runs only in the process that has won the control-port bind -- every
+//     directory still present under the staging root at that moment is
+//     residue the previous, crashed broker left (D-07's whole argument for a startup-only sweep: this is the one
 //     moment the residue is unambiguous, and ONLY for the process the kernel
 //     has just confirmed is the broker).
 //
@@ -860,6 +898,10 @@ export interface SweepOrphanedStagingOptions {
    * sweepOrphanedStaging()'s own doc comment below. */
   isAlive?: (pid: number) => boolean;
   log?: (line: string) => void;
+  /** Names this sweep in its log lines -- defaults to the staging sweep's
+   * own wording. The broker also sweeps its Ghidra projects root with this
+   * function (same precondition, same reasoning). */
+  label?: string;
 }
 
 /** The pass with NO pid check, deliberately (D-07): a staging directory is
@@ -867,13 +909,12 @@ export interface SweepOrphanedStagingOptions {
  * connection closing (SESS-03/SESS-04's handleRelease(), already wired).
  *
  * This function may be called only by a broker that has won the
- * control-port bind, and only BEFORE that broker publishes its control
- * token (vice-broker.mts's own call site sits between the confirmed bind
- * and the first writeBrokerRecordFile()). Given that precondition, and only
- * then, every directory still present under the staging root is residue a
+ * control-port bind, and only before it serves a single request
+ * (vice-broker.mts calls it synchronously, with no `await` between the
+ * confirmed bind and the call). Given that precondition, and only then,
+ * every directory still present under the staging root is residue a
  * crashed broker left -- no broker that shut down cleanly leaves one
- * behind, and this process's own sessions cannot exist yet because nothing
- * can hold its token. Every directory found is removed unconditionally and
+ * behind, and this process's own sessions cannot exist yet. Every directory found is removed unconditionally and
  * recursively.
  *
  * The defect this precondition exists to prevent: a second broker
@@ -904,9 +945,13 @@ export function sweepOrphanedStaging(options: SweepOrphanedStagingOptions): Stag
       removeStagingSessionDir(options.root, dirName);
       removed++;
     } catch (e) {
-      log(`vice-broker: staging sweep -- ${dirName} threw during removal: ${(e as Error).message}`);
+      log(`vice-broker: ${options.label ?? "staging sweep"} -- ${dirName} threw during removal: ${(e as Error).message}`);
     }
   }
-  log(`vice-broker: staging sweep found ${found} session director(y/ies), removed ${removed}`);
+  log(
+    options.label === undefined
+      ? `vice-broker: staging sweep found ${found} session director(y/ies), removed ${removed}`
+      : `vice-broker: ${options.label} found ${found} director(y/ies), removed ${removed}`,
+  );
   return { found, removed };
 }

@@ -55,11 +55,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** The sole read of c64-memory-mapping's own memmap.json -- this generator is
  * its only consumer for this purpose (per this plan's key_links entry).
  * 2026-08-22: the skills tree moved from `.claude/skills/`
- * (two levels up from `.claude/mcp/vice`) to `src/skills/` (three levels up,
+ * (two levels up from `.claude/mcp/vice`) to `skills/` (three levels up,
  * since `src/` sits directly under the repo root rather than under `.claude/`).
  * This literal was not in the original enumerated consumer list, and a
  * test failure caught the gap live. */
-const MEMMAP_PATH = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
+const MEMMAP_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
 
 /** Where the generated, committed artifact lives -- always a sibling of this
  * generator, never a caller-supplied path. */

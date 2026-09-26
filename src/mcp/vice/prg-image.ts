@@ -50,10 +50,7 @@
 //   - Never give any function here a filesystem PATH parameter. They take byte
 //     arrays and a base64 string, which is precisely what keeps path traversal
 //     out of this module's threat surface entirely. Path resolution belongs to
-//     the CLI. For the same reason this module imports nothing from either of
-//     this repo's two host/container path-translation seams; that absence is
-//     asserted structurally by `hostpath-consumers.test.ts`, not merely stated
-//     here.
+//     the CLI.
 //   - Never relax, reword or reorder either input refusal below. The concrete
 //     incident: a 4096-byte flat `.raw` capture fell through to the `.prg`
 //     parser, whose first two bytes become the load address, so a truncated

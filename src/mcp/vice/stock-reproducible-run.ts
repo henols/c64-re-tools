@@ -36,12 +36,8 @@
 //   * So the autostarted ordering is UNRESOLVED for a post-load stop, and this
 //     module implements the READY-prompt sequence measured green instead --
 //     never an ordering the evidence does not support.
-//   * The full ordered 11-step `S3` table, its argv, its measured
-//     divergence counts, and the withdrawal of the earlier "frame anchoring
-//     always fits inside the cap of 64" claim (66 differing addresses at
-//     jitter 4000) live in
-//     `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-autostart-sequencing.md`.
-//     Read that file before adding an autostart path here.
+//   * The earlier "frame anchoring always fits inside the cap of 64" claim
+//     is withdrawn (66 differing addresses at jitter 4000).
 //
 // WHAT THIS PROCEDURE REPORTS, AND WHAT IT DOES NOT ASSERT. It REPORTS the stop
 // identity it achieved. It does NOT assert frame-exactness -- `33-03`'s
@@ -89,7 +85,7 @@
 //   - Never invent a second wire-error converter. An arming/read failure goes
 //     through `convertWireError()` (the established per-handler convention);
 //     a failure surfacing from the resume/wait step is left to PROPAGATE
-//     uncaught, so the ONE existing converter seam (`withStockSession`'s own
+//     uncaught, so the ONE existing converter seam (`runBinary()`'s own
 //     `convertHandshakeError`/`convertWireError`) produces the answer.
 //   - Never publish a sub-flag that removes a step from this procedure.
 //     `D-13`: there is no `skip_reset`, no `no_anchor` and no `reset_only`, so
@@ -531,8 +527,8 @@ export async function runReproducible(
   // timeout -- with the socket and the instance still very much alive. On that
   // path the frame anchor was left ARMED: temporary:false, stop:true, sitting
   // at a once-per-frame address. Every subsequent resume on that session then
-  // halts within one frame, which is indistinguishable from a wedge to
-  // vice-wedge-triage and poisons the instance for every later tool call.
+  // halts within one frame, which is indistinguishable from a wedge and
+  // poisons the instance for every later tool call.
   //
   // So delete the anchor when the instance is still there. `connected` is the
   // operative test (it is the observable that says whether a delete could even
@@ -605,7 +601,8 @@ export async function runReproducible(
         ? "the cleanup CHECKPOINT_DELETE sent after the timeout halted the emulated machine (on stock, any inbound byte does), " +
           "and nothing here resumed it -- this is expected, not a wedge. Call vice_execution_run to resume."
         : "the machine's run state could NOT be established: the cleanup CHECKPOINT_DELETE did not complete (see cleanupError) " +
-          "and/or the connection is gone, so nothing here can claim the machine is halted. Call vice_diagnose before acting.",
+          "and/or the connection is gone, so nothing here can claim the machine is halted. Call vice_execution_pause, then " +
+          "vice_registers_get, before acting. If neither answers, ask the user to restart the broker.",
       resumes: 1,
       resumesNote:
         "exactly one resume (EXIT) was sent for this wait, which is vice-sync.ts's own invariant in its stock-native " +
