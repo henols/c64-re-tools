@@ -36,6 +36,31 @@ it, but nothing reads it.
 - **Structural tests** assert that the removed names and the `load` verb are
   absent, with planted-violation proofs, so they cannot pass vacuously.
 
+### Decided during implementation
+
+- **Equivalence measured:** on stock VICE 3.9, the text `load "<prg>" 0` of
+  `original` and `rebuild` changed only bytes inside the payload range (2236
+  changed, 0 outside), with the CPU held still. `MEM_SET` of the payload at
+  the header address, bank 0, therefore leaves the same RAM.
+- **Match the owning grant, not the port.** `grantEpochReader()`
+  (`stock-session.ts`) picks the `status` entry whose `grantId` is the lease's.
+  The client now parses `grantId`, which the broker already sent. Matching by
+  port would be unsafe: a cold launch on a reused port writes epoch 1 again,
+  which could falsely prove the old machine's identity.
+- **After a respawn there is no current epoch.** The broker counts ownership by
+  port and pid, so a respawned emulator (new pid) is owned by no grant. The
+  reconnect is refused with current epoch `null`, not `2`. The refusal text
+  (`convertHandshakeError()`) now says why instead of printing `null`.
+- **Deleted with the file reader:** `readEpoch()`, `EpochResult` and
+  `EPOCH_FILE` in `vice-errors.ts`, and `epochFile` from `useInstance()`. The
+  `repo-root.test.ts` path-agreement check keeps only `supervisorDir()`.
+  `supervisorDir()` itself now has no production caller and is left in place.
+- **The hazard-subject fixtures ship only in a source checkout**, as before;
+  the refusal for a missing PRG says so.
+- **Live coverage added:** a `stock-broker-live` case drops the relay (it
+  reconnects) and then SIGKILLs the emulator (the next call is refused).
+  `vice_program_load` got a `stock-live` case that reads the payload back.
+
 ## Context
 
 - **Visuals:** none.

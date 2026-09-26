@@ -62,7 +62,7 @@
 - The project installs through npm/npx or as a Claude Code plugin. CI publishes
   both packages through OIDC from `v*` tags.
 
-**One broker, one endpoint (v2.0.0, completed parts)**
+**One broker, one socket (v2.0.0)**
 - Clients find the broker at fixed TCP port 19510 and dial `127.0.0.1`, then
   `host.docker.internal`. A handshake checks the identity and version of what
   answered. When no broker answers, the client refuses and gives the command that
@@ -80,39 +80,17 @@
   Transfers are integrity-checked and size-capped, path traversal is refused, and
   staged files are swept.
 - The input paths of every host tool bind by a handle that the broker creates.
-
-## In Progress: v2.0.0 "One Broker, One Socket"
-
-Goal: the MCP server and every skill script work the same on a bare host and
-inside a devcontainer, with no discovery file, no bind mount and no path
-translation. This goal is met only when the old host/container seam is **gone
-from production code**, not only bypassed.
-
-- **Done: every caller through one endpoint module** (spec
-  `agent-os/specs/2026-09-25-1853-one-endpoint-client/`). Compile the endpoint client into
-  `resources/`, because Node does not type-strip `.ts` under `node_modules`.
-  Then move every host-tool skill script (`acme-build` first) and the MCP-side
-  Ghidra and dxa callers onto it. Remove the `outDir`/`sourceDir` arguments; the
-  broker installs the Ghidra extension from its own vendored tree. Give CI's ACME
-  tests their own broker before the old bare-host route is deleted.
-- **Done: deletion cutover** (spec
-  `agent-os/specs/2026-09-25-2240-deletion-cutover/`). Delete `hostpath.ts`, `containerpath.ts` and
-  `stock-paths.ts`, the `broker.json` discovery record with every reader of it,
-  and the two-route host/container branch in `host-tool-client.ts`. Rewrite the
-  stale guidance that the broker binds `0.0.0.0` and remove the dead guard
-  comments. Structural tests must assert that the old seam is absent, so that
-  they cannot pass vacuously.
-- **Done: Ghidra without the symlink alias** (spec
-  `agent-os/specs/2026-09-26-0022-ghidra-without-alias/`). Ghidra runs land on a broker-side root
-  that has no dot-prefixed segment, and the alias mechanism is deleted. This must
-  be measured against real Ghidra, because Ghidra's dot-path refusal still
-  applies.
-- **In progress: no cross-side paths** (spec
-  `agent-os/specs/2026-09-26-1019-no-cross-side-paths/`). The epoch drift check
-  reads the epoch over the control socket instead of the grant's `epoch_file`,
-  and the grant loses `epoch_file` and `supervisor_dir`. `vice_program_load`
-  writes the PRG bytes through the binary monitor instead of dialing a text
-  `load` with a client-side path.
+- No request or reply names a path the other side must open. The grant carries
+  coordinates only; the reconnect epoch is read from the broker's `status`
+  reply for the instance the grant owns. `vice_program_load` writes the PRG
+  bytes through the binary monitor, and the text monitor has no `load` verb.
+- Ghidra projects live on a broker-side root with no dot-prefixed segment.
+- The old host/container seam is gone from production code: `hostpath.ts`,
+  `containerpath.ts`, `stock-paths.ts`, `broker.json` and the Ghidra symlink
+  alias are deleted, and structural tests with planted-violation proofs
+  assert they stay gone. Specs: `agent-os/specs/2026-09-25-1853-one-endpoint-client/`,
+  `2026-09-25-2240-deletion-cutover/`, `2026-09-26-0022-ghidra-without-alias/`
+  and `2026-09-26-1019-no-cross-side-paths/`.
 
 ## Planned / Later
 
@@ -136,11 +114,9 @@ from production code**, not only bypassed.
   external analyser was removed, and nothing replaces it yet.
 - The bank-boundary annotation claim is proven only on a synthetic fixture, not
   yet on real cracked code.
-- The epoch drift check still reads the grant's `epoch_file`, a broker-side
-  path. Inside a container that path does not exist, so the check never finds
-  a baseline there.
-- `vice_program_load` still sends a client-side path to the broker instead of
-  staging the file as bytes.
+- v2.0.0's container case is proven by tests that give the client and the
+  broker disjoint roots, and by the structural seam tests. It has not been run
+  inside a real devcontainer, because this repository has none.
 - Cycle-exact equivalence past anchor hit 75 is still open. CPU history through
   the text monitor now provides an instrument for it.
 
