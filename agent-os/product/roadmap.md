@@ -107,6 +107,12 @@ from production code**, not only bypassed.
   that has no dot-prefixed segment, and the alias mechanism is deleted. This must
   be measured against real Ghidra, because Ghidra's dot-path refusal still
   applies.
+- **In progress: no cross-side paths** (spec
+  `agent-os/specs/2026-09-26-1019-no-cross-side-paths/`). The epoch drift check
+  reads the epoch over the control socket instead of the grant's `epoch_file`,
+  and the grant loses `epoch_file` and `supervisor_dir`. `vice_program_load`
+  writes the PRG bytes through the binary monitor instead of dialing a text
+  `load` with a client-side path.
 
 ## Planned / Later
 
