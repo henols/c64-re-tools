@@ -24,10 +24,10 @@ export const STUB_BROKER_CONTROL = {
 type FakeSessionBrokerControl = StockConnectSession["brokerControl"];
 
 /** Builds a HeldLease from the four coordinates a test actually cares about,
- * defaulting the two CR-06 directory fields. Tests that care about the
- * threading pass them explicitly. */
-export function makeLease(opts: Omit<HeldLease, "epochFile" | "supervisorDir"> & Partial<Pick<HeldLease, "epochFile" | "supervisorDir">>): HeldLease {
-  return { epochFile: "", supervisorDir: "", ...opts };
+ * defaulting the capability-cache directory. Tests that care about it pass
+ * it explicitly. */
+export function makeLease(opts: Omit<HeldLease, "supervisorDir"> & Partial<Pick<HeldLease, "supervisorDir">>): HeldLease {
+  return { supervisorDir: "", ...opts };
 }
 
 /** The fake client carries a REAL disconnect() that flips `connected` to

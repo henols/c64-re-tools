@@ -712,7 +712,6 @@ function buildConformanceDeps(session: StockConnectSession): StockSessionDeps {
         port: session.port,
         targetId: session.targetId,
         brokerControl: session.brokerControl,
-        epochFile: "",
         supervisorDir: "",
       } as HeldLease,
     }),
@@ -1611,7 +1610,6 @@ function buildTextConformanceDeps(port: number, overrides: Partial<StockSessionD
     port: 6502,
     targetId: "conformance-text",
     brokerControl: CONFORMANCE_BROKER_CONTROL,
-    epochFile: "",
     supervisorDir: "",
     remoteMonitorPort: port,
   };

@@ -984,7 +984,7 @@ async function startRoundTripListener(
     port: 0,
     onAcquire: async (): Promise<AcquireOutcome> => ({
       ok: true,
-      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/stock-machine-roundtrip-epoch.json", supervisorDir: "/tmp/stock-machine-roundtrip" },
+      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` },
     }),
     onRelease: (requestId: string) => handleRelease(requestId, state),
     onStatus: (): StatusInstanceEntry[] => [],

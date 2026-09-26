@@ -121,11 +121,12 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 
 import { build } from "./build.ts";
+import { epochPathFor } from "./broker-epoch.mts";
 import { dialBrokerEndpoint } from "./broker-endpoint.mts";
 import { dialControlSession, type BrokerControlSession, type HeldLease, type AcquireGrant } from "./vice-broker-client.ts";
 import { callStockTool } from "./stock-tools.ts";
 import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
-import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
+import { stockConnect, stockReconnect, type StockConnectOptions, type StockConnectSession } from "./stock-connect.ts";
 import { probeReady } from "./broker-launch.mts";
 import { snapshotPathFor, snapshotMetaPathFor } from "./transfer-paths.ts";
 
@@ -344,7 +345,6 @@ function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerContro
     port: grant.port,
     targetId: grant.id,
     brokerControl: controlSession,
-    epochFile: grant.epoch_file,
     supervisorDir: stateDir,
   };
   return {
@@ -510,7 +510,7 @@ test(
       if (!acquired.ok) return;
       const grant = acquired.grant;
 
-      const pid = await readGrantPid(grant.epoch_file);
+      const pid = await readGrantPid(epochPathFor(stateDir, grant.port));
       recordPid(pid);
 
       // --- The non-bypassable proof for I-2: read the ACTUAL argv this
@@ -620,7 +620,7 @@ test(
         if (!acquired.ok) return;
         const grant = acquired.grant;
 
-        const pid = await readGrantPid(grant.epoch_file);
+        const pid = await readGrantPid(epochPathFor(stateDir, grant.port));
         recordPid(pid);
 
         const ready = await waitForStockReady(grant.port);
@@ -757,7 +757,7 @@ test(
       if (!acquired.ok) return;
       const grant = acquired.grant;
 
-      const pid = await readGrantPid(grant.epoch_file);
+      const pid = await readGrantPid(epochPathFor(stateDir, grant.port));
       recordPid(pid);
       // Post-fix confirmation, same discriminator as Task 1 (not the
       // primary point of THIS test, but free to check and worth recording).
@@ -890,7 +890,7 @@ test(
       if (!acquired.ok) return;
       const grant = acquired.grant;
 
-      const pid = await readGrantPid(grant.epoch_file);
+      const pid = await readGrantPid(epochPathFor(stateDir, grant.port));
       recordPid(pid);
 
       const ready = await waitForStockReady(grant.port);
@@ -956,6 +956,87 @@ test(
         [injectedByte],
         `expected the injected PETSCII byte 0x${injectedByte.toString(16)} to land in the observation cell, got ${JSON.stringify(afterInjectPayload.bytes)}`,
       );
+
+      await controlSession.release();
+    });
+
+    assert.ok(report !== null, "withBrokerHarness must have returned a report");
+    assert.deepEqual(report!.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report!.pidsAliveAfterTeardown)} (recorded: ${JSON.stringify(report!.recordedPids)})`);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// v2.0.0 step 4: the reconnect epoch comes from the broker over the control
+// session, not from a file. A plain relay drop must reconnect cleanly (the
+// case that was falsely refused whenever the epoch file could not be read),
+// and a real crash-respawn must be refused.
+// ---------------------------------------------------------------------------
+
+test(
+  "stock-broker-live: a dropped relay reconnects on the broker-reported epoch, and a crash-respawn is refused as a different machine",
+  { skip: SKIP_REASON, timeout: 90000 },
+  async () => {
+    clearHeldStockSession();
+    let report: HarnessReport | null = null;
+    report = await withBrokerHarness(async ({ stateDir, controlPort, recordPid }) => {
+      await waitForBrokerReady(controlPort);
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
+      if (!opened.ok) return;
+      const controlSession = opened.session;
+      const acquired = await controlSession.acquire();
+      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+      if (!acquired.ok) return;
+      const grant = acquired.grant;
+      const epochFile = epochPathFor(stateDir, grant.port);
+      const pid = await readGrantPid(epochFile);
+      recordPid(pid);
+      assert.ok(await waitForStockReady(grant.port), `instance at port ${grant.port} never answered a binary-monitor probe`);
+
+      let lastSession: StockConnectSession | null = null;
+      const deps: StockSessionDeps = {
+        ...depsFor("127.0.0.1", grant, controlSession, stateDir),
+        connect: async (opts: StockConnectOptions) => (lastSession = await stockConnect(opts)),
+        // The real stockReconnect(), wrapped only to observe the session it returns.
+        reconnect: async (session, options) => (lastSession = await stockReconnect(session, options)),
+      };
+      const read = () => callStockTool("vice_memory_read", { address: "$0400", size: 1, encoding: "array" }, deps);
+
+      parseOkPayload((await read()) as { content: { type: "text"; text: string }[]; isError: boolean });
+      const first = lastSession as StockConnectSession | null;
+      assert.ok(first !== null, "the first call must have connected");
+      const baseline = JSON.parse(readFileSync(epochFile, "utf8")).epoch as number;
+      assert.equal(first.baselineEpoch, baseline, "the baseline must be the epoch the broker wrote, read over the socket");
+
+      // A plain relay drop, emulator untouched: the next call must reconnect.
+      await first.client.disconnect();
+      parseOkPayload((await read()) as { content: { type: "text"; text: string }[]; isError: boolean });
+      const second = lastSession as StockConnectSession | null;
+      assert.ok(second !== null && second !== first, "a dropped relay must be replaced by a fresh session");
+      assert.equal(second.baselineEpoch, baseline, "the reconnect proves the same epoch");
+
+      // A crash-respawn: the next call must be refused.
+      process.kill(pid, "SIGKILL");
+      const respawned = await waitFor(() => {
+        try {
+          const rec = JSON.parse(readFileSync(epochFile, "utf8")) as { epoch: number; pid: number };
+          if (rec.epoch > baseline && rec.pid !== pid && isAlive(rec.pid)) {
+            recordPid(rec.pid);
+            return true;
+          }
+        } catch {
+          // mid-write -- poll again.
+        }
+        return false;
+      }, 20000);
+      assert.ok(respawned, "the broker must respawn the killed emulator with an advanced epoch");
+      assert.ok(await waitFor(() => !second.client.connected, 10000), "the respawn must drop the old relay connection");
+
+      const refused = (await read()) as { content: { type: "text"; text: string }[]; isError: boolean };
+      console.log(`stock-broker-live (epoch): after respawn -> ${refused.content[0]?.text}`);
+      assert.equal(refused.isError, true, "a call after a crash-respawn must be refused");
+      assert.match(refused.content[0]!.text, /identity could not be proven across a reconnect/);
+      assert.match(refused.content[0]!.text, new RegExp(`baseline epoch ${baseline}\\b`));
 
       await controlSession.release();
     });

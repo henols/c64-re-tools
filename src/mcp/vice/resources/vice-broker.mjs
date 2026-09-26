@@ -653,8 +653,6 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
         grant: {
             port: record.port,
             url: record.url,
-            epochFile: record.epochFile,
-            supervisorDir: record.supervisorDir,
             // Key omitted entirely when the record has none --
             // the fork case, and (until a later plan closes the port-allocation
             // degrade path) a stock instance whose second port allocation itself

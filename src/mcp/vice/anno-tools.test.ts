@@ -2639,7 +2639,6 @@ test(
             port: binPort,
             targetId: "anno-tools-evid-ingest-live",
             brokerControl: EVID_LIVE_BROKER_CONTROL,
-            epochFile: "",
             supervisorDir: "",
             remoteMonitorPort: textPort,
           },

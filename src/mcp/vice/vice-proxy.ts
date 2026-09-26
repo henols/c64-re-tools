@@ -877,32 +877,22 @@ type BrokerLeaseResult = { ok: true; lease: HeldLease | null } | { ok: false; me
  * from the two success returns below that hold a control session.
  */
 function buildHeldLease(session: BrokerControlSession): HeldLease {
-  const { url, port, epochFile } = activeInstance();
+  const { url, port } = activeInstance();
   // WR-06: `new URL(url).hostname` returns a BRACKETED literal for IPv6
   // ("[::1]"), which net.connect() will not accept -- so the brackets are
   // stripped here, at the one place the dial host is derived, rather than by
   // every eventual consumer. Deliberately not a general URL-parsing helper: the
   // bracket form is the single documented WHATWG-URL quirk this seam meets.
   const host = new URL(url).hostname.replace(/^\[(.+)\]$/, "$1");
-  // CR-06: `epochFile` and `supervisorDir` are what make the stock handshake's
-  // two BACK-04/reconnect mechanisms actually live on the real path -- before
-  // this, no production call ever passed StockConnectDeps, so `baselineEpoch`
-  // was always null (making stockReconnect() throw a FALSE
-  // MachineRestartedError on every transient drop) and the capability cache
-  // was never read or written.
-  //
-  // Two DIFFERENT directories, deliberately, and not interchangeable:
-  //   - epochFile is THIS instance's own `<stateDir>/<port>/epoch.json`, read
-  //     fresh from activeInstance() like every other field here.
-  //   - supervisorDir is the broker state directory, where backend.json
-  //     lives, resolved through broker-home.mts's brokerStateDir() -- the
-  //     broker's own resolver, never a locally re-derived path.
+  // `supervisorDir` is where this process keeps its own capability cache
+  // (`backend.json`), resolved through broker-home.mts's brokerStateDir()
+  // on THIS side. The reconnect epoch is not here: stock-session.ts asks the
+  // broker for it over `brokerControl`, because the grant names no path.
   return {
     host,
     port,
     targetId: grantId ?? "",
     brokerControl: session,
-    epochFile,
     supervisorDir: brokerStateDir(),
     // Plan 41-01 (D-15): read fresh off the module-level variable
     // adoptGrant() stashed, exactly like every other field here -- `null`
@@ -957,7 +947,7 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
   // coordinates (D-1, quick task 260801-ccn) and adopts them as this
   // session's active instance -- the LAST point before the coordinates
   // become the session's identity: the endpoint every later tool call is
-  // sent to, and the path the epoch guard opens. Plan 08 (D-13) reuses this
+  // sent to. Plan 08 (D-13) reuses this
   // EXACT function for a replacement acquisition too (see
   // handleGrantedInstanceUnreachable() below) -- one code path for adopting
   // an instance, never a second one for a replacement.
@@ -1001,7 +991,6 @@ function adoptGrant(grant: Record<string, unknown>): void {
   useInstance({
     port: granted.port as number,
     url: granted.url as string,
-    epochFile: granted.epoch_file as string,
     pooled: true,
   });
 }

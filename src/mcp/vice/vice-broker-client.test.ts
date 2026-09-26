@@ -186,7 +186,7 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
 
 test("dialControlSession(): opens a session and drives all four request kinds, and no request line carries a token", async () => {
   const { server, port, rawLines } = await startFullBrokerListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } }),
+    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } }),
   });
   try {
     const opened = await dialLoopback(port);
@@ -226,14 +226,12 @@ test("dialControlSession(): opens a session and drives all four request kinds, a
 
 // ------------------------------------------------- dialControlSession(): key sets
 
-// containerizeGrant() (vice-proxy.ts lines 1963-2054, read directly from
-// source at the time this test was written) reads exactly these fields off
-// a raw grant record before translating url/epoch_file/supervisor_dir.
-const CONTAINERIZE_GRANT_FIELDS = ["id", "port", "url", "epoch_file", "supervisor_dir"];
+// The grant carries coordinates only -- never a broker-side path.
+const CONTAINERIZE_GRANT_FIELDS = ["id", "port", "url"];
 
 test("acquire result: the grant object has exactly the key set containerizeGrant() reads", async () => {
   const { server, port } = await startFullBrokerListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6601, url: "http://127.0.0.1:6601/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6601" } }),
+    onAcquire: async () => ({ ok: true, grant: { port: 6601, url: "http://127.0.0.1:6601/mcp" } }),
   });
   try {
     const opened = await dialLoopback(port);
@@ -368,7 +366,7 @@ test("session: two responses arriving in one chunk are both delivered", async ()
     const first = opened.session.acquire({ timeoutMs: 3000 });
     const second = opened.session.status({ timeoutMs: 3000 });
     await sleepMs(50); // let both request lines actually reach the server
-    const grantLine = JSON.stringify({ kind: "grant", id: "req-x", port: 6604, url: "http://127.0.0.1:6604/mcp", epoch_file: "/tmp/e.json", supervisor_dir: "/tmp/6604" });
+    const grantLine = JSON.stringify({ kind: "grant", id: "req-x", port: 6604, url: "http://127.0.0.1:6604/mcp" });
     const statusLine = JSON.stringify({ kind: "status", instances: [] });
     serverSocket.write(`${grantLine}\n${statusLine}\n`); // BOTH responses in ONE chunk
 
@@ -396,7 +394,7 @@ test("session: one response split across two chunks is delivered exactly once", 
 
     const acquirePromise = opened.session.acquire({ timeoutMs: 3000 });
     await sleepMs(50);
-    const line = `${JSON.stringify({ kind: "grant", id: "req-y", port: 6605, url: "http://127.0.0.1:6605/mcp", epoch_file: "/tmp/e.json", supervisor_dir: "/tmp/6605" })}\n`;
+    const line = `${JSON.stringify({ kind: "grant", id: "req-y", port: 6605, url: "http://127.0.0.1:6605/mcp" })}\n`;
     const splitAt = Math.floor(line.length / 2);
     serverSocket.write(line.slice(0, splitAt));
     await sleepMs(20);
@@ -449,7 +447,7 @@ test("session: a malformed response line settles the pending request as a protoc
 
 test("session: a second release() resolves without throwing", async () => {
   const { server, port } = await startFullBrokerListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6606, url: "http://127.0.0.1:6606/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6606" } }),
+    onAcquire: async () => ({ ok: true, grant: { port: 6606, url: "http://127.0.0.1:6606/mcp" } }),
   });
   try {
     const opened = await dialLoopback(port);
@@ -491,7 +489,7 @@ test("session: a second release() resolves without throwing", async () => {
  * grant id, so `grant.id` is exactly the grant that connection holds. */
 const GRANTING_ACQUIRE = async (): Promise<AcquireOutcome> => ({
   ok: true,
-  grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" },
+  grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" },
 });
 
 /** Acquires over `session` and returns the grant id, so a following
@@ -1215,7 +1213,7 @@ test("structural: none of the six retiring D-12 mechanisms exists anywhere in th
 
 const ALWAYS_GRANT = async (): Promise<AcquireOutcome> => ({
   ok: true,
-  grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" },
+  grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" },
 });
 
 test("acquire profile (33-06): session.acquire({profile}) puts {warp:true, headless:true} on the wire and it arrives at the broker's onAcquire", async () => {

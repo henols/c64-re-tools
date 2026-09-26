@@ -148,7 +148,6 @@ function buildRoundtripDeps(session: StockConnectSession): StockSessionDeps {
         port: session.port,
         targetId: session.targetId,
         brokerControl: session.brokerControl,
-        epochFile: "",
         supervisorDir: "",
       } as HeldLease,
     }),

@@ -51,7 +51,7 @@ Read these *before* resuming, in the same paused window as the memory reads.
 | `$01` (processor port) | `$__` `%________` | `vice_memory_read` — decides which vectors are live |
 | video standard | PAL \| NTSC | `vice_vicii_get_state` |
 | registers (PC, A, X, Y, SP, flags) | | `vice_registers_get` |
-| epoch-drift errors during the capture | `none` | the proxy raises these itself, before and after every forwarded call — no tool reads the epoch on demand |
+| epoch-drift errors during the capture | `none` | the MCP server raises these itself, on every reconnect after a respawn — no tool reads the epoch on demand |
 | checkpoints armed at exit | `0` | `vice_checkpoint_list` — accept only this enumeration as proof |
 
 ## Verdict
@@ -65,7 +65,7 @@ Read these *before* resuming, in the same paused window as the memory reads.
 
 If any box stays unchecked, void the run: rename each artifact to
 `<name>.VOID-<UTC timestamp>`, write a sibling note giving the reason and — when a
-drift error was the cause — both epoch values quoted from that error's own text,
+drift error was the cause — the epoch values quoted from that error's own text,
 and keep the voided artifacts on disk.
 
 ## Comparison against sibling runs

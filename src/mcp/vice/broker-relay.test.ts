@@ -960,16 +960,17 @@ function happyPathResponder(): (socket: Socket) => void {
   };
 }
 
-/** Mirrors stock-connect.test.ts's own withTempEpochFile() -- a real
- * temp-directory epoch.json, so stockReconnect()'s identity-proof path has
- * genuine evidence to read rather than an injected stub. */
-function withTempEpochFile<T>(fn: (epochPath: string, writeEpoch: (epoch: number) => void) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), "broker-relay-epoch-"));
-  const epochPath = join(dir, "epoch.json");
-  const writeEpoch = (epoch: number) => {
-    writeFileSync(epochPath, JSON.stringify({ epoch, spawned_at: new Date().toISOString(), pid: 1234 }));
-  };
-  return fn(epochPath, writeEpoch).finally(() => rmSync(dir, { recursive: true, force: true }));
+/** A settable stand-in for the broker's epoch for this grant -- what
+ * stock-session.ts's grantEpochReader() reads from `status` -- so
+ * stockReconnect()'s identity-proof path has an epoch to compare. */
+function withEpochSource<T>(fn: (readCurrentEpoch: () => Promise<number | null>, writeEpoch: (epoch: number) => void) => Promise<T>): Promise<T> {
+  let current: number | null = null;
+  return fn(
+    async () => current,
+    (epoch: number) => {
+      current = epoch;
+    },
+  );
 }
 
 /** A StockConnectBrokerControl whose claimMonitor()/releaseMonitor() call
@@ -1023,7 +1024,7 @@ function makeRealBrokerControl(state: BrokerState, targetId: string): StockConne
 // ===========================================================================
 
 test("emulator binds late: a binary attach sent before the emulator's port is bound is answered only after the bind, and the stock handshake's first PING is answered", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
+  await withEpochSource(async (readCurrentEpoch, writeEpoch) => {
     writeEpoch(7);
     let incidentWrites = 0;
     const relayDeathDeps: TestHandleRelayDeathDeps = {
@@ -1071,7 +1072,7 @@ test("emulator binds late: a binary attach sent before the emulator's port is bo
               port: emulatorPort,
               targetId,
               brokerControl,
-              deps: { dialMonitorSocket, epochPath },
+              deps: { dialMonitorSocket, readCurrentEpoch },
             });
             assert.ok(
               session.client.connected,
@@ -1412,7 +1413,7 @@ test("the client's attach-reply wait for a relay dial exceeds the broker's emula
 });
 
 test("stockConnect: a real never-binding attach's refusal, converted by convertHandshakeError(), names the cause and the retry, and never mentions VICE_BROKER_BINMON_HOST", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
+  await withEpochSource(async (readCurrentEpoch, writeEpoch) => {
     writeEpoch(1);
     const port = await reserveFreePort(); // reserved, then released -- NOTHING is ever bound on it in this test
     const targetId = "grant-g64-4-e2e-never-binds";
@@ -1441,7 +1442,7 @@ test("stockConnect: a real never-binding attach's refusal, converted by convertH
               port,
               targetId,
               brokerControl,
-              deps: { dialMonitorSocket, epochPath },
+              deps: { dialMonitorSocket, readCurrentEpoch },
             }),
           (err: unknown) => {
             const result = convertHandshakeError("vice_ping", err);
@@ -1459,7 +1460,7 @@ test("stockConnect: a real never-binding attach's refusal, converted by convertH
 });
 
 test("stockReconnect: after the binary relay is destroyed, a fresh session establishment dials the relay again and succeeds on a matching epoch", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
+  await withEpochSource(async (readCurrentEpoch, writeEpoch) => {
     writeEpoch(42);
     let emulatorSocket: Socket | null = null;
     let resolveEmulatorAccepted: () => void = () => {};
@@ -1492,7 +1493,7 @@ test("stockReconnect: after the binary relay is destroyed, a fresh session estab
             port: emulatorPort,
             targetId: "grant-reconnect-binary",
             brokerControl,
-            deps: { dialMonitorSocket, epochPath },
+            deps: { dialMonitorSocket, readCurrentEpoch },
           });
           assert.ok(session.client.connected, "the first handshake must dial the relay and connect");
 
@@ -1521,7 +1522,7 @@ test("stockReconnect: after the binary relay is destroyed, a fresh session estab
 });
 
 test("stockReconnect: after the binary relay is destroyed, an advanced epoch rejects with MachineRestartedError rather than reusing the dead relay", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
+  await withEpochSource(async (readCurrentEpoch, writeEpoch) => {
     writeEpoch(1);
     let emulatorSocket: Socket | null = null;
     let resolveEmulatorAccepted: () => void = () => {};
@@ -1554,7 +1555,7 @@ test("stockReconnect: after the binary relay is destroyed, an advanced epoch rej
             port: emulatorPort,
             targetId: "grant-reconnect-restarted",
             brokerControl,
-            deps: { dialMonitorSocket, epochPath },
+            deps: { dialMonitorSocket, readCurrentEpoch },
           });
 
           const clientClosed = new Promise<void>((resolve) => session.client.once("close", () => resolve()));

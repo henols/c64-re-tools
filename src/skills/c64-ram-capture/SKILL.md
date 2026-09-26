@@ -180,27 +180,30 @@ with the batches spent. Never extend the ceiling silently.
 
 ## Prove the machine did not change under you
 
-**Corrected 2026-08-04: there is no exposed tool that reads the epoch, and you do
-not have to poll for one.** The proxy compares the restart epoch before *and*
-after every forwarded call, and refuses the call — or discards its result, if the
-change happened mid-call — with a loud error naming both epoch values. So the
-proxy guards the capture's identity continuously, not at two sampled points.
+**No exposed tool reads the epoch, and you do not have to poll for one.** The
+MCP server takes the broker's restart epoch for your instance when it first
+connects. A respawn kills the monitor connection, so the call in flight fails and
+the next call reconnects. Before it reconnects, the server asks the broker for
+the current epoch. If it differs from the first one, or none can be read, the
+call is refused ("identity could not be proven across a reconnect"). After a
+respawn there is usually none: the new emulator process is not owned by your
+session, and the error says so.
 
 What that leaves you:
 
 - **A clean capture is one during which no epoch-drift error appeared.** Record
   that, not a pair of hand-read numbers.
 - **When you need the numbers,** they come from the drift error's own text, which
-  names the before and after value.
-- **A drift error voids the run** even if the very next call succeeds. It will —
-  the proxy re-baselines so the session stays usable — and a successful retry
-  after a respawn is talking to a freshly-booted machine.
+  names the baseline value and the current one, or says there is none.
+- **A drift error voids the run** even if the very next call succeeds. It will,
+  because the call after the error connects fresh, but a successful retry after
+  a respawn is talking to a freshly booted machine.
 
 **Void a run** whose machine identity you could not prove unchanged:
 
 1. Rename each artifact to `<name>.VOID-<UTC timestamp>`.
 2. Write a sibling note recording the reason, the time, and — if a drift error is
-   what voided it — the two epoch values quoted from that error. Do not go looking
+   what voided it — the epoch values quoted from that error. Do not go looking
    for them. Nothing reads the epoch on demand. Keep the voided artifacts on disk.
 
 ## Compare two captures

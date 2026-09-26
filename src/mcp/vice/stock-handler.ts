@@ -75,9 +75,16 @@ export function convertHandshakeError(toolName: string, err: unknown): StockErro
     );
   }
   if (err instanceof MachineRestartedError) {
+    // A null current epoch means the broker reports no running instance
+    // owned by this session: it was respawned (a new pid), killed, or the
+    // broker could not be asked. Say that, rather than printing "null".
+    const current =
+      err.currentEpoch === null || err.currentEpoch === undefined
+        ? "no current epoch: the broker reports no running instance owned by this session -- it was respawned, killed, or could not be asked"
+        : `current epoch ${String(err.currentEpoch)}`;
     return isErrorText(
       `${toolName}: the emulator's identity could not be proven across a reconnect ` +
-        `(baseline epoch ${String(err.baselineEpoch)}, current epoch ${String(err.currentEpoch)}) -- ` +
+        `(baseline epoch ${String(err.baselineEpoch)}, ${current}) -- ` +
         `treat every result since the previous call as void and retry.`,
     );
   }

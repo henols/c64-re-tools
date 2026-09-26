@@ -608,8 +608,6 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                         id: requestId,
                         port: outcome.grant.port,
                         url: outcome.grant.url,
-                        epoch_file: outcome.grant.epochFile,
-                        supervisor_dir: outcome.grant.supervisorDir,
                         // Key omitted entirely when absent -- the fork case only now.
                         // A stock grant whose second (text-monitor) port allocation
                         // failed never reaches this line at all:

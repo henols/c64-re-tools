@@ -40,7 +40,6 @@ function makeLease(opts: { host: string; port: number; targetId: string }): Held
     port: opts.port,
     targetId: opts.targetId,
     brokerControl: STUB_BROKER_CONTROL,
-    epochFile: "",
     supervisorDir: "",
   };
 }

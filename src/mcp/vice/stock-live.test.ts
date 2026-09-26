@@ -318,7 +318,6 @@ before(async () => {
         port: session.port,
         targetId: session.targetId,
         brokerControl: session.brokerControl,
-        epochFile: "",
         supervisorDir: "",
       } as HeldLease,
     }),

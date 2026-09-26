@@ -729,8 +729,7 @@ test("handleAcquire: an acquire arriving with one probe-live ready instance avai
   if (outcome.ok) {
     assert.equal(outcome.grant.port, 6600, "the grant must name the PRE-WARMED port, not a freshly allocated one");
     assert.equal(outcome.grant.url, "http://127.0.0.1:6600/mcp");
-    assert.equal(outcome.grant.epochFile, "/tmp/vice-broker-acquire-test/6600/epoch.json");
-    assert.equal(outcome.grant.supervisorDir, "/tmp/vice-broker-acquire-test/6600");
+    assert.ok(!("epochFile" in outcome.grant) && !("supervisorDir" in outcome.grant), "the grant must name no broker-side path");
   }
   assert.equal(state.instances.get(6600)?.state, "granted", "the pre-warmed instance must be marked granted, not left ready");
 });

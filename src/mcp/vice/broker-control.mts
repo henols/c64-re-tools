@@ -121,11 +121,12 @@ export interface ControlRequest {
   [key: string]: unknown;
 }
 
+/** What an acquire hands the client. It names no broker-side path: the
+ * client asks for the epoch over this connection (`status`), and never
+ * opens a file the broker wrote. */
 export interface AcquireGrant {
   port: number;
   url: string;
-  epochFile: string;
-  supervisorDir: string;
   /** The broker-allocated port stock's `-remotemonitor` text monitor binds,
    * mandatory on every stock launch. Optional here only for the fork case
    * -- a stock instance record always carries it, because a stock launch
@@ -514,7 +515,7 @@ export interface StartControlListenerResult {
 }
 
 export type ControlResponse =
-  | { kind: "grant"; id: string; port: number; url: string; epoch_file: string; supervisor_dir: string; remote_monitor_port?: number }
+  | { kind: "grant"; id: string; port: number; url: string; remote_monitor_port?: number }
   | { kind: "released" }
   | { kind: "status"; instances: StatusInstanceEntry[] }
   | {
@@ -1197,8 +1198,6 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
               id: requestId,
               port: outcome.grant.port,
               url: outcome.grant.url,
-              epoch_file: outcome.grant.epochFile,
-              supervisor_dir: outcome.grant.supervisorDir,
               // Key omitted entirely when absent -- the fork case only now.
               // A stock grant whose second (text-monitor) port allocation
               // failed never reaches this line at all:

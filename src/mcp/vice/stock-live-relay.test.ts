@@ -69,6 +69,7 @@ import { fileURLToPath } from "node:url";
 import { connect, createServer } from "node:net";
 
 import { build } from "./build.ts";
+import { epochPathFor } from "./broker-epoch.mts";
 import { dialControlSession, resolveSessionLabel, type BrokerControlSession, type AcquireGrant } from "./vice-broker-client.ts";
 import { dialBrokerEndpoint, dialMonitorRelay } from "./broker-endpoint.mts";
 import { probeReady } from "./broker-launch.mts";
@@ -387,7 +388,7 @@ async function withRelayHarness(
     const ready = await waitForPortOpen(grant.port, 30000);
     assert.ok(ready, `the cold-launched instance's binmon port ${grant.port} never accepted a connection within 30s`);
 
-    const epoch = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+    const epoch = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
     recordedPids.add(epoch.pid);
 
     await fn({ session: liveSession, grant, controlHost, controlPort, recordPid: (pid: number) => recordedPids.add(pid) });

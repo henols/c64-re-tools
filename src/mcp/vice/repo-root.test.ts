@@ -21,7 +21,6 @@ import { installResources } from "./install-resources.ts";
 
 const execFileP = promisify(execFile);
 const REPO_ROOT_MODULE_URL = new URL("./repo-root.ts", import.meta.url).href;
-const VICE_MODULE_URL = new URL("./vice-errors.ts", import.meta.url).href;
 
 /** Parse `key=value` lines (one per line, as `--print-paths` emits) into a
  * plain object. */
@@ -153,8 +152,7 @@ test("repoRoot() last-resort fallback pins the HOP COUNT as a property of depth,
 // ============================================================================
 // Path agreement (D-2, D-3, quick-260730-oga Task 2, narrowed for D-02,
 // narrowed AGAIN for plan 11's deletion of vice-supervisor.sh/vice-broker.sh):
-// proves the Node side (repo-root.ts's supervisorDir(), plus vice-errors.ts's
-// EPOCH_FILE) and the shell side (tools/vice-launcher.sh's --print-paths,
+// proves the Node side (repo-root.ts's supervisorDir()) and the shell side (tools/vice-launcher.sh's --print-paths,
 // via its own now-inlined resolve_repo_root()) resolve the SAME repo root,
 // and therefore the same .c64-re-tools/supervisor directory.
 //
@@ -176,7 +174,7 @@ test("repoRoot() last-resort fallback pins the HOP COUNT as a property of depth,
 // .git-walk-only variant, and the final not-under-.claude assertion.
 // ============================================================================
 
-test("path agreement (D-3, D-6, THE regression this task exists to catch): the launcher's own repo_root (resources/ and tools/ copies) agrees with Node's supervisorDir()/dirname(EPOCH_FILE), and the agreed path is not under .claude", async () => {
+test("path agreement (D-3, D-6, THE regression this task exists to catch): the launcher's own repo_root (resources/ and tools/ copies) agrees with Node's supervisorDir(), and the agreed path is not under .claude", async () => {
   // Self-sufficient about the deployed copies (quick-260730-q4b): this makes
   // the test pass in a fresh clone that has never run any skill .mjs file,
   // rather than depending on whether the runner happened to set
@@ -221,16 +219,13 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
   // Node-side values computed in a FRESH child process, not via this test
   // file's own already-imported modules -- immune to env mutation or
   // module-load ordering from sibling tests sharing this process.
-  // supervisorDir() (repo-root.ts) and EPOCH_FILE (vice-errors.ts) are the two
-  // Node-side derivations that survive from the original (poolDir()/
-  // sessionFilePath() went with D-02).
+  // supervisorDir() (repo-root.ts) is the Node-side derivation that survives
+  // from the original (poolDir()/sessionFilePath() went with D-02, and
+  // vice-errors.ts's EPOCH_FILE went when the epoch moved onto the socket).
   const nodeSrc = `
     import { supervisorDir } from ${JSON.stringify(REPO_ROOT_MODULE_URL)};
-    import { EPOCH_FILE } from ${JSON.stringify(VICE_MODULE_URL)};
-    import { dirname } from "node:path";
     console.log(JSON.stringify({
       supervisorDir: supervisorDir(),
-      epochDir: dirname(EPOCH_FILE),
     }));
   `;
   const { stdout: nodeOut } = await execFileP(process.execPath, ["--input-type=module", "-e", nodeSrc], {
@@ -242,11 +237,10 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
   // The expected state directory is derived from the launcher's own printed
   // repo_root (the launcher has no supervisor_dir/pool_dir field of its
   // own) -- this is the direct successor of the old byte-for-byte
-  // supervisor_dir/pool_dir/supervisorDir()/EPOCH_FILE cross-check, now that
+  // supervisor_dir/pool_dir/supervisorDir() cross-check, now that
   // the launcher is the only shell-side repo-root resolver left.
   const expectedStateDir = join(launcherVals.repo_root, ".c64-re-tools", "supervisor");
   assert.equal(nodeVals.supervisorDir, expectedStateDir, "Node supervisorDir() must equal <launcher repo_root>/.c64-re-tools/supervisor");
-  assert.equal(nodeVals.epochDir, expectedStateDir, "dirname(EPOCH_FILE) must equal <launcher repo_root>/.c64-re-tools/supervisor");
   assert.ok(
     !nodeVals.supervisorDir.includes(".claude"),
     `the agreed directory must not sit under .claude -- got ${nodeVals.supervisorDir} (the exact regression a naive move would introduce)`

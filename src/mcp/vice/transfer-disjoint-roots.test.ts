@@ -150,8 +150,6 @@ async function startDisjointListener(
       grant: {
         port: emulatorPort,
         url: `http://127.0.0.1:${emulatorPort}/mcp`,
-        epochFile: "/tmp/transfer-disjoint-roots-epoch.json",
-        supervisorDir: "/tmp/transfer-disjoint-roots",
       },
     }),
     onRelease: (requestId: string) => handleRelease(requestId, state),

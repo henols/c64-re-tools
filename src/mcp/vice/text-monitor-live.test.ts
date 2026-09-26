@@ -84,6 +84,7 @@ import { fileURLToPath } from "node:url";
 import { connect, createServer } from "node:net";
 
 import { build } from "./build.ts";
+import { epochPathFor } from "./broker-epoch.mts";
 import { dialBrokerEndpoint } from "./broker-endpoint.mts";
 import { dialControlSession, type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
 import { textConnect, textDisconnect } from "./text-connect.ts";
@@ -483,7 +484,7 @@ test(
         `grant.remote_monitor_port must be an integer in 1..65535, got: ${remoteMonitorPort}`,
       );
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       // A cold acquire's grant is handed back the instant the process is
@@ -558,7 +559,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -683,7 +684,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -694,7 +695,6 @@ test(
         port: grant.port,
         targetId: grant.id,
         brokerControl: session,
-        epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
       const deps: StockSessionDeps = {
@@ -812,7 +812,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -823,7 +823,6 @@ test(
         port: grant.port,
         targetId: grant.id,
         brokerControl: session,
-        epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
       const deps: StockSessionDeps = {
@@ -970,7 +969,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -981,7 +980,6 @@ test(
         port: grant.port,
         targetId: grant.id,
         brokerControl: session,
-        epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
       const deps: StockSessionDeps = {
@@ -1216,7 +1214,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -1233,7 +1231,6 @@ test(
         port: grant.port,
         targetId: grant.id,
         brokerControl: session,
-        epochFile: grant.epoch_file,
         supervisorDir: stateDir,
         remoteMonitorPort,
       };
@@ -1314,7 +1311,7 @@ test(
       assert.equal(typeof grant.remote_monitor_port, "number");
       const remoteMonitorPort = grant.remote_monitor_port as number;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
       recordPid(epochBefore.pid);
 
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
@@ -1341,7 +1338,6 @@ test(
         port: grant.port,
         targetId: grant.id,
         brokerControl: session,
-        epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
       const deps: StockSessionDeps = {

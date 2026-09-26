@@ -56,8 +56,6 @@ export interface AcquireGrant {
   id: string;
   port: number;
   url: string;
-  epoch_file: string;
-  supervisor_dir: string;
   /** The broker-allocated port stock's `-remotemonitor` text monitor binds,
    * mandatory in fact once a stock acquire without one was made to fail
    * outright rather than degrade.
@@ -254,12 +252,14 @@ export type ControlAcquireResult = { ok: true; grant: AcquireGrant } | { ok: fal
 
 export type ControlReleaseResult = { ok: true };
 
-interface ControlStatusInstanceEntry {
+export interface ControlStatusInstanceEntry {
   port: number;
   url: string;
   state: string;
   reason: string;
   epoch: number | null;
+  /** The grant that owns this instance, or null when none does. */
+  grantId: string | null;
 }
 
 export type ControlStatusResult =
@@ -506,34 +506,19 @@ export interface HeldLease {
   port: number;
   targetId: string;
   brokerControl: BrokerControlSession;
-  /** THIS instance's own epoch.json, as the grant names it (vice-proxy.ts
-   * fills it from activeInstance().epochFile). That is a broker-side path;
-   * reading it from inside a container is a recorded roadmap follow-up. This is the reconnect-identity baseline stock-connect.ts's
-   * stockReconnect() proves machine identity against. NOT optional: with it
-   * absent, stockReconnect() reports a FALSE MachineRestartedError on every
-   * transient socket drop ("treat every result since the previous call as
-   * void"), because identity that cannot be proven is treated as not proven.
-   * Empty string means genuinely no epoch evidence exists, which is that same
-   * unprovable case stated explicitly rather than by omission. */
-  epochFile: string;
-  /** The TOP-LEVEL supervisor directory -- the one holding
-   * `backend.json`, i.e. the broker state directory (broker-home.mts's
-   * brokerStateDir()). Deliberately NOT the grant's own per-instance
-   * `supervisor_dir` (`<stateDir>/<port>`), which holds epoch.json and would
-   * make backend-detect.mts's capability cache look in a directory that never
-   * has a record in it -- a silent permanent miss. Empty string disables the
-   * capability cache (every connect re-probes), matching
-   * backend-detect.mts's own documented degradation for an omitted
-   * supervisorDir. */
+  /** The directory holding this process's own capability cache
+   * (`backend.json`), resolved on THIS side. Never a broker-side path: the
+   * grant names none. Empty string disables the capability cache (every
+   * connect re-probes), matching backend-detect.mts's own documented
+   * degradation for an omitted supervisorDir. */
   supervisorDir: string;
   /** THIS
    * instance's own text-monitor port, read by text-connect.ts's
    * textConnect() to dial the `-remotemonitor` channel. MANDATORY on a
    * stock grant, ABSENT on a fork grant -- the fork never launches with
    * `-remotemonitor` and advertises no text tools. Its absence on a stock
-   * lease is a real defect, not a tolerated state (mirrors epochFile's own
-   * "NOT optional" discipline above): the mechanism that makes this true is
-   * broker-launch.mts's acquirePortAndLaunch(), which now FAILS THE WHOLE
+   * lease is a real defect, not a tolerated state: the mechanism that
+   * makes this true is broker-launch.mts's acquirePortAndLaunch(), which now FAILS THE WHOLE
    * ACQUIRE when the text-port allocation fails (`no_free_text_port`)
    * rather than degrading to a portless launch -- there is no longer a code
    * path that produces a stock grant, and therefore a HeldLease, without
@@ -712,8 +697,6 @@ function createSession(socket: Socket): BrokerControlSession {
       id: String(line.id),
       port: Number(line.port),
       url: String(line.url),
-      epoch_file: String(line.epoch_file),
-      supervisor_dir: String(line.supervisor_dir),
       ...(remoteMonitorPort === undefined ? {} : { remote_monitor_port: remoteMonitorPort }),
     };
     return { ok: true, grant };
@@ -750,6 +733,7 @@ function createSession(socket: Socket): BrokerControlSession {
         state: typeof e.state === "string" ? e.state : "",
         reason: typeof e.reason === "string" ? e.reason : "",
         epoch: typeof e.epoch === "number" ? e.epoch : null,
+        grantId: typeof e.grantId === "string" ? e.grantId : null,
       };
     });
     return { ok: true, instances };

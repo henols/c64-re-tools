@@ -12,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 
 import { HOST_BOUND_ARTIFACTS } from "./build.ts";
 import { STOCK_TOOLS } from "./stock-tools.ts";
@@ -202,6 +202,69 @@ test("planted non-violations: comments, the live host_tool_* ops and look-alike 
   ];
   for (const src of clean) {
     assert.deepEqual(violationsIn(src), [], `clean source must not be caught: ${src}`);
+  }
+});
+
+// The grant names no broker-side path, and the client never reads the
+// broker's epoch file: it asks for the epoch over the control connection.
+// The wire keys are forbidden everywhere; the camelCase names only on the
+// client side, because the broker keeps its own epoch file internally.
+
+/** Wire keys that named a broker-side path in the grant. */
+const GRANT_PATH_KEYS: { name: string; re: RegExp }[] = [
+  { name: "epoch_file", re: /\bepoch_file\b/ },
+  { name: "supervisor_dir", re: /\bsupervisor_dir\b/ },
+];
+
+/** Client-side names for reading the broker's epoch file. */
+const CLIENT_EPOCH_FILE_NAMES: { name: string; re: RegExp }[] = [
+  { name: "epochFile", re: /\bepochFile\b/ },
+  { name: "epochPath", re: /\bepochPath\b/ },
+  { name: "readEpoch", re: /\breadEpoch\b/ },
+];
+
+function epochViolationsIn(src: string, clientSide: boolean): string[] {
+  const stripped = stripComments(src);
+  const rules = clientSide ? [...GRANT_PATH_KEYS, ...CLIENT_EPOCH_FILE_NAMES] : GRANT_PATH_KEYS;
+  return rules.filter(({ re }) => re.test(stripped)).map(({ name }) => `uses ${name}`);
+}
+
+/** True when the file is not compiled into a host-bound broker artifact. */
+function isClientSide(file: string): boolean {
+  if (relative(HERE, file).startsWith(`resources${sep}`)) return false;
+  return !HOST_BOUND_ARTIFACTS.includes(basename(file).replace(/\.(ts|mts|mjs)$/, ".mjs"));
+}
+
+test("no production source puts a broker-side path in the grant, and no client-side source reads the broker's epoch file", () => {
+  const files = scannedFiles();
+  const offenders: string[] = [];
+  let clientFiles = 0;
+  for (const file of files) {
+    const clientSide = isClientSide(file);
+    if (clientSide) clientFiles++;
+    for (const v of epochViolationsIn(readFileSync(file, "utf8"), clientSide)) {
+      offenders.push(`${relative(HERE, file)}: ${v}`);
+    }
+  }
+  assert.deepEqual(offenders, []);
+  const rel = files.filter(isClientSide).map((f) => relative(HERE, f));
+  assert.ok(rel.includes("stock-connect.ts") && rel.includes("vice-proxy.ts") && rel.includes("vice-broker-client.ts"), "the client modules that carried the epoch path must be scanned as client-side");
+  assert.ok(!files.filter(isClientSide).some((f) => f.endsWith("broker-state.mts")), "broker-state.mts is host-bound and keeps its epoch file");
+  assert.ok(rel.includes("install-resources.ts"), "a module whose name merely contains \"resources\" is still client-side");
+  assert.ok(clientFiles > 50, `expected the client-side set to be most of the tree, found ${clientFiles}`);
+});
+
+test("planted violations: the grant path keys are caught everywhere, and the epoch-file names on the client side only", () => {
+  for (const src of ['writeLine(socket, { kind: "grant", epoch_file: f });', "const dir = String(line.supervisor_dir);"]) {
+    assert.notDeepEqual(epochViolationsIn(src, false), [], `caught on the broker side too: ${src}`);
+    assert.notDeepEqual(epochViolationsIn(src, true), [], `caught on the client side: ${src}`);
+  }
+  for (const src of ["const { epochFile } = activeInstance();", "deps.epochPath = p;", "const r = readEpoch(p);"]) {
+    assert.notDeepEqual(epochViolationsIn(src, true), [], `caught on the client side: ${src}`);
+    assert.deepEqual(epochViolationsIn(src, false), [], `allowed on the broker side: ${src}`);
+  }
+  for (const src of ["// the grant used to carry epoch_file", "const baseline = await readEpochSafely(deps);", "const epochFiles = [];"]) {
+    assert.deepEqual(epochViolationsIn(src, true), [], `clean source must not be caught: ${src}`);
   }
 });
 

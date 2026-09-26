@@ -1459,8 +1459,6 @@ async function acquireLeaseViaBroker(
       grant: {
         port: targetPort,
         url: `http://127.0.0.1:${targetPort}/mcp`,
-        epochFile: join(dir, String(targetPort), "epoch.json"),
-        supervisorDir: join(dir, String(targetPort)),
       },
     }),
   });
@@ -1539,8 +1537,6 @@ test("a full acquire-forward-release cycle creates no file under the broker stat
         grant: {
           port,
           url: `http://127.0.0.1:${port}/mcp`,
-          epochFile: join(dir, String(port), "epoch.json"),
-          supervisorDir: join(dir, String(port)),
         },
       }),
     });
@@ -1591,8 +1587,6 @@ test("acquiring twice sends exactly one acquire request, asserted by a test list
         grant: {
           port,
           url: `http://127.0.0.1:${port}/mcp`,
-          epochFile: join(dir, String(port), "epoch.json"),
-          supervisorDir: join(dir, String(port)),
         },
       };
     },
@@ -1997,8 +1991,6 @@ test("grant check: a grant whose url port disagrees with the granted port is ref
         grant: {
           port,
           url: mismatchedUrl,
-          epochFile: join(dir, "unused-epoch.json"),
-          supervisorDir: join(dir, "unused-supervisor-dir"),
         },
       }),
     });
@@ -2888,8 +2880,6 @@ async function g6408StartFixture(
         grant: {
           port: stubEmulator.port,
           url: `http://127.0.0.1:${stubEmulator.port}/mcp`,
-          epochFile: join(dir, "epoch.json"),
-          supervisorDir: dir,
           ...(stubTextMonitor ? { remoteMonitorPort: stubTextMonitor.port } : {}),
         },
       };

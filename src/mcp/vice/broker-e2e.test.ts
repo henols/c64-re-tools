@@ -20,6 +20,8 @@ import { connect, createServer, type Server } from "node:net";
 import { build } from "./build.ts";
 import { dialControlSession, type AcquireGrant, type BrokerControlSession } from "./vice-broker-client.ts";
 import { verifiedKill } from "./broker-kill.mts";
+import { epochPathFor } from "./broker-epoch.mts";
+import { grantEpochReader } from "./stock-session.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
@@ -375,17 +377,18 @@ test(
 
       assert.ok(Number.isInteger(grant.port) && grant.port >= 6600, `grant.port must be an integer >= 6600, got ${grant.port}`);
       assert.equal(typeof grant.url, "string");
-      assert.equal(typeof grant.epoch_file, "string");
-      assert.equal(typeof grant.supervisor_dir, "string");
       assert.equal(typeof grant.id, "string");
+      const rawGrant = grant as unknown as Record<string, unknown>;
+      assert.ok(!("epoch_file" in rawGrant) && !("supervisor_dir" in rawGrant), "the grant must name no broker-side path");
+      const epochFile = epochPathFor(stateDir, grant.port);
 
       // Exactly one child spawned: exactly one per-port directory under
       // stateDir carrying an epoch.json.
       const portDirs = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
       assert.equal(portDirs.length, 1, `expected exactly one instance directory, found ${JSON.stringify(portDirs.map((d) => d.name))}`);
 
-      assert.ok(existsSync(grant.epoch_file), `epoch file must exist at ${grant.epoch_file}`);
-      const epoch = JSON.parse(readFileSync(grant.epoch_file, "utf8"));
+      assert.ok(existsSync(epochFile), `epoch file must exist at ${epochFile}`);
+      const epoch = JSON.parse(readFileSync(epochFile, "utf8"));
       assert.equal(typeof epoch.pid, "number");
       assert.ok(isAlive(epoch.pid), `spawned child pid ${epoch.pid} must be alive right after grant`);
 
@@ -429,9 +432,12 @@ test(
       const acquired = await acquireGrant(port);
       const grant = acquired.grant;
 
-      const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8"));
+      const epochFile = epochPathFor(stateDir, grant.port);
+      const readGrantEpoch = grantEpochReader(acquired.session, grant.id);
+      const epochBefore = JSON.parse(readFileSync(epochFile, "utf8"));
       const pidBefore: number = epochBefore.pid;
       assert.equal(typeof pidBefore, "number");
+      assert.equal(await readGrantEpoch(), epochBefore.epoch, "the epoch the broker reports over the socket must be the one it wrote");
       assert.ok(isAlive(pidBefore), `granted child pid ${pidBefore} must be alive before the kill`);
 
       // Kill the granted child from OUTSIDE the broker with an uncatchable
@@ -444,7 +450,7 @@ test(
       const respawned = await waitFor(() => {
         let epoch: Record<string, unknown>;
         try {
-          epoch = JSON.parse(readFileSync(grant.epoch_file, "utf8"));
+          epoch = JSON.parse(readFileSync(epochFile, "utf8"));
         } catch {
           return false;
         }
@@ -458,8 +464,13 @@ test(
       }, 10000);
       assert.ok(respawned, "the killed instance must be respawned on the same port with an advanced epoch and a new, live pid within the deadline");
 
-      const epochAfter = JSON.parse(readFileSync(grant.epoch_file, "utf8"));
+      const epochAfter = JSON.parse(readFileSync(epochFile, "utf8"));
       assert.equal(epochAfter.epoch, epochBefore.epoch + 1, "the epoch integer must advance by exactly one on respawn");
+      // A respawn is a new pid, so the grant no longer owns the instance and
+      // its epoch is never read as this grant's. The reader reports none,
+      // which stockReconnect() refuses. Matching by port instead would be
+      // unsafe: a cold launch on a reused port starts again at epoch 1.
+      assert.equal(await readGrantEpoch(), null, "after a respawn the grant owns no instance, so no epoch is read as its own");
       assert.notEqual(epochAfter.pid, pidBefore, "the respawned child must be a DIFFERENT pid from the killed one");
       assert.ok(isAlive(epochAfter.pid), "the respawned child's pid must answer a zero-signal liveness check");
 
@@ -538,7 +549,8 @@ test(
       // First acquire: a real cold launch, granted.
       const firstAcquired = await acquireGrant(port);
       const firstGrant = firstAcquired.grant;
-      const epochBefore = JSON.parse(readFileSync(firstGrant.epoch_file, "utf8"));
+      const firstEpochFile = epochPathFor(stateDir, firstGrant.port);
+      const epochBefore = JSON.parse(readFileSync(firstEpochFile, "utf8"));
       const pidBefore: number = epochBefore.pid;
       assert.ok(isAlive(pidBefore), `granted child pid ${pidBefore} must be alive before the kill`);
 
@@ -552,7 +564,7 @@ test(
       const respawned = await waitFor(() => {
         let epoch: Record<string, unknown>;
         try {
-          epoch = JSON.parse(readFileSync(firstGrant.epoch_file, "utf8"));
+          epoch = JSON.parse(readFileSync(firstEpochFile, "utf8"));
         } catch {
           return false;
         }
@@ -710,7 +722,7 @@ test(
         const grantResp = await client.next();
         assert.equal(grantResp.kind, "grant", `expected a grant, got: ${JSON.stringify(grantResp)}`);
         const grantPort = Number(grantResp.port);
-        const epochFile = String(grantResp.epoch_file);
+        const epochFile = epochPathFor(stateDir, grantPort);
 
         const epochBefore = JSON.parse(readFileSync(epochFile, "utf8"));
         const pidBefore: number = epochBefore.pid;
@@ -890,7 +902,7 @@ test(
         );
 
         const grantPort = Number(first.r.port);
-        const epochFile = String(first.r.epoch_file);
+        const epochFile = epochPathFor(stateDir, grantPort);
         const epochBefore = JSON.parse(readFileSync(epochFile, "utf8"));
         assert.ok(isAlive(epochBefore.pid), `served instance's pid ${epochBefore.pid} must be alive right after the grant`);
 

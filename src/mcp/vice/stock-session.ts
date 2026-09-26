@@ -13,7 +13,7 @@
 //     and never around the session preamble -- only around the handler.
 //   - Never let a handler's exception escape runBinary()/runPure(): the stdio
 //     server is not restarted for the rest of the session.
-import { type HeldLease } from "./vice-broker-client.ts";
+import { type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
 import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession, type StockConnectDeps, type DialMonitorSocketFn } from "./stock-connect.ts";
 import {
   isErrorText,
@@ -293,7 +293,7 @@ export async function ensureStockSession(deps: StockSessionDeps): Promise<Ensure
  * `connectFn({ host, port, targetId, brokerControl })` -- no `deps` at all --
  * so two mechanisms this phase built were inert on the real path:
  *
- *   - `deps.epochPath` was undefined, so `baselineEpoch` was always null and
+ *   - no epoch source was wired, so `baselineEpoch` was always null and
  *     stockReconnect()'s first branch ALWAYS threw MachineRestartedError.
  *     Every transient socket drop told the agent "the emulator's identity
  *     could not be proven across a reconnect ... treat every result since the
@@ -305,11 +305,11 @@ export async function ensureStockSession(deps: StockSessionDeps): Promise<Ensure
  *
  * Neither was visible to the existing tests, because both stub `connect`.
  *
- * Every value here is HANDED DOWN, never resolved locally: the two directories
- * come from the lease vice-proxy.ts built (see HeldLease's own field comments
- * for why they are two DIFFERENT directories), and `binPath` is the same
- * already-settled `resolvedBinaryPath` vice_ping reports -- this module must
- * never call resolvedBackend() itself.
+ * Every value here is HANDED DOWN, never resolved locally: `supervisorDir`
+ * comes from the lease vice-proxy.ts built, the epoch is asked of the broker
+ * over the lease's own control session (grantEpochReader() below), and
+ * `binPath` is the same already-settled `resolvedBinaryPath` vice_ping
+ * reports -- this module must never call resolvedBackend() itself.
  *
  * An empty string is treated as ABSENT rather than passed through: the two
  * consumers both branch on truthiness, and passing "" would key a capability
@@ -317,11 +317,28 @@ export async function ensureStockSession(deps: StockSessionDeps): Promise<Ensure
  */
 function stockConnectDepsFor(lease: HeldLease, deps: StockSessionDeps): StockConnectDeps {
   const connectDeps: StockConnectDeps = {};
-  if (lease.epochFile) connectDeps.epochPath = lease.epochFile;
+  connectDeps.readCurrentEpoch = grantEpochReader(lease.brokerControl, lease.targetId);
   if (lease.supervisorDir) connectDeps.supervisorDir = lease.supervisorDir;
   if (deps.resolvedBinaryPath) connectDeps.binPath = deps.resolvedBinaryPath;
   if (deps.dialMonitorSocket) connectDeps.dialMonitorSocket = deps.dialMonitorSocket;
   return connectDeps;
+}
+
+/**
+ * Reads the broker's current emulator epoch for ONE grant, over that grant's
+ * own control session. The broker's `status` reply lists every instance with
+ * its owning grant id; only the entry this grant owns counts. `null` when
+ * the status call fails or no entry is owned by this grant -- the caller
+ * treats that as identity not proven, never as a match.
+ */
+export function grantEpochReader(control: Pick<BrokerControlSession, "status">, grantId: string): () => Promise<number | null> {
+  return async () => {
+    if (grantId === "") return null;
+    const result = await control.status();
+    if (!result.ok) return null;
+    const owned = result.instances.find((entry) => entry.grantId === grantId);
+    return owned ? owned.epoch : null;
+  };
 }
 
 /**

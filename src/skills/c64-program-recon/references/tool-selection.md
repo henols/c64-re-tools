@@ -19,7 +19,7 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | Find a known byte pattern | `vice_memory_search` |
 | Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` — ACME `--vicelabels` emits the format they consume. The annotation store's own export into that format is **withdrawn as of 2026-08-29, and no phase currently owns its return**. An earlier forecast named a numbered phase for it, and that forecast is superseded now |
 | Did the machine stop itself at my own checkpoint? | `vice_checkpoint_list`, then `vice_registers_get` — a PC sitting on an armed address is a self-inflicted stop, not a wedge. Resume with `vice_execution_run` |
-| Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself. A value comes from that error |
+| Read the restart epoch | **No tool does.** The MCP server checks it on every reconnect and raises drift itself. A value comes from that error |
 
 ## Delegate rather than restate
 

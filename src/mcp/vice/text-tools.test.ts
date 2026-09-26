@@ -167,7 +167,6 @@ function makeDeps(port: number, overrides: Partial<StockSessionDeps> = {}, recor
     port: 6502,
     targetId: "grant-1",
     brokerControl: makeStubBrokerControl(recorder) as unknown as HeldLease["brokerControl"],
-    epochFile: "",
     supervisorDir: "",
     remoteMonitorPort: port,
   };
@@ -193,7 +192,6 @@ function makeDepsWithBrokerIdentity(
     port: 6502,
     targetId: "grant-1",
     brokerControl: makeStubBrokerControlWithHostState(brokerHostState) as unknown as HeldLease["brokerControl"],
-    epochFile: "",
     supervisorDir: "",
     remoteMonitorPort: port,
   };
@@ -1567,7 +1565,6 @@ test(
             port: binaryPort,
             targetId: "text-tools-live-4303",
             brokerControl: brokerControl as unknown as HeldLease["brokerControl"],
-            epochFile: "",
             supervisorDir: "",
             remoteMonitorPort: textPort,
           } as HeldLease,

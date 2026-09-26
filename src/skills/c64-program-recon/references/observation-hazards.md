@@ -113,11 +113,13 @@ bracket.
 A crash-and-respawn mid-session means the run is void — `c64-ram-capture` § Void a run gives the
 procedure. A successful retry after an auto-restart may be talking to a blank machine.
 
-**You do not poll for this, and no exposed tool reads the epoch.** The proxy compares it before and
-*after* every forwarded call and raises a loud error naming both values, then re-baselines so the
-session stays usable. The two recorded incidents surfaced exactly that way and self-healed on the
-next call. Where an epoch value is needed for a record, it comes from that error text — there is
-no `vice_epoch_get`.
+**You do not poll for this, and no exposed tool reads the epoch.** A respawn kills the monitor
+connection. The next call reconnects, and before it does, the MCP server compares the epoch the broker
+now reports for your instance with the one taken at the first connect. A difference, or no epoch at
+all, raises a loud error naming the baseline and the current value or why there is none (after a
+respawn the new process is not owned by your session). The call after that connects fresh, so the
+session stays usable. Where an epoch value is needed for a record, it comes from that error text —
+there is no `vice_epoch_get`.
 
 What is still yours to do: **treat every post-drift read as a fresh machine, never as a resume
 point.** Reboot from `vice_disk_attach`. Two crashes in ~20 minutes of continuous live work is a

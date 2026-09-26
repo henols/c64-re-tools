@@ -20,6 +20,7 @@ import {
   stockDisconnect,
   runBinary,
   runPure,
+  grantEpochReader,
   type StockSessionDeps,
 } from "./stock-session.ts";
 import { STOCK_TOOLS, callStockTool, stockToolDefinitions, StockToolManifestMismatchError } from "./stock-tools.ts";
@@ -192,14 +193,26 @@ test("lease: a replacement acquisition naming a different targetId calls stockCo
 // because they only assert on the four coordinates. These assert on `deps`.
 // ---------------------------------------------------------------------------
 
-test("CR-06: the lease's epochFile/supervisorDir and the settled binary path all reach stockConnect as deps", async () => {
+/** A broker control whose `status` reply lists the given instances. */
+function brokerControlWithStatus(
+  instances: Array<{ port: number; epoch: number | null; grantId: string | null }> | "fail",
+): BrokerControlSession {
+  return {
+    ...STUB_BROKER_CONTROL,
+    status: async () =>
+      instances === "fail"
+        ? { ok: false as const, kind: "closed" as const, message: "control connection closed" }
+        : { ok: true as const, instances: instances.map((i) => ({ url: "", state: "granted", reason: "", ...i })) },
+  } as unknown as BrokerControlSession;
+}
+
+test("CR-06: the lease's supervisorDir, an epoch reader and the settled binary path all reach stockConnect as deps", async () => {
   const received: StockConnectOptions[] = [];
   const lease = makeLease({
     host: "127.0.0.1",
     port: 6502,
     targetId: "grant-deps-1",
-    brokerControl: STUB_BROKER_CONTROL,
-    epochFile: "/ws/.vice-supervisor/6502/epoch.json",
+    brokerControl: brokerControlWithStatus([{ port: 6502, epoch: 3, grantId: "grant-deps-1" }]),
     supervisorDir: "/ws/.vice-supervisor",
   });
   const outcome = await ensureStockSession({
@@ -212,34 +225,23 @@ test("CR-06: the lease's epochFile/supervisorDir and the settled binary path all
   });
   assert.ok(outcome.ok);
   assert.equal(received.length, 1);
-  assert.deepEqual(received[0]!.deps, {
-    epochPath: "/ws/.vice-supervisor/6502/epoch.json",
-    supervisorDir: "/ws/.vice-supervisor",
-    binPath: "/usr/bin/x64sc",
-  });
+  const { readCurrentEpoch, ...rest } = received[0]!.deps!;
+  assert.deepEqual(rest, { supervisorDir: "/ws/.vice-supervisor", binPath: "/usr/bin/x64sc" });
+  assert.equal(typeof readCurrentEpoch, "function");
+  assert.equal(await readCurrentEpoch!(), 3);
 });
 
-test("CR-06: the epoch path is the per-instance epoch.json, NOT the top-level supervisor dir -- the two are threaded independently", async () => {
-  const received: StockConnectOptions[] = [];
-  const lease = makeLease({
-    host: "127.0.0.1",
-    port: 6503,
-    targetId: "grant-deps-2",
-    brokerControl: STUB_BROKER_CONTROL,
-    epochFile: "/ws/.vice-supervisor/6503/epoch.json",
-    supervisorDir: "/ws/.vice-supervisor",
-  });
-  await ensureStockSession({
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => {
-      received.push(opts);
-      return fakeSession(opts);
-    },
-  });
-  const deps = received[0]!.deps!;
-  assert.notEqual(deps.epochPath, deps.supervisorDir, "backend.json and epoch.json live in DIFFERENT directories");
-  assert.match(String(deps.epochPath), /\/6503\/epoch\.json$/);
-  assert.doesNotMatch(String(deps.supervisorDir), /\/6503$/, "the capability cache must not be pointed at the per-instance directory");
+test("grantEpochReader: reads the epoch of the instance THIS grant owns, over the broker's status reply", async () => {
+  const control = brokerControlWithStatus([
+    { port: 6600, epoch: 9, grantId: "someone-else" },
+    { port: 6601, epoch: 2, grantId: "grant-mine" },
+    { port: 6602, epoch: 5, grantId: null },
+  ]);
+  assert.equal(await grantEpochReader(control, "grant-mine")(), 2);
+  assert.equal(await grantEpochReader(control, "grant-absent")(), null, "no owned entry is not a match");
+  assert.equal(await grantEpochReader(control, "")(), null, "an empty grant id owns nothing");
+  assert.equal(await grantEpochReader(brokerControlWithStatus([{ port: 6601, epoch: null, grantId: "grant-mine" }]), "grant-mine")(), null);
+  assert.equal(await grantEpochReader(brokerControlWithStatus("fail"), "grant-mine")(), null, "a failed status call reads as no epoch");
 });
 
 test("CR-06: an empty lease field is threaded as ABSENT, never as an empty-string path", async () => {
@@ -252,7 +254,7 @@ test("CR-06: an empty lease field is threaded as ABSENT, never as an empty-strin
       return fakeSession(opts);
     },
   });
-  assert.deepEqual(received[0]!.deps, {}, "no epochPath, no supervisorDir, no binPath -- absent, not empty strings");
+  assert.deepEqual(Object.keys(received[0]!.deps!), ["readCurrentEpoch"], "no supervisorDir, no binPath -- absent, not empty strings");
 });
 
 test("CR-06: the real stockConnect, driven against a loopback binmon stub through ensureStockSession, records a non-null baselineEpoch", async () => {
@@ -261,8 +263,6 @@ test("CR-06: the real stockConnect, driven against a loopback binmon stub throug
   // emulator is a loopback stub answering the four handshake commands; no
   // broker process and no x64sc are involved.
   const dir = mkdtempSync(join(tmpdir(), "stock-session-cr06-"));
-  const epochPath = join(dir, "epoch.json");
-  writeFileSync(epochPath, JSON.stringify({ epoch: 7, spawned_at: new Date().toISOString(), pid: 4242 }));
 
   const sockets = new Set<Socket>();
   const server = createServer((socket) => {
@@ -300,7 +300,13 @@ test("CR-06: the real stockConnect, driven against a loopback binmon stub throug
   const port = (server.address() as AddressInfo).port;
 
   try {
-    const lease = makeLease({ host: "127.0.0.1", port, targetId: "grant-real-1", brokerControl: STUB_BROKER_CONTROL, epochFile: epochPath, supervisorDir: dir });
+    const lease = makeLease({
+      host: "127.0.0.1",
+      port,
+      targetId: "grant-real-1",
+      brokerControl: brokerControlWithStatus([{ port, epoch: 7, grantId: "grant-real-1" }]),
+      supervisorDir: dir,
+    });
     // Phase 63 (SESS-02): stockConnect()'s default socket source is now a
     // relay dial against a broker that is not running in this test process.
     // This test is specifically about the REAL stockConnect handshake, not
@@ -319,7 +325,7 @@ test("CR-06: the real stockConnect, driven against a loopback binmon stub throug
       connect: (opts) => stockConnect({ ...opts, deps: { dialMonitorSocket: directDialMonitorSocket, ...opts.deps } }),
     });
     assert.ok(outcome.ok, `expected a live session: ${JSON.stringify(outcome)}`);
-    assert.equal(outcome.session.baselineEpoch, 7, "the reconnect baseline must be the epoch the lease's own epoch.json carries, not null");
+    assert.equal(outcome.session.baselineEpoch, 7, "the reconnect baseline must be the epoch the broker reports for this grant, not null");
     assert.equal(outcome.session.versionQuad, "3.9.0.0");
     await stockDisconnect(outcome.session);
     clearHeldStockSession();

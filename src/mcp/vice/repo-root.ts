@@ -1,7 +1,5 @@
 // The ONE shared place every module in this directory resolves the repo
-// root through (D-2). Everything else in this module tree -- vice.mjs's
-// EPOCH_FILE -- derives its `.vice-supervisor` path through
-// supervisorDir() below, so there is exactly one definition of both "where
+// root through (D-2), so there is exactly one definition of both "where
 // is the repo root" and "what is the shared state directory called".
 //
 // WHY THIS FILE EXISTS AT ALL: originally, each of the three modules
@@ -191,11 +189,11 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * and neither was ever measured before being written down. The corrected
  * picture:
  *
- *   - THREE files call `toolsDir()`/`supervisorDir()` directly:
- *     transfer-paths.ts (`snapshots` and the per-kind result directories),
- *     vice-proxy.ts (the bare root, handed to backend-detect.mts's
- *     resolvedBackend()), and vice-errors.ts, via `supervisorDir()`
- *     (`supervisor`, the fixed-port epoch file). The broker state directory
+ *   - TWO files call `toolsDir()` directly: transfer-paths.ts
+ *     (`snapshots` and the per-kind result directories) and vice-proxy.ts
+ *     (the bare root, handed to backend-detect.mts's resolvedBackend()).
+ *     No production module calls `supervisorDir()` any more: the epoch
+ *     file it located is read by the broker only. The broker state directory
  *     is broker-home.mts's `brokerStateDir()`, never this function.
  *   - FIVE files cannot import this container-side module at all, so each
  *     joins `".c64-re-tools"` with its own trailing segment(s) directly,

@@ -22,6 +22,7 @@ import {
   type StockConnectBrokerControl,
   type StockConnectOptions,
   type DialMonitorSocketFn,
+  type StockConnectDeps,
 } from "./stock-connect.ts";
 import { build } from "./build.ts";
 import {
@@ -1036,77 +1037,80 @@ test("stockConnect: ownership -- a claim timeout is reported distinctly from mon
 // Task 2: restart detection reusing MachineRestartedError
 // ===========================================================================
 
-function withTempEpochFile<T>(fn: (epochPath: string, writeEpoch: (epoch: number) => void) => Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), "stock-connect-epoch-"));
-  const epochPath = join(dir, "epoch.json");
-  const writeEpoch = (epoch: number): void => {
-    writeFileSync(epochPath, JSON.stringify({ epoch, spawned_at: new Date().toISOString(), pid: 1234 }));
-  };
-  return fn(epochPath, writeEpoch).finally(() => rmSync(dir, { recursive: true, force: true }));
+/** A settable stand-in for the broker's epoch for this grant -- the value
+ * stock-session.ts's grantEpochReader() would read from `status`. */
+function epochSource(initial: number | null): { readCurrentEpoch: () => Promise<number | null>; set: (epoch: number | null) => void } {
+  let epoch = initial;
+  return { readCurrentEpoch: async () => epoch, set: (next) => (epoch = next) };
 }
 
-test("stockConnect: a completed handshake records the instance's epoch as its reconnect baseline", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
-    writeEpoch(1);
-    await withStockStubServer(happyPathResponder(), async (port) => {
-      const { brokerControl } = makeStubBrokerControl();
-      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-10", brokerControl, deps: { epochPath } });
-      assert.equal(session.baselineEpoch, 1);
-      await stockDisconnect(session);
-    });
+test("stockConnect: a completed handshake records the grant's epoch as its reconnect baseline", async () => {
+  const source = epochSource(1);
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-10", brokerControl, deps: { readCurrentEpoch: source.readCurrentEpoch } });
+    assert.equal(session.baselineEpoch, 1);
+    await stockDisconnect(session);
   });
 });
 
 test("stockReconnect: an unchanged epoch completes a fresh handshake and returns a usable client", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
-    writeEpoch(1);
-    await withStockStubServer(happyPathResponder(), async (port) => {
-      const { brokerControl } = makeStubBrokerControl();
-      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-11", brokerControl, deps: { epochPath } });
-      const reconnected = await stockReconnect(session);
-      assert.notEqual(reconnected, session);
-      assert.equal(reconnected.versionQuad, "3.9.0.0");
-      assert.equal(reconnected.baselineEpoch, 1);
-      await stockDisconnect(reconnected);
-    });
+  const source = epochSource(1);
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-11", brokerControl, deps: { readCurrentEpoch: source.readCurrentEpoch } });
+    const reconnected = await stockReconnect(session);
+    assert.notEqual(reconnected, session);
+    assert.equal(reconnected.versionQuad, "3.9.0.0");
+    assert.equal(reconnected.baselineEpoch, 1);
+    await stockDisconnect(reconnected);
   });
 });
 
 test("stockReconnect: an advanced epoch rejects with MachineRestartedError carrying the baseline and current epochs", async () => {
-  await withTempEpochFile(async (epochPath, writeEpoch) => {
-    writeEpoch(1);
-    await withStockStubServer(happyPathResponder(), async (port) => {
-      const { brokerControl } = makeStubBrokerControl();
-      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-12", brokerControl, deps: { epochPath } });
-      writeEpoch(2);
-      await assert.rejects(
-        stockReconnect(session),
-        (err: unknown) => {
-          assert.ok(err instanceof MachineRestartedError);
-          const restartErr = err as MachineRestartedError;
-          assert.equal(restartErr.baselineEpoch, 1);
-          assert.equal(restartErr.currentEpoch, 2);
-          assert.match(String(restartErr.where), /stock-connect/);
-          return true;
-        },
-      );
-    });
+  const source = epochSource(1);
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-12", brokerControl, deps: { readCurrentEpoch: source.readCurrentEpoch } });
+    source.set(2);
+    await assert.rejects(
+      stockReconnect(session),
+      (err: unknown) => {
+        assert.ok(err instanceof MachineRestartedError);
+        const restartErr = err as MachineRestartedError;
+        assert.equal(restartErr.baselineEpoch, 1);
+        assert.equal(restartErr.currentEpoch, 2);
+        assert.match(String(restartErr.where), /stock-connect/);
+        return true;
+      },
+    );
   });
 });
 
 test("stockReconnect: no epoch can be read at all rejects with MachineRestartedError -- identity that cannot be proven is not proven", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "stock-connect-epoch-missing-"));
-  const missingEpochPath = join(dir, "does-not-exist.json");
-  try {
+  const cases: Array<{ title: string; deps: StockConnectDeps }> = [
+    { title: "no epoch source", deps: {} },
+    { title: "the source finds none", deps: { readCurrentEpoch: async () => null } },
+    { title: "the source rejects", deps: { readCurrentEpoch: async () => Promise.reject(new Error("status failed")) } },
+  ];
+  for (const { title, deps } of cases) {
     await withStockStubServer(happyPathResponder(), async (port) => {
       const { brokerControl } = makeStubBrokerControl();
-      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-13", brokerControl, deps: { epochPath: missingEpochPath } });
-      assert.equal(session.baselineEpoch, null);
-      await assert.rejects(stockReconnect(session), (err: unknown) => err instanceof MachineRestartedError);
+      const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-13", brokerControl, deps });
+      assert.equal(session.baselineEpoch, null, `${title}: baseline must be null`);
+      await assert.rejects(stockReconnect(session), (err: unknown) => err instanceof MachineRestartedError, `${title}: reconnect must refuse`);
     });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("stockReconnect: an epoch that becomes unreadable after the handshake rejects -- it is never read as a match", async () => {
+  const source = epochSource(1);
+  await withStockStubServer(happyPathResponder(), async (port) => {
+    const { brokerControl } = makeStubBrokerControl();
+    const session = await stockConnect({ host: "127.0.0.1", port, targetId: "grant-14", brokerControl, deps: { readCurrentEpoch: source.readCurrentEpoch } });
+    source.set(null);
+    await assert.rejects(stockReconnect(session), (err: unknown) => err instanceof MachineRestartedError && (err as MachineRestartedError).currentEpoch === null);
+  });
 });
 
 test("stockReconnect: MachineRestartedError is distinguishable via instanceof from StockConnectionClosedError and StockRequestTimeoutError", () => {
@@ -1234,7 +1238,7 @@ async function startTransferControlListener(
     port: 0,
     onAcquire: async (): Promise<AcquireOutcome> => ({
       ok: true,
-      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/stock-connect-transfer-epoch.json", supervisorDir: "/tmp/stock-connect-transfer" },
+      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` },
     }),
     onRelease: (requestId: string) => handleRelease(requestId, state),
     onStatus: (): StatusInstanceEntry[] => [],

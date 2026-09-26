@@ -52,7 +52,7 @@ import {
   StockRequestTimeoutError,
 } from "./stock-protocol.ts";
 import { readCapabilityRecord, writeCapabilityRecord, type CapabilityDeps } from "./backend-detect.mts";
-import { MachineRestartedError, ViceError, readEpoch, type EpochResult } from "./vice-errors.ts";
+import { MachineRestartedError, ViceError } from "./vice-errors.ts";
 import {
   MonitorOwnershipError,
   type ClaimMonitorOptions,
@@ -337,14 +337,16 @@ export interface StockConnectDeps {
    * caller-supplied string, never re-derived here (this file must not
    * become a second, driftable copy of "where is .vice-supervisor"). */
   supervisorDir?: string;
-  /** Path to this instance's own epoch.json (broker-epoch.mts's own writer),
-   * used ONLY as the reconnect baseline/comparison (Task 2). Omitted
-   * entirely means identity across a reconnect can never be proven -- see
+  /** Reads this grant's CURRENT emulator epoch from the broker, over the
+   * lease's own control session -- never from a file, since the broker's
+   * state is not on this side's disk. Used ONLY for the reconnect baseline
+   * and comparison. Resolves `null` when no epoch could be read; must not
+   * reject (a rejection is treated as `null`). Omitted entirely means
+   * identity across a reconnect can never be proven -- see
    * stockReconnect()'s own header comment. */
-  epochPath?: string;
+  readCurrentEpoch?: () => Promise<number | null>;
   readCapabilityRecordFn?: typeof readCapabilityRecord;
   writeCapabilityRecordFn?: typeof writeCapabilityRecord;
-  readEpochFn?: typeof readEpoch;
   /** Injectable socket source (Phase 63, SESS-02) -- an injectable seam in
    * this project's standing register (D-11/RESEARCH's own "no runtime
    * rollback flag" decision), giving tests and a manual bisect the same
@@ -405,8 +407,8 @@ export interface StockConnectSession {
   brokerControl: StockConnectBrokerControl;
   deps: StockConnectDeps;
   /** This instance's epoch, as read at connect time -- `null` when no
-   * epoch evidence could be read at all (deps.epochPath omitted, absent, or
-   * unreadable). Consumed only by stockReconnect() (Task 2). */
+   * epoch could be read at all (deps.readCurrentEpoch omitted, or it found
+   * none). Consumed by stockReconnect() and stock-timing.ts's guards. */
   baselineEpoch: number | null;
 }
 
@@ -483,9 +485,9 @@ async function safeResume(client: ViceMonitorClient): Promise<void> {
  *      handshake failure rather than re-deriving the check.
  *   4. Send VICE_INFO (0x85) and read the version quad.
  *   5. Gate capabilities via resolveCapabilities() above.
- *   6. Record this instance's epoch (deps.epochPath) as the reconnect
- *      baseline (Task 2) -- absence is normal here (D-3's own posture) and
- *      becomes significant only at stockReconnect() time.
+ *   6. Record this grant's epoch (deps.readCurrentEpoch) as the reconnect
+ *      baseline -- an unreadable epoch is not an error here (D-3's own
+ *      posture) and becomes significant only at stockReconnect() time.
  *   7. Send EXIT (0xaa) to RESUME the machine step 3's PING halted (CR-02).
  *      Non-optional: see resumeMachine()'s own header comment. This handshake
  *      returns the emulator to the run state it found it in, or fails.
@@ -561,12 +563,9 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
     // Step 5: settle version-gated capabilities, once per binary.
     const capabilities = await resolveCapabilities(client, versionQuad, deps);
 
-    // Step 6: record the reconnect baseline (Task 2). Absence is normal --
-    // matches vice.ts's own readEpoch()/D-3 posture -- and is not an error
-    // here; it becomes significant only inside stockReconnect().
-    const readEpochFn = deps.readEpochFn ?? readEpoch;
-    const baselineRecord: EpochResult | null = deps.epochPath ? readEpochFn(deps.epochPath) : null;
-    const baselineEpoch = baselineRecord && baselineRecord.present ? baselineRecord.epoch : null;
+    // Step 6: record the reconnect baseline. An unreadable epoch is not an
+    // error here; it becomes significant only inside stockReconnect().
+    const baselineEpoch = await readEpochSafely(deps);
 
     // Step 7 (CR-02): resume the machine the PING in step 3 halted. LAST, and
     // inside the try -- see resumeMachine()'s own header comment for why a
@@ -655,9 +654,22 @@ export interface StockReconnectOptions {
   lastToolCall?: string | null;
 }
 
+/** deps.readCurrentEpoch(), or `null` when it is omitted, rejects, or
+ * returns anything but an integer. Never throws. */
+async function readEpochSafely(deps: StockConnectDeps): Promise<number | null> {
+  if (!deps.readCurrentEpoch) return null;
+  try {
+    const epoch = await deps.readCurrentEpoch();
+    return Number.isInteger(epoch) ? epoch : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Reconnects against the SAME target this session originally handshook
- * with, proving identity via the per-instance epoch file (deps.epochPath)
+ * with, proving identity via the broker's epoch for this grant
+ * (deps.readCurrentEpoch)
  * BEFORE running the handshake again. Three failure meanings, three
  * distinct types -- conflating any two of them is the regression this
  * comment exists to prevent:
@@ -689,9 +701,7 @@ export interface StockReconnectOptions {
  * relay again, not the emulator directly.
  */
 export async function stockReconnect(session: StockConnectSession, { lastToolCall = null }: StockReconnectOptions = {}): Promise<StockConnectSession> {
-  const readEpochFn = session.deps.readEpochFn ?? readEpoch;
-  const current: EpochResult | null = session.deps.epochPath ? readEpochFn(session.deps.epochPath) : null;
-  const currentEpoch = current && current.present ? current.epoch : null;
+  const currentEpoch = await readEpochSafely(session.deps);
   const baselineEpoch = session.baselineEpoch;
 
   if (baselineEpoch === null || currentEpoch === null || currentEpoch !== baselineEpoch) {

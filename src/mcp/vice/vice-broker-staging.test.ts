@@ -123,7 +123,7 @@ async function startStagingListenerForState(
     port: 0,
     onAcquire: async (): Promise<AcquireOutcome> => ({
       ok: true,
-      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/staging-test-epoch.json", supervisorDir: "/tmp/staging-test" },
+      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` },
     }),
     onRelease: (requestId: string) => handleRelease(requestId, state),
     onStatus: (): StatusInstanceEntry[] => [],

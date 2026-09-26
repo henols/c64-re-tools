@@ -107,8 +107,7 @@ export function writeEpochRecord({ supervisorDir, record }: WriteEpochOptions): 
 /** The epoch-increment derivation the per-child supervisor calls on every
  * respawn (and on an instance's very first launch): reads supervisorDir's
  * current epoch.json if one is present, using the SAME never-throw posture
- * already established for untrusted reads elsewhere in this codebase
- * (readEpoch() in vice.ts) --
+ * already established for untrusted reads elsewhere in this codebase --
  * absence, an unreadable file, malformed JSON, a non-object shape, or a
  * non-integer `epoch` field are ALL treated as "no usable prior record"
  * rather than an error. A fresh instance must be able to start over an

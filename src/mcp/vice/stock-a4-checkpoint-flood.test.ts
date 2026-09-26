@@ -78,6 +78,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 
 import { build } from "./build.ts";
+import { epochPathFor } from "./broker-epoch.mts";
 import { dialBrokerEndpoint } from "./broker-endpoint.mts";
 import { dialControlSession, type BrokerControlSession, type AcquireGrant, type HeldLease } from "./vice-broker-client.ts";
 import { callStockTool } from "./stock-tools.ts";
@@ -297,7 +298,6 @@ function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerContro
     port: grant.port,
     targetId: grant.id,
     brokerControl: controlSession,
-    epochFile: grant.epoch_file,
     supervisorDir: stateDir,
   };
   return {
@@ -507,7 +507,7 @@ test(
       if (!acquired.ok) return;
       const grant = acquired.grant;
 
-      const pid = await readGrantPid(grant.epoch_file);
+      const pid = await readGrantPid(epochPathFor(stateDir, grant.port));
       recordPid(pid);
 
       const ready = await waitForStockReady(grant.port);

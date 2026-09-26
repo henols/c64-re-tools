@@ -17,9 +17,7 @@
 // Plan 03, Task 1 extends this further: the mode check (T-01.6.2-18), the
 // path derivations for a known port, the epoch-increment derivation
 // (fresh/second/malformed-record cases), the concurrent write-and-read
-// atomicity assertion (T-01.6.2-19), and a round trip through the
-// UNCHANGED container-side reader (readEpoch(), vice.ts) over a record this
-// writer produced.
+// atomicity assertion (T-01.6.2-19).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, statSync } from "node:fs";
@@ -29,7 +27,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { writeEpochRecord, epochPathFor, instanceLogDirFor, nextEpochFor, type EpochRecord } from "./broker-epoch.mts";
-import { readEpoch } from "./vice-errors.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures");
@@ -278,33 +275,6 @@ test("a concurrent write-and-read loop over the epoch file never observes a part
 
     await Promise.all([writer, reader]);
     assert.ok(observedReads > 0, "the concurrent reader must have observed at least one read during the write loop");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("broker-epoch.mts's writeEpochRecord() round-trips through the UNCHANGED container-side readEpoch() (vice.ts), returning a present result with a finite integer epoch", () => {
-  const fixture = JSON.parse(readFileSync(join(FIXTURES_DIR, "bash-epoch-6510.json"), "utf8")) as Record<string, unknown>;
-  const dir = mkdtempSync(join(tmpdir(), "broker-epoch-readEpoch-roundtrip-"));
-  try {
-    const record: EpochRecord = {
-      epoch: fixture.epoch as number,
-      spawned_at: fixture.spawned_at as string,
-      pid: fixture.pid as number,
-      supervisor_pid: fixture.supervisor_pid as number,
-      vice_bin: fixture.vice_bin as string,
-      vice_args: fixture.vice_args as string[],
-      log: fixture.log as string,
-      dry_run: fixture.dry_run as boolean,
-    };
-    const path = writeEpochRecord({ supervisorDir: dir, record });
-
-    const result = readEpoch(path);
-    assert.equal(result.present, true, "the container-side reader must report this writer's record as present");
-    assert.ok(Number.isInteger(result.epoch), "the container-side reader must return a finite integer epoch");
-    assert.equal(result.epoch, fixture.epoch);
-    assert.equal(result.pid, fixture.pid);
-    assert.equal(result.spawned_at, fixture.spawned_at);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

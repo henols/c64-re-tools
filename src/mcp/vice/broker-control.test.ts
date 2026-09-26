@@ -454,7 +454,7 @@ test("WR-04 host_state: carries the broker's OWN backend verdict on the wire", a
 /** The grant-issuing stub every monitor-op test below acquires through, so
  * `target_id: "req-a"` is a grant THIS connection actually holds. */
 function grantingAcquire(): (id: string) => Promise<AcquireOutcome> {
-  return async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } });
+  return async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } });
 }
 
 /** Acquires grant `id` over `client` and asserts the grant arrived, so every
@@ -1654,7 +1654,7 @@ test("three acquires arriving while a launch is in flight are all present in the
     onAcquire: async (id) => {
       calls++;
       if (inFlight) return { ok: false, reason: "launch_in_flight" };
-      return { ok: true, grant: { port: 6600, url: `http://127.0.0.1:6600/mcp`, epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } };
+      return { ok: true, grant: { port: 6600, url: `http://127.0.0.1:6600/mcp` } };
     },
   });
   const clients = [makeClient(listener.port), makeClient(listener.port), makeClient(listener.port)];
@@ -1752,7 +1752,7 @@ test("attemptAcquire: a grant that settles after its own socket was destroyed is
     client.close();
     await waitFor(() => serverSocket !== null && serverSocket.destroyed, 2000);
 
-    resolveLaunch!({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } });
+    resolveLaunch!({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } });
     await waitFor(() => releases.includes("req-1"), 2000);
 
     assert.deepEqual(releases, ["req-1"], "the release callback must be invoked with the same request id as the late grant");
@@ -1769,7 +1769,7 @@ test("attemptAcquire: a queued entry whose socket is still connected behaves exa
     onAcquire: async () => {
       calls++;
       if (inFlight) return { ok: false, reason: "launch_in_flight" };
-      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } };
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } };
     },
   });
   const client = makeClient(listener.port);
@@ -2297,7 +2297,7 @@ async function startProfileRecordingListener(): Promise<{
   const { listener } = await startTestListener({
     onAcquire: async (id: string, profile?: LaunchProfile) => {
       received.push(profile);
-      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } } as AcquireOutcome;
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } } as AcquireOutcome;
     },
     onHostState: () => ({
       pid: process.pid,
@@ -2400,7 +2400,7 @@ async function startLabelRecordingListener(): Promise<{
   const { listener } = await startTestListener({
     onAcquire: async (_id: string, _profile?: LaunchProfile, label?: string | null) => {
       received.push(label);
-      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } } as AcquireOutcome;
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } } as AcquireOutcome;
     },
   });
   return { listener, received };
@@ -2576,7 +2576,7 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
       attempts++;
       received.push(profile);
       if (attempts === 1) return { ok: false, reason: "launch_in_flight" } as AcquireOutcome;
-      return { ok: true, grant: { port: 6601, url: "http://127.0.0.1:6601/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6601" } } as AcquireOutcome;
+      return { ok: true, grant: { port: 6601, url: "http://127.0.0.1:6601/mcp" } } as AcquireOutcome;
     },
     // Stock, because a `{warp:true}` acquire is only coherent there (33
     // review WR-03): on fork the boundary now refuses it rather than
@@ -2833,7 +2833,7 @@ test("startControlListenerOnHosts: two listeners on two different bound addresse
     port: 0,
     onAcquire: async (): Promise<AcquireOutcome> => {
       if (inFlight) return { ok: false, reason: "launch_in_flight" };
-      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } };
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } };
     },
     onRelease: () => {},
     onStatus: (): StatusInstanceEntry[] => [],
@@ -2966,7 +2966,7 @@ test("two sessions, one broker: two connections declaring two labels each acquir
     onAcquire: async (id: string, _profile?: LaunchProfile, label?: string | null) => {
       const port = nextPort++;
       grants.set(id, { port, label: label ?? null });
-      return { ok: true, grant: { port, url: `http://127.0.0.1:${port}/mcp`, epochFile: `/tmp/${port}/epoch.json`, supervisorDir: `/tmp/${port}` } };
+      return { ok: true, grant: { port, url: `http://127.0.0.1:${port}/mcp` } };
     },
     onStatus: (): StatusInstanceEntry[] =>
       Array.from(grants.entries()).map(([grantId, g]) => ({
