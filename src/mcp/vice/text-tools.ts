@@ -73,10 +73,6 @@ import { textConnect, textDisconnect } from "./text-connect.ts";
 import {
   withTextChannelLock,
   buildTextCommand,
-  hazardSubjectLoadVerb,
-  isHazardSubjectId,
-  HAZARD_SUBJECT_IDS,
-  type HazardSubjectId,
   type TextMonitorClient,
 } from "./text-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
@@ -831,100 +827,6 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
       unrecognisedLines: parsed.value.unrecognisedLines,
       unrecognisedLineCount: parsed.value.unrecognisedLines.length,
       ...(identityWarning !== "" ? { identityWarning } : {}),
-    });
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Plan 50-04 (route-d): the tool that reaches text-protocol.ts's widened
-// `load` verb. See TEXT_COMMAND_ALLOWLIST's own `load` paragraph and
-// TEXT_COMMAND_PARAM_SPECS's own `load` entry (both text-protocol.ts) for
-// the full rationale this handler leans on without repeating it.
-// ---------------------------------------------------------------------------
-
-/**
- * The subject loaded when the caller names none. Plan 50-04's behaviour,
- * unchanged: an omitted `subject` dials exactly the path that plan's single
- * frozen entry dialed.
- */
-const DEFAULT_SUBJECT: HazardSubjectId = "original";
-
-/**
- * Resolve the caller's `subject` argument to one of text-protocol.ts's own
- * frozen ids, or to `null` for anything else.
- *
- * WHY THIS IS NOT A FILENAME PARAMETER, AND MUST NEVER BECOME ONE. The value
- * a caller supplies here is an ID, checked for exact membership in
- * HAZARD_SUBJECT_IDS and then used only as a LOOKUP KEY -- it is never
- * concatenated into a command string, never joined onto a path, and never
- * reaches the socket in any form. The dialed verb is built by
- * hazardSubjectLoadVerb() from the reviewed literal text-protocol.ts's own
- * closed table carries. So the set of host files this tool can ever load is
- * exactly that table, whatever a caller sends. An unrecognised id is refused
- * BY NAME before any text-monitor byte is written, the same way
- * buildTextCommand() refuses an out-of-bounds device.
- */
-function resolveSubjectId(raw: unknown): HazardSubjectId | null {
-  if (raw === undefined) return DEFAULT_SUBJECT;
-  return isHazardSubjectId(raw) ? raw : null;
-}
-
-/**
- * `vice_program_load` -- the shipped tool that reaches plan 50-04's widened
- * `load` verb (route-d).
- * Dials VICE's text-monitor `load "<file>" <device>` command for ONE member
- * of text-protocol.ts's closed HAZARD_SUBJECT_PRG_RELPATHS table, each
- * baked into its own frozen allowlist identity -- this handler takes NO
- * filename argument at all, so there is nothing here for a caller to
- * inject; the loaded path can never be anything other than a reviewed
- * literal that table already carries.
- *
- * Takes two OPTIONAL parameters. `subject` is an enumerated id from that
- * table ("original", "regressed", "modified", "rebuild"). It defaults to
- * "original", which is exactly plan 50-04's behaviour, and an id the table
- * does not carry is refused by name (see resolveSubjectId() above for why an
- * id is not a filename). `device`: an omitted device defaults
- * to 0 ("the file is read from the file system", VICE Manual ch. 12).
- * `buildTextCommand()` alone validates and bounds the device (0 through 11,
- * TEXT_COMMAND_PARAM_SPECS's own entry for this verb) -- this handler
- * duplicates no bound, mirroring `handleCpuHistory()`'s own discipline of
- * never re-stating a spec's own bound in a second place.
- *
- * No address argument is offered, and none ever will be through this tool:
- * omitting it makes VICE use the load address embedded in the `.prg` file's
- * own two-byte header, which is exactly what a committed machine-code
- * fixture needs -- text-protocol.ts's own `load` entry documents this same
- * choice and why a second numeric slot is not worth bounding for no present
- * use.
- */
-export async function handleProgramLoad(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
-  const { device, subject } = args;
-  const subjectId = resolveSubjectId(subject);
-  if (subjectId === null) {
-    return isErrorText(
-      `vice_program_load: "subject" must be one of ${HAZARD_SUBJECT_IDS.map((id) => JSON.stringify(id)).join(", ")} ` +
-        `(got ${JSON.stringify(subject)}) -- refusing before any text-monitor byte is written; this tool never accepts a filename`,
-    );
-  }
-  const resolvedDevice = device === undefined ? 0 : device;
-  const built = buildTextCommand(hazardSubjectLoadVerb(subjectId), resolvedDevice);
-  if (!built.ok) {
-    return isErrorText(`vice_program_load: ${built.message} -- refusing before any text-monitor byte is written`);
-  }
-  const command = built.command;
-
-  return withTextTool("vice_program_load", deps, async (client) => {
-    const response = await client.command(command);
-    return derivedAnswer({
-      command,
-      device: resolvedDevice,
-      subject: subjectId,
-      response,
-      note:
-        `loads the reviewed Phase 50 hazard subject "${subjectId}", baked into this verb's own frozen ` +
-        "identity (plan 50-04 route-d; one frozen verb per subject since plan 50-05) -- no filename is ever " +
-        "caller-supplied, only an enumerated subject id; the load address comes from the .prg file's own " +
-        "two-byte header, since no address argument is offered",
     });
   });
 }

@@ -15,7 +15,7 @@
 import type { ToolInfo } from "./vice-errors.ts";
 import { isErrorText, stockAnswer, type StockToolResult, type StockSessionHandler, type DerivedPureHandler } from "./stock-handler.ts";
 import { runBinary, runPure, type StockSessionDeps } from "./stock-session.ts";
-import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks } from "./stock-memory.ts";
+import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks, handleProgramLoad } from "./stock-memory.ts";
 import { handleRegistersGet, handleRegistersSet, handleRegistersAvailable } from "./stock-registers.ts";
 import {
   handleCheckpointAdd,
@@ -36,7 +36,7 @@ import { handleCiaGetState } from "./stock-cia.ts";
 import { handleSpriteGet, handleSpriteInspect } from "./stock-sprites.ts";
 import { handleCyclesStopwatch } from "./stock-timing.ts";
 import { handleRunUntil } from "./stock-run-until.ts";
-import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters, handleProgramLoad } from "./text-tools.ts";
+import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters } from "./text-tools.ts";
 
 /**
  * The `vice_ping` handler -- BACK-03's answer, on the tool an agent already
@@ -91,6 +91,7 @@ export const STOCK_TOOLS: readonly StockTool[] = Object.freeze([
   { name: "vice_memory_read", kind: "binary", handler: handleMemoryRead },
   { name: "vice_memory_write", kind: "binary", handler: handleMemoryWrite },
   { name: "vice_memory_banks", kind: "binary", handler: handleMemoryBanks },
+  { name: "vice_program_load", kind: "binary", handler: handleProgramLoad },
   { name: "vice_registers_get", kind: "binary", handler: handleRegistersGet },
   { name: "vice_registers_set", kind: "binary", handler: handleRegistersSet },
   { name: "vice_registers_available", kind: "binary", handler: handleRegistersAvailable },
@@ -131,7 +132,6 @@ export const STOCK_TOOLS: readonly StockTool[] = Object.freeze([
   { name: "vice_profile_flat", kind: "pure", handler: handleProfileFlat },
   { name: "vice_backtrace", kind: "pure", handler: handleBacktrace },
   { name: "vice_io_registers", kind: "pure", handler: handleIoRegisters },
-  { name: "vice_program_load", kind: "pure", handler: handleProgramLoad },
 ]);
 
 /** Runs one tool through the runner its kind names. Never throws. */

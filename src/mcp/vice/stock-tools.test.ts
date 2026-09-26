@@ -103,9 +103,8 @@ const STOCK_ONLY_TOOLS = new Set([
   "vice_cpu_history",
   "vice_profile_flat",
   "vice_io_registers",
-  // Plan 50-04 (route-d): the program-load tool for the committed
-  // hazard-subject fixture -- same reasoning, reached over the same
-  // text-monitor channel, no fork HTTP-API equivalent.
+  // Writes a committed hazard-subject PRG through the binary monitor; no
+  // fork HTTP-API equivalent.
   "vice_program_load",
 ]);
 
@@ -857,6 +856,18 @@ conformanceTest("vice_memory_write", async () => {
   const deps = buildConformanceDeps(session);
   const result = await callStockTool("vice_memory_write", { address: "$1000", data: [0x01, 0x02] }, deps);
   assertAnswerConforms("vice_memory_write", result);
+});
+
+conformanceTest("vice_program_load", async () => {
+  const session = buildConformanceSession("conformance-vice_program_load", (commandType) => {
+    if (commandType === CommandType.MemorySet) {
+      return conformanceAckReply(CommandType.MemorySet);
+    }
+    throw new Error(`vice_program_load: unexpected commandType ${commandType}`);
+  });
+  const deps = buildConformanceDeps(session);
+  const result = await callStockTool("vice_program_load", {}, deps);
+  assertAnswerConforms("vice_program_load", result);
 });
 
 conformanceTest("vice_memory_banks", async () => {
@@ -1735,17 +1746,6 @@ conformanceTest("vice_io_registers", async () => {
       const deps = buildTextConformanceDeps(port);
       const result = await callStockTool("vice_io_registers", { address: 0xd020 }, deps);
       assertAnswerConforms("vice_io_registers", result);
-    },
-  );
-});
-
-conformanceTest("vice_program_load", async () => {
-  await withConformanceTextServer(
-    (_line, socket) => socket.write("(C:$0801) "),
-    async (port) => {
-      const deps = buildTextConformanceDeps(port);
-      const result = await callStockTool("vice_program_load", {}, deps);
-      assertAnswerConforms("vice_program_load", result);
     },
   );
 });

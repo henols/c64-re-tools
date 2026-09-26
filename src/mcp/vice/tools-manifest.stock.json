@@ -4385,16 +4385,10 @@
     },
     {
       "name": "vice_program_load",
-      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"load \\\"<path>\\\" <device>\" for ONE member of a closed, reviewed Phase 50 hazard-subject table -- four committed fixtures under fixtures/hazard-subject/ plus the rebuild produced under the phase evidence directory. Every loadable path is baked into this tool's own frozen dialed verbs and is never a caller-supplied argument, so there is nothing here for a caller to inject. Takes an OPTIONAL \"subject\", an enumerated subject id, defaulting to \"original\". Takes an OPTIONAL \"device\" number, 0 through 11; an omitted device defaults to 0 (\"the file is read from the file system\", VICE Manual ch. 12). No address argument is offered -- omitting it makes VICE use the load address embedded in the .prg file's own two-byte header, which is exactly what these committed machine-code fixtures need.",
+      "description": "Writes ONE committed hazard-subject PRG into RAM at the load address in its own two-byte header, through the binary monitor. The subject is named by id from a closed table of fixtures under fixtures/hazard-subject/; this tool never accepts a filename. The MCP server reads the file itself and sends its bytes, so no path reaches the broker or the emulator. Only the payload bytes change: no BASIC pointer is touched and the machine is not reset or started. Halts the machine for the duration of the write, like every binary-monitor command.",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "device": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 11,
-            "description": "OPTIONAL. IEC device number VICE loads from. Defaults to 0 (the host filesystem) when omitted. 1 through 11 span this project's own documented device-number range elsewhere; this tool never accepts a filename."
-          },
           "subject": {
             "type": "string",
             "enum": [
@@ -4404,7 +4398,7 @@
               "rebuild",
               "exported-edit"
             ],
-            "description": "OPTIONAL. Which reviewed Phase 50 hazard subject to load, named by id, never by path. \"original\" is the tracer-slice subject and is the default. \"regressed\" is its three-single-bit-regression twin. \"modified\" is the one-behaviour-removed, one-behaviour-added variant made by hand in the fixture's own source. \"rebuild\" is the original re-produced from its own committed annotation store, and is the one id that resolves outside the fixture directory. \"exported-edit\" is the same one-behaviour-removed, one-behaviour-added pair made instead in a file exportAsmTree() itself emitted, reassembled against a pre-registered byte manifest. This tool never accepts a filename."
+            "description": "OPTIONAL. Which hazard subject to load, by id, never by path. Defaults to \"original\", the tracer-slice subject. \"regressed\" is its three-single-bit-regression twin. \"modified\" has one behaviour removed and one added, made by hand in the fixture source. \"rebuild\" is the original re-produced from its own committed annotation store. \"exported-edit\" is the same removed/added pair as \"modified\", made instead in a file exportAsmTree() emitted."
           }
         },
         "additionalProperties": false
@@ -4412,17 +4406,17 @@
       "outputSchema": {
         "type": "object",
         "properties": {
-          "command": {
+          "subject": {
             "type": "string"
           },
-          "device": {
-            "type": "integer"
+          "loadAddress": {
+            "type": "number"
           },
-          "response": {
-            "type": "string"
+          "endAddress": {
+            "type": "number"
           },
-          "note": {
-            "type": "string"
+          "byteLength": {
+            "type": "number"
           },
           "runState": {
             "type": "string",
@@ -4431,17 +4425,13 @@
               "stopped",
               "unknown"
             ]
-          },
-          "subject": {
-            "type": "string"
           }
         },
         "required": [
-          "command",
-          "device",
           "subject",
-          "response",
-          "note",
+          "loadAddress",
+          "endAddress",
+          "byteLength",
           "runState"
         ]
       }

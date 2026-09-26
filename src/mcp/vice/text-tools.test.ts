@@ -18,7 +18,7 @@ import { existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters, handleProgramLoad } from "./text-tools.ts";
+import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters } from "./text-tools.ts";
 import { callStockTool } from "./stock-tools.ts";
 import type { StockSessionDeps } from "./stock-session.ts";
 import type { StockToolResult } from "./stock-handler.ts";
@@ -46,7 +46,6 @@ import { loadTextFixture } from "./textmon-fixtures.ts";
 import { CPUHISTORY_DISABLED_STUB, resetTextCapabilityCache } from "./text-capability-probe.ts";
 import { PROFILING_NOT_STARTED_TEXT } from "./textmon-profile.ts";
 import { ViceMonitorClient, CommandType } from "./stock-protocol.ts";
-import { HAZARD_SUBJECT_PRG_PATH, HAZARD_SUBJECT_IDS, hazardSubjectLoadVerb } from "./text-protocol.ts";
 
 beforeEach(() => {
   resetChannelLockForTests();
@@ -1311,167 +1310,6 @@ test("handleIoRegisters (CR-02): an indeterminate (empty) reply under a RESOLVED
       assert.match(result.content[0]!.text, /unknown, not negative/);
     },
   );
-});
-
-// ---------------------------------------------------------------------------
-// handleProgramLoad (plan 50-04, route-d): reaches text-protocol.ts's
-// widened `load` verb. Takes only an optional, bounded device number --
-// never a filename -- so these tests prove the rendered command, the
-// channel-lock discipline every handler in this file shares, the
-// buildTextCommand()-driven out-of-range refusal, and that no filename-
-// shaped argument the caller supplies ever reaches the dialed command.
-// ---------------------------------------------------------------------------
-
-test("handleProgramLoad: no device argument dials device 0, the exact command buildTextCommand()'s own load spec produces", async () => {
-  const receivedLines: string[] = [];
-  await withStubTextServer(
-    (line, socket) => {
-      receivedLines.push(line);
-      socket.write(PROMPT);
-    },
-    async (port) => {
-      const deps = makeDeps(port);
-      const result = await handleProgramLoad({}, deps);
-      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
-      assert.deepEqual(receivedLines, [`load "${HAZARD_SUBJECT_PRG_PATH}" 0`]);
-      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-      assert.equal(payload.command, `load "${HAZARD_SUBJECT_PRG_PATH}" 0`);
-      assert.equal(payload.device, 0);
-    },
-  );
-});
-
-test("handleProgramLoad: a supplied device dials buildTextCommand()'s canonical rendering for that device", async () => {
-  const receivedLines: string[] = [];
-  await withStubTextServer(
-    (line, socket) => {
-      receivedLines.push(line);
-      socket.write(PROMPT);
-    },
-    async (port) => {
-      const deps = makeDeps(port);
-      const result = await handleProgramLoad({ device: 8 }, deps);
-      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
-      assert.deepEqual(receivedLines, [`load "${HAZARD_SUBJECT_PRG_PATH}" 8`]);
-      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-      assert.equal(payload.device, 8);
-    },
-  );
-});
-
-test("handleProgramLoad: refuses an out-of-range device by name, via buildTextCommand's own message, no lease resolved", async () => {
-  let leaseCalled = false;
-  const deps: StockSessionDeps = {
-    ensureLease: async () => {
-      leaseCalled = true;
-      return { ok: true, lease: null };
-    },
-  };
-  const result = await handleProgramLoad({ device: 12 }, deps);
-  assert.equal(result.isError, true);
-  assert.match(result.content[0]!.text, /vice_program_load/);
-  assert.match(result.content[0]!.text, /requires an integer between 0 and 11/);
-  assert.equal(leaseCalled, false, "no lease should ever be resolved before buildTextCommand's own bound check runs");
-});
-
-test("handleProgramLoad: holds the text-channel lock for the duration and releases it on success", async () => {
-  let holderDuringCommand: ReturnType<typeof currentChannelLockHolder> = null;
-  await withStubTextServer(
-    (_line, socket) => {
-      holderDuringCommand = currentChannelLockHolder();
-      socket.write(PROMPT);
-    },
-    async (port) => {
-      const deps = makeDeps(port);
-      assert.equal(currentChannelLockHolder(), null, "no lock held before the call");
-      const result = await handleProgramLoad({}, deps);
-      assert.equal(result.isError, false);
-      assert.ok(holderDuringCommand, "expected a holder to be observed while the command was outstanding");
-      assert.equal(holderDuringCommand!.channel, "text");
-      assert.equal(holderDuringCommand!.operation, "vice_program_load");
-      assert.equal(currentChannelLockHolder(), null, "the lock must be released again after the call returns");
-    },
-  );
-});
-
-test("handleProgramLoad: no filename can be injected -- an extraneous filename-shaped argument is ignored, the baked-in fixture path is always dialed", async () => {
-  const receivedLines: string[] = [];
-  await withStubTextServer(
-    (line, socket) => {
-      receivedLines.push(line);
-      socket.write(PROMPT);
-    },
-    async (port) => {
-      const deps = makeDeps(port);
-      const result = await handleProgramLoad(
-        { device: 0, filename: "/etc/passwd", path: "/etc/passwd", file: "../../etc/passwd" } as Record<string, unknown>,
-        deps,
-      );
-      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
-      assert.deepEqual(
-        receivedLines,
-        [`load "${HAZARD_SUBJECT_PRG_PATH}" 0`],
-        "the handler reads no filename-shaped argument at all -- only the baked-in fixture path is ever dialed",
-      );
-    },
-  );
-});
-
-test("handleProgramLoad [plan 50-05]: every subject id in the closed table dials its OWN frozen path, and an omitted subject still dials the original", async () => {
-  for (const id of HAZARD_SUBJECT_IDS) {
-    const receivedLines: string[] = [];
-    await withStubTextServer(
-      (line, socket) => {
-        receivedLines.push(line);
-        socket.write(PROMPT);
-      },
-      async (port) => {
-        const deps = makeDeps(port);
-        const result = await handleProgramLoad({ subject: id }, deps);
-        assert.equal(result.isError, false, `expected success for subject ${id}, got ${JSON.stringify(result)}`);
-        assert.deepEqual(receivedLines, [`${hazardSubjectLoadVerb(id)} 0`], `subject ${id} must dial its own frozen path`);
-        const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-        assert.equal(payload.subject, id, "the answer must name which subject was actually loaded");
-      },
-    );
-  }
-
-  // The default is unchanged from plan 50-04: no subject means the original.
-  // This is what keeps every earlier caller and every earlier captured
-  // command string valid after the table widening.
-  const defaultLines: string[] = [];
-  await withStubTextServer(
-    (line, socket) => {
-      defaultLines.push(line);
-      socket.write(PROMPT);
-    },
-    async (port) => {
-      const result = await handleProgramLoad({}, makeDeps(port));
-      assert.equal(result.isError, false);
-      assert.deepEqual(defaultLines, [`load "${HAZARD_SUBJECT_PRG_PATH}" 0`]);
-    },
-  );
-});
-
-test("handleProgramLoad [plan 50-05]: a subject the closed table does not carry is refused BY NAME, before any lease and any byte -- including a path-shaped one", async () => {
-  // The whole point of an enumerated id rather than a filename: none of
-  // these reaches a command string, and the refusal names the accepted set
-  // rather than failing somewhere inside the emulator.
-  for (const bad of ["misaligned", "/etc/passwd", "../hazard-subject.prg", "", "ORIGINAL", "__proto__", "constructor", 0, null, {}]) {
-    let leaseCalled = false;
-    const deps: StockSessionDeps = {
-      ensureLease: async () => {
-        leaseCalled = true;
-        return { ok: true, lease: null };
-      },
-    };
-    const result = await handleProgramLoad({ subject: bad } as Record<string, unknown>, deps);
-    assert.equal(result.isError, true, `expected ${JSON.stringify(bad)} to be refused`);
-    assert.match(result.content[0]!.text, /vice_program_load/);
-    assert.match(result.content[0]!.text, /"subject" must be one of/);
-    assert.match(result.content[0]!.text, /never accepts a filename/);
-    assert.equal(leaseCalled, false, "no lease may be resolved for an unrecognised subject id");
-  }
 });
 
 // ---------------------------------------------------------------------------
