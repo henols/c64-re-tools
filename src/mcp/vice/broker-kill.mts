@@ -392,9 +392,8 @@ export function registerShutdownHandlers(deps: RegisterShutdownHandlersDeps): ()
  * interrupt or a closed terminal destroys. On 2026-08-02 a `^C` produced
  * "reap saw 4 recorded instance(s), terminated 4" and killed a live
  * session -- the incident was not caused by missing machinery, it was
- * caused by nobody being told. Detaching stays the operator's own
- * nohup/setsid/systemd choice -- this banner names that choice
- * rather than offering a flag; the launcher stays thin.
+ * caused by nobody being told. The broker offers no way to detach itself;
+ * how the user runs it is not this project's business.
  *
  * The one place naming the retired
  * warm-floor environment variable does not weaken the clean break made when
@@ -415,8 +414,6 @@ export function startupBanner(): string {
     "vice-broker: accumulated context.",
     "vice-broker: a broker that dies voids every session it was serving -- there is no",
     "vice-broker: reconnect. A session whose broker dies must be restarted, not resumed.",
-    "vice-broker: to run this broker outside the current terminal session, use your own",
-    "vice-broker: nohup/setsid/systemd -- this launcher does not offer a --detach flag.",
   ];
   if (process.env.VICE_BROKER_SPARES !== undefined) { // banner-only presence check -- never reads the value
     lines.push(

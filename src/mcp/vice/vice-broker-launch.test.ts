@@ -403,7 +403,7 @@ async function assertRouteAgreement(
   }
 }
 
-test("route agreement: no project argument (npx broker / systemd unit / launchd agent) -- broker and client resolve the SAME state directory under a scratch HOME, no override (G-64-1)", async () => {
+test("route agreement: no project argument (npx broker) -- broker and client resolve the SAME state directory under a scratch HOME, no override (G-64-1)", async () => {
   await assertRouteAgreement("no-argument route", [], {});
 });
 

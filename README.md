@@ -210,28 +210,9 @@ any platform with no setup at all:
 npx -y @henols/vice-mcp broker
 ```
 
-Two optional service paths let it survive a logout instead of only running in
-a terminal you keep open. Both are things **you** run — this repository never
-runs either command itself, and `src/mcp/vice/service-no-invoke.test.ts`
-asserts that structurally, with its own planted-violation proof.
-
-**Linux (systemd, per-user, no root needed):**
-
-1. Copy [`src/mcp/vice/service/vice-broker.service`](src/mcp/vice/service/vice-broker.service)
-   to `~/.config/systemd/user/vice-broker.service`.
-2. `systemctl --user daemon-reload`
-3. `systemctl --user enable --now vice-broker.service`
-
-**macOS (launchd, per-user agent):**
-
-1. Copy [`src/mcp/vice/service/com.henols.vice-broker.plist`](src/mcp/vice/service/com.henols.vice-broker.plist)
-   to `~/Library/LaunchAgents/com.henols.vice-broker.plist`.
-2. `launchctl load ~/Library/LaunchAgents/com.henols.vice-broker.plist`
-
 **One broker per machine** means every project and every Claude Code session
-on that machine shares it — restarting it (from either service path, or by
-killing a foreground run) affects all of them at once, not just the one you
-meant to restart.
+on that machine shares it — restarting it affects all of them at once, not
+just the one you meant to restart.
 
 **A bridge appearing later needs a broker restart.** The broker enumerates
 its bind set once at startup and holds it for the life of the process. If you

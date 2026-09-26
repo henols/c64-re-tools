@@ -17,7 +17,7 @@ separately so it can be launched directly by an MCP client.
   Node's native type-stripping — no build step, no flags. Older Node needs
   `--experimental-strip-types` and is unsupported.
 - A **host** with VICE (`x64sc`) and a running broker
-  (`npx -y @henols/vice-mcp broker`, or its systemd/launchd unit). The server
+  (`npx -y @henols/vice-mcp broker`, started by hand). The server
   reaches the broker on TCP port 19510, dialling `127.0.0.1` and then
   `host.docker.internal`, so the same configuration works on the host and inside a
   container. Nothing is read from disk to find it.

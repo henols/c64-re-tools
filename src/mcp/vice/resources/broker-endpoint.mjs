@@ -346,9 +346,8 @@ export async function dialBrokerEndpoint(options = {}) {
  * already grants this project's documented `npx -y @henols/vice-mcp anno
  * <verb>` route out of the never-auto-install rule.
  *
- * FOUR other sites quote this exact string; change it here and update all
- * four in the SAME change: README.md's install section, the systemd unit,
- * the launchd plist, and the documented universal fallback.
+ * README.md's "Starting the broker" section quotes this exact string;
+ * change both in the SAME change.
  *
  * Deliberately does NOT join `prerequisites.json`: that file's `kind` field
  * is a closed two-member union (`"executable"` | `"directory"`) enforced by

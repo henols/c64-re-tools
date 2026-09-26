@@ -69,8 +69,8 @@
   starts one.
 - The broker binds to loopback and to the container bridge gateways it
   enumerates at startup. It never binds `0.0.0.0` and uses no token. Its state is
-  at `~/.c64-re-tools` (override with `VICE_BROKER_HOME`). Service files for
-  systemd and launchd ship with it and are never applied automatically.
+  at `~/.c64-re-tools` (override with `VICE_BROKER_HOME`). The user starts it by
+  hand; no service definition ships with it.
 - The connection is the session. The MCP server's long-lived connection holds
   its emulator instance. The broker reclaims the instance when the socket drops,
   including after a `SIGKILL` or a silent peer death, and writes an incident
