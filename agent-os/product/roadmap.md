@@ -115,12 +115,23 @@
   `2026-09-25-2240-deletion-cutover/`, `2026-09-26-0022-ghidra-without-alias/`
   and `2026-09-26-1019-no-cross-side-paths/`.
 
-## Planned / Later
+## In Progress: broker-owned store (v2.0.0)
 
-**Annotation store**
+- **Spec:** `agent-os/specs/2026-09-26-2233-broker-owned-store/`.
 - Move to one broker-owned annotation database per machine. Rows are scoped by a
   persisted, script-created `project_id`, and no call can read or write another
   project's data. See `agent-os/standards/anno/store-ownership.md`.
+- All 28 `anno call` tools and all 6 report verbs run in the broker. The
+  `store` argument and the snapshot ring go away, and backup becomes
+  `export-project` / `import-project`.
+- Steps:
+  1. schema v6, project-scoped;
+  2. host-bound, path-free engine;
+  3. broker anno seam;
+  4. cutover;
+  5. backup verbs and close.
+
+## Planned / Later
 
 **Operator surface**
 - Check Podman ≥ 5's `pasta` default and its effect on `host.containers.internal`
