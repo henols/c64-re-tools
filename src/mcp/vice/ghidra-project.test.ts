@@ -3,16 +3,12 @@
 // Phase 34, plan 34-03, task 1: every case in ghidra-project.mts's own
 // <behavior> block, as a case that can fail -- the dot-segment refusal
 // (checking EVERY path segment, not just the leaf, per 34-RESEARCH.md
-// Finding 2), the per-run project location, its idempotency refusal, and
+// Finding 2), the per-run project location, and
 // the argv builder's independent re-check.
 //
-// Extended, Task 3 (live finding): resolveGhidraProject() CREATES the run
-// directory as the last step of a successful resolution -- real Ghidra
-// 12.1.3 refuses a clean, well-formed project location that does not yet
-// exist on disk (`Directory not found`, at `DefaultProjectManager.
-// createProject()`; see evidence/34-ghidra-dotpath.md). Reservation-by-
-// creation is what makes a second call under the SAME run id refused
-// immediately, with no window where two callers could both see it absent.
+// resolveGhidraProject() CREATES a fresh run directory: real Ghidra 12.1.3
+// refuses a clean, well-formed project location that does not yet exist on
+// disk (`Directory not found`, at `DefaultProjectManager.createProject()`).
 //
 // Imports the UNBUILT `.mts` source directly (the module has no sibling
 // import -- only node:fs/node:path -- so the source resolves under native
@@ -20,20 +16,15 @@
 // case here run to completion with NO Ghidra installation present.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync, lstatSync, readlinkSync, symlinkSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync, readdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   DOT_SEGMENT_REFUSAL,
-  GHIDRA_RUNS_HANDLE_NAME,
-  GHIDRA_RUNS_HANDLE_TARGET,
   RUN_ID_PATTERN,
   hasDotPrefixedSegment,
-  ghidraRunsRoot,
-  ghidraRunsRealRoot,
-  ensureGhidraRunsHandle,
   resolveGhidraProject,
   buildAnalyzeHeadlessArgv,
 } from "./ghidra-project.mts";
@@ -112,31 +103,8 @@ test("hasDotPrefixedSegment: a doubled separator produces an empty internal segm
 });
 
 // ---------------------------------------------------------------------------
-// ghidraRunsRoot / ghidraRunsRealRoot -- gap G-40-1 (plan 40-08). The ONE
-// anchor case in this file that pins both literal shapes by hand rather than
-// deriving them from the functions under test, so this suite cannot become
-// vacuous. Every OTHER expectation in this file derives from these two
-// functions instead of re-joining the segments itself.
-// ---------------------------------------------------------------------------
-
-test("ghidraRunsRoot()/ghidraRunsRealRoot(): pin the literal handle and physical-target shapes by hand", () => {
-  const root = "/synthetic-repo-root";
-  const expectedHandle = join(root, "c64-re-tools", "runs", "ghidra");
-  const expectedReal = join(root, ".c64-re-tools", "runs", "ghidra");
-  assert.equal(
-    ghidraRunsRoot(root),
-    expectedHandle,
-    `the Ghidra runs location moved (gap G-40-1) -- expected the HANDLE at ${expectedHandle}, with the PHYSICAL root at ${expectedReal}`,
-  );
-  assert.equal(
-    ghidraRunsRealRoot(root),
-    expectedReal,
-    `the Ghidra runs location moved (gap G-40-1) -- expected the PHYSICAL root at ${expectedReal}, reached through the HANDLE at ${expectedHandle}`,
-  );
-});
-
-// ---------------------------------------------------------------------------
-// resolveGhidraProject -- narrowing, the dot-segment refusal, idempotency
+// resolveGhidraProject -- narrowing, the dotted-root refusal, one fresh
+// directory per run
 // ---------------------------------------------------------------------------
 
 test("resolveGhidraProject: refuses a non-object input", () => {
@@ -145,237 +113,94 @@ test("resolveGhidraProject: refuses a non-object input", () => {
 });
 
 test("resolveGhidraProject: refuses an unknown key BY NAME", () => {
-  const result = resolveGhidraProject({ repoRoot: "/repo", runId: "r1", bogusKey: "x" });
+  const result = resolveGhidraProject({ runsRoot: "/runs", runId: "r1", bogusKey: "x" });
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.message, /bogusKey/);
 });
 
-test("resolveGhidraProject: refuses a non-string/absent repoRoot, never coerced", () => {
-  const result = resolveGhidraProject({ repoRoot: 42, runId: "r1" });
+test("resolveGhidraProject: refuses a non-string/absent runsRoot, never coerced", () => {
+  const result = resolveGhidraProject({ runsRoot: 42, runId: "r1" });
   assert.equal(result.ok, false);
 });
 
 test("resolveGhidraProject: refuses a non-string/absent runId, never coerced", () => {
-  const result = resolveGhidraProject({ repoRoot: "/repo" });
+  const result = resolveGhidraProject({ runsRoot: "/runs" });
   assert.equal(result.ok, false);
 });
 
-test("resolveGhidraProject: accepts a clean repoRoot and a well-shaped runId, returning ok:true with runsRoot/projectLocation/projectName derived from ghidraRunsRoot()", async () => {
+test("resolveGhidraProject: creates a fresh run directory under runsRoot, named after the run id, with no dotted segment", async () => {
   await withTempDir((dir) => {
-    const result = resolveGhidraProject({ repoRoot: dir, runId: "r1" });
+    const runsRoot = join(dir, "runs");
+    const result = resolveGhidraProject({ runsRoot, runId: "r1" });
     assert.equal(result.ok, true);
     if (!result.ok) return;
-    assert.equal(result.runsRoot, ghidraRunsRoot(dir));
-    assert.equal(result.projectLocation, join(ghidraRunsRoot(dir), "r1"));
+    assert.equal(result.runsRoot, runsRoot);
     assert.equal(result.projectName, "r1");
+    assert.equal(dirname(result.projectLocation), runsRoot, "the run directory must sit directly under runsRoot");
+    assert.match(result.projectLocation.slice(runsRoot.length + 1), /^r1-[A-Za-z0-9]+$/);
+    assert.ok(existsSync(result.projectLocation), "analyzeHeadless does not create the project directory itself, so it must exist on return");
+    assert.equal(hasDotPrefixedSegment(result.projectLocation).dotted, false);
   });
 });
 
-test("resolveGhidraProject: an ok result lands the run directory PHYSICALLY under ghidraRunsRealRoot() -- the D-33 truth this whole plan exists for -- and remains reachable through ghidraRunsRoot() (the handle)", async () => {
+test("resolveGhidraProject: two runs under the SAME run id get two distinct, existing directories -- no reuse, no collision", async () => {
   await withTempDir((dir) => {
-    const result = resolveGhidraProject({ repoRoot: dir, runId: "physical-landing" });
-    assert.equal(result.ok, true);
-    if (!result.ok) return;
-    assert.equal(
-      existsSync(join(ghidraRunsRealRoot(dir), "physical-landing")),
-      true,
-      "the run directory must land physically under ghidraRunsRealRoot(), not merely be reachable through the handle",
-    );
-    assert.equal(existsSync(join(ghidraRunsRoot(dir), "physical-landing")), true, "the run directory must also be reachable through ghidraRunsRoot() (the handle)");
-    assert.equal(result.projectLocation, join(ghidraRunsRoot(dir), "physical-landing"));
+    const runsRoot = join(dir, "runs");
+    const first = resolveGhidraProject({ runsRoot, runId: "same-run" });
+    const second = resolveGhidraProject({ runsRoot, runId: "same-run" });
+    assert.ok(first.ok && second.ok);
+    if (!first.ok || !second.ok) return;
+    assert.notEqual(first.projectLocation, second.projectLocation);
+    assert.ok(existsSync(first.projectLocation) && existsSync(second.projectLocation));
   });
 });
 
-test("resolveGhidraProject: CREATES the run directory as the last step of a successful resolution -- the reservation, not merely a computed path (live finding, Task 3: analyzeHeadless refuses a clean location that does not yet exist)", async () => {
+test("resolveGhidraProject: a relative runsRoot is absolutized before the dotted check, which is what Ghidra itself checks", async () => {
   await withTempDir((dir) => {
-    const result = resolveGhidraProject({ repoRoot: dir, runId: "created-run" });
-    assert.equal(result.ok, true);
-    if (!result.ok) return;
-    assert.equal(existsSync(result.projectLocation), true, "resolveGhidraProject must create the project location it returns");
-  });
-});
-
-test("resolveGhidraProject: refuses a repoRoot that itself contains a dot-prefixed segment, naming that segment -- rules out .vice-supervisor/ as an ancestor -- and creates NOTHING on disk (the dot check runs before any filesystem write)", async () => {
-  await withTempDir((dir) => {
-    const repoRoot = join(dir, ".vice-supervisor", "nested");
-    const result = resolveGhidraProject({ repoRoot, runId: "r1" });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.message, /\.vice-supervisor/);
-      assert.match(result.message, new RegExp(DOT_SEGMENT_REFUSAL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+    const previous = process.cwd();
+    process.chdir(dir);
+    try {
+      const result = resolveGhidraProject({ runsRoot: "runs", runId: "r1" });
+      assert.equal(result.ok, true);
+      if (result.ok) assert.equal(result.runsRoot, join(realpathSync(dir), "runs"));
+    } finally {
+      process.chdir(previous);
     }
-    assert.deepEqual(readdirSync(dir), [], "a refused dot-prefixed repoRoot must create nothing on disk under the temp root -- no handle, no physical tree, nothing");
+  });
+});
+
+test("resolveGhidraProject: refuses a runsRoot with a dot-prefixed segment, naming the segment and VICE_BROKER_GHIDRA_DIR, and creates nothing", async () => {
+  await withTempDir((dir) => {
+    const runsRoot = join(dir, ".c64-re-tools", "ghidra");
+    const result = resolveGhidraProject({ runsRoot, runId: "r1" });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.match(result.message, /"\.c64-re-tools"/, "the refusal must name the offending segment");
+    assert.match(result.message, /VICE_BROKER_GHIDRA_DIR/, "the refusal must name the variable that moves the root");
+    assert.ok(result.message.includes(DOT_SEGMENT_REFUSAL), "the refusal must quote Ghidra's own reason");
+    assert.equal(existsSync(join(dir, ".c64-re-tools")), false, "nothing may be created under a refused root");
   });
 });
 
 test("resolveGhidraProject: refuses a run id containing a path separator", () => {
-  const result = resolveGhidraProject({ repoRoot: "/repo", runId: "a/b" });
+  const result = resolveGhidraProject({ runsRoot: "/runs", runId: "a/b" });
   assert.equal(result.ok, false);
 });
 
 test("resolveGhidraProject: refuses a run id with a dot-prefixed component", () => {
-  const result = resolveGhidraProject({ repoRoot: "/repo", runId: ".hidden" });
+  const result = resolveGhidraProject({ runsRoot: "/runs", runId: ".hidden" });
   assert.equal(result.ok, false);
 });
 
 test("resolveGhidraProject: refuses an empty run id", () => {
-  const result = resolveGhidraProject({ repoRoot: "/repo", runId: "" });
+  const result = resolveGhidraProject({ runsRoot: "/runs", runId: "" });
   assert.equal(result.ok, false);
 });
 
 test("resolveGhidraProject: refuses a run id not matched by RUN_ID_PATTERN (disallowed character)", () => {
-  assert.equal(RUN_ID_PATTERN.test("bad id!"), false);
-  const result = resolveGhidraProject({ repoRoot: "/repo", runId: "bad id!" });
+  const result = resolveGhidraProject({ runsRoot: "/runs", runId: "bad id!" });
   assert.equal(result.ok, false);
-});
-
-test("resolveGhidraProject: refuses reusing an existing run directory under the SAME run id (idempotency) -- the FIRST call's own directory creation is what the second call sees and refuses, with no separate simulated run needed", async () => {
-  await withTempDir((dir) => {
-    const first = resolveGhidraProject({ repoRoot: dir, runId: "same-run" });
-    assert.equal(first.ok, true);
-    if (!first.ok) return;
-    const second = resolveGhidraProject({ repoRoot: dir, runId: "same-run" });
-    assert.equal(second.ok, false);
-    if (!second.ok) assert.match(second.message, /reused|reuse/i);
-  });
-});
-
-test("resolveGhidraProject: still refuses reuse even when a run's directory was created by an EARLIER, separate process (e.g. a completed prior run) rather than by this call's own reservation -- pre-created PHYSICALLY under ghidraRunsRealRoot(), never through the handle, proving the resolver sees through it", async () => {
-  await withTempDir((dir) => {
-    mkdirSync(join(ghidraRunsRealRoot(dir), "pre-existing-run"), { recursive: true });
-    const result = resolveGhidraProject({ repoRoot: dir, runId: "pre-existing-run" });
-    assert.equal(result.ok, false);
-    if (!result.ok) assert.match(result.message, /reused|reuse/i);
-  });
-});
-
-test("resolveGhidraProject: two DIFFERENT run ids produce disjoint project locations sharing only the runsRoot prefix -- no shared segment below it (concurrency)", async () => {
-  await withTempDir((dir) => {
-    const a = resolveGhidraProject({ repoRoot: dir, runId: "run-a" });
-    const b = resolveGhidraProject({ repoRoot: dir, runId: "run-b" });
-    assert.equal(a.ok, true);
-    assert.equal(b.ok, true);
-    if (!a.ok || !b.ok) return;
-    assert.notEqual(a.projectLocation, b.projectLocation);
-    assert.equal(a.runsRoot, b.runsRoot);
-    const aRel = a.projectLocation.slice(a.runsRoot.length);
-    const bRel = b.projectLocation.slice(b.runsRoot.length);
-    assert.notEqual(aRel, bRel);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// ensureGhidraRunsHandle -- gap G-40-1 (plan 40-08). Mints/verifies the
-// broker-owned symlink handle; never repairs a wrong or foreign handle.
-// ---------------------------------------------------------------------------
-
-test("ensureGhidraRunsHandle: refuses a non-string/empty repoRoot, naming the offending value", () => {
-  for (const bad of [42, null, undefined, ""] as const) {
-    const result = ensureGhidraRunsHandle(bad);
-    assert.equal(result.ok, false, `expected a refusal for repoRoot=${JSON.stringify(bad)}`);
-  }
-});
-
-test("ensureGhidraRunsHandle: on a clean temp root, creates the physical runs tree AND mints the handle -- a symbolic link whose target is exactly the relative string", async () => {
-  await withTempDir((dir) => {
-    const result = ensureGhidraRunsHandle(dir);
-    assert.equal(result.ok, true);
-    if (!result.ok) return;
-    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
-    assert.equal(result.handle, handlePath);
-    assert.equal(result.target, GHIDRA_RUNS_HANDLE_TARGET);
-    assert.equal(existsSync(ghidraRunsRealRoot(dir)), true, "the physical runs tree must exist");
-    const stat = lstatSync(handlePath);
-    assert.equal(stat.isSymbolicLink(), true, "the handle must be a symbolic link");
-    assert.equal(readlinkSync(handlePath), GHIDRA_RUNS_HANDLE_TARGET, "the link target must be exactly the relative string, never absolute");
-  });
-});
-
-test("ensureGhidraRunsHandle: called a second time on the same root returns ok unchanged -- fully idempotent, the existing link untouched", async () => {
-  await withTempDir((dir) => {
-    const first = ensureGhidraRunsHandle(dir);
-    assert.equal(first.ok, true);
-    if (!first.ok) return;
-    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
-    const targetBefore = readlinkSync(handlePath);
-    const second = ensureGhidraRunsHandle(dir);
-    assert.equal(second.ok, true);
-    if (!second.ok) return;
-    assert.equal(second.handle, first.handle);
-    assert.equal(second.target, first.target);
-    assert.equal(readlinkSync(handlePath), targetBefore, "the existing link must be untouched by the second, idempotent call");
-  });
-});
-
-test("ensureGhidraRunsHandle: refuses when a REAL DIRECTORY already sits at the handle path, naming the handle and that it is a directory -- and never repairs it", async () => {
-  await withTempDir((dir) => {
-    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
-    mkdirSync(handlePath, { recursive: true });
-    writeFileSync(join(handlePath, "sentinel.txt"), "untouched", "utf8");
-    const result = ensureGhidraRunsHandle(dir);
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.message, new RegExp(GHIDRA_RUNS_HANDLE_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the refusal must name the handle path");
-      assert.match(result.message, /directory/i, "the refusal must name what was found");
-    }
-    const stat = lstatSync(handlePath);
-    assert.equal(stat.isDirectory(), true);
-    assert.equal(stat.isSymbolicLink(), false);
-    assert.equal(existsSync(join(handlePath, "sentinel.txt")), true, "ensureGhidraRunsHandle must NEVER delete, replace, or repair what it finds");
-  });
-});
-
-test("ensureGhidraRunsHandle: refuses when a symlink at the handle path points somewhere else -- including an ABSOLUTE path to the otherwise-correct real directory -- naming the found and expected targets, and never repairs it", async () => {
-  await withTempDir((dir) => {
-    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
-    mkdirSync(ghidraRunsRealRoot(dir), { recursive: true });
-    const wrongTarget = join(dir, GHIDRA_RUNS_HANDLE_TARGET); // absolute -- wrong even though it names the correct real directory
-    symlinkSync(wrongTarget, handlePath);
-    const result = ensureGhidraRunsHandle(dir);
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.message, new RegExp(wrongTarget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the refusal must name the found (wrong) target");
-      assert.match(result.message, new RegExp(GHIDRA_RUNS_HANDLE_TARGET.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the refusal must name the expected target");
-      assert.match(result.message, /absolute/i, "the refusal must state that an absolute target breaks the container route");
-    }
-    const stat = lstatSync(handlePath);
-    assert.equal(stat.isSymbolicLink(), true);
-    assert.equal(readlinkSync(handlePath), wrongTarget, "the wrong-target link must be untouched -- NEVER repaired");
-  });
-});
-
-test("ensureGhidraRunsHandle: refuses when a plain FILE sits at the handle path, naming what was found -- and never repairs it", async () => {
-  await withTempDir((dir) => {
-    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
-    writeFileSync(handlePath, "not a link", "utf8");
-    const result = ensureGhidraRunsHandle(dir);
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.message, new RegExp(GHIDRA_RUNS_HANDLE_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the refusal must name the handle path");
-      assert.match(result.message, /file/i, "the refusal must name what was found");
-    }
-    const stat = lstatSync(handlePath);
-    assert.equal(stat.isFile(), true);
-    assert.equal(readFileSync(handlePath, "utf8"), "not a link", "ensureGhidraRunsHandle must NEVER delete, replace, or repair what it finds");
-  });
-});
-
-test("resolveGhidraProject: propagates an ensureGhidraRunsHandle() refusal without creating anything -- the regression test for the silent-violation hole where a missing/wrong handle let recursive mkdir materialise a second root", async () => {
-  await withTempDir((dir) => {
-    const handlePath = join(dir, GHIDRA_RUNS_HANDLE_NAME);
-    mkdirSync(handlePath, { recursive: true });
-    const result = resolveGhidraProject({ repoRoot: dir, runId: "should-never-exist" });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.match(result.message, new RegExp(GHIDRA_RUNS_HANDLE_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the propagated refusal must name the handle path");
-    }
-    assert.equal(
-      existsSync(join(handlePath, "runs", "ghidra", "should-never-exist")),
-      false,
-      "no run directory may appear under the unverified handle path -- this is the exact hole T-40-08-02 closes",
-    );
-    assert.equal(existsSync(join(ghidraRunsRealRoot(dir), "should-never-exist")), false, "no run directory may appear under the physical root either");
-  });
+  assert.equal(RUN_ID_PATTERN.test("bad id!"), false);
 });
 
 // ---------------------------------------------------------------------------

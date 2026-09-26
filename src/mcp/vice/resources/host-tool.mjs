@@ -1148,7 +1148,7 @@ export function buildHostToolArgv(request, resolved, log, locate) {
         return { ok: true, toolPath: acmePath, argv, outputs, cwd: dirname(sourcePath) };
     }
     if (request.tool === "ghidra.analyze") {
-        const { importPath, projectLocation, projectName, preScriptPath, postScriptPath, scriptPathResolved, entrypointsPathResolved, exportPathResolved, dataRangesPathResolved, } = resolved;
+        const { importPath, projectLocation, projectName, runLogDir, preScriptPath, postScriptPath, scriptPathResolved, entrypointsPathResolved, exportPathResolved, dataRangesPathResolved, } = resolved;
         // Resolved through the seam (LOC-01) -- env (GHIDRA_HOME) -> tools.json
         // -> no $PATH probe at all (a `directory`-kind id gets no probe layer,
         // D-15) -- never a guessed install location and never this repository's
@@ -1248,13 +1248,13 @@ export function buildHostToolArgv(request, resolved, log, locate) {
         const built = buildAnalyzeHeadlessArgv(argvInput);
         if (!built.ok)
             return { ok: false, message: built.message };
-        // outputs[0] is ALWAYS the run log for ghidra.analyze -- a SIBLING of
-        // the reserved project directory (never a child of it), because
-        // -deleteProject operates INSIDE projectLocation. runHostTool()'s
-        // ghidra.analyze branch below writes the child's stdout followed by its
-        // stderr here, before the digest loop runs (MEASURED:
-        // analyzeHeadless's "Using Language/Compiler:" line arrives on stdout).
-        const runLogPath = join(dirname(projectLocation), `${projectName}.ghidra-run.log`);
+        // outputs[0] is ALWAYS the run log for ghidra.analyze -- in runLogDir,
+        // never inside the project directory, which -deleteProject empties and
+        // runHostTool() removes. runHostTool()'s ghidra.analyze branch below
+        // writes the child's stdout followed by its stderr here, before the
+        // digest loop runs (MEASURED: analyzeHeadless's "Using
+        // Language/Compiler:" line arrives on stdout).
+        const runLogPath = join(runLogDir, `${projectName}.ghidra-run.log`);
         // When exportPath is present, it is a SECOND outputs[] entry --
         // digested by the existing digestOutputFile() loop with no new digest
         // code. outputs[0] stays the run log unconditionally.
@@ -2153,13 +2153,11 @@ export async function runHostTool(raw, deps) {
     if (request.tool === "oracle.run")
         return runOracleRun(request.args, deps);
     const repoRootAbs = resolvePath(deps.repoRoot);
-    // Phase 65 (plan 65-03, assumption_delta_decision): `projectRoot` defaults
-    // to `repoRoot`, so a caller that supplies `repoRoot` alone resolves to
-    // the SAME value `repoRootAbs` above does. Only the
-    // fixed-endpoint route's own `handleHostToolRun()` (vice-broker.mts) ever
-    // supplies a DIFFERENT `projectRoot` -- see `HostToolDeps.projectRoot`'s
-    // own doc comment for why (Ghidra's project cannot move into the
-    // per-request scratch).
+    // `projectRoot` defaults to `repoRoot`, so a caller that supplies
+    // `repoRoot` alone resolves to the SAME value `repoRootAbs` above does.
+    // Only the fixed-endpoint route's own `handleHostToolRun()`
+    // (vice-broker.mts) supplies a DIFFERENT one -- see
+    // `HostToolDeps.projectRoot`'s own doc comment.
     const projectRootAbs = resolvePath(deps.projectRoot ?? deps.repoRoot);
     // Built ONCE, from the already-computed projectRootAbs (PD-06), and passed
     // as the fourth argument to every buildHostToolArgv() call site below plus
@@ -2172,13 +2170,10 @@ export async function runHostTool(raw, deps) {
     const hostToolLocator = { toolsDir: join(projectRootAbs, ".c64-re-tools"), projectRoot: projectRootAbs, here: deps.here };
     let built;
     let acmeLib = null;
-    // resolveGhidraProject() (below, in the ghidra.analyze branch) RESERVES
-    // the run directory (creates it on disk) before buildHostToolArgv()'s own
-    // GHIDRA_HOME/launcher/language preflight checks ever run -- those checks
-    // can still fail for a completely ordinary, fixable reason (unset
-    // GHIDRA_HOME, processor not yet installed). Recorded here so the shared
-    // `!built.ok` check below can clean up the orphaned reservation rather
-    // than burning the runId permanently.
+    // resolveGhidraProject() (below, in the ghidra.analyze branch) creates the
+    // run's project directory before buildHostToolArgv()'s own preflight checks
+    // run. Recorded here so it is removed on every path: a preflight refusal
+    // below, and after the spawn.
     let ghidraReservedProjectLocation;
     if (request.tool === "acme.build") {
         const sourceResolved = resolveWorkspacePath(repoRootAbs, request.args.source);
@@ -2270,11 +2265,12 @@ export async function runHostTool(raw, deps) {
                 return { ok: false, message: dataRangesPathResult.message };
             dataRangesPathResolved = dataRangesPathResult.path;
         }
-        // Phase 65 (plan 65-03): projectRootAbs, never repoRootAbs -- the Ghidra
-        // project's own per-run directory always lives under the broker's own
-        // --repo-root, never the per-request scratch (HostToolDeps.projectRoot's
-        // own doc comment).
-        const projectResolved = resolveGhidraProject({ repoRoot: projectRootAbs, runId: request.args.runId });
+        // The project directory lives under the broker's Ghidra root, never the
+        // per-request scratch (HostToolDeps.ghidraProjectsRoot's own doc comment).
+        if (deps.ghidraProjectsRoot === undefined) {
+            return { ok: false, message: `host_tool "ghidra.analyze" refuses: no Ghidra projects root was configured for this executor` };
+        }
+        const projectResolved = resolveGhidraProject({ runsRoot: deps.ghidraProjectsRoot, runId: request.args.runId });
         if (!projectResolved.ok)
             return { ok: false, message: projectResolved.message };
         ghidraReservedProjectLocation = projectResolved.projectLocation;
@@ -2282,6 +2278,7 @@ export async function runHostTool(raw, deps) {
             importPath: importResolved.path,
             projectLocation: projectResolved.projectLocation,
             projectName: projectResolved.projectName,
+            runLogDir: deps.outputDir ?? repoRootAbs,
             preScriptPath,
             postScriptPath,
             scriptPathResolved,
@@ -2407,13 +2404,8 @@ export async function runHostTool(raw, deps) {
     }
     if (!built.ok) {
         // buildHostToolArgv()'s own GHIDRA_HOME/launcher/language preflight
-        // checks can still fail here even though resolveGhidraProject() already
-        // reserved (created) the run directory above -- clean it up,
-        // best-effort, so a caller who retries the same runId after fixing the
-        // underlying problem (setting GHIDRA_HOME, running
-        // ghidra.installExtension) gets a fresh reservation instead of
-        // resolveGhidraProject()'s unrelated "refuses to reuse an existing run
-        // directory" refusal.
+        // checks can still fail here after resolveGhidraProject() created the
+        // run directory above -- remove it, best-effort.
         if (ghidraReservedProjectLocation !== undefined) {
             try {
                 rmSync(ghidraReservedProjectLocation, { recursive: true, force: true });
@@ -2472,6 +2464,16 @@ export async function runHostTool(raw, deps) {
         }
     }
     const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv, built.cwd);
+    // The Ghidra project is never an output -- remove its directory now, on
+    // every outcome, so nothing accumulates under the Ghidra root.
+    if (ghidraReservedProjectLocation !== undefined) {
+        try {
+            rmSync(ghidraReservedProjectLocation, { recursive: true, force: true });
+        }
+        catch {
+            // Best-effort only -- the next broker start sweeps the Ghidra root.
+        }
+    }
     const elapsedMs = Date.now() - startedAt;
     if (spawnResult.spawnErrorMessage !== null) {
         deps.log?.(`host_tool tool=${request.tool} exit=spawn_error elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs} bin=${built.toolPath}`);
@@ -2754,20 +2756,6 @@ async function runOracleRun(args, deps) {
     // `join(toolsDir(), "runs", "oracle")`, the same convention
     // install-resources.ts's installTargetDir() uses.
     //
-    // CORRECTED 2026-09-08: this used to also describe ghidra-project.mts's
-    // runs root as following "the same convention", full stop. That is now
-    // true of the PHYSICAL location -- both this directory and the Ghidra
-    // runs root land under the same `.c64-re-tools/runs/<subdir>` shape --
-    // but it is NOT true of how the location is REACHED. This scratch
-    // directory is joined DIRECTLY, exactly as written above. The Ghidra
-    // runs root is joined the same way internally (`ghidraRunsRealRoot()`),
-    // but Ghidra itself is never handed that direct path -- it is handed a
-    // path through `ghidraRunsRoot()`'s non-dotted ALIAS HANDLE
-    // (`<repoRoot>/c64-re-tools`, a symlink to `.c64-re-tools`), because
-    // Ghidra's own project-location check refuses a dot-prefixed segment in
-    // the path it is handed, while this scratch directory's caller (this
-    // project's own oracle spawn) has no such refusal and is handed the
-    // direct path unchanged.
     const scratchDir = join(repoRootAbs, ".c64-re-tools", "runs", "oracle", `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     try {
         // A fix: scratch-directory creation moved INSIDE this try block -- a

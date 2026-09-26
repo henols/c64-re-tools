@@ -855,6 +855,10 @@ export interface SweepOrphanedStagingOptions {
    * sweepOrphanedStaging()'s own doc comment below. */
   isAlive?: (pid: number) => boolean;
   log?: (line: string) => void;
+  /** Names this sweep in its log lines -- defaults to the staging sweep's
+   * own wording. The broker also sweeps its Ghidra projects root with this
+   * function (same precondition, same reasoning). */
+  label?: string;
 }
 
 /** The pass with NO pid check, deliberately (D-07): a staging directory is
@@ -898,9 +902,13 @@ export function sweepOrphanedStaging(options: SweepOrphanedStagingOptions): Stag
       removeStagingSessionDir(options.root, dirName);
       removed++;
     } catch (e) {
-      log(`vice-broker: staging sweep -- ${dirName} threw during removal: ${(e as Error).message}`);
+      log(`vice-broker: ${options.label ?? "staging sweep"} -- ${dirName} threw during removal: ${(e as Error).message}`);
     }
   }
-  log(`vice-broker: staging sweep found ${found} session director(y/ies), removed ${removed}`);
+  log(
+    options.label === undefined
+      ? `vice-broker: staging sweep found ${found} session director(y/ies), removed ${removed}`
+      : `vice-broker: ${options.label} found ${found} director(y/ies), removed ${removed}`,
+  );
   return { found, removed };
 }

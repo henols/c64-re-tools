@@ -76,12 +76,6 @@ import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor } from 
 // pass (host-tool.mts is added to HOST_BOUND_ARTIFACTS/tsconfig.build.json's
 // include[] in this same commit).
 import { runHostTool, bindStagedInputs } from "./host-tool.mjs";
-// A VALUE import of the same handle-minting function for the SAME reason as
-// the host-tool.mjs import immediately above -- this file is always run
-// from its own compiled resources/ form, and "./ghidra-project.mjs" is
-// compiled into that same directory by the same build.ts pass (both source
-// and target are already listed in HOST_BOUND_ARTIFACTS).
-import { ensureGhidraRunsHandle } from "./ghidra-project.mjs";
 import { startControlListenerOnHosts, enumerateBindHosts, drainPendingAcquires, resolveControlPort, } from "./broker-control.mjs";
 // A VALUE import of the machine-level state resolver (plan 62-02) -- safe
 // here for the SAME reason every other sibling value import above is: this
@@ -93,7 +87,7 @@ import { startControlListenerOnHosts, enumerateBindHosts, drainPendingAcquires, 
 // below -- it answers only when no explicit --state-dir, no VICE_POOL_DIR,
 // and no --repo-root apply, which is exactly BROKER-01/BROKER-06's "no
 // project argument at all" case (D-13).
-import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir } from "./broker-home.mjs";
+import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir, brokerGhidraDir } from "./broker-home.mjs";
 // The endpoint dialler, for the hello probe that arbitrates a busy control port.
 import { dialBrokerEndpoint, describeDialFailure } from "./broker-endpoint.mjs";
 // A VALUE import of the staging/transfer primitives (Phase 64, plan 64-03,
@@ -939,19 +933,20 @@ export function handleHostToolStage(files) {
  * `broker-transfer.mts`'s own `formatPathFreeFault()` posture of naming a
  * fixed replacement rather than attempting to scrub an unbounded shape. */
 const STAGED_REQUEST_TOKEN = "<staged-request>";
-function redactScratchRoot(value, scratchRoot) {
-    return value.split(scratchRoot).join(STAGED_REQUEST_TOKEN);
+/** The same, for the broker's Ghidra projects root (brokerGhidraDir()). */
+const GHIDRA_PROJECTS_TOKEN = "<ghidra-projects>";
+function redactScratchRoot(value, scratchRoot, ghidraRoot) {
+    return value.split(scratchRoot).join(STAGED_REQUEST_TOKEN).split(ghidraRoot).join(GHIDRA_PROJECTS_TOKEN);
 }
 /** Answers `host_tool_run`: verifies every staged upload for this request
  * has actually finished transferring (D-09's own "not every declared file
  * has arrived yet" case), binds every path-bearing wire key to its
  * scratch-relative path via `bindStagedInputs()` (host-tool.mts), runs
  * `runHostTool()` against the REQUEST'S OWN scratch root (never this
- * broker's own `--repo-root` -- the assumption_delta_decision this plan
- * records) for `repoRoot`, but `projectRoot` (Phase 65, plan 65-03) IS this
- * broker's own `--repo-root` (`args.repoRoot` at the call site below), so
- * Ghidra's per-run project and the `tools.json` locator layer keep resolving
- * exactly where they always have. `clearDeclaredOutputs: true` generalises
+ * broker's own `--repo-root`) for `repoRoot`, while `projectRoot` IS this
+ * broker's own `--repo-root` (`args.repoRoot` at the call site below), so the
+ * `tools.json` locator layer keeps resolving where it always has, and
+ * `ghidraProjectsRoot` is brokerGhidraDir(). `clearDeclaredOutputs: true` generalises
  * the c1541.read-only stale-output unlink to every tool (D-08). Then
  * rewrites the response: every `results[]` entry becomes a download handle
  * via `registerHostToolResult()` (D-07's first live producer), and every
@@ -996,11 +991,19 @@ export async function handleHostToolRun(requestKey, raw, projectRoot, deps = {})
     if (!bound.ok) {
         return { ok: false, message: bound.message };
     }
-    const response = await runHostTool(bound.request, { repoRoot: scratchRoot, projectRoot, clearDeclaredOutputs: true, outputDir: join(scratchRoot, "out"), log: deps.log });
+    const ghidraRoot = brokerGhidraDir();
+    const response = await runHostTool(bound.request, {
+        repoRoot: scratchRoot,
+        projectRoot,
+        ghidraProjectsRoot: ghidraRoot,
+        clearDeclaredOutputs: true,
+        outputDir: join(scratchRoot, "out"),
+        log: deps.log,
+    });
     const responseObj = response;
     if (!response.ok) {
         const message = typeof responseObj.message === "string" ? responseObj.message : "vice: the host tool refused";
-        return { ok: false, message: redactScratchRoot(message, scratchRoot) };
+        return { ok: false, message: redactScratchRoot(message, scratchRoot, ghidraRoot) };
     }
     const rewritten = { ...responseObj };
     const results = responseObj.results;
@@ -1013,7 +1016,7 @@ export async function handleHostToolRun(requestKey, raw, projectRoot, deps = {})
     for (const key of ["message", "stderrTail", "reason", "entrypointReason"]) {
         const value = rewritten[key];
         if (typeof value === "string") {
-            rewritten[key] = redactScratchRoot(value, scratchRoot);
+            rewritten[key] = redactScratchRoot(value, scratchRoot, ghidraRoot);
         }
     }
     return rewritten;
@@ -1747,33 +1750,6 @@ async function run(args) {
     if (backendResult.locationRefusal !== null) {
         process.stderr.write(`vice-broker: ${backendResult.locationRefusal}\n`);
     }
-    // THE BROKER mints/verifies the
-    // Ghidra runs-root handle here -- after the unconditional startup reap
-    // above, and BEFORE the control listener below accepts a single
-    // connection -- so a container-side MCP server with no host tooling of
-    // its own still finds the handle in place the moment it can reach this
-    // broker at all. This is deliberately NOT the only call site:
-    // resolveGhidraProject() (ghidra-project.mts) calls the same function as
-    // an idempotent precondition, because tests importing the compiled
-    // resources/host-tool.mjs artifact directly never involve a broker at
-    // all. Both callers write the identical relative-target
-    // link, so a race between them is a benign EEXIST, not a conflict (see
-    // ensureGhidraRunsHandle()'s own header). The negative rule: container-
-    // side code must NEVER mint this handle -- the link target is relative
-    // and correct only when written from the host's view of the workspace.
-    //
-    // Handled WITHOUT throwing: run() has no try/catch around this region and
-    // the broker must start regardless of the outcome here -- it serves
-    // twelve allowlisted tool ids and only one of them (ghidra.analyze) needs
-    // this handle. A refusal is surfaced as ONE stderr line naming the
-    // consequence; every other tool id is unaffected.
-    const ghidraHandleResult = ensureGhidraRunsHandle(args.repoRoot);
-    if (ghidraHandleResult.ok) {
-        process.stderr.write(`vice-broker: ghidra runs handle ${ghidraHandleResult.handle} -> ${ghidraHandleResult.target}\n`);
-    }
-    else {
-        process.stderr.write(`vice-broker: ghidra runs handle refused: ${ghidraHandleResult.message} -- ghidra.analyze will refuse by name until this is fixed by hand; every other tool id is unaffected\n`);
-    }
     // The singleton guarantee holds only while the control port keeps its default -- two brokers deliberately configured onto different ports are two brokers, and no code prevents that.
     let listener;
     {
@@ -1941,6 +1917,7 @@ async function run(args) {
         // Auditability for D-13's machine-level fallback (BROKER-01/BROKER-06):
         // an operator can see where THIS broker is writing.
         process.stderr.write(`vice-broker: state directory: ${args.stateDir}\n`);
+        process.stderr.write(`vice-broker: ghidra projects directory: ${brokerGhidraDir()}\n`);
         listener = { host: loopbackListener.host, port: loopbackListener.port, pendingAcquires: bindResult.pendingAcquires };
     }
     // The one place this broker calls the staging sweep. A second broker
@@ -1972,6 +1949,10 @@ async function run(args) {
     // scope limit the singleton comment above the bind states for the
     // singleton guarantee itself.
     sweepOrphanedStaging({ root: brokerStagingDir() });
+    // The Ghidra projects root, by the same reasoning: a run's project
+    // directory outlives its run only when a broker died mid-run, and no run of
+    // this process can have started yet.
+    sweepOrphanedStaging({ root: brokerGhidraDir(), label: "ghidra projects sweep" });
     // Every catchable shutdown path (SIGTERM/SIGINT/SIGHUP, an uncaught
     // exception, an unhandled rejection, normal exit) converges on ONE
     // re-entrant-safe teardown that identity-verified-kills every instance

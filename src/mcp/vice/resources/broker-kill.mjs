@@ -666,9 +666,11 @@ export function sweepOrphanedStaging(options) {
             removed++;
         }
         catch (e) {
-            log(`vice-broker: staging sweep -- ${dirName} threw during removal: ${e.message}`);
+            log(`vice-broker: ${options.label ?? "staging sweep"} -- ${dirName} threw during removal: ${e.message}`);
         }
     }
-    log(`vice-broker: staging sweep found ${found} session director(y/ies), removed ${removed}`);
+    log(options.label === undefined
+        ? `vice-broker: staging sweep found ${found} session director(y/ies), removed ${removed}`
+        : `vice-broker: ${options.label} found ${found} director(y/ies), removed ${removed}`);
     return { found, removed };
 }

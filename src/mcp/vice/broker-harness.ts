@@ -90,6 +90,11 @@ export interface StartHarnessBrokerOptions {
    * the broker's own ACME library lookup come up empty). Applied after the
    * inherited environment and before the harness's own keys. */
   env?: Record<string, string>;
+  /** A path segment appended to the fresh home directory before it becomes
+   * `VICE_BROKER_HOME` -- e.g. a dot-prefixed one, to run the broker under a
+   * dotted home like the default `~/.c64-re-tools`. The harness still removes
+   * only the directory it created. */
+  homeSegment?: string;
 }
 
 export interface HarnessBroker {
@@ -118,7 +123,8 @@ export async function startHarnessBroker(options: StartHarnessBrokerOptions = {}
   let lastError: Error | null = null;
   for (let attempt = 0; attempt <= maxPortRetries; attempt++) {
     const port = await allocateFreePort();
-    const home = mkdtempSync(join(tmpdir(), "vice-broker-harness-"));
+    const homeRoot = mkdtempSync(join(tmpdir(), "vice-broker-harness-"));
+    const home = options.homeSegment !== undefined ? join(homeRoot, options.homeSegment) : homeRoot;
 
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -151,7 +157,7 @@ export async function startHarnessBroker(options: StartHarnessBrokerOptions = {}
     }, readyTimeoutMs);
 
     if (exitedEarly) {
-      rmSync(home, { recursive: true, force: true });
+      rmSync(homeRoot, { recursive: true, force: true });
       const portInUse = /EADDRINUSE/i.test(stderrTail);
       if (portInUse && attempt < maxPortRetries) {
         lastError = new Error(`broker-harness: port ${port} was already in use, retrying with a fresh port`);
@@ -164,7 +170,7 @@ export async function startHarnessBroker(options: StartHarnessBrokerOptions = {}
 
     if (!ready) {
       child.kill("SIGKILL");
-      rmSync(home, { recursive: true, force: true });
+      rmSync(homeRoot, { recursive: true, force: true });
       throw new Error(`broker-harness: broker did not answer a hello within ${readyTimeoutMs}ms -- stderr tail:\n${stderrTail}`);
     }
 
@@ -177,7 +183,7 @@ export async function startHarnessBroker(options: StartHarnessBrokerOptions = {}
       childEnv,
       stop: async (): Promise<void> => {
         if (child.exitCode !== null || child.signalCode !== null) {
-          rmSync(home, { recursive: true, force: true });
+          rmSync(homeRoot, { recursive: true, force: true });
           return;
         }
         child.kill("SIGTERM");
@@ -186,7 +192,7 @@ export async function startHarnessBroker(options: StartHarnessBrokerOptions = {}
           child.kill("SIGKILL");
           await waitFor(() => child.exitCode !== null || child.signalCode !== null, 2000);
         }
-        rmSync(home, { recursive: true, force: true });
+        rmSync(homeRoot, { recursive: true, force: true });
       },
     };
   }

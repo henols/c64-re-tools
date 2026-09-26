@@ -9,8 +9,8 @@ node_modules/
 # and an incidents directory) now lands
 # under ONE directory: supervisor/ (broker state), snapshots/ (.vsf + .json
 # sidecars), bin/ (deployed host launcher artifacts), runs/oracle/
-# (oracle.run scratch), runs/ghidra/ (ghidra.analyze's per-run project
-# directories, reached through the alias below), incidents/ (recycle
+# (oracle.run scratch), runs/ghidra/ (ghidra.analyze's run logs and exports,
+# as downloaded from the broker), incidents/ (recycle
 # incident records), cache/ (the lockfile stamp). A consumer of this package
 # gets exactly one ignorable directory and one directory to delete, rather
 # than five. This is a clean break: no dual-read of the previous locations,
@@ -25,21 +25,9 @@ node_modules/
 # from the tree. Generated host artifacts are never committed from any depth.
 .c64-re-tools/
 
-# The non-dotted ALIAS of the root above, not a second root: one broker-
-# minted symlink (ghidra-project.mts's ensureGhidraRunsHandle()) whose
-# RELATIVE target is .c64-re-tools/, existing solely because Ghidra's own
-# dot-segment refusal binds the ABSOLUTIZED project-location path
-# (getAbsolutePath(), never getCanonicalPath() -- MEASURED) while the bytes
-# genuinely live under .c64-re-tools/runs/ghidra/ above. tools/ itself is
-# now vestigial -- git ls-files tools/ is empty, and ghidra.analyze's old
-# tools/ghidra-runs/ location (this stanza's predecessor) was its last
-# production writer (D-33).
-# NO trailing slash on the line below -- MEASURED in a throwaway repo at
-# plan time (2026-09-08): git does not treat a symlink-to-directory as a
-# directory, so a trailing-slash pattern leaves the link showing as
-# untracked in every consumer's `git status`, while this slash-less form
-# ignores it (`git check-ignore -v` attributes it to this exact line). Do
-# NOT "tidy" this by adding a trailing slash.
+# A symlink older brokers minted as a Ghidra workaround; nothing creates it
+# any more, and it is safe to delete. No trailing slash: git does not treat a
+# symlink-to-directory as a directory.
 /c64-re-tools
 
 # build artifacts from scripts/package.sh

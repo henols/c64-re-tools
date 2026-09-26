@@ -69,7 +69,7 @@
 // below is a single recursive, already-exists-tolerant mkdir so two brokers
 // (or two concurrent calls) racing on the same path both succeed.
 import { mkdirSync } from "node:fs";
-import { homedir as osHomedir } from "node:os";
+import { homedir as osHomedir, tmpdir as osTmpdir } from "node:os";
 import { join, resolve } from "node:path";
 /** The single new environment-variable name naming the machine-level root
  * (D-13) and superseding the four pre-existing directory variables (D-14).
@@ -178,6 +178,25 @@ export function brokerConfigScratchDir(opts = {}) {
  * module's root instead. */
 export function brokerRunsDir(kind, opts = {}) {
     return join(brokerHome(opts), "runs", kind);
+}
+/** The environment variable that places the Ghidra projects root. */
+export const BROKER_GHIDRA_DIR_ENV = "VICE_BROKER_GHIDRA_DIR";
+/** Where the broker puts each Ghidra run's project directory. Deliberately
+ * NOT under brokerHome(): Ghidra refuses a project location with any
+ * dot-prefixed path segment, and the default home (`~/.c64-re-tools`) has
+ * one. `VICE_BROKER_GHIDRA_DIR` wins when set (absolutized); otherwise a
+ * per-user directory under the OS temp directory, which carries no dotted
+ * segment on Linux (`/tmp`) or macOS (`/var/folders/.../T`). A run's project
+ * directory is removed when the run ends, so nothing accumulates here.
+ * Whether the resolved path is acceptable to Ghidra is checked at the point
+ * of use (ghidra-project.mts), never here. */
+export function brokerGhidraDir(opts = {}) {
+    const env = resolveEnv(opts);
+    const override = env[BROKER_GHIDRA_DIR_ENV];
+    if (override !== undefined && override !== "")
+        return resolve(override);
+    const uid = opts.uid ?? (typeof process.getuid === "function" ? process.getuid() : undefined);
+    return join(opts.tmpdir ?? osTmpdir(), `c64-re-tools-ghidra-${uid ?? "user"}`);
 }
 /** Creates `path` recursively, tolerating it already existing -- a single
  * `mkdirSync(path, { recursive: true })` call, never a check-then-create

@@ -26,11 +26,13 @@ import {
   brokerStagingDir,
   brokerRunsDir,
   brokerConfigScratchDir,
+  brokerGhidraDir,
+  BROKER_GHIDRA_DIR_ENV,
   ensureBrokerDir,
 } from "./broker-home.mts";
 import * as brokerHomeModule from "./broker-home.mts";
 
-test("broker-home.mts exports exactly the nine documented names", () => {
+test("broker-home.mts exports exactly the eleven documented names", () => {
   const expected = [
     "BROKER_HOME_ENV",
     "brokerHome",
@@ -40,6 +42,8 @@ test("broker-home.mts exports exactly the nine documented names", () => {
     "brokerStagingDir",
     "brokerRunsDir",
     "brokerConfigScratchDir",
+    "brokerGhidraDir",
+    "BROKER_GHIDRA_DIR_ENV",
     "ensureBrokerDir",
   ].sort();
   assert.deepEqual(Object.keys(brokerHomeModule).sort(), expected);
@@ -198,11 +202,29 @@ test("brokerRunsDir(): resolves a per-kind subdirectory under the machine-level 
   const home = tempDir("broker-home-runs-");
   try {
     const opts = { env: {}, homedir: home };
-    assert.equal(brokerRunsDir("ghidra", opts), join(home, ".c64-re-tools", "runs", "ghidra"));
     assert.equal(brokerRunsDir("oracle", opts), join(home, ".c64-re-tools", "runs", "oracle"));
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test("brokerGhidraDir(): VICE_BROKER_GHIDRA_DIR wins, absolutized", () => {
+  assert.equal(BROKER_GHIDRA_DIR_ENV, "VICE_BROKER_GHIDRA_DIR");
+  assert.equal(brokerGhidraDir({ env: { VICE_BROKER_GHIDRA_DIR: "/srv/ghidra-runs" }, tmpdir: "/tmp", uid: 1000 }), "/srv/ghidra-runs");
+  assert.equal(brokerGhidraDir({ env: { VICE_BROKER_GHIDRA_DIR: "rel/runs" }, tmpdir: "/tmp", uid: 1000 }), resolve("rel/runs"));
+});
+
+test("brokerGhidraDir(): defaults to a per-user directory under the OS temp directory, not under the broker home", () => {
+  const opts = { env: {}, homedir: "/home/someone", tmpdir: "/tmp", uid: 1234 };
+  assert.equal(brokerGhidraDir(opts), join("/tmp", "c64-re-tools-ghidra-1234"));
+  assert.equal(brokerGhidraDir(opts).startsWith(brokerHome(opts)), false, "Ghidra projects must not live under the (dotted) broker home");
+});
+
+test("brokerGhidraDir(): the default carries no dot-prefixed segment even when the broker home is dotted, and an empty override is treated as unset", () => {
+  const opts = { env: { VICE_BROKER_GHIDRA_DIR: "" }, homedir: "/home/someone", tmpdir: "/tmp", uid: 1234 };
+  assert.ok(brokerHome(opts).split(sep).some((segment) => segment.startsWith(".")), "precondition: the default broker home is dotted");
+  const dir = brokerGhidraDir(opts);
+  assert.equal(dir.split(sep).some((segment) => segment.startsWith(".")), false, `expected no dotted segment in ${dir}`);
 });
 
 test("build.ts's HOST_BOUND_ARTIFACTS includes broker-home.mjs", () => {

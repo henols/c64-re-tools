@@ -44,6 +44,9 @@ const SEAM_IDENTIFIERS: { name: string; re: RegExp }[] = [
   { name: "newControlToken", re: /\bnewControlToken\b/ },
   { name: "broker.json", re: /\bbroker\.json\b/ },
   { name: "control_token", re: /\bcontrol_token\b/ },
+  { name: "ensureGhidraRunsHandle", re: /\bensureGhidraRunsHandle\b/ },
+  { name: "ghidraRunsRoot", re: /\bghidraRuns(Real)?Root\b/ },
+  { name: "GHIDRA_RUNS_HANDLE_*", re: /\bGHIDRA_RUNS_HANDLE_\w+/ },
 ];
 
 /** A string literal naming a deleted module with any source or compiled
@@ -175,6 +178,9 @@ test("planted violations: each deleted-module shape and each seam identifier is 
     "const token = newControlToken();",
     'const path = join(dir, "broker.json");',
     "record.control_token = token;",
+    "ensureGhidraRunsHandle(root);",
+    "const dir = ghidraRunsRealRoot(root);",
+    "symlinkSync(GHIDRA_RUNS_HANDLE_TARGET, link);",
   ];
   for (const src of planted) {
     assert.notDeepEqual(violationsIn(src), [], `planted source must be caught: ${src}`);

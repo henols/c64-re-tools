@@ -1096,6 +1096,21 @@ test("sweepOrphanedStaging: removes every session directory it finds, and its in
   }
 });
 
+test("sweepOrphanedStaging: a label names the sweep in its log line, and the unlabelled wording is unchanged", () => {
+  const root = mkdtempSync(join(tmpdir(), "broker-kill-labelled-sweep-"));
+  try {
+    mkdirSync(join(root, "run-a"), { recursive: true });
+    const labelled: string[] = [];
+    sweepOrphanedStaging({ root, label: "ghidra projects sweep", log: (l) => labelled.push(l) });
+    assert.deepEqual(labelled, ["vice-broker: ghidra projects sweep found 1 director(y/ies), removed 1"]);
+    const plain: string[] = [];
+    sweepOrphanedStaging({ root, log: (l) => plain.push(l) });
+    assert.deepEqual(plain, ["vice-broker: staging sweep found 0 session director(y/ies), removed 0"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("sweepOrphanedStaging: a single throwing removal does not abort the sweep -- the remaining entries are still processed", () => {
   const root = mkdtempSync(join(tmpdir(), "broker-kill-staging-sweep-throw-"));
   try {

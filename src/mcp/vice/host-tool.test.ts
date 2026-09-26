@@ -64,7 +64,6 @@ import { dxaSkipReasonFor, assertDxaRequiredIfEnvSet } from "./dxa-gate.ts";
 // non-dotted, broker-minted handle -- imported so this file's own
 // assertions below cannot drift from ghidra-project.mts's one authoritative
 // definition of either path.
-import { ghidraRunsRealRoot, ghidraRunsRoot, ensureGhidraRunsHandle } from "./ghidra-project.mts";
 // 34-10 Task 2 (CR-05): a container-side import into a container-side test
 // file -- legal here, and anno-types.ts names no node:sqlite specifier.
 // Drives the OTHER implementation of the same ancestor-realpath walk for the
@@ -135,7 +134,7 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
     // own doc comment) -- threaded into the HostToolLocator runHostTool()
     // builds internally, so a case can point resolution at a scratch
     // prerequisites.json (DECL-03 non-vacuity) without a mocking library.
-    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; here?: string; projectRoot?: string; clearDeclaredOutputs?: boolean },
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; here?: string; projectRoot?: string; ghidraProjectsRoot?: string; outputDir?: string; clearDeclaredOutputs?: boolean },
   ) => Promise<
     | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
     | { ok: false; message: string }
@@ -148,7 +147,6 @@ const {
   HOST_TOOL_OUTPUT_NAME_ARG_KEYS,
   resolveWorkspacePath,
   buildHostToolArgv,
-  runHostTool,
   HOST_TOOL_IDS,
   HOST_TOOL_ARG_KEYS,
   HOST_TOOL_PATH_ARG_KEYS,
@@ -157,6 +155,13 @@ const {
   DEFAULT_HOST_TOOL_TIMEOUT_MS,
   HOST_TOOL_OUTPUT_CLASSIFIERS,
 } = hostTool;
+
+/** runHostTool() with a Ghidra projects root under the case's own temp
+ * `repoRoot` by default -- the broker sets one in production, and every
+ * ghidra.analyze case here needs one. A case that is about the root itself
+ * passes its own, or calls hostTool.runHostTool directly. */
+const runHostTool: typeof hostTool.runHostTool = (raw, deps) =>
+  hostTool.runHostTool(raw, { ghidraProjectsRoot: join(deps.repoRoot, "ghidra-projects"), ...deps });
 
 /** 34-08 (CR-01): a SEPARATELY-typed alias to the SAME runtime function --
  * oracle.probe/oracle.run's response shapes (`{ available, command, version,
@@ -2349,7 +2354,7 @@ test("Plan 60-03 Task 2 Test 6: ghidra's resolution returns the installation dir
     writeToolsJson(dir, { ghidra: ghidraDir });
     const built = buildHostToolArgv(
       { tool: "ghidra.analyze", args: { runId: "t2-r6", importPath: "x.bin", processor: FAKE_GHIDRA_HOME_LANGUAGE_ID, loaderBaseAddr: "0x0" } },
-      { importPath: "/repo/x.bin", projectLocation: "/repo/proj", projectName: "t2-r6" },
+      { importPath: "/repo/x.bin", projectLocation: "/repo/proj", projectName: "t2-r6", runLogDir: "/repo/out" },
       undefined,
       { toolsDir: join(dir, ".c64-re-tools"), projectRoot: dir },
     );
@@ -2421,11 +2426,11 @@ test("runHostTool: ghidra.analyze with GHIDRA_HOME unset is refused by name, nev
 test("buildHostToolArgv: a well-formed ghidra.analyze request produces an argv whose first two elements are the project location and project name and which contains -deleteProject", async () => {
   await withFakeGhidraHome(async () => {
     const request = { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", loaderBaseAddr: "0x0" } };
-    const resolved = { importPath: "/repo/c64-re-tools/runs/ghidra/r1/x.bin", projectLocation: "/repo/c64-re-tools/runs/ghidra/r1", projectName: "r1" };
+    const resolved = { importPath: "/repo/x.bin", projectLocation: "/ghidra-projects/r1-abc123", projectName: "r1", runLogDir: "/repo/out" };
     const built = buildHostToolArgv(request, resolved);
     assert.equal(built.ok, true);
     if (!built.ok) return;
-    assert.equal(built.argv[0], "/repo/c64-re-tools/runs/ghidra/r1");
+    assert.equal(built.argv[0], "/ghidra-projects/r1-abc123");
     assert.equal(built.argv[1], "r1");
     assert.ok(built.argv.includes("-deleteProject"));
     assert.ok(built.toolPath.endsWith(join("support", "analyzeHeadless")));
@@ -2480,9 +2485,10 @@ test("buildHostToolArgv: ghidra.analyze reads preScript/postScript from resolved
       args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", loaderBaseAddr: "0x0", preScript: "wire-pre.java", postScript: "wire-post.java" },
     };
     const resolved = {
-      importPath: "/repo/c64-re-tools/runs/ghidra/r1/x.bin",
-      projectLocation: "/repo/c64-re-tools/runs/ghidra/r1",
+      importPath: "/repo/x.bin",
+      projectLocation: "/ghidra-projects/r1-abc123",
       projectName: "r1",
+      runLogDir: "/repo/out",
       preScriptPath: "/repo/some/resolved-pre.java",
       postScriptPath: "/repo/some/resolved-post.java",
     };
@@ -2828,7 +2834,7 @@ test("runHostTool: a full ghidra.analyze invocation reports results[0] naming a 
   });
 });
 
-test("runHostTool: ghidra.analyze running twice with the SAME runId refuses the second time; two different run ids on the same image succeed both times and produce two distinct run-log paths", async () => {
+test("runHostTool: ghidra.analyze running twice with the SAME runId succeeds both times (each run gets its own project directory); two different run ids produce two distinct run-log paths", async () => {
   await withFakeGhidraHome(async () => {
     await withTempDir(async (dir) => {
       writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
@@ -2841,7 +2847,7 @@ test("runHostTool: ghidra.analyze running twice with the SAME runId refuses the 
         { tool: "ghidra.analyze", args: { runId: "idem-run", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
         { repoRoot: dir },
       );
-      assert.equal(second.ok, false, "the SAME run id must be refused the second time");
+      assert.equal(second.ok, true, "the SAME run id must run again -- each run gets its own project directory, so there is nothing to collide with");
 
       const thirdA = await runHostTool(
         { tool: "ghidra.analyze", args: { runId: "idem-run-a", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
@@ -3328,39 +3334,11 @@ test("cross-seam ordering: for every HOST_TOOL_IDS member, the client-side reque
 });
 
 // ---------------------------------------------------------------------------
-// Gap G-40-1 (plan 40-09): the handle-only invariant. debug/ghidra-run-dir-
-// outside-one-root.md's own Evidence (2026-09-08T00:27:00Z) states it
-// precisely: resolveWorkspacePath() REALPATHS its result (deliberate
-// decision A-16), so a caller-supplied path field routed through the
-// broker-minted handle would silently collapse back to the dotted real
-// path Ghidra refuses. The handle is therefore usable ONLY for the two
-// paths that are never realpath'd -- the computed project location and
-// its sibling run log. Four cases below guard this from four angles: the
-// mechanism (behavioural, non-vacuous), the surface (the typed key set),
-// the structure (a predicate over the source), and a planted-violation
-// control proving that structural predicate is not vacuous.
+// ghidra.analyze's wire surface: every path a request may name is a
+// caller-supplied input or output name, never the project location.
 // ---------------------------------------------------------------------------
 
-test("resolveWorkspacePath() REALPATHS a path routed through the Ghidra runs handle straight back to the dotted root -- the measured mechanism the handle-only invariant exists to guard (gap G-40-1, plan 40-09)", async () => {
-  await withTempDir(async (dir) => {
-    const handleResult = ensureGhidraRunsHandle(dir);
-    assert.equal(handleResult.ok, true, handleResult.ok ? "" : (handleResult as { ok: false; message: string }).message);
-
-    const resolved = hostTool.resolveWorkspacePath(dir, join("c64-re-tools", "runs", "ghidra"));
-    assert.equal(resolved.ok, true, resolved.ok ? "" : (resolved as { ok: false; message: string }).message);
-    if (!resolved.ok) return;
-
-    const dottedRoot = join(dir, ".c64-re-tools", "runs", "ghidra");
-    assert.equal(
-      resolved.path,
-      dottedRoot,
-      `resolveWorkspacePath() must realpath a handle-traversing relative path back to the dotted root (${dottedRoot}); got ${resolved.path} -- if this now returns the non-dotted handle path instead, resolveWorkspacePath() stopped realpathing and the handle-only invariant this file guards is no longer true`,
-    );
-    assert.ok(!resolved.path.includes(`${sep}c64-re-tools${sep}`), `the realpathed result must not carry the non-dotted handle segment anywhere; got ${resolved.path}`);
-  });
-});
-
-test("HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] names exactly the seven caller-supplied path fields, and none of the project-location/name/runs-root/run-id names the handle-only invariant forbids (gap G-40-1, plan 40-09)", () => {
+test("HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] names exactly the seven caller-supplied path fields, and none of them names the project location, its name or the runs root -- those are broker-side and never cross the wire", () => {
   const keys = hostTool.HOST_TOOL_PATH_ARG_KEYS["ghidra.analyze"] ?? [];
   const expected = ["importPath", "preScript", "postScript", "scriptPath", "entrypointsPath", "exportPath", "dataRangesPath"];
   assert.deepEqual(
@@ -3368,83 +3346,12 @@ test("HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] names exactly the seven caller-s
     [...expected].sort(),
     `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] must name exactly the seven caller-supplied path fields, got ${JSON.stringify([...keys].sort())}`,
   );
-  for (const forbidden of ["projectLocation", "projectName", "runsRoot", "runId", "handle"]) {
+  for (const forbidden of ["projectLocation", "projectName", "runsRoot", "runId"]) {
     assert.ok(
       !keys.some((k) => k.toLowerCase() === forbidden.toLowerCase()),
-      `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] must never name ${forbidden} -- no wire field may name the handle in the first place, since routing it through resolveWorkspacePath() would realpath straight back to the dotted root`,
+      `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] must never name ${forbidden} -- the broker chooses the project location, never a request`,
     );
   }
-});
-
-/** Strips block comments and whole-line `//` comments -- this file's own
- * copy of the shape every other structural-gate test file in this tree
- * carries locally (broker-launch.test.ts, vice-broker-supervision.test.ts,
- * acme-verify.test.ts, and others) rather than a shared import. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
-}
-
-/** THE predicate the structural assertion AND its planted-violation control
- * below both drive -- return-don't-assert, following docs-linerefs.test.ts's
- * own shape, so a synthetic copy of host-tool.mts's source exercises
- * exactly the same code the real assertion does.
- *
- * `forbiddenCalls`: every `resolveWorkspacePath(` call site (line-scoped;
- * every real call site in host-tool.mts is single-line) whose second
- * argument text names `project`, a `ghidraRuns*`/`RunsRoot`-shaped
- * identifier, or `handle` -- i.e. anything derived from the resolved
- * project, the runs root, or the handle, rather than a raw wire field.
- *
- * `projectLocationSiblingCount`: how many `dirname(projectLocation)`
- * call sites exist -- the project location's ONE allowed derived sibling
- * path, the run log. */
-function findWorkspacePathInvariantViolations(source: string): { forbiddenCalls: string[]; projectLocationSiblingCount: number } {
-  const stripped = stripComments(source);
-  const forbiddenCalls: string[] = [];
-  const FORBIDDEN_ARG = /\bproject\w*\b|\bghidraRuns\w*\b|\brunsRoot\w*\b|\bhandle\w*\b/i;
-  for (const line of stripped.split("\n")) {
-    const match = line.match(/resolveWorkspacePath\(\s*[^,]+,\s*(.+)\)/);
-    if (!match) continue;
-    const arg = (match[1] ?? "").trim();
-    if (FORBIDDEN_ARG.test(arg)) forbiddenCalls.push(line.trim());
-  }
-  const siblingMatches = stripped.match(/dirname\(\s*projectLocation\s*\)/g) ?? [];
-  return { forbiddenCalls, projectLocationSiblingCount: siblingMatches.length };
-}
-
-test("structural (gap G-40-1, plan 40-09): no resolveWorkspacePath() call site in host-tool.mts receives an argument derived from the resolved project, the runs root, or the handle, and the project location has exactly one derived sibling path (the run log)", () => {
-  const source = readFileSync(join(HERE, "host-tool.mts"), "utf8");
-  const result = findWorkspacePathInvariantViolations(source);
-
-  assert.deepEqual(
-    result.forbiddenCalls,
-    [],
-    `HANDLE-ONLY INVARIANT REGRESSION: found resolveWorkspacePath() call site(s) whose argument names the resolved project, the runs root, or the handle: ${JSON.stringify(result.forbiddenCalls)}. resolveWorkspacePath() realpaths its result (decision A-16) and would collapse a handle-routed path straight back to the dotted root Ghidra refuses.`,
-  );
-  assert.equal(
-    result.projectLocationSiblingCount,
-    1,
-    `expected exactly one dirname(projectLocation) call site (the run log) in host-tool.mts, found ${result.projectLocationSiblingCount} -- the project location must have exactly one derived sibling path`,
-  );
-});
-
-test("planted-violation (gap G-40-1, plan 40-09): the SAME structural predicate reports a synthetic resolveWorkspacePath(repoRootAbs, projectResolved.projectLocation) call site, and reports NOTHING for the real source", () => {
-  const source = readFileSync(join(HERE, "host-tool.mts"), "utf8");
-  const realResult = findWorkspacePathInvariantViolations(source);
-  assert.deepEqual(realResult.forbiddenCalls, [], "the real source must be reported by neither predicate branch before the synthetic violation is even introduced");
-
-  const anchor = "const importResolved = resolveWorkspacePath(repoRootAbs, request.args.importPath);";
-  assert.ok(source.includes(anchor), "expected to find the ghidra.analyze importPath resolution call site to plant a violation next to");
-  const planted = source.replace(
-    anchor,
-    `${anchor}\n    const plantedViolation = resolveWorkspacePath(repoRootAbs, projectResolved.projectLocation);`,
-  );
-  const plantedResult = findWorkspacePathInvariantViolations(planted);
-  assert.equal(
-    plantedResult.forbiddenCalls.length,
-    1,
-    `planted violation: expected the synthetic project-location-derived resolveWorkspacePath() call to be reported exactly once, found ${plantedResult.forbiddenCalls.length} -- without this control, the real assertion above could be passing on a predicate that never fires at all`,
-  );
 });
 
 // ---------------------------------------------------------------------------
@@ -3832,34 +3739,39 @@ test("Phase 65-03 Task 1 Test 4: with clearDeclaredOutputs true, a stale output 
   });
 });
 
-test("Phase 65-03 Task 1 Test 5: with projectRoot supplied, resolveGhidraProject() receives projectRoot, not repoRoot", async () => {
-  await withTempDir(async (scratchDir) => {
-    await withTempDir(async (projectDir) => {
-      writeFileSync(join(scratchDir, "x.bin"), "tiny\n", "utf8");
-      const previous = process.env.GHIDRA_HOME;
-      delete process.env.GHIDRA_HOME;
-      try {
-        const runId = "t65-03-t1-t5";
-        const response = await runHostTool(
-          { tool: "ghidra.analyze", args: { runId, importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
-          { repoRoot: scratchDir, projectRoot: projectDir },
+test("ghidra.analyze: the project lives under ghidraProjectsRoot, the run log lands in outputDir, and the project directory is gone once the run ends", async () => {
+  await withFakeGhidraHome(async () => {
+    await withTempDir(async (scratchDir) => {
+      await withTempDir(async (ghidraRoot) => {
+        writeFileSync(join(scratchDir, "x.bin"), "tiny\n", "utf8");
+        const outputDir = join(scratchDir, "out");
+        mkdirSync(outputDir);
+        const runId = "projects-root-run";
+        const response = await hostTool.runHostTool(
+          { tool: "ghidra.analyze", args: { runId, importPath: "x.bin", processor: FAKE_GHIDRA_HOME_LANGUAGE_ID, importRoute: "flat64k" } },
+          { repoRoot: scratchDir, ghidraProjectsRoot: ghidraRoot, outputDir },
         );
-        // GHIDRA_HOME is unset, so the run itself refuses at the launcher
-        // lookup -- but resolveGhidraProject() (and its own
-        // ensureGhidraRunsHandle() precondition) already ran by then, and
-        // its own runs-root materialisation is the observable proof of
-        // WHICH root it resolved against. The leaf run directory itself is
-        // best-effort cleaned up on this refusal path (runHostTool()'s own
-        // `!built.ok` branch), so this asserts the RUNS ROOT, one level up,
-        // which that cleanup never touches.
-        assert.equal(response.ok, false, "GHIDRA_HOME is unset, so this run must refuse at the launcher lookup");
-        assert.ok(existsSync(ghidraRunsRealRoot(projectDir)), `expected the Ghidra runs root to materialise under projectRoot (${ghidraRunsRealRoot(projectDir)})`);
-        assert.ok(!existsSync(ghidraRunsRealRoot(scratchDir)), `must NOT have materialised a Ghidra runs root under repoRoot (${ghidraRunsRealRoot(scratchDir)})`);
-      } finally {
-        if (previous === undefined) delete process.env.GHIDRA_HOME;
-        else process.env.GHIDRA_HOME = previous;
-      }
+        assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
+        if (!response.ok) return;
+        assert.equal(response.results[0]?.path, join(outputDir, `${runId}.ghidra-run.log`), "the run log must land in the request's output directory");
+        assert.ok(existsSync(join(outputDir, `${runId}.ghidra-run.log`)));
+        assert.deepEqual(readdirSync(ghidraRoot), [], "the run's project directory must be removed once the run ends");
+      });
     });
+  });
+});
+
+test("ghidra.analyze: with no ghidraProjectsRoot configured, the executor refuses by name and creates nothing", async () => {
+  await withTempDir(async (scratchDir) => {
+    writeFileSync(join(scratchDir, "x.bin"), "tiny\n", "utf8");
+    const response = await hostTool.runHostTool(
+      { tool: "ghidra.analyze", args: { runId: "no-root", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
+      { repoRoot: scratchDir },
+    );
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.match(response.message, /no Ghidra projects root/);
+    assert.deepEqual(readdirSync(scratchDir), ["x.bin"]);
   });
 });
 

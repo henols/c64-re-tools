@@ -208,22 +208,20 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  *     longer joins the literal itself, and calls broker-home.mts's
  *     `brokerStateDir()` unconditionally when no explicit `--state-dir` is
  *     given, whatever `--repo-root` says), host-tool.mts's
- *     `oracle.run` scratch directory (`runs/oracle` -- host-bound),
- *     ghidra-project.mts's `ghidraRunsRoot()`/`ghidraRunsRealRoot()`
- *     (`runs/ghidra` -- host-bound, reached through a symlinked alias
- *     handle, see below), and backend-detect.mts's `resolvedBackend()`
+ *     `oracle.run` scratch directory (`runs/oracle` -- host-bound), and
+ *     backend-detect.mts's `resolvedBackend()`
  *     cwd-relative fallback (the bare root -- host-bound, and the ONE place
  *     the emulator binary's own location is resolved, Phase 60 LOC-01/LOC-02).
- *     Every one of these five must keep its literal
+ *     Every one of these must keep its literal
  *     equal to `join(toolsDir(...), <same segments>)`, by convention, or the
  *     two halves of this codebase silently disagree on where the root is.
  *
- * The Ghidra runs root is emphatically NOT, and never was, one of the five
- * files that call this function directly -- it is host-bound
- * (ghidra-project.mts) and cannot import this file at all.
+ * Ghidra projects do not live under this root at all: Ghidra refuses a
+ * project location with a dot-prefixed segment, so the broker keeps them
+ * under broker-home.mts's `brokerGhidraDir()` instead.
  *
- * The literal string ".c64-re-tools" therefore has exactly 10 non-comment
- * occurrences in this codebase, across 8 files. repo-root.test.ts's census
+ * The literal string ".c64-re-tools" therefore has exactly 9 non-comment
+ * occurrences in this codebase, across 7 files. repo-root.test.ts's census
  * gate reads BOTH the count and this file list straight out of this
  * sentence and the bullet list below -- never duplicated by hand a second
  * time in the test -- and compares both against the real tree, with a
@@ -239,8 +237,6 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  *     G-64-1): that branch is gone, and `parseArgs()` now calls
  *     broker-home.mts's `brokerStateDir()` unconditionally whenever no
  *     explicit `--state-dir` was given, joining no literal of its own.
- *   - ghidra-project.mts -- `GHIDRA_RUNS_HANDLE_TARGET`, the alias handle's
- *     relative symlink target (1)
  *   - host-tool.mts -- `oracle.run`'s scratch-directory join (1), plus
  *     Phase 60 (LOC-01, plan 60-03)'s `HostToolLocator` plumbing:
  *     `locatorFrom()`'s `process.cwd()`-derived fallback (1) and
@@ -257,25 +253,6 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  *     XFER-07/D-08); host-bound and cannot import broker-home.mjs either
  *     (the same unbuilt-import constraint), so it joins the literal
  *     directly by the same convention as every file above (1)
- *
- * The Ghidra alias handle: a non-dotted sibling of this root
- * (`<repoRoot>/c64-re-tools`, no leading dot), a symlink whose RELATIVE
- * target is this root's own directory name, minted host-side by the broker
- * at startup (vice-broker.mts) and re-asserted, idempotently, as a
- * precondition by ghidra-project.mts's `ensureGhidraRunsHandle()` on every
- * resolve -- refused BY NAME, never repaired, when something unexpected
- * already sits at the handle path. It exists because Ghidra's own
- * project-location refusal binds the ABSOLUTIZED path argument it is
- * handed (`ProjectLocator` calls `java.io.File.getAbsolutePath()`, never
- * `getCanonicalPath()` -- MEASURED from the class's own bytecode -- so it
- * absolutizes a relative argument but does not resolve a symlink), so a
- * tool that refuses a dot-prefixed segment in the path it is HANDED can
- * still be pointed, indirectly, at bytes that live physically inside this
- * one root. The superseded method that produced the original overstated
- * claim was running this project's OWN dot-segment-refusal check
- * (`hasDotPrefixedSegment()`) against a synthetic string -- which observes
- * this project, never Ghidra; the corrected claim was measured live against
- * real Ghidra 12.1.3.
  *
  * This is a clean break, not a migration: no code path falls back to any of
  * the five previous locations when the new one is absent, and there is no
