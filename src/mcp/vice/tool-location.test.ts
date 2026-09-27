@@ -55,6 +55,14 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "./build.ts";
 import { remedyTextsFor, resolveTool, toolsFileTemplate, validateToolsFile } from "./tool-location.mts";
+import { toolsJsonPath } from "./tool-location.mts";
+
+/** Writes a project's tools.json where tool-location reads it: the project's
+ * machine-local folder under `toolsDir`. */
+function writeToolsJson(toolsDir: string, text: string): void {
+  mkdirSync(dirname(toolsJsonPath(toolsDir)), { recursive: true });
+  writeFileSync(toolsJsonPath(toolsDir), text);
+}
 
 /** This test file's own directory -- used only to locate the real,
  * committed `prerequisites.json` for the two exclusion tests below, which
@@ -101,7 +109,7 @@ test("environment layer wins over a competing tools.json entry", () => {
     writeFileSync(envBin, "");
     const fileBin = join(dir, "x64sc-file");
     writeFileSync(fileBin, "");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: fileBin }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: fileBin }));
 
     const result = resolveTool("x64sc", {
       toolsDir: dir,
@@ -124,7 +132,7 @@ test("file layer answers when the environment variable is unset", () => {
     // executable-bit check reaches this candidate; the exec bit must be set
     // for this to remain the "file layer answers" case rather than a refusal.
     chmodSync(fileBin, 0o755);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: fileBin }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: fileBin }));
 
     const result = resolveTool("x64sc", {
       toolsDir: dir,
@@ -177,7 +185,7 @@ test("an environment variable set to a bare name that resolves nowhere refuses, 
     // about this id, which is distinct from (and falls through unlike)
     // plan 59-03 Task 2's own behaviour for an entry that NAMES a path that
     // does not exist: that is now refused, per the amended LOC-06 triad.
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    writeToolsJson(dir, JSON.stringify({}));
     const pathDirA = join(dir, "bin-a");
     const pathDirB = join(dir, "bin-b");
     mkdirSync(pathDirA, { recursive: true });
@@ -223,7 +231,7 @@ test("an environment variable set to a bare name that resolves nowhere refuses, 
 test("Plan 60-08 Test 2: an environment variable set to a separator-containing value that resolves nowhere refuses, naming the variable and the value, with a decoy on PATH never answering", () => {
   withScratch((dir) => {
     const envBin = join(dir, "does-not-exist-env");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    writeToolsJson(dir, JSON.stringify({}));
     const pathDirA = join(dir, "bin-a");
     const pathDirB = join(dir, "bin-b");
     mkdirSync(pathDirA, { recursive: true });
@@ -257,7 +265,7 @@ test("Plan 60-08 Test 2: an environment variable set to a separator-containing v
 test("Plan 60-08 Test 3: a separator-containing unresolvable value is never walked on $PATH for itself, and the declared-id probe never runs either", () => {
   withScratch((dir) => {
     const envBin = join(dir, "does-not-exist-env-2");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    writeToolsJson(dir, JSON.stringify({}));
     const pathDirA = join(dir, "bin-a2");
     const pathDirB = join(dir, "bin-b2");
     mkdirSync(pathDirA, { recursive: true });
@@ -307,7 +315,7 @@ test("Plan 60-08 Test 5 (PD-14): a separator-containing unresolvable VICE_BIN st
     const fileBin = join(dir, "x64sc-from-tools-json");
     writeFileSync(fileBin, "");
     chmodSync(fileBin, 0o755);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: fileBin }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: fileBin }));
 
     const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: envBin } });
 
@@ -338,7 +346,7 @@ test("compiled artifact: the same three layers answer from resources/tool-locati
     const fileBin = join(dir, "x64sc-file");
     writeFileSync(fileBin, "");
     chmodSync(fileBin, 0o755);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: fileBin }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: fileBin }));
     const result = compiled.resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
     assert.equal(result.path, fileBin);
     assert.equal(result.layer, "file");
@@ -365,7 +373,7 @@ test("Plan 60-08 Test 6: compiled artifact -- the terminal refusal for a separat
 
   withScratch((dir) => {
     const envBin = join(dir, "does-not-exist-compiled");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    writeToolsJson(dir, JSON.stringify({}));
     const result = compiled.resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: envBin } });
     assert.equal(result.path, null);
     assert.equal(result.layer, null);
@@ -382,7 +390,7 @@ test("a tools.json value beginning ~/ expands against the injected HOME and reso
     const bin = join(binDir, "x64sc");
     writeFileSync(bin, "");
     chmodSync(bin, 0o755);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "~/bin/x64sc" }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: "~/bin/x64sc" }));
 
     const result = resolveTool("x64sc", {
       toolsDir: dir,
@@ -403,7 +411,7 @@ test("a bare ~ with no separator is joined against projectRoot rather than expan
     mkdirSync(projectRoot, { recursive: true });
     writeFileSync(bin, "");
     chmodSync(bin, 0o755);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "~" }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: "~" }));
 
     const result = resolveTool("x64sc", {
       toolsDir: dir,
@@ -424,7 +432,7 @@ test("a relative tools.json value resolves against projectRoot, not toolsDir and
     const bin = join(projectRoot, "vendor", "x64sc");
     writeFileSync(bin, "");
     chmodSync(bin, 0o755);
-    writeFileSync(join(toolsDir, "tools.json"), JSON.stringify({ x64sc: "vendor/x64sc" }));
+    writeToolsJson(toolsDir, JSON.stringify({ x64sc: "vendor/x64sc" }));
 
     const result = resolveTool("x64sc", {
       toolsDir,
@@ -444,7 +452,7 @@ test("a non-ASCII tools.json path segment round-trips byte-identically", () => {
     const bin = join(binDir, "x64sc");
     writeFileSync(bin, "");
     chmodSync(bin, 0o755);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: join(dir, segment, "x64sc") }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: join(dir, segment, "x64sc") }));
 
     const result = resolveTool("x64sc", {
       toolsDir: dir,
@@ -463,11 +471,11 @@ test("a directory-kind candidate with a trailing separator resolves to the same 
       const libDir = join(dir, "lib");
       mkdirSync(libDir, { recursive: true });
       writeFileSync(join(libDir, "marker-file"), "");
-      writeFileSync(join(dir, "tools.json"), JSON.stringify({ "test-dir-tool": `${libDir}/` }));
+      writeToolsJson(dir, JSON.stringify({ "test-dir-tool": `${libDir}/` }));
 
       const withSlash = resolveTool("test-dir-tool", { toolsDir: dir, projectRoot: dir, env: {}, here });
 
-      writeFileSync(join(dir, "tools.json"), JSON.stringify({ "test-dir-tool": libDir }));
+      writeToolsJson(dir, JSON.stringify({ "test-dir-tool": libDir }));
       const withoutSlash = resolveTool("test-dir-tool", { toolsDir: dir, projectRoot: dir, env: {}, here });
 
       assert.equal(withSlash.path, libDir);
@@ -736,7 +744,7 @@ test("Plan 60-06 Test I (PD-14): a declared variable set to an unresolvable bare
     const fileBin = join(dir, "x64sc-from-tools-json");
     writeFileSync(fileBin, "");
     chmodSync(fileBin, 0o755);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: fileBin }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: fileBin }));
 
     const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: "definitely-not-on-any-path" } });
 
@@ -858,7 +866,7 @@ test("resolveTool(\"ghidra\", …) resolves through tools.json to the directory 
     const ghidraHome = join(dir, "ghidra-home");
     mkdirSync(join(ghidraHome, "support"), { recursive: true });
     writeFileSync(join(ghidraHome, "support", "analyzeHeadless"), "");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ ghidra: ghidraHome }));
+    writeToolsJson(dir, JSON.stringify({ ghidra: ghidraHome }));
 
     const result = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: {} });
 
@@ -876,7 +884,7 @@ test("resolveTool(\"ghidra\", …) refuses a tools.json directory that exists bu
   withScratch((dir) => {
     const ghidraHome = join(dir, "ghidra-home-no-marker");
     mkdirSync(ghidraHome, { recursive: true });
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ ghidra: ghidraHome }));
+    writeToolsJson(dir, JSON.stringify({ ghidra: ghidraHome }));
 
     const result = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: {} });
 
@@ -914,7 +922,7 @@ test("resolveTool(\"dxa\", …) refuses through every layer with the declared re
     writeFileSync(join(pathDir, "dxa"), "");
     const fileBin = join(dir, "dxa-file");
     writeFileSync(fileBin, "");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ dxa: fileBin }));
+    writeToolsJson(dir, JSON.stringify({ dxa: fileBin }));
 
     const result = resolveTool("dxa", {
       toolsDir: dir,
@@ -937,7 +945,7 @@ test("resolveTool(\"node\", …) refuses through every layer with the declared r
     writeFileSync(join(pathDir, "node"), "");
     const brokerNode = join(dir, "broker-node");
     writeFileSync(brokerNode, "");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ node: brokerNode }));
+    writeToolsJson(dir, JSON.stringify({ node: brokerNode }));
 
     const result = resolveTool("node", {
       toolsDir: dir,
@@ -1058,7 +1066,7 @@ test("an id shaped like an inherited Object.prototype member is refused by name 
     const x64scBin = join(dir, "x64sc-real");
     writeFileSync(x64scBin, "");
     chmodSync(x64scBin, 0o755);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ constructor: "/should-never-be-read", x64sc: x64scBin }));
+    writeToolsJson(dir, JSON.stringify({ constructor: "/should-never-be-read", x64sc: x64scBin }));
 
     const stillRefused = resolveTool("constructor", { toolsDir: dir, projectRoot: dir, env: {} });
     assert.equal(stillRefused.path, null);
@@ -1082,11 +1090,11 @@ test("validateToolsFile: an absent tools.json, a zero-byte one and a bare {} one
     const absent = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(absent, []);
 
-    writeFileSync(join(dir, "tools.json"), "");
+    writeToolsJson(dir, "");
     const emptyBytes = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(emptyBytes, []);
 
-    writeFileSync(join(dir, "tools.json"), "{}");
+    writeToolsJson(dir, "{}");
     const emptyObject = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(emptyObject, []);
   });
@@ -1094,7 +1102,8 @@ test("validateToolsFile: an absent tools.json, a zero-byte one and a bare {} one
 
 test("validateToolsFile: unparseable JSON is exactly one file-level problem naming the file path (planted violation), and valid JSON is a clean control", () => {
   withScratch((dir) => {
-    const filePath = join(dir, "tools.json");
+    const filePath = toolsJsonPath(dir);
+    mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, "{");
 
     const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
@@ -1111,12 +1120,12 @@ test("validateToolsFile: unparseable JSON is exactly one file-level problem nami
 
 test("validateToolsFile: a non-object top level (array) is exactly one file-level problem (planted violation); an object top level is a clean control", () => {
   withScratch((dir) => {
-    writeFileSync(join(dir, "tools.json"), "[]");
+    writeToolsJson(dir, "[]");
     const arrayTop = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.equal(arrayTop.length, 1);
     assert.equal(arrayTop[0]!.toolId, null);
 
-    writeFileSync(join(dir, "tools.json"), "{}");
+    writeToolsJson(dir, "{}");
     const objectTop = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(objectTop, []);
   });
@@ -1124,13 +1133,13 @@ test("validateToolsFile: a non-object top level (array) is exactly one file-leve
 
 test("validateToolsFile: an unknown key is one problem naming it (planted violation); a declared id with a valid value is a clean control", () => {
   withScratch((dir) => {
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ vice: "/some/path" }));
+    writeToolsJson(dir, JSON.stringify({ vice: "/some/path" }));
     const unknown = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.equal(unknown.length, 1);
     assert.equal(unknown[0]!.key, "vice");
     assert.ok(unknown[0]!.message.includes("vice"));
 
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "/opt/vice/bin/x64sc" }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: "/opt/vice/bin/x64sc" }));
     const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(clean, []);
   });
@@ -1138,7 +1147,7 @@ test("validateToolsFile: an unknown key is one problem naming it (planted violat
 
 test("validateToolsFile: a key beginning with an underscore is never reported as unknown, whatever its value", () => {
   withScratch((dir) => {
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ _readme: "hello", _viceBrokerNode: 42, _anything: null }));
+    writeToolsJson(dir, JSON.stringify({ _readme: "hello", _viceBrokerNode: 42, _anything: null }));
     const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(problems, []);
   });
@@ -1146,23 +1155,23 @@ test("validateToolsFile: a key beginning with an underscore is never reported as
 
 test("validateToolsFile: a case-variant, whitespace-padded, or decomposed-Unicode key is reported as unknown rather than silently matched (planted violations); the exact declared id is a clean control", () => {
   withScratch((dir) => {
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ X64SC: "/x" }));
+    writeToolsJson(dir, JSON.stringify({ X64SC: "/x" }));
     const caseVariant = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.equal(caseVariant.length, 1);
     assert.equal(caseVariant[0]!.key, "X64SC");
 
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ "x64sc ": "/x" }));
+    writeToolsJson(dir, JSON.stringify({ "x64sc ": "/x" }));
     const whitespacePadded = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.equal(whitespacePadded.length, 1);
     assert.equal(whitespacePadded[0]!.key, "x64sc ");
 
     const decomposed = "acme-lib".replace("a", "á"); // combining acute accent, never a real id
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ [decomposed]: "/x" }));
+    writeToolsJson(dir, JSON.stringify({ [decomposed]: "/x" }));
     const decomposedResult = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.equal(decomposedResult.length, 1);
     assert.equal(decomposedResult[0]!.key, decomposed);
 
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "/x" }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: "/x" }));
     const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(clean, []);
   });
@@ -1170,7 +1179,7 @@ test("validateToolsFile: a case-variant, whitespace-padded, or decomposed-Unicod
 
 test("validateToolsFile: a JavaScript-prototype-shaped key is reported as unknown with no separate branch (planted violation)", () => {
   withScratch((dir) => {
-    writeFileSync(join(dir, "tools.json"), '{"__proto__":"/x"}');
+    writeToolsJson(dir, '{"__proto__":"/x"}');
     const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.equal(problems.length, 1);
     assert.equal(problems[0]!.key, "__proto__");
@@ -1190,13 +1199,13 @@ test("validateToolsFile: a JavaScript-prototype-shaped key is reported as unknow
 test("validateToolsFile: a non-string value for a declared id is one problem per shape (planted violations); a non-empty string is the clean control", () => {
   withScratch((dir) => {
     for (const badValue of [null, false, 0, [], {}, ""]) {
-      writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: badValue }));
+      writeToolsJson(dir, JSON.stringify({ x64sc: badValue }));
       const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
       assert.equal(problems.length, 1, `expected exactly one problem for value ${JSON.stringify(badValue)}`);
       assert.equal(problems[0]!.toolId, "x64sc");
     }
 
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "/opt/vice/bin/x64sc" }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: "/opt/vice/bin/x64sc" }));
     const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(clean, []);
   });
@@ -1209,13 +1218,13 @@ test("validateToolsFile: naming the vendored disassembler is one problem quoting
     };
     const dxaReason = prereq.tools.dxa!.location!.reason!;
 
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ dxa: "/some/dxa" }));
+    writeToolsJson(dir, JSON.stringify({ dxa: "/some/dxa" }));
     const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.equal(problems.length, 1);
     assert.equal(problems[0]!.toolId, "dxa");
     assert.ok(problems[0]!.message.includes(dxaReason));
 
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    writeToolsJson(dir, JSON.stringify({}));
     const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(clean, []);
   });
@@ -1228,13 +1237,13 @@ test("validateToolsFile: naming the Node interpreter is one problem quoting the 
     };
     const nodeReason = prereq.tools.node!.location!.reason!;
 
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ node: "/some/node" }));
+    writeToolsJson(dir, JSON.stringify({ node: "/some/node" }));
     const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.equal(problems.length, 1);
     assert.equal(problems[0]!.toolId, "node");
     assert.ok(problems[0]!.message.includes(nodeReason));
 
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    writeToolsJson(dir, JSON.stringify({}));
     const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(clean, []);
   });
@@ -1256,7 +1265,7 @@ test("validateToolsFile: pointing `here` at a scratch declaration with different
     );
 
     withScratch((dir) => {
-      writeFileSync(join(dir, "tools.json"), JSON.stringify({ "test-dxa": "/x", "test-node": "/y" }));
+      writeToolsJson(dir, JSON.stringify({ "test-dxa": "/x", "test-node": "/y" }));
       const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir, here });
 
       assert.equal(problems.length, 2);
@@ -1270,7 +1279,7 @@ test("validateToolsFile: pointing `here` at a scratch declaration with different
 
 test("validateToolsFile: one unknown key plus one valid entry returns exactly one problem, naming the unknown key", () => {
   withScratch((dir) => {
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ vice: "/some/path", x64sc: "/opt/vice/bin/x64sc" }));
+    writeToolsJson(dir, JSON.stringify({ vice: "/some/path", x64sc: "/opt/vice/bin/x64sc" }));
     const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.equal(problems.length, 1);
     assert.equal(problems[0]!.key, "vice");
@@ -1279,10 +1288,7 @@ test("validateToolsFile: one unknown key plus one valid entry returns exactly on
 
 test("validateToolsFile: several distinct problems are returned one per problem, in file key order, deterministically across repeated calls", () => {
   withScratch((dir) => {
-    writeFileSync(
-      join(dir, "tools.json"),
-      JSON.stringify({ unknown_first: "/x", x64sc: null, dxa: "/y", acme: "/opt/acme" }),
-    );
+    writeToolsJson(dir, JSON.stringify({ unknown_first: "/x", x64sc: null, dxa: "/y", acme: "/opt/acme" }));
     const first = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     const second = validateToolsFile({ toolsDir: dir, projectRoot: dir });
 
@@ -1305,7 +1311,7 @@ test("validateToolsFile: several distinct problems are returned one per problem,
 test("resolveTool(\"x64sc\", …) refuses a tools.json entry naming a path that does not exist, and the refusal names the file", () => {
   withScratch((dir) => {
     const missingBin = join(dir, "does-not-exist");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: missingBin }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: missingBin }));
 
     const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
 
@@ -1322,7 +1328,7 @@ test("resolveTool(\"x64sc\", …) refuses a tools.json entry naming an existing 
   withScratch((dir) => {
     const dirAsFile = join(dir, "x64sc-is-a-dir");
     mkdirSync(dirAsFile, { recursive: true });
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: dirAsFile }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: dirAsFile }));
 
     const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
 
@@ -1336,7 +1342,7 @@ test("resolveTool(\"x64sc\", …) refuses a tools.json entry with no executable 
     const bin = join(dir, "x64sc-file");
     writeFileSync(bin, "");
     chmodSync(bin, 0o644);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: bin }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: bin }));
 
     const refused = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
     assert.equal(refused.path, null);
@@ -1354,7 +1360,7 @@ test("resolveTool(\"ghidra\", …) refuses a tools.json entry naming an existing
   withScratch((dir) => {
     const fileNotDir = join(dir, "ghidra-is-a-file");
     writeFileSync(fileNotDir, "");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ ghidra: fileNotDir }));
+    writeToolsJson(dir, JSON.stringify({ ghidra: fileNotDir }));
 
     const result = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: {} });
 
@@ -1368,7 +1374,7 @@ test("a directory-kind entry's own permission bits are never executable-bit chec
     const ghidraHome = join(dir, "ghidra-home-perm");
     mkdirSync(join(ghidraHome, "support"), { recursive: true });
     writeFileSync(join(ghidraHome, "support", "analyzeHeadless"), "");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ ghidra: ghidraHome }));
+    writeToolsJson(dir, JSON.stringify({ ghidra: ghidraHome }));
 
     chmodSync(ghidraHome, 0o555);
     const restrictive = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: {} });
@@ -1389,7 +1395,7 @@ test("one malformed acme entry refuses acme by name; x64sc still resolves throug
     writeFileSync(x64scBin, "");
     chmodSync(x64scBin, 0o755);
     const missingAcme = join(dir, "does-not-exist-acme");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ acme: missingAcme, x64sc: x64scBin }));
+    writeToolsJson(dir, JSON.stringify({ acme: missingAcme, x64sc: x64scBin }));
 
     const acmeResult = resolveTool("acme", { toolsDir: dir, projectRoot: dir, env: {} });
     const x64scResult = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
@@ -1423,7 +1429,8 @@ test("resolveTool(\"x64sc\", …) refuses a whole-file JSON parse failure by nam
     const pathBin = join(pathDir, "x64sc");
     writeFileSync(pathBin, "");
     chmodSync(pathBin, 0o755);
-    const filePath = join(dir, "tools.json");
+    const filePath = toolsJsonPath(dir);
+    mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, "{ this is not json");
 
     const broken = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } });
@@ -1445,7 +1452,8 @@ test("resolveTool(\"x64sc\", …) refuses a whole-file JSON parse failure by nam
 
 test("resolveTool(\"x64sc\", …) refuses a non-object tools.json top level by name (planted violation); an object top level is a clean control", () => {
   withScratch((dir) => {
-    const filePath = join(dir, "tools.json");
+    const filePath = toolsJsonPath(dir);
+    mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, "[]");
 
     const arrayTop = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
@@ -1462,7 +1470,8 @@ test("resolveTool(\"x64sc\", …) refuses a non-object tools.json top level by n
 
 test("resolveTool(\"x64sc\", …) refuses a non-string tools.json entry for the requested id by name (planted violations); a real string entry is a clean control", () => {
   withScratch((dir) => {
-    const filePath = join(dir, "tools.json");
+    const filePath = toolsJsonPath(dir);
+    mkdirSync(dirname(filePath), { recursive: true });
 
     for (const badValue of [null, false, 0, [], {}]) {
       writeFileSync(filePath, JSON.stringify({ x64sc: badValue }));
@@ -1488,7 +1497,7 @@ test("one non-string acme entry refuses acme by name; a well-formed x64sc entry 
     const x64scBin = join(dir, "x64sc-good");
     writeFileSync(x64scBin, "");
     chmodSync(x64scBin, 0o755);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ acme: 12345, x64sc: x64scBin }));
+    writeToolsJson(dir, JSON.stringify({ acme: 12345, x64sc: x64scBin }));
 
     const acmeResult = resolveTool("acme", { toolsDir: dir, projectRoot: dir, env: {} });
     const x64scResult = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
@@ -1514,12 +1523,12 @@ test("resolveTool: an absent tools.json, a zero-byte one, and a bare {} one each
     assert.equal(absent.refusal, null);
     assert.equal(absent.path, pathBin);
 
-    writeFileSync(join(dir, "tools.json"), "");
+    writeToolsJson(dir, "");
     const zeroByte = resolveTool("x64sc", deps);
     assert.equal(zeroByte.refusal, null);
     assert.equal(zeroByte.path, pathBin);
 
-    writeFileSync(join(dir, "tools.json"), "{}");
+    writeToolsJson(dir, "{}");
     const emptyObject = resolveTool("x64sc", deps);
     assert.equal(emptyObject.refusal, null);
     assert.equal(emptyObject.path, pathBin);
@@ -1533,7 +1542,7 @@ test("after a file-layer refusal, tried contains no candidate built from a PATH 
     const pathBin = join(pathDir, "x64sc");
     writeFileSync(pathBin, "");
     chmodSync(pathBin, 0o755);
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: join(dir, "does-not-exist") }));
+    writeToolsJson(dir, JSON.stringify({ x64sc: join(dir, "does-not-exist") }));
 
     const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } });
 
@@ -1552,9 +1561,10 @@ test("a tools.json rewritten between calls yields one complete state or the othe
     writeFileSync(binB, "");
     chmodSync(binB, 0o755);
 
-    const toolsJsonPath = join(dir, "tools.json");
-    const writeStateA = () => writeFileSync(toolsJsonPath, JSON.stringify({ x64sc: binA }));
-    const writeStateB = () => writeFileSync(toolsJsonPath, JSON.stringify({ x64sc: binB }));
+    const toolsFile = toolsJsonPath(dir);
+    mkdirSync(dirname(toolsFile), { recursive: true });
+    const writeStateA = () => writeFileSync(toolsFile, JSON.stringify({ x64sc: binA }));
+    const writeStateB = () => writeFileSync(toolsFile, JSON.stringify({ x64sc: binB }));
 
     const deps = { toolsDir: dir, projectRoot: dir, env: {} };
 
@@ -1655,7 +1665,7 @@ test("toolsFileTemplate: writing its output to a scratch tools.json whose named 
     chmodSync(bin, 0o755);
 
     const template = toolsFileTemplate({ x64sc: bin });
-    writeFileSync(join(dir, "tools.json"), template);
+    writeToolsJson(dir, template);
 
     const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
     assert.deepEqual(problems, []);
@@ -1791,4 +1801,28 @@ test("compiled artifact: importing the regenerated resources/tool-location.mjs a
 
   assert.deepEqual(fromCompiled, fromSource);
   assert.ok(fromCompiled.length > 0);
+});
+
+test("a tools.json left at the old .c64-re-tools/ root is refused by name with the move as the remedy -- never silently ignored", () => {
+  withScratch((dir) => {
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "/opt/vice/x64sc" }));
+
+    const resolved = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+    assert.equal(resolved.path, null);
+    assert.ok(resolved.refusal!.includes(join(dir, "tools.json")), resolved.refusal!);
+    assert.ok(resolved.refusal!.includes(toolsJsonPath(dir)), "the refusal names where the file belongs");
+    assert.match(resolved.refusal!, /Move it there/);
+
+    const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.equal(problems.length, 1);
+    assert.match(problems[0]!.message, /no longer read/);
+
+    // Clean control: the same file in local/ answers.
+    rmSync(join(dir, "tools.json"));
+    const bin = join(dir, "x64sc");
+    writeFileSync(bin, "");
+    chmodSync(bin, 0o755);
+    writeToolsJson(dir, JSON.stringify({ x64sc: bin }));
+    assert.equal(resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} }).path, bin);
+  });
 });

@@ -32,6 +32,7 @@ import { fileURLToPath } from "node:url";
 
 import { runHostToolOverEndpoint, type HostToolClientResult, type RunHostToolOverEndpointOptions } from "./host-tool-endpoint.mts";
 import { repoRoot, toolsDirUnder } from "./repo-root.ts";
+import { ensureLocalDir } from "./project-local.mts";
 import { parsePrg, flatImageOrigin } from "./prg-image.mts";
 import { parseDumpListing, type DumpListingMap } from "./dxa-listing.ts";
 import { emitDataBlocks, emitLabels, type KnownDataRow } from "./dxa-blocks.ts";
@@ -219,7 +220,8 @@ export async function runDxaDisassemble(args: DxaRunArgs, opts: DxaRunOptions = 
   // refusal wins" discipline for its resolved paths.
   let datablocksPath = args.datablocksPath;
   let labelsPath = args.labelsPath;
-  const toolsRoot = opts.toolsRoot ?? toolsDirUnder(root);
+  // Host-tool output is regenerable, so it lands in the project's local/.
+  const toolsRoot = opts.toolsRoot ?? ensureLocalDir(toolsDirUnder(root));
   let inputsDir: string | undefined;
   if (args.knownDataRows !== undefined) {
     if (datablocksPath !== undefined || labelsPath !== undefined) {

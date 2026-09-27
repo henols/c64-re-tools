@@ -2,7 +2,7 @@
 // Compiled by `tsc` from backend-detect.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
 // deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
-// verbatim to .c64-re-tools/bin/, so an edit made only here reaches the host but is lost on the very next
+// verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // backend-detect.mts
 //
@@ -53,7 +53,7 @@
 // emulator binary's own resolution -- when neither `viceBin` nor
 // `resolveBinPath` is injected, resolution goes through the seam's
 // `resolveTool("x64sc", ...)` instead of this file's own ordering, so a
-// `.c64-re-tools/tools.json` entry for `x64sc` now changes what this broker
+// `.c64-re-tools/local/tools.json` entry for `x64sc` now changes what this broker
 // actually spawns. `defaultResolveBinPath()` collapses into a thin wrapper
 // over the seam's own exported `resolveOnPath()` -- the first of Phase 59
 // D-02's three independent `$PATH`-walk copies to collapse.

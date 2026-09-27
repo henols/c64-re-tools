@@ -87,7 +87,7 @@ emulator instance the broker launches for this session.
 | --- | --- |
 | `VICE_MCP_URL` | Full host MCP endpoint (overrides host/port derivation). |
 | `VICE_BROKER_CONTROL_PORT` | The broker's control port (default `19510`), for the broker and every client. |
-| `VICE_SKIP_RESOURCE_INSTALL=1` | Disable deploying host launcher scripts into `<project>/.c64-re-tools/bin/` (the npm package never deploys them). |
+| `VICE_SKIP_RESOURCE_INSTALL=1` | Disable deploying host launcher scripts into `<project>/.c64-re-tools/local/bin/` (the npm package never deploys them). |
 | `MASTRA_TELEMETRY_DISABLED=1` | Disable Mastra telemetry. |
 | `VICE_LIVE_STOCK_BIN` | Absolute path to a genuinely unpatched stock VICE binary; opts `stock-live.test.ts` in (default-skipped). |
 | `VICE_BROKER_RELAY_IDLE_MS` | The broker-owned idle deadline (default `300000`, 5 minutes) a monitor-relay connection may sit carrying no traffic in either direction before the broker reclaims that one channel. This is the mechanism the broker actually controls end-to-end (`Socket.setTimeout()`, userspace, needs no cooperation from the OS or the peer); it is suspended for as long as the connection's own grant has a declared operation in flight, so a legitimately long-running capture is never torn down by the clock. An absent, non-numeric, zero or negative value falls back to the default and is logged by name — it is never possible to disable this bound. |

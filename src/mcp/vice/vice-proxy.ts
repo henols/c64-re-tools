@@ -276,7 +276,7 @@ function packageFile(fileName: string): string {
 // `RESOLVED_BINARY.binPath` is what `vice_ping`'s `resolvedBinaryPath` field
 // reports (see stock-tools.ts's `handlePing()`). It is resolved exactly
 // ONCE here, at MCP-server process startup -- Phase 60 (LOC-01/LOC-02) routes
-// that resolution through the tool-location seam (a `.c64-re-tools/tools.json`
+// that resolution through the tool-location seam (a `.c64-re-tools/local/tools.json`
 // entry for `x64sc`, then a bare `x64sc` `$PATH` probe, in THIS process's own
 // environment) rather than a `$PATH` probe alone -- it is NOT re-probed per
 // request and has no connection to the broker, a separate, already-running

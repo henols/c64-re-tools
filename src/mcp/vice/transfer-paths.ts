@@ -4,7 +4,8 @@
 // Phase 64 (D-13/XFER-03): the CLIENT's refusal of a broker-supplied
 // destination name, plus the client-side snapshot name/path owner it lives
 // beside. This module is a leaf: it imports only `vice-errors.mts`,
-// `repo-root.ts` and `transfer-client.mts`, none of which import back.
+// `repo-root.ts`, `transfer-client.mts` and `project-local.mts`, none of
+// which import back.
 //
 // WHAT NOT TO DO:
 //   - Never re-implement `validateContainedDestination()` here. Phase 65
@@ -20,6 +21,7 @@ import { join } from "node:path";
 
 import { ViceError, type ViceErrorOptions } from "./vice-errors.mts";
 import { toolsDir } from "./repo-root.ts";
+import { ensureLocalDir } from "./project-local.mts";
 import { validateContainedDestination, type ContainedDestinationResult } from "./transfer-client.mts";
 
 export { validateContainedDestination };
@@ -57,15 +59,15 @@ export function validateSnapshotName(name: unknown): SnapshotNameResult {
 
 /**
  * The container path a snapshot named `name` lives at:
- * `<toolsDir>/snapshots/<name>.vsf` -- a subdirectory of the single
- * tool-written root `repo-root.ts`'s `toolsDir()` owns (D-33).
+ * `<toolsDir>/local/snapshots/<name>.vsf`. A snapshot is emulator state
+ * for this machine, so it lives in the project's never-committed local/.
  */
 export function snapshotPathFor(name: string): string {
   const verdict = validateSnapshotName(name);
   if (!verdict.ok) {
     throw new StockPathError(`snapshotPathFor: ${verdict.reason}`);
   }
-  return join(toolsDir(), "snapshots", `${verdict.name}.vsf`);
+  return join(ensureLocalDir(toolsDir()), "snapshots", `${verdict.name}.vsf`);
 }
 
 /** The sidecar metadata path for the same snapshot: same directory, `.json`
@@ -75,11 +77,11 @@ export function snapshotMetaPathFor(name: string): string {
   if (!verdict.ok) {
     throw new StockPathError(`snapshotMetaPathFor: ${verdict.reason}`);
   }
-  return join(toolsDir(), "snapshots", `${verdict.name}.json`);
+  return join(ensureLocalDir(toolsDir()), "snapshots", `${verdict.name}.json`);
 }
 
 /**
- * Resolves a per-kind subdirectory under `toolsDir()` -- the ONE place a
+ * Resolves a per-kind subdirectory under the project's local/ -- the ONE place a
  * later plan in this phase (64-02..64-07) asks for a destination directory,
  * matching the ROADMAP's own cross-cutting constraint that a downloaded
  * file lands in an EXISTING per-kind subdirectory, never one new inbox
@@ -88,5 +90,5 @@ export function snapshotMetaPathFor(name: string): string {
  * broker genuinely names host-tool output artifacts.
  */
 export function transferKindDir(kind: string): string {
-  return join(toolsDir(), kind);
+  return join(ensureLocalDir(toolsDir()), kind);
 }

@@ -11,12 +11,18 @@ node_modules/
 # sidecars), bin/ (deployed host launcher artifacts), runs/oracle/
 # (oracle.run scratch), runs/ghidra/ (ghidra.analyze's run logs and exports,
 # as downloaded from the broker), incidents/ (recycle
-# incident records), cache/ (the lockfile stamp). A consumer of this package
-# gets exactly one ignorable directory and one directory to delete, rather
-# than five. This is a clean break: no dual-read of the previous locations,
+# incident records), cache/ (the lockfile stamp). This is a clean break: no
+# dual-read of the previous locations,
 # no migration shim -- a pre-existing old-layout tree (.vice-supervisor/,
 # .vice-snapshots/, tools/*.mjs) is simply left on
 # disk, unread, for the user to delete by hand.
+#
+# SINCE 2026-09-27 an ANALYSED project commits its .c64-re-tools/: the root
+# holds the project's artifacts (annotations.db), and everything machine-
+# specific or regenerable lives in .c64-re-tools/local/, which carries its
+# own .gitignore of "*". THIS repository is the tool, not an analysed
+# project, and its test runs write a .c64-re-tools/ of their own, so here
+# the whole directory stays ignored.
 /.c64-re-tools/
 # ...and the same directory written anywhere else. The rule above is
 # root-anchored, so a tool-root resolved from a different cwd (running the

@@ -2,7 +2,7 @@
 // Compiled by `tsc` from host-tool.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
 // deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
-// verbatim to .c64-re-tools/bin/, so an edit made only here reaches the host but is lost on the very next
+// verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // host-tool.mts
 //
@@ -138,6 +138,7 @@ import { resolvedBackend } from "./backend-detect.mjs";
 // SECOND of Phase 59 `D-02`'s three coexisting `$PATH`-walk copies to
 // collapse (plan 60-01 collapsed the first, inside `backend-detect.mts`).
 import { resolveTool, remedyTextsFor, resolveOnPath } from "./tool-location.mjs";
+import { ensureLocalDir, localDirUnder } from "./project-local.mjs";
 // This module's FOURTH sibling import, the SAME value-import-of-a-compiled-
 // artifact convention every import above already uses. Phase 65 (SEAM-01,
 // D-03): bindStagedInputs()'s own output-name binding (below) validates a
@@ -1032,7 +1033,7 @@ export function resolveWorkspacePath(repoRoot, relative) {
  * test call sites across this file's own test suite -- which exercise argv
  * construction alone -- keep compiling and keep returning the same argv they
  * return today, with no per-call-site edit required. Documented as a last
- * resort, not a guess: a working directory with no `.c64-re-tools/tools.json`
+ * resort, not a guess: a working directory with no `.c64-re-tools/local/tools.json`
  * makes the file layer a silent no-op for that call, so this fallback can
  * only WIDEN resolution (adding the environment and `$PATH`/fixed-prefix
  * layers a bare literal never had) where a real project root already happens
@@ -2777,12 +2778,15 @@ async function runOracleRun(args, deps) {
     // `join(toolsDir(), "runs", "oracle")`, the same convention
     // install-resources.ts's installTargetDir() uses.
     //
-    const scratchDir = join(repoRootAbs, ".c64-re-tools", "runs", "oracle", `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    // It is regenerable scratch, so it lives in the project's local/.
+    const projectToolsDir = join(repoRootAbs, ".c64-re-tools");
+    const scratchDir = join(localDirUnder(projectToolsDir), "runs", "oracle", `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     try {
         // A fix: scratch-directory creation moved INSIDE this try block -- a
         // full disk or an unwritable parent now resolves to the function's
         // existing refusal shape instead of throwing synchronously out of
         // runHostTool(), which sits outside any try/catch of its own.
+        ensureLocalDir(projectToolsDir);
         mkdirSync(scratchDir, { recursive: true });
         const scratchOut = join(scratchDir, "unpacked.out");
         const timeoutMs = hostToolTimeoutMs("oracle.run", deps.timeoutMs);

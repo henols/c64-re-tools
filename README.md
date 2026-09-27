@@ -119,8 +119,8 @@ restates one in prose.
 | Prerequisite | Unblocks (skills) | Unblocks (MCP tools) | Remedy | Location override |
 | --- | --- | --- | --- | --- |
 | x64sc | c64-program-recon, c64-ram-capture | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | See the VICE per-package-manager table. | VICE_BIN |
-| c1541 | c64-disk-access | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read | See the VICE per-package-manager table. | .c64-re-tools/tools.json |
-| petcat | c64-petcat, c64-program-recon | petcat.decode | See the VICE per-package-manager table. | .c64-re-tools/tools.json |
+| c1541 | c64-disk-access | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read | See the VICE per-package-manager table. | .c64-re-tools/local/tools.json |
+| petcat | c64-petcat, c64-program-recon | petcat.decode | See the VICE per-package-manager table. | .c64-re-tools/local/tools.json |
 | acme | acme-build | acme.build | Install ACME. | ACME_BIN |
 | acme-lib | acme-build | acme.build | export ACME=<dir holding cbm/c64/vic.a>. | ACME |
 | ghidra | c64-program-recon | ghidra.analyze, ghidra.installExtension | Set the GHIDRA_HOME environment variable to name a Ghidra installation directory. | GHIDRA_HOME |
@@ -278,14 +278,21 @@ file.
 
 ## How it locates the project
 
-The MCP server writes its per-project results (captures, snapshots, tool
-output) under `.c64-re-tools/` in the **project you are working in**, not under
-the plugin's own install directory. It resolves that root from
+The MCP server keeps its per-project files under `.c64-re-tools/` in the
+**project you are working in**, not under the plugin's own install directory,
+split into two folders:
+
+- `.c64-re-tools/` itself holds the project's artifacts: today
+  `annotations.db`, every label, comment and typed range. **Commit it.**
+- `.c64-re-tools/local/` holds what belongs to this machine or can be
+  regenerated: `tools.json`, the deployed launchers in `bin/`, snapshots and
+  host-tool output. It carries its own `.gitignore`, so committing
+  `.c64-re-tools/` never picks it up and the project needs no ignore rule.
+
+It resolves that root from
 `CLAUDE_PROJECT_DIR` (which Claude Code sets), falling back to
 `CONTAINER_WORKSPACE_PATH` and then a `.git` ancestor walk — see
-`src/mcp/vice/repo-root.ts`. The annotations live there too, in
-`.c64-re-tools/annotations.db`: a project artifact, meant to be committed with
-the project so the findings version with the program. The broker keeps its own state under its
+`src/mcp/vice/repo-root.ts`. The broker keeps its own state under its
 machine-level home (`VICE_BROKER_HOME`), never inside a project. The VICE
 emulator itself runs on the host, launched by the broker, and is reached only
 through the `mcp__plugin_c64-re-tools_vice__*` tools.

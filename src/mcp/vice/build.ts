@@ -67,6 +67,7 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "host-tool-endpoint.mjs",
   "broker-children.mjs",
   "broker-watchdog.mjs",
+  "project-local.mjs",
 ];
 
 /** A plain data file that travels WITH the compiled artifacts above, never
@@ -80,7 +81,7 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
  * ran IN PLACE inside `src/mcp/vice/resources/` (one directory up lands on
  * `src/mcp/vice/prerequisites.json`) -- once `vice-broker.mts` started
  * resolving `x64sc` through the seam at STARTUP (Plan 60-01), a real
- * deployment into a consuming project's `.c64-re-tools/bin/` (where
+ * deployment into a consuming project's `.c64-re-tools/local/bin/` (where
  * neither candidate exists) made the broker throw at startup. Copying it into `resources/` here, alongside every
  * compiled artifact, makes `install-resources.ts`'s own generic recursive
  * walk of `resources/` deploy it automatically -- no separate deploy-side
@@ -102,7 +103,7 @@ export function GENERATED_BANNER(relSourcePath: string): string {
     `// Compiled by \`tsc\` from ${relSourcePath}. Edit the TypeScript source and rebuild;\n` +
     "// changes made directly to this file are silently overwritten by the next build, and are never\n" +
     "// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents\n" +
-    "// verbatim to .c64-re-tools/bin/, so an edit made only here reaches the host but is lost on the very next\n" +
+    "// verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next\n" +
     "// rebuild.\n"
   );
 }

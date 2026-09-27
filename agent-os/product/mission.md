@@ -77,9 +77,9 @@ state) and keep working when the emulator misbehaves.
   permanent limitations.
 - The user starts one broker per machine. No client ever starts it, and every
   project and container on the machine shares it.
-- Tool-written output goes under one root: the project's `.c64-re-tools/`
-  directory for client-side files (including the committed annotations.db),
-  and `~/.c64-re-tools` for broker-owned machine state.
+- A project's `.c64-re-tools/` holds its committed artifacts (annotations.db) at
+  its root, and everything machine-specific or regenerable in `local/`, which
+  ignores itself. `~/.c64-re-tools` holds the broker's machine state.
 - The server has exactly three npm runtime dependencies: `@mastra/mcp`,
   `@mastra/core` and `@modelcontextprotocol/sdk` (imported directly, already
   pulled in by `@mastra/mcp`). New runtime dependencies need a strong reason.

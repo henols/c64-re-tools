@@ -168,10 +168,10 @@ interface ScratchWorkspace {
 }
 
 /** Where a run's export lands: the endpoint downloads every result under the
- * caller's own `.c64-re-tools/runs/ghidra/`, keeping only the basename of the
+ * caller's own `.c64-re-tools/local/runs/ghidra/`, keeping only the basename of the
  * requested `exportPath`. */
 function exportFileIn(ws: ScratchWorkspace, exportRel: string): string {
-  return join(ws.root, ".c64-re-tools", "runs", "ghidra", basename(exportRel));
+  return join(ws.root, ".c64-re-tools", "local", "runs", "ghidra", basename(exportRel));
 }
 
 /** Builds a fresh temporary workspace root OUTSIDE this repository, copies

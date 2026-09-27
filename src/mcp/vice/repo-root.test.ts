@@ -204,7 +204,7 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
   // tools/ copies already exist (and were hand-verified moments ago).
   installResources({ root: repoRoot() });
 
-  const launcherScript = join(repoRoot(), ".c64-re-tools", "bin", "vice-launcher.sh");
+  const launcherScript = join(repoRoot(), ".c64-re-tools", "local", "bin", "vice-launcher.sh");
   const resourcesLauncherScript = join(repoRoot(), "src", "mcp", "vice", "resources", "vice-launcher.sh");
   for (const p of [launcherScript, resourcesLauncherScript]) {
     assert.ok(existsSync(p), `expected ${p} to exist (resolved via repoRoot())`);
@@ -270,7 +270,7 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
 
 test("path agreement without CONTAINER_WORKSPACE_PATH (D-6): the .git-walk branch -- the ONLY branch that ever runs on the real host -- still agrees between resources/ and tools/", async () => {
   const resourcesLauncherScript = join(repoRoot(), "src", "mcp", "vice", "resources", "vice-launcher.sh");
-  const launcherScript = join(repoRoot(), ".c64-re-tools", "bin", "vice-launcher.sh");
+  const launcherScript = join(repoRoot(), ".c64-re-tools", "local", "bin", "vice-launcher.sh");
 
   const hostEnv = { ...process.env };
   for (const k of Object.keys(hostEnv)) {

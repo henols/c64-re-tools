@@ -92,6 +92,7 @@
     "anno-tree-writer.mts",
     "anno-call-client.ts",
     "anno-workspace-store.ts",
+    "project-local.mts",
     "anno-reports.mts",
     "anno-derive.mts",
     "anno-details.mts",

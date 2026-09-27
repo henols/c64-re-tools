@@ -28,3 +28,8 @@ project's tool folder:
   fixtures' format) that diffs and reviews; `anno import-project` fills an
   empty project from one, in one transaction, and never merges.
 - `anno-store.mts` is the only `node:sqlite` importer.
+- The file sits at the ROOT of `.c64-re-tools/`, the folder for committed
+  project artifacts. Everything machine-specific or regenerable goes in
+  `.c64-re-tools/local/`, which `ensureLocalDir()` (project-local.mts)
+  creates with a `.gitignore` of `*`, so a project commits `.c64-re-tools/`
+  wholesale.

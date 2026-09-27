@@ -100,7 +100,7 @@ declared in `src/mcp/vice/prerequisites.json`.
   skill-script calls and files. There is no custom multiplexing envelope.
 - Files cross the socket as bytes. The broker picks its own staging paths and
   gives the client an opaque handle for each file. The client writes results
-  under the project's `.c64-re-tools/<kind>/`. Neither side ever names a path
+  under the project's `.c64-re-tools/local/<kind>/`. Neither side ever names a path
   that the other side must open.
 
 **Emulator protocol**

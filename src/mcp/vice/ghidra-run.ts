@@ -61,6 +61,7 @@ import { fileURLToPath } from "node:url";
 
 import { runHostToolOverEndpoint, type HostToolClientResult, type RunHostToolOverEndpointOptions } from "./host-tool-endpoint.mts";
 import { repoRoot as findRepoRoot, toolsDirUnder } from "./repo-root.ts";
+import { ensureLocalDir } from "./project-local.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -122,7 +123,7 @@ export interface GhidraRunResult {
   sha256: string;
   byteLength: number;
   /** Where the post-script's export was downloaded (`results[1]`, under the
-   * caller's `.c64-re-tools/runs/ghidra/`) -- present only when the request
+   * caller's `.c64-re-tools/local/runs/ghidra/`) -- present only when the request
    * named an `exportPath`. The export never lands at `exportPath` itself:
    * that is only the name the broker-side script writes. */
   exportPath?: string;
@@ -224,7 +225,7 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
   if (args.dataRangesPath !== undefined) wireArgs.dataRangesPath = args.dataRangesPath;
 
   const root = opts.repoRoot ?? findRepoRoot({ from: HERE });
-  const runOpts: RunHostToolOverEndpointOptions = { baseDir: root, toolsRoot: opts.toolsRoot ?? toolsDirUnder(root) };
+  const runOpts: RunHostToolOverEndpointOptions = { baseDir: root, toolsRoot: opts.toolsRoot ?? ensureLocalDir(toolsDirUnder(root)) };
   if (opts.port !== undefined) runOpts.port = opts.port;
 
   const response = await run("ghidra.analyze", wireArgs, runOpts);

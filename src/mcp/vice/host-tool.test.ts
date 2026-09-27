@@ -69,6 +69,7 @@ import { dxaSkipReasonFor, assertDxaRequiredIfEnvSet } from "./dxa-gate.ts";
 // Drives the OTHER implementation of the same ancestor-realpath walk for the
 // equivalence table below.
 import { storePathWithinWorkspace, AnnoStorePathError } from "./anno-types.mts";
+import { toolsJsonPath } from "./tool-location.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -351,8 +352,8 @@ function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8" | "ech
  * `runHostTool()` end-to-end through the compiled artifact, never
  * `resolveTool()` in isolation the way `tool-location.test.ts` does. */
 function writeToolsJson(dir: string, entries: Record<string, string>): void {
-  mkdirSync(join(dir, ".c64-re-tools"), { recursive: true });
-  writeFileSync(join(dir, ".c64-re-tools", "tools.json"), JSON.stringify(entries), "utf8");
+  mkdirSync(dirname(toolsJsonPath(join(dir, ".c64-re-tools"))), { recursive: true });
+  writeFileSync(toolsJsonPath(join(dir, ".c64-re-tools")), JSON.stringify(entries), "utf8");
 }
 
 /** Plan 60-03 (DECL-03 non-vacuity): writes a scratch `prerequisites.json`
@@ -3092,7 +3093,7 @@ test("runHostTool: oracle.run resolves { ok: false } rather than throwing when t
     // runOracleRun()'s own try block by this plan -- fails with EACCES
     // instead of succeeding, exercising the exact refusal path this test
     // guards.
-    const scratchParent = join(dir, ".c64-re-tools", "runs", "oracle");
+    const scratchParent = join(dir, ".c64-re-tools", "local", "runs", "oracle");
     mkdirSync(scratchParent, { recursive: true });
     chmodSync(scratchParent, 0o500);
     try {

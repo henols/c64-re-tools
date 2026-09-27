@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Deploys this skill's resources/ (the host-side shell launchers) into
-// <repo>/.c64-re-tools/bin/ the first time any skill .mjs entry point runs,
+// <repo>/.c64-re-tools/local/bin/ the first time any skill .mjs entry point runs,
 // so a copy of this skill directory alone is sufficient -- nobody has to
 // remember to also copy three shell scripts from somewhere else (D-1,
 // quick-260730-q4b). Deploy target moved from `<repo>/tools/` to
-// `<repo>/.c64-re-tools/bin/` on 2026-09-08 (D-33) -- see installTargetDir()
+// `<repo>/.c64-re-tools/local/bin/` on 2026-09-08 (D-33) -- see installTargetDir()
 // below.
 //
 // HOSTING CHOICE (D-3): this check lives in a DEDICATED module, triggered
@@ -38,6 +38,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute, resolve, sep } from "node:path";
 
 import { BROKER_START_COMMAND } from "./broker-endpoint.mts";
+import { ensureLocalDir, LOCAL_DIR_NAME } from "./project-local.mts";
 import { HOST_BOUND_ARTIFACTS } from "./build.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -93,7 +94,9 @@ export const RESOURCES_DIR =
   [join(HERE, "resources"), join(HERE, "..", "resources")].find((c) => existsSync(c)) ?? join(HERE, "resources");
 
 /** Where resources/ gets deployed to, for a given repo root. Always
- * `<root>/.c64-re-tools/bin` -- moved 2026-09-08 (D-33) under the single
+ * `<root>/.c64-re-tools/local/bin` -- deployed launchers are this machine's,
+ * so they live in the project's never-committed local/. Moved 2026-09-08
+ * (D-33) under the single
  * tool-written root every other writer in this codebase now resolves
  * through `repo-root.ts`'s `toolsDir()`. This function cannot import
  * `toolsDir()` itself (see this file's header: importing repo-root.ts here
@@ -101,7 +104,12 @@ export const RESOURCES_DIR =
  * `".c64-re-tools"` and `"bin"` must stay equal to `join(toolsDir(root),
  * "bin")` by convention, not by shared code. */
 export function installTargetDir(root: string): string {
-  return join(root, ".c64-re-tools", "bin");
+  return join(projectToolsDirOf(root), LOCAL_DIR_NAME, "bin");
+}
+
+/** `<root>/.c64-re-tools` -- the one place this module joins the literal. */
+function projectToolsDirOf(root: string): string {
+  return join(root, ".c64-re-tools");
 }
 
 /** Recursive walk of RESOURCES_DIR, returning the relative path (posix-style,
@@ -217,6 +225,7 @@ export function readDeployManifest(root: string): string[] {
  * different enumeration order. */
 export function writeDeployManifest(root: string, entries: Iterable<string>): void {
   const target = deployManifestPath(root);
+  ensureLocalDir(projectToolsDirOf(root));
   mkdirSync(dirname(target), { recursive: true });
   const tmpPath = `${target}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(tmpPath, "");
@@ -256,7 +265,7 @@ function isSafeManifestCandidate(entry: unknown, targetDir: string): entry is st
  * watch-loads.mjs, recovery-schema.mjs, releases.mjs and
  * their tests) -- this manifest-only candidate set is what kept the prune
  * from ever reaching those tracked files. The deploy target has since moved
- * to `<root>/.c64-re-tools/bin`, no longer shared with that tracked tooling,
+ * to `<root>/.c64-re-tools/local/bin`, no longer shared with that tracked tooling,
  * but the same manifest-only discipline is kept unconditionally: a file
  * present in the target but ABSENT from the manifest is left untouched no
  * matter what it is, so the prune can only ever reach a path it recorded
@@ -438,6 +447,7 @@ export function installResources({
     // without force (staleness is the only thing divergence can mean for
     // it, per the WHY note above).
     try {
+      ensureLocalDir(projectToolsDirOf(root));
       mkdirSync(dirname(target), { recursive: true });
       copyFileSync(src, target);
       chmodSync(target, statSync(src).mode & 0o777);

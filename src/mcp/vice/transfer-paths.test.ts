@@ -100,15 +100,15 @@ for (const name of REFUSED_SNAPSHOT_NAMES) {
 
 // --------------------------------------------------------- snapshotPathFor / snapshotMetaPathFor
 
-test("snapshotPathFor: returns an absolute path ending in /.c64-re-tools/snapshots/<name>.vsf", () => {
+test("snapshotPathFor: returns an absolute path ending in /.c64-re-tools/local/snapshots/<name>.vsf", () => {
   const p = snapshotPathFor("x");
-  assert.ok(p.endsWith("/.c64-re-tools/snapshots/x.vsf"));
+  assert.ok(p.endsWith("/.c64-re-tools/local/snapshots/x.vsf"));
   assert.ok(p.startsWith("/"));
 });
 
-test("snapshotMetaPathFor: returns an absolute path ending in /.c64-re-tools/snapshots/<name>.json", () => {
+test("snapshotMetaPathFor: returns an absolute path ending in /.c64-re-tools/local/snapshots/<name>.json", () => {
   const p = snapshotMetaPathFor("x");
-  assert.ok(p.endsWith("/.c64-re-tools/snapshots/x.json"));
+  assert.ok(p.endsWith("/.c64-re-tools/local/snapshots/x.json"));
   assert.ok(p.startsWith("/"));
 });
 
@@ -122,7 +122,7 @@ test("snapshotMetaPathFor: rejects an unsanitary name before building a path, th
 
 // --------------------------------------------------------- transferKindDir
 
-test("transferKindDir: resolves a per-kind subdirectory under toolsDir()", () => {
+test("transferKindDir: resolves a per-kind subdirectory under the project's local/", () => {
   const p = transferKindDir("hosttool");
-  assert.ok(p.endsWith("/.c64-re-tools/hosttool"));
+  assert.ok(p.endsWith("/.c64-re-tools/local/hosttool"));
 });

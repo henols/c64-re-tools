@@ -58,6 +58,14 @@ import type { KillStage } from "./broker-kill.mts";
 // sibling imports of any kind, so both remain safely importable this way.
 import { resolvedBackend, resetResolvedBackendForTests } from "./backend-detect.mts";
 import { resolveTool } from "./tool-location.mts";
+import { toolsJsonPath } from "./tool-location.mts";
+
+/** Writes a project's tools.json where tool-location reads it: the project's
+ * machine-local folder under `toolsDir`. */
+function writeToolsJson(toolsDir: string, text: string): void {
+  mkdirSync(dirname(toolsJsonPath(toolsDir)), { recursive: true });
+  writeFileSync(toolsJsonPath(toolsDir), text);
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT_URL = new URL("./resources/vice-broker.mjs", import.meta.url).href;
@@ -334,7 +342,7 @@ function writeStubExecutable(dir: string, name: string): string {
 
 function writeToolsJsonFile(toolsDir: string, entries: Record<string, string>): void {
   mkdirSync(toolsDir, { recursive: true });
-  writeFileSync(join(toolsDir, "tools.json"), JSON.stringify(entries));
+  writeToolsJson(toolsDir, JSON.stringify(entries));
 }
 
 /** Like stubColdSpawnFactory() above, but captures the resolved COMMAND

@@ -1165,8 +1165,8 @@ conformanceTest("vice_snapshot_save", async () => {
 
 conformanceTest("vice_snapshot_load", async () => {
   await withTempRepoRootForConformance(async (dir) => {
-    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "conformance_snapshot.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "local", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "local", "snapshots", "conformance_snapshot.vsf"), "");
     const session = buildConformanceSession("conformance-vice_snapshot_load", (commandType) => {
       if (commandType === CommandType.Undump) {
         return { type: "undump" as const, requestId: 1, errorCode: 0, programCounter: 0x0801, related: [] };

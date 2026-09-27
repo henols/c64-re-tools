@@ -106,3 +106,30 @@ it.
 - **Test support** is `workspace-store-fixture.ts` (`openTestProject`,
   `seedWorkspaceProject`) and `project-race-holder.ts`. Neither name starts
   with `anno-`, and neither ships.
+
+### Follow-up: artifacts and machine-local output in separate folders
+
+The owner asked (2026-09-27) for committed artifacts to be kept apart from
+everything else under `.c64-re-tools/`.
+
+- **The root is for artifacts; `local/` is for everything else.**
+  `annotations.db` stays at `.c64-re-tools/annotations.db`. These moved to
+  `.c64-re-tools/local/`: `tools.json` (this machine's tool paths),
+  `bin/` (deployed launchers), `snapshots/`, host-tool output (`builds/`,
+  `dxa/`, `c1541/`, `petcat/`, `runs/ghidra/`) and `runs/oracle/`.
+- **`local/` ignores itself.** `ensureLocalDir()`, in the new leaf
+  `project-local.mts` (host-bound, since the broker's oracle scratch uses it),
+  writes `local/.gitignore` with `*`. So a project commits `.c64-re-tools/`
+  wholesale, with no rule of its own. A real `git add --dry-run` test proves
+  that only `annotations.db` is staged.
+- **Snapshots count as machine-local:** emulator state, large, and
+  regenerable through the reproducible-run protocol. Move them if a project
+  wants one committed.
+- **A `tools.json` left at the old root is refused by name**, and the refusal
+  says where to move it. It is never silently ignored, because an override
+  that stops working without a word is the worst outcome. Other old-layout
+  output (`bin/`, `snapshots/`) is left on disk, unread: a clean break, as
+  D-33 was.
+- **The `.c64-re-tools` literal census stays at 9.** `install-resources.ts`
+  routes both its join and its `local/` creation through one
+  `projectToolsDirOf()` helper.

@@ -72,7 +72,7 @@
 **Setup and distribution**
 - All eight prerequisites are declared in one file, `prerequisites.json`: x64sc,
   c1541, petcat, acme, acme-lib, ghidra, dxa and node. One resolver finds each
-  tool, in this order: environment variable, then `.c64-re-tools/tools.json`, then
+  tool, in this order: environment variable, then `.c64-re-tools/local/tools.json`, then
   `$PATH` or a sibling of `x64sc`. Every refusal quotes the remedy from that file,
   and the README install tables are generated from it.
 - Skills install with the `skills` CLI (`npx skills add henols/c64-re-tools
