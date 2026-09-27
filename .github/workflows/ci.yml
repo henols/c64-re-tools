@@ -110,6 +110,39 @@ jobs:
           VICE_REQUIRE_ACME: "1"
         run: node --test skill-assembler-cli.test.ts
 
+      - name: Regenerate committed artifacts and fail on drift
+        # The committed build output (resources/*.mjs, vice-cli.mjs), the
+        # register table and the assembled fixtures must be exactly what
+        # their generators produce from the committed sources. Deleting the
+        # generated .mjs files first makes a stale, missing or orphan output
+        # show in `git status`, because build() does not prune. Each
+        # generator below leaves a clean tree clean and needs no network and
+        # no emulator. exported-edit-run.json is left out of the check: it
+        # records a timestamp and the digests of its inputs, not an output.
+        # fixtures/vsf/make-fixtures.ts is not run, because its sidecars
+        # also carry a timestamp. Runs before Test, because the suite
+        # itself rebuilds resources/.
+        working-directory: src/mcp/vice
+        run: |
+          set -euo pipefail
+          find resources -name '*.mjs' -delete
+          rm -f vice-cli.mjs
+          node build.ts
+          node anno-regbits-gen.mts
+          node fixtures/hazard-subject/make-hazard-subject-fixtures.ts
+          node fixtures/hazard-subject/make-hazard-subject-annostore.ts
+          node fixtures/hazard-subject/make-exported-edit.ts > /dev/null
+          node fixtures/export-asm/make-export-asm-fixtures.ts
+          node fixtures/coverage/make-coverage-fixtures.ts
+          git checkout -- fixtures/hazard-subject/exported-edit-run.json
+          git diff --exit-code -- .
+          drift="$(git status --porcelain --untracked-files=all -- .)"
+          if [ -n "$drift" ]; then
+            echo "untracked generated files -- run the generators and commit:" >&2
+            echo "$drift" >&2
+            exit 1
+          fi
+
       - name: Test
         working-directory: src/mcp/vice
         env:
