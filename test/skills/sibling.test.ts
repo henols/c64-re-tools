@@ -1,10 +1,10 @@
 // sibling.test.ts
 //
 // `npx skills add` can install one skill alone. Every skill that uses the
-// c64-ram-capture skill's modules must then refuse by name -- naming the
+// c64-project skill's modules must then refuse by name -- naming the
 // missing skill and the command that installs it -- instead of crashing with
 // ERR_MODULE_NOT_FOUND. Each case copies ONE consuming skill into a scratch
-// skills/ tree (no c64-ram-capture beside it) and runs it as a user would.
+// skills/ tree (no c64-project beside it) and runs it as a user would.
 // The per-skill sibling.ts copies must also stay byte-identical.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILLS = join(HERE, "..", "..", "skills");
-const SIBLING = "c64-ram-capture";
+const SIBLING = "c64-project";
 const INSTALL_HINT = `npx skills add henols/c64-re-tools --skill ${SIBLING}`;
 
 interface Case {
@@ -26,13 +26,17 @@ interface Case {
 }
 
 const CASES: Case[] = [
-  { skill: "acme-build", script: "acme.ts", args: (d) => ["build", join(d, "x.a")] },
-  { skill: "c64-disk-access", script: "c1541.ts", args: (d) => ["dir", "--image", join(d, "x.d64")] },
-  { skill: "c64-petcat", script: "petcat.ts", args: (d) => ["decode", "--image", join(d, "x.prg")] },
-  { skill: "c64-program-recon", script: "packer-finding.ts", args: (d) => [join(d, "x.prg")] },
-  { skill: "c64-provenance-diff", script: "diff-images.ts", args: () => ["list"] },
-  { skill: "c64-provenance-diff", script: "recovery-schema.ts", args: () => [] },
-  { skill: "routine-queue-walker", script: "completeness-report.ts", args: () => [] },
+  { skill: "c64-assembler", script: "acme.ts", args: (d) => ["build", join(d, "x.a")] },
+  { skill: "c64-disk", script: "c1541.ts", args: (d) => ["dir", "--image", join(d, "x.d64")] },
+  { skill: "c64-basic", script: "petcat.ts", args: (d) => ["decode", "--image", join(d, "x.prg")] },
+  { skill: "c64-disassembler", script: "disassemble.ts", args: (d) => ["listing", "--image", join(d, "x.prg"), "--kind", "prg"] },
+  { skill: "c64-unpacker", script: "packer-finding.ts", args: (d) => [join(d, "x.prg")] },
+  { skill: "c64-provenance", script: "diff-images.ts", args: () => ["list"] },
+  { skill: "c64-provenance", script: "recovery-schema.ts", args: () => [] },
+  { skill: "c64-annotations", script: "completeness-report.ts", args: () => [] },
+  { skill: "c64-ram-capture", script: "dump-artifacts.ts", args: () => [] },
+  { skill: "c64-ram-capture", script: "vsf-slice.ts", args: () => [] },
+  { skill: "c64-ram-capture", script: "watch-loads.ts", args: () => [] },
 ];
 
 for (const c of CASES) {

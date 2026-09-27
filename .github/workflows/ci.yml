@@ -79,7 +79,7 @@ jobs:
           { acme --version || acme --help; } 2>&1 | head -5 | tee /tmp/acme-banner.txt
           grep -qi acme /tmp/acme-banner.txt
 
-      - name: Assemble the acme-build scaffold (library-free)
+      - name: Assemble the c64-assembler scaffold (library-free)
         # The banner grep above only ever proved a binary named `acme` exists --
         # it never proved the scaffold this repo ships can be assembled at
         # all. The scaffold once sourced angle-bracket hardware-register
@@ -108,7 +108,7 @@ jobs:
         working-directory: src/mcp/vice
         env:
           VICE_REQUIRE_ACME: "1"
-        run: node --test skill-acme-build-cli.test.ts
+        run: node --test skill-assembler-cli.test.ts
 
       - name: Test
         working-directory: src/mcp/vice

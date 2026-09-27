@@ -47,9 +47,12 @@ state) and keep working when the emulator misbehaves.
 - **Rebuild.** An annotated project exports as a directory of ACME source. That
   source reassembles to the same bytes as the original, can be edited, and is
   checked for equivalence against the original in VICE.
-- **Eight skills.** These are playbooks with helper scripts: `acme-build`,
-  `c64-disk-access`, `c64-memory-mapping`, `c64-petcat`, `c64-program-recon`,
-  `c64-provenance-diff`, `c64-ram-capture` and `routine-queue-walker`.
+- **Twelve skills, one capability each.** These are playbooks with helper
+  scripts: `c64-emulator`, `c64-assembler`, `c64-disk`, `c64-basic`,
+  `c64-disassembler`, `c64-unpacker`, `c64-memory-map`, `c64-annotations`,
+  `c64-ram-capture`, `c64-provenance`, `c64-reverse-engineering` (the method)
+  and `c64-project` (the shared workspace scripts). A skill never teaches
+  another skill's capability; it links to it.
 
 ## Guiding Principles
 

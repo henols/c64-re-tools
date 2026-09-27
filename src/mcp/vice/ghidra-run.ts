@@ -1,63 +1,47 @@
 #!/usr/bin/env node
 // ghidra-run.ts
 //
-// Phase 36, plan 36-01 (OPC-04): client-side orchestration ONLY for the
-// `ghidra.analyze` host tool. Mirrors dxa-run.ts: reaches Ghidra through the
-// broker's fixed endpoint (`runHostToolOverEndpoint("ghidra.analyze", …)`,
-// host-tool-endpoint.mts) and NEVER `node:child_process` -- a direct spawn
-// here would bypass the one host-tool route every runtime path crosses.
+// WHY THIS FILE EXISTS: the client side of the `ghidra.analyze` host tool.
+// runGhidraAnalyze() sends one typed request through the broker's fixed
+// endpoint (`runHostToolOverEndpoint()`, host-tool-endpoint.mts), reads the
+// downloaded run log, and classifies it with classifyGhidraRunLog(). Run as
+// a script, this file is the CLI that the c64-disassembler skill spawns with
+// `process.execPath`: it parses flags, calls runGhidraAnalyze() and prints
+// one JSON line (see the CLI section at the bottom).
 //
-// The endpoint client uploads every input by bytes and downloads every result under this module's own
-// tools root, so the run log's path is a local path read AS GIVEN.
+// The endpoint client uploads every input by bytes and downloads every
+// result under the caller's tools root, so every result path is a local
+// path, read as given. `results[0]` is always the run log (the output-slot
+// invariant of buildHostToolArgv()'s ghidra branch, host-tool.mts);
+// `results[1]` is the export when the request names an `exportPath`.
 //
-// Phase 36, plan 36-01 (D-36-05): `HostToolClientResult` carries `results[]`
-// and `stderrTail` and NO stdout field at all, so the run log is
-// structurally unreachable from the container side any other way --
-// `results[0]` IS the run log, always, for `ghidra.analyze` (the same
-// output-slot invariant `buildHostToolArgv()`'s ghidra branch documents,
-// host-tool.mts).
+// WHY THE RUN LOG DECIDES SUCCESS, NOT THE EXIT STATUS: measured against
+// real Ghidra 12.1.3, a run whose post-script throws still exits 0. The
+// classifier therefore takes run-log TEXT only and answers three questions:
+//   1. Did a script throw? Only the exact literal `ERROR REPORT SCRIPT
+//      ERROR:` (HeadlessAnalyzer) counts.
+//   2. Which language did the run use? The `Using Language/Compiler:` token,
+//      or a named absence when that line is missing.
+//   3. What expected/observed classification counts did the run print? A
+//      best-effort labelled-number extraction. The export file itself
+//      carries the exact `CLASSIFICATION_*` lines.
+// runGhidraAnalyze() refuses (throws, naming both sides) when the parsed
+// language id differs from the requested `processor` by even one byte.
 //
-// The run-log CLASSIFIER (`classifyGhidraRunLog()`) lives in THIS module,
-// not a sibling one, because plan 36-03 imports it and must not modify this
-// file -- the two plans run in the same wave (36-02 also edits this
-// module's sibling, host-tool.mts). It answers three questions over run-log
-// TEXT and takes NO exit status in its signature, because MEASURED this
-// session against real Ghidra 12.1.3: a run whose post-script THROWS still
-// exits 0 -- `analyzeHeadless`'s own exit status carries no information
-// about whether a script inside the run succeeded. The three questions:
-//
-//   1. Did a script throw? The exact literal signal, and ONLY that literal
-//      -- MEASURED this session: a thrown script's own log line reads
-//      `ERROR REPORT SCRIPT ERROR:` (HeadlessAnalyzer). A naive substring
-//      search for "ERROR" alone would false-fire on ANY log carrying an
-//      unrelated ERROR line (e.g. a benign stock-warning-adjacent line);
-//      this classifier matches the exact literal only.
-//   2. Which language did the run use? The `Using Language/Compiler:`
-//      token, reported as a NAMED ABSENCE when the line is missing --
-//      never an empty-string match, which would be indistinguishable from
-//      a language id that happened to be the empty string.
-//   3. What did the run report for the classification expectation and the
-//      observed count? PROVISIONAL: the export script that prints these
-//      two labelled numbers (`GhidraStructExport.java`) does not exist
-//      until plan 36-03, so this question's parser is a best-effort,
-//      generic labelled-number extraction over "expected"/"observed" text,
-//      seeded here so plan 36-03 can import a complete shape without
-//      touching this file. Per that plan's own instruction: if the
-//      classifier as landed cannot answer this question against the real
-//      export format, that plan records it as a finding rather than
-//      editing this file.
-//
-// `runGhidraAnalyze()` reads the run log at `results[0].path` AS GIVEN,
-// parses the language id out of its own `Using Language/Compiler:` line via
-// this same classifier, and REFUSES (throws, naming both sides) when that
-// parsed id differs from the `processor` the caller asked for by even a
-// single byte -- a BYTE-EXACT, CASE-SENSITIVE comparison, never case-folded
-// (must_haves.truths, 36-01-PLAN.md). This is the criterion-1 check: a run
-// that silently used a different language than the one requested must
-// never be readable as success.
+// WHAT NOT TO DO:
+//   - Never import `node:child_process` here or spawn Ghidra. Every run goes
+//     through the one host-tool route.
+//   - Never match "ERROR" loosely. An unrelated ERROR line in the log would
+//     then read as a thrown script.
+//   - Never case-fold the language comparison, and never read
+//     analyzeHeadless's exit status as success.
+//   - Never default `--processor` or `--import-route` on the CLI. Both are
+//     required; a missing one is refused by name.
+//   - Never print anything to stdout from the CLI except the one JSON line.
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 
 import { runHostToolOverEndpoint, type HostToolClientResult, type RunHostToolOverEndpointOptions } from "./host-tool-endpoint.mts";
 import { repoRoot as findRepoRoot, toolsDirUnder } from "./repo-root.ts";
@@ -271,4 +255,121 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
     exitStatus: response.exitStatus,
     language: verdict.language,
   };
+}
+
+// ---------------------------------------------------------------------------
+// CLI. The c64-disassembler skill locates this file with resolveMcpModule()
+// and spawns it with `process.execPath` -- the skill never imports it. The
+// last (and only) stdout line is `{ "ok": true, ... }` or
+// `{ "ok": false, "message": "..." }`; the exit code is 0 or 1 to match.
+// ---------------------------------------------------------------------------
+
+/** What the CLI prints: runGhidraAnalyze()'s result with the language
+ * flattened to its id, or a refusal. */
+export type GhidraCliResult =
+  | ({ ok: true; language: string } & Omit<GhidraRunResult, "language">)
+  | { ok: false; message: string };
+
+export const GHIDRA_CLI_USAGE =
+  "usage: node ghidra-run.ts --run-id ID --import-path FILE --processor LANG-ID --import-route prg|flat64k\n" +
+  "  [--loader-base-addr 0xNNNN] [--noanalysis] [--script-path DIR] [--pre-script FILE] [--post-script FILE]\n" +
+  "  [--entrypoints-path FILE] [--export-path NAME] [--expected-classification-lines N] [--data-ranges-path FILE]\n" +
+  "  [--project-root DIR] [--tools-root DIR] [--port N]";
+
+/** Parses the CLI flags into runGhidraAnalyze()'s two arguments. Relative
+ * input paths resolve against `cwd`; `--export-path` is an output NAME
+ * (only its basename rides the wire), so it is passed as given. */
+export function parseGhidraCli(argv: string[], cwd: string = process.cwd()): { ok: true; args: GhidraRunArgs; opts: GhidraRunOptions } | { ok: false; message: string } {
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args: argv,
+      strict: true,
+      allowPositionals: false,
+      options: {
+        "run-id": { type: "string" },
+        "import-path": { type: "string" },
+        processor: { type: "string" },
+        "import-route": { type: "string" },
+        "loader-base-addr": { type: "string" },
+        noanalysis: { type: "boolean" },
+        "script-path": { type: "string" },
+        "pre-script": { type: "string" },
+        "post-script": { type: "string" },
+        "entrypoints-path": { type: "string" },
+        "export-path": { type: "string" },
+        "expected-classification-lines": { type: "string" },
+        "data-ranges-path": { type: "string" },
+        "project-root": { type: "string" },
+        "tools-root": { type: "string" },
+        port: { type: "string" },
+      },
+    }));
+  } catch (e) {
+    return { ok: false, message: `ghidra-run: ${(e as Error).message}\n${GHIDRA_CLI_USAGE}` };
+  }
+
+  for (const required of ["run-id", "import-path", "processor", "import-route"] as const) {
+    if (values[required] === undefined || values[required] === "") {
+      return { ok: false, message: `ghidra-run: --${required} is required and has no default\n${GHIDRA_CLI_USAGE}` };
+    }
+  }
+  const route = values["import-route"];
+  if (route !== "prg" && route !== "flat64k") {
+    return { ok: false, message: `ghidra-run: --import-route must be "prg" or "flat64k"; got ${JSON.stringify(route)}` };
+  }
+
+  const abs = (p: string | undefined): string | undefined => (p === undefined ? undefined : resolvePath(cwd, p));
+  const args: GhidraRunArgs = {
+    runId: values["run-id"]!,
+    importPath: abs(values["import-path"])!,
+    processor: values.processor!,
+    importRoute: route,
+  };
+  if (values["loader-base-addr"] !== undefined) args.loaderBaseAddr = values["loader-base-addr"];
+  if (values.noanalysis === true) args.noanalysis = true;
+  if (values["script-path"] !== undefined) args.scriptPath = abs(values["script-path"]);
+  if (values["pre-script"] !== undefined) args.preScript = abs(values["pre-script"]);
+  if (values["post-script"] !== undefined) args.postScript = abs(values["post-script"]);
+  if (values["entrypoints-path"] !== undefined) args.entrypointsPath = abs(values["entrypoints-path"]);
+  if (values["export-path"] !== undefined) args.exportPath = values["export-path"];
+  if (values["data-ranges-path"] !== undefined) args.dataRangesPath = abs(values["data-ranges-path"]);
+  const lines = values["expected-classification-lines"];
+  if (lines !== undefined) {
+    if (!/^\d+$/.test(lines)) {
+      return { ok: false, message: `ghidra-run: --expected-classification-lines must be a non-negative integer; got ${JSON.stringify(lines)}` };
+    }
+    args.expectedClassificationLines = Number(lines);
+  }
+
+  const opts: GhidraRunOptions = {};
+  if (values["project-root"] !== undefined) opts.repoRoot = abs(values["project-root"]);
+  if (values["tools-root"] !== undefined) opts.toolsRoot = abs(values["tools-root"]);
+  if (values.port !== undefined) {
+    if (!/^\d+$/.test(values.port)) return { ok: false, message: `ghidra-run: --port must be an integer; got ${JSON.stringify(values.port)}` };
+    opts.port = Number(values.port);
+  }
+  return { ok: true, args, opts };
+}
+
+/** The whole CLI as a function: parse, run, and turn every throw into a
+ * refusal. `seams` carries the test seams of GhidraRunOptions (`run`,
+ * `runLogText`) so a test drives this with no broker. Never rejects. */
+export async function runGhidraCli(argv: string[], seams: Pick<GhidraRunOptions, "run" | "runLogText"> = {}, cwd: string = process.cwd()): Promise<GhidraCliResult> {
+  const parsed = parseGhidraCli(argv, cwd);
+  if (!parsed.ok) return parsed;
+  try {
+    const { language, ...rest } = await runGhidraAnalyze(parsed.args, { ...parsed.opts, ...seams });
+    // runGhidraAnalyze() refuses a run log with no language line, so a
+    // returned result always carries one.
+    return { ok: true, ...rest, language: language.present ? language.id : "" };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const result = await runGhidraCli(process.argv.slice(2));
+  process.stdout.write(JSON.stringify(result) + "\n");
+  process.exitCode = result.ok ? 0 : 1;
 }

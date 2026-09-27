@@ -77,7 +77,7 @@
   and the README install tables are generated from it.
 - Skills install with the `skills` CLI (`npx skills add henols/c64-re-tools
   --skill '*'`) straight from the root `skills/` folder; our own npm installer
-  is retired. A skill installed without `c64-ram-capture` refuses by name and
+  is retired. A skill installed without `c64-project` refuses by name and
   gives the install command. Skill-script tests live in `test/skills/` and
   derived evidence in `evidence/`, so neither ships.
 - The MCP server comes from the Claude Code plugin, or from
@@ -125,6 +125,16 @@
   assert they stay gone. Specs: `agent-os/specs/2026-09-25-1853-one-endpoint-client/`,
   `2026-09-25-2240-deletion-cutover/`, `2026-09-26-0022-ghidra-without-alias/`
   and `2026-09-26-1019-no-cross-side-paths/`.
+
+## In progress
+
+**Single-capability skills**
+- Split the eight skills into twelve, each covering one capability and named
+  for what it provides: `c64-emulator`, `c64-assembler`, `c64-disk`,
+  `c64-basic`, `c64-disassembler`, `c64-unpacker`, `c64-memory-map`,
+  `c64-annotations`, `c64-ram-capture`, `c64-provenance`,
+  `c64-reverse-engineering` and `c64-project` (the shared scripts). Spec:
+  `agent-os/specs/2026-09-27-1145-single-capability-skills/`.
 
 ## Planned / Later
 

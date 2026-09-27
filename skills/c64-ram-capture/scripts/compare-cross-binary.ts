@@ -6,8 +6,8 @@
 //
 // Pure logic. This module reads files the agent already produced and does
 // arithmetic over them. It contacts nothing: the mcp__plugin_c64-re-tools_vice__*
-// tools are the only route to the emulator (.claude/CLAUDE.md § Emulator
-// Access), and nothing here opens a connection, reads broker state, or shells
+// tools are the only route to the emulator (see the c64-emulator
+// skill), and nothing here opens a connection, reads broker state, or shells
 // out.
 //
 // The narrowed volatile mask below is committed here, in this commit, before

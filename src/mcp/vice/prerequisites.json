@@ -10,7 +10,7 @@
       "kind": "executable",
       "unblocks": {
         "skills": [
-          "c64-program-recon",
+          "c64-emulator",
           "c64-ram-capture"
         ],
         "mcp": [
@@ -93,7 +93,7 @@
       "kind": "executable",
       "unblocks": {
         "skills": [
-          "c64-disk-access"
+          "c64-disk"
         ],
         "mcp": [
           "c1541.bam",
@@ -174,8 +174,7 @@
       "kind": "executable",
       "unblocks": {
         "skills": [
-          "c64-petcat",
-          "c64-program-recon"
+          "c64-basic"
         ],
         "mcp": [
           "petcat.decode"
@@ -253,7 +252,7 @@
       "kind": "executable",
       "unblocks": {
         "skills": [
-          "acme-build"
+          "c64-assembler"
         ],
         "mcp": [
           "acme.build"
@@ -279,7 +278,7 @@
             "ecosystem": "generic",
             "text": "Install ACME.",
             "provenance": "carried",
-            "source": "skills/acme-build/SKILL.md:254"
+            "source": "skills/c64-assembler/SKILL.md:192"
           }
         ]
       }
@@ -294,7 +293,7 @@
       "marker": "cbm/c64/vic.a",
       "unblocks": {
         "skills": [
-          "acme-build"
+          "c64-assembler"
         ],
         "mcp": [
           "acme.build"
@@ -306,7 +305,7 @@
             "ecosystem": "generic",
             "text": "export ACME=<dir holding cbm/c64/vic.a>.",
             "provenance": "carried",
-            "source": "skills/acme-build/SKILL.md:255"
+            "source": "skills/c64-assembler/SKILL.md:193"
           }
         ]
       }
@@ -321,7 +320,7 @@
       "marker": "support/analyzeHeadless",
       "unblocks": {
         "skills": [
-          "c64-program-recon"
+          "c64-disassembler"
         ],
         "mcp": [
           "ghidra.analyze",
@@ -348,7 +347,7 @@
       "kind": "executable",
       "unblocks": {
         "skills": [
-          "routine-queue-walker"
+          "c64-disassembler"
         ],
         "mcp": [
           "dxa.disassemble"
@@ -375,14 +374,16 @@
       "kind": "executable",
       "unblocks": {
         "skills": [
-          "acme-build",
-          "c64-disk-access",
-          "c64-memory-mapping",
-          "c64-petcat",
-          "c64-program-recon",
-          "c64-provenance-diff",
+          "c64-annotations",
+          "c64-assembler",
+          "c64-basic",
+          "c64-disassembler",
+          "c64-disk",
+          "c64-memory-map",
+          "c64-project",
+          "c64-provenance",
           "c64-ram-capture",
-          "routine-queue-walker"
+          "c64-unpacker"
         ],
         "mcp": [
           "acme.build",

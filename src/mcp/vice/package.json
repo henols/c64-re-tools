@@ -108,6 +108,7 @@
     "README.md",
     "THIRD-PARTY-NOTICES.md",
     "vendor/ghidra-ext/",
+    "vendor/ghidra-scripts/",
     "vendor/dxa/",
     "!vendor/dxa/dxa"
   ],

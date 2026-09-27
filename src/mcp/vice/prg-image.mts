@@ -77,7 +77,7 @@ import { gunzipSync } from "node:zlib";
 /**
  * Parses a `.prg` file: a little-endian 2-byte load address followed by the
  * payload bytes. This is the C64 program-file convention every C64 loader
- * (and this project's own `acme-build` output) already follows.
+ * (and this project's own `c64-assembler` output) already follows.
  */
 export function parsePrg(bytes: Uint8Array): { origin: number; body: Uint8Array } {
   if (bytes.length < 3) {

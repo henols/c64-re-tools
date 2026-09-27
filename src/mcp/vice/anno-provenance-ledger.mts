@@ -5,7 +5,7 @@
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
 // Nothing in this repository has ever READ the provenance ledger. It has one
-// writer -- `renderLedger()` in `skills/c64-provenance-diff/scripts/
+// writer -- `renderLedger()` in `skills/c64-provenance/scripts/
 // diff-images.ts` -- and zero readers, because the requirement governing this
 // module requires the verdict be READ from the existing ledger, "never
 // re-derived". Recomputing it in-process would force the
@@ -173,7 +173,7 @@ export class ProvenanceLedgerError extends Error {
  * two named routes stay in sync with each other rather than being retyped at
  * every throw site. */
 const LEDGER_REMEDY =
-  'regenerate it with c64-provenance-diff\'s "ledger" verb, or omit --ledger to export without provenance annotation';
+  'regenerate it with c64-provenance\'s "ledger" verb, or omit --ledger to export without provenance annotation';
 
 /**
  * Splits one line into its pipe-delimited cells, or returns `undefined` when

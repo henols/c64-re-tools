@@ -110,7 +110,7 @@ async function main(): Promise<void> {
     const pkgDir = join(scratch, "node_modules", ...PACKAGE_NAME.split("/"));
     mkdirSync(pkgDir, { recursive: true });
     execFileSync("tar", ["-xzf", join(scratch, tarball), "-C", pkgDir, "--strip-components=1"], { stdio: ["ignore", "ignore", "inherit"] });
-    for (const required of ["vice-cli.mjs", "dist/vice-proxy.js", "dist/vsf-slice.js", "dist/tool-location.mjs", "dist/memmap.json", "resources/vice-broker.mjs"]) {
+    for (const required of ["vice-cli.mjs", "dist/vice-proxy.js", "dist/vsf-slice.js", "dist/tool-location.mjs", "dist/ghidra-run.js", "dist/dxa-run.js", "dist/memmap.json", "resources/vice-broker.mjs", "vendor/ghidra-scripts/GhidraStructExport.java", "vendor/ghidra-scripts/VolatileCarve.java"]) {
       if (!existsSync(join(pkgDir, required))) throw new Error(`the packed package lacks ${required}`);
     }
     symlinkSync(join(HERE, "node_modules"), join(pkgDir, "node_modules"), "dir");

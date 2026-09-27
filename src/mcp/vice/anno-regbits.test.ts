@@ -88,12 +88,12 @@ test("non-vacuous drift guard: appending a byte to a SCRATCH COPY of memmap.json
   // own HERE-relative MEMMAP_PATH formula resolves the same way here as it
   // does against the real tree (plan 16-01: skills moved from `.claude/skills/`
   // to `skills/`, changing the hop count from 2 to 3).
-  const skillsDir = path.join(tmpDir, "skills", "c64-memory-mapping");
+  const skillsDir = path.join(tmpDir, "skills", "c64-memory-map");
   fs.mkdirSync(skillsDir, { recursive: true });
   const mcpDir = path.join(tmpDir, "src", "mcp", "vice");
   fs.mkdirSync(mcpDir, { recursive: true });
 
-  const realMemmapPath = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
+  const realMemmapPath = join(HERE, "..", "..", "..", "skills", "c64-memory-map", "memmap.json");
   const realBytes = readFileSync(realMemmapPath);
   const mutatedPath = path.join(skillsDir, "memmap.json");
   fs.writeFileSync(mutatedPath, Buffer.concat([realBytes, Buffer.from("\n// planted for T-11-GEN-DRIFT non-vacuity\n")]));
@@ -218,7 +218,7 @@ test("non-vacuity: a synthetic memmap entry whose desc is unmappable and absent 
   // See the drift-guard test above for why this mirrors the real repo shape
   // 3 levels deep (`src/mcp/vice` next to `skills/...`; plan 16-01: skills
   // moved to `skills/`).
-  const skillsDir = path.join(tmpDir, "skills", "c64-memory-mapping");
+  const skillsDir = path.join(tmpDir, "skills", "c64-memory-map");
   fs.mkdirSync(skillsDir, { recursive: true });
   const mcpDir = path.join(tmpDir, "src", "mcp", "vice");
   fs.mkdirSync(mcpDir, { recursive: true });

@@ -63,7 +63,7 @@
 //   - Never auto-pick an input when the caller does not name one. A
 //     silent auto-pick would happily analyse a cracktro or loader stub's
 //     bytes instead of the actual game -- precisely the failure
-//     `c64-provenance-diff` exists to prevent elsewhere in this project.
+//     `c64-provenance` exists to prevent elsewhere in this project.
 //     Every verb takes EXISTING inputs and refuses rather than guess:
 //     `render-memmap` demands its provenance sidecar by name, `coverage`
 //     demands its annotation store by name, and `export-asm` demands BOTH an
@@ -324,7 +324,7 @@ verbs:
       --force is passed, and --force replaces only the names this export
       itself produces -- any other entry already in the directory is refused
       by name, never deleted to make room.
-      --ledger names c64-provenance-diff's generated recovery/PROVENANCE.md.
+      --ledger names c64-provenance's generated recovery/PROVENANCE.md.
       Supplying it makes the export carry each covered range's recorded
       Verdict and Confidence as inline comments. It is OPTIONAL:
       omitting it exports exactly as before. The flag changes COMMENT TEXT
@@ -386,8 +386,8 @@ verbs:
       Reports the project's byte census (per data type, with an explicit
       denominator and an undefined-byte count that must read zero), the
       survivor search (auto-named labels still sitting in a code region,
-      matched by the SAME frozen prefix set routine-queue-walker's own
-      candidate queue uses), the fixture's own execution disposition read
+      matched by the SAME frozen prefix set the c64-reverse-engineering
+      skill's candidate queue uses), the fixture's own execution disposition read
       from --manifest (a NOT EXECUTED fixture renders that fact by name,
       never a clean bill of health), and the disagreement input verbatim.
       Never prints a percentage, rate or combined figure -- the same rule
@@ -1079,7 +1079,7 @@ interface ExportAsmParsedArgs {
   positional: string[];
   out?: string;
   outMissingValue?: boolean;
-  /** The ledger `c64-provenance-diff` generates
+  /** The ledger `c64-provenance` generates
    * (`recovery/PROVENANCE.md`). OPTIONAL -- see `ExportAsmOptions.ledgerPath`
    * in `anno-export-asm.mts` for why. */
   ledger?: string;
@@ -1234,7 +1234,7 @@ async function cmdExportAsm(rest: string[], ctx: CliContext): Promise<number> {
   }
   if (ledgerPath !== undefined && !existsSync(ledgerPath)) {
     console.error(
-      `export-asm: ledger not found: ${ledgerPath} -- regenerate it with c64-provenance-diff's "ledger" verb, or omit ` +
+      `export-asm: ledger not found: ${ledgerPath} -- regenerate it with c64-provenance's "ledger" verb, or omit ` +
         "--ledger to export without provenance annotation.",
     );
     return 1;
@@ -1588,7 +1588,7 @@ async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<n
  * prove, and never a percentage, rate or combined figure -- the same rule
  * this CLI applies everywhere else. This is the FALLBACK text renderer for a direct CLI
  * invocation without `--json`; `completeness-report.ts`'s
- * `renderCompletenessReport()` is the report the routine-queue-walker skill
+ * `renderCompletenessReport()` is the report the c64-annotations skill
  * actually reads, built from this same verb's `--json` answer.
  */
 function printDecompCompletenessReport(r: DecompCompletenessReport): void {
@@ -2135,7 +2135,7 @@ async function cmdCall(rest: string[], ctx: CliContext): Promise<number> {
 /**
  * Entry point for the `anno` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
- * verb per `acme.ts`'s own dispatch convention (`skills/acme-build/
+ * verb per `acme.ts`'s own dispatch convention (`skills/c64-assembler/
  * scripts/acme.ts`), with one deliberate difference: an explicit `--help`
  * returns 0 (a no-op invocation with no verb also returns 0), while an
  * unrecognised verb returns 1.

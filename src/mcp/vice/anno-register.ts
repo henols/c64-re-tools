@@ -265,7 +265,7 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     rationale:
       "AUTO-01 requires machine addresses to annotate themselves into the store mechanically -- no agent call, no " +
       "queue walk and no skill invocation anywhere in the loop -- by joining stored cross-references against " +
-      "c64-memory-mapping's memmap.json. The manifest's five procedures never describe this join at all, because " +
+      "c64-memory-map's memmap.json. The manifest's five procedures never describe this join at all, because " +
       "it answers a question this project's own store creates (what does a stored cross-reference's target " +
       "address MEAN against the published memory map), not one upstream's absorbed procedures ever asked. Without " +
       "this verb the annotation the join produces has no route onto the surface at all.",

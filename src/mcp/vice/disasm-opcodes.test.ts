@@ -298,7 +298,7 @@ describe("JAM class -- exactly 12 opcodes", () => {
     });
   }
 
-  // "jam" is in acme-build/SKILL.md's 18 verified !cpu 6510 illegal
+  // "jam" is in c64-assembler/SKILL.md's 18 verified !cpu 6510 illegal
   // mnemonics, so ACME's parser accepts the bare mnemonic -- but ALL 12 jam
   // opcodes share the identical (mnemonic, mode) pair with no operand to
   // disambiguate them, and 04-06's real-ACME round-trip found that ACME

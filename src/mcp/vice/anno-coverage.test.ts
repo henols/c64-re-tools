@@ -3913,7 +3913,7 @@ test("LIVE non-vacuity: both routes are recomputed from the committed fixture an
 // CR-05 / REPOINT-01 / WR-07, and the `T-29-14-01` disclosure symmetry.
 //
 // WHAT THIS SECTION REPRODUCES. `anno coverage game.prg --store
-// game.annostore` -- the ONLY measurement instruction `routine-queue-walker`
+// game.annostore` -- the ONLY measurement instruction `c64-reverse-engineering`
 // has -- printed a full report of ZEROS and exited 1, because the positional
 // was loaded by two functions that between them understood exactly one format:
 // the retired analyser's JSON project file carrying a gzip-then-base64

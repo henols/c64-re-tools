@@ -624,7 +624,7 @@ test(
 // ---------------------------------------------------------------------------
 
 /** Reads the KERNAL's own default hardware-IRQ service routine entry point
- * from c64-memory-mapping's own memmap.json, never a typed-from-memory
+ * from c64-memory-map's own memmap.json, never a typed-from-memory
  * literal -- copied from stock-a4-checkpoint-flood.test.ts's own
  * readKernalIrqAddress() (that file's helpers are module-local, not
  * exported; re-deriving five lines here is cheaper than exporting a second
@@ -639,14 +639,14 @@ interface KernalIrqAddress {
 }
 
 function readKernalIrqAddress(): KernalIrqAddress {
-  const memmapPath = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
+  const memmapPath = join(HERE, "..", "..", "..", "skills", "c64-memory-map", "memmap.json");
   const parsed = JSON.parse(readFileSync(memmapPath, "utf8")) as { entries: Array<Record<string, unknown>> };
   const raw = parsed.entries;
   assert.ok(Array.isArray(raw), `${memmapPath} must carry an "entries" array`);
   const cinvEntry = raw.find(
     (e) => e.sym === "CINV" && typeof e.desc === "string" && (e.desc as string).includes("Hardware IRQ Interrupt Address"),
   );
-  assert.ok(cinvEntry, "c64-memory-mapping/memmap.json must carry a CINV entry naming the default hardware IRQ interrupt address");
+  assert.ok(cinvEntry, "c64-memory-map/memmap.json must carry a CINV entry naming the default hardware IRQ interrupt address");
   const desc = (cinvEntry as Record<string, unknown>).desc as string;
   const m = desc.match(/\$([0-9A-Fa-f]{2,4})/);
   assert.ok(m, `CINV's memmap.json desc field did not carry a "$hex" default address: "${desc}"`);

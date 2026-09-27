@@ -171,7 +171,7 @@ VICE 3.9 stock, `/usr/local/bin/c1541` VICE 3.10 fork — the fork is the one
 ## `synthetic-corrupt.d64` (174848 bytes, 40-04, D-06)
 
 A byte-patched copy of `synthetic.d64` (identical sha256-verifiable base,
-patched in exactly two places), authored for the `c64-disk-access` skill's
+patched in exactly two places), authored for the `c64-disk` skill's
 `audit` subcommand — the ported fakery detector's own corrupt-fixture
 control. Byte offsets computed against this project's own standard 1541
 zone table (`sectorsPerTrack()`; tracks 1-17 have 21 sectors each, so the
@@ -212,7 +212,7 @@ call itself fails.
 `synthetic.d64` and `synthetic-corrupt.d64` were BOTH built by the very
 `c1541` binary this project's `c1541.*` seam calls read back — the
 "acknowledged mild circularity" section above names the resulting risk.
-The mitigation lives in `skills/c64-disk-access/scripts/c1541.test.ts`,
+The mitigation lives in `skills/c64-disk/scripts/c1541.test.ts`,
 as ONE live-gated test case cross-validating the directory listing, one
 entry's own claimed first track/sector, and that same entry's independently
 walked sector chain against each other, run against Phase 23's own evidence

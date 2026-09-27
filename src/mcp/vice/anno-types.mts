@@ -38,7 +38,7 @@
 //   1. NEVER re-spell, re-order, add to or remove from the twelve members of
 //      `DATA_TYPES`. They are the `anno_set_data_type` schema's own strings in
 //      the schema's own order (`anno-tools.mts:291-304`), and
-//      `skills/c64-memory-mapping/SKILL.md` already names all four split
+//      `skills/c64-annotations/references/tools.md` already names all four split
 //      variants verbatim -- a re-spelling breaks a shipped playbook and buys
 //      nothing. Narrowing the vocabulary once a project file exists is not a
 //      migration; it is data loss.
@@ -94,7 +94,7 @@
 //      exactly one place, `anno-coverage.mts`'s `AUTO_NAME_PREFIX_RE`, and
 //      a short reimplementation causes the exact failure this project has
 //      already measured: a five-prefix copy silently under-counts, which breaks the
-//      `routine-queue-walker` skill's backlog construction while every test
+//      `c64-reverse-engineering` skill's backlog construction while every test
 //      keeps passing. The store separates the two namespaces with its label
 //      `kind` field, not with a name pattern.
 //   9. NEVER build a mnemonic-to-access-kind classifier here. Nothing derivable
@@ -460,7 +460,7 @@ export type CommentType = (typeof COMMENT_TYPES)[number];
  *
  * THE CAPITALISATION IS A DECIDED ASYMMETRY, not an oversight. `DATA_TYPES` is
  * lowercase because it is read off `anno_set_data_type`'s own schema and is
- * named verbatim in `skills/c64-memory-mapping/SKILL.md`, so a re-spelling
+ * named verbatim in `skills/c64-annotations/references/tools.md`, so a re-spelling
  * would break a shipped playbook. `LABEL_KINDS` is capitalised because its only
  * mechanical consumer is the coverage census, which already spells it
  * `"User"`/`"Auto"`/`"System"` at four sites (`anno-coverage.mts:206` for the

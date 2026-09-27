@@ -8,7 +8,7 @@
 // ExternalFile, Undefined; `types.rs:314-331`) carries CLASSIFICATION but no
 // CONFIDENCE axis. `Code` cannot distinguish "PC observed executing" from
 // "reachable via a JSR, never run" -- that distinction is
-// `memory-map.template.md`'s most deliberate feature, and its own text
+// the c64-annotations skill's most deliberate feature, and its own text
 // forbids promoting a row by editing its grade (re-verify and restate the
 // evidence instead). Measured: anno line comments persist through
 // save/reload (`user_line_comments`), and both `anno_get_comments` and
@@ -18,7 +18,7 @@
 //
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR:
 //   - the five-grade vocabulary (`CONFIDENCE_GRADES`), copied verbatim from
-//     `skills/c64-program-recon/templates/memory-map.template.md`'s
+//     `skills/c64-annotations/SKILL.md`'s
 //     own confidence table -- nowhere else in this repo may hand-write one
 //     of these five phrases or bracket tokens as a second copy;
 //   - the parser (`parseConfidencePrefix`) that decides whether a comment
@@ -49,7 +49,7 @@
 //     be queryable through the same `anno_get_comments` /
 //     `anno_search_disassembly` tools this module's whole design depends
 //     on.
-//   - Never promote a row by editing its grade in place. The template's own
+//   - Never promote a row by editing its grade in place. The skill's own
 //     text says so, and this module has no "upgrade" or "promote" function
 //     by design -- a caller who wants to change a grade calls
 //     `anno_set_comment` again with a freshly composed
@@ -57,7 +57,7 @@
 //     replacing the old one explicitly), never a silent in-place mutation
 //     this module would hide.
 //   - Never widen `CONFIDENCE_GRADES` without updating
-//     `memory-map.template.md`'s own table first -- the template is the
+//     `skills/c64-annotations/SKILL.md`'s own table first -- the skill is the
 //     source of the vocabulary, this module is its one authoritative
 //     runtime copy, and the non-vacuity test below fails if the two drift.
 
@@ -66,16 +66,16 @@ export interface ConfidenceGrade {
   readonly token: string;
   /** The full bracket token as it appears in a comment, e.g. `"[confirmed-code]"`. */
   readonly bracket: string;
-  /** The human phrase from `memory-map.template.md`'s own confidence table,
+  /** The human phrase from `skills/c64-annotations/SKILL.md`'s own confidence table,
    * e.g. `"confirmed code"` (no hyphen -- this is prose, not an identifier). */
   readonly phrase: string;
-  /** What the grade means, copied verbatim from the template's "Means" column. */
+  /** What the grade means, copied verbatim from the skill's "Means" column. */
   readonly meaning: string;
 }
 
 /**
- * The five grades from `memory-map.template.md`'s confidence table, in the
- * template's own order. This is the ONE place the vocabulary is written
+ * The five grades from `skills/c64-annotations/SKILL.md`'s confidence table,
+ * in the skill's own order. This is the ONE place the vocabulary is written
  * down -- see the module header's "what NOT to do" list.
  */
 export const CONFIDENCE_GRADES: readonly ConfidenceGrade[] = [

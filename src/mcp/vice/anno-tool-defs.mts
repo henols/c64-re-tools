@@ -853,7 +853,7 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
     description:
       "The mechanical join: reads every distinct cross-reference target the store already holds, skips addresses " +
       "inside the supplied image's own loaded range (those are program addresses, never looked up), and annotates " +
-      "every remaining address with the narrowest c64-memory-mapping/memmap.json entry containing it. No agent " +
+      "every remaining address with the narrowest c64-memory-map/memmap.json entry containing it. No agent " +
       "call, no queue walk and no skill invocation anywhere in this call. Reports addressesConsidered, annotated, " +
       "skippedInImage, skippedNoMapEntry, declined and commentsChanged, plus a per-address decisions array naming " +
       "the outcome and, for every skip, WHY. Running this twice over an unchanged store reports commentsChanged: 0 " +

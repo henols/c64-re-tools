@@ -54,7 +54,7 @@ declared in `src/mcp/vice/prerequisites.json`.
 |------|---------|-------|
 | VICE `x64sc` | ≥ 3.9 | The binary-monitor opcode `CPUHISTORY_GET` needs ≥ 3.10. On 3.9, CPU history comes from the text monitor (`chis`). |
 | `c1541`, `petcat` | from VICE | Found as siblings of `x64sc`. `c1541` is the only `.d64` reader. |
-| ACME + library | 0.97 | Assembler for `acme-build`, and the oracle that proves the exported source reassembles to the same bytes. |
+| ACME + library | 0.97 | Assembler for `c64-assembler`, and the oracle that proves the exported source reassembles to the same bytes. |
 | Ghidra | 12.1.3 | Headless `analyzeHeadless`, not vendored. The NMOS 6502 SLEIGH extension is vendored in `vendor/ghidra-ext`. |
 | dxa | 0.1.5 | Vendored source in `vendor/dxa`, built by the user (`bash vendor/dxa/build.bash build`). |
 

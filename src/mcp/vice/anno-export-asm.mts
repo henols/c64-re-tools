@@ -42,7 +42,7 @@
 //   - Never restate the eleven auto-name prefixes here. `anno-types.mts:93-99`
 //     forbids a second copy of that vocabulary BY NAME, and names the exact
 //     failure a short reimplementation causes: a five-prefix copy silently
-//     under-counts, which breaks `routine-queue-walker`'s backlog construction
+//     under-counts, which breaks `c64-reverse-engineering`'s backlog construction
 //     while every test keeps passing. This module DOES need the vocabulary --
 //     it marks auto-generated names in the emitted source -- and it gets it by
 //     IMPORTING `AUTO_NAME_PREFIX_RE` from its one home. A copy made "just to
@@ -101,7 +101,7 @@ import { assertLegalAcmeIdentifier } from "./anno-acme-ident.mts";
 // constant; before this the only consumers were `anno-coverage.mts`'s own
 // `computeLabelRatio()` and its test file.
 //
-// WHY THE EXPORTER CARES. `routine-queue-walker`'s SKILL.md reads the typed
+// WHY THE EXPORTER CARES. `c64-reverse-engineering`'s SKILL.md reads the typed
 // prefixes as DOCUMENTED VOCABULARY (`s_`, `p_`, `b_`, `zpp_`, `zpf_`, `zpa_`,
 // `f_`, `a_` at :128-181 and :220-226) and never imports the regex, so the
 // coupling between that skill's backlog signal and this repo's definition of
@@ -321,7 +321,7 @@ export interface ExportAsmResult {
   midInstructionLabelCount: number;
   /** How many emitted symbol definitions carry an AUTO-GENERATED name, decided
    * by `AUTO_NAME_PREFIX_RE` -- the eleven typed prefixes, read from their one
-   * home and never restated here. This is `routine-queue-walker`'s backlog
+   * home and never restated here. This is `c64-reverse-engineering`'s backlog
    * signal, surfaced in the one artefact that leaves this tree. */
   autoNamedSymbolCount: number;
   /** How many instruction operands were rendered through a project enum's
@@ -1891,7 +1891,7 @@ export function exportAsmFrom(source: ExportAsmSource): ExportAsmResult {
         throw new Error(
           `exportAsm: the ledger at "${ledgerPath}" carries no row overlapping the block ${hexExtent(block.start)}..` +
             `${hexExtent(block.endExclusive - 1)} (inclusive) -- refusing to emit this block unannotated or with an invented ` +
-            `verdict. Regenerate the ledger with c64-provenance-diff's "ledger" verb so it covers this range, or omit --ledger.`,
+            `verdict. Regenerate the ledger with c64-provenance's "ledger" verb so it covers this range, or omit --ledger.`,
         );
       }
       const provenanceLines: string[] = [];

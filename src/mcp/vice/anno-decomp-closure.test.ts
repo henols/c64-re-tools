@@ -30,10 +30,10 @@
 // ---------------------------------------------------------------------------
 // WHAT NOT TO DO
 // ---------------------------------------------------------------------------
-//   - Never import `skills/routine-queue-walker/scripts/completeness-report.ts`.
+//   - Never import `skills/c64-annotations/scripts/completeness-report.ts`.
 //     `src/mcp/vice/**` and `skills/**` publish as SEPARATE npm packages
 //     and cannot import each other (`acme-verify.ts`'s own header states this
-//     constraint; `skill-acme-build-cli.test.ts` is the sanctioned pattern
+//     constraint; `skill-assembler-cli.test.ts` is the sanctioned pattern
 //     this file copies: SPAWN the skill script as a subprocess, never
 //     `import` it).
 //   - Never write a scratch store inside this repository's own tree. Every
@@ -67,11 +67,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures");
 const MANIFEST_PATH = join(FIXTURES_DIR, "decomp-execution-manifest.json");
 
-// `src/mcp/vice/` -> `src/` -> `skills/routine-queue-walker/scripts/` --
+// `src/mcp/vice/` -> `src/` -> `skills/c64-annotations/scripts/` --
 // computed from THIS file's own location, matching `mcp-module.ts`'s own
 // "computed hop count, never a fixed count" discipline (see that module's
 // header on the stale-offset incident this project has already had).
-const COMPLETENESS_SCRIPT = join(HERE, "..", "..", "..", "skills", "routine-queue-walker", "scripts", "completeness-report.ts");
+const COMPLETENESS_SCRIPT = join(HERE, "..", "..", "..", "skills", "c64-annotations", "scripts", "completeness-report.ts");
 
 interface FixtureSpec {
   readonly dir: string;
@@ -260,15 +260,15 @@ interface GateRun {
 }
 
 /**
- * Spawns the REAL `routine-queue-walker` skill script with `argv`, returning
+ * Spawns the REAL `c64-annotations` skill script with `argv`, returning
  * its real process exit code and both streams -- D-08's own numeric stop
- * condition, proven here exactly as `routine-queue-walker` itself observes
+ * condition, proven here exactly as `c64-annotations` itself observes
  * it. NEVER an `import` (see this file's header) -- always a subprocess,
- * matching `skill-acme-build-cli.test.ts`'s own sanctioned cross-package
+ * matching `skill-assembler-cli.test.ts`'s own sanctioned cross-package
  * pattern. The gate's own CLI child reads `workspace`'s project.
  */
 function spawnGate(workspace: string, argv: readonly string[]): GateRun {
-  assert.ok(existsSync(COMPLETENESS_SCRIPT), `the routine-queue-walker gate script must exist at ${COMPLETENESS_SCRIPT}`);
+  assert.ok(existsSync(COMPLETENESS_SCRIPT), `the c64-annotations gate script must exist at ${COMPLETENESS_SCRIPT}`);
   const env = { ...process.env, CLAUDE_PROJECT_DIR: workspace, VICE_SKIP_RESOURCE_INSTALL: "1", MASTRA_TELEMETRY_DISABLED: "1" };
   const r = spawnSync(process.execPath, [COMPLETENESS_SCRIPT, ...argv], { encoding: "utf8", timeout: 30_000, env });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
@@ -311,7 +311,7 @@ for (const fixture of NINE_FIXTURES) {
       writeFileSync(disagreementsPath, JSON.stringify(disagreements), "utf8");
 
       const gate = spawnGate(tempDir, ["--fixture", fixtureArg, "--disagreements", disagreementsPath, "--manifest", manifestPath]);
-      assert.equal(gate.status, 0, `${label}: the real routine-queue-walker gate script must exit 0:\nSTDOUT:\n${gate.stdout}\nSTDERR:\n${gate.stderr}`);
+      assert.equal(gate.status, 0, `${label}: the real c64-annotations gate script must exit 0:\nSTDOUT:\n${gate.stdout}\nSTDERR:\n${gate.stderr}`);
       assert.match(gate.stdout, /GATE: PASS/, `${label}: the rendered report must say GATE: PASS:\n${gate.stdout}`);
 
       const report = await realCompletenessJson(tempDir, fixtureArg, disagreementsPath, manifestPath);

@@ -5,23 +5,26 @@
 // here takes already-fetched data as an argument or reads a committed file
 // -- nothing in this module contacts the emulator, ever. The single
 // permitted route to the emulator is the executing agent's own
-// `mcp__plugin_c64-re-tools_vice__*` tool calls (see .claude/CLAUDE.md "Emulator Access");
+// `vice_*` tool calls (see the c64-emulator skill);
 // arming, resuming, polling, disassembling and reading memory all happen in
 // the agent's own turn, and the observations land in a committed hit-log
 // JSON (`recovery/<release>/dumps/<release>-loading-hits.json`) that this
 // module reads back. The import-purity guard test in
-// tools/watch-loads.test.ts is the mechanical statement of that boundary:
-// every import specifier in this file resolves to a `node:` built-in or a
-// sibling file inside tools/, so this module cannot acquire an outside
-// dependency without the guard failing.
+// test/skills/c64-ram-capture/watch-loads.test.ts is the mechanical statement
+// of that boundary: every import specifier in this file resolves to a `node:`
+// built-in or a file in this skill's or the c64-project skill's scripts/, so
+// this module cannot acquire an outside dependency without the guard failing.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
 
-import { loadRegistry, release as getReleaseEntry, upsertRelease } from "./releases.ts";
-import type { Address, DumpEntry, LoaderRange, ReleaseEntry, WatchSentinel } from "./releases.ts";
-import { projectRoot, dataRoot } from "./project-paths.ts";
+import type { Address, DumpEntry, LoaderRange, ReleaseEntry, WatchSentinel } from "../../c64-project/scripts/releases.ts";
+import { loadSibling, siblingOrRefuse } from "./sibling.ts";
+
+const { loadRegistry, release: getReleaseEntry, upsertRelease } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/releases.ts"), "releases.ts", "c64-ram-capture"), import.meta.url);
+const { projectRoot, dataRoot } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/project-paths.ts"), "project-paths.ts", "c64-ram-capture"), import.meta.url);
+const { addrNum, hex4 } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/address.ts"), "address.ts", "c64-ram-capture"), import.meta.url);
 
 /** An inclusive address range, either end in any form `addrNum()` parses. */
 export interface AddressRange {
@@ -152,27 +155,6 @@ function rel(p: string): string {
   return relative(REPO_ROOT, p);
 }
 
-// ------------------------------------------------------------ address math
-
-/** Parse `"$08B1"`, `"0x8b1"`, a decimal string, or a number into an integer. */
-export function addrNum(a: unknown): number {
-  if (typeof a === "number") return a;
-  if (typeof a === "string") {
-    const s = a.trim();
-    if (s.startsWith("$")) return parseInt(s.slice(1), 16);
-    if (/^0x/i.test(s)) return parseInt(s, 16);
-    const n = Number(s);
-    if (Number.isNaN(n)) throw new Error(`addrNum: cannot parse address from "${a}"`);
-    return n;
-  }
-  throw new Error(`addrNum: cannot parse address from ${JSON.stringify(a)}`);
-}
-
-/** Format an integer as a canonical `$XXXX` 4-hex-digit address string. */
-export function hex4(n: number): string {
-  return "$" + (n & 0xffff).toString(16).toUpperCase().padStart(4, "0");
-}
-
 // -------------------------------------------------------------- hit-log I/O
 
 function hitLogPath(releaseId: string): string {
@@ -291,7 +273,7 @@ export function WATCH_SET(
       "a KERNAL-bypassing raw-sector loader toggles directly; the primary on-demand-load sentinel because such a " +
       "loader leaves no KERNAL vector activity to watch instead",
     evidence:
-      "c64-memory-mapping skill memmap: $DD00 bits 0-1 select the VIC bank (00=bank3 $C000-$FFFF ... 11=bank0 " +
+      "c64-memory-map skill memmap: $DD00 bits 0-1 select the VIC bank (00=bank3 $C000-$FFFF ... 11=bank0 " +
       "$0000-$3FFF); bits 3-5 are the serial bus ATN OUT/CLOCK OUT/DATA OUT lines",
   });
   return sentinels;

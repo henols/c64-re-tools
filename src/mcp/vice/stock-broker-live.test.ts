@@ -809,7 +809,7 @@ test(
 // ---------------------------------------------------------------------------
 
 /** The reacting program's own source -- hand-rolled hardware addresses, no
- * library (the acme-build scaffold's own template.a convention: a "10 SYS
+ * library (the c64-assembler scaffold's own template.a convention: a "10 SYS
  * <entry>" BASIC stub whose link pointer ACME computes and VICE's own
  * relink independently recomputes to the SAME value for a well-formed
  * BASIC program, unlike this file's OWN deliberately-invalid raw-code

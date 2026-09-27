@@ -71,13 +71,15 @@ import { spawnSync } from "node:child_process";
 
 // The resolution ladder used to live HERE,
 // as this file's own `ladder()`/`resolveTarget()` pair. It is now extracted
-// to `mcp-module.ts` (`resolveMcpModule()`/`refusalMessage()`), because two
+// to the c64-project skill's `mcp-module.ts` (`resolveMcpModule()`/`refusalMessage()`), because two
 // MORE skill scripts (`acme.ts`, `packer-finding.ts`) needed the identical
 // lookup to reach the host-tool execution seam's endpoint client, and
 // three copies of one ladder is exactly the divergence hazard this file's own
 // header (below) already warns about for the `.vsf` layout itself. Import
 // the ladder rather than re-adding a copy here.
-import { resolveMcpModule, refusalMessage, TARGET_PACKAGE } from "./mcp-module.ts";
+import { loadSibling, siblingOrRefuse } from "./sibling.ts";
+
+const { resolveMcpModule, refusalMessage, TARGET_PACKAGE } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/mcp-module.ts"), "mcp-module.ts", "c64-ram-capture"), import.meta.url);
 
 /** The MCP-side module's file name, in one place. */
 const TARGET_FILE = "vsf-slice.ts";

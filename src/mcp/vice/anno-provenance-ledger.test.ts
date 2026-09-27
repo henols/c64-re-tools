@@ -50,10 +50,10 @@ import {
 
 // `renderLedger()` is the ONE writer this reader is matched against -- the
 // same import precedent `anno-export-asm.test.ts` and
-// `skill-memory-mapping-cli.test.ts` already establish for a test importing
+// `skill-memory-map-cli.test.ts` already establish for a test importing
 // the skill tree. Tests are not in `package.json`'s `files[]`, so the
 // shipped-closure rule is untouched.
-import { renderLedger } from "../../../skills/c64-provenance-diff/scripts/diff-images.ts";
+import { renderLedger } from "../../../skills/c64-provenance/scripts/diff-images.ts";
 
 // ---------------------------------------------------------------------------
 // One temp directory for the whole file, removed in `after()` -- this host's

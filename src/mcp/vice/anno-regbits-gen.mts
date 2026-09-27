@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // anno-regbits-gen.mts -- the ONE authoritative place in this repo that turns
-// c64-memory-mapping's memmap.json into the curated address->bit-name table
+// c64-memory-map's memmap.json into the curated address->bit-name table
 // anno-enum-gen.mts decodes register values against.
 //
 // WHY THIS EXISTS: neither register the phase's own pinned criterion-3
@@ -10,7 +10,7 @@
 // the digit 0; "Read NMls" uses a lowercase L for an uppercase I), and five
 // addresses have NO `bits` entry in memmap.json at all (its `io` parser never
 // produced one for them; widening memmap.json itself is separate work
-// belonging to `c64-memory-mapping`, not this phase). `OVERRIDES` below is
+// belonging to `c64-memory-map`, not this phase). `OVERRIDES` below is
 // the curated fix for both problems, carrying a WHY comment on every entry
 // so a future reader never has to guess why a bit was hand-named instead of
 // mechanically derived.
@@ -52,14 +52,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** The sole read of c64-memory-mapping's own memmap.json -- this generator is
+/** The sole read of c64-memory-map's own memmap.json -- this generator is
  * its only consumer for this purpose (per this plan's key_links entry).
  * 2026-08-22: the skills tree moved from `.claude/skills/`
  * (two levels up from `.claude/mcp/vice`) to `skills/` (three levels up,
  * since `src/` sits directly under the repo root rather than under `.claude/`).
  * This literal was not in the original enumerated consumer list, and a
  * test failure caught the gap live. */
-const MEMMAP_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
+const MEMMAP_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-map", "memmap.json");
 
 /** Where the generated, committed artifact lives -- always a sibling of this
  * generator, never a caller-supplied path. */

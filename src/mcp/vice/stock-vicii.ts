@@ -59,7 +59,7 @@
 //
 // FIELD-NAME PROVENANCE (Assumption A4's mitigation): every bit-field name
 // below was transcribed once from
-// skills/c64-memory-mapping/memmap.json's own entries for $D011
+// skills/c64-memory-map/memmap.json's own entries for $D011
 // (Screen control register #1 / VIC Control Register), $D012 (raster line),
 // $D016 (Screen control register #2 / VIC Control Register), $D018 (Memory
 // setup register / VIC Memory Control Register), $D019 (Interrupt status

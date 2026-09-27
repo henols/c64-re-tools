@@ -2,7 +2,7 @@
 // memmap-lookup.mts
 //
 // Phase 37, plan 37-01 (IMP-01/AUTO-01's shared foundation): the ONE loader
-// for `c64-memory-mapping`'s own `memmap.json`, its content digest, and
+// for `c64-memory-map`'s own `memmap.json`, its content digest, and
 // narrowest-containing-range selection over its 959 entries.
 //
 // Every path here is repo-relative and derived from this module's own location, the
@@ -17,7 +17,7 @@
 // computes its sha256 digest, for a different purpose (bit-name generation).
 // This module COPIES that formula rather than importing the generator --
 // `anno-regbits-gen.mts`'s own header declares itself "the sole read of
-// c64-memory-mapping's own memmap.json ... for this purpose", and widening
+// c64-memory-map's own memmap.json ... for this purpose", and widening
 // that consumer set is a separate decision this plan does not make.
 //
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: loading and caching
@@ -48,13 +48,13 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** Where `c64-memory-mapping`'s `memmap.json` is read from: a package-local
+/** Where `c64-memory-map`'s `memmap.json` is read from: a package-local
  * copy beside this module first (dist/memmap.json in the npm package, copied
  * there by build.ts's buildServer()), else the repo skill path, using the
  * SAME five-hop formula `anno-regbits-gen.mts:62` uses. Copied, not imported
  * (D-37-03). */
 const PACKAGE_MEMMAP_PATH = join(HERE, "memmap.json");
-const REPO_MEMMAP_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
+const REPO_MEMMAP_PATH = join(HERE, "..", "..", "..", "skills", "c64-memory-map", "memmap.json");
 export const MEMMAP_PATH = existsSync(PACKAGE_MEMMAP_PATH) ? PACKAGE_MEMMAP_PATH : REPO_MEMMAP_PATH;
 
 /** One entry as `memmap.json` holds it. MEASURED at plan time: 959 entries,

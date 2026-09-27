@@ -1,34 +1,43 @@
 #!/usr/bin/env node
 // dxa-run.ts
 //
-// Phase 35, plan 35-01 (DXA-02): client-side orchestration ONLY for the
-// `dxa.disassemble` host tool. Reaches dxa through the broker's fixed
-// endpoint (`runHostToolOverEndpoint("dxa.disassemble", …)`,
-// host-tool-endpoint.mts) and NEVER `node:child_process` -- SEAM-05's
-// `BANNED_COMMAND_SHAPES` already names `dxa`, so a direct spawn here is a
-// caught violation, not an invisible one.
+// WHY THIS FILE EXISTS: the client side of the `dxa.disassemble` host tool.
+// runDxaDisassemble() sends one typed request through the broker's fixed
+// endpoint (`runHostToolOverEndpoint()`, host-tool-endpoint.mts), reads the
+// downloaded `-a dump` listing, and parses it into a byte-level code/data
+// map (dxa-listing.ts). Run as a script, this file is the CLI that the
+// c64-disassembler skill spawns with `process.execPath`: it parses flags,
+// calls runDxaDisassemble() and prints one JSON line (see the CLI section at
+// the bottom).
 //
-// The endpoint client uploads every input by bytes and downloads the listing under this module's own
-// tools root, so the listing's path is a local path read AS GIVEN.
+// The endpoint client uploads every input by bytes and downloads the listing
+// under the caller's tools root, so the listing path is a local path, read
+// as given.
 //
-// The parser's window is computed from the IMAGE FILE, never from the
-// listing itself (A-04's own boundary: inferring the window from the same
-// text being validated against it would make the validation vacuous). For
-// `imageKind: "prg"` this module uses `parsePrg()`'s own origin and a body
-// length of `fileSize - 2`; for `imageKind: "flat64k"` it uses origin `0`
-// and the file's own size (`flatImageOrigin()` from prg-image.mts refuses
-// anything that is not exactly 65536 bytes).
+// The parser's window comes from the IMAGE FILE, never from the listing:
+// deriving the window from the text being checked against it would make the
+// check vacuous. For `imageKind: "prg"` the window is parsePrg()'s origin
+// and a body of `fileSize - 2`; for `imageKind: "flat64k"` it is origin 0
+// and the file's own size (flatImageOrigin(), prg-image.mts, refuses any
+// size but 65536).
 //
-// Phase 35, plan 35-04 (DXA-03): `DxaRunArgs.knownDataRows` is an
-// ALTERNATIVE to a caller-supplied `datablocksPath`/`labelsPath` -- see that
-// field's own doc comment below. This module calls `dxa-blocks.ts`'s
-// `emitDataBlocks()`/`emitLabels()` to write the files and wires the
-// resulting paths into the wire request; it adds no new
-// `HostToolId` argument key (plan 35-01 already landed all five path keys on
-// `dxa.disassemble`) and touches no allowlist table.
+// `knownDataRows` is an alternative to caller-written `datablocksPath`/
+// `labelsPath` files: this module writes the rows to per-run `-B`/`-l` files
+// with dxa-blocks.ts's emitDataBlocks()/emitLabels() and removes them when
+// the run ends.
+//
+// WHAT NOT TO DO:
+//   - Never import `node:child_process` here or spawn dxa. Every run goes
+//     through the one host-tool route; dxa lives on the host.
+//   - Never read the image from outside the project root. The local read
+//     that computes the window goes through confineToWorkspace().
+//   - Never default `--image-kind` on the CLI. The kind is required and is
+//     never guessed from the file name or size.
+//   - Never print anything to stdout from the CLI except the one JSON line.
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, join, sep, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 
 import { runHostToolOverEndpoint, type HostToolClientResult, type RunHostToolOverEndpointOptions } from "./host-tool-endpoint.mts";
 import { repoRoot, toolsDirUnder } from "./repo-root.ts";
@@ -279,4 +288,156 @@ export async function runDxaDisassemble(args: DxaRunArgs, opts: DxaRunOptions = 
     outOfWindow: map.outOfWindow,
     listingPath: listingResult.path,
   };
+}
+
+// ---------------------------------------------------------------------------
+// CLI. The c64-disassembler skill locates this file with resolveMcpModule()
+// and spawns it with `process.execPath` -- the skill never imports it. The
+// last (and only) stdout line is `{ "ok": true, ... }` or
+// `{ "ok": false, "message": "..." }`; the exit code is 0 or 1 to match.
+// ---------------------------------------------------------------------------
+
+/** `$xxxx`, the address form every CLI field below uses. */
+function hexAddr(n: number): string {
+  return `$${n.toString(16).padStart(4, "0")}`;
+}
+
+/** What the CLI prints: the listing's own file facts plus a summary of the
+ * parsed map. The per-line detail stays in the listing file. */
+export type DxaCliResult =
+  | {
+      ok: true;
+      listingPath: string;
+      sha256: string;
+      byteLength: number;
+      codeBytes: number;
+      dataBytes: number;
+      matchedLines: number;
+      firstAddress: string | null;
+      lastAddress: string | null;
+      ranges: { class: "code" | "data" | "unclassified"; start: string; end: string }[];
+      unclassified: { address: string; reason: string }[];
+      outOfWindow: string[];
+    }
+  | { ok: false; message: string };
+
+export const DXA_CLI_USAGE =
+  "usage: node dxa-run.ts --image FILE --image-kind prg|flat64k\n" +
+  "  [--entrypoints-path FILE] [--datablocks-path FILE] [--labels-path FILE] [--known-data-rows FILE.json]\n" +
+  "  [--project-root DIR] [--tools-root DIR] [--port N]";
+
+/** Reads a `--known-data-rows` file: a JSON array of KnownDataRow objects
+ * (`{ start, endInclusive, dataType, sym? }`, integer addresses).
+ * emitDataBlocks()/emitLabels() check each row's range; this checks only
+ * the outer shape. */
+function readKnownDataRows(path: string): { ok: true; rows: KnownDataRow[] } | { ok: false; message: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (e) {
+    return { ok: false, message: `dxa-run: cannot read --known-data-rows ${JSON.stringify(path)}: ${(e as Error).message}` };
+  }
+  if (!Array.isArray(parsed)) {
+    return { ok: false, message: `dxa-run: --known-data-rows ${JSON.stringify(path)} must hold a JSON array of { start, endInclusive, dataType, sym? } rows` };
+  }
+  for (const [i, row] of parsed.entries()) {
+    if (typeof row !== "object" || row === null || typeof row.dataType !== "string") {
+      return { ok: false, message: `dxa-run: --known-data-rows row ${i} is not a { start, endInclusive, dataType, sym? } object: ${JSON.stringify(row)}` };
+    }
+  }
+  return { ok: true, rows: parsed as KnownDataRow[] };
+}
+
+/** Parses the CLI flags into runDxaDisassemble()'s two arguments. Relative
+ * paths resolve against `cwd`. */
+export function parseDxaCli(argv: string[], cwd: string = process.cwd()): { ok: true; args: DxaRunArgs; opts: DxaRunOptions } | { ok: false; message: string } {
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args: argv,
+      strict: true,
+      allowPositionals: false,
+      options: {
+        image: { type: "string" },
+        "image-kind": { type: "string" },
+        "entrypoints-path": { type: "string" },
+        "datablocks-path": { type: "string" },
+        "labels-path": { type: "string" },
+        "known-data-rows": { type: "string" },
+        "project-root": { type: "string" },
+        "tools-root": { type: "string" },
+        port: { type: "string" },
+      },
+    }));
+  } catch (e) {
+    return { ok: false, message: `dxa-run: ${(e as Error).message}\n${DXA_CLI_USAGE}` };
+  }
+
+  for (const required of ["image", "image-kind"] as const) {
+    if (values[required] === undefined || values[required] === "") {
+      return { ok: false, message: `dxa-run: --${required} is required and has no default\n${DXA_CLI_USAGE}` };
+    }
+  }
+  const kind = values["image-kind"];
+  if (kind !== "prg" && kind !== "flat64k") {
+    return { ok: false, message: `dxa-run: --image-kind must be "prg" or "flat64k"; got ${JSON.stringify(kind)}` };
+  }
+
+  const abs = (p: string): string => resolvePath(cwd, p);
+  const args: DxaRunArgs = { image: abs(values.image!), imageKind: kind };
+  if (values["entrypoints-path"] !== undefined) args.entrypointsPath = abs(values["entrypoints-path"]);
+  if (values["datablocks-path"] !== undefined) args.datablocksPath = abs(values["datablocks-path"]);
+  if (values["labels-path"] !== undefined) args.labelsPath = abs(values["labels-path"]);
+  if (values["known-data-rows"] !== undefined) {
+    const rows = readKnownDataRows(abs(values["known-data-rows"]));
+    if (!rows.ok) return rows;
+    args.knownDataRows = rows.rows;
+  }
+
+  const opts: DxaRunOptions = {};
+  if (values["project-root"] !== undefined) opts.repoRoot = abs(values["project-root"]);
+  if (values["tools-root"] !== undefined) opts.toolsRoot = abs(values["tools-root"]);
+  if (values.port !== undefined) {
+    if (!/^\d+$/.test(values.port)) return { ok: false, message: `dxa-run: --port must be an integer; got ${JSON.stringify(values.port)}` };
+    opts.port = Number(values.port);
+  }
+  return { ok: true, args, opts };
+}
+
+/** The whole CLI as a function: parse, run, summarise, and turn every throw
+ * into a refusal. `seams` carries the test seams of DxaRunOptions (`run`,
+ * `imageBytes`, `listingText`) so a test drives this with no broker. Never
+ * rejects. */
+export async function runDxaCli(
+  argv: string[],
+  seams: Pick<DxaRunOptions, "run" | "imageBytes" | "listingText"> = {},
+  cwd: string = process.cwd(),
+): Promise<DxaCliResult> {
+  const parsed = parseDxaCli(argv, cwd);
+  if (!parsed.ok) return parsed;
+  try {
+    const r = await runDxaDisassemble(parsed.args, { ...parsed.opts, ...seams });
+    return {
+      ok: true,
+      listingPath: r.listingPath,
+      sha256: r.sha256,
+      byteLength: r.byteLength,
+      codeBytes: r.map.codeBytes,
+      dataBytes: r.map.dataBytes,
+      matchedLines: r.map.matchedLines,
+      firstAddress: r.map.firstAddress === null ? null : hexAddr(r.map.firstAddress),
+      lastAddress: r.map.lastAddress === null ? null : hexAddr(r.map.lastAddress),
+      ranges: r.map.ranges.map((range) => ({ class: range.class, start: hexAddr(range.start), end: hexAddr(range.end) })),
+      unclassified: [...r.map.unclassified.values()].map((u) => ({ address: hexAddr(u.address), reason: u.reason })),
+      outOfWindow: r.outOfWindow,
+    };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const result = await runDxaCli(process.argv.slice(2));
+  process.stdout.write(JSON.stringify(result) + "\n");
+  process.exitCode = result.ok ? 0 : 1;
 }

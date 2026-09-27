@@ -374,7 +374,7 @@ export interface DisagreementResolutionCensus {
 }
 
 /**
- * The four hardware-chip memory-mapped register bands `c64-memory-mapping`'s
+ * The four hardware-chip memory-mapped register bands `c64-memory-map`'s
  * own `memmap.json` labels by name -- VIC-II, SID, CIA#1, CIA#2. Color RAM
  * ($D800-$DBFF) and the two generic "I/O Area" bands are deliberately
  * EXCLUDED: neither holds a chip register this project's curated

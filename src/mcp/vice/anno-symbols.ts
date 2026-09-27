@@ -62,7 +62,7 @@
 // reuses `stock-symbols.ts`'s existing `al C:xxxx .Name` parser
 // (`parseViceLabelFile()`, exported there for exactly this reuse) rather than
 // adding this repo's THIRD copy of that format -- `stock-symbols.ts` and
-// `acme-build/scripts/acme.ts`'s `curateLabels()` are the two that already
+// `c64-assembler/scripts/acme.ts`'s `curateLabels()` are the two that already
 // exist.
 //
 // MEASURED FACTS, PAST TENSE, kept because they are the reasons for the

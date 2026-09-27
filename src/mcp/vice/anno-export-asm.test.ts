@@ -111,11 +111,11 @@ import { provenanceForRange, readProvenanceLedger } from "./anno-provenance-ledg
 // generated tier this fixture must satisfy exactly (its own three refusal
 // preconditions -- non-empty UNKNOWN reasons, agreeing_releases >= 2 for
 // ORIGINAL, and full $0000-$FFFF coverage with no gap or overlap). A TEST
-// importing the skill tree is precedented -- `skill-memory-mapping-cli.test.ts`
-// does exactly this for `c64-memory-mapping`'s own `driver.ts` -- and tests
+// importing the skill tree is precedented -- `skill-memory-map-cli.test.ts`
+// does exactly this for `c64-memory-map`'s own `driver.ts` -- and tests
 // are not in `package.json`'s `files[]`, so the shipped-closure rule this
 // file's own header names is untouched.
-import { renderLedger } from "../../../skills/c64-provenance-diff/scripts/diff-images.ts";
+import { renderLedger } from "../../../skills/c64-provenance/scripts/diff-images.ts";
 import {
   addExcludedRange,
   addScope,
@@ -1835,7 +1835,7 @@ test("ROUND TRIP: the ALIASED store still reassembles byte-identically -- a mark
 //
 // `anno-types.mts:93-99` forbids restating them and names the failure a short
 // reimplementation causes: a five-prefix copy silently under-counts, breaking
-// `routine-queue-walker`'s backlog construction while every test keeps passing.
+// `c64-reverse-engineering`'s backlog construction while every test keeps passing.
 // The structural scan below is what turns that from a rule into a check, and it
 // has THREE directions -- including the comment-only control that stops it
 // degrading into a substring search which passes by counting its own prose.
@@ -3786,7 +3786,7 @@ const FILTERED_VERDICT = "CRACKER-PATCH";
 /**
  * The planted range's own text: printable PETSCII (space, digits, and
  * uppercase letters share the same byte values as ASCII in unshifted PETSCII
- * text mode -- `skills/c64-petcat/SKILL.md`) reading as crack-credit
+ * text mode -- `skills/c64-basic/SKILL.md`) reading as crack-credit
  * text -- exactly the shape a plausible heuristic would reach for and drop.
  */
 const PLANTED_TEXT = "CRACKED BY GRP";
@@ -5331,7 +5331,7 @@ test("cross file: an auto-generated label name survives the split -- its symbols
   const symbolsText = readFileSync(join(outDir, SYMBOLS_FILE_NAME), "utf8");
   const definitionLine = symbolsText.split("\n").find((line) => line.startsWith("s_0801 = "));
   assert.ok(definitionLine !== undefined, `symbols.a must carry the definition:\n${symbolsText}`);
-  // `routine-queue-walker` reads this marker out of the generated artefact
+  // `c64-reverse-engineering` reads this marker out of the generated artefact
   // to build its backlog queue -- a split that detached it would report a
   // backlog item as done.
   assert.ok(definitionLine!.includes("auto-generated name"), `the definition must still carry the backlog marker after the split:\n${definitionLine}`);

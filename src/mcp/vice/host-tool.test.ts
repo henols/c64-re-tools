@@ -76,7 +76,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // Reach ACME only through the shared seam -- never a second hand-rolled probe.
 const SKIP_REASON: string | false = acmeSkipReasonFor("host-tool.test.ts");
 
-test("ACME availability gate (mirrors skill-acme-build-cli.test.ts's own gate) -- always runs, never skips", () => {
+test("ACME availability gate (mirrors skill-assembler-cli.test.ts's own gate) -- always runs, never skips", () => {
   assertAcmeRequiredIfEnvSet(assert);
 });
 
