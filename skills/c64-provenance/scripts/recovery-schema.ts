@@ -33,29 +33,24 @@ const REPO_ROOT = projectRoot();
 const RECOVERY_DIR = dataRoot();
 const DISKS_DIR = disksRoot();
 
-const die = (m: string): never => { console.error(`error: ${m}`); process.exit(1); };
 
-// The parameterisation gate must cover EVERY module of the recovery pipeline, not
-// just the ones sitting next to this file. When the six modules moved out of
-// `tools/` into the two skills that use them (2026-08-04), a `HERE`-only scan
-// silently stopped covering the disk-image reader that used to live in the
-// sibling skill's `scripts/` directory (since deleted)
-// and `dump-artifacts.ts` -- a static guard that keeps passing while
-// checking less is worse than one that fails.
-// 2026-08-22: the second entry used to be built project-root-relative,
-// naming the skills tree's pre-relocation auto-discovery location by hand -- which
-// stopped resolving the moment the skills tree moved to its current source-tree
-// location. Rebuilt `HERE`-relative instead -- correct in both this dev checkout
-// and a consumer's install, since a sibling skill's `scripts/` directory is always
-// one level up and back down from this file's own location either way.
-const SCAN_DIRS = [
-  HERE, // skills/c64-provenance/scripts
-  resolve(HERE, "..", "..", "c64-ram-capture", "scripts"),
-  resolve(HERE, "..", "..", "c64-project", "scripts"),
-];
-for (const dir of SCAN_DIRS) {
-  if (!existsSync(dir)) die(`SCAN_DIRS entry does not exist: ${dir} -- a guard that keeps passing while checking less is worse than one that fails`);
+// The parameterisation gate covers the scripts of EVERY skill installed next
+// to this one, found by listing the skills folder, never by naming a skill.
+// Naming one made this skill fail to load wherever that skill was not
+// installed, and a named list silently stops covering a skill added later.
+// This skill's own scripts are always scanned; the gate refuses an empty scan
+// because a static guard that keeps passing while checking less is worse
+// than one that fails.
+function skillScriptDirs(): string[] {
+  const skillsDir = resolve(HERE, "..", "..");
+  const dirs = readdirSync(skillsDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => join(skillsDir, e.name, "scripts"))
+    .filter((d) => existsSync(d))
+    .sort();
+  return dirs.includes(HERE) ? dirs : [HERE, ...dirs];
 }
+const SCAN_DIRS = skillScriptDirs();
 
 function sha256File(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -381,7 +376,7 @@ export function checkParameterisation({ toolsDir = SCAN_DIRS }: { toolsDir?: str
   }
 
   return {
-    ok: violations.length === 0 && denyListCallViolations.length === 0,
+    ok: files.length > 0 && violations.length === 0 && denyListCallViolations.length === 0,
     filesScanned: files.length,
     releaseIds: ids,
     violations,

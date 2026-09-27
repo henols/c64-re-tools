@@ -126,15 +126,21 @@
   `2026-09-25-2240-deletion-cutover/`, `2026-09-26-0022-ghidra-without-alias/`
   and `2026-09-26-1019-no-cross-side-paths/`.
 
-## In progress
-
 **Single-capability skills**
-- Split the eight skills into twelve, each covering one capability and named
-  for what it provides: `c64-emulator`, `c64-assembler`, `c64-disk`,
-  `c64-basic`, `c64-disassembler`, `c64-unpacker`, `c64-memory-map`,
-  `c64-annotations`, `c64-ram-capture`, `c64-provenance`,
-  `c64-reverse-engineering` and `c64-project` (the shared scripts). Spec:
-  `agent-os/specs/2026-09-27-1145-single-capability-skills/`.
+- Twelve skills, each covering one capability and named for what it
+  provides: `c64-emulator`, `c64-assembler`, `c64-disk`, `c64-basic`,
+  `c64-disassembler`, `c64-unpacker`, `c64-memory-map`, `c64-annotations`,
+  `c64-ram-capture`, `c64-provenance`, `c64-reverse-engineering` (the method
+  only) and `c64-project` (workspace, release registry, broker connection and
+  the shared scripts). A skill links to the skill that owns anything else,
+  never copies it.
+- A script reaches no skill but `c64-project`, and a test installs each one
+  with only `c64-project` beside it to prove it. `recovery-schema.ts`'s
+  parameterisation gate scans every installed skill instead of naming one.
+- Ghidra and dxa run from a skill: `disassemble.ts` (`analyze`, `listing`,
+  `install-extension`) drives `ghidra-run.ts` and `dxa-run.ts`, which now ship
+  in `dist/`. Skill text is written to ASD-STE100.
+  Spec: `agent-os/specs/2026-09-27-1145-single-capability-skills/`.
 
 ## Planned / Later
 
