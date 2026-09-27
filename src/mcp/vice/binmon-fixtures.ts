@@ -16,8 +16,7 @@
 // with neither an emulator nor a display present; the others
 // (display-get, event-interleaved, checkpoint-list, and the three
 // CPUHISTORY_GET cases added by plan 07-12) are LOADED from fixtures/binmon/
-// through loadCapturedFixture() below, which probe-binmon.ts's --capture mode
-// is what normally writes.
+// through loadCapturedFixture() below.
 //
 // PROVENANCE -- all six fixtures under fixtures/binmon/ are now real, hardware-recorded captures (`"synthetic": false`).
 // Read the sidecar, never this comment, for any individual fixture's status -- but there is now a
@@ -206,7 +205,6 @@ export function chunkBytes(buffer: Buffer, size: number): Buffer[] {
 
 export interface MissingFixtureErrorOptions {
   path?: string;
-  command?: string;
 }
 
 /** A named, local error -- not a bare ENOENT and not a runtime ViceError --
@@ -214,13 +212,11 @@ export interface MissingFixtureErrorOptions {
  * catching every other possible filesystem failure. */
 export class MissingFixtureError extends Error {
   path?: string;
-  command?: string;
 
-  constructor(message: string, { path, command }: MissingFixtureErrorOptions = {}) {
+  constructor(message: string, { path }: MissingFixtureErrorOptions = {}) {
     super(message);
     this.name = "MissingFixtureError";
     this.path = path;
-    this.command = command;
   }
 }
 
@@ -258,18 +254,17 @@ export interface LoadCapturedFixtureOptions {
 
 /** Load a captured `<caseName>.bin` plus its `<caseName>.json` provenance
  * sidecar. Throws MissingFixtureError, naming the expected path and the
- * capture command that produces it, when either file is absent or the
+ * reason, when either file is absent or the
  * sidecar is missing a required provenance key. */
 export function loadCapturedFixture(caseName: string, { dir }: LoadCapturedFixtureOptions = {}): CapturedFixture {
   const baseDir = dir ?? join(HERE, "fixtures", "binmon");
   const binPath = join(baseDir, `${caseName}.bin`);
   const jsonPath = join(baseDir, `${caseName}.json`);
-  const command = `node probe-binmon.ts --capture ${caseName}`;
 
   if (!existsSync(binPath) || !existsSync(jsonPath)) {
     throw new MissingFixtureError(
-      `Captured fixture "${caseName}" is missing at ${binPath} -- regenerate it with: ${command}`,
-      { path: binPath, command },
+      `Captured fixture "${caseName}" is missing at ${binPath}`,
+      { path: binPath },
     );
   }
 
@@ -290,15 +285,15 @@ export function loadCapturedFixture(caseName: string, { dir }: LoadCapturedFixtu
     throw new MissingFixtureError(
       `Captured fixture "${caseName}" sidecar at ${jsonPath} is unreadable or malformed (${
         err instanceof Error ? err.message : String(err)
-      }) -- regenerate it with: ${command}`,
-      { path: jsonPath, command },
+      })`,
+      { path: jsonPath },
     );
   }
   const missingKeys = REQUIRED_PROVENANCE_KEYS.filter((k) => !(k in provenance));
   if (missingKeys.length > 0) {
     throw new MissingFixtureError(
-      `Captured fixture "${caseName}" sidecar at ${jsonPath} is missing required key(s): ${missingKeys.join(", ")} -- regenerate it with: ${command}`,
-      { path: jsonPath, command },
+      `Captured fixture "${caseName}" sidecar at ${jsonPath} is missing required key(s): ${missingKeys.join(", ")}`,
+      { path: jsonPath },
     );
   }
 

@@ -147,15 +147,6 @@ export const DISAGREEMENT_ACCEPTED_COMMENT_PREFIX = "DISAGREEMENT-ACCEPTED:";
  * observation. */
 export const AUTHORED_PROVENANCE_COMMENT_PREFIX = "PROVENANCE: authored";
 
-/** True iff `text` is a recorded decline (criterion 4's own convention).
- * The ONE predicate the completeness report and the closure passes both
- * need, so neither re-derives a prefix match locally. Distinct from
- * `provenanceForComment()`: a decline comment is machine-written but still
- * classified `"authored"` -- see this file's own header. */
-export function isDeclineComment(text: string): boolean {
-  return text.startsWith(DECLINE_COMMENT_PREFIX);
-}
-
 /** The provenance of ONE comment, as a function of its own text. Always
  * `"authored"` today -- see this file's header for why, and
  * `anno-store-export.test.ts`'s Test 6 for the regression guard against the

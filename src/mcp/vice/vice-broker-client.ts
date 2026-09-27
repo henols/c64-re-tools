@@ -22,29 +22,8 @@ import type { LaunchProfile } from "./broker-launch.mts";
 import type { ViceBackend } from "./backend-detect.mts";
 import { ViceError } from "./vice-errors.mts";
 
-// -------------------------------------------------------------- request ids
-//
-// Primary noun of this protocol: a request/grant/lease is identified by
-// this id, never by port -- ports are
-// recycled across sessions under on-demand launch, so a port is an attribute
-// OF a grant, not identity. Matched byte-for-byte against the same shape
-// resources/vice-broker.sh's own request-id pattern validates (T-01.2-01);
-// the request-id-pattern parity test in vice-broker.test.mjs drives one
-// shared corpus through both validators so neither side can silently accept
-// an id shape the other rejects.
-//
-// This is a real, typed, NAMED export whose VALUE is unchanged from
-// the pre-conversion .mjs (verified live). The in-process broker imports
-// this exact binding rather than re-stating the pattern a third time; the
-// bash copy (resources/vice-broker.sh) does not retire until it is deleted.
-export const REQUEST_ID_PATTERN: RegExp = /^req-[0-9]+-[0-9]+-[0-9a-f]{8}$/;
-
 export function newRequestId(): string {
   return `req-${process.pid}-${Date.now()}-${randomUUID().slice(0, 8)}`;
-}
-
-export function isValidRequestId(id: unknown): id is string {
-  return typeof id === "string" && REQUEST_ID_PATTERN.test(id);
 }
 
 // ---------------------------------------------------- TCP control plane

@@ -20,9 +20,6 @@ import { registryFile, releaseDataDir } from "./project-paths.ts";
  * decimal string, or a number. `watch-loads.ts`'s `addrNum()` parses it. */
 export type Address = number | string;
 
-/** The four file-naming fields of a dump (a dump is a four-file set). */
-export type DumpFileField = "bin" | "capture_record" | "chip_state" | "range_manifest";
-
 /** One dump a release owns. Every file field is project-relative and may be
  * absent in a registry that is still being filled in. */
 export interface DumpEntry {

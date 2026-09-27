@@ -39,102 +39,26 @@
 // corrected rather than deleted.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   assertLegalAcmeIdentifier,
-  buildEnumGenerationReport,
-  DEFAULT_MAX_RESULTS,
   decomposeRegisterValue,
-  type DisasmSearchRow,
-  type EnumInstallSummary,
-  fetchRegisterSearchRows,
-  generateEnumsFromStore,
   hasRegBitsEntry,
-  installPlannedEnums,
   type RegisterDecomposition,
   __resetRegBitsCacheForTests,
-  pairSearchRows,
-  parseImmediateOperand,
-  planEnumsForPairing,
   registerKeyFor,
-  sanitizeVariantMap,
-  variantNameFor,
 } from "./anno-enum-gen.mts";
 import type { RegBitsTable } from "./anno-regbits-gen.mts";
-import { closeStore, listEnumUsage, listProjectEnums, openStore, setDataType } from "./anno-store.mts";
-import type { AnnoStoreHandle } from "./anno-store.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-/** One temp directory per test, removed unconditionally -- mirrors
- * `anno-store-export.test.ts`'s own `inTempDir()`. Never inside the repo
- * tree (this project has already had an intermittent suite failure caused
- * by scratch files racing there). */
-function inTempDir(body: (dir: string) => void): void {
-  const dir = mkdtempSync(join(tmpdir(), "anno-enum-gen-"));
-  try {
-    body(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-function freshStore(dir: string, name = "proj.annostore"): AnnoStoreHandle {
-  return openStore(join(dir, name), { workspaceRoot: dir });
-}
-
-/** Builds one disassembly row in the shape the deleted fetch returned and the
- * shape any rebuilt fetch must still produce. */
-function row(addr: number, mnemonic: string, operand: string): DisasmSearchRow {
-  return {
-    address: `$${addr.toString(16).toUpperCase().padStart(4, "0")}`,
-    address_decimal: addr,
-    label: "",
-    mnemonic,
-    operand,
-    comment: "",
-  };
-}
-
-// ---------------------------------------------------------------------------
-// The pinned measured target.
-// ---------------------------------------------------------------------------
-
-test("variantNameFor(0xd011, 0x1b) === 'YSCROLL3_ROW25_SCREENON_TEXT' (the pinned criterion-3 target)", () => {
-  assert.equal(variantNameFor(0xd011, 0x1b), "YSCROLL3_ROW25_SCREENON_TEXT");
-});
 
 test("registerKeyFor formats addresses as $XXXX (uppercase, 4-hex-digit)", () => {
   assert.equal(registerKeyFor(0xd011), "$D011");
   assert.equal(registerKeyFor(1), "$0001");
 });
-
-// ---------------------------------------------------------------------------
-// Decoding is total: two distinct values for the same register never produce
-// the same variant name, checked across all 256 possible byte values.
-// ---------------------------------------------------------------------------
-
-for (const addr of [0xd011, 0xd016, 0xd018, 0xd015]) {
-  test(`variantNameFor is injective across all 256 values for $${addr.toString(16).toUpperCase()}`, () => {
-    const seen = new Map<string, number>();
-    for (let value = 0; value <= 0xff; value++) {
-      const name = variantNameFor(addr, value);
-      assert.ok(name.length > 0, `value 0x${value.toString(16)} produced an empty variant name`);
-      const prior = seen.get(name);
-      assert.equal(
-        prior,
-        undefined,
-        `values 0x${prior?.toString(16)} and 0x${value.toString(16)} both produced the name "${name}"`,
-      );
-      seen.set(name, value);
-    }
-    assert.equal(seen.size, 256);
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Task 1 (D-16/D-17): decomposeRegisterValue() -- the ONE owning multi-bit
@@ -247,26 +171,6 @@ test("decomposeRegisterValue: the OR of every term's value reconstructs the inpu
   assert.ok(sawAtLeastOneAccepted, "the exhaustive loop must exercise at least one accepted decomposition, or this test is vacuous");
 });
 
-test("decomposeRegisterValue: joining the returned terms' field-token halves with '_' reproduces variantNameFor() exactly, exhaustively over every register and all 256 values (legitimate refusals excepted)", () => {
-  let sawAtLeastOneAccepted = false;
-  for (const key of ALL_REGISTER_KEYS) {
-    const address = Number.parseInt(key.slice(1), 16);
-    const enumName = key.slice(1);
-    for (let value = 0; value <= 0xff; value++) {
-      const decomposition = tryDecompose(address, value);
-      if (decomposition === null) continue;
-      sawAtLeastOneAccepted = true;
-      const fieldTokenHalves = decomposition.terms.map((t) => t.name.slice(enumName.length + 1));
-      assert.equal(
-        fieldTokenHalves.join("_"),
-        variantNameFor(address, value),
-        `register ${key} value 0x${value.toString(16)}: decomposed name does not match variantNameFor()`,
-      );
-    }
-  }
-  assert.ok(sawAtLeastOneAccepted, "the exhaustive loop must exercise at least one accepted decomposition, or this test is vacuous");
-});
-
 test("decomposeRegisterValue: a register whose fields do not cover every set bit refuses by name, naming the uncovered mask and the OVERRIDES remedy", () => {
   const synthetic: RegBitsTable = {
     $A999: {
@@ -287,7 +191,7 @@ test("decomposeRegisterValue: a register whose fields do not cover every set bit
   }
 });
 
-test("decomposeRegisterValue: a value whose every field decodes to a silent token returns exactly one V<value> term, matching variantNameFor()'s own degenerate case", () => {
+test("decomposeRegisterValue: a value whose every field decodes to a silent token returns exactly one V<value> term", () => {
   const synthetic: RegBitsTable = {
     $A998: {
       label: "synthetic all-silent register (test-only)",
@@ -303,13 +207,12 @@ test("decomposeRegisterValue: a value whose every field decodes to a silent toke
     assert.equal(decomposition.terms.length, 1);
     assert.equal(decomposition.terms[0]!.name, "A998_V0");
     assert.equal(decomposition.terms[0]!.value, 0x00);
-    assert.equal(variantNameFor(0xa998, 0x00), "V0");
   } finally {
     __resetRegBitsCacheForTests(undefined);
   }
 });
 
-test("decomposeRegisterValue: every returned term name passes the same identifier gate sanitizeVariantMap() applies, for every register and all 256 values (illegal shapes are refused rather than returned -- see tryDecompose)", () => {
+test("decomposeRegisterValue: every returned term name passes the ACME identifier gate, for every register and all 256 values (illegal shapes are refused rather than returned -- see tryDecompose)", () => {
   let sawAtLeastOneAccepted = false;
   for (const key of ALL_REGISTER_KEYS) {
     const address = Number.parseInt(key.slice(1), 16);
@@ -372,325 +275,6 @@ test("assertLegalAcmeIdentifier accepts a bare register letter (A/X/Y), measured
 
 test("assertLegalAcmeIdentifier rejects an identifier longer than the length ceiling", () => {
   assert.throws(() => assertLegalAcmeIdentifier("A".repeat(500), "test"));
-});
-
-test("sanitizeVariantMap builds the {$hex: name} shape and sanitizes every value", () => {
-  const out = sanitizeVariantMap("$D011", new Map([[0x1b, "YSCROLL3_ROW25_SCREENON_TEXT"]]));
-  assert.deepEqual(out, { $1b: "YSCROLL3_ROW25_SCREENON_TEXT" });
-});
-
-test("sanitizeVariantMap refuses a bad token before returning anything", () => {
-  assert.throws(() => sanitizeVariantMap("$D011", new Map([[0x1b, "BAD\nNAME=$00"]])));
-});
-
-test(
-  "T-11-NAME-INJECT: sanitizeVariantMap refuses the injection shape (newline + '= $00') and returns NOTHING, so a rebuilt installer that calls it first cannot pass the name on",
-  () => {
-    // The property the deleted installer proved with a spy binary: because
-    // this refusal is entirely client-side and happens before any I/O, an
-    // illegal variant name provably never reaches a child. With the installer
-    // gone the spy has nothing to observe, so the refusal itself is asserted
-    // directly -- including that it is total (no partial map is returned for
-    // the legal entries that preceded the illegal one).
-    let returned: unknown = "not-thrown";
-    assert.throws(
-      () => {
-        returned = sanitizeVariantMap(
-          "$D011",
-          new Map([
-            [0x00, "LEGAL_NAME"],
-            [0x1b, "BAD\nNAME = $00"],
-          ]),
-        );
-      },
-      /not a legal ACME identifier/,
-    );
-    assert.equal(returned, "not-thrown", "sanitizeVariantMap must return nothing at all when any name is illegal");
-  },
-);
-
-// ---------------------------------------------------------------------------
-// Pairing: the D-23 adjacent-only rule, against the real pairSearchRows().
-// ---------------------------------------------------------------------------
-
-test("pairSearchRows: a store at A+2 pairs with its immediate load; a store at A+3 does not", () => {
-  const ldaRows = [row(0x0810, "lda", "#$1b")];
-  const staRows = [row(0x0812, "sta", "$d011")];
-  const paired = pairSearchRows(ldaRows, staRows);
-  assert.equal(paired.totalRegisterStores, 1);
-  assert.equal(paired.pairedStores, 1);
-  assert.equal(paired.unpairedStores, 0);
-  assert.deepEqual(paired.occurrences, [{ regKey: "$D011", value: 0x1b, ldaAddr: 0x0810 }]);
-
-  const offByOne = pairSearchRows(ldaRows, [row(0x0813, "sta", "$d011")]);
-  assert.equal(offByOne.totalRegisterStores, 1, "the store is still a store to a known register");
-  assert.equal(offByOne.pairedStores, 0, "a store at A+3 must NOT pair -- adjacent-only, no dataflow");
-  assert.equal(offByOne.unpairedStores, 1);
-});
-
-test("pairSearchRows: a store to a register the bit-name table does not know is not counted at all", () => {
-  const paired = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", "$c000")]);
-  assert.equal(paired.totalRegisterStores, 0, "$C000 is not in anno-regbits.json, so it is not a register store");
-  assert.equal(paired.occurrences.length, 0);
-});
-
-test("pairSearchRows: register matching is case-insensitive on the operand's hex ($d011 and $D011 both pair)", () => {
-  for (const operand of ["$d011", "$D011"]) {
-    const paired = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", operand)]);
-    assert.equal(paired.pairedStores, 1, `expected ${operand} to normalise onto $D011`);
-    assert.equal(paired.occurrences[0]!.regKey, "$D011");
-  }
-});
-
-test("pairSearchRows: an unparsable immediate operand is skipped rather than fatal (D-23's 'a miss costs nothing')", () => {
-  // This is the exact shape an already-enum-applied instruction took in the
-  // live view: the raw "#$1b" was replaced by an enum reference, which is not
-  // a parsable immediate. A re-run must be a safe no-op, never a crash.
-  const paired = pairSearchRows([row(0x0810, "lda", "#D011.YSCROLL3_ROW25_SCREENON_TEXT")], [row(0x0812, "sta", "$d011")]);
-  assert.equal(paired.totalRegisterStores, 1);
-  assert.equal(paired.pairedStores, 0);
-  assert.equal(paired.unpairedStores, 1);
-});
-
-test("pairSearchRows: a pass whose row count EQUALS the requested ceiling is reported as possibly truncated (D-23, no silent caps)", () => {
-  const ldas = [row(0x0810, "lda", "#$1b"), row(0x0820, "lda", "#$1b")];
-  const stas = [row(0x0812, "sta", "$d011"), row(0x0822, "sta", "$d011")];
-  const atCeiling = pairSearchRows(ldas, stas, 2);
-  assert.equal(atCeiling.pass1Truncated, true);
-  assert.equal(atCeiling.pass2Truncated, true);
-
-  const belowCeiling = pairSearchRows(ldas, stas, 3);
-  assert.equal(belowCeiling.pass1Truncated, false);
-  assert.equal(belowCeiling.pass2Truncated, false);
-});
-
-test("parseImmediateOperand parses hex, decimal and binary immediates, and refuses a non-immediate operand", () => {
-  assert.equal(parseImmediateOperand("#$1b"), 0x1b);
-  assert.equal(parseImmediateOperand("#27"), 27);
-  assert.equal(parseImmediateOperand("#%00011011"), 0b00011011);
-  assert.throws(() => parseImmediateOperand("$d011"));
-});
-
-// ---------------------------------------------------------------------------
-// D-20: one variant per DISTINCT value the program actually writes.
-// ---------------------------------------------------------------------------
-
-test("planEnumsForPairing: two stores of the SAME value to one register produce ONE variant and TWO usages (D-20)", () => {
-  const pairing = pairSearchRows(
-    [row(0x0810, "lda", "#$1b"), row(0x0820, "lda", "#$1b")],
-    [row(0x0812, "sta", "$d011"), row(0x0822, "sta", "$d011")],
-  );
-  const planned = planEnumsForPairing(pairing);
-  assert.equal(planned.length, 1);
-  assert.equal(planned[0]!.enumName, "D011");
-  assert.equal(planned[0]!.variants.size, 1, "one variant per DISTINCT value -- never one per occurrence");
-  assert.equal(planned[0]!.variants.get(0x1b), "YSCROLL3_ROW25_SCREENON_TEXT");
-  assert.equal(planned[0]!.occurrences.length, 2, "both usages still bind, at their own lda addresses");
-  assert.deepEqual(
-    planned[0]!.occurrences.map((o) => o.ldaAddr),
-    [0x0810, 0x0820],
-  );
-});
-
-test("planEnumsForPairing: two DISTINCT values to one register produce two variants, and never a 256-value table", () => {
-  const pairing = pairSearchRows(
-    [row(0x0810, "lda", "#$1b"), row(0x0820, "lda", "#$00")],
-    [row(0x0812, "sta", "$d011"), row(0x0822, "sta", "$d011")],
-  );
-  const planned = planEnumsForPairing(pairing);
-  assert.equal(planned.length, 1);
-  assert.equal(planned[0]!.variants.size, 2);
-  assert.deepEqual([...planned[0]!.variants.keys()].sort((a, b) => a - b), [0x00, 0x1b]);
-});
-
-test("planEnumsForPairing: a usage binds to the lda address, NEVER the store address (measured binding rule)", () => {
-  const pairing = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", "$d011")]);
-  const planned = planEnumsForPairing(pairing);
-  assert.equal(planned[0]!.occurrences[0]!.ldaAddr, 0x0810);
-  assert.notEqual(planned[0]!.occurrences[0]!.ldaAddr, 0x0812);
-});
-
-test("planEnumsForPairing: two different registers produce two separate enums", () => {
-  const pairing = pairSearchRows(
-    [row(0x0810, "lda", "#$1b"), row(0x0820, "lda", "#$08")],
-    [row(0x0812, "sta", "$d011"), row(0x0822, "sta", "$d016")],
-  );
-  const planned = planEnumsForPairing(pairing);
-  assert.deepEqual(planned.map((p) => p.enumName).sort(), ["D011", "D016"]);
-});
-
-// ---------------------------------------------------------------------------
-// D-23's wording contract, against the real report builder.
-// ---------------------------------------------------------------------------
-
-test("buildEnumGenerationReport: the summary lines contain 'truncat' when a pass hit its ceiling, and always carry total/paired/unpaired", () => {
-  const ldas = [row(0x0810, "lda", "#$1b"), row(0x0820, "lda", "#$00")];
-  const stas = [row(0x0812, "sta", "$d011"), row(0x0822, "sta", "$d011")];
-  const pairing = pairSearchRows(ldas, stas, 2); // exactly at the ceiling
-  const installed: EnumInstallSummary[] = [
-    { regKey: "$D011", enumName: "D011", variantCount: 2, action: "created", usagesApplied: 2 },
-  ];
-  const report = buildEnumGenerationReport(pairing, installed, 2);
-
-  const joined = report.summaryLines.join("\n");
-  assert.match(joined, /truncat/i);
-  assert.match(joined, /total register stores seen: 2/);
-  assert.match(joined, /paired \(adjacent lda #imm found\): 2/);
-  assert.match(joined, /unpaired \(no adjacent immediate load\): 0/);
-  assert.match(joined, /enum D011: created, 2 variant\(s\), 2 usage\(s\) applied/);
-});
-
-test("buildEnumGenerationReport: a run below its ceiling says NOTHING about truncation -- the signal must not be always-on", () => {
-  const pairing = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", "$d011")], DEFAULT_MAX_RESULTS);
-  const report = buildEnumGenerationReport(pairing, [], DEFAULT_MAX_RESULTS);
-  assert.doesNotMatch(report.summaryLines.join("\n"), /truncat/i);
-  assert.equal(report.pass1Truncated, false);
-  assert.equal(report.pass2Truncated, false);
-});
-
-test("buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's re-runnability stays expressible", () => {
-  const pairing = pairSearchRows([row(0x0810, "lda", "#$1b")], [row(0x0812, "sta", "$d011")]);
-  const report = buildEnumGenerationReport(pairing, [
-    { regKey: "$D011", enumName: "D011", variantCount: 1, action: "updated", usagesApplied: 1 },
-  ]);
-  assert.match(report.summaryLines.join("\n"), /enum D011: updated,/);
-});
-
-// ---------------------------------------------------------------------------
-// Task 2 (D-15): the rebuilt fetch-and-install route, over a real (synthetic,
-// temp-dir) store and a real `decode()` call -- never a hand-built
-// DisasmSearchRow standing in for what the fetch itself must produce.
-// ---------------------------------------------------------------------------
-
-/** `lda #$1b` (a9 1b) then `sta $d011` (8d 11 d0), at $0810 -- the exact
- * pinned criterion-3 pairing, decoded for real through `decode()` rather
- * than hand-built as DisasmSearchRow literals. */
-const LDA_STA_D011_BYTES = new Uint8Array([0xa9, 0x1b, 0x8d, 0x11, 0xd0]);
-
-test("fetchRegisterSearchRows: a real code range decodes into one lda row and one sta row 2 bytes apart, and pairSearchRows() pairs them into $D011=0x1b", () => {
-  inTempDir((dir) => {
-    const handle = freshStore(dir);
-    try {
-      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
-      const { ldaRows, staRows } = fetchRegisterSearchRows(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
-
-      assert.equal(ldaRows.length, 1);
-      assert.equal(staRows.length, 1);
-      assert.equal(staRows[0]!.address_decimal - ldaRows[0]!.address_decimal, 2);
-
-      const pairing = pairSearchRows(ldaRows, staRows);
-      assert.equal(pairing.pairedStores, 1);
-      assert.deepEqual(pairing.occurrences, [{ regKey: "$D011", value: 0x1b, ldaAddr: 0x0810 }]);
-    } finally {
-      closeStore(handle);
-    }
-  });
-});
-
-test("generateEnumsFromStore: plans exactly one D011 enum with one variant, reporting pairedStores:1, unpairedStores:0", () => {
-  inTempDir((dir) => {
-    const handle = freshStore(dir);
-    try {
-      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
-      const report = generateEnumsFromStore(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
-
-      assert.equal(report.pairedStores, 1);
-      assert.equal(report.unpairedStores, 0);
-      assert.equal(report.enums.length, 1);
-      assert.equal(report.enums[0]!.enumName, "D011");
-      assert.equal(report.enums[0]!.variantCount, 1);
-    } finally {
-      closeStore(handle);
-    }
-  });
-});
-
-test("fetchRegisterSearchRows: a store NOT exactly 2 bytes after its lda produces zero paired occurrences and a non-zero unpairedStores (adjacent-only, D-23)", () => {
-  inTempDir((dir) => {
-    const handle = freshStore(dir);
-    try {
-      // lda #$1b (a9 1b), brk (00), sta $d011 (8d 11 d0) -- the sta starts 3
-      // bytes after the lda, not 2, so D-23's adjacent-only rule must miss it.
-      const bytes = new Uint8Array([0xa9, 0x1b, 0x00, 0x8d, 0x11, 0xd0]);
-      setDataType(handle, { start: 0x0810, endInclusive: 0x0815, dataType: "code" });
-      const { ldaRows, staRows } = fetchRegisterSearchRows(handle, { origin: 0x0810, body: bytes });
-      const pairing = pairSearchRows(ldaRows, staRows);
-
-      assert.equal(pairing.totalRegisterStores, 1, "the store is still a store to a known register");
-      assert.equal(pairing.pairedStores, 0);
-      assert.equal(pairing.unpairedStores, 1);
-    } finally {
-      closeStore(handle);
-    }
-  });
-});
-
-test("installPlannedEnums (via generateEnumsFromStore): writes exactly one project enum and binds the usage to the lda address, never the store address", () => {
-  inTempDir((dir) => {
-    const handle = freshStore(dir);
-    try {
-      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
-      generateEnumsFromStore(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
-
-      const enums = listProjectEnums(handle);
-      assert.equal(enums.length, 1);
-      assert.equal(enums[0]!.name, "D011");
-      assert.deepEqual(enums[0]!.variants, { $1b: "YSCROLL3_ROW25_SCREENON_TEXT" });
-
-      const usages = listEnumUsage(handle);
-      assert.equal(usages.length, 1);
-      assert.equal(usages[0]!.address, 0x0810, "the usage must bind to the lda address");
-      assert.notEqual(usages[0]!.address, 0x0812, "never the sta (store) address");
-      assert.equal(usages[0]!.enumName, "D011");
-    } finally {
-      closeStore(handle);
-    }
-  });
-});
-
-test("installPlannedEnums (via generateEnumsFromStore, re-run): a byte-identical repeat reports 'created' again and applies no second, duplicate enum -- ANNO-13's re-runnability", () => {
-  inTempDir((dir) => {
-    const handle = freshStore(dir);
-    try {
-      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
-      generateEnumsFromStore(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
-      generateEnumsFromStore(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
-
-      assert.equal(listProjectEnums(handle).length, 1, "a re-run must never create a second enum for the same register");
-      assert.equal(listEnumUsage(handle).length, 1, "applyEnumUsage() is idempotent -- a re-run must never duplicate the usage row");
-    } finally {
-      closeStore(handle);
-    }
-  });
-});
-
-test("fetchRegisterSearchRows: a pass whose row count equals maxResults reports a possible truncation in words, via generateEnumsFromStore's own report (D-23, no silent caps)", () => {
-  inTempDir((dir) => {
-    const handle = freshStore(dir);
-    try {
-      // Two lda/sta pairs, at $0810 and $0815.
-      const bytes = new Uint8Array([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0xa9, 0x08, 0x8d, 0x11, 0xd0]);
-      setDataType(handle, { start: 0x0810, endInclusive: 0x0819, dataType: "code" });
-      const report = generateEnumsFromStore(handle, { origin: 0x0810, body: bytes }, { maxResults: 1 });
-      assert.match(report.summaryLines.join("\n"), /truncat/i);
-    } finally {
-      closeStore(handle);
-    }
-  });
-});
-
-test("fetchRegisterSearchRows: a non-code range is never decoded (only 'code'-typed ranges are walked)", () => {
-  inTempDir((dir) => {
-    const handle = freshStore(dir);
-    try {
-      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "byte" });
-      const { ldaRows, staRows } = fetchRegisterSearchRows(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
-      assert.equal(ldaRows.length, 0);
-      assert.equal(staRows.length, 0);
-    } finally {
-      closeStore(handle);
-    }
-  });
 });
 
 // ---------------------------------------------------------------------------

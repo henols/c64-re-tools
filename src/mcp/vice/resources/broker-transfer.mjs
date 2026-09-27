@@ -80,11 +80,6 @@ function discardSink() {
         },
     });
 }
-/** The pre-terminator line-length cap, mirroring `broker-relay.mts`'s own
- * `MAX_ATTACH_LINE_BYTES` (65536) -- same reasoning: a connection that
- * accumulates this many bytes without ever completing its header line is an
- * overflow, never buffered further. */
-export const MAX_TRANSFER_HEADER_LINE_BYTES = 65536;
 /**
  * Serialises `header` to one JSON line, terminated by a single `0x0a`, and
  * writes it to `socket`. The only encoder in this file's send-side path --
@@ -93,58 +88,6 @@ export const MAX_TRANSFER_HEADER_LINE_BYTES = 65536;
  */
 export function writeTransferHeader(socket, header) {
     socket.write(JSON.stringify(header) + "\n");
-}
-/**
- * Reads one newline-terminated JSON header line off the FRONT of a transfer
- * connection's byte stream, by the same byte-level `indexOf(0x0a)` search
- * `broker-relay.mts`'s `readAttachLine()` uses -- NEVER `chunk.toString()`
- * on the accumulator as a whole, which would corrupt any payload byte that
- * happens to arrive in the SAME `"data"` event as the header's own
- * terminator. `carry` is whatever a previous call already accumulated with
- * no terminator found yet (empty Buffer on the first call).
- *
- * The header line is parsed inside try/catch and every field is type-checked
- * before use -- a malformed header is a REFUSAL (`error` set), never a thrown
- * exception past this function's own boundary. This is a first, cheap type
- * check only (string/number shape); the deeper "is `byteLength` actually a
- * safe, non-negative, in-cap integer" validation happens again, independently,
- * inside `receivePayloadToFile()` itself (D-11: the declared length is
- * untrusted input, checked wherever it is consumed, not only once at parse
- * time).
- */
-export function readTransferHeader(chunk, carry = Buffer.alloc(0)) {
-    const combined = Buffer.concat([carry, chunk]);
-    const idx = combined.indexOf(0x0a);
-    if (idx === -1) {
-        return { remainder: combined, overflow: combined.length > MAX_TRANSFER_HEADER_LINE_BYTES };
-    }
-    // `.toString()` with no encoding argument -- Buffer's own documented
-    // default is "utf8" -- decoding ONLY the header line itself, strictly
-    // before the terminator. Everything from `idx + 1` on is returned as a
-    // raw Buffer, untouched, whatever byte values it holds.
-    const lineText = combined.subarray(0, idx).toString();
-    const remainder = combined.subarray(idx + 1);
-    let parsed;
-    try {
-        parsed = JSON.parse(lineText);
-    }
-    catch {
-        return { remainder, overflow: false, error: "vice: transfer header line is not valid JSON" };
-    }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        return { remainder, overflow: false, error: "vice: transfer header line is not a JSON object" };
-    }
-    const obj = parsed;
-    if (typeof obj.kind !== "string") {
-        return { remainder, overflow: false, error: `vice: transfer header field 'kind' must be a string, got ${JSON.stringify(obj.kind)}` };
-    }
-    if (typeof obj.sha256 !== "string") {
-        return { remainder, overflow: false, error: `vice: transfer header field 'sha256' must be a string, got ${JSON.stringify(obj.sha256)}` };
-    }
-    if (typeof obj.byteLength !== "number") {
-        return { remainder, overflow: false, error: `vice: transfer header field 'byteLength' must be a number, got ${JSON.stringify(obj.byteLength)}` };
-    }
-    return { header: { kind: obj.kind, byteLength: obj.byteLength, sha256: obj.sha256 }, remainder, overflow: false };
 }
 /** The errno-token shape `formatPathFreeFault()` admits into wire text: an
  * uppercase ASCII letter first, then only uppercase ASCII letters, digits

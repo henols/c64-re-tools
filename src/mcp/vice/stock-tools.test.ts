@@ -23,7 +23,8 @@ import {
   runPure,
   type StockSessionDeps,
 } from "./stock-session.ts";
-import { STOCK_TOOLS, callStockTool, stockToolDefinitions, StockToolManifestMismatchError } from "./stock-tools.ts";
+import { STOCK_TOOLS, stockToolDefinitions, StockToolManifestMismatchError } from "./stock-tools.ts";
+import { callStockTool } from "./stock-call.ts";
 import { STUB_BROKER_CONTROL, makeLease, fakeSession } from "./stock-session-fixtures.ts";
 import type { ToolInfo } from "./vice-errors.mts";
 import type { DerivedPureHandler } from "./stock-handler.ts";

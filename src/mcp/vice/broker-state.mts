@@ -11,7 +11,6 @@
 // every launch, kill and probe test uses -- an architectural feature from
 // the first commit that defined BrokerState, rather than a retrofit once a
 // test needs it.
-import type { ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 // TYPE-ONLY import, deliberately -- the SAME discipline broker-launch.mts's
 // own `import type { BrokerState, ... } from "./broker-state.mjs"` uses in the
@@ -394,22 +393,6 @@ export function createBrokerState(): BrokerState {
 // better than a file that can go stale between passes.
 // ---------------------------------------------------------------------------
 
-/** The spawn/clock/readiness-probe/port-probe seam every launch, kill and
- * probe test uses. `spawn` and `now` are broker-launch.mts's own;
- * `probeReady` is broker-launch.mts's readiness probe (a *record*-shaped
- * convenience wrapper around this module's port-oriented `probeReady`);
- * `portInUse` is this module's own allocation-time seam (plan 02),
- * defaulting to `defaultPortInUse` below -- threaded through
- * `nextFreePort()`'s own options bag directly rather than required on every
- * caller of this interface, since most callers (tests especially) inject it
- * without constructing a full BrokerDeps object. */
-export interface BrokerDeps {
-  spawn: (command: string, args: string[]) => ChildProcess;
-  now: () => number;
-  probeReady: (record: InstanceRecord) => Promise<boolean>;
-  portInUse?: PortInUseProbe;
-}
-
 export interface StateSnapshot {
   instances: InstanceRecord[];
   grants: GrantRecord[];
@@ -583,45 +566,10 @@ export async function nextFreePort(state: BrokerState, opts: NextFreePortOptions
   return { ok: false, reason: "no_free_port" };
 }
 
-/** Counts ready, unclaimed instances -- filters the SAME in-memory map every
- * other count reads, no filesystem access anywhere in this expression. */
-export function countReady(state: BrokerState): number {
-  let n = 0;
-  for (const record of state.instances.values()) {
-    if (record.state === "ready") n++;
-  }
-  return n;
-}
-
 /** Counts every launched instance regardless of state (launching, ready or
  * granted) -- the denominator of the total <= VICE_BROKER_MAX ceiling. */
 export function countTotal(state: BrokerState): number {
   return state.instances.size;
-}
-
-/** Counts instances currently "launching". The warm floor and its own
- * maintainWarmFloor() were retired -- that was the SECOND launch path
- * that used to read this counter as a pre-check before starting a new
- * launch, alongside the cold-acquire arm's own equivalent check. With only
- * one launch path left (vice-broker.mts's handleAcquire(), guarded by
- * acquirePortAndLaunch()'s own single-owner `inFlight` boolean in
- * broker-launch.mts -- a SEPARATE, synchronous primitive, not this
- * function), nothing in production calls this counter today; it remains
- * exported alongside countReady()/countTotal() as status-shaped
- * infrastructure. It is named here, and its history preserved, because it
- * is why a SINGLE counter -- not two, one per launch path -- was the fix
- * for the 2026-08-01 outage (three simultaneous x64sc launches: one SEGV,
- * one exit 1, one exit 0 at the identical spawn second): two counters that
- * could ever disagree about whether a boot was already under way is exactly
- * how that outage happened, and the discipline of reading exactly one is
- * what this function's own existence still documents, even with one launch
- * path left to (potentially) consult it. */
-export function countLaunching(state: BrokerState): number {
-  let n = 0;
-  for (const record of state.instances.values()) {
-    if (record.state === "launching") n++;
-  }
-  return n;
 }
 
 function resolveCeiling(override?: number): number {

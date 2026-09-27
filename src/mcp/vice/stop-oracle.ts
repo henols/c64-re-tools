@@ -69,9 +69,6 @@
  * time. */
 export const ORACLE_TERMS = ["pc", "hitCount", "line", "cycle"] as const;
 
-/** One member of `ORACLE_TERMS`. */
-export type OracleTerm = (typeof ORACLE_TERMS)[number];
-
 /** One stop, as its four already-read scalar terms. No bytes, by design -- see
  * this module's header. */
 export interface StopIdentity {

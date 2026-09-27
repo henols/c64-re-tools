@@ -22,15 +22,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, Socket as NodeNetSocket, type Server, type Socket, type AddressInfo } from "node:net";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import {
-  readAttachLine,
-  MAX_ATTACH_LINE_BYTES,
   relaySessionKey,
   resolveRelayIdleMs,
   resolveRelayKeepAliveMs,
@@ -424,29 +422,6 @@ async function withMultiRelayTestBroker<T>(
 // readAttachLine() -- pure byte-level line reader.
 // ===========================================================================
 
-test("readAttachLine: finds the terminator in one call and returns everything after it as a raw remainder", () => {
-  const chunk = Buffer.concat([Buffer.from('{"op":"attach"}\n', "utf8"), Buffer.from([0x01, 0x02, 0x03])]);
-  const result = readAttachLine(chunk);
-  assert.equal(result.line, '{"op":"attach"}');
-  assert.ok(result.remainder.equals(Buffer.from([0x01, 0x02, 0x03])));
-  assert.equal(result.overflow, false);
-});
-
-test("readAttachLine: no terminator yet -- returns the accumulated carry for the next call", () => {
-  const first = readAttachLine(Buffer.from('{"op":"at', "utf8"));
-  assert.equal(first.line, undefined);
-  assert.equal(first.overflow, false);
-  const second = readAttachLine(Buffer.from('tach"}\n', "utf8"), first.remainder);
-  assert.equal(second.line, '{"op":"attach"}');
-});
-
-test("readAttachLine: overflow flag trips once the unterminated carry exceeds MAX_ATTACH_LINE_BYTES", () => {
-  const big = Buffer.alloc(MAX_ATTACH_LINE_BYTES + 1, 0x41);
-  const result = readAttachLine(big);
-  assert.equal(result.line, undefined);
-  assert.equal(result.overflow, true);
-});
-
 // ===========================================================================
 // handleMonitorClaim() -- the per-claim handle (T-63-01).
 // ===========================================================================
@@ -736,7 +711,7 @@ test("byte-transparency: a payload with a lone 0x80-0xFF byte run and an embedde
   );
 });
 
-test("boundary one overflow: a relay connection buffering past MAX_ATTACH_LINE_BYTES pre-splice bytes with no terminator has its socket destroyed and never reaches the splice", async () => {
+test("boundary one overflow: a relay connection buffering past the 64 KiB control-line limit (broker-control.mts MAX_LINE_BYTES) in pre-splice bytes with no terminator has its socket destroyed and never reaches the splice", async () => {
   await withStubEmulatorServer(
     () => {
       assert.fail("the stub emulator must never accept a connection when the pre-splice cap is exceeded with no terminator");
@@ -750,7 +725,7 @@ test("boundary one overflow: a relay connection buffering past MAX_ATTACH_LINE_B
         });
         const closed = new Promise<void>((resolve) => rawSocket.once("close", () => resolve()));
         // 65537 bytes, no terminator anywhere -- one write past the cap.
-        rawSocket.write(Buffer.alloc(MAX_ATTACH_LINE_BYTES + 1, 0x41));
+        rawSocket.write(Buffer.alloc(65536 + 1, 0x41));
         await closed;
         assert.equal(connectionCount(), 0, "the stub emulator must never be dialled for an overflowed pre-splice buffer");
       });

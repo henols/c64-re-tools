@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { IMAGE_VOLATILE, IO_VOLATILE, isImageVolatile, isIoVolatile, classify } from "../../../skills/c64-ram-capture/scripts/compare-cross-binary.ts";
+import { IMAGE_VOLATILE, isImageVolatile, isIoVolatile, classify } from "../../../skills/c64-ram-capture/scripts/compare-cross-binary.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The scripts under test live in the skill folder; this test lives in test/skills/.
@@ -105,9 +105,8 @@ test("mask: snapshot route does not mask $D000-$DFFF in the image; memory-read r
   assert.equal(isImageVolatile(0xd020, "memory-read"), false);
 });
 
-test("mask: IMAGE_VOLATILE and IO_VOLATILE are exported and non-empty", () => {
+test("mask: IMAGE_VOLATILE is exported and non-empty", () => {
   assert.ok(Array.isArray(IMAGE_VOLATILE) && IMAGE_VOLATILE.length > 0);
-  assert.ok(Array.isArray(IO_VOLATILE) && IO_VOLATILE.length > 0);
 });
 
 test("classify: no drift bucket -- a one-bit divergence outside every mask fails just like a multi-bit one", () => {

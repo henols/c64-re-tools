@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters, handleProgramLoad } from "./text-tools.ts";
-import { callStockTool } from "./stock-tools.ts";
+import { callStockTool } from "./stock-call.ts";
 import type { StockSessionDeps } from "./stock-session.ts";
 import type { StockToolResult } from "./stock-handler.ts";
 import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-connect.ts";

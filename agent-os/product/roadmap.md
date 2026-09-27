@@ -135,8 +135,7 @@
   the shared scripts). A skill links to the skill that owns anything else,
   never copies it.
 - A script reaches no skill but `c64-project`, and a test installs each one
-  with only `c64-project` beside it to prove it. `recovery-schema.ts`'s
-  parameterisation gate scans every installed skill instead of naming one.
+  with only `c64-project` beside it to prove it.
 - Ghidra and dxa run from a skill: `disassemble.ts` (`analyze`, `listing`,
   `install-extension`) drives `ghidra-run.ts` and `dxa-run.ts`, which now ship
   in `dist/`. Skill text is written to ASD-STE100.

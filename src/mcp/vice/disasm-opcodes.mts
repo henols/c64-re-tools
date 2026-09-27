@@ -157,28 +157,6 @@ export type AddressingMode =
   | "indirect_y"
   | "relative";
 
-/**
- * The canonical instruction length, in bytes, for each addressing mode.
- * Every `OpcodeEntry.length` below must equal `LENGTH_FOR_MODE[entry.mode]`
- * -- `disasm-opcodes.test.ts`'s shape suite asserts this for all 256
- * entries.
- */
-export const LENGTH_FOR_MODE: Readonly<Record<AddressingMode, 1 | 2 | 3>> = {
-  implicit: 1,
-  accumulator: 1,
-  immediate: 2,
-  zeropage: 2,
-  zeropage_x: 2,
-  zeropage_y: 2,
-  indirect_x: 2,
-  indirect_y: 2,
-  relative: 2,
-  absolute: 3,
-  absolute_x: 3,
-  absolute_y: 3,
-  indirect: 3,
-};
-
 /** One 6502/6510 opcode's decode facts. */
 export interface OpcodeEntry {
   /** Lowercase three-letter canonical 6502/6510 mnemonic (ACME source is

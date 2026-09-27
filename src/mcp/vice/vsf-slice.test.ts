@@ -39,7 +39,6 @@ import {
   MODULE_HEADER_LEN,
   MODULE_NAME_LEN,
   MIN_C64MEM_BODY_LEN,
-  V01_C64MEM_BODY_LEN,
   RAM_OFFSET,
   RAM_SIZE,
 } from "./vsf-slice.ts";
@@ -85,14 +84,12 @@ test("FIRST_MODULE_OFFSET is 58 -- the second magic block is accounted for", () 
   assert.notEqual(FIRST_MODULE_OFFSET, 37);
 });
 
-test("MIN_C64MEM_BODY_LEN is 65543 and V01_C64MEM_BODY_LEN is 65555, and neither is 4 + 65536", () => {
+test("MIN_C64MEM_BODY_LEN is 65543, not 4 + 65536", () => {
   assert.equal(MIN_C64MEM_BODY_LEN, 65543);
-  assert.equal(V01_C64MEM_BODY_LEN, 65555);
   // The falsified assertion this module exists not to carry: `4 + 65536` is
   // 65540, which is below the real minimum and above nothing, so a slicer
   // asserting equality against it refuses every real snapshot.
   assert.notEqual(MIN_C64MEM_BODY_LEN, RAM_OFFSET + RAM_SIZE);
-  assert.notEqual(V01_C64MEM_BODY_LEN, RAM_OFFSET + RAM_SIZE);
 });
 
 test("MODULE_HEADER_LEN is 22 and the size field sits at header offset 18", () => {
@@ -171,7 +168,7 @@ test("sliceC64Mem: dataOut/dataRead/dirRead come from the 3-byte SUFFIX after th
 test("sliceC64Mem: reports snapshotMinor 1 and bodyLength 65555 for the minor-1 fixture", () => {
   const slice = sliceC64Mem(fixture("wellformed-minor1"));
   assert.equal(slice.snapshotMinor, 1);
-  assert.equal(slice.bodyLength, V01_C64MEM_BODY_LEN);
+  assert.equal(slice.bodyLength, 65555);
   assert.equal(slice.bodyLength, 65555);
 });
 
@@ -491,13 +488,12 @@ test("every .vsf fixture has a sidecar declaring itself synthetic and naming its
   }
 });
 
-test("vsf-slice.ts is in package.json files[] and no fixtures entry is", () => {
-  // Two mechanical reasons the module must be listed, both stated in its own
-  // header: the skill-side route resolves it inside the published tarball,
-  // and `shippedTsModules()` -- which every structural guard scans -- is
-  // derived from `files[]`, so an unlisted module is outside the scanned set.
+test("vsf-slice.ts is a dist/ build root and no fixtures entry ships", () => {
+  // The skill-side route resolves vsf-slice.ts to dist/vsf-slice.js inside the
+  // published tarball, so the server build must compile it.
+  const server = JSON.parse(readFileSync(join(HERE, "tsconfig.server.json"), "utf8")) as { files: string[] };
+  assert.ok(server.files.includes("vsf-slice.ts"), "vsf-slice.ts is missing from tsconfig.server.json files");
   const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
-  assert.ok(pkg.files.includes("vsf-slice.ts"), "vsf-slice.ts is missing from files[]");
   assert.deepEqual(
     pkg.files.filter((f) => /fixtures/.test(f)),
     [],

@@ -176,6 +176,15 @@ test("vice-cli.mjs IS present in package.json's files[] array", () => {
   assert.equal(pkg.files.includes("vice-cli.mjs"), true, "vice-cli.mjs is the package's own binary/main entry and must ship");
 });
 
+test("package.json files[] ships no TypeScript source: an npm install runs dist/ and resources/*.mjs", () => {
+  // Node never strips types under node_modules, so a shipped .ts file is dead
+  // weight. smoke-packed.ts proves the packed tarball runs without one.
+  const pkg = JSON.parse(readFileSync(REAL_PACKAGE_JSON_PATH, "utf8")) as { files: string[] };
+  assert.deepEqual(pkg.files.filter((entry) => /\.m?ts$/.test(entry)), []);
+  assert.ok(pkg.files.includes("dist/"), "the compiled server build must ship");
+  assert.ok(pkg.files.includes("resources"), "the compiled host-bound modules must ship");
+});
+
 test("vice-cli.mjs is NOT a host-bound artifact -- it is an entry artifact, compiled beside its source", () => {
   assert.equal(HOST_BOUND_ARTIFACTS.includes("vice-cli.mjs"), false);
   assert.equal(HOST_BOUND_ARTIFACTS.includes("vice-cli.mts"), false);

@@ -34,10 +34,6 @@ interface StagedFileEntry {
 
 const brokerTransferModule = (await import(new URL("./resources/broker-transfer.mjs", import.meta.url).href)) as unknown as {
   writeTransferHeader: (socket: Socket, header: { kind: string; byteLength: number; sha256: string }) => void;
-  readTransferHeader: (
-    chunk: Buffer,
-    carry?: Buffer,
-  ) => { header?: { kind: string; byteLength: number; sha256: string }; remainder: Buffer; overflow: boolean; error?: string };
   sendPayloadFromFile: (opts: { socket: Socket; sourcePath: string; capBytes?: number; kind?: string }) => Promise<{ ok: true; byteLength: number; sha256: string } | { ok: false; reason: string }>;
   receivePayloadToFile: (opts: {
     socket: Socket;
@@ -52,7 +48,6 @@ const brokerTransferModule = (await import(new URL("./resources/broker-transfer.
   /** G-64-5 (plan 64-15, Task 1): the ONE builder of wire text for a caught
    * transfer fault -- see that function's own JSDoc in broker-transfer.mts. */
   formatPathFreeFault: (summary: string, fault: unknown) => string;
-  MAX_TRANSFER_HEADER_LINE_BYTES: number;
   stageFileSlot: (opts: { grantId: string; slot: string; now?: () => number }) => { ok: true; handle: string; stagedPath: string } | { ok: false; reason: string };
   resolveStagedFile: (handle: string) => { ok: true; entry: StagedFileEntry } | { ok: false; reason: string };
   markTransferInFlight: (handle: string) => { ok: true } | { ok: false; reason: string };
@@ -68,7 +63,6 @@ const brokerTransferModule = (await import(new URL("./resources/broker-transfer.
 };
 const {
   writeTransferHeader,
-  readTransferHeader,
   sendPayloadFromFile,
   receivePayloadToFile,
   formatPathFreeFault,
@@ -109,6 +103,30 @@ function fullByteRangeFixture(times: number): Buffer {
   const one = Buffer.alloc(256);
   for (let i = 0; i < 256; i++) one[i] = i;
   return Buffer.concat(Array.from({ length: times }, () => one));
+}
+
+/** The test side's reader for the one JSON header line `writeTransferHeader()`
+ * puts in front of the payload. It splits on the first 0x0a byte and never
+ * decodes a byte after it, so payload bytes in the same chunk stay raw. */
+function readTransferHeader(
+  chunk: Buffer,
+  carry: Buffer = Buffer.alloc(0),
+): { header?: { kind: string; byteLength: number; sha256: string }; remainder: Buffer; overflow: boolean; error?: string } {
+  const combined = Buffer.concat([carry, chunk]);
+  const idx = combined.indexOf(0x0a);
+  if (idx === -1) return { remainder: combined, overflow: combined.length > 65536 };
+  const remainder = combined.subarray(idx + 1);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(combined.subarray(0, idx).toString());
+  } catch {
+    return { remainder, overflow: false, error: "transfer header line is not valid JSON" };
+  }
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj?.kind !== "string" || typeof obj.sha256 !== "string" || typeof obj.byteLength !== "number") {
+    return { remainder, overflow: false, error: "transfer header line has the wrong shape" };
+  }
+  return { header: { kind: obj.kind, byteLength: obj.byteLength, sha256: obj.sha256 }, remainder, overflow: false };
 }
 
 /** Reads a transfer header off the front of `socket`'s byte stream via a
@@ -188,40 +206,6 @@ test("broker-transfer: a real multi-megabyte, non-UTF-8 file crosses a real loop
   } finally {
     rmSync(fixtureDir, { recursive: true, force: true });
   }
-});
-
-test("broker-transfer: writeTransferHeader + readTransferHeader round-trip a header line, with the remainder as raw payload bytes", () => {
-  const written: Buffer[] = [];
-  const fakeSocket = { write: (data: string | Buffer) => written.push(Buffer.isBuffer(data) ? data : Buffer.from(data)) } as unknown as Socket;
-  writeTransferHeader(fakeSocket, { kind: "file", byteLength: 3, sha256: "deadbeef" });
-
-  const payload = Buffer.from([0x00, 0x80, 0xff]);
-  const combined = Buffer.concat([...written, payload]);
-  const result = readTransferHeader(combined);
-  assert.deepEqual(result.header, { kind: "file", byteLength: 3, sha256: "deadbeef" });
-  assert.ok(result.remainder.equals(payload));
-  assert.equal(result.overflow, false);
-  assert.equal(result.error, undefined);
-});
-
-test("broker-transfer: readTransferHeader refuses a malformed JSON line by name, never throwing", () => {
-  const result = readTransferHeader(Buffer.from("not json at all\n"));
-  assert.equal(result.header, undefined);
-  assert.match(result.error ?? "", /not valid JSON/);
-});
-
-test("broker-transfer: readTransferHeader accumulates carry across chunks split mid-line", () => {
-  const line = JSON.stringify({ kind: "file", byteLength: 0, sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" }) + "\n";
-  const buf = Buffer.from(line);
-  const first = buf.subarray(0, 5);
-  const second = buf.subarray(5);
-
-  const partial = readTransferHeader(first);
-  assert.equal(partial.header, undefined);
-  assert.equal(partial.overflow, false);
-
-  const complete = readTransferHeader(second, partial.remainder);
-  assert.ok(complete.header);
 });
 
 test("broker-transfer: every fixture directory is created with mkdtempSync and this test cleans it up (no untracked scratch dirs)", () => {

@@ -124,7 +124,7 @@ import { build } from "./build.ts";
 import { epochPathFor } from "./broker-epoch.mts";
 import { dialBrokerEndpoint } from "./broker-endpoint.mts";
 import { dialControlSession, type BrokerControlSession, type HeldLease, type AcquireGrant } from "./vice-broker-client.ts";
-import { callStockTool } from "./stock-tools.ts";
+import { callStockTool } from "./stock-call.ts";
 import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { stockConnect, stockReconnect, type StockConnectOptions, type StockConnectSession } from "./stock-connect.ts";
 import { probeReady } from "./broker-launch.mts";

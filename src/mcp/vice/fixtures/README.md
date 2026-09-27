@@ -27,22 +27,3 @@ Evidence: direct read of live runtime state at `.vice-supervisor/` on the runnin
 (4 recorded instances at capture time), copied byte-for-byte (`diff` confirmed zero output against
 the live source files at capture time, while those live files still existed).
 Confidence: HIGH.
-
----
-
-# Planted-violation fixtures
-
-`planted-*` files in this directory are **deliberate violations**, committed so a
-structural guard can be proven by observing it bite rather than by reading it. They carry a
-`.txt` suffix (or an inert extension) so that no TypeScript program, no `node --test` glob and no
-runtime import ever loads them.
-
-| Fixture | Guard it belongs to | Route it plants |
-|---|---|---|
-| `planted-disposition-fixture.md` | `docs-review-disposition.test.ts` | a review finding left without a disposition |
-| `planted-review-fixture.md` | `docs-review-disposition.test.ts` | a review document the disposition scan must reject |
-| `planted-hop-chain-fixture.ts.txt` | `hop-chain-comments.test.ts` | a comment hop chain that does not resolve |
-| `planted-phase-pointer-fixture.ts.txt` | `comment-phase-pointers.test.ts`, `hop-chain-comments.test.ts` | a comment pointing at a phase that does not exist |
-
-Each guard reaches its fixture by an explicit path, never by a directory scan, so adding a
-fixture here does not silently enrol it in an unrelated guard.

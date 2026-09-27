@@ -89,7 +89,7 @@ import { dialBrokerEndpoint } from "./broker-endpoint.mts";
 import { dialControlSession, type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
 import { textConnect, textDisconnect } from "./text-connect.ts";
 import { TEXT_COMMAND_ALLOWLIST, withTextChannelLock, buildTextCommand } from "./text-protocol.ts";
-import { callStockTool } from "./stock-tools.ts";
+import { callStockTool } from "./stock-call.ts";
 import { clearHeldStockSession, ensureStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
 import { resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";

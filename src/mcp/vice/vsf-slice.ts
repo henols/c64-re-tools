@@ -131,11 +131,6 @@ export const RAM_SIZE = 65536;
  * which is the measured body length at module minor 0. */
 export const MIN_C64MEM_BODY_LEN = RAM_OFFSET + RAM_SIZE + 3;
 
-/** The body length at module minor 1: the minor-0 body plus two DWORD port
- * falloff clocks and four port state bytes. Evaluates to 65555, the length
- * measured on a genuine 3.9 snapshot. */
-export const V01_C64MEM_BODY_LEN = MIN_C64MEM_BODY_LEN + 4 + 4 + 4;
-
 /** The module name this module slices, matched byte-exactly after trailing
  * NULs are stripped. Byte-exact matters: `"C64MEMHACKS"` is a real, adjacent
  * module in every genuine snapshot, and a `startsWith`/`includes` match would

@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { parseAccessMap, type AccessMap, type AccessMapEntry, type AccessFlags } from "./textmon-memmap.mts";
-import { execObservationsFrom, runIdentityFrom, ingestAccessMap, type ExecObservation } from "./evid-ingest.mts";
+import { argvDigest, execObservationsFrom, runIdentityFrom, ingestAccessMap, type ExecObservation } from "./evid-ingest.mts";
 
 const HERE = fileURLToPath(import.meta.url);
 const OWN_MODULE = HERE.replace(/evid-ingest\.test\.ts$/, "evid-ingest.mts");
@@ -270,4 +270,35 @@ test("source census: evid-ingest.mts never compares against the block table's ow
       `evid-ingest.mts must never reference ${banned} outside a comment -- this module classifies nothing`,
     );
   }
+});
+
+test("argvDigest is order-sensitive and refuses an empty array by name", () => {
+  const ab = argvDigest(["a", "b"]);
+  const ba = argvDigest(["b", "a"]);
+  assert.notEqual(ab, ba, "an argv digest that is order-insensitive cannot key a reproducible run");
+  assert.match(ab, /^[0-9a-f]{64}$/, "sha256, lowercase hex");
+
+  assert.throws(
+    () => argvDigest([]),
+    (err: unknown) => {
+      assert.ok(err instanceof TypeError);
+      assert.match(err.message, /empty argv array/);
+      return true;
+    },
+  );
+});
+
+test("argvDigest is NUL-joined, so an argument containing a space is not the same as two arguments", () => {
+  const oneArg = argvDigest(["a b"]);
+  const twoArgs = argvDigest(["a", "b"]);
+  assert.notEqual(
+    oneArg,
+    twoArgs,
+    "a space join would collapse these two genuinely different argvs onto one digest",
+  );
+  assert.match(oneArg, /^[0-9a-f]{64}$/);
+  assert.match(twoArgs, /^[0-9a-f]{64}$/);
+  assert.equal(oneArg, oneArg.toLowerCase(), "lowercase hex");
+
+  assert.throws(() => argvDigest(["a", 1 as unknown as string]), /argv\[1\] is not a string/);
 });

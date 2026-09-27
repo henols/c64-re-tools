@@ -98,16 +98,12 @@ six bytes that disappear from code and reappear as data; this difference is
 `dxa-live.test.ts`'s `dxa-live EXCLUSION` case, asserted from dxa's own
 listing, never from the emitted `-B` file's contents.
 
-## `fixture.a`, `fixture.rep`, `fixture.prg` (35-03, DXA-04)
+## `fixture.a`, `fixture.prg` (35-03, DXA-04)
 
-Phase 35, plan 35-03's source-derived ground-truth tier (`partitionSourceDerived()`
-in `dxa-partition.ts`). `fixture.a` is copied UNCHANGED from the Phase 23
-evidence fixture — the same 279-byte synthetic fixture Phase 23 independently re-derived a
-145-code / 131-data / 3-pad partition for, byte by byte, from ACME's own
-`-r` report (`evidence/fixture/fixture-baseline.txt`, "OUTCOME LINES"
-section and its section-5 transcript). `fixture.rep` and `fixture.prg` are
-generated ONCE from `fixture.a` on this host and committed so
-`dxa-partition.test.ts` never invokes ACME itself (hermetic).
+`fixture.a` is copied unchanged from the Phase 23 evidence fixture: a
+279-byte synthetic image with a 145-code / 131-data / 3-pad partition.
+`fixture.prg` was assembled once from it on this host and committed, so no
+test runs ACME to get it.
 
 **Exact command, version, date:**
 
@@ -116,38 +112,27 @@ $ acme --version
 This is ACME, release 0.97 ("Zem"), 31 Jan 2021
   Platform independent version.
 
-$ acme -f cbm -o fixture.prg -l fixture.lbl -r fixture.rep fixture.a
+$ acme -f cbm -o fixture.prg fixture.a
 [exit 0]
 ```
 
-Run 2026-09-04 at `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/fixtures/dxa/`
-(`fixture.lbl` was produced as a side effect of `-l` and discarded — not
-committed, not needed by anything in this plan). `fixture.prg`'s sha256
-below is BYTE-IDENTICAL to Phase 23's own `fixture.prg`
-(`fixture-baseline.txt` section 1: `62ab9a2c287bf...`), independent
-confirmation that the same assembler on the same source reproduces the same
-image, not a lookalike.
+Run 2026-09-04 in this directory.
 
 **Per-file sha256:**
 
 | File | sha256 |
 |---|---|
 | `fixture.a` | `6fe226013a588ea8a24f9ec04074532e860595aab582ec2949c32adb7fd5d48a` |
-| `fixture.rep` | `3b905431b2ba8a711fc4b695f9b9e6f3b142232f2e9321b12812fb98f594f9d0` |
 | `fixture.prg` | `62ab9a2c287bf33f959be28409eeae5a46b6bf1ac6d2f7e88b7850611a6fc2c0` |
 
 `fixture.prg` is 281 bytes: a 2-byte `$0801` load-address header plus the
-279-byte image. `dxa-partition.test.ts` reproduces
-`GT_CODE_BYTES: 145`, `GT_DATA_BYTES: 131`, `GT_PAD_BYTES: 3`,
-`GT_EMISSIONS: 90`, `GT_TRUNCATED_COLUMNS_RECOVERED: 4` from these two files
-alone, with no dxa and no ACME in the loop at test time.
+279-byte image.
 
 ## `basic-stub.prg` (18 bytes, 35-03, DXA-04)
 
-Phase 35, plan 35-03's byte-derived ground-truth tier
-(`partitionByteDerived()` in `dxa-partition.ts`). Hand-built (via
+Hand-built (via
 `printf` writing raw bytes, never retyped through generated text) as the
-smallest input exercising both of that tier's two decidable facts: the
+smallest input carrying two decidable facts: the
 `.prg` header exclusion, and a cleanly-parsed canonical `10 SYS 2064` BASIC
 stub, followed by a short non-BASIC tail so the `unknown` region and the
 adjacency case (the end-of-program marker vs. the byte right after it) both
@@ -163,11 +148,8 @@ Byte layout (little-endian load address first):
 
 sha256: `01b9dc6965426b4940262db29f489105d23e58933695a4e451eb5f1a30ebbde8`.
 
-`dxa-partition.test.ts` asserts exactly 12 certain-data bytes
-(`$0801-$080c`), exactly 4 `unknown` bytes (`$080d-$0810`), and that the
-end-of-program marker's two bytes (`$080b-$080c`) are certain-data while the
-very next address (`$080d`) is `unknown` and the two never merge into one
-range.
+The canonical stub is 12 certain-data bytes (`$0801-$080c`), and the tail
+is 4 `unknown` bytes (`$080d-$0810`).
 
 ## `tracer.annostore.json`, `fixture.annostore.json`, `basic-stub.annostore.json` (D-02, D-12)
 

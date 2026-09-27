@@ -20,14 +20,6 @@ import { brokerIncidentsDir, ensureBrokerDir, type BrokerHomeOptions } from "./b
 
 export const BROKER_INCIDENT_VERSION = 1;
 
-/** The four ways a relay/control connection's death can trigger this
- * writer -- documented here as the intended wire vocabulary for the
- * `trigger` field, though `BrokerIncidentInput.trigger` itself stays typed
- * `unknown`, like every field this module merely renders rather than
- * validates. Consumed by a later plan (63-04's handleRelayDeath()), not
- * written to by this plan's own call sites. */
-export type BrokerIncidentTrigger = "relay_close" | "relay_error" | "relay_idle_expiry" | "control_close";
-
 function sanitiseUtcTimestamp(at: Date | string | number): string {
   const d = at instanceof Date ? at : new Date(at);
   const base = Number.isNaN(d.getTime()) ? new Date() : d;

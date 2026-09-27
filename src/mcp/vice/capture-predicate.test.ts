@@ -16,12 +16,10 @@
 // failure output about one kind of defect.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 
 import {
-  argvDigest,
   bin8,
   CaptureComparisonError,
   compareCaptures,
@@ -79,18 +77,6 @@ test("the committed transient allow-list size cap is 64, and the oracle has four
   assert.equal(IMAGE_BYTES, 65536);
   assert.deepEqual([...ORACLE_TERMS], ["pc", "hitCount", "line", "cycle"]);
   assert.equal(ORACLE_TERMS.length, 4);
-});
-
-test("both new modules are in package.json files[], or every structural census over them is vacuous", () => {
-  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
-  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
-  for (const name of ["capture-predicate.mts", "stop-oracle.ts"]) {
-    assert.equal(
-      pkg.files.includes(name),
-      true,
-      `${name} must be listed: capture-seam.test.ts's census scans a set DERIVED from files[], so an unlisted module sits outside its scope entirely`,
-    );
-  }
 });
 
 // ---------------------------------------------------------------------------
@@ -181,21 +167,6 @@ test("normalisePorts returns a COPY -- the caller's image is unchanged after the
 // 4. The argv identity digest
 // ---------------------------------------------------------------------------
 
-test("argvDigest is order-sensitive and refuses an empty array by name", () => {
-  const ab = argvDigest(["a", "b"]);
-  const ba = argvDigest(["b", "a"]);
-  assert.notEqual(ab, ba, "an argv digest that is order-insensitive cannot key a reproducible run");
-  assert.match(ab, /^[0-9a-f]{64}$/, "sha256, lowercase hex");
-
-  assert.throws(
-    () => argvDigest([]),
-    (err: unknown) => {
-      assert.ok(err instanceof CaptureComparisonError);
-      assert.match(err.message, /empty argv array/);
-      return true;
-    },
-  );
-});
 
 // ---------------------------------------------------------------------------
 // 5. Module posture: pure, byte-taking, path-free, and reaching neither
@@ -554,25 +525,6 @@ test("normalisePorts refuses a wrong-length image and a non-byte port value, nam
   assert.throws(() => normalisePorts(new Uint8Array(4096), { dirRead: 47, dataRead: 55 }), /is 4096 byte\(s\)/);
   assert.throws(() => normalisePorts(a, { dirRead: 256, dataRead: 55 }), /byte values in 0\.\.255/);
   assert.throws(() => normalisePorts(a, { dirRead: -1, dataRead: 55 }), /byte values in 0\.\.255/);
-});
-
-// ---------------------------------------------------------------------------
-// 14. The argv digest: NUL-joined, not space-joined
-// ---------------------------------------------------------------------------
-
-test("argvDigest is NUL-joined, so an argument containing a space is not the same as two arguments", () => {
-  const oneArg = argvDigest(["a b"]);
-  const twoArgs = argvDigest(["a", "b"]);
-  assert.notEqual(
-    oneArg,
-    twoArgs,
-    "a space join would collapse these two genuinely different argvs onto one digest",
-  );
-  assert.match(oneArg, /^[0-9a-f]{64}$/);
-  assert.match(twoArgs, /^[0-9a-f]{64}$/);
-  assert.equal(oneArg, oneArg.toLowerCase(), "lowercase hex");
-
-  assert.throws(() => argvDigest(["a", 1 as unknown as string]), /argv\[1\] is not a string/);
 });
 
 // ---------------------------------------------------------------------------

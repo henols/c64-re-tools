@@ -31,7 +31,6 @@ import {
   exportStoreDocument,
   importStoreDocument,
   provenanceForComment,
-  isDeclineComment,
   AnnoStoreExportError,
 } from "./anno-store-export.mts";
 import type { StoreExportDocument } from "./anno-store-export.mts";
@@ -207,7 +206,6 @@ test("Test 6: a comment whose text starts with DECLINED: round-trips with proven
       const doc = exportStoreDocument(handle);
       const row = doc.comments.find((c) => c.address === 0x0811)!;
       assert.equal(row.provenance, "authored");
-      assert.equal(isDeclineComment(row.text), true);
       assert.equal(provenanceForComment(text), "authored");
     } finally {
       closeStore(handle);

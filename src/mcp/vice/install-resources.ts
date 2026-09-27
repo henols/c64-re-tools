@@ -51,12 +51,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The on-disk shape of `.vice-deployed.json`, as read/written by
- * readDeployManifest()/writeDeployManifest() below. */
-export interface DeployManifest {
-  entries: string[];
-}
-
 /** Per-entry outcome of a copy attempt: which resources/ entries landed,
  * were left alone (already present, or a hand-authored divergence refused
  * without force -- see isGeneratedEntry() in installResources() for why a
@@ -147,15 +141,6 @@ function statusForEntry(entry: string, root: string): ResourceStatus {
   } catch {
     return "diverged";
   }
-}
-
-/** Per-entry status against a given repo root, without writing anything. */
-export function resourcesStatus({ root }: { root: string }): Record<string, ResourceStatus> {
-  const out: Record<string, ResourceStatus> = {};
-  for (const entry of resourceEntries()) {
-    out[entry] = statusForEntry(entry, root);
-  }
-  return out;
 }
 
 /** The host-launch instructions: the command that starts the broker on the

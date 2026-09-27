@@ -13,7 +13,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { OPCODES, LENGTH_FOR_MODE, type AddressingMode } from "./disasm-opcodes.mts";
+import { OPCODES, type AddressingMode } from "./disasm-opcodes.mts";
+import { LENGTH_FOR_MODE } from "./disasm-mode-lengths.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

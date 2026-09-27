@@ -33,8 +33,6 @@ import { dirname, join } from "node:path";
 import {
   buildCompletenessReport,
   renderCompletenessReport,
-  isSurvivorName,
-  typedByFor,
   computeGateFailures,
   main,
   MissingDisagreementInputError,
@@ -139,22 +137,6 @@ test("Test 2: blockCoveredNeverObservedCount renders on its own named line besid
     JSON.stringify(report).includes("blockCoveredNeverObservedCount"),
     "the field name must be spelled exactly as evid-reconcile.mts declares it",
   );
-});
-
-// ---------------------------------------------------------------------------
-// Test 3: a range whose bytes carry an execute observation renders
-// `typedBy: observed-executing`; a range whose start address carries an
-// AUTHORED_PROVENANCE comment and no observation renders `authored`; a
-// range with neither renders `byte-derived`. Precedence is asserted
-// explicitly: a range that is BOTH observed and authored renders
-// `observed-executing`.
-// ---------------------------------------------------------------------------
-test("Test 3: typedByFor() precedence -- observed-executing beats authored beats byte-derived, explicitly for the both-true case", () => {
-  assert.equal(typedByFor(true, false), "observed-executing");
-  assert.equal(typedByFor(false, true), "authored");
-  assert.equal(typedByFor(false, false), "byte-derived");
-  // THE precedence assertion: both true must still resolve to observed-executing.
-  assert.equal(typedByFor(true, true), "observed-executing", "evidence must beat inference even when both signals are present");
 });
 
 test("Test 3b: rangeProvenance rows render their own typedBy verbatim, for all three values", () => {
@@ -370,23 +352,6 @@ test("renderCompletenessReport() with a complete answer renders a DISAGREEMENTS 
   assert.match(text, /NO OBSERVATION: 18 of 21/);
   assert.match(text, /BYTE CENSUS \(denominator 21\)/);
   assert.ok(!text.includes("%"), "the rendered report must never contain a percentage, rate or combined figure");
-});
-
-test("isSurvivorName() is anchored and case-sensitive: l_0810 is a survivor, L_0810 is not", () => {
-  assert.equal(isSurvivorName("l_0810"), true);
-  assert.equal(isSurvivorName("L_0810"), false);
-  // The eleven AUTO_NAME_PREFIX_RE prefixes, spot-checked.
-  assert.equal(isSurvivorName("p_1234"), true);
-  assert.equal(isSurvivorName("s_0820"), true);
-  assert.equal(isSurvivorName("S_0820"), false);
-  // dxa's own real lNNNN shape (no underscore) and Ghidra's FUN_XXXX shape.
-  assert.equal(isSurvivorName("l810"), true);
-  assert.equal(isSurvivorName("FUN_1000"), true);
-  assert.equal(isSurvivorName("fun_1000"), false);
-  // A legitimate authored name that merely starts with a covered letter must
-  // NOT be swept in by an unanchored match.
-  assert.equal(isSurvivorName("player_x_pos"), false);
-  assert.equal(isSurvivorName("bank_switch_handler"), false);
 });
 
 test("a not-executed fixture renders a NOT EXECUTED line carrying its own reason, never a clean bill of health", () => {

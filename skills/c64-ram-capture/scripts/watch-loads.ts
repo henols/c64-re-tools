@@ -170,25 +170,6 @@ export function readHitLog(releaseId: string): HitLog {
   return JSON.parse(readFileSync(p, "utf8"));
 }
 
-/**
- * Structural validation of a hit-log's boundary-artifact shape: every
- * `armed` entry must carry the `checkpoint_num` the arming call returned,
- * and `teardown.checkpoints_remaining` must be present -- both are the
- * "the delete call's own word is never the proof" invariant made mechanical.
- */
-export function validateHitLog(log: HitLog): { ok: boolean; errors: string[] } {
-  const errors: string[] = [];
-  for (const a of log.armed ?? []) {
-    if (a.checkpoint_num === undefined || a.checkpoint_num === null) {
-      errors.push(`armed sentinel "${a.name}" is missing checkpoint_num`);
-    }
-  }
-  if (!log.teardown || log.teardown.checkpoints_remaining === undefined || log.teardown.checkpoints_remaining === null) {
-    errors.push("teardown.checkpoints_remaining is not recorded");
-  }
-  return { ok: errors.length === 0, errors };
-}
-
 // --------------------------------------------------------------- WATCH_SET
 
 function loadManifestForRelease(rel: WatchSetRegistry["releases"][number]): WatchSetManifest {

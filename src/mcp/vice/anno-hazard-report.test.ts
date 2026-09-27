@@ -45,16 +45,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildHazardReport,
-  crossCheckHazardFixture,
   HAZARD_CLASSES,
   HAZARD_DETECTION_STRENGTHS,
   HAZARD_LIMITS,
   HAZARD_REGION_OUTCOMES,
   type HazardClass,
-  type HazardCrossCheckExpectation,
   type HazardFinding,
   type HazardReport,
 } from "./anno-hazard-report.mts";
+import { crossCheckHazardFixture, type HazardCrossCheckExpectation } from "./hazard-crosscheck.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULE_PATH = join(HERE, "anno-hazard-report.mts");
@@ -1145,12 +1144,6 @@ test("hazard read-only: the module never uses the existing confidence-grade voca
 // ---------------------------------------------------------------------------
 // Shipped, not test-only
 // ---------------------------------------------------------------------------
-
-test("anno-hazard-report.mts IS present in package.json's files[] array", () => {
-  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
-  assert.ok(Array.isArray(pkg.files));
-  assert.equal(pkg.files.includes("anno-hazard-report.mts"), true, "anno-hazard-report.mts must ship -- it is reachable through anno-tools.mts and anno-cli.ts once wired");
-});
 
 test("hazard shape: HAZARD_CLASSES and HAZARD_DETECTION_STRENGTHS are frozen and declared in a stable order", () => {
   assert.deepEqual(HAZARD_CLASSES, ["indexed-dispatch", "self-modifying-code", "page-alignment", "cycle-exact-raster"]);

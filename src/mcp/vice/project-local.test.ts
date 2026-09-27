@@ -11,7 +11,7 @@ import { ensureLocalDir, LOCAL_GITIGNORE, localDirUnder } from "./project-local.
 import { annoDbPath } from "./anno-workspace-store.ts";
 import { toolsJsonPath } from "./tool-location.mts";
 import { installTargetDir } from "./install-resources.ts";
-import { snapshotPathFor, transferKindDir } from "./transfer-paths.ts";
+import { snapshotPathFor } from "./transfer-paths.ts";
 
 function withDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "project-local-"));
@@ -73,7 +73,6 @@ test("snapshot and host-tool result directories resolve under the project's loca
     try {
       const local = localDirUnder(join(dir, ".c64-re-tools"));
       assert.equal(snapshotPathFor("s1"), join(local, "snapshots", "s1.vsf"));
-      assert.equal(transferKindDir("dxa"), join(local, "dxa"));
       assert.ok(existsSync(join(local, ".gitignore")));
     } finally {
       if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;

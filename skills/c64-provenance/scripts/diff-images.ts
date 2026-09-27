@@ -907,8 +907,7 @@ const VERBS: Record<string, (rest: string[]) => void> = {
 
     const provenAt = new Date().toISOString();
     // The reference release carries its own provenance_offset record too --
-    // required so every release in the registry has the same field set
-    // (recovery-schema.ts's runBaseChecks asserts this).
+    // required so every release in the registry has the same field set.
     recordProvenanceOffset(referenceId, {
       role: "reference",
       reference_release: null,
@@ -964,7 +963,7 @@ const VERBS: Record<string, (rest: string[]) => void> = {
     // registry, enumerated -- never a hardcoded pair.
     for (const { release: releaseId, bin, manifestPath } of enumerateManifests(reg)) {
       // Both are present: enumerateManifests() read the entry out of `reg`,
-      // and a dumps[] entry is a four-file set (recovery-schema.ts checks it).
+      // and a dumps[] entry is a four-file set.
       const releaseEntry = reg.releases.find((r) => r.id === releaseId)!;
       const image = readImage(bin!);
       const manifest = readManifest(manifestPath);

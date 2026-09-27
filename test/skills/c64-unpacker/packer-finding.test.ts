@@ -31,16 +31,32 @@ import {
   MAX_PACKER_NAME_LENGTH,
   PACKED_ENTROPY_THRESHOLD,
   PACKER_VERDICTS,
-  REQUIRE_ORACLE_ENV_VAR,
   oracleConfigurationHint,
   packerFinding,
   parseUnp64Stdout,
   probeUnp64,
   shannonEntropy,
-  skipReasonForUnp64,
+  type OracleProbe,
 } from "../../../skills/c64-unpacker/scripts/packer-finding.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** The opt-in variable that turns an absent oracle from an expected skip into
+ * a hard failure, by the established `VICE_REQUIRE_*` precedent. */
+const REQUIRE_ORACLE_ENV_VAR = "VICE_REQUIRE_UNP64";
+
+/** A non-empty skip reason naming the absent oracle, or `false` when a real
+ * one is available. Handed to the test runner's `{ skip }` option, so the skip
+ * is visible in the report and never reads as a pass. */
+function skipReasonForUnp64(probed?: OracleProbe | null): string | false {
+  const result = probed ?? probeUnp64();
+  if (result.available === true) return false;
+  return (
+    `the oracle-route tests are skipped -- no external packer identifier was found (${result.reason ?? "reason not recorded"}). ` +
+    `Point UNP64 or UNP64_PATH at one, or install "unp64". ` +
+    `An absent oracle is an EXPECTED SKIP here, never a pass: set ${REQUIRE_ORACLE_ENV_VAR} to turn it into a hard failure.`
+  );
+}
 // The scripts under test live in the skill folder; this test lives in test/skills/.
 const SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-unpacker", "scripts");
 const MODULE_SRC = readFileSync(join(SCRIPT_DIR, "packer-finding.ts"), "utf8");

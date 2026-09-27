@@ -8,8 +8,7 @@
 // access.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -17,14 +16,10 @@ import {
   nextFreePort,
   isPortBlocked,
   blockPort,
-  countReady,
-  countTotal,
-  countLaunching,
   _snapshotState,
   clearMonitorClient,
   DEFAULT_BASE_PORT,
   MONITOR_CHANNELS,
-  type BrokerState,
   type InstanceRecord,
 } from "./broker-state.mts";
 
@@ -47,7 +42,6 @@ import {
 // first place -- the grep-for-zero-copies structural test below is what
 // actually enforces C7's prohibition, and it passes trivially by having
 // nothing to grep for.
-import { REQUEST_ID_PATTERN, isValidRequestId } from "./vice-broker-client.ts";
 // Phase 33, plan 33-06: the restart-tolerance case at the foot of this file
 // checks a revived, profile-less record against the REAL profileEligible()
 // out of the built artifact, so it needs the same `build()` idiom every other
@@ -204,41 +198,6 @@ test("_snapshotState (D-13): remoteMonitorPort survives the snapshot's deep copy
 
 // -------------------------------------------------------------------- counts
 
-test("counts: two ready, one granted and one launching instance yields ready=2, total=4, launching=1", () => {
-  const state = createBrokerState();
-  state.instances.set(6600, makeInstance({ port: 6600, state: "ready" }));
-  state.instances.set(6601, makeInstance({ port: 6601, state: "ready" }));
-  state.instances.set(6602, makeInstance({ port: 6602, state: "granted" }));
-  state.instances.set(6603, makeInstance({ port: 6603, state: "launching" }));
-
-  assert.equal(countReady(state), 2);
-  assert.equal(countTotal(state), 4);
-  assert.equal(countLaunching(state), 1);
-});
-
-test("counts: read only the in-memory map -- an injected filesystem reader that throws on every call still yields correct counts", () => {
-  const state = createBrokerState();
-  state.instances.set(6600, makeInstance({ port: 6600, state: "ready" }));
-  state.instances.set(6601, makeInstance({ port: 6601, state: "launching" }));
-
-  const throwingReader = (): never => {
-    throw new Error("filesystem must never be touched by a count");
-  };
-  // Nothing under broker-state.mts's count functions accepts or calls a
-  // filesystem reader at all -- the throwing stub is never invoked, which
-  // IS the proof: if any count implementation ever grew a disk read, this
-  // stub would need to be threaded through and would immediately explode.
-  assert.doesNotThrow(() => {
-    void throwingReader; // referenced so the linter/typechecker sees it used
-    countReady(state);
-    countTotal(state);
-    countLaunching(state);
-  });
-  assert.equal(countReady(state), 1);
-  assert.equal(countTotal(state), 2);
-  assert.equal(countLaunching(state), 1);
-});
-
 // --------------------------------------------------------------- snapshot
 
 test("_snapshotState: returns a plain-object deep copy -- mutating a nested value in the result leaves the broker's own state and a later snapshot unchanged", () => {
@@ -265,18 +224,6 @@ test("_snapshotState: returns a plain-object deep copy -- mutating a nested valu
 });
 
 // ------------------------------------------------------------- request ids
-
-test("the request-id validator the broker would use accepts the container-side generator's output shape and rejects a path-traversal string", () => {
-  // A real container-side generated id (vice-broker-client.ts's own
-  // newRequestId() shape: req-<pid>-<ms>-<8 hex chars>).
-  assert.ok(isValidRequestId("req-12345-1785608443993-9c3df302"));
-  assert.ok(REQUEST_ID_PATTERN.test("req-12345-1785608443993-9c3df302"));
-
-  // Path-traversal and injection-shaped strings must be rejected.
-  for (const bad of ["../../etc/passwd", "req-1-2-../../x", "req-1-2-3abc123", "", "not-a-request-id"]) {
-    assert.equal(isValidRequestId(bad), false, `expected ${JSON.stringify(bad)} to be rejected`);
-  }
-});
 
 // ---------------------------------------------------------------------------
 // Plan 41-03 (D-14): InstanceRecord.monitorClients, promoted from a single
@@ -342,22 +289,6 @@ test("clearMonitorClient: leaves every other field on the record untouched", () 
   clearMonitorClient(instance);
   assert.equal(instance.reason, "acquire");
   assert.equal(instance.pid, 4242);
-});
-
-test("structural: no broker module hand-rolls a second copy of the request-id pattern -- the shared import above is the only binding", () => {
-  const files = [
-    "broker-state.mts",
-    "broker-launch.mts",
-    "broker-control.mts",
-    "broker-kill.mts",
-    "broker-epoch.mts",
-    "vice-broker.mts",
-  ];
-  const HAND_ROLLED_PATTERN = /req-\[0-9\]/;
-  for (const rel of files) {
-    const text = readFileSync(join(HERE, rel), "utf8");
-    assert.doesNotMatch(text, HAND_ROLLED_PATTERN, `${rel} must not hand-roll a copy of REQUEST_ID_PATTERN`);
-  }
 });
 
 // ---------------------------------------------------------------------------

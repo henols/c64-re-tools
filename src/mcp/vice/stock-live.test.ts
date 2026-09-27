@@ -60,7 +60,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, connect as netConnect } from "node:net";
 
-import { callStockTool } from "./stock-tools.ts";
+import { callStockTool } from "./stock-call.ts";
 import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { ViceMonitorClient, CommandType } from "./stock-protocol.ts";
 import { stockConnect, stockDisconnect, type StockConnectSession, type DialMonitorSocketFn } from "./stock-connect.ts";

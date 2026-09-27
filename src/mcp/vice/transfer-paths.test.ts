@@ -13,7 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { validateContainedDestination, validateSnapshotName, snapshotPathFor, snapshotMetaPathFor, transferKindDir, StockPathError } from "./transfer-paths.ts";
+import { validateContainedDestination, validateSnapshotName, snapshotPathFor, snapshotMetaPathFor, StockPathError } from "./transfer-paths.ts";
 
 const ROOT = "/workspace/.c64-re-tools/inbox";
 
@@ -121,8 +121,3 @@ test("snapshotMetaPathFor: rejects an unsanitary name before building a path, th
 });
 
 // --------------------------------------------------------- transferKindDir
-
-test("transferKindDir: resolves a per-kind subdirectory under the project's local/", () => {
-  const p = transferKindDir("hosttool");
-  assert.ok(p.endsWith("/.c64-re-tools/local/hosttool"));
-});

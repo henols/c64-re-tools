@@ -22,9 +22,7 @@ import {
   brokerHome,
   brokerStateDir,
   brokerIncidentsDir,
-  brokerEpochFile,
   brokerStagingDir,
-  brokerRunsDir,
   brokerConfigScratchDir,
   brokerGhidraDir,
   BROKER_GHIDRA_DIR_ENV,
@@ -32,15 +30,13 @@ import {
 } from "./broker-home.mts";
 import * as brokerHomeModule from "./broker-home.mts";
 
-test("broker-home.mts exports exactly the eleven documented names", () => {
+test("broker-home.mts exports exactly the nine documented names", () => {
   const expected = [
     "BROKER_HOME_ENV",
     "brokerHome",
     "brokerStateDir",
     "brokerIncidentsDir",
-    "brokerEpochFile",
     "brokerStagingDir",
-    "brokerRunsDir",
     "brokerConfigScratchDir",
     "brokerGhidraDir",
     "BROKER_GHIDRA_DIR_ENV",
@@ -95,7 +91,7 @@ test("brokerHome(): VICE_BROKER_HOME set to the empty string is treated as unset
   }
 });
 
-test("legacy variable 1/4: VICE_POOL_DIR wins for brokerStateDir(), leaving incidents/epoch/staging resolving under the machine-level root", () => {
+test("legacy variable 1/3: VICE_POOL_DIR wins for brokerStateDir(), leaving incidents/staging resolving under the machine-level root", () => {
   const pool = tempDir("broker-home-pool-");
   const home = tempDir("broker-home-home-");
   try {
@@ -103,7 +99,6 @@ test("legacy variable 1/4: VICE_POOL_DIR wins for brokerStateDir(), leaving inci
     const root = join(home, ".c64-re-tools");
     assert.equal(brokerStateDir(opts), resolve(pool));
     assert.ok(brokerIncidentsDir(opts).startsWith(root));
-    assert.ok(brokerEpochFile(opts).startsWith(root));
     assert.ok(brokerStagingDir(opts).startsWith(root));
   } finally {
     rmSync(pool, { recursive: true, force: true });
@@ -111,7 +106,7 @@ test("legacy variable 1/4: VICE_POOL_DIR wins for brokerStateDir(), leaving inci
   }
 });
 
-test("legacy variable 2/4: VICE_SUPERVISOR_DIR wins for brokerStateDir(), leaving incidents/epoch/staging resolving under the machine-level root", () => {
+test("legacy variable 2/3: VICE_SUPERVISOR_DIR wins for brokerStateDir(), leaving incidents/staging resolving under the machine-level root", () => {
   const supervisor = tempDir("broker-home-supervisor-");
   const home = tempDir("broker-home-home-");
   try {
@@ -119,7 +114,6 @@ test("legacy variable 2/4: VICE_SUPERVISOR_DIR wins for brokerStateDir(), leavin
     const root = join(home, ".c64-re-tools");
     assert.equal(brokerStateDir(opts), resolve(supervisor));
     assert.ok(brokerIncidentsDir(opts).startsWith(root));
-    assert.ok(brokerEpochFile(opts).startsWith(root));
     assert.ok(brokerStagingDir(opts).startsWith(root));
   } finally {
     rmSync(supervisor, { recursive: true, force: true });
@@ -127,7 +121,7 @@ test("legacy variable 2/4: VICE_SUPERVISOR_DIR wins for brokerStateDir(), leavin
   }
 });
 
-test("legacy variable 3/4: VICE_INCIDENTS_DIR wins for brokerIncidentsDir(), leaving state/epoch/staging resolving under the machine-level root", () => {
+test("legacy variable 3/3: VICE_INCIDENTS_DIR wins for brokerIncidentsDir(), leaving state/staging resolving under the machine-level root", () => {
   const incidents = tempDir("broker-home-incidents-");
   const home = tempDir("broker-home-home-");
   try {
@@ -135,7 +129,6 @@ test("legacy variable 3/4: VICE_INCIDENTS_DIR wins for brokerIncidentsDir(), lea
     const root = join(home, ".c64-re-tools");
     assert.equal(brokerIncidentsDir(opts), resolve(incidents));
     assert.ok(brokerStateDir(opts).startsWith(root));
-    assert.ok(brokerEpochFile(opts).startsWith(root));
     assert.ok(brokerStagingDir(opts).startsWith(root));
   } finally {
     rmSync(incidents, { recursive: true, force: true });
@@ -143,23 +136,7 @@ test("legacy variable 3/4: VICE_INCIDENTS_DIR wins for brokerIncidentsDir(), lea
   }
 });
 
-test("legacy variable 4/4: VICE_EPOCH_FILE wins for brokerEpochFile(), leaving state/incidents/staging resolving under the machine-level root", () => {
-  const epochFile = join(tempDir("broker-home-epoch-"), "epoch.json");
-  const home = tempDir("broker-home-home-");
-  try {
-    const opts = { env: { VICE_EPOCH_FILE: epochFile }, homedir: home };
-    const root = join(home, ".c64-re-tools");
-    assert.equal(brokerEpochFile(opts), resolve(epochFile));
-    assert.ok(brokerStateDir(opts).startsWith(root));
-    assert.ok(brokerIncidentsDir(opts).startsWith(root));
-    assert.ok(brokerStagingDir(opts).startsWith(root));
-  } finally {
-    rmSync(epochFile, { force: true });
-    rmSync(home, { recursive: true, force: true });
-  }
-});
-
-test("two-project isolation: none of the seven resolved broker paths falls inside either of two distinct project roots", () => {
+test("two-project isolation: none of the five resolved broker paths falls inside either of two distinct project roots", () => {
   const projectA = tempDir("broker-home-projA-");
   const projectB = tempDir("broker-home-projB-");
   const home = tempDir("broker-home-shared-home-");
@@ -169,9 +146,7 @@ test("two-project isolation: none of the seven resolved broker paths falls insid
       brokerHome(opts),
       brokerStateDir(opts),
       brokerIncidentsDir(opts),
-      brokerEpochFile(opts),
       brokerStagingDir(opts),
-      brokerRunsDir("oracle", opts),
       brokerConfigScratchDir(opts),
     ];
     for (const p of resolved) {
@@ -195,16 +170,6 @@ test("ensureBrokerDir(): called twice on the same path leaves exactly one direct
     assert.deepEqual(entries, ["c"]);
   } finally {
     rmSync(parent, { recursive: true, force: true });
-  }
-});
-
-test("brokerRunsDir(): resolves a per-kind subdirectory under the machine-level root's runs directory", () => {
-  const home = tempDir("broker-home-runs-");
-  try {
-    const opts = { env: {}, homedir: home };
-    assert.equal(brokerRunsDir("oracle", opts), join(home, ".c64-re-tools", "runs", "oracle"));
-  } finally {
-    rmSync(home, { recursive: true, force: true });
   }
 });
 

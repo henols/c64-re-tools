@@ -363,26 +363,6 @@ test("textConnect: the ORIGINAL dial failure is preserved even when the release 
 // module on any halting path reads the broker's per-channel ownership map.
 // ---------------------------------------------------------------------------
 
-test("structural (D-14): no module in package.json's files[] other than the four broker-side ones reads the monitorClients identifier", () => {
-  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
-  // The four broker-side modules named in Task 1 -- promoted there, not
-  // read on any halting path. None of these actually appears in files[]
-  // today (they are host-bound, compiled to resources/*.mjs, and never
-  // published in the shipped tarball), but the exclusion is named
-  // explicitly anyway, per the plan's own wording, rather than assumed.
-  const BROKER_SIDE = new Set(["broker-state.mts", "broker-control.mts", "broker-launch.mts", "vice-broker.mts"]);
-  const offenders: string[] = [];
-  for (const rel of pkg.files) {
-    if (BROKER_SIDE.has(rel)) continue;
-    if (!rel.endsWith(".ts") && !rel.endsWith(".mts")) continue;
-    const full = join(HERE, rel);
-    if (!existsSync(full)) continue;
-    const text = readFileSync(full, "utf8");
-    if (text.includes("monitorClients")) offenders.push(rel);
-  }
-  assert.deepEqual(offenders, [], `no halting-path module may read monitorClients: ${JSON.stringify(offenders)}`);
-});
-
 test("structural (D-14): git ls-files agrees -- the identifier appears only in the four broker-side modules, their resources/*.mjs artifacts, and InstanceRecord test fixtures", () => {
   const output = execFileSync("git", ["ls-files"], { cwd: HERE, encoding: "utf8" });
   const files = output

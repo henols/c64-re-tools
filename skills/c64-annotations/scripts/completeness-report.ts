@@ -211,54 +211,6 @@ export class MissingDisagreementInputError extends Error {
   }
 }
 
-/**
- * The frozen survivor prefix set, MIRRORED from
- * `src/mcp/vice/anno-cli.ts`'s own frozen set -- frozen from a real
- * derivation run (dxa disassemble, then Ghidra import) that measured ZERO
- * labels written by import alone, confirming the eleven prefixes had
- * nothing populated to positively test against rather than contradicting
- * them. Exported here, separately from the verb's own copy, because this
- * script's own tests must be able to assert on the predicate in isolation,
- * without a live project or a subprocess -- and because this script's own
- * header forbids it from reading a project directly, so it cannot import the
- * verb's copy through anything but a duplicate literal.
- *
- * WHAT NOT TO DO: if the frozen set in `anno-cli.ts` ever changes, this copy
- * moves in the SAME commit, or the two renderers silently disagree about
- * what "survivor" means. Never restate `AUTO_NAME_PREFIX_RE`'s eleven
- * prefixes as their own literal strings here -- this predicate matches
- * against a caller-SUPPLIED name (from the verb's own `survivors` answer),
- * never derives a name from a project itself, so there is no project-derived
- * value to keep in sync beyond this one regex pair.
- */
-const AUTO_NAME_PREFIX_RE = /^(zpf_|f_|zpa_|a_|p_|zpp_|e_|j_|s_|b_|r_)/;
-const SURVIVOR_EXTRA_RE = /^(?:l_[0-9a-f]{4}|(?:FUN|LAB)_[0-9a-f]{4}|l[0-9a-f]{3,4})$/;
-
-/** True iff `name` is a survivor under the frozen set. ASCII case-sensitive:
- * `l_0810` IS a survivor, `L_0810` is NOT -- `anno-coverage.test.ts`'s own
- * `L_` exclusion precedent, restated for this phase's own prefix set. */
-export function isSurvivorName(name: string): boolean {
-  return AUTO_NAME_PREFIX_RE.test(name) || SURVIVOR_EXTRA_RE.test(name);
-}
-
-/**
- * The precedence rule, mirrored here (see this file's own
- * header on why a mirror rather than an import) so this script's own test
- * tier can assert the PRECEDENCE explicitly, not merely pass through a
- * verb-computed value. `anno-cli.ts`'s `typedByFor()` is the authoritative
- * copy that actually runs against a real project; this one exists only to be
- * unit-tested in isolation, exactly like `isSurvivorName()` above. Evidence
- * beats inference: `observed-executing` (a real execute observation exists
- * inside the range) beats `authored` (an `AUTHORED_PROVENANCE_COMMENT_PREFIX`
- * comment exists and there is no observation) beats `byte-derived` (neither).
- * A range that is BOTH observed and authored renders `observed-executing`.
- */
-export function typedByFor(hasObservation: boolean, hasAuthoredComment: boolean): string {
-  if (hasObservation) return "observed-executing";
-  if (hasAuthoredComment) return "authored";
-  return "byte-derived";
-}
-
 const PURPOSE_ELEMENT_KEYS: readonly (keyof PurposeElements)[] = ["function", "inputs", "outputs", "sideEffects"];
 
 /**

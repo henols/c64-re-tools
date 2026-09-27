@@ -50,7 +50,7 @@ import { join } from "node:path";
 import { OPCODES, type OpcodeEntry, type AddressingMode } from "./disasm-opcodes.mts";
 import { decode } from "./disasm-decoder.mts";
 import { render } from "./disasm-renderer.mts";
-import { callStockTool } from "./stock-tools.ts";
+import { callStockTool } from "./stock-call.ts";
 import { type StockSessionDeps } from "./stock-session.ts";
 import { CommandType } from "./stock-protocol.ts";
 import type { StockConnectSession } from "./stock-connect.ts";

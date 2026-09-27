@@ -25,7 +25,7 @@
 // coverage.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,16 +33,84 @@ import {
   parseProvenanceHeader,
   AnnoProvenanceHeaderError,
   renderMemoryMap,
-  checkRenderedMemoryMap,
   escapeMarkdownCell,
   RENDERER_VERSION,
 } from "./anno-memmap-render.mts";
+import { compareRenderedMemoryMap, type CheckRenderedMemoryMapResult } from "./anno-memmap-check.mts";
 import { openStore, closeStore, setDataType, setLabel, setComment } from "./anno-store.mts";
 import type { AnnoStoreHandle } from "./anno-store.mts";
 import { AnnoCommentError } from "./anno-types.mts";
-import { formatConfidenceComment, CONFIDENCE_GRADES } from "./anno-confidence.mts";
+import { CONFIDENCE_GRADES } from "./anno-confidence.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+interface CheckRenderedMemoryMapOptions {
+  /** See `RenderMemoryMapOptions.storePath`. */
+  storePath: string;
+  /** See `RenderMemoryMapOptions.provenancePath` -- same argument, one layer
+   *  up. The CALLER (`anno-cli.ts`'s `cmdRenderMemmap()`) confines it through
+   *  `storePathWithinWorkspace()`; this module performs no confinement of its
+   *  own. */
+  provenancePath: string;
+  /** The rendered file to compare against, read RAW by `readFileSync` below.
+   *  The CALLER confines it through `storePathWithinWorkspace()` -- the SAME
+   *  resolution that produces the write path on the non-`--check` branch, so
+   *  the drift check and the write are one confined value rather than two
+   *  rules. This module performs no confinement of its own. */
+  renderedPath: string;
+  /** See `RenderMemoryMapOptions.workspaceRoot`. */
+  workspaceRoot: string;
+}
+
+/**
+ * Re-renders the memory map from the CURRENT store and sidecar state and
+ * compares it against the file on disk at `renderedPath`, line by line.
+ * Never auto-fixes. Returns:
+ *   - `{status:"missing"}` when `renderedPath` does not exist;
+ *   - `{status:"in-sync"}` when the freshly rendered text is byte-identical
+ *     to the file on disk;
+ *   - `{status:"drifted", line, expected, actual}` naming the first
+ *     differing line otherwise.
+ *
+ * WHAT REACHES `drifted`, enumerated from what the compared bytes are a
+ * function of rather than from a remembered summary -- the fresh render is a
+ * function of the store rows, the sidecar bytes, `RENDERER_VERSION` and the
+ * WORKSPACE-RELATIVE sidecar location, and nothing else:
+ *   - a hand edit to the rendered file;
+ *   - a store-side change (a range, a label, a comment, or a comment's
+ *     confidence grade);
+ *   - a change to the provenance sidecar's bytes;
+ *   - a move of the sidecar to a different location RELATIVE TO the
+ *     workspace root;
+ *   - a renderer change (output shape, or a `RENDERER_VERSION` bump).
+ *
+ * AND THE NEGATIVE, which is the defect this list was corrected for: relocating
+ * the checkout -- the same tree at a
+ * different absolute path -- does NOT drift. The banner records
+ * workspace-relative locations, so no compared byte is a function of where the
+ * checkout sits. Before that fix this returned `drifted` for a byte-identical
+ * store, sidecar and rendered file while `renderMemoryMap()` printed the SAME
+ * `render_digest` in both trees, so the gate contradicted its own artifact.
+ * That matters here specifically because the rendered file is a committed
+ * artifact and this repository runs its phases in worktrees, which makes a
+ * differing checkout path the normal case rather than an edge.
+ */
+async function checkRenderedMemoryMap(
+  opts: CheckRenderedMemoryMapOptions,
+): Promise<CheckRenderedMemoryMapResult> {
+  const { storePath, provenancePath, renderedPath, workspaceRoot } = opts;
+
+  if (!existsSync(renderedPath)) {
+    return { status: "missing", path: renderedPath };
+  }
+
+  const onDisk = readFileSync(renderedPath, "utf8");
+  const { markdown } = await renderMemoryMap({ storePath, provenancePath, workspaceRoot });
+  return compareRenderedMemoryMap(onDisk, markdown);
+}
+
+/** A graded comment as an agent writes it: the bracket token, one space, the evidence. */
+const gradedComment = (grade: string, evidence: string): string => `[${grade}] ${evidence}`;
 
 // ---------------------------------------------------------------------------
 // parseProvenanceHeader -- no binary needed.
@@ -245,7 +313,7 @@ function buildStoreFixture(opts: {
 function fillBaselineStore(handle: AnnoStoreHandle): void {
   setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
   setLabel(handle, { address: 0x0810, name: "init_screen", kind: "User" });
-  setComment(handle, { address: 0x0810, commentType: "line", text: formatConfidenceComment("confirmed-code", "observed executing at boot") });
+  setComment(handle, { address: 0x0810, commentType: "line", text: gradedComment("confirmed-code", "observed executing at boot") });
 }
 
 test("changing a LABEL in the store changes the render digest -- the digest covers the store, not just the sidecar", async () => {
@@ -271,7 +339,7 @@ test("changing a COMMENT in the store changes the render digest", async () => {
     // existing image), so a perturbation must not ask for it.
     const handle = openStore(storePath, { workspaceRoot: HERE });
     try {
-      setComment(handle, { address: 0x0810, commentType: "line", text: formatConfidenceComment("probable-code", "reclassified") });
+      setComment(handle, { address: 0x0810, commentType: "line", text: gradedComment("probable-code", "reclassified") });
     } finally {
       closeStore(handle);
     }
@@ -365,12 +433,12 @@ test("renders a golden memory map from a hand-built store plus a fixture sidecar
         setComment(handle, {
           address: 0x0810,
           commentType: "line",
-          text: formatConfidenceComment("confirmed-code", "observed executing at boot"),
+          text: gradedComment("confirmed-code", "observed executing at boot"),
         });
         setComment(handle, {
           address: 0x0812,
           commentType: "line",
-          text: formatConfidenceComment("unknown", "not yet classified"),
+          text: gradedComment("unknown", "not yet classified"),
         });
       },
       provenance: { ...VALID_HEADER, rasterPositions: ["$FA", "$19"] },
@@ -509,7 +577,7 @@ test("renders a golden memory map from a hand-built store plus a fixture sidecar
         setComment(reclassify, {
           address: 0x0810,
           commentType: "line",
-          text: formatConfidenceComment("probable-code", "reclassified"),
+          text: gradedComment("probable-code", "reclassified"),
         });
       } finally {
         closeStore(reclassify);
@@ -720,7 +788,7 @@ test("an address whose store comment carries [unknown] appears under Open questi
         setComment(graded, {
           address: 0x0810,
           commentType: "line",
-          text: formatConfidenceComment("unknown", "no reliable interpretation yet"),
+          text: gradedComment("unknown", "no reliable interpretation yet"),
         });
       } finally {
         closeStore(graded);
@@ -732,9 +800,8 @@ test("an address whose store comment carries [unknown] appears under Open questi
 
       // A near-miss bracket token that survived whatever wrote it must THROW,
       // not render as an ungraded row -- the assertion this test's own name
-      // has always made. `formatConfidenceComment()` refuses to compose one,
-      // so the malformed text is written directly, which is exactly how such
-      // a comment reaches a store in the first place.
+      // has always made. The malformed text is written directly, which is
+      // exactly how such a comment reaches a store in the first place.
       const malformed = openStore(storePath, { workspaceRoot: HERE });
       try {
         setComment(malformed, { address: 0x0812, commentType: "line", text: "[confirmed_code] underscore, not a hyphen" });
@@ -783,7 +850,7 @@ async function renderSingleCommentedBlock(prefix: string, grade: string, evidenc
       prefix,
       fill: (handle) => {
         setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
-        writeCommentIncludingLegacyLineBreaks(handle, 0x0810, formatConfidenceComment(grade, evidence));
+        writeCommentIncludingLegacyLineBreaks(handle, 0x0810, gradedComment(grade, evidence));
       },
     },
     async ({ storePath, provenancePath }) => (await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE })).markdown,

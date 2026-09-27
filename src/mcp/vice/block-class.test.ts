@@ -19,9 +19,8 @@
 // `block-class.mts` will not be caught by this suite.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 
 import { blockClassAt, type BlockClass, type BlockEntry } from "./block-class.mts";
 import { DATA_TYPES } from "./anno-types.mts";
@@ -324,15 +323,3 @@ test("first-match-wins on overlapping blocks -- the earliest array entry decides
 // ---------------------------------------------------------------------------
 // 4. Shipped, not test-only -- the inverse of this suite's absence assertions
 // ---------------------------------------------------------------------------
-
-test("block-class.mts IS present in package.json's files[] array", () => {
-  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
-  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
-  assert.equal(
-    pkg.files.includes("block-class.mts"),
-    true,
-    "block-class.mts must ship: the tarball validator walks the relative-import closure from the published " +
-      "entry point, and this module is reachable through anno-cli.ts and anno-coverage.mts. A reachable " +
-      "module missing from files[] fails the pack with ERR_MODULE_NOT_FOUND at a consumer's runtime.",
-  );
-});

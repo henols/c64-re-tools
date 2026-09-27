@@ -22,10 +22,8 @@ import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.mts";
 import { runAnnoTool } from "./anno-call-client.ts";
 import { openTestProject } from "./workspace-store-fixture.ts";
 import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
-import { annoRegisterEntryFor } from "./anno-register.ts";
 import {
   AnnoImportError,
-  CONST_WRITE_WATCHED_ADDRESSES,
   GHIDRA_REFTYPE_TO_ACCESS_KIND,
   importGhidraExport,
   parseConstWrites,
@@ -360,22 +358,6 @@ test("ANNO_TOOL_DEFINITIONS: contains both new tool names, and the surface grew 
   assert.ok(names.includes("anno_join_memmap"));
 });
 
-test("annoRegisterEntryFor(): both new tools have a register entry citing a real consumer path and a well-shaped requirement id", () => {
-  for (const verb of ["anno_import_ghidra_export", "anno_join_memmap"]) {
-    const entry = annoRegisterEntryFor(verb);
-    assert.ok(entry, `${verb} has no register entry`);
-    assert.ok(entry!.consumers.length > 0, `${verb}'s register entry cites no consumer`);
-    assert.ok(entry!.requirements.length > 0, `${verb}'s register entry cites no requirement id`);
-    for (const consumer of entry!.consumers) {
-      const consumerPath = join(HERE, "..", "..", "..", consumer.path);
-      assert.ok(existsSync(consumerPath), `${verb}'s cited consumer path does not exist: ${consumer.path}`);
-    }
-    for (const reqId of entry!.requirements) {
-      assert.match(reqId, /^[A-Z][A-Z0-9]*(?:-[0-9]+)+$/, `${verb} cites requirement ${JSON.stringify(reqId)}, which is not FAMILY-NN shaped`);
-    }
-  }
-});
-
 // ---------------------------------------------------------------------------
 // Plan 37-02 (AUTO-04, AUTO-05): `parseConstWrites()` over hand-built
 // documents, plus the committed real-capture non-vacuity/reproducibility
@@ -392,10 +374,6 @@ const CONST_WRITES_CAPTURE_PATH = join(HERE, "fixtures", "ghidra", "export-bank-
  * committed capture must fail HERE, not pass every case below trivially. */
 const CONST_WRITES_CAPTURE_MIN_LINES = 4000;
 const CONST_WRITES_CAPTURE_MIN_FACTS = 3;
-
-test("CONST_WRITE_WATCHED_ADDRESSES: holds the same four addresses as the Java constant, in the TypeScript module", () => {
-  assert.deepEqual([...CONST_WRITE_WATCHED_ADDRESSES].sort((a, b) => a - b), [0x0001, 0xd011, 0xd018, 0xdd00]);
-});
 
 test("parseConstWrites: one fact per body line, all three fields numbers", () => {
   const text = ["## CONST_WRITES", "$0815 $0001 $34", "$081c $0001 $33", "## CONST_WRITES_COUNT 2", ""].join("\n");

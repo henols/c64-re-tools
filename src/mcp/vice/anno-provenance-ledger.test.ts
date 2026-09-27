@@ -18,7 +18,7 @@
 // ---------------------------------------------------------------------------
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR
 // ---------------------------------------------------------------------------
-// Whether `readProvenanceLedger()` accepts EXACTLY the files `renderLedger()`
+// Whether `readLedger()` accepts EXACTLY the files `renderLedger()`
 // can produce and refuses everything else by name, whether every refusal
 // message carries the permitted fact vocabulary and nothing else (never a
 // cell's own text), and whether `provenanceForRange()`'s address-only join
@@ -44,7 +44,8 @@ import {
   PROVENANCE_LEDGER_HEADER_CELLS,
   ProvenanceLedgerError,
   provenanceForRange,
-  readProvenanceLedger,
+  parseProvenanceLedger,
+  readProvenanceLedgerText,
   type ProvenanceLedger,
 } from "./anno-provenance-ledger.mts";
 
@@ -54,6 +55,9 @@ import {
 // the skill tree. Tests are not in `package.json`'s `files[]`, so the
 // shipped-closure rule is untouched.
 import { renderLedger } from "../../../skills/c64-provenance/scripts/diff-images.ts";
+
+/** Reads and parses a ledger file through the two exported steps production uses. */
+const readLedger = (path: string): ProvenanceLedger => parseProvenanceLedger(path, readProvenanceLedgerText(path));
 
 // ---------------------------------------------------------------------------
 // One temp directory for the whole file, removed in `after()` -- this host's
@@ -188,7 +192,7 @@ test("round trip: a renderLedger()-built three-row ledger returns three rows who
   const dir = freshDir("roundtrip");
   const { path } = writeLedgerFile(dir, THREE_ROW_RANGES);
 
-  const ledger = readProvenanceLedger(path);
+  const ledger = readLedger(path);
 
   assert.equal(ledger.path, path);
   assert.equal(ledger.rows.length, 3, "the fixture carries exactly three rows");
@@ -215,7 +219,7 @@ test("verbatim carry: a row whose Verdict cell holds a string the reader has nev
   const dir = freshDir("verbatim-verdict");
   const { path } = writeLedgerFile(dir, THREE_ROW_RANGES);
 
-  const ledger = readProvenanceLedger(path);
+  const ledger = readLedger(path);
 
   assert.equal(ledger.rows[1]!.verdict, "NOVEL-VERDICT-XYZZY", "an unrecognised Verdict string must be carried through, never classified or defaulted");
 });
@@ -226,7 +230,7 @@ test("escaped text: a row whose Evidence contains a literal pipe (escaped by the
 
   assert.ok(markdown.includes("a\\|b"), "the writer must actually have escaped the pipe, or this test measures nothing");
 
-  const ledger = readProvenanceLedger(path);
+  const ledger = readLedger(path);
 
   assert.equal(ledger.rows[1]!.evidence, "contains a literal pipe: a|b", "the reader must restore the single unescaped pipe, not leave the backslash or double it");
 });
@@ -235,7 +239,7 @@ test("single row: a one-row ledger tiling all of $0000..$FFFF is accepted and re
   const dir = freshDir("single-row");
   const { path } = writeLedgerFile(dir, SINGLE_ROW_RANGES);
 
-  const ledger = readProvenanceLedger(path);
+  const ledger = readLedger(path);
 
   assert.equal(ledger.rows.length, 1, "the empty edge's non-degenerate neighbour: one row, not zero and not two");
   assert.equal(ledger.rows[0]!.start, 0x0000);
@@ -253,7 +257,7 @@ test("refusal: the named file does not exist", () => {
   const missingPath = join(dir, "PROVENANCE.md"); // never written
 
   assert.throws(
-    () => readProvenanceLedger(missingPath),
+    () => readLedger(missingPath),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.equal(e.path, missingPath);
@@ -274,7 +278,7 @@ test("refusal: the file exists but no line splits into the seven expected header
   const path = writeMutated(dir, mutated);
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.equal(e.lineNumber, undefined, "a whole-file problem carries no lineNumber");
@@ -301,13 +305,13 @@ test("refusal: the header and separator are present but zero data rows follow", 
   const absentPath = join(dir, "never-written.md");
   let absentMessage = "";
   try {
-    readProvenanceLedger(absentPath);
+    readLedger(absentPath);
   } catch (e) {
     absentMessage = e instanceof Error ? e.message : String(e);
   }
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.equal(e.lineNumber, undefined, "a whole-file problem carries no lineNumber");
@@ -330,7 +334,7 @@ test("refusal: a data row splits into other than seven cells", () => {
   const path = writeMutated(dir, lines.join("\n"));
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.equal(e.lineNumber, index + 1, "must cite the 1-based line number of the malformed row");
@@ -356,7 +360,7 @@ test("refusal: a data row's Start cell is not a parseable $XXXX address, naming 
   const path = writeMutated(dir, lines.join("\n"));
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.equal(e.lineNumber, index + 1);
@@ -380,7 +384,7 @@ test("refusal: a data row's End cell is not a parseable $XXXX address, naming En
   const path = writeMutated(dir, lines.join("\n"));
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.equal(e.lineNumber, index + 1);
@@ -404,7 +408,7 @@ test("refusal: a data row's End is below its Start", () => {
   const path = writeMutated(dir, lines.join("\n"));
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.equal(e.lineNumber, index + 1, "must cite the 1-based line number");
@@ -427,7 +431,7 @@ test("refusal: two data rows overlap", () => {
   const path = writeMutated(dir, lines.join("\n"));
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.ok(e.message.includes(path), `must name the path: ${e.message}`);
@@ -456,7 +460,7 @@ test("refusal: two data rows are not strictly ascending by Start (reordered)", (
   const path = writeMutated(dir, mutated);
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.ok(e.message.includes(path), `must name the path: ${e.message}`);
@@ -478,7 +482,7 @@ test("refusal: the accepted rows leave a gap (a middle row deleted) -- names the
   const path = writeMutated(dir, mutated);
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.equal(e.lineNumber, undefined, "a whole-table coverage problem carries no single lineNumber");
@@ -504,7 +508,7 @@ test("refusal: a data row containing a raw NUL byte is refused rather than silen
   const path = writeMutated(dir, lines.join("\n"));
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.equal(e.lineNumber, index + 1, "must cite the 1-based line number of the row carrying the NUL byte");
@@ -538,7 +542,7 @@ test("information-disclosure control: a distinctive token in the offending row's
   const path = writeMutated(dir, lines.join("\n"));
 
   assert.throws(
-    () => readProvenanceLedger(path),
+    () => readLedger(path),
     (e: unknown) => {
       assert.ok(e instanceof ProvenanceLedgerError);
       assert.ok(!e.message.includes(DISCLOSURE_TOKEN), `the thrown message must NOT contain the disclosure token: ${e.message}`);

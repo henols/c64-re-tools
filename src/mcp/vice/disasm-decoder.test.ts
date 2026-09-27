@@ -11,7 +11,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { decode, type Instruction } from "./disasm-decoder.mts";
-import { OPCODES, LENGTH_FOR_MODE } from "./disasm-opcodes.mts";
+import { OPCODES } from "./disasm-opcodes.mts";
+import { LENGTH_FOR_MODE } from "./disasm-mode-lengths.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

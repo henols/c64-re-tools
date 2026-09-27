@@ -145,16 +145,6 @@ export function brokerIncidentsDir(opts: BrokerHomeOptions = {}): string {
   return join(brokerHome(opts), "incidents");
 }
 
-/** The broker's restart-epoch file. `VICE_EPOCH_FILE` wins first, else
- * `epoch.json` inside the DEFAULT (non-overridden) state directory -- see
- * `defaultStateDir()` above for why this does not chain through
- * `brokerStateDir()`'s own override. */
-export function brokerEpochFile(opts: BrokerHomeOptions = {}): string {
-  const env = resolveEnv(opts);
-  if (env.VICE_EPOCH_FILE) return resolve(env.VICE_EPOCH_FILE);
-  return join(defaultStateDir(opts), "epoch.json");
-}
-
 /** The broker's staging directory -- no legacy variable overrides this; it
  * is new with this module. Always a `staging` subdirectory of the
  * machine-level root. */
@@ -187,15 +177,6 @@ export function brokerStagingDir(opts: BrokerHomeOptions = {}): string {
  * this ever changes. */
 export function brokerConfigScratchDir(opts: BrokerHomeOptions = {}): string {
   return join(brokerHome(opts), "config-scratch");
-}
-
-/** A per-kind run-scratch subdirectory under the machine-level root's `runs`
- * directory -- no legacy variable overrides this either. Mirrors the
- * per-kind run-scratch convention `toolsDir()`'s consumers already use
- * inside a repo (`runs/oracle`, `runs/ghidra`), one level up under this
- * module's root instead. */
-export function brokerRunsDir(kind: string, opts: BrokerHomeOptions = {}): string {
-  return join(brokerHome(opts), "runs", kind);
 }
 
 /** The environment variable that places the Ghidra projects root. */

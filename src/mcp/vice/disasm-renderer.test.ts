@@ -12,7 +12,8 @@ import { dirname, join } from "node:path";
 
 import { render, renderLine } from "./disasm-renderer.mts";
 import { decode } from "./disasm-decoder.mts";
-import { OPCODES, LENGTH_FOR_MODE, type AddressingMode } from "./disasm-opcodes.mts";
+import { OPCODES, type AddressingMode } from "./disasm-opcodes.mts";
+import { LENGTH_FOR_MODE } from "./disasm-mode-lengths.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

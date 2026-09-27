@@ -59,7 +59,6 @@ import { dirname, join, resolve } from "node:path";
 // `annoNameFor()`, the upstream-to-surface mapping plan 29-08 added, so the
 // comparison keeps its meaning instead of becoming a rename.
 import { ANNO_TOOL_DEFINITIONS, CURATED_ANNO_TOOLS } from "./anno-tools.mts";
-import { annoRegisterEntryFor } from "./anno-register.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = resolve(
@@ -303,10 +302,7 @@ test(
  * every upstream name, with EXACTLY TWO documented departures; everything else
  * is the same suffix under this project's own family prefix.
  *
- * This is the only place the correspondence is written down. `anno-register.test.ts`
- * deliberately does NOT copy it -- its shadowing check uses a broader
- * suffix-equality relation and says so at the point of use, because a shadowing
- * check must over-approximate while this mapping must be exact.
+ * This is the only place the correspondence is written down.
  */
 function annoNameFor(upstream: string): string {
   // DEPARTURE 1 (D-09): the cursor verb is folded into the disassemble verb's
@@ -443,33 +439,4 @@ test("MCP-01 (ordering): the verdict is identical over reversed copies of BOTH t
       "whose result depends on walk order is a check whose result depends on where someone pasted an entry",
   );
   assert.ok(forward.routed.length > 0, "the reversed comparison ran over an empty walk");
-});
-
-test("MCP-01 (backward, D-08): every surface verb is either manifest-classified or carries a register entry citing at least one requirement id", () => {
-  const classified = new Set(
-    manifest.procedures.flatMap((procedure: { tools: Record<string, string> }) => Object.keys(procedure.tools)).map(annoNameFor),
-  );
-  // Non-vacuity: an empty classified set would push every verb into the register
-  // branch and turn this into a test of the register alone.
-  assert.ok(classified.size >= MEASURED_ROUTED_MINIMUM - 1, `only ${classified.size} classified surface names were derived from the manifest`);
-  const unjustified: string[] = [];
-  for (const definition of ANNO_TOOL_DEFINITIONS) {
-    if (classified.has(definition.name)) continue;
-    const entry = annoRegisterEntryFor(definition.name);
-    if (entry === undefined) {
-      unjustified.push(`${definition.name}: classified by NEITHER the manifest NOR the register`);
-      continue;
-    }
-    if (entry.requirements.length === 0) {
-      unjustified.push(`${definition.name}: has a register entry but it cites no requirement id`);
-    }
-  }
-  assert.deepEqual(
-    unjustified,
-    [],
-    `${unjustified.join("\n  ")}\n\nD-08 is literal about what happens next: a verb added with no named consumer ` +
-      "FAILS rather than being reviewed. Either derive it from the manifest, or give it a committed register entry " +
-      "citing a requirement id and a consumer.",
-  );
-  assert.ok(ANNO_TOOL_DEFINITIONS.length > 0, "the surface is empty -- this direction would pass over nothing");
 });

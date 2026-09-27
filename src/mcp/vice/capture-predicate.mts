@@ -558,36 +558,3 @@ export function formatComparison(comparison: CaptureComparison, limit = 0): stri
   lines.push(`VERDICT: ${comparison.verdict}`);
   return lines.join("\n");
 }
-
-/** The one byte an argv element cannot contain, and therefore the only safe
- * join separator for a digest over an exact argv array. */
-const ARGV_SEPARATOR = "\u0000";
-
-/** sha256 over an exact argv array, NUL-joined, lowercase hex.
- *
- * The NUL join is the whole point, and a space join would be a bug: `["a b"]`
- * and `["a", "b"]` are different argvs that a space join collapses onto the
- * same digest, while 0x00 is the one byte that cannot appear inside a POSIX
- * argument. Order-sensitive by construction, which is what makes the digest
- * usable as a run identity key (`REPRO-04`).
- *
- * An empty array is REFUSED by name rather than digesting the empty string: the
- * sha256 of "" is a real, stable and entirely meaningless value, and a run keyed
- * by it would look identified. */
-export function argvDigest(argv: readonly string[]): string {
-  if (!Array.isArray(argv)) {
-    throw new CaptureComparisonError("argvDigest: expected an array of argv strings", argv);
-  }
-  if (argv.length === 0) {
-    throw new CaptureComparisonError(
-      "argvDigest: refusing to digest an empty argv array -- the digest of nothing is a stable value that would look like a run identity",
-      argv,
-    );
-  }
-  for (let i = 0; i < argv.length; i++) {
-    if (typeof argv[i] !== "string") {
-      throw new CaptureComparisonError(`argvDigest: argv[${i}] is not a string`, argv[i]);
-    }
-  }
-  return createHash("sha256").update(argv.join(ARGV_SEPARATOR), "utf8").digest("hex");
-}

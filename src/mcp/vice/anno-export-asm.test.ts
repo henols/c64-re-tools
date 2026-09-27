@@ -106,7 +106,7 @@ import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.mts";
 // TEST-ONLY filtering variant below to decide which ranges to drop -- never
 // re-derived, on the same "re-check, never re-define" terms this file
 // already applies elsewhere.
-import { provenanceForRange, readProvenanceLedger } from "./anno-provenance-ledger.mts";
+import { parseProvenanceLedger, provenanceForRange, readProvenanceLedgerText, type ProvenanceLedger } from "./anno-provenance-ledger.mts";
 // BUILD-05 (phase 46 plan 01): `renderLedger()` is the ONE writer of the
 // generated tier this fixture must satisfy exactly (its own three refusal
 // preconditions -- non-empty UNKNOWN reasons, agreeing_releases >= 2 for
@@ -149,6 +149,9 @@ import { OPCODES } from "./disasm-opcodes.mts";
 const SKIP_REASON: string | false = acmeSkipReasonFor("anno-export-asm.test.ts");
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** Reads and parses a ledger file through the two exported steps production uses. */
+const readLedger = (path: string): ProvenanceLedger => parseProvenanceLedger(path, readProvenanceLedgerText(path));
 
 /** The committed self-modifying fixture. See `fixtures/export-asm/README.md`
  * for the provenance table. */
@@ -2813,7 +2816,7 @@ test("EXTERNAL ORACLE: real ACME refuses the same duplicate at the source-text b
 // Proves the whole seam thinly, end to end, on ONE path: a synthetic
 // `recovery/PROVENANCE.md` is built through `renderLedger()`'s own pure API
 // (zero filesystem I/O for the SOURCE data -- the markdown is written to a
-// temp file only because `readProvenanceLedger()` reads a path, exactly as
+// temp file only because `readLedger()` reads a path, exactly as
 // the store reads a path), joined to the exporter's blocks by address, and
 // its Verdict plus Confidence appear as visible comment text inside every
 // emitted block -- with real ACME still reproducing the bytes.
@@ -2895,7 +2898,7 @@ const LEDGER_GENERATED_RANGES = [
 /** Writes `LEDGER_GENERATED_RANGES` (or a caller-supplied override) through
  * `renderLedger()`'s own pure, filesystem-free API, then writes the result to
  * `dir/PROVENANCE.md` -- the one place this fixture touches a filesystem,
- * because `readProvenanceLedger()` reads a PATH. */
+ * because `readLedger()` reads a PATH. */
 function writeLedgerFixture(dir: string, generatedRanges: readonly unknown[] = LEDGER_GENERATED_RANGES): string {
   const markdown: string = renderLedger({ generatedRanges, gapTolerance: 16, prose: "synthetic fixture, phase 46 plan 01" });
   const ledgerPath = join(dir, "PROVENANCE.md");
@@ -3011,7 +3014,7 @@ test("PROVENANCE CARRY Test 6: a block the ledger leaves uncovered is refused BY
   // the FIRST byte block ($0807-$0808) deleted after rendering -- something
   // `renderLedger()` itself would never produce (it refuses unless the
   // generated tier covers exactly $0000-$FFFF with no gap). Plan 46-02 gave
-  // `readProvenanceLedger()` the matching accept-time coverage assertion, so
+  // `readLedger()` the matching accept-time coverage assertion, so
   // THIS FILE NOW REFUSES ONE LAYER EARLIER than it did when this test was
   // written: the reader itself throws the "does not cover $0000..$FFFF"
   // refusal before `exportAsm()`'s own per-block "no row overlaps this
@@ -3837,7 +3840,7 @@ function exportAsmWithVerdictFilter(options: ExportAsmOptions): { source: string
     }
   })();
   const sortedRanges = [...ranges].sort((a, b) => a.start - b.start);
-  const ledger = readProvenanceLedger(ledgerPath);
+  const ledger = readLedger(ledgerPath);
 
   // THE FORBIDDEN SHAPE, DELIBERATELY: a `.filter()` keyed on the
   // overlapping ledger row's verdict VALUE -- exactly the shape Task 2's

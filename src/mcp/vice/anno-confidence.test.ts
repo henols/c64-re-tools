@@ -7,8 +7,6 @@ import assert from "node:assert/strict";
 import {
   CONFIDENCE_GRADES,
   parseConfidencePrefix,
-  formatConfidenceComment,
-  searchQueryForGrade,
   AnnoConfidenceGradeError,
 } from "./anno-confidence.mts";
 
@@ -51,16 +49,6 @@ test("CONFIDENCE_GRADES tokens and brackets are the five canonical bracket token
 // ---------------------------------------------------------------------------
 // Round trip: each of the five tokens survives format -> parse.
 // ---------------------------------------------------------------------------
-
-test("every grade round-trips through formatConfidenceComment -> parseConfidencePrefix", () => {
-  for (const grade of CONFIDENCE_GRADES) {
-    const comment = formatConfidenceComment(grade.token, "some evidence text");
-    assert.equal(comment, `${grade.bracket} some evidence text`);
-    const parsed = parseConfidencePrefix(comment);
-    assert.equal(parsed.grade?.token, grade.token);
-    assert.equal(parsed.rest, "some evidence text");
-  }
-});
 
 // ---------------------------------------------------------------------------
 // Ungraded comments are legal, never an error.
@@ -132,23 +120,7 @@ test("parseConfidencePrefix throws on a near-miss single-word grade", () => {
 // misspelling either.
 // ---------------------------------------------------------------------------
 
-test("formatConfidenceComment throws on an invalid grade token", () => {
-  assert.throws(() => formatConfidenceComment("confimed-code", "x"), AnnoConfidenceGradeError);
-});
-
-test("searchQueryForGrade throws on an invalid grade token", () => {
-  assert.throws(() => searchQueryForGrade("confimed-code"), AnnoConfidenceGradeError);
-});
-
 // ---------------------------------------------------------------------------
 // searchQueryForGrade: the returned string appears verbatim in a graded
 // comment, so the "still [grade]" query has exactly one spelling.
 // ---------------------------------------------------------------------------
-
-test("searchQueryForGrade returns a string that appears verbatim in a graded comment", () => {
-  for (const grade of CONFIDENCE_GRADES) {
-    const query = searchQueryForGrade(grade.token);
-    const comment = formatConfidenceComment(grade.token, "evidence");
-    assert.ok(comment.includes(query), `expected "${comment}" to include "${query}"`);
-  }
-});

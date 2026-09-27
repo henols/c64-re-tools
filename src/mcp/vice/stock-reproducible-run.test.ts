@@ -26,7 +26,6 @@ import { handleRunUntil, RUN_UNTIL_KEYS } from "./stock-run-until.ts";
 import {
   runReproducible,
   REPRODUCIBLE_RUN_REQUIRED_SIBLINGS,
-  CHECKPOINT_INFO_HIT_COUNT_BODY_OFFSET,
 } from "./stock-reproducible-run.ts";
 import {
   CommandType,
@@ -436,8 +435,7 @@ test("reproducible: the answer carries all four ORACLE_TERMS with the scripted v
 test("reproducible: hit_count comes from CHECKPOINT_INFO body offset 13 -- a raw frame giving 1 at 13 and 256 at 12 reports 1", async () => {
   // The raw bytes, and the two competing reads of them.
   const raw = rawCheckpointInfoBody({ id: ANCHOR_ID, hitCount: 1, temporary: false, start: ANCHOR_ADDR });
-  assert.equal(CHECKPOINT_INFO_HIT_COUNT_BODY_OFFSET, 13);
-  assert.equal(raw.readUInt32LE(CHECKPOINT_INFO_HIT_COUNT_BODY_OFFSET), 1, "offset 13 is the truth");
+  assert.equal(raw.readUInt32LE(13), 1, "offset 13 is the truth");
   assert.equal(raw.readUInt32LE(12), 256, "offset 12 is the plausible-looking lie a wrong read reports");
 
   // The ONE seam that turns those bytes into a number agrees with offset 13.

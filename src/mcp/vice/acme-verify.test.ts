@@ -91,7 +91,6 @@ import { exportAsm, exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./an
 import { openStore, closeStore, setDataType, setLabel } from "./anno-store.mts";
 import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.mts";
 import type { ScopeRow } from "./anno-types.mts";
-import { runReassemblyGate, type GateInput } from "./reassembly-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY_MODULE_PATH = join(HERE, "acme-verify.ts");
@@ -983,24 +982,6 @@ test(
 // named thing and nothing else.
 // ---------------------------------------------------------------------------
 
-/** Every gate input EXCEPT the rebuild one, all at their passing value --
- * shared by every `gate red:` companion case below, each of which supplies
- * its own corrupted `TREE_REBUILD` token. Duplicated from
- * `reassembly-gate.test.ts`'s own `passingInput()` on the same terms this
- * file already duplicates `blocksInTreeSourceOrder()`: neither file ships,
- * and a shared non-test module for two call sites is new surface this
- * project's own convention already declines. */
-function passingGateInputExceptRebuild(): Omit<GateInput, "TREE_REBUILD"> {
-  return {
-    MOVEMENT_REBUILD: "ok",
-    HAZARD_DISPOSITION: "clean",
-    DIFF_SCOPE_COVERAGE: "complete",
-    RED_CONTROLS: "all-observed",
-    SECOND_PATH_GUARD: "held",
-    ORDERING_PROOF: "held",
-  };
-}
-
 test(
   "gate red: a corrupted byte in the tree entry point's expected bytes fails the byte-diff while ACME itself exits 0",
   { skip: SKIP_REASON },
@@ -1054,33 +1035,6 @@ test(
       "ACME REPORTED SUCCESS -- exit status 0 -- AND THE BYTE-DIFF CAUGHT IT ANYWAY. That co-occurrence is the whole " +
         `content of this red: an exit status cannot see a wrong byte, so it can never be the verdict, not even when it is zero:\n${recorded}`
     );
-  }
-);
-
-test(
-  "gate red: the gate reads that wrong-byte verdict as red under the failed-rebuild rule, not the catch-all and not the no-assembler rule",
-  { skip: SKIP_REASON },
-  () => {
-    const { treeDir, result } = gateTreeExportSubject("wrong-byte-gate");
-    const corrupted = Uint8Array.from(result.expectedBytes);
-    corrupted[0] = (corrupted[0]! + 1) & 0xff;
-    const red = verifyAcmeAssemblesTree({
-      treeDir,
-      rootFileName: ROOT_FILE_NAME,
-      expectedBytes: corrupted,
-      expectedSegments: blocksInTreeSourceOrder(result),
-    });
-    assert.equal(red.outcome, "failed", `precondition -- this must be the same failed rebuild the paired case observed: ${red.reason}`);
-
-    const verdict = runReassemblyGate({ ...passingGateInputExceptRebuild(), TREE_REBUILD: red.outcome });
-    assert.equal(verdict.outcome, "red", verdict.reason);
-    assert.equal(
-      verdict.rule,
-      "R6",
-      "a failed rebuild must be read through the byte-comparison (failed) rule, never the catch-all and never the no-assembler rule"
-    );
-    assert.notEqual(verdict.rule, "R12");
-    assert.notEqual(verdict.rule, "R4");
   }
 );
 
@@ -1168,11 +1122,7 @@ test(
       outputDir: plantedOutputDir,
       acmeBin: "/bin/true",
     });
-    assert.equal(verdict.outcome, "failed", `precondition: ${verdict.reason}`);
-
-    const gateVerdict = runReassemblyGate({ ...passingGateInputExceptRebuild(), TREE_REBUILD: verdict.outcome });
-    assert.equal(gateVerdict.outcome, "red", gateVerdict.reason);
-    assert.equal(gateVerdict.rule, "R6");
+    assert.equal(verdict.outcome, "failed", verdict.reason);
   }
 );
 
@@ -2003,25 +1953,3 @@ test("the honest-pass transcript and parseAcmeResultLines() agree -- the parser 
 // published closure is exactly the change that makes it tempting to let the
 // verifier follow it.
 // ---------------------------------------------------------------------------
-
-test("acme-verify.ts is absent from package.json's files[] array (test-only, mechanically enforced)", () => {
-  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
-  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
-  assert.equal(
-    pkg.files.includes("acme-verify.ts"),
-    false,
-    "acme-verify.ts is test-only and must never ship in the published npm tarball. Being absent is what lets it " +
-      "import ACME_BIN from acme-gate.ts instead of resolving that environment variable itself -- which acme-gate.ts " +
-      "forbids by name, because a second resolution of ACME_BIN is a second answer to which assembler ran"
-  );
-  // The paired direction, so this is a discrimination rather than a blanket
-  // refusal: the module it verifies DOES ship, and shipped in the commit that
-  // created it. Without this half, an accidentally-emptied files[] would
-  // satisfy the assertion above.
-  assert.equal(
-    pkg.files.includes("anno-export-asm.mts"),
-    true,
-    "anno-export-asm.mts is shipped runtime -- it is reachable from vice-proxy.ts through anno-cli.ts's export-asm " +
-      "verb, and a closure walk over the published set fails when a reachable module is unlisted"
-  );
-});

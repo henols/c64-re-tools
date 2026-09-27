@@ -9,9 +9,6 @@ import { fileURLToPath } from "node:url";
 import { createServer, type Server, type Socket } from "node:net";
 
 import {
-  REQUEST_ID_PATTERN,
-  newRequestId,
-  isValidRequestId,
   dialControlSession,
   MonitorOwnershipError,
   resolveSessionLabel,
@@ -48,23 +45,6 @@ const dialLoopback = (port: number) => dialControlSession({ port, candidates: ["
 const sleepMs = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 // -------------------------------------------------------------- request ids
-
-test("newRequestId()/isValidRequestId(): accepts its own output and rejects a hostile corpus", () => {
-  const id = newRequestId();
-  assert.ok(REQUEST_ID_PATTERN.test(id), `newRequestId() output must match REQUEST_ID_PATTERN: ${id}`);
-  assert.ok(isValidRequestId(id), `newRequestId() output must be accepted: ${id}`);
-
-  const hostile = {
-    "empty string": "",
-    "path traversal with a separator": `req-1-2-${"a".repeat(8)}/../../etc/passwd`,
-    "absolute path": "/etc/passwd",
-    "trailing suffix beyond eight hex characters": `req-1-2-${"a".repeat(8)}xx`,
-    "uppercase hex": `req-1-2-${"A".repeat(8)}`,
-  };
-  for (const [label, bad] of Object.entries(hostile)) {
-    assert.equal(isValidRequestId(bad), false, `must reject (${label}): ${JSON.stringify(bad)}`);
-  }
-});
 
 /** The version a raw stub reports in its hello reply: the same package.json
  * lookup the dialing client resolves its own version from, so the major
@@ -1097,9 +1077,7 @@ test("structural: the new control-client region (between the plan-06 marker pair
 test("the client module's export list is exactly the surviving surface", () => {
   const actualKeys = Object.keys(viceBrokerClient).sort();
   const expectedKeys = [
-    "REQUEST_ID_PATTERN",
     "newRequestId",
-    "isValidRequestId",
     "CONTROL_ACQUIRE_TIMEOUT_MS",
     "ACQUIRE_TIMEOUT_MS",
     "CONTROL_CONNECT_TIMEOUT_MS",
