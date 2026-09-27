@@ -211,3 +211,20 @@ Every run exited 0, with zero failures:
 | `VICE_REQUIRE_ACME=1 npm test` (in `src/mcp/vice`) | 4186 | 4109 | 0 | 77 |
 | `node --test 'test/skills/**/*.test.ts'` | 264 | 258 | 0 | 6 |
 | `npm run test:automated` | 4039 | 4030 | 0 | 9 |
+
+## After the change
+
+Every run exited 0, with zero failures. The drop equals the deleted tests
+(36 server, 3 skill). Comparing test names: 58 server names are gone
+(36 deleted + 22 retitled) and 22 are new (the retitles). For the skill
+tests, 5 are gone (3 deleted + 2 retitled) and 2 are new.
+
+| Command | tests | pass | fail | skipped |
+|---|---|---|---|---|
+| `VICE_REQUIRE_ACME=1 npm test` (in `src/mcp/vice`) | 4150 | 4073 | 0 | 77 |
+| `node --test 'test/skills/**/*.test.ts'` | 261 | 255 | 0 | 6 |
+| `npm run test:automated` | 4003 | 3994 | 0 | 9 |
+| `VICE_LIVE_GHIDRA=1 VICE_LIVE_GHIDRA_CORPUS=1 node --test ghidra-live.test.ts` | 25 | 25 | 0 | 0 |
+
+`npm run typecheck` exits 0. The census regex now finds 227 hits in 62
+files. Every remaining test title with a hit is a K or C site.
