@@ -34,8 +34,8 @@ import { promisify } from "node:util";
 import { parseOpts } from "../../../skills/c64-basic/scripts/petcat.ts";
 import type { HostToolResponse } from "../../../skills/c64-project/scripts/mcp-module.ts";
 import { projectRoot } from "../../../skills/c64-project/scripts/project-paths.ts";
-import { startHarnessBroker } from "../../../src/mcp/vice/broker-harness.ts";
-import type { HarnessBroker } from "../../../src/mcp/vice/broker-harness.ts";
+import { startHarnessBroker } from "../../vice/broker-harness.ts";
+import type { HarnessBroker } from "../../vice/broker-harness.ts";
 
 const execFileP = promisify(execFile);
 
@@ -43,9 +43,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // The scripts under test live in the skill folder; this test lives in test/skills/.
 const SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-basic", "scripts");
 const SCRIPT = join(SCRIPT_DIR, "petcat.ts");
-const LITERAL_SYS_FIXTURE = join(projectRoot(), "src", "mcp", "vice", "fixtures", "dxa", "basic-stub.prg");
-const COMPUTED_SYS_FIXTURE = join(projectRoot(), "src", "mcp", "vice", "fixtures", "petcat", "computed-sys.prg");
-const NOT_BASIC_FIXTURE = join(projectRoot(), "src", "mcp", "vice", "fixtures", "petcat", "not-basic.prg");
+const LITERAL_SYS_FIXTURE = join(projectRoot(), "test", "vice", "fixtures", "dxa", "basic-stub.prg");
+const COMPUTED_SYS_FIXTURE = join(projectRoot(), "test", "vice", "fixtures", "petcat", "computed-sys.prg");
+const NOT_BASIC_FIXTURE = join(projectRoot(), "test", "vice", "fixtures", "petcat", "not-basic.prg");
 
 // ---------------------------------------------------------------------------
 // Tier 1: pure CLI-option parsing, no seam call, no petcat install needed.

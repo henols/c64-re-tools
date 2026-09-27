@@ -108,7 +108,7 @@ jobs:
         working-directory: src/mcp/vice
         env:
           VICE_REQUIRE_ACME: "1"
-        run: node --test skill-assembler-cli.test.ts
+        run: node --test ../../../test/vice/skill-assembler-cli.test.ts
 
       - name: Regenerate committed artifacts and fail on drift
         # The committed build output (resources/*.mjs, vice-cli.mjs), the
@@ -119,7 +119,7 @@ jobs:
         # generator below leaves a clean tree clean and needs no network and
         # no emulator. exported-edit-run.json is left out of the check: it
         # records a timestamp and the digests of its inputs, not an output.
-        # fixtures/vsf/make-fixtures.ts is not run, because its sidecars
+        # test/vice/fixtures/vsf/make-fixtures.ts is not run, because its sidecars
         # also carry a timestamp. Runs before Test, because the suite
         # itself rebuilds resources/.
         working-directory: src/mcp/vice
@@ -129,14 +129,15 @@ jobs:
           rm -f vice-cli.mjs
           node build.ts
           node anno-regbits-gen.mts
-          node fixtures/hazard-subject/make-hazard-subject-fixtures.ts
-          node fixtures/hazard-subject/make-hazard-subject-annostore.ts
-          node fixtures/hazard-subject/make-exported-edit.ts > /dev/null
-          node fixtures/export-asm/make-export-asm-fixtures.ts
-          node fixtures/coverage/make-coverage-fixtures.ts
-          git checkout -- fixtures/hazard-subject/exported-edit-run.json
-          git diff --exit-code -- .
-          drift="$(git status --porcelain --untracked-files=all -- .)"
+          fixtures=../../../test/vice/fixtures
+          node "$fixtures/hazard-subject/make-hazard-subject-fixtures.ts"
+          node "$fixtures/hazard-subject/make-hazard-subject-annostore.ts"
+          node "$fixtures/hazard-subject/make-exported-edit.ts" > /dev/null
+          node "$fixtures/export-asm/make-export-asm-fixtures.ts"
+          node "$fixtures/coverage/make-coverage-fixtures.ts"
+          git checkout -- "$fixtures/hazard-subject/exported-edit-run.json"
+          git diff --exit-code -- . "$fixtures"
+          drift="$(git status --porcelain --untracked-files=all -- . "$fixtures")"
           if [ -n "$drift" ]; then
             echo "untracked generated files -- run the generators and commit:" >&2
             echo "$drift" >&2
@@ -195,7 +196,7 @@ jobs:
 
       # The skill scripts' tests live in test/skills/<skill>/, outside the skill
       # folders so `npx skills add` never ships them. The vice-mcp `npm test`
-      # glob above is cwd-only, so it cannot reach them. The glob is quoted so
+      # above runs test/vice/ only, so it cannot reach them. The glob is quoted so
       # Node receives the pattern rather than a shell expansion.
       - name: Test the skills
         run: node --test 'test/skills/**/*.test.ts'

@@ -221,7 +221,7 @@ function isSurvivorLabelName(name: string): boolean {
 }
 
 /** One row of the manifest `anno decomp-completeness --manifest FILE` reads.
- * `path` is relative to `src/mcp/vice/fixtures`; `reason` is
+ * `path` is relative to the manifest file's own directory; `reason` is
  * required (non-empty) when `execution` is `"not-executed"` and `null`
  * otherwise. */
 export interface DecompExecutionManifestEntry {

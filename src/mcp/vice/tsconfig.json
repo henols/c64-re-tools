@@ -21,7 +21,8 @@
     "**/*.ts",
     "**/*.mts",
     "../../../skills/*/scripts/*.ts",
-    "../../../test/**/*.ts"
+    "../../../test/**/*.ts",
+    "../../../test/**/*.mts"
   ],
   "exclude": [
     "node_modules",

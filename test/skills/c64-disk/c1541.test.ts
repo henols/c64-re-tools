@@ -27,8 +27,8 @@ import { promisify } from "node:util";
 import { auditEntries, parseDirListing, parseBamAllocation, parseEntryFields, salvageFirstTsFromRefusal, sectorsPerTrack } from "../../../skills/c64-disk/scripts/c1541.ts";
 import type { AuditRecord, AuditResult } from "../../../skills/c64-disk/scripts/c1541.ts";
 import { projectRoot } from "../../../skills/c64-project/scripts/project-paths.ts";
-import { startHarnessBroker } from "../../../src/mcp/vice/broker-harness.ts";
-import type { HarnessBroker } from "../../../src/mcp/vice/broker-harness.ts";
+import { startHarnessBroker } from "../../vice/broker-harness.ts";
+import type { HarnessBroker } from "../../vice/broker-harness.ts";
 
 const execFileP = promisify(execFile);
 
@@ -36,7 +36,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // The scripts under test live in the skill folder; this test lives in test/skills/.
 const SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-disk", "scripts");
 const SCRIPT = join(SCRIPT_DIR, "c1541.ts");
-const FIXTURES_DIR = join(projectRoot(), "src", "mcp", "vice", "fixtures", "c1541");
+const FIXTURES_DIR = join(projectRoot(), "test", "vice", "fixtures", "c1541");
 const CLEAN_FIXTURE = join(FIXTURES_DIR, "synthetic.d64");
 const CORRUPT_FIXTURE = join(FIXTURES_DIR, "synthetic-corrupt.d64");
 

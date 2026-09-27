@@ -1,0 +1,446 @@
+#!/usr/bin/env node
+// text-connect.test.ts
+//
+// Claim/connect/release lifecycle unit tests for text-connect.ts, with an
+// injected minimal StockConnectBrokerControl stub -- the SAME shape
+// stock-connect.test.ts's own makeStubBrokerControl() uses, since
+// text-connect.ts deliberately reuses that exact interface (D-14) rather
+// than declaring a parallel one.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { createServer, connect as netConnect, type Server } from "node:net";
+import type { AddressInfo } from "node:net";
+import { execFileSync } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { textConnect as textConnectReal, textDisconnect, type TextConnectOptions, type TextConnectSession } from "../../src/mcp/vice/text-connect.ts";
+import type { StockConnectBrokerControl, DialMonitorSocketFn } from "../../src/mcp/vice/stock-connect.ts";
+import {
+  MonitorOwnershipError,
+  type ClaimMonitorOutcome,
+  type ClaimMonitorOptions,
+  type ReleaseMonitorOptions,
+  type ReleaseMonitorOutcome,
+} from "../../src/mcp/vice/vice-broker-client.ts";
+import { VICE_DIR } from "./paths.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+// ---------------------------------------------------------------------------
+// Phase 63 (SESS-02): textConnect()'s default socket source is now a relay
+// dial against a broker that is not running in this test process -- every
+// call site in this file is about the HANDSHAKE (claim ordering, the
+// port validation, the release-on-failure discipline), not about the
+// socket source. Mirrors stock-connect.test.ts's own
+// directDialMonitorSocket/shadowing-wrapper shape exactly: dials the stub
+// text-monitor server DIRECTLY (this file's own withStubTextServer(),
+// never a real broker) and resolves an empty pending Buffer --
+// byte-identical handshake behaviour to the pre-relay direct dial this
+// replaces. `textConnect` below SHADOWS the real export with a thin
+// wrapper so every existing call site (unchanged) picks up the default
+// automatically; a call site that supplies its own `dialMonitorSocket`
+// still wins.
+// ---------------------------------------------------------------------------
+
+const directDialMonitorSocket: DialMonitorSocketFn = (opts) =>
+  new Promise((resolve, reject) => {
+    const socket = netConnect({ host: opts.host, port: opts.port });
+    socket.once("connect", () => resolve({ socket, pending: Buffer.alloc(0) }));
+    socket.once("error", reject);
+  });
+
+function textConnect(opts: TextConnectOptions): ReturnType<typeof textConnectReal> {
+  return textConnectReal({ ...opts, dialMonitorSocket: opts.dialMonitorSocket ?? directDialMonitorSocket });
+}
+
+// ---------------------------------------------------------------------------
+// Stub broker control -- mirrors stock-connect.test.ts's makeStubBrokerControl().
+// ---------------------------------------------------------------------------
+
+interface StubBrokerControlOptions {
+  claimOutcome?: ClaimMonitorOutcome;
+  releaseOutcome?: ReleaseMonitorOutcome;
+  /** Phase 63 (SESS-05) gap closure: when set, releaseMonitor() REJECTS with
+   * this value instead of resolving -- lets a test prove textDisconnect()'s
+   * `finally` still runs and the throw still propagates unchanged. */
+  releaseThrows?: unknown;
+  /** Phase 63 (SESS-05) gap closure: invoked synchronously the instant
+   * releaseMonitor() is called (before it resolves or throws), and its
+   * return value recorded into `state.probedAtRelease` -- lets a test
+   * observe, from INSIDE the stub, whatever caller-supplied fact it wants
+   * to prove was still true at that exact moment (e.g. the relay socket
+   * still being connected). Additive and optional: every pre-existing call
+   * site of makeStubBrokerControl() is unaffected. */
+  probeAtRelease?: () => unknown;
+}
+
+function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
+  brokerControl: StockConnectBrokerControl;
+  state: {
+    claimCalls: number;
+    releaseCalls: number;
+    claimedWith: ClaimMonitorOptions[];
+    releasedWith: ReleaseMonitorOptions[];
+    probedAtRelease: unknown[];
+  };
+} {
+  const state = {
+    claimCalls: 0,
+    releaseCalls: 0,
+    claimedWith: [] as ClaimMonitorOptions[],
+    releasedWith: [] as ReleaseMonitorOptions[],
+    probedAtRelease: [] as unknown[],
+  };
+  const brokerControl: StockConnectBrokerControl = {
+    async claimMonitor(claimOpts) {
+      state.claimCalls += 1;
+      state.claimedWith.push(claimOpts);
+      return opts.claimOutcome ?? { ok: true, handle: "test-handle" };
+    },
+    async releaseMonitor(releaseOpts) {
+      state.releaseCalls += 1;
+      state.releasedWith.push(releaseOpts);
+      if (opts.probeAtRelease) {
+        state.probedAtRelease.push(opts.probeAtRelease());
+      }
+      if (opts.releaseThrows !== undefined) {
+        throw opts.releaseThrows;
+      }
+      return opts.releaseOutcome ?? { ok: true };
+    },
+    async noteOperation() {
+      throw new Error("noteOperation must not be called by this suite -- textConnect() never calls it");
+    },
+    async stageFile() {
+      throw new Error("stageFile must not be called by this suite -- textConnect() never calls it");
+    },
+  };
+  return { brokerControl, state };
+}
+
+// ---------------------------------------------------------------------------
+// A minimal stub text-monitor server -- textConnect() only needs the socket
+// to accept a connection; no framing exercised here (that is
+// text-protocol.test.ts's job).
+// ---------------------------------------------------------------------------
+
+async function withStubTextServer<T>(
+  handler: (socket: import("node:net").Socket) => void,
+  fn: (port: number) => Promise<T>,
+): Promise<T> {
+  const sockets = new Set<import("node:net").Socket>();
+  const server: Server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    handler(socket);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const port = (server.address() as AddressInfo).port;
+  try {
+    return await fn(port);
+  } finally {
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Successful claim/connect/release round trip.
+// ---------------------------------------------------------------------------
+
+test("textConnect: claims before dialling, connects, and textDisconnect() releases the claim", async () => {
+  await withStubTextServer(
+    () => {
+      /* accept only -- D-13(a): no bytes expected from the client or server on connect */
+    },
+    async (port) => {
+      const { brokerControl, state } = makeStubBrokerControl();
+      const session = await textConnect({ host: "127.0.0.1", remoteMonitorPort: port, targetId: "grant-1", brokerControl });
+      assert.equal(state.claimCalls, 1);
+      assert.equal(session.targetId, "grant-1");
+      assert.equal(session.port, port);
+      assert.ok(session.client.connected);
+      // Plan 41-03 (D-14): textConnect() claims "text" explicitly.
+      assert.equal(state.claimedWith[0]?.channel, "text");
+      await textDisconnect(session);
+      assert.equal(state.releaseCalls, 1);
+      assert.equal(state.releasedWith[0]?.channel, "text", "textDisconnect() releases 'text' explicitly");
+      assert.ok(!session.client.connected);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 63 (SESS-05) gap closure: textDisconnect() must send the per-channel
+// release WHILE the relay socket is still up, and must disconnect regardless
+// of what the release returns (ok, refused, or throwing).
+// ---------------------------------------------------------------------------
+
+test("textDisconnect: sends the monitor release while the relay socket is still connected, then disconnects", async () => {
+  await withStubTextServer(
+    () => {
+      /* accept only */
+    },
+    async (port) => {
+      let session!: TextConnectSession;
+      const { brokerControl, state } = makeStubBrokerControl({
+        probeAtRelease: () => session.client.connected,
+      });
+      session = await textConnect({ host: "127.0.0.1", remoteMonitorPort: port, targetId: "grant-9", brokerControl });
+      await textDisconnect(session);
+      assert.equal(
+        state.probedAtRelease[0],
+        true,
+        "the release must reach the broker while the socket is still up -- a close that arrives at the broker FIRST is recorded as a relay death and writes an incident record for what was actually a successful, ordinary call",
+      );
+      assert.equal(session.client.connected, false, "the socket must be disconnected once textDisconnect() returns");
+    },
+  );
+});
+
+test("textDisconnect: still disconnects when the monitor release is refused, and reports the refusal", async () => {
+  await withStubTextServer(
+    () => {},
+    async (port) => {
+      const { brokerControl } = makeStubBrokerControl({ releaseOutcome: { ok: false, reason: "denied" } });
+      const session = await textConnect({ host: "127.0.0.1", remoteMonitorPort: port, targetId: "grant-10", brokerControl });
+      const originalConsoleError = console.error;
+      const capturedLines: unknown[][] = [];
+      console.error = (...args: unknown[]) => {
+        capturedLines.push(args);
+      };
+      try {
+        await textDisconnect(session);
+      } finally {
+        console.error = originalConsoleError;
+      }
+      assert.equal(session.client.connected, false, "the socket must still be disconnected after a refused release");
+      assert.equal(capturedLines.length, 1, "exactly one console.error line must be written for a refused release");
+      const message = capturedLines[0]?.map(String).join(" ") ?? "";
+      assert.match(message, /grant-10/, "the refusal line must name the target id");
+      assert.match(message, /text/, "the refusal line must name the channel");
+    },
+  );
+});
+
+test("textDisconnect: still disconnects when the monitor release throws, and still propagates the error", async () => {
+  await withStubTextServer(
+    () => {},
+    async (port) => {
+      const releaseError = new Error("release exploded");
+      const { brokerControl } = makeStubBrokerControl({ releaseThrows: releaseError });
+      const session = await textConnect({ host: "127.0.0.1", remoteMonitorPort: port, targetId: "grant-11", brokerControl });
+      await assert.rejects(
+        () => textDisconnect(session),
+        (err: unknown) => {
+          assert.equal(err, releaseError, "the ORIGINAL release error must propagate unchanged");
+          return true;
+        },
+      );
+      assert.equal(session.client.connected, false, "the finally must have run and disconnected the socket even though the release threw");
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// A claim refusal propagates without a dial being attempted.
+// ---------------------------------------------------------------------------
+
+test("textConnect: a monitor_owned claim refusal propagates as MonitorOwnershipError, and no dial is ever attempted", async () => {
+  let connectionAttempted = false;
+  await withStubTextServer(
+    () => {
+      connectionAttempted = true;
+    },
+    async (port) => {
+      const { brokerControl, state } = makeStubBrokerControl({
+        claimOutcome: { ok: false, reason: "monitor_owned", holder: { grantId: "other-grant", claimedAt: 12345, pid: 999, channel: "text" } },
+      });
+      await assert.rejects(
+        () => textConnect({ host: "127.0.0.1", remoteMonitorPort: port, targetId: "grant-2", brokerControl }),
+        (err: unknown) => {
+          assert.ok(err instanceof MonitorOwnershipError, `expected MonitorOwnershipError, got ${String(err)}`);
+          assert.match((err as Error).message, /already claimed by grant other-grant/);
+          assert.equal((err as MonitorOwnershipError).channel, "text", "plan 41-03 (D-14): channel === 'text' on the propagated error");
+          assert.doesNotMatch((err as Error).message, /wedge|hang|frozen|stuck|unresponsive/i);
+          return true;
+        },
+      );
+      assert.equal(state.claimCalls, 1);
+      assert.equal(state.claimedWith[0]?.channel, "text");
+      // Give any accidental async dial attempt time to land before asserting.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(connectionAttempted, false, "a refused claim must never reach a socket dial (PROTO-08/D-13)");
+    },
+  );
+});
+
+test("textConnect: a timeout claim outcome is kept strictly distinct from monitor_owned", async () => {
+  await withStubTextServer(
+    () => {},
+    async (port) => {
+      const { brokerControl } = makeStubBrokerControl({ claimOutcome: { ok: false, reason: "timeout" } });
+      await assert.rejects(
+        () => textConnect({ host: "127.0.0.1", remoteMonitorPort: port, targetId: "grant-3", brokerControl }),
+        (err: unknown) => {
+          assert.ok(!(err instanceof MonitorOwnershipError), "a broker timeout must never be reported as an ownership conflict");
+          assert.match((err as Error).message, /monitor claim for target grant-3 failed \(timeout\)/);
+          return true;
+        },
+      );
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// A missing or invalid remoteMonitorPort is refused by name.
+// ---------------------------------------------------------------------------
+
+test("textConnect: refuses a missing remoteMonitorPort by name, naming targetId, never dialling a guessed port", async () => {
+  const { brokerControl, state } = makeStubBrokerControl();
+  await assert.rejects(
+    () => textConnect({ host: "127.0.0.1", remoteMonitorPort: undefined, targetId: "grant-4", brokerControl }),
+    /target grant-4 has no valid text-monitor port recorded/,
+  );
+  assert.equal(state.claimCalls, 0, "an invalid port must be refused BEFORE any claim is even attempted");
+});
+
+test("textConnect: refuses an out-of-range remoteMonitorPort by name", async () => {
+  const { brokerControl, state } = makeStubBrokerControl();
+  await assert.rejects(
+    () => textConnect({ host: "127.0.0.1", remoteMonitorPort: 70000, targetId: "grant-5", brokerControl }),
+    /target grant-5 has no valid text-monitor port recorded/,
+  );
+  assert.equal(state.claimCalls, 0);
+});
+
+test("textConnect: refuses a non-integer remoteMonitorPort by name", async () => {
+  const { brokerControl } = makeStubBrokerControl();
+  await assert.rejects(
+    () => textConnect({ host: "127.0.0.1", remoteMonitorPort: 6600.5, targetId: "grant-6", brokerControl }),
+    /target grant-6 has no valid text-monitor port recorded/,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// A failure after the claim releases the claim before propagating, with the
+// original failure preserved rather than replaced by the release's own.
+// ---------------------------------------------------------------------------
+
+test("textConnect: a dial failure after a successful claim releases the claim before propagating", async () => {
+  const { brokerControl, state } = makeStubBrokerControl();
+  // Port 1 (a real, unused low port that refuses connections outright, not
+  // bound by this test) -- forces client.connect() to fail with ECONNREFUSED
+  // rather than hang.
+  await assert.rejects(
+    () => textConnect({ host: "127.0.0.1", remoteMonitorPort: 1, targetId: "grant-7", brokerControl }),
+  );
+  assert.equal(state.claimCalls, 1, "the claim must have been attempted");
+  assert.equal(state.releaseCalls, 1, "a failed dial must release the claim it just took, before propagating");
+  assert.equal(state.releasedWith[0]?.channel, "text", "a textConnect() failure releases the text channel, never a binary claim (D-14)");
+});
+
+test("textConnect: the ORIGINAL dial failure is preserved even when the release itself also fails", async () => {
+  const { brokerControl, state } = makeStubBrokerControl({ releaseOutcome: { ok: false, reason: "internal" } });
+  await assert.rejects(
+    () => textConnect({ host: "127.0.0.1", remoteMonitorPort: 1, targetId: "grant-8", brokerControl }),
+    (err: unknown) => {
+      // The original connect failure, never replaced by the release's own
+      // { ok: false } outcome -- WR-07's own precedent from stock-connect.ts.
+      assert.ok(!(err instanceof MonitorOwnershipError));
+      assert.doesNotMatch((err as Error).message, /release/i, "the propagated error must be the dial failure, not a release-failure message");
+      return true;
+    },
+  );
+  assert.equal(state.releaseCalls, 1, "the release must still have been ATTEMPTED even though it failed");
+});
+
+// ---------------------------------------------------------------------------
+// Plan 41-03 (D-14): the structural prohibition this plan carries -- no
+// module on any halting path reads the broker's per-channel ownership map.
+// ---------------------------------------------------------------------------
+
+test("structural (D-14): git ls-files agrees -- the identifier appears only in the four broker-side modules, their resources/*.mjs artifacts, and InstanceRecord test fixtures", () => {
+  const output = execFileSync("git", ["ls-files"], { cwd: VICE_DIR, encoding: "utf8" });
+  const files = output
+    .split("\n")
+    .map((f) => f.trim())
+    .filter((f) => f !== "");
+  const ALLOWED = new Set([
+    "broker-state.mts",
+    "broker-control.mts",
+    "broker-launch.mts",
+    "vice-broker.mts",
+    "resources/broker-state.mjs",
+    "resources/broker-control.mjs",
+    "resources/broker-launch.mjs",
+    "resources/vice-broker.mjs",
+    "broker-state.test.ts",
+    "broker-control.test.ts",
+    "broker-launch.test.ts",
+    "broker-kill.test.ts",
+    "vice-broker-acquire.test.ts",
+    "vice-broker-supervision.test.ts",
+    // This structural test's OWN source file, which necessarily contains the
+    // literal string "monitorClients" as the identifier it searches for --
+    // not a halting-path reference to the field.
+    "text-connect.test.ts",
+    // Phase 63, plan 63-01 (SESS-02): broker-relay.mts's own module header
+    // comment NAMES the field (documenting where the per-claim handle it
+    // checks is minted) without ever reading it -- handleRelayAttach()'s
+    // own read lives in vice-broker.mts, already allowed above. Its test
+    // file constructs the same raw InstanceRecord literals every other
+    // allowed *.test.ts file above does. Kept in sync with
+    // broker-control.test.ts's own copy of this same guard.
+    "broker-relay.mts",
+    "broker-relay.test.ts",
+    // Phase 63, plan 63-02 (SESS-02): the text channel's own relay-lifecycle
+    // test file, constructing the SAME raw InstanceRecord literals every
+    // other allowed *.test.ts file above does. Kept in sync with
+    // broker-control.test.ts's own copy of this same guard.
+    "broker-relay-text.test.ts",
+    // Phase 64, plan 64-03 (XFER-04/XFER-07): the staging/transfer wiring
+    // test file, constructing the SAME raw InstanceRecord literals every
+    // other allowed *.test.ts file above does. Kept in sync with
+    // broker-control.test.ts's own copy of this same guard.
+    "vice-broker-staging.test.ts",
+    // Phase 64, plan 64-04 (XFER-01/XFER-02): stock-machine.ts's own
+    // handler test file, whose round-trip case drives a REAL control
+    // listener and constructs the SAME raw InstanceRecord literal every
+    // other allowed *.test.ts file above does. Kept in sync with
+    // broker-control.test.ts's own copy of this same guard.
+    "stock-machine.test.ts",
+    // Phase 64, plan 64-07 (XFER-01/XFER-05/XFER-08): the disjoint-roots
+    // proof, driving all four migrated handlers against a REAL control
+    // listener and constructing the SAME raw InstanceRecord literal every
+    // other allowed *.test.ts file above does. Kept in sync with
+    // broker-control.test.ts's own copy of this same guard.
+    "transfer-disjoint-roots.test.ts",
+    // Plan 64-08 (G-64-1 gap closure): the G-64-1 tracer/transfer/text
+    // fixture (g6408StartFixture()) drives a REAL control listener against
+    // a REAL vice-proxy.ts child and constructs the SAME raw InstanceRecord
+    // literal every other allowed *.test.ts file above does. Kept in sync
+    // with broker-control.test.ts's own copy of this same guard.
+    "vice-proxy.test.ts",
+    // Phase 64 gap closure G-64-3 (plan 64-13, Task 1): stock-connect.ts's
+    // own handshake test file, whose "publish lands late" case drives a
+    // REAL control listener and constructs the SAME raw InstanceRecord
+    // literal every other allowed *.test.ts file above does. Kept in sync
+    // with broker-control.test.ts's own copy of this same guard.
+    "stock-connect.test.ts",
+  ]);
+  const offenders: string[] = [];
+  for (const rel of files) {
+    if (ALLOWED.has(rel)) continue;
+    if (!/\.(ts|mts|mjs)$/.test(rel)) continue;
+    const full = join(VICE_DIR, rel);
+    if (!existsSync(full)) continue;
+    const text = readFileSync(full, "utf8");
+    if (text.includes("monitorClients")) offenders.push(rel);
+  }
+  assert.deepEqual(offenders, [], `no halting-path module may read monitorClients: ${JSON.stringify(offenders)}`);
+});

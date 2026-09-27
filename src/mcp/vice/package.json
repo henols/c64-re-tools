@@ -51,9 +51,9 @@
     "reverse-engineering"
   ],
   "scripts": {
-    "test": "node --test '*.test.*'",
-    "test:automated": "node test-gate.ts",
-    "test:manual": "node test-gate.ts --manual",
+    "test": "node --test '../../../test/vice/*.test.ts' '../../../test/vice/*.test.mts'",
+    "test:automated": "node ../../../test/vice/test-gate.ts",
+    "test:manual": "node ../../../test/vice/test-gate.ts --manual",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "node build.ts",
     "generate:readme": "node prereq-readme-gen.ts --write",

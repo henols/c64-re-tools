@@ -468,7 +468,7 @@ test("PLANTED CONTROL 2 (permanent, anti-vacuity): a fabricated run identity is 
   // refusal, exactly like this same control's own captured real-store
   // transcript.
   const { setDataType } = await import("../../../src/mcp/vice/anno-store.mts");
-  const { seedWorkspaceProject } = await import("../../../src/mcp/vice/workspace-store-fixture.ts");
+  const { seedWorkspaceProject } = await import("../../vice/workspace-store-fixture.ts");
 
   const saved = process.env.CLAUDE_PROJECT_DIR;
   try {

@@ -1558,10 +1558,10 @@ async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<n
     return 1;
   }
 
-  // The fixture's own bytes -- the fixtures-relative manifest path, resolved
-  // beside this module, never a second guess at where the image lives. An
-  // image that is not there is not sent; the report says so by name.
-  const fixtureImagePath = join(HERE, "fixtures", manifestEntry.path);
+  // The fixture's own bytes -- the manifest entry's path, resolved beside the
+  // manifest file, never a second guess at where the image lives. An image
+  // that is not there is not sent; the report says so by name.
+  const fixtureImagePath = join(dirname(manifestPath), manifestEntry.path);
   let report: DecompCompletenessReport;
   try {
     const answer = await runReport(ctx, "decomp-completeness", { manifest_entry: manifestEntry }, {
