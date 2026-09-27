@@ -28,11 +28,9 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { REPO_ROOT } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Two levels up out of src/mcp/vice/, back down into the sibling skills
 // tree -- see this file's own header for why this hop, not a colocated

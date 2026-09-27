@@ -27,13 +27,11 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { selectMemmapEntry, loadMemmap } from "../../src/mcp/vice/memmap-lookup.mts";
 import { REPO_ROOT, VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_MODULE_PATH = join(VICE_DIR, "memmap-lookup.mts");
 const REAL_MEMMAP_PATH = join(REPO_ROOT, "skills", "c64-memory-map", "memmap.json");
 

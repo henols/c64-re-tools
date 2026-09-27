@@ -53,13 +53,11 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, relative, sep } from "node:path";
 
 import { GHIDRA_STOCK_6502_LANGUAGE_FILES } from "../../src/mcp/vice/ghidra-project.mts";
 import { REPO_ROOT, VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const VENDOR_DIR = join(VICE_DIR, "vendor", "ghidra-ext");
 const LANGUAGES_DIR = join(VENDOR_DIR, "data", "languages");
 

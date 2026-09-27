@@ -31,7 +31,7 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync, writeFileSync, renameSync } from "node:fs";
 import { join, basename, resolve as resolvePath } from "node:path";
-import { tmpdir, homedir } from "node:os";
+import { homedir } from "node:os";
 // Module-level: this file, not the caller, owns the single boolean --
 // synchronous check, synchronous set, released in a finally, with no
 // `await` between the check and the set.

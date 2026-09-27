@@ -10,7 +10,7 @@
 // production functions the real broker calls, not a re-implemented stand-in.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer, connect as netConnect, type Server, type Socket, type AddressInfo } from "node:net";
+import { createServer, type Server, type Socket, type AddressInfo } from "node:net";
 import { mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -340,7 +340,7 @@ test("emulator binds late (text channel): a text attach sent before the text mon
   const commandReply = Buffer.from("Setting default device to `Computer'\n(C:$e5d1) ", "utf8");
   let incidentWrites = 0;
   const deps: TestHandleRelayDeathDeps = {
-    writeIncident: (record) => {
+    writeIncident: (_record) => {
       incidentWrites += 1;
       return `/fake/incident/${incidentWrites}.md`;
     },

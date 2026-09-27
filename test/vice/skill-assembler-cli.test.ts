@@ -44,14 +44,12 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 import { REPO_ROOT } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = join(REPO_ROOT, "skills", "c64-assembler", "scripts", "acme.ts");
 
 /** Computed once, by the shared seam -- never a second hand-rolled probe. */

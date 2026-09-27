@@ -12,8 +12,7 @@ import { createServer, connect as netConnect, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { textConnect as textConnectReal, textDisconnect, type TextConnectOptions, type TextConnectSession } from "../../src/mcp/vice/text-connect.ts";
 import type { StockConnectBrokerControl, DialMonitorSocketFn } from "../../src/mcp/vice/stock-connect.ts";
@@ -26,7 +25,6 @@ import {
 } from "../../src/mcp/vice/vice-broker-client.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // Phase 63 (SESS-02): textConnect()'s default socket source is now a relay

@@ -15,15 +15,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { closeStore, openStore } from "../../src/mcp/vice/anno-store.mts";
 import { ANNO_TOOL_DEFINITIONS, clientFileKeys, runAnnoToolOnHandle, type AnnoInputFile } from "../../src/mcp/vice/anno-tools.mts";
 import { runAnnoReportOnHandle } from "../../src/mcp/vice/anno-reports.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const STAGED_REFUSAL = /did not arrive as a staged file/;
 
 /** A tiny PRG: load address $0801, then `lda #$00` / `rts`. */

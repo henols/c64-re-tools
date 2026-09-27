@@ -14,14 +14,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { parseIoRegisters, REQUIRED_IO_DECODED_KEYS } from "../../src/mcp/vice/textmon-registers.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = fileURLToPath(import.meta.url);
 const OWN_MODULE = join(VICE_DIR, "textmon-registers.ts");
 
 // ---------------------------------------------------------------------------

@@ -10,14 +10,12 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { closeAnnoDatabase, openAnnoDatabase, soleProjectStore } from "../../src/mcp/vice/anno-store.mts";
 import { annoDbPath } from "../../src/mcp/vice/anno-workspace-store.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const VICE_PROXY = join(VICE_DIR, "vice-proxy.ts");
 
 let ws: string;

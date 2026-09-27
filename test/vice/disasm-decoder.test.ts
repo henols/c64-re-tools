@@ -7,15 +7,13 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { decode, type Instruction } from "../../src/mcp/vice/disasm-decoder.mts";
 import { OPCODES } from "../../src/mcp/vice/disasm-opcodes.mts";
 import { LENGTH_FOR_MODE } from "./disasm-mode-lengths.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ------------------------------------------------- 1. DISASM-04: branch targets
 

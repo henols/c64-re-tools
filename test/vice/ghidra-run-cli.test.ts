@@ -9,14 +9,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 import { parseGhidraCli, runGhidraCli, type GhidraRunFn } from "../../src/mcp/vice/ghidra-run.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const LOG_OK = "INFO  Using Language/Compiler: 6502:LE:16:nmos:default (ProgramLoader)\n";
 
 function withScratch(fn: (dir: string) => Promise<void> | void): () => Promise<void> {

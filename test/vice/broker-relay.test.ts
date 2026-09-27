@@ -1004,12 +1004,11 @@ test("emulator binds late: a binary attach sent before the emulator's port is bo
     writeEpoch(7);
     let incidentWrites = 0;
     const relayDeathDeps: TestHandleRelayDeathDeps = {
-      writeIncident: (record) => {
+      writeIncident: (_record) => {
         incidentWrites += 1;
         return `/fake/incident/path-${incidentWrites}.md`;
       },
     };
-    let emulatorSocket: Socket | null = null;
     let resolveEmulatorAccepted: () => void = () => {};
     const emulatorAccepted = new Promise<void>((resolve) => {
       resolveEmulatorAccepted = resolve;
@@ -1017,7 +1016,6 @@ test("emulator binds late: a binary attach sent before the emulator's port is bo
     await withLateBindingStubEmulatorServer(
       250,
       (socket) => {
-        emulatorSocket = socket;
         resolveEmulatorAccepted();
         happyPathResponder()(socket);
       },
@@ -1080,7 +1078,7 @@ test("emulator never binds: the attach is refused by name once the deadline pass
   const deps: TestHandleRelayDeathDeps = {
     dialDeadlineMs: 300,
     dialRetryIntervalMs: 25,
-    writeIncident: (record) => {
+    writeIncident: (_record) => {
       incidentWrites += 1;
       return `/fake/incident/${incidentWrites}.md`;
     },
@@ -1157,7 +1155,7 @@ test("emulator never binds: the attach is refused by name once the deadline pass
 test("emulator binds late, client gives up first", async () => {
   let incidentWrites = 0;
   const deps: TestHandleRelayDeathDeps = {
-    writeIncident: (record) => {
+    writeIncident: (_record) => {
       incidentWrites += 1;
       return `/fake/incident/${incidentWrites}.md`;
     },
@@ -1203,7 +1201,7 @@ test("emulator binds late, client gives up first", async () => {
 test("emulator binds late, claim released meanwhile", async () => {
   let incidentWrites = 0;
   const deps: TestHandleRelayDeathDeps = {
-    writeIncident: (record) => {
+    writeIncident: (_record) => {
       incidentWrites += 1;
       return `/fake/incident/${incidentWrites}.md`;
     },
@@ -1257,7 +1255,7 @@ test("emulator binds late, claim released meanwhile", async () => {
 test("emulator binds late and speaks first", async () => {
   let incidentWrites = 0;
   const deps: TestHandleRelayDeathDeps = {
-    writeIncident: (record) => {
+    writeIncident: (_record) => {
       incidentWrites += 1;
       return `/fake/incident/${incidentWrites}.md`;
     },
@@ -1343,7 +1341,7 @@ test("emulator binds late, non-refusal error: a non-ECONNREFUSED connect error f
   const targetId = "grant-g64-4-non-refusal-error";
   const deps: TestHandleRelayDeathDeps = {
     connect: fakeConnect,
-    writeIncident: (record) => {
+    writeIncident: (_record) => {
       incidentWrites += 1;
       return `/fake/incident/${incidentWrites}.md`;
     },
@@ -1502,7 +1500,7 @@ test("stockReconnect: after the binary relay is destroyed, an advanced epoch rej
     writeEpoch(1);
     let emulatorSocket: Socket | null = null;
     let resolveEmulatorAccepted: () => void = () => {};
-    const emulatorAccepted = new Promise<void>((resolve) => {
+    new Promise<void>((resolve) => {
       resolveEmulatorAccepted = resolve;
     });
     await withStubEmulatorServer(
@@ -1683,7 +1681,7 @@ test("handleRelayDeath: a second close for the same grant and channel after a te
   let writeCount = 0;
   let clearCount = 0;
   const deps: TestHandleRelayDeathDeps = {
-    writeIncident: (record) => {
+    writeIncident: (_record) => {
       writeCount += 1;
       return `/fake/incident/${writeCount}.md`;
     },

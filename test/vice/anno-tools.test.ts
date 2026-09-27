@@ -20,11 +20,10 @@
 // emits an `ExperimentalWarning` unconditionally on first load.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { execFileSync, fork, spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { connect as netConnect } from "node:net";
 
 import {
@@ -59,7 +58,6 @@ import { runAnnoTool as runAnnoToolWith, type AnnoCallDeps } from "../../src/mcp
 import { openTestProject, type TestProject } from "./workspace-store-fixture.ts";
 import { workspaceStoreRunner } from "../../src/mcp/vice/anno-workspace-store.ts";
 import { FILE_STORE_PROJECT_ID } from "../../src/mcp/vice/anno-store.mts";
-import { loadTextFixture } from "./textmon-fixtures.ts";
 import { accessMapRanges, parseAccessMap } from "../../src/mcp/vice/textmon-memmap.mts";
 import { execObservationsFrom } from "../../src/mcp/vice/evid-ingest.mts";
 import { argvDigest } from "../../src/mcp/vice/evid-ingest.mts";
@@ -71,7 +69,6 @@ import { textConnect, textDisconnect } from "../../src/mcp/vice/text-connect.ts"
 import { withTextChannelLock } from "../../src/mcp/vice/text-protocol.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const ANNO_TOOLS_SOURCE = readFileSync(join(VICE_DIR, "anno-tools.mts"), "utf8");
 const ANNO_CALL_CLIENT_SOURCE = readFileSync(join(VICE_DIR, "anno-call-client.ts"), "utf8");
 
@@ -126,7 +123,7 @@ test("tracer (MCP-05): anno_get_symbols answers a real query against a real stor
     (handle) => {
       setLabel(handle, { address: 0xc000, name: "irq_handler", kind: "User" });
     },
-    async (_ws, storePath) => {
+    async (_ws, _storePath) => {
       const result = await runAnnoTool("anno_get_symbols", { max_results: 50 });
       assert.equal(result.isError, false, `expected a successful result, got: ${result.content[0]?.text}`);
       const body = JSON.parse(result.content[0]!.text) as {
@@ -153,7 +150,7 @@ test("anno_get_symbols narrows by address range, and reports truncation as a fac
       setLabel(handle, { address: 0xc000, name: "irq_handler", kind: "User" });
       setLabel(handle, { address: 0xc100, name: "main_loop", kind: "User" });
     },
-    async (_ws, storePath) => {
+    async (_ws, _storePath) => {
       const ranged = await runAnnoTool("anno_get_symbols", {
         max_results: 50,
         start_address: "$c000",
@@ -232,7 +229,7 @@ test("the transport validates nothing, so a missing required argument is refused
 test("an unprefixed numeric address string is refused by the ONE address parser, not accepted by a second rule here", async () => {
   await withStore(
     () => {},
-    async (_ws, storePath) => {
+    async (_ws, _storePath) => {
       const result = await runAnnoTool("anno_get_symbols", { max_results: 10, start_address: "1024" });
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /\[AnnoAddressError\]/);
@@ -406,7 +403,7 @@ test("the twelve write and stored-read verbs are advertised, and none names a st
 test("a repeated identical anno_set_label_name SUCCEEDS reporting changed:false -- an annotation pass re-run is not an error", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const first = await runAnnoTool("anno_set_label_name", { address: "$c000", name: "irq_handler" });
       assert.equal(first.isError, false, first.content[0]!.text);
       assert.equal((await body(first)).changed, true);
@@ -451,7 +448,7 @@ test("an illegal label name is REJECTED by name with the offending name in the m
 test("comment length is bounded in BYTES by the store's own assertion -- this layer adds no second check and no truncation", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       // 2049 two-byte characters: 2049 UTF-16 code units, 4098 UTF-8 bytes.
       // Over the 4096-byte bound in bytes, UNDER it in code units -- so a
       // length check written against `String.length` would have accepted it.
@@ -483,7 +480,7 @@ test("comment length is bounded in BYTES by the store's own assertion -- this la
 test("F-4: anno_set_data_type's SUCCESSFUL body carries BOTH contradictedComments and reinterpretedSplitTables", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const table = await runAnnoTool("anno_set_data_type", { start_address: "$2000", end_address: "$2007", data_type: "lo_hi_address" });
       assert.equal(table.isError, false, table.content[0]!.text);
       const commented = await runAnnoTool("anno_set_comment", { address: "$2002", comment: "[confirmed-code] this executes", type: "line" });
@@ -519,7 +516,7 @@ test("F-4: anno_set_data_type's SUCCESSFUL body carries BOTH contradictedComment
 test("F-5: a transposed scope span is refused by the store's overlap rule, and anno_remove_scope makes it recoverable without a revert", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       // The mistake 28-REVIEW.md:1788-1814 describes: one transposed end.
       const transposed = await runAnnoTool("anno_add_scope", { start_address: "$1000", end_address: "$ffff" });
       assert.equal(transposed.isError, false, "the transposed span is ACCEPTED -- that is exactly what makes it dangerous");
@@ -589,7 +586,7 @@ test("anno_exclude_range and anno_include_range are absent from the tools manife
 test("anno_exclude_range records a span with its reason, reporting changed:true and excludedRanges of length 1; a byte-identical repeat SUCCEEDS reporting changed:false", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const first = await runAnnoTool("anno_exclude_range", { start_address: "$4000", end_address: "$40ff", reason: "cracker intro" });
       assert.equal(first.isError, false, first.content[0]!.text);
       const firstBody = (await body(first)) as {
@@ -617,7 +614,7 @@ test("anno_exclude_range records a span with its reason, reporting changed:true 
 test("anno_exclude_range refuses a missing reason at the validation layer, naming the argument, with the store left untouched", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const refused = await runAnnoTool("anno_exclude_range", { start_address: "$5000", end_address: "$50ff" });
       assert.equal(refused.isError, true);
       assert.match(refused.content[0]!.text, /\[AnnoToolArgumentError\]/);
@@ -635,7 +632,7 @@ test("anno_exclude_range refuses a missing reason at the validation layer, namin
 test("anno_exclude_range refuses an empty or whitespace-only reason the same way a missing one is refused", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const refused = await runAnnoTool("anno_exclude_range", { start_address: "$5100", end_address: "$51ff", reason: "   " });
       assert.equal(refused.isError, true);
       assert.match(refused.content[0]!.text, /\[AnnoToolArgumentError\]/);
@@ -647,7 +644,7 @@ test("anno_exclude_range refuses an empty or whitespace-only reason the same way
 test("anno_exclude_range with a transposed span (end below start) is refused by assertSpanArgs's existing rule, not by a new one", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const refused = await runAnnoTool("anno_exclude_range", { start_address: "$6100", end_address: "$6000", reason: "transposed" });
       assert.equal(refused.isError, true);
       assert.match(
@@ -667,7 +664,7 @@ test("anno_exclude_range with a transposed span (end below start) is refused by 
 test("anno_exclude_range surfaces the store's overlap refusal, and two exclusions that merely TOUCH are disjoint and both accepted", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const first = await runAnnoTool("anno_exclude_range", { start_address: "$7000", end_address: "$70ff", reason: "block one" });
       assert.equal(first.isError, false, first.content[0]!.text);
 
@@ -689,7 +686,7 @@ test("anno_exclude_range surfaces the store's overlap refusal, and two exclusion
 test("anno_exclude_range refuses the same extent recorded with a DIFFERENT reason, leaving the stored reason exactly as it was", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const first = await runAnnoTool("anno_exclude_range", { start_address: "$8000", end_address: "$80ff", reason: "original reason" });
       assert.equal(first.isError, false, first.content[0]!.text);
 
@@ -713,7 +710,7 @@ test("anno_exclude_range refuses the same extent recorded with a DIFFERENT reaso
 test("anno_include_range removes an exact extent reporting changed:true; an extent that is not there reports changed:false", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const added = await runAnnoTool("anno_exclude_range", { start_address: "$9000", end_address: "$90ff", reason: "to be removed" });
       assert.equal(added.isError, false, added.content[0]!.text);
 
@@ -733,7 +730,7 @@ test("anno_include_range removes an exact extent reporting changed:true; an exte
 test("anno_include_range refuses a span that PARTIALLY overlaps a stored exclusion by name, rather than silently reporting no change", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const added = await runAnnoTool("anno_exclude_range", { start_address: "$b000", end_address: "$b0ff", reason: "partial removal target" });
       assert.equal(added.isError, false, added.content[0]!.text);
 
@@ -752,7 +749,7 @@ test("anno_include_range refuses a span that PARTIALLY overlaps a stored exclusi
 test("BATCH ROUTE (load-bearing): both anno_exclude_range and anno_include_range are validated inside anno_batch_execute by the SAME per-verb validator the direct route uses -- proves the single-validator claim rather than restating it", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const result = await runAnnoTool("anno_batch_execute", {
         calls: [
           { name: "anno_exclude_range", arguments: { start_address: "$c000", end_address: "$c0ff", reason: "batch entry zero" } },
@@ -780,7 +777,7 @@ test("BATCH ROUTE (load-bearing): both anno_exclude_range and anno_include_range
 test("a tool name outside CURATED_ANNO_TOOLS is still refused outright by the outer gate, even one shaped like the new pair", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const refused = await runAnnoTool("anno_exclude_range_v2", { start_address: "$d000", end_address: "$d0ff", reason: "not curated" });
       assert.equal(refused.isError, true);
       assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
@@ -791,7 +788,7 @@ test("a tool name outside CURATED_ANNO_TOOLS is still refused outright by the ou
 test("anno_apply_enum_usage with an omitted or empty name CLEARS the association, matching the schema's own contract", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const created = await runAnnoTool("anno_create_project_enum", {
         name: "vic_registers",
         variants: { "$d020": "border_colour", "53281": "background_colour" },
@@ -856,7 +853,7 @@ test("anno_save_project reports the revision and PERFORMS NO WRITE -- the revisi
 test("WR-10: anno_save_project's revision FIELD and the revision named in its own prose are the same value", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       // Seeded so the revision is not whatever an empty store starts at --
       // a pin that only held at revision 0 would hold for the wrong reason.
       for (const [i, name] of ["first_label", "second_label", "third_label"].entries()) {
@@ -994,7 +991,7 @@ test("the six derived and composed verbs are advertised, and every one requires 
 test("anno_disassemble decodes at an EXPLICIT address, and the surface names no cursor anywhere (D-09)", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
       const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c006" });
       assert.equal(result.isError, false, result.content[0]!.text);
@@ -1027,7 +1024,7 @@ test("D-16/D-17 Test 1: anno_disassemble renders a multi-field register write as
       createProjectEnum(handle, { name: "D018", variants: {} });
       applyEnumUsage(handle, { address: 0xc000, name: "D018" });
     },
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
       const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
       assert.equal(result.isError, false, result.content[0]!.text);
@@ -1053,7 +1050,7 @@ test("D-16/D-17 Test 1: anno_disassemble renders a multi-field register write as
 test("D-16 Test 2: a range with NO enum usage renders exactly what it renders today -- the existing listing is unchanged for unbound instructions", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
       const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
       assert.equal(result.isError, false, result.content[0]!.text);
@@ -1070,7 +1067,7 @@ test("D-16 Test 3: anno_read_region with view:'disasm' is NOT changed by this ta
       createProjectEnum(handle, { name: "D018", variants: {} });
       applyEnumUsage(handle, { address: 0xc000, name: "D018" });
     },
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
       const region = await runAnnoTool("anno_read_region", { image, start_address: "$c000", end_address: "$c005", view: "disasm" });
       assert.equal(region.isError, false, region.content[0]!.text);
@@ -1149,7 +1146,7 @@ test("CR-01 Fix Test C: a register-shaped enum name for a register anno-regbits.
       createProjectEnum(handle, { name: "D020", variants: { $00: "BLACK" } });
       applyEnumUsage(handle, { address: 0xc000, name: "D020" });
     },
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", D020_WRITE_PRG);
       const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
       assert.equal(result.isError, false, result.content[0]!.text);
@@ -1179,7 +1176,7 @@ test("CR-01 Fix Test D: a register PRESENT in the table but not fully covered by
       createProjectEnum(handle, { name: "DD00", variants: {} });
       applyEnumUsage(handle, { address: 0xc000, name: "DD00" });
     },
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", DD00_WRITE_PRG);
       const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
       assert.equal(result.isError, true, "a genuinely-lossy decomposition must still refuse, not fall back to a hex literal");
@@ -1205,7 +1202,7 @@ test("ONE cap governs BOTH views, is read at call time, and refuses by name with
   assert.equal(ANNO_READ_REGION_MAX_BYTES_ENV, "ANNO_READ_REGION_MAX_BYTES");
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
 
       const overDefault = await runAnnoTool("anno_read_region", { image, start_address: 0, end_address: 4096 });
@@ -1233,7 +1230,7 @@ test("ONE cap governs BOTH views, is read at call time, and refuses by name with
 test("anno_read_region serves both views, and a span outside the image is reported unanswerable rather than served short", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
 
       const hex = await runAnnoTool("anno_read_region", { image, start_address: "$c000", end_address: "$c002", view: "hexdump" });
@@ -1282,7 +1279,7 @@ const OUT_OF_IMAGE = 0x9000;
 test("CR-01 / MCP-04: both read verbs return the SAME {available:false} verdict for an out-of-image address", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "tiny.prg", TINY_PRG);
 
       const disasm = await runAnnoTool("anno_disassemble", { image, address: OUT_OF_IMAGE });
@@ -1305,7 +1302,7 @@ test("CR-01 / MCP-04: both read verbs return the SAME {available:false} verdict 
 test("CR-01: the incoherent range is STRUCTURALLY absent -- an out-of-image disassemble carries no end_address and no instructions", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "tiny.prg", TINY_PRG);
       const disasm = await runAnnoTool("anno_disassemble", { image, address: OUT_OF_IMAGE });
       assert.equal(disasm.isError, false, disasm.content[0]!.text);
@@ -1325,7 +1322,7 @@ test("CR-01: the incoherent range is STRUCTURALLY absent -- an out-of-image disa
 test("CR-01: an inverted span is refused IDENTICALLY by both verbs, and the one no validator can catch is caught by sliceSpan()", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "tiny.prg", TINY_PRG);
 
       // FIRST LAYER. When the caller NAMES an end below the start, the shared
@@ -1372,7 +1369,7 @@ test("CR-01: sliceSpan()'s guard names all THREE cases, so the inverted-span con
 test("CR-01 over-refusal control: a span WHOLLY INSIDE the image still succeeds on both verbs, with a non-zero instruction count", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "tiny.prg", TINY_PRG);
 
       // Without this control a fix that refused EVERYTHING would pass the
@@ -1397,7 +1394,7 @@ test("CR-01 over-refusal control: a span WHOLLY INSIDE the image still succeeds 
 test("CR-01: an OMITTED end_address still defaults to the image's own bound -- removing the clamp must not remove the ergonomics", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "tiny.prg", TINY_PRG);
       const last = 0x1003;
 
@@ -1414,7 +1411,7 @@ test("CR-01: an OMITTED end_address still defaults to the image's own bound -- r
 test("anno_get_binary_info reports the load address, origin and lengths for a real PRG, and refuses a non-PRG by name", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
       const info = await runAnnoTool("anno_get_binary_info", { image });
       assert.equal(info.isError, false, info.content[0]!.text);
@@ -1485,7 +1482,7 @@ test("anno_search: max_results is REQUIRED with no default, and a capped answer 
       setLabel(handle, { address: 0xc010, name: "loop_two", kind: "User" });
       setLabel(handle, { address: 0xc020, name: "loop_three", kind: "User" });
     },
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
 
       const noCeiling = await runAnnoTool("anno_search", { image, query: "loop" });
@@ -1508,7 +1505,7 @@ test("anno_search naming a corpus this surface does not have answers {available:
     (handle) => {
       setLabel(handle, { address: 0xc000, name: "loop_one", kind: "User" });
     },
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
       const result = await runAnnoTool("anno_search", { image, query: "loop", max_results: 10, search_strings: true });
       assert.equal(result.isError, false, "the request was WELL-FORMED -- an error here teaches an agent to retry what will never work");
@@ -1527,7 +1524,7 @@ test("anno_get_address_details returns the composition with its composed_from di
     (handle) => {
       setLabel(handle, { address: 0xc010, name: "target", kind: "User" });
     },
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
       const typed = await runAnnoTool("anno_set_data_type", { image, start_address: "$c000", end_address: "$c006", data_type: "code" });
       assert.equal(typed.isError, false, typed.content[0]!.text);
@@ -1560,7 +1557,7 @@ test("anno_get_address_details returns the composition with its composed_from di
 test("an image outside the workspace root, or absent, is refused by name -- the same containment the store path gets", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const outside = join(dirname(ws), "elsewhere.prg");
       const escaped = await runAnnoTool("anno_get_binary_info", { image: outside });
       assert.equal(escaped.isError, true);
@@ -1699,7 +1696,7 @@ test("nesting deeper than the declared cap is refused BY NAME rather than walked
 test("NOTHING executes when pre-validation refuses: the revision is unchanged and no partial write is visible", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const seeded = await runAnnoTool("anno_set_label_name", { address: "$c000", name: "first_label" });
       assert.equal(seeded.isError, false, seeded.content[0]!.text);
       const revisionBefore = (await body(seeded)).revision as number;
@@ -1728,7 +1725,7 @@ test("NOTHING executes when pre-validation refuses: the revision is unchanged an
 test("execution runs to COMPLETION: a three-call batch whose middle call fails returns three per-item entries, in order", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       // The middle call is well-FORMED (so pre-validation passes) but fails at
       // EXECUTION: the name is already bound to a different address, which the
       // store refuses rather than rebinding.
@@ -1770,7 +1767,7 @@ test("execution runs to COMPLETION: a three-call batch whose middle call fails r
 test("a batch names its store ONCE and every inner call inherits it -- an inner store is overridden, never honoured", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const elsewhere = join(dirname(ws), "elsewhere.annostore");
       const result = await runAnnoTool("anno_batch_execute", {
         calls: [{ name: "anno_set_label_name", arguments: { store: elsewhere, address: "$c000", name: "inherited" } }],
@@ -1807,7 +1804,7 @@ test("a batch names its store ONCE and every inner call inherits it -- an inner 
 test("CR-06 / MCP-04 positive control: a depth-1 nested batch relying on the DOCUMENTED store inheritance validates AND executes", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       // The inner batch names NO store -- exactly what the description tells a
       // caller to write: "the store is named ONCE at the top level and every
       // inner call inherits it".
@@ -1835,7 +1832,7 @@ test("CR-06 / MCP-04 positive control: a depth-1 nested batch relying on the DOC
 test("CR-06 negative control: a chain past the cap is still refused BY NAME, and nothing executes", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       // Depth is DERIVED from the cap, never hard-coded: raising the cap must
       // not silently turn this negative control into a passing positive one.
       // The top-level payload is depth 0, so `ANNO_MAX_BATCH_DEPTH + 1` nested
@@ -1863,7 +1860,7 @@ test("CR-06 negative control: a chain past the cap is still refused BY NAME, and
 test("CR-06: an inner store is overridden by the batch's own in BOTH phases, at depth", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const elsewhere = join(dirname(ws), "elsewhere.annostore");
       // BOTH the nested batch AND its leaf call name a different store. If
       // phase one validated against `elsewhere` while phase two executed
@@ -1896,7 +1893,7 @@ test("CR-06: an inner store is overridden by the batch's own in BOTH phases, at 
 test("CR-06: the recursive allow-list still bites -- an uncurated name TWO levels down refuses the WHOLE batch by index", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const refused = await runAnnoTool("anno_batch_execute", {
         calls: [
           { name: "anno_set_label_name", arguments: { address: "$c100", name: "would_have_landed" } },
@@ -1967,7 +1964,7 @@ function writeGhidraTransfer(ws: string, fileName = "export.txt"): string {
 test("WR-01: anno_import_ghidra_export succeeds through runAnnoTool(), reporting the full ImportCounts shape including constWrites (CR-01)", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const transfer = writeGhidraTransfer(ws);
       const result = await runAnnoTool("anno_import_ghidra_export", { export_path: transfer });
       assert.equal(result.isError, false, result.content[0]?.text);
@@ -2035,7 +2032,7 @@ test("WR-01: anno_join_memmap succeeds through runAnnoTool(), reporting the full
     (handle) => {
       putXref(handle, { fromAddress: 0x0815, toAddress: 0xd020, accessKind: "WRITE" });
     },
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
 
       const unconstrained = await runAnnoTool("anno_join_memmap", { image });
@@ -2062,7 +2059,7 @@ test("WR-01: anno_join_memmap's const_writes argument reaches runMemmapJoin() th
     (handle) => {
       putXref(handle, { fromAddress: 0x0815, toAddress: 0xd020, accessKind: "WRITE" });
     },
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
       const constrained = await runAnnoTool("anno_join_memmap", {
         image,
@@ -2091,7 +2088,7 @@ test("WR-01: anno_join_memmap's const_writes argument reaches runMemmapJoin() th
 test("WR-01: anno_join_memmap refuses a malformed const_writes element by name, through runAnnoTool()", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
       const result = await runAnnoTool("anno_join_memmap", {
         image,
@@ -2129,7 +2126,7 @@ test("WR-01: anno_join_memmap refuses a stale base_revision through runAnnoTool(
 test("WR-01: anno_join_memmap's loadImage() error paths -- a missing image and a non-image file -- are reached and named through runAnnoTool()", async () => {
   await withStore(
     () => {},
-    async (ws, store) => {
+    async (ws, _store) => {
       const missing = await runAnnoTool("anno_join_memmap", { image: join(ws, "not-here.prg") });
       assert.equal(missing.isError, true);
       assert.match(missing.content[0]!.text, /\[AnnoStorePathError\]/);
@@ -2700,7 +2697,7 @@ test("anno_evid_disagreements: an observation inside a code-classified block is 
     (handle) => {
       setDataType(handle, { start: 0x5000, endInclusive: 0x5000, dataType: "code" });
     },
-    async (ws, store) => {
+    async (_ws, _store) => {
       const ingestResult = await runAnnoTool("anno_evid_ingest", {
         memmap_text: memmapReplyText([{ address: 0x5000, ram: "--x" }]),
         image_sha256: VALID_SHA,
@@ -2724,7 +2721,7 @@ test("anno_evid_disagreements: max_results is OPTIONAL (unlike every other list-
     (handle) => {
       setDataType(handle, { start: 0x6000, endInclusive: 0x6001, dataType: "byte" });
     },
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const ingestResult = await runAnnoTool("anno_evid_ingest", {
         memmap_text: memmapReplyText([
           { address: 0x6000, ram: "--x" },
@@ -2756,7 +2753,7 @@ test("anno_evid_disagreements: max_results is OPTIONAL (unlike every other list-
 test("anno_evid_disagreements: a run-identity filter requires image_sha256, argv_digest AND seed together -- a partial identity refuses", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const result = await runAnnoTool("anno_evid_disagreements", { image_sha256: VALID_SHA });
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /image_sha256.*argv_digest.*seed together|argv_digest.*seed/i);
@@ -2767,7 +2764,7 @@ test("anno_evid_disagreements: a run-identity filter requires image_sha256, argv
 test("anno_evid_runs: reports every run identity's observation count beside a denominator, never a percentage", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const a = await runAnnoTool("anno_evid_ingest", {
         memmap_text: memmapReplyText([{ address: 0x7000, ram: "--x" }]),
         image_sha256: VALID_SHA,
@@ -2830,7 +2827,7 @@ test("contract: every evidence row round-trips through the ONE run-identity path
   let walked = 0;
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       for (const runClass of RUN_CLASSES) {
         walked++;
         const argv = ["x64sc", `run-class-${runClass}`];
@@ -2919,7 +2916,7 @@ test("anno_evid_reset: reset of identity A leaves identity B's rows readable and
 test("anno_evid_reset: resetting a run identity holding no observations reports changed:false and observationsRemoved:0 -- not an error", async () => {
   await withStore(
     () => {},
-    async (_ws, store) => {
+    async (_ws, _store) => {
       const result = await runAnnoTool("anno_evid_reset", {
         image_sha256: VALID_SHA,
         argv: ["x64sc", "never-ingested"],

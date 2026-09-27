@@ -29,13 +29,11 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { dialBrokerEndpoint } from "../../src/mcp/vice/broker-endpoint.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_BROKER_ARTIFACT = join(VICE_DIR, "resources", "vice-broker.mjs");
 
 /** Allocates a free TCP port by binding to 127.0.0.1 port 0, reading back

@@ -17,8 +17,7 @@ import { connect, createServer, type AddressInfo } from "node:net";
 import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import type { NetworkInterfaceInfo } from "node:os";
 
@@ -61,7 +60,6 @@ import { build } from "../../src/mcp/vice/build.ts";
 import { createBrokerState, type BrokerState, type InstanceRecord } from "../../src/mcp/vice/broker-state.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(VICE_DIR, "resources", "vice-broker.mjs");
 
 // Plan 64-08 (G-64-1 gap closure, Task 2): the SAME "build first, import the
@@ -1652,7 +1650,7 @@ test("three acquires arriving while a launch is in flight are all present in the
   let inFlight = true;
   let calls = 0;
   const { listener } = await startTestListener({
-    onAcquire: async (id) => {
+    onAcquire: async (_id) => {
       calls++;
       if (inFlight) return { ok: false, reason: "launch_in_flight" };
       return { ok: true, grant: { port: 6600, url: `http://127.0.0.1:6600/mcp` } };
@@ -2296,7 +2294,7 @@ async function startProfileRecordingListener(): Promise<{
 }> {
   const received: Array<LaunchProfile | undefined> = [];
   const { listener } = await startTestListener({
-    onAcquire: async (id: string, profile?: LaunchProfile) => {
+    onAcquire: async (_id: string, profile?: LaunchProfile) => {
       received.push(profile);
       return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } } as AcquireOutcome;
     },

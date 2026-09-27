@@ -272,7 +272,6 @@ test("diffRanges: a differing byte inside a release's loader_ranges is classifie
     ],
     { gapTolerance: 0 }
   );
-  const hit = result.ranges.find((r) => r.start <= 100 && r.end >= 100 && r.start !== 0);
   const patchRange = result.ranges.find((r) => r.verdict === "CRACKER-PATCH");
   assert.ok(patchRange, "expected at least one CRACKER-PATCH range");
   assert.ok(patchRange.evidence.includes("loader"));

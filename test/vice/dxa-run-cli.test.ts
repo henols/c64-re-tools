@@ -9,14 +9,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 import { parseDxaCli, runDxaCli, type DxaRunFn } from "../../src/mcp/vice/dxa-run.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** A 3-byte body at $0801 (`lda #$00`, `rts`) and the dump listing dxa
  * would print for it. */

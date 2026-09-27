@@ -7,8 +7,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { render, renderLine } from "../../src/mcp/vice/disasm-renderer.mts";
 import { decode } from "../../src/mcp/vice/disasm-decoder.mts";
@@ -16,7 +15,6 @@ import { OPCODES, type AddressingMode } from "../../src/mcp/vice/disasm-opcodes.
 import { LENGTH_FOR_MODE } from "./disasm-mode-lengths.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Hex helper shared across assertions -- lowercase, `$`-prefixed, 4 digits. */
 function hex4(value: number): string {

@@ -33,7 +33,7 @@
 // `expectedBytes`; the oracle never sees the manifest, and the manifest never
 // sees the assembler's output. Two independent things must agree for this to
 // pass: the manifest's own prediction, and ACME's own assembled bytes.
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -157,7 +157,6 @@ import {
   assertMaxResults,
   assertOptionalMaxResults,
   assertBaseRevisionArg,
-  ANNO_TOOL_DEFINITIONS,
   isEnumUsageClear,
   assertConstWritesArg,
   assertGraphicsMapIndexArg,

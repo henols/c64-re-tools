@@ -126,8 +126,7 @@
 // expected, user-facing failure (missing file, unreadable store, refused
 // overwrite): each of those produces a single actionable line instead.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, join, sep } from "node:path";
 
 import { compareRenderedMemoryMap } from "./anno-memmap-check.mts";
 // The tree writer. `acme-verify.ts` -- the module that DOES spawn ACME -- is
@@ -151,14 +150,8 @@ import type { AnnoReportName } from "./anno-reports.mts";
 import type {
   DecompCompletenessReport,
   DecompExecutionManifest,
-  DecompDisagreementInput,
-  DisagreementResolutionCensus,
-  EntryPointRow,
-  RangeProvenanceRow,
-  ReferencedAddressesCensus,
 } from "./anno-reports.mts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** What a verb runs its call through, and the workspace it runs in. The
  * root is read only when a verb needs it, so a verb refused at parsing never
@@ -1130,33 +1123,6 @@ function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
     }
   }
   return { positional, out, outMissingValue, ledger, ledgerMissingValue, force, unknownOption };
-}
-
-/**
- * The destination `export-asm` writes to when the caller names none: the
- * IMAGE's basename STEM plus a fixed, extension-free suffix, in the STORE's
- * own directory.
- *
- * The store's directory rather than the image's, deliberately and for the
- * reason `render-memmap`'s `memory-map.md` default already gives: the output
- * is a GENERATED VIEW of the annotations, so it belongs beside the artefact it
- * was generated from. The image is an input this verb only reads.
- *
- * NO EXTENSION, on purpose (`--out` was promoted from a
- * FILE to a DIRECTORY). This names a directory the tree is written
- * INTO, never a file -- a name ending in `.a` would read as a file to every
- * human and every tool that inspects it, and the tree this verb writes is
- * not one. The stem is derived the same way it always was (whatever
- * extension the image happens to carry is stripped, so `game.prg` and
- * `game.raw` derive the same default), the suffix is fixed text this
- * function owns rather than anything read off the image, and a name with no
- * extension at all keeps its whole basename.
- */
-function defaultExportAsmOut(imagePath: string, storeDir: string): string {
-  const base = basename(imagePath);
-  const ext = extname(base);
-  const stem = ext === "" ? base : base.slice(0, -ext.length);
-  return join(storeDir, `${stem}-src`);
 }
 
 /**

@@ -6,13 +6,10 @@
 // Every test here is offline -- no broker process, no emulator.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createServer, connect as netConnect, type Socket, type AddressInfo } from "node:net";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
-import { EventEmitter } from "node:events";
 
 import {
   ensureStockSession,
@@ -23,26 +20,19 @@ import {
   grantEpochReader,
   type StockSessionDeps,
 } from "../../src/mcp/vice/stock-session.ts";
-import { STOCK_TOOLS, stockToolDefinitions, StockToolManifestMismatchError } from "../../src/mcp/vice/stock-tools.ts";
 import { callStockTool } from "./stock-call.ts";
 import { STUB_BROKER_CONTROL, makeLease, fakeSession } from "./stock-session-fixtures.ts";
-import type { ToolInfo } from "../../src/mcp/vice/vice-errors.mts";
 import type { DerivedPureHandler } from "../../src/mcp/vice/stock-handler.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { MachineRestartedError } from "../../src/mcp/vice/vice-errors.mts";
 import { MonitorOwnershipError } from "../../src/mcp/vice/vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "../../src/mcp/vice/vice-broker-client.ts";
 import { stockConnect, type StockConnectSession, type StockConnectOptions, type DialMonitorSocketFn } from "../../src/mcp/vice/stock-connect.ts";
-import { resetRunStateTrackersForTest, attachRunStateTracker } from "../../src/mcp/vice/stock-runstate.ts";
-import type { StockSessionHandler, StockToolResult } from "../../src/mcp/vice/stock-handler.ts";
-import { checkAgainstSchema } from "./stock-schema-check.ts";
-import { CommandType } from "../../src/mcp/vice/stock-protocol.ts";
+import { resetRunStateTrackersForTest } from "../../src/mcp/vice/stock-runstate.ts";
+import type { StockSessionHandler } from "../../src/mcp/vice/stock-handler.ts";
 import { resetBankCatalogsForTest } from "../../src/mcp/vice/stock-memory.ts";
 import { resetRegisterCatalogsForTest } from "../../src/mcp/vice/stock-registers.ts";
-import { resetSymbolStoreForTest } from "../../src/mcp/vice/stock-symbols.ts";
-import { CURATED_ANNO_TOOLS } from "../../src/mcp/vice/anno-tools.mts";
-import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockForTests } from "../../src/mcp/vice/channel-lock.ts";
-import { TEXT_COMMAND_ALLOWLIST } from "../../src/mcp/vice/text-protocol.ts";
+import { currentChannelLockHolder, resetChannelLockForTests } from "../../src/mcp/vice/channel-lock.ts";
 import {
   resetCheckpointStateForTest,
   handleCheckpointSetCondition,
@@ -50,7 +40,6 @@ import {
   _conditionRegistryTargetsForTest,
 } from "../../src/mcp/vice/stock-checkpoints.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 beforeEach(() => {
   clearHeldStockSession();

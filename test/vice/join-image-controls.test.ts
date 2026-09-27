@@ -48,8 +48,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { closeStore, listComments, openStore, putXref } from "../../src/mcp/vice/anno-store.mts";
 import { runMemmapJoin } from "../../src/mcp/vice/anno-join.mts";
@@ -57,7 +56,6 @@ import { memmapDigest, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "../../
 import type { MemmapEntry, MemmapSelection } from "../../src/mcp/vice/memmap-lookup.mts";
 import { REPO_ROOT, VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_ANNO_JOIN_PATH = join(VICE_DIR, "anno-join.mts");
 const REAL_ANNO_STORE_PATH = join(VICE_DIR, "anno-store.mts");
 const REAL_MEMMAP_LOOKUP_PATH = join(VICE_DIR, "memmap-lookup.mts");

@@ -87,7 +87,7 @@
 // comments, mid-instruction inline labels and immediate-operand enum
 // substitution.
 import { readFileSync } from "node:fs";
-import { extname, join } from "node:path";
+import { extname } from "node:path";
 
 import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage, listExcludedRanges, listScopes } from "./anno-store.mts";
 import type { AnnoStoreHandle } from "./anno-store.mts";

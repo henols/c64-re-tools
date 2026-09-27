@@ -17,7 +17,7 @@ import { connect, createServer, type Socket } from "node:net";
 import { spawn } from "node:child_process";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
-import { runHostToolOverEndpoint, walkUploadTree, HOST_TOOL_STAGE_LINE_MAX_BYTES } from "../../src/mcp/vice/host-tool-endpoint.mts";
+import { runHostToolOverEndpoint, walkUploadTree } from "../../src/mcp/vice/host-tool-endpoint.mts";
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 import { dialHostToolSession, dialFileTransfer, type HostToolSession } from "../../src/mcp/vice/broker-endpoint.mts";
 import { transferFileOverEndpoint } from "../../src/mcp/vice/transfer-client.mts";

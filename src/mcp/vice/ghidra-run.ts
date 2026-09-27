@@ -39,7 +39,7 @@
 //     required; a missing one is refused by name.
 //   - Never print anything to stdout from the CLI except the one JSON line.
 import { readFileSync } from "node:fs";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { dirname, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 

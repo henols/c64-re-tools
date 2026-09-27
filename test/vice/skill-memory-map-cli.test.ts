@@ -31,7 +31,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 // driver.ts is a typed skill script, checked by this package's typecheck.
 import { lookup } from "../../skills/c64-memory-map/scripts/driver.ts";
@@ -48,7 +48,6 @@ interface MemMapEntry {
   reg?: string | null;
 }
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = join(REPO_ROOT, "skills", "c64-memory-map", "scripts", "driver.ts");
 const MEMMAP_JSON_PATH = join(REPO_ROOT, "skills", "c64-memory-map", "memmap.json");
 

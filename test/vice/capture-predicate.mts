@@ -101,7 +101,6 @@
 //     that could reach the predicate -- would let a capture participate in
 //     certifying its own stop. `capture-seam.test.ts` bars it by SHAPE in both
 //     directions, which is `CAP-03`.
-import { createHash } from "node:crypto";
 
 /** A flat capture is exactly this long, always. Named rather than inlined
  * because every refusal below quotes it back to the caller. */

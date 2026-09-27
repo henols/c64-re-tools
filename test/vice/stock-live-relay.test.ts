@@ -64,8 +64,7 @@ import assert from "node:assert/strict";
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { connect, createServer } from "node:net";
 
 import { build } from "../../src/mcp/vice/build.ts";
@@ -100,7 +99,6 @@ function isJamEvent(item: ParsedResponse): item is ParsedJamEvent {
   return item.type === "jam";
 }
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(VICE_DIR, "resources", "vice-broker.mjs");
 
 // ---------------------------------------------------------------------------

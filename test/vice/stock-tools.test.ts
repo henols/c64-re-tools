@@ -16,37 +16,29 @@ import { dirname } from "node:path";
 import { EventEmitter } from "node:events";
 
 import {
-  ensureStockSession,
   clearHeldStockSession,
-  stockDisconnect,
-  runBinary,
-  runPure,
   type StockSessionDeps,
 } from "../../src/mcp/vice/stock-session.ts";
 import { STOCK_TOOLS, stockToolDefinitions, StockToolManifestMismatchError } from "../../src/mcp/vice/stock-tools.ts";
 import { callStockTool } from "./stock-call.ts";
 import { STUB_BROKER_CONTROL, makeLease, fakeSession } from "./stock-session-fixtures.ts";
 import type { ToolInfo } from "../../src/mcp/vice/vice-errors.mts";
-import type { DerivedPureHandler } from "../../src/mcp/vice/stock-handler.ts";
-import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { MachineRestartedError } from "../../src/mcp/vice/vice-errors.mts";
 import { MonitorOwnershipError } from "../../src/mcp/vice/vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "../../src/mcp/vice/vice-broker-client.ts";
-import { stockConnect, type StockConnectSession, type StockConnectOptions, type DialMonitorSocketFn } from "../../src/mcp/vice/stock-connect.ts";
+import { type StockConnectSession, type StockConnectOptions, type DialMonitorSocketFn } from "../../src/mcp/vice/stock-connect.ts";
 import { resetRunStateTrackersForTest, attachRunStateTracker } from "../../src/mcp/vice/stock-runstate.ts";
-import type { StockSessionHandler, StockToolResult } from "../../src/mcp/vice/stock-handler.ts";
+import type { StockToolResult } from "../../src/mcp/vice/stock-handler.ts";
 import { checkAgainstSchema } from "./stock-schema-check.ts";
 import { CommandType } from "../../src/mcp/vice/stock-protocol.ts";
 import { resetBankCatalogsForTest } from "../../src/mcp/vice/stock-memory.ts";
 import { resetRegisterCatalogsForTest } from "../../src/mcp/vice/stock-registers.ts";
 import { resetSymbolStoreForTest } from "../../src/mcp/vice/stock-symbols.ts";
 import { CURATED_ANNO_TOOLS } from "../../src/mcp/vice/anno-tools.mts";
-import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockForTests } from "../../src/mcp/vice/channel-lock.ts";
+import { resetChannelLockForTests } from "../../src/mcp/vice/channel-lock.ts";
 import { TEXT_COMMAND_ALLOWLIST } from "../../src/mcp/vice/text-protocol.ts";
 import {
   resetCheckpointStateForTest,
-  handleCheckpointSetCondition,
-  conditionTextFor,
   _conditionRegistryTargetsForTest,
 } from "../../src/mcp/vice/stock-checkpoints.ts";
 import { VICE_DIR } from "./paths.ts";
@@ -359,15 +351,6 @@ beforeEach(() => {
 const THROWING_ENSURE_LEASE: StockSessionDeps["ensureLease"] = async () => {
   throw new Error("ensureLease must never be called for this test");
 };
-
-/** Adapters that turn a handler into a (args, deps) runner, for tests that
- * exercise the two runners through a handler of their own. */
-function asBinary(toolName: string, handler: StockSessionHandler) {
-  return (args: Record<string, unknown>, deps: StockSessionDeps) => runBinary(toolName, handler, args, deps);
-}
-function asPure(toolName: string, handler: DerivedPureHandler) {
-  return (args: Record<string, unknown>, deps: StockSessionDeps) => runPure(toolName, handler, args, deps);
-}
 
 // ---------------------------------------------------------------------------
 // Task 1 (plan 02-10): vice_ping and the handshake-error wording.

@@ -75,11 +75,8 @@
 //     vendored path is fixed by design (host-tool.mts's own header states
 //     this rule); the require-variable is the only environment input this
 //     gate takes.
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Reached through the COMPILED artifact, never the unbuilt `.mts` source
 // directly: `host-tool.mts` value-imports two sibling host-bound modules

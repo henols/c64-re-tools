@@ -81,8 +81,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { buildPaintIndex, NO_ROW, resolveAt } from "../../src/mcp/vice/anno-index.mts";
 import {
@@ -108,7 +107,6 @@ import {
 } from "../../src/mcp/vice/anno-store.mts";
 import { ViceError } from "../../src/mcp/vice/vice-errors.mts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** One temp directory per test, removed unconditionally. */
 function inTempDir(body: (dir: string) => void): void {

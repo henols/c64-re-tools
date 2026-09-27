@@ -11,8 +11,7 @@ import { createServer, connect as netConnect, type Server, type Socket } from "n
 import type { AddressInfo } from "node:net";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import {
   stockConnect as stockConnectReal,
@@ -1399,7 +1398,6 @@ test("stockConnect: publish lands late -- the production upload resolves only on
 // finding named.
 // ---------------------------------------------------------------------------
 
-const STOCK_CONNECT_TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const STOCK_CONNECT_SOURCE = readFileSync(join(VICE_DIR, "stock-connect.ts"), "utf8");
 
 test('02-REVIEW.md IN-05 pin: every thrown message naming a function via a where: "stock-connect.ts:<fn>" field is prefixed with that SAME function\'s name', () => {

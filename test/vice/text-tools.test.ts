@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 

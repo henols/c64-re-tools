@@ -19,13 +19,10 @@
 // `block-class.mts` will not be caught by this suite.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
 
 import { blockClassAt, type BlockClass, type BlockEntry } from "../../src/mcp/vice/block-class.mts";
 import { DATA_TYPES } from "../../src/mcp/vice/anno-types.mts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The EXTERNAL ANALYSER's spellings that the production mapping recognises by
  * name, plus one it deliberately does not. This is the capitalised vocabulary

@@ -20,12 +20,10 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { HOST_BOUND_ARTIFACTS } from "../../src/mcp/vice/build.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Strips `//` and block comments, leaving string and template literals
  * untouched -- the same single-pass scanner `anno-cli-path-consumers.test.ts`

@@ -6,11 +6,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const RESOURCES_DIR = join(VICE_DIR, "resources");
 
 /** Extensions a `tsc` build can ever emit under this project's tsconfig --

@@ -28,8 +28,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 
 import { build, HOST_BOUND_ARTIFACTS } from "../../src/mcp/vice/build.ts";
 // Type-only: erased at compile time, so importing it directly from the
@@ -41,7 +40,6 @@ import { build, HOST_BOUND_ARTIFACTS } from "../../src/mcp/vice/build.ts";
 import type { HostToolId } from "../../src/mcp/vice/host-tool.mts";
 import { REPO_ROOT, VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = resolve(REPO_ROOT, "skills");
 
 // Build BEFORE importing the artifact -- host-tool.test.ts's own idiom --

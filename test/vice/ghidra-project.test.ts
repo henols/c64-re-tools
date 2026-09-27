@@ -16,10 +16,9 @@
 // case here run to completion with NO Ghidra installation present.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync, readdirSync, realpathSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   DOT_SEGMENT_REFUSAL,
@@ -30,7 +29,6 @@ import {
 } from "../../src/mcp/vice/ghidra-project.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T> | T): Promise<T> {
   const dir = mkdtempSync(join(tmpdir(), "ghidra-project-test-"));

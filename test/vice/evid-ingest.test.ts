@@ -18,7 +18,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
@@ -26,7 +25,6 @@ import { parseAccessMap, type AccessMap, type AccessMapEntry, type AccessFlags }
 import { argvDigest, execObservationsFrom, runIdentityFrom, ingestAccessMap, type ExecObservation } from "../../src/mcp/vice/evid-ingest.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = fileURLToPath(import.meta.url);
 const OWN_MODULE = join(VICE_DIR, "evid-ingest.mts");
 
 const NO_ACCESS: AccessFlags = { read: false, write: false, execute: false };

@@ -17,7 +17,7 @@ import { memmapDigest, PROVENANCE_TOKEN_PREFIX } from "../../src/mcp/vice/memmap
 import type { MemmapEntry, MemmapSelection } from "../../src/mcp/vice/memmap-lookup.mts";
 // Phase 37, plan 37-08 (AUTO-07): the disassembler feedback -- the join hands
 // rows to these ALREADY-BUILT emitters, writes no second one (D-37-32).
-import { emitDataBlocks, emitLabels } from "../../src/mcp/vice/dxa-blocks.ts";
+import { emitDataBlocks } from "../../src/mcp/vice/dxa-blocks.ts";
 import type { KnownDataRow } from "../../src/mcp/vice/dxa-blocks.ts";
 import type { GraphicsConstWriteFact } from "../../src/mcp/vice/anno-graphics.mts";
 import { BANK_SELECT_ADDRESS, MEMORY_CONTROL_ADDRESS, CONTROL_REGISTER_1_ADDRESS } from "../../src/mcp/vice/anno-graphics.mts";

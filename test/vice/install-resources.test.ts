@@ -24,7 +24,6 @@ import {
   installTargetDir,
   resourceEntries,
   installResources,
-  ensureResourcesInstalled,
   hostLaunchInstructions,
   DEPLOY_MANIFEST_NAME,
   deployManifestPath,

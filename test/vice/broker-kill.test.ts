@@ -15,8 +15,7 @@ import { spawn as realSpawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import {
   verifiedKill,
@@ -27,19 +26,16 @@ import {
   reapOrphanedConfigScratch,
   sweepOrphanedStaging,
   _HANDLED_SIGNALS,
-  type KillStage,
   type VerifiedKillDeps,
   type ShutdownDeps,
   type ReapOrphanedInstancesOptions,
-  type ReapOrphanedConfigScratchOptions,
 } from "../../src/mcp/vice/broker-kill.mts";
-import { createBrokerState, _snapshotState, type BrokerState, type InstanceRecord } from "../../src/mcp/vice/broker-state.mts";
+import { createBrokerState, _snapshotState, type InstanceRecord } from "../../src/mcp/vice/broker-state.mts";
 import { epochPathFor, nextEpochFor, writeEpochRecord, type EpochRecord } from "../../src/mcp/vice/broker-epoch.mts";
 import { build } from "../../src/mcp/vice/build.ts";
 import { dialControlSession, type BrokerControlSession } from "../../src/mcp/vice/vice-broker-client.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(VICE_DIR, "resources", "vice-broker.mjs");
 
 /** Poll `predicate` to a bounded deadline rather than sleeping a fixed

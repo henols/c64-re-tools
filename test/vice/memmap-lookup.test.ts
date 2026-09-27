@@ -6,14 +6,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { BANK_CONDITIONAL_RANGES, loadMemmap, MEMMAP_PATH, memmapDigest, selectMemmapEntry } from "../../src/mcp/vice/memmap-lookup.mts";
 import type { MemmapEntry } from "../../src/mcp/vice/memmap-lookup.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 test("MEMMAP_PATH resolves to a real, existing file", () => {
   assert.equal(existsSync(MEMMAP_PATH), true);

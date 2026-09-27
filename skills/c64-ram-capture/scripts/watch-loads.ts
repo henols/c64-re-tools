@@ -17,7 +17,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve, relative } from "node:path";
+import { join, resolve, relative } from "node:path";
 
 import type { Address, DumpEntry, LoaderRange, ReleaseEntry, WatchSentinel } from "../../c64-project/scripts/releases.ts";
 import { loadSibling, siblingOrRefuse } from "./sibling.ts";
@@ -145,7 +145,6 @@ export interface IdleGateResult {
   reasons: string[];
 }
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = projectRoot();
 const RECOVERY_DIR = dataRoot();
 

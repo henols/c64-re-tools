@@ -110,7 +110,6 @@ import {
 } from "../../src/mcp/vice/text-capability-probe.ts";
 import { REPO_ROOT, VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(VICE_DIR, "resources", "vice-broker.mjs");
 
 // ---------------------------------------------------------------------------

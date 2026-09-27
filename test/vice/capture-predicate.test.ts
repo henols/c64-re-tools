@@ -16,8 +16,6 @@
 // failure output about one kind of defect.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
 
 import {
   bin8,
@@ -35,7 +33,6 @@ import {
 import { compareStopIdentity, ORACLE_TERMS, StopOracleError } from "../../src/mcp/vice/stop-oracle.ts";
 import type { StopIdentity } from "../../src/mcp/vice/stop-oracle.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** A full-length synthetic capture, filled with a repeatable pattern rather
  * than zeros: an all-zero pair would compare equivalent for the wrong reason,

@@ -1253,7 +1253,7 @@ function assertApplyEnumUsageArgs(args: unknown, batchIndex?: number): void {
   assertBaseRevisionArg("anno_apply_enum_usage", args, batchIndex);
 }
 
-function assertSaveProjectArgs(args: unknown, batchIndex?: number): void {
+function assertSaveProjectArgs(_args: unknown, _batchIndex?: number): void {
 }
 
 function assertImportGhidraExportArgs(args: unknown, batchIndex?: number): void {
@@ -1426,7 +1426,7 @@ function assertEvidDisagreementsArgs(args: unknown, batchIndex?: number): void {
 
 /** `anno_evid_runs`'s own argument assertion (plan 43-06): just the
  * universal `store` argument, since this verb takes no other input. */
-function assertEvidRunsArgs(args: unknown, batchIndex?: number): void {
+function assertEvidRunsArgs(_args: unknown, _batchIndex?: number): void {
 }
 
 /** `anno_evid_reset`'s own argument assertion (plan 43-06), the SAME shape

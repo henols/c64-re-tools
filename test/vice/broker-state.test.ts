@@ -8,8 +8,6 @@
 // access.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   createBrokerState,
@@ -49,7 +47,6 @@ import {
 // that touches the build step.
 import { build } from "../../src/mcp/vice/build.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 function makeInstance(overrides: Partial<InstanceRecord> = {}): InstanceRecord {
   return {

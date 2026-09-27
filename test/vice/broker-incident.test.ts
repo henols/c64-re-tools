@@ -13,12 +13,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { build } from "../../src/mcp/vice/build.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_INCIDENT_ARTIFACT_URL = new URL("../../src/mcp/vice/resources/broker-incident.mjs", import.meta.url).href;
 
 interface BrokerIncidentModule {

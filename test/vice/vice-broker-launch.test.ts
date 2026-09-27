@@ -28,7 +28,6 @@ import { VICE_DIR } from "./paths.ts";
 const execFileP = promisify(execFile);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BROKER_ARTIFACT = join(VICE_DIR, "resources", "vice-broker.mjs");
 const LAUNCHER = join(VICE_DIR, "resources", "vice-launcher.sh");
 // Imported by a FRESH child process below, never by this test file itself
 // (this file's own header says it never imports a .mjs module -- a child

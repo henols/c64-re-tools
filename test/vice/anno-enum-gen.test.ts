@@ -40,8 +40,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import {
   assertLegalAcmeIdentifier,
@@ -54,7 +53,6 @@ import {
 import type { RegBitsTable } from "../../src/mcp/vice/anno-regbits-gen.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 test("registerKeyFor formats addresses as $XXXX (uppercase, 4-hex-digit)", () => {
   assert.equal(registerKeyFor(0xd011), "$D011");

@@ -58,8 +58,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import {
   reconcileObservedExecution,
@@ -70,7 +69,6 @@ import type { BlockClass, BlockClassifier, BlockEntry } from "../../src/mcp/vice
 import { DATA_TYPES, type EvidExecRow, type EvidSourceBank } from "../../src/mcp/vice/anno-types.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULE_PATH = join(VICE_DIR, "evid-reconcile.mts");
 
 // ---------------------------------------------------------------------------

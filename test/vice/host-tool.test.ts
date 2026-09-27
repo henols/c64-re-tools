@@ -23,29 +23,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync, symlinkSync, readdirSync, realpathSync, existsSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, basename, isAbsolute, resolve as resolvePath, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, dirname, basename, isAbsolute, resolve as resolvePath } from "node:path";
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 
-const execFileP = promisify(execFile);
 
 import { build } from "../../src/mcp/vice/build.ts";
-import { startControlListener, type StartControlListenerResult, type AcquireOutcome, type StatusInstanceEntry, type HostStateFields, type MonitorClaimOutcome, type MonitorReleaseOutcome } from "../../src/mcp/vice/broker-control.mts";
 // The CLIENT side of the endpoint route's cross-seam ordering, imported
 // from its own .mts source.
 import {
   runHostToolOverEndpoint,
   hostToolRequestTimeoutMs,
-  walkUploadTree,
   HOST_TOOL_FILE_INPUT_KEYS,
   HOST_TOOL_TREE_INPUT_KEYS,
   HOST_TOOL_OUTPUT_NAME_KEYS,
-  HOST_TOOL_STAGE_LINE_MAX_BYTES,
 } from "../../src/mcp/vice/host-tool-endpoint.mts";
 import { DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, type HostToolSession } from "../../src/mcp/vice/broker-endpoint.mts";
-import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
+import { assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { dxaSkipReasonFor, assertDxaRequiredIfEnvSet } from "./dxa-gate.ts";
 // FORKRM-01 (plan 52-06): resolvedBackend()'s own environment-variable
 // backend override was the ONLY path that bypassed its module-level memo --
@@ -72,10 +65,8 @@ import { storePathWithinWorkspace, AnnoStorePathError } from "../../src/mcp/vice
 import { toolsJsonPath } from "../../src/mcp/vice/tool-location.mts";
 import { REPO_ROOT, VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Reach ACME only through the shared seam -- never a second hand-rolled probe.
-const SKIP_REASON: string | false = acmeSkipReasonFor("host-tool.test.ts");
 
 test("ACME availability gate (mirrors skill-assembler-cli.test.ts's own gate) -- always runs, never skips", () => {
   assertAcmeRequiredIfEnvSet(assert);

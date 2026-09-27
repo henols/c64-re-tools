@@ -94,7 +94,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment, installedLanguageIds, GHIDRA_STOCK_6502_LANGUAGE_FILES, GHIDRA_IMPORT_ROUTES, importRouteBaseAddr, LANGUAGE_ID_PATTERN, LOADER_BASE_ADDR_PATTERN, RUN_ID_PATTERN, } from "./ghidra-project.mjs";
+import { resolveGhidraProject, buildAnalyzeHeadlessArgv, installedLanguageIds, GHIDRA_STOCK_6502_LANGUAGE_FILES, GHIDRA_IMPORT_ROUTES, importRouteBaseAddr, LANGUAGE_ID_PATTERN, LOADER_BASE_ADDR_PATTERN, RUN_ID_PATTERN, } from "./ghidra-project.mjs";
 // This module's SECOND sibling import. `resolvedBackend()` is the ONE
 // place that decides which x64sc build is on this host (backend-detect.mts's
 // own header) -- findSiblingBinary() below resolves c1541/petcat as siblings

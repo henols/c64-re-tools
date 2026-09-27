@@ -58,7 +58,6 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { repoRoot } from "../../src/mcp/vice/repo-root.ts";
 // Read-only import for test assertions only -- this test file does not
 // modify vice-broker-client.ts's own content; ACQUIRE_TIMEOUT_MS (the
 // control-plane client's own acquire deadline, replacing the retiring
@@ -1449,7 +1448,7 @@ async function startControlBroker(port: number, deps: StubBrokerDeps = {}) {
  * releases the connection. */
 async function acquireLeaseViaBroker(
   proxy: ProxyHandle,
-  dir: string,
+  _dir: string,
   targetPort: number,
   callId: number,
   controlPort: number,
@@ -1761,7 +1760,7 @@ test("a control connection already closed out from under the proxy: teardown doe
 test("C3 regression guard: initialize + tools/list alone write no request and no lease, ever", async () => {
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-c3-"));
   const { server, requests } = startStandInServer();
-  const port = await listen(server);
+  await listen(server);
   const proxy = startProxy({
     VICE_POOL_DIR: dir,
     VICE_EPOCH_FILE: join(dir, "epoch.json"),

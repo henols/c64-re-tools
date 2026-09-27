@@ -87,7 +87,7 @@
 // apparatus, `call()`/`callTool`, `serverInfo()`) is gone entirely: every
 // remaining tool dispatch in this file goes through stock-tools.ts, never
 // through a fork transport.
-import { activeInstance, useInstance, type ActiveInstance, type ToolInfo } from "./vice-errors.mts";
+import { activeInstance, useInstance, type ToolInfo } from "./vice-errors.mts";
 import { repoRoot, toolsDir } from "./repo-root.ts";
 // The single version-resolution seam (quick-260819-tsz, D-5) -- PROXY_VERSION
 // below is the only consumer in this file; see version.mts's own header for

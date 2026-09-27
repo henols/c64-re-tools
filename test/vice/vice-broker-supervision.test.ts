@@ -26,8 +26,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
 
@@ -37,7 +36,6 @@ import type { SuperviseChildDeps } from "../../src/mcp/vice/broker-launch.mts";
 import type { ViceBackend } from "../../src/mcp/vice/backend-detect.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT_URL = new URL("../../src/mcp/vice/resources/vice-broker.mjs", import.meta.url).href;
 const LAUNCH_ARTIFACT_URL = new URL("../../src/mcp/vice/resources/broker-launch.mjs", import.meta.url).href;
 

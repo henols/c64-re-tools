@@ -6,13 +6,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
 
 import { assembleImage, sha256Buffer, buildChipState, vicBank, screenBase, buildRangeManifest } from "../../../skills/c64-ram-capture/scripts/dump-artifacts.ts";
 import { allDumpArtifacts, skipUnless } from "./test-corpus.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 function chunkOf(address: number, byte: string, length: number) {
   // `byte` is a 2-hex-char octet (e.g. "00"); repeating it `length` times

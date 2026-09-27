@@ -50,7 +50,6 @@ import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { build } from "../../src/mcp/vice/build.ts";
 import { remedyTextsFor, resolveTool } from "../../src/mcp/vice/tool-location.mts";
@@ -68,7 +67,6 @@ function writeToolsJson(toolsDir: string, text: string): void {
  * committed `prerequisites.json` for the two exclusion tests below, which
  * read its `reason` fields directly rather than duplicating those
  * sentences as string literals in this file. */
-const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 
 function withScratch<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "tool-location-test-"));

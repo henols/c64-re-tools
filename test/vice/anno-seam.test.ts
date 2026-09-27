@@ -16,13 +16,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { AnnoStorePathError } from "../../src/mcp/vice/anno-types.mts";
 import { closeStore, openStore } from "../../src/mcp/vice/anno-store.mts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // 2. WR-25 -- `openStore`'s unconfined ESCAPE HATCH, pinned to its enumerated

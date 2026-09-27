@@ -52,7 +52,7 @@
 import { test, before, after } from "node:test";
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 import assert from "node:assert/strict";
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";

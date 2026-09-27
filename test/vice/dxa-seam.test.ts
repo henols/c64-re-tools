@@ -24,14 +24,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { build } from "../../src/mcp/vice/build.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Build BEFORE importing the artifact -- host-tool.test.ts's own idiom --
 // so this suite never reaches a stale committed resources/host-tool.mjs.

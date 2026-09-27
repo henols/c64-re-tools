@@ -73,8 +73,7 @@ import assert from "node:assert/strict";
 import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { createServer } from "node:net";
 
 import { build } from "../../src/mcp/vice/build.ts";
@@ -88,7 +87,6 @@ import { probeReady } from "../../src/mcp/vice/broker-launch.mts";
 import { TRACE_HITS_PER_SECOND_LIMIT } from "../../src/mcp/vice/stock-checkpoints.ts";
 import { REPO_ROOT, VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(VICE_DIR, "resources", "vice-broker.mjs");
 
 // ---------------------------------------------------------------------------

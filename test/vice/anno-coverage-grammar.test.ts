@@ -426,7 +426,6 @@ const PER_STRATUM = 2;
 const STRATA_PER_FAMILY = NOP_COUNTS.length * TERMINATOR_CHOICES.length;
 
 /** How many arrangements each family offers the global take. */
-const SAMPLES_PER_FAMILY = PER_STRATUM * STRATA_PER_FAMILY;
 
 /** At most this many indexed arrangements enter the corpus. A runtime bound on
  * a factorial enumeration, never a scope statement: the take that reaches it is

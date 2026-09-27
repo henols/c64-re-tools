@@ -18,7 +18,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve, relative } from "node:path";
+import { join, resolve, relative } from "node:path";
 
 import type { DumpEntry, LoaderRange, ProvenanceOffsetRecord, Registry, ReleaseEntry } from "../../c64-project/scripts/releases.ts";
 import { loadSibling, siblingOrRefuse } from "./sibling.ts";
@@ -29,7 +29,6 @@ const { projectRoot, dataRoot } = siblingOrRefuse(await loadSibling(() => import
 const { loadRegistry, registryPath, upsertRelease } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/releases.ts"), "releases.ts", "c64-provenance"), import.meta.url);
 const { addrNum, hex4 } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/address.ts"), "address.ts", "c64-provenance"), import.meta.url);
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = projectRoot();
 const RECOVERY_DIR = dataRoot();
 
@@ -211,7 +210,6 @@ export function enumerateManifests(registry: { releases: readonly Pick<ReleaseEn
 
 // ------------------------------------------------------------ anchorSearch
 
-const VOLATILE_START = 0x0000;
 const VOLATILE_END = 0x03ff; // CPU port regs, stack, KERNAL work area/BASIC input buffer -- see NOTES.md's own drift zones; biased away from as anchor source, never excluded from the diff itself.
 
 function isTrivialRun(buf: Buffer): boolean {

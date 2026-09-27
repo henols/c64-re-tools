@@ -8,8 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { connect, createServer, Socket, type Server } from "node:net";
 
 import { startControlListener, bindControlListener, HELLO_PROTOCOL_MAGIC as SERVER_HELLO_PROTOCOL_MAGIC } from "../../src/mcp/vice/broker-control.mts";
@@ -30,10 +29,9 @@ import {
   type DialFailure,
   type DialFileTransferResult,
 } from "../../src/mcp/vice/broker-endpoint.mts";
-import type { FileTransferOutcome, FileTransferRequest, StartControlListenerOptions } from "../../src/mcp/vice/broker-control.mts";
+import type { FileTransferOutcome, StartControlListenerOptions } from "../../src/mcp/vice/broker-control.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ENDPOINT_TS = join(VICE_DIR, "broker-endpoint.mts");
 const BROKER_CONTROL_MTS = join(VICE_DIR, "broker-control.mts");
 

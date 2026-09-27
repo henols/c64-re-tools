@@ -14,7 +14,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
@@ -36,7 +35,6 @@ import {
 } from "../../src/mcp/vice/text-capability-probe.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = fileURLToPath(import.meta.url);
 const OWN_MODULE = join(VICE_DIR, "text-capability-probe.ts");
 
 // ---------------------------------------------------------------------------

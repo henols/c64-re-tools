@@ -11,6 +11,8 @@
     "allowJs": false,
     "noEmit": true,
     "erasableSyntaxOnly": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "allowImportingTsExtensions": true,
     "types": [
       "node"

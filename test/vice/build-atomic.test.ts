@@ -33,12 +33,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { build, buildServer, HOST_BOUND_ARTIFACTS, resolveStagingParent, SERVER_DATA_FILES, SERVER_ROOTS } from "../../src/mcp/vice/build.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 test(
   "a complete file already at the target path is never mutated in place -- a reader holding it open still sees its original bytes, and the path gets a new inode",

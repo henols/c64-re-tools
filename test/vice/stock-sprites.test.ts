@@ -17,8 +17,6 @@ import { EventEmitter } from "node:events";
 import {
   handleSpriteGet,
   handleSpriteInspect,
-  vicBank,
-  vicBankBase,
   screenBase,
   spriteDataAddress,
   renderSpriteAscii,
@@ -93,8 +91,6 @@ function parseAnswer(result: { content: { text: string }[] }): Record<string, un
 
 const DD00 = 193; // 0xC1
 const D018 = 0x31; // 49
-const VIC_BANK = vicBank(DD00); // 2
-const VIC_BANK_BASE = vicBankBase(DD00); // 32768
 const SCREEN_BASE = screenBase(D018, DD00); // 35840
 const POINTER_TABLE_ADDR = SCREEN_BASE + 0x3f8; // 36856
 const POINTERS = [0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87];

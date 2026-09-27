@@ -34,7 +34,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 

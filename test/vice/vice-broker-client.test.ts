@@ -4,8 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { createServer, type Server, type Socket } from "node:net";
 
 import {
@@ -37,7 +36,6 @@ import type { MonitorChannel } from "../../src/mcp/vice/broker-state.mts";
 import * as viceBrokerClient from "../../src/mcp/vice/vice-broker-client.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Dials a session at a listener THIS file started on loopback. The only
  * candidate is 127.0.0.1, so no test here ever dials the bridge alias. */

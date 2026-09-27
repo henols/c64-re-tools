@@ -38,11 +38,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Strips `//` line comments and `/* ... *\/` block comments, returning the
  * comment-stripped source as ONE newline-joined string. The WR-02 fix

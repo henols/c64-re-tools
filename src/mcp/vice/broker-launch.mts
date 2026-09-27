@@ -25,7 +25,7 @@
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync, writeFileSync, renameSync } from "node:fs";
 import { join, basename, resolve as resolvePath } from "node:path";
-import { tmpdir, homedir } from "node:os";
+import { homedir } from "node:os";
 // TYPE-ONLY import, deliberately -- this module must be importable and
 // runnable directly (native Node type-stripping, no build step) by its own
 // unit tests, exactly like every other host-bound module's test file

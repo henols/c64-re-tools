@@ -32,17 +32,15 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-import { closeStore, openStore, setDataType } from "../../src/mcp/vice/anno-store.mts";
+import { setDataType } from "../../src/mcp/vice/anno-store.mts";
 import { ANNO_TOOL_DEFINITIONS } from "../../src/mcp/vice/anno-tools.mts";
 import { runAnnoTool as runAnnoToolWith } from "../../src/mcp/vice/anno-call-client.ts";
 import { openTestProject, type TestProject } from "./workspace-store-fixture.ts";
 import { FILE_STORE_PROJECT_ID } from "../../src/mcp/vice/anno-store.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const OWN_FILENAME = "evid-report-keys.test.ts";
 
 // ---------------------------------------------------------------------------

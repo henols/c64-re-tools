@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import { runAnnoTool } from "../../src/mcp/vice/anno-call-client.ts";
@@ -13,7 +12,6 @@ import { runAnnoCli } from "../../src/mcp/vice/anno-cli.ts";
 import { annoDbPath, workspaceStoreRunner } from "../../src/mcp/vice/anno-workspace-store.ts";
 import { closeAnnoDatabase, listLabels, openAnnoDatabase, projectStore, soleProjectStore } from "../../src/mcp/vice/anno-store.mts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 async function withWorkspace<T>(fn: (ws: string) => Promise<T>): Promise<T> {
   const ws = mkdtempSync(join(tmpdir(), "anno-workspace-store-"));

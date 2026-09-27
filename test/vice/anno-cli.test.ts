@@ -1445,7 +1445,7 @@ function makeSidecar(dir: string, name = "sidecar.json"): string {
 test("CR-02 (A): render-memmap --out outside the workspace root is refused by the ONE seam, and creates nothing there", async () => {
   await withWorkspaceTempDir(async (ws) => {
     await withTempDir(async (outside) => {
-      const storePath = makeRenderableStore(ws);
+      makeRenderableStore(ws);
       const provenancePath = makeSidecar(ws);
       const escaped = join(outside, "memory-map.md");
       const { result: code, stdout, stderr } = await withCapturedConsole(() =>
@@ -1462,7 +1462,7 @@ test("CR-02 (A): render-memmap --out outside the workspace root is refused by th
 test("CR-03 (B): render-memmap --provenance outside the workspace root is refused, and the refusal contains NONE of that file's bytes", async () => {
   await withWorkspaceTempDir(async (ws) => {
     await withTempDir(async (outside) => {
-      const storePath = makeRenderableStore(ws);
+      makeRenderableStore(ws);
       // THE TOKEN IS EXACTLY TEN CHARACTERS, AND THAT IS LOAD-BEARING.
       // Node truncates its own JSON parse-error snippet at ten characters
       // (`Unexpected token 'T', "TOKEN-ZZQQ"... is not valid JSON` -- the
@@ -1489,7 +1489,7 @@ test("CR-03 (B): render-memmap --provenance outside the workspace root is refuse
 
 test("CR-02/WR-08 (C): render-memmap refuses to overwrite an existing in-workspace --out without --force, leaving its bytes untouched", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const storePath = makeRenderableStore(ws);
+    makeRenderableStore(ws);
     const provenancePath = makeSidecar(ws);
     const outPath = join(ws, "memory-map.md");
     const original = "ORIGINAL-CONTENTS-DO-NOT-DESTROY\n";
@@ -1507,7 +1507,7 @@ test("CR-02/WR-08 (C): render-memmap refuses to overwrite an existing in-workspa
 
 test("CR-02/WR-08 (D, over-refusal control): render-memmap --force DOES overwrite -- so C is not satisfied by a verb that can never write", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const storePath = makeRenderableStore(ws);
+    makeRenderableStore(ws);
     const provenancePath = makeSidecar(ws);
     const outPath = join(ws, "memory-map.md");
     writeFileSync(outPath, "ORIGINAL-CONTENTS-DO-NOT-DESTROY\n");
@@ -1549,7 +1549,7 @@ test("CR-02 (E): coverage --out outside the workspace root is refused, and creat
 
 test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs, and --check still reports missing / in-sync / drifted", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const storePath = makeRenderableStore(ws);
+    makeRenderableStore(ws);
     const provenancePath = makeSidecar(ws);
     const outPath = join(ws, "rendered.md");
 
@@ -1618,7 +1618,7 @@ test("(G) --out is required: there is no default output path, and nothing is wri
 
 test("CR-03 (H): an in-workspace sidecar that is not JSON fails naming the path and the failure, and discloses NONE of its bytes", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const storePath = makeRenderableStore(ws);
+    makeRenderableStore(ws);
     // Ten characters, at the file's opening -- see test B's note: Node's
     // parse-error snippet truncates at ten, so a longer token would make this
     // assertion vacuous rather than protective.
@@ -1643,7 +1643,7 @@ test("CR-03 (H): an in-workspace sidecar that is not JSON fails naming the path 
 
 test("CR-03 (I): a sidecar that IS valid JSON but is not a valid provenance header still fails through the HEADER PARSER, naming the fields", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const storePath = makeRenderableStore(ws);
+    makeRenderableStore(ws);
     const provenancePath = join(ws, "sidecar.json");
     // Valid JSON, wrong schema. A schema failure names FIELDS THE CALLER
     // SUPPLIED and is not a disclosure route, so blurring it into the syntax
@@ -1660,7 +1660,7 @@ test("CR-03 (I): a sidecar that IS valid JSON but is not a valid provenance head
 
 test("CR-03 (J, over-refusal control): a valid sidecar still renders", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const storePath = makeRenderableStore(ws);
+    makeRenderableStore(ws);
     const provenancePath = makeSidecar(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", join(ws, "ok.md")]),
@@ -1797,7 +1797,7 @@ test("export-asm: the summary line reports excludedRangeCount, symmetric with ev
 
 test("export-asm: --out overrides the destination directory, and a --force re-run into it exits 0", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
     const chosen = join(ws, "chosen-dir");
     const first = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--out", chosen]));
     assert.equal(first.result, 0, first.stderr);
@@ -1813,7 +1813,7 @@ test("export-asm: --out overrides the destination directory, and a --force re-ru
 
 test("export-asm: a non-empty destination directory is refused without --force, and every pre-existing file is left untouched", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
     const outDir = join(ws, "occupied");
     mkdirSync(outDir);
     writeFileSync(join(outDir, "PRECIOUS.txt"), "PRECIOUS\n");
@@ -1834,7 +1834,7 @@ test("export-asm: a non-empty destination directory is refused without --force, 
 
 test("export-asm: --force re-writes a previous export of the same store into the same directory and exits 0", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
     const outDir = join(ws, "reused");
     const first = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--out", outDir]));
     assert.equal(first.result, 0, first.stderr);
@@ -1909,7 +1909,7 @@ test("export-asm: --out that IS or CONTAINS the image, the ledger or the annotat
 test("export-asm: PAIRED DIRECTION -- an --out that contains none of the inputs still writes (T-47-14 non-vacuity)", async () => {
   // A verb that refused every --out would pass the test above too.
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
     const outDir = join(ws, "not-an-input-dir");
     const { result: code, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["export-asm", imagePath, "--out", outDir]),
@@ -1935,7 +1935,7 @@ test("export-asm: --store is not an option any more, and is refused by name befo
 test("export-asm: an --out outside the workspace root is refused even when both INPUTS are legal, and nothing is created there", async () => {
   await withTempDir(async (outside) => {
     await withWorkspaceTempDir(async (ws) => {
-      const { storePath, imagePath } = makeExportableProject(ws);
+      const { imagePath } = makeExportableProject(ws);
       const escapedOut = join(outside, "escaped-dir");
       const { result: code, stderr } = await withCapturedConsole(() =>
         runAnnoCli(["export-asm", imagePath, "--out", escapedOut, "--force"]),
@@ -1968,7 +1968,7 @@ test("export-asm: a workspace with no annotation project is refused, and none is
 
 test("export-asm: a nonexistent image is refused by name", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath } = makeExportableProject(ws);
+    makeExportableProject(ws);
     const { result: code, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["export-asm", join(ws, "no-such.prg"), "--out", join(ws, "game-src")]),
     );
@@ -1994,7 +1994,7 @@ test("export-asm: a missing --out value, and a flag-shaped one, are each refused
 
 test("export-asm: an unknown option is refused by checkAcceptedOptions() BEFORE the verb runs", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
     const { result: code, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["export-asm", imagePath, "--nonsense"]),
     );
@@ -2009,7 +2009,7 @@ test("export-asm: an unknown option is refused by checkAcceptedOptions() BEFORE 
 
 test("export-asm: more than one positional is refused rather than silently ignored", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
     const { result: code, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["export-asm", imagePath, imagePath]),
     );
@@ -2060,7 +2060,7 @@ function writeMinimalLedger(dir: string, name = "PROVENANCE.md"): string {
 
 test("export-asm: --ledger FILE annotates the tree with the ledger's verdict, and the run still exits 0", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
     const ledgerPath = writeMinimalLedger(ws);
     const { result: code, stdout } = await withCapturedConsole(() =>
       runAnnoCli(["export-asm", imagePath, "--out", join(ws, "game-src"), "--ledger", ledgerPath]),
@@ -2076,7 +2076,7 @@ test("export-asm: --ledger FILE annotates the tree with the ledger's verdict, an
 
 test("export-asm: omitting --ledger still exits 0 and the tree carries no PROVENANCE LEDGER text", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
     const { result: code } = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--out", join(ws, "game-src")]));
     assert.equal(code, 0);
     const written = readFileSync(join(ws, "game-src", UNSCOPED_FILE_NAME), "utf8");
@@ -2086,7 +2086,7 @@ test("export-asm: omitting --ledger still exits 0 and the tree carries no PROVEN
 
 test("export-asm: a missing --ledger value, and a flag-shaped one, are each refused as a missing value rather than swallowing the next token", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
 
     const noValue = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--ledger"]));
     assert.notEqual(noValue.result, 0);
@@ -2102,7 +2102,7 @@ test("export-asm: a missing --ledger value, and a flag-shaped one, are each refu
 
 test("export-asm: a nonexistent --ledger is refused by name, and no tree is written", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
     const missing = join(ws, "does-not-exist.md");
     const { result: code, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["export-asm", imagePath, "--out", join(ws, "game-src"), "--ledger", missing]),
@@ -2116,7 +2116,7 @@ test("export-asm: a nonexistent --ledger is refused by name, and no tree is writ
 test("export-asm: a --ledger outside the workspace root is refused by the ONE seam, on the same terms as --out", async () => {
   await withTempDir(async (outside) => {
     await withWorkspaceTempDir(async (ws) => {
-      const { storePath, imagePath } = makeExportableProject(ws);
+      const { imagePath } = makeExportableProject(ws);
       const escaped = writeMinimalLedger(outside, "escaped.md");
       const { result: code, stderr } = await withCapturedConsole(() =>
         runAnnoCli(["export-asm", imagePath, "--out", join(ws, "game-src"), "--ledger", escaped]),
@@ -2210,7 +2210,7 @@ function makeMaxTableEntriesDispatchProject(dir: string, imageName = "dispatch.p
 
 test("hazard-report: --json reports truncated: true end to end when the scan trips MAX_TABLE_ENTRIES", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeMaxTableEntriesDispatchProject(ws);
+    const { imagePath } = makeMaxTableEntriesDispatchProject(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["hazard-report", "--image", imagePath, "--json"]),
     );
@@ -2222,7 +2222,7 @@ test("hazard-report: --json reports truncated: true end to end when the scan tri
 
 test('hazard-report: the rendered (non --json) report also shows "truncated" in its FINDINGS heading when the scan trips MAX_TABLE_ENTRIES', async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeMaxTableEntriesDispatchProject(ws);
+    const { imagePath } = makeMaxTableEntriesDispatchProject(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["hazard-report", "--image", imagePath]),
     );
@@ -2233,7 +2233,7 @@ test('hazard-report: the rendered (non --json) report also shows "truncated" in 
 
 test("hazard-report: the rendered report carries an UNPROVEN DISPATCH CANDIDATES heading (48-REVIEW WR-03)", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws, "ordinary.prg");
+    const { imagePath } = makeExportableProject(ws, "ordinary.prg");
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["hazard-report", "--image", imagePath]),
     );
@@ -2248,7 +2248,7 @@ test("hazard-report: the rendered report carries an UNPROVEN DISPATCH CANDIDATES
 
 test("hazard-report: an ordinary run with no dispatch table reports truncated: false via the real CLI verb (non-vacuity control)", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws, "ordinary.prg");
+    const { imagePath } = makeExportableProject(ws, "ordinary.prg");
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["hazard-report", "--image", imagePath, "--json"]),
     );
@@ -2264,7 +2264,7 @@ test("hazard-report: an ordinary run with no dispatch table reports truncated: f
 
 test("hazard-report: --store/--image confinement and missing-file refusals still work through the real CLI verb", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath } = makeMaxTableEntriesDispatchProject(ws);
+    makeMaxTableEntriesDispatchProject(ws);
     const missingImage = join(ws, "does-not-exist.prg");
     const { result: code, stderr } = await withCapturedConsole(() =>
       runAnnoCli(["hazard-report", "--image", missingImage]),

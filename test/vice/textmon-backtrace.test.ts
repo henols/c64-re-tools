@@ -13,14 +13,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { parseBacktrace, type BacktraceFrame } from "../../src/mcp/vice/textmon-backtrace.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = fileURLToPath(import.meta.url);
 const OWN_MODULE = join(VICE_DIR, "textmon-backtrace.ts");
 
 // ---------------------------------------------------------------------------

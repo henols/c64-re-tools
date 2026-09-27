@@ -7,8 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import {
   deriveIdentifier,
@@ -18,7 +17,6 @@ import {
 } from "../../src/mcp/vice/anno-regbits-gen.mts";
 import { REPO_ROOT, VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const ACME_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 test("parseBitRange: single index, descending range and ascending range all normalise correctly", () => {
@@ -193,7 +191,7 @@ test("OVERRIDES: every field/register override entry carries a WHY comment (grep
 // the real one.
 // ---------------------------------------------------------------------------
 
-test("non-vacuity: a synthetic memmap entry whose desc is unmappable and absent from OVERRIDES THROWS naming the address", async (t) => {
+test("non-vacuity: a synthetic memmap entry whose desc is unmappable and absent from OVERRIDES THROWS naming the address", async (_t) => {
   const os = await import("node:os");
   const fs = await import("node:fs");
   const path = await import("node:path");

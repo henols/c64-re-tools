@@ -21,8 +21,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { spawn as realSpawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import type { ChildProcess, SpawnOptionsWithoutStdio } from "node:child_process";
@@ -58,7 +57,6 @@ import {
 import { epochPathFor, instanceLogDirFor, nextEpochFor, writeEpochRecord } from "../../src/mcp/vice/broker-epoch.mts";
 import { VICE_DIR } from "./paths.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** Poll `predicate` to a bounded deadline rather than sleeping a fixed
  * duration -- this project's own stack pattern (checkpoint/frame
@@ -720,10 +718,6 @@ test("promoteLaunchingInstances (plan 41-05): a cold-launched launching record i
   assert.equal(record.state, "ready", "the cold-launched record must be promoted with no floor-shaped dependency in the picture");
   assert.equal(record.readyAt, 1300);
 });
-
-function countInstances(state: BrokerState): number {
-  return state.instances.size;
-}
 
 // ------------------------------------------------------------- runBrokerPass
 
