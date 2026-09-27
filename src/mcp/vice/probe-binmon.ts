@@ -30,7 +30,7 @@
 // --capture-out (default fixtures/binmon/ next to this script), each via a
 // tmp-sibling -> rename write. The sidecar's capturedFrom names the x64sc
 // that tool-location.mts's resolveTool() finds (VICE_BIN, then
-// .c64-re-tools/tools.json, then $PATH), prefixed by CAPTURE_BACKEND_KIND.
+// .c64-re-tools/local/tools.json, then $PATH), prefixed by CAPTURE_BACKEND_KIND.
 // Every case is bounded by MAX_CAPTURE_FRAMES: a runaway case aborts and
 // writes nothing.
 //
@@ -2476,7 +2476,7 @@ export function buildSidecar({
 }
 
 /** The x64sc path the project's one tool resolver finds (VICE_BIN, then
- * .c64-re-tools/tools.json, then $PATH), or null when nothing answers.
+ * .c64-re-tools/local/tools.json, then $PATH), or null when nothing answers.
  * repo-root.ts is imported here, lazily, because loading it deploys
  * resources as a side effect; --selftest and a plain import must not. */
 async function resolvedX64scPath(): Promise<string | null> {

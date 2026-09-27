@@ -36,18 +36,23 @@ state) and keep working when the emulator misbehaves.
   emulator over its binary monitor and its text monitor, through one broker per
   machine. The broker owns the emulator processes and respawns them when they
   crash.
-- **Annotation store (`.annostore`).** Findings are kept as queryable state, not
-  as prose: labels, comments, per-range types, scopes, enums, cross-references
-  and runtime execution evidence. It is reached through the `vice-mcp anno` CLI.
+- **Annotation store.** Findings are kept as queryable state, not as prose:
+  labels, comments, per-range types, scopes, enums, cross-references and
+  runtime execution evidence. Each project keeps them in its own SQLite file,
+  `.c64-re-tools/annotations.db`, committed with the project. It is reached
+  through the `vice-mcp anno` CLI.
 - **Analysis engines.** A vendored dxa builds the code/data map, and headless
-  Ghidra runs under this project's own NMOS 6502 language. Both annotate the store
-  automatically.
-- **Rebuild.** An annotated store exports as a directory of ACME source. That
+  Ghidra runs under this project's own NMOS 6502 language. Both annotate the
+  project automatically.
+- **Rebuild.** An annotated project exports as a directory of ACME source. That
   source reassembles to the same bytes as the original, can be edited, and is
   checked for equivalence against the original in VICE.
-- **Eight skills.** These are playbooks with helper scripts: `acme-build`,
-  `c64-disk-access`, `c64-memory-mapping`, `c64-petcat`, `c64-program-recon`,
-  `c64-provenance-diff`, `c64-ram-capture` and `routine-queue-walker`.
+- **Twelve skills, one capability each.** These are playbooks with helper
+  scripts: `c64-emulator`, `c64-assembler`, `c64-disk`, `c64-basic`,
+  `c64-disassembler`, `c64-unpacker`, `c64-memory-map`, `c64-annotations`,
+  `c64-ram-capture`, `c64-provenance`, `c64-reverse-engineering` (the method)
+  and `c64-project` (the shared workspace scripts). A skill never teaches
+  another skill's capability; it links to it.
 
 ## Guiding Principles
 
@@ -75,8 +80,9 @@ state) and keep working when the emulator misbehaves.
   permanent limitations.
 - The user starts one broker per machine. No client ever starts it, and every
   project and container on the machine shares it.
-- Tool-written output goes under one root: the project's `.c64-re-tools/`
-  directory for client-side files, and `~/.c64-re-tools` for broker-owned state.
+- A project's `.c64-re-tools/` holds its committed artifacts (annotations.db) at
+  its root, and everything machine-specific or regenerable in `local/`, which
+  ignores itself. `~/.c64-re-tools` holds the broker's machine state.
 - The server has exactly three npm runtime dependencies: `@mastra/mcp`,
   `@mastra/core` and `@modelcontextprotocol/sdk` (imported directly, already
   pulled in by `@mastra/mcp`). New runtime dependencies need a strong reason.

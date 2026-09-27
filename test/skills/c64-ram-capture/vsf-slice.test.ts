@@ -26,6 +26,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // The scripts under test live in the skill folder; this test lives in test/skills/.
 const SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-ram-capture", "scripts");
 const WRAPPER = join(SCRIPT_DIR, "vsf-slice.ts");
+const PROJECT_SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-project", "scripts");
 const MCP_DIR = resolve(HERE, "..", "..", "..", "src", "mcp", "vice");
 const FIXTURES = join(MCP_DIR, "fixtures", "vsf");
 
@@ -108,13 +109,18 @@ test("no rung resolves: exits non-zero naming EVERY path tried and telling the c
   // fails on a real, named path rather than on being unset.
   const dir = scratchDir();
   try {
-    const script = join(dir, "vsf-slice.ts");
+    // The wrapper loads its ladder from the c64-project skill's
+    // mcp-module.ts through sibling.ts, so a bare copy of the wrapper alone
+    // would refuse before ever reaching the ladder this test means to
+    // exercise. Lay out both skills the way an install does.
+    const scriptDir = join(dir, "skills", "c64-ram-capture", "scripts");
+    const projectDir = join(dir, "skills", "c64-project", "scripts");
+    mkdirSync(scriptDir, { recursive: true });
+    mkdirSync(projectDir, { recursive: true });
+    const script = join(scriptDir, "vsf-slice.ts");
     copyFileSync(WRAPPER, script);
-    // 34-04: the wrapper now imports its ladder from a sibling mcp-module.ts
-    // (extracted so acme.ts/packer-finding.ts share it too), so a bare copy
-    // of the wrapper alone would fail to resolve that import before ever
-    // reaching the ladder this test means to exercise. Copy the sibling too.
-    copyFileSync(join(SCRIPT_DIR, "mcp-module.ts"), join(dir, "mcp-module.ts"));
+    copyFileSync(join(SCRIPT_DIR, "sibling.ts"), join(scriptDir, "sibling.ts"));
+    copyFileSync(join(PROJECT_SCRIPT_DIR, "mcp-module.ts"), join(projectDir, "mcp-module.ts"));
     const empty = join(dir, "empty");
     mkdirSync(empty);
 

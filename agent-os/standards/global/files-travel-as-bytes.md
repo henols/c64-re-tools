@@ -19,7 +19,7 @@ await transferFile({ direction: "upload", handle: staged.handle, sourcePath: loc
 - Prefer the capability VICE already implements over re-creating it on the
   client.
 - Results come back the same way: download by handle into the project's
-  `.c64-re-tools/<kind>/`.
+  `.c64-re-tools/local/<kind>/`.
 - Never send a client path to the broker or the emulator, and never read a
   path the broker names. The broker's own state (epoch files, staging,
   Ghidra projects) is reached only through a reply on the socket.

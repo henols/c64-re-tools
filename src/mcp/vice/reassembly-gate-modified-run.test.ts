@@ -84,12 +84,12 @@ import { spawnSync } from "node:child_process";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { verifyAcmeAssemblesTree } from "./acme-verify.ts";
-import { exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.ts";
-import { openStore, closeStore } from "./anno-store.ts";
-import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.ts";
-import type { ScopeRow } from "./anno-types.ts";
-import { buildHazardReport, type HazardReport } from "./anno-hazard-report.ts";
-import type { BlockEntry } from "./block-class.ts";
+import { exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.mts";
+import { openStore, closeStore } from "./anno-store.mts";
+import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.mts";
+import type { ScopeRow } from "./anno-types.mts";
+import { buildHazardReport, type HazardReport } from "./anno-hazard-report.mts";
+import type { BlockEntry } from "./block-class.mts";
 import { hazardCoverageOutsideDiffScope, movementRebuildFromResult, DIFF_SCOPE_COVERAGES, HAZARD_DISPOSITIONS, type DiffScopeExtent } from "./reassembly-gate.ts";
 import { relocateSubject, buildMovementResult } from "./reassembly-gate-movement.ts";
 import { MOVEMENT_ORIGIN, movementDocument, movementImage, ROUTINE_A_SITES, MOVEMENT_DELTA } from "./reassembly-gate-movement-subject.ts";
@@ -440,10 +440,10 @@ test("gate run: the four in-process gate inputs, measured for real against the M
 // A SUBPROCESS, NEVER AN IMPORT: `src/mcp/vice/**` and `skills/**`
 // publish as separate npm packages and cannot import each other
 // (`acme-verify.ts`'s own header states the identical constraint for
-// `ACME_VERIFY_ARGV_FLAGS`). `skill-acme-build-cli.test.ts` already
+// `ACME_VERIFY_ARGV_FLAGS`). `skill-assembler-cli.test.ts` already
 // establishes this exact pattern -- a `src/mcp/vice/` test file driving a
 // sibling `skills/` script via `spawnSync(process.execPath, [...])` --
-// for `skills/acme-build/scripts/acme.ts`; this is the same pattern
+// for `skills/c64-assembler/scripts/acme.ts`; this is the same pattern
 // applied to `compare-cross-binary.ts`. This is NOT a second real-assembler
 // launch site: `compare-cross-binary.ts` never spawns anything and
 // contacts nothing (its own header states this), so `T-50-09`'s "the one

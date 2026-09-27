@@ -314,7 +314,7 @@ const CORPUS_SKIP_REASON: string | false =
  * never a fixed guess, so the seam request's `repoRoot` for THIS call is
  * always exactly big enough to contain both the corpus image and the
  * scratch output directory, and no bigger. Mirrors `c1541.ts`'s own
- * `commonAncestorDir()` (`skills/c64-disk-access/scripts/c1541.ts`),
+ * `commonAncestorDir()` (`skills/c64-disk/scripts/c1541.ts`),
  * duplicated here rather than imported -- this file must never reach into a
  * skill script (D-36-12's own container/host-side split; a skill script
  * additionally ships in the OTHER npm package). Duplicated a further two

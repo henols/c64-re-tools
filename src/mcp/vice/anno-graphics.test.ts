@@ -19,11 +19,11 @@ import {
   deriveGraphicsRanges,
   MEMORY_CONTROL_ADDRESS,
   SPRITE_POINTER_OFFSET,
-} from "./anno-graphics.ts";
-import type { GraphicsConstWriteFact, GraphicsMap } from "./anno-graphics.ts";
-import { DATA_TYPES } from "./anno-types.ts";
-import { closeStore, listXrefs, openStore, putXref } from "./anno-store.ts";
-import { runMemmapJoin } from "./anno-join.ts";
+} from "./anno-graphics.mts";
+import type { GraphicsConstWriteFact, GraphicsMap } from "./anno-graphics.mts";
+import { DATA_TYPES } from "./anno-types.mts";
+import { closeStore, listXrefs, openStore, putXref } from "./anno-store.mts";
+import { runMemmapJoin } from "./anno-join.mts";
 
 function inTempDir(body: (dir: string) => void): void {
   const dir = mkdtempSync(join(tmpdir(), "anno-graphics-"));

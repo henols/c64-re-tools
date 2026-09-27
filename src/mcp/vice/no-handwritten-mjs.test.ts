@@ -44,7 +44,7 @@ function repoFiles(): string[] {
 
 test("planted violations are caught and build-owned output is not", () => {
   const planted = [
-    "skills/c64-petcat/scripts/petcat.mjs",
+    "skills/c64-basic/scripts/petcat.mjs",
     "test/skills/helper.js",
     "src/mcp/vice/tool.cjs",
     "src/mcp/vice/resources/not-in-the-build-list.mjs",

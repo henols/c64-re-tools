@@ -13,7 +13,7 @@
 // it on the next commit. This file is the regression that keeps the phase's
 // own closure claim true on EVERY CI run, mechanically, using nothing but
 // what is already committed: the nine `.annostore.json` exports plan 45-02's
-// `anno-store-export.ts` produces and this repository's own fixture images.
+// `anno-store-export.mts` produces and this repository's own fixture images.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR
@@ -30,10 +30,10 @@
 // ---------------------------------------------------------------------------
 // WHAT NOT TO DO
 // ---------------------------------------------------------------------------
-//   - Never import `skills/routine-queue-walker/scripts/completeness-report.ts`.
+//   - Never import `skills/c64-annotations/scripts/completeness-report.ts`.
 //     `src/mcp/vice/**` and `skills/**` publish as SEPARATE npm packages
 //     and cannot import each other (`acme-verify.ts`'s own header states this
-//     constraint; `skill-acme-build-cli.test.ts` is the sanctioned pattern
+//     constraint; `skill-assembler-cli.test.ts` is the sanctioned pattern
 //     this file copies: SPAWN the skill script as a subprocess, never
 //     `import` it).
 //   - Never write a scratch store inside this repository's own tree. Every
@@ -58,19 +58,20 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { openStore, closeStore } from "./anno-store.ts";
-import { exportStoreDocument, importStoreDocument, type StoreExportDocument } from "./anno-store-export.ts";
+import { openStore, closeStore } from "./anno-store.mts";
+import { exportStoreDocument, importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.mts";
 import { runAnnoCli } from "./anno-cli.ts";
+import { seedWorkspaceProject } from "./workspace-store-fixture.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures");
 const MANIFEST_PATH = join(FIXTURES_DIR, "decomp-execution-manifest.json");
 
-// `src/mcp/vice/` -> `src/` -> `skills/routine-queue-walker/scripts/` --
+// `src/mcp/vice/` -> `src/` -> `skills/c64-annotations/scripts/` --
 // computed from THIS file's own location, matching `mcp-module.ts`'s own
 // "computed hop count, never a fixed count" discipline (see that module's
 // header on the stale-offset incident this project has already had).
-const COMPLETENESS_SCRIPT = join(HERE, "..", "..", "..", "skills", "routine-queue-walker", "scripts", "completeness-report.ts");
+const COMPLETENESS_SCRIPT = join(HERE, "..", "..", "..", "skills", "c64-annotations", "scripts", "completeness-report.ts");
 
 interface FixtureSpec {
   readonly dir: string;
@@ -144,6 +145,8 @@ interface FixtureWorkspace {
   storePath: string;
   manifestPath: string;
   doc: StoreExportDocument;
+  /** The fixture's name as `--fixture` takes it: its manifest path. */
+  fixtureArg: string;
 }
 
 /**
@@ -159,6 +162,10 @@ interface FixtureWorkspace {
  * this repository's own tree, and every `anno-cli.ts` verb this file drives
  * refuses a store path outside its own resolved workspace root by design
  * (T-29-28's mitigation, not an inconvenience to route around).
+ *
+ * The fixture's annotations are seeded as that workspace's own project, its
+ * .c64-re-tools/annotations.db, which is what `evid-disagreements`,
+ * `decomp-completeness` and the spawned gate all read.
  *
  * The manifest is copied into the SAME temp directory: `decomp-completeness`
  * confines `--manifest` the identical way, and the manifest's own fixture
@@ -176,6 +183,9 @@ async function withFixtureWorkspace<T>(fixture: FixtureSpec, body: (ws: FixtureW
     const docPath = join(FIXTURES_DIR, fixture.dir, `${fixture.name}.annostore.json`);
     const doc = JSON.parse(readFileSync(docPath, "utf8")) as StoreExportDocument;
 
+    // The committed export, twice: into a scratch store file (Test 1's
+    // round trip, an engine property) and into the workspace's own project
+    // in the broker (every verb and the gate).
     const storePath = join(tempDir, `${fixture.name}.annostore`);
     const handle = openStore(storePath, { workspaceRoot: tempDir });
     try {
@@ -183,8 +193,9 @@ async function withFixtureWorkspace<T>(fixture: FixtureSpec, body: (ws: FixtureW
     } finally {
       closeStore(handle);
     }
+    seedWorkspaceProject(tempDir, (project) => importStoreDocument(project, doc));
 
-    return await body({ tempDir, storePath, manifestPath, doc });
+    return await body({ tempDir, storePath, manifestPath, doc, fixtureArg: `${fixture.dir}/${fixture.name}.prg` });
   } finally {
     if (previousProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
     else process.env.CLAUDE_PROJECT_DIR = previousProjectDir;
@@ -192,14 +203,20 @@ async function withFixtureWorkspace<T>(fixture: FixtureSpec, body: (ws: FixtureW
   }
 }
 
-/** Runs `evid-disagreements --store <storePath> --json` through the REAL
- * `cmdEvidDisagreements()` dispatch (via `runAnnoCli()`), in-process -- the
- * SAME code path a developer's CLI invocation takes (this task's own
+/** The CLI's dependencies for `workspace`: its own project, through the
+ * default runner. */
+function cliDeps(workspace: string) {
+  return { workspaceRoot: workspace };
+}
+
+/** Runs `evid-disagreements --json` for `workspace`'s project through the
+ * REAL `cmdEvidDisagreements()` dispatch (via `runAnnoCli()`), in-process --
+ * the SAME code path a developer's CLI invocation takes (this task's own
  * read_first names it explicitly). Returns the parsed JSON answer, which is
  * exactly the document a real `--disagreements FILE` argument must contain. */
-async function realDisagreements(storePath: string): Promise<unknown> {
-  const { result: code, stdout, stderr } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", storePath, "--json"]));
-  assert.equal(code, 0, `evid-disagreements must succeed for ${storePath}:\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
+async function realDisagreements(workspace: string): Promise<unknown> {
+  const { result: code, stdout, stderr } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--json"], cliDeps(workspace)));
+  assert.equal(code, 0, `evid-disagreements must succeed for ${workspace}:\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
   return JSON.parse(stdout);
 }
 
@@ -214,17 +231,25 @@ interface DecompCompletenessJson {
   disagreementResolution: { unresolvedCount: number };
 }
 
-/** Runs `decomp-completeness --store ... --disagreements ... --manifest ...
+/** Runs `decomp-completeness --fixture ... --disagreements ... --manifest ...
  * --json` through the REAL `cmdDecompCompleteness()` dispatch, in-process.
  * Returns the structured report -- the SAME document
  * `completeness-report.ts`'s own `buildCompletenessReport()` normalises --
  * used here for the four NAMED zero-count assertions this task requires
  * (an exit code alone tells you it passed; these tell you WHAT passed). */
-async function realCompletenessJson(storePath: string, disagreementsPath: string, manifestPath: string): Promise<DecompCompletenessJson> {
+async function realCompletenessJson(
+  workspace: string,
+  fixtureArg: string,
+  disagreementsPath: string,
+  manifestPath: string,
+): Promise<DecompCompletenessJson> {
   const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-    runAnnoCli(["decomp-completeness", "--store", storePath, "--disagreements", disagreementsPath, "--manifest", manifestPath, "--json"]),
+    runAnnoCli(
+      ["decomp-completeness", "--fixture", fixtureArg, "--disagreements", disagreementsPath, "--manifest", manifestPath, "--json"],
+      cliDeps(workspace),
+    ),
   );
-  assert.equal(code, 0, `decomp-completeness --json must succeed for ${storePath}:\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
+  assert.equal(code, 0, `decomp-completeness --json must succeed for ${fixtureArg}:\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
   return JSON.parse(stdout) as DecompCompletenessJson;
 }
 
@@ -235,16 +260,17 @@ interface GateRun {
 }
 
 /**
- * Spawns the REAL `routine-queue-walker` skill script with `argv`, returning
+ * Spawns the REAL `c64-annotations` skill script with `argv`, returning
  * its real process exit code and both streams -- D-08's own numeric stop
- * condition, proven here exactly as `routine-queue-walker` itself observes
+ * condition, proven here exactly as `c64-annotations` itself observes
  * it. NEVER an `import` (see this file's header) -- always a subprocess,
- * matching `skill-acme-build-cli.test.ts`'s own sanctioned cross-package
- * pattern.
+ * matching `skill-assembler-cli.test.ts`'s own sanctioned cross-package
+ * pattern. The gate's own CLI child reads `workspace`'s project.
  */
-function spawnGate(argv: readonly string[]): GateRun {
-  assert.ok(existsSync(COMPLETENESS_SCRIPT), `the routine-queue-walker gate script must exist at ${COMPLETENESS_SCRIPT}`);
-  const r = spawnSync(process.execPath, [COMPLETENESS_SCRIPT, ...argv], { encoding: "utf8", timeout: 30_000 });
+function spawnGate(workspace: string, argv: readonly string[]): GateRun {
+  assert.ok(existsSync(COMPLETENESS_SCRIPT), `the c64-annotations gate script must exist at ${COMPLETENESS_SCRIPT}`);
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: workspace, VICE_SKIP_RESOURCE_INSTALL: "1", MASTRA_TELEMETRY_DISABLED: "1" };
+  const r = spawnSync(process.execPath, [COMPLETENESS_SCRIPT, ...argv], { encoding: "utf8", timeout: 30_000, env });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
@@ -260,11 +286,7 @@ for (const fixture of NINE_FIXTURES) {
       const handle = openStore(storePath, { workspaceRoot: dirname(storePath), mustExist: true });
       let reExported: StoreExportDocument;
       try {
-        // `storeName` is passed EXPLICITLY as the committed document's own
-        // `store` field -- that field records the ORIGINAL store's basename
-        // at export time, which this scratch copy's own filename need not
-        // match for the row classes themselves to be proven equal.
-        reExported = exportStoreDocument(handle, { storeName: doc.store });
+        reExported = exportStoreDocument(handle);
       } finally {
         closeStore(handle);
       }
@@ -283,16 +305,16 @@ for (const fixture of NINE_FIXTURES) {
   const label = `${fixture.dir}/${fixture.name}.prg`;
 
   test(`${label} -- Test 2/4: the real disagreement query plus the real gate exit 0, with all four zero-counts named`, async () => {
-    await withFixtureWorkspace(fixture, async ({ storePath, manifestPath, tempDir }) => {
-      const disagreements = await realDisagreements(storePath);
+    await withFixtureWorkspace(fixture, async ({ fixtureArg, manifestPath, tempDir }) => {
+      const disagreements = await realDisagreements(tempDir);
       const disagreementsPath = join(tempDir, "disagreements.json");
       writeFileSync(disagreementsPath, JSON.stringify(disagreements), "utf8");
 
-      const gate = spawnGate(["--store", storePath, "--disagreements", disagreementsPath, "--manifest", manifestPath]);
-      assert.equal(gate.status, 0, `${label}: the real routine-queue-walker gate script must exit 0:\nSTDOUT:\n${gate.stdout}\nSTDERR:\n${gate.stderr}`);
+      const gate = spawnGate(tempDir, ["--fixture", fixtureArg, "--disagreements", disagreementsPath, "--manifest", manifestPath]);
+      assert.equal(gate.status, 0, `${label}: the real c64-annotations gate script must exit 0:\nSTDOUT:\n${gate.stdout}\nSTDERR:\n${gate.stderr}`);
       assert.match(gate.stdout, /GATE: PASS/, `${label}: the rendered report must say GATE: PASS:\n${gate.stdout}`);
 
-      const report = await realCompletenessJson(storePath, disagreementsPath, manifestPath);
+      const report = await realCompletenessJson(tempDir, fixtureArg, disagreementsPath, manifestPath);
       // THE FOUR ZERO-COUNTS, NAMED INDIVIDUALLY -- the exit code above
       // proves the gate passed; these prove WHAT passed.
       assert.equal(report.byteCensus.undefinedCount, 0, `${label}: byte census undefined count must be 0`);
@@ -323,12 +345,12 @@ for (const fixture of NINE_FIXTURES.filter((f) => NOT_EXECUTED_NAMES.includes(f.
   const manifestEntry = manifestEntryFor(fixture.name);
 
   test(`${label} -- Test 3: a GREEN gate run still renders NOT EXECUTED and the manifest's own reason`, async () => {
-    await withFixtureWorkspace(fixture, async ({ storePath, manifestPath, tempDir }) => {
-      const disagreements = await realDisagreements(storePath);
+    await withFixtureWorkspace(fixture, async ({ fixtureArg, manifestPath, tempDir }) => {
+      const disagreements = await realDisagreements(tempDir);
       const disagreementsPath = join(tempDir, "disagreements.json");
       writeFileSync(disagreementsPath, JSON.stringify(disagreements), "utf8");
 
-      const gate = spawnGate(["--store", storePath, "--disagreements", disagreementsPath, "--manifest", manifestPath]);
+      const gate = spawnGate(tempDir, ["--fixture", fixtureArg, "--disagreements", disagreementsPath, "--manifest", manifestPath]);
       assert.equal(gate.status, 0, `${label}: this fixture's gate must still be GREEN:\nSTDOUT:\n${gate.stdout}\nSTDERR:\n${gate.stderr}`);
       assert.match(gate.stdout, /NOT EXECUTED:/, `${label}: a non-executed fixture's report must render its own NOT EXECUTED line, even on a green run:\n${gate.stdout}`);
       assert.ok(manifestEntry.reason, `${label}: the manifest entry must carry a reason string`);
@@ -337,7 +359,7 @@ for (const fixture of NINE_FIXTURES.filter((f) => NOT_EXECUTED_NAMES.includes(f.
         `${label}: the rendered report must carry the manifest's own reason text verbatim:\n${gate.stdout}`,
       );
 
-      const report = await realCompletenessJson(storePath, disagreementsPath, manifestPath);
+      const report = await realCompletenessJson(tempDir, fixtureArg, disagreementsPath, manifestPath);
       assert.equal(report.executionDisposition, "not-executed", `${label}: the structured report's own executionDisposition must be "not-executed"`);
       assert.equal(report.notExecutedReason, manifestEntry.reason, `${label}: the structured report's own notExecutedReason must match the manifest's reason exactly`);
     });
@@ -353,8 +375,8 @@ for (const fixture of NINE_FIXTURES.filter((f) => NOT_EXECUTED_NAMES.includes(f.
 
 test("Test 5 (NON-VACUITY CONTROL): omitting --disagreements makes the real gate exit non-zero, naming --disagreements", async () => {
   const fixture = NINE_FIXTURES[0]!;
-  await withFixtureWorkspace(fixture, async ({ storePath, manifestPath }) => {
-    const gate = spawnGate(["--store", storePath, "--manifest", manifestPath]);
+  await withFixtureWorkspace(fixture, async ({ fixtureArg, manifestPath, tempDir }) => {
+    const gate = spawnGate(tempDir, ["--fixture", fixtureArg, "--manifest", manifestPath]);
     assert.notEqual(gate.status, 0, "omitting --disagreements must NOT exit 0 -- an omitted query and a query that found nothing must never look the same (D-09)");
     const combined = `${gate.stdout}${gate.stderr}`;
     assert.ok(combined.includes("--disagreements"), `the refusal must name --disagreements literally, by name:\n${combined}`);
@@ -389,17 +411,14 @@ test("WR-02 Fix: a fixture whose image cannot be located reports imageUnavailabl
       "utf8",
     );
 
-    const storePath = join(tempDir, "does-not-exist-wr02.annostore");
-    const handle = openStore(storePath, { workspaceRoot: tempDir });
-    try {
+    {
       // A stored xref landing inside a code range is a REAL entry-point
       // candidate that needs no image bytes to establish (buildEntryPoints()
       // unions it independently of image.origin) -- present here specifically
       // so the assertion below distinguishes "the fix empties everything" from
       // "the fix removes only the fabricated $0000", the actual claim.
       const doc: StoreExportDocument = {
-        schemaVersion: 1,
-        store: "does-not-exist-wr02.annostore",
+        schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
         ranges: [{ start: 0x1000, endInclusive: 0x1002, dataType: "code", bank: null, provenance: "derived" }],
         labels: [],
         comments: [],
@@ -408,17 +427,16 @@ test("WR-02 Fix: a fixture whose image cannot be located reports imageUnavailabl
         xrefs: [{ fromAddress: 0x0810, toAddress: 0x1000, accessKind: "COMPUTED_JUMP", bank: null }],
         execObservations: [],
         scopes: [],
+        excludedRanges: [],
       };
-      importStoreDocument(handle, doc);
-    } finally {
-      closeStore(handle);
+      seedWorkspaceProject(tempDir, (project) => importStoreDocument(project, doc));
     }
 
-    const disagreements = await realDisagreements(storePath);
+    const disagreements = await realDisagreements(tempDir);
     const disagreementsPath = join(tempDir, "disagreements.json");
     writeFileSync(disagreementsPath, JSON.stringify(disagreements), "utf8");
 
-    const report = await realCompletenessJson(storePath, disagreementsPath, manifestPath);
+    const report = await realCompletenessJson(tempDir, fakeFixturePath, disagreementsPath, manifestPath);
     assert.equal(report.imageUnavailable, true, "an unlocatable image must be reported BY NAME");
     assert.deepEqual(
       report.entryPoints.map((e) => e.address),

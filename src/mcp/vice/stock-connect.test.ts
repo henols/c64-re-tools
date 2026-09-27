@@ -62,7 +62,7 @@ import {
   type ReleaseMonitorOptions,
   type ReleaseMonitorOutcome,
 } from "./vice-broker-client.ts";
-import { MachineRestartedError } from "./vice-errors.ts";
+import { MachineRestartedError } from "./vice-errors.mts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
 
 // ---------------------------------------------------------------------------

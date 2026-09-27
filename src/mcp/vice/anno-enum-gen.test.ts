@@ -1,4 +1,4 @@
-// anno-enum-gen.test.ts -- coverage for anno-enum-gen.ts (D-20/D-22/D-23,
+// anno-enum-gen.test.ts -- coverage for anno-enum-gen.mts (D-20/D-22/D-23,
 // ANNO-13): the pinned variantNameFor() target, decoding totality across all
 // 256 values for four registers, sanitization refusals, the adjacent-pair
 // rule, D-20's one-variant-per-distinct-value plan, and the truncation-signal
@@ -63,10 +63,10 @@ import {
   registerKeyFor,
   sanitizeVariantMap,
   variantNameFor,
-} from "./anno-enum-gen.ts";
-import type { RegBitsTable } from "./anno-regbits-gen.ts";
-import { closeStore, listEnumUsage, listProjectEnums, openStore, setDataType } from "./anno-store.ts";
-import type { AnnoStoreHandle } from "./anno-store.ts";
+} from "./anno-enum-gen.mts";
+import type { RegBitsTable } from "./anno-regbits-gen.mts";
+import { closeStore, listEnumUsage, listProjectEnums, openStore, setDataType } from "./anno-store.mts";
+import type { AnnoStoreHandle } from "./anno-store.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -279,7 +279,7 @@ test("decomposeRegisterValue: a register whose fields do not cover every set bit
     assert.throws(() => decomposeRegisterValue(0xa999, 0xff), (err: unknown) => {
       assert.ok(err instanceof Error);
       assert.match(err.message, /0xf0/);
-      assert.match(err.message, /anno-regbits-gen\.ts/);
+      assert.match(err.message, /anno-regbits-gen\.mts/);
       return true;
     });
   } finally {
@@ -705,8 +705,8 @@ test("fetchRegisterSearchRows: a non-code range is never decoded (only 'code'-ty
 // had been deleted for being trivially green.
 // ---------------------------------------------------------------------------
 
-test("anno-enum-gen.ts never references the machine-global save_global_enum() route (D-21, zero-count grep)", () => {
-  const src = readFileSync(join(HERE, "anno-enum-gen.ts"), "utf8");
+test("anno-enum-gen.mts never references the machine-global save_global_enum() route (D-21, zero-count grep)", () => {
+  const src = readFileSync(join(HERE, "anno-enum-gen.mts"), "utf8");
   const count = (src.match(/save_global_enum/g) ?? []).length;
   assert.equal(count, 0);
 });

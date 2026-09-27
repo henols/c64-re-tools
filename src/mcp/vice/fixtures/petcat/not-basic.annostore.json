@@ -1,6 +1,5 @@
 {
-  "schemaVersion": 1,
-  "store": "not-basic.annostore",
+  "schemaVersion": 2,
   "ranges": [
     {
       "start": 2563,
@@ -171,5 +170,6 @@
   "enumUsage": [],
   "xrefs": [],
   "execObservations": [],
-  "scopes": []
+  "scopes": [],
+  "excludedRanges": []
 }

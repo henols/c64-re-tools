@@ -11,20 +11,20 @@
 //     absence assertion is the shape; only the polarity differs.
 //
 // Phase 56 removed this file's IMPORT-PURITY assertion, which used to scan
-// `block-class.ts`'s own source (`block-class.ts`'s header trap 1 records
+// `block-class.mts`'s own source (`block-class.mts`'s header trap 1 records
 // that giving the classifier the census, the raw bytes, a decoder or a
 // confidence grade would collapse the bytes-versus-store independence axis
 // QUIETLY). That prohibition is no longer test-enforced here -- a future
 // edit importing `anno-`, `disasm-` or `stock-` modules into
-// `block-class.ts` will not be caught by this suite.
+// `block-class.mts` will not be caught by this suite.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { blockClassAt, type BlockClass, type BlockEntry } from "./block-class.ts";
-import { DATA_TYPES } from "./anno-types.ts";
+import { blockClassAt, type BlockClass, type BlockEntry } from "./block-class.mts";
+import { DATA_TYPES } from "./anno-types.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -32,7 +32,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * name, plus one it deliberately does not. This is the capitalised vocabulary
  * the rented analyser's Rust `Display` emits and every committed coverage
  * fixture is spelled in -- it is NOT this project's own store's vocabulary,
- * which is lowercase and lives in `anno-types.ts`. That distinction is
+ * which is lowercase and lives in `anno-types.mts`. That distinction is
  * load-bearing now that the mapping accepts both.
  *
  * Written out here rather than imported so a silent change to the mapping
@@ -115,7 +115,7 @@ test("derived TOTAL cross-check: every member of the store's frozen block vocabu
   // and a hand-written copy is the only copy there can be.
   //
   // It is deliberately REVERSED here, for the store's twelve. This project's
-  // own vocabulary has exactly ONE home (`DATA_TYPES` in `anno-types.ts`),
+  // own vocabulary has exactly ONE home (`DATA_TYPES` in `anno-types.mts`),
   // and the failure this test exists against is precisely a DIVERGENCE
   // between that home and this mapping -- a correct new store silently
   // reclassifying every block as `data` while every spot check stays green.
@@ -137,7 +137,7 @@ test("derived TOTAL cross-check: every member of the store's frozen block vocabu
       actual,
       expected,
       `the store's ${JSON.stringify(member)} block type resolved to ${JSON.stringify(actual)} rather than ` +
-        `${JSON.stringify(expected)} -- block-class.ts and anno-types.ts's DATA_TYPES have diverged, which ` +
+        `${JSON.stringify(expected)} -- block-class.mts and anno-types.mts's DATA_TYPES have diverged, which ` +
         "reclassifies live blocks and moves a published census figure with no error anywhere",
     );
   }
@@ -223,7 +223,7 @@ test("by-name pin: each of the store's twelve data types resolves to the class t
   assert.deepEqual(
     Object.keys(STORE_BLOCK_CLASS_BY_NAME).sort(),
     [...DATA_TYPES].sort(),
-    "the by-name table and anno-types.ts's DATA_TYPES must name exactly the same members -- a data type added " +
+    "the by-name table and anno-types.mts's DATA_TYPES must name exactly the same members -- a data type added " +
       "to the frozen vocabulary without a row here would be censused as `data` with nothing red",
   );
 
@@ -257,7 +257,7 @@ test("the analyser arm survives the store arm being added -- its four spellings 
   // ITS TRIGGER HAS ALREADY FIRED (2026-08-29, plan 29-07): the producer of
   // this capitalised vocabulary is gone. The arm survives anyway because every
   // committed coverage fixture is still SPELLED in it, so its removal trigger
-  // is now the FIXTURES being re-spelled -- see `block-class.ts`'s own dated
+  // is now the FIXTURES being re-spelled -- see `block-class.mts`'s own dated
   // note on the arm, and the Phase 32 guard-fate item that carries it.
   assert.equal(classOf(ANALYSER_CODE), "code");
   assert.equal(classOf(ANALYSER_UNDEFINED), "undefined");
@@ -325,14 +325,14 @@ test("first-match-wins on overlapping blocks -- the earliest array entry decides
 // 4. Shipped, not test-only -- the inverse of this suite's absence assertions
 // ---------------------------------------------------------------------------
 
-test("block-class.ts IS present in package.json's files[] array", () => {
+test("block-class.mts IS present in package.json's files[] array", () => {
   const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
   assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
   assert.equal(
-    pkg.files.includes("block-class.ts"),
+    pkg.files.includes("block-class.mts"),
     true,
-    "block-class.ts must ship: the tarball validator walks the relative-import closure from the published " +
-      "entry point, and this module is reachable through anno-cli.ts and anno-coverage.ts. A reachable " +
+    "block-class.mts must ship: the tarball validator walks the relative-import closure from the published " +
+      "entry point, and this module is reachable through anno-cli.ts and anno-coverage.mts. A reachable " +
       "module missing from files[] fails the pack with ERR_MODULE_NOT_FOUND at a consumer's runtime.",
   );
 });

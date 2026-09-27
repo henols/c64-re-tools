@@ -1,7 +1,7 @@
 // anno-bank.test.ts -- Phase 37 plan 37-06, Task 1 (AUTO-04/AUTO-05): the
 // processor-port bit decode, the region resolution, and the decline. Every
 // `<behavior>` bullet below is written FIRST and observed to fail before the
-// implementation in `anno-bank.ts` / `anno-join.ts` exists, per this plan's
+// implementation in `anno-bank.mts` / `anno-join.mts` exists, per this plan's
 // own TDD instruction.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -9,26 +9,26 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { decodeBankState, isBankConditionalAddress, regionAdmitsEntry, resolveBankedRegion } from "./anno-bank.ts";
-import type { BankedRegion } from "./anno-bank.ts";
-import { closeStore, listComments, openStore, putXref } from "./anno-store.ts";
-import { parseConstWrites, parseGhidraExport } from "./anno-import.ts";
-import type { ConstWriteFact } from "./anno-import.ts";
-import { runMemmapJoin } from "./anno-join.ts";
-import { loadMemmap, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "./memmap-lookup.ts";
-import type { MemmapEntry } from "./memmap-lookup.ts";
+import { decodeBankState, isBankConditionalAddress, regionAdmitsEntry, resolveBankedRegion } from "./anno-bank.mts";
+import type { BankedRegion } from "./anno-bank.mts";
+import { closeStore, listComments, openStore, putXref } from "./anno-store.mts";
+import { parseConstWrites, parseGhidraExport } from "./anno-import.mts";
+import type { ConstWriteFact } from "./anno-import.mts";
+import { runMemmapJoin } from "./anno-join.mts";
+import { loadMemmap, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "./memmap-lookup.mts";
+import type { MemmapEntry } from "./memmap-lookup.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_CAPTURE_PATH = join(HERE, "fixtures", "ghidra", "export-bank-path-dependent.txt");
-const REAL_ANNO_BANK_PATH = join(HERE, "anno-bank.ts");
-const REAL_ANNO_JOIN_PATH = join(HERE, "anno-join.ts");
-const REAL_ANNO_STORE_PATH = join(HERE, "anno-store.ts");
-const REAL_MEMMAP_LOOKUP_PATH = join(HERE, "memmap-lookup.ts");
-// Plan 37-08 (AUTO-07) added a fourth sibling import to anno-join.ts
-// (`./anno-graphics.ts`, the graphics write-back's own derivation module) --
+const REAL_ANNO_BANK_PATH = join(HERE, "anno-bank.mts");
+const REAL_ANNO_JOIN_PATH = join(HERE, "anno-join.mts");
+const REAL_ANNO_STORE_PATH = join(HERE, "anno-store.mts");
+const REAL_MEMMAP_LOOKUP_PATH = join(HERE, "memmap-lookup.mts");
+// Plan 37-08 (AUTO-07) added a fourth sibling import to anno-join.mts
+// (`./anno-graphics.mts`, the graphics write-back's own derivation module) --
 // shimmed here the same way, by absolute path, mirroring this file's own
-// anno-store.ts/memmap-lookup.ts shims below.
-const REAL_ANNO_GRAPHICS_PATH = join(HERE, "anno-graphics.ts");
+// anno-store.mts/memmap-lookup.mts shims below.
+const REAL_ANNO_GRAPHICS_PATH = join(HERE, "anno-graphics.mts");
 
 const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const PROVENANCE_TOKEN_RE = new RegExp(`${ESCAPED_PROVENANCE_TOKEN_PREFIX}[0-9a-f]{64}$`);
@@ -388,7 +388,7 @@ test("regionAdmitsEntry(): matches io_area/character_rom/basic_rom/kernal_rom vi
 // ---------------------------------------------------------------------------
 // Phase 37, plan 37-06, Task 2 -- Control: bypassing the processor-port
 // decode reddens the two-value flip (37-VALIDATION.md Observed-Red Controls
-// row 5). The mutation lives in a SCRATCH COPY of `anno-bank.ts` ONLY; the
+// row 5). The mutation lives in a SCRATCH COPY of `anno-bank.mts` ONLY; the
 // committed module is never opened for writing by this file (a red
 // observation is its own committed deliverable, never batched with the fix
 // that makes it green).
@@ -396,7 +396,7 @@ test("regionAdmitsEntry(): matches io_area/character_rom/basic_rom/kernal_rom vi
 
 /** `decodeBankState()`'s committed form, held verbatim so the mutation below
  * is a single, exact, whole-function textual replacement -- copied
- * character-for-character from `anno-bank.ts` at plan time. */
+ * character-for-character from `anno-bank.mts` at plan time. */
 const FIXED_DECODE_BANK_STATE = `export function decodeBankState(value: number): BankState {
   const raw = value;
   const b = value & 0x07; // bits #2-#0: CHAREN(2) HIRAM(1) LORAM(0)
@@ -420,14 +420,14 @@ const BYPASSED_DECODE_BANK_STATE = `export function decodeBankState(value: numbe
   return { raw, ioRange: "io_area", basicRange: "basic_rom", kernalRange: "kernal_rom" };
 }`;
 
-/** Builds a scratch tree holding a MUTATED copy of `anno-bank.ts` (the bit
+/** Builds a scratch tree holding a MUTATED copy of `anno-bank.mts` (the bit
  * decode bypassed, nothing else touched), an UNMUTATED copy of
- * `anno-join.ts` (so the full pipeline -- not just the decode function in
+ * `anno-join.mts` (so the full pipeline -- not just the decode function in
  * isolation -- is what is actually observed going wrong), and re-export
- * shims for `anno-join.ts`'s other two sibling imports (`anno-store.ts`,
- * `memmap-lookup.ts`), so the scratch join calls the exact same real store
+ * shims for `anno-join.mts`'s other two sibling imports (`anno-store.mts`,
+ * `memmap-lookup.mts`), so the scratch join calls the exact same real store
  * and memmap-lookup functions this test file itself uses statically.
- * Asserts the committed `anno-bank.ts` still carries the exact decode text
+ * Asserts the committed `anno-bank.mts` still carries the exact decode text
  * before mutating, so source drift fails loudly rather than making the
  * replacement a silent no-op. */
 function buildScratchTreeWithBypassedDecode(): { tmpDir: string; modulePath: string } {
@@ -436,18 +436,18 @@ function buildScratchTreeWithBypassedDecode(): { tmpDir: string; modulePath: str
   const committedBankSource = readFileSync(REAL_ANNO_BANK_PATH, "utf8");
   assert.ok(
     committedBankSource.includes(FIXED_DECODE_BANK_STATE),
-    "expected the committed anno-bank.ts to still carry decodeBankState()'s committed form -- has the source drifted?",
+    "expected the committed anno-bank.mts to still carry decodeBankState()'s committed form -- has the source drifted?",
   );
   const mutatedBankSource = committedBankSource.replace(FIXED_DECODE_BANK_STATE, BYPASSED_DECODE_BANK_STATE);
   assert.ok(!mutatedBankSource.includes(FIXED_DECODE_BANK_STATE), "expected the committed decode text to be gone from the mutated source");
-  writeFileSync(join(tmpDir, "anno-bank.ts"), mutatedBankSource, "utf8");
+  writeFileSync(join(tmpDir, "anno-bank.mts"), mutatedBankSource, "utf8");
 
-  writeFileSync(join(tmpDir, "anno-join.ts"), readFileSync(REAL_ANNO_JOIN_PATH, "utf8"), "utf8");
-  writeFileSync(join(tmpDir, "anno-store.ts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
-  writeFileSync(join(tmpDir, "memmap-lookup.ts"), `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`, "utf8");
-  writeFileSync(join(tmpDir, "anno-graphics.ts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "anno-join.mts"), readFileSync(REAL_ANNO_JOIN_PATH, "utf8"), "utf8");
+  writeFileSync(join(tmpDir, "anno-store.mts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "memmap-lookup.mts"), `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "anno-graphics.mts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
 
-  return { tmpDir, modulePath: join(tmpDir, "anno-join.ts") };
+  return { tmpDir, modulePath: join(tmpDir, "anno-join.mts") };
 }
 
 async function importScratchAnnoJoinWithBypassedBank(modulePath: string): Promise<{ runMemmapJoin: typeof runMemmapJoin }> {
@@ -514,13 +514,13 @@ test(
 // Phase 37, plan 37-06, Task 3 -- Control: replacing the decline with a
 // forward-carried value reddens the path-dependent case (37-VALIDATION.md
 // Observed-Red Controls row 6; AUTO-05, the phase's sixth and last required
-// control). The mutation lives in a SCRATCH COPY of `anno-join.ts` ONLY.
+// control). The mutation lives in a SCRATCH COPY of `anno-join.mts` ONLY.
 // ---------------------------------------------------------------------------
 
 /** The decline branch's committed text (the "several values resolving to
  * different regions" case) -- the single, small, textually-replaceable
  * region of source Task 1 built exactly for this control. Copied
- * character-for-character from `anno-join.ts` at plan time. */
+ * character-for-character from `anno-join.mts` at plan time. */
 const FIXED_DECLINE_BLOCK_LINES = [
   "      if (uniqueRegions.size > 1) {",
   "        declined += 1;",
@@ -547,11 +547,11 @@ const FORWARD_CARRIED_DECLINE_BLOCK_LINES = [
 ];
 const FORWARD_CARRIED_DECLINE_BLOCK = FORWARD_CARRIED_DECLINE_BLOCK_LINES.join("\n");
 
-/** Builds a scratch tree holding a MUTATED copy of `anno-join.ts` (the
+/** Builds a scratch tree holding a MUTATED copy of `anno-join.mts` (the
  * decline branch replaced, nothing else touched) and re-export shims for ALL
- * THREE of its sibling imports (`anno-bank.ts`, `anno-store.ts`,
- * `memmap-lookup.ts`), forwarding by absolute path to the real, unmutated
- * files -- neither `anno-bank.ts` nor its own siblings need mutating for
+ * THREE of its sibling imports (`anno-bank.mts`, `anno-store.mts`,
+ * `memmap-lookup.mts`), forwarding by absolute path to the real, unmutated
+ * files -- neither `anno-bank.mts` nor its own siblings need mutating for
  * this control, only resolving. */
 function buildScratchTreeWithForwardCarriedDecline(): { tmpDir: string; modulePath: string } {
   const tmpDir = mkdtempSync(join(tmpdir(), "anno-join-forward-carry-"));
@@ -559,18 +559,18 @@ function buildScratchTreeWithForwardCarriedDecline(): { tmpDir: string; modulePa
   const committedJoinSource = readFileSync(REAL_ANNO_JOIN_PATH, "utf8");
   assert.ok(
     committedJoinSource.includes(FIXED_DECLINE_BLOCK),
-    "expected the committed anno-join.ts to still carry the decline branch's committed text -- has the source drifted?",
+    "expected the committed anno-join.mts to still carry the decline branch's committed text -- has the source drifted?",
   );
   const mutatedJoinSource = committedJoinSource.replace(FIXED_DECLINE_BLOCK, FORWARD_CARRIED_DECLINE_BLOCK);
   assert.ok(!mutatedJoinSource.includes(FIXED_DECLINE_BLOCK), "expected the committed decline text to be gone from the mutated source");
-  writeFileSync(join(tmpDir, "anno-join.ts"), mutatedJoinSource, "utf8");
+  writeFileSync(join(tmpDir, "anno-join.mts"), mutatedJoinSource, "utf8");
 
-  writeFileSync(join(tmpDir, "anno-bank.ts"), `export * from ${JSON.stringify(REAL_ANNO_BANK_PATH)};\n`, "utf8");
-  writeFileSync(join(tmpDir, "anno-store.ts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
-  writeFileSync(join(tmpDir, "memmap-lookup.ts"), `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`, "utf8");
-  writeFileSync(join(tmpDir, "anno-graphics.ts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "anno-bank.mts"), `export * from ${JSON.stringify(REAL_ANNO_BANK_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "anno-store.mts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "memmap-lookup.mts"), `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`, "utf8");
+  writeFileSync(join(tmpDir, "anno-graphics.mts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
 
-  return { tmpDir, modulePath: join(tmpDir, "anno-join.ts") };
+  return { tmpDir, modulePath: join(tmpDir, "anno-join.mts") };
 }
 
 async function importScratchAnnoJoinWithForwardCarry(modulePath: string): Promise<{ runMemmapJoin: typeof runMemmapJoin }> {

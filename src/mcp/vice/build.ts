@@ -67,6 +67,7 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "host-tool-endpoint.mjs",
   "broker-children.mjs",
   "broker-watchdog.mjs",
+  "project-local.mjs",
 ];
 
 /** A plain data file that travels WITH the compiled artifacts above, never
@@ -80,14 +81,16 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
  * ran IN PLACE inside `src/mcp/vice/resources/` (one directory up lands on
  * `src/mcp/vice/prerequisites.json`) -- once `vice-broker.mts` started
  * resolving `x64sc` through the seam at STARTUP (Plan 60-01), a real
- * deployment into a consuming project's `.c64-re-tools/bin/` (where
+ * deployment into a consuming project's `.c64-re-tools/local/bin/` (where
  * neither candidate exists) made the broker throw at startup. Copying it into `resources/` here, alongside every
  * compiled artifact, makes `install-resources.ts`'s own generic recursive
  * walk of `resources/` deploy it automatically -- no separate deploy-side
  * code needed -- and gives `readDeclaration()`'s FIRST candidate ("beside
  * `here`") a real file at every location the compiled module ever runs
  * from, deployed or not. */
-export const HOST_BOUND_DATA_FILES: string[] = ["prerequisites.json"];
+export const HOST_BOUND_DATA_FILES: ReadonlyArray<{ from: string; to: string }> = [
+  { from: "src/mcp/vice/prerequisites.json", to: "prerequisites.json" },
+];
 
 /** The generated-file banner (01.6-RESEARCH.md §F), a function of the
  * source's relative path. Prepended to every emitted file by build() below --
@@ -100,7 +103,7 @@ export function GENERATED_BANNER(relSourcePath: string): string {
     `// Compiled by \`tsc\` from ${relSourcePath}. Edit the TypeScript source and rebuild;\n` +
     "// changes made directly to this file are silently overwritten by the next build, and are never\n" +
     "// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents\n" +
-    "// verbatim to .c64-re-tools/bin/, so an edit made only here reaches the host but is lost on the very next\n" +
+    "// verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next\n" +
     "// rebuild.\n"
   );
 }
@@ -247,8 +250,9 @@ export function build({ outDir = "resources" }: BuildOptions = {}): void {
       const staged = join(stagingDir, rel);
       const banner = GENERATED_BANNER(sourceRelForEmitted(rel));
       const content = readFileSync(staged, "utf8");
-      if (!content.startsWith(banner)) {
-        writeFileSync(staged, banner + content);
+      if (!content.includes(banner)) {
+        // After a leading shebang, which must stay line 1.
+        writeFileSync(staged, withBannerAfterShebang(content, banner));
       }
     }
 
@@ -273,9 +277,9 @@ export function build({ outDir = "resources" }: BuildOptions = {}): void {
     // compiled artifact -- never exposed at an `outDir` path half-written --
     // so it must be moved into place BEFORE the leftover check below, or its
     // own staged copy would itself register as an unexplained leftover.
-    for (const rel of HOST_BOUND_DATA_FILES) {
+    for (const { from, to: rel } of HOST_BOUND_DATA_FILES) {
       const staged = join(stagingDir, rel);
-      copyFileSync(join(HERE, rel), staged);
+      copyFileSync(join(REPO_ROOT, from), staged);
       const to = join(outDirAbs, rel);
       try {
         renameSync(staged, to);
@@ -393,23 +397,29 @@ export function buildEntries({ outRoot = REPO_ROOT }: EntryBuildOptions = {}): v
  * `tool-location.mts` is a root because backend-detect.mts reaches it only
  * through `createRequire()`, which no import scan follows. Without it as a
  * root, dist/ would lack the file and backend-detect would fall back to the
- * `.mts` specifier, which Node refuses under node_modules. */
+ * `.mts` specifier, which Node refuses under node_modules.
+ *
+ * `ghidra-run.ts` and `dxa-run.ts` are roots because nothing in the server
+ * graph imports them: the c64-disassembler skill spawns them as CLIs, and
+ * rung 3 of its resolveMcpModule() maps `x.ts` to `dist/x.js`. */
 export const SERVER_ROOTS: ReadonlyArray<{ source: string; emitted: string }> = [
   { source: "vice-proxy.ts", emitted: "vice-proxy.js" },
   { source: "vsf-slice.ts", emitted: "vsf-slice.js" },
   { source: "tool-location.mts", emitted: "tool-location.mjs" },
+  { source: "ghidra-run.ts", emitted: "ghidra-run.js" },
+  { source: "dxa-run.ts", emitted: "dxa-run.js" },
 ];
 
 /** Data files the compiled graph reads beside itself that cannot be found
  * one directory up, in the package root. `from` is relative to REPO_ROOT,
  * `to` is relative to the server outDir. memmap.json lives in the
- * c64-memory-mapping skill, outside this package, so the package carries a
- * copy (memmap-lookup.ts reads it beside itself first). Every other data
+ * c64-memory-map skill, outside this package, so the package carries a
+ * copy (memmap-lookup.mts reads it beside itself first). Every other data
  * file (package.json, tools-manifest.stock.json, anno-regbits.json,
  * prerequisites.json, resources/) sits in the package root and is found by
  * a two-candidate `[HERE, HERE/..]` lookup, so it is not copied. */
 export const SERVER_DATA_FILES: ReadonlyArray<{ from: string; to: string }> = [
-  { from: "skills/c64-memory-mapping/memmap.json", to: "memmap.json" },
+  { from: "skills/c64-memory-map/memmap.json", to: "memmap.json" },
 ];
 
 /** Every regular file under `dir`, as sorted posix relative paths. */

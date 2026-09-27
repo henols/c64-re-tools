@@ -45,7 +45,7 @@
 // `NEVER_CACHED_COMMANDS`) so no future caller can put it back by routing
 // it back through the memoised entry point.
 //
-// D-42-3 (inherited from textmon-memmap.ts, decided once for all five text
+// D-42-3 (inherited from textmon-memmap.mts, decided once for all five text
 // parsers this phase adds): refuse by RETURNING, never by throwing. This
 // module never throws for a malformed, empty, unresolved, or disagreeing
 // input -- every failure mode reports through TextCapabilityVerdict's

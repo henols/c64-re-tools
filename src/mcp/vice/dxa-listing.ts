@@ -21,7 +21,7 @@
 // dropped.
 //
 // THIS MODULE PERFORMS NO FILESYSTEM OR NETWORK I/O of its own -- every
-// function here takes a string and returns values, exactly as `prg-image.ts` states of itself for
+// function here takes a string and returns values, exactly as `prg-image.mts` states of itself for
 // the same reason (path resolution and path-boundary hazards stay entirely
 // out of this module's threat surface).
 //

@@ -29,6 +29,7 @@
     "transfer-client.mts",
     "host-tool-endpoint.mts",
     "broker-children.mts",
-    "broker-watchdog.mts"
+    "broker-watchdog.mts",
+    "project-local.mts"
   ]
 }

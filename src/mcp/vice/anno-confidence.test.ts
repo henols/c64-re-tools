@@ -10,14 +10,14 @@ import {
   formatConfidenceComment,
   searchQueryForGrade,
   AnnoConfidenceGradeError,
-} from "./anno-confidence.ts";
+} from "./anno-confidence.mts";
 
 // ---------------------------------------------------------------------------
 // Non-vacuity control: the vocabulary itself. A drift from
-// memory-map.template.md's own confidence table must fail HERE.
+// skills/c64-annotations/SKILL.md's own confidence table must fail HERE.
 // ---------------------------------------------------------------------------
 
-test("CONFIDENCE_GRADES has exactly five members with the exact five phrases from the template", () => {
+test("CONFIDENCE_GRADES has exactly five members with the exact five phrases from the skill's table", () => {
   assert.equal(CONFIDENCE_GRADES.length, 5);
   const phrases = CONFIDENCE_GRADES.map((g) => g.phrase);
   assert.deepEqual(phrases, [

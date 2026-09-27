@@ -112,7 +112,7 @@ const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath
  * SOURCE vendor tree), a different directory tree entirely, not
  * `resources/vendor/dxa/`. No committed test file's own walk reads this exact
  * path and branches on its presence, so -- unlike the fixed-name scratch file
- * in `skills/acme-build/` -- this site has no currently-measured
+ * in `skills/c64-assembler/` -- this site has no currently-measured
  * concurrent-scanner hazard. */
 function plantFakeDxaBinary(): { binPath: string; cleanupDir: string } {
   const vendorDir = join(HERE, "resources", "vendor", "dxa");

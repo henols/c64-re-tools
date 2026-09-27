@@ -19,30 +19,15 @@ import {
   idleGate,
   classifyHit,
   screenSignature,
-  addrNum,
-  hex4,
 } from "../../../skills/c64-ram-capture/scripts/watch-loads.ts";
 import { buildChipState, buildRangeManifest } from "../../../skills/c64-ram-capture/scripts/dump-artifacts.ts";
 import { firstDumpArtifact, skipUnless } from "./test-corpus.ts";
-import type { LoaderRange } from "../../../skills/c64-ram-capture/scripts/releases.ts";
+import type { LoaderRange } from "../../../skills/c64-project/scripts/releases.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The scripts under test live in the skill folder; this test lives in test/skills/.
 const SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-ram-capture", "scripts");
-
-// ----------------------------------------------------------------- addrNum
-
-test("addrNum parses $-hex, 0x-hex, decimal strings and numbers", () => {
-  assert.equal(addrNum("$08B1"), 0x08b1);
-  assert.equal(addrNum("0x08b1"), 0x08b1);
-  assert.equal(addrNum("2225"), 2225);
-  assert.equal(addrNum(2225), 2225);
-});
-
-test("hex4 formats a 4-digit uppercase $ address", () => {
-  assert.equal(hex4(0x08b1), "$08B1");
-  assert.equal(hex4(0), "$0000");
-});
+const PROJECT_SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-project", "scripts");
 
 // -------------------------------------------------------------- WATCH_SET
 
@@ -267,7 +252,7 @@ function importSpecifiers(src: string): string[] {
   return specs;
 }
 
-test("every import specifier in watch-loads.ts and dump-artifacts.ts is a node: built-in or a sibling file inside tools/ -- the mechanical proof of the one permitted route", () => {
+test("every import specifier in watch-loads.ts and dump-artifacts.ts is a node: built-in or a file inside this skill's or c64-project's scripts/ -- the mechanical proof of the one permitted route", () => {
   const files = ["watch-loads.ts", "dump-artifacts.ts"];
   let totalSpecifiers = 0;
   for (const f of files) {
@@ -284,7 +269,10 @@ test("every import specifier in watch-loads.ts and dump-artifacts.ts is a node: 
       );
       if (isSiblingPath) {
         const resolved = resolve(SCRIPT_DIR, spec);
-        assert.ok(resolved.startsWith(SCRIPT_DIR), `${f}'s import "${spec}" resolves outside tools/ (${resolved})`);
+        assert.ok(
+          resolved.startsWith(SCRIPT_DIR) || resolved.startsWith(PROJECT_SCRIPT_DIR),
+          `${f}'s import "${spec}" resolves outside this skill's and c64-project's scripts/ (${resolved})`
+        );
       }
     }
   }

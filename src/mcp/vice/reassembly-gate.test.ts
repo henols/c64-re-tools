@@ -31,11 +31,11 @@ import { fileURLToPath } from "node:url";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { verifyAcmeAssemblesTree } from "./acme-verify.ts";
-import { exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.ts";
-import { openStore, closeStore } from "./anno-store.ts";
-import { importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument, type StoreExportRangeRow } from "./anno-store-export.ts";
-import type { ScopeRow } from "./anno-types.ts";
-import { buildHazardReport, type HazardReport, type HazardFinding, type HazardRegionDisposition } from "./anno-hazard-report.ts";
+import { exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.mts";
+import { openStore, closeStore } from "./anno-store.mts";
+import { importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument, type StoreExportRangeRow } from "./anno-store-export.mts";
+import type { ScopeRow } from "./anno-types.mts";
+import { buildHazardReport, type HazardReport, type HazardFinding, type HazardRegionDisposition } from "./anno-hazard-report.mts";
 import {
   runReassemblyGate,
   movementRebuildFromResult,
@@ -58,7 +58,7 @@ test("ACME availability gate", () => {
 // imported across these two test files, which is deliberate: neither ships,
 // and a shared non-test module for this alone would be new surface for two
 // call sites) exactly the way `ACME_VERIFY_ARGV_FLAGS`'s own sibling
-// construction in `skills/acme-build/scripts/acme.ts` is documented as a
+// construction in `skills/c64-assembler/scripts/acme.ts` is documented as a
 // deliberate second copy in `acme-verify.ts`.
 // ---------------------------------------------------------------------------
 
@@ -293,7 +293,7 @@ test(
 // above): a few dozen bytes carrying one detectable self-modification, one
 // plain code block and one data block. The self-modification's WRITER
 // instruction is stored as `byte`-typed data, never `code` -- the exporter's
-// own in-tree-reference rule (`anno-export-asm.ts`'s `referencedAddress()` /
+// own in-tree-reference rule (`anno-export-asm.mts`'s `referencedAddress()` /
 // `isInTree()`) treats ANY absolute- or zeropage-mode operand pointing at an
 // address covered by some OTHER emitted range as a reference that must
 // resolve through a store label, and this subject deliberately carries none.
@@ -305,7 +305,7 @@ test(
 // address of the subject's four ranges, deliberately: the export's own
 // extent is `[minBlockStart, maxBlockEnd)`, and removing a MIDDLE range
 // would leave that span unchanged (a gap is still spanned, per
-// `anno-export-asm.ts`'s own $00-fill rule). Only removing the range at
+// `anno-export-asm.mts`'s own $00-fill rule). Only removing the range at
 // either END actually narrows the extent -- which is the whole point being
 // pinned here: a clean byte-diff over a scope that quietly stopped covering
 // the interesting range.
@@ -383,7 +383,6 @@ function exportScopeSubjectTree(tag: string, ranges: readonly StoreExportRangeRo
   try {
     importStoreDocument(handle, {
       schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-      store: "scope-subject",
       ranges: [...ranges],
       labels: [],
       comments: [],
@@ -392,6 +391,7 @@ function exportScopeSubjectTree(tag: string, ranges: readonly StoreExportRangeRo
       xrefs: [],
       execObservations: [],
       scopes: [],
+      excludedRanges: [],
     });
   } finally {
     closeStore(handle);

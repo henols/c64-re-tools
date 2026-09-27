@@ -60,7 +60,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { decode } from "./disasm-decoder.ts";
+import { decode } from "./disasm-decoder.mts";
 import {
   MAX_TABLE_ENTRIES,
   SPLIT_TABLE_WINDOW,
@@ -68,7 +68,7 @@ import {
   computeStructuralCensus,
   provenDispatchTargets,
   scanIndirectDispatch,
-} from "./anno-coverage.ts";
+} from "./anno-coverage.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -1836,7 +1836,7 @@ test("the corpus reaches every generative dimension: order, interleaving, gap pl
 });
 
 test("the module under test is READ-ONLY by construction, and this suite writes no file", () => {
-  // The corpus lives in memory. `anno-coverage.ts` performs no filesystem
+  // The corpus lives in memory. `anno-coverage.mts` performs no filesystem
   // write outside its own project loader, and this file adds none: the
   // committed source-level assertion in `anno-coverage.test.ts` proves the
   // former, and this one states that the grammar suite did not change it.

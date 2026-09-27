@@ -62,7 +62,7 @@
 //     stated in words instead.
 import type { AcmeOutcome } from "./acme-verify.ts";
 import type { MovementOutcome, MovementResult } from "./reassembly-gate.ts";
-import type { StoreExportDocument, StoreExportRangeRow, StoreExportScopeRow } from "./anno-store-export.ts";
+import type { StoreExportDocument, StoreExportRangeRow, StoreExportScopeRow } from "./anno-store-export.mts";
 
 /**
  * The three ways a declared reference site holds an address, and there are
@@ -271,7 +271,7 @@ export function relocateSubject(request: RelocationRequest): RelocatedSubject {
     }
   }
 
-  const scopeRows = document.scopes ?? [];
+  const scopeRows = document.scopes;
   const scopeIndex = scopeRows.findIndex((scope) => scope.start <= originalAddress && originalAddress <= scope.endInclusive);
   const movedScope: StoreExportScopeRow | undefined =
     scopeIndex === -1 ? undefined : { start: scopeRows[scopeIndex]!.start + delta, endInclusive: scopeRows[scopeIndex]!.endInclusive + delta };
@@ -280,7 +280,7 @@ export function relocateSubject(request: RelocationRequest): RelocatedSubject {
     ...document,
     labels: document.labels.map((label) => (label.name === symbolName ? { ...label, address: relocatedAddress } : label)),
     ranges: document.ranges.map((range, i) => (i === rangeIndex ? movedRange : range)),
-    scopes: document.scopes === undefined ? undefined : document.scopes.map((scope, i) => (i === scopeIndex && movedScope !== undefined ? movedScope : scope)),
+    scopes: document.scopes.map((scope, i) => (i === scopeIndex && movedScope !== undefined ? movedScope : scope)),
   };
 
   // Rebuild the image from scratch, spanning the TRANSFORMED document's own

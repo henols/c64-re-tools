@@ -1,6 +1,5 @@
 {
-  "schemaVersion": 1,
-  "store": "basic-stub.annostore",
+  "schemaVersion": 2,
   "ranges": [
     {
       "start": 2049,
@@ -66,5 +65,6 @@
   "enumUsage": [],
   "xrefs": [],
   "execObservations": [],
-  "scopes": []
+  "scopes": [],
+  "excludedRanges": []
 }

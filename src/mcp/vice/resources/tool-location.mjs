@@ -2,14 +2,14 @@
 // Compiled by `tsc` from tool-location.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
 // deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
-// verbatim to .c64-re-tools/bin/, so an edit made only here reaches the host but is lost on the very next
+// verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // tool-location.mts
 //
 // THIS IS THE ONE AUTHORITATIVE PLACE that knows the precedence order for a
 // declared tool id -- a key under `tools` in the committed
 // prerequisites.json. For an id, this module walks three layers in a fixed
-// order (an environment variable, then `.c64-re-tools/tools.json`, then a
+// order (an environment variable, then `.c64-re-tools/local/tools.json`, then a
 // `$PATH` walk or a probe) and reports the resolved path plus which layer
 // and which exact mechanism answered. Nothing calls this module today; a
 // later phase rewires a live callsite to ask it, and that absence here is
@@ -108,7 +108,7 @@
 // refuses by name -- naming the variable, its value, and every candidate
 // tried -- immediately before the declared-id `$PATH` probe, so a same-named
 // binary sitting on `$PATH` is never silently substituted for the one the
-// developer wrote, whatever the value's shape. `.c64-re-tools/tools.json` is
+// developer wrote, whatever the value's shape. `.c64-re-tools/local/tools.json` is
 // still consulted first (PD-14): an entry a developer wrote down is a
 // statement of intent, not a guess, so the ONE fall-through this removes is
 // the declared-id `$PATH` probe for a bare candidate, not the file layer.
@@ -128,6 +128,23 @@
 import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
+import { localDirUnder } from "./project-local.mjs";
+/** Where a project's tools.json lives: its never-committed local/, because
+ * a tool's path is this machine's. `toolsDir` is the project's
+ * .c64-re-tools/. */
+export function toolsJsonPath(toolsDir) {
+    return join(localDirUnder(toolsDir), "tools.json");
+}
+/** Where tools.json lived before local/ existed. A file still there is
+ * refused by name rather than silently ignored: an override that stopped
+ * working without a word is the worst outcome. */
+function legacyToolsJsonRefusal(toolsDir, exists) {
+    const legacy = join(toolsDir, "tools.json");
+    if (!exists(legacy))
+        return null;
+    return (`${legacy} is no longer read -- tools.json now lives in the project's machine-local folder, at ` +
+        `${toolsJsonPath(toolsDir)}. Move it there.`);
+}
 /** This module's own directory. Computed once, at module load, purely as
  * the DEFAULT for `deps.here` below -- never assigned to again, and never
  * read as a substitute for a caller-supplied `toolsDir`/`projectRoot`. */
@@ -231,7 +248,7 @@ function describeValueShape(value) {
         return value === "" ? "an empty string" : `a string (${JSON.stringify(value)})`;
     return `a ${typeof value} (${JSON.stringify(value)})`;
 }
-/** Judges `.c64-re-tools/tools.json` alone and returns every file-level
+/** Judges `.c64-re-tools/local/tools.json` alone and returns every file-level
  * problem it finds -- unparseable JSON, a top level that is not a plain
  * object, a key that names no declared tool, a value that is not a
  * non-empty string, and an entry naming a tool this declaration says the
@@ -248,12 +265,15 @@ export function validateToolsFile(deps) {
     const exists = deps.exists ?? existsSync;
     const readFile = deps.readFile ?? ((p) => readFileSync(p, "utf8"));
     const here = deps.here ?? HERE;
-    const filePath = join(deps.toolsDir, "tools.json");
+    const filePath = toolsJsonPath(deps.toolsDir);
     let text;
     if (deps.raw !== undefined) {
         text = deps.raw;
     }
     else {
+        const legacy = legacyToolsJsonRefusal(deps.toolsDir, exists);
+        if (legacy !== null)
+            return [{ toolId: null, key: "", message: legacy }];
         if (!exists(filePath))
             return [];
         text = readFile(filePath);
@@ -331,7 +351,7 @@ export function validateToolsFile(deps) {
 }
 /** Resolves one declared tool id through, in order: an environment
  * variable (using the env-var name the declaration's own `location.envVar`
- * names -- never a name hardcoded in this file), `.c64-re-tools/tools.json`,
+ * names -- never a name hardcoded in this file), `.c64-re-tools/local/tools.json`,
  * then a `$PATH` walk for the tool's own id (executable-kind ids only -- a
  * `$PATH` walk for a directory-kind id is meaningless, so that id's probe
  * layer answers `null` rather than recording a candidate nobody meant).
@@ -463,7 +483,7 @@ export function resolveTool(id, deps) {
     //
     //   If neither step found a match, the variable WAS set non-empty and
     //   nothing answered it (`envUnresolved`) -- WHATEVER the value's shape.
-    //   This is recorded but not yet returned -- `.c64-re-tools/tools.json`
+    //   This is recorded but not yet returned -- `.c64-re-tools/local/tools.json`
     //   still gets its say (PD-14: an entry a developer wrote down is a
     //   statement of intent, not a guess), and only once THAT layer also has
     //   nothing to say for this id does resolution refuse, immediately before
@@ -510,7 +530,7 @@ export function resolveTool(id, deps) {
         }
     }
     /** Builds the environment layer's terminal refusal sentence (PD-13/PD-21):
-     * composed only when `envUnresolved` fired above AND `.c64-re-tools/tools.json`
+     * composed only when `envUnresolved` fired above AND `.c64-re-tools/local/tools.json`
      * had nothing to say for this id either. Names the tool id, the declared
      * variable, the value it held, what was looked for, and every candidate
      * tried so far -- mirroring `buildFileLayerRefusal()`'s own prose idiom
@@ -531,9 +551,9 @@ export function resolveTool(id, deps) {
             return (`${base}; the seam will not fall back to searching $PATH for "${id}" itself, ` +
                 `because that could start a different binary than the one ${varName} named`);
         }
-        return `${base}; resolution is terminal for ${varName}, and .c64-re-tools/tools.json was consulted and had nothing to say for "${id}" either`;
+        return `${base}; resolution is terminal for ${varName}, and .c64-re-tools/local/tools.json was consulted and had nothing to say for "${id}" either`;
     };
-    // Layer 2: `.c64-re-tools/tools.json`. This is the one layer D-08 scopes
+    // Layer 2: `.c64-re-tools/local/tools.json`. This is the one layer D-08 scopes
     // validation to, and the amended LOC-06 triad applies in full here: a
     // named entry is refused by name when the path is absent, is not what
     // its record's `kind` declares, or -- for a `directory` kind -- does
@@ -559,9 +579,13 @@ export function resolveTool(id, deps) {
     // can be read from either shape at all); a present-but-not-a-non-empty-
     // string value affects only the id it names, so a sibling id's own
     // well-formed entry in the same file still resolves.
-    const toolsJsonPath = join(deps.toolsDir, "tools.json");
-    if (exists(toolsJsonPath)) {
-        const rawText = readFile(toolsJsonPath);
+    const legacyRefusal = legacyToolsJsonRefusal(deps.toolsDir, exists);
+    if (legacyRefusal !== null) {
+        return { id, path: null, tried, layer: null, mechanism: null, refusal: legacyRefusal, envCandidate };
+    }
+    const toolsJsonFile = toolsJsonPath(deps.toolsDir);
+    if (exists(toolsJsonFile)) {
+        const rawText = readFile(toolsJsonFile);
         if (rawText.trim() !== "") {
             let parsed;
             let parseFailed = false;
@@ -578,7 +602,7 @@ export function resolveTool(id, deps) {
                     tried,
                     layer: null,
                     mechanism: null,
-                    refusal: `${toolsJsonPath} could not be parsed: its bytes are not valid JSON`,
+                    refusal: `${toolsJsonFile} could not be parsed: its bytes are not valid JSON`,
                     envCandidate,
                 };
             }
@@ -589,7 +613,7 @@ export function resolveTool(id, deps) {
                     tried,
                     layer: null,
                     mechanism: null,
-                    refusal: `${toolsJsonPath} must be a plain object mapping a declared tool id to a path string; found ${describeValueShape(parsed)}`,
+                    refusal: `${toolsJsonFile} must be a plain object mapping a declared tool id to a path string; found ${describeValueShape(parsed)}`,
                     envCandidate,
                 };
             }
@@ -632,7 +656,7 @@ export function resolveTool(id, deps) {
     // layer's TERMINAL refusal. Reached only when a declared variable was set
     // to a non-empty value that resolved through neither Layer 1 step
     // (`envUnresolved`, above -- now set WHATEVER the value's shape), AND
-    // `.c64-re-tools/tools.json` had nothing to say for this id either (a
+    // `.c64-re-tools/local/tools.json` had nothing to say for this id either (a
     // present, well-formed, resolving entry already returned above; an
     // ABSENT entry falls through to here, same as before this phase). This is
     // what makes the declared-id `$PATH` probe below UNREACHABLE once a
@@ -662,7 +686,7 @@ export function resolveTool(id, deps) {
     return { id, path: null, tried, layer: null, mechanism: null, refusal: null, envCandidate };
 }
 /** Builds the text a doctor (Phase 61's `DOCTOR-08`) writes as
- * `.c64-re-tools/tools.json` -- an EXPORT of this seam, never a committed
+ * `.c64-re-tools/local/tools.json` -- an EXPORT of this seam, never a committed
  * static example, so the doctor fills in paths it itself resolved through
  * `resolveTool()` and this project never carries two templates that can
  * disagree (D-12's locked bare-string shape rides along: every emitted tool
@@ -720,7 +744,7 @@ export function toolsFileTemplate(resolved, deps = {}) {
  *
  * An id the declaration does not carry, and a record with no `remedies`
  * block, both return `[]` rather than throwing: this module returns
- * structured results, and `vice-errors.ts` is not reached from here. The id
+ * structured results, and `vice-errors.mts` is not reached from here. The id
  * lookup is exact ARRAY membership against the declaration's own key set,
  * never a bracket property lookup on an unchecked string (T-60-02) -- the
  * same defence `resolveTool()` and `validateToolsFile()` already carry for

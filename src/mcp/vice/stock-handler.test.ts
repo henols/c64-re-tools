@@ -10,7 +10,7 @@ import { isErrorText, convertHandshakeError, convertWireError, stockAnswer, deri
 import { attachRunStateTracker, resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { ErrorCode, StockFramingError, StockProtocolError, StockResponseMismatchError, StockConnectionClosedError, type ViceMonitorClient } from "./stock-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
-import { MachineRestartedError } from "./vice-errors.ts";
+import { MachineRestartedError } from "./vice-errors.mts";
 
 beforeEach(() => {
   resetRunStateTrackersForTest();

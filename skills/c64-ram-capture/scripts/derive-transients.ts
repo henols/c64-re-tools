@@ -47,7 +47,7 @@
 //     `compare.ts` classifies a one-bit difference as "drift" and lets it
 //     pass anywhere. A one-bit difference outside the allow-list FAILS here.
 //     The cost of getting this wrong is recorded in
-//     `src/mcp/vice/capture-predicate.ts`'s header: a predicate carrying
+//     `src/mcp/vice/capture-predicate.mts`'s header: a predicate carrying
 //     either inherited rule passes the phase's one-bit fail-ability control,
 //     so the control goes green having proven nothing.
 //
@@ -59,10 +59,10 @@
 // exclusion disappears and a difference there is a real difference.
 //
 // WHY IT CARRIES ITS OWN COMPARISON INSTEAD OF CALLING THE MCP-SIDE ONE.
-// `src/mcp/vice/capture-predicate.ts` is the authoritative predicate, and
+// `src/mcp/vice/capture-predicate.mts` is the authoritative predicate, and
 // `vsf-slice.ts` in this directory shows the route a skill script takes to
 // reach the MCP tree: spawn the interpreter on a CLI entry point. That route
-// is unavailable here -- `capture-predicate.ts` is a pure library with no CLI
+// is unavailable here -- `capture-predicate.mts` is a pure library with no CLI
 // entry point, a static cross-package import resolves from an installed skill
 // (see `vsf-slice.ts`'s header for the measured constraint), and
 // a transitive closure walk over the published set would fail the
@@ -124,7 +124,7 @@ type RawJson = Record<string, unknown> | unknown[] | string | number | boolean |
 
 /** The committed maximum number of addresses an allow-list may enumerate
  * This literal MUST equal `TRANSIENT_ALLOW_LIST_CAP` in
- * `src/mcp/vice/capture-predicate.ts`; the colocated test asserts that
+ * `src/mcp/vice/capture-predicate.mts`; the colocated test asserts that
  * equality against the IMPORTED constant rather than against a second copy of
  * the number, so the two cannot drift apart silently. */
 const TRANSIENT_ALLOW_LIST_CAP = 64;

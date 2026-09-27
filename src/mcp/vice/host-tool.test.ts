@@ -65,17 +65,18 @@ import { dxaSkipReasonFor, assertDxaRequiredIfEnvSet } from "./dxa-gate.ts";
 // assertions below cannot drift from ghidra-project.mts's one authoritative
 // definition of either path.
 // 34-10 Task 2 (CR-05): a container-side import into a container-side test
-// file -- legal here, and anno-types.ts names no node:sqlite specifier.
+// file -- legal here, and anno-types.mts names no node:sqlite specifier.
 // Drives the OTHER implementation of the same ancestor-realpath walk for the
 // equivalence table below.
-import { storePathWithinWorkspace, AnnoStorePathError } from "./anno-types.ts";
+import { storePathWithinWorkspace, AnnoStorePathError } from "./anno-types.mts";
+import { toolsJsonPath } from "./tool-location.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Reach ACME only through the shared seam -- never a second hand-rolled probe.
 const SKIP_REASON: string | false = acmeSkipReasonFor("host-tool.test.ts");
 
-test("ACME availability gate (mirrors skill-acme-build-cli.test.ts's own gate) -- always runs, never skips", () => {
+test("ACME availability gate (mirrors skill-assembler-cli.test.ts's own gate) -- always runs, never skips", () => {
   assertAcmeRequiredIfEnvSet(assert);
 });
 
@@ -351,8 +352,8 @@ function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8" | "ech
  * `runHostTool()` end-to-end through the compiled artifact, never
  * `resolveTool()` in isolation the way `tool-location.test.ts` does. */
 function writeToolsJson(dir: string, entries: Record<string, string>): void {
-  mkdirSync(join(dir, ".c64-re-tools"), { recursive: true });
-  writeFileSync(join(dir, ".c64-re-tools", "tools.json"), JSON.stringify(entries), "utf8");
+  mkdirSync(dirname(toolsJsonPath(join(dir, ".c64-re-tools"))), { recursive: true });
+  writeFileSync(toolsJsonPath(join(dir, ".c64-re-tools")), JSON.stringify(entries), "utf8");
 }
 
 /** Plan 60-03 (DECL-03 non-vacuity): writes a scratch `prerequisites.json`
@@ -940,7 +941,7 @@ test("resolveWorkspacePath: an unreadable ancestor directory refuses by name rat
 // CR-05 (34-10 Task 2): the edge cases that make the control a control --
 // adjacency, empty/degenerate, not-yet-existing ancestors, dangling (three
 // ways), cycles (two positions), normalisation, and a cross-implementation
-// equivalence table against anno-types.ts's storePathWithinWorkspace(). No
+// equivalence table against anno-types.mts's storePathWithinWorkspace(). No
 // production code here -- if a case cannot be made to pass, Task 1's walk is
 // wrong.
 // ---------------------------------------------------------------------------
@@ -1055,7 +1056,7 @@ test("resolveWorkspacePath: redundant separators, \".\" and \"..\" segments all 
   });
 });
 
-test("resolveWorkspacePath and anno-types.ts's storePathWithinWorkspace() agree: refusal for refusal, acceptance for acceptance, and identical resolved paths where both accept (equivalence table, A-15)", async () => {
+test("resolveWorkspacePath and anno-types.mts's storePathWithinWorkspace() agree: refusal for refusal, acceptance for acceptance, and identical resolved paths where both accept (equivalence table, A-15)", async () => {
   await withSymlinkFixture(async (ws) => {
     mkdirSync(join(ws, "sub"), { recursive: true });
     symlinkSync(join(ws, "sub"), join(ws, "inside-link"), "dir");
@@ -1094,7 +1095,7 @@ test("resolveWorkspacePath and anno-types.ts's storePathWithinWorkspace() agree:
         try {
           annoAccepted = storePathWithinWorkspace(join(ws, rel), ws);
         } catch (e) {
-          assert.ok(e instanceof AnnoStorePathError, `anno-types.ts's confinement must throw AnnoStorePathError for row ${JSON.stringify(rel)}, got ${(e as Error).constructor.name}`);
+          assert.ok(e instanceof AnnoStorePathError, `anno-types.mts's confinement must throw AnnoStorePathError for row ${JSON.stringify(rel)}, got ${(e as Error).constructor.name}`);
           annoThrew = true;
         }
         executedComparisons += 1;
@@ -3092,7 +3093,7 @@ test("runHostTool: oracle.run resolves { ok: false } rather than throwing when t
     // runOracleRun()'s own try block by this plan -- fails with EACCES
     // instead of succeeding, exercising the exact refusal path this test
     // guards.
-    const scratchParent = join(dir, ".c64-re-tools", "runs", "oracle");
+    const scratchParent = join(dir, ".c64-re-tools", "local", "runs", "oracle");
     mkdirSync(scratchParent, { recursive: true });
     chmodSync(scratchParent, 0o500);
     try {

@@ -58,7 +58,7 @@ import { dirname, join, resolve } from "node:path";
 // subject was renamed is the drift it exists to catch -- carrying
 // `annoNameFor()`, the upstream-to-surface mapping plan 29-08 added, so the
 // comparison keeps its meaning instead of becoming a rename.
-import { ANNO_TOOL_DEFINITIONS, CURATED_ANNO_TOOLS } from "./anno-tools.ts";
+import { ANNO_TOOL_DEFINITIONS, CURATED_ANNO_TOOLS } from "./anno-tools.mts";
 import { annoRegisterEntryFor } from "./anno-register.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

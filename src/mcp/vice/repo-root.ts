@@ -248,7 +248,8 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * fires. That is the mechanism that stops this specific claim going false
  * again (threat `T-40-10-02`):
  *   - repo-root.ts -- this definition, the line below (1)
- *   - install-resources.ts -- `installTargetDir()`'s `bin` join (1)
+ *   - install-resources.ts -- `projectToolsDirOf()`, which `installTargetDir()`
+ *     (`local/bin`) and the local/ creation both go through (1)
  *   - vice-broker.mts -- `run()`'s `toolsDir` for the once-per-process
  *     emulator-binary resolution (1). `parseArgs()`'s own state-dir
  *     resolution used to join the literal a second time, on the explicit

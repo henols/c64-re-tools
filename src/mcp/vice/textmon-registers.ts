@@ -6,7 +6,7 @@
 // framed text into structured data.
 //
 // WHY THIS FILE EXISTS RATHER THAN LIVING INSIDE THE TOOL HANDLER: the same
-// reasoning `textmon-memmap.ts`, `textmon-profile.ts` and `disasm-decoder.ts`
+// reasoning `textmon-memmap.mts`, `textmon-profile.ts` and `disasm-decoder.mts`
 // state for themselves applies here unchanged -- keeping the parser
 // import-free of transport code means any future non-tool consumer can
 // depend on this one file without dragging in a socket, and PARSE-03's own

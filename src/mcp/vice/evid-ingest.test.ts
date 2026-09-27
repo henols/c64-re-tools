@@ -1,6 +1,6 @@
 // evid-ingest.test.ts
 //
-// Deterministic, no-store coverage for evid-ingest.ts -- the pure transform
+// Deterministic, no-store coverage for evid-ingest.mts -- the pure transform
 // from a parsed `memmapshow` access map to durable-shaped observation rows
 // (EVID-01, EVID-04). Nothing here opens a store: `execObservationsFrom()`,
 // `runIdentityFrom()` and `ingestAccessMap()` are all plain-data-in,
@@ -12,7 +12,7 @@
 // controls, the per-bank split, the run-identity refusals, the unabsorbed
 // parse refusal, and determinism via sorting.
 //
-// Task 3 adds a source-census case: evid-ingest.ts must never compare
+// Task 3 adds a source-census case: evid-ingest.mts must never compare
 // against the byte-derived block table's own vocabulary strings -- this
 // module classifies nothing and must never begin to.
 import { test } from "node:test";
@@ -21,11 +21,11 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
-import { parseAccessMap, type AccessMap, type AccessMapEntry, type AccessFlags } from "./textmon-memmap.ts";
-import { execObservationsFrom, runIdentityFrom, ingestAccessMap, type ExecObservation } from "./evid-ingest.ts";
+import { parseAccessMap, type AccessMap, type AccessMapEntry, type AccessFlags } from "./textmon-memmap.mts";
+import { execObservationsFrom, runIdentityFrom, ingestAccessMap, type ExecObservation } from "./evid-ingest.mts";
 
 const HERE = fileURLToPath(import.meta.url);
-const OWN_MODULE = HERE.replace(/evid-ingest\.test\.ts$/, "evid-ingest.ts");
+const OWN_MODULE = HERE.replace(/evid-ingest\.test\.ts$/, "evid-ingest.mts");
 
 const NO_ACCESS: AccessFlags = { read: false, write: false, execute: false };
 
@@ -246,28 +246,28 @@ test("ingestAccessMap on a successful parse returns the derived run identity and
 });
 
 // ---------------------------------------------------------------------------
-// Task 3: source-census -- evid-ingest.ts never compares against the
+// Task 3: source-census -- evid-ingest.mts never compares against the
 // byte-derived block table's own vocabulary. This module classifies
 // nothing and must never begin to.
 // ---------------------------------------------------------------------------
 
-test("source census: evid-ingest.ts never compares against the block table's own vocabulary strings", () => {
+test("source census: evid-ingest.mts never compares against the block table's own vocabulary strings", () => {
   const source = readFileSync(OWN_MODULE, "utf8");
   const nonCommentLines = source.split("\n").filter((line) => !/^\s*[/*]/.test(line));
   const nonCommentSource = nonCommentLines.join("\n");
-  // block-class.ts's own BlockClass vocabulary ("code" | "data" | "undefined")
+  // block-class.mts's own BlockClass vocabulary ("code" | "data" | "undefined")
   // -- neither may appear as a string literal in this module's non-comment
   // source. This module reports execution observations only; it never
   // classifies an address as code, data or anything else. `node:sqlite` and
   // `anno-store` absence used to be asserted, non-redundantly, by
-  // anno-seam.test.ts's shipped-module-set scan (which covered evid-ingest.ts
+  // anno-seam.test.ts's shipped-module-set scan (which covered evid-ingest.mts
   // too). Phase 56 removed that scan, so this census does not repeat the
   // `node:sqlite` substring check here.
   for (const banned of ['"code"', "'code'", '"data"', "'data'", "block-class"]) {
     assert.equal(
       nonCommentSource.includes(banned),
       false,
-      `evid-ingest.ts must never reference ${banned} outside a comment -- this module classifies nothing`,
+      `evid-ingest.mts must never reference ${banned} outside a comment -- this module classifies nothing`,
     );
   }
 });

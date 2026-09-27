@@ -21,7 +21,7 @@
 // ---------------------------------------------------------------------------
 // WHY IT IS A SEPARATE PROCESS AT ALL, WHICH IS THE ONLY INTERESTING QUESTION
 // ---------------------------------------------------------------------------
-// `STORE-07` confines `node:sqlite` to `anno-store.ts`. `anno-seam.test.ts`
+// `STORE-07` confines `node:sqlite` to `anno-store.mts`. `anno-seam.test.ts`
 // used to bound the TEST tree with the same predicate: the set of test files
 // naming the builtin was a DECLARED list, then exactly `["anno-seam.test.ts"]`.
 // Phase 56 removed that declared-list check. A fixture builder written inline

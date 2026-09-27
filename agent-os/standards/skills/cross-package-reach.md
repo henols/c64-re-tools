@@ -28,13 +28,13 @@ spawn(process.execPath, [mod.path, "run", "--tool", tool, "--args", JSON.stringi
 
 ## Sibling skills
 
-A skill may be installed without the `c64-ram-capture` skill it uses. Never
+A skill may be installed without the `c64-project` skill it uses. Never
 value-import a sibling skill statically; load it through the skill's
 `scripts/sibling.ts` so a missing sibling is a refusal that names it.
 
 ```ts
-import type { HostToolResponse } from "../../c64-ram-capture/scripts/mcp-module.ts"; // erased: fine
-const mcp = await loadSibling(() => import("../../c64-ram-capture/scripts/mcp-module.ts"), "mcp-module.ts", "c64-petcat");
+import type { HostToolResponse } from "../../c64-project/scripts/mcp-module.ts"; // erased: fine
+const mcp = await loadSibling(() => import("../../c64-project/scripts/mcp-module.ts"), "mcp-module.ts", "c64-basic");
 if (!mcp.ok) return { ok: false, message: mcp.message };
 ```
 

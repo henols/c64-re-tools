@@ -1,4 +1,4 @@
-// node:test coverage of disasm-renderer.ts -- D-09's !byte substitution for
+// node:test coverage of disasm-renderer.mts -- D-09's !byte substitution for
 // every acmeExpressible:false opcode, D-10's note comments, D-11's width
 // invariant, and DISASM-06's substitution gating table. Every fixture is
 // built by calling decode() on real opcode bytes -- never a hand-constructed
@@ -10,9 +10,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { render, renderLine } from "./disasm-renderer.ts";
-import { decode } from "./disasm-decoder.ts";
-import { OPCODES, LENGTH_FOR_MODE, type AddressingMode } from "./disasm-opcodes.ts";
+import { render, renderLine } from "./disasm-renderer.mts";
+import { decode } from "./disasm-decoder.mts";
+import { OPCODES, LENGTH_FOR_MODE, type AddressingMode } from "./disasm-opcodes.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -340,9 +340,9 @@ describe("D-10: notes render as trailing comments", () => {
 
 // ------------------------------------------------- 7. Purity
 
-describe("purity (D-05: only ./disasm-decoder.ts and/or ./disasm-opcodes.ts, never stock-address.ts)", () => {
-  test("disasm-renderer.ts's only from \"...\" specifiers, after stripping comment lines, are drawn from the allowed set", () => {
-    const source = readFileSync(join(HERE, "disasm-renderer.ts"), "utf8");
+describe("purity (D-05: only ./disasm-decoder.mts and/or ./disasm-opcodes.mts, never stock-address.ts)", () => {
+  test("disasm-renderer.mts's only from \"...\" specifiers, after stripping comment lines, are drawn from the allowed set", () => {
+    const source = readFileSync(join(HERE, "disasm-renderer.mts"), "utf8");
     const codeOnly = source
       .split("\n")
       .filter((line) => !line.trim().startsWith("//"))
@@ -354,7 +354,7 @@ describe("purity (D-05: only ./disasm-decoder.ts and/or ./disasm-opcodes.ts, nev
       .filter((specifier): specifier is string => specifier !== undefined);
 
     const specifiers = [...new Set(fromLines)];
-    const allowed = new Set(["./disasm-decoder.ts", "./disasm-opcodes.ts"]);
+    const allowed = new Set(["./disasm-decoder.mts", "./disasm-opcodes.mts"]);
 
     assert.ok(specifiers.length > 0, "expected at least one import specifier");
     for (const specifier of specifiers) {

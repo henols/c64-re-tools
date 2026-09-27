@@ -13,10 +13,12 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
 
-import { releaseDir } from "./releases.ts";
-import { projectRoot } from "./project-paths.ts";
-import { addrNum, hex4 } from "./watch-loads.ts";
-import type { Address } from "./releases.ts";
+import type { Address } from "../../c64-project/scripts/releases.ts";
+import { loadSibling, siblingOrRefuse } from "./sibling.ts";
+
+const { releaseDir } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/releases.ts"), "releases.ts", "c64-ram-capture"), import.meta.url);
+const { projectRoot } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/project-paths.ts"), "project-paths.ts", "c64-ram-capture"), import.meta.url);
+const { addrNum, hex4 } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/address.ts"), "address.ts", "c64-ram-capture"), import.meta.url);
 
 /** One `{ address, hex }` chunk record the agent wrote after a memory read. */
 export interface MemoryChunk {
@@ -118,7 +120,7 @@ export function sha256Buffer(buf: Uint8Array): string {
 
 /**
  * VIC-II bank number (0-3) from CIA2 port A ($DD00)'s low two bits. The
- * stored value is the INVERSE of the bank number (c64-memory-mapping skill
+ * stored value is the INVERSE of the bank number (c64-memory-map skill
  * memmap: raw value %00 = "Bank #3" $C000-$FFFF ... %11 = "Bank #0"
  * $0000-$3FFF), so bank = 3 - (raw & 3). Verified against
  * a committed chip-state sidecar's own recorded

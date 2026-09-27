@@ -2,7 +2,7 @@
 // Compiled by `tsc` from host-tool.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
 // deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
-// verbatim to .c64-re-tools/bin/, so an edit made only here reaches the host but is lost on the very next
+// verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // host-tool.mts
 //
@@ -41,7 +41,7 @@
 //     resolveWorkspacePath() is the only place a wire-supplied path becomes a
 //     real path. BOTH the workspace root and the candidate go through the
 //     same ancestor-realpath walk (realpathOfNearestExisting(), mirroring
-//     anno-types.ts's storePathWithinWorkspace() and its own incident
+//     anno-types.mts's storePathWithinWorkspace() and its own incident
 //     history by name) before the prefix comparison, and the comparison is
 //     over the WALKED (real) paths, never the lexical join -- a purely
 //     lexical path.resolve() + startsWith() check is exactly what a live
@@ -138,6 +138,7 @@ import { resolvedBackend } from "./backend-detect.mjs";
 // SECOND of Phase 59 `D-02`'s three coexisting `$PATH`-walk copies to
 // collapse (plan 60-01 collapsed the first, inside `backend-detect.mts`).
 import { resolveTool, remedyTextsFor, resolveOnPath } from "./tool-location.mjs";
+import { ensureLocalDir, localDirUnder } from "./project-local.mjs";
 // This module's FOURTH sibling import, the SAME value-import-of-a-compiled-
 // artifact convention every import above already uses. Phase 65 (SEAM-01,
 // D-03): bindStagedInputs()'s own output-name binding (below) validates a
@@ -835,7 +836,7 @@ export function normaliseHostToolRequest(raw) {
 // separator-appended prefix comparison, and the returned `ok: true` value is
 // the WALKED (real) path, never the lexical join. That is load-bearing
 // rather than a symmetry preference, for the two reasons
-// anno-types.ts:1159-1176 already names for its own two consumers of this
+// anno-types.mts:1159-1176 already names for its own two consumers of this
 // walk: a workspace root that does not yet exist is a legitimate input (a
 // bare realpath would throw a raw ENOENT), and resolving only the candidate
 // side makes every in-workspace path look foreign whenever the root itself
@@ -863,9 +864,9 @@ export function normaliseHostToolRequest(raw) {
 /**
  * The maximum number of DANGLING-symlink hops `realpathOfNearestExisting`
  * will take before refusing. 40 is deliberately the same value
- * anno-types.ts:971 uses -- Linux's own `MAXSYMLINKS`, so a chain this walk
+ * anno-types.mts:971 uses -- Linux's own `MAXSYMLINKS`, so a chain this walk
  * refuses is one the kernel would refuse too. Task 2's equivalence case
- * (against anno-types.ts's storePathWithinWorkspace()) is what keeps the two
+ * (against anno-types.mts's storePathWithinWorkspace()) is what keeps the two
  * copies from drifting apart. The bound exists because a cycle (`a -> b`,
  * `b -> a`) is otherwise an infinite loop inside a function whose input
  * arrives unvalidated from the transport.
@@ -874,14 +875,14 @@ const MAX_SYMLINK_HOPS = 40;
 /**
  * Does the path ENTRY `entry` exist -- does this NAME exist in its
  * directory -- without following a symlink at the leaf, and without
- * throwing. Mirrors anno-types.ts's own `pathEntryExists`, with one
+ * throwing. Mirrors anno-types.mts's own `pathEntryExists`, with one
  * deliberate difference: this returns a refusal where that version throws,
  * because `resolveWorkspacePath()`'s contract is a result object and this
  * module's own never-throw discipline must not be widened by adding
  * filesystem access.
  *
  * `throwIfNoEntry: false` suppresses `ENOENT` and NOTHING ELSE
- * (anno-types.ts:985-1000's own REVERSED-2026-08-28 note) -- a permission
+ * (anno-types.mts:985-1000's own REVERSED-2026-08-28 note) -- a permission
  * error or any other stat failure on an ancestor becomes a named refusal
  * here rather than escaping as a bare thrown error.
  */
@@ -902,7 +903,7 @@ function pathEntryExists(entry, forPath) {
  * re-joined after it -- or a refusal naming the path when the walk cannot
  * answer.
  *
- * Mirrors anno-types.ts:1082's `realpathOfNearestExisting()` exactly, with
+ * Mirrors anno-types.mts:1082's `realpathOfNearestExisting()` exactly, with
  * the same deliberate difference `pathEntryExists()` above states: this
  * RETURNS a refusal where that version THROWS `AnnoStorePathError`. Walks up
  * while the path ENTRY does not exist, unshifting each `basename` onto a
@@ -1032,7 +1033,7 @@ export function resolveWorkspacePath(repoRoot, relative) {
  * test call sites across this file's own test suite -- which exercise argv
  * construction alone -- keep compiling and keep returning the same argv they
  * return today, with no per-call-site edit required. Documented as a last
- * resort, not a guess: a working directory with no `.c64-re-tools/tools.json`
+ * resort, not a guess: a working directory with no `.c64-re-tools/local/tools.json`
  * makes the file layer a silent no-op for that call, so this fallback can
  * only WIDEN resolution (adding the environment and `$PATH`/fixed-prefix
  * layers a bare literal never had) where a real project root already happens
@@ -1100,7 +1101,7 @@ export function buildHostToolArgv(request, resolved, log, locate) {
             };
         }
         const acmePath = acmeResolved.path;
-        // Fixed flags first, in the SAME order skills/acme-build/scripts/
+        // Fixed flags first, in the SAME order skills/c64-assembler/scripts/
         // acme.ts's build() uses today, then one -D per define and one -I pair
         // per include in caller-given order, then --setpc if given, then the
         // resolved source path LAST.
@@ -2777,12 +2778,15 @@ async function runOracleRun(args, deps) {
     // `join(toolsDir(), "runs", "oracle")`, the same convention
     // install-resources.ts's installTargetDir() uses.
     //
-    const scratchDir = join(repoRootAbs, ".c64-re-tools", "runs", "oracle", `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    // It is regenerable scratch, so it lives in the project's local/.
+    const projectToolsDir = join(repoRootAbs, ".c64-re-tools");
+    const scratchDir = join(localDirUnder(projectToolsDir), "runs", "oracle", `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     try {
         // A fix: scratch-directory creation moved INSIDE this try block -- a
         // full disk or an unwritable parent now resolves to the function's
         // existing refusal shape instead of throwing synchronously out of
         // runHostTool(), which sits outside any try/catch of its own.
+        ensureLocalDir(projectToolsDir);
         mkdirSync(scratchDir, { recursive: true });
         const scratchOut = join(scratchDir, "unpacked.out");
         const timeoutMs = hostToolTimeoutMs("oracle.run", deps.timeoutMs);

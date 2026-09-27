@@ -46,16 +46,18 @@ import {
   type AnnoComment,
   type AnnoCrossReference,
   type AnnoSymbol,
-} from "./anno-coverage.ts";
-import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
-import { DATA_TYPES } from "./anno-types.ts";
-import { decode } from "./disasm-decoder.ts";
-import { decodeRawData } from "./prg-image.ts";
+} from "./anno-coverage.mts";
+import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.mts";
+import { DATA_TYPES } from "./anno-types.mts";
+import { decode } from "./disasm-decoder.mts";
+import { decodeRawData } from "./prg-image.mts";
 // CR-05 case E asserts that the coverage loader and the MCP tool surface's own
 // image loader agree. `loadImage()` is module-private, so the comparison runs
 // through its published face, `anno_get_binary_info`.
-import { openStore, closeStore } from "./anno-store.ts";
-import { runAnnoTool } from "./anno-tools.ts";
+import { openStore, closeStore } from "./anno-store.mts";
+import { runAnnoTool } from "./anno-call-client.ts";
+import { openTestProject } from "./workspace-store-fixture.ts";
+import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = join(HERE, "fixtures", "coverage");
@@ -605,12 +607,12 @@ test("independence: rewriting every block entry to one type leaves every census 
 // rewritten. This section proves the stronger thing a later phase actually
 // needs: the census does not move when the whole block VOCABULARY is
 // replaced -- when a different implementation of "what class is this address,
-// according to the store" is substituted through `block-class.ts`'s
+// according to the store" is substituted through `block-class.mts`'s
 // `BlockClassifier` seam.
 //
 // WHY THE SECOND VOCABULARY SHARES NO STRING WITH THE FIRST -- do NOT
 // "simplify" this back into overlap. Zero overlap is what makes a comparison
-// site LEFT BEHIND in `anno-coverage.ts` observable. A left-behind site
+// site LEFT BEHIND in `anno-coverage.mts` observable. A left-behind site
 // compares a block entry's raw `type` against the production vocabulary's own
 // spelling; fed a listing spelled in that vocabulary it would agree with the
 // production adapter and hide. Fed a listing the substituted classifier reads
@@ -628,7 +630,7 @@ const ANALYSER_BLOCK_SPELLINGS: readonly string[] = ["Code", "Undefined", "Byte"
  * disjointness assertion below stays a measurement rather than becoming stale
  * prose.
  *
- * `block-class.ts` now accepts two vocabularies: the analyser's four
+ * `block-class.mts` now accepts two vocabularies: the analyser's four
  * capitalised spellings above and this project's own store's twelve lowercase
  * members, imported from their single home. Left hand-written at four entries
  * this constant would silently stop covering the twelve the boundary also
@@ -679,7 +681,7 @@ test("the production block-spelling list is the DERIVED union of BOTH accepted v
   for (const member of DATA_TYPES) {
     assert.ok(
       PRODUCTION_BLOCK_SPELLINGS.includes(member),
-      `the derived union dropped the store block type ${JSON.stringify(member)} -- block-class.ts accepts it, so ` +
+      `the derived union dropped the store block type ${JSON.stringify(member)} -- block-class.mts accepts it, so ` +
         "the disjointness assertion below must cover it",
     );
   }
@@ -703,7 +705,7 @@ test("substitutability: the substituted vocabulary shares no string with EITHER 
     shared,
     [],
     "the substituted vocabulary shares a spelling with the production one -- a comparison site left behind in " +
-      "anno-coverage.ts could then agree with the adapter by accident and hide from the proof below",
+      "anno-coverage.mts could then agree with the adapter by accident and hide from the proof below",
   );
 });
 
@@ -816,9 +818,9 @@ test("idempotency: building the coverage report twice over the same fixture thro
 // ---------------------------------------------------------------------------
 // 2c. The LABEL-KIND half of the same boundary
 //
-// `SEAM-03` extracted the BLOCK-type vocabulary into `block-class.ts`. The
+// `SEAM-03` extracted the BLOCK-type vocabulary into `block-class.mts`. The
 // sibling LABEL-KIND vocabulary was never extracted and is still compared
-// inline at four sites in `anno-coverage.ts`: `:1430`
+// inline at four sites in `anno-coverage.mts`: `:1430`
 // (`kind === "System" || kind === "Platform"`), `:1432` (`kind === "User"`),
 // `:1869` (the `nameByAddress` build) and `:2180` (the `seeds` build). This
 // section does not extract that second boundary -- it PINS the agreement and
@@ -852,7 +854,7 @@ test("a lowercase label kind collapses the user tally to zero with no error -- t
   const after = reportFor(WELL_DOCUMENTED, { symbols: lowercased });
 
   const why =
-    "computeLabelRatio compares the kind against the CAPITALISED spellings at anno-coverage.ts:1430 and :1432, " +
+    "computeLabelRatio compares the kind against the CAPITALISED spellings at anno-coverage.mts:1430 and :1432, " +
     "and a kind matching neither falls through BOTH branches -- so a store emitting a lowercase kind empties the " +
     "tally with no error anywhere. The same comparison is repeated inline at :1869 (nameByAddress) and :2180 " +
     "(seeds), where the same lowercase kind empties the census's name map and its seed set. This tally is the " +
@@ -3911,7 +3913,7 @@ test("LIVE non-vacuity: both routes are recomputed from the committed fixture an
 // CR-05 / REPOINT-01 / WR-07, and the `T-29-14-01` disclosure symmetry.
 //
 // WHAT THIS SECTION REPRODUCES. `anno coverage game.prg --store
-// game.annostore` -- the ONLY measurement instruction `routine-queue-walker`
+// game.annostore` -- the ONLY measurement instruction `c64-reverse-engineering`
 // has -- printed a full report of ZEROS and exited 1, because the positional
 // was loaded by two functions that between them understood exactly one format:
 // the retired analyser's JSON project file carrying a gzip-then-base64
@@ -3928,7 +3930,7 @@ test("LIVE non-vacuity: both routes are recomputed from the committed fixture an
 // the sibling render verb in this same round).
 //
 // THE DISPATCH ORDER IS THE POINT OF CASE C. Extension first, length second --
-// copied from `anno-tools.ts`'s `loadImage()`, not re-derived. A short flat
+// copied from `anno-tools.mts`'s `loadImage()`, not re-derived. A short flat
 // capture must be REFUSED BY NAME, never fall through to the load-address
 // parser and come back with an origin read backwards out of its own payload.
 // ---------------------------------------------------------------------------
@@ -3985,7 +3987,7 @@ test("CR-05 (B): an exactly-65536-byte flat capture with a .raw extension decode
 
 test("CR-05 (C, WR-07): a SHORT flat .raw is refused BY NAME, never parsed as a load address plus payload", async () => {
   await withImageDir((dir) => {
-    // The concrete incident `prg-image.ts`'s header records: 4096 bytes whose
+    // The concrete incident `prg-image.mts`'s header records: 4096 bytes whose
     // first two are 0xea 0xea. Falling through to the load-address parser
     // would report origin $eaea and exit zero. Extension dispatch runs BEFORE
     // any length check precisely so this refusal stays reachable.
@@ -4018,12 +4020,11 @@ test("CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer id
   // `loadImage()` is module-private; `anno_get_binary_info` is its published
   // face and reports the same origin and body length, so this compares the two
   // views of "what is an image" through the surface that actually ships one.
-  // It runs against a real workspace because `loadImage()` confines its path.
+  // It runs against a real workspace because the client confines the path.
   const ws = mkdtempSync(join(tmpdir(), "anno-coverage-agree-"));
   const previous = process.env.CLAUDE_PROJECT_DIR;
   try {
-    const storePath = join(ws, "project.annostore");
-    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    const broker = openTestProject(ws, { dbPath: join(ws, "project.annostore"), projectId: FILE_STORE_PROJECT_ID });
     process.env.CLAUDE_PROJECT_DIR = ws;
 
     for (const [name, bytes, expectOrigin] of [
@@ -4032,7 +4033,7 @@ test("CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer id
     ] as const) {
       const image = writeImageFile(ws, name, bytes);
       const loaded = loadProjectImage(image);
-      const info = await runAnnoTool("anno_get_binary_info", { store: storePath, image });
+      const info = await runAnnoTool("anno_get_binary_info", { image }, { runAnno: broker.runAnno });
       assert.equal(info.isError, false, info.content[0]!.text);
       const toolBody = JSON.parse(info.content[0]!.text) as { origin: number; body_bytes: number };
       assert.equal(loaded.payloadDecoded, true, `${name}: the coverage loader must accept what the tool surface accepts`);
@@ -4040,6 +4041,7 @@ test("CR-05 (E, agreement): loadProjectImage and anno-tools' loadImage answer id
       assert.equal(loaded.origin, toolBody.origin, `${name}: the two loaders must agree on the origin`);
       assert.equal(loaded.bytes.length, toolBody.body_bytes, `${name}: the two loaders must agree on the body length`);
     }
+    broker.close();
   } finally {
     if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
     else process.env.CLAUDE_PROJECT_DIR = previous;

@@ -2,7 +2,7 @@
 // anno-hazard-report.test.ts
 //
 // HERMETIC except for reading committed fixture images and this module's own
-// (and `anno-coverage.ts`'s) source text off disk -- no store, no VICE, no
+// (and `anno-coverage.mts`'s) source text off disk -- no store, no VICE, no
 // network.
 //
 // Behaviors covered, grouped by the stable name prefixes the plan declares:
@@ -54,15 +54,15 @@ import {
   type HazardCrossCheckExpectation,
   type HazardFinding,
   type HazardReport,
-} from "./anno-hazard-report.ts";
+} from "./anno-hazard-report.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const MODULE_PATH = join(HERE, "anno-hazard-report.ts");
+const MODULE_PATH = join(HERE, "anno-hazard-report.mts");
 
 const SMC_PRG_PATH = join(HERE, "fixtures", "export-asm", "smc.prg");
 const TRACER_PRG_PATH = join(HERE, "fixtures", "dxa", "tracer.prg");
 const HAZARD_SUBJECT_PRG_PATH = join(HERE, "fixtures", "hazard-subject", "hazard-subject.prg");
-const COVERAGE_MODULE_PATH = join(HERE, "anno-coverage.ts");
+const COVERAGE_MODULE_PATH = join(HERE, "anno-coverage.mts");
 const CHARSET_PHANTOM_PRG_PATH = join(HERE, "fixtures", "ghidra", "charset-phantom.prg");
 const BANK_PRG_PATH = join(HERE, "fixtures", "ghidra", "bank.prg");
 const CROSS_CHECK_PATH = join(HERE, "fixtures", "hazard-subject", "CROSS-CHECK.md");
@@ -217,15 +217,15 @@ test("hazard reuse: the scanner is declared exactly once and called from exactly
   const hazardText = withoutComments(readFileSync(MODULE_PATH, "utf8"));
   const combined = `${coverageText}\n${hazardText}`;
   const declarations = (combined.match(/\bfunction scanIndirectDispatch\(/g) ?? []).length;
-  assert.equal(declarations, 1, "scanIndirectDispatch must be declared exactly once, in anno-coverage.ts");
+  assert.equal(declarations, 1, "scanIndirectDispatch must be declared exactly once, in anno-coverage.mts");
   const occurrences = (combined.match(/\bscanIndirectDispatch\(/g) ?? []).length;
   const callSites = occurrences - declarations;
   assert.equal(
     callSites,
     2,
-    `scanIndirectDispatch() has ${callSites} non-test call site(s) across anno-coverage.ts and anno-hazard-report.ts. The two ` +
-      "expected sites are the coverage report builder (anno-coverage.ts's buildCoverageReport()) and the hazard report " +
-      "(anno-hazard-report.ts's buildHazardReport()). A third site means either a new caller that must be recorded in this " +
+    `scanIndirectDispatch() has ${callSites} non-test call site(s) across anno-coverage.mts and anno-hazard-report.mts. The two ` +
+      "expected sites are the coverage report builder (anno-coverage.mts's buildCoverageReport()) and the hazard report " +
+      "(anno-hazard-report.mts's buildHazardReport()). A third site means either a new caller that must be recorded in this " +
       "test's own comment, or a second implementation of the scan, which this phase forbids.",
   );
 });
@@ -1122,7 +1122,7 @@ test("hazard read-only: the module contains no file-write call, no store-open ca
     "applyWrite",
   ];
   for (const banned of forbidden) {
-    assert.ok(!source.includes(banned), `anno-hazard-report.ts must never mention ${banned} -- a report run must be read-only by construction`);
+    assert.ok(!source.includes(banned), `anno-hazard-report.mts must never mention ${banned} -- a report run must be read-only by construction`);
   }
 });
 
@@ -1135,10 +1135,10 @@ test("hazard read-only: the module never uses the existing confidence-grade voca
   // would fail on a false positive rather than a genuine vocabulary clash --
   // see this module's own header section on the separate vocabulary.
   for (const bracket of ["[confirmed-code]", "[probable-code]", "[confirmed-data]", "[probable-data]", "[unknown]"]) {
-    assert.ok(!source.includes(bracket), `anno-hazard-report.ts must never render the existing confidence bracket token ${bracket}`);
+    assert.ok(!source.includes(bracket), `anno-hazard-report.mts must never render the existing confidence bracket token ${bracket}`);
   }
   for (const bareToken of ["confirmed-code", "probable-code", "confirmed-data", "probable-data"]) {
-    assert.ok(!source.includes(bareToken), `anno-hazard-report.ts must never reuse the existing confidence token ${bareToken}`);
+    assert.ok(!source.includes(bareToken), `anno-hazard-report.mts must never reuse the existing confidence token ${bareToken}`);
   }
 });
 
@@ -1146,10 +1146,10 @@ test("hazard read-only: the module never uses the existing confidence-grade voca
 // Shipped, not test-only
 // ---------------------------------------------------------------------------
 
-test("anno-hazard-report.ts IS present in package.json's files[] array", () => {
+test("anno-hazard-report.mts IS present in package.json's files[] array", () => {
   const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
   assert.ok(Array.isArray(pkg.files));
-  assert.equal(pkg.files.includes("anno-hazard-report.ts"), true, "anno-hazard-report.ts must ship -- it is reachable through anno-tools.ts and anno-cli.ts once wired");
+  assert.equal(pkg.files.includes("anno-hazard-report.mts"), true, "anno-hazard-report.mts must ship -- it is reachable through anno-tools.mts and anno-cli.ts once wired");
 });
 
 test("hazard shape: HAZARD_CLASSES and HAZARD_DETECTION_STRENGTHS are frozen and declared in a stable order", () => {

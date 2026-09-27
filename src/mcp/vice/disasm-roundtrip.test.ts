@@ -4,7 +4,7 @@
 // D-08/D-09): feeds `vice_disassemble`'s OWN `listing` output to a REAL
 // `acme` process and asserts the reassembled bytes equal the original byte
 // stream exactly, across all 256 opcodes -- then separately asserts D-09's
-// `!byte` substitution table (`disasm-opcodes.ts`'s `acmeExpressible`) in
+// `!byte` substitution table (`disasm-opcodes.mts`'s `acmeExpressible`) in
 // BOTH directions against that same real assembler, so it can neither
 // under-substitute (shipping a mnemonic that does not reassemble) nor
 // over-substitute (hiding a mnemonic ACME genuinely accepts, or -- the
@@ -29,10 +29,10 @@
 //   - Never interpolate the rendered listing (or any test input) into a
 //     shell command string. `assemble()` below writes it to a file and
 //     spawns `acme` with an argv array (T-04-06-01) -- the same convention
-//     `skills/acme-build/scripts/acme.ts` already uses for the one
+//     `skills/c64-assembler/scripts/acme.ts` already uses for the one
 //     other place this repo shells out to ACME.
 //   - Never hardcode a static "known unassemblable" list for Suite C. Every
-//     assertion in that suite is driven from `disasm-opcodes.ts`'s own
+//     assertion in that suite is driven from `disasm-opcodes.mts`'s own
 //     `OPCODES` table, so a future correction to that table is
 //     automatically re-verified the next time this file runs.
 //   - Never treat an ACME stderr WARNING as a failure. ACME 0.97 documents
@@ -47,9 +47,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { OPCODES, type OpcodeEntry, type AddressingMode } from "./disasm-opcodes.ts";
-import { decode } from "./disasm-decoder.ts";
-import { render } from "./disasm-renderer.ts";
+import { OPCODES, type OpcodeEntry, type AddressingMode } from "./disasm-opcodes.mts";
+import { decode } from "./disasm-decoder.mts";
+import { render } from "./disasm-renderer.mts";
 import { callStockTool } from "./stock-tools.ts";
 import { type StockSessionDeps } from "./stock-session.ts";
 import { CommandType } from "./stock-protocol.ts";
@@ -387,7 +387,7 @@ test("Suite C: the acmeExpressible substitution table is byte-faithful in BOTH d
 // The plan's own prediction was that an UNFORCED "lda $0080" would assemble
 // to 2 bytes (ACME re-encoding it to zeropage) -- empirically false against
 // the real installed ACME 0.97 ("Zem"): a 4-hex-digit literal (which is
-// exactly what disasm-renderer.ts's hex4() always emits, for both raw
+// exactly what disasm-renderer.mts's hex4() always emits, for both raw
 // literals and substituted-symbol header definitions) ALREADY forces
 // word-width addressing on this assembler, independent of the `+2` postfix.
 // This suite therefore asserts what is actually true -- the `+2` spelling IS
@@ -395,9 +395,9 @@ test("Suite C: the acmeExpressible substitution table is byte-faithful in BOTH d
 // Suites A/B already exercise for $AD) -- and separately demonstrates, with
 // an UNPADDED 2-digit literal for the identical value, that the underlying
 // shrink hazard the force exists to prevent is real: without SOME safeguard
-// (disasm-renderer.ts's own hex4() padding, in this codebase's actual
+// (disasm-renderer.mts's own hex4() padding, in this codebase's actual
 // mechanism) a value below $0100 WOULD silently shrink. Documented as a
-// deviation in 04-06-SUMMARY.md; no correction to disasm-renderer.ts was
+// deviation in 04-06-SUMMARY.md; no correction to disasm-renderer.mts was
 // needed -- both of its actual mechanisms (hex4 padding AND the `+2` force)
 // independently produce the correct byte-exact result.
 test("Suite D: the +2 size-force spelling is understood by ACME and produces the correct wide encoding (D-11)", { skip: SKIP_REASON }, () => {
@@ -418,7 +418,7 @@ test("Suite D: the +2 size-force spelling is understood by ACME and produces the
   // Non-vacuity proof: demonstrate the shrink hazard is real for the exact
   // same numeric value when written WITHOUT either safeguard (a 2-digit,
   // unpadded literal) -- ACME re-encodes it to zeropage, 2 bytes, a
-  // DIFFERENT opcode ($A5, not $AD). This is what disasm-renderer.ts's own
+  // DIFFERENT opcode ($A5, not $AD). This is what disasm-renderer.mts's own
   // hex4() padding (plus the +2 force, belt-and-suspenders) exists to
   // prevent.
   const { ok: hazardOk, bytes: hazardBytes, stderr: hazardStderr } = assemble("!cpu 6510\n* = $1000\nlda $80\n");

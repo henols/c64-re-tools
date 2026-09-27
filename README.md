@@ -8,15 +8,19 @@ It provides two things as a single installable unit:
 - **The `vice` MCP server** — tools that drive a host VICE
   emulator (run disks, read/write RAM, checkpoints, save-state capture,
   scripted input) through an on-demand broker.
-- **Eight C64 skills:**
-  - `acme-build` — assemble 6502/6510 source with the ACME cross-assembler.
-  - `c64-disk-access` — read a `.d64` image's directory, BAM and files with c1541.
-  - `c64-memory-mapping` — resolve any C64 address; annotate disassembly.
-  - `c64-petcat` — detokenize a BASIC stub and find its machine-code handover.
-  - `c64-program-recon` — work out an unknown C64 program's runtime structure.
-  - `c64-provenance-diff` — decide what a cracker changed vs. original code.
+- **Twelve C64 skills, one capability each:**
+  - `c64-emulator` — drive the running C64 through the `vice_*` tools.
+  - `c64-assembler` — assemble 6502/6510 source into a `.prg`.
+  - `c64-disk` — read a `.d64` image's directory, BAM and files.
+  - `c64-basic` — detokenize BASIC and find its machine-code handover.
+  - `c64-disassembler` — disassemble a `.prg` or memory image (Ghidra, dxa).
+  - `c64-unpacker` — detect a packed binary and depack it.
+  - `c64-memory-map` — what a C64 address, register or value means.
+  - `c64-annotations` — the project's labels, comments and typed ranges.
   - `c64-ram-capture` — capture and compare a running C64's 64K RAM.
-  - `routine-queue-walker` — drive a store's undocumented routines and symbols to closure.
+  - `c64-provenance` — decide what a cracker changed vs. original code.
+  - `c64-reverse-engineering` — the method for taking an unknown program apart.
+  - `c64-project` — the project workspace, release registry and broker connection.
 
 ## Install
 
@@ -25,7 +29,7 @@ installs anything for you: every command below is one you run yourself.
 
 ### Skills — any agent, with the `skills` CLI
 
-The eight skills install with the open agent-skills CLI
+The twelve skills install with the open agent-skills CLI
 ([`skills`](https://github.com/vercel-labs/skills), the one `/find-skills` uses).
 It reads them straight from this GitHub repository; nothing has to be published.
 
@@ -33,7 +37,7 @@ It reads them straight from this GitHub repository; nothing has to be published.
 npx skills add henols/c64-re-tools --skill '*'
 ```
 
-- Install all eight. Several skills use `c64-ram-capture`'s scripts; a skill
+- Install all twelve. Most skills use `c64-project`'s scripts; a skill
   installed without it refuses by name and gives the command that installs it.
 - `-a claude-code` (or `cursor`, `codex`, …) picks the agent; `-g` installs for
   your user instead of the project; `--list` shows the skills without installing.
@@ -81,7 +85,7 @@ See [Starting the broker](#starting-the-broker).
 
 ### Developing this repo: no in-repo autoload
 
-The payload (the eight skills under `skills/` and the `vice` MCP server under
+The payload (the twelve skills under `skills/` and the `vice` MCP server under
 `src/mcp/vice/`) lives outside `.claude/`, so Claude Code does not auto-discover
 it. A Claude Code session opened on this repository's own working tree therefore
 does **not** auto-load the skills or the server the way it would if they sat
@@ -118,14 +122,14 @@ restates one in prose.
 
 | Prerequisite | Unblocks (skills) | Unblocks (MCP tools) | Remedy | Location override |
 | --- | --- | --- | --- | --- |
-| x64sc | c64-program-recon, c64-ram-capture | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | See the VICE per-package-manager table. | VICE_BIN |
-| c1541 | c64-disk-access | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read | See the VICE per-package-manager table. | .c64-re-tools/tools.json |
-| petcat | c64-petcat, c64-program-recon | petcat.decode | See the VICE per-package-manager table. | .c64-re-tools/tools.json |
-| acme | acme-build | acme.build | Install ACME. | ACME_BIN |
-| acme-lib | acme-build | acme.build | export ACME=<dir holding cbm/c64/vic.a>. | ACME |
-| ghidra | c64-program-recon | ghidra.analyze, ghidra.installExtension | Set the GHIDRA_HOME environment variable to name a Ghidra installation directory. | GHIDRA_HOME |
-| dxa | routine-queue-walker | dxa.disassemble | bash vendor/dxa/build.bash build | none |
-| node | acme-build, c64-disk-access, c64-memory-mapping, c64-petcat, c64-program-recon, c64-provenance-diff, c64-ram-capture, routine-queue-walker | acme.build, ghidra.analyze, oracle.probe, oracle.run, dxa.disassemble, ghidra.installExtension, c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | Install Node >= v24 and put it on PATH, or set VICE_BROKER_NODE to an absolute path to one. | none |
+| x64sc | c64-emulator, c64-ram-capture | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | See the VICE per-package-manager table. | VICE_BIN |
+| c1541 | c64-disk | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read | See the VICE per-package-manager table. | .c64-re-tools/local/tools.json |
+| petcat | c64-basic | petcat.decode | See the VICE per-package-manager table. | .c64-re-tools/local/tools.json |
+| acme | c64-assembler | acme.build | Install ACME. | ACME_BIN |
+| acme-lib | c64-assembler | acme.build | export ACME=<dir holding cbm/c64/vic.a>. | ACME |
+| ghidra | c64-disassembler | ghidra.analyze, ghidra.installExtension | Set the GHIDRA_HOME environment variable to name a Ghidra installation directory. | GHIDRA_HOME |
+| dxa | c64-disassembler | dxa.disassemble | bash vendor/dxa/build.bash build | none |
+| node | c64-annotations, c64-assembler, c64-basic, c64-disassembler, c64-disk, c64-memory-map, c64-project, c64-provenance, c64-ram-capture, c64-unpacker | acme.build, ghidra.analyze, oracle.probe, oracle.run, dxa.disassemble, ghidra.installExtension, c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | Install Node >= v24 and put it on PATH, or set VICE_BROKER_NODE to an absolute path to one. | none |
 
 <!-- prereq-gen:prerequisite-overview:end -->
 
@@ -212,9 +216,9 @@ that cause this, none of them specific to this project: a stray `nc` session
 against the monitor port, a second Claude Code session pointed at the same
 instance, VICE's own `-remotemonitor` flag, or any other 6502 debugger that
 dials in. This plugin's own annotation route can never cause it: the `anno`
-CLI opens a SQLite annotation store and decodes bytes out of a file on disk,
-and there is no emulator connection anywhere on that path to contend for the
-port. If an emulator has gone silent, check for one of these before assuming
+CLI opens the project's own SQLite annotation file and decodes bytes out of a
+file on disk, and there is no emulator connection anywhere on that path to
+contend for the port. If an emulator has gone silent, check for one of these before assuming
 it is wedged, then restart the broker.
 
 ## Starting the broker
@@ -255,9 +259,10 @@ namespace caveat went with it — that limit belonged to the analyser's own HTTP
 MCP route, which this project never used and now cannot.
 
 **What replaced it.** Annotations — labels, comments, typed ranges, scopes and
-enums — live in this project's own SQLite annotation store, reached through the
-`anno` CLI's `call` verb, with no external process anywhere on the
-path. Whole-program ACME export is **withdrawn and returns in Phase 30**,
+enums — live in the project's own SQLite file,
+`.c64-re-tools/annotations.db`, committed with the project and reached
+through the `anno` CLI's `call` verb, with no external process anywhere on
+the path. Whole-program ACME export is **withdrawn and returns in Phase 30**,
 rebuilt over that store and settled by assembling the output with a real ACME
 and diffing the bytes against the input. The skill playbooks name that
 withdrawal at each place a reader would otherwise reach for the old route.
@@ -277,9 +282,18 @@ file.
 
 ## How it locates the project
 
-The MCP server writes its per-project results (captures, snapshots, tool
-output) under `.c64-re-tools/` in the **project you are working in**, not under
-the plugin's own install directory. It resolves that root from
+The MCP server keeps its per-project files under `.c64-re-tools/` in the
+**project you are working in**, not under the plugin's own install directory,
+split into two folders:
+
+- `.c64-re-tools/` itself holds the project's artifacts: today
+  `annotations.db`, every label, comment and typed range. **Commit it.**
+- `.c64-re-tools/local/` holds what belongs to this machine or can be
+  regenerated: `tools.json`, the deployed launchers in `bin/`, snapshots and
+  host-tool output. It carries its own `.gitignore`, so committing
+  `.c64-re-tools/` never picks it up and the project needs no ignore rule.
+
+It resolves that root from
 `CLAUDE_PROJECT_DIR` (which Claude Code sets), falling back to
 `CONTAINER_WORKSPACE_PATH` and then a `.git` ancestor walk — see
 `src/mcp/vice/repo-root.ts`. The broker keeps its own state under its
@@ -294,7 +308,7 @@ through the `mcp__plugin_c64-re-tools_vice__*` tools.
   plugin.json        # manifest: mcpServers (skills/ is the default skills location)
   marketplace.json   # single-plugin marketplace, so `marketplace add` works on this repo
 .mcp.json            # vice server, launched via ${CLAUDE_PLUGIN_ROOT}
-skills/              # the eight skills (canonical source; what `npx skills add` installs)
+skills/              # the twelve skills (canonical source; what `npx skills add` installs)
 src/mcp/vice/        # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/, tests)
 test/skills/         # the skill scripts' tests (kept out of the skill folders so they never ship)
 evidence/            # repo-only measured artifacts that must never ship with a skill

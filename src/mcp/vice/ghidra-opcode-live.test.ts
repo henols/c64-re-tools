@@ -130,10 +130,10 @@ interface ScratchWorkspace {
 }
 
 /** Where a run's export lands: the endpoint downloads every result under the
- * caller's own `.c64-re-tools/runs/ghidra/`, keeping only the basename of the
+ * caller's own `.c64-re-tools/local/runs/ghidra/`, keeping only the basename of the
  * requested `exportPath`. */
 function exportFileIn(ws: ScratchWorkspace, exportRel: string): string {
-  return join(ws.root, ".c64-re-tools", "runs", "ghidra", basename(exportRel));
+  return join(ws.root, ".c64-re-tools", "local", "runs", "ghidra", basename(exportRel));
 }
 
 /** Duplicated from ghidra-live.test.ts's own identically-shaped helper --
@@ -925,7 +925,7 @@ function corpusBodyOffsetForAddress(address: number, bodyLength: number): number
  * never a fixed guess, so the seam request's `repoRoot` for THIS call is
  * always exactly big enough to contain both the corpus image and the
  * scratch output directory, and no bigger. Mirrors `c1541.ts`'s own
- * `commonAncestorDir()` (`skills/c64-disk-access/scripts/c1541.ts`),
+ * `commonAncestorDir()` (`skills/c64-disk/scripts/c1541.ts`),
  * duplicated here rather than imported -- this file must never reach into a
  * skill script (D-36-12's own container/host-side split; a skill script
  * additionally ships in the OTHER npm package). Duplicated a second time in

@@ -11,6 +11,8 @@
   "files": [
     "vice-proxy.ts",
     "vsf-slice.ts",
-    "tool-location.mts"
+    "tool-location.mts",
+    "ghidra-run.ts",
+    "dxa-run.ts"
   ]
 }

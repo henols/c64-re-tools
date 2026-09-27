@@ -8,7 +8,7 @@
 //
 // Every test here drives installResources()/ensureResourcesInstalled()
 // against a SYNTHETIC temp root (mkdtempSync) so no test ever writes into
-// the real repo's .c64-re-tools/bin/ -- matching vice-pool.test.mjs's own existing
+// the real repo's .c64-re-tools/local/bin/ -- matching vice-pool.test.mjs's own existing
 // temp-directory idiom. Nothing here imports vice-pool.mjs or
 // vice-session.mjs.
 import { test } from "node:test";
@@ -66,7 +66,7 @@ test("RESOURCES_DIR (quick-260731-p8a, path-anchor regression): points at the MO
   assert.ok(entries.includes("vice-launcher.sh"), "expected vice-launcher.sh (plan 01) to be a tracked resource");
 });
 
-test("installResources(): install-when-missing -- every file under resources/ lands at <root>/.c64-re-tools/bin/<same relative path>", () => {
+test("installResources(): install-when-missing -- every file under resources/ lands at <root>/.c64-re-tools/local/bin/<same relative path>", () => {
   const root = mkdtempSync(join(tmpdir(), "vice-install-missing-"));
   const entries = resourceEntries();
   const result = installResources({ root, log: () => {} });
@@ -193,7 +193,7 @@ test("ensureResourcesInstalled(): fire-once-per-process -- calling it twice in o
     import { existsSync, rmSync } from "node:fs";
     import { join } from "node:path";
     const root = ${JSON.stringify(root)};
-    const target = join(root, ".c64-re-tools", "bin", "vice-broker.mjs");
+    const target = join(root, ".c64-re-tools", "local", "bin", "vice-broker.mjs");
     ensureResourcesInstalled({ root });
     console.log("first:" + existsSync(target));
     rmSync(target);

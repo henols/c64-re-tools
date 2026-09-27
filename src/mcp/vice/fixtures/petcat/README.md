@@ -112,7 +112,7 @@ sha256: `39e3d7b6b5d075d37d053ad89b24b41bef4f3c29760c84447cab3f3be1882241`
 
 ## `computed-sys.annostore.json`, `not-basic.annostore.json` (D-02, D-12)
 
-Phase 45, plan 45-06's committed derived-half exports (`anno-store-export.ts`'s
+Phase 45, plan 45-06's committed derived-half exports (`anno-store-export.mts`'s
 `exportStoreDocument()`, D-02 schema, `schemaVersion: 1`) for these two
 fixtures. Producing tool versions: the vendored `dxa` binary (sha256
 `0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523`), Ghidra

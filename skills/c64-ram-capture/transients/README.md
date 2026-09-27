@@ -33,7 +33,7 @@ Verbatim, because this is the part that is meant to survive:
   artifact without an explicit `--force`.
 - The list is **enumerated** — one entry per address, never a range, a span, a
   page or a region. `parseAllowList()` in
-  `src/mcp/vice/capture-predicate.ts` refuses range-shaped keys by name.
+  `src/mcp/vice/capture-predicate.mts` refuses range-shaped keys by name.
 - There is **no bit-count tolerance** at any address. A one-bit difference
   outside the list fails.
 
@@ -77,7 +77,7 @@ derivation's colocated test asserts the round-trip rather than assuming it.
 
 ## The cap is 64, and exceeding it VOIDS the derivation
 
-`TRANSIENT_ALLOW_LIST_CAP = 64` in `src/mcp/vice/capture-predicate.ts` is the
+`TRANSIENT_ALLOW_LIST_CAP = 64` in `src/mcp/vice/capture-predicate.mts` is the
 one definition. A test asserts the script's default cap equal to it.
 `--cap` **only ever narrows**. `derive` refuses a value above the committed cap
 by name.

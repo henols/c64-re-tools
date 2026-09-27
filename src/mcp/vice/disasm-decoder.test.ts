@@ -1,17 +1,17 @@
-// node:test coverage of disasm-decoder.ts -- DISASM-04 (resolved branch
+// node:test coverage of disasm-decoder.mts -- DISASM-04 (resolved branch
 // targets), DISASM-05 (truncation reported, never fabricated), the
 // JMP ($xxFF) NMOS page-wrap note, the opts.end/opts.count boundary rules,
 // the all-256 length invariant (criterion 2, same exhaustive ethic as
 // disasm-opcodes.test.ts), the never-throws guarantee, and this module's
-// own purity constraint (only imports ./disasm-opcodes.ts).
+// own purity constraint (only imports ./disasm-opcodes.mts).
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { decode, type Instruction } from "./disasm-decoder.ts";
-import { OPCODES, LENGTH_FOR_MODE } from "./disasm-opcodes.ts";
+import { decode, type Instruction } from "./disasm-decoder.mts";
+import { OPCODES, LENGTH_FOR_MODE } from "./disasm-opcodes.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -299,9 +299,9 @@ describe("never throws", () => {
 
 // ------------------------------------------------- 8. Purity
 
-describe("purity (D-05: this module's only import is ./disasm-opcodes.ts)", () => {
-  test("disasm-decoder.ts has exactly one `from \"...\"` specifier once comment lines are stripped", () => {
-    const source = readFileSync(join(HERE, "disasm-decoder.ts"), "utf8");
+describe("purity (D-05: this module's only import is ./disasm-opcodes.mts)", () => {
+  test("disasm-decoder.mts has exactly one `from \"...\"` specifier once comment lines are stripped", () => {
+    const source = readFileSync(join(HERE, "disasm-decoder.mts"), "utf8");
     // Strip `//`-comment lines first -- this module's own header legitimately
     // names `stock-*.ts`/`vice*.ts`/`node:` in its prohibition list, so an
     // unfiltered scan would be a self-invalidating gate.
@@ -315,6 +315,6 @@ describe("purity (D-05: this module's only import is ./disasm-opcodes.ts)", () =
       .map((line) => line.match(/from\s+"([^"]+)"/)?.[1])
       .filter((specifier): specifier is string => specifier !== undefined);
 
-    assert.deepEqual([...new Set(fromLines)], ["./disasm-opcodes.ts"]);
+    assert.deepEqual([...new Set(fromLines)], ["./disasm-opcodes.mts"]);
   });
 });

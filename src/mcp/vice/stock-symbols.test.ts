@@ -59,7 +59,7 @@ afterEach(() => {
   resetSymbolStoreForTest();
 });
 
-// The exact confirmed VICE label-file shape (acme-build/SKILL.md's
+// The exact confirmed VICE label-file shape (c64-assembler/SKILL.md's
 // --vicelabels example), deliberately including: two normal entries, one
 // uppercase-hex entry, one blank line, one comment-ish non-matching line,
 // one unrelated monitor command, one duplicate name, and one second name

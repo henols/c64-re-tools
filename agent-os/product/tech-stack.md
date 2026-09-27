@@ -40,8 +40,8 @@
 - Runtime: `@mastra/mcp` 1.15.0, `@mastra/core` 1.55.0 and `@modelcontextprotocol/sdk`
   (imported directly by `vice-proxy.ts`, already pulled in by `@mastra/mcp`) only. Mastra telemetry
   is disabled with `MASTRA_TELEMETRY_DISABLED=1`.
-- Node built-ins that carry architecture: `node:sqlite` (only `anno-store.ts`
-  may import it), `node:net` (the monitor channels and the broker endpoint) and
+- Node built-ins that carry architecture: `node:sqlite` (only `anno-store.mts`
+  may import it, and no broker module loads it), `node:net` (the monitor channels and the broker endpoint) and
   `node:zlib`.
 - Dev: TypeScript 7.0.2 (typecheck only) and `@types/node`.
 
@@ -54,7 +54,7 @@ declared in `src/mcp/vice/prerequisites.json`.
 |------|---------|-------|
 | VICE `x64sc` | ≥ 3.9 | The binary-monitor opcode `CPUHISTORY_GET` needs ≥ 3.10. On 3.9, CPU history comes from the text monitor (`chis`). |
 | `c1541`, `petcat` | from VICE | Found as siblings of `x64sc`. `c1541` is the only `.d64` reader. |
-| ACME + library | 0.97 | Assembler for `acme-build`, and the oracle that proves the exported source reassembles to the same bytes. |
+| ACME + library | 0.97 | Assembler for `c64-assembler`, and the oracle that proves the exported source reassembles to the same bytes. |
 | Ghidra | 12.1.3 | Headless `analyzeHeadless`, not vendored. The NMOS 6502 SLEIGH extension is vendored in `vendor/ghidra-ext`. |
 | dxa | 0.1.5 | Vendored source in `vendor/dxa`, built by the user (`bash vendor/dxa/build.bash build`). |
 
@@ -100,7 +100,7 @@ declared in `src/mcp/vice/prerequisites.json`.
   skill-script calls and files. There is no custom multiplexing envelope.
 - Files cross the socket as bytes. The broker picks its own staging paths and
   gives the client an opaque handle for each file. The client writes results
-  under the project's `.c64-re-tools/<kind>/`. Neither side ever names a path
+  under the project's `.c64-re-tools/local/<kind>/`. Neither side ever names a path
   that the other side must open.
 
 **Emulator protocol**
@@ -127,17 +127,16 @@ declared in `src/mcp/vice/prerequisites.json`.
 - The emulator binary is spawned only with an argv array, never a shell string.
 
 **Analysis and store**
-- `node:sqlite` is used in one module only (`anno-store.ts`). The schema version
-  check is strict equality, with no migration.
-- Annotation is a CLI (`anno call`). It never touches the emulator.
-- **Target store ownership (not yet built):** the broker owns ONE annotation
-  database per machine, under the broker home. It serves every project, and no
-  store file lives in a project. The calling script creates a random
-  `project_id` on first use in `<project>/.c64-re-tools/project.json` and sends
-  it on every call. Every row carries `project_id`. The broker binds it into
-  every read and write, so no call can reach another project's data. There is
-  no cross-project query. `anno-store.ts` then becomes host-bound. Today the
-  store is still one client-local `.annostore` file per project.
+- `node:sqlite` is used in one module only (`anno-store.mts`). The schema version
+  (6) check is strict equality, with no migration.
+- Annotation is a CLI (`anno call` and the report verbs). It never touches the
+  emulator.
+- **The project owns the store:** each project's annotations are ONE SQLite
+  file, `<project>/.c64-re-tools/annotations.db`, committed with the project.
+  The client opens it in-process per call; the broker never loads the store.
+  The file holds exactly one project, created by the first write. Every row
+  still carries `project_id`, bound into every statement. `anno export-project`
+  / `import-project` give the binary file a diffable text form.
 - Skill scripts never spawn external binaries. Every host tool goes through the
   broker's fixed endpoint (`host_tool_stage`/`host_tool_run`): inputs upload as
   bytes, results download by handle, and no request names a broker-side path.

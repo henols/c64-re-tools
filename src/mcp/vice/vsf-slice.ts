@@ -7,7 +7,7 @@
 //
 // This module performs NO filesystem and NO network I/O: every function takes
 // bytes (`Uint8Array`) and returns values. Callers obtain the bytes
-// themselves. That is the same claim `prg-image.ts` makes about itself, and a
+// themselves. That is the same claim `prg-image.mts` makes about itself, and a
 // structural test in `vsf-slice.test.ts` asserts it from this module's own
 // source rather than trusting this paragraph.
 //
@@ -410,8 +410,8 @@ export function sliceC64Mem(bytes: Uint8Array): C64MemSlice {
 //     importing this module still performs no I/O.
 //
 //     WHO ACTUALLY IMPORTS THIS (corrected, 33 review WR-07). This line used
-//     to say "`capture-predicate.ts` imports it, and so does the structural
-//     census". The first half was false: `capture-predicate.ts` imports only
+//     to say "`capture-predicate.mts` imports it, and so does the structural
+//     census". The first half was false: `capture-predicate.mts` imports only
 //     `node:crypto`, and names this module in comments alone. A repo-wide
 //     grep finds NO non-test module importing it. Today's only non-test
 //     consumers are this module's OWN CLI -- invoked as a subprocess by

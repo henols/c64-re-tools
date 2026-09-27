@@ -64,7 +64,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve as resolvePath } from "node:path";
 
-import { parsePrg } from "./prg-image.ts";
+import { parsePrg } from "./prg-image.mts";
 
 /** Renders an address as a 4-hex-digit `$xxxx` column, matching Phase 23's
  * own evidence-script convention (`fixture-baseline.mjs`'s `hex()`). */

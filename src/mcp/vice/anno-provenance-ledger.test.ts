@@ -1,14 +1,14 @@
 // anno-provenance-ledger.test.ts -- phase 46 plan 02 (BUILD-05 criterion 4).
 //
 // Every `<behavior>` bullet below was written FIRST and observed to fail
-// before plan 46-02's implementation in `anno-provenance-ledger.ts` existed,
+// before plan 46-02's implementation in `anno-provenance-ledger.mts` existed,
 // in the `anno-bank.test.ts:1-5` shape this directory's suites declare that
 // discipline in.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// `anno-provenance-ledger.ts` is the one new parser this phase adds, and its
+// `anno-provenance-ledger.mts` is the one new parser this phase adds, and its
 // whole contract is refusal behaviour: BUILD-05 criterion 4 requires that,
 // with the ledger asked for and absent or malformed, the exporter declines
 // BY NAME rather than inventing a verdict. A refusal contract is only worth
@@ -46,14 +46,14 @@ import {
   provenanceForRange,
   readProvenanceLedger,
   type ProvenanceLedger,
-} from "./anno-provenance-ledger.ts";
+} from "./anno-provenance-ledger.mts";
 
 // `renderLedger()` is the ONE writer this reader is matched against -- the
 // same import precedent `anno-export-asm.test.ts` and
-// `skill-memory-mapping-cli.test.ts` already establish for a test importing
+// `skill-memory-map-cli.test.ts` already establish for a test importing
 // the skill tree. Tests are not in `package.json`'s `files[]`, so the
 // shipped-closure rule is untouched.
-import { renderLedger } from "../../../skills/c64-provenance-diff/scripts/diff-images.ts";
+import { renderLedger } from "../../../skills/c64-provenance/scripts/diff-images.ts";
 
 // ---------------------------------------------------------------------------
 // One temp directory for the whole file, removed in `after()` -- this host's

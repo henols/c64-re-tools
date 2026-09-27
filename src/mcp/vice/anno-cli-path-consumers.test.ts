@@ -142,12 +142,28 @@ function stripComments(src: string): string {
   return out;
 }
 
-/** Counts real `storePathWithinWorkspace(` CALL SITES in already-stripped
- * source. The trailing `(` is what distinguishes a call from the bare import
- * binding at the top of `anno-cli.ts`, which names the symbol without calling
- * it and must not be counted as a confinement. */
+/** Counts real seam CALL SITES in already-stripped source: direct
+ * `storePathWithinWorkspace(` calls plus calls of `anno-cli.ts`'s one
+ * wrapper, `confine(`, which confines and prints the verb's refusal. The
+ * trailing `(` is what distinguishes a call from the bare import binding,
+ * which names the symbol without calling it and must not be counted as a
+ * confinement. Each wrapper DEFINITION is subtracted twice -- once for its
+ * own `function confine(` spelling and once for the one predicate call in
+ * its body -- so a wrapped argument counts once, not twice.
+ * `wrapperRoutesThroughSeam()` is what keeps the wrapper honest. */
 function seamCallCount(strippedSrc: string): number {
-  return strippedSrc.split("storePathWithinWorkspace(").length - 1;
+  const direct = strippedSrc.split("storePathWithinWorkspace(").length - 1;
+  const wrapped = strippedSrc.split(/\bconfine\(/).length - 1;
+  const wrappers = strippedSrc.split("function confine(").length - 1;
+  return direct + wrapped - 2 * wrappers;
+}
+
+/** True when every `function confine(` in already-stripped source calls
+ * `storePathWithinWorkspace(` in its own body -- the one property that lets
+ * a `confine(` call count as a seam call at all. */
+function wrapperRoutesThroughSeam(strippedSrc: string): boolean {
+  const bodies = strippedSrc.split("function confine(").slice(1).map((rest) => rest.slice(0, rest.indexOf("\n}\n")));
+  return bodies.every((body) => body.includes("storePathWithinWorkspace("));
 }
 
 /** The ONE predicate. Both the real scan and the planted-violation controls
@@ -172,29 +188,34 @@ type CliPathArgument = {
  * what keeps the hand-declaration honest in the other direction.
  */
 const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
-  { verb: "render-memmap", argument: "<store>", kind: "positional" },
   { verb: "render-memmap", argument: "--provenance", kind: "flag" },
   { verb: "render-memmap", argument: "--out", kind: "flag" },
   { verb: "coverage", argument: "<image>", kind: "positional" },
-  { verb: "coverage", argument: "--store", kind: "flag" },
   { verb: "coverage", argument: "--out", kind: "flag" },
   { verb: "export-asm", argument: "<image>", kind: "positional" },
-  { verb: "export-asm", argument: "--store", kind: "flag" },
   { verb: "export-asm", argument: "--out", kind: "flag" },
   { verb: "export-asm", argument: "--ledger", kind: "flag" },
-  { verb: "evid-disagreements", argument: "--store", kind: "flag" },
-  { verb: "decomp-completeness", argument: "--store", kind: "flag" },
   { verb: "decomp-completeness", argument: "--disagreements", kind: "flag" },
   { verb: "decomp-completeness", argument: "--manifest", kind: "flag" },
-  { verb: "hazard-report", argument: "--store", kind: "flag" },
   { verb: "hazard-report", argument: "--image", kind: "flag" },
+  { verb: "export-project", argument: "--out", kind: "flag" },
+  { verb: "import-project", argument: "<file>", kind: "positional" },
   { verb: "call", argument: "--args-file", kind: "flag" },
 ];
 
 /**
+ * The verbs that take NO path argument at all, kept explicit for the same
+ * reason as `NON_PATH_OPTIONS`: `evid-disagreements` answers for the
+ * workspace's own project and accepts only `--json`. The coverage test below
+ * requires every other verb to appear in the inventory.
+ */
+const VERBS_WITHOUT_PATH_ARGUMENTS: readonly string[] = ["evid-disagreements"];
+
+/**
  * The options that carry NO path, per verb, kept EXPLICIT and SHORT so that
  * adding to it is a visible decision rather than a quiet one. `--check` and
- * `--force` are booleans; `--sample` takes an integer.
+ * `--force` are booleans; `--sample` takes an integer; `--fixture` takes a
+ * fixture NAME that is looked up in `--manifest`, never opened as a file.
  *
  * Assertion 2 subtracts this list from the real `VERB_OPTIONS` and requires
  * everything left over to be named in `CLI_PATH_ARGUMENTS`. That direction is
@@ -202,7 +223,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
  * to the CLI without a confinement call reds HERE, BY NAME, instead of being
  * reviewed.
  */
-const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "--json", "--args"];
+const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "--json", "--args", "--fixture"];
 
 /**
  * MEASURED, NOT COPIED: nine caller-supplied path arguments across the three
@@ -242,6 +263,17 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * carries no confinement call, so `call` contributes exactly one to this
  * floor, not two.
  *
+ * LOWERED 17 -> 11 by the broker-owned annotation store, in the commit that
+ * removed every store argument: `render-memmap <store>` and `--store` on
+ * coverage, export-asm, evid-disagreements, decomp-completeness and
+ * hazard-report. The annotations are the workspace's own project, held by
+ * the broker, so those six arguments are gone from the surface rather than
+ * unconfined -- and the inventory's other direction (every VERB_OPTIONS
+ * entry, every synopsis positional) is what proves they are gone.
+ *
+ * RAISED 11 -> 13 with the backup pair: `export-project --out` and
+ * `import-project <file>`, each confined by the same seam.
+ *
  * HAND-PINNED AS AN INTEGER LITERAL, AND IT MUST STAY THAT WAY. Deriving it
  * from `CLI_PATH_ARGUMENTS.length` (or from disk) would make it unfailable and
  * would discard the entire non-vacuity it exists to provide: a truncated or
@@ -249,7 +281,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * trivially. Raise it when a verb genuinely grows a path argument; never lower
  * it to fit.
  */
-const CLI_PATH_ARGUMENT_FLOOR = 17;
+const CLI_PATH_ARGUMENT_FLOOR = 13;
 
 // ---------------------------------------------------------------------------
 // 1. The inventory is declared and complete.
@@ -273,9 +305,19 @@ test("every verb named in CLI_PATH_ARGUMENTS is a real verb, and every real verb
   const realVerbs = new Set(Object.keys(VERB_OPTIONS));
   assert.deepEqual(
     [...verbsInInventory].sort(),
-    [...realVerbs].sort(),
+    [...realVerbs].filter((v) => !VERBS_WITHOUT_PATH_ARGUMENTS.includes(v)).sort(),
     "the inventory must cover exactly the verbs the CLI dispatches -- a verb with no entry has no audited path arguments",
   );
+});
+
+test("every verb in VERBS_WITHOUT_PATH_ARGUMENTS is a real verb whose every option is declared non-path", () => {
+  for (const verb of VERBS_WITHOUT_PATH_ARGUMENTS) {
+    const accepted = VERB_OPTIONS[verb];
+    assert.ok(accepted, `VERBS_WITHOUT_PATH_ARGUMENTS names "${verb}", which is not a key of VERB_OPTIONS`);
+    for (const option of accepted!) {
+      assert.ok(NON_PATH_OPTIONS.includes(option), `${verb} is declared path-free but accepts ${option}, which is not declared non-path`);
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -317,6 +359,12 @@ test("NON_PATH_OPTIONS names only options that some verb actually accepts -- a s
 // 3. Every declared consumer routes through the seam.
 // ---------------------------------------------------------------------------
 
+test("anno-cli.ts's confine() wrapper calls storePathWithinWorkspace() in its own body", () => {
+  const stripped = stripComments(readFileSync(ANNO_CLI_SOURCE_PATH, "utf8"));
+  assert.ok(stripped.includes("function confine("), "precondition: anno-cli.ts defines the confine() wrapper this scan credits");
+  assert.ok(wrapperRoutesThroughSeam(stripped), "a confine( call counts as a seam call only while the wrapper calls the predicate");
+});
+
 test("anno-cli.ts contains at least one storePathWithinWorkspace() call site per declared path argument", () => {
   const stripped = stripComments(readFileSync(ANNO_CLI_SOURCE_PATH, "utf8"));
   const found = seamCallCount(stripped);
@@ -331,7 +379,7 @@ test("anno-cli.ts contains at least one storePathWithinWorkspace() call site per
 test("the seam count is taken against COMMENT-STRIPPED source -- an unfiltered count would pass by counting prose", () => {
   const raw = readFileSync(ANNO_CLI_SOURCE_PATH, "utf8");
   const stripped = stripComments(raw);
-  const rawMentions = raw.split("storePathWithinWorkspace").length - 1;
+  const rawMentions = seamCallCount(raw);
   const strippedCalls = seamCallCount(stripped);
   // Not an equality: the raw count includes the import binding and every
   // prose mention. The point is that stripping REMOVES mentions, so the guard
@@ -457,6 +505,39 @@ test("every CLI_PATH_ARGUMENTS positional is declared in some verb's USAGE synop
 });
 
 // ---------------------------------------------------------------------------
+// 3c. No verb names a store. The broker owns the annotation database and every
+// verb answers for the workspace's own project, so a `--store` flag or a
+// store-shaped positional on any verb would be a route back to a client-local
+// store file.
+// ---------------------------------------------------------------------------
+
+/** Every store-naming argument in a verb surface: an option spelled
+ * `--store`, or a synopsis positional spelled `<store>` or `<project>`.
+ * The real check and its planted control both call this. */
+function storeArguments(verbOptions: Readonly<Record<string, readonly string[]>>, usage: string): string[] {
+  const found: string[] = [];
+  for (const [verb, options] of Object.entries(verbOptions)) {
+    if (options.includes("--store")) found.push(`${verb} --store`);
+    for (const positional of declaredPositionals(usage, verb)) {
+      if (positional === "<store>" || positional === "<project>") found.push(`${verb} ${positional}`);
+    }
+  }
+  return found;
+}
+
+test("no verb accepts --store or declares a store positional -- the annotations are the workspace's own project", () => {
+  assert.deepEqual(storeArguments(VERB_OPTIONS, usageText), []);
+});
+
+test("planted control: a verb surface that still names a store is reported by the same predicate", () => {
+  const plantedUsage = "  render-memmap <store> --out FILE\n  coverage <image> [--out FILE]\n";
+  assert.deepEqual(
+    storeArguments({ "render-memmap": ["--out"], coverage: ["--store", "--out"] }, plantedUsage),
+    ["render-memmap <store>", "coverage --store"],
+  );
+});
+
+// ---------------------------------------------------------------------------
 // 4. Two positive controls, so the predicate can go red.
 // ---------------------------------------------------------------------------
 
@@ -477,7 +558,7 @@ test("planted violation: a command function that writes a caller-supplied --out 
   // that a tiny file has few call sites.
   const plantedConfined = [
     'import { writeFileSync } from "node:fs";',
-    'import { storePathWithinWorkspace } from "./anno-types.ts";',
+    'import { storePathWithinWorkspace } from "./anno-types.mts";',
     "export function cmdSomething(out: string, body: string, root: string): number {",
     "  const outPath = storePathWithinWorkspace(out, root);",
     "  writeFileSync(outPath, body);",
@@ -496,6 +577,22 @@ test("planted violation: a command function that writes a caller-supplied --out 
     true,
     "the predicate must NOT report a confined write -- a control that only ever refuses is indistinguishable from one that works",
   );
+});
+
+test("planted violation: a confine() wrapper that never calls the predicate is reported, and credits no call site", () => {
+  const hollowWrapper = [
+    "function confine(verb: string, raw: string, root: string): string | undefined {",
+    "  return raw;",
+    "}",
+    "export function cmdSomething(out: string, root: string): string | undefined {",
+    '  return confine("x", out, root);',
+    "}",
+    "",
+  ].join("\n");
+  const realWrapper = hollowWrapper.replace("  return raw;", "  return storePathWithinWorkspace(raw, root);");
+  assert.equal(wrapperRoutesThroughSeam(stripComments(hollowWrapper)), false, "a wrapper that does not confine must be reported");
+  assert.equal(wrapperRoutesThroughSeam(stripComments(realWrapper)), true, "a wrapper that confines must not be reported");
+  assert.equal(seamCallCount(stripComments(realWrapper)), 1, "one wrapped call is one seam call -- the wrapper's own body is not counted again");
 });
 
 test("planted violation: a seam mention that lives ONLY in a comment or a string literal is not counted as a call site", () => {

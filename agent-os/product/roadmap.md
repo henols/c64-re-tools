@@ -25,16 +25,27 @@
   anchor hit 50; exactness is lost from anchor hit 75.
 
 **Annotation store**
-- `.annostore` (`node:sqlite`, schema version 5) holds labels, comments, a
-  12-member per-range type vocabulary, scopes, project enums, cross-references,
-  search and revert. Durability is proven across a real `SIGKILL`.
+- Each project keeps its annotations in ONE SQLite file (`node:sqlite`, schema
+  version 6), `<project>/.c64-re-tools/annotations.db`, committed with the
+  project. It holds labels, comments, a 12-member per-range type vocabulary,
+  scopes, project enums and cross-references, with search. Durability is proven
+  across a real `SIGKILL`.
+- The client opens the file per call; the broker never loads the store, and a
+  structural test with a planted proof keeps it that way. The first write
+  creates the file and its one project; a read without it is refused. Specs:
+  `agent-os/specs/2026-09-26-2233-broker-owned-store/` (the call surface) and
+  `2026-09-27-0124-project-owned-store/` (where the store lives).
 - A runtime evidence layer stores what the emulator was observed executing,
   keyed by run. It is joined with the byte-derived block table, and disagreements
   are reported first.
 - Enums are generated from `memmap.json`, so register writes render with bit
   names.
 - The store is reached through the `vice-mcp anno` CLI (`anno call <name> --args
-  JSON`). It is no longer on the MCP tool surface.
+  JSON` and six report verbs), which hands the engine staged input bytes, never
+  a path. It is no longer on the MCP tool surface. No call takes a store path.
+- `anno export-project` and `anno import-project` give the binary file a
+  diffable text form, in the fixtures' format. Import fills an empty project
+  only, in one transaction.
 
 **Static analysis**
 - dxa 0.1.5 (vendored source) produces a machine-readable code/data map.
@@ -61,12 +72,12 @@
 **Setup and distribution**
 - All eight prerequisites are declared in one file, `prerequisites.json`: x64sc,
   c1541, petcat, acme, acme-lib, ghidra, dxa and node. One resolver finds each
-  tool, in this order: environment variable, then `.c64-re-tools/tools.json`, then
+  tool, in this order: environment variable, then `.c64-re-tools/local/tools.json`, then
   `$PATH` or a sibling of `x64sc`. Every refusal quotes the remedy from that file,
   and the README install tables are generated from it.
 - Skills install with the `skills` CLI (`npx skills add henols/c64-re-tools
   --skill '*'`) straight from the root `skills/` folder; our own npm installer
-  is retired. A skill installed without `c64-ram-capture` refuses by name and
+  is retired. A skill installed without `c64-project` refuses by name and
   gives the install command. Skill-script tests live in `test/skills/` and
   derived evidence in `evidence/`, so neither ships.
 - The MCP server comes from the Claude Code plugin, or from
@@ -115,12 +126,23 @@
   `2026-09-25-2240-deletion-cutover/`, `2026-09-26-0022-ghidra-without-alias/`
   and `2026-09-26-1019-no-cross-side-paths/`.
 
-## Planned / Later
+**Single-capability skills**
+- Twelve skills, each covering one capability and named for what it
+  provides: `c64-emulator`, `c64-assembler`, `c64-disk`, `c64-basic`,
+  `c64-disassembler`, `c64-unpacker`, `c64-memory-map`, `c64-annotations`,
+  `c64-ram-capture`, `c64-provenance`, `c64-reverse-engineering` (the method
+  only) and `c64-project` (workspace, release registry, broker connection and
+  the shared scripts). A skill links to the skill that owns anything else,
+  never copies it.
+- A script reaches no skill but `c64-project`, and a test installs each one
+  with only `c64-project` beside it to prove it. `recovery-schema.ts`'s
+  parameterisation gate scans every installed skill instead of naming one.
+- Ghidra and dxa run from a skill: `disassemble.ts` (`analyze`, `listing`,
+  `install-extension`) drives `ghidra-run.ts` and `dxa-run.ts`, which now ship
+  in `dist/`. Skill text is written to ASD-STE100.
+  Spec: `agent-os/specs/2026-09-27-1145-single-capability-skills/`.
 
-**Annotation store**
-- Move to one broker-owned annotation database per machine. Rows are scoped by a
-  persisted, script-created `project_id`, and no call can read or write another
-  project's data. See `agent-os/standards/anno/store-ownership.md`.
+## Planned / Later
 
 **Operator surface**
 - Check Podman ≥ 5's `pasta` default and its effect on `host.containers.internal`

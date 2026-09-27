@@ -20,7 +20,7 @@
 //        vocabulary
 //     5. a structural source assertion: no filesystem, child-process,
 //        `node:sqlite` or `toFixed` (outside a comment) anywhere in
-//        `evid-reconcile.ts`'s own source
+//        `evid-reconcile.mts`'s own source
 //
 //   Task 2:
 //     6. a block covered by no observation at all is entirely
@@ -65,12 +65,12 @@ import {
   reconcileObservedExecution,
   type EvidReconcileInput,
   type EvidReconciliation,
-} from "./evid-reconcile.ts";
-import type { BlockClass, BlockClassifier, BlockEntry } from "./block-class.ts";
-import { DATA_TYPES, type EvidExecRow, type EvidSourceBank } from "./anno-types.ts";
+} from "./evid-reconcile.mts";
+import type { BlockClass, BlockClassifier, BlockEntry } from "./block-class.mts";
+import { DATA_TYPES, type EvidExecRow, type EvidSourceBank } from "./anno-types.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const MODULE_PATH = join(HERE, "evid-reconcile.ts");
+const MODULE_PATH = join(HERE, "evid-reconcile.mts");
 
 // ---------------------------------------------------------------------------
 // Fixture builders -- every input is a synthetic object literal, never read
@@ -183,7 +183,7 @@ test("Behavior 5: structural source assertion -- no filesystem, child-process, n
   // dxa-proof01-compare.test.ts's own structural assertion exactly.
   const bannedSubstrings = ["child_process", "node:fs", '"fs', "'fs", "node:sqlite", "dxa-partition"];
   for (const banned of bannedSubstrings) {
-    assert.equal(source.includes(banned), false, `evid-reconcile.ts must never reference ${banned}`);
+    assert.equal(source.includes(banned), false, `evid-reconcile.mts must never reference ${banned}`);
   }
 
   const nonCommentLines = source.split("\n").filter((line) => !/^\s*[/*]/.test(line));
@@ -191,12 +191,12 @@ test("Behavior 5: structural source assertion -- no filesystem, child-process, n
     assert.ok(!line.includes("toFixed"), `no rounding helper allowed (found "toFixed" outside a comment): ${line}`);
   }
 
-  assert.match(source, /from\s+["']\.\/block-class\.ts["']/, "must import from block-class.ts");
-  assert.match(source, /from\s+["']\.\/anno-types\.ts["']/, "must import from anno-types.ts");
+  assert.match(source, /from\s+["']\.\/block-class\.mts["']/, "must import from block-class.mts");
+  assert.match(source, /from\s+["']\.\/anno-types\.mts["']/, "must import from anno-types.mts");
   assert.ok(source.includes("blockClassAt"), "must reference blockClassAt");
 
   // No comparison against a literal block-type string on the left of an
-  // equality against a `.type` field -- that is block-class.ts's job alone.
+  // equality against a `.type` field -- that is block-class.mts's job alone.
   assert.equal(/["'](code|Code|data|Byte|Undefined|undefined)["']\s*===\s*\w+\.type/.test(source), false);
   assert.equal(/\w+\.type\s*===\s*["'](code|Code|data|Byte|Undefined|undefined)["']/.test(source), false);
 });
@@ -474,7 +474,7 @@ test("Behavior 16: determinism -- two identical calls, and a call over shuffled 
 // bucket the address falls into stops moving between the two calls below --
 // which is exactly the assertion that would then go red. The independence
 // this proof rests on is the whole reason a disagreement signal (EVID-03)
-// means anything: if this module colluded with block-class.ts's own
+// means anything: if this module colluded with block-class.mts's own
 // vocabulary, "the byte-derived side said data" and "this module also
 // thinks it is data" would be the same fact stated twice, not two
 // independent classifiers agreeing to disagree with a third, the runtime
@@ -541,7 +541,7 @@ test("substitutability: the production union is derived and non-vacuous, and the
     shared,
     [],
     "the substituted vocabulary shares a spelling with a production one -- a comparison site left behind in " +
-      "evid-reconcile.ts could then agree with the injected classifier by accident and hide from the proof below",
+      "evid-reconcile.mts could then agree with the injected classifier by accident and hide from the proof below",
   );
 });
 

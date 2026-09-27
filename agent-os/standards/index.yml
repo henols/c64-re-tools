@@ -2,9 +2,9 @@ anno:
   frozen-vocabularies:
     description: Frozen stored vocabularies, derived subsets, literal pinning tests
   sqlite-rules:
-    description: node:sqlite confinement and SQL/pragma rules for anno-store.ts
+    description: node:sqlite confinement and SQL/pragma rules for anno-store.mts
   store-ownership:
-    description: "Target: one broker-owned annotation DB, rows scoped by a persisted project_id"
+    description: "The annotation DB is a committed project artifact: <project>/.c64-re-tools/annotations.db, opened by the client"
   store-validators:
     description: Store argument validators that throw, never default or sanitise
   workspace-confinement:

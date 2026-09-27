@@ -47,7 +47,7 @@
 // emulator binary's own resolution -- when neither `viceBin` nor
 // `resolveBinPath` is injected, resolution goes through the seam's
 // `resolveTool("x64sc", ...)` instead of this file's own ordering, so a
-// `.c64-re-tools/tools.json` entry for `x64sc` now changes what this broker
+// `.c64-re-tools/local/tools.json` entry for `x64sc` now changes what this broker
 // actually spawns. `defaultResolveBinPath()` collapses into a thin wrapper
 // over the seam's own exported `resolveOnPath()` -- the first of Phase 59
 // D-02's three independent `$PATH`-walk copies to collapse.
@@ -340,7 +340,7 @@ export interface ResolvedBackendDeps {
   resolveBinPath?: (bin: string, env: NodeJS.ProcessEnv) => string | null;
   stat?: (resolvedPath: string) => BinaryIdentity | null;
   now?: () => number;
-  /** The directory holding `.c64-re-tools/tools.json` -- passed straight
+  /** The directory holding `.c64-re-tools/local/tools.json` -- passed straight
    * into the seam's `resolveTool()` call when neither `viceBin` nor
    * `resolveBinPath` above is supplied (PD-01). Derived from `supervisorDir`
    * (PD-03) when omitted and a `supervisorDir` IS given -- vice-broker.mts's

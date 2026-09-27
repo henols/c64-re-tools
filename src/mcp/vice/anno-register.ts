@@ -121,8 +121,8 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_add_scope",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-store.ts", symbol: "addScope" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_add_scope" },
+      { path: "src/mcp/vice/anno-store.mts", symbol: "addScope" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_add_scope" },
     ],
     requirements: ["STORE-01"],
     rationale:
@@ -138,8 +138,8 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_remove_scope",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-store.ts", symbol: "removeScope" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_remove_scope" },
+      { path: "src/mcp/vice/anno-store.mts", symbol: "removeScope" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_remove_scope" },
     ],
     requirements: ["STORE-01"],
     rationale:
@@ -152,16 +152,15 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     note:
       "The measured consequence, which is why this is not merely tidiness: `anno_add_scope($1000, $ffff)` -- " +
       "ONE TRANSPOSED END, arriving from a transport whose validator returns its input unchanged -- makes " +
-      "every future scope from $1000 upward permanently unaddable. The only route back was `revertTo`, and " +
-      "the snapshot ring is bounded at MAX_SNAPSHOT_REVISIONS: 32 further writes and the store's own " +
-      "published floor refuses, by name, the revision that would undo it.",
+      "every future scope from $1000 upward permanently unaddable. The store keeps no revert history, so " +
+      "without this inverse there is no route back at all.",
   },
   {
     verb: "anno_search",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-derive.ts", symbol: "searchAnnotations" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_search" },
+      { path: "src/mcp/vice/anno-derive.mts", symbol: "searchAnnotations" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_search" },
     ],
     requirements: ["STORE-06"],
     rationale:
@@ -181,8 +180,8 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_update_project_enum",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-store.ts", symbol: "updateProjectEnum" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_update_project_enum" },
+      { path: "src/mcp/vice/anno-store.mts", symbol: "updateProjectEnum" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_update_project_enum" },
     ],
     requirements: ["STORE-01"],
     rationale:
@@ -203,8 +202,8 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_exclude_range",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-store.ts", symbol: "addExcludedRange" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_exclude_range" },
+      { path: "src/mcp/vice/anno-store.mts", symbol: "addExcludedRange" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_exclude_range" },
     ],
     requirements: ["BUILD-05", "BUILD-07"],
     rationale:
@@ -227,26 +226,24 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_include_range",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-store.ts", symbol: "removeExcludedRange" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_include_range" },
+      { path: "src/mcp/vice/anno-store.mts", symbol: "removeExcludedRange" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_include_range" },
     ],
     requirements: ["BUILD-07"],
     rationale:
       "The inverse of the overlap refusal, on the same terms anno_remove_scope's entry states: the store " +
       "refuses any exclusion overlapping an existing one, so a single transposed end would otherwise make a " +
-      "whole region permanently unexcludable, with the only route back being a revert through the bounded " +
-      "snapshot ring. A write verb whose mistakes cannot be undone is a data-loss surface even when every " +
+      "whole region permanently unexcludable, with no route back at all. A write verb whose mistakes cannot be undone is a data-loss surface even when every " +
       "individual refusal is correct, so the inverse ships in the same phase as the refusal.",
     note:
-      "The measured mechanism, not an asserted risk: the snapshot ring is bounded at MAX_SNAPSHOT_REVISIONS, so " +
-      "a mistake that is not directly undoable becomes permanently undoable after that many further writes.",
+      "The store keeps no revert history, so a mistake that is not directly undoable is permanent.",
   },
   {
     verb: "anno_import_ghidra_export",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-import.ts", symbol: "importGhidraExport" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_import_ghidra_export" },
+      { path: "src/mcp/vice/anno-import.mts", symbol: "importGhidraExport" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_import_ghidra_export" },
     ],
     requirements: ["IMP-01", "IMP-02"],
     rationale:
@@ -261,14 +258,14 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_join_memmap",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-join.ts", symbol: "runMemmapJoin" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_join_memmap" },
+      { path: "src/mcp/vice/anno-join.mts", symbol: "runMemmapJoin" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_join_memmap" },
     ],
     requirements: ["AUTO-01"],
     rationale:
       "AUTO-01 requires machine addresses to annotate themselves into the store mechanically -- no agent call, no " +
       "queue walk and no skill invocation anywhere in the loop -- by joining stored cross-references against " +
-      "c64-memory-mapping's memmap.json. The manifest's five procedures never describe this join at all, because " +
+      "c64-memory-map's memmap.json. The manifest's five procedures never describe this join at all, because " +
       "it answers a question this project's own store creates (what does a stored cross-reference's target " +
       "address MEAN against the published memory map), not one upstream's absorbed procedures ever asked. Without " +
       "this verb the annotation the join produces has no route onto the surface at all.",
@@ -277,12 +274,12 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_evid_ingest",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/evid-ingest.ts", symbol: "ingestAccessMap" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_evid_ingest" },
+      { path: "src/mcp/vice/evid-ingest.mts", symbol: "ingestAccessMap" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_evid_ingest" },
     ],
     requirements: ["EVID-01", "EVID-04"],
     rationale:
-      "EVID-01 requires what the emulator observed executing to become durable, accumulating rows in `.annostore`, " +
+      "EVID-01 requires what the emulator observed executing to become durable, accumulating rows in the annotation project, " +
       "keyed by run identity, so a later session queries the evidence instead of re-running the program. EVID-04 " +
       "requires the write path be unable to state, imply or render that an address is data on the strength of " +
       "never having been observed executing. The manifest's five absorbed upstream procedures predate this store " +
@@ -295,8 +292,8 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_evid_disagreements",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/evid-reconcile.ts", symbol: "reconcileObservedExecution" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_evid_disagreements" },
+      { path: "src/mcp/vice/evid-reconcile.mts", symbol: "reconcileObservedExecution" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_evid_disagreements" },
     ],
     requirements: ["EVID-03", "EVID-04"],
     rationale:
@@ -312,8 +309,8 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_evid_runs",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-store.ts", symbol: "listObservedRuns" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_evid_runs" },
+      { path: "src/mcp/vice/anno-store.mts", symbol: "listObservedRuns" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_evid_runs" },
     ],
     requirements: ["EVID-04"],
     rationale:
@@ -327,8 +324,8 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_evid_reset",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-store.ts", symbol: "deleteExecObservationsForRun" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_evid_reset" },
+      { path: "src/mcp/vice/anno-store.mts", symbol: "deleteExecObservationsForRun" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_evid_reset" },
     ],
     requirements: ["EVID-05"],
     rationale:
@@ -343,8 +340,8 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_hazard_report",
     kind: "unclassified",
     consumers: [
-      { path: "src/mcp/vice/anno-hazard-report.ts", symbol: "buildHazardReport" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_hazard_report" },
+      { path: "src/mcp/vice/anno-hazard-report.mts", symbol: "buildHazardReport" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_hazard_report" },
     ],
     requirements: ["BUILD-04"],
     rationale:
@@ -363,8 +360,8 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     verb: "anno_save_project",
     kind: "manifest-deviation",
     consumers: [
-      { path: "src/mcp/vice/anno-store.ts", symbol: "currentRevision" },
-      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_save_project" },
+      { path: "src/mcp/vice/anno-store.mts", symbol: "currentRevision" },
+      { path: "src/mcp/vice/anno-tools.mts", symbol: "anno_save_project" },
     ],
     requirements: ["STORE-04", "MCP-04"],
     rationale:

@@ -204,7 +204,7 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
   // tools/ copies already exist (and were hand-verified moments ago).
   installResources({ root: repoRoot() });
 
-  const launcherScript = join(repoRoot(), ".c64-re-tools", "bin", "vice-launcher.sh");
+  const launcherScript = join(repoRoot(), ".c64-re-tools", "local", "bin", "vice-launcher.sh");
   const resourcesLauncherScript = join(repoRoot(), "src", "mcp", "vice", "resources", "vice-launcher.sh");
   for (const p of [launcherScript, resourcesLauncherScript]) {
     assert.ok(existsSync(p), `expected ${p} to exist (resolved via repoRoot())`);
@@ -242,7 +242,7 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
   // module-load ordering from sibling tests sharing this process.
   // supervisorDir() (repo-root.ts) is the Node-side derivation that survives
   // from the original (poolDir()/sessionFilePath() went with D-02, and
-  // vice-errors.ts's EPOCH_FILE went when the epoch moved onto the socket).
+  // vice-errors.mts's EPOCH_FILE went when the epoch moved onto the socket).
   const nodeSrc = `
     import { supervisorDir } from ${JSON.stringify(REPO_ROOT_MODULE_URL)};
     console.log(JSON.stringify({
@@ -270,7 +270,7 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
 
 test("path agreement without CONTAINER_WORKSPACE_PATH (D-6): the .git-walk branch -- the ONLY branch that ever runs on the real host -- still agrees between resources/ and tools/", async () => {
   const resourcesLauncherScript = join(repoRoot(), "src", "mcp", "vice", "resources", "vice-launcher.sh");
-  const launcherScript = join(repoRoot(), ".c64-re-tools", "bin", "vice-launcher.sh");
+  const launcherScript = join(repoRoot(), ".c64-re-tools", "local", "bin", "vice-launcher.sh");
 
   const hostEnv = { ...process.env };
   for (const k of Object.keys(hostEnv)) {
@@ -330,7 +330,7 @@ const CENSUS_SCAN_DIR = dirname(fileURLToPath(import.meta.url)); // src/mcp/vice
  * embedded NUL character as a normal code unit rather than truncating or
  * refusing the read -- unlike a plain `grep` (no `-a`), which treats a file
  * containing a NUL byte as binary and silently skips it. This repository's
- * own anno-memmap-render.ts carries two embedded NUL bytes and has already
+ * own anno-memmap-render.mts carries two embedded NUL bytes and has already
  * caused one wrong decision here by being silently skipped by a naive scan
  * (see MEMORY note "NUL byte hides a source file from grep"). */
 function countNonCommentLiteralOccurrences(text: string): { total: number; lines: number } {
@@ -478,7 +478,7 @@ test("census gate planted-violation control: the SAME comparison predicate fires
   );
 });
 
-test("census gate is NUL-tolerant: a NUL byte earlier in a source file's text does not hide a later occurrence, and the real anno-memmap-render.ts (which carries two embedded NUL bytes) is scanned, not silently skipped", () => {
+test("census gate is NUL-tolerant: a NUL byte earlier in a source file's text does not hide a later occurrence, and the real anno-memmap-render.mts (which carries two embedded NUL bytes) is scanned, not silently skipped", () => {
   // Direct unit proof: an embedded NUL before the literal must not truncate
   // or otherwise defeat the scan.
   const withEmbeddedNul = "const x = 1;\n" + "\u0000" + '  const y = join(root, ".c64-re-tools", "runs");\n';
@@ -491,12 +491,12 @@ test("census gate is NUL-tolerant: a NUL byte earlier in a source file's text do
   // it, which is what a plain `grep` (no `-a`) would do.
   const result = censusCodebase(CENSUS_SCAN_DIR);
   assert.ok(
-    result.scannedFiles.includes("anno-memmap-render.ts"),
-    "anno-memmap-render.ts (embedded NUL bytes) must be scanned, not silently skipped by the census walk"
+    result.scannedFiles.includes("anno-memmap-render.mts"),
+    "anno-memmap-render.mts (embedded NUL bytes) must be scanned, not silently skipped by the census walk"
   );
   assert.equal(
-    result.perFile["anno-memmap-render.ts"],
+    result.perFile["anno-memmap-render.mts"],
     0,
-    "anno-memmap-render.ts holds no occurrence of the literal -- this asserts it was actually read (key present) rather than dropped"
+    "anno-memmap-render.mts holds no occurrence of the literal -- this asserts it was actually read (key present) rather than dropped"
   );
 });

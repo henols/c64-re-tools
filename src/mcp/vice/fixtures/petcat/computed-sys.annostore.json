@@ -1,6 +1,5 @@
 {
-  "schemaVersion": 1,
-  "store": "computed-sys.annostore",
+  "schemaVersion": 2,
   "ranges": [
     {
       "start": 2049,
@@ -87,5 +86,6 @@
   "enumUsage": [],
   "xrefs": [],
   "execObservations": [],
-  "scopes": []
+  "scopes": [],
+  "excludedRanges": []
 }

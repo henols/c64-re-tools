@@ -17,7 +17,7 @@
 // hot address this can stall the emulator thread. This file therefore never
 // starts with a tight loop. It starts by arming the checkpoint on the
 // KERNAL's own default hardware-IRQ entry point (read from
-// c64-memory-mapping's own memmap.json, never a typed literal -- see
+// c64-memory-map's own memmap.json, never a typed literal -- see
 // readKernalIrqAddress() below) -- a freshly booted, unmodified machine
 // already executes this address at roughly 50-60Hz via the CIA1 timer IRQ
 // (the jiffy-clock update), comfortably above the 20/s limit, with NO
@@ -111,7 +111,7 @@ const SKIP_REASON: string | false = !process.env.VICE_LIVE_A4_FLOOD_BIN
     : false;
 
 // ---------------------------------------------------------------------------
-// The armed address: read from c64-memory-mapping's own memmap.json, never a
+// The armed address: read from c64-memory-map's own memmap.json, never a
 // typed-from-memory literal. CINV ($0314/$0315) is the KERNAL's own hardware
 // IRQ vector; its documented default target is the KERNAL's default IRQ
 // service routine entry point, which a freshly booted, unmodified machine
@@ -126,14 +126,14 @@ interface KernalIrqAddress {
 }
 
 function readKernalIrqAddress(): KernalIrqAddress {
-  const memmapPath = join(HERE, "..", "..", "..", "skills", "c64-memory-mapping", "memmap.json");
+  const memmapPath = join(HERE, "..", "..", "..", "skills", "c64-memory-map", "memmap.json");
   const parsed = JSON.parse(readFileSync(memmapPath, "utf8")) as { entries: Array<Record<string, unknown>> };
   const raw = parsed.entries;
   assert.ok(Array.isArray(raw), `${memmapPath} must carry an "entries" array -- got shape: ${JSON.stringify(Object.keys(parsed ?? {}))}`);
   const cinvEntry = raw.find(
     (e) => e.sym === "CINV" && typeof e.desc === "string" && (e.desc as string).includes("Hardware IRQ Interrupt Address"),
   );
-  assert.ok(cinvEntry, `c64-memory-mapping/memmap.json must carry a CINV entry naming the default hardware IRQ interrupt address (checked at ${memmapPath})`);
+  assert.ok(cinvEntry, `c64-memory-map/memmap.json must carry a CINV entry naming the default hardware IRQ interrupt address (checked at ${memmapPath})`);
   const desc = (cinvEntry as Record<string, unknown>).desc as string;
   const m = desc.match(/\$([0-9A-Fa-f]{2,4})/);
   assert.ok(m, `CINV's memmap.json desc field did not carry a "$hex" default address: "${desc}"`);
@@ -142,7 +142,7 @@ function readKernalIrqAddress(): KernalIrqAddress {
     address,
     addressHex: `$${m![1].toUpperCase()}`,
     source:
-      `c64-memory-mapping/memmap.json, sym "CINV": "${desc}" -- the KERNAL's documented default hardware-IRQ ` +
+      `c64-memory-map/memmap.json, sym "CINV": "${desc}" -- the KERNAL's documented default hardware-IRQ ` +
       `service routine entry point, reached via the $0314/$0315 vector on every CIA1 timer IRQ (the jiffy-clock ` +
       `update) unless a program has redirected it. A freshly booted, unmodified machine executes this address at ` +
       `roughly 50-60Hz, comfortably above the ${TRACE_HITS_PER_SECOND_LIMIT}/s auto-disable limit, with no fixture ` +

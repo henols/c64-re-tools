@@ -38,11 +38,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
-import { decode, type Instruction } from "./disasm-decoder.ts";
-import { scanIndirectDispatch } from "./anno-coverage.ts";
-import { buildHazardReport } from "./anno-hazard-report.ts";
-import { openStore, closeStore, listRanges, listLabels, listScopes } from "./anno-store.ts";
-import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.ts";
+import { decode, type Instruction } from "./disasm-decoder.mts";
+import { scanIndirectDispatch } from "./anno-coverage.mts";
+import { buildHazardReport } from "./anno-hazard-report.mts";
+import { openStore, closeStore, listRanges, listLabels, listScopes } from "./anno-store.mts";
+import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");
@@ -70,7 +70,7 @@ function loadPrg(path: string): { bytes: Uint8Array; origin: number } {
 }
 
 /** Re-derives `decoded is Instruction` locally rather than importing
- * `anno-coverage.ts`'s own private `isDecodableAsInstruction` (unexported by
+ * `anno-coverage.mts`'s own private `isDecodableAsInstruction` (unexported by
  * design): a legal, non-truncated decode at `address`. */
 function isLegalInstructionStart(bytes: Uint8Array, origin: number, address: number): boolean {
   if (address < origin) return false;

@@ -66,8 +66,8 @@ import { repoRoot } from "./repo-root.ts";
 // Phase 37, plan 37-08 (AUTO-07): the derived character-set range is computed
 // from the fixture's own real CONST_WRITES facts, never hard-coded -- the
 // SAME two production modules the join itself will use.
-import { parseConstWrites, parseGhidraExport } from "./anno-import.ts";
-import { deriveGraphicsRanges } from "./anno-graphics.ts";
+import { parseConstWrites, parseGhidraExport } from "./anno-import.mts";
+import { deriveGraphicsRanges } from "./anno-graphics.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures", "ghidra");
@@ -168,10 +168,10 @@ interface ScratchWorkspace {
 }
 
 /** Where a run's export lands: the endpoint downloads every result under the
- * caller's own `.c64-re-tools/runs/ghidra/`, keeping only the basename of the
+ * caller's own `.c64-re-tools/local/runs/ghidra/`, keeping only the basename of the
  * requested `exportPath`. */
 function exportFileIn(ws: ScratchWorkspace, exportRel: string): string {
-  return join(ws.root, ".c64-re-tools", "runs", "ghidra", basename(exportRel));
+  return join(ws.root, ".c64-re-tools", "local", "runs", "ghidra", basename(exportRel));
 }
 
 /** Builds a fresh temporary workspace root OUTSIDE this repository, copies
@@ -1124,7 +1124,7 @@ const CORPUS_ENTRY_POINTS: readonly string[] = ["$081b", "$b70a", "$b74c", "$b7e
  * never a fixed guess, so the seam request's `repoRoot` for THIS call is
  * always exactly big enough to contain both the corpus image and the
  * scratch output directory, and no bigger. Mirrors `c1541.ts`'s own
- * `commonAncestorDir()` (`skills/c64-disk-access/scripts/c1541.ts`),
+ * `commonAncestorDir()` (`skills/c64-disk/scripts/c1541.ts`),
  * duplicated here rather than imported -- this file must never reach into a
  * skill script (D-36-12's own container/host-side split; a skill script
  * additionally ships in the OTHER npm package). */
@@ -2036,7 +2036,7 @@ test(
 // advance to), reporting a fully-successful seed as `DATARANGE-FAILED` and
 // undercounting `DATARANGE-SEED-COUNT` by one. `$fff8-$ffff` is not a
 // hypothetical boundary: it is exactly the sprite-pointer range
-// `anno-graphics.ts`'s own `deriveGraphicsRanges()` can legitimately derive
+// `anno-graphics.mts`'s own `deriveGraphicsRanges()` can legitimately derive
 // (bank base $0000 with $D018's high nibble $F -- see the finding's own
 // worked example). The flat-64K route is used so every address up to
 // $FFFF is backed by real memory (a .prg's own small loaded range is not).

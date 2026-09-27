@@ -33,7 +33,7 @@ import {
   parseAllowList,
   popcount,
   TRANSIENT_ALLOW_LIST_CAP,
-} from "./capture-predicate.ts";
+} from "./capture-predicate.mts";
 import { compareStopIdentity, ORACLE_TERMS, StopOracleError } from "./stop-oracle.ts";
 import type { StopIdentity } from "./stop-oracle.ts";
 
@@ -84,7 +84,7 @@ test("the committed transient allow-list size cap is 64, and the oracle has four
 test("both new modules are in package.json files[], or every structural census over them is vacuous", () => {
   const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
   assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
-  for (const name of ["capture-predicate.ts", "stop-oracle.ts"]) {
+  for (const name of ["capture-predicate.mts", "stop-oracle.ts"]) {
     assert.equal(
       pkg.files.includes(name),
       true,

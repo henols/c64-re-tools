@@ -10,7 +10,7 @@
 // TWO KINDS OF CASES. Task 1's eleven `gate hazard:` cases (below) need no
 // assembler and no store at all -- they drive `matchHazardAcknowledgements()`
 // and `disposeHazardReport()` directly against hand-built `HazardFinding` and
-// `HazardRegionDisposition` literals shaped like `anno-hazard-report.ts`'s
+// `HazardRegionDisposition` literals shaped like `anno-hazard-report.mts`'s
 // own real output. A later commit in this same file adds Task 2's five
 // cases: a REAL hazard report over the committed hazard-subject fixture, and
 // an exhaustive enumeration of the gate's own seven-input token space.
@@ -20,9 +20,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildHazardReport, type HazardFinding, type HazardRegionDisposition, type HazardReport } from "./anno-hazard-report.ts";
-import type { BlockEntry } from "./block-class.ts";
-import type { StoreExportDocument } from "./anno-store-export.ts";
+import { buildHazardReport, type HazardFinding, type HazardRegionDisposition, type HazardReport } from "./anno-hazard-report.mts";
+import type { BlockEntry } from "./block-class.mts";
+import type { StoreExportDocument } from "./anno-store-export.mts";
 import {
   hazardFindingKey,
   matchHazardAcknowledgements,
@@ -328,7 +328,7 @@ function loadPrg(path: string): { bytes: Uint8Array; origin: number } {
 /** The committed store export's own ranges, converted to `BlockEntry`'s
  * shape (`start_address`/`end_address`/`type`) -- the shape
  * `buildHazardReport()`'s own `ranges` field accepts, which is NOT the same
- * shape `anno-store-export.ts`'s own `StoreExportRangeRow` uses
+ * shape `anno-store-export.mts`'s own `StoreExportRangeRow` uses
  * (`start`/`endInclusive`/`dataType`). This is the one place in this file
  * that bridges the two. */
 function loadCommittedSubjectRanges(): BlockEntry[] {

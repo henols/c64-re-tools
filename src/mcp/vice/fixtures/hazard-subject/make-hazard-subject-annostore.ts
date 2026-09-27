@@ -54,10 +54,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { openStore, closeStore, setDataType, setLabel, setComment, addScope } from "../../anno-store.ts";
-import { exportStoreDocument } from "../../anno-store-export.ts";
-import type { StoreExportDocument } from "../../anno-store-export.ts";
-import { decode } from "../../disasm-decoder.ts";
+import { openStore, closeStore, setDataType, setLabel, setComment, addScope } from "../../anno-store.mts";
+import { exportStoreDocument } from "../../anno-store-export.mts";
+import type { StoreExportDocument } from "../../anno-store-export.mts";
+import { decode } from "../../disasm-decoder.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ACME_BIN = process.env.ACME_BIN ?? "acme";
@@ -341,7 +341,7 @@ function buildExportDocument(subjectOutput: string, bytes: Uint8Array, symbols: 
           "address, which is exactly why a report reading this program shows no self-modification finding at it.",
       });
 
-      return exportStoreDocument(handle, { storeName: "hazard-subject.annostore" });
+      return exportStoreDocument(handle);
     } finally {
       closeStore(handle);
     }

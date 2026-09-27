@@ -181,7 +181,7 @@ export const EMPTY_UNBLOCKS = "none";
 
 /** The overview's Location override cell for a record with no `envVar` but
  * with `location.fileOverridable === true`. */
-export const FILE_ONLY_OVERRIDE = ".c64-re-tools/tools.json";
+export const FILE_ONLY_OVERRIDE = ".c64-re-tools/local/tools.json";
 
 /** The overview's Location override cell for a record with neither an
  * `envVar` nor `location.fileOverridable === true`. */

@@ -15,7 +15,7 @@
 //
 // The confirmed input format is a VICE label file, one `al C:xxxx .Name`
 // line per symbol, verified against ACME's `--vicelabels` output via
-// acme-build/scripts/acme.ts's own parser (curateLabels(),
+// c64-assembler/scripts/acme.ts's own parser (curateLabels(),
 // `/^al\s+C:[0-9a-f]+\s+\.(\S+)/i`). VERIFIED (Phase 9, ANNO-16(c)):
 // the external analyser 0.9.20's `--export_lbl` was run against the
 // probe-illegal.prg-derived fixture and emitted `al C:0810 .init_screen`,
@@ -42,7 +42,7 @@
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { resolve, sep } from "node:path";
 
-import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
+import { ViceError, type ViceErrorOptions } from "./vice-errors.mts";
 import { repoRoot } from "./repo-root.ts";
 import { parseAddress, setSymbolResolver, type SymbolResolver } from "./stock-address.ts";
 import { derivedAnswer, isErrorText } from "./stock-handler.ts";

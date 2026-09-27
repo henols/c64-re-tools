@@ -51,8 +51,8 @@ import {
   splitEntryAddressPairs,
   SPLIT_DATA_TYPES,
   XREF_ACCESS_KINDS,
-} from "./anno-types.ts";
-import { OPCODES } from "./disasm-opcodes.ts";
+} from "./anno-types.mts";
+import { OPCODES } from "./disasm-opcodes.mts";
 
 /** The twelve members, WRITTEN OUT BY HAND -- see the file header for why this
  * one expectation is not derived from its own subject. */
@@ -291,7 +291,7 @@ test("resolveSplitTargets refuses an odd byte count on each of the four split la
 // ---------------------------------------------------------------------------
 //
 // `splitEntryAddressPairs()` names the two ADDRESSES whose bytes form one entry
-// of a split table. `anno-store.ts`'s `retype()` gate consults it before it
+// of a split table. `anno-store.mts`'s `retype()` gate consults it before it
 // fragments a split row, and `resolveSplitTargets()` above consults the SAME
 // underlying `splitPartnerOffsets()` couples to read bytes -- so a resolver and
 // a writer cannot disagree about what an entry IS.
@@ -663,12 +663,12 @@ test("assertEnumName and parseVariantKey complete the validator set: the identif
 // Deriving `3` from the constant would make the pin read its own subject.
 // ---------------------------------------------------------------------------
 
-test("SCHEMA_VERSION is 5 -- a deliberate one-way bump that strands every version 4 store, not a number that drifted", () => {
+test("SCHEMA_VERSION is 6 -- a deliberate one-way bump that strands every version 5 store, not a number that drifted", () => {
   assert.equal(
     SCHEMA_VERSION,
-    5,
-    "version 5 is a deliberate one-way bump: it buys the anno_excluded_range table, and it strands every version 4 store on disk " +
-      "because the checkpoint decision was reaffirm-refusal -- no migration arm was written. An edit to this number must be a decision, " +
+    6,
+    "version 6 is a deliberate one-way bump: it buys one database for every project, scoped by project_id, and it strands every " +
+      "version 5 store on disk because the decision was reaffirm-refusal -- no migration arm was written. An edit to this number must be a decision, " +
       "which is why the expectation is typed out here by hand rather than derived from the constant it is checking.",
   );
 });

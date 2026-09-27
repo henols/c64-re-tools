@@ -26,7 +26,7 @@
 //      that fixture records. That is the assertion T-29-29 exists for: a
 //      vocabulary mismatch between the store's columns and the census's input
 //      shapes would move a measurement with nothing red anywhere.
-import { test, before } from "node:test";
+import { test, before, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, copyFileSync, readdirSync } from "node:fs";
@@ -34,16 +34,13 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import {
-  runAnnoCli,
-  VERB_OPTIONS,
-  checkAcceptedOptions,
-  symbolsFromStore,
-  commentsFromStore,
-  blocksFromStore,
-  crossReferencesFromStore,
-} from "./anno-cli.ts";
-import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
+import { runAnnoCli as runAnnoCliWith, VERB_OPTIONS, checkAcceptedOptions } from "./anno-cli.ts";
+import { openTestProject } from "./workspace-store-fixture.ts";
+import { workspaceStoreRunner, type RunAnno } from "./anno-workspace-store.ts";
+import { FILE_STORE_PROJECT_ID } from "./anno-store.mts";
+import { symbolsFromStore, commentsFromStore, crossReferencesFromStore } from "./anno-reports.mts";
+import { blocksFromStore } from "./block-class.mts";
+import { CURATED_ANNO_TOOLS } from "./anno-tools.mts";
 import {
   openStore,
   closeStore,
@@ -56,12 +53,12 @@ import {
   listRanges,
   insertExecObservations,
   addExcludedRange,
-} from "./anno-store.ts";
-import { buildCoverageReport, coverageFindings } from "./anno-coverage.ts";
-import type { AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.ts";
-import type { BlockEntry } from "./block-class.ts";
+} from "./anno-store.mts";
+import { buildCoverageReport, coverageFindings } from "./anno-coverage.mts";
+import type { AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.mts";
+import type { BlockEntry } from "./block-class.mts";
 import { repoRoot } from "./repo-root.ts";
-import { ROOT_FILE_NAME, SYMBOLS_FILE_NAME, UNSCOPED_FILE_NAME } from "./anno-export-asm.ts";
+import { ROOT_FILE_NAME, SYMBOLS_FILE_NAME, UNSCOPED_FILE_NAME } from "./anno-export-asm.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -86,8 +83,20 @@ const REMOVED_VERBS = ["bootstrap", "verify", "gen-enums", "export-lbl", "import
  * six with `hazard-report` -- the CLI route for the movement-hazard
  * report -- and from six to seven with `call` (D-12, plan 65-02) -- the
  * ONE generic route for the other nineteen former `anno_*` MCP tools,
- * added in the same change that removes all 25 from `tools/list` (D-13). */
-const SURVIVING_VERBS = ["render-memmap", "coverage", "export-asm", "evid-disagreements", "decomp-completeness", "hazard-report", "call"];
+ * added in the same change that removes all 25 from `tools/list` (D-13) --
+ * and from seven to nine with `export-project` and `import-project`, the
+ * text form of a project's committed annotations.db. */
+const SURVIVING_VERBS = [
+  "render-memmap",
+  "coverage",
+  "export-asm",
+  "evid-disagreements",
+  "decomp-completeness",
+  "hazard-report",
+  "export-project",
+  "import-project",
+  "call",
+];
 
 /** A fully-filled provenance sidecar -- `parseProvenanceHeader()` refuses a
  * missing or placeholder key by name, so any test that renders for real needs
@@ -109,6 +118,44 @@ const RENDER_SIDECAR = {
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
+
+/** The store the current test's verbs read, served as its workspace's
+ * project through the client's own runner. Outside `serveStore()` there is
+ * none: a verb that gets as far as the runner fails loudly, and never falls
+ * through to this checkout's own .c64-re-tools/. */
+let served: { runAnno: RunAnno; close(): void; workspace: string } | undefined;
+
+/** Serves the store file at `storePath` as `workspace`'s annotation project
+ * for the rest of the test: the database is that file, under
+ * `FILE_STORE_PROJECT_ID`, so `openStore(storePath)` reads exactly what the
+ * verbs read and write. */
+function serveStore(workspace: string, storePath: string): void {
+  served?.close();
+  const project = openTestProject(workspace, { dbPath: storePath, projectId: FILE_STORE_PROJECT_ID });
+  served = { runAnno: project.runAnno, close: project.close, workspace };
+}
+
+afterEach(() => {
+  served?.close();
+  served = undefined;
+});
+
+/** Serves `workspace` with NO annotation project -- no annotations.db --
+ * the state a report must refuse. */
+function serveEmptyWorkspace(workspace: string): void {
+  served?.close();
+  served = { runAnno: workspaceStoreRunner({ workspaceRoot: workspace }), close: () => {}, workspace };
+}
+
+/** Runs the CLI against the served project, with its workspace as the root. */
+function runAnnoCli(argv: string[]): Promise<number> {
+  return runAnnoCliWith(
+    argv,
+    served === undefined
+      ? { runAnno: async () => ({ ok: false, code: "internal", message: "no test store is served for this call" }) }
+      : { runAnno: served.runAnno, workspaceRoot: served.workspace },
+  );
+}
 
 async function withCapturedConsole<T>(
   fn: () => Promise<T>,
@@ -230,7 +277,7 @@ test("bin: `vice-mcp anno --help` exits 0, prints the plugin invocation and no n
 // ---------------------------------------------------------------------------
 
 /** The three live image forms, each with the pattern that locates it in
- * `anno-coverage.ts`'s dispatch and the pattern that locates it in the
+ * `anno-coverage.mts`'s dispatch and the pattern that locates it in the
  * shipped USAGE text. The legacy JSON branch is excluded: it is the fallthrough
  * and has no `ext ===` test to locate. */
 const COVERAGE_IMAGE_FORMS = [
@@ -265,7 +312,7 @@ function orderOfForms(text: string, which: "inCode" | "inUsage"): string[] {
 }
 
 test("WR-21: the coverage USAGE names the image forms in loadProjectImage()'s OWN branch order", () => {
-  const loaderSource = readFileSync(join(HERE, "anno-coverage.ts"), "utf8");
+  const loaderSource = readFileSync(join(HERE, "anno-coverage.mts"), "utf8");
   const loaderStart = loaderSource.indexOf("export function loadProjectImage(");
   assert.notEqual(loaderStart, -1, "precondition: loadProjectImage() is still the dispatcher this text describes");
   const loaderBody = loaderSource.slice(loaderStart, loaderSource.indexOf("// The retired project form", loaderStart));
@@ -371,36 +418,33 @@ test("render-memmap: --help lists the verb, states the output is generated, and 
   assert.match(helpResult.stdout, /--check.*hand edit/is);
 });
 
-test("render-memmap: a missing annotation store is refused rather than CREATED", async () => {
+test("render-memmap: a workspace with no annotation project is refused, and nothing is created", async () => {
   await withWorkspaceTempDir(async (dir) => {
-    const missing = join(dir, "does-not-exist.annostore");
+    serveEmptyWorkspace(dir);
+    writeFileSync(join(dir, "sidecar.json"), JSON.stringify(RENDER_SIDECAR));
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", missing, "--provenance", join(dir, "sidecar.json")]),
+      runAnnoCli(["render-memmap", "--provenance", join(dir, "sidecar.json"), "--out", join(dir, "memory-map.md")]),
     );
     assert.notEqual(code, 0);
-    assert.match(stderr, /annotation store not found/i);
-    assert.match(stderr, /refusing to CREATE one/i);
-    assert.equal(existsSync(missing), false, "the refusal must not have created the store it refused to find");
+    assert.match(stderr, /has no annotation project yet/);
+    assert.equal(existsSync(join(dir, ".c64-re-tools", "annotations.db")), false, "a report must not create the project it refused to find");
+    assert.equal(existsSync(join(dir, "memory-map.md")), false);
   });
 });
 
-test("render-memmap: a store path outside the workspace root is refused by the ONE confinement seam", async () => {
-  await withTempDir(async (dir) => {
-    const outside = join(dir, "escaped.annostore");
-    writeFileSync(outside, "");
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", outside, "--provenance", join(dir, "sidecar.json")]),
-    );
-    assert.notEqual(code, 0);
-    assert.match(stderr, /outside the workspace root/i);
-  });
+test("render-memmap: a positional argument is refused -- there is no store to name, only the workspace's own project", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runAnnoCli(["render-memmap", "game.annostore", "--provenance", "sidecar.json", "--out", "memory-map.md"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /takes no positional argument/);
 });
 
 test("render-memmap: a missing --provenance is refused", async () => {
   await withWorkspaceTempDir(async (dir) => {
     const storePath = join(dir, "game.annostore");
     writeFileSync(storePath, "");
-    const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["render-memmap", storePath]));
+    const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["render-memmap"]));
     assert.notEqual(code, 0);
     assert.match(stderr, /--provenance.*required/i);
   });
@@ -411,7 +455,7 @@ test("render-memmap: a nonexistent --provenance file is refused", async () => {
     const storePath = join(dir, "game.annostore");
     writeFileSync(storePath, "");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", join(dir, "does-not-exist.json")]),
+      runAnnoCli(["render-memmap", "--provenance", join(dir, "does-not-exist.json"), "--out", join(dir, "memory-map.md")]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /provenance sidecar not found/i);
@@ -420,21 +464,21 @@ test("render-memmap: a nonexistent --provenance file is refused", async () => {
 
 test("render-memmap: an unknown option is refused with a non-zero exit code (WR-08 posture)", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runAnnoCli(["render-memmap", "some.project", "--provenance", "x.json", "--not-a-real-flag"]),
+    runAnnoCli(["render-memmap", "--provenance", "x.json", "--not-a-real-flag"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /unknown option/i);
 });
 
 test("render-memmap: --provenance with no value is refused", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["render-memmap", "some.project", "--provenance"]));
+  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["render-memmap", "--provenance"]));
   assert.notEqual(code, 0);
   assert.match(stderr, /--provenance requires a value/i);
 });
 
 test("render-memmap: --out followed by a flag-shaped token is refused (not silently consumed as the value)", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runAnnoCli(["render-memmap", "some.project", "--provenance", "x.json", "--out", "--check"]),
+    runAnnoCli(["render-memmap", "--provenance", "x.json", "--out", "--check"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /--out requires a value/i);
@@ -444,36 +488,30 @@ test("render-memmap: --out followed by a flag-shaped token is refused (not silen
 // coverage: argument-level refusals, including the TWO-PATH contract.
 // ---------------------------------------------------------------------------
 
-test("coverage: a missing project positional is refused with the two-path usage line", async () => {
+test("coverage: a missing image positional is refused with the usage line", async () => {
   const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["coverage"]));
   assert.notEqual(code, 0);
-  assert.match(stderr, /usage: coverage <image> --store FILE/);
+  assert.match(stderr, /usage: coverage <image> \[--out FILE\]/);
 });
 
-test("coverage: --store is REQUIRED and is never derived from <project> (D-02: this CLI does not guess)", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["coverage", "some.project"]));
-  assert.notEqual(code, 0);
-  assert.match(stderr, /--store FILE is required/);
-  assert.match(stderr, /will not derive its path from <project>/);
+test("coverage: --store is not an option any more, and is refused by name -- the annotations are the workspace's own project", async () => {
+  for (const argv of [
+    ["coverage", "some.project", "--store", "s.store"],
+    ["coverage", "some.project", "--store"],
+  ]) {
+    const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(argv));
+    assert.notEqual(code, 0);
+    assert.match(stderr, /unknown option "--store"/);
+  }
 });
 
-test("coverage: --store with no value is refused, not silently given the next token", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["coverage", "some.project", "--store"]));
-  assert.notEqual(code, 0);
-  assert.match(stderr, /--store requires a value/i);
-});
 
-test("coverage: --store followed by a flag-shaped token is refused (WR-08 posture)", async () => {
-  const { result: code, stderr } = await withCapturedConsole(() =>
-    runAnnoCli(["coverage", "some.project", "--store", "--force"]),
-  );
-  assert.notEqual(code, 0);
-  assert.match(stderr, /--store requires a value/i);
-});
+
+
 
 test("coverage: an unknown option is refused with a non-zero exit code", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runAnnoCli(["coverage", "some.project", "--store", "s.store", "--not-a-real-flag"]),
+    runAnnoCli(["coverage", "some.project", "--not-a-real-flag"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /unknown option/i);
@@ -481,7 +519,7 @@ test("coverage: an unknown option is refused with a non-zero exit code", async (
 
 test("coverage: --sample must be a positive integer", async () => {
   const { result: code, stderr } = await withCapturedConsole(() =>
-    runAnnoCli(["coverage", "some.project", "--store", "s.store", "--sample", "0"]),
+    runAnnoCli(["coverage", "some.project", "--sample", "0"]),
   );
   assert.notEqual(code, 0);
   assert.match(stderr, /--sample must be a positive integer/);
@@ -492,34 +530,32 @@ test("coverage: a path outside the workspace root is refused by the ONE confinem
     const outside = join(dir, "elsewhere.project");
     writeFileSync(outside, "{}");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["coverage", outside, "--store", join(dir, "elsewhere.store")]),
+      runAnnoCli(["coverage", outside]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /outside the workspace root/i);
   });
 });
 
-test("coverage: an absent store is refused BY NAME rather than created (gone and empty must not read the same)", async () => {
+test("coverage: a workspace with no annotation project is refused BY NAME, and none is created (gone and empty must not read the same)", async () => {
   await withWorkspaceTempDir(async (dir) => {
+    serveEmptyWorkspace(dir);
     const projectPath = join(dir, "game.project");
     writeFileSync(projectPath, JSON.stringify({ origin: 0x0810, raw_data_base64: "" }));
-    const storePath = join(dir, "annotations.store");
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["coverage", projectPath, "--store", storePath]),
-    );
+    const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["coverage", projectPath]));
     assert.notEqual(code, 0);
-    assert.match(stderr, /annotation store not found/i);
-    assert.match(stderr, /refusing to CREATE one/);
-    assert.equal(existsSync(storePath), false, "a refused run must not leave a store behind at the named path");
+    assert.match(stderr, /has no annotation project yet/);
+    assert.equal(existsSync(join(dir, ".c64-re-tools", "annotations.db")), false, "a refused run must not create a project");
   });
 });
 
-test("coverage: an absent project file is refused before the store is opened", async () => {
+test("coverage: an absent image file is refused before the broker is asked", async () => {
   await withWorkspaceTempDir(async (dir) => {
     const storePath = join(dir, "annotations.store");
     closeStore(openStore(storePath, { workspaceRoot: repoRoot() }));
+    serveStore(dir, storePath);
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["coverage", join(dir, "nope.project"), "--store", storePath]),
+      runAnnoCli(["coverage", join(dir, "nope.project")]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /project file not found/i);
@@ -540,7 +576,7 @@ test("coverage: an absent project file is refused before the store is opened", a
 // store from a fixture's own recorded facts, reading it back through the four
 // adapter functions, and asserting the census reaches the verdict the fixture
 // records. A vocabulary mismatch at any of the four shapes -- most easily the
-// block-type column, whose two vocabularies `block-class.ts` alone reconciles
+// block-type column, whose two vocabularies `block-class.mts` alone reconciles
 // -- changes that verdict.
 // ---------------------------------------------------------------------------
 
@@ -566,7 +602,7 @@ function fixtureDirs(): string[] {
 /** The fixtures are spelled in the CAPITALISED vocabulary the retired analyser
  * emitted; the store's own `dataType` column is lowercase. The translation is
  * written out here, in the test, rather than reached for in production code:
- * `block-class.ts` is the only module allowed to reconcile the two
+ * `block-class.mts` is the only module allowed to reconcile the two
  * vocabularies at runtime, and this is a fixture-loading concern. Everything
  * outside the two spellings the fixtures actually use is refused loudly rather
  * than defaulted, so a fixture gaining a third block type fails here instead
@@ -603,6 +639,7 @@ function populateStoreFromFixture(storePath: string, fixture: FixtureStore): voi
   } finally {
     closeStore(handle);
   }
+  serveStore(dirname(storePath), storePath);
 }
 
 for (const dir of fixtureDirs()) {
@@ -669,7 +706,7 @@ test("coverage end to end: the verb runs against a real store and prints all thr
 
     const outPath = join(dir, "report.json");
     const { result: code, stdout } = await withCapturedConsole(() =>
-      runAnnoCli(["coverage", projectPath, "--store", storePath, "--out", outPath]),
+      runAnnoCli(["coverage", projectPath, "--out", outPath]),
     );
     assert.equal(code, 0, stdout);
     assert.match(stdout, /MEASURE 1 of 3 -- structural byte census/);
@@ -699,14 +736,14 @@ test("coverage: --out refuses to clobber an existing file unless --force is give
     const outPath = join(dir, "report.json");
     writeFileSync(outPath, "PRE-EXISTING");
     const { result: refused, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["coverage", projectPath, "--store", storePath, "--out", outPath]),
+      runAnnoCli(["coverage", projectPath, "--out", outPath]),
     );
     assert.notEqual(refused, 0);
     assert.match(stderr, /refusing to overwrite/i);
     assert.equal(readFileSync(outPath, "utf8"), "PRE-EXISTING");
 
     const { result: forced } = await withCapturedConsole(() =>
-      runAnnoCli(["coverage", projectPath, "--store", storePath, "--out", outPath, "--force"]),
+      runAnnoCli(["coverage", projectPath, "--out", outPath, "--force"]),
     );
     assert.equal(forced, 0);
     assert.notEqual(readFileSync(outPath, "utf8"), "PRE-EXISTING");
@@ -780,7 +817,7 @@ test("the cross-reference adapter answers over the WHOLE population, with no cei
 test("the verb-options map agrees with USAGE's own per-verb option lists, for every verb (IN-06)", () => {
   const usage = helpResult.stdout;
   const verbs = Object.keys(VERB_OPTIONS);
-  assert.equal(verbs.length, 7, `expected exactly 7 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
+  assert.equal(verbs.length, 9, `expected exactly 9 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
 
   for (const verb of verbs) {
     const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
@@ -887,11 +924,18 @@ const VALUE_TAKING_PAIRS: readonly { verb: string; option: string }[] = Object.e
   ([verb, options]) => options.filter((o) => !BOOLEAN_OPTIONS.has(o)).map((option) => ({ verb, option })),
 );
 
+/** The verbs with no value-taking option: evid-disagreements answers for the
+ * workspace's own project and takes only `--json`, and import-project takes
+ * only its one positional. */
+const VERBS_WITHOUT_VALUE_OPTIONS = new Set(["evid-disagreements", "import-project"]);
+
 test("PRECONDITION: VALUE_TAKING_PAIRS is non-empty and covers every verb (30-REVIEW WR-09)", () => {
   assert.ok(VALUE_TAKING_PAIRS.length >= 4, `expected at least four value-taking pairs, got ${VALUE_TAKING_PAIRS.length}`);
+  assert.deepEqual(VERB_OPTIONS["evid-disagreements"], ["--json"], "the exemption below must stay a verb with no value-taking option");
+  assert.deepEqual(VERB_OPTIONS["import-project"], [], "the exemption below must stay a verb with no value-taking option");
   assert.deepEqual(
     [...new Set(VALUE_TAKING_PAIRS.map((p) => p.verb))].sort(),
-    Object.keys(VERB_OPTIONS).sort(),
+    Object.keys(VERB_OPTIONS).filter((v) => !VERBS_WITHOUT_VALUE_OPTIONS.has(v)).sort(),
     "every verb must contribute at least one value-taking option, or this control silently skips a parser",
   );
 });
@@ -950,7 +994,7 @@ test("PAIRED DIRECTION: an ordinary value is still accepted at every value-takin
 // the next verb to write an output file cannot leave the number behind again.
 // ---------------------------------------------------------------------------
 
-test("refuseOverwrite()'s call-site count matches the number its own doc states (30-REVIEW WR-08; back to two at phase 47 plan 47-05)", () => {
+test("refuseOverwrite()'s call-site count matches the number its own doc states (30-REVIEW WR-08; three since export-project)", () => {
   const stripped = stripCommentsAndLiterals(readFileSync(ANNO_CLI_SOURCE_PATH, "utf8"));
   // The DECLARATION is not a call site. Counting it is an off-by-one this
   // test caught on itself the first time it ran, which is the shape of the
@@ -961,27 +1005,28 @@ test("refuseOverwrite()'s call-site count matches the number its own doc states 
   // BACK DOWN TO TWO as of phase 47 plan 47-05: `export-asm`'s `--out` was
   // promoted to a directory, and its overwrite question moved entirely into
   // `exportAsmTree()`'s own output-directory contract -- `cmdExportAsm()` no
-  // longer calls this single-file check at all.
+  // longer calls this single-file check at all. BACK UP TO THREE with
+  // `export-project`, whose `--out` is a single file.
   assert.equal(
     callSites,
-    2,
+    3,
     `refuseOverwrite() has ${callSites} call site(s) in anno-cli.ts. If that is correct, update BOTH paragraphs of its ` +
       `doc comment -- the one naming the verbs AND the one stating the count. WR-08 was exactly these two disagreeing.`,
   );
 
-  // And the doc really does say two, in the paragraph that states a count.
-  // Read off disk rather than retyped, so a doc that reverts to "three" fails
-  // here rather than passing because this file has its own copy.
+  // And the doc really does say three, in the paragraph that states a count.
+  // Read off disk rather than retyped, so a doc that keeps an older count
+  // fails here rather than passing because this file has its own copy.
   const doc = readFileSync(ANNO_CLI_SOURCE_PATH, "utf8");
   assert.match(
     doc,
-    /stated as the TWO call sites it\s+\* actually has/,
+    /stated as the THREE call sites it\s+\* actually has/,
     "the count-stating paragraph must name the same number the scan just measured",
   );
   assert.doesNotMatch(
     doc,
-    /stated as the THREE call sites/,
-    "the stale phase-47-05 wording (\"three\" as the CURRENT claim) must not come back -- it may still appear as history",
+    /stated as the TWO call sites/,
+    "the phase-47-05 count (\"two\" as the CURRENT claim) must not come back -- it may still appear as history",
   );
 });
 
@@ -1265,7 +1310,7 @@ test("structural (WR-09): every writeFileSync( in anno-cli.ts is inside a try bl
   // site's own arguments are visible in the matched text.
   const contexts = indices.map((idx) => source.slice(idx, idx + 60));
   assert.ok(
-    contexts.some((c) => c.includes("outPath, rendered.markdown")),
+    contexts.some((c) => c.includes("outPath, rendered.files[0]!.bytes")),
     `expected to see cmdRenderMemmap()'s own write site among: ${JSON.stringify(contexts)}`,
   );
   // `outPath`, not `out`: CR-02 confined `coverage`'s output argument through
@@ -1327,11 +1372,12 @@ test("in-process (WR-09): render-memmap with --out inside a non-existent directo
     } finally {
       closeStore(handle);
     }
+    serveStore(dir, storePath);
     const provenancePath = join(dir, "sidecar.json");
     writeFileSync(provenancePath, JSON.stringify(RENDER_SIDECAR, null, 2));
     const outPath = join(dir, "no-such-dir", "memory-map.md");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", outPath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /^render-memmap:/);
@@ -1382,6 +1428,7 @@ function makeRenderableStore(dir: string): string {
   } finally {
     closeStore(handle);
   }
+  serveStore(dir, storePath);
   return storePath;
 }
 
@@ -1401,7 +1448,7 @@ test("CR-02 (A): render-memmap --out outside the workspace root is refused by th
       const provenancePath = makeSidecar(ws);
       const escaped = join(outside, "memory-map.md");
       const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-        runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", escaped]),
+        runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", escaped]),
       );
       assert.notEqual(code, 0, "an --out outside the workspace root must not succeed");
       assert.match(stderr, /outside the workspace root/i, "the refusal must name the confinement, not some downstream symptom");
@@ -1427,7 +1474,7 @@ test("CR-03 (B): render-memmap --provenance outside the workspace root is refuse
       const token = "QQZZORACLE";
       writeFileSync(secret, `${token}\nmore private lines\n`);
       const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-        runAnnoCli(["render-memmap", storePath, "--provenance", secret]),
+        runAnnoCli(["render-memmap", "--provenance", secret, "--out", join(ws, "memory-map.md")]),
       );
       assert.notEqual(code, 0);
       assert.match(stderr, /outside the workspace root/i, "the read must be refused BY THE CONFINEMENT, before the file is opened at all");
@@ -1447,7 +1494,7 @@ test("CR-02/WR-08 (C): render-memmap refuses to overwrite an existing in-workspa
     const original = "ORIGINAL-CONTENTS-DO-NOT-DESTROY\n";
     writeFileSync(outPath, original);
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", outPath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /refusing to overwrite the existing file/i);
@@ -1464,7 +1511,7 @@ test("CR-02/WR-08 (D, over-refusal control): render-memmap --force DOES overwrit
     const outPath = join(ws, "memory-map.md");
     writeFileSync(outPath, "ORIGINAL-CONTENTS-DO-NOT-DESTROY\n");
     const { result: code, stdout } = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--force"]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", outPath, "--force"]),
     );
     assert.equal(code, 0, "--force must be an ACCEPTED option of this verb and must succeed");
     assert.match(stdout, /wrote/i);
@@ -1490,7 +1537,7 @@ test("CR-02 (E): coverage --out outside the workspace root is refused, and creat
       closeStore(openStore(storePath, { workspaceRoot: ws }));
       const escaped = join(outside, "coverage.json");
       const { result: code, stderr } = await withCapturedConsole(() =>
-        runAnnoCli(["coverage", projectPath, "--store", storePath, "--out", escaped]),
+        runAnnoCli(["coverage", projectPath, "--out", escaped]),
       );
       assert.notEqual(code, 0);
       assert.match(stderr, /outside the workspace root/i);
@@ -1507,7 +1554,7 @@ test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs
 
     // --check BEFORE anything is rendered: "missing".
     const missing = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", outPath, "--check"]),
     );
     assert.notEqual(missing.result, 0);
     assert.match(missing.stderr, /missing/i);
@@ -1515,7 +1562,7 @@ test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs
 
     // The write itself.
     const wrote = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", outPath]),
     );
     assert.equal(wrote.result, 0, wrote.stderr);
     assert.equal(existsSync(outPath), true);
@@ -1523,7 +1570,7 @@ test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs
 
     // --check against the freshly written file: "in sync".
     const inSync = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", outPath, "--check"]),
     );
     assert.equal(inSync.result, 0, inSync.stderr);
     assert.match(inSync.stdout, /in sync/i);
@@ -1533,7 +1580,7 @@ test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs
     onDisk[onDisk.length - 2] = "a hand edit that was never rendered";
     writeFileSync(outPath, onDisk.join("\n"));
     const drifted = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", outPath, "--check"]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", outPath, "--check"]),
     );
     assert.notEqual(drifted.result, 0);
     assert.match(drifted.stderr, /drifted at line/i);
@@ -1542,27 +1589,23 @@ test("(F) over-refusal control: an in-workspace --out still writes on BOTH verbs
     const projectPath = join(ws, "game.project");
     writeFileSync(projectPath, JSON.stringify({ origin: 0x0810, raw_data_base64: "" }));
     const covOut = join(ws, "coverage.json");
-    const cov = await withCapturedConsole(() => runAnnoCli(["coverage", projectPath, "--store", storePath, "--out", covOut]));
+    const cov = await withCapturedConsole(() => runAnnoCli(["coverage", projectPath, "--out", covOut]));
     assert.equal(existsSync(covOut), true, "an in-workspace coverage --out must still be written");
     assert.ok(cov.stdout.includes(covOut), "the coverage 'wrote' line must name the file that was actually written");
   });
 });
 
-test("(G) over-refusal control: the DEFAULT output path (no --out) still resolves through the seam and still writes", async () => {
+test("(G) --out is required: there is no default output path, and nothing is written when it is omitted", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const storePath = makeRenderableStore(ws);
+    makeRenderableStore(ws);
     const provenancePath = makeSidecar(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath]),
     );
-    assert.equal(code, 0, stderr);
-    const derived = join(ws, "memory-map.md");
-    assert.equal(existsSync(derived), true, "the derived default must still be written beside the store");
-    assert.match(stdout, /wrote/i);
-    // Confining the DEFAULT too is deliberate: a derived path is confined by
-    // the same rule as a caller-supplied one rather than trusted because it
-    // was derived.
-    assert.ok(stdout.includes(derived));
+    assert.notEqual(code, 0);
+    assert.match(stderr, /--out FILE is required/);
+    assert.doesNotMatch(stdout, /^render-memmap: wrote/m);
+    assert.equal(existsSync(join(ws, "memory-map.md")), false, "no default path may be written");
   });
 });
 
@@ -1582,10 +1625,13 @@ test("CR-03 (H): an in-workspace sidecar that is not JSON fails naming the path 
     const provenancePath = join(ws, "sidecar.json");
     writeFileSync(provenancePath, `${token}\nnot json at all\n`);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", join(ws, "memory-map.md")]),
     );
     assert.notEqual(code, 0);
-    assert.ok(stderr.includes(provenancePath), "the failure must still NAME the sidecar it could not parse");
+    // The report engine learns only the sidecar's WORKSPACE-RELATIVE
+    // location -- never the client's own path.
+    assert.ok(stderr.includes('"sidecar.json"'), `the failure must still NAME the sidecar it could not parse; got ${stderr}`);
+    assert.ok(!stderr.includes(provenancePath), "the client's absolute path never reaches the engine, so it cannot be in the engine's message");
     assert.match(stderr, /not valid JSON/i, "the failure must still say WHAT went wrong");
     assert.ok(
       !`${stdout}\n${stderr}`.includes(token),
@@ -1603,7 +1649,7 @@ test("CR-03 (I): a sidecar that IS valid JSON but is not a valid provenance head
     // failure would lose the diagnostic this verb depends on.
     writeFileSync(provenancePath, JSON.stringify({ capturePath: "/tmp/x.raw" }));
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", join(ws, "memory-map.md")]),
     );
     assert.notEqual(code, 0);
     assert.doesNotMatch(stderr, /not valid JSON/i, "a SCHEMA failure must not be reported as a SYNTAX failure");
@@ -1616,7 +1662,7 @@ test("CR-03 (J, over-refusal control): a valid sidecar still renders", async () 
     const storePath = makeRenderableStore(ws);
     const provenancePath = makeSidecar(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["render-memmap", storePath, "--provenance", provenancePath, "--out", join(ws, "ok.md")]),
+      runAnnoCli(["render-memmap", "--provenance", provenancePath, "--out", join(ws, "ok.md")]),
     );
     assert.equal(code, 0, stderr);
     assert.match(stdout, /wrote/i);
@@ -1657,11 +1703,12 @@ function makeExportableProject(dir: string, imageName = "game.prg"): { storePath
   } finally {
     closeStore(handle);
   }
+  serveStore(dir, storePath);
   return { storePath, imagePath };
 }
 
 test("export-asm: --help lists the verb and states, in as many words, that it does NOT assemble", () => {
-  assert.match(helpResult.stdout, /^ {2}export-asm <image> --store FILE \[--out DIR\] \[--ledger FILE\] \[--force\]$/m);
+  assert.match(helpResult.stdout, /^ {2}export-asm <image> --out DIR \[--ledger FILE\] \[--force\]$/m);
   assert.match(helpResult.stdout, /DOES NOT ASSEMBLE/);
   // The claim this verb must never make. `--help` is the only channel by which
   // a caller learns what the command does, so the absence has to hold there.
@@ -1672,18 +1719,16 @@ test("export-asm: --help lists the verb and states, in as many words, that it do
   );
 });
 
-test("export-asm: writes an ACME source TREE to the derived default directory beside the STORE and exits 0", async () => {
+test("export-asm: writes an ACME source TREE to the --out directory and exits 0", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
+    const { imagePath } = makeExportableProject(ws);
+    const outDir = join(ws, "game-src");
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath]),
+      runAnnoCli(["export-asm", imagePath, "--out", outDir]),
     );
     assert.equal(code, 0, stderr);
 
-    // The derived default: the IMAGE's basename stem plus a fixed,
-    // extension-free suffix, in the STORE's own directory.
-    const outDir = join(ws, "game-src");
-    assert.ok(existsSync(outDir), `expected the derived default output directory at ${outDir}; stdout: ${stdout}`);
+    assert.ok(existsSync(outDir), `expected the output directory at ${outDir}; stdout: ${stdout}`);
     assert.ok(statSync(outDir).isDirectory(), `${outDir} must be a directory, not a file`);
 
     const rootSource = readFileSync(join(outDir, ROOT_FILE_NAME), "utf8");
@@ -1697,7 +1742,7 @@ test("export-asm: writes an ACME source TREE to the derived default directory be
     // case-insensitive match would stop this assertion noticing a future
     // drift back.
     const symbolsSource = readFileSync(join(outDir, SYMBOLS_FILE_NAME), "utf8");
-    assert.match(symbolsSource, /^start = \$c000$/m, "the store's label reaches symbols.a, in the document's one hex case");
+    assert.match(symbolsSource, /^start = \$c000$/m, "the project's label reaches symbols.a, in the document's one hex case");
 
     // The summary line names the CONFINED directory -- the directory that is
     // actually on disk, never whatever the caller typed.
@@ -1718,6 +1763,16 @@ test("export-asm: writes an ACME source TREE to the derived default directory be
   });
 });
 
+test("export-asm: --out is required -- there is no default directory, and nothing is written when it is omitted", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { imagePath } = makeExportableProject(ws);
+    const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath]));
+    assert.notEqual(code, 0);
+    assert.match(stderr, /--out DIR is required/);
+    assert.equal(existsSync(join(ws, "game-src")), false, "the old derived default must not be written");
+  });
+});
+
 test("export-asm: the summary line reports excludedRangeCount, symmetric with every other figure it already carries (WR-02)", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
@@ -1730,7 +1785,7 @@ test("export-asm: the summary line reports excludedRangeCount, symmetric with ev
     }
 
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath]),
+      runAnnoCli(["export-asm", imagePath, "--out", join(ws, "game-src")]),
     );
     assert.equal(code, 0, stderr);
 
@@ -1743,7 +1798,7 @@ test("export-asm: --out overrides the destination directory, and two runs produc
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const chosen = join(ws, "chosen-dir");
-    const first = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", chosen]));
+    const first = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--out", chosen]));
     assert.equal(first.result, 0, first.stderr);
     const firstFiles = readdirSync(chosen).sort();
     const firstRoot = readFileSync(join(chosen, ROOT_FILE_NAME));
@@ -1754,7 +1809,7 @@ test("export-asm: --out overrides the destination directory, and two runs produc
     // `anno-export-asm.test.ts` already proves full-tree byte identity in
     // both directions; this is the CLI's own plumbing check.
     const second = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", chosen, "--force"]),
+      runAnnoCli(["export-asm", imagePath, "--out", chosen, "--force"]),
     );
     assert.equal(second.result, 0, second.stderr);
     assert.deepEqual(readdirSync(chosen).sort(), firstFiles, "a second export over an unchanged store must write the same file set");
@@ -1770,7 +1825,7 @@ test("export-asm: a non-empty destination directory is refused without --force, 
     writeFileSync(join(outDir, "PRECIOUS.txt"), "PRECIOUS\n");
 
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outDir]),
+      runAnnoCli(["export-asm", imagePath, "--out", outDir]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /already holds/i);
@@ -1787,10 +1842,10 @@ test("export-asm: --force re-writes a previous export of the same store into the
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const outDir = join(ws, "reused");
-    const first = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outDir]));
+    const first = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--out", outDir]));
     assert.equal(first.result, 0, first.stderr);
 
-    const forced = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outDir, "--force"]));
+    const forced = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--out", outDir, "--force"]));
     assert.equal(forced.result, 0, forced.stderr);
     assert.match(readFileSync(join(outDir, ROOT_FILE_NAME), "utf8"), /!cpu 6510/);
   });
@@ -1815,56 +1870,36 @@ test("export-asm: --force re-writes a previous export of the same store into the
 // annotation store".
 // ---------------------------------------------------------------------------
 
-test("export-asm: --out that IS or CONTAINS the store, the image or the ledger is refused, and --force does NOT lift it (T-47-14)", async () => {
+test("export-asm: --out that IS or CONTAINS the image, the ledger or the annotation store is refused, and --force does NOT lift it (T-47-14)", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    // Store, image and ledger each live in their OWN directory, so
-    // containment can be asserted per-input without one scenario's
-    // directory accidentally also containing a DIFFERENT input.
-    const storeDir = join(ws, "store-home");
+    // Image and ledger each live in their OWN directory, so containment can
+    // be asserted per-input without one scenario's directory accidentally
+    // also containing a DIFFERENT input. The annotation store is the
+    // workspace's own .c64-re-tools/annotations.db.
     const imageDir = join(ws, "image-home");
     const ledgerDir = join(ws, "ledger-home");
-    mkdirSync(storeDir);
     mkdirSync(imageDir);
     mkdirSync(ledgerDir);
 
-    const imagePath = join(imageDir, "game.prg");
-    writeFileSync(imagePath, Buffer.from([0x00, 0xc0, 0xa9, 0x01, 0x8d, 0x20, 0xd0, 0x60]));
-    const storePath = join(storeDir, "game.annostore");
-    const handle = openStore(storePath, { workspaceRoot: ws });
-    try {
-      setDataType(handle, { start: 0xc000, endInclusive: 0xc005, dataType: "code" });
-      setLabel(handle, { address: 0xc000, name: "start", kind: "User" });
-    } finally {
-      closeStore(handle);
-    }
+    const { imagePath } = makeExportableProject(imageDir);
     const ledgerPath = writeMinimalLedger(ledgerDir);
+    serveStore(ws, join(imageDir, "game.annostore"));
 
-    const beforeStore = readFileSync(storePath);
     const beforeImage = readFileSync(imagePath);
     const beforeLedger = readFileSync(ledgerPath, "utf8");
 
     const cases: Array<{ out: string; expect: RegExp; label: string }> = [
-      { out: storePath, expect: /annotation store/i, label: "IS the store" },
-      { out: storeDir, expect: /annotation store/i, label: "CONTAINS the store" },
       { out: imagePath, expect: /image/i, label: "IS the image" },
       { out: imageDir, expect: /image/i, label: "CONTAINS the image" },
       { out: ledgerPath, expect: /ledger/i, label: "IS the ledger" },
       { out: ledgerDir, expect: /ledger/i, label: "CONTAINS the ledger" },
+      { out: join(ws, ".c64-re-tools", "annotations.db"), expect: /annotation store/i, label: "IS the annotation store" },
+      { out: join(ws, ".c64-re-tools"), expect: /annotation store/i, label: "CONTAINS the annotation store" },
     ];
 
     for (const { out, expect, label } of cases) {
       for (const force of [false, true]) {
-        const argv = [
-          "export-asm",
-          imagePath,
-          "--store",
-          storePath,
-          "--ledger",
-          ledgerPath,
-          "--out",
-          out,
-          ...(force ? ["--force"] : []),
-        ];
+        const argv = ["export-asm", imagePath, "--ledger", ledgerPath, "--out", out, ...(force ? ["--force"] : [])];
         const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(argv));
         assert.notEqual(code, 0, `${label} (force=${force}) must be refused`);
         assert.match(stderr, /refusing to write the exported tree/i, `${label}: ${stderr}`);
@@ -1872,7 +1907,6 @@ test("export-asm: --out that IS or CONTAINS the store, the image or the ledger i
       }
     }
 
-    assert.deepEqual(readFileSync(storePath), beforeStore, "the annotation store must be untouched by every refused attempt");
     assert.deepEqual(readFileSync(imagePath), beforeImage, "the image must be untouched by every refused attempt");
     assert.equal(readFileSync(ledgerPath, "utf8"), beforeLedger, "the ledger must be untouched by every refused attempt");
   });
@@ -1884,29 +1918,23 @@ test("export-asm: PAIRED DIRECTION -- an --out that contains none of the inputs 
     const { storePath, imagePath } = makeExportableProject(ws);
     const outDir = join(ws, "not-an-input-dir");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outDir]),
+      runAnnoCli(["export-asm", imagePath, "--out", outDir]),
     );
     assert.equal(code, 0, stderr);
     assert.match(readFileSync(join(outDir, ROOT_FILE_NAME), "utf8"), /!cpu 6510/);
   });
 });
 
-test("export-asm: a --store outside the workspace root is refused by the ONE seam, and nothing is created there", async () => {
-  await withTempDir(async (outside) => {
-    // Deliberately a SYSTEM tmpdir: this test wants the confinement refusal,
-    // which is precisely what a path outside the workspace root produces.
-    await withWorkspaceTempDir(async (ws) => {
-      const { imagePath } = makeExportableProject(ws);
-      const escaped = join(outside, "escaped.annostore");
-      const escapedOut = join(outside, "escaped-dir");
-      const { result: code, stderr } = await withCapturedConsole(() =>
-        runAnnoCli(["export-asm", imagePath, "--store", escaped, "--out", escapedOut]),
-      );
-      assert.notEqual(code, 0);
-      assert.match(stderr, /outside the workspace root/i);
-      assert.equal(existsSync(escaped), false, "the refusal must not have created a store outside the root");
-      assert.equal(existsSync(escapedOut), false, "and must not have written the export there either");
-    });
+test("export-asm: --store is not an option any more, and is refused by name before anything is written", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { imagePath, storePath } = makeExportableProject(ws);
+    const outDir = join(ws, "game-src");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outDir]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /unknown option "--store"/);
+    assert.equal(existsSync(outDir), false);
   });
 });
 
@@ -1916,7 +1944,7 @@ test("export-asm: an --out outside the workspace root is refused even when both 
       const { storePath, imagePath } = makeExportableProject(ws);
       const escapedOut = join(outside, "escaped-dir");
       const { result: code, stderr } = await withCapturedConsole(() =>
-        runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", escapedOut, "--force"]),
+        runAnnoCli(["export-asm", imagePath, "--out", escapedOut, "--force"]),
       );
       assert.notEqual(code, 0);
       assert.match(stderr, /outside the workspace root/i);
@@ -1928,17 +1956,19 @@ test("export-asm: an --out outside the workspace root is refused even when both 
   });
 });
 
-test("export-asm: a missing annotation store is refused rather than CREATED", async () => {
+test("export-asm: a workspace with no annotation project is refused, and none is created", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { imagePath } = makeExportableProject(ws);
-    const missing = join(ws, "does-not-exist.annostore");
+    const imagePath = join(ws, "game.prg");
+    writeFileSync(imagePath, Buffer.from([0x00, 0xc0, 0x60]));
+    serveEmptyWorkspace(ws);
+    const outDir = join(ws, "game-src");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", missing]),
+      runAnnoCli(["export-asm", imagePath, "--out", outDir]),
     );
     assert.notEqual(code, 0);
-    assert.match(stderr, /annotation store not found/i);
-    assert.match(stderr, /refusing to CREATE one/i);
-    assert.equal(existsSync(missing), false, "the refusal must not have created the store it refused to find");
+    assert.match(stderr, /has no annotation project yet/);
+    assert.equal(existsSync(join(ws, ".c64-re-tools", "annotations.db")), false, "a report must not create the project it refused to find");
+    assert.equal(existsSync(outDir), false);
   });
 });
 
@@ -1946,30 +1976,25 @@ test("export-asm: a nonexistent image is refused by name", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath } = makeExportableProject(ws);
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", join(ws, "no-such.prg"), "--store", storePath]),
+      runAnnoCli(["export-asm", join(ws, "no-such.prg"), "--out", join(ws, "game-src")]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /image not found/i);
   });
 });
 
-test("export-asm: a missing --store, and a --store with no value, are each refused by their OWN message", async () => {
+test("export-asm: a missing --out value, and a flag-shaped one, are each refused as a missing value", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { imagePath } = makeExportableProject(ws);
 
-    const absent = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath]));
-    assert.notEqual(absent.result, 0);
-    assert.match(absent.stderr, /--store FILE is required/);
-    assert.match(absent.stderr, /will not derive its path from <image>/);
-
-    const noValue = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store"]));
+    const noValue = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--out"]));
     assert.notEqual(noValue.result, 0);
-    assert.match(noValue.stderr, /--store requires a value/);
+    assert.match(noValue.stderr, /--out requires a value/);
 
     // A flag-shaped "value" is a missing value, not a path called `--force`.
-    const flagShaped = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", "--force"]));
+    const flagShaped = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--out", "--force"]));
     assert.notEqual(flagShaped.result, 0);
-    assert.match(flagShaped.stderr, /--store requires a value/);
+    assert.match(flagShaped.stderr, /--out requires a value/);
   });
 });
 
@@ -1977,7 +2002,7 @@ test("export-asm: an unknown option is refused by checkAcceptedOptions() BEFORE 
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--nonsense"]),
+      runAnnoCli(["export-asm", imagePath, "--nonsense"]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /^export-asm: unknown option "--nonsense"/);
@@ -1992,7 +2017,7 @@ test("export-asm: more than one positional is refused rather than silently ignor
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, imagePath, "--store", storePath]),
+      runAnnoCli(["export-asm", imagePath, imagePath]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /usage: export-asm <image>/);
@@ -2044,7 +2069,7 @@ test("export-asm: --ledger FILE annotates the tree with the ledger's verdict, an
     const { storePath, imagePath } = makeExportableProject(ws);
     const ledgerPath = writeMinimalLedger(ws);
     const { result: code, stdout } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", ledgerPath]),
+      runAnnoCli(["export-asm", imagePath, "--out", join(ws, "game-src"), "--ledger", ledgerPath]),
     );
     assert.equal(code, 0, stdout);
     // The one block in this fixture lies inside no scope, so it lands in
@@ -2058,7 +2083,7 @@ test("export-asm: --ledger FILE annotates the tree with the ledger's verdict, an
 test("export-asm: omitting --ledger still exits 0 and the tree carries no PROVENANCE LEDGER text", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
-    const { result: code } = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath]));
+    const { result: code } = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--out", join(ws, "game-src")]));
     assert.equal(code, 0);
     const written = readFileSync(join(ws, "game-src", UNSCOPED_FILE_NAME), "utf8");
     assert.doesNotMatch(written, /PROVENANCE LEDGER/);
@@ -2069,12 +2094,12 @@ test("export-asm: a missing --ledger value, and a flag-shaped one, are each refu
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
 
-    const noValue = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger"]));
+    const noValue = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--ledger"]));
     assert.notEqual(noValue.result, 0);
     assert.match(noValue.stderr, /--ledger requires a value/);
 
     const flagShaped = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", "--force"]),
+      runAnnoCli(["export-asm", imagePath, "--ledger", "--force"]),
     );
     assert.notEqual(flagShaped.result, 0);
     assert.match(flagShaped.stderr, /--ledger requires a value/);
@@ -2086,7 +2111,7 @@ test("export-asm: a nonexistent --ledger is refused by name, and no tree is writ
     const { storePath, imagePath } = makeExportableProject(ws);
     const missing = join(ws, "does-not-exist.md");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", missing]),
+      runAnnoCli(["export-asm", imagePath, "--out", join(ws, "game-src"), "--ledger", missing]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /ledger not found/i);
@@ -2094,13 +2119,13 @@ test("export-asm: a nonexistent --ledger is refused by name, and no tree is writ
   });
 });
 
-test("export-asm: a --ledger outside the workspace root is refused by the ONE seam, on the same terms as --store and --out", async () => {
+test("export-asm: a --ledger outside the workspace root is refused by the ONE seam, on the same terms as --out", async () => {
   await withTempDir(async (outside) => {
     await withWorkspaceTempDir(async (ws) => {
       const { storePath, imagePath } = makeExportableProject(ws);
       const escaped = writeMinimalLedger(outside, "escaped.md");
       const { result: code, stderr } = await withCapturedConsole(() =>
-        runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", escaped]),
+        runAnnoCli(["export-asm", imagePath, "--out", join(ws, "game-src"), "--ledger", escaped]),
       );
       assert.notEqual(code, 0);
       assert.match(stderr, /outside the workspace root/i);
@@ -2138,19 +2163,20 @@ function makeEvidDisagreementsStore(dir: string, name: string, opts: { dataType:
   } finally {
     closeStore(handle);
   }
+  serveStore(dir, storePath);
   return storePath;
 }
 
-test("evid-disagreements: --help documents exactly --store and --json, and names no positional", () => {
-  assert.match(helpResult.stdout, /^ {2}evid-disagreements --store FILE \[--json\]$/m);
+test("evid-disagreements: --help documents exactly --json, and names no positional", () => {
+  assert.match(helpResult.stdout, /^ {2}evid-disagreements \[--json\]$/m);
 });
 
-test("call: the unknown-verb refusal now names SEVEN verbs, not six", async () => {
+test("call: the unknown-verb refusal names all NINE verbs", async () => {
   const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["not-a-real-verb"]));
   assert.notEqual(code, 0);
   assert.match(
     stderr,
-    /this CLI has exactly seven: render-memmap, coverage, export-asm, evid-disagreements, decomp-completeness, hazard-report and call/,
+    /this CLI has exactly nine: render-memmap, coverage, export-asm, evid-disagreements, decomp-completeness, hazard-report, export-project, import-project and call/,
   );
 });
 
@@ -2184,6 +2210,7 @@ function makeMaxTableEntriesDispatchProject(dir: string, imageName = "dispatch.p
   const storePath = join(dir, "dispatch.annostore");
   const handle = openStore(storePath, { workspaceRoot: dir });
   closeStore(handle);
+  serveStore(dir, storePath);
   return { storePath, imagePath };
 }
 
@@ -2191,7 +2218,7 @@ test("hazard-report: --json reports truncated: true end to end when the scan tri
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeMaxTableEntriesDispatchProject(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["hazard-report", "--store", storePath, "--image", imagePath, "--json"]),
+      runAnnoCli(["hazard-report", "--image", imagePath, "--json"]),
     );
     assert.equal(code, 0, stderr);
     const parsed = JSON.parse(stdout) as { truncated: unknown };
@@ -2203,7 +2230,7 @@ test('hazard-report: the rendered (non --json) report also shows "truncated" in 
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeMaxTableEntriesDispatchProject(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["hazard-report", "--store", storePath, "--image", imagePath]),
+      runAnnoCli(["hazard-report", "--image", imagePath]),
     );
     assert.equal(code, 0, stderr);
     assert.match(stdout, /, truncated\)/, "the human-readable FINDINGS heading must show truncation when the scan actually truncated");
@@ -2214,7 +2241,7 @@ test("hazard-report: the rendered report carries an UNPROVEN DISPATCH CANDIDATES
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws, "ordinary.prg");
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["hazard-report", "--store", storePath, "--image", imagePath]),
+      runAnnoCli(["hazard-report", "--image", imagePath]),
     );
     assert.equal(code, 0, stderr);
     assert.match(
@@ -2229,7 +2256,7 @@ test("hazard-report: an ordinary run with no dispatch table reports truncated: f
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws, "ordinary.prg");
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["hazard-report", "--store", storePath, "--image", imagePath, "--json"]),
+      runAnnoCli(["hazard-report", "--image", imagePath, "--json"]),
     );
     assert.equal(code, 0, stderr);
     const parsed = JSON.parse(stdout) as { truncated: unknown };
@@ -2246,7 +2273,7 @@ test("hazard-report: --store/--image confinement and missing-file refusals still
     const { storePath } = makeMaxTableEntriesDispatchProject(ws);
     const missingImage = join(ws, "does-not-exist.prg");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["hazard-report", "--store", storePath, "--image", missingImage]),
+      runAnnoCli(["hazard-report", "--image", missingImage]),
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /hazard-report: image not found/);
@@ -2258,13 +2285,13 @@ test(
     "agreement as a count only, silence stating plainly that absence proves nothing",
   async () => {
     await withWorkspaceTempDir(async (ws) => {
-      const disagreementStore = makeEvidDisagreementsStore(ws, "disagree.annostore", { dataType: "byte", observe: true });
-      const agreementStore = makeEvidDisagreementsStore(ws, "agree.annostore", { dataType: "code", observe: true });
-      const silenceStore = makeEvidDisagreementsStore(ws, "silence.annostore", { dataType: "code", observe: false });
-
-      const disagreeOut = (await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", disagreementStore]))).stdout;
-      const agreeOut = (await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", agreementStore]))).stdout;
-      const silenceOut = (await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", silenceStore]))).stdout;
+      // Each planted store is served as the workspace's project in turn.
+      makeEvidDisagreementsStore(ws, "disagree.annostore", { dataType: "byte", observe: true });
+      const disagreeOut = (await withCapturedConsole(() => runAnnoCli(["evid-disagreements"]))).stdout;
+      makeEvidDisagreementsStore(ws, "agree.annostore", { dataType: "code", observe: true });
+      const agreeOut = (await withCapturedConsole(() => runAnnoCli(["evid-disagreements"]))).stdout;
+      makeEvidDisagreementsStore(ws, "silence.annostore", { dataType: "code", observe: false });
+      const silenceOut = (await withCapturedConsole(() => runAnnoCli(["evid-disagreements"]))).stdout;
 
       // The DISAGREEMENTS heading comes FIRST (EVID-03). Only the
       // disagreement store's output carries an actual row under it -- a
@@ -2313,8 +2340,8 @@ test(
 
 test("evid-disagreements: DISAGREEMENTS renders before AGREEMENT, which renders before NO OBSERVATION", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const store = makeEvidDisagreementsStore(ws, "order.annostore", { dataType: "byte", observe: true });
-    const { stdout } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", store]));
+    makeEvidDisagreementsStore(ws, "order.annostore", { dataType: "byte", observe: true });
+    const { stdout } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements"]));
     const disagreementsIdx = stdout.indexOf("DISAGREEMENTS");
     const agreementIdx = stdout.indexOf("AGREEMENT:");
     const noObservationIdx = stdout.indexOf("NO OBSERVATION");
@@ -2326,37 +2353,38 @@ test("evid-disagreements: DISAGREEMENTS renders before AGREEMENT, which renders 
 
 test("evid-disagreements: --json prints the raw reconciliation answer instead of the rendered report", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const store = makeEvidDisagreementsStore(ws, "json.annostore", { dataType: "byte", observe: true });
-    const { stdout, result: code } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", store, "--json"]));
-    assert.equal(code, 0);
-    const parsed = JSON.parse(stdout) as { store: string; disagreementCount: number; denominator: number };
+    makeEvidDisagreementsStore(ws, "json.annostore", { dataType: "byte", observe: true });
+    const { stdout, stderr, result: code } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--json"]));
+    assert.equal(code, 0, stderr);
+    const parsed = JSON.parse(stdout) as { project: string; disagreementCount: number; denominator: number; store?: unknown };
     assert.equal(parsed.disagreementCount, 1);
     assert.equal(parsed.denominator, 1);
-    assert.equal(parsed.store, store);
+    assert.equal(parsed.project, FILE_STORE_PROJECT_ID, "the answer names the project it read");
+    assert.equal("store" in parsed, false, "no store path reaches the answer");
   });
 });
 
-test("evid-disagreements: --store FILE is required, missing value and unknown options are refused", async () => {
-  const absent = await withCapturedConsole(() => runAnnoCli(["evid-disagreements"]));
-  assert.notEqual(absent.result, 0);
-  assert.match(absent.stderr, /--store FILE is required/);
+test("evid-disagreements: --store, a positional and unknown options are each refused", async () => {
+  const store = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", "x.annostore"]));
+  assert.notEqual(store.result, 0);
+  assert.match(store.stderr, /unknown option "--store"/);
 
-  const noValue = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store"]));
-  assert.notEqual(noValue.result, 0);
-  assert.match(noValue.stderr, /--store requires a value/);
+  const positional = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "x.annostore"]));
+  assert.notEqual(positional.result, 0);
+  assert.match(positional.stderr, /takes no positional argument/);
 
-  const unknown = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", "x.annostore", "--nonsense"]));
+  const unknown = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--nonsense"]));
   assert.notEqual(unknown.result, 0);
   assert.match(unknown.stderr, /unknown option "--nonsense"/);
 });
 
-test("evid-disagreements: a missing annotation store is refused rather than CREATED", async () => {
+test("evid-disagreements: a workspace with no annotation project is refused, and none is created", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const absentStore = join(ws, "nope.annostore");
-    const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", absentStore]));
+    serveEmptyWorkspace(ws);
+    const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements"]));
     assert.notEqual(code, 0);
-    assert.match(stderr, /annotation store not found/);
-    assert.equal(existsSync(absentStore), false);
+    assert.match(stderr, /has no annotation project yet/);
+    assert.equal(existsSync(join(ws, ".c64-re-tools", "annotations.db")), false);
   });
 });
 
@@ -2369,36 +2397,41 @@ test("evid-disagreements: a missing annotation store is refused rather than CREA
 /** `--args`'s JSON string, single-quoted at the shell in the plan's own
  * prose but built here as a plain JS string -- these tests call `runAnnoCli()`
  * / spawn the bin directly, never a shell, so no shell-quoting is involved. */
-function setLabelArgsJson(storePath: string, address: number, name: string): string {
-  return JSON.stringify({ store: storePath, address, name });
+function setLabelArgsJson(address: number, name: string): string {
+  return JSON.stringify({ address, name });
 }
-function getSymbolsArgsJson(storePath: string, maxResults = 10): string {
-  return JSON.stringify({ store: storePath, max_results: maxResults });
+function getSymbolsArgsJson(maxResults = 10): string {
+  return JSON.stringify({ max_results: maxResults });
 }
 
-test("call, Test 1: write-then-read against a real store with no x64sc on PATH (spawned, CLAUDE_PROJECT_DIR set)", async () => {
-  await withWorkspaceTempDir(async (ws) => {
-    const storePath = join(ws, "call-test1.annostore");
-    // Every anno_* verb (including a "writer") REFUSES a store path that does
-    // not already exist (assertStorePresent(), D-06) -- there is no implicit
-    // bootstrap on first write. Create it deliberately first.
-    closeStore(openStore(storePath, { workspaceRoot: ws }));
-    const env = { ...CLI_ENV, CLAUDE_PROJECT_DIR: ws };
-
+/** Runs `anno call` write-then-read through the real bin, from a workspace
+ * with no project yet: the write creates .c64-re-tools/annotations.db, the
+ * read finds the label in it. No broker is involved: the project is a file of
+ * the workspace. */
+async function spawnedWriteThenRead(ws: string, label: string, address: number, env: (base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv): Promise<void> {
+  {
+    const childEnv = env({ ...CLI_ENV, CLAUDE_PROJECT_DIR: ws });
     const setResult = spawnSync(
       process.execPath,
-      [VICE_PROXY, "anno", "call", "anno_set_label_name", "--args", setLabelArgsJson(storePath, 0xc000, "call_test1_label")],
-      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
+      [VICE_PROXY, "anno", "call", "anno_set_label_name", "--args", setLabelArgsJson(address, label)],
+      { encoding: "utf8" as const, env: childEnv, timeout: CLI_TIMEOUT_MS },
     );
     assert.equal(setResult.status, 0, `anno_set_label_name via call must exit 0: stdout=${setResult.stdout} stderr=${setResult.stderr}`);
+    assert.ok(existsSync(join(ws, ".c64-re-tools", "annotations.db")), "the first write must create the workspace's annotations.db");
 
     const getResult = spawnSync(
       process.execPath,
-      [VICE_PROXY, "anno", "call", "anno_get_symbols", "--args", getSymbolsArgsJson(storePath)],
-      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
+      [VICE_PROXY, "anno", "call", "anno_get_symbols", "--args", getSymbolsArgsJson()],
+      { encoding: "utf8" as const, env: childEnv, timeout: CLI_TIMEOUT_MS },
     );
     assert.equal(getResult.status, 0, `anno_get_symbols via call must exit 0: stdout=${getResult.stdout} stderr=${getResult.stderr}`);
-    assert.match(getResult.stdout, /call_test1_label/, "the label just set must round-trip back out through call");
+    assert.match(getResult.stdout, new RegExp(label), "the label just set must round-trip back out through call");
+  }
+}
+
+test("call, Test 1: write-then-read through the real bin, from a workspace with no project yet (spawned, CLAUDE_PROJECT_DIR set)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    await spawnedWriteThenRead(ws, "call_test1_label", 0xc000, (env) => env);
   });
 });
 
@@ -2434,22 +2467,21 @@ test("call, Test 4: --args together with --args-file is refused, naming both fla
 test("call, Test 5: --args-file outside the workspace root is refused through storePathWithinWorkspace(); an in-workspace file succeeds", async () => {
   const outsideResult = await withTempDir(async (outsideDir) => {
     const argsFile = join(outsideDir, "outside-args.json");
-    writeFileSync(argsFile, getSymbolsArgsJson(join(outsideDir, "whatever.annostore")), "utf8");
+    writeFileSync(argsFile, getSymbolsArgsJson(), "utf8");
     return withCapturedConsole(() => runAnnoCli(["call", "anno_get_symbols", "--args-file", argsFile]));
   });
   assert.notEqual(outsideResult.result, 0, "an --args-file outside the workspace root must be refused");
   assert.match(outsideResult.stderr, /outside the workspace root/);
 
   await withWorkspaceTempDir(async (ws) => {
-    const storePath = join(ws, "call-test5.annostore");
-    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    serveStore(ws, join(ws, "call-test5.annostore"));
     const setArgsFile = join(ws, "set-args.json");
-    writeFileSync(setArgsFile, setLabelArgsJson(storePath, 0xc010, "call_test5_label"), "utf8");
+    writeFileSync(setArgsFile, setLabelArgsJson(0xc010, "call_test5_label"), "utf8");
     const setResult = await withCapturedConsole(() => runAnnoCli(["call", "anno_set_label_name", "--args-file", setArgsFile]));
     assert.equal(setResult.result, 0, `an in-workspace --args-file must succeed: stderr=${setResult.stderr}`);
 
     const getArgsFile = join(ws, "get-args.json");
-    writeFileSync(getArgsFile, getSymbolsArgsJson(storePath), "utf8");
+    writeFileSync(getArgsFile, getSymbolsArgsJson(), "utf8");
     const getResult = await withCapturedConsole(() => runAnnoCli(["call", "anno_get_symbols", "--args-file", getArgsFile]));
     assert.equal(getResult.result, 0);
     assert.match(getResult.stdout, /call_test5_label/);
@@ -2458,24 +2490,6 @@ test("call, Test 5: --args-file outside the workspace root is refused through st
 
 test("call, Test 6: Test 1's write-then-read pair still succeeds with PATH narrowed to only process.execPath's own directory (no x64sc reachable)", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const storePath = join(ws, "call-test6.annostore");
-    closeStore(openStore(storePath, { workspaceRoot: ws }));
-    const narrowPath = dirname(process.execPath);
-    const env = { ...CLI_ENV, CLAUDE_PROJECT_DIR: ws, PATH: narrowPath };
-
-    const setResult = spawnSync(
-      process.execPath,
-      [VICE_PROXY, "anno", "call", "anno_set_label_name", "--args", setLabelArgsJson(storePath, 0xc020, "call_test6_label")],
-      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
-    );
-    assert.equal(setResult.status, 0, `must succeed with no x64sc reachable on PATH: stdout=${setResult.stdout} stderr=${setResult.stderr}`);
-
-    const getResult = spawnSync(
-      process.execPath,
-      [VICE_PROXY, "anno", "call", "anno_get_symbols", "--args", getSymbolsArgsJson(storePath)],
-      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
-    );
-    assert.equal(getResult.status, 0, `must succeed with no x64sc reachable on PATH: stdout=${getResult.stdout} stderr=${getResult.stderr}`);
-    assert.match(getResult.stdout, /call_test6_label/);
+    await spawnedWriteThenRead(ws, "call_test6_label", 0xc020, (env) => ({ ...env, PATH: dirname(process.execPath) }));
   });
 });

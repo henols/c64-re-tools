@@ -50,7 +50,7 @@
 //   - Never carry this project's own planning bookkeeping in this file. A
 //     consumer reading it has no planning tree to resolve a citation
 //     against, so every rule here is stated in words instead.
-import { HAZARD_CLASSES, type HazardClass, type HazardFinding, type HazardRegionDisposition, type HazardReport } from "./anno-hazard-report.ts";
+import { HAZARD_CLASSES, type HazardClass, type HazardFinding, type HazardRegionDisposition, type HazardReport } from "./anno-hazard-report.mts";
 import type { HazardAcknowledgementResult } from "./reassembly-gate.ts";
 
 // ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ export interface AcknowledgementMatchResult {
  * every part it joins comes from a closed vocabulary this codebase itself
  * controls: `HazardClass` is one of the four frozen `HAZARD_CLASSES` members,
  * `mechanism` is always a lowercase-hyphenated identifier
- * (`anno-hazard-report.ts`'s own stated convention), and an address is a
+ * (`anno-hazard-report.mts`'s own stated convention), and an address is a
  * plain decimal integer -- none of the three ever contains "::". */
 const KEY_SEPARATOR = "::";
 
@@ -145,7 +145,7 @@ const KEY_SEPARATOR = "::";
  * silently collapse two distinct findings into one acknowledgement slot.
  *
  * The findings array's OWN INDEX is not usable either: nothing in
- * `anno-hazard-report.ts` documents that array as stably ordered across a
+ * `anno-hazard-report.mts` documents that array as stably ordered across a
  * re-export or a re-run, so an acknowledgement keyed on "the third finding"
  * would silently move to a different finding the moment the array's order
  * changed for a reason that had nothing to do with the acknowledgement

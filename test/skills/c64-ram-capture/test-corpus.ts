@@ -14,9 +14,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { projectRoot } from "../../../skills/c64-ram-capture/scripts/project-paths.ts";
-import { loadRegistry } from "../../../skills/c64-ram-capture/scripts/releases.ts";
-import type { DumpFileField, Registry } from "../../../skills/c64-ram-capture/scripts/releases.ts";
+import { projectRoot } from "../../../skills/c64-project/scripts/project-paths.ts";
+import { loadRegistry } from "../../../skills/c64-project/scripts/releases.ts";
+import type { DumpFileField, Registry } from "../../../skills/c64-project/scripts/releases.ts";
 
 /** One dump file located through the registry. */
 export interface DumpArtifact {

@@ -29,8 +29,8 @@
 //     predicate exists to catch).
 //
 // BYTE-SAFE READING, NOT A SHELL TEXT SEARCH -- MANDATORY, NOT A STYLE
-// PREFERENCE. Four files under this directory (`anno-memmap-render.ts`,
-// `anno-store-export.ts`, `prereq-readme-gen.ts`, `prerequisites.test.ts`)
+// PREFERENCE. Four files under this directory (`anno-memmap-render.mts`,
+// `anno-store-export.mts`, `prereq-readme-gen.ts`, `prerequisites.test.ts`)
 // carry a literal NUL byte; GNU grep classifies a file containing one as
 // binary and silently skips it, which would make this exact gate pass
 // vacuously over precisely the files most likely to hide something. Every

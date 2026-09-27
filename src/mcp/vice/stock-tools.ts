@@ -12,7 +12,7 @@
 //     and channel-lock.ts is one non-reentrant mutex across both channels.
 //   - Never make a pure client-side tool "binary": every wire touch halts
 //     the machine on stock.
-import type { ToolInfo } from "./vice-errors.ts";
+import type { ToolInfo } from "./vice-errors.mts";
 import { isErrorText, stockAnswer, type StockToolResult, type StockSessionHandler, type DerivedPureHandler } from "./stock-handler.ts";
 import { runBinary, runPure, type StockSessionDeps } from "./stock-session.ts";
 import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks } from "./stock-memory.ts";

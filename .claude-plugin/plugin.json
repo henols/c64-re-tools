@@ -3,7 +3,7 @@
   "name": "c64-re-tools",
   "displayName": "C64 Reverse-Engineering Tools",
   "version": "0.0.0-dev",
-  "description": "VICE emulator MCP server (mcp__plugin_c64-re-tools_vice__* tools) plus C64 reverse-engineering and ACME-rebuild skills.",
+  "description": "VICE emulator MCP server (mcp__plugin_c64-re-tools_vice__* tools) plus single-capability C64 skills: emulator, assembler, disk, BASIC, disassembler, unpacker, memory map, annotations, RAM capture, provenance, the reverse-engineering method and the project workspace.",
   "author": {
     "name": "Henrik Olsson",
     "url": "https://github.com/henols"

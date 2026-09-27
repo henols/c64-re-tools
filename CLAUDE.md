@@ -19,7 +19,7 @@ state — and keep working when the emulator misbehaves.
 ## Languages
 - TypeScript 
 - Bash - host launcher script (`src/mcp/vice/resources/vice-launcher.sh`)
-- 6502/6510 assembly (ACME dialect) - skill scaffolds/templates, e.g. `skills/acme-build/template.a`
+- 6502/6510 assembly (ACME dialect) - skill scaffolds/templates, e.g. `skills/c64-assembler/template.a`
 - Markdown - all skill documentation (`SKILL.md` files).
 ## Runtime
 - Node.js ≥ 24. The MCP server ('@henols/vice-mcp') and the skill scripts

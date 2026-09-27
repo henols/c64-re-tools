@@ -707,7 +707,7 @@ test("handleSnapshotSave: a successful save writes a sidecar containing name, cr
     const { session } = makeSnapshotSession();
     const result = await handleSnapshotSave({ name: "ok_3", description: "a test snapshot" }, session, fakeDeps);
     assert.equal(result.isError, false);
-    const metaPath = join(dir, ".c64-re-tools", "snapshots", "ok_3.json");
+    const metaPath = join(dir, ".c64-re-tools", "local", "snapshots", "ok_3.json");
     assert.ok(existsSync(metaPath));
     const meta = JSON.parse(readFileSync(metaPath, "utf8"));
     assert.equal(meta.name, "ok_3");
@@ -727,7 +727,7 @@ test("handleSnapshotSave: a failing DUMP writes no sidecar and dials no transfer
     });
     const result = await handleSnapshotSave({ name: "ok_4" }, session, fakeDeps);
     assert.equal(result.isError, true);
-    const metaPath = join(dir, ".c64-re-tools", "snapshots", "ok_4.json");
+    const metaPath = join(dir, ".c64-re-tools", "local", "snapshots", "ok_4.json");
     assert.equal(existsSync(metaPath), false);
     assert.equal(transferCalls.length, 0);
   });
@@ -758,7 +758,7 @@ test("handleSnapshotSave: a sidecar write failure still answers ok with metadata
     // Pre-create the exact sidecar path AS A DIRECTORY -- writeFileSync then
     // fails deterministically (EISDIR) regardless of uid/permissions, unlike
     // a chmod-based approach which is a no-op when tests run as root.
-    const metaPath = join(dir, ".c64-re-tools", "snapshots", "ok_5.json");
+    const metaPath = join(dir, ".c64-re-tools", "local", "snapshots", "ok_5.json");
     mkdirSync(metaPath, { recursive: true });
     const { session } = makeSnapshotSession();
     const result = await handleSnapshotSave({ name: "ok_5" }, session, fakeDeps);
@@ -787,7 +787,7 @@ test("handleSnapshotSave: a failed download produces an error result, leaves no 
     const result = await handleSnapshotSave({ name: "ok_11" }, session, fakeDeps);
     assert.equal(result.isError, true);
     assert.equal(sends.length, 1); // DUMP was sent before the failed download
-    const snapshotsDir = join(dir, ".c64-re-tools", "snapshots");
+    const snapshotsDir = join(dir, ".c64-re-tools", "local", "snapshots");
     const localPath = join(snapshotsDir, "ok_11.vsf");
     assert.equal(existsSync(localPath), false);
     assert.deepEqual(readdirSync(snapshotsDir), []);
@@ -798,8 +798,8 @@ test("handleSnapshotSave: a failed download produces an error result, leaves no 
 
 test("handleSnapshotLoad: a missing file refuses with a message listing the .vsf names present, records zero sends and never stages or transfers", async () => {
   await withTempRepoRoot(async (dir) => {
-    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "other.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "local", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "local", "snapshots", "other.vsf"), "");
     const { session, sends, stageCalls, transferCalls } = makeSnapshotSession();
     const result = await handleSnapshotLoad({ name: "missing" }, session, fakeDeps);
     assert.equal(result.isError, true);
@@ -812,8 +812,8 @@ test("handleSnapshotLoad: a missing file refuses with a message listing the .vsf
 
 test("handleSnapshotLoad: a successful load records an Undump body whose filename equals the staging reply's emulator filename, uploads the local file, and reports programCounter -- never the staged path in the result", async () => {
   await withTempRepoRoot(async (dir) => {
-    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
-    const localVsfPath = join(dir, ".c64-re-tools", "snapshots", "ok_6.vsf");
+    mkdirSync(join(dir, ".c64-re-tools", "local", "snapshots"), { recursive: true });
+    const localVsfPath = join(dir, ".c64-re-tools", "local", "snapshots", "ok_6.vsf");
     writeFileSync(localVsfPath, "");
     const { session, sends, transferCalls } = makeSnapshotSession({
       responder: (commandType) =>
@@ -842,8 +842,8 @@ test("handleSnapshotLoad: a successful load records an Undump body whose filenam
 
 test("handleSnapshotLoad: a load whose sidecar is absent answers with metadata: null rather than erroring", async () => {
   await withTempRepoRoot(async (dir) => {
-    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "ok_7.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "local", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "local", "snapshots", "ok_7.vsf"), "");
     const { session } = makeSnapshotSession({
       responder: () => ({ type: "undump", requestId: 1, errorCode: 0, programCounter: 0 }),
     });
@@ -856,8 +856,8 @@ test("handleSnapshotLoad: a load whose sidecar is absent answers with metadata: 
 
 test("handleSnapshotLoad: a refused staging request produces an error result and sends no UNDUMP", async () => {
   await withTempRepoRoot(async (dir) => {
-    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "ok_13.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "local", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "local", "snapshots", "ok_13.vsf"), "");
     const { session, sends } = makeSnapshotSession({ stageOutcome: { ok: false, reason: "denied" } });
     const result = await handleSnapshotLoad({ name: "ok_13" }, session, fakeDeps);
     assert.equal(result.isError, true);
@@ -867,8 +867,8 @@ test("handleSnapshotLoad: a refused staging request produces an error result and
 
 test("handleSnapshotLoad: a refused upload produces an error result and sends no UNDUMP", async () => {
   await withTempRepoRoot(async (dir) => {
-    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "ok_12.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "local", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "local", "snapshots", "ok_12.vsf"), "");
     const { session, sends } = makeSnapshotSession({
       transferImpl: async () => ({ ok: false, reason: "digest mismatch" }),
     });
@@ -880,8 +880,8 @@ test("handleSnapshotLoad: a refused upload produces an error result and sends no
 
 test("handleSnapshotLoad: UNDUMP answering 0x8f says the emulator could not read the snapshot, from the exported constant (G-64-3, plan 64-13, Task 3)", async () => {
   await withTempRepoRoot(async (dir) => {
-    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "cmdfailure_2.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "local", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "local", "snapshots", "cmdfailure_2.vsf"), "");
     const { session } = makeSnapshotSession({
       responder: (commandType) => {
         if (commandType === CommandType.Undump) {
@@ -909,8 +909,8 @@ test("handleSnapshotSave/Load: every ok-answer carries runState", async () => {
     const r1 = await handleSnapshotSave({ name: "ok_8" }, s1, fakeDeps);
     assert.ok("runState" in JSON.parse(r1.content[0]!.text));
 
-    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
-    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "ok_9.vsf"), "");
+    mkdirSync(join(dir, ".c64-re-tools", "local", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "local", "snapshots", "ok_9.vsf"), "");
     const { session: s2 } = makeSnapshotSession({
       responder: () => ({ type: "undump", requestId: 1, errorCode: 0, programCounter: 0 }),
     });

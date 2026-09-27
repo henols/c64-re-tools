@@ -1,6 +1,6 @@
 // prg-image.test.ts
 //
-// The committed regression for `prg-image.ts`'s two input validators, plus
+// The committed regression for `prg-image.mts`'s two input validators, plus
 // the payload round trip its own doc comment says it exists to allow.
 //
 // PROVENANCE OF THE FIRST FOUR TESTS: they were RELOCATED VERBATIM out of
@@ -12,7 +12,7 @@
 // Only the import specifier changed.
 //
 // Phase 56 removed this file's structural no-I/O check -- an import-set scan
-// plus a forbidden-pattern scan of `prg-image.ts`'s own source, asserting the
+// plus a forbidden-pattern scan of `prg-image.mts`'s own source, asserting the
 // module really is the pure, filesystem/subprocess/network-free thing its
 // header claims. That claim is no longer test-enforced here.
 //
@@ -23,7 +23,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
 
-import { parsePrg, flatImageOrigin, decodeRawData } from "./prg-image.ts";
+import { parsePrg, flatImageOrigin, decodeRawData } from "./prg-image.mts";
 
 // ---------------------------------------------------------------------------
 // Relocated verbatim from anno-project.test.ts.
