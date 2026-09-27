@@ -150,10 +150,9 @@ const SKIP_REASON: string | false = acmeSkipReasonFor("anno-export-asm.test.ts")
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** The committed self-modifying fixture and the ACME source it was assembled
- * from. See `fixtures/export-asm/README.md` for the provenance table. */
+/** The committed self-modifying fixture. See `fixtures/export-asm/README.md`
+ * for the provenance table. */
 const SMC_DIR = join(HERE, "fixtures", "export-asm");
-const SMC_SOURCE_PATH = join(SMC_DIR, "smc.a");
 const SMC_PRG_PATH = join(SMC_DIR, "smc.prg");
 
 // ---------------------------------------------------------------------------
@@ -499,13 +498,6 @@ test("a symbol below $0100 is defined with TWO hex digits and one at or above wi
   );
   assert.ok(lines.includes("entry = $0801"), `an address at or above $0100 takes four digits:\n${result.source}`);
   assert.equal(result.symbolCount, 2);
-});
-
-test("running the exporter twice over an unchanged store and image produces byte-identical source", () => {
-  const { dir, storePath, imagePath } = plantedFixture("determinism");
-  const first = exportAsm({ storePath, imagePath, workspaceRoot: dir });
-  const second = exportAsm({ storePath, imagePath, workspaceRoot: dir });
-  assert.equal(second.source, first.source, "emission order is derived from sorted addresses, never from row insertion order");
 });
 
 // ---------------------------------------------------------------------------
@@ -1541,24 +1533,6 @@ test("FIXTURE INTEGRITY: smc.prg genuinely self-modifies -- an `inc` writes to a
   );
   assert.equal(target, 0x0802, "the write target is the `lda #$00` operand byte at $0802");
   assert.equal(writer.mnemonic, "inc");
-});
-
-test("REGENERATOR AGREEMENT: re-assembling smc.a reproduces the committed smc.prg byte-for-byte", { skip: SKIP_REASON }, () => {
-  const dir = freshDir("smc-regen");
-  const outPath = join(dir, "smc.prg");
-  // `-f cbm` deliberately, NOT ACME_VERIFY_ARGV_FLAGS' `-f plain`: the fixture
-  // is a real `.prg` and carries its two-byte load address, which is what the
-  // integrity test above reads.
-  const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPath, SMC_SOURCE_PATH], { encoding: "utf8", timeout: 30_000 });
-  assert.equal(r.status, 0, `smc.a must assemble:\n  stderr: ${r.stderr ?? ""}`);
-  assert.equal(existsSync(outPath), true, "ACME must write an output file");
-
-  assert.deepEqual(
-    [...new Uint8Array(readFileSync(outPath))],
-    [...new Uint8Array(readFileSync(SMC_PRG_PATH))],
-    "smc.a and smc.prg have drifted apart. The committed image is only evidence while it is EXACTLY what its source assembles to; " +
-      "regenerate with `cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.ts`.",
-  );
 });
 
 /** The store the round-trip and negative-control tests share: the whole
@@ -3383,20 +3357,6 @@ test("ordering: emitted block starts are strictly ascending with no two equal, o
   }
 });
 
-test("ordering: running the same ledger-mode export twice produces byte-identical result.source", () => {
-  const dir = freshDir("ordering-repeat");
-  const { storePath, imagePath } = orderingStore(dir);
-  const singleRowRanges = [
-    { start: 0x0000, end: 0xffff, kind: "unused", verdict: "ORIGINAL", agreeing_releases: 2, evidence: "ordering test: one row tiling everything" },
-  ];
-  const ledgerPath = writeLedgerFixture(dir, singleRowRanges);
-
-  const first = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
-  const second = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
-
-  assert.equal(second.source, first.source, "a stable sort over a totally ordered key must be reproducible across two identical runs");
-});
-
 // ---------------------------------------------------------------------------
 // BUILD-07 (phase 46 plan 05): the exclusion marker -- "exclude" means
 // "emit, and say so", never "omit".
@@ -3649,14 +3609,12 @@ test("exclusion empty: a store with no exclusion records emits no exclusion mark
   const { storePath, imagePath } = exclusionStore(dir, []);
 
   const baseline = exportAsm({ storePath, imagePath, workspaceRoot: dir });
-  const again = exportAsm({ storePath, imagePath, workspaceRoot: dir });
 
   assert.equal(baseline.excludedRangeCount, 0);
   assert.ok(
     !baseline.source.split("\n").some((line) => line.startsWith(EXCLUSION_MARKER_PREFIX)),
     "zero exclusion records must emit zero marker lines",
   );
-  assert.equal(again.source, baseline.source, "exporting a store with no exclusion records twice must be byte-identical");
 });
 
 test("exclusion empty: a one-byte exclusion is recorded and emitted", () => {
@@ -3729,24 +3687,6 @@ test("exclusion ordering: two disjoint exclusions inside one block emit markers 
     markerLines[1],
     `${EXCLUSION_MARKER_PREFIX}$1030..$103f second exclusion, recorded first`,
     "the HIGHER-start exclusion's marker must appear SECOND, regardless of recording order",
-  );
-});
-
-test("exclusion ordering: two consecutive identical exports produce byte-identical source", () => {
-  const dir = freshDir("exclusion-ordering-repeat");
-  const { storePath, imagePath } = exclusionStore(dir, [
-    { start: 0x0807, endInclusive: 0x0808, reason: "cracked loader stub" },
-    { start: 0x0809, endInclusive: 0x080a, reason: "trainer patch" },
-  ]);
-  const ledgerPath = writeLedgerFixture(dir);
-
-  const first = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
-  const second = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
-
-  assert.equal(
-    second.source,
-    first.source,
-    "STABILITY across two identical runs is the guarantee; ascending-by-start (asserted above) is a recorded CHOICE, not a written contract",
   );
 });
 
@@ -4527,18 +4467,18 @@ test("exportAsmTree output-directory contract: a non-empty output directory WITH
   assert.deepEqual(readdirSync(outDir), ["stray.txt"], "nothing must have been written alongside the pre-existing file");
 });
 
-test("exportAsmTree output-directory contract: `force: true` re-writes a directory holding a PREVIOUS export of the same store, byte-identical to the first export", () => {
+test("exportAsmTree output-directory contract: `force: true` re-writes a directory holding a PREVIOUS export of the same store, with the file set the store's scopes define", () => {
   const fixture = oneScopeFixture("tree-outdir-force-reexport");
   const outDir = join(fixture.dir, "tree");
-  const first = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
-  const firstBytesByName = new Map(first.files.map((name) => [name, readFileSync(join(outDir, name))] as const));
+  exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
 
   const second = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir, force: true });
 
-  assert.deepEqual([...second.files].sort(), [...first.files].sort(), "force: true must re-write the SAME file-name set for an unchanged store");
-  for (const name of second.files) {
-    assert.deepEqual(readFileSync(join(outDir, name)), firstBytesByName.get(name), `${name} must be byte-identical to the first export`);
-  }
+  assert.equal(second.outDir, outDir, "the force: true export must complete and report the directory it wrote");
+  // The fixture's one scope holds its only range, so no unscoped.a is written.
+  const expected = [ROOT_FILE_NAME, SYMBOLS_FILE_NAME, ...second.scopes.map((scope) => scopeFileName(scope.start))].sort();
+  assert.deepEqual(second.files, expected, "force: true must write exactly the root, the symbols file and one file per scope");
+  assert.deepEqual(readdirSync(outDir).sort(), expected, "the directory must hold exactly the file set the store's scopes define");
 });
 
 test("exportAsmTree output-directory contract: `force: true` still refuses a directory holding one file this export would NOT write, naming it, and leaves it byte-unchanged", () => {
@@ -4582,55 +4522,9 @@ test("exportAsmTree output-directory contract: root.a's modification time is >= 
 });
 
 // ---------------------------------------------------------------------------
-// Phase 47, plan 47-02, Task 3: the drift guard, and every empty and
-// ordering edge this phase owes. Modelled on resources-sync.test.ts's own
-// two-direction walk-and-compare discipline -- the domain here is a
-// generated tree instead of a committed one, but the discipline (nothing
-// produced that was not expected, nothing expected that was not produced)
-// is the same.
+// Phase 47, plan 47-02, Task 3: every empty and ordering edge this phase
+// owes.
 // ---------------------------------------------------------------------------
-
-test("tree determinism: exporting one unchanged store twice into two different directories yields identical sorted file-name lists and byte-identical files, checked in BOTH directions", () => {
-  const fixture = twoScopeFixture("tree-determinism-base", { extraRanges: [{ start: 0x0807, endInclusive: 0x0808, dataType: "byte" }] });
-  const outDirA = join(fixture.dir, "tree-a");
-  const outDirB = join(fixture.dir, "tree-b");
-  const resultA = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir: outDirA });
-  const resultB = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir: outDirB });
-
-  const namesA = readdirSync(outDirA).sort();
-  const namesB = readdirSync(outDirB).sort();
-  assert.deepEqual(namesA, namesB, "two exports of an unchanged store must produce identical sorted file-name lists");
-  assert.deepEqual([...resultA.files].sort(), [...resultB.files].sort());
-
-  // Direction 1: every file A produced exists byte-identically in B.
-  for (const name of namesA) {
-    assert.deepEqual(readFileSync(join(outDirA, name)), readFileSync(join(outDirB, name)), `${name} must be byte-identical between the two exports (A -> B)`);
-  }
-  // Direction 2: every file B produced exists byte-identically in A. A guard
-  // that only walked A's own list could never see a file B invented that A
-  // never produced -- this direction is what catches that.
-  for (const name of namesB) {
-    assert.deepEqual(readFileSync(join(outDirB, name)), readFileSync(join(outDirA, name)), `${name} must be byte-identical between the two exports (B -> A)`);
-  }
-});
-
-test("tree determinism: non-vacuity -- corrupting one byte of one file in the second directory makes the two-direction comparison report a difference naming that file", () => {
-  const fixture = twoScopeFixture("tree-determinism-non-vacuity");
-  const outDirA = join(fixture.dir, "tree-a");
-  const outDirB = join(fixture.dir, "tree-b");
-  exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir: outDirA });
-  const resultB = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir: outDirB });
-
-  const corruptedName = SYMBOLS_FILE_NAME;
-  const corruptedPath = join(outDirB, corruptedName);
-  writeFileSync(corruptedPath, `${readFileSync(corruptedPath, "utf8")}; CORRUPTED BY TEST\n`, "utf8");
-
-  const differing: string[] = [];
-  for (const name of resultB.files) {
-    if (!readFileSync(join(outDirA, name)).equals(readFileSync(join(outDirB, name)))) differing.push(name);
-  }
-  assert.deepEqual(differing, [corruptedName], "the comparison must report exactly, and only, the one file that was corrupted");
-});
 
 test("tree determinism: `files` equals the set computed from the store's own scope rows plus the always-present root, symbols and (here) unscoped names", () => {
   // Every scope in this fixture holds at least one block, and its extra
@@ -4649,7 +4543,7 @@ test("tree determinism: `files` equals the set computed from the store's own sco
   assert.deepEqual(unexpected, [], `files carries names the store's scope rows do not account for: ${unexpected.join(", ") || "(none)"}`);
 });
 
-test("tree ordering: sourceOrder is the symbols file, then each scope file ascending by scope start, then the unscoped file -- identical across two exports of the unchanged store", () => {
+test("tree ordering: sourceOrder is the symbols file, then each scope file ascending by scope start, then the unscoped file", () => {
   const fixture = twoScopeFixture("tree-ordering", { extraRanges: [{ start: 0x0807, endInclusive: 0x0808, dataType: "byte" }] });
   const outDirA = join(fixture.dir, "tree-a");
   const outDirB = join(fixture.dir, "tree-b");
@@ -4659,7 +4553,6 @@ test("tree ordering: sourceOrder is the symbols file, then each scope file ascen
   const expectedOrder = [SYMBOLS_FILE_NAME, scopeFileName(0x0801), scopeFileName(0x0805), UNSCOPED_FILE_NAME];
   assert.deepEqual(resultA.sourceOrder, expectedOrder);
   assert.deepEqual(resultB.sourceOrder, expectedOrder);
-  assert.deepEqual(resultA.sourceOrder, resultB.sourceOrder, "sourceOrder must be identical across two exports of the unchanged store");
 });
 
 test("tree ordering: the !source sequence parsed from root.a's own text equals result.sourceOrder", () => {

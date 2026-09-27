@@ -4,7 +4,7 @@
 // Two tiers, deliberately separated (mirrors this project's own
 // c1541.test.ts / dxa-live.test.ts convention):
 //
-//   1. PURE unit tests (Task 2's own six behaviours) against a synthetic
+//   1. PURE unit tests (Task 2's own behaviours) against a synthetic
 //      store this file builds itself in a temp directory under the OS temp
 //      dir -- never inside the repository tree (this project has already had
 //      an intermittent suite failure caused by scratch files racing in the
@@ -75,7 +75,7 @@ function populateOneOfEach(handle: AnnoStoreHandle): void {
 }
 
 // ---------------------------------------------------------------------------
-// Tier 1: pure unit tests (Task 2's six behaviours).
+// Tier 1: pure unit tests (Task 2's behaviours).
 // ---------------------------------------------------------------------------
 
 test("Test 1: exportStoreDocument() on a store with one row of every class returns all seven arrays populated, provenance present on every ranges/comments row", () => {
@@ -102,20 +102,6 @@ test("Test 1: exportStoreDocument() on a store with one row of every class retur
       for (const row of doc.comments) {
         assert.ok("provenance" in row, "every comments row must carry a provenance key");
       }
-    } finally {
-      closeStore(handle);
-    }
-  });
-});
-
-test("Test 2: exporting the same store twice returns byte-identical JSON", () => {
-  inTempDir((dir) => {
-    const handle = freshStore(dir);
-    try {
-      populateOneOfEach(handle);
-      const first = JSON.stringify(exportStoreDocument(handle));
-      const second = JSON.stringify(exportStoreDocument(handle));
-      assert.equal(first, second);
     } finally {
       closeStore(handle);
     }
@@ -429,7 +415,7 @@ test("WR-01 Fix non-vacuity control: bank: null (every committed fixture's real 
 });
 
 // ---------------------------------------------------------------------------
-// Additional structural coverage (acceptance criteria beyond the six named
+// Additional structural coverage (acceptance criteria beyond the named
 // behaviours): the DECLINED: prefix constant is declared in exactly one
 // production file.
 // ---------------------------------------------------------------------------

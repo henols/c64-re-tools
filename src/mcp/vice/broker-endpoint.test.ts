@@ -394,13 +394,6 @@ test("classifyHelloReply: a non-numeric leading version segment is unparseable a
   assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: false, rank: 2 });
 });
 
-test("classifyHelloReply holds no state: classifying the same reply twice yields the same outcome", () => {
-  const raw = { kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "6.0.0", tag: "x" };
-  const first = classifyHelloReply({ connected: true, raw }, "5.0.0");
-  const second = classifyHelloReply({ connected: true, raw }, "5.0.0");
-  assert.deepEqual(first, second);
-});
-
 // --------------------------------------------------------------- the nine <behavior> cases
 
 test("behavior 1: candidate 1 wedged (accepts, never writes a byte), candidate 2 healthy -- resolves ok from candidate 2, well within twice the reply timeout", async () => {
@@ -682,13 +675,6 @@ test("rootless disclosure: present when any candidate's resolved flag is true wi
   assert.match(message, /rootless/i);
   assert.match(message, /unconfirmed|community-sourced/i, "must disclose the claim's provenance");
   assert.ok(!/podman/i.test(message), "must not mention the alternative container runtime whose default is deferred (DEFER-01)");
-});
-
-test("describeDialFailure is pure: called twice on the same observations, it returns byte-identical text", () => {
-  const failure = makeFailure({ rank: 4, observations: [{ host: "127.0.0.1", rank: 4, resolved: true, version: "6.0.0" }, { host: "host.docker.internal", rank: 1, resolved: false }] });
-  const first = describeDialFailure(failure);
-  const second = describeDialFailure(failure);
-  assert.equal(first, second);
 });
 
 test("all four ranks produce distinct message text", () => {

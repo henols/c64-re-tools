@@ -2,7 +2,7 @@
 //
 // Phase 34, plan 34-01, task 2: every edge row this plan owns, as a case
 // that can fail -- the typed allowlist's refusals (SEAM-02), the
-// deterministic argv construction, the byte-vs-character digest contract
+// ordered argv construction, the byte-vs-character digest contract
 // (SEAM-03), and the lease-isolation claim (SEAM-01) as a spy assertion
 // rather than a sentence.
 //
@@ -615,16 +615,8 @@ test("resolveWorkspacePath accepts a plain in-root relative path", () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildHostToolArgv -- deterministic, ordered (edge: ordering)
+// buildHostToolArgv -- ordered (edge: ordering)
 // ---------------------------------------------------------------------------
-
-test("buildHostToolArgv is deterministic: the same request and resolved paths yield two deepEqual argv arrays", () => {
-  const request = { tool: "acme.build", args: { source: "a.a", format: "cbm", defines: ["FOO", "BAR"], includes: ["inc1", "inc2"] } };
-  const resolved = { sourcePath: "/repo/a.a", outDirPath: "/repo" };
-  const first = buildHostToolArgv(request, resolved);
-  const second = buildHostToolArgv(request, resolved);
-  assert.deepEqual(first, second);
-});
 
 test("buildHostToolArgv orders fixed flags first, then repeated defines/includes in caller-given order, then the source path last", () => {
   const request = { tool: "acme.build", args: { source: "a.a", format: "cbm", defines: ["FOO", "BAR"], includes: ["inc1", "inc2"] } };

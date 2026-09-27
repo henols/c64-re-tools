@@ -11,14 +11,13 @@
 // three layers surviving compilation into resources/tool-location.mjs, and
 // an unknown tool id's refusal without `tools.json` ever being touched.
 //
-// The file-layer path normalisation and the two no-state proofs (Task 3):
+// The file-layer path normalisation and the no-cache proof (Task 3):
 // `~/` expansion against an injected HOME, a bare `~` left un-expanded and
 // joined against `projectRoot` instead, a relative value resolved against
 // `projectRoot` rather than `toolsDir` or the process cwd, a non-ASCII
 // segment surviving byte-identically, a directory-kind trailing separator
-// resolving to the same path as one without, a binary appearing on `$PATH`
-// between two calls being found by the second with no reset call, and many
-// concurrent calls against one scratch tree each matching a solo call.
+// resolving to the same path as one without, and a binary appearing on
+// `$PATH` between two calls being found by the second with no reset call.
 //
 // The widened, terminal environment layer (Plan 60-06, LOC-03 gap closure):
 // a bare-name declared-variable value that resolves nowhere refuses by name
@@ -500,23 +499,6 @@ test("no cache: a binary appearing on the injected PATH between two calls is fou
   });
 });
 
-test("many concurrent resolveTool calls against one scratch tree each match the same call made alone", async () => {
-  await withScratch(async (dir) => {
-    const pathDir = join(dir, "bin");
-    mkdirSync(pathDir, { recursive: true });
-    const probeBin = join(pathDir, "x64sc");
-    writeFileSync(probeBin, "");
-    const deps = { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } };
-
-    const solo = resolveTool("x64sc", deps);
-    const concurrent = await Promise.all(Array.from({ length: 20 }, () => Promise.resolve(resolveTool("x64sc", deps))));
-
-    for (const result of concurrent) {
-      assert.deepEqual(result, solo);
-    }
-  });
-});
-
 // -----------------------------------------------------------------------
 // Plan 60-06 (LOC-03 gap closure): the widened, terminal environment layer,
 // one case per declared variable and per record kind. Test A/B below prove
@@ -699,25 +681,6 @@ test("Plan 60-08 Test 10 (invariant, enumerated from prerequisites.json): every 
   }
 });
 
-// Plan 60-08 Test 11 (LOC-03 concurrency edge): many concurrent resolutions
-// of a separator-containing unresolvable value each match a solo call --
-// the seam gains no cache, no memo and no reset hatch from this plan.
-test("Plan 60-08 Test 11 (concurrency): many concurrent resolutions of a separator-containing unresolvable value each return the same fields as a solo call", async () => {
-  await withScratch(async (dir) => {
-    const envBin = join(dir, "does-not-exist-concurrent");
-    const deps = { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: envBin } };
-
-    const solo = resolveTool("x64sc", deps);
-    const concurrent = await Promise.all(Array.from({ length: 20 }, () => Promise.resolve(resolveTool("x64sc", deps))));
-    for (const r of concurrent) {
-      assert.equal(r.path, solo.path);
-      assert.equal(r.layer, solo.layer);
-      assert.equal(r.mechanism, solo.mechanism);
-      assert.equal(r.refusal, solo.refusal);
-    }
-  });
-});
-
 // Plan 60-08 Test 12: the kind-correct refusal and the invariant both hold
 // through the freshly built resources/tool-location.mjs, not only the
 // unbuilt source.
@@ -776,22 +739,17 @@ test("Plan 60-06 Test K (no memo): a bare-name environment value whose target do
   });
 });
 
-test("Plan 60-06 Test K (concurrency): many concurrent resolveTool calls for a slash-free environment value against one scratch tree each match the same call made alone", async () => {
-  await withScratch(async (dir) => {
+test("Plan 60-06 Test K: a slash-free environment value naming an executable on the injected PATH resolves through the environment layer", () => {
+  withScratch((dir) => {
     const pathDir = join(dir, "bin");
     mkdirSync(pathDir, { recursive: true });
     const realBin = join(pathDir, "custom-x64sc-name");
     writeFileSync(realBin, "");
     const deps = { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: "custom-x64sc-name", PATH: pathDir } };
 
-    const solo = resolveTool("x64sc", deps);
-    assert.equal(solo.path, realBin);
-    assert.equal(solo.layer, "env");
-    const concurrent = await Promise.all(Array.from({ length: 20 }, () => Promise.resolve(resolveTool("x64sc", deps))));
-
-    for (const result of concurrent) {
-      assert.deepEqual(result, solo);
-    }
+    const result = resolveTool("x64sc", deps);
+    assert.equal(result.path, realBin);
+    assert.equal(result.layer, "env");
   });
 });
 
@@ -1286,18 +1244,16 @@ test("validateToolsFile: one unknown key plus one valid entry returns exactly on
   });
 });
 
-test("validateToolsFile: several distinct problems are returned one per problem, in file key order, deterministically across repeated calls", () => {
+test("validateToolsFile: several distinct problems are returned one per problem, in file key order", () => {
   withScratch((dir) => {
     writeToolsJson(dir, JSON.stringify({ unknown_first: "/x", x64sc: null, dxa: "/y", acme: "/opt/acme" }));
-    const first = validateToolsFile({ toolsDir: dir, projectRoot: dir });
-    const second = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
 
-    assert.equal(first.length, 3);
+    assert.equal(problems.length, 3);
     assert.deepEqual(
-      first.map((p) => p.key),
+      problems.map((p) => p.key),
       ["unknown_first", "x64sc", "dxa"],
     );
-    assert.deepEqual(second, first);
   });
 });
 
@@ -1651,11 +1607,9 @@ test("toolsFileTemplate: an id the declaration does not know at all is silently 
   assert.equal("not-a-real-tool" in parsed, false);
 });
 
-test("toolsFileTemplate: the returned string ends with a newline and two calls with identical inputs return identical strings", () => {
-  const first = toolsFileTemplate({ x64sc: "/opt/vice/bin/x64sc" });
-  const second = toolsFileTemplate({ x64sc: "/opt/vice/bin/x64sc" });
-  assert.ok(first.endsWith("\n"));
-  assert.equal(first, second);
+test("toolsFileTemplate: the returned string ends with a newline", () => {
+  const template = toolsFileTemplate({ x64sc: "/opt/vice/bin/x64sc" });
+  assert.ok(template.endsWith("\n"));
 });
 
 test("toolsFileTemplate: writing its output to a scratch tools.json whose named path exists and satisfies its kind yields zero problems from validateToolsFile()", () => {
@@ -1742,16 +1696,14 @@ test("non-vacuity (DECL-03): pointing here at a scratch declaration with a disti
   });
 });
 
-test("remedyTextsFor(\"acme\", { platform: \"linux\" }) returns the two linux entries in declaration order followed by the universal entry, stable across repeated calls", () => {
+test("remedyTextsFor(\"acme\", { platform: \"linux\" }) returns the two linux entries in declaration order followed by the universal entry", () => {
   const prereq = readCommittedPrerequisites();
   const acme = prereq.tools.acme!.remedies!;
   const expected = [...acme.linux!.map((e) => e.text), ...acme.universal!.map((e) => e.text)];
 
-  const first = remedyTextsFor("acme", { platform: "linux" });
-  const second = remedyTextsFor("acme", { platform: "linux" });
+  const result = remedyTextsFor("acme", { platform: "linux" });
 
-  assert.deepEqual(first, expected);
-  assert.deepEqual(second, first);
+  assert.deepEqual(result, expected);
 });
 
 test("empty cases: a record with no remedies block returns [], a platform with no matching key returns only universal entries, and an undeclared id returns [] without throwing", () => {

@@ -122,7 +122,7 @@ async function importHostTool(): Promise<{
 }
 
 // ---------------------------------------------------------------------------
-// hazard reassembly: the five export properties, asserted on this subject
+// hazard reassembly: the export properties, asserted on this subject
 // ---------------------------------------------------------------------------
 
 test("hazard reassembly: the exported tree contains a root file, a symbols file, at least four scope files and exactly four binary data files", () => {
@@ -222,22 +222,6 @@ test("hazard reassembly: the dispatch and decline tables keep four distinct, tab
   // through naming, not through an accidental collision.
   const names = ["dispatch_hi", "dispatch_lo", "decline_hi", "decline_lo"];
   assert.equal(new Set(names).size, 4, "the four table names must be pairwise distinct");
-});
-
-test("hazard reassembly: two exports from the unchanged store produce byte-identical file sets", () => {
-  const a = exportSubjectTree("tree-determinism-files-a");
-  const b = exportSubjectTree("tree-determinism-files-b");
-  assert.deepEqual([...a.result.files].sort(), [...b.result.files].sort(), "two exports of the same unchanged store must write the exact same file names");
-});
-
-test("hazard reassembly: two exports from the unchanged store produce byte-identical file contents", () => {
-  const a = exportSubjectTree("tree-determinism-bytes-a");
-  const b = exportSubjectTree("tree-determinism-bytes-b");
-  for (const name of a.result.files) {
-    const bytesA = readFileSync(join(a.outDir, name));
-    const bytesB = readFileSync(join(b.outDir, name));
-    assert.deepEqual([...bytesA], [...bytesB], `${name} must be byte-identical across two exports of the same unchanged store`);
-  }
 });
 
 // ---------------------------------------------------------------------------

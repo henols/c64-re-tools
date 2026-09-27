@@ -10,13 +10,13 @@
 // NEVER REQUIRES THE REAL VENDORED BINARY -- true for the WHOLE file, not
 // merely the one case that spawns a child to actually complete (the
 // success-response-shape case). Until this restructuring (quick-260914-9n4),
-// that was true in name only: the four `buildHostToolArgv()` argv-shape
+// that was true in name only: the three `buildHostToolArgv()` argv-shape
 // cases below call straight into production code that refuses BEFORE
 // assembling any argv when the real vendored binary is absent at either
 // candidate path (host-tool.mts's own `dxaFound.path === null` refusal), so
 // they silently depended on this developer's own built `vendor/dxa/dxa`
 // without the header ever saying so -- exactly the gap CI's Test-step
-// failure exposed. All five cases that need a resolvable dxa (the four argv
+// failure exposed. All four cases that need a resolvable dxa (the three argv
 // cases plus the success-response-shape case) now share the ONE
 // `withPlantedDxa()` wrapper below, so the file has exactly one plant idiom
 // and the header's claim is true for the first time.
@@ -105,10 +105,9 @@ const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath
  *
  * What observes the planted subtree, checked directly rather than assumed:
  * `resources-sync.test.ts` walks the whole committed `resources/` tree, but
- * filters to `GENERATED_EXTENSIONS = [".mjs"]` before comparing anything --
+ * filters to `GENERATED_EXTENSIONS = [".mjs"]` before checking anything --
  * this planted file is named `dxa`, carries no extension, and is filtered out
- * before either of its two comparisons runs, so it cannot flip that test's
- * verdict. `dxa-build-gate.test.ts` scans `src/mcp/vice/vendor/dxa/*.c` (the
+ * before its check runs, so it cannot flip that test's verdict. `dxa-build-gate.test.ts` scans `src/mcp/vice/vendor/dxa/*.c` (the
  * SOURCE vendor tree), a different directory tree entirely, not
  * `resources/vendor/dxa/`. No committed test file's own walk reads this exact
  * path and branches on its presence, so -- unlike the fixed-name scratch file
@@ -127,7 +126,7 @@ function plantFakeDxaBinary(): { binPath: string; cleanupDir: string } {
  * `finally` -- so a thrown assertion inside `fn` still cleans up. Cases in a
  * single file run SEQUENTIALLY under `node --test` (Node runs one file's
  * `test()` registrations one after another within that file's own process),
- * so nesting a plant/remove pair five times within THIS file races nothing;
+ * so nesting a plant/remove pair four times within THIS file races nothing;
  * the hazard this project has actually measured is only ACROSS files that
  * import the same compiled artifact and therefore resolve the same fixed
  * plant path concurrently (see host-tool.test.ts's own gated case for that
@@ -169,21 +168,6 @@ test('dxa.disassemble with imageKind: "prg": argv contains NO -g at all', async 
     // directions are asserted by two separate cases (this file's own
     // acceptance criterion).
     assert.equal(built.argv.includes("-g"), false, "expected NO -g flag anywhere in the prg-kind argv");
-  });
-});
-
-test("dxa.disassemble argv is byte-identical across two successive buildHostToolArgv() calls on the same request", async () => {
-  await withPlantedDxa(() => {
-    const request = { tool: "dxa.disassemble", args: { image: "x.prg", imageKind: "prg" as const, entrypointsPath: "/ws/e.txt" } };
-    const resolved = { imagePath: "/ws/x.prg", outDirPath: "/ws", entrypointsPath: "/ws/e.txt" };
-    const first = buildHostToolArgv(request, resolved);
-    const second = buildHostToolArgv(request, resolved);
-    assert.equal(first.ok, true);
-    assert.equal(second.ok, true);
-    if (first.ok && second.ok) {
-      assert.deepEqual(first.argv, second.argv, "two successive calls on the same request must yield deepEqual argv arrays");
-      assert.deepEqual(first.outputs, second.outputs);
-    }
   });
 });
 

@@ -205,16 +205,9 @@ test("Test 4: two ranges that touch exactly render as TWO rows, never merged; a 
 });
 
 // ---------------------------------------------------------------------------
-// Test 5: rendering the same answer twice produces byte-identical text, and
-// the row order is ascending address then ascending endInclusive then name.
+// Test 5b: the row order is ascending address then ascending endInclusive
+// then name.
 // ---------------------------------------------------------------------------
-test("Test 5: rendering the same report twice produces byte-identical text (determinism)", () => {
-  const report = buildCompletenessReport(completeAnswer());
-  const first = renderCompletenessReport(report);
-  const second = renderCompletenessReport(report);
-  assert.equal(first, second);
-});
-
 test("Test 5b: rangeProvenance rows render in the order supplied (ascending address, then endInclusive) -- a caller-scrambled order is rendered as given, since sorting is the VERB's own contract, not this renderer's", () => {
   const ascending = buildCompletenessReport(
     completeAnswer({

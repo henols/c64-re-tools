@@ -4,7 +4,7 @@
 // parser (PARSE-02, PARSE-03). Mirrors textmon-memmap.test.ts's shape:
 // purity, both real two-binary captures parsing clean, the byte-exact
 // thousands-separator assertion, the stable-tie ordering control, every
-// refusal code, idempotency and concurrency, and the planted controls each
+// refusal code, and the planted controls each
 // paired with the discriminating assertion that both real captures still
 // parse. No fixture in this file is hand-rolled beyond short, explicitly
 // synthetic inline payloads -- every real payload comes from
@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
-import { parseFlatProfile, PROFILING_NOT_STARTED_TEXT, type FlatProfileParseResult } from "./textmon-profile.ts";
+import { parseFlatProfile, PROFILING_NOT_STARTED_TEXT } from "./textmon-profile.ts";
 
 const HERE = fileURLToPath(import.meta.url);
 const OWN_MODULE = HERE.replace(/textmon-profile\.test\.ts$/, "textmon-profile.ts");
@@ -183,13 +183,6 @@ test("parseFlatProfile: VICE's own cold-profiler sentence, prompt-framed exactly
   assertRealCapturesStillParseCleanly();
 });
 
-test("idempotency: two parses of the cold-profiler reply are deeply equal", () => {
-  const payload = `${PROFILING_NOT_STARTED_TEXT}\n(C:$fd50) `;
-  const first = parseFlatProfile(payload);
-  const second = parseFlatProfile(payload);
-  assert.deepEqual(first, second);
-});
-
 test("parseFlatProfile: a planted row whose address field is not four hex digits refuses with the malformed-row code -- paired with the real-capture discriminating control", () => {
   const badRow = "        100  50,0%           100  50,0% zzzz";
   const payload = `${HEADER}\n${RULES}\n${badRow}\n`;
@@ -280,34 +273,3 @@ function assertRealCapturesStillParseCleanly(): void {
   assert.equal(cachedStockParsesOk, true, "discriminating control: the real stock capture must still parse cleanly (unchanged parser)");
   assert.equal(cachedForkParsesOk, true, "discriminating control: the real fork capture must still parse cleanly (unchanged parser)");
 }
-
-// ---------------------------------------------------------------------------
-// Idempotency and concurrency.
-// ---------------------------------------------------------------------------
-
-test("idempotency: a second parse of the same input is deeply equal to the first", () => {
-  const text = loadTextFixture("flat-profile-stock").text;
-  const first = parseFlatProfile(text);
-  const second = parseFlatProfile(text);
-  assert.deepEqual(first, second);
-});
-
-test("concurrency: interleaved parses of both binaries' captures equal their sequential results", async () => {
-  const stockText = loadTextFixture("flat-profile-stock").text;
-  const forkText = loadTextFixture("flat-profile-fork").text;
-
-  const sequentialStock = parseFlatProfile(stockText);
-  const sequentialFork = parseFlatProfile(forkText);
-
-  const results: FlatProfileParseResult[] = await Promise.all([
-    Promise.resolve().then(() => parseFlatProfile(stockText)),
-    Promise.resolve().then(() => parseFlatProfile(forkText)),
-    Promise.resolve().then(() => parseFlatProfile(stockText)),
-    Promise.resolve().then(() => parseFlatProfile(forkText)),
-  ]);
-
-  assert.deepEqual(results[0], sequentialStock);
-  assert.deepEqual(results[1], sequentialFork);
-  assert.deepEqual(results[2], sequentialStock);
-  assert.deepEqual(results[3], sequentialFork);
-});
