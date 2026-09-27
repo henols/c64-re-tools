@@ -51,8 +51,8 @@ const FIXTURES_DIR = join(HERE, "fixtures", "ghidra");
 // resolve a declaration file for the plain `.mjs` target -- the SAME idiom
 // `host-tool.test.ts` already uses for its own typed access to this
 // artifact, minus that file's own `build()` call: THIS file's own header
-// states every case passes SKIP_REASON through, and `resources-sync.test.ts`
-// (part of the automated suite) already gates the committed artifact's
+// states every case passes SKIP_REASON through, and CI's
+// regenerate-and-diff step already gates the committed artifact's
 // freshness.
 const hostToolModule = (await import(new URL("./resources/host-tool.mjs", import.meta.url).href)) as unknown as {
   runHostTool: (

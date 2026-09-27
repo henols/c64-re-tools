@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // GENERATED FILE -- DO NOT EDIT.
 // Compiled by `tsc` from src/mcp/vice/vice-cli.mts. Edit the TypeScript source and run
-// `node build.ts` in src/mcp/vice; entry-sync.test.ts reds on drift.
+// `node build.ts` in src/mcp/vice; CI fails on a stale copy.
 // vice-cli.mts
 //
 // WHY THIS FILE EXISTS: the package's single bin and `main`. It refuses a

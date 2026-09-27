@@ -466,7 +466,7 @@ test("11. the boundary, one step either side: the root itself, one segment in, o
   });
 });
 
-test("12. idempotency: a repeated confinement check returns the identical answer and creates nothing", () => {
+test("12. a repeated confinement check refuses every time and creates nothing", () => {
   inTempDir((root) => {
     const ws = join(root, "ws");
     const outside = join(root, "outside");
@@ -478,9 +478,7 @@ test("12. idempotency: a repeated confinement check returns the identical answer
     const accepted = join(ws, "p.annostore");
     const before = readdirSync(ws).sort();
 
-    const first = storePathWithinWorkspace(accepted, ws);
-    const second = storePathWithinWorkspace(accepted, ws);
-    assert.equal(first, second, "two calls on the same accepted input return the byte-identical string -- the check is a question, not a step");
+    storePathWithinWorkspace(accepted, ws);
 
     assert.throws(() => storePathWithinWorkspace(join(ws, "dangling"), ws), AnnoStorePathError, "first call on the rejected input refuses");
     assert.throws(() => storePathWithinWorkspace(join(ws, "dangling"), ws), AnnoStorePathError, "and so does the second -- a refusal is not consumed by being observed");
@@ -490,7 +488,7 @@ test("12. idempotency: a repeated confinement check returns the identical answer
     // short-circuit the second call fails one of these three assertions. The
     // check must CREATE NOTHING -- that is what makes a repeated call the same
     // answer rather than a second, different one.
-    assert.deepEqual(readdirSync(ws).sort(), before, "the workspace listing is unchanged across all four calls: the confinement check creates nothing");
+    assert.deepEqual(readdirSync(ws).sort(), before, "the workspace listing is unchanged across all three calls: the confinement check creates nothing");
     assert.deepEqual(readdirSync(outside), [], "and nothing appeared outside the root either");
   });
 });

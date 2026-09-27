@@ -12,8 +12,8 @@
 //     while loading (e.g. no project root) must surface as itself.
 //   - Never pass a computed specifier. The thunk holds a literal import() so
 //     tsc still types the loaded module.
-//   - Keep every copy byte-identical; test/skills/sibling.test.ts
-//     checks it. Each consuming skill carries one because the helper cannot
+//   - Keep every copy identical by hand; no test compares them. Each
+//     consuming skill carries one because the helper cannot
 //     live in c64-project itself.
 
 import { resolve } from "node:path";

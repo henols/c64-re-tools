@@ -124,48 +124,6 @@ function assembleFreshWithSymbols(rootSourceName: string): { bytes: Uint8Array; 
   }
 }
 
-/** Builds the regressed twin's root text the same way
- * `make-hazard-subject-fixtures.ts`'s `regressedRootSource()` does, so the
- * test's own fresh assembly and the committed generator agree on what root
- * text produces `hazard-subject-regressed.prg`. */
-function regressedRootSourceText(): string {
-  let rootText = readFileSync(join(FIXTURE_DIR, ROOT_SOURCE_NAME), "utf8");
-  const dispatchLine = '!source "hazard-subject-dispatch.a"';
-  const dispatchRegressedLine = '!source "hazard-subject-dispatch-regressed.a"';
-  const alignLine = '!source "hazard-subject-align.a"';
-  const alignRegressedLine = '!source "hazard-subject-align-regressed.a"';
-  assert.ok(rootText.includes(dispatchLine), `precondition: root must contain ${JSON.stringify(dispatchLine)}`);
-  assert.ok(rootText.includes(alignLine), `precondition: root must contain ${JSON.stringify(alignLine)}`);
-  rootText = rootText.replace(dispatchLine, dispatchRegressedLine).replace(alignLine, alignRegressedLine);
-  return rootText;
-}
-
-function assembleRegressedFreshWithSymbols(): { bytes: Uint8Array; symbols: Map<string, number> } {
-  const dir = mkdtempSync(join(tmpdir(), "hazard-subject-variants-regressed-"));
-  try {
-    const rootPath = join(dir, "synthesized-regressed-root.a");
-    writeFileSync(rootPath, regressedRootSourceText());
-    const outPath = join(dir, "out.prg");
-    const symPath = join(dir, "out.sym");
-    const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPath, "--symbollist", symPath, rootPath], {
-      encoding: "utf8",
-      timeout: 30_000,
-      cwd: FIXTURE_DIR,
-    });
-    assert.equal(r.status, 0, `the synthesized regressed root must assemble:\n  stderr: ${r.stderr ?? ""}`);
-    assert.equal(existsSync(outPath), true, "ACME must write an output file");
-    assert.equal(existsSync(symPath), true, "ACME must write a symbol list file");
-    const symbols = new Map<string, number>();
-    for (const line of readFileSync(symPath, "utf8").split("\n")) {
-      const m = line.match(/^\s*(\S+)\s*=\s*\$([0-9a-fA-F]+)/);
-      if (m) symbols.set(m[1]!, parseInt(m[2]!, 16));
-    }
-    return { bytes: new Uint8Array(readFileSync(outPath)), symbols };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 // ---------------------------------------------------------------------------
 // The regressed twin -- red control for the cross-binary comparison
 // instrument, three single-bit regressions at $D020, $D015 and $D018.
@@ -225,16 +183,6 @@ test(
     );
   },
 );
-
-test("hazard subject variants: REGENERATOR AGREEMENT (regressed twin) -- re-deriving the synthesized root reproduces the committed hazard-subject-regressed.prg byte-for-byte", { skip: SKIP_REASON }, () => {
-  const { bytes } = assembleRegressedFreshWithSymbols();
-  assert.deepEqual(
-    [...bytes],
-    [...new Uint8Array(readFileSync(REGRESSED_PRG_PATH))],
-    "the synthesized regressed root and hazard-subject-regressed.prg have drifted apart; regenerate with " +
-      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts`.",
-  );
-});
 
 test("hazard subject variants: make-hazard-subject-fixtures.ts contains exactly one implementation of the !source line substitution", () => {
   const generatorSource = readFileSync(join(FIXTURE_DIR, "make-hazard-subject-fixtures.ts"), "utf8");
@@ -360,16 +308,6 @@ test(
     assert.equal(originalD015Stores.length, 1, "the committed subject must contain exactly one store to $D015");
   },
 );
-
-test("hazard subject variants: REGENERATOR AGREEMENT (modified subject) -- re-deriving the synthesized root reproduces the committed hazard-subject-modified.prg byte-for-byte", { skip: SKIP_REASON }, () => {
-  const { bytes } = assembleModifiedFreshWithSymbols();
-  assert.deepEqual(
-    [...bytes],
-    [...new Uint8Array(readFileSync(MODIFIED_PRG_PATH))],
-    "the synthesized modified root and hazard-subject-modified.prg have drifted apart; regenerate with " +
-      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.ts`.",
-  );
-});
 
 test("hazard subject variants: hazard-subject-align-nosprite.a names both required finding anchors in its header", () => {
   const source = readFileSync(join(FIXTURE_DIR, "hazard-subject-align-nosprite.a"), "utf8");

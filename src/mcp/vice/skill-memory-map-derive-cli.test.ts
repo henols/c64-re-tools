@@ -155,14 +155,6 @@ test("vic verb: radix markers (bare hex, dollar-prefixed, 0x-prefixed, binary) f
   assert.equal(binary.stdout, bare.stdout);
 });
 
-test("vic verb determinism: run twice with identical arguments produces byte-identical stdout", () => {
-  const first = runDerive(["vic", "--dd00", "3E", "--d018", "18", "--d011", "1B", "--d016", "C8"]);
-  const second = runDerive(["vic", "--dd00", "3E", "--d018", "18", "--d011", "1B", "--d016", "C8"]);
-  assert.equal(first.status, 0);
-  assert.equal(second.status, 0);
-  assert.equal(first.stdout, second.stdout);
-});
-
 // ---------------------------------------------------------------------------
 // sprites verb -- pinned against its own usage example.
 // ---------------------------------------------------------------------------

@@ -61,7 +61,8 @@ declared in `src/mcp/vice/prerequisites.json`.
 ## Build, Test, CI
 
 - `build.ts` compiles the host-side `.mts` modules into committed
-  `resources/*.mjs`. `resources-sync.test.ts` fails when the two drift apart.
+  `resources/*.mjs`. CI regenerates every committed generated artifact and
+  fails when the tree then differs.
 - Tests use Node's built-in `node --test`. Server tests sit next to the module
   they test; skill-script tests live in `test/skills/<skill>/` so they never ship.
   `npm run test:automated` skips the manual-only suites, and live suites run only

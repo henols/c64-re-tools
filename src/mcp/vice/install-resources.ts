@@ -337,8 +337,8 @@ export function pruneResources({
  * hardcoded filename here, because that list is already the ENFORCED source
  * of truth for "what tsc emits": build()'s own "build: emitted file set
  * does not match HOST_BOUND_ARTIFACTS" assertion throws if the compiler's
- * real output ever differs from it, and resources-sync.test.ts separately
- * asserts committed resources/ matches a fresh build using this same list.
+ * real output ever differs from it, and CI separately fails when the
+ * committed resources/ differs from a fresh build.
  * A maintainer who adds a new compiled artifact must already extend this
  * list for build() to succeed at all, so this check cannot silently drift
  * out of sync with reality without also breaking the build.

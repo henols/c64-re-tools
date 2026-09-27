@@ -248,16 +248,6 @@ function fillBaselineStore(handle: AnnoStoreHandle): void {
   setComment(handle, { address: 0x0810, commentType: "line", text: formatConfidenceComment("confirmed-code", "observed executing at boot") });
 }
 
-test("the render digest is identical across two renders of the same store and the same sidecar", async () => {
-  await withRenderFixture({ prefix: "anno-memmap-digest-stable", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
-    const first = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
-    const second = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
-    assert.match(first.renderDigest, /^[0-9a-f]{64}$/);
-    assert.equal(first.renderDigest, second.renderDigest);
-    assert.equal(first.markdown, second.markdown);
-  });
-});
-
 test("changing a LABEL in the store changes the render digest -- the digest covers the store, not just the sidecar", async () => {
   await withRenderFixture({ prefix: "anno-memmap-digest-label", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
     const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
@@ -683,7 +673,7 @@ test("a store with ZERO ranges, labels and comments renders a banner and a diges
   }
 });
 
-test("--check names the LOWEST differing line when the file differs on several, and two runs over the same inputs name the same line", async () => {
+test("--check names the LOWEST differing line when the file differs on several", async () => {
   await withRenderFixture(
     { prefix: "anno-memmap-lowest-line", fill: fillBaselineStore },
     async ({ dir, storePath, provenancePath }) => {
@@ -707,11 +697,6 @@ test("--check names the LOWEST differing line when the file differs on several, 
       assert.equal(first.status, "drifted");
       if (first.status !== "drifted") return;
       assert.equal(first.line, lowerIndex + 1, "the LOWEST differing line is the one named, not the last or the largest");
-
-      // Stable: the same inputs name the same line, because both sides come
-      // from the same deterministic sort rather than from iteration order.
-      const second = await checkRenderedMemoryMap({ storePath, provenancePath, renderedPath, workspaceRoot: dir });
-      assert.deepEqual(second, first, "two runs over identical inputs must return the identical verdict");
     },
   );
 });

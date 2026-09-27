@@ -142,6 +142,18 @@
   in `dist/`. Skill text is written to ASD-STE100.
   Spec: `agent-os/specs/2026-09-27-1145-single-capability-skills/`.
 
+**Test suite**
+- No test compares two runs, calls or parses of the same input, and no
+  test compares a committed build output or fixture with a fresh build of
+  its source. Byte checks remain only against an independent reference:
+  the original image, the bytes sent, the state before a refusal, or a
+  golden value. A change that makes the exporter or a parser
+  non-deterministic is therefore not caught.
+- CI regenerates the committed generated artifacts (`resources/`,
+  `vice-cli.mjs`, `anno-regbits.json`, the assembled fixtures) and fails
+  when the tree then differs. Spec:
+  `agent-os/specs/2026-09-27-1502-no-byte-identity-tests/`.
+
 ## Planned / Later
 
 **Operator surface**
@@ -163,8 +175,6 @@
   the text monitor now provides an instrument for it.
 
 **Cleanup**
-- Remove byte-identical assertions from the tests. The owner has decided this;
-  its requirements are not written yet.
 - Optionally, move the server's colocated tests into a dedicated test folder
   (the skill-script tests already live in `test/skills/`).
 

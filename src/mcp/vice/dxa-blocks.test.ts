@@ -143,19 +143,17 @@ test("emitDataBlocks: output is sorted ascending by start regardless of input or
   }
 });
 
-test("emitDataBlocks: idempotent -- two runs on the same store state produce byte-identical files", () => {
+test("emitDataBlocks: a second emit to the same path replaces the file, never appends to it", () => {
   const dir = scratchDir();
   try {
-    const outputPath = join(dir, "idempotent.b");
+    const outputPath = join(dir, "re-emit.b");
     const rows: KnownDataRow[] = [
       { start: 0x1000, endInclusive: 0x1fff, dataType: "byte" },
       { start: 0x4000, endInclusive: 0x4fff, dataType: "screencode" },
     ];
     emitDataBlocks(rows, outputPath);
-    const first = readFileSync(outputPath);
     emitDataBlocks(rows, outputPath);
-    const second = readFileSync(outputPath);
-    assert.deepEqual(first, second, "the second run overwrites, producing byte-identical output -- no accumulation");
+    assert.equal(readFileSync(outputPath, "utf8"), "1000-1fff\n4000-4fff\n", "the second run overwrites -- no accumulation");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

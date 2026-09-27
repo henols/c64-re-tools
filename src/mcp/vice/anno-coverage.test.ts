@@ -798,23 +798,6 @@ test("substitutability: on an UNGRADED comment set every fromStore value moves w
   }
 });
 
-test("idempotency: building the coverage report twice over the same fixture through the adapter yields deep-equal reports", () => {
-  const fixedNow = () => "2026-01-01T00:00:00.000Z";
-  const { projectPath, store } = loadFixture(WELL_DOCUMENTED);
-  const build = () =>
-    buildCoverageReport({
-      projectPath,
-      symbols: store.symbols,
-      comments: store.comments,
-      blocks: store.blocks,
-      crossReferences: store.cross_references,
-      blockClassifier: blockClassAt,
-      now: fixedNow,
-    });
-
-  assert.deepEqual(build(), build(), "the census must stay a pure function of the bytes and the seed set across repeated builds");
-});
-
 // ---------------------------------------------------------------------------
 // 2c. The LABEL-KIND half of the same boundary
 //
@@ -1084,38 +1067,8 @@ test("a missing or empty project path is the ONE caller-contract violation this 
 });
 
 // ---------------------------------------------------------------------------
-// 5. Idempotency and ordering
+// 5. Ordering
 // ---------------------------------------------------------------------------
-
-test("idempotency: two consecutive reports over the same fixture are deeply equal once the timestamp is removed", () => {
-  const strip = (r: CoverageReport): Omit<CoverageReport, "generatedAt"> => {
-    const { generatedAt, ...rest } = r;
-    void generatedAt;
-    return rest;
-  };
-  // The advisory class is covered by the deep comparison above only if it is
-  // actually ON the report object -- a silently-dropped field would make the
-  // comparison pass vacuously. Assert its presence explicitly, so "two
-  // consecutive reports are deeply equal INCLUDING the advisory field" is a
-  // checked statement rather than an assumed one.
-  const report = reportFor(WELL_DOCUMENTED);
-  assert.ok(
-    Array.isArray(report.dispatch.splitTableCandidates),
-    "dispatch.splitTableCandidates must be present and an array on every report -- if it were dropped, the deep comparison above would cover nothing",
-  );
-
-  assert.deepEqual(strip(reportFor(WELL_DOCUMENTED)), strip(reportFor(WELL_DOCUMENTED)));
-
-  // And over EVERY committed fixture, not one hand-picked case. Idempotency is
-  // a property of the instrument, so a new fixture directory joins this loop
-  // automatically -- which is what keeps the claim from going stale the moment
-  // a payload with a different shape lands. `generatedAt` is the only field
-  // that may differ between two runs; everything else, including the advisory
-  // candidate list and every class run, must be byte-stable.
-  for (const dir of fixtureDirs()) {
-    assert.deepEqual(strip(reportFor(dir)), strip(reportFor(dir)), `${dir}: two consecutive reports over one input must be deeply equal`);
-  }
-});
 
 test("ordering: every offending-address list in every fixture's report is in ascending numeric order", () => {
   const ascending = (values: readonly number[], what: string): void => {
@@ -3818,29 +3771,6 @@ test("every declaration row's route is a declared one, and only an OUTSIDE row m
   }
 });
 
-test("the witness is PURE over its four arguments: two calls on one payload return the same answer", () => {
-  // Idempotency, stated as an assertion because every coverage check below
-  // calls the witness more than once on the same row. A witness that carried
-  // state between calls would make the second answer depend on the order the
-  // rows happen to sit in.
-  for (const [shape, route] of [
-    ["stack-return-push-idiom", "class-3-pass"],
-    ["stack-return-push-idiom", "class-4-pass"],
-    ["zeropage-vector-jumped-through", "class-3-pass"],
-  ] as const) {
-    for (const [name, bytes, origin] of [
-      ["STACK_RETURN_MIXED_REGISTERS", STACK_RETURN_MIXED_REGISTERS, DISPATCH_ORIGIN],
-      ["ORDINARY_INDEXED_COPY", ORDINARY_INDEXED_COPY, ORDINARY_ORIGIN],
-    ] as const) {
-      assert.equal(
-        reachesGateInterior(bytes, origin, shape, route),
-        reachesGateInterior(bytes, origin, shape, route),
-        `the witness answered differently on two identical calls for ${name} against ("${shape}", "${route}")`,
-      );
-    }
-  }
-});
-
 // ---------------------------------------------------------------------------
 // 10. The previously-unseen fixture
 // ---------------------------------------------------------------------------
@@ -4063,19 +3993,15 @@ test("CR-05 (F, behavioural): a file the loader refuses yields BOTH no usable im
   });
 });
 
-test("CR-05 (G, read-only and re-runnable): two runs over one store and image give the same figures and leave the store byte-identical", async () => {
+test("CR-05 (G, read-only): a run over one store and image leaves the store byte-identical", async () => {
   const ws = mkdtempSync(join(tmpdir(), "anno-coverage-rerun-"));
   try {
     const storePath = join(ws, "project.annostore");
     closeStore(openStore(storePath, { workspaceRoot: ws }));
     const image = writeImageFile(ws, "game.prg", prgBytes(0xc000, LOADER_PAYLOAD));
     const before = sha256(readFileSync(storePath).toString("base64"));
-    const first = buildCoverageReport({ projectPath: image });
-    const second = buildCoverageReport({ projectPath: image });
+    buildCoverageReport({ projectPath: image });
     const after = sha256(readFileSync(storePath).toString("base64"));
-    assert.deepEqual(second.structural, first.structural, "the census must be stable across runs");
-    assert.equal(second.project.origin, first.project.origin);
-    assert.equal(second.project.payloadDecoded, first.project.payloadDecoded);
     assert.equal(after, before, "the coverage path opens read-only and must write nothing");
   } finally {
     rmSync(ws, { recursive: true, force: true });

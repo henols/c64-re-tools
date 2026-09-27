@@ -1625,22 +1625,6 @@ test("every family contributed at least MIN_PER_FAMILY members, so the corpus ca
   assert.equal(perFamily.size, FAMILIES.length, "every family must appear in the corpus, not merely most of them");
 });
 
-test("building the corpus twice yields byte-identical payloads in identical order", () => {
-  const again = buildCorpus();
-  assert.equal(again.length, CORPUS.length, "the enumeration is deterministic in SIZE");
-  for (let i = 0; i < again.length; i++) {
-    const first = CORPUS[i]!;
-    const second = again[i]!;
-    assert.equal(second.id, first.id, `payload ${i} changed identity between two builds`);
-    assert.equal(
-      byteKey(second.bytes),
-      byteKey(first.bytes),
-      `payload ${first.id} rendered different bytes on a second build -- the enumeration is not deterministic, so ` +
-        `no failure in this file would be reproducible`,
-    );
-  }
-});
-
 test("every payload is exactly 64 bytes with an intact data tail, and no two indexed arrangements are byte-identical", () => {
   const keys = new Set<string>();
   for (const payload of CORPUS) {
@@ -2128,7 +2112,7 @@ test("degenerate inputs produce empty dispatch collections and no throw", () => 
   }
 });
 
-test("every address list the scan publishes is strictly ascending and free of duplicates, and scanning twice is stable", () => {
+test("every address list the scan publishes is strictly ascending and free of duplicates", () => {
   const ascendingAndUnique = (values: readonly number[]): boolean =>
     values.every((value, index) => index === 0 || value > values[index - 1]!);
 
@@ -2146,15 +2130,6 @@ test("every address list the scan publishes is strictly ascending and free of du
         `${where}: ${name} is not strictly ascending -- ${list.map((value) => hex(value)).join(", ")}`,
       );
     }
-  }
-
-  // Idempotency, measured on a fresh scan rather than on the memoised one.
-  for (const payload of [INDEXED_MEMBERS[0]!, INDEXED_MEMBERS[INDEXED_MEMBERS.length - 1]!, TWIN_MEMBERS[0]!]) {
-    assert.deepEqual(
-      scanOfPayload(payload.bytes),
-      scanOfPayload(payload.bytes),
-      `${payload.id}: scanning the same payload twice must yield deep-equal results`,
-    );
   }
 });
 

@@ -5,7 +5,7 @@
 // textmon-profile.test.ts's shape: purity, both real two-binary captures
 // parsing clean, the sprite-table header-derived-offset proof, every
 // refusal code (including the two source-traced degradation outcomes),
-// idempotency and concurrency, and the planted controls each paired with
+// and the planted controls each paired with
 // the discriminating assertion that both real captures still parse. No
 // fixture in this file is hand-rolled beyond short, explicitly synthetic
 // inline payloads and targeted string mutations of the real captured
@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
-import { parseIoRegisters, REQUIRED_IO_DECODED_KEYS, type IoRegistersParseResult } from "./textmon-registers.ts";
+import { parseIoRegisters, REQUIRED_IO_DECODED_KEYS } from "./textmon-registers.ts";
 
 const HERE = fileURLToPath(import.meta.url);
 const OWN_MODULE = HERE.replace(/textmon-registers\.test\.ts$/, "textmon-registers.ts");
@@ -380,18 +380,15 @@ test("planted control (CR-01): removing the VC $ line names exactly vc, vcbase, 
   assertRealCapturesStillParseCleanly();
 });
 
-test("planted control (CR-01): ordering determinism -- removing Colors: and Video $ at once produces byte-identical refusal messages across two parses, with names in REQUIRED_IO_DECODED_KEYS declaration order (borderColor before backgroundColor before videoBase before charsetBase before charsetSource) -- paired with the real-capture discriminating control", () => {
+test("planted control (CR-01): field-name order -- removing Colors: and Video $ at once produces a refusal message with names in REQUIRED_IO_DECODED_KEYS declaration order (borderColor before backgroundColor before videoBase before charsetBase before charsetSource) -- paired with the real-capture discriminating control", () => {
   const mutated = realStockText()
     .replace("Colors: Border: e BG: 6 \n", "")
     .replace("Video $0400, Charset $1000 (CharROM)\n", "");
-  const first = parseIoRegisters(mutated);
-  const second = parseIoRegisters(mutated);
-  assert.equal(first.ok, false);
-  assert.equal(second.ok, false);
-  if (!first.ok && !second.ok) {
-    assert.equal(first.refusal.code, "incomplete-decoded-state");
-    assert.equal(first.refusal.message, second.refusal.message, "expected byte-identical refusal messages across two parses of the same drifted input");
-    const msg = first.refusal.message;
+  const result = parseIoRegisters(mutated);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.refusal.code, "incomplete-decoded-state");
+    const msg = result.refusal.message;
     const borderColorIdx = msg.indexOf("borderColor");
     const backgroundColorIdx = msg.indexOf("backgroundColor");
     const videoBaseIdx = msg.indexOf("videoBase");
@@ -406,14 +403,6 @@ test("planted control (CR-01): ordering determinism -- removing Colors: and Vide
     assert.ok(charsetBaseIdx < charsetSourceIdx, "expected charsetBase before charsetSource");
   }
   assertRealCapturesStillParseCleanly();
-});
-
-test("idempotency (refusal arm): two parses of the same drifted (Colors: line removed) payload are deeply equal", () => {
-  const mutated = realStockText().replace("Colors: Border: e BG: 6 \n", "");
-  const first = parseIoRegisters(mutated);
-  const second = parseIoRegisters(mutated);
-  assert.equal(first.ok, false);
-  assert.deepEqual(first, second);
 });
 
 test("interface census: REQUIRED_IO_DECODED_KEYS equals IoDecodedState's own declared field set, read from this module's real source -- what stops a field added to the interface later from silently re-opening CR-01", () => {
@@ -499,35 +488,4 @@ test("planted control (WR-02): inside a CIA1-renamed section, a memspace marker 
     assert.notEqual(result.refusal.code, "unsupported-chip");
   }
   assertRealCapturesStillParseCleanly();
-});
-
-// ---------------------------------------------------------------------------
-// Idempotency and concurrency.
-// ---------------------------------------------------------------------------
-
-test("idempotency: a second parse of the same input is deeply equal to the first", () => {
-  const text = loadTextFixture("register-decode-stock").text;
-  const first = parseIoRegisters(text);
-  const second = parseIoRegisters(text);
-  assert.deepEqual(first, second);
-});
-
-test("concurrency: interleaved parses of both binaries' captures equal their sequential results", async () => {
-  const stockText = loadTextFixture("register-decode-stock").text;
-  const forkText = loadTextFixture("register-decode-fork").text;
-
-  const sequentialStock = parseIoRegisters(stockText);
-  const sequentialFork = parseIoRegisters(forkText);
-
-  const results: IoRegistersParseResult[] = await Promise.all([
-    Promise.resolve().then(() => parseIoRegisters(stockText)),
-    Promise.resolve().then(() => parseIoRegisters(forkText)),
-    Promise.resolve().then(() => parseIoRegisters(stockText)),
-    Promise.resolve().then(() => parseIoRegisters(forkText)),
-  ]);
-
-  assert.deepEqual(results[0], sequentialStock);
-  assert.deepEqual(results[1], sequentialFork);
-  assert.deepEqual(results[2], sequentialStock);
-  assert.deepEqual(results[3], sequentialFork);
 });

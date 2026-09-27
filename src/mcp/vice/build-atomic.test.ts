@@ -1,13 +1,11 @@
 // build-atomic.test.ts
 //
-// Polices build()'s write path against torn reads. Two other test files are
-// the victims when build() writes in place: resources-sync.test.ts, which
-// compares the committed resources/ tree against a fresh scratch build and
-// can catch a sibling test's build() mid-write; and
-// vice-broker-launch.test.ts, whose freshDeployDir() copies artifacts out of
-// resources/ and spawns them under bare `node`, so a half-written artifact
-// there is not just misread, it is EXECUTED. Both failures are false
-// alarms against the pre-fix build() -- the committed tree is correct, the
+// Polices build()'s write path against torn reads. A test file is the
+// victim when build() writes in place: vice-broker-launch.test.ts, whose
+// freshDeployDir() copies artifacts out of resources/ and spawns them
+// under bare `node`, so a half-written artifact
+// there is not just misread, it is EXECUTED. That failure is a false
+// alarm against the pre-fix build() -- the committed tree is correct, the
 // read just landed inside another process's write window.
 //
 // Per-file atomic rename() (no lock) is sufficient here because no test in
@@ -191,9 +189,8 @@ test(
     // Both out-dirs below live INSIDE one private wrapper directory, never
     // directly under the shared system temp root -- so tempSiblingsOf()'s
     // scan (dirname(dir)) is scoped to a parent this test run owns
-    // exclusively. Ten other test files in this suite also call build(),
-    // several (e.g. resources-sync.test.ts) into their own
-    // mkdtempSync(tmpdir())-scoped scratch dirs; node --test runs test FILES
+    // exclusively. Other test files in this suite also call build(),
+    // some into their own mkdtempSync(tmpdir())-scoped scratch dirs; node --test runs test FILES
     // concurrently, so without this wrapper any of them staging a
     // `.build-tmp-*` directory in the shared tmpdir() while this test is
     // between its build() call and its readdirSync reddens the assertion

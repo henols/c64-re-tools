@@ -4,8 +4,8 @@
 // byte, indexed by that byte (`OPCODES[0xa9]` is `lda #`). Pure data, zero
 // imports, zero I/O, no build step: this is a container-side `.ts` run
 // directly under Node's native type-stripping (see this package's
-// README/CLAUDE.md), not a host-bound `.mts` -- `build.ts` and
-// `resources-sync.test.ts` do not apply to it.
+// README/CLAUDE.md), not a host-bound `.mts` -- `build.ts` does not
+// apply to it.
 //
 // ---------------------------------------------------------------------------
 // Attribution / provenance (D-07, criterion 5)

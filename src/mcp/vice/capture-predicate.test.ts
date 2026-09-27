@@ -185,7 +185,6 @@ test("argvDigest is order-sensitive and refuses an empty array by name", () => {
   const ab = argvDigest(["a", "b"]);
   const ba = argvDigest(["b", "a"]);
   assert.notEqual(ab, ba, "an argv digest that is order-insensitive cannot key a reproducible run");
-  assert.equal(argvDigest(["a", "b"]), ab, "and it is stable for the same input");
   assert.match(ab, /^[0-9a-f]{64}$/, "sha256, lowercase hex");
 
   assert.throws(

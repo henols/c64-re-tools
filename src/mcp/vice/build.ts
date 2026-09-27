@@ -149,8 +149,8 @@ export interface BuildOptions {
  *
  * Nothing lands at a path inside `outDir` until that path's final bytes
  * (compiled output plus banner) already exist complete elsewhere, so a
- * reader of `outDir` -- including a sibling `build()` call's own
- * resources-sync-style comparison, or a process that spawns an artifact
+ * reader of `outDir` -- including a sibling `build()` call, or a process
+ * that spawns an artifact
  * straight out of `outDir` -- can never observe a partial or banner-less
  * file. This is per-file atomic replacement, not a lock: no caller in this
  * repo mutates the .mts sources between builds, so every concurrent build
@@ -159,17 +159,15 @@ export interface BuildOptions {
  * `rename()` onto a fully-finished path already guarantees.
  *
  * The staging directory is a SIBLING of `outDir` (never inside it -- a
- * directory walk over `outDir`, such as resources-sync.test.ts's, must
- * never see it) on `outDir`'s own filesystem (never `os.tmpdir()`, which
+ * directory walk over `outDir` must never see it) on `outDir`'s own filesystem (never `os.tmpdir()`, which
  * may be a different mount and would make the final rename fail EXDEV). Its
  * name carries exactly one leading dot and no dot in the tail, so it stays
  * invisible to this directory's shallow extension-filtered listing gates
  * (`/\.[cm]?[jt]s$/`). It is removed on every path, success or failure.
  *
  * Takes an --out-dir-shaped option rather than always writing to
- * resources/, so the sync test can build into a scratch directory through
- * this EXACT code path -- the banner must never exist in two
- * implementations.
+ * resources/, so a test can build into a scratch directory through this
+ * EXACT code path -- the banner must never exist in two implementations.
  */
 /** Where to stage a build before renaming artifacts into `outDirAbs`.
  *
@@ -194,7 +192,7 @@ export interface BuildOptions {
  * `node_modules/.bin/tsc` to exist, so it can never be absent when a build can
  * run at all.
  *
- * When a caller passes an `outDir` on a *different* device — `resources-sync`
+ * When a caller passes an `outDir` on a *different* device — a test that
  * builds into a scratch dir, which may be another mount — the preferred
  * location would make every `renameSync()` throw `EXDEV`, so this falls back
  * to the adjacent sibling. That fallback keeps correctness and gives up only
@@ -325,7 +323,7 @@ export function ENTRY_BANNER(relSourcePath: string): string {
   return (
     "// GENERATED FILE -- DO NOT EDIT.\n" +
     `// Compiled by \`tsc\` from ${relSourcePath}. Edit the TypeScript source and run\n` +
-    "// `node build.ts` in src/mcp/vice; entry-sync.test.ts reds on drift.\n"
+    "// `node build.ts` in src/mcp/vice; CI fails on a stale copy.\n"
   );
 }
 

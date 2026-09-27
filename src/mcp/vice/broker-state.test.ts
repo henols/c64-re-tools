@@ -39,9 +39,9 @@ import {
 // into the SAME tsc build program (verified empirically, this plan) --
 // tsconfig.build.json's allowImportingTsExtensions:false then fails to
 // compile THEIR OWN internal ".ts"-suffixed imports, and even if that flag
-// were loosened, resources-sync.test.ts's byte-identical check would then
-// require those unrelated container-side compiled files to be committed
-// under resources/ as if they were host-bound artifacts. broker-state.mts
+// were loosened, CI's regenerate-and-diff step would then require those
+// unrelated container-side compiled files to be committed under
+// resources/ as if they were host-bound artifacts. broker-state.mts
 // has no code path that validates a request id at all (ports/counts/
 // snapshot never touch one), so there is nothing to hand-roll there in the
 // first place -- the grep-for-zero-copies structural test below is what

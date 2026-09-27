@@ -5,11 +5,10 @@
 // missing skill and the command that installs it -- instead of crashing with
 // ERR_MODULE_NOT_FOUND. Each case copies ONE consuming skill into a scratch
 // skills/ tree (no c64-project beside it) and runs it as a user would.
-// The per-skill sibling.ts copies must also stay byte-identical.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -130,17 +129,5 @@ test("recovery-schema's parameterisation gate runs with only c64-project beside 
     assert.ok(JSON.parse(withCapture.stdout).filesScanned > aloneScanned, "an added skill's scripts must be scanned too");
   } finally {
     rmSync(scratch, { recursive: true, force: true });
-  }
-});
-
-test("every consuming skill's sibling.ts is byte-identical", () => {
-  const copies = readdirSync(SKILLS)
-    .map((s) => join(SKILLS, s, "scripts", "sibling.ts"))
-    .filter((p) => existsSync(p));
-  const consumers = new Set(CASES.map((c) => c.skill));
-  assert.equal(copies.length, consumers.size, `expected one sibling.ts per consuming skill (${[...consumers].join(", ")})`);
-  const first = readFileSync(copies[0]);
-  for (const p of copies.slice(1)) {
-    assert.ok(readFileSync(p).equals(first), `${p} differs from ${copies[0]}`);
   }
 });
