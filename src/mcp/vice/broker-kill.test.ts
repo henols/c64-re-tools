@@ -1192,7 +1192,7 @@ test("sweepOrphanedStaging: a single throwing removal does not abort the sweep -
   }
 });
 
-test("resources-sync structural aid: reapOrphanedConfigScratch()/sweepOrphanedStaging() are real functions imported unbuilt from broker-kill.mts", () => {
+test("structural aid: reapOrphanedConfigScratch()/sweepOrphanedStaging() are real functions imported unbuilt from broker-kill.mts", () => {
   assert.equal(typeof reapOrphanedConfigScratch, "function");
   assert.equal(typeof sweepOrphanedStaging, "function");
 });

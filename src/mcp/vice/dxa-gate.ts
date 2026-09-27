@@ -89,12 +89,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // copied here, including `tsconfig.json`'s `resources` exclusion being why
 // the cast is needed at all). This is still the ONE probe:
 // `resources/host-tool.mjs` is `build.ts`'s committed, drift-checked
-// (`resources-sync.test.ts`) compilation of the very same `findDxaBinary()`
+// (by CI's regenerate-and-diff step) compilation of the very same `findDxaBinary()`
 // declaration at `host-tool.mts`, never a second hand-written copy. This
 // module does NOT call `build()` itself -- every importing test file that
 // needs a guaranteed-fresh artifact already calls `build()` before its own
-// use of it, and `resources-sync.test.ts` is the one place drift between
-// source and artifact is asserted; a second `build()` call here would only
+// use of it, and CI's regenerate-and-diff step is the one place drift
+// between source and artifact is caught; a second `build()` call here would only
 // add a redundant `tsc` invocation per importer.
 const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.url).href)) as unknown as {
   findDxaBinary: (here: string) => { path: string | null; tried: string[] };

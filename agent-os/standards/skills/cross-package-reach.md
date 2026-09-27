@@ -40,4 +40,4 @@ if (!mcp.ok) return { ok: false, message: mcp.message };
 
 - `import type` from a sibling is fine: it erases at runtime.
 - Keep the thunk's specifier literal, so tsc types the module.
-- Every `sibling.ts` copy is byte-identical (`test/skills/sibling.test.ts`).
+- Keep every `sibling.ts` copy identical by hand. No test compares them.

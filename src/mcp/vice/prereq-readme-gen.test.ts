@@ -5,7 +5,7 @@
 // guard imports `prereq-readme-gen.ts`'s own derive functions and calls them
 // on the real declaration; it only writes its own reader for what the
 // committed README.md ACTUALLY contains, then compares the two as parsed
-// records -- never as rendered bytes (D-10, mirroring resources-sync.test.ts's
+// records -- never as rendered bytes (D-10, mirroring build.ts's
 // own "the banner text must never exist in two implementations" rule).
 //
 // WHAT NOT TO DO: do not re-derive what a row "should" contain here. If a

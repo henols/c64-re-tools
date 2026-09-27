@@ -203,9 +203,8 @@ test("writeBrokerIncident(): a filesystem failure propagates rather than being s
 });
 
 // ---------------------------------------------------------------------------
-// Build: the new artifact exists and resources-sync stays green (asserted
-// separately by resources-sync.test.ts itself; this is a narrower, local
-// sanity check that build() actually emitted this ONE artifact).
+// Build: a local sanity check that build() actually emitted this ONE
+// artifact.
 // ---------------------------------------------------------------------------
 
 test("build(): resources/broker-incident.mjs exists after a build", () => {

@@ -32,10 +32,9 @@
 //
 // WHAT NOT TO DO, named concretely:
 //   - Never hand-edit anno-regbits.json. It is a generated-but-committed
-//     artifact (ENGINEERING_RULES.md Sec 11), the same shape
-//     `resources-sync.test.ts` already established for compiled `.mjs`
-//     build output -- re-run `node anno-regbits-gen.mts` and let the drift
-//     guard in anno-regbits.test.ts confirm the result matches.
+//     artifact (ENGINEERING_RULES.md Sec 11), the same shape as the compiled
+//     `.mjs` build output -- re-run `node anno-regbits-gen.mts` and commit
+//     the result. CI regenerates it and fails on any difference.
 //   - Never silently skip or placeholder an unmappable bit description.
 //     `buildRegBits()` THROWS, naming the address, the bit range and the
 //     offending description, when mechanical derivation fails AND no

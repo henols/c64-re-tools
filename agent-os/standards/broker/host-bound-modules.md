@@ -17,10 +17,10 @@ import type { BrokerState } from "./broker-state.mjs";   // type-only: loads unb
   incident-record.ts). Mirror the constant or shape instead, and pin the
   agreement with a sync test.
 - Run `node build.ts` after editing. Commit the regenerated `.mjs`.
-  `resources-sync.test.ts` reds on drift.
+  CI rebuilds and fails on drift.
 - A new host-bound module goes in both lists. build() fails on any
   mismatch.
 - Entry artifacts (`build.ts` `ENTRY_ARTIFACTS`, `tsconfig.entry.json`)
   are compiled too, but emitted beside their `.mts` source and never
   host-bound: the package bin `vice-cli`, which runs from `node_modules`.
-  `entry-sync.test.ts` reds on drift.
+  CI rebuilds it and fails on drift.
