@@ -14,12 +14,10 @@
 // it is barred by SHAPE rather than by convention (`CAP-03`, `D-26`):
 //
 //   1. This module takes NO image buffer. No exported function here declares a
-//      byte-array parameter of any kind, and `capture-seam.test.ts` asserts that
-//      from this module's own exported signatures, over stripped code, with a
-//      planted oracle-shaped module as its positive control.
+//      byte-array parameter of any kind.
 //   2. This module imports NOTHING from `capture-predicate.mts`, on any route,
 //      static or dynamic -- and that module imports nothing from here. Both
-//      directions are asserted, because the circularity is symmetric and a
+//      directions are barred, because the circularity is symmetric and a
 //      one-directional guard leaves half of it open.
 //
 // This module performs NO filesystem and NO network I/O, imports nothing at all,
@@ -68,9 +66,6 @@
  * reader comparing two transcripts sees the terms in the same sequence every
  * time. */
 export const ORACLE_TERMS = ["pc", "hitCount", "line", "cycle"] as const;
-
-/** One member of `ORACLE_TERMS`. */
-export type OracleTerm = (typeof ORACLE_TERMS)[number];
 
 /** One stop, as its four already-read scalar terms. No bytes, by design -- see
  * this module's header. */

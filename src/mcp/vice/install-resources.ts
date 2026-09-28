@@ -8,19 +8,19 @@
 // below.
 //
 // HOSTING CHOICE (D-3): this check lives in a DEDICATED module, triggered
-// from repo-root.mjs, for two reasons. First, repo-root.mjs is a pure path
+// from repo-root.ts, for two reasons. First, repo-root.ts is a pure path
 // resolver, and inlining filesystem-writing side effects into it would make
 // every importer of a path function also a file writer. Second and decisive:
-// this module needs the repo root, and repo-root.mjs is where the repo root
-// is computed -- hosting this logic INSIDE repo-root.mjs and importing it
+// this module needs the repo root, and repo-root.ts is where the repo root
+// is computed -- hosting this logic INSIDE repo-root.ts and importing it
 // back from there would be a module cycle. In that cycle, this module would
-// evaluate while repo-root.mjs's `const HERE` is still in its temporal dead
+// evaluate while repo-root.ts's `const HERE` is still in its temporal dead
 // zone, and every entry point would die with
 // "Cannot access 'HERE' before initialization".
 //
 // THE CYCLE IS AVOIDED STRUCTURALLY: this module takes the repo root as an
-// ARGUMENT and imports NOTHING from repo-root.mjs. Do not "clean this up" by
-// adding `import { repoRoot } from "./repo-root.mjs"` here -- that importable
+// ARGUMENT and imports NOTHING from repo-root.ts. Do not "clean this up" by
+// adding `import { repoRoot } from "./repo-root.ts"` here -- that importable
 // convenience is exactly the cycle described above.
 import {
   existsSync,
@@ -49,12 +49,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * exactly (PATTERNS.md "Narrowing unknown, not casting"). */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** The on-disk shape of `.vice-deployed.json`, as read/written by
- * readDeployManifest()/writeDeployManifest() below. */
-export interface DeployManifest {
-  entries: string[];
 }
 
 /** Per-entry outcome of a copy attempt: which resources/ entries landed,
@@ -149,15 +143,6 @@ function statusForEntry(entry: string, root: string): ResourceStatus {
   }
 }
 
-/** Per-entry status against a given repo root, without writing anything. */
-export function resourcesStatus({ root }: { root: string }): Record<string, ResourceStatus> {
-  const out: Record<string, ResourceStatus> = {};
-  for (const entry of resourceEntries()) {
-    out[entry] = statusForEntry(entry, root);
-  }
-  return out;
-}
-
 /** The host-launch instructions: the command that starts the broker on the
  * host, that it refuses with exit 2 inside a container, --check-container as
  * the diagnostic, and that Ctrl-C stops it cleanly. */
@@ -197,8 +182,7 @@ export function deployManifestPath(root: string): string {
  * array are ALL treated identically as "nothing has been recorded here yet"
  * -- an empty array. Two nested try/catch layers: the outer catches a read
  * failure (ENOENT, EACCES, a directory at that path, ...), the inner catches
- * a JSON.parse failure -- matching readJsonMaybe()'s posture elsewhere in
- * this module tree (vice-broker-client.mjs) exactly. */
+ * a JSON.parse failure. */
 export function readDeployManifest(root: string): string[] {
   let raw: string;
   try {
@@ -252,21 +236,13 @@ function isSafeManifestCandidate(entry: unknown, targetDir: string): entry is st
 /**
  * Removes a deployed file this installer previously placed under
  * installTargetDir(root) but which no longer corresponds to a current
- * resources/ entry -- the delete half installResources() alone never had
- * (RESEARCH.md's Runtime State Inventory: "install-resources.mjs's current
- * installResources() only ever adds/overwrites -- it has no delete/prune
- * step"; a retired executable would otherwise linger on the host forever).
+ * resources/ entry -- the delete half of installResources()'s copy loop,
+ * which only adds/overwrites (a retired executable would otherwise linger
+ * on the host forever).
  *
  * The candidate set is EXACTLY `readDeployManifest(root)` minus the current
  * `resourceEntries()` -- never a directory walk of `installTargetDir(root)`.
- * Before the 2026-09-08 `.c64-re-tools/` consolidation (D-33),
- * `installTargetDir(root)` was `<root>/tools`, a MIXED directory also
- * holding tracked reverse-engineering tooling (diff-images.mjs,
- * watch-loads.mjs, recovery-schema.mjs, releases.mjs and
- * their tests) -- this manifest-only candidate set is what kept the prune
- * from ever reaching those tracked files. The deploy target has since moved
- * to `<root>/.c64-re-tools/local/bin`, no longer shared with that tracked tooling,
- * but the same manifest-only discipline is kept unconditionally: a file
+ * The manifest-only discipline is kept unconditionally: a file
  * present in the target but ABSENT from the manifest is left untouched no
  * matter what it is, so the prune can only ever reach a path it recorded
  * having placed there itself (T-01.6-11).

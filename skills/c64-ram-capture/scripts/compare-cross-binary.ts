@@ -173,8 +173,6 @@ const FLAT_VOLATILE: MaskEntry[] = [
   { lo: 0xde00, hi: 0xdfff, reason: "I/O expansion area and reads open bus" },
 ];
 
-export const IO_VOLATILE: MaskEntry[] = [...VIC_MIRRORED_VOLATILE, ...FLAT_VOLATILE];
-
 function ioMaskEntryFor(addr: number): MaskEntry | null {
   if (addr >= 0xd000 && addr <= 0xd3ff) {
     const canonical = 0xd000 + (addr & 0x3f);

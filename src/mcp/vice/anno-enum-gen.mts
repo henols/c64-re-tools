@@ -133,29 +133,17 @@ import { fileURLToPath } from "node:url";
 
 import type { RegBitsField, RegBitsTable } from "./anno-regbits-gen.mts";
 import { MAX_ACME_IDENTIFIER_LENGTH, assertLegalAcmeIdentifier } from "./anno-acme-ident.mts";
-import { decode } from "./disasm-decoder.mts";
-import type { Instruction } from "./disasm-decoder.mts";
-import { applyEnumUsage, createProjectEnum, listRanges, updateProjectEnum } from "./anno-store.mts";
-import type { AnnoStoreHandle } from "./anno-store.mts";
-import { AnnoLabelError } from "./anno-types.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Beside this module (the package root), else one directory up (the
 // compiled dist/ copy, one level below the package root).
 const REGBITS_PATH = [join(HERE, "anno-regbits.json"), join(HERE, "..", "anno-regbits.json")].find((c) => existsSync(c)) ?? join(HERE, "anno-regbits.json");
 
-/** The ceiling a caller states instead of trusting a producer's own default
- * (which was 50, `handler.rs:1074-1077`). The "no silent caps" rule: the
- * returned row count is compared against THIS value and a possible truncation
- * is reported in words. A rebuilt fetch passes it explicitly for the same
- * reason. */
-export const DEFAULT_MAX_RESULTS = 10_000;
-
 // MAX_ACME_IDENTIFIER_LENGTH / assertLegalAcmeIdentifier() live in
 // anno-acme-ident.mts (plan 260821-a86, T-11-NAME-INJECT) -- that module is
 // the ONE authoritative place for the ACME identifier policy, consumed by
-// THIS file's sanitizeVariantMap() below plus anno-symbols.ts's own pre-spawn
-// label-name gate. Re-exported here (imported above) so this file's existing
+// THIS file's sanitizeVariantMap() below plus anno-export-asm.mts's label
+// and enum-variant checks. Re-exported here (imported above) so this file's existing
 // consumers and tests keep their current import path.
 export { MAX_ACME_IDENTIFIER_LENGTH, assertLegalAcmeIdentifier };
 
@@ -271,37 +259,12 @@ function decodeField(key: string, field: RegBitsField, value: number): { decoded
   const token = field.tokens?.[decoded];
   if (token === undefined) {
     throw new Error(
-      `variantNameFor: register ${key} field "${field.name}" (kind ${field.kind}) has no token for decoded ` +
+      `decodeField: register ${key} field "${field.name}" (kind ${field.kind}) has no token for decoded ` +
         `value ${decoded} (full register value 0x${value.toString(16)}) -- refusing rather than silently ` +
         "dropping a field, which could make two distinct register values decode to the same name.",
     );
   }
   return { decoded, token };
-}
-
-export function variantNameFor(register: number, value: number): string {
-  const key = registerKeyFor(register);
-  const fields = requireRegBitsEntry(key, "variantNameFor");
-
-  const tokens: string[] = [];
-  for (const field of fields) {
-    const { token } = decodeField(key, field, value);
-    if (token !== "") tokens.push(token);
-  }
-  if (tokens.length === 0) {
-    // Every field decoded to an explicitly-silent token (e.g. all eight
-    // sprite-plane flags clear at once) -- the only way this can happen is a
-    // register whose EVERY field is a flag/enum with a silent-by-design
-    // state, at the one value where every field lands on that state. An
-    // empty string is not a legal ACME identifier, so this is not "no
-    // change needed", it is the single degenerate case this table's design
-    // creates -- named explicitly (`V<value>`) rather than left empty. Since
-    // a numeric field always emits a non-empty token, this fallback can only
-    // ever fire for AT MOST one value per register (the all-fields-silent
-    // one), so it can never collide with a genuine multi-token name.
-    return `V${value}`;
-  }
-  return tokens.join("_");
 }
 
 // ---------------------------------------------------------------------------
@@ -379,7 +342,7 @@ export interface RegisterDecomposition {
 export function decomposeRegisterValue(register: number, value: number): RegisterDecomposition {
   const key = registerKeyFor(register);
   const fields = requireRegBitsEntry(key, "decomposeRegisterValue");
-  const enumName = key.slice(1); // "$D011" -> "D011", the SAME prefix planEnumsForPairing() derives.
+  const enumName = key.slice(1); // "$D011" -> "D011", the enum name prefix.
 
   const terms: RegisterTerm[] = [];
   const commentParts: string[] = [];
@@ -452,307 +415,11 @@ export function decomposeRegisterValue(register: number, value: number): Registe
 // The two-pass search + adjacent-pair.
 // ---------------------------------------------------------------------------
 
-export interface DisasmSearchRow {
-  address: string;
-  address_decimal: number;
-  label: string;
-  mnemonic: string;
-  operand: string;
-  comment: string;
-}
-
-/** Parses an ACME-style immediate operand string (`"#$1b"`, `"#42"`,
- * `"#%00011011"`) into its numeric value. Throws on anything else, naming
- * the offending operand text -- never silently returns 0 for an
- * unparsable operand, which would misname a variant. */
-export function parseImmediateOperand(operand: string): number {
-  if (!operand.startsWith("#")) {
-    throw new Error(`parseImmediateOperand: "${operand}" is not an immediate operand (does not start with "#")`);
-  }
-  const body = operand.slice(1);
-  let value: number;
-  if (body.startsWith("$")) {
-    value = Number.parseInt(body.slice(1), 16);
-  } else if (body.startsWith("%")) {
-    value = Number.parseInt(body.slice(1), 2);
-  } else {
-    value = Number.parseInt(body, 10);
-  }
-  if (!Number.isInteger(value) || Number.isNaN(value)) {
-    throw new Error(`parseImmediateOperand: could not parse "${operand}" as a numeric immediate value`);
-  }
-  return value;
-}
-
-/** Normalises a store's operand text (`"$d011"`) into the same `$xxxx`
- * (uppercase, no padding assumptions beyond what the server itself emits)
- * shape used as this module's own register-lookup key, so the two never
- * silently fail to match on case alone. */
-function normalizeOperandAsKey(operand: string): string | null {
-  if (!operand.startsWith("$")) return null;
-  const hex = operand.slice(1);
-  if (!/^[0-9a-fA-F]+$/.test(hex)) return null;
-  return `$${hex.toUpperCase().padStart(4, "0")}`;
-}
-
-export interface PairOccurrence {
-  regKey: string;
-  value: number;
-  ldaAddr: number;
-}
-
-export interface PairingResult {
-  occurrences: PairOccurrence[];
-  totalRegisterStores: number;
-  pairedStores: number;
-  unpairedStores: number;
-  pass1Truncated: boolean;
-  pass2Truncated: boolean;
-}
-
-/**
- * THE ADJACENT-PAIR RULE -- pure, and the reason this module survived
- * the cut when the fetch-and-install route was deleted. It was extracted
- * verbatim from the deleted two-pass fetch, which is now the CALLER's job:
- * hand it the `lda` rows and the `sta` rows and it pairs each store to a
- * register the bit-name table knows with an immediate load exactly 2 bytes
- * earlier.
- *
- * Adjacent-only, no dataflow: `lda #imm` is always 2 bytes in immediate mode,
- * so the following store begins at `ldaAddr + 2` regardless of the store's
- * own addressing mode. A store with no immediate load at exactly that address
- * is simply not paired -- "a miss costs nothing" is this rule's whole
- * posture, and what keeps it cheap enough to be worth having at all.
- *
- * The register narrowing is CLIENT-SIDE, against `anno-regbits.json`'s own
- * keys, never a second hardcoded list and never a producer-side query
- * (see the measured search-field fact in this module's header for why that
- * is not merely a preference).
- *
- * `maxResults` is the ceiling the caller asked its fetch for. A pass whose
- * row count EQUALS that ceiling is reported as possibly truncated -- this is
- * this module's "no silent caps" rule -- pass the same value the fetch used,
- * or the truncation signal is meaningless.
- */
-export function pairSearchRows(
-  ldaRows: readonly DisasmSearchRow[],
-  staRows: readonly DisasmSearchRow[],
-  maxResults: number = DEFAULT_MAX_RESULTS,
-): PairingResult {
-  const table = loadRegBits();
-  const knownRegisters = new Set(Object.keys(table));
-
-  const pass1Truncated = ldaRows.length === maxResults;
-  const pass2Truncated = staRows.length === maxResults;
-
-  const immByAddr = new Map<number, number>();
-  for (const row of ldaRows) {
-    if (!row.operand.startsWith("#")) continue; // not an immediate load
-    try {
-      immByAddr.set(row.address_decimal, parseImmediateOperand(row.operand));
-    } catch {
-      // An unparsable immediate operand is skipped (never paired), not fatal
-      // to the whole pass -- "a miss costs nothing" is this module's posture.
-    }
-  }
-
-  const knownStores = staRows.filter((row) => {
-    const key = normalizeOperandAsKey(row.operand);
-    return key !== null && knownRegisters.has(key);
-  });
-
-  const occurrences: PairOccurrence[] = [];
-  for (const store of knownStores) {
-    const regKey = normalizeOperandAsKey(store.operand)!;
-    const ldaAddr = store.address_decimal - 2;
-    const imm = immByAddr.get(ldaAddr);
-    if (imm === undefined) continue; // adjacent-only -- a miss costs nothing
-    occurrences.push({ regKey, value: imm, ldaAddr });
-  }
-
-  return {
-    occurrences,
-    totalRegisterStores: knownStores.length,
-    pairedStores: occurrences.length,
-    unpairedStores: knownStores.length - occurrences.length,
-    pass1Truncated,
-    pass2Truncated,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // The enum PLAN and its wording contract. The installation
 // route that consumed these was deleted; what a rebuilt one
 // needs is all still here.
 // ---------------------------------------------------------------------------
-
-/** Formats a numeric value the way the retired producer's own
- * `EnumDefinition::parse_variants` accepted it (`$`-prefixed lowercase hex),
- * matching the measured example in this phase's own RESEARCH.md exactly.
- * Kept because it is the shape a variant KEY takes, and whoever rebuilds the
- * route needs to know what it was to decide whether to keep it. */
-function formatVariantKey(value: number): string {
-  return `$${value.toString(16)}`;
-}
-
-/**
- * Builds the `{ "$1b": "YSCROLL3_..." }`-shaped variants object, calling
- * `assertLegalAcmeIdentifier` on every variant name FIRST.
- *
- * That ordering is the whole property, not an implementation detail: because
- * sanitization happens entirely client-side and before any I/O, a rejected
- * name provably never reaches a child process. The deleted installer proved
- * exactly that with a spy binary; any rebuilt installer inherits the property
- * by calling this function before it does any I/O of its own.
- */
-export function sanitizeVariantMap(regKey: string, variants: ReadonlyMap<number, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [value, name] of variants) {
-    assertLegalAcmeIdentifier(name, `variant name for ${regKey} value 0x${value.toString(16)}`);
-    out[formatVariantKey(value)] = name;
-  }
-  return out;
-}
-
-/**
- * The two outcomes a rebuilt installer must still be able to report.
- *
- * KEPT ACROSS THE CUT even though nothing in this repo installs
- * an enum today. Creating an enum whose name already existed FAILED outright
- * on the retired producer -- there was no upsert -- so re-runnability
- * was met by a documented precedence: try CREATE
- * first, and only on an already-exists failure fall back to UPDATE, which
- * replaces the variant map wholesale. That precedence, and this two-valued
- * result, are re-runnability's whole observable content. A rebuilt installer
- * that can only ever report "created" has quietly dropped it.
- */
-export type EnumInstallAction = "created" | "updated";
-
-export interface EnumInstallSummary {
-  regKey: string;
-  enumName: string;
-  variantCount: number;
-  action: EnumInstallAction;
-  usagesApplied: number;
-}
-
-/** One register's worth of the plan: the enum name, the sanitized variant
- * map, and every paired occurrence whose `lda` address a usage must be bound
- * to (never the store address -- see the measured binding fact in this
- * module's header). */
-export interface PlannedEnum {
-  regKey: string;
-  enumName: string;
-  /** value -> variant name, one entry per DISTINCT value observed. */
-  variants: Map<number, string>;
-  occurrences: PairOccurrence[];
-}
-
-/**
- * THE GROUPING RULE, pure and route-free: group the paired occurrences by
- * register, keep ONE variant per DISTINCT value the program actually writes,
- * and name each with `variantNameFor()`.
- *
- * Never a full 256-values-per-register table. That is not an efficiency
- * choice: applying an enum emitted its WHOLE variant list into the exported
- * ACME header, so a table of 256 dead definitions is 256 lines of noise in
- * the output for every register touched. The measured fact is in this
- * module's header; this function is where the consequence lives.
- *
- * Extracted from the deleted `generateEnums()` pass with its
- * grouping and naming unchanged -- only the install calls that followed it
- * went.
- */
-export function planEnumsForPairing(pairing: PairingResult): PlannedEnum[] {
-  // regKey -> value -> representative ldaAddr (first seen)
-  const byRegister = new Map<string, Map<number, number>>();
-  const occurrencesByRegister = new Map<string, PairOccurrence[]>();
-  for (const occ of pairing.occurrences) {
-    if (!byRegister.has(occ.regKey)) byRegister.set(occ.regKey, new Map());
-    if (!occurrencesByRegister.has(occ.regKey)) occurrencesByRegister.set(occ.regKey, []);
-    byRegister.get(occ.regKey)!.set(occ.value, occ.ldaAddr);
-    occurrencesByRegister.get(occ.regKey)!.push(occ);
-  }
-
-  const planned: PlannedEnum[] = [];
-  for (const [regKey, valuesToLdaAddr] of byRegister) {
-    const address = Number.parseInt(regKey.slice(1), 16);
-    const variants = new Map<number, string>();
-    for (const value of valuesToLdaAddr.keys()) {
-      variants.set(value, variantNameFor(address, value));
-    }
-    planned.push({
-      regKey,
-      enumName: regKey.slice(1), // "$D011" -> "D011"
-      variants,
-      occurrences: occurrencesByRegister.get(regKey) ?? [],
-    });
-  }
-  return planned;
-}
-
-export interface EnumGenerationReport {
-  totalRegisterStores: number;
-  pairedStores: number;
-  unpairedStores: number;
-  pass1Truncated: boolean;
-  pass2Truncated: boolean;
-  enums: EnumInstallSummary[];
-  /** Human-readable summary lines, always including the word "truncat..." if
-   * either pass hit its own `max_results` ceiling ("no silent caps" --
-   * a possible truncation is stated in words, never left to be inferred). */
-  summaryLines: string[];
-}
-
-/**
- * THE WORDING CONTRACT, pure and route-free: the coverage report that
- * names the totals, the pairing counts and -- in WORDS, never left to be
- * inferred from a row count that happens to equal a ceiling -- any pass that
- * may have been truncated.
- *
- * "No silent caps" is the whole point. A caller who reads
- * `pairedStores: 4000` off a run whose fetch ceiling was 4000 has no way to
- * know whether that is the answer or the ceiling; a line containing the word
- * "TRUNCATION" is the difference between a measurement and a guess.
- *
- * Extracted from the deleted `generateEnums()` pass with its
- * strings byte-identical, so a rebuilt pass reports in the same words rather
- * than paraphrasing them.
- */
-export function buildEnumGenerationReport(
-  pairing: PairingResult,
-  enums: readonly EnumInstallSummary[],
-  maxResults: number = DEFAULT_MAX_RESULTS,
-): EnumGenerationReport {
-  const summaryLines: string[] = [
-    `total register stores seen: ${pairing.totalRegisterStores}`,
-    `paired (adjacent lda #imm found): ${pairing.pairedStores}`,
-    `unpaired (no adjacent immediate load): ${pairing.unpairedStores}`,
-  ];
-  if (pairing.pass1Truncated) {
-    summaryLines.push(
-      `TRUNCATION WARNING: pass 1 (lda search) returned exactly max_results=${maxResults} rows -- coverage may be incomplete`,
-    );
-  }
-  if (pairing.pass2Truncated) {
-    summaryLines.push(
-      `TRUNCATION WARNING: pass 2 (sta search) returned exactly max_results=${maxResults} rows -- coverage may be incomplete`,
-    );
-  }
-  for (const e of enums) {
-    summaryLines.push(`enum ${e.enumName}: ${e.action}, ${e.variantCount} variant(s), ${e.usagesApplied} usage(s) applied`);
-  }
-
-  return {
-    totalRegisterStores: pairing.totalRegisterStores,
-    pairedStores: pairing.pairedStores,
-    unpairedStores: pairing.unpairedStores,
-    pass1Truncated: pairing.pass1Truncated,
-    pass2Truncated: pairing.pass2Truncated,
-    enums: [...enums],
-    summaryLines,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // THE REBUILT FETCH AND INSTALL, over this project's own
@@ -761,162 +428,4 @@ export function buildEnumGenerationReport(
 // `pairSearchRows()`, `planEnumsForPairing()`, `sanitizeVariantMap()`,
 // `buildEnumGenerationReport()`).
 // ---------------------------------------------------------------------------
-
-/** The minimal shape this module's fetch needs from a loaded image: the
- * origin address and the raw body bytes. Deliberately NOT importing
- * `anno-tools.mts`'s own `LoadedImage` (a private, tool-layer interface) --
- * that would pull the tool-dispatch module into this one, and all this fetch
- * needs from it is these two fields. */
-interface EnumSourceImage {
-  origin: number;
-  body: Uint8Array;
-}
-
-const IMMEDIATE_LOAD_MNEMONICS: ReadonlySet<string> = new Set(["lda", "ldx", "ldy"]);
-const ABSOLUTE_STORE_MNEMONICS: ReadonlySet<string> = new Set(["sta", "stx", "sty"]);
-
-/** The slice of `image` covering `[start, endInclusive]`, or `null` when the
- * span is not entirely inside the image -- mirrors `anno-tools.mts`'s own
- * `sliceSpan()` bounds discipline (never a short slice, never a fabricated
- * byte for a range this image does not cover) without importing that
- * private function. */
-function sliceImageRange(image: EnumSourceImage, start: number, endInclusive: number): Uint8Array | null {
-  const from = start - image.origin;
-  const to = endInclusive - image.origin;
-  if (from < 0 || to >= image.body.length || from > to) return null;
-  return image.body.subarray(from, to + 1);
-}
-
-function searchRowAddress(instr: Instruction): string {
-  return `$${instr.address.toString(16).toUpperCase().padStart(4, "0")}`;
-}
-
-function toSearchRow(instr: Instruction, operand: string): DisasmSearchRow {
-  return { address: searchRowAddress(instr), address_decimal: instr.address, label: "", mnemonic: instr.mnemonic, operand, comment: "" };
-}
-
-export interface FetchRegisterSearchRowsOptions {
-  maxResults?: number;
-}
-
-export interface FetchRegisterSearchRowsResult {
-  ldaRows: DisasmSearchRow[];
-  staRows: DisasmSearchRow[];
-}
-
-/**
- * THE REBUILT FETCH. Walks `handle`'s own `code`-typed ranges,
- * decoding each through the SAME `disasm-decoder.mts` `decode()` function
- * `anno_disassemble` uses -- never a second decoder, never a regex over
- * rendered text. Returns two plain row arrays in the exact `DisasmSearchRow`
- * shape `pairSearchRows()` already consumes: pass 1, immediate loads
- * (`lda`/`ldx`/`ldy`); pass 2, absolute stores (`sta`/`stx`/`sty`) whose
- * target is a register `anno-regbits.json` knows.
- *
- * `maxResults` bounds EACH pass independently AS IT IS FETCHED, not merely
- * reported afterwards -- that is what makes `pairSearchRows()`'s own
- * truncation signal (a returned row count equal to the ceiling) a true
- * measurement rather than a coincidence: capping here is the only way a
- * caller comparing the returned length against the same ceiling can trust
- * what it sees ("no silent caps", stated at this module's top).
- */
-export function fetchRegisterSearchRows(
-  handle: AnnoStoreHandle,
-  image: EnumSourceImage,
-  opts: FetchRegisterSearchRowsOptions = {},
-): FetchRegisterSearchRowsResult {
-  const maxResults = opts.maxResults ?? DEFAULT_MAX_RESULTS;
-  const knownRegisters = new Set(Object.keys(loadRegBits()));
-
-  const ldaRows: DisasmSearchRow[] = [];
-  const staRows: DisasmSearchRow[] = [];
-
-  for (const range of listRanges(handle)) {
-    if (range.dataType !== "code") continue;
-    const bytes = sliceImageRange(image, range.start, range.endInclusive);
-    if (bytes === null) continue; // this image does not cover the range -- never fabricate bytes for it
-    const instructions = decode(bytes, range.start, { end: range.endInclusive });
-    for (const instr of instructions) {
-      if (ldaRows.length < maxResults && instr.mode === "immediate" && instr.operand && IMMEDIATE_LOAD_MNEMONICS.has(instr.mnemonic)) {
-        ldaRows.push(toSearchRow(instr, `#$${instr.operand.value.toString(16).padStart(2, "0")}`));
-      } else if (staRows.length < maxResults && instr.mode === "absolute" && instr.operand && ABSOLUTE_STORE_MNEMONICS.has(instr.mnemonic)) {
-        const key = registerKeyFor(instr.operand.value);
-        if (knownRegisters.has(key)) {
-          staRows.push(toSearchRow(instr, `$${instr.operand.value.toString(16).padStart(4, "0")}`));
-        }
-      }
-    }
-  }
-
-  return { ldaRows, staRows };
-}
-
-/**
- * THE REBUILT INSTALL: create-or-update each planned enum through the
- * shipped `createProjectEnum()`/`updateProjectEnum()` write path -- the SAME
- * functions `anno_create_project_enum`/`anno_update_project_enum` dispatch
- * to, never a second install path -- and bind every occurrence through
- * `applyEnumUsage()`, at the `lda` address (never the store address -- the
- * measured binding fact in this module's header). `sanitizeVariantMap()`
- * runs FIRST, before any I/O, so an illegal identifier provably never
- * reaches the store (the same client-side-first property the deleted
- * installer proved with a spy binary).
- *
- * CREATE-THEN-UPDATE, never a delete: `createProjectEnum()` no-ops on a
- * byte-identical repeat and THROWS `AnnoLabelError` when the same name
- * already holds DIFFERENT content -- caught here and retried through
- * `updateProjectEnum()`, which replaces the variant map wholesale. This is
- * `EnumInstallAction`'s own documented re-runnability precedent (see its
- * comment above); an installer that could only ever report "created" would
- * have quietly dropped that re-runnability property.
- */
-export function installPlannedEnums(handle: AnnoStoreHandle, planned: readonly PlannedEnum[]): EnumInstallSummary[] {
-  const summaries: EnumInstallSummary[] = [];
-  for (const plan of planned) {
-    const sanitized = sanitizeVariantMap(plan.regKey, plan.variants);
-    const description = `Generated by anno-enum-gen.mts from ${plan.occurrences.length} observed write(s) to ${plan.regKey}.`;
-
-    let action: EnumInstallAction;
-    try {
-      createProjectEnum(handle, { name: plan.enumName, variants: sanitized, description });
-      action = "created";
-    } catch (err) {
-      if (!(err instanceof AnnoLabelError)) throw err;
-      updateProjectEnum(handle, { name: plan.enumName, variants: sanitized, description });
-      action = "updated";
-    }
-
-    let usagesApplied = 0;
-    for (const occ of plan.occurrences) {
-      applyEnumUsage(handle, { address: occ.ldaAddr, name: plan.enumName });
-      usagesApplied += 1;
-    }
-
-    summaries.push({ regKey: plan.regKey, enumName: plan.enumName, variantCount: plan.variants.size, action, usagesApplied });
-  }
-  return summaries;
-}
-
-export interface GenerateEnumsFromStoreOptions {
-  maxResults?: number;
-}
-
-/**
- * THE REBUILT PASS: fetch -> `pairSearchRows()` -> `planEnumsForPairing()`
- * -> `installPlannedEnums()` (which itself calls `sanitizeVariantMap()`) ->
- * `buildEnumGenerationReport()`. The three middle heuristics are called,
- * never edited, exactly per this module's own header specification.
- */
-export function generateEnumsFromStore(
-  handle: AnnoStoreHandle,
-  image: EnumSourceImage,
-  opts: GenerateEnumsFromStoreOptions = {},
-): EnumGenerationReport {
-  const maxResults = opts.maxResults ?? DEFAULT_MAX_RESULTS;
-  const { ldaRows, staRows } = fetchRegisterSearchRows(handle, image, { maxResults });
-  const pairing = pairSearchRows(ldaRows, staRows, maxResults);
-  const planned = planEnumsForPairing(pairing);
-  const installed = installPlannedEnums(handle, planned);
-  return buildEnumGenerationReport(pairing, installed, maxResults);
-}
 

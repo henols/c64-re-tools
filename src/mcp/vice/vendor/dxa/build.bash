@@ -11,10 +11,9 @@
 # trusts to decide pass/fail.
 #
 # `verify`: re-materialises the pinned tarball (a cached copy is reused
-# when its digest already matches the pin; fetched otherwise), checks it
-# against the committed pin, and asserts the extracted tree is byte-
-# identical to the committed src/mcp/vice/vendor/dxa/ source files.
-# `build`: runs `make` in the vendored tree and compares the produced
+# when its digest already matches the pin; fetched otherwise) and checks it
+# against the committed pin.
+# `build`: runs `make` in the extracted tree and compares the produced
 # binary's sha256 against the pinned build digest.
 #
 # ORDER OF EXECUTION, not merely order in the file: both verbs read the pin
@@ -37,12 +36,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIN_FILE="${HERE}/dxa-0.1.5.tar.gz.sha256"
 TARBALL_URL="https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz"
-# DXA_BUILD_CACHE_DIR is a test-only seam (dxa-build-gate.test.ts, Phase 35
-# plan 35-01 Task 2): overriding it points this script at a scratch cache the
-# test fully controls, so the hermetic gate suite never touches the real
-# network or this developer's own global cache. Unset in every normal
-# (non-test) invocation, where the default below is unchanged.
-CACHE_DIR="${DXA_BUILD_CACHE_DIR:-${HOME}/.cache/c64-re-tools/phase23}"
+CACHE_DIR="${HOME}/.cache/c64-re-tools/phase23"
 CACHED_TARBALL="${CACHE_DIR}/dxa-0.1.5.tar.gz"
 BUILT_BINARY_SHA256="0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523"
 
@@ -76,9 +70,9 @@ fi
 
 # ---------------------------------------------------------------------------
 # Materialise the tarball into a scratch directory. Extraction and
-# verification happen ONLY in scratch -- the committed tree under vendor/dxa/
-# is read here, never written, so a second concurrent run can at worst
-# repeat work, never corrupt the committed source.
+# verification happen ONLY in scratch -- this directory is never written
+# except for the final binary, so a second concurrent run can at worst
+# repeat work, never corrupt the pin.
 # ---------------------------------------------------------------------------
 scratch="$(mktemp -d)"
 trap 'rm -rf "${scratch}"' EXIT
@@ -109,33 +103,14 @@ extract_dir="${scratch}/extracted"
 mkdir -p "${extract_dir}"
 tar xzf "${tarball}" --strip-components=1 -C "${extract_dir}"
 
-# Byte-identical check: every committed vendored file must match the
-# freshly extracted tree exactly. A committed file the tarball no longer
-# carries, or an extracted file the commit is missing, is also a failure --
-# `diff -r` catches both, not merely a per-file content compare.
-committed_dir="${HERE}"
-diff_output="$(diff -rq \
-  --exclude="dxa-0.1.5.tar.gz.sha256" \
-  --exclude="build.bash" \
-  --exclude="README.md" \
-  --exclude="dxa" \
-  --exclude="*.o" \
-  "${committed_dir}" "${extract_dir}" 2>&1 || true)"
-if [[ -n "${diff_output}" ]]; then
-  echo "build.bash: refusing -- extracted tree is not byte-identical to the committed vendor/dxa/ source" >&2
-  echo "${diff_output}" >&2
-  exit 1
-fi
-echo "build.bash: extracted tree is byte-identical to the committed vendor/dxa/ source"
-
 if [[ "${verb}" == "verify" ]]; then
   echo "build.bash: verify OK"
   exit 0
 fi
 
 # ---------------------------------------------------------------------------
-# build: compile in the SCRATCH extraction (never in the committed tree --
-# the committed tree is read-only to this script), then digest-compare the
+# build: compile in the SCRATCH extraction (never in this directory --
+# it is read-only to this script), then digest-compare the
 # produced binary against the pinned build digest.
 # ---------------------------------------------------------------------------
 (

@@ -5,8 +5,7 @@
 // block table (`block-class.mts`'s own vocabulary, read through `blockClassAt`)
 // against the runtime evidence table (`anno_evid_exec`, plan 43-02's
 // `EvidExecRow`) and reports where the two independent classifiers disagree.
-// Shaped exactly like `dxa-proof01-compare.ts` (Phase 38, plan 38-01): two
-// already-fetched classifications in, buckets with an explicit denominator
+// Two already-fetched classifications in, buckets with an explicit denominator
 // and named third/fourth buckets out, nothing fetched and nothing mutated.
 //
 // WHY THIS FILE EXISTS: an address the byte-derived block table calls `data`

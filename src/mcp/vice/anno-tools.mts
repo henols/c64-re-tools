@@ -59,8 +59,7 @@
 //      plausible-looking zero this refusal channel exists to prevent. Every reason names what
 //      was asked for, why it cannot be answered, and where the nearest
 //      answerable thing lives, in the shape `stock-cia.ts:116-124` established
-//      and at the >= 40-character length `check-skill-tool-coverage.mjs:285`
-//      already enforces in CI.
+//      and at the >= 40-character length `anno-tools.test.ts` asserts.
 //
 // `anno_batch_execute` IS THE ONE SANCTIONED NESTED-ARGUMENT VERB ON THIS
 // SURFACE, AND NO SECOND MAY JOIN IT. A meta-tool that takes an arbitrary tool
@@ -157,7 +156,6 @@ import {
   assertMaxResults,
   assertOptionalMaxResults,
   assertBaseRevisionArg,
-  ANNO_TOOL_DEFINITIONS,
   isEnumUsageClear,
   assertConstWritesArg,
   assertGraphicsMapIndexArg,
@@ -808,7 +806,7 @@ function appendReadableComment(line: string, comment: string): string {
 
 /**
  * D-16's SECOND renderer (plan 45-05): the READABILITY half. `anno-export-
- * asm.ts` carries the proof (a real-ACME byte-diff oracle); this is what a
+ * asm.mts` carries the proof (a real-ACME byte-diff oracle); this is what a
  * Claude session actually reads. Calls `decomposeRegisterValue()` -- the ONE
  * owning decoder -- for exactly the same reason: this function decodes
  * NOTHING itself.
@@ -821,7 +819,7 @@ function appendReadableComment(line: string, comment: string): string {
  *
  * THE LINE-INDEX MAPPING THIS RELIES ON: `render(instructions, { origin })`
  * is called here WITHOUT `showSymbols`, so `resolveSymbol()` (`disasm-
- * renderer.ts`) always returns `undefined` and its own symbol-header loop
+ * renderer.mts`) always returns `undefined` and its own symbol-header loop
  * never emits a line -- the header is EXACTLY `"!cpu 6510"` then `"* =
  * $XXXX"`, two lines, and `instructions[i]` maps to `lines[HEADER_LINES +
  * i]` with no other possible offset. A future caller of this function that
@@ -847,7 +845,7 @@ function renderDisassembleListing(handle: AnnoStoreHandle, instructions: readonl
     if (usage === undefined) return;
 
     // THE SAME REFUSAL SHAPE THE EXPORT BOUNDARY RAISES (`anno-export-
-    // asm.ts`'s own enum-substitution block) for the same conditions, not a
+    // asm.mts`'s own enum-substitution block) for the same conditions, not a
     // silently plain listing for a store row this readable surface cannot
     // honour.
     const project = enumsByName.get(usage.enumName);

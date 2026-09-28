@@ -4,12 +4,12 @@
 // reaches the caller in the module's own words.
 //
 // WHAT THIS FILE IS NOT TESTING: the `.vsf` layout. Every layout assertion
-// lives in `src/mcp/vice/vsf-slice.test.ts`, next to the module that owns the
+// lives in `test/vice/vsf-slice.test.ts`, the test of the module that owns the
 // layout. Asserting body lengths here would create the second copy this
 // wrapper exists not to have -- in the test rather than in the code, where it
 // would be no less binding and considerably harder to notice.
 //
-// Portable: the fixtures live in the MCP tree, which the plugin distribution
+// Portable: the fixtures live in test/vice/fixtures/, which the plugin distribution
 // keeps in the same checkout. With that tree absent the fixture-driven checks
 // skip rather than fail, matching this project's other live-test files'
 // (e.g. `dxa-live.test.ts`'s) posture towards a corpus or binary they
@@ -28,7 +28,7 @@ const SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-ram-capture", "sc
 const WRAPPER = join(SCRIPT_DIR, "vsf-slice.ts");
 const PROJECT_SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-project", "scripts");
 const MCP_DIR = resolve(HERE, "..", "..", "..", "src", "mcp", "vice");
-const FIXTURES = join(MCP_DIR, "fixtures", "vsf");
+const FIXTURES = resolve(HERE, "..", "..", "vice", "fixtures", "vsf");
 
 /** The flat-image size the whole route exists to produce. Stated here as the
  * ONE number this file carries, because it is the wrapper's observable

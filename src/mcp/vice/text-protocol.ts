@@ -136,8 +136,6 @@ export const TEXT_COMMAND_ALLOWLIST = Object.freeze([
   "memmapzap",
 ] as const);
 
-export type TextCommand = (typeof TEXT_COMMAND_ALLOWLIST)[number];
-
 // ---------------------------------------------------------------------------
 // Parameterized commands (D-42-1, plan 42-04). Three of
 // the allowlisted verbs -- "chis", "prof flat", "io" -- were captured on the

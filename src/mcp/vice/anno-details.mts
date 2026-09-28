@@ -56,8 +56,8 @@ import { crossReferencesTo } from "./anno-derive.mts";
 import type { CrossReferencesResult } from "./anno-derive.mts";
 
 /** A component that HAS an answer, and one that could not be answered at all.
- * The second shape is `stock-cia.ts`'s unavailability entry and
- * `stock-recycle.ts`'s `CaptureStepResult`: an unanswerable question never
+ * The second shape is `stock-cia.ts`'s unavailability entry: an unanswerable
+ * question never
  * comes back as a plausible zero. */
 export type ComposedComponent<T> = { available: true; value: T } | { available: false; reason: string };
 

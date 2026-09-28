@@ -9,28 +9,22 @@
 //
 // This module performs NO filesystem and NO network I/O: every function takes
 // bytes (or a base64 string) and returns values. Callers obtain and persist
-// the bytes themselves. That is the same claim `anno-project.ts` makes about
-// itself, and it must remain true of both files now that the split has
-// happened -- a structural test in `prg-image.test.ts` asserts it from this
-// module's own source rather than trusting this paragraph.
+// the bytes themselves. A structural test in `prg-image.test.ts` asserts it
+// from this module's own source rather than trusting this paragraph.
 //
-// WHY THIS FILE EXISTS SEPARATELY: these three functions used to live in
-// `anno-project.ts`, the module that builds a `.regen2000proj` file for the
-// the external analyser analyser. They were never about that analyser. One of them
-// is imported statically by the byte-coverage census (`anno-coverage.mts`), a
-// capability that must keep working independently of whether this repo still
-// drives that analyser at all -- so a census whose only route to a payload
-// decoder ran through analyser glue was one deletion away from breaking with
-// no announcement (SEAM-02). Extracting them under a name that carries no
-// analyser prefix removes that coupling outright instead of recording it as a
-// hazard to remember later. There is deliberately NO re-export left behind in
-// `anno-project.ts`: a compatibility shim would leave the coupling fully
-// intact while looking finished.
+// WHY THIS FILE EXISTS SEPARATELY: these three functions are not about any
+// external analyser. One of them is imported statically by the byte-coverage
+// census (`anno-coverage.mts`), a capability that must keep working
+// independently of whether this repo drives an external analyser at all --
+// so a census whose only route to a payload decoder ran through analyser
+// glue would be one deletion away from breaking with no announcement
+// (SEAM-02). A module whose name carries no analyser prefix removes that
+// coupling outright instead of recording it as a hazard to remember later.
 //
 // THIS MODULE MUST BE LISTED IN `package.json`'s `files[]`. It is reachable
 // from the published entry point's import closure, and the STATIC route is
-// named here first because it is the stronger reachability claim: `anno-
-// tools.ts` -- the curated `anno_*` MCP tool surface -- imports `parsePrg` and
+// named here first because it is the stronger reachability claim:
+// `anno-tools.mts` -- the curated `anno_*` MCP tool surface -- imports `parsePrg` and
 // `flatImageOrigin` from here with a plain top-level import, and `vice-proxy.ts`
 // imports `anno-tools.mts` statically. `anno-coverage.mts` (the byte-coverage
 // census) imports `decodeRawData`, `parsePrg` and `flatImageOrigin` for the

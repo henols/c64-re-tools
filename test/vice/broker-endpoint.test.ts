@@ -1,0 +1,1248 @@
+// broker-endpoint.test.ts
+//
+// Plan 62-01, task 1: the genuine end-to-end case (a real listener, a real
+// dial, a completed handshake), plus the structural assertions that keep
+// this module's own written-down contract honest -- no filesystem access,
+// no import of vice-broker-client.ts, and the two mirrored
+// magic-string literals in byte-identical agreement.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { connect, createServer, Socket, type Server } from "node:net";
+
+import { startControlListener, bindControlListener, HELLO_PROTOCOL_MAGIC as SERVER_HELLO_PROTOCOL_MAGIC } from "../../src/mcp/vice/broker-control.mts";
+import {
+  dialBrokerEndpoint,
+  classifyHelloReply,
+  describeDialFailure,
+  BROKER_START_COMMAND,
+  DIAL_CANDIDATES,
+  HELLO_PROTOCOL_MAGIC,
+  dialFileTransfer,
+  dialMonitorRelay,
+  TRANSFER_TAG,
+  RELAY_TAG_BINARY,
+  resolveEndpointPort,
+  awaitTransferComplete,
+  type BrokerEndpointConnectFn,
+  type DialFailure,
+  type DialFileTransferResult,
+} from "../../src/mcp/vice/broker-endpoint.mts";
+import type { FileTransferOutcome, StartControlListenerOptions } from "../../src/mcp/vice/broker-control.mts";
+import { VICE_DIR } from "./paths.ts";
+
+const BROKER_ENDPOINT_TS = join(VICE_DIR, "broker-endpoint.mts");
+const BROKER_CONTROL_MTS = join(VICE_DIR, "broker-control.mts");
+
+/** Strips `//` line comments and `/* ... *\/` block comments -- the same
+ * stripCommentLines() idiom tool-location-consumers.test.ts already uses
+ * for exactly this reason: this module's own header comments NAME the
+ * forbidden fs calls and vice-broker-client.ts (explaining what NOT to do),
+ * so a naive raw-source
+ * substring check would trip on its own prose rather than on real code. */
+function stripCommentLines(src: string): string {
+  const out: string[] = [];
+  let inBlock = false;
+
+  function processSegment(text: string): void {
+    if (inBlock) {
+      const closeIdx = text.indexOf("*/");
+      if (closeIdx === -1) return;
+      inBlock = false;
+      processSegment(text.slice(closeIdx + 2));
+      return;
+    }
+    const trimmed = text.trim();
+    if (trimmed.startsWith("/*")) {
+      const openIdx = text.indexOf("/*");
+      const closeIdx = text.indexOf("*/", openIdx + 2);
+      if (closeIdx === -1) {
+        inBlock = true;
+        return;
+      }
+      processSegment(text.slice(closeIdx + 2));
+      return;
+    }
+    if (/^\s*\/\//.test(text)) return;
+    out.push(text);
+  }
+
+  for (const line of src.split("\n")) {
+    processSegment(line);
+  }
+  return out.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// The genuine end-to-end case.
+// ---------------------------------------------------------------------------
+
+test("dialBrokerEndpoint completes a real handshake end to end against a real listener on an ephemeral port", async () => {
+  const listener = await startControlListener({
+    host: "127.0.0.1",
+    port: 0, // ephemeral -- never the production port literal
+    onAcquire: async () => ({ ok: false, reason: "internal" }),
+    onRelease: () => {},
+    onStatus: () => [],
+    onHostState: () => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 16,
+      basePort: 6600,
+      backend: "stock" as const,
+    }),
+    onMonitorClaim: () => ({ ok: false, code: "internal" as const }),
+    onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
+    onOperation: () => ({ ok: false, code: "bad_request" as const }),
+  });
+  try {
+    const result = await dialBrokerEndpoint({ port: listener.port, candidates: ["127.0.0.1"] });
+    assert.equal(result.ok, true, `expected a completed handshake, got ${JSON.stringify(result)}`);
+    if (result.ok) {
+      assert.equal(result.port, listener.port);
+      assert.equal(result.host, "127.0.0.1");
+      assert.equal(typeof result.version, "string");
+      assert.equal(result.tag, "control");
+    }
+  } finally {
+    listener.server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The default candidate list.
+// ---------------------------------------------------------------------------
+
+test("DIAL_CANDIDATES is exactly the two fixed hosts, loopback first", () => {
+  assert.deepEqual(DIAL_CANDIDATES, ["127.0.0.1", "host.docker.internal"]);
+});
+
+// ---------------------------------------------------------------------------
+// Plan 64-08 (G-64-1 gap closure, Task 1): resolveEndpointPort() -- the one
+// default-port resolver every fixed-endpoint dial in this module now uses,
+// closing the latent "relay always dials 19510" defect the G-64-1 diagnosis
+// recorded.
+// ---------------------------------------------------------------------------
+
+test("resolveEndpointPort: absent, empty, non-integer, out-of-range and zero all fall back to 19510", () => {
+  assert.equal(resolveEndpointPort({ env: {} }), 19510, "absent");
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "" } }), 19510, "empty string");
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "0" } }), 19510, "zero");
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "65536" } }), 19510, "above 65535");
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "abc" } }), 19510, "non-numeric");
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "12.5" } }), 19510, "non-integer");
+});
+
+test("resolveEndpointPort: an integer 1..65535 is honoured verbatim", () => {
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "1" } }), 1);
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "65535" } }), 65535);
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "40123" } }), 40123);
+});
+
+test("resolveEndpointPort: defaults to process.env when no env option is supplied", () => {
+  const prev = process.env.VICE_BROKER_CONTROL_PORT;
+  try {
+    process.env.VICE_BROKER_CONTROL_PORT = "42123";
+    assert.equal(resolveEndpointPort(), 42123);
+  } finally {
+    if (prev === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = prev;
+  }
+});
+
+test("dialBrokerEndpoint with no port option reaches a hello-answering listener on the port named by VICE_BROKER_CONTROL_PORT", async () => {
+  const listener = await startControlListener({
+    host: "127.0.0.1",
+    port: 0,
+    onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
+    onRelease: () => {},
+    onStatus: () => [],
+    onHostState: () => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 16,
+      basePort: 6600,
+      backend: "stock" as const,
+    }),
+    onMonitorClaim: () => ({ ok: false, code: "internal" as const }),
+    onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
+    onOperation: () => ({ ok: false, code: "bad_request" as const }),
+  });
+  const prev = process.env.VICE_BROKER_CONTROL_PORT;
+  try {
+    process.env.VICE_BROKER_CONTROL_PORT = String(listener.port);
+    const result = await dialBrokerEndpoint({ candidates: ["127.0.0.1"] });
+    assert.equal(result.ok, true, `expected a completed handshake with no port option, got ${JSON.stringify(result)}`);
+    if (result.ok) {
+      assert.equal(result.port, listener.port, "the dial must have reached the port named by VICE_BROKER_CONTROL_PORT, not the fixed 19510 default");
+    }
+  } finally {
+    if (prev === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = prev;
+    listener.server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Structural assertions: no filesystem access, no vice-broker-client import.
+// ---------------------------------------------------------------------------
+
+test("broker-endpoint.mts never touches the filesystem and never imports vice-broker-client.ts", () => {
+  // readFileSync, not a shell grep -- four source files in this tree carry
+  // NUL bytes that a shell grep silently skips (see this repo's own
+  // documented gotcha); readFileSync with "utf8" never truncates on one.
+  // Comment-stripped, because this module's own header comments NAME the
+  // forbidden calls and vice-broker-client.ts while explaining why they are
+  // forbidden -- a raw substring check would trip on that prose, not on
+  // real code.
+  const source = stripCommentLines(readFileSync(BROKER_ENDPOINT_TS, "utf8"));
+  for (const forbidden of ["readFileSync(", "existsSync(", "readFile(", "vice-broker-client"]) {
+    assert.ok(!source.includes(forbidden), `broker-endpoint.mts must not contain ${JSON.stringify(forbidden)} outside of comments`);
+  }
+});
+
+test("the mirrored HELLO_PROTOCOL_MAGIC literal in broker-endpoint.mts is byte-identical to broker-control.mts's own definition", () => {
+  assert.equal(HELLO_PROTOCOL_MAGIC, SERVER_HELLO_PROTOCOL_MAGIC);
+
+  // Belt and braces: read both literals directly out of source, not just
+  // out of the imported runtime values, so a copy-paste that diverges only
+  // in a comment-adjacent duplicate would still be caught.
+  const clientSource = readFileSync(BROKER_ENDPOINT_TS, "utf8");
+  const serverSource = readFileSync(BROKER_CONTROL_MTS, "utf8");
+  const clientMatch = clientSource.match(/export const HELLO_PROTOCOL_MAGIC = "([^"]+)"/);
+  const serverMatch = serverSource.match(/export const HELLO_PROTOCOL_MAGIC = "([^"]+)"/);
+  assert.ok(clientMatch, "broker-endpoint.mts must export HELLO_PROTOCOL_MAGIC as a string literal");
+  assert.ok(serverMatch, "broker-control.mts must export HELLO_PROTOCOL_MAGIC as a string literal");
+  assert.equal(clientMatch![1], serverMatch![1]);
+});
+
+// ============================================================================
+// Plan 62-01, task 2: both candidates always dialled, each on its own
+// timeout, ranked by informativeness (D-07). Fixtures are built from real
+// sockets on ephemeral ports; candidate SELECTION is driven through the
+// `candidates` option and an injected `connect` seam, never real DNS.
+// ============================================================================
+
+/** A stub StartControlListenerOptions set that answers `hello` only --
+ * every acquire/release/etc callback is a harmless no-op refusal, since no
+ * task-2 test exercises the lease-bearing ops. */
+async function startHealthyListener(overrides: { helloVersion?: string } = {}) {
+  const listener = await startControlListener({
+    host: "127.0.0.1",
+    port: 0,
+    onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
+    onRelease: () => {},
+    onStatus: () => [],
+    onHostState: () => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 16,
+      basePort: 6600,
+      backend: "stock" as const,
+    }),
+    onMonitorClaim: () => ({ ok: false, code: "internal" as const }),
+    onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
+    onOperation: () => ({ ok: false, code: "bad_request" as const }),
+    helloVersion: overrides.helloVersion,
+  });
+  return { listener };
+}
+
+/** Binds a real listener, reads back its kernel-chosen port, then closes it
+ * immediately -- the port now refuses connections on loopback,
+ * deterministically (the exact idiom vice-broker-client.test.ts's own
+ * "a refused connection returns a typed connect_refused failure" case
+ * already uses; no reliance on a hardcoded port being free). */
+async function allocateDeadPort(): Promise<number> {
+  const probe = await bindControlListener("127.0.0.1", 0);
+  await new Promise<void>((r) => probe.server.close(() => r()));
+  return probe.port;
+}
+
+/** A tiny hand-written server that writes ONE canned newline-delimited-JSON
+ * line to every connection immediately (never reading the incoming hello
+ * request first) -- the stale-broker and version-skew fixtures both need
+ * exactly this shape, differing only in the line's own content. */
+function startCannedLineServer(line: string): Promise<{ server: Server; port: number }> {
+  return new Promise((resolvePromise) => {
+    const server = createServer((socket) => {
+      socket.write(`${line}\n`);
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+      resolvePromise({ server, port });
+    });
+  });
+}
+
+/** An injected `connect` seam redirecting each candidate NAME (arbitrary,
+ * never touching real DNS) to a real fixture port on loopback, per this
+ * phase's own "per-candidate port map or an injected connect seam" test
+ * convention. A name absent from the map falls back to whatever port the
+ * dial itself resolved (unused by any test here, but keeps the type total). */
+function makeCandidateConnect(portByHost: Record<string, number>): BrokerEndpointConnectFn {
+  const impl = (opts: { host?: string; port?: number }): Socket => {
+    const host = opts.host ?? "";
+    const port = portByHost[host] ?? opts.port ?? 0;
+    return connect({ host: "127.0.0.1", port });
+  };
+  return impl as unknown as BrokerEndpointConnectFn;
+}
+
+/** Like makeCandidateConnect(), but `dnsFailHosts` synthesizes a genuine DNS
+ * resolution failure (ENOTFOUND) for the named candidates instead of ever
+ * attempting a real connection -- a real `net.Socket`, so it satisfies every
+ * EventEmitter/`.destroy()`/`.destroyed` usage dialOneCandidate makes, but
+ * its "connection" is entirely synthetic and touches no real network. */
+function makeConnectWithDnsFailure(dnsFailHosts: Set<string>, portByHost: Record<string, number> = {}): BrokerEndpointConnectFn {
+  const impl = (opts: { host?: string; port?: number }): Socket => {
+    const host = opts.host ?? "";
+    if (dnsFailHosts.has(host)) {
+      const sock = new Socket();
+      queueMicrotask(() => {
+        const err = new Error(`getaddrinfo ENOTFOUND ${host}`) as NodeJS.ErrnoException;
+        err.code = "ENOTFOUND";
+        sock.emit("error", err);
+      });
+      return sock;
+    }
+    const port = portByHost[host] ?? opts.port ?? 0;
+    return connect({ host: "127.0.0.1", port });
+  };
+  return impl as unknown as BrokerEndpointConnectFn;
+}
+
+/** Delays the ACTUAL connect attempt for exactly one named candidate by
+ * `delayMs`, using node:net's own two-phase construct-then-connect --
+ * `new Socket()` returns synchronously (as dialOneCandidate's `onSocket`
+ * callback requires) and `.connect(...)` is invoked later on that SAME
+ * object, firing the ordinary "connect"/"error" events whenever it runs.
+ * This is what lets a test arrange for one specific candidate to settle
+ * AFTER the other despite being listed first, so the tie-ordering
+ * assertion is proven against candidate order, never settle order. */
+function makeCandidateConnectWithDelay(delayedHost: string, delayMs: number, portByHost: Record<string, number>): BrokerEndpointConnectFn {
+  const impl = (opts: { host?: string; port?: number }): Socket => {
+    const host = opts.host ?? "";
+    const port = portByHost[host] ?? opts.port ?? 0;
+    const sock = new Socket();
+    if (host === delayedHost) {
+      setTimeout(() => sock.connect({ host: "127.0.0.1", port }), delayMs);
+    } else {
+      sock.connect({ host: "127.0.0.1", port });
+    }
+    return sock;
+  };
+  return impl as unknown as BrokerEndpointConnectFn;
+}
+
+// --------------------------------------------------------------- classifyHelloReply
+
+test("classifyHelloReply: not connected -> rank 1 (nothing is listening)", () => {
+  assert.deepEqual(classifyHelloReply({ connected: false, raw: null }, "5.0.0"), { completed: false, rank: 1 });
+});
+
+test("classifyHelloReply: connected but no valid reply (timeout or non-JSON) -> rank 2 (foreign listener)", () => {
+  assert.deepEqual(classifyHelloReply({ connected: true, raw: null }, "5.0.0"), { completed: false, rank: 2 });
+});
+
+test("classifyHelloReply: connected, wrong protocol magic -> rank 2", () => {
+  const raw = { kind: "hello", protocol: "not-the-real-magic", version: "5.0.0", tag: "x" };
+  assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: false, rank: 2 });
+});
+
+test("classifyHelloReply: connected, unauthorized error -> rank 3 (stale pre-v2.0.0 broker)", () => {
+  const raw = { kind: "error", code: "unauthorized", message: "missing or invalid control token" };
+  assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: false, rank: 3 });
+});
+
+test("classifyHelloReply: connected, bad_request error -> rank 3", () => {
+  const raw = { kind: "error", code: "bad_request", message: "unknown op" };
+  assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: false, rank: 3 });
+});
+
+test("classifyHelloReply: connected, valid magic, incompatible major -> rank 4 (version skew), carrying the observed version", () => {
+  const raw = { kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "6.0.0", tag: "x" };
+  assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: false, rank: 4, version: "6.0.0" });
+});
+
+test("classifyHelloReply: connected, valid magic, compatible major -> a completed handshake", () => {
+  const raw = { kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "5.9.9", tag: "x" };
+  assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: true, version: "5.9.9", tag: "x" });
+});
+
+test("classifyHelloReply: a missing, empty, or non-string version classifies as rank 2, never as a version mismatch", () => {
+  for (const badVersion of [undefined, "", 42, null]) {
+    const raw = { kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: badVersion, tag: "x" };
+    assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: false, rank: 2 }, `version ${JSON.stringify(badVersion)} must classify as rank 2, not a skew`);
+  }
+});
+
+test("classifyHelloReply: a non-numeric leading version segment is unparseable and classifies as rank 2, not compared", () => {
+  const raw = { kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "vNext", tag: "x" };
+  assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: false, rank: 2 });
+});
+
+// --------------------------------------------------------------- the nine <behavior> cases
+
+test("behavior 1: candidate 1 wedged (accepts, never writes a byte), candidate 2 healthy -- resolves ok from candidate 2, well within twice the reply timeout", async () => {
+  const wedged = await bindControlListener("127.0.0.1", 0);
+  const { listener: healthy } = await startHealthyListener();
+  try {
+    const replyTimeoutMs = 300;
+    const connectFn = makeCandidateConnect({ "cand-wedged": wedged.port, "cand-healthy": healthy.port });
+    const start = Date.now();
+    const result = await dialBrokerEndpoint({
+      candidates: ["cand-wedged", "cand-healthy"],
+      connect: connectFn,
+      connectTimeoutMs: 500,
+      replyTimeoutMs,
+    });
+    const elapsed = Date.now() - start;
+    assert.equal(result.ok, true, `expected a completed handshake, got ${JSON.stringify(result)}`);
+    if (result.ok) assert.equal(result.host, "cand-healthy");
+    assert.ok(elapsed < replyTimeoutMs * 2, `expected under twice the reply timeout (${replyTimeoutMs * 2}ms), took ${elapsed}ms -- candidates must run concurrently, not chained`);
+  } finally {
+    wedged.server.close();
+    healthy.server.close();
+  }
+});
+
+test("behavior 2: candidate 1 healthy, candidate 2 unresolvable -- the dial resolves ok from candidate 1", async () => {
+  const { listener: healthy } = await startHealthyListener();
+  try {
+    const connectFn = makeConnectWithDnsFailure(new Set(["cand-dns-fail"]), { "cand-healthy": healthy.port });
+    const result = await dialBrokerEndpoint({
+      candidates: ["cand-healthy", "cand-dns-fail"],
+      connect: connectFn,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+    });
+    assert.equal(result.ok, true, `expected a completed handshake, got ${JSON.stringify(result)}`);
+    if (result.ok) assert.equal(result.host, "cand-healthy");
+  } finally {
+    healthy.server.close();
+  }
+});
+
+test("behavior 3: both candidates healthy -- the dial resolves ok once, and every socket (winner and loser) is destroyed before it resolves", async () => {
+  const { listener: a } = await startHealthyListener();
+  const { listener: b } = await startHealthyListener();
+  try {
+    const connectFn = makeCandidateConnect({ "cand-a": a.port, "cand-b": b.port });
+    const result = await dialBrokerEndpoint({
+      candidates: ["cand-a", "cand-b"],
+      connect: connectFn,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+    });
+    assert.equal(result.ok, true, `expected a completed handshake, got ${JSON.stringify(result)}`);
+
+    // Give the destroyed sockets' "close" events a tick to propagate
+    // server-side before asking each server how many connections remain.
+    await new Promise((r) => setTimeout(r, 100));
+    const aConns = await new Promise<number>((resolvePromise) => a.server.getConnections((_err, count) => resolvePromise(count)));
+    const bConns = await new Promise<number>((resolvePromise) => b.server.getConnections((_err, count) => resolvePromise(count)));
+    assert.equal(aConns, 0, "candidate a's server must show zero live connections once the dial has resolved");
+    assert.equal(bConns, 0, "candidate b's server must show zero live connections once the dial has resolved");
+  } finally {
+    a.server.close();
+    b.server.close();
+  }
+});
+
+test("behavior 4: neither candidate connects -- not-ok with rank 1, and each candidate's resolved boolean is observed correctly", async () => {
+  const deadPort = await allocateDeadPort();
+  const connectFn = makeConnectWithDnsFailure(new Set(["cand-dns-fail"]), { "cand-refused": deadPort });
+  const result = await dialBrokerEndpoint({
+    candidates: ["cand-dns-fail", "cand-refused"],
+    connect: connectFn,
+    connectTimeoutMs: 500,
+    replyTimeoutMs: 500,
+  });
+  assert.equal(result.ok, false, `expected not-ok, got ${JSON.stringify(result)}`);
+  if (result.ok) return;
+  assert.equal(result.rank, 1);
+  assert.equal(result.observations.length, 2);
+  const dnsObs = result.observations.find((o) => o.host === "cand-dns-fail");
+  const refusedObs = result.observations.find((o) => o.host === "cand-refused");
+  assert.ok(dnsObs && refusedObs, "both candidate observations must be present");
+  assert.equal(dnsObs!.resolved, false, "a DNS failure must record resolved:false");
+  assert.equal(refusedObs!.resolved, true, "a connect-refused failure must record resolved:true -- DNS succeeded, nothing is listening");
+});
+
+test("behavior 5: candidate 1 a bare accepting listener (foreign listener), candidate 2 refused -- not-ok with rank 2", async () => {
+  const bare = await bindControlListener("127.0.0.1", 0);
+  const deadPort = await allocateDeadPort();
+  try {
+    const connectFn = makeCandidateConnect({ "cand-bare": bare.port, "cand-refused": deadPort });
+    const result = await dialBrokerEndpoint({
+      candidates: ["cand-bare", "cand-refused"],
+      connect: connectFn,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+    });
+    assert.equal(result.ok, false, `expected not-ok, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.equal(result.rank, 2);
+  } finally {
+    bare.server.close();
+  }
+});
+
+test("behavior 6: candidate 1 answers an authorization error (stale broker), candidate 2 refused -- not-ok with rank 3", async () => {
+  const stale = await startCannedLineServer(JSON.stringify({ kind: "error", code: "unauthorized", message: "missing or invalid control token" }));
+  const deadPort = await allocateDeadPort();
+  try {
+    const connectFn = makeCandidateConnect({ "cand-stale": stale.port, "cand-refused": deadPort });
+    const result = await dialBrokerEndpoint({
+      candidates: ["cand-stale", "cand-refused"],
+      connect: connectFn,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+    });
+    assert.equal(result.ok, false, `expected not-ok, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.equal(result.rank, 3);
+  } finally {
+    stale.server.close();
+  }
+});
+
+test("behavior 7: candidate 1 answers a valid handshake with an incompatible major, candidate 2 refused -- not-ok with rank 4 (version skew)", async () => {
+  const skewed = await startCannedLineServer(JSON.stringify({ kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "6.0.0", tag: "control" }));
+  const deadPort = await allocateDeadPort();
+  try {
+    const connectFn = makeCandidateConnect({ "cand-skew": skewed.port, "cand-refused": deadPort });
+    const result = await dialBrokerEndpoint({
+      candidates: ["cand-skew", "cand-refused"],
+      connect: connectFn,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+      clientVersion: "5.0.0",
+    });
+    assert.equal(result.ok, false, `expected not-ok, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.equal(result.rank, 4);
+  } finally {
+    skewed.server.close();
+  }
+});
+
+test("behavior 8: candidate 1 incompatible major, candidate 2 compatible -- ok is true and the winning host is candidate 2 (a skew never short-circuits)", async () => {
+  const skewed = await startCannedLineServer(JSON.stringify({ kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "6.0.0", tag: "control" }));
+  const compatible = await startCannedLineServer(JSON.stringify({ kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "5.2.0", tag: "control" }));
+  try {
+    const connectFn = makeCandidateConnect({ "cand-skew": skewed.port, "cand-compat": compatible.port });
+    const result = await dialBrokerEndpoint({
+      candidates: ["cand-skew", "cand-compat"],
+      connect: connectFn,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+      clientVersion: "5.0.0",
+    });
+    assert.equal(result.ok, true, `expected ok, got ${JSON.stringify(result)}`);
+    if (result.ok) assert.equal(result.host, "cand-compat");
+  } finally {
+    skewed.server.close();
+    compatible.server.close();
+  }
+});
+
+test("behavior 9: both candidates produce rank 1 (a tie) -- the reported observation order is the fixed candidate order (loopback first), regardless of which one settled first", async () => {
+  const loopbackDeadPort = await allocateDeadPort();
+  const bridgeDeadPort = await allocateDeadPort();
+  // The loopback candidate's own connect attempt is delayed, so the bridge
+  // candidate settles FIRST in real time despite being listed second --
+  // proving the final observation order is candidate order, not settle order.
+  const connectFn = makeCandidateConnectWithDelay(DIAL_CANDIDATES[0], 150, {
+    [DIAL_CANDIDATES[0]]: loopbackDeadPort,
+    [DIAL_CANDIDATES[1]]: bridgeDeadPort,
+  });
+  const result = await dialBrokerEndpoint({
+    candidates: DIAL_CANDIDATES,
+    connect: connectFn,
+    connectTimeoutMs: 1000,
+    replyTimeoutMs: 500,
+  });
+  assert.equal(result.ok, false, `expected not-ok, got ${JSON.stringify(result)}`);
+  if (result.ok) return;
+  assert.equal(result.rank, 1);
+  assert.equal(result.observations.length, 2);
+  assert.equal(result.observations[0].host, DIAL_CANDIDATES[0], "the loopback candidate must be reported first regardless of settle order");
+  assert.equal(result.observations[1].host, DIAL_CANDIDATES[1]);
+});
+
+// ============================================================================
+// Plan 62-01, task 3: four refusals a person can act on, and the start
+// command they all quote.
+// ============================================================================
+
+function makeFailure(overrides: Partial<DialFailure> & { rank: DialFailure["rank"] }): DialFailure {
+  return {
+    ok: false,
+    port: 19510,
+    clientVersion: "5.0.0",
+    observations: [
+      { host: "127.0.0.1", rank: overrides.rank, resolved: false },
+      { host: "host.docker.internal", rank: 1, resolved: false },
+    ],
+    ...overrides,
+  };
+}
+
+test("BROKER_START_COMMAND names the npm bin and the plugin-root invocation, one literal with no interpolation and no npx", () => {
+  assert.equal(BROKER_START_COMMAND, "vice-mcp broker (npm install) or node <plugin-root>/src/mcp/vice/vice-cli.mjs broker (plugin or checkout)");
+  assert.doesNotMatch(BROKER_START_COMMAND, /npx/);
+});
+
+test("the start-command literal appears in broker-endpoint.mts between 1 and 3 times -- one definition, never a hand-copied second string", () => {
+  const source = readFileSync(BROKER_ENDPOINT_TS, "utf8");
+  const count = (source.match(/vice-mcp broker \(npm install\) or node <plugin-root>\/src\/mcp\/vice\/vice-cli\.mjs broker \(plugin or checkout\)/g) ?? []).length;
+  assert.ok(count >= 1 && count <= 3, `expected the literal to appear 1-3 times, found ${count}`);
+});
+
+test("rank 1: names the start command verbatim and states nothing answered on either candidate", () => {
+  const failure = makeFailure({ rank: 1, observations: [{ host: "127.0.0.1", rank: 1, resolved: false }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const message = describeDialFailure(failure);
+  assert.ok(message.includes(BROKER_START_COMMAND), "rank 1 must quote the start command verbatim");
+  assert.match(message, /no broker answered/i);
+  assert.ok(message.includes("127.0.0.1"));
+  assert.ok(message.includes("host.docker.internal"));
+  assert.ok(message.includes("19510"));
+});
+
+test("rank 2: states something else holds the port, naming the port and the candidate host it was observed on", () => {
+  const failure = makeFailure({ rank: 2, observations: [{ host: "127.0.0.1", rank: 2, resolved: true }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const message = describeDialFailure(failure);
+  assert.ok(message.includes("127.0.0.1"));
+  assert.ok(message.includes("19510"));
+  assert.match(message, /already listening|something else/i);
+});
+
+test("rank 3: states the listener is an older broker that must be restarted from the new package, naming the start command", () => {
+  const failure = makeFailure({ rank: 3, observations: [{ host: "127.0.0.1", rank: 3, resolved: true }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const message = describeDialFailure(failure);
+  assert.ok(message.includes(BROKER_START_COMMAND), "rank 3 must quote the start command verbatim");
+  assert.match(message, /older than v2\.0\.0|older broker|stale/i);
+});
+
+test("rank 4: names the package, both observed versions, and which side is behind", () => {
+  const failure = makeFailure({
+    rank: 4,
+    clientVersion: "5.0.0",
+    observations: [
+      { host: "127.0.0.1", rank: 4, resolved: true, version: "6.0.0" },
+      { host: "host.docker.internal", rank: 1, resolved: false },
+    ],
+  });
+  const message = describeDialFailure(failure);
+  assert.ok(message.includes("@henols/vice-mcp"), "must name the server package");
+  assert.ok(!message.includes("@henols/c64-re-tools"), "the retired installer package must not be named");
+  assert.ok(message.includes("5.0.0"), "must name the client's own observed version");
+  assert.ok(message.includes("6.0.0"), "must name the broker's observed version");
+});
+
+test("rank 4: a missing/empty/numeric/non-numeric-leading version classifies as rank 2 (not skew) upstream, so describeDialFailure never has to render an unparseable version as a skew", () => {
+  for (const badVersion of [undefined, "", 42, "vNext"]) {
+    const raw = { kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: badVersion, tag: "x" };
+    const classification = classifyHelloReply({ connected: true, raw }, "5.0.0");
+    assert.equal(classification.completed, false);
+    if (!classification.completed) assert.equal(classification.rank, 2, `version ${JSON.stringify(badVersion)} must classify as rank 2, not rank 4`);
+  }
+});
+
+test("rootless disclosure: absent when every candidate's resolved flag is false", () => {
+  const failure = makeFailure({ rank: 1, observations: [{ host: "127.0.0.1", rank: 1, resolved: false }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const message = describeDialFailure(failure);
+  assert.ok(!/rootless/i.test(message));
+});
+
+test("rootless disclosure: present when any candidate's resolved flag is true with a failed connection, and carries a provenance disclaimer without naming the alternative container runtime", () => {
+  const failure = makeFailure({ rank: 1, observations: [{ host: "127.0.0.1", rank: 1, resolved: true }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const message = describeDialFailure(failure);
+  assert.match(message, /rootless/i);
+  assert.match(message, /unconfirmed|community-sourced/i, "must disclose the claim's provenance");
+  assert.ok(!/podman/i.test(message), "must not mention the alternative container runtime whose default is deferred (DEFER-01)");
+});
+
+test("all four ranks produce distinct message text", () => {
+  const base = { host: "127.0.0.1", resolved: true };
+  const messages = ([1, 2, 3, 4] as const).map((rank) =>
+    describeDialFailure(
+      makeFailure({
+        rank,
+        observations: [{ ...base, rank, version: rank === 4 ? "6.0.0" : undefined }, { host: "host.docker.internal", rank: 1, resolved: false }],
+      }),
+    ),
+  );
+  const uniqueMessages = new Set(messages);
+  assert.equal(uniqueMessages.size, 4, "each of the four ranks must produce its own distinct message");
+});
+
+// ============================================================================
+// Plan 64-02 (XFER-04): dialFileTransfer() -- the one authoritative way to
+// open a payload connection. Reuses the SAME two-candidate hello race, fixed
+// port and injected-connect seam every test above already exercises for
+// dialBrokerEndpoint(); this section covers only what is NEW: the
+// `file-transfer` hello tag, the `transfer` request/reply exchange, and the
+// byte-level terminator search over a payload that can share a TCP segment
+// with its own reply line.
+// ============================================================================
+
+/** A stub StartControlListenerOptions set IDENTICAL to startHealthyListener()
+ * above, plus an injected `onFileTransfer` -- this listener's own dispatch
+ * arm services `transfer` requests through the real broker-control.mts
+ * wire, so these tests drive the genuine control-plane protocol rather than
+ * a hand-rolled fixture, for every case except the two load-bearing
+ * byte-level ones below (which need to control the exact bytes of a single
+ * socket write, something no callback signature can express). */
+async function startTransferCapableListener(onFileTransfer: NonNullable<StartControlListenerOptions["onFileTransfer"]>) {
+  const listener = await startControlListener({
+    host: "127.0.0.1",
+    port: 0,
+    onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
+    onRelease: () => {},
+    onStatus: () => [],
+    onHostState: () => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 16,
+      basePort: 6600,
+      backend: "stock" as const,
+    }),
+    onMonitorClaim: () => ({ ok: false, code: "internal" as const }),
+    onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
+    onOperation: () => ({ ok: false, code: "bad_request" as const }),
+    onFileTransfer,
+  });
+  return { listener };
+}
+
+/** A raw, hand-written fixture (no broker-control.mts involved at all) that
+ * answers the client's `hello` with a compatible reply, THEN answers the
+ * client's own `transfer` request line with exactly the bytes `respond`
+ * returns -- letting a test control precisely how many socket writes carry
+ * the reply, and whether payload bytes share the SAME write as the reply
+ * line's own terminator. `respond` receives the parsed transfer request. */
+function startRawTransferFixture(respond: (transferReq: Record<string, unknown>) => Buffer): Promise<{ server: Server; port: number }> {
+  return new Promise((resolvePromise) => {
+    const server = createServer((socket) => {
+      // Answers WHATEVER arrives first as the hello reply -- dialOneCandidate()
+      // does not itself read the client's own hello line, it only waits for
+      // the first data event, exactly per this file's own dialBrokerEndpoint
+      // fixtures above.
+      socket.write(`${JSON.stringify({ kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "5.0.0", tag: TRANSFER_TAG })}\n`);
+      let carry = Buffer.alloc(0);
+      let answered = false;
+      // The client itself writes ITS OWN `{"op":"hello",...}` request line
+      // (dialOneCandidate()'s own handshake) BEFORE `performTransfer()` ever
+      // writes the `transfer` request line -- this fixture already answered
+      // the hello proactively above, so the FIRST line this handler reads is
+      // the client's own hello request, not the transfer request. Skip
+      // exactly one line before treating the next as the transfer request.
+      let skippedHelloLine = false;
+      socket.on("data", (chunk: Buffer) => {
+        if (answered) return;
+        carry = Buffer.concat([carry, chunk]);
+        let idx: number;
+        while ((idx = carry.indexOf(0x0a)) !== -1) {
+          const line = carry.subarray(0, idx).toString("utf8");
+          carry = carry.subarray(idx + 1);
+          if (!skippedHelloLine) {
+            skippedHelloLine = true;
+            continue;
+          }
+          answered = true;
+          let parsed: Record<string, unknown> = {};
+          try {
+            parsed = JSON.parse(line);
+          } catch {
+            parsed = {};
+          }
+          socket.write(respond(parsed));
+          return;
+        }
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+      resolvePromise({ server, port });
+    });
+  });
+}
+
+test("dialFileTransfer: races the same two candidates on the fixed control port, keeps the first to complete a hello, and destroys the loser", async () => {
+  // The callback owns writing every reply line on success (see
+  // FileTransferOutcome's own header comment) -- a bare `{ok:true}` with no
+  // socket write would leave dialFileTransfer() waiting out its own reply
+  // timer, so this stub answers a trivial empty-payload download itself.
+  const answerEmptyDownload: NonNullable<StartControlListenerOptions["onFileTransfer"]> = (_request, socket): FileTransferOutcome => {
+    socket.write(`${JSON.stringify({ kind: "transfer_payload", byteLength: 0, sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" })}\n`);
+    return { ok: true };
+  };
+  // Both candidate listeners accept the SAME dial, so the race can
+  // legitimately settle on either one.
+  const { listener: a } = await startTransferCapableListener(answerEmptyDownload);
+  const { listener: b } = await startTransferCapableListener(answerEmptyDownload);
+  try {
+    const connectFn = makeCandidateConnect({ "cand-a": a.port, "cand-b": b.port });
+    const result: DialFileTransferResult = await dialFileTransfer({
+      handle: "a-valid-handle",
+      direction: "download",
+      candidates: ["cand-a", "cand-b"],
+      connect: connectFn,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+    });
+    assert.equal(result.ok, true, `expected a completed transfer dial, got ${JSON.stringify(result)}`);
+    if (result.ok) assert.ok(result.host === "cand-a" || result.host === "cand-b", "the winning host must be one of the two candidates");
+
+    // Give the loser's "close" event a tick to propagate server-side, then
+    // confirm exactly one of the two servers still holds a live connection
+    // -- the winner's socket is handed back to the caller and stays open.
+    await new Promise((r) => setTimeout(r, 100));
+    const aConns = await new Promise<number>((resolvePromise) => a.server.getConnections((_err, count) => resolvePromise(count)));
+    const bConns = await new Promise<number>((resolvePromise) => b.server.getConnections((_err, count) => resolvePromise(count)));
+    assert.equal(aConns + bConns, 1, "exactly one server must show a live connection -- the loser's socket must be destroyed");
+    if (result.ok) result.socket.destroy();
+  } finally {
+    a.server.close();
+    b.server.close();
+  }
+});
+
+test("dialFileTransfer: the hello line this dial writes carries the value of TRANSFER_TAG", async () => {
+  let capturedHelloLine: Record<string, unknown> | null = null;
+  const rawServer = createServer((socket) => {
+    let carry = "";
+    socket.on("data", (chunk: Buffer) => {
+      carry += chunk.toString("utf8");
+      const idx = carry.indexOf("\n");
+      if (idx === -1) return;
+      capturedHelloLine = JSON.parse(carry.slice(0, idx));
+      socket.destroy();
+    });
+  });
+  await new Promise<void>((r) => rawServer.listen(0, "127.0.0.1", () => r()));
+  const addr = rawServer.address();
+  const rawPort = typeof addr === "object" && addr !== null ? addr.port : 0;
+  try {
+    await dialFileTransfer({
+      handle: "a-valid-handle",
+      direction: "download",
+      candidates: ["cand-raw"],
+      connect: makeCandidateConnect({ "cand-raw": rawPort }),
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 300,
+    });
+    assert.ok(capturedHelloLine, "the server must have captured a hello line");
+    assert.equal((capturedHelloLine as unknown as Record<string, unknown>).op, "hello");
+    assert.equal((capturedHelloLine as unknown as Record<string, unknown>).tag, TRANSFER_TAG);
+  } finally {
+    rawServer.close();
+  }
+});
+
+test("dialFileTransfer: a download's transfer_payload reply and its first payload bytes arriving in a SINGLE socket write resolve `pending` byte-identical to the payload sent, including bytes in 0x80..0xFF", async () => {
+  // A payload spanning the full byte range, including the 0x80-0xFF run a
+  // whole-buffer string decode would corrupt -- the same load-bearing shape
+  // broker-transfer.test.mts's own end-to-end case already uses.
+  const payload = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+  const fixture = await startRawTransferFixture((req) => {
+    assert.equal(req.op, "transfer");
+    assert.equal(req.direction, "download");
+    const header = Buffer.from(`${JSON.stringify({ kind: "transfer_payload", byteLength: payload.length, sha256: "irrelevant-for-this-test" })}\n`);
+    return Buffer.concat([header, payload]);
+  });
+  try {
+    const result = await dialFileTransfer({
+      handle: "a-valid-handle",
+      direction: "download",
+      candidates: ["cand-fixture"],
+      connect: makeCandidateConnect({ "cand-fixture": fixture.port }),
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+      // Matches startRawTransferFixture()'s own hardcoded hello reply
+      // version ("5.0.0") -- classifyHelloReply() compares MAJOR versions
+      // (D-05), so this must agree with the fixture rather than with
+      // whatever this checkout's real package.json happens to resolve to.
+      clientVersion: "5.0.0",
+    });
+    assert.equal(result.ok, true, `expected a completed download dial, got ${JSON.stringify(result)}`);
+    if (!result.ok || result.direction !== "download") return;
+    assert.equal(result.byteLength, payload.length);
+    assert.equal(result.sha256, "irrelevant-for-this-test");
+    assert.ok(result.pending.equals(payload), `pending must be byte-identical to the payload sent -- got ${result.pending.length} bytes`);
+    result.socket.destroy();
+  } finally {
+    fixture.server.close();
+  }
+});
+
+test("dialFileTransfer: an error reply resolves ok:false naming the broker's own refusal, and destroys the socket", async () => {
+  const { listener } = await startTransferCapableListener((): FileTransferOutcome => ({ ok: false, code: "denied", message: "vice: no staged file for this handle" }));
+  try {
+    const result = await dialFileTransfer({
+      handle: "an-unknown-handle",
+      direction: "download",
+      candidates: ["127.0.0.1"],
+      port: listener.port,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+    });
+    assert.equal(result.ok, false, `expected ok:false, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.match(result.reason, /no staged file/);
+  } finally {
+    listener.server.close();
+  }
+});
+
+test("dialFileTransfer: every failure mode resolves rather than rejecting, and the returned reason is a non-empty string", async () => {
+  // Reply timeout: a bare accepting listener that answers hello but never
+  // answers the transfer line at all.
+  const bare = await bindControlListener("127.0.0.1", 0);
+  try {
+    const timeoutResult = await dialFileTransfer({
+      handle: "some-handle",
+      direction: "download",
+      candidates: ["127.0.0.1"],
+      port: bare.port,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 200,
+    });
+    assert.equal(timeoutResult.ok, false);
+    if (!timeoutResult.ok) assert.ok(timeoutResult.reason.length > 0, "reason must be a non-empty string");
+  } finally {
+    bare.server.close();
+  }
+
+  // Socket error / early close: a server that accepts and destroys
+  // immediately, before any reply is ever written.
+  const closer = createServer((socket) => socket.destroy());
+  await new Promise<void>((r) => closer.listen(0, "127.0.0.1", () => r()));
+  const closerAddr = closer.address();
+  const closerPort = typeof closerAddr === "object" && closerAddr !== null ? closerAddr.port : 0;
+  try {
+    const closeResult = await dialFileTransfer({
+      handle: "some-handle",
+      direction: "download",
+      candidates: ["127.0.0.1"],
+      port: closerPort,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+    });
+    assert.equal(closeResult.ok, false);
+    if (!closeResult.ok) assert.ok(closeResult.reason.length > 0, "reason must be a non-empty string");
+  } finally {
+    closer.close();
+  }
+
+  // No candidate reachable at all.
+  const deadPort = await allocateDeadPort();
+  const noCandidateResult = await dialFileTransfer({
+    handle: "some-handle",
+    direction: "download",
+    candidates: ["127.0.0.1"],
+    port: deadPort,
+    connectTimeoutMs: 500,
+    replyTimeoutMs: 500,
+  });
+  assert.equal(noCandidateResult.ok, false);
+  if (!noCandidateResult.ok) assert.ok(noCandidateResult.reason.length > 0, "reason must be a non-empty string");
+});
+
+// ============================================================================
+// Plan 64-09 (G-64-1): the wire proves what the types promise. These three
+// tests capture a REAL request line from a REAL dial and assert its exact
+// key set -- a behavioural observation of the wire, never a scan of source
+// text (D-17, 260914-poo D-1) -- so a later edit that adds a credential key
+// onto either line goes red here.
+// ============================================================================
+
+/** A raw, hand-written fixture (no broker-control.mts involved at all) that
+ * answers the client's `hello` with a compatible reply tagged
+ * RELAY_TAG_BINARY, THEN answers the client's own `attach` request line with
+ * exactly the bytes `respond` returns -- mirrors startRawTransferFixture()
+ * above exactly, for the attach line instead of the transfer line. `respond`
+ * receives the parsed attach request. */
+function startRawAttachFixture(respond: (attachReq: Record<string, unknown>) => Buffer): Promise<{ server: Server; port: number }> {
+  return new Promise((resolvePromise) => {
+    const server = createServer((socket) => {
+      socket.write(`${JSON.stringify({ kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "5.0.0", tag: RELAY_TAG_BINARY })}\n`);
+      let carry = Buffer.alloc(0);
+      let answered = false;
+      // Mirrors startRawTransferFixture()'s own skip: the client writes its
+      // OWN hello request line before performAttach() ever writes the
+      // attach request line, so the first line this handler reads is the
+      // client's own hello, not the attach request.
+      let skippedHelloLine = false;
+      socket.on("data", (chunk: Buffer) => {
+        if (answered) return;
+        carry = Buffer.concat([carry, chunk]);
+        let idx: number;
+        while ((idx = carry.indexOf(0x0a)) !== -1) {
+          const line = carry.subarray(0, idx).toString("utf8");
+          carry = carry.subarray(idx + 1);
+          if (!skippedHelloLine) {
+            skippedHelloLine = true;
+            continue;
+          }
+          answered = true;
+          let parsed: Record<string, unknown> = {};
+          try {
+            parsed = JSON.parse(line);
+          } catch {
+            parsed = {};
+          }
+          socket.write(respond(parsed));
+          return;
+        }
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+      resolvePromise({ server, port });
+    });
+  });
+}
+
+test("dialMonitorRelay: the attach line this dial writes carries exactly op, target_id, channel and handle -- no credential of any kind (G-64-1)", async () => {
+  let capturedAttachLine: Record<string, unknown> | null = null;
+  const fixture = await startRawAttachFixture((req) => {
+    capturedAttachLine = req;
+    return Buffer.from(`${JSON.stringify({ kind: "attached" })}\n`);
+  });
+  try {
+    const result = await dialMonitorRelay({
+      targetId: "target-1",
+      channel: "binary",
+      handle: "a-valid-handle",
+      candidates: ["cand-fixture"],
+      connect: makeCandidateConnect({ "cand-fixture": fixture.port }),
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+      clientVersion: "5.0.0",
+    });
+    assert.equal(result.ok, true, `expected a completed attach dial, got ${JSON.stringify(result)}`);
+    if (result.ok) result.socket.destroy();
+    assert.ok(capturedAttachLine, "the fixture must have captured an attach line");
+    const keys = Object.keys(capturedAttachLine as Record<string, unknown>).sort();
+    assert.deepEqual(keys, ["channel", "handle", "op", "target_id"].sort());
+    assert.equal((capturedAttachLine as Record<string, unknown>).handle, "a-valid-handle", "the captured handle must equal the one passed in");
+  } finally {
+    fixture.server.close();
+  }
+});
+
+test("dialFileTransfer: a download's transfer request line carries exactly op, direction and handle -- no credential of any kind (G-64-1)", async () => {
+  let capturedTransferLine: Record<string, unknown> | null = null;
+  const fixture = await startRawTransferFixture((req) => {
+    capturedTransferLine = req;
+    return Buffer.from(`${JSON.stringify({ kind: "transfer_payload", byteLength: 0, sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" })}\n`);
+  });
+  try {
+    const result = await dialFileTransfer({
+      handle: "a-valid-handle",
+      direction: "download",
+      candidates: ["cand-fixture"],
+      connect: makeCandidateConnect({ "cand-fixture": fixture.port }),
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+      clientVersion: "5.0.0",
+    });
+    assert.equal(result.ok, true, `expected a completed download dial, got ${JSON.stringify(result)}`);
+    if (result.ok) result.socket.destroy();
+    assert.ok(capturedTransferLine, "the fixture must have captured a transfer line");
+    const keys = Object.keys(capturedTransferLine as Record<string, unknown>).sort();
+    assert.deepEqual(keys, ["direction", "handle", "op"].sort());
+  } finally {
+    fixture.server.close();
+  }
+});
+
+test("dialFileTransfer: an upload's transfer request line carries exactly op, direction, handle, byteLength and sha256 -- no credential of any kind (G-64-1)", async () => {
+  let capturedTransferLine: Record<string, unknown> | null = null;
+  const fixture = await startRawTransferFixture((req) => {
+    capturedTransferLine = req;
+    return Buffer.from(`${JSON.stringify({ kind: "transfer_ready" })}\n`);
+  });
+  try {
+    const result = await dialFileTransfer({
+      handle: "a-valid-handle",
+      direction: "upload",
+      byteLength: 4,
+      sha256: "irrelevant-for-this-test",
+      candidates: ["cand-fixture"],
+      connect: makeCandidateConnect({ "cand-fixture": fixture.port }),
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+      clientVersion: "5.0.0",
+    });
+    assert.equal(result.ok, true, `expected a completed upload dial, got ${JSON.stringify(result)}`);
+    if (result.ok) result.socket.destroy();
+    assert.ok(capturedTransferLine, "the fixture must have captured a transfer line");
+    const keys = Object.keys(capturedTransferLine as Record<string, unknown>).sort();
+    assert.deepEqual(keys, ["byteLength", "direction", "handle", "op", "sha256"].sort());
+  } finally {
+    fixture.server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// awaitTransferComplete() -- G-64-3 (plan 64-13, Task 2). A RAW loopback
+// socket pair, never dialFileTransfer()'s own hello/transfer handshake --
+// this reader operates strictly AFTER that handshake has already produced an
+// open transfer socket, so these tests drive it directly against a plain
+// net.createServer()/net.connect() pair.
+// ---------------------------------------------------------------------------
+
+function startRawSocketServer(onConnection: (socket: Socket) => void): Promise<{ server: Server; port: number }> {
+  return new Promise((resolvePromise) => {
+    const server = createServer(onConnection);
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+      resolvePromise({ server, port });
+    });
+  });
+}
+
+function connectRawClient(port: number): Promise<Socket> {
+  return new Promise((resolvePromise, reject) => {
+    const socket = connect({ host: "127.0.0.1", port });
+    socket.once("connect", () => resolvePromise(socket));
+    socket.once("error", reject);
+  });
+}
+
+test("awaitTransferComplete: resolves ok on a matching transfer_complete line", async () => {
+  const fixture = await startRawSocketServer((socket) => {
+    socket.write(`${JSON.stringify({ kind: "transfer_complete", byteLength: 4, sha256: "deadbeef" })}\n`);
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const result = await awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef" });
+    assert.equal(result.ok, true, `expected ok, got ${JSON.stringify(result)}`);
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});
+
+test("awaitTransferComplete: resolves ok:false naming both pairs when the echoed byteLength or sha256 disagrees with what was declared", async () => {
+  const fixture = await startRawSocketServer((socket) => {
+    socket.write(`${JSON.stringify({ kind: "transfer_complete", byteLength: 999, sha256: "wrong-digest" })}\n`);
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const result = await awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef" });
+    assert.equal(result.ok, false, `expected ok:false, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.match(result.reason, /999/);
+    assert.match(result.reason, /wrong-digest/);
+    assert.match(result.reason, /4/);
+    assert.match(result.reason, /deadbeef/);
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});
+
+test("awaitTransferComplete: resolves ok:false carrying the broker's own message, verbatim, on an error line", async () => {
+  const fixture = await startRawSocketServer((socket) => {
+    socket.write(`${JSON.stringify({ kind: "error", code: "internal", message: "vice: transfer failed before the upload could be published: forced failure" })}\n`);
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const result = await awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef" });
+    assert.equal(result.ok, false, `expected ok:false, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.equal(result.reason, "vice: transfer failed before the upload could be published: forced failure", "the broker's own message must be carried verbatim, never re-wrapped or double-prefixed");
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});
+
+test("awaitTransferComplete: resolves ok:false when the server closes the connection without ever writing a line", async () => {
+  const fixture = await startRawSocketServer((socket) => {
+    socket.destroy();
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const result = await awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef", timeoutMs: 2000 });
+    assert.equal(result.ok, false, `expected ok:false, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.ok(result.reason.length > 0, "reason must be a non-empty string");
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});
+
+test("awaitTransferComplete: resolves ok:false on timeout, naming that a broker older than this reply never sends one", async () => {
+  const fixture = await startRawSocketServer(() => {
+    // Accepts the connection and answers nothing at all -- the broker-side
+    // shape of a build that predates this completion reply.
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const startedAt = Date.now();
+    const result = await awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef", timeoutMs: 100 });
+    const elapsedMs = Date.now() - startedAt;
+    assert.equal(result.ok, false, `expected ok:false, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.match(result.reason, /restart the broker/);
+    assert.ok(elapsedMs >= 90, `must not resolve before the injected 100ms timeout has elapsed (observed ${elapsedMs}ms)`);
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});
+
+test("awaitTransferComplete: still reads a line the server writes while the client itself is still writing on the same full-duplex socket", async () => {
+  const fixture = await startRawSocketServer((socket) => {
+    // The broker's own completion reply, delayed slightly so it lands WHILE
+    // the client below is still mid-write on the SAME socket -- proving this
+    // reader (which only ever listens, never inspects the write side) is not
+    // confused by concurrent outbound traffic in the opposite direction.
+    setTimeout(() => {
+      socket.write(`${JSON.stringify({ kind: "transfer_complete", byteLength: 4, sha256: "deadbeef" })}\n`);
+    }, 20);
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const completionPromise = awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef" });
+    // The client's OWN outbound payload write -- still in flight when the
+    // server's completion line arrives above.
+    client.write(Buffer.alloc(1024 * 1024, 0x41));
+    const result = await completionPromise;
+    assert.equal(result.ok, true, `expected ok, got ${JSON.stringify(result)}`);
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});

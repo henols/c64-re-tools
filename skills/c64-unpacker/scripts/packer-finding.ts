@@ -235,16 +235,9 @@ export interface PackerFindingOptions {
  */
 export const PACKED_ENTROPY_THRESHOLD = 7.5;
 
-/** Default command name when neither environment variable is set. */
-const DEFAULT_ORACLE_COMMAND = "unp64";
-
 /** The two environment variables the external identifier is located from, in
  * this order -- the same convention upstream's own comparison harness uses. */
 const ORACLE_ENV_VARS = Object.freeze(["UNP64", "UNP64_PATH"]);
-
-/** The opt-in variable that turns an absent oracle from an expected skip into
- * a hard failure, by the established `VICE_REQUIRE_*` precedent. */
-export const REQUIRE_ORACLE_ENV_VAR = "VICE_REQUIRE_UNP64";
 
 /** Every child process here is bounded. A hung identifier is treated exactly
  * like an absent one (T-19-23). */
@@ -619,22 +612,6 @@ export function packerFinding(options: PackerFindingOptions = {}): PackerFinding
 // The live gate. Absence of the oracle is an EXPECTED SKIP by default and a
 // hard FAIL under the opt-in variable -- never a pass either way.
 // ---------------------------------------------------------------------------
-
-/**
- * Returns a non-empty skip reason naming the absent oracle, or `false` when a
- * real one is available -- meant to be handed straight to a test runner's
- * `{ skip }` option so the skip is VISIBLE in the report rather than a test
- * that quietly returns early and reads as a pass.
- */
-export function skipReasonForUnp64(probed?: OracleProbe | null): string | false {
-  const result = probed ?? probeUnp64();
-  if (result.available === true) return false;
-  return (
-    `the oracle-route tests are skipped -- no external packer identifier was found (${result.reason ?? "reason not recorded"}). ` +
-    `Point ${ORACLE_ENV_VARS.join(" or ")} at one, or install "${DEFAULT_ORACLE_COMMAND}". ` +
-    `An absent oracle is an EXPECTED SKIP here, never a pass: set ${REQUIRE_ORACLE_ENV_VAR} to turn it into a hard failure.`
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Command-line entry: one file in, one JSON object out.

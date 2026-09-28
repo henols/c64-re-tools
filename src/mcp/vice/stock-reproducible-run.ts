@@ -71,9 +71,9 @@
 //   - Never call `registerTraceCheckpoint()` here. That guard
 //     (`stock-checkpoints.ts`) exists for `stop:false` TRACE checkpoints, and
 //     EVERY checkpoint this file arms stops.
-//   - Never send a second resume for one wait. Exactly ONE `EXIT` per call,
-//     which is `vice-sync.ts`'s own "exactly one resume per wait" invariant
-//     ported here in its stock-native (event-driven, not polling) form. The
+//   - Never send a second resume for one wait. Exactly ONE `EXIT` per call:
+//     the "exactly one resume per wait" invariant in its stock-native
+//     (event-driven, not polling) form. The
 //     consequence is deliberate and is REPORTED, not papered over: the anchor
 //     is armed `stop: true`, so an anchor hit ARRIVING BEFORE the target's
 //     halts the machine, no further instructions execute, and the wait bounds
@@ -145,29 +145,6 @@ export const REPRODUCIBLE_RUN_REQUIRED_SIBLINGS = ["frame_anchor"] as const;
  * of the frame term. All three come out of ONE `REGISTERS_GET` reply. */
 const REQUIRED_REGISTER_NAMES = ["PC", "LIN", "CYC"] as const;
 
-/** `CHECKPOINT_INFO`'s `hit_count` field offset within the response BODY.
- *
- * THE ONE NUMBER A READER WILL WANT TO SKIP AND MUST NOT: `hit_count` sits at
- * body offset **13** as u32LE. Reading offset 12 instead yields **256** where
- * the truth is **1** -- because offset 12 is the `temporary` flag byte, so a
- * non-temporary checkpoint on its first hit gives `0x00 0x01 0x00 0x00 0x00`
- * and a u32LE read one byte early sees `1 * 256`. That is the worst kind of
- * wrong number: it looks plausible. A frame term of 256 reported as a frame
- * term of 1 would certify two entirely different stops as the same stop.
- *
- * This module does NOT read that offset itself -- `stock-protocol.ts`'s
- * `parseResponse()` CHECKPOINT_INFO branch (`stock-protocol.ts:1370`,
- * `hitCount: body.readUInt32LE(13)`) is the ONE place in this tree that turns
- * those bytes into a number, and duplicating the read here would be a second
- * parse of the same field, which is exactly the drift the single-seam rule
- * exists to prevent (`T-33-32`). The constant is declared and exported so the
- * offset has ONE named definition that `stock-reproducible-run.test.ts` pins
- * end to end: it builds a RAW body whose offset 13 gives 1 and whose offset 12
- * gives 256, runs it through the real `parseResponse()`, and asserts both the
- * parsed value and this procedure's reported frame term are 1. A wrong offset
- * therefore reds with a DISTINGUISHABLE number rather than a plausible one. */
-export const CHECKPOINT_INFO_HIT_COUNT_BODY_OFFSET = 13;
-
 /** What `runReproducible()` did, for the caller that wants the record rather
  * than the JSON answer. Returned alongside the answer so `handleRunUntil`
  * stays a one-line branch and tests can assert on structure. */
@@ -193,8 +170,8 @@ interface RunReproducibleOptions {
 }
 
 /** True iff `value` is a well-formed, generic JSON object. Matches this module
- * tree's own `isPlainObject()` convention (`vice.ts:310-316`); redeclared
- * privately here, not imported, per the established per-module convention. */
+ * tree's own `isPlainObject()` convention; redeclared privately here, not
+ * imported, per the established per-module convention. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -559,8 +536,7 @@ export async function runReproducible(
     const anchorCleanup = await deleteCheckpoint(session, anchorCheckpointId);
 
     // machineHalted is DERIVED, never a hand-passed literal: a state flag
-    // drifts from reality the moment a call site changes
-    // (stock-diagnose.ts:642-656, normative). "delete_failed" is reachable
+    // drifts from reality the moment a call site changes. "delete_failed" is reachable
     // precisely when the socket is already gone, and claiming a halted machine
     // over a dead connection while telling the caller to resume down it is
     // self-contradictory in one JSON body.

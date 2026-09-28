@@ -4,11 +4,11 @@ This package is MIT-licensed (see `LICENSE` at the repository root, copyright
 Henrik Olsson). This file lists third-party material incorporated into, or
 relied on by, `@henols/vice-mcp`, with a provenance line per source.
 
-**GPL-2.0-or-later source IS incorporated into this repository, under `src/mcp/vice/vendor/dxa/` (Phase 35, DXA-01).** That source is build-time-only input — vendored to be compiled by `vendor/dxa/build.bash` into a host-side binary this project's host-tool execution seam spawns as a subprocess, never imported by, linked into, or shipped inside the published `@henols/vice-mcp` tarball (A-06: `src/mcp/vice/package.json`'s `files[]` deliberately omits `vendor/dxa/` and the `dxa-*` modules that consume it). Every OTHER source named below is either zlib-licensed (incorporated), reference-only (nothing copied), or a build/test-time subprocess whose licence therefore never attaches to anything shipped.
+**No GPL-2.0-or-later source is incorporated into this repository.** `vendor/dxa/build.bash` downloads the pinned upstream dxa 0.1.5 tarball, checks its sha256, and builds a host-side binary in a scratch directory. The host-tool execution seam spawns that binary as a subprocess; nothing imports it, links it or ships it. Every OTHER source named below is either zlib-licensed (incorporated), reference-only (nothing copied), or a build/test-time subprocess whose licence therefore never attaches to anything shipped.
 
 ## Incorporated material — cc65 (zlib)
 
-The 6502/6510 opcode table in `disasm-opcodes.ts` (mnemonics, addressing
+The 6502/6510 opcode table in `disasm-opcodes.mts` (mnemonics, addressing
 modes, instruction lengths) is transcribed by hand from cc65's
 `src/da65/opc6502x.c`, fetched raw
 (`https://raw.githubusercontent.com/cc65/cc65/master/src/da65/opc6502x.c`)
@@ -17,7 +17,7 @@ against `master` @ commit `547d923588d870aacf0b0016c67d0f6a92a70f83`
 `02e79d35d73efd31522b5eab986d1919e3560bba` (2025-06-19, "making da65 produce
 the same mnemonics as ca65 uses"). This is the only incorporated third-party
 material the disassembler carries — the derived-data files
-(`disasm-decoder.ts`, `disasm-renderer.ts`, `stock-disassemble.ts`) contain no
+(`disasm-decoder.mts`, `disasm-renderer.mts`, `stock-disassemble.ts`) contain no
 further transcribed material of their own.
 
 cc65 is zlib-licensed, copyright cc65's own author:
@@ -28,7 +28,7 @@ cc65 is zlib-licensed, copyright cc65's own author:
 
 Full zlib licence text, reproduced below, satisfies the origin-must-not-be-
 misrepresented and altered-versions-must-be-marked obligations for this
-transcription (see `disasm-opcodes.ts`'s own header comment for the
+transcription (see `disasm-opcodes.mts`'s own header comment for the
 attribution as it appears in-source):
 
 ```
@@ -51,10 +51,10 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-## Incorporated material — dxa (GPL-2.0-or-later)
+## Build-time download — dxa (GPL-2.0-or-later)
 
-`src/mcp/vice/vendor/dxa/` vendors the upstream-unmodified, GPL-licensed
-source of [dxa](https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz)
+`src/mcp/vice/vendor/dxa/` pins the upstream-unmodified, GPL-licensed
+source tarball of [dxa](https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz)
 0.1.5 (37,987 bytes, 25 Mar 2022), the symbolic 65xx disassembler this
 project's byte-level code/data discovery engine builds and spawns
 (`DXA-01`). The tarball is pinned by `dxa-0.1.5.tar.gz.sha256`
@@ -64,10 +64,10 @@ byte-for-byte against that pin by `vendor/dxa/build.bash` on every run.
 
 The tarball ships **no `LICENSE` and no `COPYING` file** — the GPL grant
 lives only in a header comment repeated (with per-file variance, below) at
-the top of every vendored `.c`/`.h` file. This project therefore supplies the
+the top of every `.c`/`.h` file in the tarball. This project therefore supplies the
 full GPL licence text itself, reproduced in full further down this section.
 
-`main.c`'s header, quoted verbatim from `src/mcp/vice/vendor/dxa/main.c`:
+`main.c`'s header, quoted verbatim from the tarball's `main.c`:
 
 ```
 /*\
@@ -97,7 +97,7 @@ full GPL licence text itself, reproduced in full further down this section.
 ```
 
 **Per-file copyright variance — recorded rather than flattened.** Every
-vendored `.c` file carries the `dxa -- symbolic 65xx disassembler` /
+`.c` file in the tarball carries the `dxa -- symbolic 65xx disassembler` /
 `GNU General Public License` (GPL) header block, but the copyright line
 itself differs by file, reflecting dxa's own history as a fork of Marko
 Mäkelä's `d65`:
@@ -116,13 +116,8 @@ Mäkelä's `d65`:
   Marko M\"akel\"a` followed by `Changes for dxa (C) 2005-2019 Cameron
   Kaiser`.
 
-Every one of `ChangeLog`, `dump.c`, `dxa.1`, `INSTALL`, `label.c`, `main.c`,
-`Makefile`, `opcodes.h`, `options.h`, `proto.h`, `scan.c`, `structures.h`,
-`table.c`, `tests/Makefile`, `tests/test01.t`, `tests/test02.t`, `vector.c`
-is upstream-unmodified and every `.c` file's header names the same GPL
-grant — nothing added, nothing removed, nothing patched
-(`vendor/dxa/build.bash`'s `verify` step asserts this byte-for-byte on every
-run, not merely at vendoring time).
+`build.bash` builds from the tarball exactly as fetched: nothing is added,
+removed or patched.
 
 `vendor/dxa/build.bash` — never a package manager, never `$PATH` — is the
 only supported way to obtain a built `dxa` binary; the built binary and every
@@ -528,8 +523,8 @@ have been.
 - **`@mastra/core`** (`1.55.0`) — underlying Mastra runtime `@mastra/mcp`
   depends on. See its own package licence (MIT) on the npm registry.
 
-No new runtime dependency was added by the disassembler (`disasm-opcodes.ts`,
-`disasm-decoder.ts`, `disasm-renderer.ts`, `stock-disassemble.ts` import only
+No new runtime dependency was added by the disassembler (`disasm-opcodes.mts`,
+`disasm-decoder.mts`, `disasm-renderer.mts`, `stock-disassemble.ts` import only
 this package's own sibling modules and Node built-ins). This is a checkable
 claim, not a prose one: the packed
 tarball's runtime `dependencies` are exactly these two, by key set and count.

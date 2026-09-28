@@ -1,0 +1,2268 @@
+// broker-launch.test.ts
+//
+// Plan 02, Task 2: broker-launch.mts completed -- the readiness probe's
+// three-way branch, serialised warm-floor maintenance (one launch per
+// pass), and the fixed-order evaluation pass. Task 3 adds this file's
+// concurrency race test (the required deliverable criterion C names)
+// alongside these fixtures rather than duplicating them.
+//
+// Plan 41-05 (folded todo): the warm floor is RETIRED. Its own promotion
+// step (launching -> ready) survives as promoteLaunchingInstances(), tested
+// below in its own section; the floor-arithmetic tests (a floor of N
+// launching one per pass, the default settling point, and so on) are
+// deleted along with the behaviour they described. The overlapping-launch
+// case, whose real subject is the single-owner inFlight guard rather than
+// the floor, is re-pointed at acquirePortAndLaunch() directly so the guard
+// keeps its regression test.
+//
+// Every launch/probe test uses the injected spawn/probe seam with a stub;
+// no real x64sc runs anywhere in this file.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn as realSpawn } from "node:child_process";
+import { EventEmitter } from "node:events";
+import type { ChildProcess, SpawnOptionsWithoutStdio } from "node:child_process";
+
+import { HOST_BOUND_ARTIFACTS } from "../../src/mcp/vice/build.ts";
+import {
+  createBrokerState,
+  type BrokerState,
+  type InstanceRecord,
+  type PortAllocationResult,
+} from "../../src/mcp/vice/broker-state.mts";
+import {
+  tryLaunchOne,
+  isLaunchInFlight,
+  probeReady,
+  promoteLaunchingInstances,
+  runBrokerPass,
+  acquirePortAndLaunch,
+  deleteInstanceRecord,
+  superviseChild,
+  withCrashSupervision,
+  buildViceArgs,
+  STOCK_DETERMINISM_SEED,
+  STOCK_DETERMINISM_FLAGS,
+} from "../../src/mcp/vice/broker-launch.mts";
+// Direct SOURCE import (".mts", not ".mjs") -- safe for a test file, which
+// always references the literal extension the file is actually saved
+// under, regardless of the same-module-to-sibling-module ".mjs"-only
+// constraint superviseChild() itself is subject to (see broker-launch.mts's
+// own header comment). These are the REAL broker-epoch.mts functions,
+// injected into superviseChild()'s EpochWriterDeps below exactly like
+// vice-broker.mts's real wiring will eventually inject them.
+import { epochPathFor, instanceLogDirFor, nextEpochFor, writeEpochRecord } from "../../src/mcp/vice/broker-epoch.mts";
+import { VICE_DIR } from "./paths.ts";
+
+
+/** Poll `predicate` to a bounded deadline rather than sleeping a fixed
+ * duration -- this project's own stack pattern (checkpoint/frame
+ * synchronisation, never wall-clock delay), reused here for "wait for an
+ * async respawn chain to reach an observable state" the same way
+ * host-scripts.test.ts's own waitFor() is used for a real spawned child. */
+async function waitFor<T>(
+  predicate: () => T | null | undefined,
+  { timeoutMs = 8000, pollMs = 10 }: { timeoutMs?: number; pollMs?: number } = {},
+): Promise<T | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = predicate();
+    if (result) return result;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return null;
+}
+
+function makeEpochDeps() {
+  return { epochPathFor, instanceLogDirFor, nextEpochFor, writeEpochRecord };
+}
+
+/** A fully-controlled stand-in ChildProcess for the deterministic
+ * backoff/crash-window/give-up tests below: a real EventEmitter (so
+ * superviseChild()'s own `child.once("exit", ...)` wiring works exactly as
+ * it would against a real ChildProcess), with a FAKE pid and no real OS
+ * process behind it at all -- the test itself decides exactly when this
+ * "child" exits by calling `.emit("exit", ...)` on it, giving the precise
+ * ordering control the backoff-sequence and crash-window-exclusion
+ * assertions need. Real subprocesses (`/bin/true`, `/bin/sleep`) are used
+ * instead, per host-scripts.test.ts's own idiom, wherever a REAL pid is the
+ * point (the "no orphaned child" liveness check; the plain
+ * exits-on-its-own case). */
+let fakePidCounter = 90000;
+function fakeChild(): ChildProcess {
+  const emitter = new EventEmitter();
+  (emitter as unknown as { pid: number }).pid = fakePidCounter++;
+  return emitter as unknown as ChildProcess;
+}
+
+function stubChild(pid = 4242): ChildProcess {
+  return { pid } as unknown as ChildProcess;
+}
+
+// ---------------------------------------------------------- structural
+
+test("structural: only tryLaunchOne() ever adds an instance record to state.instances -- the single guarded function every launch call site must route through", () => {
+  // Enumerated from the build's OWN artifact set (build.ts's
+  // HOST_BOUND_ARTIFACTS), never a hand-maintained list of source files --
+  // a new host-bound module added later is covered automatically.
+  assert.ok(HOST_BOUND_ARTIFACTS.length >= 2, "host-bound artifact set enumerated as suspiciously small -- resolution is broken");
+
+  for (const rel of HOST_BOUND_ARTIFACTS) {
+    const sourceRel = rel.replace(/\.mjs$/, ".mts");
+    const text = readFileSync(join(VICE_DIR, sourceRel), "utf8");
+    const matches = text.match(/\.instances\.set\(/g) ?? [];
+    if (sourceRel === "broker-launch.mts") {
+      assert.equal(matches.length, 1, `broker-launch.mts must register exactly one instance record (inside tryLaunchOne() itself); found ${matches.length}`);
+    } else {
+      assert.equal(matches.length, 0, `${sourceRel} must not register an instance record directly -- every launch must route through tryLaunchOne()`);
+    }
+  }
+});
+
+// 01.6.2-12-PLAN.md, Task 3: strips BOTH `/* ... */` (including JSDoc
+// `/** ... */`) block comments AND whole `//` comment lines before any of
+// this file's own count-based structural assertions run. A naive
+// line-anchored `^\s*//` strip alone (this project's own established
+// idiom elsewhere) is NOT enough here: a `/** ... */` doc comment that
+// happens to mention the counted token inline (e.g. a header comment
+// explaining "the wrapper this file uses is withCrashSupervision()") is
+// invisible to that filter and silently inflates the count -- a real
+// instance of exactly this trap was found and fixed while writing this
+// task's own gate (see this task's own findings-log entry). Only whole
+// `//` comment LINES are stripped (never a trailing inline "// ..." after
+// real code on the same line) so a string literal containing "//" (e.g.
+// this file's own "http://127.0.0.1:<port>/mcp" URL construction) is never
+// truncated mid-line.
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+}
+
+// ===========================================================================
+// 01.6.2-12-PLAN.md, Task 3: the structural anti-regression gate. Promotes
+// 01.6.2-VERIFICATION.md's own diagnostic grep (a zero-hit search for
+// superviseChild/withCrashSupervision in the real broker entry point) from a
+// one-off finding into a standing test: an unwrapped spawn factory added to
+// EITHER real launch path in vice-broker.mts must fail this test, not ship
+// silently the way CR-01 did the first time.
+// ===========================================================================
+
+test("structural: broker-launch.mts's child exit listener is installed in exactly one place, and vice-broker.mts's spawn-factory count equals its withCrashSupervision call-site count, importing the wrapper by name", () => {
+  const launchSource = stripComments(readFileSync(join(VICE_DIR, "broker-launch.mts"), "utf8"));
+  const brokerSource = stripComments(readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8"));
+
+  // Assertion 1: the child exit listener exists in exactly ONE place in the
+  // whole supervision module -- inside withCrashSupervision() itself. Two
+  // installation points (e.g. a regressed inline copy alongside the shared
+  // wrapper) is the same shape of hazard this whole gap closure exists to
+  // remove, one level down.
+  const exitListenerCount = (launchSource.match(/\.once\("exit"/g) ?? []).length;
+  assert.equal(
+    exitListenerCount,
+    1,
+    `assertion 1 (exit-listener installation count) FAILED: expected exactly 1 comment-stripped '.once("exit"' call in broker-launch.mts, found ${exitListenerCount} -- the child exit listener must be installed in exactly ONE place in the whole module tree`,
+  );
+
+  // Assertion 2: the real broker entry point's spawn-factory count must
+  // equal its supervision-wrapper call-site count. This is the load-bearing
+  // check -- a third spawnFactory added to a future launch path without a
+  // matching withCrashSupervision() composition changes this equality and
+  // fails HERE, rather than shipping an unsupervised launch path silently.
+  const spawnFactoryCount = (brokerSource.match(/\bspawnFactory:/g) ?? []).length;
+  const wrapperCallSiteCount = (brokerSource.match(/\bwithCrashSupervision\(/g) ?? []).length;
+  assert.ok(spawnFactoryCount > 0, "assertion 2 setup FAILED: found zero spawnFactory properties in vice-broker.mts -- the equality check below would pass vacuously against a broker with no launch paths at all");
+  assert.equal(
+    spawnFactoryCount,
+    wrapperCallSiteCount,
+    `assertion 2 (spawn-factory count vs supervision-wrapper call-site count) FAILED: vice-broker.mts declares ${spawnFactoryCount} comment-stripped spawnFactory propert${spawnFactoryCount === 1 ? "y" : "ies"} but composes through withCrashSupervision( at only ${wrapperCallSiteCount} comment-stripped call site${wrapperCallSiteCount === 1 ? "" : "s"} -- every real launch path's spawn factory must be wrapped by the shared supervision primitive`,
+  );
+
+  // Assertion 3: the real broker entry point must import the wrapper BY
+  // NAME from the supervision module -- a differently-named local
+  // re-implementation could satisfy assertion 2's raw count without ever
+  // being the shared, unit-tested wrapper.
+  const importsWrapperByName = /import\s*\{[^}]*\bwithCrashSupervision\b[^}]*\}\s*from\s*["']\.\/broker-launch\.mjs["']/.test(brokerSource);
+  assert.ok(importsWrapperByName, "assertion 3 (import by name) FAILED: vice-broker.mts must import withCrashSupervision by name from ./broker-launch.mjs");
+});
+
+// ===========================================================================
+// 01.6.2.1-01-PLAN.md, Task 2: the structural anti-regression gate over
+// grant recording -- the SAME "correct module, never called" failure shape
+// the two gates above already guard against, one level up: Defect 5 was
+// maintainWarmFloor()'s own warm pool sitting correctly built and
+// unit-tested while handleAcquire() never consulted it. This gate counts
+// the grant-recording call site (this task's own assumption-delta decision
+// promotes "resolve a grantable instance" to the ONE primary operation, fed
+// by both a warm-instance and a cold-launch arm) and asserts the real
+// acquire entry point's own body actually invokes the warm-instance
+// selector, not merely defines it.
+// ===========================================================================
+
+test("structural: vice-broker.mts records a grant in exactly one place, and its real acquire entry point invokes the warm-instance selector by name", () => {
+  const brokerSource = stripComments(readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8"));
+
+  // Assertion 1: exactly one grant-recording call site in the whole module.
+  // Two independent state.grants.set() sites (one per arm) would let a
+  // FUTURE third acquire arm reintroduce Defect 5 invisibly -- this task's
+  // own assumption-delta decision promotes "resolve a grantable instance"
+  // to the ONE primary operation for exactly this reason.
+  const grantCallCount = (brokerSource.match(/\bstate\.grants\.set\(/g) ?? []).length;
+  assert.equal(
+    grantCallCount,
+    1,
+    `assertion 1 (grant-recording call count) FAILED: expected exactly 1 comment-stripped state.grants.set( call in vice-broker.mts, found ${grantCallCount} -- a second, independent grant-recording site would let a future third acquire arm reintroduce Defect 5 invisibly`,
+  );
+
+  // Assertion 2: the real acquire entry point's own body invokes the
+  // warm-instance selector BY NAME -- the exact "correct module, never
+  // called" failure shape Defect 5 was. Matches ONLY a single-line
+  // invocation ("await selectWarmInstance(...)"), never the selector's own
+  // multi-line declaration ("async function selectWarmInstance(\n  state:
+  // ..."), so this assertion cannot be satisfied by the selector merely
+  // existing, unreferenced -- exactly how maintainWarmFloor() itself sat
+  // correctly built and unit-tested while orphaned from handleAcquire()
+  // before this task.
+  const selectorCallSiteCount = (brokerSource.match(/\bawait\s+selectWarmInstance\(/g) ?? []).length;
+  assert.equal(
+    selectorCallSiteCount,
+    1,
+    `assertion 2 (warm-instance selector call-site count) FAILED: expected exactly 1 comment-stripped "await selectWarmInstance(" call in vice-broker.mts, found ${selectorCallSiteCount} -- the real acquire entry point must actually CALL the selector, not merely define it`,
+  );
+});
+
+// ===========================================================================
+// Plan 41-05 (folded todo): 01.6.2.1-07-PLAN.md's own WR-04 structural gate
+// (which used to sit here, asserting the warm-launch log-path variable was
+// declared inside maintainWarmFloorForRealBroker()'s own body rather than at
+// module scope) is REMOVED along with the function and the variable it
+// tested -- the warm floor's own log-path stash no longer exists to
+// regress. The cold-launch arm's OWN equivalent variable (`lastLogRelPath`
+// inside handleAcquire()) is a separate, pre-existing, already-local
+// variable this gate never covered and this removal does not touch.
+// ===========================================================================
+
+function makeInstance(overrides: Partial<InstanceRecord> = {}): InstanceRecord {
+  return {
+    port: 6600,
+    url: "http://127.0.0.1:6600/mcp",
+    state: "launching",
+    reason: "acquire",
+    epochFile: "/tmp/epoch.json",
+    supervisorDir: "/tmp/6600",
+    pid: 4242,
+    expectedIdentity: "x64sc",
+    launchedAt: 0,
+    readyAt: null,
+    viceBin: "x64sc",
+    viceArgs: [],
+    dryRun: false,
+    // Plan 41-03 (D-14): monitorClients is non-optional -- "no claim on any
+    // channel" is an empty map, never an absent field.
+    monitorClients: {},
+    ...overrides,
+  };
+}
+
+// -------------------------------------------------------------- tryLaunchOne
+
+test("tryLaunchOne: records a launching instance and returns it, spawning exactly once", () => {
+  const state = createBrokerState();
+  let spawnCount = 0;
+  const record = tryLaunchOne("acquire", 6600, {
+    state,
+    supervisorDir: "/tmp/6600",
+    epochFile: "/tmp/6600/epoch.json",
+    remoteMonitorPort: 6650,
+    spawn: (cmd, args) => {
+      spawnCount++;
+      assert.equal(cmd, "x64sc");
+      assert.ok(Array.isArray(args));
+      return stubChild(9999);
+    },
+    now: () => 1000,
+  });
+  assert.equal(spawnCount, 1);
+  assert.ok(record);
+  assert.equal(record!.state, "launching");
+  assert.equal(record!.pid, 9999);
+  assert.equal(state.instances.get(6600), record);
+});
+
+test("tryLaunchOne: a launch that rejects still clears the in-flight owner so a following launch succeeds", () => {
+  const state = createBrokerState();
+  assert.equal(isLaunchInFlight(), false);
+  assert.throws(() => {
+    tryLaunchOne("acquire", 6600, {
+      state,
+      supervisorDir: "/tmp/6600",
+      epochFile: "/tmp/6600/epoch.json",
+      remoteMonitorPort: 6650,
+      spawn: () => {
+        throw new Error("spawn failed");
+      },
+    });
+  });
+  assert.equal(isLaunchInFlight(), false, "the guard must be released even when spawn throws");
+
+  const record = tryLaunchOne("acquire", 6601, {
+    state,
+    supervisorDir: "/tmp/6601",
+    epochFile: "/tmp/6601/epoch.json",
+    remoteMonitorPort: 6651,
+    spawn: () => stubChild(1234),
+  });
+  assert.ok(record, "a following launch request must succeed once the guard has cleared");
+});
+
+// ---------------------------------------------------------------- probeReady
+//
+// D-05 as amended by P-05/P-06 (01.6.2.1-02-PLAN.md, Task 1): the probe
+// collapses to exactly one in-process mechanism. Four tests that exercised
+// the retiring branches are gone, named here with their reasons per P-06's
+// no-silent-deletion rule (all four were in this file, immediately below
+// this comment before this task):
+//
+// 1. "probeReady: prefers the external command when named, passing the
+//    port as its own argv element" -- DELETED. Exercised the
+//    external-command branch, which no longer exists; its no-shell-
+//    interpolation care is moot once no command is ever executed.
+// 2. "probeReady: external command failure (non-zero exit) reports not
+//    ready" -- DELETED. Same branch, same reason.
+// 3. "probeReady: with neither mechanism available, reports success
+//    unconditionally and logs the reason" -- DELETED. Asserted the
+//    report-ready-without-evidence behaviour P-06 removes -- the test that
+//    encoded the "pair of indistinguishable states" D-05 set out to
+//    dissolve; deleting it is the dissolution landing, not a coverage loss.
+// 4. "maintainWarmFloor: a pass with no readiness mechanism at all warms
+//    zero instances and logs exactly one line naming why" (with its own
+//    retired-probe-command-variable save/delete/restore dance) -- DELETED,
+//    further down this file where it used to sit, immediately after
+//    makeWarmFloorDeps().
+//
+// SURVIVING, AMENDED: "probeReady: with no external command named, issues
+// an HTTP readiness request and succeeds only when BOTH substrings are
+// present" -- kept and renamed below (its substance is precisely what P-05
+// preserves and it is now the probe's only mechanism, so its name must stop
+// implying a choice was made between mechanisms); the both-substrings
+// assertion itself is untouched.
+//
+// Every OTHER maintainWarmFloor test in this file injects its floor
+// explicitly through the options bag rather than depending on the default,
+// and every one of them was read while making this change: none references
+// the retired mechanism union, the retired environment variable, or the
+// no-mechanism branch, so none is affected by this collapse beyond the
+// `{ ready, mechanism }` -> plain-boolean return-shape update every stubbed
+// `probe` callback in this file needed regardless.
+
+test("probeReady: issues an HTTP readiness request and succeeds only when BOTH substrings are present", async () => {
+  const calls: Array<{ port: number; timeoutMs: number }> = [];
+  const bothPresent = await probeReady(6600, {
+    httpProbe: (port, timeoutMs) => {
+      calls.push({ port, timeoutMs });
+      return Promise.resolve(true);
+    },
+  });
+  assert.equal(bothPresent, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].port, 6600);
+
+  const onlyOnePresent = await probeReady(6601, {
+    httpProbe: () => Promise.resolve(false),
+  });
+  assert.equal(onlyOnePresent, false);
+});
+
+// P-07: the probe timeout default shortens from 5s to ~1s, and the
+// seconds-valued environment knob (VICE_BROKER_PROBE_TIMEOUT_S) must still
+// honour any value an operator on a slow host sets it to. No test asserted
+// either half before this task.
+test("probeReady: the timeout default is 1000ms, and the seconds-valued knob still honours a non-default value", async () => {
+  const timeoutsMs: number[] = [];
+  const stub = (_port: number, timeoutMs: number): Promise<boolean> => {
+    timeoutsMs.push(timeoutMs);
+    return Promise.resolve(true);
+  };
+
+  await probeReady(6600, { httpProbe: stub });
+  assert.equal(timeoutsMs[0], 1000, "the default probe timeout must be 1000ms (1s), down from the retired 5s default");
+
+  await probeReady(6600, { httpProbe: stub, probeTimeoutSEnv: "7" });
+  assert.equal(timeoutsMs[1], 7000, "the seconds-valued timeout knob must still be honoured for a non-default value");
+});
+
+// ---------------------------------------------------------------------------
+// WR-01: probeReady() is backend-aware. On stock the port speaks the BINARY
+// MONITOR, so the HTTP POST could never succeed -- warm-floor instances stayed
+// `launching` forever, countLaunching(state) > 0 short-circuited every later
+// warm pass, and a never-usable emulator process was retained until shutdown
+// while still counting toward countTotal()/atCapacity().
+// ---------------------------------------------------------------------------
+
+test("WR-01 probeReady: an omitted backend still takes the HTTP route, unchanged", async () => {
+  let httpCalls = 0;
+  let binmonCalls = 0;
+  const deps = {
+    httpProbe: () => {
+      httpCalls += 1;
+      return Promise.resolve(true);
+    },
+    binmonProbe: () => {
+      binmonCalls += 1;
+      return Promise.resolve(true);
+    },
+  };
+  assert.equal(await probeReady(6600, deps), true);
+  assert.equal(httpCalls, 1, "an omitted backend must take the HTTP route");
+  assert.equal(binmonCalls, 0);
+});
+
+test("WR-01 probeReady: the stock route uses the binary-monitor probe and never the HTTP one", async () => {
+  let httpCalls = 0;
+  const seen: Array<{ port: number; timeoutMs: number }> = [];
+  const ready = await probeReady(6605, {
+    backend: "stock",
+    httpProbe: () => {
+      httpCalls += 1;
+      return Promise.resolve(true);
+    },
+    binmonProbe: (port, timeoutMs) => {
+      seen.push({ port, timeoutMs });
+      return Promise.resolve(true);
+    },
+  });
+  assert.equal(ready, true);
+  assert.equal(httpCalls, 0, "an HTTP POST at a binary-monitor port can never succeed and must not be attempted");
+  assert.deepEqual(seen, [{ port: 6605, timeoutMs: 1000 }], "the stock route gets the same port and the same timeout budget");
+});
+
+test("WR-01 probeReady: the seconds-valued timeout knob applies to the stock route too", async () => {
+  const timeoutsMs: number[] = [];
+  await probeReady(6605, {
+    backend: "stock",
+    probeTimeoutSEnv: "4",
+    binmonProbe: (_port, timeoutMs) => {
+      timeoutsMs.push(timeoutMs);
+      return Promise.resolve(true);
+    },
+  });
+  assert.deepEqual(timeoutsMs, [4000]);
+});
+
+// --- the REAL binmon probe, against a loopback stub emulator -----------------
+//
+// No real x64sc anywhere: the stub speaks the 11-byte request / 12-byte response
+// header layout confirmed against genuine stock VICE's binary monitor -- all
+// multi-byte fields little-endian -- and nothing else.
+
+const BINMON_STX = 0x02;
+const BINMON_API = 0x02;
+const BINMON_REQ_HEADER_LEN = 11;
+
+interface BinmonStubOptions {
+  /** Build the reply for one decoded request; `null` means answer nothing. */
+  reply?: (commandType: number, requestId: number) => Buffer | null;
+  /** Accept the connection and then never read or answer anything. */
+  silent?: boolean;
+}
+
+async function withBinmonStub<T>(
+  opts: BinmonStubOptions,
+  fn: (port: number, received: () => number[]) => Promise<T>,
+): Promise<T> {
+  const { createServer } = await import("node:net");
+  const sockets = new Set<import("node:net").Socket>();
+  const received: number[] = [];
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    socket.on("error", () => {
+      /* the probe destroys its socket; nothing to report */
+    });
+    if (opts.silent) return;
+    let buf = Buffer.alloc(0);
+    socket.on("data", (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      for (;;) {
+        if (buf.length < BINMON_REQ_HEADER_LEN) break;
+        const bodyLength = buf.readUInt32LE(2);
+        const total = BINMON_REQ_HEADER_LEN + bodyLength;
+        if (buf.length < total) break;
+        const requestId = buf.readUInt32LE(6);
+        const commandType = buf[10]!;
+        buf = buf.subarray(total);
+        received.push(commandType);
+        const reply = opts.reply?.(commandType, requestId) ?? null;
+        if (reply) socket.write(reply);
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const port = (server.address() as { port: number }).port;
+  try {
+    return await fn(port, () => received);
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+function binmonReply(responseType: number, errorCode: number, requestId: number): Buffer {
+  const header = Buffer.alloc(12);
+  header[0] = BINMON_STX;
+  header[1] = BINMON_API;
+  header.writeUInt32LE(0, 2);
+  header[6] = responseType;
+  header[7] = errorCode;
+  header.writeUInt32LE(requestId >>> 0, 8);
+  return header;
+}
+
+test("WR-01 binmon probe: a well-formed PING reply reports READY, and the probe RESUMES the machine its own PING halted", async () => {
+  await withBinmonStub(
+    { reply: (commandType, requestId) => binmonReply(commandType, 0x00, requestId) },
+    async (port, received) => {
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), true);
+      // The EXIT is the whole point: on genuine stock VICE, any inbound byte
+      // halts the machine -- confirmed against the binary monitor's own
+      // request handling -- so a probe that only pinged would leave every
+      // warm instance "ready" and frozen. probeReady() resolves as
+      // soon as its own write flushes, which can be before the peer has read it,
+      // so wait for the stub to actually observe both commands rather than
+      // asserting on a race.
+      const sawBoth = await waitFor(() => received().length >= 2, { timeoutMs: 2000 });
+      assert.ok(sawBoth, `the stub must observe both commands, saw ${JSON.stringify(received())}`);
+      assert.deepEqual(received(), [0x81, 0xaa], "exactly one PING then one EXIT, in that order");
+    },
+  );
+});
+
+test("WR-01 binmon probe: an accept with NO reply is NOT ready -- a bare TCP accept is insufficient", async () => {
+  await withBinmonStub({ silent: true }, async (port) => {
+    assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "1" }), false);
+  });
+});
+
+test("WR-01 binmon probe: a reply carrying a non-zero error code is NOT ready", async () => {
+  await withBinmonStub(
+    { reply: (commandType, requestId) => binmonReply(commandType, 0x8f, requestId) },
+    async (port) => {
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), false);
+    },
+  );
+});
+
+test("WR-01 binmon probe: a reply of the WRONG response type is NOT ready", async () => {
+  await withBinmonStub(
+    { reply: (_commandType, requestId) => binmonReply(0x62, 0x00, requestId) },
+    async (port) => {
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), false);
+    },
+  );
+});
+
+test("WR-01 binmon probe: a reply carrying a DIFFERENT request id is NOT ready -- a stray event must not read as an answer", async () => {
+  await withBinmonStub(
+    { reply: (commandType) => binmonReply(commandType, 0x00, 0xffffffff) },
+    async (port) => {
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), false);
+    },
+  );
+});
+
+test("WR-01 binmon probe: a reply with the wrong api_version is NOT ready", async () => {
+  await withBinmonStub(
+    {
+      reply: (commandType, requestId) => {
+        const frame = binmonReply(commandType, 0x00, requestId);
+        frame[1] = 0x03;
+        return frame;
+      },
+    },
+    async (port) => {
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), false);
+    },
+  );
+});
+
+test("WR-01 binmon probe: nothing listening at all reports not-ready without throwing", async () => {
+  // Port 1 on loopback: reserved, nothing binds it, so the connect is refused.
+  assert.equal(await probeReady(1, { backend: "stock", probeTimeoutSEnv: "1" }), false);
+});
+
+test("WR-01 binmon probe: the probe never leaves its socket open -- stock VICE has exactly one client slot", async () => {
+  await withBinmonStub(
+    { reply: (commandType, requestId) => binmonReply(commandType, 0x00, requestId) },
+    async (port) => {
+      const { createConnection } = await import("node:net");
+      assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), true);
+      // A second client can connect immediately afterwards, which is only true
+      // if the probe released the slot.
+      await new Promise<void>((resolve, reject) => {
+        const socket = createConnection({ host: "127.0.0.1", port });
+        socket.once("connect", () => {
+          socket.destroy();
+          resolve();
+        });
+        socket.once("error", reject);
+      });
+    },
+  );
+});
+
+// ------------------------------------------------- promoteLaunchingInstances
+//
+// Plan 41-05 (folded todo): this section replaces the retired
+// "maintainWarmFloor" section. The FLOOR-ARITHMETIC cases (a floor of 3
+// launching exactly one per pass; three passes launching three; the default
+// settling at one; the countLaunching()-pre-check overlapping-launch case)
+// are DELETED along with the behaviour they described -- there is no floor
+// left to arithmetic against, and promoteLaunchingInstances() never calls
+// acquirePortAndLaunch() at all, so it never competes for the single-owner
+// launch slot the retired countLaunching()-pre-check test exercised. The
+// PROMOTION cases below move onto promoteLaunchingInstances() UNCHANGED in
+// substance -- extraction, not rewrite.
+// ---------------------------------------------------------------------------
+
+function makePromoteDeps(state: BrokerState, overrides: Partial<Parameters<typeof promoteLaunchingInstances>[0]> = {}) {
+  return {
+    state,
+    now: () => 5000,
+    probe: () => Promise.resolve(true),
+    log: () => {},
+    ...overrides,
+  };
+}
+
+test("promoteLaunchingInstances: a launching instance whose probe succeeds is promoted to ready with a readiness timestamp", async () => {
+  const state = createBrokerState();
+  state.instances.set(6600, makeInstance({ port: 6600, state: "launching", launchedAt: 1000 }));
+  const deps = makePromoteDeps(state, {
+    now: () => 1500,
+    probe: () => Promise.resolve(true),
+  });
+  await promoteLaunchingInstances(deps);
+  const record = state.instances.get(6600)!;
+  assert.equal(record.state, "ready");
+  assert.equal(record.readyAt, 1500);
+});
+
+// 01.6.2-10-PLAN.md ledger row 27 (RE-OBSERVED): the retiring bash suite's
+// "maintain_spares boot-time log" test asserted the promotion log line
+// carried an elapsed-ms figure. promoteLaunchingInstances()'s own promotion
+// log line (broker-launch.mts) still names the elapsed time -- this was the
+// one surviving half of that retiring test with no dedicated assertion in
+// this file until now; the retiring test's OTHER half (a poll-interval
+// caveat reading VICE_BROKER_POLL_MS) has no equivalent, since this design
+// is not discrete-poll-interval based (ledger row 27's own DELETED-adjacent
+// note).
+test("promoteLaunchingInstances: promoting a launching instance to ready logs the elapsed time in milliseconds", async () => {
+  const state = createBrokerState();
+  state.instances.set(6600, makeInstance({ port: 6600, state: "launching", launchedAt: 1000 }));
+  const logs: string[] = [];
+  const deps = makePromoteDeps(state, {
+    now: () => 1250,
+    probe: () => Promise.resolve(true),
+    log: (l: string) => logs.push(l),
+  });
+  await promoteLaunchingInstances(deps);
+  const promotionLine = logs.find((l) => /launching -> ready/.test(l));
+  assert.ok(promotionLine, `expected a promotion log line, got: ${JSON.stringify(logs)}`);
+  assert.match(
+    promotionLine!,
+    /port 6600 launching -> ready \(250ms\)/,
+    `expected the elapsed-ms figure in the promotion line, got: ${promotionLine}`
+  );
+});
+
+test("promoteLaunchingInstances: a launching instance whose probe fails stays launching and is not promoted", async () => {
+  const state = createBrokerState();
+  state.instances.set(6600, makeInstance({ port: 6600, state: "launching" }));
+  const deps = makePromoteDeps(state, {
+    probe: () => Promise.resolve(false),
+  });
+  await promoteLaunchingInstances(deps);
+  assert.equal(state.instances.get(6600)!.state, "launching");
+  assert.equal(state.instances.get(6600)!.readyAt, null);
+});
+
+// Plan 41-05: the property the folded todo's own item 1 names -- the
+// promotion step is reachable "with no warm-floor concern present at all."
+// A cold-launched `launching` record (via acquirePortAndLaunch(), exactly as
+// a real cold acquire would leave one mid-boot -- see this function's own
+// header comment: handleAcquire() grants it synchronously without ever
+// observing "ready", so THIS is the realistic route a "launching" record
+// takes) is promoted by runBrokerPass() alone, with no floor-shaped deps
+// anywhere in the picture.
+test("promoteLaunchingInstances (plan 41-05): a cold-launched launching record is promoted to ready by runBrokerPass() with no warm-floor concern present at all", async () => {
+  const state = createBrokerState();
+  const coldResult = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/promote-no-floor-6600",
+    backend: "stock",
+    allocatePort: async () => ({ ok: true, port: 6600 }),
+    allocateRemoteMonitorPort: async () => ({ ok: true, port: 6650 }),
+    spawn: () => stubChild(9002),
+    now: () => 1000,
+  });
+  assert.ok(coldResult.ok, "the cold acquire launch itself must succeed to set up this scenario");
+  assert.equal(state.instances.get(6600)!.state, "launching");
+
+  await runBrokerPass({
+    serveAcquires: () => {},
+    promoteLaunching: () => promoteLaunchingInstances({ state, now: () => 1300, probe: () => Promise.resolve(true), log: () => {} }),
+  });
+
+  const record = state.instances.get(6600)!;
+  assert.equal(record.state, "ready", "the cold-launched record must be promoted with no floor-shaped dependency in the picture");
+  assert.equal(record.readyAt, 1300);
+});
+
+// ------------------------------------------------------------- runBrokerPass
+
+test("runBrokerPass: calls the acquire-serving concern before the promotion concern", async () => {
+  const order: string[] = [];
+  await runBrokerPass({
+    serveAcquires: () => {
+      order.push("serveAcquires");
+    },
+    promoteLaunching: () => {
+      order.push("promoteLaunching");
+    },
+  });
+  assert.deepEqual(order, ["serveAcquires", "promoteLaunching"]);
+});
+
+test("runBrokerPass: awaits an async serveAcquires before starting promoteLaunching", async () => {
+  const order: string[] = [];
+  await runBrokerPass({
+    serveAcquires: async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      order.push("serveAcquires");
+    },
+    promoteLaunching: () => {
+      order.push("promoteLaunching");
+    },
+  });
+  assert.deepEqual(order, ["serveAcquires", "promoteLaunching"]);
+});
+
+// ===========================================================================
+// Task 3: criterion C's required deliverable -- the 2026-08-01 triple-launch
+// regression, reproduced live rather than hypothesised (RESEARCH.md §C: the
+// bash outage was three simultaneous x64sc launches racing the SAME
+// count_launching() check -- one SEGV, one exit 1, one exit 0 at the
+// identical spawn second).
+//
+// These tests target acquirePortAndLaunch(), not tryLaunchOne() directly.
+// tryLaunchOne() is fully synchronous (no `await` between its own guard
+// check and set), which means two SEPARATE calls to it can never actually
+// overlap in JS's single-threaded, run-to-completion model, REGARDLESS of
+// how they are scheduled -- proven empirically while writing this test:
+// two tryLaunchOne() calls racing on DIFFERENT ports via a shared deferred
+// gate always produced two spawns, correctly, because launching two
+// different instances for two different requests is not a bug. The REAL
+// race this criterion must guard is nextFreePort()'s own asynchronous
+// port-in-use probe (plan 02, C4): two overlapping callers could otherwise
+// both be told the SAME candidate port is free before either commits it,
+// which is exactly what acquirePortAndLaunch() closes by holding the
+// SAME single in_flight owner across the ENTIRE allocate-then-launch
+// sequence, not merely the synchronous spawn instant.
+//
+// CROSS-PHASE DEPENDENCY, stated explicitly rather than left as an
+// assumption: this test's own GREEN state is Phase 01.6.2.1's stated
+// prerequisite for D-07 (non-preemptive launch priority layered on top of
+// this exact lock). When D-07's priority layer is added in that phase and
+// something goes red, this file is the first place to look -- if THIS test
+// is also red, the priority layer broke the lock; if this test is still
+// green, the regression is somewhere in the new priority logic instead.
+// Named as a dependency this phase's own work satisfies, never as an
+// assumption that this phase "sealed" concurrency safety for all time.
+// ===========================================================================
+
+test("criterion C: two concurrent launch requests against a stubbed, deferred port allocator produce exactly one spawn (2026-08-01 triple-launch regression)", async () => {
+  const state = createBrokerState();
+  let spawnCallCount = 0;
+  let allocatePortCallCount = 0;
+  const stubSpawn = (_cmd: string, _args: string[]) => {
+    spawnCallCount++;
+    return stubChild(5000 + spawnCallCount);
+  };
+  // Both requests' allocator would return the SAME port 6600 if either
+  // ever reached it -- the realistic shape of the race: two overlapping
+  // callers, both told the identical candidate is free.
+  const stubAllocatePort = async (): Promise<PortAllocationResult> => {
+    allocatePortCallCount++;
+    return { ok: true, port: 6600 };
+  };
+
+  // A SHARED, test-controlled deferred resolution: both launch requests are
+  // constructed as `.then()` continuations off the SAME pending promise, so
+  // neither request "starts" (i.e. reaches its own call into
+  // acquirePortAndLaunch()) before the other -- releasing the gate
+  // schedules BOTH continuations as separate microtasks from the identical
+  // resolved promise. This is what makes the concurrency real rather than
+  // nominal: a test that simply called the function twice in a row, with
+  // no scheduling gap at all, would pass even against a genuinely broken
+  // guard, for the boring reason that two back-to-back synchronous calls
+  // in the same tick can never interleave regardless of correctness.
+  let releaseGate: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+
+  const stubAllocateRemoteMonitorPort = async (): Promise<PortAllocationResult> => ({ ok: true, port: 6650 });
+
+  const request1 = gate.then(() =>
+    acquirePortAndLaunch("acquire", {
+      state,
+      stateDir: "/tmp/race-cold",
+      backend: "stock",
+      allocatePort: stubAllocatePort,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort,
+      spawn: stubSpawn,
+    })
+  );
+  const request2 = gate.then(() =>
+    acquirePortAndLaunch("spare", {
+      state,
+      stateDir: "/tmp/race-warm",
+      backend: "stock",
+      allocatePort: stubAllocatePort,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort,
+      spawn: stubSpawn,
+    })
+  );
+
+  // Both continuations are already queued before either has run -- NOW
+  // release them together.
+  releaseGate!();
+  const [result1, result2] = await Promise.all([request1, request2]);
+
+  assert.equal(spawnCallCount, 1, `exactly one spawn must occur for two concurrent launch requests; got ${spawnCallCount}`);
+  const successes = [result1, result2].filter((r) => r.ok);
+  assert.equal(successes.length, 1, "exactly one of the two concurrent requests must succeed");
+  const refused = [result1, result2].filter((r) => !r.ok) as Array<{ ok: false; reason: string }>;
+  assert.equal(refused.length, 1);
+  assert.equal(refused[0].reason, "launch_in_flight", "the losing request must be refused as launch_in_flight, not silently dropped or errored");
+  assert.equal(isLaunchInFlight(), false, "the guard must be clear once both requests have settled");
+});
+
+// Plan 41-05 (folded todo): the second "criterion C" test that used to sit
+// here -- "a warming pass overlapping a cold acquire's still-in-flight
+// launch produces no second spawn" -- is REMOVED along with the behaviour it
+// tested. Its own DISCRIMINATING-POWER note (below, at the time) recorded
+// that this test's "no second spawn" property was enforced by the retired
+// maintainWarmFloor()'s OWN independent countLaunching()>0 pre-check -- a
+// RECORDED-STATE throttle checked before acquirePortAndLaunch() was ever
+// reached -- NOT by the single-owner inFlight guard the first "criterion C"
+// test above proves. That pre-check has no equivalent left:
+// promoteLaunchingInstances() never calls acquirePortAndLaunch() at all, so
+// there is nothing left to throttle. The single-owner guard's own regression
+// coverage is entirely retained by the FIRST "criterion C" test above,
+// unchanged -- it already drives two overlapping acquirePortAndLaunch()
+// calls directly, with no maintainWarmFloor() involvement at all, so it
+// needed no re-pointing.
+
+// Task 3's third required assertion -- "an injected spawn rejection leaves
+// the guard clear, and the next launch request spawns" -- is ALREADY
+// covered above by Task 2's own "tryLaunchOne: a launch that rejects still
+// clears the in-flight owner so a following launch succeeds" test, and
+// holds identically for acquirePortAndLaunch() since it shares the exact
+// same module-level guard and the exact same try/finally release
+// discipline; it is not duplicated here.
+//
+// DISCRIMINATING-POWER CHECK (performed during Task 3's execution, recorded
+// here and in the plan's own SUMMARY rather than left implicit): the guard's
+// `if (inFlight) return ...` check and `inFlight = true;` set were
+// temporarily moved to AFTER `await deps.allocatePort(...)` instead of
+// before it (the realistic shape of this exact mistake: "let me just
+// allocate the port first, then check if something else is already
+// launching"). The "criterion C" test above -- the two-concurrent-
+// requests test -- FAILED against that regressed version (spawnCallCount
+// observed as 2, both requests succeeding instead of one being refused as
+// launch_in_flight), proving it has real discriminating power against the
+// exact regression it exists to catch, rather than passing vacuously
+// regardless of the guard's correctness. The regression was reverted
+// immediately after this check; no trace of it remains in the committed
+// source. This mirrors Phase 01.6.1's own practice of proving a guard's
+// tests against an injected regression before trusting them.
+
+// ===========================================================================
+// 01.6.2.1-03-PLAN.md, Task 2: D-07 -- non-preemptive launch priority,
+// layered on the SAME single in-flight owner criterion C's test above
+// already proves (re-confirmed passing immediately before this task's own
+// implementation began, per this task's own stated prerequisite --
+// 01.6.2-VERIFICATION.md observable truth #9, sealed at a full-suite re-run
+// of 390 tests / 385 pass / 0 fail / 5 todo).
+//
+// Read against the landed code before writing anything, per this task's own
+// instruction to determine (not assume) what already holds: the fixed pass
+// order (runBrokerPass(): serve acquires, then promote launching -- plan
+// 41-05 retires the warm floor this order originally maintained) already
+// existed: TRUE. The single in-flight owner already prevents a
+// second spawn: TRUE (criterion C, above). Plan 01's warm-instance selector
+// (vice-broker.mts's selectWarmInstance()) already lets a waiting request
+// take a ready instance whichever reason booted it -- performing no
+// `reason` check anywhere in its own body, and already proven end-to-end by
+// vice-broker-acquire.test.ts's own passing "an acquire arriving with one
+// probe-live ready instance available is served from it" test: TRUE. All
+// three held already. D-07's own remaining deliverable, per this task's own
+// text, is therefore exactly what the two tests below add: the
+// non-preemption proof, the priority proof, and the launch-slot decision
+// log line -- none of which existed before this task.
+// ===========================================================================
+
+test("D-07: an in-flight boot is never preempted -- no kill of any kind is issued, no second spawn occurs, and the in-flight boot runs to completion", async () => {
+  const state = createBrokerState();
+  let spawnCallCount = 0;
+  let killCallCount = 0;
+  const stubSpawn = (_cmd: string, _args: string[]) => {
+    spawnCallCount++;
+    const child = { pid: 8000 + spawnCallCount, kill: () => { killCallCount++; } };
+    return child as unknown as ChildProcess;
+  };
+  const dynamicAllocatePort = async (s: BrokerState): Promise<PortAllocationResult> => {
+    let port = 6600;
+    while (s.instances.has(port)) port++;
+    return { ok: true, port };
+  };
+
+  let releaseGate: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  const deferredAllocatePort = async (s: BrokerState): Promise<PortAllocationResult> => {
+    await gate;
+    return dynamicAllocatePort(s);
+  };
+
+  // A warming launch starts and is now genuinely IN FLIGHT, blocked on the
+  // deferred allocator -- the criterion-C tests' own technique for making
+  // the overlap real rather than nominal.
+  const inFlightLaunch = acquirePortAndLaunch("spare", {
+    state,
+    stateDir: "/tmp/d07-nopreempt-inflight",
+    backend: "stock",
+    allocatePort: deferredAllocatePort,
+    allocateRemoteMonitorPort: async () => ({ ok: true, port: 6650 }),
+    spawn: stubSpawn,
+  });
+
+  // An acquire arrives WHILE that boot is still in flight.
+  const arriving = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/d07-nopreempt-arriving",
+    backend: "stock",
+    allocatePort: dynamicAllocatePort,
+    allocateRemoteMonitorPort: async () => ({ ok: true, port: 6651 }),
+    spawn: stubSpawn,
+  });
+  assert.equal(arriving.ok, false, "an acquire arriving while a boot is in flight must be refused (queued elsewhere), never preempt it");
+  assert.equal((arriving as { ok: false; reason: string }).reason, "launch_in_flight");
+  assert.equal(killCallCount, 0, "no kill of any kind must be issued against the in-flight instance while an acquire arrives -- this is the assertion that would catch someone implementing priority by preemption");
+  assert.equal(spawnCallCount, 0, "no second spawn must occur while the first boot is still in flight");
+
+  releaseGate!();
+  const inFlightResult = await inFlightLaunch;
+  assert.ok(inFlightResult.ok, "the in-flight boot must run to completion rather than being aborted");
+  assert.equal(spawnCallCount, 1, "exactly one spawn total -- the in-flight boot's own");
+  assert.equal(killCallCount, 0, "no kill occurred even after the in-flight boot completed -- it was never preempted");
+
+  // "The arriving acquire is then served by that completed instance" --
+  // once this boot reaches `ready`, vice-broker.mts's selectWarmInstance()
+  // is what serves a waiting request from it, and it performs no `reason`
+  // check at all (read directly in its own source, and already proven
+  // end-to-end by vice-broker-acquire.test.ts, cited in this task's own
+  // pre-implementation determination above). What THIS test proves, at
+  // this module's own level, is the half selectWarmInstance() depends on:
+  // the boot this acquire will eventually be served by is never killed and
+  // never a duplicate, and reaches a normal, granted-able completion.
+  const completedPort = (inFlightResult as { ok: true; record: InstanceRecord }).record.port;
+  assert.equal(state.instances.get(completedPort)!.state, "launching", "the completed boot's record remains in place, untouched by the arriving acquire's own refusal");
+  assert.equal(state.instances.get(completedPort)!.reason, "spare", "the record's own reason is unchanged -- eligibility for a later grant never depends on which reason booted it");
+});
+
+// Plan 41-05 (folded todo): "D-07: a request-driven launch wins the freed
+// slot over a warming launch in the same pass, and the decision is logged
+// naming both reasons" -- and its own DISCRIMINATING-POWER CHECK note --
+// used to sit here. REMOVED along with the scenario it proved: with the
+// warm floor retired, `promoteLaunching` never calls acquirePortAndLaunch(),
+// so there is no second launcher left within one pass to WIN a freed slot
+// against. D-07's launch-slot decision log line itself survives unchanged
+// (broker-launch.mts's acquirePortAndLaunch(), still exercised by the
+// `criterion C` two-concurrent-requests test above), and the fixed pass
+// order's own remaining purpose is covered by the two `runBrokerPass` order
+// tests above.
+
+// ===========================================================================
+// Plan 03, Task 2: superviseChild() -- the per-child supervisor (C2/D-23).
+// No real emulator
+// runs anywhere in this file: `/bin/true`/`/bin/sleep` stand in for a REAL
+// pid wherever a genuine liveness check is the point; a fully test-
+// controlled EventEmitter stands in wherever exact backoff/crash-window
+// ordering is the point.
+// ===========================================================================
+
+function makeSuperviseDeps(stateDir: string, overrides: Partial<Parameters<typeof superviseChild>[2]> = {}) {
+  return {
+    state: createBrokerState(),
+    stateDir,
+    epoch: makeEpochDeps(),
+    sleepMs: async () => {}, // instant by default -- tests that care override this
+    now: () => 1000,
+    initialBackoffMs: 5,
+    maxBackoffMs: 20,
+    maxRestarts: 50, // high by default so give-up never fires unless a test wants it to
+    crashWindowMs: 60000,
+    log: () => {},
+    ...overrides,
+  };
+}
+
+// ===========================================================================
+// 01.6.2-12-PLAN.md, Task 1 (gap closure): withCrashSupervision() is the
+// single exit-listener installation point extracted from launchSupervised()
+// -- this test proves the wrapper's own return-value contract in isolation
+// (never replaces or wraps the child object itself), independent of
+// launchSupervised()'s respawn-chain tests above, which already exercise
+// the same wrapper transitively via superviseChild().
+// ===========================================================================
+
+test("withCrashSupervision: the wrapper returns the base spawn's own child object unchanged, so a caller's own handle is never replaced", () => {
+  const child = fakeChild();
+  const deps = {
+    state: createBrokerState(),
+    stateDir: "/tmp/withCrashSupervision-unused",
+    epoch: makeEpochDeps(),
+    log: () => {},
+  };
+  const wrapped = withCrashSupervision("acquire", 6600, () => child, deps);
+  const returned = wrapped("x64sc", ["-mcpserverport", "6600"]);
+  assert.equal(returned, child, "the wrapper must return the exact child object baseSpawn produced, unchanged -- never a new or wrapped object");
+});
+
+test("superviseChild: a stub child that exits on its own is respawned, and the instance's epoch record advances by one", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-respawn-"));
+  try {
+    // The FIRST spawn exits immediately (/bin/true) to trigger exactly one
+    // crash; every spawn AFTER that is a long-lived process (/bin/sleep)
+    // so the chain settles at epoch 2 instead of racing uncontrolled
+    // through further crashes (maxRestarts is high specifically so THIS
+    // test is about "a crash is respawned," not about give-up).
+    let spawnCount = 0;
+    const deps = makeSuperviseDeps(dir, {
+      spawn: () => {
+        spawnCount++;
+        return spawnCount === 1 ? realSpawn("/bin/true", []) : realSpawn("/bin/sleep", ["300"]);
+      },
+    });
+    const record = superviseChild("acquire", 6600, deps, 6650);
+    assert.ok(record, "the initial launch must succeed");
+    assert.equal(record!.epoch, 1, "the first launch records epoch 1");
+
+    const supervisorDir = join(dir, "6600");
+    const respawned = await waitFor(() => {
+      const rec = deps.state.instances.get(6600);
+      return rec && rec.epoch === 2 ? rec : null;
+    });
+    assert.ok(respawned, "the instance must be respawned (epoch advances to 2) after the child exits on its own");
+
+    const epochOnDisk = JSON.parse(readFileSync(join(supervisorDir, "epoch.json"), "utf8"));
+    assert.equal(epochOnDisk.epoch, 2, "the epoch.json on disk must also reflect the respawn's bumped epoch");
+
+    // Clean up the long-lived respawned /bin/sleep so it doesn't linger.
+    // Mark deliberateKill FIRST -- exactly like T-01.6.2-21's own
+    // discipline -- so this cleanup kill is read as a deliberate teardown,
+    // not another crash; killing it without that flag would trigger
+    // ANOTHER automatic respawn (correctly, per this module's own crash
+    // handling) and leak a fresh, untracked /bin/sleep in its place.
+    const finalRecord = deps.state.instances.get(6600);
+    if (finalRecord) {
+      finalRecord.deliberateKill = true;
+      if (typeof finalRecord.pid === "number") {
+        try {
+          process.kill(finalRecord.pid, "SIGKILL");
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("superviseChild: a stub child whose instance carries the deliberate-kill marker causes zero respawns and the instance is absent from _snapshotState() afterwards", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-deliberate-kill-"));
+  try {
+    const deps = makeSuperviseDeps(dir, {
+      spawn: () => realSpawn("/bin/sleep", ["300"]),
+    });
+    const record = superviseChild("acquire", 6600, deps, 6650);
+    assert.ok(record, "the initial launch must succeed");
+    const pid = record!.pid as number;
+
+    const aliveBefore = await waitFor(() => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    assert.ok(aliveBefore, "the sleep child must be alive before the deliberate kill");
+
+    // Mark deliberate-kill BEFORE sending any signal -- exactly the
+    // ordering T-01.6.2-21 requires: the exit handler must see this flag
+    // set by the time the exit event it is racing against actually fires.
+    deps.state.instances.get(6600)!.deliberateKill = true;
+    process.kill(pid, "SIGTERM");
+
+    const gone = await waitFor(() => (deps.state.instances.has(6600) ? null : true));
+    assert.ok(gone, "a deliberately-killed instance must be dropped from the map, never respawned");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("superviseChild: the first respawn waits the configured initial backoff; the second waits twice that; the delay is clamped at the configured ceiling however many crashes follow", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-backoff-"));
+  try {
+    const spawnedChildren: ChildProcess[] = [];
+    const delays: number[] = [];
+    const deps = makeSuperviseDeps(dir, {
+      initialBackoffMs: 100,
+      maxBackoffMs: 250,
+      maxRestarts: 50,
+      sleepMs: async (ms: number) => {
+        delays.push(ms);
+      },
+      spawn: () => {
+        const child = fakeChild();
+        spawnedChildren.push(child);
+        return child;
+      },
+    });
+
+    superviseChild("acquire", 6600, deps, 6650);
+    assert.equal(spawnedChildren.length, 1, "the initial launch must spawn exactly one child");
+
+    // Crash #1 -> respawn #1 (initial backoff).
+    (spawnedChildren[0] as unknown as EventEmitter).emit("exit", 1, null);
+    await waitFor(() => (spawnedChildren.length >= 2 ? true : null));
+    // Crash #2 -> respawn #2 (doubled).
+    (spawnedChildren[1] as unknown as EventEmitter).emit("exit", 1, null);
+    await waitFor(() => (spawnedChildren.length >= 3 ? true : null));
+    // Crash #3 -> respawn #3 (clamped at the ceiling, NOT 400).
+    (spawnedChildren[2] as unknown as EventEmitter).emit("exit", 1, null);
+    await waitFor(() => (spawnedChildren.length >= 4 ? true : null));
+
+    assert.deepEqual(delays, [100, 200, 250], "the observed delays must be the initial value, twice it, then the clamped ceiling");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("superviseChild: an instance crashing one more than the configured maximum inside the configured window is absent from _snapshotState() afterwards and a give-up line naming it appears in the captured log output", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-giveup-"));
+  try {
+    const spawnedChildren: ChildProcess[] = [];
+    const logs: string[] = [];
+    const deps = makeSuperviseDeps(dir, {
+      initialBackoffMs: 1,
+      maxBackoffMs: 10,
+      maxRestarts: 3,
+      crashWindowMs: 60000,
+      log: (l: string) => logs.push(l),
+      spawn: () => {
+        const child = fakeChild();
+        spawnedChildren.push(child);
+        return child;
+      },
+    });
+
+    superviseChild("acquire", 6600, deps, 6650);
+    assert.equal(spawnedChildren.length, 1);
+
+    // Crash #1 (count 1, <3 -> respawn), crash #2 (count 2, <3 -> respawn),
+    // crash #3 (count 3, >=3 -> GIVE UP; one more than "2 respawns
+    // allowed" is the `>= VICE_MAX_RESTARTS` check).
+    (spawnedChildren[0] as unknown as EventEmitter).emit("exit", 1, null);
+    await waitFor(() => (spawnedChildren.length >= 2 ? true : null));
+    (spawnedChildren[1] as unknown as EventEmitter).emit("exit", 1, null);
+    await waitFor(() => (spawnedChildren.length >= 3 ? true : null));
+    (spawnedChildren[2] as unknown as EventEmitter).emit("exit", 1, null);
+
+    const gone = await waitFor(() => (deps.state.instances.has(6600) ? null : true));
+    assert.ok(gone, "the instance must be given up on and dropped from the map");
+    // No fourth spawn must ever occur -- give-up means give-up, not "one
+    // more attempt."
+    assert.equal(spawnedChildren.length, 3, "no spawn beyond the give-up point may occur");
+
+    const giveUpLine = logs.find((l) => /giving up/.test(l));
+    assert.ok(giveUpLine, "a give-up line must appear in the captured log output");
+    assert.match(giveUpLine!, /6600/, "the give-up line must name the port");
+    assert.match(giveUpLine!, /3 crashes/, "the give-up line must name the crash count");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("superviseChild: a crash whose timestamp falls outside the configured window does not push the instance over the give-up threshold", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-window-"));
+  try {
+    const spawnedChildren: ChildProcess[] = [];
+    let currentTime = 0;
+    const deps = makeSuperviseDeps(dir, {
+      initialBackoffMs: 1,
+      maxBackoffMs: 10,
+      maxRestarts: 2,
+      crashWindowMs: 1000,
+      now: () => currentTime,
+      spawn: () => {
+        const child = fakeChild();
+        spawnedChildren.push(child);
+        return child;
+      },
+    });
+
+    superviseChild("acquire", 6600, deps, 6650);
+    assert.equal(spawnedChildren.length, 1);
+
+    // Crash #1 at t=0 -- crashTimes=[0], length 1 < maxRestarts(2) -> respawn.
+    currentTime = 0;
+    (spawnedChildren[0] as unknown as EventEmitter).emit("exit", 1, null);
+    await waitFor(() => (spawnedChildren.length >= 2 ? true : null));
+
+    // Crash #2 at t=5000 -- FAR outside the 1000ms window relative to the
+    // first crash at t=0, so it must be filtered OUT rather than pushing
+    // the count to 2. If the window logic were broken (never excluding
+    // old crashes), this would incorrectly reach the give-up threshold
+    // here instead of on crash #3 below.
+    currentTime = 5000;
+    (spawnedChildren[1] as unknown as EventEmitter).emit("exit", 1, null);
+    await waitFor(() => (spawnedChildren.length >= 3 ? true : null));
+    assert.equal(spawnedChildren.length, 3, "the distant first crash must not count toward give-up -- a third spawn must occur");
+    assert.ok(deps.state.instances.has(6600), "the instance must still be alive after the second crash");
+
+    // Crash #3 at t=5001 -- now WITHIN the window of crash #2 (t=5000), so
+    // the pruned count reaches 2 (>= maxRestarts) and give-up fires.
+    currentTime = 5001;
+    (spawnedChildren[2] as unknown as EventEmitter).emit("exit", 1, null);
+    const gone = await waitFor(() => (deps.state.instances.has(6600) ? null : true));
+    assert.ok(gone, "two crashes within the window must trigger give-up");
+    assert.equal(spawnedChildren.length, 3, "no fourth spawn may occur once given up");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("superviseChild: for every spawn and respawn in a test run, the captured log output contains a line naming the resolved binary and its full argument vector", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-logging-"));
+  try {
+    const spawnedChildren: ChildProcess[] = [];
+    const logs: string[] = [];
+    const deps = makeSuperviseDeps(dir, {
+      initialBackoffMs: 1,
+      maxBackoffMs: 10,
+      maxRestarts: 50,
+      viceBin: "x64sc",
+      log: (l: string) => logs.push(l),
+      spawn: () => {
+        const child = fakeChild();
+        spawnedChildren.push(child);
+        return child;
+      },
+    });
+
+    superviseChild("acquire", 6600, deps, 6650);
+    (spawnedChildren[0] as unknown as EventEmitter).emit("exit", 1, null);
+    await waitFor(() => (spawnedChildren.length >= 2 ? true : null));
+    (spawnedChildren[1] as unknown as EventEmitter).emit("exit", 1, null);
+    await waitFor(() => (spawnedChildren.length >= 3 ? true : null));
+
+    const launchLines = logs.filter((l) => /^vice-broker: launching x64sc /.test(l));
+    assert.equal(launchLines.length, 3, "every spawn AND every respawn must log its own resolved command line");
+    for (const line of launchLines) {
+      assert.match(line, /-binarymonitoraddress ip4:\/\/127\.0\.0\.1:6600/, "the logged line must name the full resolved argument vector");
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("superviseChild: after a spawn, a file exists inside that instance's logs directory and the epoch record's log field names exactly that file relative to the instance directory", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-logfile-"));
+  try {
+    const deps = makeSuperviseDeps(dir, {
+      spawn: () => realSpawn("/bin/true", []),
+    });
+    const record = superviseChild("acquire", 6600, deps, 6650);
+    assert.ok(record);
+    assert.ok(record!.logPath, "the record must carry a logPath");
+
+    const supervisorDir = join(dir, "6600");
+    const epochOnDisk = JSON.parse(readFileSync(join(supervisorDir, "epoch.json"), "utf8"));
+    const resolvedLogPath = join(supervisorDir, epochOnDisk.log);
+    assert.ok(existsSync(resolvedLogPath), "the log file the epoch record names must actually exist on disk");
+    assert.equal(resolvedLogPath, record!.logPath, "the record's own logPath must match the epoch record's log field, joined onto the instance directory");
+    assert.ok(epochOnDisk.log.startsWith("logs/"), "the epoch record's log field must be relative, starting with the per-instance logs directory name");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("superviseChild: a broker-ordered death drops the instance and never relaunches", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-final-death-"));
+  try {
+    const spawnedChildren: ChildProcess[] = [];
+    const deps = makeSuperviseDeps(dir, {
+      spawn: () => {
+        const child = fakeChild();
+        spawnedChildren.push(child);
+        return child;
+      },
+    });
+
+    const record = superviseChild("acquire", 6600, deps, 6650);
+    assert.ok(record, "the initial launch must succeed");
+
+    const before = deps.state.instances.get(6600)!;
+    before.deliberateKill = true;
+
+    (spawnedChildren[0] as unknown as EventEmitter).emit("exit", null, "SIGTERM");
+    const gone = await waitFor(() => (deps.state.instances.has(6600) ? null : true));
+    assert.ok(gone, "a broker-ordered death must drop the instance");
+    assert.equal(spawnedChildren.length, 1, "no relaunch may occur for a final death");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("superviseChild: the give-up path leaves no live child pid, asserted by a zero-signal liveness check on every pid the test's stub spawn handed out", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-no-orphan-"));
+  try {
+    const pids: number[] = [];
+    const deps = makeSuperviseDeps(dir, {
+      initialBackoffMs: 1,
+      maxBackoffMs: 10,
+      maxRestarts: 2,
+      crashWindowMs: 60000,
+      spawn: () => {
+        const child = realSpawn("/bin/true", []);
+        if (typeof child.pid === "number") pids.push(child.pid);
+        return child;
+      },
+    });
+
+    const record = superviseChild("acquire", 6600, deps, 6650);
+    assert.ok(record);
+
+    const gone = await waitFor(() => (deps.state.instances.has(6600) ? null : true), { timeoutMs: 10000 });
+    assert.ok(gone, "the instance must eventually be given up on (each /bin/true exits immediately, exceeding maxRestarts quickly)");
+    assert.ok(pids.length >= 2, "at least two real children must have been spawned across the crash sequence");
+
+    for (const pid of pids) {
+      const deadline = Date.now() + 2000;
+      let alive = true;
+      while (Date.now() < deadline) {
+        try {
+          process.kill(pid, 0);
+        } catch {
+          alive = false;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      assert.ok(!alive, `pid ${pid} must not still be alive after give-up -- /bin/true always exits on its own, and give-up must not leave anything running`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ===========================================================================
+// 02-03-PLAN.md, Task 1: buildViceArgs() -- BROK-01, D-12. Every test below
+// exercises pure argv construction / env parsing; no process is ever
+// spawned in this section.
+// ===========================================================================
+
+test("buildViceArgs: the VICE_ARGS override short-circuits before the stock branch", () => {
+  const stockArgs = buildViceArgs(6510, { backend: "stock", viceArgsEnv: "/bin/sleep 600" });
+  assert.deepEqual(stockArgs, ["/bin/sleep", "600"]);
+});
+
+test("buildViceArgs: stock backend defaults to a loopback binary-monitor bind", () => {
+  const args = buildViceArgs(6510, { backend: "stock" });
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    "-seed",
+    "4242",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
+});
+
+// 33-05-PLAN.md, Task 1 (REPRO-01, REPRO-05, D-15): the two positions this
+// plan learned from a measured failure, asserted together so neither can
+// displace the other. -console at index >= 2 makes the process DIE headless
+// with `Gtk-WARNING: cannot open display:` (33-RESEARCH.md P5), and -warp is
+// position-free but is pinned immediately before -binarymonitor so the argv
+// digest REPRO-04 keys captures on is stable.
+test("buildViceArgs (33-05): a profile of {warp,headless} emits -console at index 1 and -warp immediately before -binarymonitor, with neither displacing the other", () => {
+  const args = buildViceArgs(6510, { backend: "stock", profile: { warp: true, headless: true } });
+  assert.equal(args.indexOf("-default"), 0, "-default must stay at index 0 however many profile flags are requested");
+  assert.equal(args.indexOf("-console"), 1, "-console must sit at index 1: it is handled in main.c's prefix scan, and at index >= 2 the process dies headless");
+  assert.equal(args[args.indexOf("-binarymonitor") - 1], "-warp", "-warp must sit immediately before -binarymonitor");
+  assert.deepEqual(args, [
+    "-default",
+    "-console",
+    "-drive8type",
+    "1541",
+    ...STOCK_DETERMINISM_FLAGS,
+    "-warp",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
+});
+
+// ===========================================================================
+// 08.2-02-PLAN.md, Task 1: I-2 -- the stock branch must emit -default
+// -drive8type 1541 ahead of -binarymonitor, from a single fix site, so a
+// broker-launched stock x64sc boots with unit 8 answering. Task 2 (below,
+// separately) covers the XDG_CONFIG_HOME options-threading seam -- I-2 and
+// I-1 are separate root causes and their acceptance stays separable, so no
+// assertion here mentions XDG_CONFIG_HOME.
+// ===========================================================================
+
+// RENAMED by 33-05: the title used to claim "the exact fixed argv shape", which
+// stopped describing the body once REPRO-01's determinism block landed. A test
+// whose name asserts something the body no longer checks is worse than no test.
+test("buildViceArgs (I-2, extended by 33-05): stock backend emits -default -drive8type 1541 ahead of -binarymonitor, now followed by REPRO-01's determinism block", () => {
+  const args = buildViceArgs(6510, { backend: "stock" });
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    "-seed",
+    "4242",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
+});
+
+test("buildViceArgs (I-2): ordering invariant survives future flag additions -- -default is index 0, -drive8type precedes -binarymonitor, and 1541 follows -drive8type immediately", () => {
+  const args = buildViceArgs(6510, { backend: "stock" });
+  assert.equal(args.indexOf("-default"), 0, "-default must be the very first element or it silently clobbers -drive8type");
+  assert.ok(args.indexOf("-drive8type") < args.indexOf("-binarymonitor"), "-drive8type must be set before the monitor binds");
+  assert.equal(args[args.indexOf("-drive8type") + 1], "1541", "the element immediately following -drive8type must be the string 1541");
+  // 33-05: the same three invariants, restated so they keep MEANING under the
+  // new argv length rather than merely tolerating it -- the determinism block
+  // sits between "1541" and -binarymonitor as one contiguous run, in one fixed
+  // order (REPRO-04 keys captures on an argv digest, so a block whose order
+  // varied would produce two digests for one launch intent).
+  const blockStart = args.indexOf("-drive8type") + 2;
+  assert.deepEqual(
+    args.slice(blockStart, blockStart + STOCK_DETERMINISM_FLAGS.length),
+    [...STOCK_DETERMINISM_FLAGS],
+    "REPRO-01's determinism block must be one contiguous, fixed-order run immediately after -drive8type 1541",
+  );
+  assert.equal(args[blockStart + STOCK_DETERMINISM_FLAGS.length], "-binarymonitor", "-binarymonitor must follow the determinism block immediately when no profile flag is requested");
+});
+
+test("buildViceArgs (I-2): the -default/-drive8type ordering invariant holds in the remoteMonitorPort variant too", () => {
+  const args = buildViceArgs(6510, { backend: "stock", remoteMonitorPort: 6511 });
+  assert.equal(args.indexOf("-default"), 0, "-default must stay at index 0 even when -remotemonitor is appended");
+  assert.ok(args.indexOf("-drive8type") < args.indexOf("-binarymonitor"));
+  assert.equal(args[args.indexOf("-drive8type") + 1], "1541");
+  assert.ok(args.includes("-remotemonitor"), "the remoteMonitorPort variant must still append -remotemonitor");
+});
+
+// ===========================================================================
+// 08.2-02-PLAN.md, Task 2: I-1 rider, first half -- the injected-spawn seam
+// itself. These two tests inject a THREE-ARG spawn stub directly into
+// tryLaunchOne(), BELOW the real daemon's makeLoggingSpawn() +
+// withCrashSupervision() composition (vice-broker.mts), and therefore prove
+// only that the seam accepts and forwards a scratch XDG_CONFIG_HOME for
+// stock launches. They do NOT prove a real broker launch is isolated --
+// deps.spawn / deps.spawnFactory is never undefined on the real broker
+// daemon's own paths, so the widened default wrapper is dead code there,
+// and the forwarding happens at three further hops (makeLoggingSpawn() in
+// vice-broker.mts, and withCrashSupervision()'s wrapper body and
+// launchSupervised()'s defaultRealSpawn in this file -- plan 41-05 retires
+// the fourth hop this comment used to name, the warm floor's own
+// maintainWarmFloorForRealBroker inner stashingSpawn closure). Those three
+// hops now forward the options argument -- plan 08.2-06 closed them in this
+// same phase, and the non-bypassable proof lives in
+// vice-broker-acquire.test.ts, which calls handleAcquire() with
+// buildColdSpawnFactory OMITTED so no injected stub can satisfy it. These
+// two tests remain seam-level by design.
+//
+// Neither test asserts anything about -drive8type (Task 1's own tests do
+// that): I-1 and I-2 are separate root causes and their acceptance stays
+// separable.
+// ===========================================================================
+
+// ===========================================================================
+// 64-05-PLAN.md, Task 1 (XFER-07, D-08): the per-launch config-scratch
+// directory moves under the machine-level broker root. Every case below
+// sets VICE_BROKER_HOME to a fresh mkdtempSync directory and restores the
+// previous value in a `finally` -- no case here may write into a real
+// machine-level ~/.c64-re-tools.
+// ===========================================================================
+
+/** Runs `fn` with a fresh mkdtempSync VICE_BROKER_HOME -- never the real
+ * machine-level root -- restoring the previous value (or unsetting it) in a
+ * `finally`, matching vice-broker-staging.test.ts's own withStagingFixture()
+ * idiom. The fixture directory itself is unavoidably created under
+ * os.tmpdir() (the standard, portable writable scratch location every
+ * fixture in this codebase uses) -- what these tests actually prove is that
+ * the scratch dir is no longer a DIRECT child of the bare OS temp directory
+ * with the old "vice-broker-vicerc-" prefix (OLD_TMPDIR_SCRATCH_PREFIX
+ * below), which is the literal, testable form of "moved off the OS temp
+ * directory". */
+function withBrokerHomeFixture<T>(fn: (home: string) => T): T {
+  const home = mkdtempSync(join(tmpdir(), "broker-launch-config-scratch-"));
+  const previous = process.env.VICE_BROKER_HOME;
+  process.env.VICE_BROKER_HOME = home;
+  try {
+    return fn(home);
+  } finally {
+    if (previous === undefined) delete process.env.VICE_BROKER_HOME;
+    else process.env.VICE_BROKER_HOME = previous;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+/** The OLD direct-child-of-tmpdir prefix this task retires -- a scratch dir
+ * must never again match this shape, whatever VICE_BROKER_HOME resolves to. */
+const OLD_TMPDIR_SCRATCH_PREFIX = join(tmpdir(), "vice-broker-vicerc-");
+
+test("spawnAndRecordInstance (I-1 rider, extended by 64-05/D-08, via tryLaunchOne): a stock launch's injected spawn stub receives XDG_CONFIG_HOME under the fixture broker root's config-scratch subdirectory, never a direct child of the OS temp directory", () => {
+  withBrokerHomeFixture((home) => {
+    const state = createBrokerState();
+    const spawnArgsSeen: unknown[][] = [];
+    const record = tryLaunchOne("acquire", 6700, {
+      state,
+      supervisorDir: "/tmp/i1-stock-seam",
+      epochFile: "/tmp/i1-stock-seam/epoch.json",
+      backend: "stock",
+      // Plan 41-05 (D-16): a stock launch now REQUIRES this field --
+      // spawnAndRecordInstance() throws otherwise. This test's own subject is
+      // the I-1 XDG_CONFIG_HOME rider, not D-16's port requirement, so an
+      // arbitrary port satisfies the invariant without being load-bearing to
+      // what this test actually asserts.
+      remoteMonitorPort: 6799,
+      spawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => {
+        spawnArgsSeen.push([command, args, options]);
+        return stubChild(4243);
+      },
+    });
+    assert.ok(record, "the stock launch must succeed");
+    assert.equal(spawnArgsSeen.length, 1);
+    const [, , options] = spawnArgsSeen[0] as [string, string[], SpawnOptionsWithoutStdio | undefined];
+    assert.ok(options, "a stock launch must receive a third options argument");
+    const scratchDir = options?.env?.XDG_CONFIG_HOME;
+    assert.equal(typeof scratchDir, "string", "XDG_CONFIG_HOME must be a non-empty string");
+    assert.ok(scratchDir && scratchDir.length > 0, "XDG_CONFIG_HOME must be non-empty");
+    assert.ok(scratchDir && existsSync(scratchDir), "the scratch directory must actually exist on disk");
+    assert.notEqual(scratchDir, process.env.XDG_CONFIG_HOME, "the scratch dir must differ from the ambient XDG_CONFIG_HOME");
+    assert.ok(
+      scratchDir && scratchDir.startsWith(join(home, "config-scratch")),
+      `the scratch dir must live under the fixture broker root's config-scratch subdirectory, got: ${scratchDir}`,
+    );
+    assert.ok(
+      scratchDir && !scratchDir.startsWith(OLD_TMPDIR_SCRATCH_PREFIX),
+      "the scratch dir must not be a direct child of the OS temp directory with the old prefix",
+    );
+  });
+});
+
+test("spawnAndRecordInstance (64-05/D-08): the config-scratch parent directory is created when absent, and two stock launches in a row both succeed", () => {
+  withBrokerHomeFixture(() => {
+    const state = createBrokerState();
+    const record1 = tryLaunchOne("acquire", 6701, {
+      state,
+      supervisorDir: "/tmp/i1-stock-seam-1",
+      epochFile: "/tmp/i1-stock-seam-1/epoch.json",
+      backend: "stock",
+      remoteMonitorPort: 6801,
+      spawn: () => stubChild(4244),
+    });
+    assert.ok(record1, "the first stock launch must succeed");
+
+    const state2 = createBrokerState();
+    const record2 = tryLaunchOne("acquire", 6702, {
+      state: state2,
+      supervisorDir: "/tmp/i1-stock-seam-2",
+      epochFile: "/tmp/i1-stock-seam-2/epoch.json",
+      backend: "stock",
+      remoteMonitorPort: 6802,
+      spawn: () => stubChild(4245),
+    });
+    assert.ok(record2, "a second stock launch against the same (now-existing) parent must also succeed");
+  });
+});
+
+test("spawnAndRecordInstance (64-05/D-08): the pid record beside the scratch directory carries both the child's pid and the emulator binary identity", () => {
+  withBrokerHomeFixture(() => {
+    const state = createBrokerState();
+    const spawnArgsSeen: unknown[][] = [];
+    const record = tryLaunchOne(
+      "acquire",
+      6703,
+      {
+        state,
+        supervisorDir: "/tmp/i1-stock-seam-pidrec",
+        epochFile: "/tmp/i1-stock-seam-pidrec/epoch.json",
+        backend: "stock",
+        remoteMonitorPort: 6803,
+        viceBin: "x64sc",
+        spawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => {
+          spawnArgsSeen.push([command, args, options]);
+          return stubChild(4246);
+        },
+      },
+    );
+    assert.ok(record, "the stock launch must succeed");
+    const [, , options] = spawnArgsSeen[0] as [string, string[], SpawnOptionsWithoutStdio | undefined];
+    const scratchDir = options?.env?.XDG_CONFIG_HOME as string;
+    const recordPath = `${scratchDir}.json`;
+    assert.ok(existsSync(recordPath), `the pid record must exist beside the scratch directory at ${recordPath}`);
+    const parsed = JSON.parse(readFileSync(recordPath, "utf8"));
+    assert.equal(parsed.pid, 4246, "the record must carry the spawned child's own pid");
+    assert.equal(parsed.expectedIdentity, "x64sc", "the record must carry the emulator binary's own identity");
+  });
+});
+
+test("structural (64-05/D-08): broker-launch.mts's 'Config-scratch lifetime' comment no longer claims this directory is never cleaned up, no longer claims it accumulates under the OS temp directory, and names broker-kill.mts as the reap's owner", () => {
+  const source = readFileSync(join(VICE_DIR, "broker-launch.mts"), "utf8");
+  assert.equal(/deliberately does NOT clean/i.test(source), false, "the comment must no longer claim the directory is never cleaned up");
+  assert.equal(/accumulate under the OS temp dir/i.test(source), false, "the comment must no longer claim these accumulate under the OS temp directory");
+  assert.match(source, /broker-kill\.mts.{0,80}(reap|own)/is, "the comment must name broker-kill.mts as the reap's owner");
+});
+
+// MUST run before any later test in this file passes a non-loopback
+// binmonHost to buildViceArgs() -- the widened-bind note is gated by a
+// module-level flag with no test-facing reset, so this is the one place in
+// the whole file the note is provably observable as "exactly one," ahead of
+// the very next test below (which reuses the same widened host but does not
+// itself assert on stderr).
+test("buildViceArgs: widening the stock bind away from 127.0.0.1 emits exactly one stderr note per process, however many times buildViceArgs is called", () => {
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  const writes: string[] = [];
+  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    writes.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0" });
+    buildViceArgs(6511, { backend: "stock", binmonHost: "0.0.0.0" });
+    buildViceArgs(6512, { backend: "stock", binmonHost: "0.0.0.0" });
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  const noteLines = writes.filter((l) => /binary monitor is/.test(l) && /unauthenticated/.test(l));
+  assert.equal(noteLines.length, 1, `expected exactly one widened-bind note across three calls, got ${noteLines.length}: ${JSON.stringify(writes)}`);
+});
+
+test("buildViceArgs: stock backend honours an explicit binmonHost override", () => {
+  const args = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0" });
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    "-seed",
+    "4242",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://0.0.0.0:6510",
+  ]);
+});
+
+// ===========================================================================
+// 03-04-PLAN.md, Task 1: D-13 -- the -remotemonitor flag and its own
+// second, broker-allocated port. buildViceArgs()'s own three cases first
+// (pure argv construction, no process spawned), then acquirePortAndLaunch()'s
+// wiring of the real allocator below.
+// ===========================================================================
+
+// RENAMED by 33-05: the title used to claim byte-identity with "the current
+// argv", which is exactly the claim REPRO-01's unconditional determinism block
+// retired on the stock branch (D-15's 2026-09-02 amendment rider). What the body
+// pins now is the absence of -remotemonitor, which is what D-13 ever cared about.
+test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort appends no -remotemonitor at all, and ends at the binmon address", () => {
+  const args = buildViceArgs(6600, { backend: "stock" });
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    "-seed",
+    "4242",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6600",
+  ]);
+});
+
+test("buildViceArgs (D-13): stock backend WITH a remoteMonitorPort appends -remotemonitor and its address, same host as the binmon bind", () => {
+  const args = buildViceArgs(6600, { backend: "stock", remoteMonitorPort: 6601 });
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    "-seed",
+    "4242",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
+    "+autostart-delay-random",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6600",
+    "-remotemonitor",
+    "-remotemonitoraddress",
+    "ip4://127.0.0.1:6601",
+  ]);
+});
+
+test("acquirePortAndLaunch (D-13): a stock launch's second allocation receives an exclude set containing the primary port, and the record carries both the port and -remotemonitor", async () => {
+  const state = createBrokerState();
+  const excludeSeen: number[][] = [];
+  const result = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/d13-stock-second-port",
+    backend: "stock",
+    allocatePort: async () => ({ ok: true, port: 6600 }),
+    allocateRemoteMonitorPort: async (_s, exclude) => {
+      excludeSeen.push(Array.from(exclude));
+      return { ok: true, port: 6601 };
+    },
+    spawn: () => stubChild(4242),
+  });
+  assert.ok(result.ok, "the launch must succeed");
+  assert.deepEqual(excludeSeen, [[6600]], "the second allocation must receive an exclude set containing exactly the primary port");
+  const record = (result as { ok: true; record: InstanceRecord }).record;
+  assert.equal(record.remoteMonitorPort, 6601, "the record must carry the second allocated port");
+  assert.ok(record.viceArgs.includes("-remotemonitor"), "the argv must include -remotemonitor");
+  assert.ok(state.blockedPorts.has(6601), "the second port must be blocked so it is never re-offered");
+});
+
+test("acquirePortAndLaunch (D-16, plan 41-05): a second-port allocation failure FAILS THE WHOLE ACQUIRE, spawns nothing, and leaves state.instances empty", async () => {
+  const state = createBrokerState();
+  let secondAllocationCalls = 0;
+  let spawnCalls = 0;
+  const result = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/d16-stock-second-port-fail",
+    backend: "stock",
+    allocatePort: async () => ({ ok: true, port: 6600 }),
+    allocateRemoteMonitorPort: async () => {
+      secondAllocationCalls++;
+      return { ok: false, reason: "no_free_port" };
+    },
+    spawn: () => {
+      spawnCalls++;
+      return stubChild(4242);
+    },
+  });
+  assert.equal(result.ok, false, "a failed text-port allocation must fail the whole acquire -- owner direction (D-16): 'it should not be possible, vice must be started witht the text channel'");
+  assert.equal(!result.ok && result.reason, "no_free_text_port", "the failure reason must name the text-port allocation specifically (checkpoint option B), not the generic no_free_port");
+  assert.equal(secondAllocationCalls, 1);
+  assert.equal(spawnCalls, 0, "no process may ever be spawned when the text-port allocation fails");
+  assert.equal(state.instances.size, 0, "no InstanceRecord may exist for a failed text-port allocation");
+});
+
+test("acquirePortAndLaunch (D-16, discriminating power): the primary port allocated before a text-port allocation failure is allocatable again on the very next call -- no leak", async () => {
+  const state = createBrokerState();
+  const first = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/d16-primary-port-reuse",
+    backend: "stock",
+    allocatePort: async () => ({ ok: true, port: 6600 }),
+    allocateRemoteMonitorPort: async () => ({ ok: false, reason: "no_free_port" }),
+    spawn: () => stubChild(4242),
+  });
+  assert.equal(first.ok, false);
+
+  let secondAllocatePortSawExclusions = false;
+  const second = await acquirePortAndLaunch("acquire", {
+    state,
+    stateDir: "/tmp/d16-primary-port-reuse",
+    backend: "stock",
+    allocatePort: async () => {
+      // If the primary port had leaked (added to blockedPorts or left in
+      // state.instances by the previous failed attempt), a real allocator
+      // would skip it; this stub simply reports what it received and always
+      // offers 6600 back, so the plant is on ANY caller-observable leak, not
+      // on this stub's own selection logic.
+      secondAllocatePortSawExclusions = state.instances.has(6600) || state.blockedPorts.has(6600);
+      return { ok: true, port: 6600 };
+    },
+    allocateRemoteMonitorPort: async () => ({ ok: true, port: 6601 }),
+    spawn: () => stubChild(4243),
+  });
+  assert.equal(secondAllocatePortSawExclusions, false, "the primary port must not be blocked or already recorded after the first attempt's own failure");
+  assert.ok(second.ok, "a fresh attempt with a working second allocator must succeed, reusing the SAME primary port the failed attempt allocated");
+  assert.equal(second.ok && second.record.port, 6600);
+});
+
+test("spawnAndRecordInstance (D-16, via tryLaunchOne): throws, naming the missing field, when handed backend \"stock\" with no remoteMonitorPort", () => {
+  const state = createBrokerState();
+  assert.throws(
+    () => {
+      tryLaunchOne("acquire", 6600, {
+        state,
+        supervisorDir: "/tmp/d16-stock-no-port-throw",
+        epochFile: "/tmp/d16-stock-no-port-throw/epoch.json",
+        backend: "stock",
+        spawn: () => stubChild(4242),
+      });
+    },
+    /remoteMonitorPort/,
+    "a stock construction site with no remoteMonitorPort must throw by name rather than write a portless stock record",
+  );
+  assert.equal(state.instances.size, 0, "no record may have been written before the throw");
+  assert.equal(isLaunchInFlight(), false, "the in-flight guard must still be released even though spawnAndRecordInstance() threw");
+});
+
+test("grep gate (D-16): broker-launch.mts's source no longer carries the removed degrade log's own wording about the text-monitor port going undialed", () => {
+  const source = readFileSync(join(VICE_DIR, "broker-launch.mts"), "utf8");
+  assert.ok(!source.includes("nothing in Phase 3 dials the text-monitor port"), "the removed degrade log's own phrase must not survive anywhere in the source");
+  assert.ok(!source.includes("launching WITHOUT -remotemonitor"), "the removed degrade log's own phrase must not survive anywhere in the source");
+  assert.ok(!source.includes("Degrade, never fail"), "the removed degrade branch's own comment must not survive anywhere in the source");
+});
+
+// ===========================================================================
+// CR-02 (03-REVIEW.md): the D-13 second port across an instance's REPLACEMENT
+// and its TEARDOWN. Every test above covers only a fresh launch through
+// acquirePortAndLaunch(); the crash-supervision path reaches tryLaunchOne()
+// directly, which is exactly where both halves of CR-02 lived -- the
+// replacement silently lost `-remotemonitor`, and the old port stayed in
+// state.blockedPorts forever.
+// ===========================================================================
+
+/** Boots a supervised STOCK instance whose record carries a second port,
+ * exactly as acquirePortAndLaunch() would have left it (record field set,
+ * port blocked), and hands back the state plus the live child so a test can
+ * decide how it dies. */
+function bootStockInstanceWithSecondPort(
+  stateDir: string,
+  overrides: Partial<Parameters<typeof superviseChild>[2]> = {},
+): { deps: ReturnType<typeof makeSuperviseDeps>; children: ChildProcess[]; port: number; remotePort: number } {
+  const children: ChildProcess[] = [];
+  const port = 6600;
+  const remotePort = 6601;
+  const deps = makeSuperviseDeps(stateDir, {
+    backend: "stock",
+    spawn: () => {
+      const child = fakeChild();
+      children.push(child);
+      return child;
+    },
+    ...overrides,
+  });
+  // Plan 41-05 (D-16): remoteMonitorPort is now REQUIRED at construction --
+  // supplied to superviseChild() directly (its own optional fourth
+  // parameter) rather than patched onto the record after the fact, which
+  // would now throw before this call ever returns. Blocking the port
+  // separately still mirrors what acquirePortAndLaunch() itself does for a
+  // real stock cold launch (spawnAndRecordInstance() does not touch
+  // state.blockedPorts -- only the caller that resolved the port does).
+  const record = superviseChild("acquire", port, deps, remotePort);
+  assert.ok(record, "the initial supervised launch must succeed");
+  deps.state.blockedPorts.add(remotePort);
+  return { deps, children, port, remotePort };
+}
+
+test("CR-02: a crash-respawn keeps the instance's second (-remotemonitor) port, on the record and in the argv", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cr02-respawn-second-port-"));
+  try {
+    const { deps, children, port, remotePort } = bootStockInstanceWithSecondPort(dir);
+    children[0]!.emit("exit", 1, null);
+
+    const respawned = await waitFor(() => {
+      const rec = deps.state.instances.get(port);
+      return rec && rec.epoch === 2 ? rec : null;
+    });
+    assert.ok(respawned, "the crashed stock instance must be respawned");
+    assert.equal(
+      respawned!.remoteMonitorPort,
+      remotePort,
+      "CR-02 REGRESSION: the replacement lost the second port, so D-13's 'the instance record carries it' stops being true the first time an instance is replaced",
+    );
+    assert.ok(respawned!.viceArgs.includes("-remotemonitor"), `CR-02 REGRESSION: the respawned argv lost -remotemonitor: ${JSON.stringify(respawned!.viceArgs)}`);
+    assert.ok(
+      respawned!.viceArgs.some((a) => a.includes(String(remotePort))),
+      `the respawned argv must bind the SAME second port the crashed instance held: ${JSON.stringify(respawned!.viceArgs)}`,
+    );
+    assert.ok(deps.state.blockedPorts.has(remotePort), "the second port must stay blocked while a live replacement is still using it");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CR-02: a deliberate teardown releases the second port back to the allocator instead of leaking it into blockedPorts", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cr02-teardown-release-"));
+  try {
+    const { deps, children, port, remotePort } = bootStockInstanceWithSecondPort(dir);
+    const record = deps.state.instances.get(port)!;
+    record.deliberateKill = true;
+    children[0]!.emit("exit", 0, "SIGTERM");
+
+    const gone = await waitFor(() => (deps.state.instances.has(port) ? null : true));
+    assert.ok(gone, "a deliberately-torn-down instance must be dropped from the map");
+    assert.equal(
+      deps.state.blockedPorts.has(remotePort),
+      false,
+      "CR-02 REGRESSION: the torn-down instance's second port is still blocked -- nextFreePort() never reconsiders a blocked candidate, so every teardown would permanently shrink the allocation band",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CR-02: a crash-loop give-up releases the second port back to the allocator", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cr02-giveup-release-"));
+  try {
+    const { deps, children, port, remotePort } = bootStockInstanceWithSecondPort(dir, { maxRestarts: 1 });
+    children[0]!.emit("exit", 1, null);
+
+    const gone = await waitFor(() => (deps.state.instances.has(port) ? null : true));
+    assert.ok(gone, "the give-up path must drop the instance");
+    assert.equal(deps.state.blockedPorts.has(remotePort), false, "CR-02 REGRESSION: a given-up instance's second port stayed blocked for the life of the process");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("deleteInstanceRecord: releases only a record's OWN second port, never an unrelated bind-refused block (CR-02)", () => {
+  const state = createBrokerState();
+  // Population 1 (see BrokerState.blockedPorts' own doc comment): a port
+  // nextFreePort() refused because it failed to bind. Nothing may release it.
+  state.blockedPorts.add(6650);
+  // Population 2: a live stock instance's second port.
+  state.blockedPorts.add(6601);
+  state.instances.set(6600, {
+    port: 6600,
+    url: "http://127.0.0.1:6600/mcp",
+    state: "ready",
+    reason: "acquire",
+    epochFile: "/tmp/cr02-unit/epoch.json",
+    supervisorDir: "/tmp/cr02-unit",
+    pid: 4242,
+    expectedIdentity: "x64sc",
+    launchedAt: 0,
+    readyAt: 0,
+    viceBin: "x64sc",
+    viceArgs: [],
+    dryRun: false,
+    monitorClients: {},
+    remoteMonitorPort: 6601,
+  });
+
+  deleteInstanceRecord(state, 6600);
+
+  assert.equal(state.instances.has(6600), false, "the record must be deleted");
+  assert.equal(state.blockedPorts.has(6601), false, "the record's own second port must be released");
+  assert.equal(state.blockedPorts.has(6650), true, "a bind-refused port must stay blocked for the lifetime of the process");
+
+  // Idempotent, and a no-op for a record that never had a second port.
+  deleteInstanceRecord(state, 6600);
+  state.instances.set(6602, {
+    port: 6602,
+    url: "http://127.0.0.1:6602/mcp",
+    state: "ready",
+    reason: "acquire",
+    epochFile: "/tmp/cr02-unit/epoch.json",
+    supervisorDir: "/tmp/cr02-unit",
+    pid: 4243,
+    expectedIdentity: "x64sc",
+    launchedAt: 0,
+    readyAt: 0,
+    viceBin: "x64sc",
+    viceArgs: [],
+    dryRun: false,
+    monitorClients: {},
+  });
+  deleteInstanceRecord(state, 6602);
+  assert.equal(state.instances.has(6602), false, "a fork record with no second port must still be deleted");
+  assert.equal(state.blockedPorts.has(6650), true, "and must still leave every unrelated block in place");
+});
+
+// The env-reading backend-override function that used to live here was
+// retired as of plan 02-07 (moved to backend-detect.mts's resolvedBackend()),
+// and that override itself was deleted outright by FORKRM-01 (plan 52-06) --
+// there is nothing left in this file to assert about environment-driven
+// backend selection.
+
+// ===========================================================================
+// 33-05-PLAN.md, Task 2: REPRO-01 / REPRO-05 / D-15 -- the profile knobs, the
+// fourth ordering invariant, and the four edge cases the plan's must_haves
+// name (empty, ordering, idempotency, concurrency). Pure argv construction
+// only; no process is spawned in this section.
+//
+// ORDERING NOTE, same class as the widened-bind note-once test far above:
+// the idempotency test below is the FIRST and ONLY test in this file that
+// passes a non-loopback binmonHost together with a remoteMonitorPort, so it
+// is the one place the SECOND (-remotemonitor) one-time note is provably
+// observable as "exactly one". Do not add an earlier test that widens the
+// text-monitor bind, and do not move this block above the buildViceArgs
+// section -- both would consume that note.
+// ===========================================================================
+
+test("STOCK_DETERMINISM_FLAGS / STOCK_DETERMINISM_SEED (33-05, REPRO-01): the exported block is the exact nine fixed tokens, in one fixed order, and is frozen against mutation", () => {
+  assert.equal(STOCK_DETERMINISM_SEED, 4242, "the exported seed must stay the value REPRO-01's reproduction was measured with (33-RESEARCH.md M3)");
+  assert.deepEqual(
+    [...STOCK_DETERMINISM_FLAGS],
+    ["-seed", "4242", "-raminitstartrandom", "0", "-raminitrepeatrandom", "0", "-raminitrandomchance", "0", "+autostart-delay-random"],
+    "this is the one definition tests and evidence scripts assert against -- a second hand-copied array is exactly what the export exists to prevent",
+  );
+  assert.ok(Object.isFrozen(STOCK_DETERMINISM_FLAGS), "the exported block must be frozen: a caller mutating the shared value would produce a launch that no longer matches the recorded seed");
+});
+
+test("buildViceArgs (33-05, REPRO-05): the fourth ordering invariant -- with profile.headless, -console is at index 1 and -drive8type still precedes -binarymonitor", () => {
+  const args = buildViceArgs(6510, { backend: "stock", profile: { headless: true } });
+  assert.equal(args.indexOf("-default"), 0, "-default must stay at index 0");
+  assert.equal(args.indexOf("-console"), 1, "the MEASURED failure was precisely a -console that had drifted to index >= 2, where the process dies with Gtk-WARNING: cannot open display:");
+  assert.ok(args.indexOf("-drive8type") < args.indexOf("-binarymonitor"), "-drive8type must still be set before the monitor binds");
+  assert.equal(args[args.indexOf("-drive8type") + 1], "1541", "1541 must still follow -drive8type immediately");
+});
+
+test("buildViceArgs (33-05, D-15, edge: empty): an absent profile, an empty profile object and a both-false profile all produce the identical argv", () => {
+  const absent = buildViceArgs(6510, { backend: "stock" });
+  const empty = buildViceArgs(6510, { backend: "stock", profile: {} });
+  const bothFalse = buildViceArgs(6510, { backend: "stock", profile: { warp: false, headless: false } });
+  assert.deepEqual(empty, absent, "an empty profile object must not diverge from an absent one");
+  assert.deepEqual(bothFalse, absent, "a knob set to false must not diverge from an absent knob");
+  assert.ok(!absent.includes("-console"), "no -console may appear without profile.headless");
+  assert.ok(!absent.includes("-warp"), "no -warp may appear without profile.warp");
+});
+
+test("buildViceArgs (33-05, D-15): profile.warp alone places -warp immediately before -binarymonitor and adds nothing else", () => {
+  const args = buildViceArgs(6510, { backend: "stock", profile: { warp: true } });
+  assert.deepEqual(args, [
+    "-default",
+    "-drive8type",
+    "1541",
+    ...STOCK_DETERMINISM_FLAGS,
+    "-warp",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
+  assert.ok(!args.includes("-console"), "profile.warp must not imply -console");
+});
+
+test("buildViceArgs (33-05, D-15): profile.headless alone places -console at index 1 and adds nothing else", () => {
+  const args = buildViceArgs(6510, { backend: "stock", profile: { headless: true } });
+  assert.deepEqual(args, [
+    "-default",
+    "-console",
+    "-drive8type",
+    "1541",
+    ...STOCK_DETERMINISM_FLAGS,
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    "ip4://127.0.0.1:6510",
+  ]);
+  assert.ok(!args.includes("-warp"), "profile.headless must not imply -warp");
+});
+
+test("buildViceArgs (33-05, edge: adjacency): with warp AND headless both requested, both flags are emitted and neither displaces the other", () => {
+  const args = buildViceArgs(6510, { backend: "stock", profile: { warp: true, headless: true } });
+  const warpOnly = buildViceArgs(6510, { backend: "stock", profile: { warp: true } });
+  const headlessOnly = buildViceArgs(6510, { backend: "stock", profile: { headless: true } });
+  assert.equal(args.indexOf("-console"), 1, "-console must stay at index 1 when -warp is also requested");
+  assert.equal(args[args.indexOf("-binarymonitor") - 1], "-warp", "-warp must stay immediately before -binarymonitor when -console is also requested");
+  assert.equal(args.length, warpOnly.length + 1, "the both-true argv must be exactly the warp-only argv plus -console");
+  assert.equal(args.length, headlessOnly.length + 1, "the both-true argv must be exactly the headless-only argv plus -warp");
+});
+
+test("buildViceArgs (33-05, edge: idempotency): three calls on the widened-bind branch return three deep-equal arrays, and the one-time text-monitor note is emitted exactly once -- module state never leaks into argv", () => {
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  const writes: string[] = [];
+  process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+    writes.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  let first: string[];
+  let second: string[];
+  let third: string[];
+  try {
+    first = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0", remoteMonitorPort: 6511 });
+    second = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0", remoteMonitorPort: 6511 });
+    third = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0", remoteMonitorPort: 6511 });
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  assert.deepEqual(second, first, "two calls with identical inputs must return deep-equal arrays");
+  assert.deepEqual(third, first, "and a third must too -- the one-time note flips module state, and that must never reach argv");
+  const textNotes = writes.filter((l) => /text monitor/.test(l) && /unauthenticated/.test(l));
+  assert.equal(textNotes.length, 1, `expected exactly one widened text-monitor note across three calls, got ${textNotes.length}: ${JSON.stringify(writes)}`);
+  const binmonNotes = writes.filter((l) => /binary monitor is/.test(l) && /unauthenticated/.test(l));
+  assert.equal(binmonNotes.length, 0, "the binmon note is once-per-process and was already consumed by the note-once test above -- observing a second one here would mean the gate had been reset");
+});
+
+test("buildViceArgs (33-05, edge: concurrency): two stock instances on different ports differ in EXACTLY one argv element -- the ip4://host:port string", () => {
+  const a = buildViceArgs(6600, { backend: "stock" });
+  const b = buildViceArgs(6601, { backend: "stock" });
+  assert.equal(a.length, b.length, "two stock launches must produce argv of identical length");
+  const differing: number[] = [];
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) differing.push(i);
+  }
+  assert.deepEqual(
+    differing,
+    [a.indexOf("-binarymonitoraddress") + 1],
+    `exactly one index may differ, and it must be the binmon address -- a flag that accidentally derived from the port would red this. a=${JSON.stringify(a)} b=${JSON.stringify(b)}`,
+  );
+  assert.equal(a[differing[0]!], "ip4://127.0.0.1:6600");
+  assert.equal(b[differing[0]!], "ip4://127.0.0.1:6601");
+});
+
+test("buildViceArgs (33-05, T-33-04): VICE_ARGS still short-circuits ahead of the stock branch with a profile present -- profile must never become a second whole-argv override", () => {
+  const stockArgs = buildViceArgs(6510, { backend: "stock", viceArgsEnv: "/bin/sleep 600", profile: { warp: true, headless: true } });
+  assert.deepEqual(stockArgs, ["/bin/sleep", "600"], "the deliberate operator-only override must win over the profile, not be merged with it");
+  assert.ok(!stockArgs.includes("-console") && !stockArgs.includes("-warp"), "no profile flag may leak past the VICE_ARGS short-circuit");
+});
+
+// ---------------------------------------------------------------------------
+// Phase 33, plan 33-06 (T-33-04): the anti-smuggling assertion, made
+// ELEMENT-WISE rather than by inspecting the whole array against one expected
+// value.
+//
+// The whole-argv assertions elsewhere in this file already pin what the stock
+// branch returns TODAY. This one pins a different, stronger property that
+// survives future additions to the block: no argv element is EVER derived
+// from a `profile` VALUE. `profile` maps to exactly two literal flag tokens
+// and to nothing else -- there is no `extraArgs`, no passthrough string, and
+// no place a caller-supplied value can land. `VICE_ARGS` remains the single
+// deliberate operator-only whole-argv override.
+//
+// If a future plan adds a legitimate stock flag, it belongs in the allow-list
+// below. If a future plan makes an argv element a FUNCTION of a profile
+// value, this test reds -- which is the point.
+// ---------------------------------------------------------------------------
+
+/** Every literal token the stock branch is permitted to emit. Built from the
+ * exported determinism block plus the fixed flags, so the block cannot drift
+ * away from this list; the ip4:// address string is the ONE computed element
+ * and is matched by shape below rather than listed here. */
+const STOCK_LITERAL_ARGV_TOKENS: ReadonlySet<string> = new Set([
+  "-default",
+  "-console",
+  "-warp",
+  "-drive8type",
+  "1541",
+  ...STOCK_DETERMINISM_FLAGS,
+  "-binarymonitor",
+  "-binarymonitoraddress",
+  "-remotemonitor",
+  "-remotemonitoraddress",
+]);
+
+test("buildViceArgs (33-06, T-33-04): with {warp:true, headless:true} every returned element is either a literal stock flag token or the ip4:// address string -- no argv element is ever derived from a profile VALUE", () => {
+  const args = buildViceArgs(6510, { backend: "stock", viceArgsEnv: "", profile: { warp: true, headless: true } });
+
+  // Element-wise, with the offending element named -- a deepEqual against a
+  // whole expected array would fail for an ordinary flag addition too and so
+  // would not distinguish "the argv changed" from "a profile value reached
+  // argv", which is the only failure this test is about.
+  for (const [i, element] of args.entries()) {
+    const isLiteral = STOCK_LITERAL_ARGV_TOKENS.has(element);
+    const isAddress = /^ip4:\/\/[^\s]+:\d+$/.test(element);
+    assert.ok(
+      isLiteral || isAddress,
+      `argv[${i}] = ${JSON.stringify(element)} is neither a literal stock flag token nor an ip4:// address. ` +
+        `A profile must map to fixed literal flags only (T-33-04); an element derived from a profile VALUE is an argv-injection surface. Full argv: ${JSON.stringify(args)}`,
+    );
+  }
+  // And the two knobs really did land -- otherwise the loop above would pass
+  // vacuously on an argv that ignored the profile entirely.
+  assert.ok(args.includes("-console"), "headless must still have produced -console");
+  assert.ok(args.includes("-warp"), "warp must still have produced -warp");
+  assert.equal(args.filter((a) => /^ip4:\/\//.test(a)).length, 1, "exactly one computed element -- the binmon bind address");
+});
+
+test("buildViceArgs (33-06, T-33-04): the same element-wise property holds with a SECOND (-remotemonitor) port requested, where two computed address strings exist", () => {
+  const args = buildViceArgs(6510, { backend: "stock", viceArgsEnv: "", remoteMonitorPort: 6511, profile: { warp: true, headless: true } });
+  for (const [i, element] of args.entries()) {
+    assert.ok(
+      STOCK_LITERAL_ARGV_TOKENS.has(element) || /^ip4:\/\/[^\s]+:\d+$/.test(element),
+      `argv[${i}] = ${JSON.stringify(element)} is neither a literal stock flag token nor an ip4:// address; full argv: ${JSON.stringify(args)}`,
+    );
+  }
+  assert.equal(args.filter((a) => /^ip4:\/\//.test(a)).length, 2, "two computed elements -- the binmon and text-monitor bind addresses");
+});
+
+test("buildViceArgs (33-06, T-33-04): a profile carrying a STRING value cannot reach argv -- the type forbids it, and even an unsound cast produces no element carrying the string", () => {
+  // The wire boundary refuses this shape outright (broker-control.mts's
+  // normaliseLaunchProfile(), asserted in broker-control.test.ts). This case
+  // closes the route STRUCTURALLY one layer deeper: even if a malformed
+  // profile somehow reached the builder, there is no code path from a profile
+  // VALUE into an argv element, so the smuggled string appears nowhere.
+  const smuggled = "--attack-flag";
+  const args = buildViceArgs(6510, {
+    backend: "stock",
+    viceArgsEnv: "",
+    profile: { warp: smuggled } as unknown as { warp?: boolean; headless?: boolean },
+  });
+  assert.equal(args.includes(smuggled), false, "the smuggled string must not appear as an argv element");
+  assert.equal(
+    args.some((a) => a.includes(smuggled)),
+    false,
+    "and must not appear as a SUBSTRING of any argv element either -- no interpolation site exists for a profile value",
+  );
+  for (const [i, element] of args.entries()) {
+    assert.ok(
+      STOCK_LITERAL_ARGV_TOKENS.has(element) || /^ip4:\/\/[^\s]+:\d+$/.test(element),
+      `argv[${i}] = ${JSON.stringify(element)} escaped the literal-token allow-list under a smuggled profile value`,
+    );
+  }
+  // A truthy non-boolean does still switch the flag on (`profile?.warp` is a
+  // truthiness test, deliberately -- it is not this function's job to
+  // re-validate a shape the boundary already refused, and re-deriving that
+  // check here would create the second narrowing site 33-06 exists to avoid).
+  // Recorded as an observation, not a complaint: the flag is a fixed literal
+  // either way, so the smuggled VALUE is still unreachable.
+  assert.ok(args.includes("-warp"), "a truthy value switches the fixed literal flag on; the value itself remains unreachable");
+});

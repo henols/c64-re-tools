@@ -393,9 +393,7 @@ export function writeGeneratedRegions({
   return { rewrote, errors };
 }
 
-/** The plain `.git`-marker walk, copied (not imported) from
- * `phase58-citation-ledger.test.ts` (itself mirrored from
- * `phase50-findings-contract.test.ts`). Deliberately NOT `repoRoot()` from
+/** The plain `.git`-marker walk. Deliberately NOT `repoRoot()` from
  * `repo-root.ts`: that function's first branch returns
  * `env.CLAUDE_PROJECT_DIR` whenever it is set, which under plugin semantics
  * names the CONSUMING project and under a worktree run names the primary

@@ -11,6 +11,8 @@
     "allowJs": false,
     "noEmit": true,
     "erasableSyntaxOnly": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "allowImportingTsExtensions": true,
     "types": [
       "node"
@@ -21,7 +23,8 @@
     "**/*.ts",
     "**/*.mts",
     "../../../skills/*/scripts/*.ts",
-    "../../../test/**/*.ts"
+    "../../../test/**/*.ts",
+    "../../../test/**/*.mts"
   ],
   "exclude": [
     "node_modules",

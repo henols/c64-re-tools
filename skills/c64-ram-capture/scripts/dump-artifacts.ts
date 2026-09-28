@@ -11,7 +11,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve, relative } from "node:path";
+import { join, resolve, relative } from "node:path";
 
 import type { Address } from "../../c64-project/scripts/releases.ts";
 import { loadSibling, siblingOrRefuse } from "./sibling.ts";
@@ -71,7 +71,6 @@ export interface WriteDumpSetInput {
   captureExtra?: Record<string, unknown>;
 }
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = projectRoot();
 
 const die: (m: string) => never = (m) => { console.error(`error: ${m}`); process.exit(1); };

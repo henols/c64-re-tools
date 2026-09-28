@@ -76,8 +76,8 @@ import { stockAnswer, isErrorText, convertWireError, type StockSessionHandler, t
 import type { StockConnectSession } from "./stock-connect.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not an
- * array. Matches this module tree's own isPlainObject() convention
- * (vice.ts:310-316); redeclared privately here, not imported, per the
+ * array. Matches this module tree's own isPlainObject() convention;
+ * redeclared privately here, not imported, per the
  * established per-module convention. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -473,8 +473,8 @@ export const handleCheckpointAdd: StockSessionHandler = async (args, session, _d
   }
 
   // temporary is ALWAYS false in Phase 3 -- the fork exposes no such
-  // argument, and vice-sync.ts's "never delete a VICE-marked temporary
-  // checkpoint" invariant is a fork-side concern this module never touches.
+  // argument, and a "never delete a VICE-marked temporary checkpoint"
+  // invariant is a fork-side concern this module never touches.
   const body = checkpointSetBody({ start, end, stop, enabled: true, operation, temporary: false });
 
   let response;

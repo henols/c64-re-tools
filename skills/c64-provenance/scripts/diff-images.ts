@@ -18,7 +18,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve, relative } from "node:path";
+import { join, resolve, relative } from "node:path";
 
 import type { DumpEntry, LoaderRange, ProvenanceOffsetRecord, Registry, ReleaseEntry } from "../../c64-project/scripts/releases.ts";
 import { loadSibling, siblingOrRefuse } from "./sibling.ts";
@@ -29,7 +29,6 @@ const { projectRoot, dataRoot } = siblingOrRefuse(await loadSibling(() => import
 const { loadRegistry, registryPath, upsertRelease } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/releases.ts"), "releases.ts", "c64-provenance"), import.meta.url);
 const { addrNum, hex4 } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/address.ts"), "address.ts", "c64-provenance"), import.meta.url);
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = projectRoot();
 const RECOVERY_DIR = dataRoot();
 
@@ -211,7 +210,6 @@ export function enumerateManifests(registry: { releases: readonly Pick<ReleaseEn
 
 // ------------------------------------------------------------ anchorSearch
 
-const VOLATILE_START = 0x0000;
 const VOLATILE_END = 0x03ff; // CPU port regs, stack, KERNAL work area/BASIC input buffer -- see NOTES.md's own drift zones; biased away from as anchor source, never excluded from the diff itself.
 
 function isTrivialRun(buf: Buffer): boolean {
@@ -843,7 +841,7 @@ export function renderLedger({
 
   // NOTE: the embedded invocation path below is deliberately the
   // CONSUMER's installed location (`.claude/skills/...`), not this repository's
-  // source-tree location (`skills/...`) -- pinned by diff-images.test.ts and skill-consumer-paths.test.ts.
+  // source-tree location (`skills/...`) -- pinned by diff-images.test.ts.
   let generated = `<!-- GENERATED, DO NOT HAND-EDIT. Regenerate with: node .claude/skills/c64-provenance/scripts/diff-images.ts ledger --gap-tolerance ${gapTolerance} -->\n\n`;
   generated += `| Start | End | Kind | Verdict | Confidence | Agreeing releases | Evidence / Reason |\n`;
   generated += `|---|---|---|---|---|---|---|\n`;
@@ -907,8 +905,7 @@ const VERBS: Record<string, (rest: string[]) => void> = {
 
     const provenAt = new Date().toISOString();
     // The reference release carries its own provenance_offset record too --
-    // required so every release in the registry has the same field set
-    // (recovery-schema.ts's runBaseChecks asserts this).
+    // required so every release in the registry has the same field set.
     recordProvenanceOffset(referenceId, {
       role: "reference",
       reference_release: null,
@@ -964,7 +961,7 @@ const VERBS: Record<string, (rest: string[]) => void> = {
     // registry, enumerated -- never a hardcoded pair.
     for (const { release: releaseId, bin, manifestPath } of enumerateManifests(reg)) {
       // Both are present: enumerateManifests() read the entry out of `reg`,
-      // and a dumps[] entry is a four-file set (recovery-schema.ts checks it).
+      // and a dumps[] entry is a four-file set.
       const releaseEntry = reg.releases.find((r) => r.id === releaseId)!;
       const image = readImage(bin!);
       const manifest = readManifest(manifestPath);

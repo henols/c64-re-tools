@@ -79,16 +79,3 @@ export function snapshotMetaPathFor(name: string): string {
   }
   return join(ensureLocalDir(toolsDir()), "snapshots", `${verdict.name}.json`);
 }
-
-/**
- * Resolves a per-kind subdirectory under the project's local/ -- the ONE place a
- * later plan in this phase (64-02..64-07) asks for a destination directory,
- * matching the ROADMAP's own cross-cutting constraint that a downloaded
- * file lands in an EXISTING per-kind subdirectory, never one new inbox
- * folder. This function has NO live caller in this phase (D-13): the
- * broker never calls it yet. Its first real caller is Phase 65, where the
- * broker genuinely names host-tool output artifacts.
- */
-export function transferKindDir(kind: string): string {
-  return join(ensureLocalDir(toolsDir()), kind);
-}

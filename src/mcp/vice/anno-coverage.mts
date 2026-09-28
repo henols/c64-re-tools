@@ -734,94 +734,6 @@ interface DispatchPairing {
 }
 
 /**
- * The COMPLETE, frozen list of shapes `hasDispatchContext()` accepts as proof
- * that something dispatches through a reconstructed pair of tables. One stable
- * string id per sufficient shape, in the order the predicate tests them.
- *
- * A SHAPE LISTED HERE IS THE DECISION TO TREAT THAT SHAPE AS PROOF OF CODE --
- * the same decision `provenDispatchTargets()`'s doc comment describes, made one
- * level down. The class-3 gate reads this predicate, and `splitTables` is one
- * of the four sources that seam publishes, so a shape admitted here becomes a
- * recursive-descent seed and turns whatever it points at into headline
- * `reachedAsInstruction`.
- *
- * ADDING A SHAPE HERE WITHOUT A NEGATIVE CONTROL THAT REACHES ITS INTERIOR
- * FAILS THE TEST SUITE BY NAME. `anno-coverage.test.ts`'s
- * `GATE_INTERIOR_DECLARATIONS` must claim every id in this array, and a
- * declaration is checked mechanically by a witness that decodes the payload --
- * not accepted as a claim. That mechanism exists because this was once a real
- * false-positive route that a 2517-passing suite concealed: every negative
- * control the gate had bracketed it from the OUTSIDE, and a negative control
- * built from the outside of the predicate it constrains is not a control.
- *
- * The count is also tied to the predicate mechanically: a test reads
- * `hasDispatchContext()`'s body from this module's source text and asserts that
- * the number of true-returning sites in it equals this array's length, so a
- * fourth branch added without a matching id reds the suite rather than sliding
- * through a hand-maintained mirror.
- */
-export const DISPATCH_CONTEXT_SHAPES: readonly string[] = Object.freeze([
-  "stack-return-push-idiom",
-  "zeropage-vector-jumped-through",
-]);
-
-/** One gate that may publish a proven dispatch finding whose evidence is one
- * of `DISPATCH_CONTEXT_SHAPES`. See `DISPATCH_GATE_ROUTES`. */
-export interface DispatchGateRoute {
-  /** The route's stable string id, used as the second half of a control
-   * target's identity in the test suite. */
-  readonly id: string;
-  /** Does this gate reach its verdict by calling `hasDispatchContext()`? A
-   * route that does accepts EXACTLY the shapes declared above, which is what
-   * makes reachability on it a derived fact rather than a declaration. */
-  readonly consultsSharedGate: boolean;
-  /** The name of the scan collection this route writes its proven findings
-   * into -- an `IndirectDispatchScan` field name, and a member of
-   * `PROVEN_TARGET_SOURCES`. */
-  readonly publishesInto: string;
-}
-
-/**
- * The COMPLETE, frozen list of ROUTES by which a shape above can become a
- * proven dispatch finding. One record per gate.
- *
- * A ROUTE IS THE SECOND HALF OF A CONTROL TARGET'S IDENTITY, and this array
- * exists because keying control targets on shape ALONE shipped a hole big
- * enough to drive the defect it was built to catch straight through. One of
- * the two shapes above is ruled on by TWO gates, not one -- the class-3 pass,
- * which consults `hasDispatchContext()`, and the class-4 pass, whose own
- * five-instruction window is its gate. The test suite's interior witness used
- * to define that shape's interior as a DISJUNCTION of the two routes, so every
- * control declared against the shape satisfied the class-4 half and the
- * class-3 route into it had no control at all. The knowledge was already
- * written down one comment away; nothing forced a control for it.
- *
- * `publishesInto` is what makes a route's DECLINE measurable. A negative
- * control on the class-3 route is proved to decline through `splitTables` --
- * the collection that route publishes into -- and never through the aggregate
- * `provenDispatchTargets()` seam, because the stack-return payload is
- * simultaneously a class-3 decline and a class-4 acceptance: measured through
- * the seam it looks accepted, and its class-3 decline becomes inexpressible.
- *
- * ADDING A THIRD GATE HERE WITHOUT A CONTROL FOR IT FAILS THE TEST SUITE BY
- * NAME, and so does adding one to `scanIndirectDispatch()` without recording
- * it here. Four assertions in `anno-coverage.test.ts` hold this array down
- * against the module's own text rather than against a hand-maintained mirror:
- * the number of `hasDispatchContext(` call sites equals the number of records
- * whose `consultsSharedGate` is true; each record's `publishesInto` occurs
- * exactly once as a publication site inside `scanIndirectDispatch()`, and the
- * total equals this array's length; every `publishesInto` is a member of
- * `PROVEN_TARGET_SOURCES`; and the class-4 publication site precedes the
- * shared gate's only call site, with no call to the gate before it -- which is
- * what makes "the class-4 pass is a route, not a caller of the shared gate" a
- * source-level fact instead of a claim in a table.
- */
-export const DISPATCH_GATE_ROUTES: readonly DispatchGateRoute[] = Object.freeze([
-  Object.freeze({ id: "class-3-pass", consultsSharedGate: true, publishesInto: "splitTables" }),
-  Object.freeze({ id: "class-4-pass", consultsSharedGate: false, publishesInto: "stackReturnDispatch" }),
-]);
-
-/**
  * Does the instruction window starting at `start` carry evidence that
  * something DISPATCHES through a reconstructed pair of tables?
  *
@@ -1319,32 +1231,6 @@ export function scanIndirectDispatch(
     truncated,
   };
 }
-
-/**
- * The COMPLETE, frozen set of scan collections `provenDispatchTargets()` reads
- * -- the class-1 indirect jumps, the class-2 multi-entry tables, the class-4
- * stack-return findings and the class-3 split tables, named as the
- * `IndirectDispatchScan` fields they are.
- *
- * ADDING A SOURCE HERE IS THE DECISION TO TREAT THAT SOURCE AS PROOF OF CODE,
- * which is the same decision the function's own doc comment below describes,
- * stated as data so a test can read it. `splitTableCandidates` is deliberately
- * NOT a member: an advisory pairing that became a seam source would seed a
- * recursive descent from evidence the gate explicitly declined, and that is
- * the whole point of it being advisory.
- *
- * This declares what the function already does and changes none of it. A test
- * extracts the function's body from this module's text, collects the `scan.`
- * fields it iterates, and asserts set equality with this array in both
- * directions -- so a fifth source added to the seam reds the suite by name,
- * and so does a route publishing into a collection the seam never reads.
- */
-export const PROVEN_TARGET_SOURCES: readonly string[] = Object.freeze([
-  "indirectJumps",
-  "multiEntryTables",
-  "stackReturnDispatch",
-  "splitTables",
-]);
 
 /**
  * The ONE place that decides what may seed a recursive descent.
@@ -2056,21 +1942,6 @@ export interface CoverageReport {
   reproducibility: Reproducibility;
   divergence: DivergenceReport;
 }
-
-/** The exact top-level key set, in order. Exported so the schema test asserts
- * against ONE definition rather than a second hand-typed copy that could
- * drift from the interface above. */
-export const COVERAGE_REPORT_KEYS: readonly string[] = [
-  "schemaVersion",
-  "generatedAt",
-  "project",
-  "structural",
-  "dispatch",
-  "labels",
-  "commentVacuity",
-  "reproducibility",
-  "divergence",
-];
 
 export interface CoverageOptions {
   /** The project image's name: read from disk when `project` is omitted, and

@@ -7,8 +7,8 @@
 // WHY THIS MODULE EXISTS: this policy started life inside anno-enum-gen.mts,
 // consumed only by its own `createOrUpdateEnum()`/`sanitizeVariantMap()`.
 // T-11-NAME-INJECT widened the finding to a SECOND entry route --
-// `anno_set_label_name` (both outer and batch-inner) in anno-tools.mts, and
-// `importLabels()` in anno-symbols.ts -- and `anno-enum-gen.mts` statically
+// `anno_set_label_name` (both outer and batch-inner) in anno-tools.mts -- and
+// `anno-enum-gen.mts` statically
 // imports `runAnnoTool` FROM `anno-tools.mts`, so `anno-tools.mts` cannot
 // import the policy back from `anno-enum-gen.mts` without forming a module
 // cycle. This module has no import from anywhere else in this repo, so

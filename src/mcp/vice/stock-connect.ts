@@ -21,7 +21,7 @@
 // this file is that seam.
 //
 // WHAT NOT TO DO:
-//   - Never re-derive an epoch or restart heuristic here. vice.ts's
+//   - Never re-derive an epoch or restart heuristic here. vice-errors.mts's
 //     MachineRestartedError is the ONE restart-error type this whole module
 //     tree uses (D-11); reuse it, do not define a second one.
 //   - Never dial the binmon port before claimMonitor() has succeeded --
@@ -149,8 +149,7 @@ export function clampCpuHistoryCount(count: number): number {
 /** Sends CPUHISTORY_GET (0x86) with memspace=main and a clamped count of 1
  * (the minimum real VICE accepts -- monitor_binary.c:1491-1497 rejects
  * `requested_count < 1` with InvalidParameter, confirmed live in
- * 07-RESEARCH.md Pitfall 8; count=1 is also probe-binmon.ts's own
- * already-verified value), and maps the wire outcome to
+ * 07-RESEARCH.md Pitfall 8), and maps the wire outcome to
  * CpuHistoryCapability's three-way answer -- 0x00 OK -> "available", 0x83
  * INVALID_TYPE -> "absent" (the pre-3.10 case), 0x8f CMD_FAILURE ->
  * "not_compiled_in" (the distinct compiled-without-support case), 0x81
@@ -676,7 +675,7 @@ async function readEpochSafely(deps: StockConnectDeps): Promise<number | null> {
  *
  *   - StockRequestTimeoutError (stock-protocol.ts): "connected but silent."
  *   - StockConnectionClosedError (stock-protocol.ts): "this socket died."
- *   - MachineRestartedError (vice.ts, reused -- never redefined here):
+ *   - MachineRestartedError (vice-errors.mts, reused -- never redefined here):
  *     "the machine under you is not the machine you handshook with," or its
  *     identity across the reconnect could not be proven at all (no epoch
  *     evidence either way is treated the same as proven-different -- D-3's

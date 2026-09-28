@@ -17,7 +17,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve, relative } from "node:path";
+import { join, resolve, relative } from "node:path";
 
 import type { Address, DumpEntry, LoaderRange, ReleaseEntry, WatchSentinel } from "../../c64-project/scripts/releases.ts";
 import { loadSibling, siblingOrRefuse } from "./sibling.ts";
@@ -145,7 +145,6 @@ export interface IdleGateResult {
   reasons: string[];
 }
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = projectRoot();
 const RECOVERY_DIR = dataRoot();
 
@@ -168,25 +167,6 @@ export function readHitLog(releaseId: string): HitLog {
     throw new Error(`readHitLog: no hit log at ${rel(p)} for release "${releaseId}"`);
   }
   return JSON.parse(readFileSync(p, "utf8"));
-}
-
-/**
- * Structural validation of a hit-log's boundary-artifact shape: every
- * `armed` entry must carry the `checkpoint_num` the arming call returned,
- * and `teardown.checkpoints_remaining` must be present -- both are the
- * "the delete call's own word is never the proof" invariant made mechanical.
- */
-export function validateHitLog(log: HitLog): { ok: boolean; errors: string[] } {
-  const errors: string[] = [];
-  for (const a of log.armed ?? []) {
-    if (a.checkpoint_num === undefined || a.checkpoint_num === null) {
-      errors.push(`armed sentinel "${a.name}" is missing checkpoint_num`);
-    }
-  }
-  if (!log.teardown || log.teardown.checkpoints_remaining === undefined || log.teardown.checkpoints_remaining === null) {
-    errors.push("teardown.checkpoints_remaining is not recorded");
-  }
-  return { ok: errors.length === 0, errors };
 }
 
 // --------------------------------------------------------------- WATCH_SET
@@ -560,7 +540,7 @@ function renderReleaseSection(id: string, log: HitLog): string {
  * consumer's installed location, not this repository's source tree -- this
  * string is written into a `recovery/LOADING.md` a consumer keeps. A blanket
  * path sweep rewrote them to the source tree once already; pinned
- * by the test below plus the class-level registry in skill-consumer-paths.test.ts.
+ * by the test below.
  */
 export function renderLoading(entries: ReadonlyArray<{ id: string; log: HitLog }>): string {
   let out = "# `recovery/LOADING.md` -- the on-demand-load detection record\n\n";

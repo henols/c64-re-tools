@@ -126,8 +126,7 @@
 // expected, user-facing failure (missing file, unreadable store, refused
 // overwrite): each of those produces a single actionable line instead.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, join, sep } from "node:path";
 
 import { compareRenderedMemoryMap } from "./anno-memmap-check.mts";
 // The tree writer. `acme-verify.ts` -- the module that DOES spawn ACME -- is
@@ -151,14 +150,8 @@ import type { AnnoReportName } from "./anno-reports.mts";
 import type {
   DecompCompletenessReport,
   DecompExecutionManifest,
-  DecompDisagreementInput,
-  DisagreementResolutionCensus,
-  EntryPointRow,
-  RangeProvenanceRow,
-  ReferencedAddressesCensus,
 } from "./anno-reports.mts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** What a verb runs its call through, and the workspace it runs in. The
  * root is read only when a verb needs it, so a verb refused at parsing never
@@ -504,12 +497,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
  *
  * The call site at `runAnnoCli()` sits OUTSIDE that function's `try`, so the
  * throw escaped the function entirely and broke the never-throw contract this
- * file's header states. The identical defect was found and fixed one
- * directory over in this same phase -- `scripts/lib/anno-cli-invocations.mjs`
- * reads every verb-keyed table through its `own()` helper, and one of that
- * file's controls quotes THIS file's variable name verbatim as
- * `"accepted.includes is not a function"`. The hardening stopped at the
- * checker and never reached the CLI the checker models; it reaches it now.
+ * file's header states.
  *
  * `Array.isArray()` rather than a bare truthiness test is deliberate belt and
  * braces: an own key whose value is somehow not an array falls through to
@@ -1133,33 +1121,6 @@ function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
 }
 
 /**
- * The destination `export-asm` writes to when the caller names none: the
- * IMAGE's basename STEM plus a fixed, extension-free suffix, in the STORE's
- * own directory.
- *
- * The store's directory rather than the image's, deliberately and for the
- * reason `render-memmap`'s `memory-map.md` default already gives: the output
- * is a GENERATED VIEW of the annotations, so it belongs beside the artefact it
- * was generated from. The image is an input this verb only reads.
- *
- * NO EXTENSION, on purpose (`--out` was promoted from a
- * FILE to a DIRECTORY). This names a directory the tree is written
- * INTO, never a file -- a name ending in `.a` would read as a file to every
- * human and every tool that inspects it, and the tree this verb writes is
- * not one. The stem is derived the same way it always was (whatever
- * extension the image happens to carry is stripped, so `game.prg` and
- * `game.raw` derive the same default), the suffix is fixed text this
- * function owns rather than anything read off the image, and a name with no
- * extension at all keeps its whole basename.
- */
-function defaultExportAsmOut(imagePath: string, storeDir: string): string {
-  const base = basename(imagePath);
-  const ext = extname(base);
-  const stem = ext === "" ? base : base.slice(0, -ext.length);
-  return join(storeDir, `${stem}-src`);
-}
-
-/**
  * Whether `dir` (a directory `--out` is about to become, or
  * already is) either equals `candidate` exactly, or genuinely CONTAINS it.
  * Compared by PATH SEGMENT via a trailing separator, never by string prefix
@@ -1558,10 +1519,10 @@ async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<n
     return 1;
   }
 
-  // The fixture's own bytes -- the fixtures-relative manifest path, resolved
-  // beside this module, never a second guess at where the image lives. An
-  // image that is not there is not sent; the report says so by name.
-  const fixtureImagePath = join(HERE, "fixtures", manifestEntry.path);
+  // The fixture's own bytes -- the manifest entry's path, resolved beside the
+  // manifest file, never a second guess at where the image lives. An image
+  // that is not there is not sent; the report says so by name.
+  const fixtureImagePath = join(dirname(manifestPath), manifestEntry.path);
   let report: DecompCompletenessReport;
   try {
     const answer = await runReport(ctx, "decomp-completeness", { manifest_entry: manifestEntry }, {

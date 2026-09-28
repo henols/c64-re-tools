@@ -1,0 +1,485 @@
+// node:test structural coverage of the tracked host shell scripts: the
+// launcher (resources/vice-launcher.sh), the one-shell-script allowlist
+// (which holds exactly one entry, the launcher) and the ignore-set parity
+// gate.
+//
+// Nothing here drives the real emulator -- every process spawned below is
+// the script itself run with `--dry-run`/`--print-paths`/`-n`.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  mkdtempSync,
+  writeFileSync,
+  chmodSync,
+  symlinkSync,
+  rmSync,
+  accessSync,
+  constants as fsConstants,
+} from "node:fs";
+import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+
+// install-resources.ts: the deployed resource set the parity gate below
+// checks against `.gitignore`.
+import { DEPLOY_MANIFEST_NAME, resourceEntries, installTargetDir } from "../../src/mcp/vice/install-resources.ts";
+import { VICE_DIR } from "./paths.ts";
+
+const execFileP = promisify(execFile);
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+// REPO-ROOT RESOLUTION, DELIBERATELY NOT `repoRoot()` FROM THE SIBLING
+// `repo-root.ts`: that resolver's documented precedence checks
+// `CONTAINER_WORKSPACE_PATH` FIRST and returns it whenever this file's
+// location resolves inside it -- which, in THIS devcontainer, is
+// unconditionally true regardless of which git worktree is actually
+// executing. A parallel executor running inside an isolated worktree would
+// have `.gitignore`/`git ls-files` below silently redirected to the SHARED
+// devcontainer mount's main checkout instead of the worktree's own tree --
+// exactly the quiet-wrong-answer class this project's own conventions
+// reject elsewhere. `findRepoRoot()` is the plain `.git`-marker walk ONLY (no
+// env-var short-circuit), so this gate always inspects the tree it is
+// actually running from, worktree or not.
+function findRepoRoot(from: string): string {
+  let dir = from;
+  while (true) {
+    if (existsSync(join(dir, ".git"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) {
+      throw new Error(`findRepoRoot: no .git ancestor found above ${from}`);
+    }
+    dir = parent;
+  }
+}
+
+const REPO_ROOT = findRepoRoot(HERE);
+
+// ============================================================================
+// Plan 11: the retiring per-instance supervisor's signal-handling test, the
+// trap-registration loop (both retiring daemons registering EXIT/HUP/INT/
+// TERM), and the syntax-check loop (bash -n over every surviving script) are
+// ALL removed here -- their common driver, the SURVIVING_HOST_SCRIPTS array,
+// enumerated exactly the two retiring daemons plus the launcher, and two of
+// those three no longer exist. Dispositions, per 01.6.2-VALIDATION.md's own
+// ledger (row 11 and neighbours):
+//   - The SIGHUP signal-handling test: RE-OBSERVED by broker-kill.test.ts's
+//     own shutdown()/registerShutdownHandlers() tests, which cover every
+//     catchable signal path (SIGTERM/SIGINT/SIGHUP) against the real broker
+//     process, not one signal against a per-instance shell supervisor.
+//   - The trap-registration loop: DELETED outright for the two retiring
+//     daemons (no subject survives); the ONE assertion in that loop whose
+//     subject survives -- vice-launcher.sh execing into node, which is what
+//     makes signal delivery pass straight through to the broker process with
+//     no bash trap of its own needed -- is kept below as its own standalone
+//     test, load-bearing in its own right.
+//   - The syntax-check loop: DELETED as redundant. vice-broker-launch.test.ts
+//     already has its own "bash -n exits 0 for the launcher" test covering
+//     the one surviving script's syntax.
+// ============================================================================
+
+test("structural: vice-launcher.sh execs the RESOLVED interpreter variable, never a bare 'node' command, so signal delivery passes straight through to the broker process with no bash trap of its own needed", () => {
+  const src = readFileSync(join(VICE_DIR, "resources", "vice-launcher.sh"), "utf8");
+  // exec REPLACES the process image in place (same pid), so INT/TERM/HUP/
+  // EXIT are delivered straight to whichever interpreter this launcher
+  // resolved, with no bash trap in between. Originally this assertion
+  // pinned `exec node ...` -- a bare command name that trusted whatever
+  // `node` PATH happened to resolve first. It must now exec the resolved
+  // variable so the interpreter that was version-gated is the one that
+  // actually runs.
+  const stripped = stripShellCommentsForDaemonGate(src);
+  const trimmed = stripped.replace(/\n+$/, "");
+  const lines = trimmed.split("\n").filter((line) => line.trim().length > 0);
+  const lastLine = lines[lines.length - 1];
+  assert.match(
+    lastLine,
+    /^exec\s+"\$NODE_BIN"(\s|$)/,
+    `vice-launcher.sh's final line must exec the resolved-interpreter variable ($NODE_BIN), got: ${lastLine}`,
+  );
+
+  const bareExecCount = (stripped.match(/\bexec\s+node\b/g) ?? []).length;
+  assert.equal(
+    bareExecCount,
+    0,
+    "the comment-filtered body of vice-launcher.sh must contain zero occurrences of the bare-interpreter exec form -- the interpreter this launcher gated must be the one it execs, never whatever 'node' happens to resolve on PATH",
+  );
+});
+
+// ============================================================================
+// Interpreter resolution: the launcher no longer trusts PATH blindly. It
+// resolves an explicit interpreter (VICE_BROKER_NODE override, then `node`
+// on PATH), gates the result against a floor mirroring package.json's
+// `engines.node`, and refuses by name -- before exec -- when nothing usable
+// resolved. Every case below is safe by construction: cases that refuse do
+// so BEFORE exec (they can never start a broker), and the --print-paths
+// cases spawn no broker either -- they only run a `--version` probe on a
+// candidate binary.
+// ============================================================================
+
+const LAUNCHER_PATH = join(VICE_DIR, "resources", "vice-launcher.sh");
+
+// Resolved once, at module load, rather than assumed as "bash"/"dirname"/
+// "basename" bare names -- the whole point of the tests below is to control
+// PATH precisely, so the harness invoking the launcher (and the harness's
+// own stub interpreters) must not itself depend on the ambient PATH the
+// test runner happens to have.
+const BASH_BIN = execFileSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).trim();
+const DIRNAME_BIN = execFileSync("sh", ["-c", "command -v dirname"], { encoding: "utf8" }).trim();
+const BASENAME_BIN = execFileSync("sh", ["-c", "command -v basename"], { encoding: "utf8" }).trim();
+
+async function runLauncher(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await execFileP(BASH_BIN, [LAUNCHER_PATH, ...args], { env });
+    return { code: 0, stdout, stderr };
+  } catch (err) {
+    const e = err as { code?: number; stdout?: string; stderr?: string };
+    return { code: typeof e.code === "number" ? e.code : 1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
+  }
+}
+
+/** Writes a fake `node` that always prints a fixed `--version` string,
+ * regardless of any argument it's called with -- enough to drive the
+ * launcher's own version probe without a real Node interpreter. */
+function writeStubNode(dir: string, version: string): string {
+  const stubPath = join(dir, "node");
+  writeFileSync(stubPath, `#!${BASH_BIN}\necho "${version}"\n`);
+  chmodSync(stubPath, 0o755);
+  return stubPath;
+}
+
+const RE_META = /[.*+?^${}()|[\]\\]/g;
+function escapeForRegExp(s: string): string {
+  return s.replace(RE_META, "\\$&");
+}
+
+test("drift guard: vice-launcher.sh's NODE_FLOOR_MAJOR literal equals the major of package.json's engines.node floor", () => {
+  const launcherSrc = readFileSync(LAUNCHER_PATH, "utf8");
+  const floorMatch = launcherSrc.match(/^NODE_FLOOR_MAJOR=(\d+)$/m);
+  assert.ok(floorMatch, "vice-launcher.sh must declare a NODE_FLOOR_MAJOR=<int> literal");
+  const launcherFloor = Number(floorMatch![1]);
+
+  const pkg = JSON.parse(readFileSync(join(VICE_DIR, "package.json"), "utf8")) as { engines?: { node?: string } };
+  const engineRange = pkg.engines?.node;
+  assert.ok(engineRange, "src/mcp/vice/package.json must declare engines.node");
+  const engineMatch = engineRange!.match(/(\d+)/);
+  assert.ok(engineMatch, `could not parse a major version out of engines.node ("${engineRange}")`);
+  const engineFloor = Number(engineMatch![1]);
+
+  assert.equal(
+    launcherFloor,
+    engineFloor,
+    `vice-launcher.sh's NODE_FLOOR_MAJOR (${launcherFloor}) must equal package.json's engines.node major (${engineFloor}) -- ` +
+      "two numbers answering one question is how the bare-interpreter defect happened in the first place",
+  );
+});
+
+test("below-floor override: refuses before exec, naming the stub's path, its reported version, the floor, and the override variable", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "vice-launcher-test-stub-"));
+  try {
+    const stubPath = writeStubNode(dir, "v20.0.0");
+
+    const { code, stdout, stderr } = await runLauncher([], {
+      PATH: process.env.PATH,
+      VICE_BROKER_NODE: stubPath,
+    });
+
+    assert.notEqual(code, 0, "a below-floor interpreter must be refused, not started");
+    assert.match(stderr, new RegExp(escapeForRegExp(stubPath)), "refusal must name the stub's own path");
+    assert.match(stderr, /v20\.0\.0/, "refusal must name the version the stub reported");
+    assert.match(stderr, /24/, "refusal must name the floor");
+    assert.match(stderr, /VICE_BROKER_NODE/, "refusal must name the override variable");
+    assert.doesNotMatch(stdout, /vice-broker\.mjs/, "the broker artifact must never be named on stdout -- it was never reached");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("override points at nothing: refuses, naming the variable, the path, and requiring an absolute path to an executable", async () => {
+  const missingPath = join(tmpdir(), "vice-launcher-test-does-not-exist", "node");
+  const { code, stderr } = await runLauncher([], {
+    PATH: process.env.PATH,
+    VICE_BROKER_NODE: missingPath,
+  });
+
+  assert.notEqual(code, 0);
+  assert.match(stderr, /VICE_BROKER_NODE/);
+  assert.match(stderr, new RegExp(escapeForRegExp(missingPath)));
+  assert.match(stderr, /executable/);
+});
+
+test("nothing resolvable: a PATH with only dirname/basename (no node, no override) refuses, naming both remedies", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "vice-launcher-test-minpath-"));
+  try {
+    symlinkSync(DIRNAME_BIN, join(dir, "dirname"));
+    symlinkSync(BASENAME_BIN, join(dir, "basename"));
+
+    const { code, stderr } = await runLauncher([], { PATH: dir });
+
+    assert.notEqual(code, 0, "with no node resolvable at all, the launcher must refuse rather than proceed");
+    assert.match(stderr, /install/i, "refusal must name the install remedy");
+    assert.match(stderr, /VICE_BROKER_NODE/, "refusal must name the override remedy");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--print-paths stays total: exits 0 reporting a below-floor stub, and separately exits 0 reporting nothing found, rather than ever refusing", async () => {
+  const stubDir = mkdtempSync(join(tmpdir(), "vice-launcher-test-stub-"));
+  const minDir = mkdtempSync(join(tmpdir(), "vice-launcher-test-minpath-"));
+  try {
+    const stubPath = writeStubNode(stubDir, "v20.0.0");
+    symlinkSync(DIRNAME_BIN, join(minDir, "dirname"));
+    symlinkSync(BASENAME_BIN, join(minDir, "basename"));
+
+    const withStub = await runLauncher(["--print-paths"], {
+      PATH: minDir,
+      VICE_BROKER_NODE: stubPath,
+    });
+    assert.equal(withStub.code, 0, "the diagnostic must not refuse even when the resolved interpreter is below the floor");
+    assert.match(withStub.stdout, /^node_bin=.*node$/m);
+    assert.match(withStub.stdout, /^node_version=v20\.0\.0$/m);
+
+    const withNothing = await runLauncher(["--print-paths"], { PATH: minDir });
+    assert.equal(withNothing.code, 0, "the diagnostic must not refuse when nothing at all resolved");
+    assert.match(withNothing.stdout, /^node_bin=$/m);
+    assert.match(withNothing.stdout, /^node_version=$/m);
+  } finally {
+    rmSync(stubDir, { recursive: true, force: true });
+    rmSync(minDir, { recursive: true, force: true });
+  }
+});
+
+test("happy path: --print-paths with the real environment prints an absolute, executable node_bin and a node_version matching that binary's own --version", async () => {
+  const { code, stdout } = await runLauncher(["--print-paths"], process.env);
+  assert.equal(code, 0);
+
+  const binMatch = stdout.match(/^node_bin=(.+)$/m);
+  assert.ok(binMatch, "expected a node_bin= line in --print-paths output");
+  const nodeBin = binMatch![1];
+  assert.ok(nodeBin.startsWith("/"), "node_bin must be an absolute path");
+  assert.doesNotThrow(() => accessSync(nodeBin, fsConstants.X_OK), "node_bin must be an executable file");
+
+  const versionMatch = stdout.match(/^node_version=(.+)$/m);
+  assert.ok(versionMatch, "expected a node_version= line in --print-paths output");
+  const reportedVersion = versionMatch![1];
+
+  const { stdout: ownVersion } = await execFileP(nodeBin, ["--version"]);
+  assert.equal(reportedVersion, ownVersion.trim(), "node_version= must match the resolved binary's own --version output");
+});
+
+// ============================================================================
+// Plan 03, Task 2, gate 1: `.gitignore` and the deployed set are in two-way
+// parity. A one-way check would let a stale entry survive a deletion (a
+// removed script must be able to shrink the ignore list with it); this gate
+// enforces BOTH directions.
+//
+// REWORKED 2026-09-08 (D-33, plan 40-01): the twelve per-file `/tools/*`
+// entries this gate used to compare against `resourceEntries()` name-for-name
+// collapsed into ONE directory stanza (`/.c64-re-tools/`) when the deploy
+// target moved from `<repoRoot>/tools/` to `<repoRoot>/.c64-re-tools/bin/`
+// (D-33) -- a per-file relation is unexpressible against a single directory
+// line, so per the owner's own instruction this gate is replaced with a
+// relation over the deployed DIRECTORY rather than deleted: direction 1 (every
+// deployed entry resolves under the one ignored deployment directory) and
+// direction 2 (the ignore file names that directory EXACTLY once, so a
+// collapse-gone-wrong that duplicated the stanza per writer still fails
+// here) -- both directions still fail independently, matching the original
+// gate's own two-way discipline.
+// ============================================================================
+
+/** The literal prefix every deployed artifact's absolute path must fall
+ * under -- `<repoRoot>/.c64-re-tools/` -- derived from a synthetic root via
+ * installTargetDir() rather than hardcoded a second time, so this test
+ * cannot silently drift from install-resources.ts's own definition. */
+function deployedDirPrefix(repoRootAbs: string): string {
+  return join(repoRootAbs, ".c64-re-tools") + "/";
+}
+
+test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + the deploy manifest) are in two-way parity over the deployed DIRECTORY", () => {
+  const gitignoreText = readFileSync(join(REPO_ROOT, ".gitignore"), "utf8");
+  const stanzaLines = gitignoreText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line === "/.c64-re-tools/");
+
+  // Direction 1: every current resource (and the manifest) resolves UNDER
+  // the one ignored deployment directory -- an artifact whose deploy target
+  // drifted outside .c64-re-tools/ would show up as untracked noise in git
+  // status in whatever commit happens to follow.
+  const syntheticRoot = "/synthetic-repo-root-for-parity-check";
+  const target = installTargetDir(syntheticRoot);
+  const prefix = deployedDirPrefix(syntheticRoot);
+  const deployedNames = [...resourceEntries(), DEPLOY_MANIFEST_NAME];
+  assert.ok(deployedNames.length > 0, "expected at least one deployed resource plus the manifest -- otherwise this direction is vacuous");
+  for (const name of deployedNames) {
+    const absolute = join(target, name);
+    assert.ok(
+      absolute === prefix.slice(0, -1) || absolute.startsWith(prefix),
+      `${name} resolves to ${absolute}, which does not fall under the single ignored deployment directory ` +
+        `${prefix} -- a deployed artifact outside it shows up as untracked noise in git status. ` +
+        "Check installTargetDir() (install-resources.ts) and .gitignore's single stanza agree."
+    );
+  }
+
+  // Direction 2: the ignore file names the deployment directory EXACTLY
+  // ONCE -- a stale per-writer duplicate (the shape this gate replaced)
+  // would survive a naive re-collapse and silently reintroduce the mess
+  // this stanza exists to prevent.
+  assert.equal(
+    stanzaLines.length,
+    1,
+    `.gitignore must name the single tool-written root's deployment stanza (/.c64-re-tools/) exactly once; found ${stanzaLines.length}`
+  );
+});
+
+// ============================================================================
+// Plan 03, Task 2, gate 2: the one-shell-script structural check, using the
+// RIGHT predicate. C6's own phrasing ("find . -name '*.sh' ... excluding
+// gitignored tools/") is wrong: tools/ is a MIXED directory holding both
+// gitignored deployment output (the .sh copies this same file's other tests
+// read straight out of resources/) AND tracked reverse-engineering tooling
+// (diff-images.ts, watch-loads.ts, releases.ts and their tests) -- a directory-exclusion predicate cannot
+// tell those apart and would pass a gate that should fail. `git ls-files`
+// enumerates TRACKED files instead, which is the right question: deployed
+// copies under the real (untracked, gitignored) tools/ and any stray
+// `.claude/worktrees/` copy are excluded structurally, not by a hand-
+// maintained exclusion list.
+// ============================================================================
+
+// Named constant per plan 03's instruction: this array SHRINKS as scripts
+// retire. Every change to it must be a deliberate edit with a commit behind it, not
+// a silent widening to make a red gate pass.
+// In this plugin repo the tracked shell-script set is exactly four: the
+// host-side VICE launcher (deployed from resources/), the SessionStart
+// dependency-provisioning script the plugin runs on the consumer, the
+// packaging script that validates the manifests and builds the release zip,
+// and (quick-260819-vie D-1) the release-assets seam that stamps the
+// manifests, builds the zip and attaches it to the matching GitHub Release --
+// the ONE place both `release` and `release-on-merge` call, replacing the
+// three steps that used to live only inside the `release` job and could
+// therefore never run on the merge path (v0.2.0 shipped with zero release
+// assets as a direct result). Unlike the originating project this carries no
+// `.devcontainer/` provisioning scripts -- a plugin is installed into someone
+// else's workspace, not shipped with its own container image -- so the old
+// ".devcontainer/-exactly-2" assertion is gone. This array still
+// shrinks/grows only by a deliberate, committed edit.
+const EXPECTED_TRACKED_SHELL_SCRIPTS = [
+  "src/mcp/vice/resources/vice-launcher.sh",
+].sort();
+
+test("structural: git ls-files enumerates the tracked shell-script set as exactly EXPECTED_TRACKED_SHELL_SCRIPTS", async () => {
+  const { stdout } = await execFileP("git", ["ls-files", "--", "*.sh"], { cwd: REPO_ROOT });
+  const tracked = stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  assert.deepEqual(
+    [...tracked].sort(),
+    EXPECTED_TRACKED_SHELL_SCRIPTS,
+    "the tracked shell-script set has drifted from EXPECTED_TRACKED_SHELL_SCRIPTS -- " +
+      "update this array only as part of the commit that actually adds or retires the script, " +
+      "never to silently paper over an unexpected drift."
+  );
+});
+
+// ============================================================================
+// Plan 01.6.2-09 (T-01.6.2-54): a structural gate proving neither retiring
+// daemon filename (the per-instance supervisor, vice-supervisor.sh, or the
+// bash broker, vice-broker.sh) appears anywhere in the module directory's
+// non-test TypeScript source -- not merely that the eight known message
+// builders were fixed by hand. Enumerated from the directory itself (the
+// same idiom vice-proxy.test.ts's own "structural: the set of source
+// files..." test and vice-broker-client.test.ts's own closure gate already
+// use), so a future message reintroducing a dead filename is caught the
+// moment it lands, with no test file to remember to update.
+//
+// WIDENED, plan 11: resources/ used to be DELIBERATELY OUT OF SCOPE (a
+// subdirectory this shallow, non-recursive readdirSync(HERE) never reached)
+// because it still held both retiring scripts' own bytes -- of course their
+// own filenames appeared there, that was never a violation. That reason is
+// gone now that both files are deleted, so the exclusion goes with it: the
+// gate now also scans resources/'s surviving files (the compiled broker
+// artifacts and the one hand-authored launcher) as defense-in-depth against
+// a dead filename being reintroduced anywhere this module tree deploys from.
+//
+// Comment lines are filtered out before matching, so a header sentence
+// NAMING a retiring filename (as this very comment does, deliberately, to
+// explain what changed and why -- and as vice-launcher.sh's own header does,
+// recording what it copied from the retiring bash broker) cannot make the
+// gate self-invalidating. resources/'s one surviving shell file uses `#`
+// comments, not `//`/`/* */`, so it gets its own stripping pass.
+// ============================================================================
+
+const RETIRING_DAEMON_FILENAMES: string[] = ["vice-supervisor.sh", "vice-broker.sh"];
+
+/** Strips `//` line comments and `/* ... *\/` block comments before matching
+ * -- matches vice-broker-client.test.ts's own stripComments() idiom
+ * exactly (plan 07's closure gate precedent). Deliberately simple: the
+ * retiring filenames never legitimately appear inside a runtime string
+ * literal in this module set outside the messages this gate polices, so a
+ * comment-stripping pass is enough to serve this one gate. */
+function stripCommentsForDaemonGate(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .map((line) => line.replace(/\/\/.*$/, ""))
+    .join("\n");
+}
+
+/** Strips `#` line comments -- the shell equivalent of
+ * stripCommentsForDaemonGate() above, deliberately just as simple (no
+ * attempt to skip a `#` inside a string literal; this gate's retiring
+ * filenames never legitimately appear inside one). Applied only to
+ * resources/'s one surviving `.sh` file, which uses shell comment syntax,
+ * not the double-slash or slash-star style the flat TypeScript module set
+ * uses. */
+function stripShellCommentsForDaemonGate(source: string): string {
+  return source
+    .split("\n")
+    .map((line) => line.replace(/#.*$/, ""))
+    .join("\n");
+}
+
+test("structural: neither retiring daemon filename (vice-supervisor.sh, vice-broker.sh) appears anywhere in the module's non-test TypeScript source or in resources/'s surviving deployed files", () => {
+  const flatFiles = readdirSync(VICE_DIR)
+    .filter((f) => /\.[cm]?[jt]s$/.test(f) && !/\.test\.[cm]?[jt]s$/.test(f))
+    .sort()
+    .map((f) => ({ file: f, text: stripCommentsForDaemonGate(readFileSync(join(VICE_DIR, f), "utf8")) }));
+  assert.ok(flatFiles.length > 0, "module directory enumerated as empty -- glob or path resolution is broken");
+
+  const resourcesDir = join(VICE_DIR, "resources");
+  const resourcesDirents = readdirSync(resourcesDir, { withFileTypes: true }).filter((d) => d.isFile());
+  assert.ok(resourcesDirents.length > 0, "resources/ enumerated as empty -- glob or path resolution is broken");
+  const resourceFiles = resourcesDirents
+    .map((d) => d.name)
+    .sort()
+    .map((name) => {
+      const text = readFileSync(join(resourcesDir, name), "utf8");
+      const stripped = name.endsWith(".sh") ? stripShellCommentsForDaemonGate(text) : stripCommentsForDaemonGate(text);
+      return { file: `resources/${name}`, text: stripped };
+    });
+
+  const offenders: { file: string; filename: string }[] = [];
+  for (const { file, text: stripped } of [...flatFiles, ...resourceFiles]) {
+    for (const filename of RETIRING_DAEMON_FILENAMES) {
+      const escaped = filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (new RegExp(escaped).test(stripped)) {
+        offenders.push({ file, filename });
+      }
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `a retiring daemon filename reappeared in non-test source: ${JSON.stringify(offenders)} -- ` +
+      "every agent-facing or operator-facing message must name the surviving launcher (vice-launcher.sh) instead."
+  );
+});

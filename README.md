@@ -309,16 +309,16 @@ through the `mcp__plugin_c64-re-tools_vice__*` tools.
   marketplace.json   # single-plugin marketplace, so `marketplace add` works on this repo
 .mcp.json            # vice server, launched via ${CLAUDE_PLUGIN_ROOT}
 skills/              # the twelve skills (canonical source; what `npx skills add` installs)
-src/mcp/vice/        # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/, tests)
+src/mcp/vice/        # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/)
+test/vice/           # the MCP server's tests, test helpers and fixtures
 test/skills/         # the skill scripts' tests (kept out of the skill folders so they never ship)
 evidence/            # repo-only measured artifacts that must never ship with a skill
 ```
 
 The payload no longer sits on Claude Code's auto-discovery path — see
 "Developing this repo: no in-repo autoload" above for why that is deliberate.
-The MCP server's own test suite resolves paths relative to its own module
-directory (`repo-root.ts`'s depth-based fallback), so it does not depend on the
-tree mirroring a consumer's installed `.claude/` layout.
+The MCP server's tests reach the package through `test/vice/paths.ts`, so they
+do not depend on the tree mirroring a consumer's installed `.claude/` layout.
 
 ## Publishing (maintainers)
 

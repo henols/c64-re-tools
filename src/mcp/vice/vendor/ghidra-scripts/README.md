@@ -23,11 +23,7 @@ declares a `package`.
 
 **Neither file, nor this README, may name a phase number anywhere -- not in
 a class name, not in a comment, not in a string literal.** Both scripts are
-named for what they do, not for the phase that promoted them. This directory
-sits outside `docs-dangling-refs.test.ts`'s own scanned set --that guard's
-character-state-machine literal extractor covers only the `.ts`/`.mts`
-modules named in `package.json`'s `files[]`, and `.java` sources under
-`vendor/` are never packaged (the same exclusion `fixtures/` gets, per
-a retired tarball checker). The rule is carried here instead by this
-plan's own `<verify>` grep over both `.java` files and this README:
+named for what they do, not for the phase that promoted them. `.java`
+sources under `vendor/` are never packaged (the same exclusion `fixtures/`
+gets). The rule is carried here by this plan's own `<verify>` grep over both `.java` files and this README:
 `grep -aciE 'Phase[[:space:]]+[0-9]'`, asserted to return 0.

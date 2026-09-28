@@ -555,8 +555,8 @@ moves anything. A human decides.
 ### `anno decomp-completeness` and the gate
 
 ```bash
-$A decomp-completeness --fixture <dir>/<fixture>.prg --disagreements <fixture>-disagreements.json --manifest src/mcp/vice/fixtures/decomp-execution-manifest.json
-node skills/c64-annotations/scripts/completeness-report.ts --fixture <dir>/<fixture>.prg --disagreements <fixture>-disagreements.json --manifest src/mcp/vice/fixtures/decomp-execution-manifest.json
+$A decomp-completeness --fixture <dir>/<fixture>.prg --disagreements <fixture>-disagreements.json --manifest test/vice/fixtures/decomp-execution-manifest.json
+node skills/c64-annotations/scripts/completeness-report.ts --fixture <dir>/<fixture>.prg --disagreements <fixture>-disagreements.json --manifest test/vice/fixtures/decomp-execution-manifest.json
 ```
 
 Run both from the workspace whose project holds the fixture's annotations.

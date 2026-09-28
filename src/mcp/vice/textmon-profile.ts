@@ -60,7 +60,7 @@
 //     move `PROFILING_NOT_STARTED_TEXT` outside this module. `text-tools.ts`
 //     branches on the `profiling-not-started` CODE this module exports,
 //     never on VICE's own text -- the single-owner rule PARSE-03's
-//     structural guard enforces (textmon-seam.test.ts) is not weakened to
+//     structural guard enforces is not weakened to
 //     fix a message.
 
 /** One decoded `prof flat` row, in VICE's own emitted order (rank order by

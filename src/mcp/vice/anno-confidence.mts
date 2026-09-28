@@ -115,9 +115,6 @@ export const CONFIDENCE_GRADES: readonly ConfidenceGrade[] = [
 /** Every valid bracket token, e.g. `["[confirmed-code]", ..., "[unknown]"]`. */
 const VALID_BRACKETS: readonly string[] = CONFIDENCE_GRADES.map((g) => g.bracket);
 
-/** Every valid inner token, e.g. `["confirmed-code", ..., "unknown"]`. */
-const VALID_TOKENS: readonly string[] = CONFIDENCE_GRADES.map((g) => g.token);
-
 const GRADE_BY_TOKEN: ReadonlyMap<string, ConfidenceGrade> = new Map(
   CONFIDENCE_GRADES.map((g) => [g.token, g]),
 );
@@ -133,8 +130,8 @@ export interface AnnoConfidenceGradeErrorOptions {
  * Thrown by `parseConfidencePrefix()` when a comment begins with a bracket
  * token that is not exactly one of `CONFIDENCE_GRADES`'s five. Named,
  * carries the offending token as a field, and its message lists all five
- * valid tokens -- mirroring `anno-launch.ts`'s `AnnoViceFlagError` shape
- * (a named error over a malformed token, rather than a silent strip).
+ * valid tokens: a named error over a malformed token, rather than a silent
+ * strip.
  */
 export class AnnoConfidenceGradeError extends Error {
   offendingToken: string;
@@ -193,41 +190,4 @@ export function parseConfidencePrefix(comment: string): ParsedConfidencePrefix {
 
   const consumed = match[0]!.length;
   return { grade, rest: comment.slice(consumed) };
-}
-
-/**
- * Composes a graded comment: the grade's bracket token, one space, then
- * `evidence`. The ONE place a graded comment is assembled, so no caller
- * invents its own spelling of a bracket token.
- */
-export function formatConfidenceComment(grade: string, evidence: string): string {
-  const found = GRADE_BY_TOKEN.get(grade);
-  if (!found) {
-    throw new AnnoConfidenceGradeError(
-      `"${grade}" is not a valid confidence grade token -- the five valid tokens are ` +
-        `${VALID_TOKENS.join(", ")}.`,
-      { offendingToken: grade },
-    );
-  }
-  return `${found.bracket} ${evidence}`;
-}
-
-/**
- * Returns the literal search string that appears verbatim in every comment
- * carrying `grade` -- the bracket token itself, e.g. `"[unknown]"`. Passing
- * this to `anno_search_disassembly`'s `query` (with `use_regex` left
- * false/omitted) lists every address still carrying that grade. One
- * spelling, so "show me everything still [unknown]" never has two competing
- * queries drifting apart.
- */
-export function searchQueryForGrade(grade: string): string {
-  const found = GRADE_BY_TOKEN.get(grade);
-  if (!found) {
-    throw new AnnoConfidenceGradeError(
-      `"${grade}" is not a valid confidence grade token -- the five valid tokens are ` +
-        `${VALID_TOKENS.join(", ")}.`,
-      { offendingToken: grade },
-    );
-  }
-  return found.bracket;
 }

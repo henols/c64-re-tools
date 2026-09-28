@@ -91,7 +91,6 @@ import { fileURLToPath } from "node:url";
 import {
   resolveGhidraProject,
   buildAnalyzeHeadlessArgv,
-  hasDotPrefixedSegment,
   installedLanguageIds,
   GHIDRA_STOCK_6502_LANGUAGE_FILES,
   GHIDRA_IMPORT_ROUTES,

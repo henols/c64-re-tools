@@ -37,7 +37,7 @@ import { asciiToPetscii, StockPetsciiError } from "./stock-petscii.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler } from "./stock-handler.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
- * an array. Matches vice.ts's own isPlainObject() predicate exactly -- the
+ * an array. Matches this module tree's isPlainObject() predicate exactly -- the
  * same narrowing discipline this module tree uses everywhere a parsed JSON
  * value's fields are touched. Declared privately per this codebase's own
  * convention (re-declared per consuming module, never imported). */

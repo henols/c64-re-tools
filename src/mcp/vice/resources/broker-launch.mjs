@@ -31,7 +31,7 @@
 import { spawn as nodeSpawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync, writeFileSync, renameSync } from "node:fs";
 import { join, basename, resolve as resolvePath } from "node:path";
-import { tmpdir, homedir } from "node:os";
+import { homedir } from "node:os";
 // Module-level: this file, not the caller, owns the single boolean --
 // synchronous check, synchronous set, released in a finally, with no
 // `await` between the check and the set.
@@ -558,10 +558,8 @@ export function tryLaunchOne(reason, port, deps) {
  * concurrent acquires -- e.g. two requests arriving over the TCP control
  * listener at nearly the same moment, or one arriving while an EARLIER
  * acquire's own launch is still resolving -- never a warming pass, which no
- * longer exists. This is also the function that restores vice-broker.sh's
- * own process_requests() throttle (its `in_flight` local): whatever launches
- * this broker ever attempts, they never overlap, matching the bash
- * original's declined-to-change behaviour. Non-preemptive launch PRIORITY
+ * longer exists. This is also the broker's launch throttle: whatever
+ * launches this broker ever attempts, they never overlap. Non-preemptive launch PRIORITY
  * layers on top of this same "one at a time" guard, never replacing it, and
  * the anti-pattern it names -- killing or relaunching preemptively to serve
  * a newer request -- is likewise unaffected by the floor's removal: this
@@ -697,8 +695,7 @@ function defaultLog(line) {
     process.stderr.write(`${line}\n`);
 }
 /** A single POST of a tools/call for vice_ping at the instance's own URL,
- * bounded by the probe timeout -- matching the exact single-POST curl form
- * vice-broker.sh's own probe_ready() used. Treated as ready ONLY when the
+ * bounded by the probe timeout. Treated as ready ONLY when the
  * response body carries BOTH the "version" and "machine" substrings a real
  * vice_ping reply contains; a bare TCP accept is explicitly not sufficient
  * (a C64 can accept a connection before it has finished booting). */
@@ -746,8 +743,7 @@ async function defaultHttpProbe(port, timeoutMs) {
 // nor decodes bodies. But it cannot reuse even the constants: this file is a
 // host-bound .mts compiled into resources/ by build.ts, and a .mts cannot
 // value-import a .ts module (TS5097). The same constraint already produced
-// hand-copied wire constants in binmon-fixtures.ts and a standalone client in
-// probe-binmon.ts. What is written here is the minimum a READINESS check needs:
+// hand-copied wire constants in binmon-fixtures.ts. What is written here is the minimum a READINESS check needs:
 // one request header out, one response header in, four bytes checked.
 // ---------------------------------------------------------------------------
 /** Hand-copied from this project's own measured binary-monitor wire format
@@ -965,13 +961,10 @@ export async function promoteLaunchingInstances(deps) {
         }
     }
 }
-/** The fixed pass order (mirrors vice-broker.sh's own broker_once(), whose
- * comment names the ordering as load-bearing: "the spare invariant is
- * always re-evaluated against the freshest possible grant/teardown
- * state"). The bash version's third concern, the grant sweep, does NOT
- * appear here -- it is one of several retiring file-lease mechanisms; the
- * TCP connection itself is the lease. The broker-instances.json projection
- * write does not appear either (see broker-state.mts's own FINDING 2
+/** The fixed pass order, which is load-bearing: the spare invariant is
+ * always re-evaluated against the freshest possible grant/teardown state.
+ * No grant sweep appears here -- the TCP connection itself is the lease.
+ * The broker-instances.json projection write does not appear either (see broker-state.mts's own FINDING 2
  * comment). Takes plain callbacks rather than the full BrokerState/deps
  * shape so a test can inject two instrumented no-op functions and assert
  * call ORDER without needing a real broker, a real port or a real launch.
@@ -998,14 +991,12 @@ export async function runBrokerPass(deps) {
     await deps.promoteLaunching();
 }
 // ===========================================================================
-// Per-child supervision: absorbs resources/vice-supervisor.sh WHOLESALE. The
-// respawn loop becomes an exit-event handler installed on the spawned
-// child; the backoff shape (initial delay, doubling, ceiling), the
-// crash-loop give-up (too many crashes inside a window), and the
-// per-instance boot/crash log are ported exactly, keeping the same
-// configuration knobs -- VICE_RESTART_BACKOFF_S, VICE_RESTART_BACKOFF_MAX_S,
-// VICE_MAX_RESTARTS, VICE_CRASH_WINDOW_S all keep their exact names and
-// semantics.
+// Per-child supervision: the respawn loop is an exit-event handler
+// installed on the spawned child, with a backoff shape (initial delay,
+// doubling, ceiling), a crash-loop give-up (too many crashes inside a
+// window), and a per-instance boot/crash log. The configuration knobs are
+// VICE_RESTART_BACKOFF_S, VICE_RESTART_BACKOFF_MAX_S, VICE_MAX_RESTARTS and
+// VICE_CRASH_WINDOW_S.
 // ===========================================================================
 function resolveMs(envVar, defaultSeconds, override) {
     if (typeof override === "number")
@@ -1032,9 +1023,8 @@ function resolveCount(envVar, defaultValue, override) {
  *   released instance must be killed and stay gone).
  * - crash count (this instance's crash timestamps still inside the window,
  *   INCLUDING this one) at or above the configured maximum ->
- *   "given_up": drop the instance, log a line naming it and the count.
- *   Mirrors vice-supervisor.sh's own `>= VICE_MAX_RESTARTS` check exactly
- *   (T-01.6.2-20).
+ *   "given_up": drop the instance, log a line naming it and the count
+ *   (a `>= VICE_MAX_RESTARTS` check, T-01.6.2-20).
  * - otherwise -> "respawned": wait the CURRENT backoff (from the crashed
  *   record, so the doubling carries forward across respawns), then relaunch
  *   through launchSupervised() below -- the SAME tryLaunchOne() primitive
@@ -1258,9 +1248,8 @@ function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonit
 }
 /** The public entry point: launches a NEW instance under full supervision
  * (crash respawn with backoff, crash-loop give-up, kill-never-recycle via
- * the deliberate-kill marker, and the per-instance boot/crash log), exactly
- * mirroring resources/vice-supervisor.sh's own respawn loop but expressed
- * as an event-loop exit handler instead of a `while true` poll.
+ * the deliberate-kill marker, and the per-instance boot/crash log),
+ * expressed as an event-loop exit handler instead of a `while true` poll.
  *
  * `remoteMonitorPort` is an OPTIONAL fourth parameter, threaded straight
  * through to launchSupervised() exactly like every other optional trailing

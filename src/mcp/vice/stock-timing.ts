@@ -2,8 +2,7 @@
 // stock-timing.ts
 //
 // THE stock-backend implementation of `vice_cycles_stopwatch` (TIME-01), plus
-// the two shared primitives (readCycleBaseline()/resolveVideoStandard()) that
-// a later plan's `stock-diagnose.ts` liveness bracket reuses verbatim.
+// the two primitives it builds on (readCycleBaseline()/resolveVideoStandard()).
 //
 // WHY THIS FILE EXISTS: stock VICE's binary monitor has no monotonic cycle
 // register at all (CLAUDE.md's own Protocol constraint) -- the fork's
@@ -254,8 +253,7 @@ export async function readProgramCounter(session: StockConnectSession): Promise<
 }
 
 /**
- * The shared cycle-baseline primitive `handleCyclesStopwatch()` below and
- * (07-06) `stock-diagnose.ts`'s liveness bracket both consume. Route
+ * The cycle-baseline primitive `handleCyclesStopwatch()` below consumes. Route
  * selection is a SINGLE read of `session.capabilities.cpuHistory` -- Phase
  * 2's BACK-04 already settled this once per connect; there is no second
  * probe here (Pattern 2, 07-RESEARCH.md).

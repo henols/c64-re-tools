@@ -31,7 +31,6 @@ const CASES: Case[] = [
   { skill: "c64-disassembler", script: "disassemble.ts", args: (d) => ["listing", "--image", join(d, "x.prg"), "--kind", "prg"] },
   { skill: "c64-unpacker", script: "packer-finding.ts", args: (d) => [join(d, "x.prg")] },
   { skill: "c64-provenance", script: "diff-images.ts", args: () => ["list"] },
-  { skill: "c64-provenance", script: "recovery-schema.ts", args: () => [] },
   { skill: "c64-annotations", script: "completeness-report.ts", args: () => [] },
   { skill: "c64-ram-capture", script: "dump-artifacts.ts", args: () => [] },
   { skill: "c64-ram-capture", script: "vsf-slice.ts", args: () => [] },
@@ -102,32 +101,3 @@ for (const c of CASES) {
     }
   });
 }
-
-test("recovery-schema's parameterisation gate runs with only c64-project beside it and scans every installed skill", () => {
-  const scratch = mkdtempSync(join(tmpdir(), "sibling-test-"));
-  try {
-    mkdirSync(join(scratch, ".git"));
-    mkdirSync(join(scratch, "recovery"));
-    writeFileSync(join(scratch, "recovery", "RELEASES.json"), JSON.stringify({ schema_version: "1.0", releases: [] }));
-    cpSync(join(SKILLS, "c64-provenance"), join(scratch, "skills", "c64-provenance"), { recursive: true });
-    cpSync(join(SKILLS, SIBLING), join(scratch, "skills", SIBLING), { recursive: true });
-    const run = () => spawnSync(process.execPath, [join(scratch, "skills", "c64-provenance", "scripts", "recovery-schema.ts"), "check-parameterisation", "--json"], {
-      cwd: scratch,
-      encoding: "utf8",
-      env: { ...process.env, C64RE_PROJECT_ROOT: scratch },
-      timeout: 30_000,
-    });
-    const alone = run();
-    assert.equal(alone.status, 0, `the gate must pass with only c64-project installed:\n${alone.stdout}\n${alone.stderr}`);
-    const aloneScanned = JSON.parse(alone.stdout).filesScanned as number;
-    assert.ok(aloneScanned > 0, "the gate must scan at least its own scripts");
-
-    // A skill installed later is covered without any code change.
-    cpSync(join(SKILLS, "c64-ram-capture"), join(scratch, "skills", "c64-ram-capture"), { recursive: true });
-    const withCapture = run();
-    assert.equal(withCapture.status, 0, `${withCapture.stdout}\n${withCapture.stderr}`);
-    assert.ok(JSON.parse(withCapture.stdout).filesScanned > aloneScanned, "an added skill's scripts must be scanned too");
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
-  }
-});

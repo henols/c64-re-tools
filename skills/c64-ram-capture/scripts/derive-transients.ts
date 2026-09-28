@@ -47,7 +47,7 @@
 //     `compare.ts` classifies a one-bit difference as "drift" and lets it
 //     pass anywhere. A one-bit difference outside the allow-list FAILS here.
 //     The cost of getting this wrong is recorded in
-//     `src/mcp/vice/capture-predicate.mts`'s header: a predicate carrying
+//     `test/vice/capture-predicate.mts`'s header: a predicate carrying
 //     either inherited rule passes the phase's one-bit fail-ability control,
 //     so the control goes green having proven nothing.
 //
@@ -58,23 +58,15 @@
 // RAM *under* I/O, not the register read view -- so on the snapshot route the
 // exclusion disappears and a difference there is a real difference.
 //
-// WHY IT CARRIES ITS OWN COMPARISON INSTEAD OF CALLING THE MCP-SIDE ONE.
-// `src/mcp/vice/capture-predicate.mts` is the authoritative predicate, and
-// `vsf-slice.ts` in this directory shows the route a skill script takes to
-// reach the MCP tree: spawn the interpreter on a CLI entry point. That route
-// is unavailable here -- `capture-predicate.mts` is a pure library with no CLI
-// entry point, a static cross-package import resolves from an installed skill
-// (see `vsf-slice.ts`'s header for the measured constraint), and
-// a transitive closure walk over the published set would fail the
-// pack for one. So this is the retired skill-side/MCP-side disk-image-reader
-// pair's own answer rather than the `vsf-slice.ts`
-// answer: a second independent implementation of a rule that
-// is STABLE and TINY -- set membership over differing addresses, with no
-// ranges, no tolerances and no version-sensitive layout anywhere in it. The
-// agreement between the two is not left to trust: `derive-transients.test.ts`
-// imports `compareCaptures()` over the same resolution ladder `vsf-slice.ts`
-// uses and asserts that `check`'s verdict matches it on a synthetic pair,
-// skipping with a NAMED reason if the MCP tree is absent.
+// WHY IT CARRIES ITS OWN COMPARISON. The reference predicate,
+// `test/vice/capture-predicate.mts`, is test-side and ships in no package, so
+// an installed skill cannot reach it. The rule is STABLE and TINY -- set
+// membership over differing addresses, with no ranges, no tolerances and no
+// version-sensitive layout anywhere in it -- so this script carries a second,
+// independent implementation. The agreement between the two is not left to
+// trust: `derive-transients.test.ts` imports `compareCaptures()` from the
+// reference predicate and asserts that `check`'s verdict matches it on a
+// synthetic pair.
 //
 // WHAT NOT TO DO:
 //   - Never raise the cap because a derivation overflowed it. An overflow
@@ -124,7 +116,7 @@ type RawJson = Record<string, unknown> | unknown[] | string | number | boolean |
 
 /** The committed maximum number of addresses an allow-list may enumerate
  * This literal MUST equal `TRANSIENT_ALLOW_LIST_CAP` in
- * `src/mcp/vice/capture-predicate.mts`; the colocated test asserts that
+ * `test/vice/capture-predicate.mts`; this script's test asserts that
  * equality against the IMPORTED constant rather than against a second copy of
  * the number, so the two cannot drift apart silently. */
 const TRANSIENT_ALLOW_LIST_CAP = 64;

@@ -11,12 +11,15 @@
 // in, which is the opposite of shippable.
 //
 // Test-support only. Pure filesystem reads; contacts nothing.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { projectRoot } from "../../../skills/c64-project/scripts/project-paths.ts";
 import { loadRegistry } from "../../../skills/c64-project/scripts/releases.ts";
-import type { DumpFileField, Registry } from "../../../skills/c64-project/scripts/releases.ts";
+import type { Registry } from "../../../skills/c64-project/scripts/releases.ts";
+
+/** The per-dump file fields a registry entry names. */
+type DumpFileField = "bin" | "capture_record" | "chip_state" | "range_manifest";
 
 /** One dump file located through the registry. */
 export interface DumpArtifact {
@@ -67,13 +70,6 @@ export function allDumpArtifacts(field: DumpFileField): DumpArtifact[] {
     }
   }
   return out;
-}
-
-/** Parsed JSON for a `firstDumpArtifact` hit, or null. */
-export function readJsonArtifact(field: DumpFileField): (DumpArtifact & { json: unknown }) | null {
-  const hit = firstDumpArtifact(field);
-  if (!hit) return null;
-  return { ...hit, json: JSON.parse(readFileSync(hit.path, "utf8")) };
 }
 
 /**

@@ -152,7 +152,7 @@ export interface ProvenanceLedgerErrorOptions {
 
 /**
  * Thrown by `readProvenanceLedger()`. Follows `ViceError`'s shape convention
- * (`vice.ts`) -- plain public fields, no sanitising -- rather than a
+ * (`vice-errors.mts`) -- plain public fields, no sanitising -- rather than a
  * message-only `Error`, so a caller that wants the path or the line number
  * programmatically (a CLI wrapper printing its own summary, say) does not
  * have to parse them back out of prose.
@@ -277,47 +277,6 @@ function refuseBadAddress(ledgerPath: string, lineNumber: number, column: "Start
       `one from the cell's own text. ${LEDGER_REMEDY}.`,
     { path: ledgerPath, lineNumber },
   );
-}
-
-/**
- * Reads and parses `ledgerPath`'s generated tier.
- *
- * Locates the header row by matching every cell against
- * `PROVENANCE_LEDGER_HEADER_CELLS`, skips the `|---|` separator line
- * immediately below it without re-validating its own shape, then parses
- * every following pipe-delimited line into a `ProvenanceLedgerRow` until the
- * first line that is not a table row at all, then asserts the accepted rows
- * as a WHOLE are strictly ascending, disjoint, and tile exactly
- * `$0000-$FFFF`.
- *
- * Refuses (`ProvenanceLedgerError`) for eight distinct reasons, and REJECTS
- * rather than repairs at every one of them -- no trimming, no defaulting, no
- * coercing a bad address to zero, no dropping a bad row and continuing with
- * the rest. Listed here in RULE order rather than strict execution order
- * (the zero-data-rows check can only run once the per-row loop below has
- * finished, so it fires textually after checks 4-6 even though it is
- * conceptually "does the table hold any rows at all"):
- *   1. the file cannot be read.
- *   2. no header row matching all seven cells is found.
- *   3. the header and separator are present but zero data rows follow.
- *   4. a candidate row does not split into exactly seven cells.
- *   5. a candidate row's Start or End cell is not the `$XXXX` shape
- *      `hex4()` writes.
- *   6. a candidate row's End is below its Start.
- *   7. two rows overlap, or are not strictly ascending by Start.
- *   8. the accepted rows do not begin at `$0000`, leave a gap, or stop
- *      below `$FFFF`.
- *
- * Every refusal names the path and, for a single-row problem, the 1-based
- * line number -- never the row's own cell text. See the module header's
- * "WHAT NOT TO DO" section for the full permitted-fact vocabulary, and for
- * why checks 7 and 8 are the ONLY two that mirror `renderLedger()`'s own
- * emit-time preconditions: they are the ADDRESS-shaped ones, and the two
- * CONTENT-shaped ones (UNKNOWN-with-empty-reason, ORIGINAL-agreeing-below-2)
- * are deliberately never re-asserted here.
- */
-export function readProvenanceLedger(ledgerPath: string): ProvenanceLedger {
-  return parseProvenanceLedger(ledgerPath, readProvenanceLedgerText(ledgerPath));
 }
 
 /** Reads a ledger's text, refusing an unreadable file by name (check 1). */

@@ -156,7 +156,7 @@ standard hardware-register library. That is deliberate: neither a plain
 scaffold that depended on it would fail to assemble on a fresh install.
 
 The host side probes for the library in the conventional install locations
-that `acme.mts`'s `findAcmeLib()` names. `$ACME` still matters for **your own**
+that `host-tool.mts`'s `findAcmeLib()` names. `$ACME` still matters for **your own**
 sources that use angle-bracket includes (see "Writing source" above). It does
 not matter for the scaffold. Set it in the environment of the **host** broker
 process, not in this script's environment, because the probe runs host-side.

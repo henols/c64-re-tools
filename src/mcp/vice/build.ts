@@ -109,7 +109,7 @@ export function GENERATED_BANNER(relSourcePath: string): string {
 }
 
 /** Recursive walk of `dir`, returning every `.mjs` file's relative (posix,
- * "/"-joined) path underneath it. Mirrors install-resources.mjs's own walk()
+ * "/"-joined) path underneath it. Mirrors install-resources.ts's own walk()
  * shape -- a real directory listing, not a hardcoded list. */
 function emittedMjsFilesUnder(dir: string, base = ""): string[] {
   if (!existsSync(dir)) return [];
@@ -178,9 +178,8 @@ export interface BuildOptions {
  *    `renameSync()` per artifact, and `rename(2)` fails `EXDEV` across mounts.
  *    That is why the original implementation staged at `dirname(outDirAbs)`.
  * 2. **Outside any directory a test walks.** Staging at `dirname(outDirAbs)`
- *    put a transient `.build-tmp-*` inside `src/mcp/vice/`, and
- *    `vice-mcp-selector-docs.test.ts`'s `walkFiles()` recurses through every
- *    directory there except `node_modules` — so a concurrent walk descended
+ *    put a transient `.build-tmp-*` inside `src/mcp/vice/`, and a test that
+ *    walks every directory there except `node_modules` — so a concurrent walk descended
  *    into the staging dir and died `ENOENT` when the rename removed it. That
  *    is a race this very function introduced while fixing a different one
  *    (quick-260804-o09), and constraint 1 is why the obvious fix of "just move

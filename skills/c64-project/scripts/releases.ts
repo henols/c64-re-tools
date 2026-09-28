@@ -20,9 +20,6 @@ import { registryFile, releaseDataDir } from "./project-paths.ts";
  * decimal string, or a number. `watch-loads.ts`'s `addrNum()` parses it. */
 export type Address = number | string;
 
-/** The four file-naming fields of a dump (a dump is a four-file set). */
-export type DumpFileField = "bin" | "capture_record" | "chip_state" | "range_manifest";
-
 /** One dump a release owns. Every file field is project-relative and may be
  * absent in a registry that is still being filled in. */
 export interface DumpEntry {
@@ -126,7 +123,7 @@ export function release(id: string): ReleaseEntry {
  * The registry's own N-readiness documentation:
  * a top-level `schema_notes` string, sibling to `schema_version` and
  * `releases`, stating the mechanical claim that adding a release is one
- * `releases[]` entry plus one invocation of `tools/recover.mjs`. Kept as a
+ * `releases[]` entry. Kept as a
  * plain top-level field rather than a JSON comment (JSON has none) or a
  * per-release field (it describes the registry's shape, not any one
  * release). Rehearsed against the real validator in

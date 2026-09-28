@@ -35,7 +35,6 @@ async function invokeHostTool(tool: string, args: object, opts: InvokeHostToolOp
 }
 
 const SELF = fileURLToPath(import.meta.url);
-const HERE = dirname(SELF);
 
 // How to refer to this script in hints, from wherever we were run.
 function selfPath() {

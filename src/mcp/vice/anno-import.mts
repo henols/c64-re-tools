@@ -261,16 +261,6 @@ export const GHIDRA_REFTYPE_TO_ACCESS_KIND: Readonly<Record<string, XrefAccessKi
   COMPUTED_CALL: "COMPUTED_JUMP",
 });
 
-/** The watched-address set, mirroring the Java constant
- * `CONST_WRITE_WATCHED_ADDRESSES` in `GhidraStructExport.java` byte-for-byte
- * -- the two MUST be kept in step. `parseConstWrites()` below does NOT
- * filter its own output against this list: a `## CONST_WRITES` line for an
- * address outside this set is still parsed and returned, because the
- * EXPORTER owns the watched set, and a parser that silently dropped a
- * widened set would hide the widening from every caller rather than
- * surfacing it. */
-export const CONST_WRITE_WATCHED_ADDRESSES: readonly number[] = Object.freeze([0x0001, 0xd011, 0xd018, 0xdd00]);
-
 /** One resolved immediate store to a watched address, per `## CONST_WRITES`
  * line: the instruction's own address, the memory address it wrote to, and
  * the compile-time constant it wrote. All three are plain numbers -- callers

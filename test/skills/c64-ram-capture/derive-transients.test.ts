@@ -11,18 +11,18 @@
 // a later comparison would pass on bytes nobody vetted, with a non-zero exit
 // long since scrolled past. The exit code alone cannot see that.
 //
-// Portable: the agreement checks import `capture-predicate.mts` over the same
-// resolution ladder `vsf-slice.ts` uses. With the MCP tree absent they SKIP
-// WITH A NAMED REASON -- never silently, because a silently skipped agreement
-// test is worse than an absent one.
+// The agreement checks import the test-side predicate oracle,
+// `test/vice/capture-predicate.mts`, directly: it ships in neither tarball
+// and always exists in a checkout.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
+
+import * as predicate from "../../vice/capture-predicate.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The scripts under test live in the skill folder; this test lives in test/skills/.
@@ -30,45 +30,6 @@ const SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-ram-capture", "sc
 const SCRIPT = join(SCRIPT_DIR, "derive-transients.ts");
 
 const IMAGE_BYTES = 65536;
-
-/** The MCP-side predicate module's shape, for typing the dynamic import below. */
-type Predicate = typeof import("../../../src/mcp/vice/capture-predicate.mts");
-
-// ---------------------------------------------------------------------------
-// The MCP-side predicate, over `vsf-slice.ts`'s resolution ladder.
-// ---------------------------------------------------------------------------
-
-const TARGET_FILE = "capture-predicate.mts";
-const TARGET_PACKAGE = "@henols/vice-mcp";
-
-/** The same three rungs, in the same order, as `vsf-slice.ts`'s `ladder()`:
- * `$VICE_MCP_DIR`, the in-repo relative path, then the published package. */
-// 34-04: the ONE production copy of this ladder is now mcp-module.ts's resolveMcpModule() -- this local copy is deliberately NOT converted (test files ship in neither tarball).
-function predicateLadder() {
-  const rungs = [];
-  const override = process.env.VICE_MCP_DIR;
-  if (override) rungs.push(join(resolve(override), TARGET_FILE));
-  rungs.push(resolve(HERE, "..", "..", "..", "src", "mcp", "vice", TARGET_FILE));
-  try {
-    rungs.push(createRequire(import.meta.url).resolve(`${TARGET_PACKAGE}/${TARGET_FILE}`));
-  } catch {
-    // The published-package rung is simply absent in a plugin checkout. Not an
-    // error: the in-repo rung above is the one that resolves there.
-  }
-  return rungs;
-}
-
-const predicatePath = predicateLadder().find((p) => existsSync(p)) ?? null;
-
-/** A NAMED skip reason, so a skipped agreement check says which paths it
- * tried instead of vanishing from the summary. */
-const SKIP_REASON = predicatePath
-  ? false
-  : `${TARGET_FILE} did not resolve over the ladder (tried: ${predicateLadder().join(", ") || "no rung"}); ` +
-    `set VICE_MCP_DIR to the directory holding it to run the agreement checks`;
-
-let predicate: Predicate | null = null;
-if (predicatePath) predicate = (await import(predicatePath)) as Predicate;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -334,18 +295,18 @@ test("derive: 65 addresses VOIDS the derivation -- non-zero, no file at --out, a
 // Agreement with the authoritative MCP-side predicate
 // ---------------------------------------------------------------------------
 
-test("the script's default cap is the MCP-side TRANSIENT_ALLOW_LIST_CAP, not a second copy of 64", { skip: SKIP_REASON }, () => {
+test("the script's default cap is the MCP-side TRANSIENT_ALLOW_LIST_CAP, not a second copy of 64", () => {
   const src = readFileSync(SCRIPT, "utf8");
   const m = src.match(/^const TRANSIENT_ALLOW_LIST_CAP = (\d+);$/m);
   assert.ok(m, "the script must declare its cap as one named constant");
   assert.equal(
     Number(m[1]),
-    predicate!.TRANSIENT_ALLOW_LIST_CAP,
+    predicate.TRANSIENT_ALLOW_LIST_CAP,
     "the derivation's cap must equal the predicate's committed cap",
   );
 });
 
-test("a derived artifact round-trips through parseAllowList unmodified", { skip: SKIP_REASON }, () => {
+test("a derived artifact round-trips through parseAllowList unmodified", () => {
   const dir = scratchDir();
   try {
     const wanted = spreadAddresses(12);
@@ -356,7 +317,7 @@ test("a derived artifact round-trips through parseAllowList unmodified", { skip:
     // Parsed straight off disk with NOTHING edited in between -- the point is
     // that the shipped artifact is already the shape the predicate accepts,
     // rather than needing a translation step that could drift.
-    const parsed = predicate!.parseAllowList(JSON.parse(readFileSync(out, "utf8")));
+    const parsed = predicate.parseAllowList(JSON.parse(readFileSync(out, "utf8")));
     assert.equal(parsed.release, "round-trip");
     assert.deepEqual(
       parsed.addresses,
@@ -377,7 +338,7 @@ test("a derived artifact round-trips through parseAllowList unmodified", { skip:
 // The JSON.parse used to sit outside parseArtifact(), so a syntax
 // error surfaced through the outer catch as a bare `error: Unexpected token …`
 // naming no file -- unlike every other refusal in this script.
-test("check: a syntactically invalid allow-list names the FILE that failed to parse", { skip: SKIP_REASON }, () => {
+test("check: a syntactically invalid allow-list names the FILE that failed to parse", () => {
   const dir = scratchDir();
   try {
     const imgs = tripletDifferingAt(dir, [0x0300]);
@@ -394,7 +355,7 @@ test("check: a syntactically invalid allow-list names the FILE that failed to pa
   }
 });
 
-test("a malformed artifact is refused by BOTH implementations, not just the predicate", { skip: SKIP_REASON }, () => {
+test("a malformed artifact is refused by BOTH implementations, not just the predicate", () => {
   const dir = scratchDir();
   try {
     const imgs = tripletDifferingAt(dir, [0x0300]);
@@ -409,7 +370,7 @@ test("a malformed artifact is refused by BOTH implementations, not just the pred
 
     // The MCP-side predicate refuses it.
     assert.throws(
-      () => predicate!.parseAllowList(JSON.parse(readFileSync(bad, "utf8"))),
+      () => predicate.parseAllowList(JSON.parse(readFileSync(bad, "utf8"))),
       /non-string attribution/,
       "the predicate has always refused this",
     );
@@ -425,7 +386,7 @@ test("a malformed artifact is refused by BOTH implementations, not just the pred
   }
 });
 
-test("check: the verdict agrees with compareCaptures on a synthetic pair, both ways", { skip: SKIP_REASON }, () => {
+test("check: the verdict agrees with compareCaptures on a synthetic pair, both ways", () => {
   const dir = scratchDir();
   try {
     // Derive from a triplet, then re-check a pair against the derivation.
@@ -434,7 +395,7 @@ test("check: the verdict agrees with compareCaptures on a synthetic pair, both w
     const list = join(dir, "list.json");
     assert.equal(run(["derive", "--release", "agreement", "--out", list, ...imgs]).status, 0);
 
-    const parsed = predicate!.parseAllowList(JSON.parse(readFileSync(list, "utf8")));
+    const parsed = predicate.parseAllowList(JSON.parse(readFileSync(list, "utf8")));
 
     // Case 1: the pair differs only at allow-listed addresses -> equivalent.
     const equivA = join(dir, "eq-a.bin");
@@ -445,7 +406,7 @@ test("check: the verdict agrees with compareCaptures on a synthetic pair, both w
     writeFileSync(equivB, bufEqB);
 
     const cliEquiv = run(["check", "--allow-list", list, equivA, equivB]);
-    const libEquiv = predicate!.compareCaptures(new Uint8Array(bufEqA), new Uint8Array(bufEqB), parsed);
+    const libEquiv = predicate.compareCaptures(new Uint8Array(bufEqA), new Uint8Array(bufEqB), parsed);
     assert.match(cliEquiv.stdout, /^CHECK_VERDICT: equivalent$/m);
     assert.equal(libEquiv.verdict, "equivalent");
     assert.equal(cliEquiv.status, 0);
@@ -462,7 +423,7 @@ test("check: the verdict agrees with compareCaptures on a synthetic pair, both w
     writeFileSync(divB, bufDivB);
 
     const cliDiv = run(["check", "--allow-list", list, divA, divB]);
-    const libDiv = predicate!.compareCaptures(new Uint8Array(bufDivA), new Uint8Array(bufDivB), parsed);
+    const libDiv = predicate.compareCaptures(new Uint8Array(bufDivA), new Uint8Array(bufDivB), parsed);
     assert.match(cliDiv.stdout, /^CHECK_VERDICT: not-equivalent$/m);
     assert.equal(libDiv.verdict, "not-equivalent");
     assert.notEqual(cliDiv.status, 0, "a non-equivalent check must exit non-zero");

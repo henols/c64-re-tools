@@ -1,0 +1,722 @@
+#!/usr/bin/env node
+// hazard-subject-fixture.test.ts -- the purpose-built hazard-subject fixture's
+// own assertion file.
+//
+// WHY THIS FILE EXISTS
+// ---------------------------------------------------------------------------
+// `fixtures/hazard-subject/` grows a committed synthetic C64 program that
+// deliberately plants non-canonical movement-hazard constructions -- shapes a
+// real detector accepts but that differ from this project's own shipped test
+// corpus, plus at least one shape a detector correctly DECLINES. Every
+// assertion here names the byte-level construction the fixture's source
+// actually contains, never a detector's opinion of it -- the fixture is
+// evidence a detector is measured AGAINST, and a test that asserted "the
+// detector says X" instead of "the bytes are X" would let the fixture and the
+// detector drift into agreeing with each other for the wrong reason.
+//
+// A test that needs an image either reads the committed `.prg` or
+// assembles the committed `.a` sources fresh into a throwaway directory and
+// reads the bytes ACME writes.
+//
+// Test names carry the `hazard subject:` prefix throughout, per the plan.
+//
+// GATE
+// ---------------------------------------------------------------------------
+// Exactly one test always runs and is never skipped: "ACME availability
+// gate". With `VICE_REQUIRE_ACME` set (CI's Test step) a missing ACME FAILS
+// that test. Locally, with no ACME on PATH, every other ACME-dependent test
+// skips with a named reason computed ONCE by the shared `acme-gate.ts` seam
+// -- never a hand-rolled probe.
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
+import { decode, type Instruction } from "../../src/mcp/vice/disasm-decoder.mts";
+import { scanIndirectDispatch } from "../../src/mcp/vice/anno-coverage.mts";
+import { buildHazardReport } from "../../src/mcp/vice/anno-hazard-report.mts";
+import { openStore, closeStore, listRanges, listLabels, listScopes } from "../../src/mcp/vice/anno-store.mts";
+import { importStoreDocument, type StoreExportDocument } from "../../src/mcp/vice/anno-store-export.mts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");
+const ROOT_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject.a");
+const ROOT_SOURCE_NAME = "hazard-subject.a";
+const DISPATCH_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-dispatch.a");
+const ALIGN_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align.a");
+const ALIGN_MISALIGNED_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align-misaligned.a");
+const PRG_PATH = join(FIXTURE_DIR, "hazard-subject.prg");
+const MISALIGNED_PRG_PATH = join(FIXTURE_DIR, "hazard-subject-misaligned.prg");
+const REGENERATOR_PATH = join(FIXTURE_DIR, "make-hazard-subject-fixtures.ts");
+
+const SKIP_REASON = acmeSkipReasonFor("hazard-subject-fixture.test.ts");
+
+test("ACME availability gate", () => {
+  assertAcmeRequiredIfEnvSet(assert);
+});
+
+/** Splits a committed `.prg`'s two-byte little-endian load address from its
+ * payload, the same way every consumer in this tree does. */
+function loadPrg(path: string): { bytes: Uint8Array; origin: number } {
+  const raw = readFileSync(path);
+  const origin = raw[0]! | (raw[1]! << 8);
+  return { bytes: new Uint8Array(raw.subarray(2)), origin };
+}
+
+/** Re-derives `decoded is Instruction` locally rather than importing
+ * `anno-coverage.mts`'s own private `isDecodableAsInstruction` (unexported by
+ * design): a legal, non-truncated decode at `address`. */
+function isLegalInstructionStart(bytes: Uint8Array, origin: number, address: number): boolean {
+  if (address < origin) return false;
+  const offset = address - origin;
+  if (offset < 0 || offset >= bytes.length) return false;
+  const decoded: Instruction | undefined = decode(bytes.subarray(offset), address, { count: 1 })[0];
+  return !!decoded && !decoded.illegal && !decoded.notes.includes("truncated");
+}
+
+/** Assembles `rootSourceName` (resolved with `cwd: FIXTURE_DIR`, so its own
+ * bare-filename `!source` lines resolve exactly as the committed regenerator
+ * resolves them) fresh into a throwaway directory, never touching the
+ * committed `.prg`. Returns the raw bytes ACME wrote, load address included. */
+function assembleFresh(rootSourceName: string): Uint8Array {
+  const dir = mkdtempSync(join(tmpdir(), "hazard-subject-fixture-"));
+  try {
+    const outPath = join(dir, "out.prg");
+    const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPath, rootSourceName], {
+      encoding: "utf8",
+      timeout: 30_000,
+      cwd: FIXTURE_DIR,
+    });
+    assert.equal(r.status, 0, `${rootSourceName} must assemble:\n  stderr: ${r.stderr ?? ""}`);
+    assert.equal(existsSync(outPath), true, "ACME must write an output file");
+    return new Uint8Array(readFileSync(outPath));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// hazard subject: class 1 -- the planted non-canonical stack-return dispatch,
+// and the mixed-index-register construction the scanner correctly declines.
+// ---------------------------------------------------------------------------
+
+test("hazard subject: the imported scanner proves at least one stack-return dispatch finding on the committed image, with the scan's own truncation flag false", { skip: SKIP_REASON }, () => {
+  const { bytes, origin } = loadPrg(PRG_PATH);
+  const instructions = decode(bytes, origin);
+  const scan = scanIndirectDispatch(instructions, bytes, origin);
+  assert.ok(
+    scan.stackReturnDispatch.length >= 1,
+    "the committed image must carry at least one PROVEN stack-return dispatch finding -- the planted non-canonical construction",
+  );
+  assert.equal(scan.truncated, false, "the scan must not have been cut short reconstructing the planted subject");
+});
+
+test("hazard subject: every target the stack-return finding reconstructs is a real instruction start inside the committed image", { skip: SKIP_REASON }, () => {
+  const { bytes, origin } = loadPrg(PRG_PATH);
+  const instructions = decode(bytes, origin);
+  const scan = scanIndirectDispatch(instructions, bytes, origin);
+  assert.ok(scan.stackReturnDispatch.length >= 1, "precondition: at least one proven finding must exist to check its targets");
+  for (const finding of scan.stackReturnDispatch) {
+    assert.ok(finding.targets.length > 0, "a proven finding must reconstruct at least one target");
+    for (const target of finding.targets) {
+      assert.ok(
+        isLegalInstructionStart(bytes, origin, target),
+        `reconstructed target $${target.toString(16)} must decode as a legal, non-truncated instruction inside the image`,
+      );
+    }
+  }
+});
+
+test("hazard subject: the mixed-index-register declining control appears in no proven collection -- only as an unproven, unresolved candidate", { skip: SKIP_REASON }, () => {
+  const { bytes, origin } = loadPrg(PRG_PATH);
+  const instructions = decode(bytes, origin);
+  const scan = scanIndirectDispatch(instructions, bytes, origin);
+
+  // Exactly one PROVEN stack-return finding -- the mixed-register site never
+  // promotes to a second one, and no zeropage-vector-gated split table exists
+  // in this subject either.
+  assert.equal(scan.stackReturnDispatch.length, 1, "the mixed-index-register site must not be promoted into a second proven stack-return finding");
+  assert.equal(scan.splitTables.length, 0, "this subject plants no zeropage-vector-gated split table -- a non-zero count here would mean the declining site was proven some other way");
+
+  // The declining pairing shows up ONLY as an advisory candidate: no
+  // orientation claim, no targets.
+  assert.ok(scan.splitTableCandidates.length >= 1, "the mixed-index-register pairing must be recorded as an unproven, advisory candidate");
+  for (const candidate of scan.splitTableCandidates) {
+    assert.equal(candidate.orientationResolved, false, "an advisory candidate must carry no orientation claim");
+    assert.equal(candidate.targets.length, 0, "an advisory candidate must reconstruct no targets");
+  }
+});
+
+test("hazard subject: the dispatch routine's two paired loads walk the Y register, never X; the declining control walks X on one load and Y on the other", () => {
+  const rootSource = readFileSync(ROOT_SOURCE_PATH, "utf8");
+  const dispatchSource = readFileSync(DISPATCH_SOURCE_PATH, "utf8");
+
+  assert.ok(rootSource.includes("dispatch_hi,y"), "the proven site's first load must index dispatch_hi through Y");
+  assert.ok(rootSource.includes("dispatch_lo,y"), "the proven site's second load must index dispatch_lo through Y");
+  assert.ok(!/,\s*x\b/i.test(rootSource), "the root file must contain no X-indexed load at all -- the proven site never uses X");
+
+  assert.ok(dispatchSource.includes("decline_hi,x"), "the declining control's first load must index decline_hi through X");
+  assert.ok(dispatchSource.includes("decline_lo,y"), "the declining control's second load must index decline_lo through Y");
+});
+
+test("hazard subject: every entry in both split address tables is written as a label followed by an explicit -1", () => {
+  const dispatchSource = readFileSync(DISPATCH_SOURCE_PATH, "utf8");
+  const provenTablesBlock = dispatchSource.slice(dispatchSource.indexOf("dispatch_hi"), dispatchSource.indexOf("decline_hi"));
+  assert.ok(provenTablesBlock.length > 0, "precondition: dispatch_hi must precede decline_hi in the source");
+  const biasedEntries = provenTablesBlock.match(/dispatch_target_\d+-1\)/g) ?? [];
+  assert.equal(
+    biasedEntries.length,
+    6,
+    "the proven site's two tables (dispatch_hi, dispatch_lo) must together carry exactly six explicit `label-1` entries -- three targets, high byte and low byte each",
+  );
+});
+
+test("hazard subject: no fixture source in this tree names the scanner it is planted against", () => {
+  const dispatchSource = readFileSync(DISPATCH_SOURCE_PATH, "utf8");
+  const stripped = dispatchSource
+    .split("\n")
+    .filter((line) => !/^\s*;/.test(line))
+    .join("\n");
+  assert.ok(!stripped.includes("scanIndirectDispatch"), "the dispatch fixture source must never name the scanner it is planted against");
+});
+
+test("hazard subject: the root source carries exactly four bare-filename !source lines", () => {
+  const rootSource = readFileSync(ROOT_SOURCE_PATH, "utf8");
+  const sourceLines = rootSource.match(/^!source\s+"[^"/\\]+"\s*$/gm) ?? [];
+  assert.equal(sourceLines.length, 4, "the root must carry exactly four !source lines after the dispatch, alignment and raster constructions are all added, each a bare filename");
+});
+
+test("hazard subject: no planning-vocabulary string appears anywhere in the dispatch fixture source", () => {
+  const dispatchSource = readFileSync(DISPATCH_SOURCE_PATH, "utf8");
+  assert.ok(!/\bD-\d/.test(dispatchSource), "must not carry a bare D-NN decision id");
+  assert.ok(!/\bBUILD-\d/.test(dispatchSource), "must not carry a BUILD-NN requirement id");
+  assert.ok(!/\bPhase\s+\d/.test(dispatchSource), "must not carry a 'Phase N' citation");
+});
+
+/** Assembles `rootSourceName` fresh (same discipline as `assembleFresh()`)
+ * AND asks ACME for a symbol list, so a test can check a real label's
+ * ASSEMBLED address rather than reading it out of the source text. Returns
+ * `null` for a symbol name it did not find, never throws. */
+function assembleFreshWithSymbols(rootSourceName: string): { bytes: Uint8Array; symbols: Map<string, number> } {
+  const dir = mkdtempSync(join(tmpdir(), "hazard-subject-fixture-sym-"));
+  try {
+    const outPath = join(dir, "out.prg");
+    const symPath = join(dir, "out.sym");
+    const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPath, "--symbollist", symPath, rootSourceName], {
+      encoding: "utf8",
+      timeout: 30_000,
+      cwd: FIXTURE_DIR,
+    });
+    assert.equal(r.status, 0, `${rootSourceName} must assemble:\n  stderr: ${r.stderr ?? ""}`);
+    assert.equal(existsSync(outPath), true, "ACME must write an output file");
+    assert.equal(existsSync(symPath), true, "ACME must write a symbol list file");
+    const symbols = new Map<string, number>();
+    for (const line of readFileSync(symPath, "utf8").split("\n")) {
+      const m = line.match(/^\s*(\S+)\s*=\s*\$([0-9a-fA-F]+)/);
+      if (m) symbols.set(m[1]!, parseInt(m[2]!, 16));
+    }
+    return { bytes: new Uint8Array(readFileSync(outPath)), symbols };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// hazard subject: class 3 -- the planted VIC-II hardware alignment
+// dependency, and the four data tables the export path needs.
+// ---------------------------------------------------------------------------
+
+test("hazard subject: the sprite shape base address is a multiple of 64, and the character-set base address is a multiple of 2048 -- asserted against the assembled image", { skip: SKIP_REASON }, () => {
+  const { symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const spriteBase = symbols.get("align_sprite_base");
+  const charBase = symbols.get("align_char_base");
+  assert.ok(spriteBase !== undefined, "align_sprite_base must be a real symbol in the assembled image");
+  assert.ok(charBase !== undefined, "align_char_base must be a real symbol in the assembled image");
+  assert.equal(spriteBase! % 64, 0, `align_sprite_base ($${spriteBase!.toString(16)}) must be 64-byte aligned`);
+  assert.equal(charBase! % 2048, 0, `align_char_base ($${charBase!.toString(16)}) must be 2048-byte aligned`);
+});
+
+test("hazard subject: the byte written to $07f8 equals the sprite base divided by 64", { skip: SKIP_REASON }, () => {
+  const { bytes, symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const spriteBase = symbols.get("align_sprite_base")!;
+  const origin = bytes[0]! | (bytes[1]! << 8);
+  const payload = bytes.subarray(2);
+  const instructions = decode(payload, origin);
+  const storeIndex = instructions.findIndex((insn) => insn.mnemonic === "sta" && insn.operand?.value === 0x07f8);
+  assert.ok(storeIndex > 0, "the image must contain an `sta $07f8` instruction");
+  const loader = instructions[storeIndex - 1]!;
+  assert.equal(loader.mnemonic, "lda", "the instruction immediately before `sta $07f8` must be the `lda #imm` that loads the pointer byte");
+  assert.equal(loader.operand?.role, "immediate", "the sprite pointer must be loaded as an immediate value");
+  assert.equal(loader.operand!.value, Math.floor(spriteBase / 64), "the byte written to $07f8 must equal the sprite base divided by 64");
+});
+
+test("hazard subject: four distinct labelled data tables exist -- sprite shape, character set, level and music", () => {
+  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
+  for (const label of ["align_sprite_base", "align_char_base", "align_level_table", "align_music_table"]) {
+    assert.ok(new RegExp(`^${label}\\b`, "m").test(alignSource), `${label} must be declared as its own label in the alignment source`);
+  }
+  const dataDirectives = alignSource.match(/^\s*!(byte|fill)\b/gm) ?? [];
+  assert.ok(dataDirectives.length >= 4, "each of the four tables must carry at least one data directive");
+});
+
+test("hazard subject: the alignment source carries an explicit alignment directive for both the sprite shape block and the character-set block", () => {
+  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
+  const alignDirectives = alignSource.match(/^\s*!align\b/gm) ?? [];
+  assert.equal(alignDirectives.length, 2, "exactly two !align directives are expected -- one for the character set, one for the sprite shape");
+});
+
+test("hazard subject: the sprite pointer and the VIC memory-control bits are derived from their labels, never written as bare hex constants", () => {
+  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
+  assert.ok(alignSource.includes("align_sprite_base / 64"), "the $07f8 write must derive its value from align_sprite_base, not a literal");
+  assert.ok(alignSource.includes("align_char_base / 2048"), "the $d018 write must derive its value from align_char_base, not a literal");
+});
+
+test("hazard subject: no planning-vocabulary string appears anywhere in the alignment fixture source", () => {
+  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
+  assert.ok(!/\bD-\d/.test(alignSource), "must not carry a bare D-NN decision id");
+  assert.ok(!/\bBUILD-\d/.test(alignSource), "must not carry a BUILD-NN requirement id");
+  assert.ok(!/\bPhase\s+\d/.test(alignSource), "must not carry a 'Phase N' citation");
+});
+
+// ---------------------------------------------------------------------------
+// hazard subject: class 4 -- the planted timer-stabilised raster routine,
+// the non-canonical variant of the fourth hazard class.
+// ---------------------------------------------------------------------------
+
+const RASTER_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-raster.a");
+
+/** Finds the store pair `lda #imm ; sta target` for `target`, immediately
+ * adjacent in the decoded stream -- the same adjacent-pair shape the report
+ * module's own recovery walk looks for, re-derived independently here so
+ * this fixture test does not depend on that module's implementation. */
+function findImmediateStore(instructions: readonly Instruction[], target: number): Instruction | undefined {
+  for (let i = 0; i + 1 < instructions.length; i++) {
+    const load = instructions[i]!;
+    if (load.mnemonic !== "lda" || load.operand?.role !== "immediate") continue;
+    const store = instructions[i + 1]!;
+    if (store.mnemonic === "sta" && store.operand?.role === "absolute" && store.operand.value === target) return store;
+  }
+  return undefined;
+}
+
+/** Walks forward from `startAddress` (an instruction START address) to the
+ * first `rti`/`rts`, inclusive -- the same bounded handler-window walk the
+ * class-4 detector itself uses, re-derived independently here. */
+function rasterHandlerWindow(instructions: readonly Instruction[], startAddress: number): Instruction[] {
+  const startIdx = instructions.findIndex((instr) => instr.address === startAddress);
+  assert.ok(startIdx >= 0, `precondition: $${startAddress.toString(16)} must be a real instruction start`);
+  const window: Instruction[] = [];
+  for (let i = startIdx; i < instructions.length; i++) {
+    const instr = instructions[i]!;
+    window.push(instr);
+    if (instr.opcode === 0x40 || instr.opcode === 0x60) break;
+  }
+  return window;
+}
+
+test("hazard subject: the image contains a store pair writing an in-image address into the interrupt vector", { skip: SKIP_REASON }, () => {
+  const fresh = assembleFresh(ROOT_SOURCE_NAME);
+  const origin = fresh[0]! | (fresh[1]! << 8);
+  const instructions = decode(fresh.subarray(2), origin);
+
+  const lowStore = findImmediateStore(instructions, 0x0314);
+  const highStore = findImmediateStore(instructions, 0x0315);
+  assert.ok(lowStore, "the image must store an immediate byte into $0314 (the RAM IRQ vector's low byte)");
+  assert.ok(highStore, "the image must store an immediate byte into $0315 (the RAM IRQ vector's high byte)");
+
+  const lowIdx = instructions.indexOf(lowStore!);
+  const highIdx = instructions.indexOf(highStore!);
+  const target = instructions[lowIdx - 1]!.operand!.value | (instructions[highIdx - 1]!.operand!.value << 8);
+  assert.ok(
+    isLegalInstructionStart(fresh.subarray(2), origin, target),
+    `the reconstructed interrupt-vector target $${target.toString(16)} must decode as a legal instruction start inside the image`,
+  );
+});
+
+test("hazard subject: the routine the interrupt vector names contains a write to the first CIA's timer reload registers", { skip: SKIP_REASON }, () => {
+  const fresh = assembleFresh(ROOT_SOURCE_NAME);
+  const origin = fresh[0]! | (fresh[1]! << 8);
+  const bytes = fresh.subarray(2);
+  const instructions = decode(bytes, origin);
+
+  const lowStore = findImmediateStore(instructions, 0x0314)!;
+  const highStore = findImmediateStore(instructions, 0x0315)!;
+  const lowIdx = instructions.indexOf(lowStore);
+  const highIdx = instructions.indexOf(highStore);
+  const target = instructions[lowIdx - 1]!.operand!.value | (instructions[highIdx - 1]!.operand!.value << 8);
+
+  const window = rasterHandlerWindow(instructions, target);
+  const timerReloadWrite = window.some(
+    (instr) =>
+      (instr.mnemonic === "sta" || instr.mnemonic === "stx" || instr.mnemonic === "sty") &&
+      instr.operand?.role === "absolute" &&
+      (instr.operand.value === 0xdc04 || instr.operand.value === 0xdc05),
+  );
+  assert.ok(timerReloadWrite, "the routine the interrupt vector names must write to $dc04 or $dc05 (CIA1 Timer A's reload registers)");
+});
+
+test("hazard subject: the routine the interrupt vector names contains no run of three or more consecutive no-operation instructions", { skip: SKIP_REASON }, () => {
+  const fresh = assembleFresh(ROOT_SOURCE_NAME);
+  const origin = fresh[0]! | (fresh[1]! << 8);
+  const bytes = fresh.subarray(2);
+  const instructions = decode(bytes, origin);
+
+  const lowStore = findImmediateStore(instructions, 0x0314)!;
+  const highStore = findImmediateStore(instructions, 0x0315)!;
+  const lowIdx = instructions.indexOf(lowStore);
+  const highIdx = instructions.indexOf(highStore);
+  const target = instructions[lowIdx - 1]!.operand!.value | (instructions[highIdx - 1]!.operand!.value << 8);
+
+  const window = rasterHandlerWindow(instructions, target);
+  let consecutiveNops = 0;
+  for (const instr of window) {
+    consecutiveNops = instr.opcode === 0xea ? consecutiveNops + 1 : 0;
+    assert.ok(consecutiveNops < 3, "no run of three or more consecutive no-operation instructions may exist in this routine -- that is the textbook jitter-compensation sled this variant must not carry");
+  }
+});
+
+test("hazard subject: the raster fixture's own header names which of the detector's three class-4 signals it presents and which it does not", () => {
+  const rasterSource = readFileSync(RASTER_SOURCE_PATH, "utf8").toLowerCase();
+  assert.ok(rasterSource.includes("presents the third signal and only the third"), "the header must state which signal is presented");
+  assert.ok(rasterSource.includes("deliberately does not present the first signal"), "the header must state the raster-register signal is deliberately absent");
+  assert.ok(rasterSource.includes("does not present the second signal"), "the header must state the timing-sled signal is deliberately absent");
+});
+
+test("hazard subject: no planning-vocabulary string appears anywhere in the raster fixture source", () => {
+  const rasterSource = readFileSync(RASTER_SOURCE_PATH, "utf8");
+  assert.ok(!/\bD-\d/.test(rasterSource), "must not carry a bare D-NN decision id");
+  assert.ok(!/\bBUILD-\d/.test(rasterSource), "must not carry a BUILD-NN requirement id");
+  assert.ok(!/\bPhase\s+\d/.test(rasterSource), "must not carry a 'Phase N' citation");
+});
+
+// ---------------------------------------------------------------------------
+// hazard subject: class 2's second, deliberately undetected self-modification
+// -- the indirect-indexed store the class-2 detector misses by construction.
+// ---------------------------------------------------------------------------
+
+test("hazard subject: the second self-modification's indirect-indexed store lands inside another decoded instruction's byte range, and no instruction in the image carries that target address as a literal operand", { skip: SKIP_REASON }, () => {
+  const { bytes, symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const origin = bytes[0]! | (bytes[1]! << 8);
+  const payload = bytes.subarray(2);
+  const instructions = decode(payload, origin);
+
+  const ptrLo = symbols.get("smc2_ptr_lo")!;
+  const target = symbols.get("smc2_operand_addr")!;
+  assert.ok(ptrLo !== undefined, "smc2_ptr_lo must be a real symbol in the assembled image");
+  assert.ok(target !== undefined, "smc2_operand_addr must be a real symbol in the assembled image");
+
+  const indirectStore = instructions.find(
+    (instr) => instr.mnemonic === "sta" && instr.mode === "indirect_y" && instr.operand?.value === ptrLo,
+  );
+  assert.ok(indirectStore, "the image must contain an sta (zp),y store through smc2_ptr_lo");
+
+  const host = instructions.find((instr) => target > instr.address && target < instr.address + instr.bytes.length);
+  assert.ok(host, "the target address must land strictly inside another decoded instruction's byte range");
+  assert.notEqual(host, indirectStore, "the host instruction must be a DIFFERENT instruction from the indirect store itself");
+
+  // "carries the target address as a literal operand" is checked against
+  // ABSOLUTE/ZEROPAGE-mode operands only -- the modes a static detector
+  // reads as a resolved address. A lone immediate BYTE coincidentally
+  // matching one half of the target is expected noise (this image's own
+  // BASIC loader stub, decoded as if it were instructions, produces exactly
+  // that kind of coincidence) and is not what this claim is about: no
+  // instruction anywhere resolves to this address as ITS OWN operand.
+  for (const instr of instructions) {
+    if (instr === indirectStore) continue; // its own operand is the ZP POINTER address, not the target
+    if (!instr.operand) continue;
+    if (instr.operand.role === "absolute" || instr.operand.role === "zeropage") {
+      assert.notEqual(instr.operand.value, target, `instruction at $${instr.address.toString(16)} must not carry the second self-modification's target as a literal operand`);
+    }
+  }
+});
+
+test("hazard subject: the report over the subject image finds the first self-modification, records the second as a limit, never as a finding, and every hazard class uses a distinct mechanism id", { skip: SKIP_REASON }, () => {
+  const { bytes, symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const origin = bytes[0]! | (bytes[1]! << 8);
+  const payload = bytes.subarray(2);
+
+  const report = buildHazardReport({ bytes: payload, origin });
+
+  const smcFindings = report.findings.filter((f) => f.hazardClass === "self-modifying-code");
+  assert.equal(smcFindings.length, 1, "exactly one class-2 finding must be reported for the whole subject -- the opcode-byte patch, and only it");
+  assert.equal(smcFindings[0]!.mechanism, "store-target-in-instruction-opcode-byte", "the one reported class-2 finding must be the first construction's opcode-byte patch");
+
+  const target = symbols.get("smc2_operand_addr")!;
+  const anchoredAtIndirectTarget = report.findings.some((f) => f.hazardClass === "self-modifying-code" && (f.anchorAddress === target || f.blockedAddress === target));
+  assert.equal(
+    anchoredAtIndirectTarget,
+    false,
+    "the report must contain NO class-2 finding anchored at the indirect store's target -- if this assertion ever fails because the detector improved, revisit HAZARD_LIMITS's own indirect-indexed entry and this fixture's header together; do NOT delete this assertion",
+  );
+
+  const missNamed = report.limits.some(
+    (l) => l.hazardClass === "self-modifying-code" && /runtime-computed/.test(l.limit) && /indirect/.test(l.limit),
+  );
+  assert.ok(missNamed, "the report's own emitted limits must contain the entry naming a store through a runtime-computed pointer as undetected");
+
+  const mechanismIds = new Set<string>();
+  for (const finding of report.findings) {
+    assert.ok(!mechanismIds.has(finding.mechanism), `mechanism id ${JSON.stringify(finding.mechanism)} is shared by more than one finding over the subject -- the four planted classes must use four distinct mechanisms`);
+    mechanismIds.add(finding.mechanism);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// hazard subject: class 3's observable negative control -- the deliberately
+// mis-aligned twin.
+// ---------------------------------------------------------------------------
+
+/** Re-derives the SAME text substitution `make-hazard-subject-fixtures.ts`
+ * uses to build the mis-aligned twin's root: swap the one `!source
+ * "hazard-subject-align.a"` line for the mis-aligned file. Independent of the
+ * regenerator's own implementation -- this is a second, separately-written
+ * derivation of the same recipe, so a bug in one is not hidden by the other
+ * silently agreeing with itself. */
+function misalignedRootSourceText(): string {
+  const rootText = readFileSync(ROOT_SOURCE_PATH, "utf8");
+  const marker = '!source "hazard-subject-align.a"';
+  assert.ok(rootText.includes(marker), `precondition: the root must still contain ${JSON.stringify(marker)} for the substitution to apply`);
+  return rootText.replace(marker, '!source "hazard-subject-align-misaligned.a"');
+}
+
+/** Assembles the synthesized mis-aligned root fresh, with a symbol list,
+ * exactly like `assembleFreshWithSymbols()` but for a root that has no
+ * committed file of its own. */
+function assembleMisalignedFreshWithSymbols(): { bytes: Uint8Array; symbols: Map<string, number> } {
+  const dir = mkdtempSync(join(tmpdir(), "hazard-subject-fixture-mis-"));
+  try {
+    const rootPath = join(dir, "synthesized-misaligned-root.a");
+    writeFileSync(rootPath, misalignedRootSourceText());
+    const outPath = join(dir, "out.prg");
+    const symPath = join(dir, "out.sym");
+    const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPath, "--symbollist", symPath, rootPath], {
+      encoding: "utf8",
+      timeout: 30_000,
+      cwd: FIXTURE_DIR,
+    });
+    assert.equal(r.status, 0, `the synthesized mis-aligned root must assemble:\n  stderr: ${r.stderr ?? ""}`);
+    assert.equal(existsSync(outPath), true, "ACME must write an output file");
+    assert.equal(existsSync(symPath), true, "ACME must write a symbol list file");
+    const symbols = new Map<string, number>();
+    for (const line of readFileSync(symPath, "utf8").split("\n")) {
+      const m = line.match(/^\s*(\S+)\s*=\s*\$([0-9a-fA-F]+)/);
+      if (m) symbols.set(m[1]!, parseInt(m[2]!, 16));
+    }
+    return { bytes: new Uint8Array(readFileSync(outPath)), symbols };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("hazard subject: hazard-subject-misaligned.prg exists, is tracked, and differs from hazard-subject.prg", () => {
+  assert.ok(existsSync(MISALIGNED_PRG_PATH), "hazard-subject-misaligned.prg must be committed");
+  const ls = spawnSync("git", ["ls-files", "--error-unmatch", MISALIGNED_PRG_PATH], { encoding: "utf8", cwd: FIXTURE_DIR });
+  assert.equal(ls.status, 0, "hazard-subject-misaligned.prg must be a tracked file, not merely present on disk");
+  const aligned = readFileSync(PRG_PATH);
+  const misaligned = readFileSync(MISALIGNED_PRG_PATH);
+  assert.notDeepEqual([...aligned], [...misaligned], "the mis-aligned image must differ from the aligned one");
+});
+
+test("hazard subject: the mis-aligned source differs from the aligned source only in the two deliberate filler-byte insertions", () => {
+  const strip = (text: string) =>
+    text
+      .split("\n")
+      .map((line) => line.replace(/;.*$/, "").trimEnd())
+      .filter((line) => line.trim().length > 0);
+
+  const alignedLines = strip(readFileSync(ALIGN_SOURCE_PATH, "utf8"));
+  const misalignedLines = strip(readFileSync(ALIGN_MISALIGNED_SOURCE_PATH, "utf8"));
+
+  const extraLines = misalignedLines.filter((line) => line.trim() === "!byte 0").length;
+  assert.equal(extraLines, 2, "the mis-aligned source must add exactly two `!byte 0` filler lines and nothing else");
+  assert.equal(
+    misalignedLines.length,
+    alignedLines.length + 2,
+    "besides the two filler-byte insertions, the mis-aligned source's non-comment, non-blank lines must match the aligned source's exactly",
+  );
+
+  // With the two filler lines removed, every remaining non-comment,
+  // non-blank line must match the aligned source's, in order.
+  const withoutFillers = misalignedLines.filter((line) => line.trim() !== "!byte 0");
+  assert.deepEqual(withoutFillers, alignedLines, "removing the two filler-byte lines must leave the mis-aligned source identical to the aligned one, line for line");
+});
+
+test("hazard subject: the mis-aligned image's sprite shape base is not a multiple of 64, and its character-set base is not a multiple of 2048", { skip: SKIP_REASON }, () => {
+  const { symbols } = assembleMisalignedFreshWithSymbols();
+  const spriteBase = symbols.get("align_sprite_base");
+  const charBase = symbols.get("align_char_base");
+  assert.ok(spriteBase !== undefined, "align_sprite_base must be a real symbol in the mis-aligned image");
+  assert.ok(charBase !== undefined, "align_char_base must be a real symbol in the mis-aligned image");
+  assert.notEqual(spriteBase! % 64, 0, `the mis-aligned align_sprite_base ($${spriteBase!.toString(16)}) must NOT be 64-byte aligned`);
+  assert.notEqual(charBase! % 2048, 0, `the mis-aligned align_char_base ($${charBase!.toString(16)}) must NOT be 2048-byte aligned`);
+});
+
+test("hazard subject: the regenerator's fixture table declares four builds, and all refuse before writing if the assembler is unusable", () => {
+  // Was "exactly two build entries" before plan 50-02 added the regressed
+  // twin and the modified subject as two more synthesized-root FIXTURES
+  // entries (both via the shared substituteSourceLines() helper). Updated
+  // here rather than left stale -- this is Rule 1 (a now-incorrect
+  // assertion about this generator's own shape), not new coverage.
+  const generatorSource = readFileSync(REGENERATOR_PATH, "utf8");
+  const outputMentions = generatorSource.match(/output:\s*"[^"]+\.prg"/g) ?? [];
+  assert.equal(outputMentions.length, 4, "the FIXTURES table must declare exactly four build entries, one per committed .prg");
+  assert.ok(generatorSource.includes('"hazard-subject.prg"'), "the aligned build's output name must be declared");
+  assert.ok(generatorSource.includes('"hazard-subject-misaligned.prg"'), "the mis-aligned build's output name must be declared");
+  assert.ok(generatorSource.includes('"hazard-subject-regressed.prg"'), "the regressed build's output name must be declared");
+  assert.ok(generatorSource.includes('"hazard-subject-modified.prg"'), "the modified build's output name must be declared");
+  assert.ok(generatorSource.includes("REFUSING to write a partial fixture"), "the shared refusal path must still cover every build");
+});
+
+test("hazard subject: the mis-aligned source's header states that the assembler exits zero and that no automated check here distinguishes the two images by behaviour", () => {
+  const misalignedSource = readFileSync(ALIGN_MISALIGNED_SOURCE_PATH, "utf8").toLowerCase();
+  assert.ok(misalignedSource.includes("exits zero"), "the header must state that the assembler exits zero on this build");
+  assert.ok(misalignedSource.includes("by behaviour"), "the header must state that no automated check here distinguishes the two images by behaviour");
+});
+
+test("hazard subject: no planning-vocabulary string appears anywhere in the mis-aligned fixture source", () => {
+  const misalignedSource = readFileSync(ALIGN_MISALIGNED_SOURCE_PATH, "utf8");
+  assert.ok(!/\bD-\d/.test(misalignedSource), "must not carry a bare D-NN decision id");
+  assert.ok(!/\bBUILD-\d/.test(misalignedSource), "must not carry a BUILD-NN requirement id");
+  assert.ok(!/\bPhase\s+\d/.test(misalignedSource), "must not carry a 'Phase N' citation");
+});
+
+// ---------------------------------------------------------------------------
+// hazard subject: the committed store export -- the decomposition the
+// multi-file export path will read two plans later.
+// ---------------------------------------------------------------------------
+
+const ANNOSTORE_PATH = join(FIXTURE_DIR, "hazard-subject.annostore.json");
+
+function loadCommittedExport(): StoreExportDocument {
+  return JSON.parse(readFileSync(ANNOSTORE_PATH, "utf8")) as StoreExportDocument;
+}
+
+/** Imports the committed export into a throwaway store and returns its rows
+ * read back through the real query layer -- never the raw JSON -- so these
+ * tests prove the export against what a real import produces, the same
+ * substrate the multi-file export path reads from. */
+function importIntoFreshStore(): { ranges: ReturnType<typeof listRanges>; labels: ReturnType<typeof listLabels>; scopes: ReturnType<typeof listScopes> } {
+  const doc = loadCommittedExport();
+  const dir = mkdtempSync(join(tmpdir(), "hazard-subject-annostore-import-"));
+  try {
+    const storePath = join(dir, "hazard-subject.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    try {
+      importStoreDocument(handle, doc);
+      return { ranges: listRanges(handle), labels: listLabels(handle), scopes: listScopes(handle) };
+    } finally {
+      closeStore(handle);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("hazard subject: the committed store export imports cleanly into a fresh store", () => {
+  const { ranges, labels, scopes } = importIntoFreshStore();
+  assert.ok(ranges.length > 0, "the imported store must contain at least one range");
+  assert.ok(labels.length > 0, "the imported store must contain at least one label");
+  assert.ok(scopes.length > 0, "the imported store must contain at least one scope");
+});
+
+test("hazard subject: every address in the committed image is covered by exactly one range in the committed store export", { skip: SKIP_REASON }, () => {
+  const { bytes } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const origin = bytes[0]! | (bytes[1]! << 8);
+  const imageEndInclusive = origin + bytes.length - 2 - 1;
+
+  const { ranges } = importIntoFreshStore();
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  let expected = origin;
+  for (const r of sorted) {
+    assert.equal(r.start, expected, `ranges must partition the image with no hole or overlap -- expected the next range to start at $${expected.toString(16)}, found $${r.start.toString(16)}`);
+    expected = r.endInclusive + 1;
+  }
+  assert.equal(expected - 1, imageEndInclusive, `the last range must end exactly at the image's own last byte $${imageEndInclusive.toString(16)}`);
+});
+
+test("hazard subject: exactly four ranges in the committed store export are typed as external files", () => {
+  const doc = loadCommittedExport();
+  const externalFileRanges = doc.ranges.filter((r) => r.dataType === "external_file");
+  assert.equal(externalFileRanges.length, 4, "the sprite shape, character set, level and music tables must be the only four external_file ranges");
+});
+
+test("hazard subject: every scope in the committed store export contains at least one range, and no range crosses a scope boundary", () => {
+  const { ranges, scopes } = importIntoFreshStore();
+  assert.ok(scopes.length >= 4, "at least four scopes must be declared -- one per hazard-bearing routine");
+  for (const scope of scopes) {
+    const contained = ranges.filter((r) => r.start >= scope.start && r.endInclusive <= scope.endInclusive);
+    assert.ok(contained.length >= 1, `scope $${scope.start.toString(16)}..$${scope.endInclusive.toString(16)} must contain at least one range`);
+    for (const r of ranges) {
+      const overlaps = r.start <= scope.endInclusive && scope.start <= r.endInclusive;
+      const wholeyContained = scope.start <= r.start && r.endInclusive <= scope.endInclusive;
+      assert.ok(!overlaps || wholeyContained, `range $${r.start.toString(16)}..$${r.endInclusive.toString(16)} must not cross scope $${scope.start.toString(16)}..$${scope.endInclusive.toString(16)}'s own boundary`);
+    }
+  }
+});
+
+test("hazard subject: every in-image branch, call, jump and data-reference target has a declared symbol in the committed store export", { skip: SKIP_REASON }, () => {
+  const { bytes: prgBytes } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const origin = prgBytes[0]! | (prgBytes[1]! << 8);
+  const payload = prgBytes.subarray(2);
+  const imageEndInclusive = origin + payload.length - 1;
+  const instructions = decode(payload, origin);
+
+  // Scoped to CODE-typed ranges the committed export itself declares --
+  // `decode()` knows nothing about typing and happily produces a plausible
+  // "instruction" (and a resolved branch target) over raw DATA bytes too;
+  // a reference is only real when the instruction making it is itself real
+  // code, per this export's own decomposition.
+  const { ranges: codeCheckRanges } = importIntoFreshStore();
+  const codeRanges = codeCheckRanges.filter((r) => r.dataType === "code");
+  const isInCodeRange = (address: number) => codeRanges.some((r) => address >= r.start && address <= r.endInclusive);
+
+  const targets = new Set<number>();
+  for (const instr of instructions) {
+    if (!isInCodeRange(instr.address)) continue;
+    if (instr.resolvedTarget !== undefined) targets.add(instr.resolvedTarget);
+    if (instr.operand && (instr.operand.role === "absolute" || instr.operand.role === "zeropage") && (instr.mode === "absolute" || instr.mode === "absolute_x" || instr.mode === "absolute_y")) {
+      targets.add(instr.operand.value);
+    }
+  }
+
+  const scan = scanIndirectDispatch(instructions, payload, origin);
+  for (const t of scan.discoveredTargets) targets.add(t);
+
+  const lowStore = findImmediateStore(instructions, 0x0314);
+  const highStore = findImmediateStore(instructions, 0x0315);
+  if (lowStore && highStore) {
+    const lowIdx = instructions.indexOf(lowStore);
+    const highIdx = instructions.indexOf(highStore);
+    targets.add(instructions[lowIdx - 1]!.operand!.value | (instructions[highIdx - 1]!.operand!.value << 8));
+  }
+
+  const { labels } = importIntoFreshStore();
+  const labelledAddresses = new Set(labels.map((l) => l.address));
+
+  const inImageTargets = [...targets].filter((t) => t >= origin && t <= imageEndInclusive);
+  assert.ok(inImageTargets.length > 0, "precondition: this image must reference at least one in-image address");
+  for (const t of inImageTargets) {
+    assert.ok(labelledAddresses.has(t), `in-image reference target $${t.toString(16)} has no declared symbol in the committed store export`);
+  }
+});
+
+test("hazard subject: the two touching dispatch ranges are two ranges with adjacent inclusive bounds in the committed store export", () => {
+  const { bytes, symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  void bytes;
+  const dispatchHi = symbols.get("dispatch_hi")!;
+  const dispatchLo = symbols.get("dispatch_lo")!;
+  assert.ok(dispatchHi !== undefined && dispatchLo !== undefined, "precondition: both table base symbols must exist");
+
+  const { ranges } = importIntoFreshStore();
+  const hiRange = ranges.find((r) => r.start === dispatchHi);
+  const loRange = ranges.find((r) => r.start === dispatchLo);
+  assert.ok(hiRange, "dispatch_hi must be the start of its own range");
+  assert.ok(loRange, "dispatch_lo must be the start of its own range");
+  assert.notEqual(hiRange, loRange, "the two tables must be two DISTINCT ranges, never coalesced into one");
+  assert.equal(hiRange!.endInclusive + 1, loRange!.start, "the two ranges' bounds must be exactly adjacent -- dispatch_hi's end plus one equals dispatch_lo's start");
+});

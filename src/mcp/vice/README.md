@@ -126,12 +126,14 @@ same authorisation wording a bare, unrecognised target id gets.
 
 ## Development
 
-`npm test` runs on the host with no extra environment. Suites that drive a
+The tests, their helpers and their fixtures live in `test/vice/` at the
+repository root, so the package holds production code only. `npm test` runs
+them on the host with no extra environment. Suites that drive a
 real emulator run only when their `VICE_LIVE_*` variable is set, and suites
 that need a host tool skip with a named reason when it is missing.
 
 `npm run test:automated` is the subset of `npm test` that excludes the
-manual-only files (see `test-gate.ts`'s own header).
+manual-only files (see `test/vice/test-gate.ts`'s own header).
 
 ```sh
 npm ci

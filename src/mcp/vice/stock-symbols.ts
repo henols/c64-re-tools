@@ -71,10 +71,9 @@ const VICE_LABEL_LINE_RE = /^al\s+C:([0-9a-fA-F]{1,4})\s+\.(\S+)/;
 
 /** T-05-02-03: three independent resource ceilings, each refusing with both
  * the observed value and the limit named. `MAX_LABEL_FILE_BYTES` is exported
- * (11-08, Rule A20) so `anno-symbols.ts`'s `exportLabels()`/`importLabels()`
- * can apply the SAME byte ceiling to an external-analyser-produced/-consumed
- * `.lbl` file before ever calling `parseViceLabelFile()` below -- never a
- * second hand-copied number. */
+ * (11-08, Rule A20) so a caller outside this module can apply the SAME
+ * byte ceiling to a `.lbl` file before ever calling `parseViceLabelFile()`
+ * below -- never a second hand-copied number. */
 export const MAX_LABEL_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_LABEL_FILE_LINES = 50000;
 const MAX_SYMBOLS = 20000;
@@ -87,7 +86,7 @@ const SUPPORTED_FORMATS = ["auto", "vice"];
 const REFUSED_FORMATS = ["kickasm", "simple"];
 
 /** The one address/byte-count error type this module ever throws -- never a
- * bare Error, matching vice.ts's established ViceError hierarchy
+ * bare Error, matching vice-errors.mts's established ViceError hierarchy
  * (stock-address.ts's StockAddressError, transfer-paths.ts's StockPathError
  * are the sibling precedents). */
 export class StockSymbolsError extends ViceError {
@@ -189,10 +188,9 @@ function resolveLabelFilePath(pathArg: unknown): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Exported (11-08, Rule A20) so `anno-symbols.ts` can validate a
- * external-analyser-produced `.lbl` file (or check a caller-supplied one
- * BEFORE it is ever handed to a spawned analyser child) through THIS
- * parser -- the ONE `al C:xxxx .Name` reader in this repo -- rather than
+ * Exported (11-08, Rule A20) so a caller outside this module can validate
+ * a `.lbl` file (or check a caller-supplied one BEFORE it is ever handed to
+ * a spawned analyser child) through THIS parser -- the ONE `al C:xxxx .Name` reader in this repo -- rather than
  * adding a second copy of `VICE_LABEL_LINE_RE`. Ceiling violations
  * (`MAX_LABEL_FILE_LINES`/`MAX_SYMBOLS`) throw `StockSymbolsError` exactly as
  * they do for `handleSymbolsLoad` below; a caller across the module boundary

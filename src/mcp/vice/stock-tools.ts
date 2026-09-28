@@ -13,7 +13,7 @@
 //   - Never make a pure client-side tool "binary": every wire touch halts
 //     the machine on stock.
 import type { ToolInfo } from "./vice-errors.mts";
-import { isErrorText, stockAnswer, type StockToolResult, type StockSessionHandler, type DerivedPureHandler } from "./stock-handler.ts";
+import { stockAnswer, type StockToolResult, type StockSessionHandler, type DerivedPureHandler } from "./stock-handler.ts";
 import { runBinary, runPure, type StockSessionDeps } from "./stock-session.ts";
 import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks } from "./stock-memory.ts";
 import { handleRegistersGet, handleRegistersSet, handleRegistersAvailable } from "./stock-registers.ts";
@@ -137,15 +137,6 @@ export const STOCK_TOOLS: readonly StockTool[] = Object.freeze([
 /** Runs one tool through the runner its kind names. Never throws. */
 export function runStockTool(tool: StockTool, args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   return tool.kind === "binary" ? runBinary(tool.name, tool.handler, args, deps) : runPure(tool.name, tool.handler, args, deps);
-}
-
-/** Runs the tool named `name`, or refuses by name when no tool has it. */
-export async function callStockTool(name: string, args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
-  const tool = STOCK_TOOLS.find((t) => t.name === name);
-  if (!tool) {
-    return isErrorText(`${name}: no stock tool has this name.`);
-  }
-  return runStockTool(tool, args, deps);
 }
 
 export class StockToolManifestMismatchError extends Error {

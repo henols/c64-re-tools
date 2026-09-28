@@ -22,9 +22,7 @@
 //     `stop:false` trace checkpoints (stock-checkpoints.ts), and the
 //     checkpoint this file arms always stops.
 //   - Never send a second resume for one wait -- exactly one resume per
-//     call, matching vice-sync.ts's own "exactly one resume per wait"
-//     invariant, ported here in its stock-native (event-driven, not
-//     polling) form.
+//     call, in a stock-native (event-driven, not polling) form.
 //   - Never invent a second wire-error converter -- an arming failure goes
 //     through convertWireError() directly (the established per-handler
 //     convention every sibling family module already follows); a failure
@@ -53,8 +51,8 @@ import { runStateFor } from "./stock-runstate.ts";
 import { runReproducible, REPRODUCIBLE_RUN_REQUIRED_SIBLINGS } from "./stock-reproducible-run.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
- * an array. Matches this module tree's own isPlainObject() convention
- * (vice.ts:310-316); redeclared privately here, not imported, per the
+ * an array. Matches this module tree's own isPlainObject() convention;
+ * redeclared privately here, not imported, per the
  * established per-module convention (see stock-checkpoints.ts's own copy). */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -64,9 +62,7 @@ function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** D-02: the stock-only `timeout_ms` argument's default, in milliseconds.
- * Matches VICE_MCP_TIMEOUT_MS's own 30000 default (vice.ts) so one number
- * governs both the RPC transport layer and this tool's own wait. */
+/** D-02: the stock-only `timeout_ms` argument's default, in milliseconds. */
 export const RUN_UNTIL_DEFAULT_TIMEOUT_MS = 30000;
 
 /** A present `timeout_ms` above this ceiling is CLAMPED (not refused) to
@@ -417,11 +413,9 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
   // object, so that answer could read {"machineHalted": true, "runState":
   // "running"} -- self-contradictory in one JSON body.
   //
-  // So derive it, from the same seam stock-diagnose.ts's deriveMachinePaused()
-  // uses, and keep the note honest per branch. This is the rule
-  // stock-diagnose.ts:642-656 states normatively: a hand-passed state flag
-  // drifts from reality the moment a call site changes. Do not reintroduce a
-  // literal here.
+  // So derive it, from stock-runstate.ts's runStateFor() seam, and keep the
+  // note honest per branch: a hand-passed state flag drifts from reality the
+  // moment a call site changes. Do not reintroduce a literal here.
   const deleteWasAnswered = cleanup !== "delete_failed";
   const machineHalted = deleteWasAnswered && session.client.connected ? true : runStateFor(session.client) === "stopped";
   const machineHaltedNote = machineHalted

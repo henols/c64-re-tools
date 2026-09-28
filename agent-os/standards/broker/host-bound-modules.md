@@ -13,8 +13,8 @@ import type { BrokerState } from "./broker-state.mjs";   // type-only: loads unb
 - Import siblings with `.mjs` specifiers. Use `import type` when the
   module must also load unbuilt (from tests), and inject functions via
   Deps instead of value-importing them.
-- Never value-import a container-side `.ts` (e.g. repo-root.ts,
-  incident-record.ts). Mirror the constant or shape instead, and pin the
+- Never value-import a container-side `.ts` (e.g. repo-root.ts).
+  Mirror the constant or shape instead, and pin the
   agreement with a sync test.
 - Run `node build.ts` after editing. Commit the regenerated `.mjs`.
   CI rebuilds and fails on drift.

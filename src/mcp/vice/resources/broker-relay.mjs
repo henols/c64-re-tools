@@ -35,44 +35,6 @@
 //     buffered further.
 import { connect as netConnect } from "node:net";
 /**
- * The pre-splice line-length cap, mirroring broker-control.mts's own
- * MAX_LINE_BYTES (65536) -- the SAME reasoning applies here: a connection
- * that accumulates this many bytes without ever completing its attach line
- * is destroyed rather than buffered without bound (T-63-07).
- */
-export const MAX_ATTACH_LINE_BYTES = 65536;
-/**
- * Reads one newline-terminated ASCII line off the FRONT of a relay
- * connection's byte stream, by a byte-level `indexOf(0x0a)` search -- NEVER
- * `chunk.toString("utf8")` first, which would corrupt any binmon bytes that
- * happen to arrive in the SAME `"data"` event as the attach line's own
- * terminator (Task 2's own boundary-one concern). `carry` is whatever a
- * previous call already accumulated with no terminator found yet (empty
- * Buffer on the first call). Everything after the terminator -- including
- * bytes that are not valid UTF-8 at all -- is returned as a raw `Buffer`,
- * untouched, for the caller to hand straight to spliceRelay() as `pending`.
- */
-export function readAttachLine(chunk, carry = Buffer.alloc(0)) {
-    const combined = Buffer.concat([carry, chunk]);
-    const idx = combined.indexOf(0x0a);
-    if (idx === -1) {
-        return { remainder: combined, overflow: combined.length > MAX_ATTACH_LINE_BYTES };
-    }
-    return {
-        // `.toString()` with NO encoding argument -- Buffer's own documented
-        // default is "utf8", so this is the identical decode Task 2's own
-        // grep gate (`grep -acF 'toString("utf8")'`) exists to keep OUT of
-        // this file's relayed-byte path; spelling the default out explicitly
-        // here would read as exactly the string-mode conversion this module's
-        // own header comment forbids, even though this ONE call -- decoding
-        // the attach line itself, strictly BEFORE the terminator -- is not a
-        // relayed byte at all.
-        line: combined.subarray(0, idx).toString(),
-        remainder: combined.subarray(idx + 1),
-        overflow: false,
-    };
-}
-/**
  * The default, real implementation: sets the socket's own inactivity
  * timeout (`Socket.prototype.setTimeout()`) and routes its `"timeout"`
  * event to `onExpire`. THE COMPARISON THIS RELIES ON IS AT-OR-PAST THE

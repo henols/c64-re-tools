@@ -6,20 +6,15 @@
 // rebuild.
 // broker-kill.mts
 //
-// The identity-verified kill discipline,
-// ported from resources/vice-broker.sh's signal_recorded_pid()/
-// signal_vice_child_pid(): zero-signal liveness check, identity check against
-// the process's own argument string, SIGTERM, poll-then-SIGKILL. The
-// expected-identity string always comes from the instance record (the
-// resolved binary path recorded at spawn time by broker-launch.mts), never a
-// module constant -- this broker spawns the emulator directly and there is
-// no intermediate supervising script for an identity check to match against.
-// See this module's own history: the bash original's PARAMETERISED sibling
-// (signal_vice_child_pid, matched against a caller-supplied binary) is the
-// model this ported; its hardcoded sibling (signal_recorded_pid, matched
-// against $SUPERVISOR_SCRIPT) is NOT -- there is no supervisor script in
-// this topology, so carrying that constant forward would make every kill
-// silently refuse while logging a plausible-looking pid-reuse warning.
+// The identity-verified kill discipline: zero-signal liveness check,
+// identity check against the process's own argument string, SIGTERM,
+// poll-then-SIGKILL. The expected-identity string always comes from the
+// instance record (the resolved binary path recorded at spawn time by
+// broker-launch.mts), never a module constant -- this broker spawns the
+// emulator directly and there is no intermediate supervising script for an
+// identity check to match against, so a hardcoded supervisor-script
+// identity would make every kill silently refuse while logging a
+// plausible-looking pid-reuse warning.
 //
 // This task also completes the module with two further concerns, both
 // depending on the kill discipline above rather than replacing it:
@@ -144,9 +139,8 @@ export async function verifiedKill({ pid, expectedIdentity, deps = {} }) {
     }
     return "sigterm";
 }
-/** The single shutdown sequence every catchable entry point converges on
- * (mirrors resources/vice-broker.sh's own broker_shutdown() ->
- * reap_all_instances()). For every instance currently recorded: set the
+/** The single shutdown sequence every catchable entry point converges on.
+ * For every instance currently recorded: set the
  * deliberate-kill marker BEFORE any signal reaches it (T-01.6.2-21) -- done
  * as its own pass over every instance FIRST, before any kill is attempted,
  * so a slow kill on instance A can never race a later-arriving signal that
@@ -440,8 +434,8 @@ function readExistingEpochFieldsMaybe(path) {
  * reasonable placeholders when the directory carries no prior epoch.json at
  * all (the exact case this reap exists to still cover: a directory the
  * broker has no in-memory record of). This bump is what carries the void
- * into the existing MachineRestartedError path (vice.ts's
- * assertSameMachine()) -- no second notion of "recoverable" is invented
+ * into the existing MachineRestartedError path (stock-connect.ts's
+ * stockReconnect()) -- no second notion of "recoverable" is invented
  * here. */
 function bumpEpochForInstanceDir(deps, stateDir, port) {
     const supervisorDir = join(stateDir, String(port));

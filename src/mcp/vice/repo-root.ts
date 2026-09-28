@@ -13,16 +13,13 @@
 // resolved to `.claude/skills/.vice-supervisor` or
 // `.claude/skills/vice-session/.vice-supervisor` instead of
 // `<repo>/.vice-supervisor` -- a directory the host-side shell launcher
-// (`tools/vice-launcher.sh`, plan 11's surviving script -- the paired
-// implementation this era's now-retired `tools/vice-supervisor.sh` and
-// `tools/vice-pool.sh` used to be) never writes to. NOTHING would have
+// (`tools/vice-launcher.sh`) never writes to. NOTHING would have
 // errored: the container would just read a permanently-empty
 // epoch/registry/session directory, and restart detection (and the pool,
 // and sessions) would quietly stop working while every command kept
 // "succeeding". That failure mode -- a broken invariant with no error
 // anywhere -- is exactly the class of bug this codebase keeps rejecting
-// elsewhere (see vice.mjs's MachineRestartedError, vice-session.mjs's
-// epoch-continuity guard). Do not reintroduce a fixed `".."` (or any other
+// elsewhere (see vice-errors.mts's MachineRestartedError). Do not reintroduce a fixed `".."` (or any other
 // relative-to-this-file hop count) in place of this resolver; if the
 // directory depth of this module tree ever changes again, the ladder below
 // still gets the right answer without anyone having to count directories by
@@ -302,13 +299,10 @@ export function supervisorDir(opts: RepoRootOptions = {}): string {
 }
 
 // Fires once per process, on whatever entry point happens to import THIS
-// module -- which is vice.mjs and vice-broker-client.mjs already (both
-// import repoRoot()/supervisorDir()), among other modules in this tree,
-// plus vice-probe.ts's own side-effect-only import (see that file). This
-// one call is what makes the
-// deploy-on-first-use check (quick-260730-q4b, D-3) fire for every skill
-// .mjs entry point without any of them referencing install-resources.ts
-// directly.
+// module -- vice-proxy.ts (which imports repoRoot()) among other modules
+// in this tree. This one call is what makes the deploy-on-first-use check
+// (D-3) fire for every entry point without any of them referencing
+// install-resources.ts directly.
 //
 // POSITION IS LOAD-BEARING: this must run at the BOTTOM of this module body,
 // after HERE, repoRoot() and supervisorDir() are all initialised. Moving it

@@ -6,8 +6,7 @@
 // rebuild.
 // container-guard.mts
 //
-// PD-03: TypeScript port of resources/lib/container-guard.sh's five
-// container-detection signals, checked at broker PROCESS STARTUP -- not
+// PD-03: the five container-detection signals, checked at broker PROCESS STARTUP -- not
 // only at vice-launcher.sh's shell wrapper. This closes the
 // invocation-scoped hole found on 2026-08-03: running
 // the compiled broker directly (bypassing the launcher) was previously
@@ -34,7 +33,7 @@ const defaultDeps = {
         }
     },
 };
-/** Matches container-guard.sh's own awk cgroup matcher: the field after the
+/** The cgroup matcher: the field after the
  * LAST colon on any /proc/1/cgroup line, tested against a container-naming
  * path component. Deliberately does NOT match a systemd host's
  * `0::/init.scope`, a bare root cgroup, or the Docker daemon's own

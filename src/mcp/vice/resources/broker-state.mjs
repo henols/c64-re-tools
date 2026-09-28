@@ -4,6 +4,19 @@
 // deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
 // verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
+// broker-state.mts
+//
+// The in-process state that replaces six on-disk
+// locations -- two Maps plus a process-scoped Set, the 6600 port band,
+// the full port-scan allocator, and the three running counts
+// (countReady/countTotal/countLaunching) every launch path consults. An
+// earlier revision of this module was minimal (state shape + a
+// single-candidate port probe only); this completes it.
+//
+// BrokerDeps is the injectable spawn/clock/readiness-probe/port-probe seam
+// every launch, kill and probe test uses -- an architectural feature from
+// the first commit that defined BrokerState, rather than a retrofit once a
+// test needs it.
 import { createServer } from "node:net";
 // ---------------------------------------------------------------------------
 // MonitorChannel: exactly two channels exist -- stock VICE
@@ -77,8 +90,8 @@ export function _snapshotState(state) {
  * from 6510 to 6600 -- 6510-6599 stays reserved by convention
  * for an x64sc a human launches for their own work. */
 export const DEFAULT_BASE_PORT = 6600;
-/** Scan ceiling matching vice-broker.sh's own next_free_port(): exactly one
- * hundred candidates starting at (and including) the base port. Bounded so
+/** Scan ceiling: exactly one hundred candidates starting at (and
+ * including) the base port. Bounded so
  * an exhausted host produces one explicit `no_free_port` result rather than
  * an unbounded scan. */
 const PORT_SCAN_CEILING = 100;
@@ -95,8 +108,7 @@ export function resolveBasePort() {
 }
 /** Real default: attempts to bind the candidate port on 127.0.0.1 and
  * immediately releases it. Answers ONLY "is a TCP listener already bound
- * here" -- the exact question vice-broker.sh's own /dev/tcp-based
- * port_in_use() asked, and deliberately never reused as a readiness check
+ * here" -- and deliberately never reused as a readiness check
  * (see broker-launch.mts's probeReady() header comment for why those two
  * questions are never conflated: a C64 can accept a connection before it
  * has finished booting). EADDRINUSE means genuinely in use; any other
@@ -177,45 +189,10 @@ export async function nextFreePort(state, opts = {}) {
     }
     return { ok: false, reason: "no_free_port" };
 }
-/** Counts ready, unclaimed instances -- filters the SAME in-memory map every
- * other count reads, no filesystem access anywhere in this expression. */
-export function countReady(state) {
-    let n = 0;
-    for (const record of state.instances.values()) {
-        if (record.state === "ready")
-            n++;
-    }
-    return n;
-}
 /** Counts every launched instance regardless of state (launching, ready or
  * granted) -- the denominator of the total <= VICE_BROKER_MAX ceiling. */
 export function countTotal(state) {
     return state.instances.size;
-}
-/** Counts instances currently "launching". The warm floor and its own
- * maintainWarmFloor() were retired -- that was the SECOND launch path
- * that used to read this counter as a pre-check before starting a new
- * launch, alongside the cold-acquire arm's own equivalent check. With only
- * one launch path left (vice-broker.mts's handleAcquire(), guarded by
- * acquirePortAndLaunch()'s own single-owner `inFlight` boolean in
- * broker-launch.mts -- a SEPARATE, synchronous primitive, not this
- * function), nothing in production calls this counter today; it remains
- * exported alongside countReady()/countTotal() as status-shaped
- * infrastructure. It is named here, and its history preserved, because it
- * is why a SINGLE counter -- not two, one per launch path -- was the fix
- * for the 2026-08-01 outage (three simultaneous x64sc launches: one SEGV,
- * one exit 1, one exit 0 at the identical spawn second): two counters that
- * could ever disagree about whether a boot was already under way is exactly
- * how that outage happened, and the discipline of reading exactly one is
- * what this function's own existence still documents, even with one launch
- * path left to (potentially) consult it. */
-export function countLaunching(state) {
-    let n = 0;
-    for (const record of state.instances.values()) {
-        if (record.state === "launching")
-            n++;
-    }
-    return n;
 }
 function resolveCeiling(override) {
     if (typeof override === "number")

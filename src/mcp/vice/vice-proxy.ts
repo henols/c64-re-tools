@@ -87,7 +87,7 @@
 // apparatus, `call()`/`callTool`, `serverInfo()`) is gone entirely: every
 // remaining tool dispatch in this file goes through stock-tools.ts, never
 // through a fork transport.
-import { activeInstance, useInstance, type ActiveInstance, type ToolInfo } from "./vice-errors.mts";
+import { activeInstance, useInstance, type ToolInfo } from "./vice-errors.mts";
 import { repoRoot, toolsDir } from "./repo-root.ts";
 // The single version-resolution seam (quick-260819-tsz, D-5) -- PROXY_VERSION
 // below is the only consumer in this file; see version.mts's own header for
@@ -303,9 +303,9 @@ const RESOLVED_BINARY = backendDetect.resolvedBackend({ toolsDir: toolsDir({ fro
 /** A single MCP tool descriptor, as this file's own three synthetic tools
  * and every manifest-sourced tool share the shape (name/description/
  * inputSchema, plus whatever `_meta` handleToolsList() stamps on afterward).
- * Deliberately the same shape as vice.ts's own `ToolInfo` (imported above for
- * `readManifestTools()`'s return), so a manifest tool and a synthetic tool
- * are interchangeable wherever this file combines them. */
+ * Deliberately the same shape as vice-errors.mts's `ToolInfo` (imported
+ * above for `readManifestTools()`'s return), so a manifest tool and a
+ * synthetic tool are interchangeable wherever this file combines them. */
 type ToolDefinition = ToolInfo;
 
 /** Narrows an `unknown` value to a plain, non-array, non-null object --
@@ -1057,7 +1057,7 @@ function adoptGrant(grant: Record<string, unknown>): void {
 // first signal regardless of anything this process does, and the abrupt
 // path exits naturally once stdin is gone and nothing else is listening.
 //
-// TEARDOWN-REGION-BEGIN -- vice-proxy.test.mjs's source assertion slices
+// TEARDOWN-REGION-BEGIN -- vice-proxy.test.ts's source assertion slices
 // the file between this marker and its closing counterpart further below,
 // and asserts that slice contains no promise-awaiting construct and calls
 // the control session's release function exactly once. Do not move either
