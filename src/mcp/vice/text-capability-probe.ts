@@ -621,8 +621,7 @@ function chipDegradationLine(verdict: TextCapabilityVerdict, observedLine: strin
  * is a REFUSAL/gap message, not a general-purpose status report.
  *
  * No line this function renders names a phase number (own test asserts
- * this against the same `/\bPhase\s+\d/i` pattern `docs-dangling-refs.test.ts`
- * enforces tree-wide once this module joins `files[]`).
+ * this against the `/\bPhase\s+\d/i` pattern).
  */
 export function textCapabilityRefusalMessage(verdicts: readonly TextCapabilityVerdict[]): string {
   const byCommand = new Map<TextCapabilityCommand, TextCapabilityVerdict>();

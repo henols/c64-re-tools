@@ -12,10 +12,8 @@
 // machine for no documented reason. Every ACME-gated test file imports this
 // single implementation instead of copying it.
 //
-// This half previously lived at the bottom of `anno-test-gate.ts`, sharing a
-// file with the external analyser gate. It stands under its own name now
-// because that filename's `anno-` prefix makes the ACME gate collateral
-// damage of any prefix-driven cleanup of the external analyser surface -- and
+// It stands under its own name because an `anno-` prefix would make the
+// ACME gate collateral damage of any prefix-driven cleanup -- and
 // that loss is SILENT: with the gate gone, a missing ACME degrades from a hard
 // FAIL back into a named SKIP, and CI reports green either way. The
 // the external analyser gate keeps its own module; there is deliberately no
@@ -30,8 +28,6 @@
 // This module is TEST-ONLY. It must never appear in package.json's `files[]`
 // (a test-only helper has no business in the published npm tarball), and it
 // must never be imported by a production module -- only by `*.test.ts` files.
-// `acme-gate.test.ts` asserts the `files[]` absence mechanically, on every
-// suite run.
 //
 // This file's own name deliberately does NOT match the `*.test.*` glob
 // `package.json`'s `"test"` script runs (`node --test '*.test.*'`) -- it is

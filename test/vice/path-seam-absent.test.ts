@@ -56,7 +56,7 @@ const SEAM_IDENTIFIERS: { name: string; re: RegExp }[] = [
 const DELETED_MODULE_RE = new RegExp(`["'\`][^"'\`\\n]*\\b(${DELETED_STEMS.join("|")})\\.(ts|mts|mjs)["'\`]`);
 
 /** Drops `//` whole-line comments and `/* ... *\/` block comments. A
- * trailing `//` comment on a code line is kept, as in anno-launch.test.ts. */
+ * trailing `//` comment on a code line is kept. */
 function stripComments(src: string): string {
   const out: string[] = [];
   let inBlock = false;

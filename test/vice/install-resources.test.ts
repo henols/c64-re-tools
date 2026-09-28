@@ -1,16 +1,10 @@
 // node:test coverage of install-resources.ts's deploy-on-first-use
-// installer -- rescued from vice-pool.test.mjs (quick-260730-q4b Task 2,
-// quick-260731-p8a) before that file is deleted wholesale in plan 04.
-// install-resources.ts SURVIVES D-02/D-05, and this is the ONLY test file
-// its guarantees have ever had -- criterion 9 rests on it, and plan 03
-// converted install-resources.mjs to TypeScript and needed this file's
-// red/green signal to do so safely.
+// installer. This is the ONLY test file its guarantees have -- criterion 9
+// rests on it.
 //
 // Every test here drives installResources()/ensureResourcesInstalled()
 // against a SYNTHETIC temp root (mkdtempSync) so no test ever writes into
-// the real repo's .c64-re-tools/local/bin/ -- matching vice-pool.test.mjs's own existing
-// temp-directory idiom. Nothing here imports vice-pool.mjs or
-// vice-session.mjs.
+// the real repo's .c64-re-tools/local/bin/.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, statSync, chmodSync } from "node:fs";
@@ -40,7 +34,8 @@ const execFileP = promisify(execFile);
 
 test("RESOURCES_DIR (quick-260731-p8a, path-anchor regression): points at the MODULE DIRECTORY's resources/, not a scripts/-relative directory", () => {
   // A wrong hop count here is SILENT, because ensureResourcesInstalled()
-  // swallows every error by contract -- see install-resources.mjs's header.
+  // swallows every error by contract -- see install-resources.ts's
+  // ensureResourcesInstalled().
   // Asserting the exact entry set (not just "no throw") is what makes this
   // non-vacuous: a directory that resolves to somewhere with NO resources/
   // subdirectory makes readdirSync() throw loudly inside resourceEntries(),
@@ -55,7 +50,7 @@ test("RESOURCES_DIR (quick-260731-p8a, path-anchor regression): points at the MO
   );
   // Derived from resourceEntries() itself rather than a hardcoded list of
   // filenames -- so this test never needs an edit when a resource is added
-  // or removed (plan 03's prune, plan 04's deletion of vice-pool.sh). Its
+  // or removed. Its
   // ONLY job is proving the anchor points somewhere non-empty and shaped
   // right, per the two structural assertions above -- a wrong hop count
   // still fails loudly there, not here.
@@ -301,11 +296,9 @@ test("pruneResources(): a file present under the deployment target but ABSENT fr
   const root = mkdtempSync(join(tmpdir(), "vice-prune-untracked-"));
   installResources({ root, log: () => {} });
   // Simulate an untracked file placed directly under the deploy target,
-  // never recorded in the installer's own manifest (formerly tools/diff-images.mjs,
-  // tracked reverse-engineering tooling that used to share the pre-D-33 tools/
-  // deploy target; the scenario is now synthetic since the deploy target no
-  // longer shares a directory with that tooling, but the invariant it proves
-  // -- an unmanifested file is never pruned -- is unconditional).
+  // never recorded in the installer's own manifest (a synthetic scenario:
+  // the invariant it proves -- an unmanifested file is never pruned -- is
+  // unconditional).
   const untracked = join(installTargetDir(root), "diff-images.mjs");
   writeFileSync(untracked, "// tracked reverse-engineering tooling, not a deployed resource\n");
 

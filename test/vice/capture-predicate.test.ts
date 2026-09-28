@@ -10,10 +10,7 @@
 // rather than to the fixture, to the harness, or to an unrelated refusal firing
 // first. A control that could not have gone green is not a control.
 //
-// `CAP-03`'s STRUCTURAL half lives in `capture-seam.test.ts`, deliberately
-// separately: this file drives behaviour through the two modules' exported
-// functions, that one reads their source text. Splitting them keeps each file's
-// failure output about one kind of defect.
+// This file drives behaviour through the two modules' exported functions.
 import test from "node:test";
 import assert from "node:assert/strict";
 

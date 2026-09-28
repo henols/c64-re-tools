@@ -861,7 +861,7 @@ test("dialFileTransfer: the hello line this dial writes carries the value of TRA
 test("dialFileTransfer: a download's transfer_payload reply and its first payload bytes arriving in a SINGLE socket write resolve `pending` byte-identical to the payload sent, including bytes in 0x80..0xFF", async () => {
   // A payload spanning the full byte range, including the 0x80-0xFF run a
   // whole-buffer string decode would corrupt -- the same load-bearing shape
-  // broker-transfer.test.ts's own end-to-end case (plan 64-01) already uses.
+  // broker-transfer.test.mts's own end-to-end case already uses.
   const payload = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
   const fixture = await startRawTransferFixture((req) => {
     assert.equal(req.op, "transfer");

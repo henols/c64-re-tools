@@ -152,6 +152,11 @@
   `vice-cli.mjs`, `anno-regbits.json`, the assembled fixtures) and fails
   when the tree then differs. Spec:
   `agent-os/specs/2026-09-27-1502-no-byte-identity-tests/`.
+- The server tests, their helpers and fixtures live in `test/vice/`, so
+  `src/mcp/vice/` holds production code and dev tooling only. Unused
+  modules, exports, fixtures and the committed dxa sources are removed, the
+  npm package ships no TypeScript source, and `tsc` rejects unused locals
+  and parameters. Spec: `agent-os/specs/2026-09-27-1654-clean-unused-move-tests/`.
 
 ## Planned / Later
 
@@ -173,9 +178,6 @@
 - Cycle-exact equivalence past anchor hit 75 is still open. CPU history through
   the text monitor now provides an instrument for it.
 
-**Cleanup**
-- Optionally, move the server's colocated tests into a dedicated test folder
-  (the skill-script tests already live in `test/skills/`).
 
 ## Explicitly Out of Scope
 

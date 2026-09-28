@@ -53,10 +53,7 @@ import {
 import type { EcosystemRow, OverviewRow, ToolDeclaration, ToolDeclarationRecord } from "../../src/mcp/vice/prereq-readme-gen.ts";
 import { VICE_DIR } from "./paths.ts";
 
-/** The plain `.git`-marker walk, copied from `phase58-citation-ledger.test.ts`
- * (itself mirrored from `phase50-findings-contract.test.ts`) -- this is
- * already the third copy in the tree (61-CONTEXT.md's Reusable Assets
- * note). `repo-root.ts`'s `repoRoot()` was checked first and rejected for
+/** The plain `.git`-marker walk. `repo-root.ts`'s `repoRoot()` was checked first and rejected for
  * the same reason `prereq-readme-gen.ts` rejects it: its `CLAUDE_PROJECT_DIR`
  * branch can name a different tree than the one being generated and guarded. */
 function findRepoRoot(from: string): string {
@@ -307,8 +304,7 @@ function auditOverviewRegion(readmeText: string, declaration: ToolDeclaration): 
 // Fixture and mutation helpers shared by the GEN-03 (planted-divergence),
 // tolerance and round-trip cases below. Every case that touches a filesystem
 // path builds its own scratch pair and tears it down in a `finally` block --
-// never a shared fixture -- per the fixture-per-case discipline
-// `phase58-citation-ledger.test.ts` already follows (D-12).
+// never a shared fixture -- per the fixture-per-case discipline (D-12).
 // ---------------------------------------------------------------------------
 
 /** Builds a fresh `mkdtempSync(tmpdir())` scratch pair seeded from the real,

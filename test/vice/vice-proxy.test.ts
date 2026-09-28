@@ -1,6 +1,6 @@
 // node:test coverage of vice-proxy.ts's stdio-MCP-server half, driven as a
-// REAL spawned child process (matching vice-pool.test.mjs's own idiom: real
-// subprocess, no module-boundary mocking), speaking JSON-RPC to it over
+// REAL spawned child process (real subprocess, no module-boundary
+// mocking), speaking JSON-RPC to it over
 // stdio. CORRECTED 2026-09-14: this file no longer dials an in-process
 // node:http stand-in directly through a fixed VICE_MCP_URL -- that forwarding
 // path was deleted once the stock backend started refusing outright,
@@ -23,7 +23,7 @@
 // Coverage note for plan 01.1-03 (never-throw hardening task): the two
 // tracer-era tests immediately below do NOT directly trigger
 // `process.on('uncaughtException', ...)` or an EPIPE on `process.stdout`'s
-// `'error'` listener -- both handlers are installed in vice-proxy.mjs and
+// `'error'` listener -- both handlers are installed in vice-proxy.ts and
 // exercised only incidentally (by staying silent) here. Dedicated coverage
 // for those two handlers, plus the full JSON-RPC error-code matrix and the
 // never-cache-a-negative-result property, lives in the "never-throw"/
@@ -33,10 +33,10 @@
 // Coverage note for plan 01.2-01 (broker teardown task): every `finally`
 // block's cleanup call is `proxy.child.kill("SIGKILL")`, not a bare
 // `kill()` -- a NON-assertion change, made necessary by this task's own
-// change to vice-proxy.mjs. Registering `process.on("SIGTERM", ...)` (this
+// change to vice-proxy.ts. Registering `process.on("SIGTERM", ...)` (this
 // task's teardown handler) suppresses Node's default SIGTERM-terminates
 // behaviour, and the handler itself deliberately never calls
-// `process.exit()` (see that handler's own comment in vice-proxy.mjs) --
+// `process.exit()` (see that handler's own comment in vice-proxy.ts) --
 // in production the client's own ladder escalates to an unhandleable
 // SIGKILL ~490ms after the first signal, and a plain `kill()` in a test's
 // cleanup has to play that same role or the child is left running,
@@ -328,9 +328,9 @@ async function unusedPort(): Promise<number> {
 }
 
 /**
- * Spawns `node vice-proxy.mjs` as a real child process and gives back a
+ * Spawns `node vice-proxy.ts` as a real child process and gives back a
  * small harness for line-based stdin/stdout JSON-RPC exchange, matching the
- * exact framing vice-proxy.mjs itself implements (newline-delimited, one
+ * exact framing vice-proxy.ts itself implements (newline-delimited, one
  * JSON value per line).
  *
  * `VICE_BROKER_HOME` defaults to `DEFAULT_BROKER_HOME` and
@@ -529,7 +529,7 @@ test("stdout carries only valid JSON-RPC messages", async () => {
     // unknown method (the malformed line above drew no response, per the
     // note above) -- must have parsed cleanly as JSON and carry
     // jsonrpc: "2.0". This is what fails if ANY module in the import graph
-    // (vice.ts and everything it transitively imports) ever leaks a stray
+    // (vice-proxy.ts and everything it transitively imports) ever leaks a stray
     // console.log onto stdout instead of stderr.
     assert.ok(proxy.messages.length >= 4, "expected at least 4 stdout messages across this session");
     for (const msg of proxy.messages) {
@@ -1280,7 +1280,7 @@ test("never-throw: a broken stdout pipe does not kill the process", async () => 
     assert.match(
       source,
       /process\.stdout\.on\(\s*["']error["']/,
-      "vice-proxy.mjs must register an 'error' listener on process.stdout"
+      "vice-proxy.ts must register an 'error' listener on process.stdout"
     );
   } finally {
     proxy.child.kill("SIGKILL");
@@ -1783,7 +1783,7 @@ test("teardown region: no promise-awaiting construct, and the control session's 
   const source = readFileSync(PROXY_PATH, "utf8");
   const beginIdx = source.indexOf("TEARDOWN-REGION-BEGIN");
   const endIdx = source.indexOf("TEARDOWN-REGION-END");
-  assert.ok(beginIdx !== -1, "TEARDOWN-REGION-BEGIN marker must be present in vice-proxy.mjs");
+  assert.ok(beginIdx !== -1, "TEARDOWN-REGION-BEGIN marker must be present in vice-proxy.ts");
   assert.ok(endIdx !== -1 && endIdx > beginIdx, "TEARDOWN-REGION-END marker must be present after the begin marker");
   const region = source.slice(beginIdx, endIdx);
 
@@ -2302,13 +2302,12 @@ function countStderrLinesMatching(proxy: ProxyHandle, pattern: RegExp): number {
 }
 
 /** Walk up from `from` to the nearest `.git` ancestor. Deliberately NOT
- * repoRoot() (repo-root.mjs): that module's documented CONTAINER_WORKSPACE_PATH
+ * repoRoot() (repo-root.ts): that module's documented CONTAINER_WORKSPACE_PATH
  * precedence resolves to the shared devcontainer mount's MAIN checkout when
  * run from inside a git worktree (see 01.2-01-SUMMARY.md's "Issues
  * Encountered" -- a pre-existing, documented hazard this task does not fix),
  * which would read the wrong .mcp.json when this test itself runs inside a
- * worktree. Mirrors vice-mcp-selector-docs.test.mjs's own findRepoRoot(),
- * anchored at THIS file's actual on-disk location instead. */
+ * worktree. Anchored at THIS file's actual on-disk location instead. */
 function findWorktreeAwareRepoRoot(from: string): string {
   let dir = from;
   while (true) {
@@ -2403,28 +2402,13 @@ test("output-limit warning: exactly one stderr line when MAX_MCP_OUTPUT_TOKENS i
 // ---------------------------------------------------------------------------
 
 test("structural: the set of source files under src/mcp/vice/ containing a network-call construct is exactly broker-launch.mts", () => {
-  // Directory-enumerating, matching skill-docs.test.mjs's own idiom -- a
-  // future module joining this directory is covered the moment it lands on
-  // disk, with no test file to remember to update. A "network-call
-  // construct" here means an actual outbound call site (`fetch(`), not
-  // merely the word "fetch" appearing in prose or a variable name.
-  //
-  // WIDENED, Phase 01.6.1 Task 1 (a fourth extension-hardcoded static check,
-  // not named by this phase's own RESEARCH/PATTERNS documents): the original
-  // `.endsWith(".mjs")` predicate went silently -- in this case actually
-  // LOUDLY, this file's own assertion caught it live -- vacuous the moment
-  // vice-probe.mjs (this test's own named example) renamed to vice-probe.ts
-  // in the same task. vice-proxy.mjs and this test file are themselves
-  // deferred to their own later plan (RESEARCH §2 Slice 9); only this one
-  // check's file-enumeration predicate is widened here, to the same
-  // `[cm]?[jt]s` class used throughout this phase's other enumerators --
-  // vice-proxy.mjs/vice-proxy.test.mjs are not renamed or otherwise touched.
-  //
-  // UPDATED, Phase 01.6.1 Plan 05 (the vice.mjs->vice.ts rename this fourth
-  // enumerator's own expected-offenders array was flagged, since Wave 1, as
-  // needing an update the moment this rename landed): the array entry is
-  // renamed to match, not deleted -- the check still enforces the same
-  // two-file network-call surface, it just tracks the surviving name.
+  // Directory-enumerating -- a future module joining this directory is
+  // covered the moment it lands on disk, with no test file to remember to
+  // update. A "network-call construct" here means an actual outbound call
+  // site (`fetch(`), not merely the word "fetch" appearing in prose or a
+  // variable name. The file-enumeration predicate matches the whole
+  // `[cm]?[jt]s` extension class, so a module that changes extension stays
+  // covered.
   //
   // WIDENED, Phase 01.6.2 plan 02: broker-launch.mts's probeReady() gained
   // an HTTP readiness POST (the fetch()-based branch of its three-way
@@ -2442,19 +2426,11 @@ test("structural: the set of source files under src/mcp/vice/ containing a netwo
     .sort();
   assert.ok(files.length > 0, "module directory enumerated as empty -- glob or path resolution is broken");
 
-  // Plan 55-04: re-measured (`node -e` over this exact enumerate-then-filter
-  // pair, run directly against the checked-out tree). `vice-probe.ts` and
-  // `vice.ts` are both gone from disk entirely (confirmed separately: `ls
-  // vice-probe.ts vice.ts` reports "No such file or directory" for both),
-  // so a three-name expectation naming them can never pass again -- it is
-  // not a style break, it is asserting against files that do not exist.
   // This guard's own subject, per its name and the comment above, is the
   // set of files "under src/mcp/vice/" -- the ON-DISK directory tree, not
-  // the npm-published shipped-module subset shipped-modules.ts derives from
-  // package.json's `files[]` (used by other guards, e.g. spawn-seam.test.ts,
-  // for a different property: what actually ships, not what exists on
-  // disk) -- so this stays a directory enumeration, unchanged, with only
-  // the expected set corrected.
+  // the npm-published subset derived from package.json's `files[]` (a
+  // different property: what actually ships, not what exists on disk) --
+  // so this stays a directory enumeration.
   //
   // The equality below is still a full two-directional set equality, never
   // relaxed to a subset/containment check: a new file joining this

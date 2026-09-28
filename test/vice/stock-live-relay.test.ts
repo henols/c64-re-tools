@@ -12,8 +12,7 @@
 // all; only a genuine stock build produces real REGISTER_INFO/CHECKPOINT_INFO/
 // JAM frames.
 //
-// Mirrors stock-live-broker-monitor.test.ts's own three-way opt-in guard and
-// broker spawn/teardown shape verbatim in SHAPE (this file's own read_first):
+// Uses a three-way opt-in guard and a real broker spawn/teardown:
 // a real broker daemon (resources/vice-broker.mjs, under bare node) AND a
 // real emulator process, launched through the broker's own production
 // acquire path so the argv is the production argv rather than a second
@@ -54,7 +53,7 @@
 //     (0x83) is the one place this file resolves PC's id, exactly like
 //     stock-registers.ts's own registerCatalogFor() never hardcodes one.
 //   - Never use -jamaction 2 (Monitor) for the JAM case below --
-//     stock-live-triage.test.ts's own header comment records the empirical
+//     a live run recorded the empirical
 //     finding that Monitor jamaction routes a JAM through the STOPPED path
 //     instead of emitting the bare, zero-length-body JAM (0x61) event this
 //     file needs to observe. This file passes no jamaction override at all,
@@ -102,8 +101,7 @@ function isJamEvent(item: ParsedResponse): item is ParsedJamEvent {
 const BROKER_ARTIFACT = join(VICE_DIR, "resources", "vice-broker.mjs");
 
 // ---------------------------------------------------------------------------
-// Opt-in gate -- mirrors stock-live-broker-monitor.test.ts's own gate
-// exactly, with this file's own env var name.
+// Opt-in gate, keyed on this file's own env var name.
 // ---------------------------------------------------------------------------
 
 const VICE_LIVE_RELAY_BIN_ENV = process.env.VICE_LIVE_RELAY_BIN;
@@ -123,8 +121,8 @@ const SKIP_REASON: string | false = !VICE_LIVE_RELAY_BIN_ENV
     : false;
 
 // ---------------------------------------------------------------------------
-// Small shared helpers -- mirrors stock-live-broker-monitor.test.ts's own
-// isAlive()/waitFor()/waitForAsync()/waitForPortOpen() verbatim in shape.
+// Small shared helpers -- isAlive()/waitFor()/waitForAsync()/
+// waitForPortOpen().
 // ---------------------------------------------------------------------------
 
 function isAlive(pid: number): boolean {
@@ -161,8 +159,7 @@ async function waitForAsync(predicate: () => Promise<boolean>, deadlineMs: numbe
  *
  * MEASURED this session (a genuine finding, not a style preference): a bare
  * "does this port accept a connection" probe -- this file's own FIRST
- * attempt, mirroring stock-live-broker-monitor.test.ts's own
- * waitForPortOpen() helper verbatim -- silently starved the real relay
+ * attempt -- silently starved the real relay
  * connection that followed it: every command timed out and the unsolicited
  * register dump never arrived, with zero bytes ever observed on the relay
  * socket even after a 20-second wait. broker-launch.mts's own probeReady()
@@ -193,8 +190,7 @@ interface BrokerHandle {
 
 /** Spawns the EMITTED broker artifact (never the TypeScript source) under
  * bare node, wired for a genuine stock backend against a genuine stock
- * binary -- mirrors stock-live-broker-monitor.test.ts's own startBroker()
- * shape exactly, including its VICE_ARGS-must-be-unset discipline. */
+ * binary, with VICE_ARGS left unset. */
 function startBroker(stateDir: string, viceBinPath: string, scratchDir: string, controlPort: number): BrokerHandle {
   const merged: Record<string, string | undefined> = {
     ...process.env,
@@ -254,9 +250,7 @@ async function waitForBrokerReady(port: number, deadlineMs = 10000): Promise<voi
 // ---------------------------------------------------------------------------
 // Raw status helper -- the typed BrokerControlSession.status() narrows the
 // wire's StatusInstanceEntry down and does not expose sessionLabel/grantId/
-// operation (mirrors stock-live-broker-monitor.test.ts's own rawStatus()
-// pattern for the identical reason: hasMonitorClient there, sessionLabel
-// here). Test-local infrastructure only, never a change to
+// operation. Test-local infrastructure only, never a change to
 // vice-broker-client.ts.
 // ---------------------------------------------------------------------------
 
@@ -333,10 +327,7 @@ const MEM_WRITE_START = 0xc000;
 const MEM_WRITE_END = 0xc00f;
 
 /** The 6510 KIL (illegal, undocumented) opcode and its own landing address --
- * 0xC100, distinct from the memory-write range above -- mirroring
- * stock-live-triage.test.ts's own JAM_TARGET_ADDRESS/KIL_OPCODE constants,
- * at a different address so the two live files can never interfere if ever
- * run against the same instance. */
+ * 0xC100, distinct from the memory-write range above. */
 const JAM_TARGET_ADDRESS = 0xc100;
 const KIL_OPCODE = 0x02;
 
@@ -731,9 +722,8 @@ test(
 // ---------------------------------------------------------------------------
 
 /** Binds a throwaway server to 127.0.0.1:0, reads the OS-assigned port, and
- * closes it -- the standard "free ephemeral port" idiom, copied from
- * stock-live-triage.test.ts's own freeEphemeralPort() rather than imported
- * (test files in this repo do not import one another). */
+ * closes it -- the standard "free ephemeral port" idiom, kept local rather
+ * than imported (test files in this repo do not import one another). */
 async function freeEphemeralPort(): Promise<number> {
   return new Promise((resolvePromise, reject) => {
     const srv = createServer();
@@ -754,9 +744,7 @@ async function freeEphemeralPort(): Promise<number> {
  * purpose: the questions this GAP PROBE section answers are about the
  * EMULATOR itself, not about the relay (plan 63-09's own broker-relay.test.ts
  * already proves the relay's own byte-transparency for the JAM shape
- * synthetically). Deliberately mirrors stock-live-triage.test.ts's own
- * spawnOnPort() in SHAPE rather than importing it -- test files in this repo
- * do not import one another.
+ * synthetically).
  *
  * Argv-array form only (`spawn(bin, argsArray)`), never a shell string and
  * never a string-interpolated binary path (T-63-10-01). Binds

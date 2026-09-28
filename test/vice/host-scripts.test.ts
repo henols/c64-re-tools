@@ -1,19 +1,10 @@
-// node:test structural coverage of the tracked host shell scripts that
-// survive D-02 -- rescued from vice-pool.test.mjs (quick-260801-qpq Task 3)
-// before that file is deleted wholesale in plan 04. vice-pool.sh itself is
-// deleted per D-02 and dropped from this file entirely; vice-supervisor.sh
-// and the bash broker (resources/vice-broker.sh) kept the assertions
-// vice-pool.sh used to share for a while, and the launcher
-// (resources/vice-launcher.sh, created in plan 01) joined the shared script
-// list. Plan 03 extended this file with the one-shell-script allowlist and
-// the ignore-set parity gate. Plan 11 deletes both retiring daemons: the
-// one-shell-script allowlist now holds exactly one entry (the launcher), and
-// every assertion whose subject was one of the two retiring scripts is gone
-// with them -- see the two comment blocks below for exactly what and why.
+// node:test structural coverage of the tracked host shell scripts: the
+// launcher (resources/vice-launcher.sh), the one-shell-script allowlist
+// (which holds exactly one entry, the launcher) and the ignore-set parity
+// gate.
 //
-// Nothing here imports vice-pool.mjs or vice-session.mjs, or drives the real
-// emulator -- every process spawned below is the script itself run with
-// `--dry-run`/`--print-paths`/`-n`.
+// Nothing here drives the real emulator -- every process spawned below is
+// the script itself run with `--dry-run`/`--print-paths`/`-n`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -34,14 +25,8 @@ import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-// install-resources.ts (Plan 03 of 01.6.1): the scoped @ts-expect-error that
-// used to sit on this import (added Plan 01, when install-resources.mjs was
-// still untyped) is now GONE -- the moment Plan 03 landed a typed
-// install-resources.ts, that directive would have become a loud TS2578
-// ("unused '@ts-expect-error' directive") error, which was the whole point
-// of using @ts-expect-error over a declare-module shim in the first place:
-// a self-cancelling signal to remove it, never a silent suppression that
-// outlives its cause.
+// install-resources.ts: the deployed resource set the parity gate below
+// checks against `.gitignore`.
 import { DEPLOY_MANIFEST_NAME, resourceEntries, installTargetDir } from "../../src/mcp/vice/install-resources.ts";
 import { VICE_DIR } from "./paths.ts";
 
@@ -57,8 +42,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // have `.gitignore`/`git ls-files` below silently redirected to the SHARED
 // devcontainer mount's main checkout instead of the worktree's own tree --
 // exactly the quiet-wrong-answer class this project's own conventions
-// reject elsewhere (see vice-mcp-selector-docs.test.mjs's identical
-// rationale). `findRepoRoot()` is the plain `.git`-marker walk ONLY (no
+// reject elsewhere. `findRepoRoot()` is the plain `.git`-marker walk ONLY (no
 // env-var short-circuit), so this gate always inspects the tree it is
 // actually running from, worktree or not.
 function findRepoRoot(from: string): string {
@@ -76,8 +60,7 @@ function findRepoRoot(from: string): string {
 const REPO_ROOT = findRepoRoot(HERE);
 
 // ============================================================================
-// Plan 11: the retiring per-instance supervisor's signal-handling test
-// (vice-supervisor.sh: a SIGHUP terminates the running child...), the
+// Plan 11: the retiring per-instance supervisor's signal-handling test, the
 // trap-registration loop (both retiring daemons registering EXIT/HUP/INT/
 // TERM), and the syntax-check loop (bash -n over every surviving script) are
 // ALL removed here -- their common driver, the SURVIVING_HOST_SCRIPTS array,
@@ -293,9 +276,9 @@ test("happy path: --print-paths with the real environment prints an absolute, ex
 
 // ============================================================================
 // Plan 03, Task 2, gate 1: `.gitignore` and the deployed set are in two-way
-// parity. A one-way check would let a stale entry survive a deletion (plan
-// 04's removal of vice-pool.sh must be able to shrink the ignore list with
-// it); this gate enforces BOTH directions.
+// parity. A one-way check would let a stale entry survive a deletion (a
+// removed script must be able to shrink the ignore list with it); this gate
+// enforces BOTH directions.
 //
 // REWORKED 2026-09-08 (D-33, plan 40-01): the twelve per-file `/tools/*`
 // entries this gate used to compare against `resourceEntries()` name-for-name
@@ -362,8 +345,7 @@ test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + 
 // gitignored tools/") is wrong: tools/ is a MIXED directory holding both
 // gitignored deployment output (the .sh copies this same file's other tests
 // read straight out of resources/) AND tracked reverse-engineering tooling
-// (diff-images.mjs, watch-loads.mjs, recovery-schema.mjs,
-// releases.mjs and their tests) -- a directory-exclusion predicate cannot
+// (diff-images.ts, watch-loads.ts, releases.ts and their tests) -- a directory-exclusion predicate cannot
 // tell those apart and would pass a gate that should fail. `git ls-files`
 // enumerates TRACKED files instead, which is the right question: deployed
 // copies under the real (untracked, gitignored) tools/ and any stray
@@ -372,11 +354,7 @@ test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + 
 // ============================================================================
 
 // Named constant per plan 03's instruction: this array SHRINKS as scripts
-// retire -- by one in plan 04 (vice-pool.sh's deletion), down to this single
-// entry now that plan 11 folds the remaining bash daemons (and their two
-// shared libraries) into the TypeScript broker. This is the single entry the
-// array's own history has been anticipating since it was first written.
-// Every change to it must be a deliberate edit with a commit behind it, not
+// retire. Every change to it must be a deliberate edit with a commit behind it, not
 // a silent widening to make a red gate pass.
 // In this plugin repo the tracked shell-script set is exactly four: the
 // host-side VICE launcher (deployed from resources/), the SessionStart

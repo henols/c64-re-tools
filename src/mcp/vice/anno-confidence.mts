@@ -130,8 +130,8 @@ export interface AnnoConfidenceGradeErrorOptions {
  * Thrown by `parseConfidencePrefix()` when a comment begins with a bracket
  * token that is not exactly one of `CONFIDENCE_GRADES`'s five. Named,
  * carries the offending token as a field, and its message lists all five
- * valid tokens -- mirroring `anno-launch.ts`'s `AnnoViceFlagError` shape
- * (a named error over a malformed token, rather than a silent strip).
+ * valid tokens: a named error over a malformed token, rather than a silent
+ * strip.
  */
 export class AnnoConfidenceGradeError extends Error {
   offendingToken: string;

@@ -1,9 +1,6 @@
 // node:test coverage of channel-lock.ts -- a pure primitive, no emulator
-// involved at all. Unlike vice-sync.ts's checkpoint-wait functions (whose
-// header states their correctness only means anything against a real
-// emulator's timing), this module is a plain FIFO queue plus a timeout, and
-// CLAUDE.md's exemption for vice-sync.ts's functions does not extend to it
-// (D-08) -- every case below is a meaningful, deterministic assertion.
+// involved at all. This module is a plain FIFO queue plus a timeout (D-08),
+// so every case below is a meaningful, deterministic assertion.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 

@@ -90,8 +90,8 @@ export function _snapshotState(state) {
  * from 6510 to 6600 -- 6510-6599 stays reserved by convention
  * for an x64sc a human launches for their own work. */
 export const DEFAULT_BASE_PORT = 6600;
-/** Scan ceiling matching vice-broker.sh's own next_free_port(): exactly one
- * hundred candidates starting at (and including) the base port. Bounded so
+/** Scan ceiling: exactly one hundred candidates starting at (and
+ * including) the base port. Bounded so
  * an exhausted host produces one explicit `no_free_port` result rather than
  * an unbounded scan. */
 const PORT_SCAN_CEILING = 100;
@@ -108,8 +108,7 @@ export function resolveBasePort() {
 }
 /** Real default: attempts to bind the candidate port on 127.0.0.1 and
  * immediately releases it. Answers ONLY "is a TCP listener already bound
- * here" -- the exact question vice-broker.sh's own /dev/tcp-based
- * port_in_use() asked, and deliberately never reused as a readiness check
+ * here" -- and deliberately never reused as a readiness check
  * (see broker-launch.mts's probeReady() header comment for why those two
  * questions are never conflated: a C64 can accept a connection before it
  * has finished booting). EADDRINUSE means genuinely in use; any other

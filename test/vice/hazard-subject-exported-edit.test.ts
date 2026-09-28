@@ -12,8 +12,7 @@
 // actually stop the run rather than silently degrading into a pass. Every
 // case here runs the driver as a REAL subprocess (`spawnSync(process.execPath,
 // [...])`) against a scratch copy of the manifest, on the same
-// subprocess-not-import pattern `reassembly-gate-modified-run.test.ts`'s own
-// header states for `compare-cross-binary.ts`: the driver's own single
+// subprocess-not-import pattern used for `compare-cross-binary.ts`: the driver's own single
 // real-assembler call still goes through `acme-verify.ts` and nothing here
 // adds a second launch site of its own.
 //

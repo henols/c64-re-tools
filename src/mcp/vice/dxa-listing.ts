@@ -72,8 +72,7 @@ export interface DumpLineShape {
  * INCLUSIVE. Two `code`/`data` ranges are never merged across a source-line
  * boundary even when their addresses touch or their class matches -- only
  * bytes emitted by the SAME matched line ever coalesce into one `code`/`data`
- * entry (`dxa-listing.test.ts`'s adjacency cases assert this directly). This
- * is what makes "two spans that merely touch stay two entries" true
+ * entry. This is what makes "two spans that merely touch stay two entries" true
  * regardless of class agreement. `unclassified` addresses (an overlapping
  * decode; see `UnclassifiedByte`) coalesce among themselves by address
  * alone -- they have no single owning line to key on -- but never merge into
@@ -244,7 +243,7 @@ export function parseDumpListing(text: string, window: ParseDumpListingWindow): 
   // `unclassified` with a stated reason naming every claiming line and
   // class. Agreement is not resolution: a rule that resolved the agreeing
   // case would be the same tie-break rule, merely unobservable on that
-  // input (dxa-listing.test.ts's agreeing-overlap case asserts this).
+  // input.
   // Tracks which matched line (by index into `lines`) produced each
   // `code`/`data` address -- used ONLY to decide range-merge boundaries
   // below (two different lines never coalesce even when touching);
@@ -279,8 +278,7 @@ export function parseDumpListing(text: string, window: ParseDumpListingWindow): 
   // Ordering and adjacency: sort covered addresses ascending and coalesce
   // ONLY consecutive addresses that share both class AND originating line
   // for `code`/`data` -- two different lines never merge even when their
-  // spans touch exactly or agree on class (dxa-listing.test.ts's adjacency
-  // cases assert this). `unclassified` addresses coalesce by address alone
+  // spans touch exactly or agree on class. `unclassified` addresses coalesce by address alone
   // (they have no single owning line), but a class change ALWAYS breaks a
   // range, so `unclassified` never merges into an adjacent `code`/`data`
   // run.

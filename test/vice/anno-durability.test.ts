@@ -260,8 +260,7 @@ test("STORE-04's planted violation, in the SAME shape and through the SAME helpe
 });
 
 test("the mutator is test-only: absent from package.json files[], and its filename does not match the *.test.* glob the runner collects", () => {
-  // Following `acme-gate.test.ts`'s own mechanical check rather than trusting
-  // the mutator's header comment.
+  // A mechanical check rather than trusting the mutator's header comment.
   const pkg = JSON.parse(readFileSync(join(VICE_DIR, "package.json"), "utf8")) as { files: string[] };
   assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
   assert.equal(

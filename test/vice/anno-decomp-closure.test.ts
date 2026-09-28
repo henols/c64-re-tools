@@ -40,7 +40,7 @@
 //     temp directory here is `mkdtempSync(join(tmpdir(), ...))`, matching
 //     `anno-store.test.ts`'s own convention -- this project has already had
 //     an intermittent suite failure from scratch files racing inside the
-//     repo tree (`audit-root-args.test.ts`'s `/tmp`-scratch race).
+//     repo tree.
 //   - Never spawn an emulator, `dxa`, Ghidra or ACME. Every input this file
 //     needs is already committed; a live tool dependency here would turn a
 //     regression into a re-run.

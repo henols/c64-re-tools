@@ -3,13 +3,10 @@
 // The committed regression for `prg-image.mts`'s two input validators, plus
 // the payload round trip its own doc comment says it exists to allow.
 //
-// PROVENANCE OF THE FIRST FOUR TESTS: they were RELOCATED VERBATIM out of
-// `anno-project.test.ts` together with the functions they cover -- same
-// titles, same fixtures, same regex matchers. That is deliberate. Their whole
-// value is that they are the already-committed regression for the refusals
-// standing between a truncated capture and a silently wrong load address; a
-// reworded assertion would be a new test wearing an old test's authority.
-// Only the import specifier changed.
+// THE FIRST FOUR TESTS are the committed regression for the refusals
+// standing between a truncated capture and a silently wrong load address.
+// Keep their titles, fixtures and regex matchers: a reworded assertion would
+// be a new test wearing an old test's authority.
 //
 // Phase 56 removed this file's structural no-I/O check -- an import-set scan
 // plus a forbidden-pattern scan of `prg-image.mts`'s own source, asserting the
@@ -26,7 +23,6 @@ import { gzipSync } from "node:zlib";
 import { parsePrg, flatImageOrigin, decodeRawData } from "../../src/mcp/vice/prg-image.mts";
 
 // ---------------------------------------------------------------------------
-// Relocated verbatim from anno-project.test.ts.
 // ---------------------------------------------------------------------------
 
 test("parsePrg: extracts a little-endian load address and the remaining body", () => {

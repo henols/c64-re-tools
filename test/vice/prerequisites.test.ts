@@ -12,18 +12,10 @@
 // from passing vacuously (a validator with no planted-violation case cannot
 // tell "always passes" from "correctly passes").
 //
-// DECL-05's packaging proof lives HERE, not in a standalone
-// scripts/check-npm-packages.mjs. That script (and its sibling
-// check-no-skill-external-spawn.mjs) was retired on the owner's call in
-// d0e9fb2e ("build: reduce CI to a correctness gate and make the git tag the
-// version") -- the SAME day this plan was authored, for a reason unrelated
-// to this file: what those two scripts enforced is now project convention,
-// not a standalone mechanical gate, and scripts/ no longer exists as a
-// place this phase can add to. DECL-05 itself still requires a non-vacuous,
-// tarball-list-based proof -- never a repo-path `existsSync` -- so this file
-// reads the packed tarball's OWN file list via `npm pack --dry-run --json`,
-// the exact technique the retired script used, rather than reintroducing a
-// standalone script the owner just removed.
+// DECL-05's packaging proof lives HERE, not in a standalone script. DECL-05
+// requires a non-vacuous, tarball-list-based proof -- never a repo-path
+// `existsSync` -- so this file reads the packed tarball's OWN file list via
+// `npm pack --dry-run --json`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -696,8 +688,7 @@ test("D-07: the two declared directory markers match their tool ids (relation, n
 // OWN file list via `npm pack --dry-run --json` -- never a repo-path
 // `existsSync` -- so a `files[]` entry that does not survive packing is
 // caught here rather than by an end user who installed rather than cloned.
-// See this file's header for why this lives here instead of the retired
-// scripts/check-npm-packages.mjs.
+// See this file's header for why this lives here.
 // ---------------------------------------------------------------------------
 
 // `--ignore-scripts` keeps the dry run from running `prepack`, which would

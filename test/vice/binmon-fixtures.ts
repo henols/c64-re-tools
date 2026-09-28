@@ -145,7 +145,7 @@ export function syntheticDuplicateReplyStream(requestId: number): Buffer {
 }
 
 /** A valid frame, one non-0x02 garbage byte, then a second valid frame --
- * the exact shape probe-binmon.ts's BinMon._onData() resync loop
+ * the exact shape stock-protocol.ts's parseBuffer() resync loop
  * must recover from: drop one byte and keep looking for STX, never trust an
  * arbitrary 32-bit length read at a byte that merely looked like STX. */
 export function syntheticDesyncStream(): Buffer {
@@ -158,8 +158,7 @@ export function syntheticDesyncStream(): Buffer {
 /** DISPLAY_GET (0x84) response for the 504x312 8bpp debug-screen geometry
  * captured live from a genuine stock VICE instance (dw=504 dh=312 xo=136
  * yo=51 iw=320 ih=200 bpp=8). Body layout confirmed against
- * monitor_binary.c's own response encoder and against probe-binmon.ts's
- * parseDisplayGet(): [info_len:u32LE][dw,dh,xo,yo,iw,ih:
+ * monitor_binary.c's own response encoder: [info_len:u32LE][dw,dh,xo,yo,iw,ih:
  * u16LE each][bpp:1][buflen:u32LE][buffer...]. Exists so PROTO-07's test is
  * not blocked on host availability; plan 02-02's committed real capture
  * supersedes this synthetic frame. */
@@ -227,8 +226,8 @@ export class MissingFixtureError extends Error {
  * `assert.equal(fixture.synthetic, false)` (whose stated purpose is that "a
  * future re-record to a synthesized fallback fails loudly here rather than
  * silently") was satisfied by omission. Requiring the key means provenance is
- * always STATED. probe-binmon.ts's buildSidecar() emits `synthetic: false`
- * for every live capture; the synthesized fixtures carry `true`. */
+ * always STATED. Every live-capture sidecar carries `synthetic: false`; the
+ * synthesized fixtures carry `true`. */
 const REQUIRED_PROVENANCE_KEYS = ["capturedFrom", "viceVersion", "capturedAt", "command", "synthetic"] as const;
 
 export interface CapturedFixture {

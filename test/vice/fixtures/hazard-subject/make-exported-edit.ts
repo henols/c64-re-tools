@@ -9,8 +9,7 @@
 // Plans 50-02 and 50-06 proved the assembler works and that a hand-written
 // twin subject reassembles and behaves as expected. Neither made its edit in
 // a file the decomposition's own exporter wrote. This driver does: it walks
-// the same real export-and-assemble path `make-rebuild.mjs` (plan 50-06)
-// already proved out, then applies a COMMITTED, PRE-REGISTERED edit to one
+// the real export-and-assemble path, then applies a COMMITTED, PRE-REGISTERED edit to one
 // exported file, reassembles the edited tree through the same single
 // oracle, and refuses rather than guesses at every step where the edit
 // could silently go wrong.
@@ -21,8 +20,7 @@
 //                                 point, which is also the byte-diff oracle
 //
 // NO SECOND ASSEMBLER CALL SITE AND NO SECOND BYTE COMPARISON. This file
-// contains no spawn/exec/spawnSync of its own: grep it, exactly as
-// `make-rebuild.mjs`'s own header states for itself.
+// contains no spawn/exec/spawnSync of its own: grep it.
 //
 // THE PRE-REGISTRATION IS THE ACCEPTANCE CONTRACT. `exported-edit.manifest.json`
 // is committed BEFORE this driver ever calls the assembler against the
@@ -93,13 +91,12 @@ function fail(message: string): never {
 }
 
 /**
- * THE SAME COPY `make-rebuild.mjs` carries, for the SAME stated reason (its
- * own header): `exportAsmTree()` sources `symbols.a` first, then each
- * populated scope ascending by scope start, then `unscoped.a` LAST
- * regardless of address, while ACME's own `-v2` per-segment result lines
- * follow FILE INCLUSION order. A third copy, not an import: this is a phase
- * evidence/fixture driver, and importing a `*.test.ts` module to borrow the
- * helper would RUN that module's whole suite as a side effect.
+ * `exportAsmTree()` sources `symbols.a` first, then each populated scope
+ * ascending by scope start, then `unscoped.a` LAST regardless of address,
+ * while ACME's own `-v2` per-segment result lines follow FILE INCLUSION
+ * order. A local copy, not an import: this is a phase evidence/fixture
+ * driver, and importing a `*.test.ts` module to borrow the helper would RUN
+ * that module's whole suite as a side effect.
  */
 function blocksInTreeSourceOrder(result: ExportAsmTreeResult): ExportBlock[] {
   const sortedScopes = [...result.scopes].sort((a, b) => a.start - b.start);
@@ -311,8 +308,7 @@ const body = readFileSync(join(outputDir, VERIFY_OUTPUT_FILE_NAME));
 
 // -----------------------------------------------------------------------
 // 7. Derive the two-byte little-endian load address, cross-checked against
-//    ACME's own per-segment result lines -- the same rule make-rebuild.mjs
-//    states and follows.
+//    ACME's own per-segment result lines.
 // -----------------------------------------------------------------------
 const loadAddress = minStart;
 const segmentLineLows = verdict.acmeResultLines

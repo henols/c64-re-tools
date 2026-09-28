@@ -4,24 +4,8 @@
 // 6510-port normalisation, the byte-by-byte comparison that decides
 // equivalence, and the argv identity digest a reproducible run is keyed by.
 //
-// CONSUMER STATUS: EXERCISED BY EVIDENCE, NOT YET WIRED INTO A SHIPPED TOOL.
-// Corrected 2026-09-03 after phase 33's verification caught the previous
-// version of this paragraph asserting, wrongly, that nothing outside the tests
-// imports this module and that `normalisePorts()` had never run against a real
-// capture. Both claims were false when written. What is actually true:
-//
-//   * FOUR committed phase-33 evidence probes import this module by path --
-//     `evidence/capture-pair.mjs:120`, `reset-removed-probe.mjs:103`,
-//     `frame-anchor-probe.mjs:86` and `determinism-probe.mjs:78`.
-//   * `normalisePorts()` HAS run against real captures -- three of them, at
-//     `evidence/capture-pair.mjs:680`.
-//   * `compareCaptures()` is called at `evidence/capture-pair.mjs:776`, and
-//     THAT CALL IS the `C0_CAPTURE_PAIR: pass` gate input. This module produced
-//     the milestone's headline equivalence result; it is not unvalidated code.
-//
-// What remains true, and is the only sense in which this is "not yet wired":
-// no SHIPPED MCP tool and no production caller reaches it -- the route today
-// is an evidence script importing it directly. So read "the ONE authoritative
+// CONSUMER STATUS: NOT YET WIRED INTO A SHIPPED TOOL. No SHIPPED MCP tool and
+// no production caller reaches this module. So read "the ONE authoritative
 // place" above as A DESIGN CONSTRAINT ON FUTURE CALLERS -- when the predicate
 // is called, it is called here -- rather than as a claim about the production
 // surface.
@@ -99,8 +83,7 @@
 //     dynamic. The captured 64K is the DEPENDENT VARIABLE the stop-identity
 //     oracle certifies; a predicate that could reach the oracle -- or an oracle
 //     that could reach the predicate -- would let a capture participate in
-//     certifying its own stop. `capture-seam.test.ts` bars it by SHAPE in both
-//     directions, which is `CAP-03`.
+//     certifying its own stop (`CAP-03`).
 
 /** A flat capture is exactly this long, always. Named rather than inlined
  * because every refusal below quotes it back to the caller. */

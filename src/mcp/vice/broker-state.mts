@@ -278,10 +278,10 @@ export interface GrantRecord {
    * mid-operation. Do not read `null` as proof of idleness. */
   operation: { name: string; declaredAt: number } | null;
   /** The client-declared session label (Phase 63, SESS-06) -- a display-only
-   * identifier the acquiring connection chose for itself (vice-broker-
-   * client.ts's resolveSessionLabel()), already run through broker-
-   * control.mts's own sanitiseSessionLabel() before this field is ever
-   * written -- this field never holds an unsanitised value. REQUIRED, not
+   * identifier the acquiring connection chose for itself
+   * (vice-broker-client.ts's resolveSessionLabel()), already run through
+   * broker-control.mts's own sanitiseSessionLabel() before this field is
+   * ever written -- this field never holds an unsanitised value. REQUIRED, not
    * optional, matching this record's own `pid`/`operation` convention:
    * every grant is created with this field explicitly set (`null` when the
    * acquire declared none) at vice-broker.mts's single `state.grants.set()`
@@ -368,29 +368,23 @@ export function createBrokerState(): BrokerState {
 }
 
 // ---------------------------------------------------------------------------
-// FINDING 1 (recorded per this plan's own acceptance criteria -- a positive
-// finding, not an oversight): vice-broker.sh's drop_dead_instance_records()
-// (resources/vice-broker.sh:1792-1831) -- the start-time validator that
-// dropped any grant/warm-instance record whose pid was dead or mismatched, because a
-// ghost record could otherwise survive a broker stop, a broker start, and a
-// full host restart -- HAS NO EQUIVALENT HERE, AND NEEDS NONE. A fresh
+// FINDING 1 (a positive finding, not an oversight): a start-time validator
+// that drops any grant record whose pid is dead or mismatched -- so that a
+// ghost record cannot survive a broker stop, a broker start, and a full
+// host restart -- HAS NO EQUIVALENT HERE, AND NEEDS NONE. A fresh
 // broker process starts with an EMPTY instances Map by construction
 // (createBrokerState() above): there is no stale record to drop, because
 // there is no record until THIS broker instance itself creates one via
 // tryLaunchOne() (broker-launch.mts). This is exactly what "state in one
-// place, in process" (C4) buys -- the entire CLASS of bug that function
-// existed to catch cannot occur when the record lives only in the process's
+// place, in process" (C4) buys -- the entire CLASS of bug such a validator
+// exists to catch cannot occur when the record lives only in the process's
 // own memory. Not a gap; a strengthening.
 //
-// FINDING 2 (also recorded per this plan's own acceptance criteria):
-// broker-instances.json -- the pure projection of grants+warm instances that
-// write_instances()/read_instance_field() (resources/vice-broker.sh:958-
-// 1043) rebuilt every single pass, with no confirmed consumer outside the
-// bash daemon's own `status` subcommand -- is DROPPED ENTIRELY.
-// With state in-process and a control plane in place,
-// "what instances exist" becomes a control-plane query that
-// (status/host_state), answered on demand from this exact Map -- strictly
-// better than a file that can go stale between passes.
+// FINDING 2: there is no on-disk projection file of the grants. With state
+// in-process and a control plane in place, "what instances exist" is a
+// control-plane query (status/host_state), answered on demand from this
+// exact Map -- strictly better than a file that can go stale between
+// passes.
 // ---------------------------------------------------------------------------
 
 export interface StateSnapshot {
@@ -429,8 +423,8 @@ export function _snapshotState(state: BrokerState): StateSnapshot {
  * for an x64sc a human launches for their own work. */
 export const DEFAULT_BASE_PORT = 6600;
 
-/** Scan ceiling matching vice-broker.sh's own next_free_port(): exactly one
- * hundred candidates starting at (and including) the base port. Bounded so
+/** Scan ceiling: exactly one hundred candidates starting at (and
+ * including) the base port. Bounded so
  * an exhausted host produces one explicit `no_free_port` result rather than
  * an unbounded scan. */
 const PORT_SCAN_CEILING = 100;
@@ -450,8 +444,7 @@ export type PortInUseProbe = (port: number) => Promise<boolean>;
 
 /** Real default: attempts to bind the candidate port on 127.0.0.1 and
  * immediately releases it. Answers ONLY "is a TCP listener already bound
- * here" -- the exact question vice-broker.sh's own /dev/tcp-based
- * port_in_use() asked, and deliberately never reused as a readiness check
+ * here" -- and deliberately never reused as a readiness check
  * (see broker-launch.mts's probeReady() header comment for why those two
  * questions are never conflated: a C64 can accept a connection before it
  * has finished booting). EADDRINUSE means genuinely in use; any other

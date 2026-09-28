@@ -147,9 +147,7 @@ test("manifest/backend (D-03 name coverage): every STOCK_ONLY_TOOLS name is pres
 // pair has equal required-argument sets, stock's extras all optional on the
 // fork side) is deleted along with the fork manifest and transport: its
 // entire premise was a two-manifest comparison, and with one manifest there
-// is nothing left to compare. `manifest-arg-compat.test.ts` was the other,
-// more thorough guard over the same premise and is deleted whole for the
-// same reason.
+// is nothing left to compare.
 
 test("manifest/backend (D-02 outputSchema presence): every stock manifest entry declares an outputSchema whose type is \"object\"", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);

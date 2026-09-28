@@ -1039,15 +1039,12 @@ test("with zero live sessions, the handshake still answers and the broker report
 });
 
 // ---------------------------------------------------------------------------
-// The retiring bash suite's "bash -n exits 0; start still refuses in-container
-// with exit 2; --check-container still exits 3" structural test asserted the
-// container guard's exit-code contract directly against
-// resources/vice-broker.sh. The new broker wires the SAME container-guard.mts
-// functions (containerGuardEnforce()/containerGuardReport(), pre-existing and
-// unchanged -- vice-broker.mts:650/654) but no test spawned the real emitted
-// artifact to prove the wiring itself (as opposed to the guard functions in
-// isolation, which container-guard.test.ts already covers). This run now
-// simulates a container by handing the child ONE real signal
+// The broker wires container-guard.mts's functions
+// (containerGuardEnforce()/containerGuardReport()) into its start path. This
+// test spawns the real emitted artifact to prove the wiring itself (as
+// opposed to the guard functions in isolation, which container-guard.test.ts
+// already covers): start refuses in-container with exit 2, and
+// --check-container exits 3. This run simulates a container by handing the child ONE real signal
 // (SIMULATED_CONTAINER_ENV) rather than inheriting one ambiently -- that is
 // the right shape here because the assertion under test is the emitted
 // artifact's exit-code contract, which fires identically on any single

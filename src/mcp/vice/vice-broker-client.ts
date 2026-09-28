@@ -471,7 +471,7 @@ export interface BrokerControlSession {
  * names. Declared here, beside
  * BrokerControlSession and dialControlSession(), because it is
  * backend-agnostic -- the fork path does not consume it only because
- * forwardToVice() reads activeInstance() from the same module (vice.ts)
+ * it reads activeInstance() from the module (vice-errors.mts)
  * that owns the state, not because this shape is stock-specific.
  *
  * `targetId` is the GRANT ID, not the port.

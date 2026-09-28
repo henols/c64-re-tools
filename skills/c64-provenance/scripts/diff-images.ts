@@ -841,7 +841,7 @@ export function renderLedger({
 
   // NOTE: the embedded invocation path below is deliberately the
   // CONSUMER's installed location (`.claude/skills/...`), not this repository's
-  // source-tree location (`skills/...`) -- pinned by diff-images.test.ts and skill-consumer-paths.test.ts.
+  // source-tree location (`skills/...`) -- pinned by diff-images.test.ts.
   let generated = `<!-- GENERATED, DO NOT HAND-EDIT. Regenerate with: node .claude/skills/c64-provenance/scripts/diff-images.ts ledger --gap-tolerance ${gapTolerance} -->\n\n`;
   generated += `| Start | End | Kind | Verdict | Confidence | Agreeing releases | Evidence / Reason |\n`;
   generated += `|---|---|---|---|---|---|---|\n`;

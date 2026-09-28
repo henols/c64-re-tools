@@ -123,7 +123,7 @@ export function release(id: string): ReleaseEntry {
  * The registry's own N-readiness documentation:
  * a top-level `schema_notes` string, sibling to `schema_version` and
  * `releases`, stating the mechanical claim that adding a release is one
- * `releases[]` entry plus one invocation of `tools/recover.mjs`. Kept as a
+ * `releases[]` entry. Kept as a
  * plain top-level field rather than a JSON comment (JSON has none) or a
  * per-release field (it describes the registry's shape, not any one
  * release). Rehearsed against the real validator in

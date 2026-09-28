@@ -194,7 +194,7 @@ const FIXTURES: Record<string, FixtureSpec> = {
   },
 };
 
-const COMMAND = "node src/mcp/vice/fixtures/vsf/make-fixtures.ts";
+const COMMAND = "node test/vice/fixtures/vsf/make-fixtures.ts";
 
 /** `main(names)` regenerates the named fixtures, or all four when given none.
  * The filter exists so a plan can land one fixture at a time without leaving

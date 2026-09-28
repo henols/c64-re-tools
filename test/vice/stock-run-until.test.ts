@@ -3,7 +3,7 @@
 // emulator (matching this repo's established DI-stub convention,
 // stock-checkpoints.test.ts:1-56 / stock-session.test.ts:1-133).
 //
-// 07-PATTERNS.md is explicit that vice-sync.ts's "deliberately not
+// 07-PATTERNS.md is explicit that the old sync module's "deliberately not
 // unit-tested" disposition does NOT carry over to this file: that
 // disposition is about a polling design against unpredictable real timing,
 // and this design is event-driven against a synthetic client, so every

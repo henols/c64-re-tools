@@ -796,9 +796,9 @@ test("the data-type suite is driven from `DATA_TYPES` itself -- a thirteenth mem
 for (const dataType of DATA_TYPES) {
   // Phase 47, plan 47-03: `external_file` is EXCLUDED from this generic
   // single-file loop. Its own emitted line is `!binary "data_XXXX.bin"`,
-  // naming a sibling file that only `exportAsmTree()` writes -- `acme-
-  // verify.ts` (which `verifyExport()` below calls) is single-file by design
-  // (hard scope fence 3) and never writes one, so this loop would see ACME's
+  // naming a sibling file that only `exportAsmTree()` writes --
+  // `acme-verify.ts` (which `verifyExport()` below calls) is single-file by
+  // design (hard scope fence 3) and never writes one, so this loop would see ACME's
   // own "Cannot open input file" for this one type, every time, regardless
   // of whether the emission itself is correct. Its round trip is proved
   // separately, through `exportAsmTree()`, in the "binary emission:" suite
@@ -2576,7 +2576,7 @@ const RENDERER_PATH = join(VICE_DIR, "disasm-renderer.mts");
 /** `disasm-renderer.mts`'s FIXED note vocabulary for the two flags that put an
  * instruction on the `!byte` path. Not exported from that module, so the
  * strings are asserted present in its source below before anything matches on
- * them -- the `acme-gate.test.ts` non-vacuity technique. */
+ * them -- a non-vacuity check. */
 const UNASSEMBLABLE_NOTE = "not expressible in ACME !cpu 6510";
 const ILLEGAL_NOTE = "illegal opcode";
 
@@ -2738,8 +2738,7 @@ test("ALL 256 OPCODES: every `acmeExpressible: false` entry goes out as `!byte` 
 const STORE_PATH_ON_DISK = join(VICE_DIR, "anno-store.mts");
 
 /** `setLabel()`'s own refusal wording, read out of the module source rather
- * than retyped from memory -- the `acme-gate.test.ts` technique. Retyping is
- * how a test ends up passing for the wrong reason: any throw would satisfy an
+ * than retyped from memory. Retyping is how a test ends up passing for the wrong reason: any throw would satisfy an
  * `assert.throws()` with no message predicate. */
 const SET_LABEL_REFUSAL = "is already bound to address";
 

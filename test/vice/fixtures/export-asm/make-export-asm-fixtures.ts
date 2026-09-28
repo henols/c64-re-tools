@@ -12,7 +12,7 @@
 // degradation of every test that reads the fixture.
 //
 // DETERMINISM IS PART OF THE CONTRACT: running this script twice must leave
-// `git status --porcelain src/mcp/vice/fixtures/export-asm` empty. There is no
+// `git status --porcelain test/vice/fixtures/export-asm` empty. There is no
 // timestamp, no random value and no host-dependent path in the emitted file --
 // ACME's `-f cbm` output is a pure function of the source.
 //

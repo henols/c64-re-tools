@@ -231,10 +231,10 @@ test(
 // ------------------------------------------------- staging location (walk safety)
 //
 // The atomic-write fix (quick-260804-o09) staged at `dirname(outDir)`, which for
-// the default outDir is `src/mcp/vice/` itself. vice-mcp-selector-docs.test.ts's
-// walkFiles() recurses every directory there except node_modules, so a concurrent
-// walk descended into the transient staging dir and died ENOENT when the rename
-// removed it -- one race traded for another. These pin the corrected location.
+// the default outDir is `src/mcp/vice/` itself. A test that walks every
+// directory there except node_modules then descended into the transient
+// staging dir and died ENOENT when the rename removed it -- one race traded
+// for another. These pin the corrected location.
 
 test("resolveStagingParent(): the DEFAULT outDir stages inside node_modules/.cache -- the one directory the project's recursive walks structurally exclude", () => {
   const parent = resolveStagingParent(join(VICE_DIR, "resources"));

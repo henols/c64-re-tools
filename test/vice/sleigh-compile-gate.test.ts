@@ -2,10 +2,8 @@
 // sleigh-compile-gate.test.ts
 //
 // Phase 36, plan 36-01 (OPC-01, OPC-04): the phase's EARLIEST gate. Per
-// D-36-03, this is a hermetic test that invokes `support/sleigh` DIRECTLY --
-// the same "a test may invoke a host binary directly" precedent
-// `dxa-build-gate.test.ts` already established for `vendor/dxa/build.bash`.
-// It needs no host-tool seam change whatsoever; the `.ldefs` id and the
+// D-36-03, this is a hermetic test that invokes `support/sleigh` DIRECTLY
+// (a test may invoke a host binary directly). It needs no host-tool seam change whatsoever; the `.ldefs` id and the
 // `-processor` seam change land in the SAME commit (OPC-04), but this gate
 // itself is pure filesystem + one direct child-process invocation.
 //
@@ -22,16 +20,15 @@
 // path, passed through node:test's own `{ skip }` option on EVERY case --
 // never a hand-rolled early return, which would report a false PASS rather
 // than a SKIP (mirrors `dxa-live.test.ts`'s own SKIP_REASON idiom). It
-// copies the vendored tree into a fresh `mkdtempSync` scratch directory
-// (mirroring `dxa-build-gate.test.ts`'s own `makeScratchTree()` discipline),
+// copies the vendored tree into a fresh `mkdtempSync` scratch directory,
 // copies the three stock 6502 language files in beside it, runs
 // `support/sleigh` there, and tears the whole scratch root down in a
 // `finally`. This host's `/tmp` is a RAM-backed filesystem whose ageing is
 // disabled, so an untorn-down scratch tree is leaked memory, not leaked
 // disk -- torn down anyway, always.
 //
-// THE PASS SIGNAL is three CONJOINED conditions, never a digest comparison
-// (unlike `dxa-build-gate.test.ts`'s own build gate): exit status 0, AND the
+// THE PASS SIGNAL is three CONJOINED conditions, never a digest comparison:
+// exit status 0, AND the
 // `.sla` present on disk after the run, AND the `.sla`'s mtime STRICTLY
 // NEWER than every input's mtime (the `.slaspec`, the included `.sinc`, and
 // the three copied stock files). A digest against a moving target (Ghidra's

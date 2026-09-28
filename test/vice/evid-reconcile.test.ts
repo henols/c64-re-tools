@@ -4,7 +4,7 @@
 // Plan 43-04 (EVID-03, EVID-04). HERMETIC: no store, no VICE, no filesystem
 // read except this module's own source (Behavior 5's structural assertion).
 // Every `BlockEntry`/`EvidExecRow` below is a synthetic object literal built
-// by hand, exactly as `dxa-proof01-compare.test.ts` builds its inputs.
+// by hand.
 //
 // Behaviors covered by this file, added across three tasks (numbered so a
 // reader sees the coverage without reading every assertion):
@@ -178,8 +178,7 @@ test("Behavior 5: structural source assertion -- no filesystem, child-process, n
   const source = sourceBytes.toString("utf8");
 
   // Open-quote form (`"fs` / `'fs`), not a closed pair, so a subpath
-  // specifier (`"fs/promises"`) is caught too -- mirrors
-  // dxa-proof01-compare.test.ts's own structural assertion exactly.
+  // specifier (`"fs/promises"`) is caught too.
   const bannedSubstrings = ["child_process", "node:fs", '"fs', "'fs", "node:sqlite", "dxa-partition"];
   for (const banned of bannedSubstrings) {
     assert.equal(source.includes(banned), false, `evid-reconcile.mts must never reference ${banned}`);

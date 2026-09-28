@@ -152,7 +152,7 @@ export interface ProvenanceLedgerErrorOptions {
 
 /**
  * Thrown by `readProvenanceLedger()`. Follows `ViceError`'s shape convention
- * (`vice.ts`) -- plain public fields, no sanitising -- rather than a
+ * (`vice-errors.mts`) -- plain public fields, no sanitising -- rather than a
  * message-only `Error`, so a caller that wants the path or the line number
  * programmatically (a CLI wrapper printing its own summary, say) does not
  * have to parse them back out of prose.

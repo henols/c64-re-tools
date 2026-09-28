@@ -1,12 +1,8 @@
 // node:test coverage of repo-root.ts's repoRoot() ladder, the path-anchor
 // hop count it falls back to as a last resort, and the resources/-versus-
-// tools/ path-agreement regression -- rescued from vice-pool.test.mjs
-// (quick-260730-oga Task 2, quick-260731-p8a) before that file is deleted
-// wholesale in plan 04 (D-02). repoRoot() itself SURVIVES D-02/D-05: it is
-// the one shared path resolver every remaining module in this tree
-// (vice.mjs, vice-probe.ts, install-resources.ts's caller) derives its
-// state directory through. Nothing here imports vice-pool.mjs or
-// vice-session.mjs -- both are deleted in plan 04.
+// tools/ path-agreement regression. repoRoot() is the one shared path
+// resolver every module in this tree (vice-proxy.ts, install-resources.ts's
+// caller) derives its state directory through.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -37,7 +33,7 @@ function parseKeyValueLines(text: string): Record<string, string> {
 // ============================================================================
 // repoRoot() ladder (D-2) and the last-resort path-anchor hop count
 // (quick-260731-p8a). Both drive repoRoot({ from, env }) injection directly
-// and need no other module -- carried over unchanged from vice-pool.test.mjs.
+// and need no other module.
 // ============================================================================
 
 test("repoRoot() ladder: a .git ancestor resolves with no env set; a containing CONTAINER_WORKSPACE_PATH wins over a NEARER .git; a non-containing CONTAINER_WORKSPACE_PATH loses to the .git walk", () => {
@@ -171,27 +167,18 @@ test("repoRoot() last-resort fallback counts its three hops from the PACKAGE dir
 });
 
 // ============================================================================
-// Path agreement (D-2, D-3, quick-260730-oga Task 2, narrowed for D-02,
-// narrowed AGAIN for plan 11's deletion of vice-supervisor.sh/vice-broker.sh):
-// proves the Node side (repo-root.ts's supervisorDir()) and the shell side (tools/vice-launcher.sh's --print-paths,
-// via its own now-inlined resolve_repo_root()) resolve the SAME repo root,
-// and therefore the same .c64-re-tools/supervisor directory.
+// Path agreement (D-2, D-3): proves the Node side (repo-root.ts's
+// supervisorDir()) and the shell side (tools/vice-launcher.sh's
+// --print-paths, via its own inlined resolve_repo_root()) resolve the SAME
+// repo root, and therefore the same .c64-re-tools/supervisor directory.
 //
-// NARROWED again from the vice-supervisor.sh/vice-broker.sh-era version:
-// that version also cross-checked the two retiring daemons' own
-// supervisor_dir/pool_dir fields, which had a direct Node-side counterpart
-// to compare byte-for-byte. Neither retiring script survives plan 11's
-// deletion, and the surviving launcher has no supervisor_dir/pool_dir
-// concept of its own (it only resolves repo_root, self_dir and
-// broker_artifact -- see vice-launcher.sh's own header). The property this
-// test proves is unchanged (Node and the shell agree on one repo root, and
-// therefore on one state directory) -- only the shell-side anchor moves from
-// "compare two scripts' own printed state-dir fields" to "derive the
-// expected state dir from the launcher's own printed repo_root and compare
-// against Node's directly", since the launcher is the only shell-side
-// resolver left. Every structural property of the original regression is
-// kept: the VICE_-prefixed env strip, the fresh-child-process Node
-// evaluation, the self-sufficient installResources() call, the
+// The launcher has no supervisor_dir/pool_dir concept of its own (it only
+// resolves repo_root, self_dir and broker_artifact -- see
+// vice-launcher.sh's own header), so the test derives the expected state
+// dir from the launcher's own printed repo_root and compares it against
+// Node's directly, since the launcher is the only shell-side resolver.
+// The test keeps: the VICE_-prefixed env strip, the fresh-child-process
+// Node evaluation, the self-sufficient installResources() call, the
 // .git-walk-only variant, and the final not-under-.claude assertion.
 // ============================================================================
 
@@ -224,8 +211,8 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
 
   // The launcher's --print-paths output is NOT expected to be byte-identical
   // between the two copies: self_dir/broker_artifact are deliberately
-  // resolved as SIBLINGS of whichever copy is actually running (see vice-
-  // launcher.sh's own header comment -- a launcher run from resources/ must
+  // resolved as SIBLINGS of whichever copy is actually running (see
+  // vice-launcher.sh's own header comment -- a launcher run from resources/ must
   // launch the resources/ broker artifact, not silently reach across to a
   // possibly-stale tools/ copy). Only repo_root, the one key derived purely
   // from resolve_repo_root() rather than from the running script's own
@@ -311,8 +298,7 @@ test("path agreement without CONTAINER_WORKSPACE_PATH (D-6): the .git-walk branc
 // going wrong a second time.
 //
 // The predicates below RETURN their findings instead of asserting
-// internally (docs-linerefs.test.ts's own shape, `docs-linerefs.test.ts:32-
-// 38`) so the planted-violation test below drives the SAME comparison code
+// internally so the planted-violation test below drives the SAME comparison code
 // the real assertion uses, rather than re-implementing the rule locally and
 // proving nothing about the rule the real check applies.
 // ============================================================================

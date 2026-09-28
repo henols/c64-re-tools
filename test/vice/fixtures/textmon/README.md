@@ -5,8 +5,8 @@ a fixed set of parseable commands, captured **live** from both binaries on this
 host — genuine unpatched stock VICE 3.9 (`/usr/bin/x64sc`) and the patched fork
 VICE 3.10 (`/usr/local/bin/x64sc`) — with the same five-key provenance
 discipline `../binmon/README.md` already documents for the binary-monitor
-fixtures. Captured by a now-retired capture script, `fixture-capture.mjs`
-(plan `39-07`, `CHAN-01`).
+fixtures. Captured by a capture script that is no longer in the tree (see
+"Regenerate, never hand-edit" below).
 
 **Every fixture here is a real, hardware-recorded capture (`"synthetic": false`).**
 Read each fixture's own sidecar, never this paragraph alone.
@@ -20,24 +20,24 @@ command-group name (e.g. `access-map`) is never a valid `caseName` by itself.
 
 | Fixture | Command group | Loader case name | Captured from | VICE version | Captured at | Asserted by |
 |---|---|---|---|---|---|---|
-| `access-map-stock.txt` / `.json` | `access-map` | `access-map-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `access-map-fork.txt` / `.json` | `access-map` | `access-map-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `flat-profile-stock.txt` / `.json` | `flat-profile` | `flat-profile-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `flat-profile-fork.txt` / `.json` | `flat-profile` | `flat-profile-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `cpu-history-stock.txt` / `.json` | `cpu-history` | `cpu-history-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `cpu-history-fork.txt` / `.json` | `cpu-history` | `cpu-history-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `backtrace-stock.txt` / `.json` | `backtrace` | `backtrace-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `backtrace-fork.txt` / `.json` | `backtrace` | `backtrace-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `register-decode-stock.txt` / `.json` | `register-decode` | `register-decode-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `register-decode-fork.txt` / `.json` | `register-decode` | `register-decode-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `connect-banner-stock.txt` / `.json` | `connect-banner` | `connect-banner-stock` | **real capture** — `stock:/usr/bin/x64sc` (0 bytes — see "The empty banner" below) | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-fixtures.test.ts` |
-| `connect-banner-fork.txt` / `.json` | `connect-banner` | `connect-banner-fork` | **real capture** — `fork:/usr/local/bin/x64sc` (0 bytes — see "The empty banner" below) | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-fixtures.test.ts` |
+| `access-map-stock.txt` / `.json` | `access-map` | `access-map-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-memmap.test.ts` |
+| `access-map-fork.txt` / `.json` | `access-map` | `access-map-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-memmap.test.ts` |
+| `flat-profile-stock.txt` / `.json` | `flat-profile` | `flat-profile-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-profile.test.ts` |
+| `flat-profile-fork.txt` / `.json` | `flat-profile` | `flat-profile-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-profile.test.ts` |
+| `cpu-history-stock.txt` / `.json` | `cpu-history` | `cpu-history-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-cpuhistory.test.ts` |
+| `cpu-history-fork.txt` / `.json` | `cpu-history` | `cpu-history-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-cpuhistory.test.ts` |
+| `backtrace-stock.txt` / `.json` | `backtrace` | `backtrace-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-backtrace.test.ts` |
+| `backtrace-fork.txt` / `.json` | `backtrace` | `backtrace-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-backtrace.test.ts` |
+| `register-decode-stock.txt` / `.json` | `register-decode` | `register-decode-stock` | **real capture** — `stock:/usr/bin/x64sc` | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-registers.test.ts` |
+| `register-decode-fork.txt` / `.json` | `register-decode` | `register-decode-fork` | **real capture** — `fork:/usr/local/bin/x64sc` | `x64sc (VICE 3.10)` | 2026-09-07 | `textmon-registers.test.ts` |
+| `connect-banner-stock.txt` / `.json` | `connect-banner` | `connect-banner-stock` | **real capture** — `stock:/usr/bin/x64sc` (0 bytes — see "The empty banner" below) | `x64sc (VICE 3.9)` | 2026-09-07 | `textmon-memmap.test.ts` |
+| `connect-banner-fork.txt` / `.json` | `connect-banner` | `connect-banner-fork` | **real capture** — `fork:/usr/local/bin/x64sc` (0 bytes — see "The empty banner" below) | `x64sc (VICE 3.10)` | 2026-09-07 | `text-protocol.test.ts` |
 
 **The `capturedFrom` kind token (`stock`/`fork`) is DERIVED, not operator-supplied**
 — unlike the binmon tree's own recorded two-month mislabelling incident
-(`../binmon/README.md`), `fixture-capture.mjs` computes it from the RESOLVED
-ABSOLUTE PATH of the binary that actually answered (`probe-harness.mjs`'s
-`viceKind()`), never from an environment variable or a hand-typed string.
+(`../binmon/README.md`), the capture script computed it from the RESOLVED
+ABSOLUTE PATH of the binary that actually answered, never from an environment
+variable or a hand-typed string.
 
 Each `.txt` is the raw response bytes exactly as received over the text-monitor
 TCP socket — always including the final exit prompt, and additionally the
@@ -102,11 +102,9 @@ For a command slow enough to compute (`memmapshow`, scanning all 65536
 addresses), the entry-echo and the rest of the reply routinely arrive as
 **separate TCP segments** — measured live while building the capture script:
 a naive client that resolves on the FIRST regex match against the accumulated
-buffer's end (`textmon-probe-client.mjs`'s own `sendAndAwaitPrompt()` — a
-throwaway, by its own file header, explicitly not built to survive this
-hazard) truncates the capture at 10 bytes (the bare entry-echo) and
+buffer's end truncates the capture at 10 bytes (the bare entry-echo) and
 misattributes the real ~1.6MB `memmapshow` dump to whatever command is sent
-next. `fixture-capture.mjs` uses its own local settle-based capture instead
+next. The capture script used its own local settle-based capture instead
 (wait for a `PROMPT_RE` match, then require the socket to go quiet for a fixed
 window before finalizing, resetting on any further data) — every payload in
 this tree was captured with that corrected framing, confirmed by
@@ -184,14 +182,9 @@ protocol *version* question the way the binary side's opcode gate is.
 
 Hand-editing any `.txt` or `.json` here is never the right move — a fixture
 edited to make a test pass silently stops being evidence of anything.
-Regenerate the whole batch instead: the capture script is retired and no
-longer in the tree, so recover `fixture-capture.mjs` from git history
-
-```
-git log --all -- '*/fixture-capture.mjs'
-```
-
-and run it against both `/usr/bin/x64sc` and `/usr/local/bin/x64sc` present and
+Regenerate the whole batch instead: the capture script is no longer in the
+tree, so recover it from git history (commit `34e7eead` removed it) and run
+it against both `/usr/bin/x64sc` and `/usr/local/bin/x64sc` present and
 executable, with the `vice-broker` user unit `inactive` and no other `x64sc`
 process alive (the script's own `preflight()` refuses in code otherwise, per
 D-16). The script commits into this directory directly; every fixture pair in

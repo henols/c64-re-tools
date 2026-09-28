@@ -451,8 +451,7 @@ const rawLiveStorePath = process.env[LIVE_STORE_ENV];
 
 /** Computed exactly once. Every test in this tier passes this through
  * node:test's own `{ skip }` option -- never a hand-rolled early return,
- * which would report a false PASS rather than a SKIP (mirrors
- * fork-live.test.ts's own SKIP_REASON convention). */
+ * which would report a false PASS rather than a SKIP. */
 const LIVE_SKIP_REASON: string | false =
   rawLiveStorePath === undefined || rawLiveStorePath === ""
     ? `anno-store-export.test.ts's live tier is opt-in and default-skipped -- set ${LIVE_STORE_ENV}=/path/to/real.annostore ` +

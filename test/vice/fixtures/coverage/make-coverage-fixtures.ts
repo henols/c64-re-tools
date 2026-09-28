@@ -44,7 +44,7 @@
 // is the one the shipped writer emits.
 //
 // DETERMINISM IS PART OF THE CONTRACT: running this script twice must leave
-// `git status --porcelain src/mcp/vice/fixtures/coverage` empty. There is no
+// `git status --porcelain test/vice/fixtures/coverage` empty. There is no
 // timestamp, no random value and no host-dependent path in any emitted file.
 //
 // THE FILENAME DELIBERATELY CARRIES NO TEST SUFFIX. A `*.test.ts` here would

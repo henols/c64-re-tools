@@ -71,9 +71,9 @@
 //   - Never call `registerTraceCheckpoint()` here. That guard
 //     (`stock-checkpoints.ts`) exists for `stop:false` TRACE checkpoints, and
 //     EVERY checkpoint this file arms stops.
-//   - Never send a second resume for one wait. Exactly ONE `EXIT` per call,
-//     which is `vice-sync.ts`'s own "exactly one resume per wait" invariant
-//     ported here in its stock-native (event-driven, not polling) form. The
+//   - Never send a second resume for one wait. Exactly ONE `EXIT` per call:
+//     the "exactly one resume per wait" invariant in its stock-native
+//     (event-driven, not polling) form. The
 //     consequence is deliberate and is REPORTED, not papered over: the anchor
 //     is armed `stop: true`, so an anchor hit ARRIVING BEFORE the target's
 //     halts the machine, no further instructions execute, and the wait bounds
@@ -170,8 +170,8 @@ interface RunReproducibleOptions {
 }
 
 /** True iff `value` is a well-formed, generic JSON object. Matches this module
- * tree's own `isPlainObject()` convention (`vice.ts:310-316`); redeclared
- * privately here, not imported, per the established per-module convention. */
+ * tree's own `isPlainObject()` convention; redeclared privately here, not
+ * imported, per the established per-module convention. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -536,8 +536,7 @@ export async function runReproducible(
     const anchorCleanup = await deleteCheckpoint(session, anchorCheckpointId);
 
     // machineHalted is DERIVED, never a hand-passed literal: a state flag
-    // drifts from reality the moment a call site changes
-    // (stock-diagnose.ts:642-656, normative). "delete_failed" is reachable
+    // drifts from reality the moment a call site changes. "delete_failed" is reachable
     // precisely when the socket is already gone, and claiming a halted machine
     // over a dead connection while telling the caller to resume down it is
     // self-contradictory in one JSON body.

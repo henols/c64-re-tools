@@ -51,7 +51,7 @@ import { snapshotPathFor, snapshotMetaPathFor, validateSnapshotName } from "./tr
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention
- * (vice.ts:314, stock-condition.ts:228) -- redeclared privately here, not
+ * (stock-condition.ts:228) -- redeclared privately here, not
  * imported, per the established per-module convention. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

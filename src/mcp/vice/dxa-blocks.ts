@@ -127,7 +127,7 @@ function selectDataBearingRows(rows: readonly KnownDataRow[]): KnownDataRow[] {
  * addresses fall outside `$0000-$ffff` -- before any line is written for it.
  * `context` names the throwing function so the message reads the same
  * `functionName: what went wrong` shape as the rest of this project's error
- * messages (e.g. `dxa-partition.ts`). */
+ * messages. */
 function assertRowShape(row: KnownDataRow, context: string): void {
   // WR-01 (`35-REVIEW.md`): integrality is checked FIRST, before the range
   // and inversion comparisons below, because a non-integer address slips
@@ -137,7 +137,7 @@ function assertRowShape(row: KnownDataRow, context: string): void {
   // this module's own "refused BY NAME, never silently" discipline, and a
   // `-B` file dxa cannot parse is the failure mode this whole module exists
   // to make impossible. Every sibling numeric boundary check added in this
-  // phase (`dxa-partition.ts`, `dxa-listing.ts`) already calls
+  // phase (`dxa-listing.ts`) already calls
   // `Number.isInteger()`; this one did not.
   if (!Number.isInteger(row.start) || !Number.isInteger(row.endInclusive)) {
     throw new Error(

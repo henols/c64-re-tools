@@ -540,7 +540,7 @@ function renderReleaseSection(id: string, log: HitLog): string {
  * consumer's installed location, not this repository's source tree -- this
  * string is written into a `recovery/LOADING.md` a consumer keeps. A blanket
  * path sweep rewrote them to the source tree once already; pinned
- * by the test below plus the class-level registry in skill-consumer-paths.test.ts.
+ * by the test below.
  */
 export function renderLoading(entries: ReadonlyArray<{ id: string; log: HitLog }>): string {
   let out = "# `recovery/LOADING.md` -- the on-demand-load detection record\n\n";

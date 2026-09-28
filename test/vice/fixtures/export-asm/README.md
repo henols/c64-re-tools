@@ -96,7 +96,7 @@ cd src/mcp/vice && node fixtures/export-asm/make-export-asm-fixtures.ts
 ```
 
 Deterministic: running it twice must leave
-`git status --porcelain src/mcp/vice/fixtures/export-asm` empty. The script
+`git status --porcelain test/vice/fixtures/export-asm` empty. The script
 probes `ACME_BIN` (defaulting to `acme` on `PATH`) first and exits non-zero
 without touching `smc.prg` if the assembler is missing, refuses the source, or
 writes no output file.

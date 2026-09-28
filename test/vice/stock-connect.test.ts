@@ -1,7 +1,7 @@
 // node:test coverage of stock-connect.ts's connect handshake: claim before
 // dial, api_version assertion, VICE_INFO identity, the CPUHISTORY_GET
 // capability gate, and (Task 2) reconnect-with-identity-check reusing
-// vice.ts's MachineRestartedError. Every server in this file is a loopback
+// vice-errors.mts's MachineRestartedError. Every server in this file is a loopback
 // net stub standing in for VICE's binary monitor -- never a real emulator
 // (this plan's own environment constraint). Every broker control session is
 // an injected stub -- never a real broker process.
@@ -1424,10 +1424,8 @@ test('02-REVIEW.md IN-05 pin: every thrown message naming a function via a where
   }
 });
 
-// This repo's own stripCommentLines() convention (anno-launch.test.ts)
-// reused verbatim rather than reinvented: strips `//`
-// and `/* ... */` comments line-by-line, closing a block comment on the
-// FIRST close-token found by position, never by whether the trimmed line
+// Strips `//` and `/* ... */` comments line-by-line, closing a block comment
+// on the FIRST close-token found by position, never by whether the trimmed line
 // happens to end with one, and re-feeding any code trailing a same-line
 // close back through the same logic.
 function stripCommentLinesForShellScan(src: string): string {
@@ -1483,7 +1481,7 @@ test("13-REVIEW.md WR-01 pin: no production .ts/.mjs file in src/mcp/vice interp
   // the ENTIRE derived file set for the forbidden shape (a `"-c"` argument
   // followed by a backtick template literal containing `${`), so a future
   // caller-derived shell command anywhere in this directory trips the same
-  // gate the review's fix (commit f73d0fa) closed for probe-binmon.ts.
+  // gate the review's fix (commit f73d0fa) closed.
   const shCInterpolationPattern = /["'`]-c["'`]\s*,\s*`[^`]*\$\{[^`]*`/g;
   const violations: Array<{ file: string; snippet: string }> = [];
   for (const name of topLevelShellScanFiles()) {

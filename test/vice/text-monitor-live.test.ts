@@ -6,12 +6,10 @@
 // dials it, and one real text-monitor command (`device c:`) returns its
 // complete, prompt-framed response against genuine stock VICE 3.9.
 //
-// Mirrors stock-live-broker-monitor.test.ts's own harness shape (a real
-// broker daemon, spawned from the emitted resources/vice-broker.mjs
-// artifact, driving a real genuine-stock x64sc) -- see that file's own
-// header comment for the full reachability analysis this harness reuses
-// unchanged. This file adds nothing to that analysis: it needs only ONE
-// grant, ONE claim, ONE command, never a second session or a crash respawn.
+// The harness is a real broker daemon, spawned from the emitted
+// resources/vice-broker.mjs artifact, driving a real genuine-stock x64sc.
+// It needs only ONE grant, ONE claim, ONE command, never a second session
+// or a crash respawn.
 //
 // Registered in test-gate.ts's MANUAL_ONLY_TESTS.
 //
@@ -113,7 +111,7 @@ import { REPO_ROOT, VICE_DIR } from "./paths.ts";
 const BROKER_ARTIFACT = join(VICE_DIR, "resources", "vice-broker.mjs");
 
 // ---------------------------------------------------------------------------
-// Opt-in gate -- mirrors stock-live-broker-monitor.test.ts's own gate exactly.
+// Opt-in gate.
 // ---------------------------------------------------------------------------
 
 const VICE_LIVE_STOCK_BIN_ENV = process.env.VICE_LIVE_STOCK_BIN;
@@ -130,10 +128,8 @@ const SKIP_REASON: string | false = !VICE_LIVE_STOCK_BIN_ENV
     : false;
 
 // ---------------------------------------------------------------------------
-// Small shared helpers -- copied from stock-live-broker-monitor.test.ts's own
-// (not imported: that file's helpers are module-local, not exported, and
-// re-deriving a five-line polling helper here is cheaper than exporting a
-// second file's test-only surface).
+// Small shared helpers, kept local (test files in this repo do not import
+// one another).
 // ---------------------------------------------------------------------------
 
 async function waitFor(predicate: () => boolean, deadlineMs: number, pollMs = 100): Promise<boolean> {
@@ -155,10 +151,9 @@ async function waitForAsync(predicate: () => Promise<boolean>, deadlineMs: numbe
 }
 
 /** One-shot "is anything listening yet" probe -- a bare TCP connect with no
- * command sent, immediately closed. See
- * stock-live-broker-monitor.test.ts's own waitForPortOpen() for why this is
- * needed at all: a cold-launched instance is marked "granted" the instant
- * the process is SPAWNED, not once it has finished booting. */
+ * command sent, immediately closed. It is needed because a cold-launched
+ * instance is marked "granted" the instant the process is SPAWNED, not once
+ * it has finished booting. */
 function waitForPortOpen(host: string, port: number, deadlineMs: number): Promise<boolean> {
   return waitForAsync(
     () =>
@@ -489,8 +484,7 @@ test(
 
       // A cold acquire's grant is handed back the instant the process is
       // SPAWNED -- bounded-wait for the binmon port to accept a connection
-      // before dialling anything (stock-live-broker-monitor.test.ts's own
-      // waitForPortOpen() precedent). D-13's own MEASURED fact
+      // before dialling anything. D-13's own MEASURED fact
       // (TEXT_BIND_BUDGET_MS_MAX: 0) is that the text port binds FASTER than
       // the binary one, so waiting on the binary port bounds the text port
       // too.
@@ -724,7 +718,7 @@ test(
 
         // Resume and poll, bounded, for the checkpoint's own wire hit count
         // to advance -- mirrors stock-a4-checkpoint-flood.test.ts's own poll
-        // shape (never a paused-state flag, per vice-sync.ts's invariant).
+        // shape (never a paused-state flag).
         const deadline = Date.now() + 20000;
         let hitEntry: Record<string, unknown> | null = null;
         while (Date.now() < deadline && !hitEntry) {

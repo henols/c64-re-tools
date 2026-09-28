@@ -86,7 +86,7 @@ const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath
  * been built.
  *
  * D-27 (40-05) ASSESSMENT -- why this site does NOT take the unique-directory
- * idiom skill-honesty-checks.test.ts's runCiScriptWithScratchFile() moved to:
+ * idiom:
  *
  * findDxaBinary(here)'s candidate list is `[join(here, "vendor", "dxa",
  * "dxa"), join(here, "..", "vendor", "dxa", "dxa")]` -- a FIXED,
@@ -106,8 +106,7 @@ const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath
  * `resources-sync.test.ts` walks the whole committed `resources/` tree, but
  * filters to `GENERATED_EXTENSIONS = [".mjs"]` before checking anything --
  * this planted file is named `dxa`, carries no extension, and is filtered out
- * before its check runs, so it cannot flip that test's verdict. `dxa-build-gate.test.ts` scans `src/mcp/vice/vendor/dxa/*.c` (the
- * SOURCE vendor tree), a different directory tree entirely, not
+ * before its check runs, so it cannot flip that test's verdict.
  * `resources/vendor/dxa/`. No committed test file's own walk reads this exact
  * path and branches on its presence, so -- unlike the fixed-name scratch file
  * in `skills/c64-assembler/` -- this site has no currently-measured

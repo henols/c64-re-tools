@@ -56,9 +56,9 @@ build -- see "Bounded by design" below.
 
 | Fixture | Case | Captured from | VICE version | Captured at | Asserted by |
 |---|---|---|---|---|---|
-| `display-get.bin` / `.json` | `display-get` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `binmon-fixtures.test.ts`, `stock-protocol.test.ts` |
-| `event-interleaved.bin` / `.json` | `event-interleaved` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `binmon-fixtures.test.ts`, `stock-protocol.test.ts` |
-| `checkpoint-list.bin` / `.json` | `checkpoint-list` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `binmon-fixtures.test.ts`, `stock-protocol.test.ts` |
+| `display-get.bin` / `.json` | `display-get` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `stock-protocol.test.ts` |
+| `event-interleaved.bin` / `.json` | `event-interleaved` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `stock-protocol.test.ts` |
+| `checkpoint-list.bin` / `.json` | `checkpoint-list` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-21 | `stock-protocol.test.ts` |
 | `cpuhistory-get.bin` / `.json` | `cpuhistory-get` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
 | `cpuhistory-get-multi.bin` / `.json` | `cpuhistory-get-multi` | **real capture** -- `fork:/usr/local/bin/x64sc` | 3.10.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
 | `cpuhistory-get-unsupported.bin` / `.json` | `cpuhistory-get-unsupported` | **real capture** -- `stock:/usr/bin/x64sc` (INVALID_TYPE error frame; genuine unpatched stock; **needs a 3.9-class build to re-record**) | 3.9.0.0 | 2026-08-18 | `stock-protocol.test.ts` (plan 07-12) |
@@ -85,7 +85,7 @@ was optional, `loadCapturedFixture()` derived `synthetic: provenance.synthetic
 
 ## Frozen evidence
 
-The capture tool that wrote these files (`probe-binmon.ts`) was removed.
+The capture tool that wrote these files was removed.
 Each `.bin` is now frozen evidence of what a real `x64sc -binarymonitor`
 build sent, recorded with the VICE version and command in its sidecar. Never
 hand-edit a `.bin` to make a test pass: an edited fixture is no longer

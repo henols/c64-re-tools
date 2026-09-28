@@ -94,14 +94,8 @@ const ANNO_CLI_SOURCE_PATH = join(VICE_DIR, "anno-cli.ts");
  * string/template literal's content untouched. A single-pass character
  * scanner, NOT a regex.
  *
- * This mirrors `scripts/lib/anno-cli-verbs.mjs`'s `stripComments()` and its
- * recorded reason rather than inventing a second discipline: this repo's own
- * `docs-dangling-refs.test.ts` measured a regex-alternation extractor silently
- * missing a literal at the exact site a real defect lived. A copy rather than
- * an import because that module lives under `scripts/lib/` (deliberately out
- * of the shipped runtime's `files[]`) and does not export this helper; the
- * alternative -- widening its export surface for a test in another tree -- is
- * a larger change than the twenty lines below.
+ * A scanner rather than a regex because a regex-alternation extractor was
+ * measured silently missing a literal at the exact site a real defect lived.
  */
 function stripComments(src: string): string {
   let out = "";

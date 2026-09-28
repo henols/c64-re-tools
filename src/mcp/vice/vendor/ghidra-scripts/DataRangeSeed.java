@@ -8,7 +8,7 @@
 // those bytes as instructions. This is Phase 37 plan 37-08's (`AUTO-07`)
 // Ghidra-side half of the graphics-range feedback loop: the derived
 // character-set/bitmap/screen-matrix/sprite-pointer ranges this project's own
-// `anno-graphics.ts` computes are fed back here so the analyser stops minting
+// `anno-graphics.mts` computes are fed back here so the analyser stops minting
 // PHANTOM labels and cross-references inside a region that is actually
 // display data, never program.
 //

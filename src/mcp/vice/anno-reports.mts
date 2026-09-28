@@ -203,8 +203,8 @@ export function crossReferencesFromStore(
  * import route writes today, kept here in case a future one ever carries a
  * raw dxa or Ghidra name through unrenamed: `l_XXXX` (an underscored form no
  * current tool emits), `FUN_XXXX`/`LAB_XXXX` (Ghidra's own default naming),
- * and `lXXX`/`lXXXX` (dxa's own real, no-underscore listing convention,
- * `dxa-listing.test.ts:52`). Anchored at both ends, unlike
+ * and `lXXX`/`lXXXX` (dxa's own real, no-underscore listing convention).
+ * Anchored at both ends, unlike
  * `AUTO_NAME_PREFIX_RE`'s prefix-only match, because these three shapes are
  * short enough that an unanchored match would false-fire on a legitimate
  * longer authored name that merely starts the same way.

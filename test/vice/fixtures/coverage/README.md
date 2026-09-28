@@ -36,7 +36,7 @@ cd src/mcp/vice && node fixtures/coverage/make-coverage-fixtures.ts
 ```
 
 The generator is deterministic and idempotent — running it twice must leave
-`git status --porcelain src/mcp/vice/fixtures/coverage` empty. Project files are produced by this
+`git status --porcelain test/vice/fixtures/coverage` empty. Project files are produced by this
 repository's own real `synthesizeProject()`, so the payload format is exactly what the shipped
 writer emits rather than a hand-assembled approximation.
 

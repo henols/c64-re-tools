@@ -9,7 +9,7 @@
 // composition are in the call path, not merely a hand-built argv string.
 //
 // WHY THIS FILE EXISTS (audit item I-2 / phase 8.2 plan 03): every existing
-// live test (stock-live.test.ts, stock-live-triage.test.ts) spawns x64sc
+// direct-spawn live test (stock-live.test.ts) spawns x64sc
 // DIRECTLY with node:child_process and never calls buildViceArgs(),
 // tryLaunchOne() or acquirePortAndLaunch() -- that gap is EXACTLY where the
 // Drive8Type=0 defect (FINDING-C1, closed by plan 08.2-02) hid: no test,
@@ -226,9 +226,8 @@ function writeD64Fixture(dir: string, prgPath: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Real-broker-artifact spawn/teardown -- stock-live-broker-monitor.test.ts's
-// own startBroker()/stopBroker() shape, trimmed to what
-// this file needs (no crash-respawn machinery).
+// Real-broker-artifact spawn/teardown -- a startBroker()/stopBroker() pair
+// trimmed to what this file needs (no crash-respawn machinery).
 // ---------------------------------------------------------------------------
 
 interface BrokerHandle {
@@ -336,8 +335,7 @@ async function waitForStockReady(port: number, deadlineMs = 30000): Promise<bool
 /** Builds a REAL, production-shaped StockSessionDeps for one grant --
  * `ensureLease` hands back the lease this grant already holds (never
  * re-acquiring), and `connect` is a thin pass-through to the real
- * stockConnect(). Mirrors stock-live-broker-monitor.test.ts's own
- * depsFor(). */
+ * stockConnect(). */
 function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerControlSession, stateDir: string): StockSessionDeps {
   const lease: HeldLease = {
     host,

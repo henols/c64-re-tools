@@ -38,7 +38,7 @@
 // the mutated join calls the exact SAME real store functions and the exact
 // SAME real memmap-lookup functions this test file itself uses statically,
 // with no need to drag `anno-store.mts`'s own deep dependency chain
-// (`anno-index.mts`, `anno-confidence.mts`, `vice.ts`, `node:sqlite`, ...)
+// (`anno-index.mts`, `anno-confidence.mts`, `vice-errors.mts`, `node:sqlite`, ...)
 // into a scratch copy just to resolve one import. Task 2's provenance
 // control DOES need the three-level mirror, because it mutates
 // `memmap.json` itself and `memmap-lookup.mts`'s own `MEMMAP_PATH` formula

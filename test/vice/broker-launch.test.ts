@@ -997,8 +997,8 @@ test("D-07: an in-flight boot is never preempted -- no kill of any kind is issue
 // tests above.
 
 // ===========================================================================
-// Plan 03, Task 2: superviseChild() -- the per-child supervisor absorbed
-// wholesale from resources/vice-supervisor.sh (C2/D-23). No real emulator
+// Plan 03, Task 2: superviseChild() -- the per-child supervisor (C2/D-23).
+// No real emulator
 // runs anywhere in this file: `/bin/true`/`/bin/sleep` stand in for a REAL
 // pid wherever a genuine liveness check is the point; a fully test-
 // controlled EventEmitter stands in wherever exact backoff/crash-window
@@ -1188,8 +1188,7 @@ test("superviseChild: an instance crashing one more than the configured maximum 
 
     // Crash #1 (count 1, <3 -> respawn), crash #2 (count 2, <3 -> respawn),
     // crash #3 (count 3, >=3 -> GIVE UP; one more than "2 respawns
-    // allowed" mirrors vice-supervisor.sh's own `>= VICE_MAX_RESTARTS`
-    // check exactly).
+    // allowed" is the `>= VICE_MAX_RESTARTS` check).
     (spawnedChildren[0] as unknown as EventEmitter).emit("exit", 1, null);
     await waitFor(() => (spawnedChildren.length >= 2 ? true : null));
     (spawnedChildren[1] as unknown as EventEmitter).emit("exit", 1, null);

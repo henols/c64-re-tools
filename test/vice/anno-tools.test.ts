@@ -298,10 +298,9 @@ test("anno-tools.mts never throws a bare Error -- every refusal is an AnnoStoreE
 // Plan 29-06 Task 1: the write and stored-read verbs.
 //
 // `stripCommentsAndStrings` below is shared by every structural guard added in
-// this plan. A single-pass character scanner and NOT a regex, for the reason
-// `scripts/lib/anno-cli-verbs.mjs:47-60` records and this repo's own
-// `docs-dangling-refs.test.ts` MEASURED: a regex-alternation extractor silently
-// missed a literal at the exact site a real defect lived. Template-literal
+// this plan. A single-pass character scanner and NOT a regex, because a
+// regex-alternation extractor was MEASURED to silently miss a literal at the
+// exact site a real defect lived. Template-literal
 // INTERPOLATIONS are preserved as code, because `${someIdentifier}` is an
 // identifier reference and a guard over identifiers must see it.
 // ---------------------------------------------------------------------------

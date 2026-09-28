@@ -222,8 +222,8 @@ export function emitCondition(node: ConditionNode): string {
 // ---------------------------------------------------------------------------
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
- * an array. Matches this module tree's own isPlainObject() convention
- * (vice.ts:310-316) -- redeclared privately here, not imported, per the
+ * an array. Matches this module tree's own isPlainObject() convention --
+ * redeclared privately here, not imported, per the
  * established per-module convention. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

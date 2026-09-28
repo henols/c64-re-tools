@@ -585,8 +585,7 @@ function runVerifyProbe(requireAcme: boolean): ChildRun {
   }
 }
 
-/** The ONE `VICE_REQUIRE_ACME=1` probe run, memoised (WR-11, the discipline
- * `acme-gate.test.ts` records at its own `failRun()`). Two tests below assert
+/** The ONE `VICE_REQUIRE_ACME=1` probe run, memoised (WR-11). Two tests below assert
  * two properties of the SAME failing child run against one fixed input, so a
  * second spawn would add a full Node start plus a `mkdtemp`/`rm` cycle on a
  * RAM-backed `/tmp` and no observation. Lazily computed rather than called at
@@ -1947,10 +1946,8 @@ test("the honest-pass transcript and parseAcmeResultLines() agree -- the parser 
 // D30-01 / USER-D-02: this module SHIPS NOWHERE, and that is mechanically
 // enforced rather than promised.
 //
-// The mirror of `acme-gate.test.ts`'s own absence assertion, deliberately
-// worded the same way and placed next to its subject rather than beside that
-// one. Added 2026-08-31, in the plan that made `anno-export-asm.mts` reachable
-// from `vice-proxy.ts` through `anno-cli.ts`: the exporter joining the
-// published closure is exactly the change that makes it tempting to let the
-// verifier follow it.
+// Placed next to its subject. `anno-export-asm.mts` is reachable from
+// `vice-proxy.ts` through `anno-cli.ts`: the exporter being in the
+// published closure is exactly what makes it tempting to let the verifier
+// follow it.
 // ---------------------------------------------------------------------------

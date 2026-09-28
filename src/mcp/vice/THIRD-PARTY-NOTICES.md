@@ -8,7 +8,7 @@ relied on by, `@henols/vice-mcp`, with a provenance line per source.
 
 ## Incorporated material — cc65 (zlib)
 
-The 6502/6510 opcode table in `disasm-opcodes.ts` (mnemonics, addressing
+The 6502/6510 opcode table in `disasm-opcodes.mts` (mnemonics, addressing
 modes, instruction lengths) is transcribed by hand from cc65's
 `src/da65/opc6502x.c`, fetched raw
 (`https://raw.githubusercontent.com/cc65/cc65/master/src/da65/opc6502x.c`)
@@ -17,7 +17,7 @@ against `master` @ commit `547d923588d870aacf0b0016c67d0f6a92a70f83`
 `02e79d35d73efd31522b5eab986d1919e3560bba` (2025-06-19, "making da65 produce
 the same mnemonics as ca65 uses"). This is the only incorporated third-party
 material the disassembler carries — the derived-data files
-(`disasm-decoder.ts`, `disasm-renderer.ts`, `stock-disassemble.ts`) contain no
+(`disasm-decoder.mts`, `disasm-renderer.mts`, `stock-disassemble.ts`) contain no
 further transcribed material of their own.
 
 cc65 is zlib-licensed, copyright cc65's own author:
@@ -28,7 +28,7 @@ cc65 is zlib-licensed, copyright cc65's own author:
 
 Full zlib licence text, reproduced below, satisfies the origin-must-not-be-
 misrepresented and altered-versions-must-be-marked obligations for this
-transcription (see `disasm-opcodes.ts`'s own header comment for the
+transcription (see `disasm-opcodes.mts`'s own header comment for the
 attribution as it appears in-source):
 
 ```
@@ -523,8 +523,8 @@ have been.
 - **`@mastra/core`** (`1.55.0`) — underlying Mastra runtime `@mastra/mcp`
   depends on. See its own package licence (MIT) on the npm registry.
 
-No new runtime dependency was added by the disassembler (`disasm-opcodes.ts`,
-`disasm-decoder.ts`, `disasm-renderer.ts`, `stock-disassemble.ts` import only
+No new runtime dependency was added by the disassembler (`disasm-opcodes.mts`,
+`disasm-decoder.mts`, `disasm-renderer.mts`, `stock-disassemble.ts` import only
 this package's own sibling modules and Node built-ins). This is a checkable
 claim, not a prose one: the packed
 tarball's runtime `dependencies` are exactly these two, by key set and count.

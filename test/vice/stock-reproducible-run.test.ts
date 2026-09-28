@@ -4,11 +4,9 @@
 // convention; the helpers below mirror stock-run-until.test.ts:36-165 so a
 // reader moving between the two files sees the same shapes).
 //
-// vice-sync.ts's "deliberately not unit-tested" disposition does NOT carry
-// over here, for the same reason it does not carry over to
-// stock-run-until.test.ts: that disposition is about a POLLING design against
-// unpredictable real timing, and this design is EVENT-DRIVEN against a
-// synthetic client. Every timeout in this file is in the tens of milliseconds.
+// This design is EVENT-DRIVEN against a synthetic client, not POLLING against
+// unpredictable real timing, so it is unit-tested directly. Every timeout in
+// this file is in the tens of milliseconds.
 //
 // THE ONE ASSERTION A READER SHOULD NOT SKIP is the offset-13 pair, further
 // down: it builds a RAW CHECKPOINT_INFO body whose u32LE at offset 13 is 1 and
@@ -333,7 +331,7 @@ test("reproducible: the recorded command order is CheckpointSet, CheckpointSet, 
     CommandType.CheckpointDelete,
   ]);
 
-  // Exactly ONE resume per wait -- vice-sync.ts's invariant, stock-native.
+  // Exactly ONE resume per wait.
   assert.equal(calls.filter(([ct]) => ct === CommandType.Exit).length, 1);
   assert.equal(okText(result).resumes, 1);
 });

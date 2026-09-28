@@ -31,7 +31,7 @@ export interface AnnoToolDefinition {
     properties: Record<string, unknown>;
     required?: string[];
   };
-  // Structural compatibility with vice.ts's own ToolInfo (vice-proxy.ts's
+  // Structural compatibility with vice-errors.mts's ToolInfo (vice-proxy.ts's
   // ToolDefinition alias), which carries this index signature -- lets
   // vice-proxy.ts's buildViceTool() accept an AnnoToolDefinition directly,
   // with no per-call cast at the registration site.

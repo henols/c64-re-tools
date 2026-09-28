@@ -1,14 +1,7 @@
 // block-class.test.ts
 //
 // The unit tests for the ONE store-vocabulary boundary (SEAM-03). Behavioural
-// coverage of block-class lookup and the vocabulary mapping, plus one
-// structural, load-bearing check:
-//
-//   - the `files[]` INCLUSION assertion. This is the exact inverse of the
-//     test-only-module assertions elsewhere in this suite: the classifier is
-//     production runtime code reachable from the published entry point's
-//     relative-import closure, so it MUST ship. `anno-verify.test.ts`'s
-//     absence assertion is the shape; only the polarity differs.
+// coverage of block-class lookup and the vocabulary mapping.
 //
 // Phase 56 removed this file's IMPORT-PURITY assertion, which used to scan
 // `block-class.mts`'s own source (`block-class.mts`'s header trap 1 records

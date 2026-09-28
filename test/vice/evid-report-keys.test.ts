@@ -323,8 +323,8 @@ test("direction 3 (denominator adjacency), planted control: a synthetic nested o
 });
 
 // ---------------------------------------------------------------------------
-// This file is test-only: it must never ship. Mirrors acme-gate.test.ts's own
-// mechanical check rather than trusting this file's own header comment.
+// This file is test-only: it must never ship. A mechanical check rather than
+// trusting this file's own header comment.
 // ---------------------------------------------------------------------------
 
 test("evid-report-keys.test.ts is absent from package.json's files[] array (test-only, mechanically enforced)", () => {

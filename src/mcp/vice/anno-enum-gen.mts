@@ -142,8 +142,8 @@ const REGBITS_PATH = [join(HERE, "anno-regbits.json"), join(HERE, "..", "anno-re
 // MAX_ACME_IDENTIFIER_LENGTH / assertLegalAcmeIdentifier() live in
 // anno-acme-ident.mts (plan 260821-a86, T-11-NAME-INJECT) -- that module is
 // the ONE authoritative place for the ACME identifier policy, consumed by
-// THIS file's sanitizeVariantMap() below plus anno-symbols.ts's own pre-spawn
-// label-name gate. Re-exported here (imported above) so this file's existing
+// THIS file's sanitizeVariantMap() below plus anno-export-asm.mts's label
+// and enum-variant checks. Re-exported here (imported above) so this file's existing
 // consumers and tests keep their current import path.
 export { MAX_ACME_IDENTIFIER_LENGTH, assertLegalAcmeIdentifier };
 

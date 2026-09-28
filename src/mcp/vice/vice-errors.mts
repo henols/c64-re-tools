@@ -2,21 +2,16 @@
 // vice-errors.mts
 //
 // WHY THIS FILE EXISTS: the shared error hierarchy and lease-state
-// accessors, used by BOTH the fork transport's former callers and the
-// surviving stock lease-acquisition path. Split out of vice.ts (removing
-// the forked VICE MCP backend) because buildHeldLease() in vice-proxy.ts
-// reads activeInstance() on EVERY tool call, on BOTH backends, through
-// ensureBrokerLease() -- deleting vice.ts wholesale would have broken stock
-// lease acquisition, not just the fork's own transport.
+// accessors used by the stock lease-acquisition path: buildHeldLease() in
+// vice-proxy.ts reads activeInstance() on EVERY tool call, through
+// ensureBrokerLease().
 //
 // WHAT NOT TO DO:
-//   - The fork transport (call(), rpc(), ensureInitialized(), withReconnect(),
-//     the outer-name refusal array and its refusal-message builder, and the
-//     session-identity apparatus: SessionInfo, beginSession(),
-//     sessionReconnects(), lastToolCall(), assertSameMachine()) was deleted
-//     along with vice.ts once it had no remaining stock-path consumer. Never
-//     reintroduce any of it here -- this module is backend-agnostic by
-//     design, and none of that apparatus has a place to come back to.
+//   - Never reintroduce a fork transport here (call(), rpc(),
+//     ensureInitialized(), withReconnect(), an outer-name refusal array and
+//     its refusal-message builder, or a session-identity apparatus:
+//     SessionInfo, beginSession(), sessionReconnects(), lastToolCall(),
+//     assertSameMachine()) -- this module is backend-agnostic by design.
 
 export interface ActiveInstance {
   port: number;
@@ -30,16 +25,13 @@ export interface ActiveInstance {
 // every read goes through activeInstance(), so a lease redirect takes
 // effect everywhere at once.
 
-// LEGACY PORT DEFAULT: the pre-split fallback derived its default port by
-// parsing vice.ts's DEFAULT_ENDPOINT, an HTTP-URL-shaped constant that only
-// ever made sense for the fork's HTTP transport. That derivation is NOT
-// carried across this split: every stock caller of activeInstance() --
-// starting with buildHeldLease() in vice-proxy.ts, reached through
-// ensureBrokerLease() on EVERY tool call, on every backend -- runs strictly
-// AFTER a useInstance() write has already replaced this fallback (traced
-// during the split: ensureBrokerLease()'s only path to buildHeldLease()
-// without a prior write returns early via the VICE_MCP_URL override branch,
-// which never calls activeInstance() at all). LEGACY_DEFAULT_PORT is
+// LEGACY PORT DEFAULT: every stock caller of activeInstance() -- starting
+// with buildHeldLease() in vice-proxy.ts, reached through
+// ensureBrokerLease() on EVERY tool call -- runs strictly AFTER a
+// useInstance() write has already replaced this fallback
+// (ensureBrokerLease()'s only path to buildHeldLease() without a prior
+// write returns early via the VICE_MCP_URL override branch, which never
+// calls activeInstance() at all). LEGACY_DEFAULT_PORT is
 // therefore a plain, self-contained numeric default, kept only so this
 // module never hands back an ill-typed ActiveInstance before any lease
 // exists: the 6510-6599 band reserved by convention for an x64sc a human
@@ -68,13 +60,8 @@ export interface UseInstanceOptions {
  * Redirect the lease seam to a specific pooled (or fallback) instance.
  *
  * This function is deliberately backend-agnostic: it only updates the
- * lease-state accessors above. It does NOT reset the fork transport's own
- * MCP handshake flag (vice.ts's `initialized`) -- that variable is owned by
- * vice.ts, not this module, and the fork transport now derives its own
- * "is this handshake still valid" answer by comparing
- * its last-initialized URL against activeInstance().url on every call (see
- * vice.ts's ensureInitialized()), rather than this function reaching across
- * a module boundary to flip a flag it does not own.
+ * lease-state accessors above, and never reaches across a module boundary
+ * to flip a flag it does not own.
  */
 export function useInstance({ port, url, pooled = false }: UseInstanceOptions): void {
   activeUrl = url;
@@ -135,10 +122,8 @@ export class MachineRestartedError extends ViceError {
   }
 }
 
-// A single tool's discovery metadata, as returned by the fork's tools/list
-// RPC. Moved here (rather than left in vice.ts) because stock-tools.ts
-// needs the TYPE ONLY, with no other dependency on the fork transport that
-// declares it.
+// A single tool's discovery metadata, in tools/list shape. It lives here
+// because stock-tools.ts needs the TYPE ONLY, with no other dependency.
 export interface ToolInfo {
   name: string;
   description?: string;

@@ -497,12 +497,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
  *
  * The call site at `runAnnoCli()` sits OUTSIDE that function's `try`, so the
  * throw escaped the function entirely and broke the never-throw contract this
- * file's header states. The identical defect was found and fixed one
- * directory over in this same phase -- `scripts/lib/anno-cli-invocations.mjs`
- * reads every verb-keyed table through its `own()` helper, and one of that
- * file's controls quotes THIS file's variable name verbatim as
- * `"accepted.includes is not a function"`. The hardening stopped at the
- * checker and never reached the CLI the checker models; it reaches it now.
+ * file's header states.
  *
  * `Array.isArray()` rather than a bare truthiness test is deliberate belt and
  * braces: an own key whose value is somehow not an array falls through to

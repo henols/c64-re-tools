@@ -1444,9 +1444,8 @@ test("all five text tools surface a disagreeing broker identity's warning on the
 // is a new, independent, committed live test case.
 //
 // A stock x64sc launched with `-console` plus a monitor flag starts with
-// the CPU HALTED (MEASURED, `probe-harness.mjs`'s own `resumeExecution()`
-// header) and stays halted until an EXIT (0xaa) is sent over the BINARY
-// monitor -- text-monitor commands are drawn only from TEXT_COMMAND_ALLOWLIST
+// the CPU HALTED (MEASURED) and stays halted until an EXIT (0xaa) is sent
+// over the BINARY monitor -- text-monitor commands are drawn only from TEXT_COMMAND_ALLOWLIST
 // (D-01) and carry no resume verb, so this case opens its own throwaway
 // binary connection purely to issue that one resume, then dials
 // callStockTool("vice_memmap_show"/"vice_memmap_zap", ...) exactly as
@@ -1541,13 +1540,11 @@ test(
     try {
       await connectWithRetry(binClient, "127.0.0.1", binaryPort);
       // PING confirms the monitor is actually SERVING, not merely that the
-      // listen backlog accepted the TCP connection (probe-harness.mjs's own
-      // pingReady() note).
+      // listen backlog accepted the TCP connection.
       await binClient.send(CommandType.Ping, Buffer.alloc(0), { timeoutMs: 3000 });
 
-      // Resume the CPU -- the ONE resume, per resumeExecution()'s own
-      // documented invariant: send nothing else to either monitor until the
-      // free-run window below has elapsed.
+      // Resume the CPU -- the ONE resume: send nothing else to either
+      // monitor until the free-run window below has elapsed.
       await binClient.send(CommandType.Exit, Buffer.alloc(0), { timeoutMs: 10000 });
       await new Promise((resolve) => setTimeout(resolve, 3000));
 

@@ -2,11 +2,8 @@
 // finding cannot invent a name, and that an absent oracle is a
 // VISIBLE skip rather than a silent pass.
 //
-// Colocated beside the module on purpose: `ci-suite-coverage.test.ts`'s
-// frozen registry already proves CI runs `skills/*/scripts/*.test.ts`,
-// so this file needs no new CI step. It also means the file is excluded from
-// both published tarballs by the same test-file exclusion every other
-// colocated skill test relies on.
+// It lives in test/skills/, outside the skill folder, so it ships in neither
+// published tarball, and CI's test/skills step runs it with no step of its own.
 //
 // The two assertions that matter most, and why they are here rather than
 // stated in prose:

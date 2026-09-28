@@ -560,9 +560,9 @@ async function selectWarmInstance(state, deps) {
  * `no_free_port`/`launch_in_flight` passed straight through from
  * acquirePortAndLaunch()'s own typed failure (the cold arm only), and
  * `internal` only for a genuine, otherwise-unclassified fault. A
- * `launch_in_flight` outcome is NOT a control-plane error -- broker-
- * control.mts's own attemptAcquire()/enqueueAcquire() queue the request and
- * retry it later rather than refusing it. */
+ * `launch_in_flight` outcome is NOT a control-plane error --
+ * broker-control.mts's own attemptAcquire()/enqueueAcquire() queue the
+ * request and retry it later rather than refusing it. */
 export async function handleAcquire(requestId, stateDir, state, deps = {}) {
     // The readiness probe is backend-aware, from the SAME threaded-down
     // verdict handleAcquire already uses for buildViceArgs() -- on stock the port
@@ -595,11 +595,10 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
         // async port allocation (not merely tryLaunchOne()'s synchronous spawn
         // instant) -- see that function's own header comment for the race this
         // closes between a cold acquire and a concurrent warm-floor pass. This
-        // is also what restores vice-broker.sh's own process_requests() throttle:
-        // a cold acquire that arrives while ANY launch (cold or warm) is already
-        // under way is queued here (plan 05), matching the bash original's
-        // declined-to-change behaviour of never racing a second instance into
-        // existence, but answered LATER instead of refused outright.
+        // is also the launch throttle: a cold acquire that arrives while ANY
+        // launch (cold or warm) is already under way is queued here (plan 05),
+        // never racing a second instance into existence, but answered LATER
+        // instead of refused outright.
         let lastLogRelPath = "";
         const result = await acquirePortAndLaunch("acquire", {
             state,

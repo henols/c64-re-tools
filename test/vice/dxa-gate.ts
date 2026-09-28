@@ -47,8 +47,7 @@
 // This module is TEST-ONLY. It must never appear in package.json's
 // `files[]` (a test-only helper has no business in the published npm
 // tarball), and it must never be imported by a production module -- only by
-// `*.test.ts` files. `dxa-gate.test.ts` asserts the `files[]` absence
-// mechanically, on every suite run.
+// `*.test.ts` files.
 //
 // This file's own name deliberately does NOT match the `*.test.*` glob
 // `package.json`'s `"test"` script runs (`node --test '*.test.*'`) -- it is

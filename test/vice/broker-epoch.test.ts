@@ -1,11 +1,9 @@
 // broker-epoch.test.ts
 //
-// Task 1 (this file, this commit): frozen-contract assertions against the
-// two epoch fixtures captured live from the running bash broker in
-// `fixtures/README.md`, BEFORE `vice-supervisor.sh`'s `write_epoch()` is
-// deleted. These assertions pin down the "before" shape of the epoch record
-// so a later plan's TypeScript
-// writer (`broker-epoch.mts`, plan 03) can be held to it with something
+// Task 1: frozen-contract assertions against the two epoch fixtures
+// captured live from the earlier bash broker (see `fixtures/README.md`).
+// These assertions pin down the "before" shape of the epoch record so the
+// TypeScript writer (`broker-epoch.mts`) can be held to it with something
 // concrete to diff against.
 //
 // Task 3 (this file, this plan 01) extends this with the writer's own
@@ -31,8 +29,8 @@ import { writeEpochRecord, epochPathFor, instanceLogDirFor, nextEpochFor, type E
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures");
 
-/** The exact eight fields the bash writer's `write_epoch()` emits
- * (`vice-supervisor.sh` lines 289-306), in the order it prints them. */
+/** The exact eight fields the captured bash epoch records carry, in the
+ * order the bash writer printed them. */
 const EPOCH_FIELDS = [
   "epoch",
   "spawned_at",

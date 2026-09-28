@@ -4,8 +4,7 @@
 // socket-driven variants added in plan 02-04's Task 2, and the
 // correlation/demux + socket-lifecycle-rejection layer added in plan 02-06
 // (VERIF-02's remaining three cases: duplicate reply, event-interleaved,
-// checkpoint-list correlation). Colocated, same harness shape as
-// vice-probe.test.ts and binmon-fixtures.test.ts.
+// checkpoint-list correlation).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
@@ -543,7 +542,7 @@ test("error hierarchy: StockProtocolError, StockFramingError, StockDesyncError a
  * never disconnects) cannot leave a lingering handle open and wedge the
  * suite. net.Server has no closeAllConnections() (that method exists only
  * on http.Server) -- tracking accepted sockets ourselves is the net.Server
- * equivalent of vice-probe.test.ts's withStubServer() harness discipline. */
+ * equivalent. */
 async function withStubNetServer<T>(
   handler: (socket: import("node:net").Socket) => void,
   fn: (port: number) => Promise<T>,

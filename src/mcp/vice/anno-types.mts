@@ -789,11 +789,11 @@ export interface SplitTargets {
 }
 
 // ---------------------------------------------------------------------------
-// The named error family. Follows `vice.ts`'s own constructor pattern: an
-// `interface XErrorOptions`, plain public fields, `super(message, options)` for
-// the field-free base and `super(message)` for the field-carrying subclasses
-// (`vice.ts:245-292`, with `MachineRestartedError` as the field-carrying
-// shape). Every subclass is an `AnnoStoreError` and therefore a `ViceError`, so
+// The named error family. Follows `vice-errors.mts`'s own constructor
+// pattern: an `interface XErrorOptions`, plain public fields,
+// `super(message, options)` for the field-free base and `super(message)` for
+// the field-carrying subclasses (with `MachineRestartedError` as the
+// field-carrying shape). Every subclass is an `AnnoStoreError` and therefore a `ViceError`, so
 // one `catch` can take the whole family or any single member of it.
 // ---------------------------------------------------------------------------
 

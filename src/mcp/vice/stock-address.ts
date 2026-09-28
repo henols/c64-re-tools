@@ -78,7 +78,7 @@ export function hasSymbolStore(): boolean {
 }
 
 /** The one address/byte-count error type this module ever throws -- never a
- * bare Error, matching vice.ts's established ViceError hierarchy. */
+ * bare Error, matching vice-errors.mts's established ViceError hierarchy. */
 export class StockAddressError extends ViceError {
   constructor(message: string, options: ViceErrorOptions = {}) {
     super(message, options);

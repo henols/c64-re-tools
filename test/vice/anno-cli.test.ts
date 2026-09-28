@@ -812,8 +812,7 @@ test("the cross-reference adapter answers over the WHOLE population, with no cei
 // ---------------------------------------------------------------------------
 
 // The verb count here is a count site that MOVES with the dispatch switch,
-// alongside `ANNO_CLI_VERB_FLOOR` and `anno-verb-coverage.test.ts`'s own verb
-// list. Kept as a hand-maintained literal on purpose: deriving it from
+// alongside `ANNO_CLI_VERB_FLOOR`. Kept as a hand-maintained literal on purpose: deriving it from
 // `Object.keys(VERB_OPTIONS).length` would assert that a number equals itself.
 test("the verb-options map agrees with USAGE's own per-verb option lists, for every verb (IN-06)", () => {
   const usage = helpResult.stdout;
@@ -883,12 +882,6 @@ test("an unaccepted option is refused for every verb it does not belong to (IN-0
 //
 //   $ node -e 'import("./anno-cli.ts").then(m => m.runAnnoCli(["hasOwnProperty","game.prg","--force"]))'
 //   TypeError: accepted.includes is not a function
-//
-// The identical defect was found and fixed one directory over in this same
-// phase (`scripts/lib/anno-cli-invocations.mjs`'s `own()` helper), and
-// `anno-cli-invocations.test.ts:530-596` carries five controls for it -- one
-// quoting THIS file's variable name verbatim. The hardening stopped at the
-// checker and never reached the CLI the checker models.
 //
 // The list is deliberately every inherited key a plausible typo or a hostile
 // argv could produce, not just the one that was reproduced first: a fix that

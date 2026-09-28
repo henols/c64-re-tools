@@ -18,9 +18,7 @@
 // STANDING RULE: every payload shape a manual-only live suite depends on
 // MUST have a mirror assertion in the automated set. A manual-only file is
 // invisible to this gate by design, so a shape change with no automated
-// mirror can red it silently. Worked example: `stock-diagnose.test.ts`'s
-// shape oracle for the restarted verdict's evidence needs no emulator, so it
-// runs here and fails the moment the live suite's assumed shape would.
+// mirror can red it silently.
 //
 // WHAT NOT TO DO:
 //   - Never re-list these file names in a CI workflow, an npm script, or a

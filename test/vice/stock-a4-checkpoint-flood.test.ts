@@ -38,7 +38,7 @@
 //     `hitCount` field, sourced from CHECKPOINT_LIST's parsed wire response)
 //     and the trace guard's own `autoDisables` report -- NEVER a
 //     paused-state flag. Polling on paused state is the documented wrong
-//     shape this project's own vice-sync.ts invariant forbids.
+//     shape this project forbids.
 //   - Exactly one binary-monitor client is opened against the granted
 //     instance for this entire test (one `dialControlSession()` +
 //     `stockConnect()` pair) -- stock VICE's monitor services exactly one
@@ -65,8 +65,8 @@
 //     firing -- poll the wire hit count and the autoDisables report.
 //   - Never retry a stalled wait indefinitely -- a deadline expiry is an
 //     OBSERVATION (record it), not a reason to loop again.
-//   - Never edit stock-checkpoints.ts, probe-binmon.ts, or any other
-//     production source from this file -- this plan's own instruction (and
+//   - Never edit stock-checkpoints.ts or any other production source from
+//     this file -- this plan's own instruction (and
 //     15-10-PLAN.md's <verification>) is that no source file changes here.
 import { test } from "node:test";
 import assert from "node:assert/strict";
