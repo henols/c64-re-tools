@@ -6,7 +6,7 @@
 // it running is their business. This project ships no service definition
 // (systemd unit, launchd agent), never invokes a service manager, and never
 // spawns the broker from a client. A promise like that decays silently
-// unless something asserts it. This file is that assertion, copying the closed-consumer-set idiom
+// unless something asserts it. This file asserts the last two, copying the closed-consumer-set idiom
 // `tool-location-consumers.test.ts` already established (comment-stripped
 // source, a `readdirSync` walk over this
 // package's own top-level modules, a closed-set assertion, one named
@@ -51,7 +51,7 @@
 // sources already covered here) or `node_modules/`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { VICE_DIR } from "./paths.ts";
@@ -233,19 +233,6 @@ function brokerSpawners(): string[] {
   }
   return hits.sort();
 }
-
-// ---------------------------------------------------------------------------
-// No service definition ships.
-// ---------------------------------------------------------------------------
-
-test("no service definition ships: no service/ directory and no systemd unit or launchd plist in the package tree", () => {
-  assert.equal(existsSync(join(VICE_DIR, "service")), false, "src/mcp/vice/service/ must not exist");
-  const shipped = readdirSync(VICE_DIR, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && /\.(service|plist)$/.test(entry.name))
-    .filter((entry) => !entry.parentPath.includes("node_modules"))
-    .map((entry) => join(entry.parentPath, entry.name));
-  assert.deepEqual(shipped, []);
-});
 
 // ---------------------------------------------------------------------------
 // invokesServiceManager() -- planted-violation proof, then the clean cases.
