@@ -15,7 +15,7 @@
 // CRACKER-PATCH verdicts wholesale, so every function below either proves
 // its own precondition (proveOffset refuses a majority vote) or refuses to
 // emit at all (renderLedger) rather than launder an assumption as evidence.
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { join, resolve, relative } from "node:path";
@@ -1133,7 +1133,10 @@ the manifests, and the bytes stay verbatim evidence.
 }
 
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   const [cmd, ...rest] = process.argv.slice(2);
   if (!cmd || !VERBS[cmd]) {
     console.log(`usage: node ${fileURLToPath(import.meta.url)} <anchor-search|diff|count-patches|ledger> [--gap-tolerance N] [--reference <id>] [--json]`);

@@ -28,7 +28,7 @@
 //     Ghidra's BinaryLoader loads the 2-byte header as memory, so the base
 //     is computed from the header (load address - 2) to put the body at its
 //     real load address.
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, realpathSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -392,7 +392,10 @@ export async function main(argv: string[], deps: DisassembleDeps = {}): Promise<
 }
 
 // Guarded so a test can import the exports above without running the CLI.
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   const result = await main(process.argv.slice(2));
   console.log(JSON.stringify(result));
   process.exitCode = result.ok ? 0 : 1;

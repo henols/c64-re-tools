@@ -46,19 +46,13 @@
 //       the memory-read route they are the register read view. Comparing one
 //       against the other is meaningless, so this module refuses the pair.
 //
-// Departure from compare.ts's own CLI-dispatch shape: the dispatch tail at
-// the bottom of this file is GUARDED
-// (`if (process.argv[1] === fileURLToPath(import.meta.url))`), unlike
-// compare.ts's unguarded tail. This module exports IMAGE_VOLATILE and
-// IO_VOLATILE for reuse by this file's own test file and by later Phase 50
-// plans; an unguarded tail would call process.exit() the instant anything
-// imports this module, killing whatever process did the importing.
-// `dump-artifacts.ts`, the newer script in this same directory, already
-// carries the identical guard for the identical reason.
+// The CLI dispatch at the bottom runs only when this file is the process
+// entry point, so a test can import IMAGE_VOLATILE, isIoVolatile() and
+// classify() without running the CLI.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const IMAGE_BYTES = 65536;
@@ -578,6 +572,9 @@ function main() {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   main();
 }

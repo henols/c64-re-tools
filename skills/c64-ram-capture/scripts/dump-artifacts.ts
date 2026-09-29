@@ -8,7 +8,7 @@
 // serialises what it fetched via mcp__plugin_c64-re-tools_vice__* tool calls, and a pure
 // function renders it*. Every function below takes already-fetched data as
 // an argument -- nothing here contacts the emulator.
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { join, resolve, relative } from "node:path";
@@ -361,7 +361,10 @@ const VERBS: Record<string, (rest: string[]) => void> = {
   },
 };
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   const [cmd, ...rest] = process.argv.slice(2);
   if (!cmd || !VERBS[cmd]) {
     console.log(`usage: node ${fileURLToPath(import.meta.url)} <assemble|chip-state|manifest|write-set> [--json]`);

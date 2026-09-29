@@ -19,6 +19,7 @@
 //     guessed address is spent on a disassembler downstream, and a wrong
 //     one is expensive there -- report the decline and its reason exactly
 //     as the seam gave them, never a fallback value.
+import { realpathSync } from "node:fs";
 import { dirname, relative, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -111,21 +112,14 @@ export function parseOpts(argv: string[]): PetcatOpts {
 
 // --------------------------------------------------------------------- main
 //
-// The CLI dispatch below MUST be guarded to run only
-// when this file is the actual entry point, not merely imported -- mirrors
-// c1541.ts's own entry-point guard verbatim (the "Rule 3
-// fix, discovered mid-execution"), added there after an unguarded dispatch
-// ran with the TEST RUNNER's own process.argv on every import of
-// c1541.test.ts, printing the usage banner and calling process.exit(0)
-// before a single test() call ever registered. Nothing imports petcat.ts as
-// a module today (confirmed by grep across src/ and scripts/), so this was
-// latent rather than live here -- but the next petcat.test.ts that imports
-// a pure helper from this file would reintroduce the exact bug c1541.ts
-// already found and fixed once. Same shape
-// (`resolve(process.argv[1]) === fileURLToPath(import.meta.url)`), never a
-// second guard shape invented for this sibling script.
+// The CLI dispatch runs only when this file is the process entry point, so a
+// test can import the exports above. realpathSync() makes the check true
+// through a symlinked install too.
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   const [cmd, ...rest] = process.argv.slice(2);
   const VERBS = {
     decode: (argv: string[]) => runDecode(argv),

@@ -10,9 +10,8 @@
 // Portable: the registry's location comes from `project-paths.ts`, so a project
 // with a different data layout points the toolkit at its own via
 // `C64RE_DATA_DIR` / `C64RE_REGISTRY` rather than editing this file.
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
 
 import { registryFile, releaseDataDir } from "./project-paths.ts";
 
@@ -166,7 +165,10 @@ export function upsertRelease(id: string, fn: (entry: ReleaseEntry) => ReleaseEn
 
 // -------------------------------------------------------------------- CLI
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   const [cmd, ...rest] = process.argv.slice(2);
   if (cmd === "list") {
     const reg = loadRegistry();

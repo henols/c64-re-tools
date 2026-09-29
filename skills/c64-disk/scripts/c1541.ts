@@ -21,7 +21,7 @@
 //     `.d64` in this script) when the seam refuses. A seam refusal is
 //     reported as `{ ok: false, message }`; it is never retried by
 //     re-implementing the read here.
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, relative, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HostToolResponse, InvokeHostToolOptions } from "../../c64-project/scripts/mcp-module.ts";
@@ -521,17 +521,14 @@ function parseOpts(argv: string[]): C1541Opts {
 
 // --------------------------------------------------------------------- main
 //
-// The CLI dispatch below MUST be guarded to run only when this file is the actual
-// entry point, not merely imported -- c1541.test.ts (this plan) imports
-// auditEntries()/parseDirListing()/etc. as a pure library, and an unguarded
-// dispatch would run this section with the TEST RUNNER's own process.argv
-// (no recognised command) on every import, printing the usage banner and
-// calling process.exit(0) before a single test() call ever registers.
-// Mirrors the deleted skill-side pure-parse module's own entry-point guard
-// (`resolve(process.argv[1]) === fileURLToPath(import.meta.url)`) rather
-// than inventing a second shape.
+// The CLI dispatch runs only when this file is the process entry point, so a
+// test can import the exports above. realpathSync() makes the check true
+// through a symlinked install too.
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   const [cmd, ...rest] = process.argv.slice(2);
   const VERBS = {
     bam: (argv: string[]) => runCapability("bam", argv),

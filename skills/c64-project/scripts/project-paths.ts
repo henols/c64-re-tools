@@ -15,7 +15,7 @@
 //      toolkit at its own without editing any module.
 //
 // Pure path arithmetic over the filesystem. Contacts nothing.
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, parse } from "node:path";
 
@@ -75,7 +75,10 @@ export function releaseDataDir(id: string): string {
   return join(dataRoot(), id);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   console.log(`project root: ${projectRoot()}`);
   console.log(`data root:    ${dataRoot()}`);
   console.log(`disks root:   ${disksRoot()}`);

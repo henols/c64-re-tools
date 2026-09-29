@@ -14,10 +14,10 @@
 // of that boundary: every import specifier in this file resolves to a `node:`
 // built-in or a file in this skill's or the c64-project skill's scripts/, so
 // this module cannot acquire an outside dependency without the guard failing.
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { join, resolve, relative } from "node:path";
+import { join, relative } from "node:path";
 
 import type { Address, DumpEntry, LoaderRange, ReleaseEntry, WatchSentinel } from "../../c64-project/scripts/releases.ts";
 import { loadSibling, siblingOrRefuse } from "./sibling.ts";
@@ -660,7 +660,10 @@ const VERBS: Record<string, (rest: string[]) => void> = {
   },
 };
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   const [cmd, ...rest] = process.argv.slice(2);
   if (!cmd || !VERBS[cmd]) {
     console.log(`usage: node ${fileURLToPath(import.meta.url)} <resolve|attribute|report|check-idle|signature|render> [--release <id>] [--json]`);

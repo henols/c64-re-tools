@@ -52,7 +52,7 @@
 //     lives ONE place, `../../c64-project/scripts/mcp-module.ts`, and is
 //     loaded from there through ./sibling.ts.
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { loadSibling } from "./sibling.ts";
@@ -553,6 +553,9 @@ export function main(argv: string[]): number {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   process.exitCode = main(process.argv.slice(2));
 }

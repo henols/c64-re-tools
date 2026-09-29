@@ -16,7 +16,7 @@
 //     consuming skill carries one because the helper cannot
 //     live in c64-project itself.
 
-import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export type SiblingLoad<T> = { ok: true; mod: T } | { ok: false; message: string };
@@ -50,7 +50,8 @@ export async function loadSibling<T>(load: () => Promise<T>, file: string, who: 
  * refusal and exits 1; when imported it throws it. Pass `import.meta.url`. */
 export function siblingOrRefuse<T>(load: SiblingLoad<T>, importMetaUrl: string): T {
   if (load.ok) return load.mod;
-  if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(importMetaUrl)) {
+  // realpathSync(): the entry point may run through a symlinked install.
+  if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(importMetaUrl)) {
     console.error(`error: ${load.message}`);
     process.exit(1);
   }

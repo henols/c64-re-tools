@@ -17,9 +17,9 @@
 //
 // Node >= 24 (type stripping). No dependencies on purpose.
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // memmap.json lives at the skill root, one level up from scripts/, by decision
@@ -572,7 +572,10 @@ const commands: Record<string, (argv: string[]) => Promise<void>> = {
 // such an import from also running the CLI.
 export { lookup };
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   const [cmd, ...rest] = process.argv.slice(2);
   if (!cmd || !commands[cmd]) {
     console.error(`usage: node driver.ts <command>

@@ -96,7 +96,7 @@
 // a measurement. Installing the identifier and running it against a genuinely
 // packed fixture is the experiment that would settle it; until then the
 // oracle-route test SKIPS with a visible reason and never reads as a pass.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -680,6 +680,9 @@ function main(argv: string[]): void {
 }
 
 // Run only when invoked directly, never when imported by the colocated test.
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
   main(process.argv.slice(2));
 }
