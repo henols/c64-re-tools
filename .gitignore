@@ -74,12 +74,13 @@ dist/
 # Graphify raw scratch output. Regenerable, so it is ignored.
 /graphify-out/
 
-# Phase 35 (DXA-01): the built dxa binary and its intermediate object files.
-# vendor/dxa/build.bash's `build` verb reproduces the binary from the
-# committed, pinned source on demand -- it is host-architecture-specific and
-# a digest gate already defends the committed pin, so committing the binary
-# itself would publish an artifact no digest gate could then re-verify.
+# The built dxa binary, its intermediate object files and the temporary
+# file build.bash renames into place. vendor/dxa/build.bash's `build` verb
+# builds the binary on demand from the pinned upstream tarball it downloads
+# (no dxa source is committed). The binary is host-specific, so it is never
+# committed.
 /src/mcp/vice/vendor/dxa/dxa
+/src/mcp/vice/vendor/dxa/dxa.tmp.*
 /src/mcp/vice/vendor/dxa/*.o
 
 # Phase 36 (OPC-01): the built SLEIGH language file. `ghidra.installExtension`
