@@ -20,7 +20,7 @@ earn.
 D=skills/c64-provenance/scripts/diff-images.ts   # from the repo root
 
 node $D anchor-search                        # 1. prove the per-release offset  [WRITES]
-node $D diff                                 # 2. N-way byte diff at that offset
+node $D diff                                 # 2. N-way byte diff at that offset [WRITES]
 node $D count-patches                        # 3. CRACKER-PATCH addresses in game code
 node $D ledger                                # 4. regenerate recovery/PROVENANCE.md [WRITES]
 
@@ -35,18 +35,24 @@ The script is pure Node over committed files: the `.bin` dumps, their
 release ids come from the release registry. List them with `releases.ts list`
 in `c64-project`.
 
+Each release needs a dump with the label `run1`, with a `.bin` and a
+`.map.json`. The script reads that dump as the primary dump of the release.
+Record it with `releases.ts add-dump` in `c64-project`.
+
 ## The order
 
 | # | Verb | Proves | Refuses to |
 |---|---|---|---|
 | 1 | `anchor-search` | A single global offset per release, from long distinctive byte runs located with `Buffer.indexOf` | Accept a **majority** vote. All usable anchors must agree, or there is no offset. |
-| 2 | `diff` | Which ranges are different, coalesced on verdict continuity | Diff at an assumed offset |
+| 2 | `diff` | Which ranges are different, coalesced on verdict continuity | Diff at an assumed offset. A release with no offset that `anchor-search` proved stops the verb. |
 | 3 | `count-patches` | How many addresses are `CRACKER-PATCH` **and** `game`-kind | Count a patch outside game code |
 | 4 | `ledger` | The generated tier of `recovery/PROVENANCE.md` | Emit an assumption as if it were evidence |
 
-## Two verbs write to tracked files
+## Three verbs write to tracked files
 
-`anchor-search` updates `recovery/RELEASES.json`. `ledger` rewrites
+`anchor-search` updates `recovery/RELEASES.json`. If it cannot prove an
+offset for a release, it clears the stored offset of that release. `diff`
+rewrites the `.map.json` range manifest of each dump. `ledger` rewrites
 `recovery/PROVENANCE.md` and also changes `RELEASES.json`. So a dirty
 `git status` after a run is **expected**.
 
@@ -55,7 +61,7 @@ What changed is the important part. A clean second run gives a
 real change:
 
 ```bash
-git diff -- recovery/RELEASES.json recovery/PROVENANCE.md
+git diff -- recovery/RELEASES.json recovery/PROVENANCE.md recovery/*/dumps/*.map.json
 ```
 
 If only those two fields have `-`/`+` pairs, revert the changes and continue.
@@ -93,11 +99,13 @@ releases, so they are `ORIGINAL`, with real evidence for the word. The other
 has a `reason` that names the alternatives it ruled out:
 
 > differs across 2 release(s) (release-a, release-b) with no recognised cracker
-> signature … not a revision difference … not a `.d64` read error … not a packer
-> artifact … not relocation (the anchor-proven offset for this pair is recorded
-> above and used here).
+> signature … Ruled out: relocation (each release's anchor-proven offset is
+> applied here). Not checked by this tool: a revision difference, a read error
+> and a packer artifact …
 
-`UNKNOWN` with a rule-out list is the honest answer. Do not change it to
+`UNKNOWN` with that statement is the honest answer. The ledger prose gives
+the recorded trigger of each release. It says that the images show the same
+program state only when each release records the same trigger. Do not change it to
 `CRACKER-PATCH` because a byte is different. **Confidence: HIGH.** The run was
 live against the committed corpus. `ledger` gave the committed
 `generated_tier_sha256 dc7eb080…` byte-identically, so the classification is
@@ -242,22 +250,30 @@ clean" is not an answer.
   ancestor also agree on the ancestor's patches. So unproven ancestry makes
   each `ORIGINAL` verdict conditional, not earned.
 
-## Failure shape
+The last line on stdout is one JSON result: `{"ok": true, ...}` with exit
+code 0, or `{"ok": false, "message": "..."}` with exit code 1. `--json` gives
+only that line, with the full data (`diff --json` adds each range). Without
+`--json`, short text lines come first.
 
-- `anchor-search` exits 1 when any release has no proven offset. It prints
-  `ok=false` for that release. It refuses a registry with fewer than two
-  releases (`error: anchor-search needs at least two releases in the
-  registry`) and an unknown `--reference` (`error: unknown reference release
-  "<id>"`).
+- `anchor-search` gives `ok: false` when any release has no proven offset,
+  and names that release. It refuses a registry with fewer than two
+  releases (`anchor-search needs at least two releases in the registry`) and
+  an unknown `--reference` (`unknown reference release "<id>"`).
+- `diff`, `count-patches` and `ledger` refuse a release that has no offset
+  proven against the recorded reference (`no anchor-proven offset against
+  reference "<id>" for release(s) …`). They never use 0 in place of a
+  missing offset.
+- `--gap-tolerance` with no value, or with a value that is not a
+  non-negative integer, gives a refusal that names the flag.
 - A dump that is not exactly 65536 bytes stops the run with
   `readImage: <path> is <n> bytes, expected exactly 65536`.
-- `ledger` refuses to emit and exits 1 with `ledger: renderLedger: refusing to
-  emit -- …` when an `UNKNOWN` range has an empty reason, when an `ORIGINAL`
-  range has fewer than 2 agreeing releases, or when the generated tier has a
-  gap, an overlap, or does not reach `$FFFF`.
+- `ledger` refuses to emit with `renderLedger: refusing to emit -- …` when
+  an `UNKNOWN` range has an empty reason, when an `ORIGINAL` range has fewer
+  than 2 agreeing releases, or when the generated tier has a gap, an
+  overlap, or does not reach `$FFFF`.
 - `ledger` without a project prose file prints `ledger: no project prose at
   <path> -- emitting the derived prose only.` and continues.
-- No verb or an unknown verb prints the usage line. An unknown verb exits 1.
+- No verb or an unknown verb gives `ok: false` with the usage text.
 
 ## What this skill does NOT do
 
@@ -275,6 +291,7 @@ clean" is not an answer.
 
 | Symptom | Correct |
 |---|---|
+| `no anchor-proven offset against reference "<id>" for release(s) …` | Run `anchor-search`. If it cannot prove the offset, capture the release again. |
 | `anchor-search` reports `ok=false` | The anchors did not agree, so there is no single offset. Do **not** use the majority. The images are not the same fully loaded state, or one capture is bad. Capture again. Do not force it. |
 | `git status` dirty after a run | Expected: two verbs write. Diff the two files. If only `proven_at`/`generated_at` moved, `git checkout --` them. |
 | `generated_tier_sha256` changed | The classification changed, not only a timestamp. Find the cause before you commit. The digest is the determinism check. |
@@ -287,3 +304,4 @@ clean" is not an answer.
 | A loader range disagrees with `NOTES.md` | The `loader_ranges` in `RELEASES.json` win, because live disassembly evidence earned them. Prose is how `$08F5` got the wrong class. |
 | Title-screen text shows up as cracktro | You used a bare printable-run scan. The vocabulary scan exists because `$4771-$4779` is the game's own text. |
 | `unknown release "x" -- known releases: …` | Run `releases.ts list` in `c64-project` for the valid ids. |
+| `primaryDumpEntry: release "x" has no run1 dump with a .bin recorded` | Record the `write-set` result of the release as its `run1` dump: `releases.ts add-dump` in `c64-project`. |
