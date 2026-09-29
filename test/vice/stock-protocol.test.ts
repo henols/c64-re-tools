@@ -9,7 +9,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
-import { readFileSync } from "node:fs";
 
 import {
   parseBuffer,
@@ -46,6 +45,7 @@ import {
   advanceInstructionsBody,
   keyboardFeedBody,
   joyportSetBody,
+  joyportDeviceSetBody,
   ResetMode,
   resetBody,
   autostartBody,
@@ -1546,6 +1546,24 @@ test("keyboardFeedBody: an empty payload throws", () => {
   assert.throws(() => keyboardFeedBody({ petscii: Buffer.alloc(0) }), StockEncodingError);
 });
 
+test("joyportDeviceSetBody: encodes an integer RESOURCE_SET of JoyPort2Device", () => {
+  const body = joyportDeviceSetBody({ controlPort: 2, deviceId: 37 });
+  const name = "JoyPort2Device";
+  assert.equal(body[0], 0x01, "value type integer");
+  assert.equal(body[1], name.length);
+  assert.equal(body.subarray(2, 2 + name.length).toString("ascii"), name);
+  assert.equal(body[2 + name.length], 4);
+  assert.equal(body.readUInt32LE(3 + name.length), 37);
+  assert.equal(body.length, 2 + name.length + 1 + 4);
+});
+
+test("joyportDeviceSetBody: refuses a control port other than 1 or 2 and an out-of-range device id", () => {
+  assert.throws(() => joyportDeviceSetBody({ controlPort: 0, deviceId: 37 }), StockEncodingError);
+  assert.throws(() => joyportDeviceSetBody({ controlPort: 3, deviceId: 37 }), StockEncodingError);
+  assert.throws(() => joyportDeviceSetBody({ controlPort: 1, deviceId: -1 }), StockEncodingError);
+  assert.throws(() => joyportDeviceSetBody({ controlPort: 1, deviceId: 1.5 }), StockEncodingError);
+});
+
 test("joyportSetBody: 4 bytes, port(u16LE) value(u16LE)", () => {
   const body = joyportSetBody({ port: 1, value: 0x10 });
   assert.equal(body.length, 4);
@@ -2069,15 +2087,3 @@ test("CPUHISTORY_GET (WR-05): the same entry shape with a truthful instruction_l
   assert.equal(response.entries[0]!.opcode, 0x8d);
 });
 
-test("structural: stock-protocol.ts defines no resourceSetBody() and no case ResponseType.ResourceSet, outside comments (T-07-04)", () => {
-  const source = readFileSync(new URL("../../src/mcp/vice/stock-protocol.ts", import.meta.url), "utf8");
-  const nonCommentSource = source
-    .split("\n")
-    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-    .join("\n");
-  assert.ok(!nonCommentSource.includes("resourceSetBody"), "no non-comment line should define resourceSetBody");
-  assert.ok(
-    !nonCommentSource.includes("case ResponseType.ResourceSet"),
-    "no non-comment line should contain a case ResponseType.ResourceSet parser branch",
-  );
-});

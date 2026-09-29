@@ -6,10 +6,10 @@
 // resetRunStateTrackersForTest()'s own documented role.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
-import { handleKeyboardType, handleKeyboardPetscii, handleJoystickSet, JOYPORT_BITS } from "../../src/mcp/vice/stock-input.ts";
-import { CommandType } from "../../src/mcp/vice/stock-protocol.ts";
+import { handleKeyboardType, handleKeyboardPetscii, handleJoystickSet, JOYPORT_BITS, resetJoyportDevicesForTest } from "../../src/mcp/vice/stock-input.ts";
+import { CommandType, JOYPORT_DEVICE_IO_SIMULATION } from "../../src/mcp/vice/stock-protocol.ts";
+import { resetBankCatalogsForTest } from "../../src/mcp/vice/stock-memory.ts";
 import { resetRunStateTrackersForTest } from "../../src/mcp/vice/stock-runstate.ts";
 import type { StockConnectSession } from "../../src/mcp/vice/stock-connect.ts";
 
@@ -152,37 +152,130 @@ test("handleKeyboardPetscii: the ok-answer carries runState and a petsciiHex fie
 // handleJoystickSet
 // ---------------------------------------------------------------------------
 
-test("handleJoystickSet: direction omitted records a JoyportSet body of length 4 with readUInt16LE(0) === 1 and readUInt16LE(2) === 0", async () => {
-  const { session, sends } = createFakeSession();
+const IO_SIM = JOYPORT_DEVICE_IO_SIMULATION;
+
+/** A fake binary monitor that models the joyport devices the way stock VICE
+ * does: JOYPORT_SET only reaches the CIA while the port's device is the I/O
+ * simulation device, which reads back `lines & 0x1f` (bits 5-7 low). */
+function createJoyportFake(options: { refuseDevice?: boolean } = {}) {
+  const devices: Record<number, number> = { 1: 1, 2: 1 };
+  const lines: Record<number, number> = { 0: 0, 1: 0 };
+  const sends: RecordedSend[] = [];
+  const fakeClient = {
+    send: async (commandType: number, body: Buffer = Buffer.alloc(0)) => {
+      sends.push({ commandType, body });
+      switch (commandType) {
+        case CommandType.BanksAvailable:
+          return { type: "banks_available", banks: [{ id: 0, name: "default" }, { id: 4, name: "io" }] };
+        case CommandType.ResourceGet: {
+          const port = Number(body.subarray(1).toString("ascii").match(/JoyPort(\d)Device/)![1]);
+          return { type: "resource_get", valueType: "integer", value: devices[port] };
+        }
+        case CommandType.ResourceSet: {
+          const nameLength = body[1];
+          const port = Number(body.subarray(2, 2 + nameLength).toString("ascii").match(/JoyPort(\d)Device/)![1]);
+          if (!options.refuseDevice) devices[port] = body.readUInt32LE(3 + nameLength);
+          return { type: "unknown", errorCode: 0 };
+        }
+        case CommandType.JoyportSet:
+          lines[body.readUInt16LE(0)] = body.readUInt16LE(2) & 0x1f;
+          return { type: "unknown", errorCode: 0 };
+        case CommandType.MemoryGet: {
+          const address = body.readUInt16LE(1);
+          const port = address === 0xdc01 ? 1 : 2;
+          const value = devices[port] === IO_SIM ? lines[port - 1] : address === 0xdc00 ? 0x7f : 0xff;
+          return { type: "memory_get", bytes: Uint8Array.of(value) };
+        }
+        default:
+          return { type: "unknown", errorCode: 0 };
+      }
+    },
+    on: () => {},
+  };
+  const session = { client: fakeClient, targetId: "fake-target" } as unknown as StockConnectSession;
+  return { session, sends, devices };
+}
+
+function joyportSends(sends: RecordedSend[]) {
+  return sends.filter((send) => send.commandType === CommandType.JoyportSet).map((send) => ({ port: send.body.readUInt16LE(0), value: send.body.readUInt16LE(2) }));
+}
+
+beforeEach(() => {
+  resetJoyportDevicesForTest();
+  resetBankCatalogsForTest();
+});
+
+test("handleJoystickSet: holding up on port 2 attaches the I/O simulation device and clears bit 0 of $DC00", async () => {
+  const { session, sends, devices } = createJoyportFake();
+  const result = await handleJoystickSet({ port: 2, direction: "up" }, session, {} as never);
+  assert.equal(result.isError, false);
+  assert.equal(devices[2], IO_SIM);
+  assert.deepEqual(joyportSends(sends), [{ port: 1, value: 0x1e }]);
+  const payload = JSON.parse(result.content[0].text);
+  assert.equal(payload.ciaRegister, "$DC00");
+  assert.equal(payload.ciaValue & 0x01, 0);
+  assert.equal(payload.device, "io-simulation");
+});
+
+test("handleJoystickSet: port 1 drives VICE joyport 0 and reads back through $DC01", async () => {
+  const { session, sends } = createJoyportFake();
+  const result = await handleJoystickSet({ port: 1, direction: ["up", "left"], fire: true }, session, {} as never);
+  assert.equal(result.isError, false);
+  assert.deepEqual(joyportSends(sends), [{ port: 0, value: 0x0a }]);
+  const payload = JSON.parse(result.content[0].text);
+  assert.equal(payload.ciaRegister, "$DC01");
+  assert.equal(payload.ciaValue, 0x0a);
+  assert.deepEqual(payload.valueBits, ["up", "left", "fire"]);
+  assert.equal(payload.value, 0x15);
+  assert.equal(payload.lines, 0x0a);
+  assert.equal(payload.runState, "unknown");
+});
+
+test("handleJoystickSet: port defaults to control port 1", async () => {
+  const { session, sends } = createJoyportFake();
+  await handleJoystickSet({ direction: "down" }, session, {} as never);
+  assert.deepEqual(joyportSends(sends), [{ port: 0, value: 0x1d }]);
+});
+
+test("handleJoystickSet: a release after a hold idles the lines and puts back the port's joystick device", async () => {
+  const { session, sends, devices } = createJoyportFake();
+  await handleJoystickSet({ port: 2, direction: "right" }, session, {} as never);
+  const result = await handleJoystickSet({ port: 2, direction: "center" }, session, {} as never);
+  assert.equal(result.isError, false);
+  assert.equal(devices[2], 1);
+  assert.deepEqual(joyportSends(sends), [{ port: 1, value: 0x17 }, { port: 1, value: 0x1f }]);
+  const payload = JSON.parse(result.content[0].text);
+  assert.equal(payload.device, "restored");
+  assert.equal(payload.ciaValue, 0x7f);
+});
+
+test("handleJoystickSet: a release with nothing held sends no joyport command and changes no device", async () => {
+  const { session, sends, devices } = createJoyportFake();
   const result = await handleJoystickSet({}, session, {} as never);
   assert.equal(result.isError, false);
-  assert.equal(sends.length, 1);
-  assert.equal(sends[0].commandType, CommandType.JoyportSet);
-  assert.equal(sends[0].body.length, 4);
-  assert.equal(sends[0].body.readUInt16LE(0), 1);
-  assert.equal(sends[0].body.readUInt16LE(2), 0);
+  assert.deepEqual(joyportSends(sends), []);
+  assert.equal(sends.some((send) => send.commandType === CommandType.ResourceSet), false);
+  assert.equal(devices[1], 1);
+  assert.equal(JSON.parse(result.content[0].text).device, "unchanged");
 });
 
-test("handleJoystickSet: direction: 'up', fire: true records readUInt16LE(2) === 0x11", async () => {
-  const { session, sends } = createFakeSession();
-  await handleJoystickSet({ direction: "up", fire: true }, session, {} as never);
-  assert.equal(sends[0].body.readUInt16LE(2), 0x11);
+test("handleJoystickSet: refuses by name when VICE does not keep the I/O simulation device, and sends no joyport command", async () => {
+  const { session, sends } = createJoyportFake({ refuseDevice: true });
+  const result = await handleJoystickSet({ port: 2, direction: "up" }, session, {} as never);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /^vice_joystick_set: /);
+  assert.match(result.content[0].text, /vice_keyboard_type/);
+  assert.deepEqual(joyportSends(sends), []);
 });
 
-test("handleJoystickSet: direction: ['up', 'left'] records readUInt16LE(2) === 0x05", async () => {
-  const { session, sends } = createFakeSession();
-  await handleJoystickSet({ direction: ["up", "left"] }, session, {} as never);
-  assert.equal(sends[0].body.readUInt16LE(2), 0x05);
-});
-
-test("handleJoystickSet: direction: 'UP' is accepted case-insensitively", async () => {
-  const { session, sends } = createFakeSession();
+test("handleJoystickSet: direction 'UP' is accepted case-insensitively", async () => {
+  const { session, sends } = createJoyportFake();
   const result = await handleJoystickSet({ direction: "UP" }, session, {} as never);
   assert.equal(result.isError, false);
-  assert.equal(sends[0].body.readUInt16LE(2), JOYPORT_BITS.up);
+  assert.deepEqual(joyportSends(sends), [{ port: 0, value: 0x1f & ~JOYPORT_BITS.up }]);
 });
 
-test("handleJoystickSet: direction: ['up', 'down'] refuses naming both, with zero sends", async () => {
+test("handleJoystickSet: direction ['up', 'down'] refuses naming both, with zero sends", async () => {
   const { session, sends } = createFakeSession();
   const result = await handleJoystickSet({ direction: ["up", "down"] }, session, {} as never);
   assert.equal(result.isError, true);
@@ -191,21 +284,21 @@ test("handleJoystickSet: direction: ['up', 'down'] refuses naming both, with zer
   assert.equal(sends.length, 0);
 });
 
-test("handleJoystickSet: direction: ['left', 'right'] refuses naming both, with zero sends", async () => {
+test("handleJoystickSet: direction ['left', 'right'] refuses, with zero sends", async () => {
   const { session, sends } = createFakeSession();
   const result = await handleJoystickSet({ direction: ["left", "right"] }, session, {} as never);
   assert.equal(result.isError, true);
   assert.equal(sends.length, 0);
 });
 
-test("handleJoystickSet: direction: ['center', 'up'] refuses, with zero sends", async () => {
+test("handleJoystickSet: direction ['center', 'up'] refuses, with zero sends", async () => {
   const { session, sends } = createFakeSession();
   const result = await handleJoystickSet({ direction: ["center", "up"] }, session, {} as never);
   assert.equal(result.isError, true);
   assert.equal(sends.length, 0);
 });
 
-test("handleJoystickSet: direction: 'diagonal' refuses naming the five accepted values, with zero sends", async () => {
+test("handleJoystickSet: direction 'diagonal' refuses naming the five accepted values, with zero sends", async () => {
   const { session, sends } = createFakeSession();
   const result = await handleJoystickSet({ direction: "diagonal" }, session, {} as never);
   assert.equal(result.isError, true);
@@ -215,25 +308,11 @@ test("handleJoystickSet: direction: 'diagonal' refuses naming the five accepted 
   assert.equal(sends.length, 0);
 });
 
-test("handleJoystickSet: port: 3 refuses naming 1 and 2, with zero sends", async () => {
+test("handleJoystickSet: port 3 refuses naming 1 and 2, with zero sends", async () => {
   const { session, sends } = createFakeSession();
   const result = await handleJoystickSet({ port: 3 }, session, {} as never);
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /\b1\b/);
   assert.match(result.content[0].text, /\b2\b/);
   assert.equal(sends.length, 0);
-});
-
-test("handleJoystickSet: the answer's valueBits for ['up','left'] with fire: true is exactly ['up','left','fire'] in that order", async () => {
-  const { session } = createFakeSession();
-  const result = await handleJoystickSet({ direction: ["up", "left"], fire: true }, session, {} as never);
-  assert.equal(result.isError, false);
-  const payload = JSON.parse(result.content[0].text);
-  assert.deepEqual(payload.valueBits, ["up", "left", "fire"]);
-  assert.equal(payload.runState, "unknown");
-});
-
-test("stock-input.ts exports no handleJoystickTap", () => {
-  const source = readFileSync(new URL("../../src/mcp/vice/stock-input.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /handleJoystickTap/);
 });

@@ -805,12 +805,10 @@ export interface JoyportSetBodyOptions {
 /**
  * JOYPORT_SET (0xa2) request body -- 4 bytes, `port(u16LE) value(u16LE)`,
  * read directly out of monitor_binary.c's own JOYPORT_SET request decoder.
- *
- * The body SHAPE is cited; the BIT MEANING of `value` (which bit is
- * up/down/left/right/fire) is [ASSUMED] -- RESEARCH.md Assumptions Log row
- * A3 -- and is mapped in stock-input.ts, not here. This encoder
- * deliberately takes a raw, already-composed value so the assumed mapping
- * lives in exactly one place a future probe session can correct.
+ * `port` is VICE's 0-based joyport index (0 = C64 control port 1, 1 = C64
+ * control port 2). The command only reaches the CIA when that port's
+ * device is the I/O simulation device (see joyportDeviceSetBody()); the
+ * device then returns `value & 0x1f` as the active-low joystick lines.
  */
 export function joyportSetBody({ port, value }: JoyportSetBodyOptions): Buffer {
   requireU16("port", port);
@@ -818,6 +816,40 @@ export function joyportSetBody({ port, value }: JoyportSetBodyOptions): Buffer {
   const body = Buffer.alloc(4);
   body.writeUInt16LE(port, 0);
   body.writeUInt16LE(value, 2);
+  return body;
+}
+
+/** VICE's joyport device id for "Joyport I/O simulation". VICE's joyport.h
+ * keeps its device-id enum order fixed across builds. */
+export const JOYPORT_DEVICE_IO_SIMULATION = 37;
+
+export interface JoyportDeviceSetBodyOptions {
+  /** C64 control port, 1 or 2. */
+  controlPort: number;
+  deviceId: number;
+}
+
+/**
+ * RESOURCE_SET (0x52) request body for `JoyPort<n>Device` only --
+ * `value_type(1)=1 (integer) name_length(1) name value_length(1)=4
+ * value(u32LE)`. This encoder takes no free resource name: other
+ * resources (for example MachineVideoStandard) power-cycle the machine
+ * when set, and this tree sets no other resource.
+ */
+export function joyportDeviceSetBody({ controlPort, deviceId }: JoyportDeviceSetBodyOptions): Buffer {
+  if (controlPort !== 1 && controlPort !== 2) {
+    throw new StockEncodingError(`joyportDeviceSetBody: controlPort must be 1 or 2, got ${String(controlPort)}`, { field: "controlPort" });
+  }
+  if (!Number.isInteger(deviceId) || deviceId < 0 || deviceId > 0xff) {
+    throw new StockEncodingError(`joyportDeviceSetBody: deviceId must be an integer 0-255, got ${String(deviceId)}`, { field: "deviceId" });
+  }
+  const name = Buffer.from(`JoyPort${controlPort}Device`, "ascii");
+  const body = Buffer.alloc(2 + name.length + 1 + 4);
+  body[0] = 0x01;
+  body[1] = name.length;
+  name.copy(body, 2);
+  body[2 + name.length] = 4;
+  body.writeUInt32LE(deviceId, 3 + name.length);
   return body;
 }
 
@@ -975,15 +1007,11 @@ export interface ResourceGetBodyOptions {
  * RESOURCE_GET (0x51) request body -- `name_length(1) name(ASCII, NOT
  * NUL-terminated)`. [CITED monitor_binary.c:918-935]
  *
- * READ-SIDE ONLY: this encoder exists so this phase's sole production
- * caller can read `MachineVideoStandard` to pick the right cycles-per-line
- * and lines-per-frame constants. There is no `RESOURCE_SET` (0x52) encoder
- * in this tree and this plan does not add one -- the SET side of
- * `MachineVideoStandard`, `VICIIModel` and `MachinePowerFrequency` reaches
- * `machine_trigger_reset(POWER_CYCLE)` one call deep (`c64/c64.c:1367`) and
- * destroys all emulation state (CLAUDE.md's Safety constraint). Do not add
- * a `resourceSetBody()` or a `case ResponseType.ResourceSet` beside this one
- * without re-deriving that deny-list boundary first.
+ * The one RESOURCE_SET encoder is joyportDeviceSetBody(), which names only
+ * `JoyPort1Device`/`JoyPort2Device`. Setting `MachineVideoStandard`,
+ * `VICIIModel` or `MachinePowerFrequency` power-cycles the machine and
+ * destroys all emulation state, so this tree has no free-name
+ * RESOURCE_SET encoder.
  */
 export function resourceGetBody({ name }: ResourceGetBodyOptions): Buffer {
   const nameBuf = requireResourceName(name);

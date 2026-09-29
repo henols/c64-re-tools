@@ -1403,13 +1403,13 @@
     },
     {
       "name": "vice_joystick_set",
-      "description": "Set joystick state. vice_joystick_tap is absent on stock: a tap needs the machine to run for a measured interval, which requires an unrequested resume (forbidden by D-05) plus a timing route stock does not have until Phase 7.",
+      "description": "Hold or release joystick switches on C64 control port 1 or 2. A hold attaches VICE's \"Joyport I/O simulation\" device to that port (the only device the binary monitor can drive); a release (direction center, fire false) puts back the port's previous device. While a switch is held, bits 5-7 of the port's CIA register read 0. The answer reports the CIA register ($DC01 for port 1, $DC00 for port 2) as read back. The machine halts; resume it to let the program see the switches.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "port": {
             "type": "number",
-            "description": "Joystick port 1 or 2 (default=1)"
+            "description": "C64 control port 1 or 2 (default 1)"
           },
           "direction": {
             "type": "string",
@@ -1445,6 +1445,23 @@
               "type": "string"
             }
           },
+          "lines": {
+            "type": "number"
+          },
+          "device": {
+            "type": "string",
+            "enum": [
+              "io-simulation",
+              "restored",
+              "unchanged"
+            ]
+          },
+          "ciaRegister": {
+            "type": "string"
+          },
+          "ciaValue": {
+            "type": "number"
+          },
           "runState": {
             "type": "string",
             "enum": [
@@ -1460,6 +1477,10 @@
           "fire",
           "value",
           "valueBits",
+          "lines",
+          "device",
+          "ciaRegister",
+          "ciaValue",
           "runState"
         ]
       }
