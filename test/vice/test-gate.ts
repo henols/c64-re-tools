@@ -28,8 +28,8 @@
 //     second test runner. A new manual-only file goes into MANUAL_ONLY_TESTS
 //     below and nowhere else.
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { readdirSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The test files dispositioned as manual-only. Frozen: extend this array
@@ -75,7 +75,8 @@ function main(): void {
 }
 
 // Only run when invoked directly (`node test-gate.ts` / `npm run
-// test:automated`), never when imported.
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// test:automated`), also through a symlink, never when imported.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
   main();
 }
