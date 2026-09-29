@@ -1300,7 +1300,7 @@
     },
     {
       "name": "vice_keyboard_type",
-      "description": "Type text (uppercase ASCII displays as uppercase on C64 by default). Bytes queue in the keyboard buffer of a now-halted machine (D-05) -- nothing consumes them until the agent explicitly resumes.",
+      "description": "Type text into the C64 keyboard buffer. By default both upper- and lowercase ASCII letters type as the capitals of the power-on charset, so BASIC commands work in either case. The machine halts; the bytes stay queued until you resume it.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1310,7 +1310,7 @@
           },
           "petscii_upper": {
             "type": "boolean",
-            "description": "Default true: uppercase ASCII displays as uppercase on C64. Set false for raw PETSCII (uppercase ASCII maps to graphics)"
+            "description": "Default true: ASCII A-Z and a-z both map to PETSCII $41-$5A (capitals in the power-on charset). Set false to send each byte unchanged (a-z then shows as graphics in the power-on charset)."
           }
         },
         "required": [

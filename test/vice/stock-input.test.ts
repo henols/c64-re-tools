@@ -46,14 +46,14 @@ beforeEach(() => {
 // handleKeyboardType
 // ---------------------------------------------------------------------------
 
-test("handleKeyboardType: 'HELLO' with petscii_upper omitted records byte 0 = 5 and bytes 1-5 = 0xc8 0xc5 0xcc 0xcc 0xcf", async () => {
+test("handleKeyboardType: 'HELLO' with petscii_upper omitted sends a 5-byte feed of unshifted letters 0x48 0x45 0x4c 0x4c 0x4f", async () => {
   const { session, sends } = createFakeSession();
   const result = await handleKeyboardType({ text: "HELLO" }, session, {} as never);
   assert.equal(result.isError, false);
   assert.equal(sends.length, 1);
   assert.equal(sends[0].commandType, CommandType.KeyboardFeed);
   assert.equal(sends[0].body[0], 5);
-  assert.deepEqual(Array.from(sends[0].body.subarray(1)), [0xc8, 0xc5, 0xcc, 0xcc, 0xcf]);
+  assert.deepEqual(Array.from(sends[0].body.subarray(1)), [0x48, 0x45, 0x4c, 0x4c, 0x4f]);
 });
 
 test("handleKeyboardType: 'hello' records 0x48 0x45 0x4c 0x4c 0x4f", async () => {
@@ -63,11 +63,11 @@ test("handleKeyboardType: 'hello' records 0x48 0x45 0x4c 0x4c 0x4f", async () =>
   assert.deepEqual(Array.from(sends[0].body.subarray(1)), [0x48, 0x45, 0x4c, 0x4c, 0x4f]);
 });
 
-test("handleKeyboardType: 'HELLO' with petscii_upper: false records 0x48 0x45 0x4c 0x4c 0x4f", async () => {
+test("handleKeyboardType: 'hello' with petscii_upper: false sends the raw bytes 0x68 0x65 0x6c 0x6c 0x6f", async () => {
   const { session, sends } = createFakeSession();
-  await handleKeyboardType({ text: "HELLO", petscii_upper: false }, session, {} as never);
+  await handleKeyboardType({ text: "hello", petscii_upper: false }, session, {} as never);
   assert.equal(sends.length, 1);
-  assert.deepEqual(Array.from(sends[0].body.subarray(1)), [0x48, 0x45, 0x4c, 0x4c, 0x4f]);
+  assert.deepEqual(Array.from(sends[0].body.subarray(1)), [0x68, 0x65, 0x6c, 0x6c, 0x6f]);
 });
 
 test("handleKeyboardType: an embedded PETSCII control code (0x93) at index 1 refuses with the PETSCII error's own message and records zero sends", async () => {
