@@ -163,3 +163,37 @@ test("a first write racing another agrees on ONE project: the check is repeated 
     assert.deepEqual(projectIds(path), [rival], "exactly one project");
   });
 });
+
+test("several first writes racing on a file that does not exist yet all succeed and agree on ONE project", async () => {
+  await withWorkspace(async (ws) => {
+    const path = annoDbPath(ws);
+    mkdirSync(dirname(path), { recursive: true });
+    assert.equal(existsSync(path), false, "precondition: no database file yet");
+
+    const flag = new SharedArrayBuffer(4);
+    const racers = Array.from({ length: 8 }, () =>
+      new Worker(new URL("./project-race-holder.ts", import.meta.url), { workerData: { mode: "first-open", dbPath: path, flag } }),
+    );
+    try {
+      const outcomes = racers.map(
+        (worker) =>
+          new Promise<{ ok: boolean; projectId?: string; message?: string }>((resolveOutcome, rejectOutcome) => {
+            worker.on("message", (m) => typeof m === "object" && resolveOutcome(m));
+            worker.on("error", rejectOutcome);
+          }),
+      );
+      await Promise.all(racers.map((worker) => new Promise<void>((resolveReady) => worker.on("message", (m) => m === "ready" && resolveReady()))));
+      const view = new Int32Array(flag);
+      Atomics.store(view, 0, 1);
+      Atomics.notify(view, 0);
+
+      const results = await Promise.all(outcomes);
+      for (const result of results) assert.equal(result.ok, true, result.message);
+      const ids = new Set(results.map((r) => r.projectId));
+      assert.equal(ids.size, 1, "every racer must see the same project");
+      assert.deepEqual(projectIds(path), [...ids]);
+    } finally {
+      await Promise.all(racers.map((worker) => worker.terminate()));
+    }
+  });
+});
