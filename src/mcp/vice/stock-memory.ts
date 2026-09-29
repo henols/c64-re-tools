@@ -39,7 +39,7 @@
 //     where the emulator enumerated 6, and made resolveRequiredBank()'s
 //     refusal tell an agent a working bank name did not exist. Anything
 //     agent-facing reads `entries`, the verbatim wire list.
-import { CommandType, memGetBody, memSetBody } from "./stock-protocol.ts";
+import { CommandType, memSetBody, readMemory } from "./stock-protocol.ts";
 import { parseAddress, parseByteCount } from "./stock-address.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
@@ -256,7 +256,7 @@ export const handleMemoryRead: StockSessionHandler = async (args, session, _deps
 
   let size: number;
   try {
-    size = parseByteCount(args.size, { max: 0xffff, what: "size" });
+    size = parseByteCount(args.size, { max: 0x10000, what: "size" });
   } catch (err) {
     return isErrorText(`vice_memory_read: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -289,25 +289,16 @@ export const handleMemoryRead: StockSessionHandler = async (args, session, _deps
     return bankResolution.result;
   }
 
-  // Memspace is fixed to 0x00 (main) in Phase 3 -- drive memspace is Phase
-  // 6's GAIN-03; there is deliberately no argument for it here.
-  const body = memGetBody({ sidefx: sideEffects, start: address, end, memspace: 0x00, bank: bankResolution.id });
-
-  let response;
+  // Memspace is fixed to 0x00 (main); there is no argument for it.
+  let bytes: Uint8Array;
   try {
-    response = await session.client.send(CommandType.MemoryGet, body);
+    bytes = await readMemory(session.client, { sidefx: sideEffects, start: address, end, memspace: 0x00, bank: bankResolution.id });
   } catch (err) {
     return convertWireError("vice_memory_read", err);
   }
 
-  if (response.type !== "memory_get") {
-    return isErrorText(
-      `vice_memory_read: the binary monitor replied with an unexpected response type ("${response.type}"), expected "memory_get"`,
-    );
-  }
-
-  if (response.bytes.length !== size) {
-    return isErrorText(`vice_memory_read: expected ${size} byte(s), got ${response.bytes.length} -- a short read is a wrong answer, not a partial success`);
+  if (bytes.length !== size) {
+    return isErrorText(`vice_memory_read: expected ${size} byte(s), got ${bytes.length} -- a short read is a wrong answer, not a partial success`);
   }
 
   const payload: Record<string, unknown> = {
@@ -319,9 +310,9 @@ export const handleMemoryRead: StockSessionHandler = async (args, session, _deps
     memspace: "main",
   };
   if (encoding === "hex") {
-    payload.hex = Buffer.from(response.bytes).toString("hex");
+    payload.hex = Buffer.from(bytes).toString("hex");
   } else {
-    payload.bytes = Array.from(response.bytes);
+    payload.bytes = Array.from(bytes);
   }
 
   return stockAnswer(session.client, payload);

@@ -2490,3 +2490,44 @@ export class ViceMonitorClient extends EventEmitter {
     this.emit("transport-error", err);
   }
 }
+
+// ---------------------------------------------------------------------------
+// readMemory() -- the one MEMORY_GET caller
+// ---------------------------------------------------------------------------
+
+/** The most bytes one MEMORY_GET reply can carry: its length field is a
+ * u16, so a 65536-byte read comes back with length 0 and no bytes. */
+export const MEMORY_GET_MAX_BYTES = 0xffff;
+
+export interface ReadMemoryOptions {
+  start: number;
+  /** Inclusive. */
+  end: number;
+  sidefx?: boolean;
+  memspace?: number;
+  bank?: number;
+  timeoutMs?: number;
+}
+
+/**
+ * Reads `start`..`end` (inclusive) with MEMORY_GET and returns the bytes.
+ * A range longer than MEMORY_GET_MAX_BYTES is split into two requests, so
+ * a full 64K read returns all 65536 bytes. Callers still check the length
+ * they got against the length they asked for.
+ */
+export async function readMemory(
+  client: Pick<ViceMonitorClient, "send">,
+  { start, end, sidefx = false, memspace, bank = 0x0000, timeoutMs }: ReadMemoryOptions,
+): Promise<Uint8Array> {
+  const parts: Uint8Array[] = [];
+  for (let chunkStart = start; chunkStart <= end; chunkStart += MEMORY_GET_MAX_BYTES) {
+    const chunkEnd = Math.min(end, chunkStart + MEMORY_GET_MAX_BYTES - 1);
+    const body = memGetBody({ sidefx, start: chunkStart, end: chunkEnd, memspace, bank });
+    const response = await client.send(CommandType.MemoryGet, body, timeoutMs === undefined ? {} : { timeoutMs });
+    if (response.type !== "memory_get") {
+      throw new StockResponseMismatchError(`got a "${response.type}" reply to MEMORY_GET, expected "memory_get"`, { expected: ResponseType.MemoryGet });
+    }
+    parts.push(response.bytes);
+  }
+  return parts.length === 1 ? parts[0]! : Uint8Array.from(Buffer.concat(parts));
+}

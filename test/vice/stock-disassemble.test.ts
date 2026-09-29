@@ -227,6 +227,49 @@ test("handleDisassemble: an end-form range decoding to more than 100 instruction
   assert.equal(parsed.nextAddress, address + 100);
 });
 
+test("handleDisassemble: an end form over the whole address space reads only enough for 101 instructions and still reports the next address", async () => {
+  const { session, calls } = makeSession((_commandType, body) => {
+    const start = body.readUInt16LE(1);
+    const end = body.readUInt16LE(3);
+    return memoryGetReply(new Array(end - start + 1).fill(0x20).map((byte, index) => (index % 3 === 0 ? byte : 0x10)));
+  });
+  const result = await handleDisassemble({ address: "$0000", end: "$ffff" }, session, DEPS);
+  assert.equal(result.isError, false, result.content[0]!.text);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]![1].readUInt16LE(3), 101 * 3 - 1, "the read stops after 101 three-byte instructions");
+  const parsed = parseAnswer(result);
+  assert.equal(parsed.count, 100);
+  assert.equal(parsed.limitReached, true);
+  assert.equal(parsed.nextAddress, 300);
+});
+
+test("handleDisassemble: a bank name is resolved through the emulator's catalog and sent on the read", async () => {
+  const { session, calls } = makeSession((commandType) => {
+    if (commandType === CommandType.BanksAvailable) {
+      return { type: "banks_available" as const, requestId: 1, errorCode: 0, banks: [{ id: 0, name: "default" }, { id: 1, name: "ram" }], related: [] };
+    }
+    return memoryGetReply(nops(30));
+  });
+  const result = await handleDisassemble({ address: "$a000", bank: "ram" }, session, DEPS);
+  assert.equal(result.isError, false, result.content[0]!.text);
+  const read = calls.find(([commandType]) => commandType === CommandType.MemoryGet)!;
+  assert.equal(read[1].readUInt16LE(6), 1, "the MEMORY_GET carries the ram bank id");
+  assert.deepEqual(parseAnswer(result).bank, { id: 1, name: "ram" });
+});
+
+test("handleDisassemble: an unknown bank name refuses without reading memory", async () => {
+  const { session, calls } = makeSession((commandType) => {
+    if (commandType === CommandType.BanksAvailable) {
+      return { type: "banks_available" as const, requestId: 1, errorCode: 0, banks: [{ id: 0, name: "default" }], related: [] };
+    }
+    return memoryGetReply(nops(30));
+  });
+  const result = await handleDisassemble({ address: "$a000", bank: "nosuch" }, session, DEPS);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /^vice_disassemble: /);
+  assert.equal(calls.some(([commandType]) => commandType === CommandType.MemoryGet), false);
+});
+
 test("handleDisassemble: limitReached is false and nextAddress is absent when the range holds 100 or fewer instructions", async () => {
   const { session } = makeSession(() => memoryGetReply(nops(30)));
   const result = await handleDisassemble({ address: "$1000" }, session, DEPS);

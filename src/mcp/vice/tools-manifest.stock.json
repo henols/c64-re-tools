@@ -62,7 +62,7 @@
           },
           "size": {
             "type": "number",
-            "description": "Bytes to read (1-65535)"
+            "description": "Bytes to read (1-65536)"
           },
           "bank": {
             "type": "string",
@@ -1506,6 +1506,10 @@
           "show_symbols": {
             "type": "boolean",
             "description": "Show symbol names where the operand's role and width prove substitution cannot change the encoding (default true). With no symbol store loaded this is a no-op and the answer says so."
+          },
+          "bank": {
+            "type": "string",
+            "description": "Optional: memory bank name (e.g. ram to disassemble the RAM under ROM). Defaults to the CPU view, which follows $00/$01 banking. Use vice_memory_banks to list available banks."
           }
         },
         "required": [
@@ -1521,6 +1525,7 @@
           "end": {
             "type": "number"
           },
+          "bank": {},
           "count": {
             "type": "number"
           },
