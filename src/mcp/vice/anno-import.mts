@@ -24,6 +24,9 @@
 //   - Never report success before the import's one transaction has
 //     committed. The client deletes the transfer file on success, and every
 //     `putXref()` of one import joins one `applyAtomically()` call.
+//   - Never echo a line or a token of the file in a refusal: the section
+//     name and the line number locate it, and echoing turns a refusal into a
+//     read oracle.
 //   - Never guess an unrecognised `ReferenceType` token onto the nearest
 //     member of `XREF_ACCESS_KINDS`. It is dropped and COUNTED in
 //     `kindsSeenNotImported`, never silently absorbed and never refused --
@@ -34,16 +37,13 @@ import { createHash } from "node:crypto";
 
 import { applyAtomically, putXref } from "./anno-store.mts";
 import type { AnnoStoreHandle } from "./anno-store.mts";
-import { parseStoreAddress } from "./anno-types.mts";
+import { AnnoStoreError, parseStoreAddress } from "./anno-types.mts";
 import type { XrefAccessKind } from "./anno-types.mts";
 
 /** The offending section and 1-based line number ride on every refusal, so a
- * refusal is actionable without re-reading this file's parser. Follows the
- * `ViceError`-family construction idiom in SHAPE (a `message` plus plain
- * public fields) but is a bare `Error` subclass, not an `AnnoStoreError` --
- * this module never touches the store's own persistence and has no reason to
- * join that error family. */
-export class AnnoImportError extends Error {
+ * refusal is actionable without re-reading this file's parser. Part of the
+ * store's `ViceError` family, so a caller catches it with the rest. */
+export class AnnoImportError extends AnnoStoreError {
   section?: string;
   line?: number;
 
@@ -93,14 +93,14 @@ function parseGhidraAddressToken(token: string, what: string): number {
     const value = parseInt(token, 16);
     if (value < 0 || value > 0xffff) {
       throw new AnnoImportError(
-        `anno_import_ghidra_export refused: ${what} ${JSON.stringify(token)} is out of range -- expected $0000-$ffff.`,
+        `anno_import_ghidra_export refused: ${what} is out of range -- expected $0000-$ffff.`,
         { section: what },
       );
     }
     return value;
   }
   throw new AnnoImportError(
-    `anno_import_ghidra_export refused: ${what} ${JSON.stringify(token)} is not a resolvable address -- expected bare ` +
+    `anno_import_ghidra_export refused: ${what} is not a resolvable address -- expected bare ` +
       `hex digits (Ghidra's own rendering) or a "$"/"0x"-prefixed form.`,
     { section: what },
   );
@@ -151,8 +151,8 @@ export function parseGhidraExport(text: string): GhidraExportDocument {
       sawFirstNonBlank = true;
       if (!line.startsWith("## ")) {
         throw new AnnoImportError(
-          `anno_import_ghidra_export refused: expected the first non-blank line to be a "## " section header, found ` +
-            `${JSON.stringify(line)} at line ${lineNo} -- refusing to parse a headerless document as a bodiless one.`,
+          `anno_import_ghidra_export refused: expected the first non-blank line to be a "## " section header, but line ` +
+            `${lineNo} is not one -- refusing to parse a headerless document as a bodiless one.`,
           { section: "(document)", line: lineNo },
         );
       }
@@ -172,16 +172,21 @@ export function parseGhidraExport(text: string): GhidraExportDocument {
       continue;
     }
 
-    // A body line belonging to `currentSection`. `currentSection` is always
-    // defined here: the first-non-blank-line check above already refused any
-    // document whose first line is not a header, so a body line can only be
-    // reached after at least one header has been seen.
+    // A body line belonging to `currentSection`. A document whose headers so
+    // far are all trailers (`## NAME value`) has opened no section yet, so
+    // this line belongs to none and is refused.
+    if (currentSection === undefined) {
+      throw new AnnoImportError(
+        `anno_import_ghidra_export refused: line ${lineNo} is a body line, but no "## NAME" section header opens before it -- ` +
+          "only trailer lines came first.",
+        { section: "(document)", line: lineNo },
+      );
+    }
     if (currentSection === "REFERENCES") {
       const tokens = line.trim().split(/\s+/);
       if (tokens.length !== 4 || tokens[1] !== "->") {
         throw new AnnoImportError(
-          `anno_import_ghidra_export refused: REFERENCES line ${lineNo} does not match "<from> -> <to> ` +
-            `<ReferenceType>": ${JSON.stringify(line)}`,
+          `anno_import_ghidra_export refused: REFERENCES line ${lineNo} does not match "<from> -> <to> <ReferenceType>".`,
           { section: "REFERENCES", line: lineNo },
         );
       }
@@ -210,7 +215,7 @@ export function parseGhidraExport(text: string): GhidraExportDocument {
       continue;
     }
 
-    sections.get(currentSection!)!.push(line);
+    sections.get(currentSection)!.push(line);
   }
 
   const checkTrailerCount = (sectionName: string, trailerName: string): void => {
@@ -303,8 +308,7 @@ export function parseConstWrites(document: GhidraExportDocument): ConstWriteFact
     const tokens = line.trim().split(/\s+/);
     if (tokens.length !== 3) {
       throw new AnnoImportError(
-        `anno_import_ghidra_export refused: CONST_WRITES line ${lineNo} does not match "<store-address> ` +
-          `<target-address> <value>": ${JSON.stringify(line)}`,
+        `anno_import_ghidra_export refused: CONST_WRITES line ${lineNo} does not match "<store-address> <target-address> <value>".`,
         { section: "CONST_WRITES", line: lineNo },
       );
     }

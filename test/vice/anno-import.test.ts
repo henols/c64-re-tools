@@ -454,6 +454,32 @@ test("parseConstWrites: over the committed real capture, non-vacuity floor and a
   );
 });
 
+test("parseGhidraExport: a body line after only trailer lines is refused by name, naming the line", () => {
+  const text = ["## REFERENCE_COUNT 1", "$0812 -> $d020 WRITE", ""].join("\n");
+  assert.throws(
+    () => parseGhidraExport(text),
+    (err: unknown) => err instanceof AnnoImportError && /line 2 is a body line/.test(err.message) && /no "## NAME" section header/.test(err.message),
+  );
+});
+
+test("parseGhidraExport: a refusal names the section and line but never quotes the line itself", () => {
+  const secret = "SECRET-CONTENT-4f2a";
+  const text = ["## REFERENCES", `$0812 ${secret} WRITE`, "## REFERENCE_COUNT 1", ""].join("\n");
+  assert.throws(
+    () => parseGhidraExport(text),
+    (err: unknown) => err instanceof AnnoImportError && /REFERENCES line 2/.test(err.message) && !err.message.includes(secret),
+  );
+  const badToken = ["## REFERENCES", `$0812 -> ${secret} WRITE`, "## REFERENCE_COUNT 1", ""].join("\n");
+  inTempDir((dir) => {
+    const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+    assert.throws(
+      () => importFile(handle, writeTransfer(dir, badToken)),
+      (err: unknown) => err instanceof AnnoImportError && !err.message.includes(secret),
+    );
+    closeStore(handle);
+  });
+});
+
 test("importGhidraExport: a write that fails part-way through the import leaves the revision and every row as they were", () => {
   inTempDir((dir) => {
     const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
