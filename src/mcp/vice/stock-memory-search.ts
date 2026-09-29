@@ -223,11 +223,12 @@ export const handleMemorySearch: StockSessionHandler = async (args, session, _de
       }
     }
     if (isMatch) {
-      matches.push(start + offset);
+      // `truncated` means a match exists past the ones returned.
       if (matches.length === maxResults) {
         truncated = true;
         break;
       }
+      matches.push(start + offset);
     }
   }
 
@@ -384,11 +385,12 @@ export const handleMemoryCompare: StockSessionHandler = async (args, session, _d
     const value1 = bytes1[offset]!;
     const value2 = bytes2[offset]!;
     if (value1 !== value2) {
-      differences.push({ offset, address1: range1Start + offset, address2: range2Start + offset, value1, value2 });
+      // `truncated` means a difference exists past the ones returned.
       if (differences.length === maxDifferences) {
         truncated = true;
         break;
       }
+      differences.push({ offset, address1: range1Start + offset, address2: range2Start + offset, value1, value2 });
     }
   }
 

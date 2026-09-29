@@ -113,6 +113,15 @@ test("handleMemorySearch: a search of all 64K finds a pattern in the last two by
   assert.equal(calls.length, 2, "the 64K range goes out as two MEMORY_GETs");
 });
 
+test("handleMemorySearch: exactly max_results matches is not truncated", async () => {
+  const corpus = [0xaa, 0x00, 0xaa, 0x00];
+  const { session } = makeSession(() => memoryGetReply(corpus));
+  const result = await handleMemorySearch({ start: "$1000", end: "$1003", pattern: [0xaa], max_results: 2 }, session, DEPS);
+  const parsed = parseAnswer(result);
+  assert.deepEqual(parsed.matches, [0x1000, 0x1002]);
+  assert.equal(parsed.truncated, false);
+});
+
 test("handleMemorySearch: max_results truncation stops the scan and flags truncated", async () => {
   const corpus = [0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa];
   const { session } = makeSession(() => memoryGetReply(corpus));
@@ -337,6 +346,23 @@ test("handleMemoryCompare: max_differences truncates and identical is false", as
   const parsed = parseAnswer(result);
   assert.equal((parsed.differences as unknown[]).length, 1);
   assert.equal(parsed.truncated, true);
+  assert.equal(parsed.identical, false);
+});
+
+test("handleMemoryCompare: exactly max_differences differences is not truncated", async () => {
+  let call = 0;
+  const { session } = makeSession(() => {
+    call += 1;
+    return memoryGetReply(call === 1 ? [0x00, 0x01, 0x02] : [0x00, 0x01, 0xff]);
+  });
+  const result = await handleMemoryCompare(
+    { mode: "ranges", range1_start: "$2000", range1_end: "$2002", range2_start: "$3000", max_differences: 1 },
+    session,
+    DEPS,
+  );
+  const parsed = parseAnswer(result);
+  assert.equal((parsed.differences as unknown[]).length, 1);
+  assert.equal(parsed.truncated, false);
   assert.equal(parsed.identical, false);
 });
 
