@@ -6,29 +6,35 @@
 // These modules ship as a bundled skill toolkit and may be installed at any
 // depth in any project, so nothing here counts directory hops. Two rules:
 //
-//   1. The project root is found by walking UP for a `.git` marker. Counting
-//      hops from `import.meta.url` breaks the moment the toolkit is installed
-//      somewhere other than `skills/<skill>/scripts/`, and it breaks
-//      silently -- paths resolve to a plausible wrong place rather than erroring.
+//   1. The project root is, in this order: `C64RE_PROJECT_ROOT`, then
+//      `CLAUDE_PROJECT_DIR`, then the nearest directory with a `.git` entry
+//      at or above the current working directory. The walk starts at the
+//      working directory and never at this file: an installed skill can sit
+//      outside the project it works on.
 //   2. Every data location is overridable by environment variable, so a project
 //      that does not use this repo's `recovery/` + `disks/` layout can point the
 //      toolkit at its own without editing any module.
+//
+// Every function computes its answer when it is called. Importing this module
+// does no work, so a script that does not need a project root still loads
+// outside a checkout.
 //
 // Pure path arithmetic over the filesystem. Contacts nothing.
 import { existsSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, parse } from "node:path";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-
 /**
- * Nearest ancestor directory containing a `.git` entry, starting from this
- * file. Falls back to `C64RE_PROJECT_ROOT` when set, which also covers the
- * case of running from an export with no git metadata at all.
+ * The project root: `C64RE_PROJECT_ROOT`, then `CLAUDE_PROJECT_DIR`, then the
+ * nearest ancestor of `process.cwd()` (itself included) that holds a `.git`
+ * entry. Throws, naming the start directory and the variable to set, when
+ * none of the three gives a root.
  */
 export function projectRoot(): string {
   if (process.env.C64RE_PROJECT_ROOT) return resolve(process.env.C64RE_PROJECT_ROOT);
-  let dir = HERE;
+  if (process.env.CLAUDE_PROJECT_DIR) return resolve(process.env.CLAUDE_PROJECT_DIR);
+  const start = process.cwd();
+  let dir = start;
   const { root } = parse(dir);
   while (true) {
     if (existsSync(join(dir, ".git"))) return dir;
@@ -36,8 +42,9 @@ export function projectRoot(): string {
     dir = dirname(dir);
   }
   throw new Error(
-    "project-paths: could not locate the project root -- no `.git` found above " +
-      `${HERE}. Set C64RE_PROJECT_ROOT to the directory that holds your data dirs.`,
+    "project-paths: could not locate the project root -- no `.git` found at or above " +
+      `${start}, and neither C64RE_PROJECT_ROOT nor CLAUDE_PROJECT_DIR is set. Set C64RE_PROJECT_ROOT ` +
+      "to the directory that holds your data dirs.",
   );
 }
 
@@ -75,12 +82,28 @@ export function releaseDataDir(id: string): string {
   return join(dataRoot(), id);
 }
 
+/** The four roots, or a refusal that names why the project root is unknown. */
+export function resolvedRoots():
+  | { ok: true; projectRoot: string; dataRoot: string; disksRoot: string; registry: string }
+  | { ok: false; message: string } {
+  try {
+    return { ok: true, projectRoot: projectRoot(), dataRoot: dataRoot(), disksRoot: disksRoot(), registry: registryFile() };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 // True when this file is the process entry point, also when it runs through a symlink.
 const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (invokedDirectly) {
-  console.log(`project root: ${projectRoot()}`);
-  console.log(`data root:    ${dataRoot()}`);
-  console.log(`disks root:   ${disksRoot()}`);
-  console.log(`registry:     ${registryFile()}`);
+  const result = resolvedRoots();
+  if (result.ok && !process.argv.includes("--json")) {
+    console.log(`project root: ${result.projectRoot}`);
+    console.log(`data root:    ${result.dataRoot}`);
+    console.log(`disks root:   ${result.disksRoot}`);
+    console.log(`registry:     ${result.registry}`);
+  }
+  console.log(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
 }

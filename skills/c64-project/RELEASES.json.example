@@ -8,8 +8,8 @@
       "disk_image": "disks/example-release.d64",
       "dumps": [
         {
-          "label": "example-label",
-          "range_manifest": "recovery/example-release/dumps/example-release-example-label.map.json"
+          "label": "run1",
+          "range_manifest": "recovery/example-release/dumps/example-release-run1.map.json"
         }
       ]
     }
