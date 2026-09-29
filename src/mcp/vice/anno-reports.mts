@@ -17,6 +17,7 @@
 import { decode } from "./disasm-decoder.mts";
 import type { Instruction } from "./disasm-decoder.mts";
 import {
+  applyAtomically,
   listComments,
   listExecObservations,
   listLabels,
@@ -917,7 +918,9 @@ function exportProjectReport(handle: AnnoStoreHandle): AnnoReportResult {
  * Fills an EMPTY project from an export document, in one transaction. A
  * project that already holds any row is refused and left untouched: merging
  * two sets of annotations is a decision about which one is right, and this
- * verb does not make it.
+ * verb does not make it. The emptiness check runs inside the same
+ * transaction as the import, so a write that lands between the check and the
+ * import cannot be merged into.
  */
 function importProjectReport(handle: AnnoStoreHandle, args: Record<string, unknown>, inputs: AnnoInputs): AnnoReportResult {
   const file = stagedInputFile("import-project", "document", args.document, inputs);
@@ -937,16 +940,17 @@ function importProjectReport(handle: AnnoStoreHandle, args: Record<string, unkno
     }
   }
 
-  const held = Object.entries(documentCounts(exportStoreDocument(handle))).filter(([, n]) => n > 0);
-  if (held.length > 0) {
-    throw new AnnoReportRefusal(
-      `import-project: this workspace's project already holds annotations (${held.map(([k, n]) => `${n} ${k}`).join(", ")}) -- ` +
-        "import-project fills an EMPTY project only and never merges. To replace it, save it first with " +
-        "`anno export-project --out FILE`, delete .c64-re-tools/annotations.db, and import into the new, empty project.",
-    );
-  }
-
-  const imported = importStoreDocument(handle, doc as unknown as StoreExportDocument);
+  const imported = applyAtomically(handle, () => {
+    const held = Object.entries(documentCounts(exportStoreDocument(handle))).filter(([, n]) => n > 0);
+    if (held.length > 0) {
+      throw new AnnoReportRefusal(
+        `import-project: this workspace's project already holds annotations (${held.map(([k, n]) => `${n} ${k}`).join(", ")}) -- ` +
+          "import-project fills an EMPTY project only and never merges. To replace it, save it first with " +
+          "`anno export-project --out FILE`, delete .c64-re-tools/annotations.db, and import into the new, empty project.",
+      );
+    }
+    return importStoreDocument(handle, doc as unknown as StoreExportDocument);
+  });
   return { json: { imported }, files: [] };
 }
 

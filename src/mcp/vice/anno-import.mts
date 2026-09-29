@@ -21,9 +21,9 @@
 //     `parseGhidraExport()` returns a document `importGhidraExport()` walks
 //     in full to build a write list BEFORE the first `putXref()` call -- a
 //     streaming parse that writes as it reads cannot honour this.
-//   - Never report success before the LAST `putXref()` has returned. The
-//     client deletes the transfer file on success, and `applyWrite()`
-//     commits before returning, so only a returned write is a durable one.
+//   - Never report success before the import's one transaction has
+//     committed. The client deletes the transfer file on success, and every
+//     `putXref()` of one import joins one `applyAtomically()` call.
 //   - Never guess an unrecognised `ReferenceType` token onto the nearest
 //     member of `XREF_ACCESS_KINDS`. It is dropped and COUNTED in
 //     `kindsSeenNotImported`, never silently absorbed and never refused --
@@ -32,7 +32,7 @@
 
 import { createHash } from "node:crypto";
 
-import { putXref } from "./anno-store.mts";
+import { applyAtomically, putXref } from "./anno-store.mts";
 import type { AnnoStoreHandle } from "./anno-store.mts";
 import { parseStoreAddress } from "./anno-types.mts";
 import type { XrefAccessKind } from "./anno-types.mts";
@@ -352,13 +352,17 @@ export interface ImportGhidraExportArgs {
   exportName: string;
   exportBytes: Uint8Array;
   expectedSha256?: string;
+  /** The whole import's compare-and-swap guard, checked under the write
+   * lock before the first write. */
+  baseRevision?: number;
 }
 
 /**
  * Imports one transfer file's bytes into `handle`. The digest and the byte
  * length are derived from the same buffer, so they describe the same bytes.
  * Parses fully, builds the mapped write list fully, and only THEN issues
- * every `putXref()` call in file order.
+ * every `putXref()` call in file order, all in one transaction: a failure
+ * part-way leaves the store as it was.
  */
 export function importGhidraExport(handle: AnnoStoreHandle, args: ImportGhidraExportArgs): ImportCounts {
   const exportName = args.exportName;
@@ -405,15 +409,20 @@ export function importGhidraExport(handle: AnnoStoreHandle, args: ImportGhidraEx
   }
 
   // PHASE TWO: every write is issued only after the whole document parsed
-  // and the whole write list was built above. No `putXref()` call happens
-  // before this point.
+  // and the whole write list was built above, in one transaction.
   let xrefsWritten = 0;
   let xrefsAlreadyPresent = 0;
-  for (const write of writes) {
-    const result = putXref(handle, write);
-    if (result.changed) xrefsWritten += 1;
-    else xrefsAlreadyPresent += 1;
-  }
+  applyAtomically(
+    handle,
+    () => {
+      for (const write of writes) {
+        const result = putXref(handle, write);
+        if (result.changed) xrefsWritten += 1;
+        else xrefsAlreadyPresent += 1;
+      }
+    },
+    { baseRevision: args.baseRevision },
+  );
 
   return {
     referencesSeen,

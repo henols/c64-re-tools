@@ -133,7 +133,7 @@
 // below is a CALLER-side change and nothing more.
 import { extname } from "node:path";
 import { addExcludedRange, addScope, applyEnumUsage, applyWrite, clearEnumUsage, createProjectEnum, currentRevision, deleteExecObservationsForRun, insertExecObservations, listComments, listEnumUsage, listExcludedRanges, listExecObservations, listLabels, listObservedRuns, listProjectEnums, listRanges, listScopes, listXrefs, removeExcludedRange, removeScope, setComment, setDataType, setLabel, updateProjectEnum, type AnnoStoreHandle } from "./anno-store.mts";
-import { AnnoStoreError, AnnoStoreStaleRevisionError, assertCommentType, assertDataType, parseStoreAddress, parseVariantKey, type CommentRow, type EnumUsageRow, type LabelRow, type ProjectEnumRow } from "./anno-types.mts";
+import { AnnoStoreError, assertCommentType, assertDataType, parseStoreAddress, parseVariantKey, type CommentRow, type EnumUsageRow, type LabelRow, type ProjectEnumRow } from "./anno-types.mts";
 import { crossReferencesTo, searchAnnotations } from "./anno-derive.mts";
 import { composeAddressDetails } from "./anno-details.mts";
 import { decode, type Instruction } from "./disasm-decoder.mts";
@@ -391,45 +391,26 @@ function dispatchSaveProject(handle: AnnoStoreHandle): unknown {
   };
 }
 
-/** Enforces `base_revision` as a whole-call precondition rather than
- * threading it through each of the many writes `importGhidraExport()` and
- * `runMemmapJoin()` may issue: both verbs commit several writes per call, and
- * a single up-front comparison against the revision the caller computed its
- * batch against is the coherent point to apply an optimistic-concurrency
- * guard for a multi-write verb -- checked BEFORE anything is written, exactly
- * like every other refusal on this surface. */
-function assertNotStale(name: string, handle: AnnoStoreHandle, baseRevision: number | undefined): void {
-  if (baseRevision === undefined) return;
-  const rev = currentRevision(handle);
-  if (baseRevision !== rev) {
-    throw new AnnoStoreStaleRevisionError(
-      `${name} refused: base revision ${baseRevision} is not the current on-disk revision ${rev}. Nothing was written.`,
-      { baseRevision, currentRevision: rev },
-    );
-  }
-}
-
+/** Both multi-write verbs take `base_revision` as a whole-call guard: the
+ * verb checks it under the write lock and runs every write in one
+ * transaction, so a stale guard or a refusal part-way writes nothing. */
 function dispatchImportGhidraExport(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): unknown {
   const bag = argBag(args);
   const baseRevision = assertBaseRevisionArg("anno_import_ghidra_export", args);
-  assertNotStale("anno_import_ghidra_export", handle, baseRevision);
   const exportFile = stagedInputFile("anno_import_ghidra_export", "export_path", bag.export_path, inputs);
   return importGhidraExport(handle, {
     exportName: exportFile.name,
     exportBytes: exportFile.bytes,
     expectedSha256: bag.sha256 as string | undefined,
+    ...(baseRevision !== undefined ? { baseRevision } : {}),
   });
 }
 
 function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): unknown {
   const baseRevision = assertBaseRevisionArg("anno_join_memmap", args);
-  assertNotStale("anno_join_memmap", handle, baseRevision);
   const image = loadImage("anno_join_memmap", args, inputs);
-  // CR-01 fix: `const_writes`/`graphics_map_index` are threaded into
-  // `runMemmapJoin()` exactly as its own `RunMemmapJoinArgs` documents --
-  // OMISSION (not `[]`) is what keeps every pre-existing call (no
-  // const_writes at all) a byte-identical no-op for the bank-state and
-  // graphics machinery.
+  // OMITTING `const_writes` (not sending `[]`) is what keeps the bank-state
+  // and graphics steps off.
   const constWrites = assertConstWritesArg("anno_join_memmap", args);
   const graphicsMapIndex = assertGraphicsMapIndexArg("anno_join_memmap", args);
   return runMemmapJoin(handle, {
@@ -437,6 +418,7 @@ function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown, inputs: Anno
     imageByteLength: image.body.length,
     ...(constWrites !== undefined ? { constWrites } : {}),
     ...(graphicsMapIndex !== undefined ? { graphicsMapIndex } : {}),
+    ...(baseRevision !== undefined ? { baseRevision } : {}),
   });
 }
 
