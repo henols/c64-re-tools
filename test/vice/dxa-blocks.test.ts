@@ -226,3 +226,33 @@ test("emitLabels: mixed rows omit the symbol-less one and keep the symbol-bearin
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("emitDataBlocks and emitLabels refuse a row with an unknown dataType by name and write nothing", () => {
+  const dir = scratchDir();
+  try {
+    const rows = [
+      { start: 0x1000, endInclusive: 0x1fff, dataType: "byte" },
+      { start: 0x3000, endInclusive: 0x30ff, dataType: "bytes", sym: "tbl" },
+    ] as unknown as KnownDataRow[];
+    assert.throws(() => emitDataBlocks(rows, join(dir, "unknown.b")), /emitDataBlocks: row has unknown dataType "bytes"/);
+    assert.throws(() => emitLabels(rows, join(dir, "unknown.lbl")), /emitLabels: row has unknown dataType "bytes"/);
+    assert.equal(existsSync(join(dir, "unknown.b")), false);
+    assert.equal(existsSync(join(dir, "unknown.lbl")), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("emitLabels refuses a sym that would break the labels file and writes nothing", () => {
+  const dir = scratchDir();
+  try {
+    for (const sym of ["two\nlines", "tab\there", "a = $1000", "9lives"]) {
+      const out = join(dir, "bad.lbl");
+      const rows: KnownDataRow[] = [{ start: 0x0810, endInclusive: 0x0810, dataType: "byte", sym }];
+      assert.throws(() => emitLabels(rows, out), /is not a label name/, JSON.stringify(sym));
+      assert.equal(existsSync(out), false);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
