@@ -2,241 +2,81 @@
 
 ## 1. Purpose
 
-Define how every project-aware c64-re-tools component resolves the same project without a project manifest, and define exactly what c64-re-tools may persist inside that project.
+Define the simplest possible project model and exactly what c64-re-tools may persist inside that project.
 
-The goals are:
+## 2. Project root
 
-- deterministic behavior from skills installed outside the project;
-- harness independence;
-- no fixed relative-path assumptions;
-- no accidental project roots inside installed packages;
-- minimal toolkit-owned project state.
+The project root is the working directory from which the agent harness is launched.
 
-## 2. Project identity
+That is the entire rule.
 
-A c64-re-tools project is an ordinary directory.
-
-There is no required project manifest.
-
-The directory:
+Conceptually:
 
 ~~~text
-.c64-re-tools/
+projectRoot = harness working directory
 ~~~
 
-acts as an optional explicit project-root marker once it exists.
+There is no project-root discovery algorithm.
 
-Its durable v1 content is:
+Do not:
+
+- walk upward for .git;
+- walk upward for .c64-re-tools;
+- inspect package.json;
+- infer a project from the skill/MCP installation path;
+- read harness-specific workspace variables;
+- use C64RE_PROJECT_ROOT or another override;
+- guess a parent directory.
+
+If the user wants to work on another project, launch the harness from that project's directory.
+
+## 3. Project initialization
+
+There is no explicit initialization command.
+
+When c64-re-tools first needs persistent project knowledge, it creates:
 
 ~~~text
-.c64-re-tools/
-└── knowledge.db
+<project root>/
+└── .c64-re-tools/
+    └── knowledge.db
 ~~~
 
-An empty .c64-re-tools directory is also a valid root marker. This allows a nested C64 project to be pinned inside a larger repository without introducing a manifest.
+The directory is not used to discover the project. It is simply toolkit-owned storage under the already-known project root.
 
-## 3. Shared root resolver
+Read-only knowledge access may treat a missing knowledge.db as an empty knowledge store without creating the file.
 
-Every project-aware skill script and local runtime component uses one shared deterministic resolver.
+The first durable semantic write or analyzer import creates .c64-re-tools/ and knowledge.db automatically.
 
-No skill implements its own root walk.
+## 4. Project-relative paths
 
-Conceptual interface:
+All project file paths are interpreted relative to the harness working directory.
+
+Examples:
 
 ~~~text
-resolveProjectRoot(
-  startDirectory = process.cwd(),
-  explicitRoot?
-)
+original/game.d64
+src/main.a
+build/game.prg
 ~~~
-
-### Resolution order
-
-1. An explicit root argument supplied by the caller.
-2. C64RE_PROJECT_ROOT when set.
-3. Walk upward from startDirectory and stop at the first directory containing either:
-   - .c64-re-tools/; or
-   - .git.
-4. If no boundary exists, use startDirectory itself.
-
-At each directory during the upward walk, .c64-re-tools is checked before .git.
-
-This means:
-
-- a nested C64 project marker wins before reaching an outer Git repository;
-- a nested Git repository wins before an outer project's .c64-re-tools marker;
-- when .c64-re-tools and .git are in the same directory, that directory is the project root.
-
-## 4. Explicit-root behavior
-
-An explicit root may be provided by deterministic script/runtime plumbing for cases such as:
-
-- monorepos;
-- commands intentionally operating on another project directory;
-- harnesses whose process working directory is not the project;
-- tests.
-
-C64RE_PROJECT_ROOT provides the same user/environment override without binding the core resolver to a particular harness.
-
-The explicit root or environment override:
-
-- is resolved relative to the current working directory when relative;
-- must already exist;
-- must be a directory;
-- is canonicalized before use;
-- wins absolutely over marker discovery.
-
-If it is invalid, resolution fails. Do not silently fall through to another root.
-
-## 5. What is deliberately not consulted
-
-Core project discovery does not read:
-
-~~~text
-CLAUDE_PROJECT_DIR
-CONTAINER_WORKSPACE_PATH
-CURSOR-specific variables
-Codex-specific variables
-installed skill path
-installed MCP package path
-import.meta.url-relative repository guesses
-fixed ".." hop counts
-package.json
-~~~
-
-A harness/distribution adapter may translate its own workspace concept into C64RE_PROJECT_ROOT when necessary.
-
-The core remains harness-independent.
-
-## 6. Working-directory rule
-
-The default discovery anchor is process.cwd(), never the skill/script/module installation directory.
-
-Skills are expected to run with the user's project as their working context.
-
-If packaging for a harness cannot guarantee that, its adapter sets C64RE_PROJECT_ROOT or passes the explicit root through shared runtime plumbing.
-
-## 7. Nested project examples
-
-### Ordinary Git repository
-
-~~~text
-game/                  ← .git → project root
-├── .git/
-├── original/
-└── src/
-    └── main.a         ← command started here
-~~~
-
-The upward walk resolves game/.
-
-### Explicit nested C64 project
-
-~~~text
-retro-work/
-├── .git/
-├── game-a/
-│   ├── .c64-re-tools/ ← nearest boundary → project root
-│   └── game.d64
-└── game-b/
-~~~
-
-A command started inside game-a resolves game-a.
-
-### Nested Git repository
-
-~~~text
-outer/
-├── .c64-re-tools/
-└── imported-game/
-    ├── .git/          ← nearest boundary → project root
-    └── game.prg
-~~~
-
-A command inside imported-game resolves imported-game rather than outer.
-
-### No Git and no marker
-
-~~~text
-game/
-├── game.prg
-└── src/
-~~~
-
-When invoked from game/, game/ is the project.
-
-When invoked from game/src/ with no explicit root and no marker, game/src/ is necessarily the project because there is no external fact from which the parent intent can be inferred.
-
-Use an explicit root once in such an ambiguous layout if game/ is intended. The first durable write then creates game/.c64-re-tools/, making later discovery automatic.
-
-## 8. Knowledge initialization
-
-There is no mandatory project-initialization command.
-
-### Read-only operation
-
-If the resolved project has no:
-
-~~~text
-.c64-re-tools/knowledge.db
-~~~
-
-a read-only knowledge query behaves as an empty knowledge store.
-
-It does not create files merely because knowledge was read.
-
-### First durable write
-
-The first semantic write or analyzer import:
-
-1. resolves the project root;
-2. creates .c64-re-tools/ if absent;
-3. creates/initializes knowledge.db;
-4. performs the requested write transaction.
-
-There is no separate registration step.
-
-### Pinning a nested/non-Git project
-
-On an ambiguous first write, the skill/runtime may supply explicitRoot.
-
-Once .c64-re-tools exists at that location, normal upward discovery finds it thereafter.
-
-## 9. Corrupt or incompatible knowledge store
-
-If .c64-re-tools exists and knowledge.db exists but cannot be opened/validated:
-
-- that directory remains the project root;
-- the operation fails clearly;
-- do not walk farther upward looking for another database;
-- do not silently create a replacement database.
-
-This prevents a damaged project from accidentally reading/writing an ancestor project's knowledge.
-
-## 10. Project-relative files
-
-All project-aware file inputs are resolved through the shared project root.
 
 A project-relative path:
 
 - must not be absolute;
 - must not escape the project with parent traversal;
-- is canonicalized against the project root;
 - must not escape through a symlink when its bytes/tree are staged for host execution.
 
-The LLM normally sees project-relative paths, not absolute client paths.
+The LLM normally sees these project-relative paths.
 
-## 11. Persistent project layout
+## 5. Persistent project layout
 
-In v1, c64-re-tools reserves only:
+The only authoritative toolkit-owned project state in v1 is:
 
 ~~~text
 .c64-re-tools/knowledge.db
 ~~~
 
-as authoritative toolkit-owned project state.
-
-Do not create a general:
+Do not create a general project-local runtime/cache tree such as:
 
 ~~~text
 .c64-re-tools/local/
@@ -249,94 +89,64 @@ staging/
 builds/
 ~~~
 
-tree in the project.
-
-Those concerns have better owners elsewhere.
-
-## 12. SQLite side files
+## 6. SQLite side files
 
 knowledge.db must remain a self-contained source-controlled database after each successful committed write.
 
 Use SQLite rollback-journal semantics for v1 rather than relying on persistent WAL state.
 
-Temporary SQLite journal/locking files may exist while a process is active, but successful durable state must be present in knowledge.db itself when the transaction completes.
+Temporary SQLite journal/locking files may exist while a process is active, but committed project knowledge must be present in knowledge.db when the transaction completes.
 
-No custom project lock file is required; SQLite owns database locking/concurrency.
+SQLite owns database locking/concurrency; no additional project lock file is required.
 
-Concurrent semantic writes use the existing revision check/transaction rules rather than a second locking mechanism.
+## 7. Where non-project state lives
 
-## 13. Where non-project state lives
+### Host Runtime
 
-### Host Runtime state
-
-Machine-specific Host Runtime state lives in the user's host-level application state/data directories, outside projects.
-
-Examples:
+Host Runtime machine-specific state lives outside the project:
 
 - logs;
 - runtime sockets/ports;
-- tool discovery/configuration;
+- native-tool discovery/configuration;
 - temporary Ghidra projects;
-- host request staging;
+- request staging;
 - crash diagnostics.
 
-Exact OS paths are internal implementation details.
+### MCP session
 
-### MCP session state
-
-Session-owned transient state lives with the MCP/Host Runtime session:
+Session state lives with the MCP/Host Runtime session:
 
 - VICE process;
 - visual baselines;
 - snapshots;
 - temporary comparison state.
 
-It disappears when the session ends/state is lost unless a future explicit export feature says otherwise.
-
 ### Short-lived skill/native-tool state
 
-Temporary analyzer/build/disk/BASIC staging uses request-owned temporary locations and is deleted after the result is returned.
+Analyzer/build/disk/BASIC staging is request-owned and removed after the operation.
 
 ### Build outputs
 
-Assembler outputs are developer/project artifacts, not toolkit metadata.
-
-They are written by the skill to the user-requested project path after bytes return from the Host Runtime.
+Assembler outputs are normal developer/project artifacts written by the skill to the requested project-relative location after bytes return from the Host Runtime.
 
 ### Test scenarios
 
-If persisted, test scenario definitions are ordinary developer-authored project files in a location the developer chooses.
+Persisted scenario definitions are ordinary developer-authored project files at locations chosen by the developer. They are not hidden toolkit state and are not stored in knowledge.db.
 
-They are not hidden c64-re-tools state and are not stored in knowledge.db.
+## 8. Shared runtime
 
-## 14. Shared runtime dependency
+The shared deterministic runtime provides:
 
-Project-root resolution, project-relative path validation and knowledge access belong to shared deterministic runtime code.
+- the harness working directory as project root;
+- project-relative path validation;
+- knowledge access;
+- Host Runtime client/staging helpers.
 
-Skill scripts must not locate/import MCP internals through filesystem ladders.
+There is no root resolver beyond reading the harness working directory.
 
-Greenfield runtime dependency rule:
+Released skill scripts should still use bundled/shared runtime code rather than locating MCP internals through filesystem ladders.
 
-~~~text
-maintained shared TypeScript source
-        ↓
-release build/bundling
-        ↓
-skill script artifact
-~~~
-
-Where practical, each released skill script is self-contained/bundled with the small shared runtime pieces it needs.
-
-This means runtime correctness does not depend on:
-
-- sibling skill installation paths;
-- node_modules search from the user's project;
-- a VICE_MCP_DIR-style override;
-- relative hops from a skill package into an MCP package.
-
-The MCP and skills may share source libraries during development, but a released skill never needs to discover the MCP's source tree on disk.
-
-## 15. Knowledge API ownership
+## 9. Knowledge API ownership
 
 All access to knowledge.db goes through one shared local knowledge library.
 
@@ -349,51 +159,20 @@ It owns:
 - current/history queries;
 - analyzer import/reconciliation.
 
-Skills do not open SQLite independently.
+Skills do not implement independent SQLite behavior.
 
-The c64-knowledge skill exposes that library's useful operations; other skills use the same library internally where needed.
+## 10. Failure behavior
 
-## 16. Failure behavior
-
-Project-root/path failures should be actionable and small.
-
-Examples:
+Relevant project/path failures are simple:
 
 ~~~text
-explicit project root does not exist
 project-relative path escapes the project
 knowledge database is invalid
 knowledge database requires an unsupported migration
 ~~~
 
-Do not normally report:
+There is no "could not determine project root" error because the harness working directory already is the project root.
 
-- module installation paths;
-- root-discovery ladder internals;
-- package locations;
-- database pragmas;
-- SQLite lock filenames.
+## 11. Operational invariant
 
-Explicit human diagnostics may expose those details.
-
-## 17. Current-code lessons retained
-
-The current implementation correctly recognized several problems that remain important:
-
-- one shared root resolver is better than duplicated root logic;
-- fixed relative ".." hops are unsafe;
-- skill installation directories are not necessarily the user's project;
-- an explicit c64-re-tools root override is useful.
-
-The greenfield design deliberately drops current fallbacks that guess a project from:
-
-- Claude-specific workspace variables;
-- container-specific variables;
-- a .git walk starting from the installed module rather than the working project;
-- fixed package-directory hop counts.
-
-## 18. Invariant
-
-The project-state invariant is:
-
-> Resolve the project from the user's working context, persist only durable knowledge under .c64-re-tools, and keep runtime/tool/session machinery outside the project.
+> Launch the harness from the C64 project directory. That directory is the project root, and c64-re-tools stores durable knowledge in its .c64-re-tools/knowledge.db.
