@@ -3473,16 +3473,27 @@ test("EXCLUSION Test 5: an exclusion covering only PART of a store range still e
   assert.match(block, /\$cc, \$dd/, "the block must still carry BOTH bytes of its full extent, not only the un-excluded one");
 });
 
-test("EXCLUSION Test 6: result.excludedRangeCount counts only exclusion records overlapping an emitted block, not every record in the store", () => {
+test("an exclusion that overlaps no emitted block is refused by name instead of being dropped from the source", () => {
+  const dir = freshDir("exclusion-unmarked");
+  const { storePath, imagePath } = exclusionStore(dir, [
+    { start: 0x0807, endInclusive: 0x0808, reason: "overlaps the middle range" },
+    { start: 0x0900, endInclusive: 0x0901, reason: "outside every annotated range" },
+  ]);
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => e instanceof Error && /exclusion at \$0900\.\.\$0901 overlaps no typed block/.test(e.message) && /1 of 2 exclusion\(s\)/.test(e.message),
+  );
+});
+
+test("result.excludedRangeCount counts exclusion records, once each, when every record overlaps an emitted block", () => {
   const dir = freshDir("exclusion-6");
   const { storePath, imagePath } = exclusionStore(dir, [
     { start: 0x0807, endInclusive: 0x0808, reason: "overlaps the middle range" },
-    { start: 0x0900, endInclusive: 0x0901, reason: "outside every annotated range -- never emitted, never counted" },
+    { start: 0x0803, endInclusive: 0x0804, reason: "inside the code block" },
   ]);
-
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
-
-  assert.equal(result.excludedRangeCount, 1, "only the one record overlapping an emitted block may be counted, even though the store holds two");
+  assert.equal(result.excludedRangeCount, 2);
 });
 
 test("EXCLUSION Test 7: a store whose exclusion reason was edited on disk to contain a line break is refused BY NAME at the export boundary", () => {
