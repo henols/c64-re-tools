@@ -7,7 +7,7 @@
 // written into this checkout.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -189,5 +189,35 @@ test(
     const parsed = JSON.parse(lines[0]!);
     assert.equal(parsed.ok, false);
     assert.match(parsed.message, /--import-path is required/);
+  }),
+);
+
+/** Spawns ghidra-run.ts from `cwd` with no project-root variables set. */
+function spawnGhidraRun(cwd: string, script: string, args: string[]) {
+  const env = { ...process.env };
+  delete env.CLAUDE_PROJECT_DIR;
+  delete env.C64RE_PROJECT_ROOT;
+  return spawnSync(process.execPath, [script, ...args], { cwd, encoding: "utf8", timeout: 30_000, env });
+}
+
+test(
+  "the entry runs when the script is reached through a symlink",
+  withScratch((dir) => {
+    const link = join(dir, "ghidra-run-link.ts");
+    symlinkSync(join(VICE_DIR, "ghidra-run.ts"), link);
+    const r = spawnGhidraRun(dir, link, ["--run-id", "g"]);
+    assert.equal(r.status, 1);
+    assert.match(JSON.parse(r.stdout.trim()).message, /--import-path is required/);
+  }),
+);
+
+test(
+  "the CLI with no --project-root uses the project found from the current directory",
+  withScratch((dir) => {
+    mkdirSync(join(dir, ".git"));
+    // Port 1 refuses the connection, so the run fails after the tools root is made.
+    const r = spawnGhidraRun(dir, join(VICE_DIR, "ghidra-run.ts"), [...BASE, "--port", "1"]);
+    assert.equal(r.status, 1, r.stderr);
+    assert.ok(existsSync(join(dir, ".c64-re-tools", "local")), "the tools root is under the project found from the cwd");
   }),
 );

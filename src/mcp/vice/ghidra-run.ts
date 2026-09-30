@@ -17,14 +17,12 @@
 //
 // WHY THE RUN LOG DECIDES SUCCESS, NOT THE EXIT STATUS: measured against
 // real Ghidra 12.1.3, a run whose post-script throws still exits 0. The
-// classifier therefore takes run-log TEXT only and answers three questions:
+// classifier therefore takes run-log TEXT only and answers two questions:
 //   1. Did a script throw? Only the exact literal `ERROR REPORT SCRIPT
 //      ERROR:` (HeadlessAnalyzer) counts.
 //   2. Which language did the run use? The `Using Language/Compiler:` token,
 //      or a named absence when that line is missing.
-//   3. What expected/observed classification counts did the run print? A
-//      best-effort labelled-number extraction. The export file itself
-//      carries the exact `CLASSIFICATION_*` lines.
+// The export file carries the `CLASSIFICATION_*` lines.
 // runGhidraAnalyze() refuses (throws, naming both sides) when the parsed
 // language id differs from the requested `processor` by even one byte.
 //
@@ -38,8 +36,8 @@
 //   - Never default `--processor` or `--import-route` on the CLI. Both are
 //     required; a missing one is refused by name.
 //   - Never print anything to stdout from the CLI except the one JSON line.
-import { readFileSync } from "node:fs";
-import { dirname, resolve as resolvePath } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -48,24 +46,16 @@ import { repoRoot as findRepoRoot, toolsDirUnder } from "./repo-root.ts";
 import { ensureLocalDir } from "./project-local.mts";
 import { prgLoaderBaseAddr } from "./ghidra-project.mts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-
-/** Mirrors the extended `GhidraAnalyzeArgs` (host-tool.mts) field-for-field.
- * `processor` is required, exactly as it is on the wire (D-36-01's promote
- * decision). The seven fields below `postScript` are plan 36-02's own
- * additions to `ghidra.analyze` -- written here NOW, all optional, so this
- * interface is authored ONCE rather than edited a second time when that
- * plan lands; `runGhidraAnalyze()` includes each in the wire request ONLY
- * when the caller supplies it, so omitting all seven here is
- * indistinguishable from calling this module before plan 36-02 landed. */
+/** Mirrors `GhidraAnalyzeArgs` (host-tool.mts) field-for-field.
+ * `processor` is required, exactly as it is on the wire. Every optional
+ * field goes into the wire request only when the caller supplies it. */
 export interface GhidraRunArgs {
   runId: string;
   importPath: string;
   processor: string;
   preScript?: string;
   postScript?: string;
-  /** Plan 36-02: required, two-member enum on the WIRE once that plan
-   * lands; optional HERE because no caller in this plan supplies it. */
+  /** The import route; the CLI requires it. */
   importRoute?: "prg" | "flat64k";
   loaderBaseAddr?: string;
   noanalysis?: boolean;
@@ -73,9 +63,7 @@ export interface GhidraRunArgs {
   entrypointsPath?: string;
   exportPath?: string;
   expectedClassificationLines?: number;
-  /** Phase 37, plan 37-08 (AUTO-07): optional, path-bearing -- a range file
-   * for the new DataRangeSeed.java pre-script. Included in the wire request
-   * ONLY when the caller supplies it, mirroring every other field below. */
+  /** A range file for the DataRangeSeed.java pre-script. */
   dataRangesPath?: string;
 }
 
@@ -90,7 +78,7 @@ export interface GhidraRunOptions {
   run?: GhidraRunFn;
   /** The local root: relative paths in the args resolve against it, and
    * every result downloads under `<repoRoot>/.c64-re-tools/`. Defaults to
-   * this checkout's own root. */
+   * the project root found from the current working directory. */
   repoRoot?: string;
   /** Where results download; defaults to `<repoRoot>/.c64-re-tools`. */
   toolsRoot?: string;
@@ -122,7 +110,7 @@ export interface GhidraRunResult {
   language: { present: true; id: string } | { present: false };
 }
 
-/** Answers three questions over run-log TEXT ONLY -- no exit status in this
+/** Answers two questions over run-log TEXT ONLY -- no exit status in this
  * function's signature, by design (see this module's own header). Never
  * throws: an absent signal for any of the three questions is reported as a
  * structured "not present" value, never inferred from an empty match. */
@@ -136,11 +124,6 @@ export interface GhidraRunLogVerdict {
   /** The `Using Language/Compiler:` token, or a named absence when the
    * line itself is missing from the run log. */
   language: { present: true; id: string } | { present: false };
-  /** PROVISIONAL (see header): the classification expectation and observed
-   * count the export script (plan 36-03's `GhidraStructExport.java`)
-   * prints on their own labelled lines. Absent until that script's real
-   * output format is measured; this generic extraction may not match it. */
-  classification: { present: true; expected: number; observed: number } | { present: false };
 }
 
 /** The exact literal signal for a thrown script, MEASURED this session
@@ -155,29 +138,15 @@ const SCRIPT_THREW_LITERAL = "ERROR REPORT SCRIPT ERROR:";
  * suffix (`:default`) that always follows it on this line. */
 const LANGUAGE_LINE_PATTERN = /Using Language\/Compiler:\s*([^\s:]+(?::[^\s:]+)*?):[A-Za-z0-9_]+\s/;
 
-/** A generic, best-effort labelled-number extraction for the classification
- * question (see this module's own header on why this is PROVISIONAL). */
-const CLASSIFICATION_EXPECTED_PATTERN = /expected[^0-9\n]{0,40}?(\d+)/i;
-const CLASSIFICATION_OBSERVED_PATTERN = /observed[^0-9\n]{0,40}?(\d+)/i;
-
 /** THE ONE PLACE run-log text is classified. Pure string logic -- no
- * filesystem access, no child process, no Ghidra installation required.
- * Plan 36-03 imports this function over its own captured log fixtures
- * without modifying this file. */
+ * filesystem access, no child process, no Ghidra installation required. */
 export function classifyGhidraRunLog(logText: string): GhidraRunLogVerdict {
   const scriptThrew = logText.includes(SCRIPT_THREW_LITERAL);
 
   const languageMatch = LANGUAGE_LINE_PATTERN.exec(logText);
   const language: GhidraRunLogVerdict["language"] = languageMatch ? { present: true, id: languageMatch[1]! } : { present: false };
 
-  const expectedMatch = CLASSIFICATION_EXPECTED_PATTERN.exec(logText);
-  const observedMatch = CLASSIFICATION_OBSERVED_PATTERN.exec(logText);
-  const classification: GhidraRunLogVerdict["classification"] =
-    expectedMatch && observedMatch
-      ? { present: true, expected: Number(expectedMatch[1]), observed: Number(observedMatch[1]) }
-      : { present: false };
-
-  return { scriptThrew, language, classification };
+  return { scriptThrew, language };
 }
 
 /**
@@ -193,7 +162,7 @@ export function classifyGhidraRunLog(logText: string): GhidraRunLogVerdict {
  */
 export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptions = {}): Promise<GhidraRunResult> {
   const run = opts.run ?? runHostToolOverEndpoint;
-  const root = opts.repoRoot ?? findRepoRoot({ from: HERE });
+  const root = opts.repoRoot ?? findRepoRoot({ from: process.cwd() });
 
   // The .prg route imports the whole file, header included, so the base is
   // two bytes below the image's own load address. With no explicit base,
@@ -385,7 +354,8 @@ export async function runGhidraCli(argv: string[], seams: Pick<GhidraRunOptions,
   }
 }
 
-if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
   const result = await runGhidraCli(process.argv.slice(2));
   process.stdout.write(JSON.stringify(result) + "\n");
   process.exitCode = result.ok ? 0 : 1;

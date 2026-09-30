@@ -215,10 +215,8 @@ function generateFlat64kVariant(ws: ScratchWorkspace): string {
   return relPath;
 }
 
-/** A generic labelled-integer extraction over the export FILE's own text --
- * distinct from `classifyGhidraRunLog()`'s own classification pattern (which
- * reads RUN-LOG text, printed via `println()` with a trailing colon); the
- * export file's own lines carry no colon (`GhidraStructExport.java`'s
+/** A generic labelled-integer extraction over the export FILE's own text;
+ * the export file's own lines carry no colon (`GhidraStructExport.java`'s
  * `classificationSection.append("CLASSIFICATION_EXPECTED_FROM_BLOCKS "
  * ).append(...)`). Returns `null` for either field when its own labelled line
  * is absent -- never an accidental zero. */
