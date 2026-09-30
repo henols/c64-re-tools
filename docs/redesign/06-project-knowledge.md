@@ -26,19 +26,15 @@ The original application remains in the project where the developer chose to pla
 
 ## 2. Persistent toolkit state
 
-The only mandatory persistent toolkit-owned project state is:
+The only authoritative persistent toolkit-owned project state in v1 is:
 
 ```text
 .c64-re-tools/knowledge.db
 ```
 
-Optional disposable/machine-local data belongs under:
+Do not create a general project-local runtime/cache tree under `.c64-re-tools`. Host Runtime state, screenshots, snapshots, analyzer scratch, staging and logs belong outside the project. See [17 — Project root and local state](17-project-root-and-local-state.md).
 
-```text
-.c64-re-tools/local/
-```
-
-`local/` is not authoritative knowledge and should normally be ignored by source control.
+The `.c64-re-tools/` directory itself also acts as an explicit project-root marker when present.
 
 ## 3. One representation
 
@@ -468,7 +464,7 @@ COMMIT
 
 A failure writes no partial revision and leaves current knowledge unchanged.
 
-Use SQLite settings appropriate for a source-controlled single-file database. Avoid a design where successful project state can remain only in an uncommitted WAL sidecar.
+Use SQLite rollback-journal semantics appropriate for a source-controlled single-file database. A successful committed write must be fully represented in `knowledge.db`; do not rely on persistent WAL state. SQLite owns locking/concurrency; no additional project lock file is required.
 
 ## 11. What is not stored in v1
 
