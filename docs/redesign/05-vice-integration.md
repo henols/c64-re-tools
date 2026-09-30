@@ -70,6 +70,16 @@ When VICE exits unexpectedly:
 
 The Host Runtime must never replay a possibly state-changing failed request automatically.
 
-## 8. Real-emulator validation
+## 8. Session machine profile and spaces
+
+Each VICE session uses one fixed machine profile for its lifetime. Initial supported profiles are C64 PAL and C64 NTSC, with PAL as the normal/default profile. Changing profile means starting a fresh session rather than mutating timing assumptions in place.
+
+Low-level debugging supports explicit logical spaces for the C64 CPU and drive 8 CPU. Monitor default-memspace repair and channel-specific workarounds remain internal.
+
+The public MCP may expose frame advancement, canonical screen capture/comparison and atomic composite observations as C64-domain operations even when their implementation requires multiple serialized VICE monitor operations.
+
+See [14 — VICE MCP surface](14-vice-mcp-surface.md).
+
+## 9. Real-emulator validation
 
 Protocol and behavior claims that depend on VICE must have at least one real-emulator validation path. Self-authored mocks are useful for deterministic unit testing but are not sufficient evidence for external VICE behavior.
