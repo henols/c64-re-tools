@@ -185,11 +185,17 @@ function screenMatrixStart(bankBase: number, memoryControlValue: number): number
   return bankBase + ((memoryControlValue >> 4) & 0x0f) * SCREEN_MATRIX_GRANULARITY;
 }
 
-/** Character-or-bitmap base: $D018's low nibble's upper three bits (bits
- * #1-#3), scaled by the character-base granularity, added to the bank base.
- * Matches `stock-vicii.ts`'s `memorySetup.charsetOffset` exactly. */
-function characterOrBitmapStart(bankBase: number, memoryControlValue: number): number {
+/** Character-set base: $D018's low nibble's upper three bits (bits #1-#3),
+ * scaled by the character-base granularity, added to the bank base. Matches
+ * `stock-vicii.ts`'s `memorySetup.charsetOffset`. */
+function characterSetStart(bankBase: number, memoryControlValue: number): number {
   return bankBase + ((memoryControlValue >> 1) & 0x07) * CHARACTER_BASE_GRANULARITY;
+}
+
+/** Bitmap base: $D018 bit #3 alone selects the 8 KB half of the bank. Matches
+ * `stock-vicii.ts`'s `memorySetup.bitmapOffset`. */
+function bitmapStart(bankBase: number, memoryControlValue: number): number {
+  return bankBase + ((memoryControlValue >> 3) & 0x01) * BITMAP_SIZE;
 }
 
 /** True iff $D011 bit 5 (bitmap mode) is set. Matches `stock-vicii.ts`'s
@@ -273,8 +279,8 @@ function buildGraphicsMap(combo: RegisterCombo): GraphicsMap {
     });
 
     if (controlRegister1 !== undefined) {
-      const charOrBitmapStart = characterOrBitmapStart(bankBase, memoryControl);
       const bitmap = isBitmapMode(controlRegister1);
+      const charOrBitmapStart = bitmap ? bitmapStart(bankBase, memoryControl) : characterSetStart(bankBase, memoryControl);
       ranges.push({
         start: charOrBitmapStart,
         endInclusive: charOrBitmapStart + (bitmap ? BITMAP_SIZE : CHARACTER_SET_SIZE) - 1,
