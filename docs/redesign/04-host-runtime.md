@@ -162,6 +162,8 @@ Tool discovery/configuration lives on the host.
 
 The caller receives domain-level structured results suitable for its skill, not raw command lines or process metadata.
 
+The frozen v1 logical request/result contracts for ACME, DXA, Ghidra, c1541 and petcat are defined in [16 — Host Runtime native-tool contracts](16-host-runtime-tool-contracts.md).
+
 ## 9. Process safety
 
 - Spawn executables with argv arrays, never interpolated shell strings.
