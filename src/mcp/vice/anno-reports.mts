@@ -708,15 +708,38 @@ function exportAsmReport(handle: AnnoStoreHandle, args: Record<string, unknown>,
   };
 }
 
-/** evid-disagreements: where runtime evidence disagrees with the typed ranges.
- * `runIdentity` rides beside the reconciliation, `null` unless the store
- * holds exactly one run -- an ambiguous "which run" is refused by the
- * consuming verb, never guessed here. */
-function evidDisagreementsReport(handle: AnnoStoreHandle): AnnoReportResult {
+/** evid-disagreements: where runtime evidence disagrees with the typed ranges,
+ * for ONE run. `args.run` (`{image_sha256, argv_digest, seed}`) picks the run;
+ * without it the store must hold at most one. Several runs and no choice is
+ * refused by name -- mixing two runs' observations would answer for neither.
+ * `runIdentity` rides beside the reconciliation, `null` when the store holds
+ * no run. */
+function evidDisagreementsReport(handle: AnnoStoreHandle, args: Record<string, unknown>): AnnoReportResult {
   const blocks = blocksFromStore(listRanges(handle));
-  const reconciliation = reconcileObservedExecution({ blocks, observations: listExecObservations(handle) });
   const { runs } = listObservedRuns(handle);
-  const run = runs.length === 1 ? runs[0]! : undefined;
+  let run: (typeof runs)[number] | undefined;
+  if (args.run !== undefined) {
+    const sel = args.run;
+    if (!isPlainObject(sel) || typeof sel.image_sha256 !== "string" || typeof sel.argv_digest !== "string" || typeof sel.seed !== "string") {
+      throw new AnnoReportRefusal("evid-disagreements: the run selector must carry image_sha256, argv_digest and seed as strings");
+    }
+    run = runs.find((r) => r.imageSha256 === sel.image_sha256 && r.argvDigest === sel.argv_digest && r.seed === sel.seed);
+    if (run === undefined) {
+      throw new AnnoReportRefusal(
+        `evid-disagreements: no recorded run matches the selector (${runs.length} run(s) are recorded) -- name a run the project holds.`,
+      );
+    }
+  } else if (runs.length > 1) {
+    throw new AnnoReportRefusal(
+      `evid-disagreements: the project holds ${runs.length} recorded runs and none was chosen -- mixing their observations would ` +
+        "answer for none of them. Name one with --run IMAGE_SHA256:ARGV_DIGEST:SEED (`anno call anno_evid_runs` lists them).",
+    );
+  } else {
+    run = runs[0];
+  }
+  const observations =
+    run === undefined ? listExecObservations(handle) : listExecObservations(handle, { imageSha256: run.imageSha256, argvDigest: run.argvDigest, seed: run.seed });
+  const reconciliation = reconcileObservedExecution({ blocks, observations });
   const runIdentity = run === undefined ? null : { imageSha256: run.imageSha256, argvDigest: run.argvDigest, seed: run.seed };
   return { json: { runIdentity, ...reconciliation }, files: [] };
 }
@@ -965,7 +988,7 @@ export async function runAnnoReportOnHandle(handle: AnnoStoreHandle, name: strin
     case "export-asm":
       return exportAsmReport(handle, bag, inputs);
     case "evid-disagreements":
-      return evidDisagreementsReport(handle);
+      return evidDisagreementsReport(handle, bag);
     case "decomp-completeness":
       return decompCompletenessReport(handle, bag, inputs);
     case "hazard-report":

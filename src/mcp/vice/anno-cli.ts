@@ -339,7 +339,7 @@ verbs:
       Such an annotation is never silently dropped while this command
       reports success.
 
-  evid-disagreements [--json]
+  evid-disagreements [--run IMAGE_SHA256:ARGV_DIGEST:SEED] [--json]
       Answers where this workspace's byte-derived block classification (its
       own typed ranges) and the observed-execution evidence (anno_evid_exec
       rows, written by anno_evid_ingest) DISAGREE -- the SAME reconciliation
@@ -353,7 +353,8 @@ verbs:
       a reader summing every line gets what the block table covers, never
       what the program is. No percentage, rate or coverage figure is ever
       printed. --json prints the raw JSON answer instead of the rendered
-      report.
+      report. --run picks the recorded run to answer for; a project that
+      holds several runs refuses without it, and one run needs no --run.
       Requires an EXISTING annotation project; creates none and writes
       nothing.
 
@@ -467,7 +468,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
   "render-memmap": ["--provenance", "--out", "--force", "--check"],
   coverage: ["--out", "--force", "--sample"],
   "export-asm": ["--out", "--ledger", "--force"],
-  "evid-disagreements": ["--json"],
+  "evid-disagreements": ["--run", "--json"],
   "decomp-completeness": ["--fixture", "--disagreements", "--manifest", "--json"],
   "hazard-report": ["--image", "--json"],
   "export-project": ["--out", "--force"],
@@ -1252,6 +1253,8 @@ async function cmdExportAsm(rest: string[], ctx: CliContext): Promise<number> {
 
 interface EvidDisagreementsParsedArgs {
   positional: string[];
+  run?: string;
+  runMissingValue?: boolean;
   json?: boolean;
   unknownOption?: string;
 }
@@ -1263,18 +1266,27 @@ interface EvidDisagreementsParsedArgs {
 function parseEvidDisagreementsArgs(rest: string[]): EvidDisagreementsParsedArgs {
   const positional: string[] = [];
   let json = false;
+  let run: string | undefined;
+  let runMissingValue = false;
   let unknownOption: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
     if (a === "--json") {
       json = true;
+    } else if (a === "--run") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("-")) runMissingValue = true;
+      else {
+        run = value;
+        i += 1;
+      }
     } else if (a.startsWith("--")) {
       unknownOption ??= a;
     } else {
       positional.push(a);
     }
   }
-  return { positional, json, unknownOption };
+  return { positional, run, runMissingValue, json, unknownOption };
 }
 
 /**
@@ -1323,10 +1335,15 @@ function printEvidDisagreementsReport(label: string, r: EvidReconciliation): voi
  * three states.
  */
 async function cmdEvidDisagreements(rest: string[], ctx: CliContext): Promise<number> {
-  const { positional, json, unknownOption } = parseEvidDisagreementsArgs(rest);
+  const { positional, run, runMissingValue, json, unknownOption } = parseEvidDisagreementsArgs(rest);
 
   if (unknownOption) {
     console.error(`evid-disagreements: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (runMissingValue) {
+    console.error("evid-disagreements: --run requires a value\n");
     console.log(USAGE);
     return 1;
   }
@@ -1335,9 +1352,20 @@ async function cmdEvidDisagreements(rest: string[], ctx: CliContext): Promise<nu
     return 1;
   }
 
+  let selector: { image_sha256: string; argv_digest: string; seed: string } | undefined;
+  if (run !== undefined) {
+    const first = run.indexOf(":");
+    const second = first < 0 ? -1 : run.indexOf(":", first + 1);
+    if (first < 0 || second < 0 || second === run.length - 1) {
+      console.error("evid-disagreements: --run must read IMAGE_SHA256:ARGV_DIGEST:SEED");
+      return 1;
+    }
+    selector = { image_sha256: run.slice(0, first), argv_digest: run.slice(first + 1, second), seed: run.slice(second + 1) };
+  }
+
   let answer: ReportAnswer;
   try {
-    answer = await runReport(ctx, "evid-disagreements", {}, {});
+    answer = await runReport(ctx, "evid-disagreements", selector === undefined ? {} : { run: selector }, {});
   } catch (err) {
     return reportFailure("evid-disagreements", err);
   }

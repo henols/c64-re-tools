@@ -201,7 +201,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
 /**
  * The verbs that take NO path argument at all, kept explicit for the same
  * reason as `NON_PATH_OPTIONS`: `evid-disagreements` answers for the
- * workspace's own project and accepts only `--json`. The coverage test below
+ * workspace's own project and accepts `--json` and `--run`, a run key. The coverage test below
  * requires every other verb to appear in the inventory.
  */
 const VERBS_WITHOUT_PATH_ARGUMENTS: readonly string[] = ["evid-disagreements"];
@@ -218,7 +218,7 @@ const VERBS_WITHOUT_PATH_ARGUMENTS: readonly string[] = ["evid-disagreements"];
  * to the CLI without a confinement call reds HERE, BY NAME, instead of being
  * reviewed.
  */
-const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "--json", "--args", "--fixture"];
+const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "--json", "--args", "--fixture", "--run"];
 
 /**
  * MEASURED, NOT COPIED: nine caller-supplied path arguments across the three

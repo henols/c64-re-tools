@@ -922,14 +922,12 @@ const VALUE_TAKING_PAIRS: readonly { verb: string; option: string }[] = Object.e
   ([verb, options]) => options.filter((o) => !BOOLEAN_OPTIONS.has(o)).map((option) => ({ verb, option })),
 );
 
-/** The verbs with no value-taking option: evid-disagreements answers for the
- * workspace's own project and takes only `--json`, and import-project takes
- * only its one positional. */
-const VERBS_WITHOUT_VALUE_OPTIONS = new Set(["evid-disagreements", "import-project"]);
+/** The verbs with no value-taking option: import-project takes only its one
+ * positional. */
+const VERBS_WITHOUT_VALUE_OPTIONS = new Set(["import-project"]);
 
 test("PRECONDITION: VALUE_TAKING_PAIRS is non-empty and covers every verb (30-REVIEW WR-09)", () => {
   assert.ok(VALUE_TAKING_PAIRS.length >= 4, `expected at least four value-taking pairs, got ${VALUE_TAKING_PAIRS.length}`);
-  assert.deepEqual(VERB_OPTIONS["evid-disagreements"], ["--json"], "the exemption below must stay a verb with no value-taking option");
   assert.deepEqual(VERB_OPTIONS["import-project"], [], "the exemption below must stay a verb with no value-taking option");
   assert.deepEqual(
     [...new Set(VALUE_TAKING_PAIRS.map((p) => p.verb))].sort(),
@@ -2158,8 +2156,8 @@ function makeEvidDisagreementsStore(dir: string, name: string, opts: { dataType:
   return storePath;
 }
 
-test("evid-disagreements: --help documents exactly --json, and names no positional", () => {
-  assert.match(helpResult.stdout, /^ {2}evid-disagreements \[--json\]$/m);
+test("evid-disagreements: --help documents --run and --json, and names no positional", () => {
+  assert.match(helpResult.stdout, /^ {2}evid-disagreements \[--run IMAGE_SHA256:ARGV_DIGEST:SEED\] \[--json\]$/m);
 });
 
 test("call: the unknown-verb refusal names all NINE verbs", async () => {
@@ -2501,5 +2499,34 @@ test("decomp-completeness: a manifest entry whose image path climbs out of the w
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
+  });
+});
+
+test("evid-disagreements: a project holding two runs refuses without --run, and --run answers for that run alone", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = join(ws, "two-runs.annostore");
+    const handle = openStore(storePath, { workspaceRoot: ws });
+    try {
+      setDataType(handle, { start: 0x9000, endInclusive: 0x9001, dataType: "byte" });
+      insertExecObservations(handle, { imageSha256: EVID_CLI_SHA, argvDigest: EVID_CLI_DIGEST, seed: "run-a", observations: [{ address: 0x9000, sourceBank: "ram" }] });
+      insertExecObservations(handle, { imageSha256: EVID_CLI_SHA, argvDigest: EVID_CLI_DIGEST, seed: "run-b", observations: [{ address: 0x9001, sourceBank: "ram" }] });
+    } finally {
+      closeStore(handle);
+    }
+    serveStore(ws, storePath);
+
+    const refused = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--json"]));
+    assert.notEqual(refused.result, 0);
+    assert.match(refused.stderr, /holds 2 recorded runs and none was chosen/);
+
+    const chosen = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--json", "--run", `${EVID_CLI_SHA}:${EVID_CLI_DIGEST}:run-a`]));
+    assert.equal(chosen.result, 0, chosen.stderr);
+    const answer = JSON.parse(chosen.stdout) as { runIdentity: { seed: string }; disagreements: { address: number }[] };
+    assert.equal(answer.runIdentity.seed, "run-a");
+    assert.deepEqual(answer.disagreements.map((d) => d.address), [0x9000], "run-b's observation at $9001 is not mixed in");
+
+    const unknown = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--run", `${EVID_CLI_SHA}:${EVID_CLI_DIGEST}:nope`]));
+    assert.notEqual(unknown.result, 0);
+    assert.match(unknown.stderr, /no recorded run matches the selector/);
   });
 });
