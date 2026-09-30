@@ -3,14 +3,10 @@
 // Scope is assembling only: source in, .prg + symbol files out.  Running the
 // result on a C64 belongs to the c64-emulator skill.
 //
-// The assembler is reached ONLY through the host-tool execution seam -- the
-// project owner's rule of 2026-08-28 is that this script runs container-side,
-// `acme` lives host-side, and there is no container PATH to find it on. This file used to spawn `acme` directly (a synchronous
-// `spawnSync("acme", args, { env })`) and probed FOUR fixed HOST paths
-// (`/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme`, `~/.acme`)
-// for its `<...>`-include library -- both are exactly what the owner's rule
-// says cannot work from inside a container. The spawn and the library probe
-// both moved to `src/mcp/vice/host-tool.mts`'s `acme.build` allowlist entry.
+// The assembler is reached ONLY through the host-tool execution seam: this
+// script runs container-side, `acme` lives host-side, and there is no
+// container PATH to find it on. The spawn and the `<...>`-include library
+// probe live in `src/mcp/vice/host-tool.mts`'s `acme.build` allowlist entry.
 // This file constructs a TYPED request and hands it to the compiled endpoint
 // client, which uploads the source's directory to the broker over the fixed
 // endpoint and downloads the produced files into a per-build staging
@@ -21,7 +17,7 @@
 // works on the developer's own host and silently fails inside a container is
 // the exact failure this seam exists to remove. A seam refusal is reported
 // and the build fails; it is never retried by spawning `acme` here.
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, realpathSync } from "node:fs";
 import { dirname, join, basename, relative, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HostToolResponse, InvokeHostToolOptions } from "../../c64-project/scripts/mcp-module.ts";
@@ -43,7 +39,13 @@ function selfPath() {
   return !r || r.startsWith("..") || isAbsolute(r) ? SELF : r;
 }
 
-const die: (m: string) => never = (m) => { console.error(`error: ${m}`); process.exit(1); };
+/** Every result this script prints. The last stdout line is always one of
+ * these, as JSON. */
+export type ScriptResult = { ok: true; [key: string]: unknown } | { ok: false; message: string; [key: string]: unknown };
+
+/** A refusal that stops the verb. `main()` turns it into `{ ok: false, message }`. */
+class Refusal extends Error {}
+const die = (m: string): never => { throw new Refusal(m); };
 
 // ------------------------------------------------------------------- types
 
@@ -183,17 +185,23 @@ async function build(src: string, opts: BuildOpts): Promise<BuildResult> {
   if (opts.includes && opts.includes.length) args.includes = opts.includes;
   if (opts.noReport) args.noReport = true;
 
-  // Results come back into the output directory under the SOURCE's own
-  // basename (the executor's naming); each is then renamed to the requested
-  // stem with its extension.
-  const response: HostToolResponse = await invokeHostTool("acme.build", args, { destDir: desiredOutDirAbs });
-  // A seam-level refusal (unresolvable client, unreachable broker, a bad
-  // request) -- never a local fallback that spawns the assembler itself.
-  if (!response.ok) die(response.message);
-  for (const result of response.results ?? []) {
-    const ext = (basename(result.path).match(/\.(prg|sym|vs|rep)$/i) ?? [])[0];
-    const target = ext ? `${desiredStem}${ext.toLowerCase()}` : null;
-    if (target && target !== result.path) renameSync(result.path, target);
+  // Results come back under the SOURCE's own basename (the executor's
+  // naming). They land in a staging directory of their own, so a build with
+  // `-o other.prg` never overwrites an existing `<source>.prg`; each result
+  // is then renamed to the requested stem with its extension.
+  const staging = mkdtempSync(join(desiredOutDirAbs, ".acme-"));
+  let response: HostToolResponse;
+  try {
+    response = await invokeHostTool("acme.build", args, { destDir: staging });
+    // A seam-level refusal (unresolvable client, unreachable broker, a bad
+    // request) -- never a local fallback that spawns the assembler itself.
+    if (!response.ok) return die(response.message);
+    for (const result of response.results ?? []) {
+      const ext = (basename(result.path).match(/\.(prg|sym|vs|rep)$/i) ?? [])[0];
+      if (ext) renameSync(result.path, `${desiredStem}${ext.toLowerCase()}`);
+    }
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
   }
 
   const stem = desiredStem;
@@ -219,13 +227,12 @@ async function build(src: string, opts: BuildOpts): Promise<BuildResult> {
 
 const hex = (n: number, w = 4) => n.toString(16).padStart(w, "0");
 
-function reportBuild(res: BuildResult, { json }: { json: boolean }) {
-  if (json) { console.log(JSON.stringify(res, null, 2)); return; }
+function reportBuild(res: BuildResult) {
   for (const d of res.diags) {
     if (d.file) console.log(`${d.file}:${d.line}: ${d.severity}: ${d.message}`);
     else console.log(`  ${d.message}`);
   }
-  if (!res.ok) { console.error(`build FAILED (${res.errors.length} error(s))`); return; }
+  if (!res.ok) return;
   const r = res.range;
   console.log(
     `built ${res.prg} (${res.size} bytes)` +
@@ -240,33 +247,41 @@ function reportBuild(res: BuildResult, { json }: { json: boolean }) {
 
 // -------------------------------------------------------------------- verbs
 
-async function cmdBuild(argv: string[]) {
+async function cmdBuild(argv: string[]): Promise<ScriptResult> {
   const o = parseOpts(argv);
   const res = await build(o.src, o);
-  reportBuild(res, o);
-  process.exit(res.ok ? 0 : 1);
+  if (!o.json) reportBuild(res);
+  if (res.ok) return { ...res, ok: true };
+  return { ...res, ok: false, message: buildFailure(res) };
 }
 
-async function cmdSym(argv: string[]) {
+function buildFailure(res: BuildResult): string {
+  return `build FAILED (${res.errors.length} error(s))${res.errors[0] ? `: ${res.errors[0].message}` : ""}`;
+}
+
+async function cmdSym(argv: string[]): Promise<ScriptResult> {
   const o = parseOpts(argv);
   const res = await build(o.src, { ...o, noReport: true });
-  if (!res.ok) { reportBuild(res, o); process.exit(1); }
+  if (!res.ok) {
+    if (!o.json) reportBuild(res);
+    return { ...res, ok: false, message: buildFailure(res) };
+  }
   const used = res.symbols.filter((s) => s.used).sort((a, b) => a.name.localeCompare(b.name));
-  if (o.json) { console.log(JSON.stringify(used, null, 2)); return; }
-  for (const s of used) console.log(`${s.isAddress ? "addr " : "const"} ${s.value.padStart(6)}  ${s.name}`);
+  if (!o.json) for (const s of used) console.log(`${s.isAddress ? "addr " : "const"} ${s.value.padStart(6)}  ${s.name}`);
+  return { ok: true, symbols: used };
 }
 
 // A skeleton that is correct on the first try: BASIC stub with a computed SYS
-// target, the C64 symbol libraries, and no !to (the CLI supplies -o).
-function cmdNew(argv: string[]) {
+// target and no !to (the CLI supplies -o).
+function cmdNew(argv: string[]): ScriptResult {
   const path = argv[0];
-  if (!path) die("usage: new <file.a>");
-  if (existsSync(path)) die(`${path} already exists`);
-  // template.a lives at the skill root, one level up from scripts/, by
-  // decision: only .mjs modules move into scripts/.
+  if (!path) return die("usage: new <file.a>");
+  if (existsSync(path)) return die(`${path} already exists`);
+  // template.a lives at the skill root, one level up from scripts/.
   writeFileSync(path, readFileSync(join(HERE, "..", "template.a"), "utf8"));
   console.log(`wrote ${path}`);
   console.log(`next: node ${selfPath()} build ${path}`);
+  return { ok: true, path };
 }
 
 // ------------------------------------------------------------------ options
@@ -288,24 +303,44 @@ function parseOpts(argv: string[]): BuildOpts & { src: string } {
     else rest.push(a);
   }
   o.src = rest[0];
-  if (!o.src) die("no source file given");
+  if (!o.src) return die("no source file given");
   return { ...o, src: o.src };
 }
 
 // --------------------------------------------------------------------- main
 
-const [cmd, ...rest] = process.argv.slice(2);
-const VERBS = { new: cmdNew, build: cmdBuild, sym: cmdSym } satisfies Record<string, (argv: string[]) => void | Promise<void>>;
-const isVerb = (name: string): name is keyof typeof VERBS => Object.hasOwn(VERBS, name);
-if (!cmd || !isVerb(cmd)) {
-  console.log(`usage: node ${selfPath()} <command> [options]
+const VERBS = { new: cmdNew, build: cmdBuild, sym: cmdSym } satisfies Record<string, (argv: string[]) => ScriptResult | Promise<ScriptResult>>;
+
+function usage(): string {
+  return `usage: node ${selfPath()} <command> [options]
 
   new <file.a>              scaffold a C64 program (BASIC stub, no libraries needed)
   build <file.a>            assemble -> .prg .sym .vs .rep
   sym <file.a>              list the symbols the program uses
 
 options: -o FILE  --out-dir DIR  -f FORMAT  --setpc ADDR  -DSYM=VAL  -I DIR
-         --no-report  --json`);
-  process.exit(cmd ? 1 : 0);
+         --no-report  --json
+The last stdout line is one JSON result.`;
 }
-await VERBS[cmd](rest);
+
+/** The whole CLI as a function. Never rejects. */
+export async function main(argv: string[]): Promise<ScriptResult> {
+  const [cmd, ...rest] = argv;
+  if (!cmd || !Object.hasOwn(VERBS, cmd)) {
+    return { ok: false, message: cmd ? `unknown command ${JSON.stringify(cmd)}\n${usage()}` : usage() };
+  }
+  try {
+    return await VERBS[cmd as keyof typeof VERBS](rest);
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  const result = await main(process.argv.slice(2));
+  console.log(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
+}

@@ -11,8 +11,8 @@
 ; exactly what this scaffold's body uses, defined locally instead. If you
 ; want the full library for your own sources' angle-bracket includes, set
 ; $ACME to a directory containing that library (with vic.a inside it);
-; acme.ts's findAcmeLib() already probes for it and passes it through to
-; the child.
+; the host broker's findAcmeLib() (src/mcp/vice/host-tool.mts) already
+; probes for it and passes it through to acme.
 
 !cpu 6510                       ; C64's CPU: legal 6502 + the illegal opcodes
 
