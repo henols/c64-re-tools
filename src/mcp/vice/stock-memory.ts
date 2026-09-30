@@ -84,7 +84,7 @@ export interface BankCatalog {
  * garbage-collected. Both the module-level holder below and
  * resetBankCatalogsForTest() call this rather than repeating the
  * constructor inline. */
-function freshCatalogCache(): WeakMap<object, BankCatalog> { return new WeakMap(); }
+function freshCatalogCache(): WeakMap<object, Promise<BankCatalog>> { return new WeakMap(); }
 
 let bankCatalogs = freshCatalogCache();
 
@@ -97,13 +97,11 @@ export function resetBankCatalogsForTest(): void {
 
 /**
  * Resolves (and caches, per session) the emulator's own bank enumeration.
- * On a cache miss, sends BANKS_AVAILABLE (0x82) with no body -- the opcode
- * takes an empty body, and client.send() already defaults to
- * Buffer.alloc(0), so there is no dedicated wire-body encoder to invent for
- * this command. Bank names are matched case-insensitively on lookup (the
- * lowercased name is the map key; the wire's own spelling is kept in
- * `byId` for reporting), because the fork's own tool description uses
- * lowercase 'ram'.
+ * The cache holds the in-flight promise, so concurrent callers share one
+ * BANKS_AVAILABLE (0x82) round trip; a rejection, including an empty
+ * enumeration, is evicted so the next call retries. Bank names are matched
+ * case-insensitively on lookup (the lowercased name is the map key; the
+ * wire's own spelling is kept in `byId` for reporting).
  */
 export async function bankCatalogFor(session: StockConnectSession): Promise<BankCatalog> {
   const existing = bankCatalogs.get(session);
@@ -111,28 +109,42 @@ export async function bankCatalogFor(session: StockConnectSession): Promise<Bank
     return existing;
   }
 
-  const response = await session.client.send(CommandType.BanksAvailable);
-  if (response.type !== "banks_available") {
-    throw new Error(`bankCatalogFor: expected a "banks_available" reply, got "${response.type}"`);
-  }
-
-  const byName = new Map<string, number>();
-  const byId = new Map<number, string>();
-  const entries: { id: number; name: string }[] = [];
-  for (const bank of response.banks) {
-    byName.set(bank.name.toLowerCase(), bank.id);
-    // WR-01: FIRST name per id wins here, so the reverse lookup is stable
-    // rather than "whichever alias the emulator listed last". Aliases are
-    // never lost -- they all live in `entries`.
-    if (!byId.has(bank.id)) {
-      byId.set(bank.id, bank.name);
+  const pending = (async (): Promise<BankCatalog> => {
+    const response = await session.client.send(CommandType.BanksAvailable);
+    if (response.type !== "banks_available") {
+      throw new Error(`bankCatalogFor: expected a "banks_available" reply, got "${response.type}"`);
     }
-    entries.push({ id: bank.id, name: bank.name });
-  }
+    if (response.banks.length === 0) {
+      throw new Error(
+        "bankCatalogFor: the connected VICE build enumerated zero banks via BANKS_AVAILABLE -- " +
+          "no bank name can be resolved, and this is not cached as an empty catalog",
+      );
+    }
 
-  const catalog: BankCatalog = { byName, byId, entries };
-  bankCatalogs.set(session, catalog);
-  return catalog;
+    const byName = new Map<string, number>();
+    const byId = new Map<number, string>();
+    const entries: { id: number; name: string }[] = [];
+    for (const bank of response.banks) {
+      byName.set(bank.name.toLowerCase(), bank.id);
+      // The first name per id wins in the reverse lookup, so it is stable
+      // rather than "whichever alias the emulator listed last". Aliases are
+      // never lost: they all live in `entries`.
+      if (!byId.has(bank.id)) {
+        byId.set(bank.id, bank.name);
+      }
+      entries.push({ id: bank.id, name: bank.name });
+    }
+    return { byName, byId, entries };
+  })();
+
+  bankCatalogs.set(session, pending);
+  // A failed fetch is retried by the next call, never memoised.
+  pending.catch(() => {
+    if (bankCatalogs.get(session) === pending) {
+      bankCatalogs.delete(session);
+    }
+  });
+  return pending;
 }
 
 /** Shared bank-argument resolution for every handler whose `bank` argument is

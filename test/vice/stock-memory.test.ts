@@ -225,6 +225,25 @@ test("bankCatalogFor: a second call on the SAME session records no second send",
   assert.equal(calls.length, 1);
 });
 
+test("bankCatalogFor: two concurrent first calls share one BANKS_AVAILABLE round trip", async () => {
+  const { session, calls } = makeSession(async () => twoBankReply());
+  const [a, b] = await Promise.all([bankCatalogFor(session), bankCatalogFor(session)]);
+  assert.strictEqual(a, b);
+  assert.equal(calls.length, 1);
+});
+
+test("bankCatalogFor: an empty enumeration is refused and not cached, so the next call asks again", async () => {
+  let empty = true;
+  const { session, calls } = makeSession(() =>
+    empty ? { type: "banks_available" as const, requestId: 1, errorCode: 0, banks: [], related: [] } : twoBankReply(),
+  );
+  await assert.rejects(bankCatalogFor(session), /zero banks/);
+  empty = false;
+  const catalog = await bankCatalogFor(session);
+  assert.equal(catalog.byName.get("ram"), 0x0c);
+  assert.equal(calls.length, 2);
+});
+
 test("bankCatalogFor: a DIFFERENT session object triggers a fresh fetch", async () => {
   const { session: sessionA, calls: callsA } = makeSession(() => twoBankReply());
   const { session: sessionB, calls: callsB } = makeSession(() => twoBankReply());

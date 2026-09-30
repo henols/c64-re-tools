@@ -37,6 +37,7 @@
 //     only, and only for this one resource name.
 import {
   CommandType,
+  cpuHistoryGetBody,
   memspaceBody,
   resourceGetBody,
   StockConnectionClosedError,
@@ -272,9 +273,7 @@ export async function readCycleBaseline(session: StockConnectSession): Promise<C
     // Route A: CPUHISTORY_GET(count:1) -- NEVER count:0, which real VICE
     // rejects with InvalidParameter (the Wave-0 defect 07-01 fixed).
     const count = clampCpuHistoryCount(1);
-    const body = Buffer.alloc(5);
-    body[0] = 0x00; // memspace: main
-    body.writeUInt32LE(count, 1);
+    const body = cpuHistoryGetBody({ count, memspace: 0x00 });
     const response = await session.client.send(CommandType.CpuHistoryGet, body);
     if (response.type !== "cpu_history") {
       throw new Error(`readCycleBaseline: expected a cpu_history reply, got "${response.type}"`);

@@ -1021,6 +1021,25 @@ export function resourceGetBody({ name }: ResourceGetBodyOptions): Buffer {
   return body;
 }
 
+export interface CpuHistoryGetBodyOptions {
+  count: number;
+  memspace?: number;
+}
+
+/**
+ * CPUHISTORY_GET (0x86) request body -- 5 bytes, `memspace(1) count(u32LE)`.
+ * `count` is at least 1: real VICE rejects 0 with InvalidParameter.
+ */
+export function cpuHistoryGetBody({ count, memspace }: CpuHistoryGetBodyOptions): Buffer {
+  if (!Number.isInteger(count) || count < 1 || count > 0xffffffff) {
+    throw new StockEncodingError(`cpuHistoryGetBody: count must be an integer in 1..4294967295, got ${String(count)}`, { field: "count" });
+  }
+  const body = Buffer.alloc(5);
+  body[0] = memspaceByte(memspace);
+  body.writeUInt32LE(count, 1);
+  return body;
+}
+
 // CHECKPOINT_LIST (0x14), PING (0x81), BANKS_AVAILABLE (0x82),
 // EXECUTE_UNTIL_RETURN (0x73) and EXIT (0xaa) take EMPTY bodies --
 // deliberately no encoder for any of the five: ViceMonitorClient.send()

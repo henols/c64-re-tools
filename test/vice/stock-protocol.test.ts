@@ -46,6 +46,7 @@ import {
   keyboardFeedBody,
   joyportSetBody,
   joyportDeviceSetBody,
+  cpuHistoryGetBody,
   ResetMode,
   resetBody,
   autostartBody,
@@ -1544,6 +1545,12 @@ test("keyboardFeedBody: a 256-byte payload throws", () => {
 
 test("keyboardFeedBody: an empty payload throws", () => {
   assert.throws(() => keyboardFeedBody({ petscii: Buffer.alloc(0) }), StockEncodingError);
+});
+
+test("cpuHistoryGetBody: 5 bytes, memspace then count as u32LE; a count of 0 is refused", () => {
+  const body = cpuHistoryGetBody({ count: 256, memspace: 0x00 });
+  assert.deepEqual([...body], [0x00, 0x00, 0x01, 0x00, 0x00]);
+  assert.throws(() => cpuHistoryGetBody({ count: 0 }), StockEncodingError);
 });
 
 test("joyportDeviceSetBody: encodes an integer RESOURCE_SET of JoyPort2Device", () => {
