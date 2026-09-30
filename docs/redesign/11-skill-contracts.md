@@ -450,39 +450,61 @@ Report errors at source-level locations where possible. Hide host process/stagin
 
 ### Purpose
 
-Verify requested C64 behavior for development regressions or original-vs-reconstruction functional equivalence.
+Verify requested C64 behavior for development regressions or original-vs-reconstruction functional equivalence using layered evidence.
+
+The skill supports:
+
+- routine-level behavior;
+- checkpointed machine-state comparisons;
+- screenshot/visual comparisons;
+- longer gameplay scenarios;
+- preparation of human playtest checklists.
 
 ### Inputs
 
 - scenario/action to perform;
-- starting-state requirements;
+- reproducible starting-state requirements;
+- checkpoint condition(s);
 - observations/assertions to compare;
+- explicit tolerances/masks where applicable;
 - original/reconstructed targets when equivalence is requested.
 
 ### Tools / execution path
 
-Primarily MCP for VICE state and input.
+Primarily MCP for VICE execution, state and input.
 
-Local deterministic comparison helpers may be used for RAM/image/output comparison.
+Local deterministic comparison helpers may be used for memory/state/image comparison.
+
+Original and rebuild are normally run sequentially in the one VICE instance.
 
 ### Workflow
 
 ~~~text
 establish reproducible start
     ↓
-perform defined inputs/actions
+perform defined logical inputs/actions
     ↓
-observe defined state/behavior
+reach verified checkpoint
     ↓
-compare/assert
+capture relevant observations
     ↓
-return pass/fail/inconclusive with relevant evidence
+repeat for comparison target
+    ↓
+compare using explicit rules
+    ↓
+return PASS / FAIL / INCONCLUSIVE
 ~~~
+
+Prefer semantic observations such as player_x or update_player over fixed physical addresses when original and rebuild layouts differ.
+
+For games, screenshot checkpoints should normally be paired with useful display-driving state when that helps explain a mismatch.
 
 ### Knowledge
 
 Read:
-- address/symbol context needed to interpret assertions.
+- semantic original-side address/symbol context needed by the test.
+
+Rebuild-side semantic locations may come from assembler/source symbols.
 
 Automatic write:
 - none.
@@ -490,29 +512,40 @@ Automatic write:
 Semantic write:
 - unexpected behavior may lead to a separate justified knowledge update after investigation.
 
-Do not store ordinary test runs in knowledge.db.
+Do not store ordinary test runs, transient screenshots, comparison artifacts or manual playtest outcomes in knowledge.db.
 
 ### Result
 
+Exactly one automated state:
+
 ~~~text
-pass
-fail
-inconclusive
+PASS
+FAIL
+INCONCLUSIVE
 ~~~
 
 with the smallest useful evidence explaining the result.
 
+A visual failure should report useful differences, and where possible correlate them with C64 state rather than returning only a pixel score.
+
 ### Failure and conflicts
 
-A test that did not reach its required starting state is inconclusive, not a failure of application behavior.
+A test that did not reach its required starting state/checkpoint is INCONCLUSIVE, not a failure of application behavior.
 
-Do not claim functional equivalence beyond the behavior the scenario actually exercises.
+Random/nondeterministic behavior must be controlled or compared through explicit invariants; otherwise exact assertions may be inconclusive.
+
+Do not claim functional equivalence beyond the behavior actually exercised.
+
+Human playtesting is the final acceptance layer for behavior that automated scenarios cannot fully establish.
+
+See [13 — Testing and functional equivalence](13-testing-and-functional-equivalence.md).
 
 ### Handoffs
 
 - investigate failure → c64-emulator
 - static cause → c64-static-analysis
 - rebuild after fix → c64-assembler
+- durable semantic conclusion → c64-knowledge
 
 ## 10. c64-disk
 
