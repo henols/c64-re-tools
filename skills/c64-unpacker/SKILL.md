@@ -93,10 +93,12 @@ image and keeps them.
 
 ## Failure shape
 
-The script always prints one JSON object on success, with exit 0:
+The script prints one line of JSON as its last output. On success the object
+has `"ok": true` and the fields of the finding, with exit 0:
 
 ```json
 {
+  "ok": true,
   "packer": null,
   "verdict": "unpacked",
   "confidence": "MEDIUM",
@@ -122,14 +124,16 @@ The script always prints one JSON object on success, with exit 0:
 - An empty file gives no entropy measurement. Without an identifier the
   verdict is then `unknown`.
 
-The script exits non-zero only for bad input:
+The script gives `{"ok": false, "message": "..."}` and exit code 1 only for
+bad input. `--help` or `-h` gives `{"ok": true, "usage": "..."}` and exit
+code 0.
 
-| Output | Exit |
+| `message` | Cause |
 | --- | --- |
-| The usage text (no file given) | 2 |
-| The usage text (`--help` or `-h`) | 0 |
-| `packer-finding: could not read <file>: <error>` | 1 |
-| `packer-finding: --entropy must be a number, got "<value>"` | 1 |
+| The usage text | No file given. |
+| `packer-finding: could not read <file>: <error>` | The file is missing or unreadable. |
+| `packer-finding: --entropy must be a number, got "<value>"` | The value is not a plain decimal number. `7.8abc` is refused. |
+| `packer-finding: --entropy needs a value, …` | The flag has no value. |
 
 ## What this skill does NOT do
 

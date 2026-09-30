@@ -405,7 +405,7 @@ export function runUnp64(probe: OracleProbe | null | undefined, filePath: string
   if (!response || typeof response.ok !== "boolean") {
     return { ok: false, stdout: "", reason: message || "the oracle.run seam call failed" };
   }
-  return { ok: response.ok, stdout: typeof response.stdout === "string" ? response.stdout : "", reason: response.reason ?? null };
+  return { ok: response.ok, stdout: typeof response.stdout === "string" ? response.stdout : "", reason: response.reason ?? message ?? null };
 }
 
 /**
@@ -619,7 +619,7 @@ export function packerFinding(options: PackerFindingOptions = {}): PackerFinding
 
 const USAGE = `usage: node skills/c64-unpacker/scripts/packer-finding.ts <file> [--entropy N]
 
-Prints ONE JSON object: the packer finding for <file>.
+Prints ONE JSON object: ok, plus the packer finding for <file>.
 
   packer            the packer name, or null. Non-null ONLY when an external
                     oracle stated it verbatim. This project never guesses one.
@@ -632,57 +632,59 @@ Prints ONE JSON object: the packer finding for <file>.
 
 --entropy overrides the locally computed value with one you already have (the
 curated binary-info tool reports it). The entropy gate answers PACKEDNESS and
-never identity.`;
+never identity. A bad input gives {"ok": false, "message": "..."} and exit 1.`;
 
-function readFlag(argv: string[], name: string): string | undefined {
-  const index = argv.indexOf(`--${name}`);
-  if (index === -1) return undefined;
-  const value = argv[index + 1];
-  if (value === undefined || value.startsWith("--")) return undefined;
-  return value;
+/** Every result this script prints. The last stdout line is always one of
+ * these, as JSON. */
+export type ScriptResult = ({ ok: true } & PackerFinding) | { ok: true; usage: string } | { ok: false; message: string };
+
+/** A plain decimal number, or null. `parseFloat` alone would take "7.8abc". */
+function parseDecimal(text: string): number | null {
+  return /^[0-9]+(\.[0-9]+)?$/.test(text) ? Number(text) : null;
 }
 
-function main(argv: string[]): void {
+/** The whole CLI as a function. Never throws. */
+export function main(argv: string[]): ScriptResult {
+  if (argv.includes("--help") || argv.includes("-h")) return { ok: true, usage: USAGE };
   const positional: string[] = [];
+  let entropy: number | null = null;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (token === "--entropy") {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith("--")) return { ok: false, message: "packer-finding: --entropy needs a value, for example --entropy 7.83" };
+      entropy = parseDecimal(value);
+      if (entropy === null) return { ok: false, message: `packer-finding: --entropy must be a number, got "${value}"` };
       i++;
       continue;
     }
-    if (token.startsWith("--")) continue;
+    if (token.startsWith("--")) return { ok: false, message: `packer-finding: unknown flag ${token}\n${USAGE}` };
     positional.push(token);
   }
 
   const filePath = positional[0];
-  if (filePath === undefined || argv.includes("--help") || argv.includes("-h")) {
-    console.log(USAGE);
-    process.exit(filePath === undefined && !argv.includes("--help") && !argv.includes("-h") ? 2 : 0);
-  }
+  if (filePath === undefined) return { ok: false, message: USAGE };
+  if (positional.length > 1) return { ok: false, message: `packer-finding: give exactly one file, got ${positional.length}` };
 
-  let bytes: Buffer | null = null;
+  let bytes: Buffer;
   try {
     bytes = readFileSync(filePath);
   } catch (err) {
-    console.error(`packer-finding: could not read ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
+    return { ok: false, message: `packer-finding: could not read ${filePath}: ${err instanceof Error ? err.message : String(err)}` };
   }
 
-  const entropyRaw = readFlag(argv, "entropy");
-  const entropy = entropyRaw === undefined ? null : Number.parseFloat(entropyRaw);
-  if (entropyRaw !== undefined && !Number.isFinite(entropy)) {
-    console.error(`packer-finding: --entropy must be a number, got "${entropyRaw}"`);
-    process.exit(1);
+  try {
+    return { ok: true, ...packerFinding({ filePath, bytes, ...(entropy === null ? {} : { entropy }) }) };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }
-
-  const finding = packerFinding({ filePath, bytes, ...(entropy === null ? {} : { entropy }) });
-  console.log(JSON.stringify(finding, null, 2));
 }
 
-// Run only when invoked directly, never when imported by the colocated test.
 // True when this file is the process entry point, also when it runs through a symlink.
 const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (invokedDirectly) {
-  main(process.argv.slice(2));
+  const result = main(process.argv.slice(2));
+  console.log(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
 }
