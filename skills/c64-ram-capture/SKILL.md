@@ -383,7 +383,7 @@ node $W attribute  --release <id> --addr '$C000'   # which sentinel owns an addr
 node $W check-idle --release <id>                  # the idle gate, exit 1 on fail
 node $W signature  --hex <1000-byte-hex> --sprite-enable <n>
 node $W report     --release <id>                  # the hits, in a fixed order
-node $W render    [--release <id>]                 # writes recovery/LOADING.md
+node $W render    [--release <id>]                 # writes recovery/LOADING.md for all releases
 ```
 
 Each command takes `--json`.
@@ -420,8 +420,9 @@ ranges overlap, it refuses. It does not choose a winner.
    the fallback.
 3. Let the machine run with no input. Record the cycles in
    `idle_calibration.cycles_advanced` and the hits of each sentinel.
-   `check-idle` passes only when each `stopping` sentinel has zero hits and
-   `cycles_advanced` is more than zero. A machine that did not run proves
+   `check-idle` passes only when each `stopping` sentinel of the watch set
+   has a calibration entry with zero hits, and `cycles_advanced` is more than
+   zero. A missing entry fails the gate. A machine that did not run proves
    nothing.
 4. Play through the milestones. At each milestone, read the 1000 bytes of
    the screen matrix and `$D015`, and give them to `signature`. The digest is
@@ -429,7 +430,8 @@ ranges overlap, it refuses. It does not choose a winner.
    hashed.
 5. For each hit, record the program counter, a `vice_backtrace` and a
    `vice_disassemble`. Then set `classification` to `gameplay-write` or
-   `load-candidate`. A hit without all three is `unattributed`.
+   `load-candidate`. A hit without all three is `unattributed`, whatever its
+   `classification` field says.
 6. For a `load-candidate`, take a supplementary capture and record its path
    in `supplementary_dump`.
 7. Delete each checkpoint. Record the `vice_checkpoint_list` count in
@@ -444,7 +446,10 @@ proof.
 
 `report` sorts the hits by cycle, then address, then sentinel. The same log
 always gives the same report. `render` writes `recovery/LOADING.md` for each
-release that has a hit log.
+release that has a hit log. `--release <id>` keeps the other
+releases in the file. It only makes `render` refuse when that release is
+unknown or has no hit log. The load-event count of a release is the number
+of attributed `load-candidate` hits.
 
 - Set `run_status: "blocked"` when the live work did not finish. `render`
   then marks a count of 0 as **not an evidenced zero**, and a larger count as
@@ -461,11 +466,15 @@ the map is in `c64-annotations`.
 
 ## Failure shape
 
-Each script prints its result, or refuses with an `Error:` message and a
-non-zero exit code. A refusal writes nothing. `compare` and `cross` exit 1 on
-a FAIL verdict. `check` exits 1 when a pair is not equivalent. `check-idle`
-exits 1 when the idle gate fails. An over-cap `derive` exits non-zero and
-writes no artifact.
+The last line on stdout is one JSON result: `{"ok": true, ...}` with exit
+code 0, or `{"ok": false, "message": "..."}` with exit code 1. `--json` gives
+only that line. Without `--json`, text lines come first. `vsf-slice.ts`
+passes the output of the MCP module through without a change.
+
+A refusal writes nothing. `compare` and `cross` give `ok: false` on a FAIL
+verdict. `check` gives `ok: false` when a pair is not equivalent. `check-idle`
+gives `ok: false` when the idle gate fails. An over-cap `derive` gives
+`ok: false` and writes no artifact.
 
 ## What this skill does NOT do
 

@@ -1,19 +1,15 @@
 #!/usr/bin/env node
 // watch-loads.ts
 //
-// The on-demand-load detector's pure logic (01-04 Task 1). Every function
-// here takes already-fetched data as an argument or reads a committed file
-// -- nothing in this module contacts the emulator, ever. The single
-// permitted route to the emulator is the executing agent's own
-// `vice_*` tool calls (see the c64-emulator skill);
-// arming, resuming, polling, disassembling and reading memory all happen in
-// the agent's own turn, and the observations land in a committed hit-log
-// JSON (`recovery/<release>/dumps/<release>-loading-hits.json`) that this
-// module reads back. The import-purity guard test in
-// test/skills/c64-ram-capture/watch-loads.test.ts is the mechanical statement
-// of that boundary: every import specifier in this file resolves to a `node:`
-// built-in or a file in this skill's or the c64-project skill's scripts/, so
-// this module cannot acquire an outside dependency without the guard failing.
+// The on-demand-load detector's pure logic. Every function here takes
+// already-fetched data as an argument or reads a committed file -- nothing in
+// this module contacts the emulator, ever. The single permitted route to the
+// emulator is the executing agent's own `vice_*` tool calls (see the
+// c64-emulator skill); arming, resuming, polling, disassembling and reading
+// memory all happen in the agent's own turn, and the observations land in a
+// committed hit-log JSON (`recovery/<release>/dumps/<release>-loading-hits.json`)
+// that this module reads back. The project root and the data root are
+// computed on each call, never at import.
 import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -22,7 +18,7 @@ import { join, relative } from "node:path";
 import type { Address, DumpEntry, LoaderRange, ReleaseEntry, WatchSentinel } from "../../c64-project/scripts/releases.ts";
 import { loadSibling, siblingOrRefuse } from "./sibling.ts";
 
-const { loadRegistry, release: getReleaseEntry, upsertRelease } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/releases.ts"), "releases.ts", "c64-ram-capture"), import.meta.url);
+const { loadRegistry, release: getReleaseEntry, upsertRelease, PRIMARY_DUMP_LABEL } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/releases.ts"), "releases.ts", "c64-ram-capture"), import.meta.url);
 const { projectRoot, dataRoot } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/project-paths.ts"), "project-paths.ts", "c64-ram-capture"), import.meta.url);
 const { addrNum, hex4 } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/address.ts"), "address.ts", "c64-ram-capture"), import.meta.url);
 
@@ -142,22 +138,22 @@ export interface IdleGateResult {
   ok: boolean;
   cycles_advanced: number | null | undefined;
   violations: Array<{ name: string; hits: number }>;
+  missing: string[];
   reasons: string[];
 }
 
-const REPO_ROOT = projectRoot();
-const RECOVERY_DIR = dataRoot();
-
-const die: (m: string) => never = (m) => { console.error(`error: ${m}`); process.exit(1); };
+/** Every result this script prints. The last stdout line is always one of
+ * these, as JSON. */
+export type ScriptResult = { ok: true; [key: string]: unknown } | { ok: false; message: string; [key: string]: unknown };
 
 function rel(p: string): string {
-  return relative(REPO_ROOT, p);
+  return relative(projectRoot(), p);
 }
 
 // -------------------------------------------------------------- hit-log I/O
 
 function hitLogPath(releaseId: string): string {
-  return join(RECOVERY_DIR, releaseId, "dumps", `${releaseId}-loading-hits.json`);
+  return join(dataRoot(), releaseId, "dumps", `${releaseId}-loading-hits.json`);
 }
 
 /** Read and JSON.parse a release's committed boundary hit-log artifact. */
@@ -172,11 +168,11 @@ export function readHitLog(releaseId: string): HitLog {
 // --------------------------------------------------------------- WATCH_SET
 
 function loadManifestForRelease(rel: WatchSetRegistry["releases"][number]): WatchSetManifest {
-  const dump = (rel.dumps ?? []).find((d) => d.label === "run1");
+  const dump = (rel.dumps ?? []).find((d) => d.label === PRIMARY_DUMP_LABEL);
   if (!dump || !dump.range_manifest) {
-    throw new Error(`WATCH_SET: release "${rel.id}" has no run1 dump with a range_manifest recorded`);
+    throw new Error(`WATCH_SET: release "${rel.id}" has no ${PRIMARY_DUMP_LABEL} dump with a range_manifest recorded`);
   }
-  const manifestPath = join(REPO_ROOT, dump.range_manifest);
+  const manifestPath = join(projectRoot(), dump.range_manifest);
   return JSON.parse(readFileSync(manifestPath, "utf8"));
 }
 
@@ -205,7 +201,7 @@ export function WATCH_SET(
   if (loaderRanges.length === 0) {
     throw new Error(
       `WATCH_SET: release "${releaseId}" has no loader_ranges recorded -- derive and record loader_ranges ` +
-        `(earn them live against a disassembly, per plan Task 2 step 1) before resolving a watch set; a set ` +
+        `(earn them live against a disassembly) before resolving a watch set; a set ` +
         `with no re-entry sentinel in it is not a two-tier set`
     );
   }
@@ -321,28 +317,42 @@ export function reportHits(hitLog: HitRecord[] | HitLog | null | undefined): Hit
 
 /**
  * The mechanical half of the idle check. Passes only when every
- * `stopping`-tier sentinel recorded exactly zero hits AND the recorded
- * `cycles_advanced` is greater than zero -- a machine that did not execute
- * proves nothing, whatever the hit counts say. Otherwise names the
- * violating sentinels with their counts.
+ * `stopping`-tier sentinel of `watchSet` has a calibration entry that
+ * recorded exactly zero hits, AND the recorded `cycles_advanced` is greater
+ * than zero -- a machine that did not execute proves nothing, whatever the
+ * hit counts say. A stopping sentinel with no calibration entry fails the
+ * gate, so an empty calibration can never pass. A watch set with no
+ * stopping sentinel fails too. Otherwise names the violating sentinels with
+ * their counts.
  */
-export function idleGate(calibration: IdleCalibration | null | undefined): IdleGateResult {
+export function idleGate(
+  calibration: IdleCalibration | null | undefined,
+  watchSet: ReadonlyArray<{ name: string; tier: string }>,
+): IdleGateResult {
   const cyclesAdvanced = calibration?.cycles_advanced;
   const sentinels = calibration?.sentinels ?? [];
-  const violations = sentinels
-    .filter((s) => s.tier === "stopping" && s.hits !== 0)
-    .map((s) => ({ name: s.name, hits: s.hits }));
-  const cyclesOk = typeof cyclesAdvanced === "number" && cyclesAdvanced > 0;
+  const stopping = watchSet.filter((w) => w.tier === "stopping");
   const reasons: string[] = [];
+  const cyclesOk = typeof cyclesAdvanced === "number" && cyclesAdvanced > 0;
   if (!cyclesOk) {
     reasons.push(`cycles_advanced (${cyclesAdvanced}) is not greater than zero -- a machine that did not execute proves nothing`);
   }
+  if (stopping.length === 0) {
+    reasons.push("the watch set has no stopping-tier sentinel -- there is nothing for the idle gate to prove");
+  }
+  const missing = stopping.filter((w) => !sentinels.some((s) => s.name === w.name)).map((w) => w.name);
+  if (missing.length > 0) {
+    reasons.push(`stopping-tier sentinel(s) with no idle calibration entry: ${missing.join(", ")}`);
+  }
+  const violations = sentinels
+    .filter((s) => s.tier === "stopping" && s.hits !== 0)
+    .map((s) => ({ name: s.name, hits: s.hits }));
   if (violations.length > 0) {
     reasons.push(
       `stopping-tier sentinel(s) recorded non-zero idle hits: ${violations.map((v) => `${v.name}=${v.hits}`).join(", ")}`
     );
   }
-  return { ok: cyclesOk && violations.length === 0, cycles_advanced: cyclesAdvanced, violations, reasons };
+  return { ok: reasons.length === 0, cycles_advanced: cyclesAdvanced, violations, missing, reasons };
 }
 
 // ---------------------------------------------------------------- classifyHit
@@ -405,19 +415,24 @@ function fmtRange(s: Partial<AddressRange>): string {
 
 function renderReleaseSection(id: string, log: HitLog): string {
   const hits = reportHits(log);
-  const count = hits.length;
+  const classified = hits.map((h) => ({ hit: h, cls: classifyHit(h) }));
+  const loadCandidates = classified.filter((c) => c.cls === "load-candidate").map((c) => c.hit);
+  const count = loadCandidates.length;
+  const unattributed = classified.filter((c) => c.cls === "unattributed").length;
   let s = `## Release: ${id}\n\n`;
 
   s += `**Load-event count:**\n\n${count}\n\n`;
+  s += `Recorded hits: ${hits.length}. The count above is the hits classified \`load-candidate\` with a program counter, ` +
+    `a backtrace and a disassembly. Unattributed hits: ${unattributed}.\n\n`;
 
   if (log.run_status === "blocked") {
-    if (count === 0) {
+    if (hits.length === 0) {
       s += `> **⚠ THIS IS NOT AN EVIDENCED ZERO.** The count above is \`0\` only because no live ` +
         `emulator work reached completion for this release this run -- it is a bare absence of ` +
         `attempted measurement, not a null result earned by an idle calibration on a machine proven ` +
         `to have executed. ${log.run_status_note ?? ""}\n\n`;
     } else {
-      s += `> **⚠ THIS IS A PARTIAL RESULT, NOT A COMPLETED COVERAGE CLAIM.** The count above (\`${count}\`) ` +
+      s += `> **⚠ THIS IS A PARTIAL RESULT, NOT A COMPLETED COVERAGE CLAIM.** The count above (\`${count}\`, from ${hits.length} recorded hit(s)) ` +
         `reflects genuinely attributed hits from the portion of the play-through that did complete before this ` +
         `run was blocked -- it is not evidence that no further load events exist beyond what was reached. ` +
         `${log.run_status_note ?? ""}\n\n`;
@@ -478,24 +493,22 @@ function renderReleaseSection(id: string, log: HitLog): string {
     s += "(no hits recorded above the idle floor)\n\n";
   } else {
     s += "| Cycle | Address | Sentinel | Tier | Classification | Evidence |\n|---|---|---|---|---|---|\n";
-    for (const h of hits) {
-      const cls = h.classification ?? classifyHit(h);
+    for (const { hit: h, cls } of classified) {
       s += `| ${h.cycle} | ${h.address} | ${h.sentinel} | ${h.tier ?? ""} | ${cls} | ${escapeCell(h.disassembly ?? "")} |\n`;
     }
     s += "\n";
   }
 
-  const loadCandidates = hits.filter((h) => (h.classification ?? classifyHit(h)) === "load-candidate");
   s += `### Supplementary dumps\n\n`;
   if (loadCandidates.length === 0) {
     s += "None -- no hit was classified `load-candidate` for this release.\n\n";
   } else {
     for (const h of loadCandidates) {
       s += `- Hit at ${h.address} (cycle ${h.cycle}): supplementary dump \`${h.supplementary_dump ?? "unrecorded"}\`, ` +
-        `registry ref \`${h.load_event_ref ?? "unrecorded"}\`. Reproducibility bar: a single capture, decided in ` +
-        `the claim is about an observed moment rather than a stable state -- if loaded content is later ` +
-        `absorbed into the canonical image, this region must be re-captured at the primary dumps' ` +
-        `three-run bar before it can be treated as a round-trip diff target.\n`;
+        `registry ref \`${h.load_event_ref ?? "unrecorded"}\`. Reproducibility bar: a single capture, because ` +
+        `the claim is about an observed moment rather than a stable state. If loaded content is later ` +
+        `absorbed into the canonical image, capture this region again at the primary dumps' ` +
+        `three-run bar before you use it as a round-trip diff target.\n`;
     }
     s += "\n";
   }
@@ -559,116 +572,127 @@ export function renderLoading(entries: ReadonlyArray<{ id: string; log: HitLog }
 
 // -------------------------------------------------------------------- CLI
 
-function optValue(rest: string[], name: string): string | undefined {
+function optValue(rest: readonly string[], name: string): string | undefined {
   const i = rest.indexOf(`--${name}`);
-  return i === -1 ? undefined : rest[i + 1];
+  if (i === -1) return undefined;
+  const v = rest[i + 1];
+  if (v === undefined || v.startsWith("--")) throw new Error(`--${name} needs a value`);
+  return v;
 }
 
-const VERBS: Record<string, (rest: string[]) => void> = {
-  resolve(rest) {
+/** The release's recorded watch set, or the one resolved from the registry. */
+function watchSetFor(releaseId: string): WatchSentinel[] {
+  const relEntry = getReleaseEntry(releaseId);
+  return relEntry.watch_set && relEntry.watch_set.length ? relEntry.watch_set : WATCH_SET(releaseId);
+}
+
+type Say = (line: string) => void;
+
+const VERBS: Record<string, (rest: string[], say: Say) => ScriptResult> = {
+  resolve(rest, say) {
     const releaseId = optValue(rest, "release");
-    if (!releaseId) die("usage: resolve --release <id> [--json]");
+    if (!releaseId) return { ok: false, message: "usage: resolve --release <id> [--json]" };
     const watchSet = WATCH_SET(releaseId);
     recordWatchSet(releaseId, watchSet);
-    const result = { release: releaseId, count: watchSet.length, watch_set: watchSet };
-    if (rest.includes("--json")) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`${releaseId}: resolved ${watchSet.length} sentinel(s)`);
-      for (const s of watchSet) console.log(`  ${s.name} tier=${s.tier} type=${s.type} ${fmtRange(s)}`);
-    }
+    say(`${releaseId}: resolved ${watchSet.length} sentinel(s)`);
+    for (const s of watchSet) say(`  ${s.name} tier=${s.tier} type=${s.type} ${fmtRange(s)}`);
+    return { ok: true, release: releaseId, count: watchSet.length, watch_set: watchSet };
   },
 
-  attribute(rest) {
+  attribute(rest, say) {
     const releaseId = optValue(rest, "release");
     const addrArg = optValue(rest, "addr");
-    if (!releaseId || !addrArg) die("usage: attribute --release <id> --addr <address> [--json]");
-    const relEntry = getReleaseEntry(releaseId);
-    const sentinels = relEntry.watch_set && relEntry.watch_set.length ? relEntry.watch_set : WATCH_SET(releaseId);
-    const result = attributeAddress(addrArg, sentinels);
-    if (rest.includes("--json")) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(result.matched ? `${addrArg} -> ${result.name}` : `${addrArg} -> unmatched`);
-    }
+    if (!releaseId || !addrArg) return { ok: false, message: "usage: attribute --release <id> --addr <address> [--json]" };
+    const result = attributeAddress(addrArg, watchSetFor(releaseId));
+    say(result.matched ? `${addrArg} -> ${result.name}` : `${addrArg} -> unmatched`);
+    return { ok: true, release: releaseId, ...result };
   },
 
-  report(rest) {
+  report(rest, say) {
     const releaseId = optValue(rest, "release");
-    if (!releaseId) die("usage: report --release <id> [--json]");
-    const log = readHitLog(releaseId);
-    const hits = reportHits(log);
-    const result = { release: releaseId, count: hits.length, hits };
-    if (rest.includes("--json")) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`${releaseId}: ${hits.length} hit(s)`);
-      for (const h of hits) {
-        console.log(`  cycle=${h.cycle} addr=${h.address} sentinel=${h.sentinel} classification=${h.classification ?? classifyHit(h)}`);
-      }
-    }
+    if (!releaseId) return { ok: false, message: "usage: report --release <id> [--json]" };
+    const hits = reportHits(readHitLog(releaseId)).map((h) => ({ ...h, classification: classifyHit(h) }));
+    say(`${releaseId}: ${hits.length} hit(s)`);
+    for (const h of hits) say(`  cycle=${h.cycle} addr=${h.address} sentinel=${h.sentinel} classification=${h.classification}`);
+    return { ok: true, release: releaseId, count: hits.length, hits };
   },
 
-  "check-idle"(rest) {
+  "check-idle"(rest, say) {
     const releaseId = optValue(rest, "release");
-    if (!releaseId) die("usage: check-idle --release <id> [--json]");
+    if (!releaseId) return { ok: false, message: "usage: check-idle --release <id> [--json]" };
     const log = readHitLog(releaseId);
-    if (!log.idle_calibration) die(`check-idle: release "${releaseId}" hit log has no idle_calibration recorded`);
-    const gate = idleGate(log.idle_calibration);
-    const result = { release: releaseId, ...gate, sentinels: log.idle_calibration.sentinels ?? [] };
-    if (rest.includes("--json")) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`${releaseId}: cycles_advanced=${gate.cycles_advanced} ok=${gate.ok}`);
-      for (const s of result.sentinels) console.log(`  ${s.name}: tier=${s.tier} ${s.start !== undefined ? fmtRange(s) : ""} hits=${s.hits}`);
-      if (!gate.ok) for (const r of gate.reasons) console.error(`  - ${r}`);
-    }
-    process.exitCode = gate.ok ? 0 : 1;
+    if (!log.idle_calibration) return { ok: false, message: `check-idle: release "${releaseId}" hit log has no idle_calibration recorded` };
+    const gate = idleGate(log.idle_calibration, watchSetFor(releaseId));
+    const sentinels = log.idle_calibration.sentinels ?? [];
+    say(`${releaseId}: cycles_advanced=${gate.cycles_advanced} ok=${gate.ok}`);
+    for (const s of sentinels) say(`  ${s.name}: tier=${s.tier} ${s.start !== undefined ? fmtRange(s) : ""} hits=${s.hits}`);
+    for (const r of gate.reasons) say(`  - ${r}`);
+    const record = { release: releaseId, ...gate, sentinels };
+    return gate.ok ? { ...record, ok: true } : { ...record, ok: false, message: `check-idle: ${gate.reasons.join("; ")}` };
   },
 
-  signature(rest) {
+  signature(rest, say) {
     const hex = optValue(rest, "hex");
-    const spriteEnable = optValue(rest, "sprite-enable");
-    if (!hex) die("usage: signature --hex <1000-byte-hex> [--sprite-enable <n>] [--json]");
-    const result = screenSignature(hex, spriteEnable !== undefined ? Number(spriteEnable) : null);
-    if (rest.includes("--json")) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`${result.digest} sprite_enable=${result.sprite_enable}`);
+    const spriteEnableRaw = optValue(rest, "sprite-enable");
+    if (!hex) return { ok: false, message: "usage: signature --hex <1000-byte-hex> [--sprite-enable <n>] [--json]" };
+    let spriteEnable: number | null = null;
+    if (spriteEnableRaw !== undefined) {
+      spriteEnable = addrNum(spriteEnableRaw);
+      if (spriteEnable > 0xff) return { ok: false, message: `--sprite-enable must be one byte, got ${spriteEnableRaw}` };
     }
+    const result = screenSignature(hex, spriteEnable);
+    say(`${result.digest} sprite_enable=${result.sprite_enable}`);
+    return { ok: true, ...result };
   },
 
-  render(rest) {
+  render(rest, say) {
     const reg = loadRegistry();
     const only = optValue(rest, "release");
-    const releaseIds = only ? [only] : reg.releases.map((r) => r.id);
+    // LOADING.md always carries every release, so --release only checks that
+    // the named release has a hit log. It never narrows the document.
+    if (only !== undefined) {
+      if (!reg.releases.some((r) => r.id === only)) {
+        return { ok: false, message: `unknown release "${only}" -- known releases: ${reg.releases.map((r) => r.id).join(", ")}` };
+      }
+      if (!existsSync(hitLogPath(only))) return { ok: false, message: `render: release "${only}" has no hit log at ${rel(hitLogPath(only))}` };
+    }
     const entries: Array<{ id: string; log: HitLog }> = [];
-    for (const id of releaseIds) {
-      const p = hitLogPath(id);
-      if (!existsSync(p)) continue;
-      entries.push({ id, log: JSON.parse(readFileSync(p, "utf8")) });
+    const withoutLog: string[] = [];
+    for (const { id } of reg.releases) {
+      if (!existsSync(hitLogPath(id))) {
+        withoutLog.push(id);
+        continue;
+      }
+      entries.push({ id, log: readHitLog(id) });
     }
-    const markdown = renderLoading(entries);
-    const outPath = join(RECOVERY_DIR, "LOADING.md");
-    writeFileSync(outPath, markdown);
-    const result = { path: rel(outPath), releases: entries.map((e) => e.id) };
-    if (rest.includes("--json")) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`wrote ${rel(outPath)} for releases: ${result.releases.join(", ")}`);
-    }
+    if (entries.length === 0) return { ok: false, message: "render: no release has a hit log -- nothing to render" };
+    const outPath = join(dataRoot(), "LOADING.md");
+    writeFileSync(outPath, renderLoading(entries));
+    say(`wrote ${rel(outPath)} for releases: ${entries.map((e) => e.id).join(", ")}`);
+    return { ok: true, path: rel(outPath), releases: entries.map((e) => e.id), withoutHitLog: withoutLog };
   },
 };
+
+/** The whole CLI as a function. `say` receives the human-readable lines. Never throws. */
+export function main(argv: readonly string[], say: Say = () => {}): ScriptResult {
+  const [cmd, ...rest] = argv.filter((a) => a !== "--json");
+  if (!cmd || !Object.hasOwn(VERBS, cmd)) {
+    const usage = `usage: node ${fileURLToPath(import.meta.url)} <resolve|attribute|report|check-idle|signature|render> [--release <id>] [--json]`;
+    return { ok: false, message: cmd ? `unknown command ${JSON.stringify(cmd)}\n${usage}` : usage };
+  }
+  try {
+    return VERBS[cmd](rest, say);
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 // True when this file is the process entry point, also when it runs through a symlink.
 const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (invokedDirectly) {
-  const [cmd, ...rest] = process.argv.slice(2);
-  if (!cmd || !VERBS[cmd]) {
-    console.log(`usage: node ${fileURLToPath(import.meta.url)} <resolve|attribute|report|check-idle|signature|render> [--release <id>] [--json]`);
-    process.exitCode = cmd ? 1 : 0;
-  } else {
-    VERBS[cmd](rest);
-  }
+  const argv = process.argv.slice(2);
+  const result = main(argv, argv.includes("--json") ? () => {} : (line) => console.log(line));
+  console.log(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
 }

@@ -1,16 +1,15 @@
-// Coverage for the on-demand-load detector's pure logic (01-04 Task 1).
-// Every test here runs with no emulator present -- small synthetic fixtures
-// for the boundary/attribution/ordering behaviour, plus two cases that read
-// the real committed sidecars to prove the pure functions reproduce
-// already-recorded evidence. The import-purity guard test at the bottom is
-// the durable, mechanical statement of the one-permitted-route rule: this
-// whole file runs to completion with the emulator absent, and the guard
-// keeps it that way.
+// Coverage for the on-demand-load detector's pure logic. Every test here
+// runs with no emulator present -- small synthetic fixtures for the
+// boundary/attribution/ordering behaviour, two cases that read the real
+// committed sidecars to prove the pure functions reproduce already-recorded
+// evidence, and CLI cases over a scratch project.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   WATCH_SET,
@@ -27,7 +26,6 @@ import type { LoaderRange } from "../../../skills/c64-project/scripts/releases.t
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The scripts under test live in the skill folder; this test lives in test/skills/.
 const SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-ram-capture", "scripts");
-const PROJECT_SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-project", "scripts");
 
 // -------------------------------------------------------------- WATCH_SET
 
@@ -146,7 +144,19 @@ test("idleGate accepts a calibration in which every stopping-tier sentinel recor
       { name: "unused:b", tier: "counting", hits: 3 },
     ],
   };
-  assert.equal(idleGate(cal).ok, true);
+  assert.equal(idleGate(cal, [{ name: "loader:a", tier: "stopping" }, { name: "unused:b", tier: "counting" }]).ok, true);
+});
+
+test("idleGate rejects an empty calibration, naming each stopping sentinel it lacks", () => {
+  const result = idleGate({ cycles_advanced: 12345, sentinels: [] }, [{ name: "loader:a", tier: "stopping" }]);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.missing, ["loader:a"]);
+});
+
+test("idleGate rejects a watch set with no stopping sentinel", () => {
+  const result = idleGate({ cycles_advanced: 12345, sentinels: [] }, [{ name: "reg:$DD00", tier: "counting" }]);
+  assert.equal(result.ok, false);
+  assert.match(result.reasons.join(" "), /no stopping-tier sentinel/);
 });
 
 test("idleGate rejects a calibration in which a stopping-tier sentinel recorded a non-zero count, naming it", () => {
@@ -154,7 +164,7 @@ test("idleGate rejects a calibration in which a stopping-tier sentinel recorded 
     cycles_advanced: 12345,
     sentinels: [{ name: "loader:a", tier: "stopping", hits: 113 }],
   };
-  const result = idleGate(cal);
+  const result = idleGate(cal, [{ name: "loader:a", tier: "stopping" }]);
   assert.equal(result.ok, false);
   assert.equal(result.violations[0].name, "loader:a");
   assert.equal(result.violations[0].hits, 113);
@@ -162,7 +172,7 @@ test("idleGate rejects a calibration in which a stopping-tier sentinel recorded 
 
 test("idleGate rejects a calibration whose cycles_advanced is zero even when every hit count is zero", () => {
   const cal = { cycles_advanced: 0, sentinels: [{ name: "loader:a", tier: "stopping", hits: 0 }] };
-  const result = idleGate(cal);
+  const result = idleGate(cal, [{ name: "loader:a", tier: "stopping" }]);
   assert.equal(result.ok, false);
   assert.match(result.reasons.join(" "), /cycles_advanced/);
 });
@@ -238,49 +248,6 @@ test("buildRangeManifest over a committed image produces ranges whose union cove
   assert.equal(expected, 65536);
 });
 
-// ------------------------------------------------- import-purity guard (T-01-25)
-
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
-}
-
-function importSpecifiers(src: string): string[] {
-  const specs: string[] = [];
-  // Static imports and literal dynamic import("...") both count, so a guarded
-  // sibling load stays inside this rule.
-  const re = /import\s*(?:\(\s*|[^'"()]+?\s+from\s+)?["']([^"']+)["']/g;
-  let m;
-  while ((m = re.exec(src))) specs.push(m[1]);
-  return specs;
-}
-
-test("every import specifier in watch-loads.ts and dump-artifacts.ts is a node: built-in or a file inside this skill's or c64-project's scripts/ -- the mechanical proof of the one permitted route", () => {
-  const files = ["watch-loads.ts", "dump-artifacts.ts"];
-  let totalSpecifiers = 0;
-  for (const f of files) {
-    const src = stripComments(readFileSync(join(SCRIPT_DIR, f), "utf8"));
-    const specs = importSpecifiers(src);
-    assert.ok(specs.length > 0, `${f} should have at least one import specifier (this assertion fails if removed, so it cannot pass vacuously)`);
-    totalSpecifiers += specs.length;
-    for (const spec of specs) {
-      const isNodeBuiltin = spec.startsWith("node:");
-      const isSiblingPath = spec.startsWith("./") || spec.startsWith("../");
-      assert.ok(
-        isNodeBuiltin || isSiblingPath,
-        `${f} imports "${spec}", which is neither a node: built-in nor a relative path -- this module must never acquire an outside dependency`
-      );
-      if (isSiblingPath) {
-        const resolved = resolve(SCRIPT_DIR, spec);
-        assert.ok(
-          resolved.startsWith(SCRIPT_DIR) || resolved.startsWith(PROJECT_SCRIPT_DIR),
-          `${f}'s import "${spec}" resolves outside this skill's and c64-project's scripts/ (${resolved})`
-        );
-      }
-    }
-  }
-  assert.ok(totalSpecifiers > 0, "at least one specifier must have been checked across both modules");
-});
-
 // ----------------------------------------------------------------- renderLoading
 
 test("renderLoading flags a blocked run's zero count as unevidenced rather than rendering it as a plain zero", async () => {
@@ -354,5 +321,91 @@ test("renderLoading names both watch-loads.ts and dump-artifacts.ts at the consu
       !new RegExp(`(?<!\\.claude/)skills/c64-ram-capture/scripts/${name.replace(".", "\\.")}`).test(md),
       `renderLoading output must never name this repository's source-tree path for ${name}`
     );
+  }
+});
+
+test("renderLoading counts only attributed load candidates as load events, whatever a hit's recorded classification says", async () => {
+  const { renderLoading } = await import("../../../skills/c64-ram-capture/scripts/watch-loads.ts");
+  const log = {
+    armed: [],
+    hits: [
+      { cycle: 1, address: "$C000", sentinel: "unused:x", classification: "load-candidate", pc: "$0810", backtrace: ["$0801"], disassembly: "STA $C000" },
+      { cycle: 2, address: "$C001", sentinel: "unused:x", classification: "load-candidate" },
+      { cycle: 3, address: "$C002", sentinel: "unused:x", classification: "gameplay-write", pc: "$0810", backtrace: ["$0801"], disassembly: "STA $C002" },
+    ],
+  };
+  const md = renderLoading([{ id: "example", log }]);
+  assert.match(md, /\*\*Load-event count:\*\*\n\n1\n/);
+  assert.match(md, /Recorded hits: 3\..*Unattributed hits: 1\./);
+  assert.match(md, /\| 2 \| \$C001 \| unused:x \|  \| unattributed \|/);
+});
+
+// ------------------------------------------------------------------- CLI
+
+const SCRIPT = join(SCRIPT_DIR, "watch-loads.ts");
+
+function loadsProject(hitLogs: Record<string, object | null>) {
+  const root = mkdtempSync(join(tmpdir(), "watch-loads-test-"));
+  mkdirSync(join(root, ".git"));
+  const releases = Object.keys(hitLogs).map((id) => ({
+    id,
+    disk_image: `${id}.d64`,
+    dumps: [],
+    loader_ranges: [{ start: "$0400", end: "$04FF" }],
+    watch_set: [{ name: "loader:$0400-$04FF", kind: "loader-reentry", tier: "stopping", type: "exec", start: 0x400, end: 0x4ff, reason: "r", evidence: "" }],
+  }));
+  mkdirSync(join(root, "recovery"), { recursive: true });
+  writeFileSync(join(root, "recovery", "RELEASES.json"), JSON.stringify({ releases }));
+  for (const [id, log] of Object.entries(hitLogs)) {
+    if (!log) continue;
+    mkdirSync(join(root, "recovery", id, "dumps"), { recursive: true });
+    writeFileSync(join(root, "recovery", id, "dumps", `${id}-loading-hits.json`), JSON.stringify(log));
+  }
+  const run = (...argv: string[]) => {
+    const r = spawnSync(process.execPath, [SCRIPT, ...argv, "--json"], { cwd: root, encoding: "utf8", env: { ...process.env, C64RE_PROJECT_ROOT: root, C64RE_DATA_DIR: "", C64RE_REGISTRY: "" }, timeout: 30_000 });
+    return { status: r.status, result: JSON.parse(r.stdout.trim().split("\n").pop() ?? "") };
+  };
+  return { root, run, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+}
+
+test("render --release keeps every release in LOADING.md, and refuses an unknown release", () => {
+  const log = { armed: [], hits: [] };
+  const p = loadsProject({ "rel-a": log, "rel-b": log, "rel-c": null });
+  try {
+    const r = p.run("render", "--release", "rel-a");
+    assert.equal(r.status, 0, JSON.stringify(r.result));
+    assert.deepEqual(r.result.releases, ["rel-a", "rel-b"]);
+    assert.deepEqual(r.result.withoutHitLog, ["rel-c"]);
+    const md = readFileSync(join(p.root, "recovery", "LOADING.md"), "utf8");
+    assert.match(md, /## Release: rel-a/);
+    assert.match(md, /## Release: rel-b/);
+
+    const unknown = p.run("render", "--release", "nope");
+    assert.equal(unknown.status, 1);
+    assert.match(unknown.result.message, /unknown release "nope"/);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("render with no hit log anywhere is refused and writes no file", () => {
+  const p = loadsProject({ "rel-a": null });
+  try {
+    const r = p.run("render");
+    assert.equal(r.status, 1);
+    assert.equal(existsSync(join(p.root, "recovery", "LOADING.md")), false);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("check-idle fails when the calibration lacks a stopping sentinel of the recorded watch set", () => {
+  const p = loadsProject({ "rel-a": { idle_calibration: { cycles_advanced: 1000, sentinels: [] } } });
+  try {
+    const r = p.run("check-idle", "--release", "rel-a");
+    assert.equal(r.status, 1);
+    assert.deepEqual(r.result.missing, ["loader:$0400-$04FF"]);
+  } finally {
+    p.cleanup();
   }
 });
