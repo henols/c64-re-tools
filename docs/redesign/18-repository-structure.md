@@ -56,7 +56,8 @@ c64-re-tools/
 │   │       ├── petcat.ts
 │   │       └── ghidra/
 │   │           ├── index.ts
-│   │           └── scripts/
+│   │           ├── scripts/
+│   │           └── language/
 │   │
 │   ├── knowledge/
 │   │   ├── database.ts
@@ -426,9 +427,11 @@ index.ts owns temporary Ghidra project creation, headless invocation, seed prepa
 
 scripts/ contains only c64-re-tools-owned Ghidra scripts required to seed/export analysis.
 
+language/ contains the c64-re-tools-owned NMOS 6502/6510 SLEIGH integration required for C64 analysis, including undocumented opcode support. It must cover all 105 undocumented opcode bytes in addition to the documented instruction set.
+
 These files are product integration code, not vendored Ghidra.
 
-If a custom Ghidra language/extension is required for the supported C64 processor contract, keep its c64-re-tools-owned files under this same ghidra/ ownership boundary rather than creating vendor/.
+The host installer/build materializes or installs this language against the user's external Ghidra installation. Do not copy Ghidra itself into the repository.
 
 ## 9. Knowledge
 
