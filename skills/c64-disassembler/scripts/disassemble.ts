@@ -281,7 +281,6 @@ export async function runAnalyze(o: DisassembleOpts, deps: DisassembleDeps = {})
     "--processor", o.processor,
     "--import-route", o.kind!,
     "--noanalysis",
-    "--script-path", scriptsDir,
     "--pre-script", join(scriptsDir, "VolatileCarve.java"),
     "--post-script", exportScript.path,
     "--export-path", `${runId}.ghidra-export.txt`,

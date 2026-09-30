@@ -76,7 +76,8 @@ Rules for checkpoints:
 - A condition is permanent. Stock VICE cannot clear or replace a condition.
   To change it, delete the checkpoint and add it again.
 - `vice_run_until` waits 30000 ms by default. A higher `timeout_ms` than
-  600000 is reduced to 600000. `cycles` is refused.
+  600000 is reduced to 600000. The arguments are `address`, `timeout_ms`
+  and `cycles`. The tool refuses `cycles`.
 - A timed-out `vice_run_until` answer tells you that the machine is stopped.
   It is not a dead emulator. Read `machineHalted`. The value `false` means
   that the state is unknown, not that the machine runs. Then call
@@ -84,8 +85,13 @@ Rules for checkpoints:
 - When the address is only a guess, use `vice_checkpoint_add` and a polling
   loop with a limit. Do not use a long `vice_run_until` wait.
 - `vice_run_until` ends on any stop: its own target, another checkpoint of
-  yours, a watch or a JAM. The answer says which stop ended the wait. Read
-  it before you assume that the target address was reached.
+  yours, a watch or a JAM. Read `reached` before you assume that the target
+  address was reached. `stoppedBy.kind` names the stop: `target`,
+  `checkpoint`, `jam` or `other`. The answer also has `pc`, `checkpointId`,
+  `hitCount` (for a `target` stop) and `cleanup` (for another stop, the
+  result of the delete of the temporary checkpoint). `machineHalted` is
+  `false` when VICE resumed the machine at once after the stop. The note in
+  the answer says so. Then call `vice_execution_pause`.
 - `vice_execution_step` and `vice_execution_until_return` refuse while the
   run state is `unknown`. Call `vice_execution_pause` or `vice_execution_run`
   first.
@@ -108,13 +114,13 @@ all reads in one paused window, then resume one time.
 
 | Question | Call |
 |---|---|
-| Bytes at an address | `vice_memory_read` with `address` and `size`. A short read is refused, never returned as part of the data. |
+| Bytes at an address | `vice_memory_read` with `address` and `size` (65536 at most). A short read is refused, never returned as part of the data. |
 | Bytes in a different bank | `vice_memory_read` with `bank`. `vice_memory_banks` lists the banks. |
 | Write bytes | `vice_memory_write` |
 | Find a byte pattern | `vice_memory_search`. `mask` must be as long as `pattern`. `max_results` is 100 by default. |
 | Compare two live ranges | `vice_memory_compare` with `mode: 'ranges'`. `mode: 'snapshot'` is refused. |
 | CPU registers | `vice_registers_get`, `vice_registers_set`. `vice_registers_available` gives each register's width in bits. |
-| Instructions at an address | `vice_disassemble`. An illegal opcode that ACME cannot express shows as `!byte`, with the mnemonic in a comment. |
+| Instructions at an address | `vice_disassemble`, with an optional `bank`. An illegal opcode that ACME cannot express shows as `!byte`, with the mnemonic in a comment. |
 | VIC-II and sprite state | `vice_vicii_get_state`, `vice_sprite_get`, `vice_sprite_inspect`, `vice_io_registers`. See [references/graphics.md](references/graphics.md). |
 | CIA and SID state | `vice_cia_get_state`. No tool reads the SID. See [references/sound-and-input.md](references/sound-and-input.md). |
 | The calls that led to the current instruction | `vice_backtrace` |
@@ -141,8 +147,9 @@ What a register value means is the job of `c64-memory-map`.
 
 ## Give input
 
-`vice_keyboard_type` types text. `vice_keyboard_petscii` sends exact PETSCII
-bytes. Both put the bytes in the KERNAL keyboard buffer of a stopped machine.
+`vice_keyboard_type` types text. By default (`petscii_upper: true`) it types
+letters of both cases as capitals. With `petscii_upper: false` it sends the
+raw bytes. `vice_keyboard_petscii` sends exact PETSCII bytes. Both put the bytes in the KERNAL keyboard buffer of a stopped machine.
 Nothing reads the buffer until you resume.
 
 **The keyboard matrix cannot be driven.** No `vice_keyboard_matrix` tool
@@ -157,12 +164,14 @@ games and cracks read `$DC00`/`$DC01` directly, so they never see the buffer.
   the joystick cannot pass the gate, no tool can.
 
 `vice_joystick_set` takes `port` (1 or 2, default 1), `direction` (one
-direction or a list) and `fire`. Many games read the joystick in port 2, so
-give `port` each time. Opposite directions together are refused. Set
-`direction: "center"` and `fire: false` to release the joystick. No tap tool
-exists: set the state, run, then release. The bit values that the tool sends
-are not yet checked against a live VICE. Make sure that the program
-reacts.
+direction or a list) and `fire`. `port` is the C64 control port. Many games read the
+joystick in port 2, so give `port` each time. Opposite directions together are
+refused. The tool needs the `io` bank. While a direction is held, the port
+uses VICE's I/O simulation device. `direction: "center"` with `fire: false`
+releases the joystick and restores the earlier device. The answer adds
+`lines`, `device`, `ciaRegister` and `ciaValue`. `ciaValue` is the byte that
+the tool reads back from the CIA register of the port. No tap tool exists:
+set the state, run, then release. Make sure that the program reacts.
 
 To hold a key or a direction through a gate, release it at the trigger
 checkpoint, never before.

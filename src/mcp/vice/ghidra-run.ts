@@ -59,7 +59,6 @@ export interface GhidraRunArgs {
   importRoute?: "prg" | "flat64k";
   loaderBaseAddr?: string;
   noanalysis?: boolean;
-  scriptPath?: string;
   entrypointsPath?: string;
   exportPath?: string;
   expectedClassificationLines?: number;
@@ -189,7 +188,6 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
   if (args.importRoute !== undefined) wireArgs.importRoute = args.importRoute;
   if (loaderBaseAddr !== undefined) wireArgs.loaderBaseAddr = loaderBaseAddr;
   if (args.noanalysis !== undefined) wireArgs.noanalysis = args.noanalysis;
-  if (args.scriptPath !== undefined) wireArgs.scriptPath = args.scriptPath;
   if (args.entrypointsPath !== undefined) wireArgs.entrypointsPath = args.entrypointsPath;
   if (args.exportPath !== undefined) wireArgs.exportPath = args.exportPath;
   if (args.expectedClassificationLines !== undefined) wireArgs.expectedClassificationLines = args.expectedClassificationLines;
@@ -258,7 +256,7 @@ export type GhidraCliResult =
 
 export const GHIDRA_CLI_USAGE =
   "usage: node ghidra-run.ts --run-id ID --import-path FILE --processor LANG-ID --import-route prg|flat64k\n" +
-  "  [--loader-base-addr 0xNNNN] [--noanalysis] [--script-path DIR] [--pre-script FILE] [--post-script FILE]\n" +
+  "  [--loader-base-addr 0xNNNN] [--noanalysis] [--pre-script FILE] [--post-script FILE]\n" +
   "  [--entrypoints-path FILE] [--export-path NAME] [--expected-classification-lines N] [--data-ranges-path FILE]\n" +
   "  [--project-root DIR] [--tools-root DIR] [--port N]";
 
@@ -279,7 +277,6 @@ export function parseGhidraCli(argv: string[], cwd: string = process.cwd()): { o
         "import-route": { type: "string" },
         "loader-base-addr": { type: "string" },
         noanalysis: { type: "boolean" },
-        "script-path": { type: "string" },
         "pre-script": { type: "string" },
         "post-script": { type: "string" },
         "entrypoints-path": { type: "string" },
@@ -314,7 +311,6 @@ export function parseGhidraCli(argv: string[], cwd: string = process.cwd()): { o
   };
   if (values["loader-base-addr"] !== undefined) args.loaderBaseAddr = values["loader-base-addr"];
   if (values.noanalysis === true) args.noanalysis = true;
-  if (values["script-path"] !== undefined) args.scriptPath = abs(values["script-path"]);
   if (values["pre-script"] !== undefined) args.preScript = abs(values["pre-script"]);
   if (values["post-script"] !== undefined) args.postScript = abs(values["post-script"]);
   if (values["entrypoints-path"] !== undefined) args.entrypointsPath = abs(values["entrypoints-path"]);

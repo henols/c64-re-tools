@@ -290,13 +290,29 @@ split into two folders:
   host-tool output. It carries its own `.gitignore`, so committing
   `.c64-re-tools/` never picks it up and the project needs no ignore rule.
 
-It resolves that root from
-`CLAUDE_PROJECT_DIR` (which Claude Code sets), falling back to
-`CONTAINER_WORKSPACE_PATH` and then a `.git` ancestor walk — see
-`src/mcp/vice/repo-root.ts`. The broker keeps its own state under its
+It resolves that root from `C64RE_PROJECT_ROOT`, then
+`CLAUDE_PROJECT_DIR` (which Claude Code sets), then `CONTAINER_WORKSPACE_PATH`
+(when the working directory is inside it), then a `.git` walk from the working
+directory — see `src/mcp/vice/repo-root.ts`. The broker keeps its own state under its
 machine-level home (`VICE_BROKER_HOME`), never inside a project. The VICE
 emulator itself runs on the host, launched by the broker, and is reached only
 through the `mcp__plugin_c64-re-tools_vice__*` tools.
+
+## Broker and host-tool behaviour
+
+- The broker mints each grant id (`g-<uuid>`). A connection holds one grant. A
+  second `acquire` on the same connection is refused.
+- When the VICE binary is missing, the broker refuses with the code
+  `vice_not_found`.
+- Host tools read the project's `.c64-re-tools/local/tools.json` on the client.
+  The client sends its bytes with the request. The broker's working directory
+  is not used.
+- `ghidra.analyze` runs only the vendored scripts (`VolatileCarve.java`,
+  `GhidraStructExport.java`, `DataRangeSeed.java`). It refuses a script
+  directory.
+- ACME can still read or write files named by content the text scan cannot see (for example a path built from a macro or symbol), so a staged source tree remains trusted input.
+- `vice_joystick_set` switches the port to VICE's I/O simulation joyport
+  device while a direction is held. Center restores the earlier device.
 
 ## Layout
 

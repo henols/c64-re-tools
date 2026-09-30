@@ -1,9 +1,10 @@
 # vendor/ghidra-scripts -- provenance
 
-Three committed, function-named Ghidra scripts. All three are reached
-through `-scriptPath` (`ghidra.analyze`'s own `scriptPath` field): Ghidra
-resolves script filenames against that path, and a script loaded this way is
-compiled in the default package, so no file below declares a `package`.
+Three committed, function-named Ghidra scripts. `ghidra.analyze` runs only
+these three: the broker passes this directory as `-scriptPath` itself and
+refuses any other script or a client `scriptPath`. Ghidra resolves script
+filenames against that path, and a script loaded this way is compiled in the
+default package, so no file below declares a `package`.
 
 - `VolatileCarve.java` (class `VolatileCarve`) -- a `-preScript`. Reached
   through `ghidra.analyze`'s `preScript` field, with an optional entry-point

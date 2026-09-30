@@ -53,7 +53,7 @@ test("parseGhidraCli: an unknown flag and a bad route are refused", () => {
 
 test("parseGhidraCli: input paths resolve against cwd; the export name is passed as given", () => {
   const r = parseGhidraCli(
-    [...BASE, "--script-path", "s", "--pre-script", "s/Pre.java", "--post-script", "s/Post.java", "--entrypoints-path", "ep", "--data-ranges-path", "dr", "--export-path", "g.export.txt", "--noanalysis", "--loader-base-addr", "0x7ff", "--expected-classification-lines", "12", "--project-root", "proj", "--tools-root", "t", "--port", "6510"],
+    [...BASE, "--pre-script", "s/Pre.java", "--post-script", "s/Post.java", "--entrypoints-path", "ep", "--data-ranges-path", "dr", "--export-path", "g.export.txt", "--noanalysis", "--loader-base-addr", "0x7ff", "--expected-classification-lines", "12", "--project-root", "proj", "--tools-root", "t", "--port", "6510"],
     "/work",
   );
   assert.ok(r.ok, r.ok ? "" : r.message);
@@ -64,7 +64,6 @@ test("parseGhidraCli: input paths resolve against cwd; the export name is passed
     importRoute: "prg",
     loaderBaseAddr: "0x7ff",
     noanalysis: true,
-    scriptPath: "/work/s",
     preScript: "/work/s/Pre.java",
     postScript: "/work/s/Post.java",
     entrypointsPath: "/work/ep",

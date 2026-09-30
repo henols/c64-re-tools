@@ -93,6 +93,25 @@ emulator instance the broker launches for this session.
 | `VICE_BROKER_RELAY_IDLE_MS` | The broker-owned idle deadline (default `300000`, 5 minutes) a monitor-relay connection may sit carrying no traffic in either direction before the broker reclaims that one channel. This is the mechanism the broker actually controls end-to-end (`Socket.setTimeout()`, userspace, needs no cooperation from the OS or the peer); it is suspended for as long as the connection's own grant has a declared operation in flight, so a legitimately long-running capture is never torn down by the clock. An absent, non-numeric, zero or negative value falls back to the default and is logged by name — it is never possible to disable this bound. |
 | `VICE_BROKER_RELAY_KEEPALIVE_MS` | The TCP keepalive delay (default `30000`) set on the client-facing relay socket and on every accepted control connection. This is a **secondary, best-effort signal only** — `Socket.setKeepAlive(true, ms)` sets *only* the delay before the first probe; the interval between probes and the number of probes past that delay remain the host's own kernel settings (`tcp_keepalive_intvl`/`tcp_keepalive_probes` on Linux), which this broker cannot change. It does **not** bound anything by itself — `VICE_BROKER_RELAY_IDLE_MS` above is the owned bound. Same absent/non-numeric/zero/negative fallback discipline as the idle deadline. |
 
+## Broker and host-tool behaviour
+
+- The broker mints each grant id (`g-<uuid>`). A connection holds one grant. A
+  second `acquire` on the same connection is refused.
+- When the VICE binary is missing, the broker refuses with the code
+  `vice_not_found`.
+- Host tools read the project's `.c64-re-tools/local/tools.json` on the client.
+  The client sends its bytes with the request. The broker's working directory
+  is not used.
+- `ghidra.analyze` runs only the vendored scripts (`VolatileCarve.java`,
+  `GhidraStructExport.java`, `DataRangeSeed.java`). It refuses a script
+  directory.
+- ACME can still read or write files named by content the text scan cannot see (for example a path built from a macro or symbol), so a staged source tree remains trusted input.
+- `vice_joystick_set` switches the port to VICE's I/O simulation joyport
+  device while a direction is held. Center restores the earlier device.
+
+The project root is resolved in this order: `C64RE_PROJECT_ROOT`,
+`CLAUDE_PROJECT_DIR`, then a `.git` walk from the working directory.
+
 ## The session label
 
 A single broker can serve several unrelated projects at once. `status` names each

@@ -45,7 +45,7 @@ $A call <name> --args-file batch.json      # for a large object, e.g. anno_batch
 - The JSON object carries the argument names that `references/tools.md` gives.
 - Give `--args` or `--args-file`, not both.
 - On success, `call` prints the JSON answer and exits 0.
-- On a refusal, `call` prints `<name> failed: [<ErrorClass>] <message>` and exits 1.
+- On a refusal or a failure, `call` prints `[<ErrorClass>] <name> refused|failed: <message>` on stderr and exits 1.
 - A verb refuses an option that it does not read. It names the flag and the accepted set.
 
 **Addresses.** Give an address as an integer 0..65535, a `"$hex"` string or a
@@ -322,8 +322,10 @@ put its findings into the project. Run them in this order:
    skips the addresses inside the loaded image. It writes a comment with the
    narrowest `c64-memory-map/memmap.json` entry at each other address. It reports:
    - `addressesConsidered`, `annotated`, `skippedInImage`, `skippedNoMapEntry`,
-     `declined`, `commentsChanged`
-   - a decision for each address, with the reason for each skip
+     `skippedExistingComment`, `declined`, `commentsChanged`
+   - a decision for each address, with the reason for each skip. The outcome
+     `skipped-existing-comment` means the address already has a human line
+     comment. The join never overwrites a human line comment.
 
    Give the SAME `constWrites` array, unchanged, as `const_writes`. It starts two
    more steps:
@@ -527,8 +529,13 @@ both `vice_memmap_zap` and `anno_evid_reset`.
 The CLI verb prints the same join as `anno_evid_disagreements`:
 
 ```bash
-$A evid-disagreements --json > game-disagreements.json
+$A evid-disagreements [--run IMAGE_SHA256:ARGV_DIGEST:SEED] --json > game-disagreements.json
 ```
+
+`--run` selects the recorded run to answer for. `anno call anno_evid_runs`
+lists the runs. A project with one run needs no `--run`. A project with
+several runs refuses the verb without `--run`, because a mix of runs answers
+for none of them.
 
 It prints disagreements as rows. It prints agreement as one count. An address
 that the block table covers but that no run executed is its own count. **That
@@ -564,7 +571,8 @@ Each of the three arguments is necessary. None has a default.
 
 - `--fixture` is the fixture as its manifest entry spells it (path or stem).
 - `--disagreements` is the JSON that `anno evid-disagreements --json` wrote for
-  this project. The verb refuses a document with a missing field. It also
+  this project. If the project holds several runs, run `evid-disagreements`
+  with `--run` first. The verb refuses a document with a missing field. It also
   refuses a document whose run identity is not in the project's evidence runs.
 - `--manifest` records which fixtures ran under the reproducible-run protocol.
   The verb refuses a manifest that does not list the fixture.
@@ -593,7 +601,7 @@ code or that line, not the rendered text.
 ## Failure shape
 
 `anno call` prints the answer JSON and exits 0, or prints
-`<name> failed: [<ErrorClass>] <message>` and exits 1. The report verbs exit
+`[<ErrorClass>] <name> refused|failed: <message>` on stderr and exits 1. The report verbs exit
 non-zero for a caller error, and print the reason. `completeness-report.ts` exits 1 when
 it cannot get the report, or when one gate condition fails. It prints the reason.
 

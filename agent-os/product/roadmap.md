@@ -54,7 +54,9 @@
   depends on the execution path.
 - The host tools (ACME, dxa, Ghidra, `c1541`, `petcat`) are reached only through
   the broker's fixed endpoint: inputs upload as bytes, results download by
-  handle, and no request names a broker-side path.
+  handle, and no request names a broker-side path. The client sends the
+  project's `.c64-re-tools/local/tools.json` as bytes with the request, and
+  Ghidra runs only the vendored scripts.
 
 **Rebuild**
 - The store exports as a directory of ACME source: one file per scope, joined

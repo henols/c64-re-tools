@@ -126,7 +126,7 @@ test("analyze: spawns ghidra-run.ts with the committed scripts, absolute paths a
   assert.equal(flag(argv, "--entrypoints-path"), "/work/ep.txt");
   assert.equal(flag(argv, "--data-ranges-path"), "/work/dr.txt");
   assert.equal(flag(argv, "--export-path"), "game.ghidra-export.txt");
-  const scriptDir = flag(argv, "--script-path")!;
+  const scriptDir = dirname(flag(argv, "--pre-script")!);
   assert.ok(existsSync(join(scriptDir, "GhidraStructExport.java")));
   assert.equal(flag(argv, "--pre-script"), join(scriptDir, "VolatileCarve.java"));
   assert.ok(existsSync(flag(argv, "--pre-script")!));

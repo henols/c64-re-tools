@@ -3,8 +3,9 @@
 Run each call with `anno call <name> --args '<json>'`. `../SKILL.md` gives the
 three install forms of the command.
 
-The source of these definitions is `src/mcp/vice/anno-tool-defs.mts`. The
-`call` verb refuses a name that is not in the list below.
+`src/mcp/vice/anno-tool-defs.mts` holds only the call names and the argument
+keys that name a client file. This file documents the arguments. The `call`
+verb refuses a name that is not in the list below.
 
 ## Argument rules for all calls
 
