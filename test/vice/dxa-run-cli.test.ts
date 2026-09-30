@@ -7,7 +7,7 @@
 // nothing is written into this checkout.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -142,6 +142,55 @@ test(
     assert.equal(lines.length, 1, `stdout carries only the result line:\n${r.stdout}`);
     const parsed = JSON.parse(lines[0]!);
     assert.equal(parsed.ok, false);
+    assert.match(parsed.message, /--image-kind is required/);
+  }),
+);
+
+test(
+  "runDxaCli: an image outside the project root is read, and its bytes set the parser's window",
+  withScratch(async (dir) => {
+    mkdirSync(join(dir, "proj"));
+    mkdirSync(join(dir, "elsewhere"));
+    writeFileSync(join(dir, "elsewhere", "g.prg"), IMAGE);
+    const run: DxaRunFn = async (tool) => ({ ok: true, tool, exitStatus: 0, results: [{ path: join(dir, "g.lst"), sha256: "", byteLength: 0 }], stderrTail: "" });
+    const argv = ["--image", join(dir, "elsewhere", "g.prg"), "--image-kind", "prg", "--project-root", join(dir, "proj"), "--tools-root", dir];
+    const r = await runDxaCli(argv, { run, listingText: LISTING }, dir);
+    assert.ok(r.ok, r.ok ? "" : r.message);
+    assert.equal(r.firstAddress, "$0801");
+
+    const missing = await runDxaCli(["--image", "none.prg", "--image-kind", "prg", "--project-root", dir, "--tools-root", dir], { run }, dir);
+    assert.match(missing.ok ? "" : missing.message, /runDxaDisassemble: cannot read the image .*none\.prg/);
+  }),
+);
+
+/** Spawns `script` from `cwd` with no project-root variables set. */
+function spawnFrom(cwd: string, script: string, args: string[]) {
+  const env = { ...process.env };
+  delete env.CLAUDE_PROJECT_DIR;
+  delete env.C64RE_PROJECT_ROOT;
+  return spawnSync(process.execPath, [script, ...args], { cwd, encoding: "utf8", timeout: 30_000, env });
+}
+
+test(
+  "the CLI with no --project-root uses the project found from the current directory",
+  withScratch((dir) => {
+    mkdirSync(join(dir, ".git"));
+    writeFileSync(join(dir, "g.prg"), IMAGE);
+    // Port 1 refuses the connection, so the run fails after the tools root is made.
+    const r = spawnFrom(dir, join(VICE_DIR, "dxa-run.ts"), ["--image", "g.prg", "--image-kind", "prg", "--port", "1"]);
+    assert.equal(r.status, 1, r.stderr);
+    assert.ok(existsSync(join(dir, ".c64-re-tools", "local")), "the tools root is under the project found from the cwd");
+  }),
+);
+
+test(
+  "the entry runs when the script is reached through a symlink",
+  withScratch((dir) => {
+    const link = join(dir, "dxa-run-link.ts");
+    symlinkSync(join(VICE_DIR, "dxa-run.ts"), link);
+    const r = spawnFrom(dir, link, ["--image", "g.prg"]);
+    assert.equal(r.status, 1);
+    const parsed = JSON.parse(r.stdout.trim());
     assert.match(parsed.message, /--image-kind is required/);
   }),
 );
