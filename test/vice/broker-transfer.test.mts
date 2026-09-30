@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type AddressInfo, type Socket } from "node:net";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -938,6 +938,20 @@ test("clearStagingForSession: removes the session directory recursively and is a
     // Second call: a no-op, never a throw.
     clearStagingForSession(grantId);
     assert.equal(existsSync(sessionDir), false);
+  });
+});
+
+test("clearStagingForSession: an id that names a path outside the staging root removes nothing", async () => {
+  await withStagingFixture(async (home) => {
+    const victim = join(home, "victim");
+    mkdirSync(victim, { recursive: true });
+    writeFileSync(join(victim, "keep"), "keep");
+    mkdirSync(join(home, "staging"), { recursive: true });
+    for (const hostile of ["../victim", "..", ".", "a/../../victim", ""]) {
+      clearStagingForSession(hostile);
+    }
+    assert.equal(existsSync(join(victim, "keep")), true);
+    assert.equal(existsSync(join(home, "staging")), true);
   });
 });
 

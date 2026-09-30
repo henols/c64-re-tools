@@ -665,12 +665,17 @@ export function clearTransferInFlight(handle: string): void {
  * sends no goodbye, only a socket close -- still loses its staging.
  */
 export function clearStagingForSession(grantId: string): void {
-  const sessionDir = join(brokerStagingDir(), grantId);
-  try {
-    rmSync(sessionDir, { recursive: true, force: true });
-  } catch {
-    // Best-effort -- a directory that never existed (no slot was ever
-    // staged for this grant) must not be treated as a failure.
+  // The id becomes a path segment only once it passes the same check
+  // stageFileSlot() applies; an id that fails it can own no staging
+  // directory, so there is nothing on disk to remove.
+  if (refuseUnsafeSegment(grantId, "grant id").ok) {
+    const sessionDir = join(brokerStagingDir(), grantId);
+    try {
+      rmSync(sessionDir, { recursive: true, force: true });
+    } catch {
+      // Best-effort -- a directory that never existed (no slot was ever
+      // staged for this grant) must not be treated as a failure.
+    }
   }
 
   const prefix = `${grantId}\u0000`;

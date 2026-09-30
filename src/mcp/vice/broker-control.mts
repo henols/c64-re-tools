@@ -33,6 +33,7 @@
 // the bridge set is enumerated rather than dropped outright. Port: 19510
 // default via VICE_BROKER_CONTROL_PORT.
 import { createServer, type Server, type Socket } from "node:net";
+import { randomUUID } from "node:crypto";
 import { networkInterfaces as osNetworkInterfaces, type NetworkInterfaceInfo } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -824,8 +825,11 @@ function writeHostToolLine(socket: Socket, obj: unknown): void {
   }
 }
 
-function defaultRequestId(prefix: string): string {
-  return `${prefix}-${process.pid}-${Date.now()}`;
+/** Mints the id of a new grant. The broker is the only source of grant ids:
+ * a grant id names a staging directory and is the identity every
+ * target-naming op is checked against, so a caller never chooses it. */
+function mintGrantId(): string {
+  return `g-${randomUUID()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1046,6 +1050,9 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
     // `JSON.parse()` call, never the accumulator as a whole.
     let carry: Buffer = Buffer.alloc(0);
     let requestIdForThisConnection: string | null = null;
+    // True from an accepted `acquire` until it settles (granted, refused, or
+    // its connection closed), so a second `acquire` cannot race the first.
+    let acquirePending = false;
     // Phase 65 (SEAM-01, D-03/D-09): the request key `host_tool_stage`
     // minted and bound to THIS connection -- `null` until a stage succeeds,
     // never re-read from a later `host_tool_run` line's own `request`
@@ -1483,7 +1490,18 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
       }
 
       if (req.op === "acquire") {
-        const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("req");
+        // One grant per connection: the connection is the lease, so a second
+        // grant on it could never be released on its own.
+        if (requestIdForThisConnection !== null || acquirePending) {
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message: "acquire: this connection already holds or is waiting for a grant; open a new connection for another grant",
+          });
+          return;
+        }
+        // The request's own `id` is never the grant id: the broker mints it.
+        const requestId = mintGrantId();
         // Narrow BEFORE attemptAcquire, so a malformed profile never
         // reaches onAcquire and therefore never reaches the port allocator,
         // a spawn, or argv construction. A refusal also does NOT enqueue --
@@ -1509,9 +1527,15 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         // declared name already goes through. An absent or hostile value
         // collapses to `null`, never fabricated.
         const label = sanitiseSessionLabel(req.label);
-        void attemptAcquire(requestId, profile, label).then((settled) => {
+        acquirePending = true;
+        const attempt = (): Promise<boolean> =>
+          attemptAcquire(requestId, profile, label).then((settled) => {
+            if (settled) acquirePending = false;
+            return settled;
+          });
+        void attempt().then((settled) => {
           if (!settled) {
-            enqueueAcquire(pendingAcquires, { requestId, attempt: () => attemptAcquire(requestId, profile, label) });
+            enqueueAcquire(pendingAcquires, { requestId, attempt });
           }
         });
       } else if (req.op === "release") {
@@ -1522,7 +1546,12 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         }
         writeLine(socket, { kind: "released" });
       } else if (req.op === "status") {
-        writeLine(socket, { kind: "status", instances: opts.onStatus() });
+        // A grant id is shown only to the connection that holds it: it is the
+        // identity every target-naming op checks, so it is never published.
+        const instances = opts.onStatus().map((entry) =>
+          entry.grantId !== null && entry.grantId !== requestIdForThisConnection ? { ...entry, grantId: null } : entry,
+        );
+        writeLine(socket, { kind: "status", instances });
       } else if (req.op === "host_state") {
         const hs = opts.onHostState();
         writeLine(socket, {
@@ -1554,7 +1583,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           });
           return;
         }
-        const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("claim");
+        const requestId = typeof req.id === "string" ? req.id : "";
         const outcome = opts.onMonitorClaim(requestId, targetId, channel);
         if (outcome.ok) {
           writeLine(socket, { kind: "monitor_claimed", handle: outcome.handle });
@@ -1601,7 +1630,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           });
           return;
         }
-        const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("release-monitor");
+        const requestId = typeof req.id === "string" ? req.id : "";
         const outcome = opts.onMonitorRelease(requestId, targetId, channel);
         if (outcome.ok) {
           writeLine(socket, { kind: "monitor_released" });

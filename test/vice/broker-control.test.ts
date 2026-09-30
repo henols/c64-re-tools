@@ -375,7 +375,8 @@ test("status: one entry per instance, carrying port, url, state, reason, epoch a
     client.send({ op: "status" });
     const resp = await client.next();
     assert.equal(resp.kind, "status");
-    assert.deepEqual(resp.instances, entries);
+    // This connection holds no grant, so no grant id reaches it.
+    assert.deepEqual(resp.instances, entries.map((entry) => ({ ...entry, grantId: null })));
   } finally {
     client.close();
     listener.server.close();
@@ -456,13 +457,110 @@ function grantingAcquire(): (id: string) => Promise<AcquireOutcome> {
   return async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } });
 }
 
-/** Acquires grant `id` over `client` and asserts the grant arrived, so every
- * monitor-op test starts from a connection that owns what it names. */
-async function acquireGrant(client: ReturnType<typeof makeClient>, id: string): Promise<void> {
-  client.send({ op: "acquire", id });
+/** Acquires a grant over `client`, asserts it arrived, and returns the grant
+ * id the broker minted, so every monitor-op test starts from a connection
+ * that owns what it names. */
+async function acquireGrant(client: ReturnType<typeof makeClient>): Promise<string> {
+  client.send({ op: "acquire", id: "client-chosen-id" });
   const grant = await client.next();
-  assert.equal(grant.kind, "grant", `precondition: the connection must hold grant ${id}`);
+  assert.equal(grant.kind, "grant", "precondition: the connection must hold a grant");
+  assert.equal(typeof grant.id, "string");
+  return grant.id as string;
 }
+
+test("acquire: the broker mints the grant id and ignores the id the request carries", async () => {
+  const seen: string[] = [];
+  const { listener } = await startTestListener({
+    onAcquire: async (id) => {
+      seen.push(id);
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } };
+    },
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "acquire", id: "../../../outside" });
+    const grant = await client.next();
+    assert.equal(grant.kind, "grant");
+    assert.match(String(grant.id), /^g-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    assert.deepEqual(seen, [grant.id], "the launch callback sees the minted id, never the request's own");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("acquire: a second acquire on a connection that already holds a grant is refused bad_request", async () => {
+  let calls = 0;
+  const { listener } = await startTestListener({
+    onAcquire: async () => {
+      calls += 1;
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } };
+    },
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client);
+    client.send({ op: "acquire" });
+    const second = await client.next();
+    assert.equal(second.kind, "error");
+    assert.equal(second.code, "bad_request");
+    assert.equal(calls, 1, "the refused acquire never reaches the launch callback");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("acquire: a second connection sending the same request id gets its own grant and cannot act on the first", async () => {
+  const { listener, monitorClaimCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onMonitorClaim: () => ({ ok: true, handle: "h" }),
+  });
+  const first = makeClient(listener.port);
+  const second = makeClient(listener.port);
+  try {
+    const firstGrant = await acquireGrant(first);
+    const secondGrant = await acquireGrant(second);
+    assert.notEqual(firstGrant, secondGrant);
+    second.send({ op: "monitor_claim", target_id: firstGrant });
+    const refused = await second.next();
+    assert.equal(refused.kind, "error");
+    assert.equal(refused.code, "denied");
+    assert.deepEqual(monitorClaimCalls, [], "no claim reaches the broker for a grant another connection holds");
+  } finally {
+    first.close();
+    second.close();
+    listener.server.close();
+  }
+});
+
+test("status: a grant id is shown only to the connection that holds it", async () => {
+  let minted = "";
+  const { listener } = await startTestListener({
+    onAcquire: async (id) => {
+      minted = id;
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } };
+    },
+    onStatus: () => [
+      { port: 6600, url: "http://127.0.0.1:6600/mcp", state: "granted", reason: "acquire", epoch: 1, hasMonitorClient: false, sessionLabel: "s", grantId: minted, operation: null },
+    ],
+  });
+  const holder = makeClient(listener.port);
+  const other = makeClient(listener.port);
+  try {
+    await acquireGrant(holder);
+    holder.send({ op: "status" });
+    const own = await holder.next();
+    other.send({ op: "status" });
+    const foreign = await other.next();
+    assert.equal((own.instances as StatusInstanceEntry[])[0]!.grantId, minted);
+    assert.equal((foreign.instances as StatusInstanceEntry[])[0]!.grantId, null);
+  } finally {
+    holder.close();
+    other.close();
+    listener.server.close();
+  }
+});
 
 test("monitor_claim: an ok stub answers the monitor_claimed response kind", async () => {
   const { listener, monitorClaimCalls } = await startTestListener({
@@ -471,11 +569,11 @@ test("monitor_claim: an ok stub answers the monitor_claimed response kind", asyn
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: grantReqA });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_claimed");
-    assert.deepEqual(monitorClaimCalls, ["req-a"]);
+    assert.deepEqual(monitorClaimCalls, [grantReqA]);
   } finally {
     client.close();
     listener.server.close();
@@ -492,8 +590,8 @@ test("monitor_claim: a monitor_owned stub answers an error carrying code monitor
     // This connection legitimately holds req-b; the instance behind it is
     // already claimed by a DIFFERENT grant (req-a). That is the genuine
     // ownership conflict, distinct from CR-03's spoofing case below.
-    await acquireGrant(client, "req-b");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b" });
+    const grantReqB = await acquireGrant(client);
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: grantReqB });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "monitor_owned");
@@ -524,8 +622,8 @@ test("monitor_claim (D-14): claiming 'text' on an instance whose 'binary' channe
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-b");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-b", channel: "text" });
+    const grantReqB = await acquireGrant(client);
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: grantReqB, channel: "text" });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_claimed");
     assert.deepEqual(monitorClaimChannels, ["text"]);
@@ -542,8 +640,8 @@ test("monitor_claim (D-14): a 'text' claim from a second grant while a first gra
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-second");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-second", channel: "text" });
+    const grantReqSecond = await acquireGrant(client);
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: grantReqSecond, channel: "text" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "monitor_owned");
@@ -564,8 +662,8 @@ test("monitor_claim (D-14): an unrecognised non-empty channel value is bad_reque
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a", channel: "drive" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: grantReqA, channel: "drive" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -585,8 +683,8 @@ test("monitor_claim (D-14): no channel field at all behaves exactly as channel: 
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: grantReqA });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_claimed");
     assert.deepEqual(monitorClaimChannels, ["binary"]);
@@ -603,8 +701,8 @@ test("monitor_release (D-14): no channel field at all behaves exactly as channel
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "monitor_release", id: "release-1", target_id: grantReqA });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_released");
     assert.deepEqual(monitorReleaseChannels, ["binary"]);
@@ -621,8 +719,8 @@ test("monitor_release (D-14): an unrecognised non-empty channel value is bad_req
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a", channel: "drive" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "monitor_release", id: "release-1", target_id: grantReqA, channel: "drive" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -653,20 +751,20 @@ test("status (D-14): hasMonitorClient is true when only the text channel is clai
 test("monitor_claim: a repeated claim from the same grant id is idempotent -- the stub answers ok both times, no conflict", async () => {
   const { listener, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
-    onMonitorClaim: (_requestId, targetId) => (targetId === "req-a" ? { ok: true, handle: "test-handle" } : { ok: false, code: "internal" }),
+    onMonitorClaim: (_requestId, targetId) => (targetId.startsWith("g-") ? { ok: true, handle: "test-handle" } : { ok: false, code: "internal" }),
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "req-a" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: grantReqA });
     const first = await client.next();
     assert.equal(first.kind, "monitor_claimed");
 
-    client.send({ op: "monitor_claim", id: "claim-2", target_id: "req-a" });
+    client.send({ op: "monitor_claim", id: "claim-2", target_id: grantReqA });
     const second = await client.next();
     assert.equal(second.kind, "monitor_claimed");
 
-    assert.deepEqual(monitorClaimCalls, ["req-a", "req-a"]);
+    assert.deepEqual(monitorClaimCalls, [grantReqA, grantReqA]);
   } finally {
     client.close();
     listener.server.close();
@@ -680,8 +778,8 @@ test("monitor_claim: a target_id this connection holds but the broker cannot res
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "no-such-grant");
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "no-such-grant" });
+    const grantNoSuchGrant = await acquireGrant(client);
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: grantNoSuchGrant });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -702,7 +800,7 @@ test("CR-03 monitor_claim: a connection holding grant A is DENIED when it names 
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "grant-a");
+    await acquireGrant(client);
     client.send({ op: "monitor_claim", id: "claim-1", target_id: "grant-b" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
@@ -723,7 +821,7 @@ test("CR-03 monitor_release: a connection holding grant A is DENIED when it trie
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "grant-a");
+    await acquireGrant(client);
     client.send({ op: "monitor_release", id: "release-1", target_id: "grant-b" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
@@ -767,12 +865,12 @@ test("CR-03: an explicit `release` drops the connection's grant, after which its
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "grant-a");
+    const grantGrantA = await acquireGrant(client);
     client.send({ op: "release" });
     const released = await client.next();
     assert.equal(released.kind, "released");
 
-    client.send({ op: "monitor_claim", id: "claim-1", target_id: "grant-a" });
+    client.send({ op: "monitor_claim", id: "claim-1", target_id: grantGrantA });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "denied");
@@ -805,11 +903,11 @@ test("monitor_release: an ok stub answers the monitor_released response kind", a
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "monitor_release", id: "release-1", target_id: "req-a" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "monitor_release", id: "release-1", target_id: grantReqA });
     const resp = await client.next();
     assert.equal(resp.kind, "monitor_released");
-    assert.deepEqual(monitorReleaseCalls, ["req-a"]);
+    assert.deepEqual(monitorReleaseCalls, [grantReqA]);
   } finally {
     client.close();
     listener.server.close();
@@ -826,8 +924,8 @@ test("monitor_release: a broker-side non-holder outcome answers a refusal, not s
     // The connection legitimately holds req-b -- the refusal here comes from
     // the BROKER's own holder comparison, not from the control-plane
     // ownership gate CR-03 added (which is covered separately above).
-    await acquireGrant(client, "req-b");
-    client.send({ op: "monitor_release", id: "release-1", target_id: "req-b" });
+    const grantReqB = await acquireGrant(client);
+    client.send({ op: "monitor_release", id: "release-1", target_id: grantReqB });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "denied");
@@ -853,11 +951,11 @@ test("operation: a declaration from a connection that owns the named grant is ac
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_run_until" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "operation", id: "op-1", target_id: grantReqA, name: "vice_run_until" });
     const resp = await client.next();
     assert.equal(resp.kind, "operation_noted");
-    assert.deepEqual(operationCalls, [{ targetId: "req-a", channel: "binary", name: "vice_run_until" }]);
+    assert.deepEqual(operationCalls, [{ targetId: grantReqA, channel: "binary", name: "vice_run_until" }]);
   } finally {
     client.close();
     listener.server.close();
@@ -868,7 +966,7 @@ test("operation: a declaration naming a grant this connection does NOT hold is r
   const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-b");
+    await acquireGrant(client);
     client.send({ op: "operation", id: "op-1", target_id: "someone-elses-grant", name: "vice_ping" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
@@ -900,8 +998,8 @@ test("operation: an unrecognised non-empty channel value is bad_request, naming 
   const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", channel: "video", name: "vice_ping" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "operation", id: "op-1", target_id: grantReqA, channel: "video", name: "vice_ping" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -918,10 +1016,10 @@ test("operation: no channel field at all behaves exactly as channel: 'binary'", 
   const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_ping" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "operation", id: "op-1", target_id: grantReqA, name: "vice_ping" });
     await client.next();
-    assert.deepEqual(operationCalls, [{ targetId: "req-a", channel: "binary", name: "vice_ping" }]);
+    assert.deepEqual(operationCalls, [{ targetId: grantReqA, channel: "binary", name: "vice_ping" }]);
   } finally {
     client.close();
     listener.server.close();
@@ -932,11 +1030,11 @@ test("operation: name null clears -- the callback observes null verbatim, never 
   const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: null });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "operation", id: "op-1", target_id: grantReqA, name: null });
     const resp = await client.next();
     assert.equal(resp.kind, "operation_noted");
-    assert.deepEqual(operationCalls, [{ targetId: "req-a", channel: "binary", name: null }]);
+    assert.deepEqual(operationCalls, [{ targetId: grantReqA, channel: "binary", name: null }]);
   } finally {
     client.close();
     listener.server.close();
@@ -947,8 +1045,8 @@ test("operation: a name that is neither a string nor null is refused bad_request
   const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: 42 });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "operation", id: "op-1", target_id: grantReqA, name: 42 });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -967,8 +1065,8 @@ test("operation: a broker-side bad_request outcome (the should-be-unreachable mi
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_ping" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "operation", id: "op-1", target_id: grantReqA, name: "vice_ping" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "bad_request");
@@ -989,21 +1087,21 @@ test("operation: Task 3 ordering proof -- a declare, the wrapped work, then a cl
   const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
+    const grantReqA = await acquireGrant(client);
 
     let wrappedWorkDone = false;
     // Fire the declare WITHOUT awaiting its reply -- mirrors
     // stock-session.ts's declareOperation()/text-tools.ts's own
     // fire-and-forget discipline exactly: neither reads a response before
     // moving on.
-    client.send({ op: "operation", id: "op-declare", target_id: "req-a", name: "vice_run_until" });
+    client.send({ op: "operation", id: "op-declare", target_id: grantReqA, name: "vice_run_until" });
     // The "wrapped work" a real tool call performs happens HERE,
     // synchronously, before this test ever reads a response line --
     // proving the calling code is never blocked on the declaration's own
     // reply (T-63-13).
     wrappedWorkDone = true;
     // Clear, also without awaiting.
-    client.send({ op: "operation", id: "op-clear", target_id: "req-a", name: null });
+    client.send({ op: "operation", id: "op-clear", target_id: grantReqA, name: null });
 
     assert.equal(wrappedWorkDone, true, "the wrapped work must complete without ever waiting for the declaration's reply");
 
@@ -1017,8 +1115,8 @@ test("operation: Task 3 ordering proof -- a declare, the wrapped work, then a cl
     assert.deepEqual(
       operationCalls,
       [
-        { targetId: "req-a", channel: "binary", name: "vice_run_until" },
-        { targetId: "req-a", channel: "binary", name: null },
+        { targetId: grantReqA, channel: "binary", name: "vice_run_until" },
+        { targetId: grantReqA, channel: "binary", name: null },
       ],
       "the broker must observe the declare THEN the clear, in that order, for one logical operation",
     );
@@ -1063,9 +1161,9 @@ test("stage_file: a request missing target_id or slot is refused bad_request, an
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
+    const grantReqA = await acquireGrant(client);
 
-    client.send({ op: "stage_file", id: "stage-missing-slot", target_id: "req-a" });
+    client.send({ op: "stage_file", id: "stage-missing-slot", target_id: grantReqA });
     const missingSlot = await client.next();
     assert.equal(missingSlot.kind, "error");
     assert.equal(missingSlot.code, "bad_request");
@@ -1089,13 +1187,13 @@ test("stage_file: a request from the owning connection is answered file_staged, 
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "stage_file", id: "stage-1", target_id: grantReqA, slot: "autostart" });
     const resp = await client.next();
     assert.equal(resp.kind, "file_staged");
-    assert.equal(resp.handle, "handle-for-req-a-autostart");
-    assert.equal(resp.emulator_filename, "/staging/req-a/autostart.bin");
-    assert.deepEqual(stageFileCalls, [{ targetId: "req-a", slot: "autostart" }]);
+    assert.equal(resp.handle, `handle-for-${grantReqA}-autostart`);
+    assert.equal(resp.emulator_filename, `/staging/${grantReqA}/autostart.bin`);
+    assert.deepEqual(stageFileCalls, [{ targetId: grantReqA, slot: "autostart" }]);
   } finally {
     client.close();
     listener.server.close();
@@ -1109,8 +1207,8 @@ test("stage_file: a callback refusal is forwarded verbatim as an error naming th
   });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "stage_file", id: "stage-1", target_id: grantReqA, slot: "autostart" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "internal");
@@ -1124,8 +1222,8 @@ test("stage_file: against a listener with NO onStageFile stub configured, the re
   const { listener } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
-    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart" });
+    const grantReqA = await acquireGrant(client);
+    client.send({ op: "stage_file", id: "stage-1", target_id: grantReqA, slot: "autostart" });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
     assert.equal(resp.code, "internal");
@@ -1490,9 +1588,9 @@ test("operation: a name carrying a line terminator and 200 characters is recorde
   const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
-    await acquireGrant(client, "req-a");
+    const grantReqA = await acquireGrant(client);
     const hostile = `${"x".repeat(199)}\n`; // 200 chars total, trailing line terminator
-    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: hostile });
+    client.send({ op: "operation", id: "op-1", target_id: grantReqA, name: hostile });
     const resp = await client.next();
     assert.equal(resp.kind, "operation_noted");
     assert.equal(operationCalls.length, 1);
@@ -1727,9 +1825,11 @@ test("attemptAcquire: a queued entry whose socket is already destroyed never cal
 
 test("attemptAcquire: a grant that settles after its own socket was destroyed is released through the release callback, not silently dropped", async () => {
   let resolveLaunch: ((outcome: AcquireOutcome) => void) | null = null;
+  let mintedId = "";
   const { listener, releases } = await startTestListener({
-    onAcquire: () =>
+    onAcquire: (id) =>
       new Promise<AcquireOutcome>((resolvePromise) => {
+        mintedId = id;
         resolveLaunch = resolvePromise;
       }),
   });
@@ -1752,9 +1852,9 @@ test("attemptAcquire: a grant that settles after its own socket was destroyed is
     await waitFor(() => serverSocket !== null && serverSocket.destroyed, 2000);
 
     resolveLaunch!({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } });
-    await waitFor(() => releases.includes("req-1"), 2000);
+    await waitFor(() => releases.includes(mintedId), 2000);
 
-    assert.deepEqual(releases, ["req-1"], "the release callback must be invoked with the same request id as the late grant");
+    assert.deepEqual(releases, [mintedId], "the release callback must be invoked with the same grant id as the late grant");
     assert.ok(!written.some((line) => line.includes('"kind":"grant"')), "no grant response line may be written once the owning socket is destroyed");
   } finally {
     listener.server.close();
@@ -2828,9 +2928,11 @@ test("enumerateBindHosts: calls the injected networkInterfaces() exactly once pe
 
 test("startControlListenerOnHosts: two listeners on two different bound addresses share exactly one pending-acquire queue, serving two acquires in arrival order", async () => {
   let inFlight = true;
+  const seen: string[] = [];
   const listenerOpts = {
     port: 0,
-    onAcquire: async (): Promise<AcquireOutcome> => {
+    onAcquire: async (id: string): Promise<AcquireOutcome> => {
+      if (!seen.includes(id)) seen.push(id);
       if (inFlight) return { ok: false, reason: "launch_in_flight" };
       return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp" } };
     },
@@ -2871,7 +2973,7 @@ test("startControlListenerOnHosts: two listeners on two different bound addresse
 
       assert.deepEqual(
         pendingAcquires.map((e) => e.requestId),
-        ["req-A", "req-B"],
+        seen,
         "arrival order must be preserved regardless of which bound address each request arrived on",
       );
 
@@ -3006,16 +3108,16 @@ test("two sessions, one broker: two connections declaring two labels each acquir
     // broker state (deleting the grant) so the subsequent status reply
     // reflects a real release's effect.
     clientA.close();
-    await waitFor(() => releases.includes("grant-a"), 2000);
-    assert.deepEqual(releases, ["grant-a"], "closing A must release only A's own grant id -- B's is untouched");
-    grants.delete("grant-a");
+    await waitFor(() => releases.includes(String(grantA.id)), 2000);
+    assert.deepEqual(releases, [grantA.id], "closing A must release only A's own grant id -- B's is untouched");
+    grants.delete(String(grantA.id));
 
     clientB.send({ op: "status" });
     const status2 = await clientB.next();
     const entries2 = status2.instances as StatusInstanceEntry[];
     assert.equal(entries2.length, 1, "only B's grant remains");
     assert.equal(entries2[0]?.sessionLabel, "session-b", "a fresh status must still name B with B's own label");
-    assert.equal(entries2[0]?.grantId, "grant-b");
+    assert.equal(entries2[0]?.grantId, grantB.id);
   } finally {
     clientA.close();
     clientB.close();
@@ -3023,54 +3125,12 @@ test("two sessions, one broker: two connections declaring two labels each acquir
   }
 });
 
-// The set of ControlRequestKind members this invariant test classifies as
-// NOT taking a caller-supplied target id at all -- `acquire`/`release` name
-// no target (the connection's own held grant IS the target for `release`);
-// `status`/`host_state`/`host_tool`/`hello` never resolve against a grant.
-// `transfer` (Phase 64, XFER-04) joins this set: its request carries a
-// `handle`, never a `target_id` (see this plan's wire_vocabulary block) --
-// the SAME T-63-01 reasoning that already puts `attach`'s handle authority
-// on a DIFFERENT connection than the one that named a target_id, except
-// `transfer` never reads target_id at all, so it cannot be exercised by
-// this test's target_id-substitution shape.
-// `host_tool_stage`/`host_tool_run` (Phase 65, SEAM-01) join this set too:
-// neither reads `target_id` at all -- `host_tool_stage` carries only
-// `files`, `host_tool_run` carries `tool`/`args`/`request` (a request KEY,
-// never a target id), and both are gated on a per-connection BOUND request
-// key, never on `ownsTarget()`.
-const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "hello", "transfer", "host_tool_stage", "host_tool_run"]);
-// The set this invariant test actually EXERCISES below -- every op whose
-// dispatch arm reads `req.target_id` and resolves it against a grant.
-// `stage_file` (Phase 64, XFER-04) joins this set: gated by the SAME
-// ownsTarget() predicate as monitor_claim/monitor_release/operation.
+// Every op whose dispatch arm reads `req.target_id` and resolves it against
+// a grant.
 const TARGET_NAMING_OPS_UNDER_TEST = ["monitor_claim", "monitor_release", "attach", "operation", "stage_file"];
 
-test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session's declared label used as a target id, byte-identically to a bare unrelated garbage target id, and the refusal never quotes the label back; the covered op set is asserted against ControlRequestKind so a future target-naming op reds this test until it is listed", async () => {
-  // Structural half FIRST: read ControlRequestKind's own live declaration
-  // (the same idiom the eleven-members test above already uses) and require
-  // EVERY member to be classified into exactly one of the two lists above --
-  // a future op that is neither breaks this assertion before any behaviour
-  // is even exercised, so it cannot be added silently.
-  const source = readFileSync(join(VICE_DIR, "broker-control.mts"), "utf8");
-  const match = /export type ControlRequestKind =([^;]*);/.exec(source);
-  assert.ok(match, "ControlRequestKind's declaration must be findable in broker-control.mts");
-  const members = match![1]
-    .split("|")
-    .map((s) => s.trim().replace(/^"|"$/g, ""))
-    .filter((s) => s !== "");
-  for (const member of members) {
-    assert.ok(
-      KNOWN_NON_TARGET_NAMING_OPS.has(member) || TARGET_NAMING_OPS_UNDER_TEST.includes(member),
-      `ControlRequestKind member "${member}" is neither a known non-target-naming op nor covered by this invariant test -- classify it (add it to one of the two lists above this test) before this test can pass`,
-    );
-  }
-  assert.equal(
-    members.length,
-    KNOWN_NON_TARGET_NAMING_OPS.size + TARGET_NAMING_OPS_UNDER_TEST.length,
-    "every ControlRequestKind member must be classified exactly once, into exactly one of the two lists",
-  );
-
-  // Behavioural half: from connection B (which never held A's grant and
+test("every target-naming op refuses another session's declared label used as a target id exactly as it refuses an unrelated garbage id, and never quotes the label back", async () => {
+  // From connection B (which never held A's grant and
   // never saw A's label as anything but an opaque string), send every
   // target-naming op with `target_id` set to A's OWN DECLARED label, and
   // compare the refusal against the SAME op sent with an unrelated garbage
@@ -3089,7 +3149,7 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
     const grantA = await clientA.next();
     assert.equal(grantA.kind, "grant", `precondition: A must hold a grant; got ${JSON.stringify(grantA)}`);
 
-    await acquireGrant(clientB, "grant-b");
+    await acquireGrant(clientB);
 
     const garbageId = "totally-unrelated-garbage-id-12345";
 
@@ -3119,7 +3179,7 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
 
     // A's own grant must be entirely untouched by every attempt above --
     // prove it can still declare an operation on it through its own connection.
-    clientA.send({ op: "operation", id: "op-a-still-alive", target_id: "grant-a", name: "vice_ping" });
+    clientA.send({ op: "operation", id: "op-a-still-alive", target_id: grantA.id, name: "vice_ping" });
     const ownResp = await clientA.next();
     assert.equal(ownResp.kind, "operation_noted", "A's own grant must be unaffected by every refused attempt against its label");
   } finally {

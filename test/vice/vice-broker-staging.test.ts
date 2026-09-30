@@ -90,10 +90,9 @@ function makeGrantedInstance(port: number, overrides: Partial<InstanceRecord> = 
   };
 }
 
-function setupBrokerState(emulatorPort: number, targetId: string): BrokerState {
+function setupBrokerState(emulatorPort: number): BrokerState {
   const state = createBrokerState();
   state.instances.set(emulatorPort, makeGrantedInstance(emulatorPort));
-  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
   return state;
 }
 
@@ -121,10 +120,13 @@ async function startStagingListenerForState(
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    onAcquire: async (): Promise<AcquireOutcome> => ({
-      ok: true,
-      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` },
-    }),
+    onAcquire: async (id: string): Promise<AcquireOutcome> => {
+      state.grants.set(id, { id, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+      return {
+        ok: true,
+        grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` },
+      };
+    },
     onRelease: (requestId: string) => handleRelease(requestId, state),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
@@ -293,13 +295,14 @@ function nextEmulatorPort(): number {
 test("vice-broker-staging: a full upload-then-download round trip is byte-for-byte identical for a buffer spanning every value 0x00..0xFF", async () => {
   await withStagingFixture(async () => {
     const emulatorPort = nextEmulatorPort();
-    const grantId = "req-1-1-aaaaaaaa";
-    const state = setupBrokerState(emulatorPort, grantId);
+    let grantId = "";
+    const state = setupBrokerState(emulatorPort);
     const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const control = makeControlClient(listener.port);
       try {
-        const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
+        const acquireReply = await control.sendAndRead({ op: "acquire" });
+        grantId = String(acquireReply.id);
         assert.equal(acquireReply.kind, "grant");
 
         const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
@@ -365,8 +368,7 @@ test("vice-broker-staging: a full upload-then-download round trip is byte-for-by
 test("vice-broker-staging: a transfer presenting an unknown handle receives an error frame and no file appears anywhere under VICE_BROKER_HOME", async () => {
   await withStagingFixture(async (home) => {
     const emulatorPort = nextEmulatorPort();
-    const grantId = "req-1-1-bbbbbbbb";
-    const state = setupBrokerState(emulatorPort, grantId);
+    const state = setupBrokerState(emulatorPort);
     const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const socket = netConnect({ host: "127.0.0.1", port: listener.port });
@@ -388,13 +390,13 @@ test("vice-broker-staging: a transfer presenting an unknown handle receives an e
 test("vice-broker-staging: an upload whose declared digest disagrees with its bytes leaves no file at the staged path", async () => {
   await withStagingFixture(async (home) => {
     const emulatorPort = nextEmulatorPort();
-    const grantId = "req-1-1-cccccccc";
-    const state = setupBrokerState(emulatorPort, grantId);
+    let grantId = "";
+    const state = setupBrokerState(emulatorPort);
     const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const control = makeControlClient(listener.port);
       try {
-        await control.sendAndRead({ op: "acquire", id: grantId });
+        grantId = String((await control.sendAndRead({ op: "acquire" })).id);
         const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
@@ -433,8 +435,8 @@ test("vice-broker-staging: an upload whose declared digest disagrees with its by
 test("vice-broker-staging: real fs fault at the publish rename (the session directory removed before the rename) answers an error line with the errno code and no path under VICE_BROKER_HOME", async () => {
   await withStagingFixture(async (home) => {
     const emulatorPort = nextEmulatorPort();
-    const grantId = "req-64-15-t2-rename";
-    const state = setupBrokerState(emulatorPort, grantId);
+    let grantId = "";
+    const state = setupBrokerState(emulatorPort);
     // Starts undefined -- armed right before this upload so the hook is
     // per-case, matching stock-connect.test.ts's own getDeps shape.
     let beforePublish: (() => Promise<void>) | undefined;
@@ -442,7 +444,7 @@ test("vice-broker-staging: real fs fault at the publish rename (the session dire
     try {
       const control = makeControlClient(listener.port);
       try {
-        await control.sendAndRead({ op: "acquire", id: grantId });
+        grantId = String((await control.sendAndRead({ op: "acquire" })).id);
         const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
@@ -490,14 +492,14 @@ test("vice-broker-staging: real fs fault at the publish rename (the session dire
 test("vice-broker-staging: real fs fault in the pre-publish hook (a real ENOENT fs error) answers an error line with the errno code and no path under VICE_BROKER_HOME", async () => {
   await withStagingFixture(async (home) => {
     const emulatorPort = nextEmulatorPort();
-    const grantId = "req-64-15-t2-hook";
-    const state = setupBrokerState(emulatorPort, grantId);
+    let grantId = "";
+    const state = setupBrokerState(emulatorPort);
     let beforePublish: (() => Promise<void>) | undefined;
     const { listener } = await startStagingListenerForState(state, emulatorPort, () => ({ beforePublish }));
     try {
       const control = makeControlClient(listener.port);
       try {
-        await control.sendAndRead({ op: "acquire", id: grantId });
+        grantId = String((await control.sendAndRead({ op: "acquire" })).id);
         const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
@@ -543,13 +545,13 @@ test("vice-broker-staging: real fs fault in the pre-publish hook (a real ENOENT 
 test("vice-broker-staging: a download for a handle whose staged file does not exist yet is refused by name, never a zero-byte payload", async () => {
   await withStagingFixture(async () => {
     const emulatorPort = nextEmulatorPort();
-    const grantId = "req-1-1-dddddddd";
-    const state = setupBrokerState(emulatorPort, grantId);
+    let grantId = "";
+    const state = setupBrokerState(emulatorPort);
     const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const control = makeControlClient(listener.port);
       try {
-        await control.sendAndRead({ op: "acquire", id: grantId });
+        grantId = String((await control.sendAndRead({ op: "acquire" })).id);
         const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
@@ -576,13 +578,13 @@ test("vice-broker-staging: a download for a handle whose staged file does not ex
 test("vice-broker-staging: a second transfer on an in-flight handle is refused while the first completes successfully", async () => {
   await withStagingFixture(async () => {
     const emulatorPort = nextEmulatorPort();
-    const grantId = "req-1-1-eeeeeeee";
-    const state = setupBrokerState(emulatorPort, grantId);
+    let grantId = "";
+    const state = setupBrokerState(emulatorPort);
     const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const control = makeControlClient(listener.port);
       try {
-        await control.sendAndRead({ op: "acquire", id: grantId });
+        grantId = String((await control.sendAndRead({ op: "acquire" })).id);
         const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
@@ -633,12 +635,13 @@ test("vice-broker-staging: a second transfer on an in-flight handle is refused w
 test("vice-broker-staging: after the session-close path runs for a grant, the session's staging directory no longer exists", async () => {
   await withStagingFixture(async (home) => {
     const emulatorPort = nextEmulatorPort();
-    const grantId = "req-1-1-ffffffff";
-    const state = setupBrokerState(emulatorPort, grantId);
+    let grantId = "";
+    const state = setupBrokerState(emulatorPort);
     const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const control = makeControlClient(listener.port);
-      const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
+      const acquireReply = await control.sendAndRead({ op: "acquire" });
+      grantId = String(acquireReply.id);
       assert.equal(acquireReply.kind, "grant");
       const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
       assert.equal(stageReply.kind, "file_staged");
