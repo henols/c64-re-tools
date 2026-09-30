@@ -130,6 +130,8 @@ Host Runtime:
 - binary-monitor connection;
 - serialized request handling.
 
+The first slice intentionally uses only the binary monitor. This is sufficient to prove session ownership, machine state, memory access and register access with the smallest possible implementation. The text monitor is still part of the v1 VICE-session architecture and is added when the first frozen MCP operation genuinely requires it; do not interpret this milestone as a binary-monitor-only architecture.
+
 Host client:
 
 - connection;
@@ -240,7 +242,7 @@ Finish the remaining frozen v1 MCP contract before adding more product workflows
 - snapshots;
 - drive8 support where defined by the frozen schema.
 
-Use the text monitor only where an operation genuinely requires it.
+Add the text-monitor connection and routing when the first operation genuinely requires it. Thereafter, keep binary/text monitor selection internal to `src/host/vice`; callers never choose a monitor.
 
 All binary/text monitor routing remains inside src/host/vice.
 
