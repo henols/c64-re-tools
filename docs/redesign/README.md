@@ -16,26 +16,30 @@ A reconstructed application does **not** need byte-identical machine code. Given
 |---|---|---|
 | 01 | [Requirements](01-requirements.md) | Product goals, requirements, invariants and non-goals |
 | 02 | [Architecture](02-architecture.md) | System boundaries, ownership and dependency direction |
-| 03 | [Application API](03-application-api.md) | Deterministic C64 operations available to MCP, CLI and tests |
-| 04 | [Host Runtime](04-host-runtime.md) | Host/client split, sessions, transport, tools and file staging |
+| 03 | [Application API](03-application-api.md) | Stateful VICE MCP plus skill-script/local knowledge interfaces |
+| 04 | [Host Runtime](04-host-runtime.md) | Host/client split, sessions, native tools and file staging |
 | 05 | [VICE integration](05-vice-integration.md) | Emulator lifecycle and monitor abstraction |
 | 06 | [Project and knowledge](06-project-knowledge.md) | Project model and the versioned SQLite knowledge database |
-| 07 | [Skills and workflows](07-skills-and-workflows.md) | What belongs in skills and what must remain implementation |
-| 08 | [Installation and distribution](08-installation-and-distribution.md) | Installation through existing skill/MCP package handlers |
+| 07 | [Skills and workflows](07-skills-and-workflows.md) | Common skill structure, execution paths and workflow rules |
+| 08 | [Installation and distribution](08-installation-and-distribution.md) | Portable Agent Plugins foundation with AP SDK at the distribution edge |
 | 09 | [Build, test and release](09-build-test-release.md) | Development, functional equivalence, CI and release principles |
 | 10 | [Current-code reuse](10-current-code-reuse.md) | How the existing implementation may inform the rewrite |
 
 ## Core decisions
 
 1. **One MCP process owns one VICE instance.** One MCP connection to the Host Runtime equals one runtime session and one emulator.
-2. **One Host Runtime serves many independent MCP sessions.** It owns VICE and native host tools because those belong on the graphical host, not in each devcontainer/headless agent environment.
-3. **The Host Runtime owns all VICE monitor communication.** Binary/text monitor details never cross into the Application API.
-4. **Tools are deterministic operations; skills own workflows.** Skills explain when and how to combine capabilities but contain no application implementation.
-5. **The project is the ordinary project directory.** No project manifest is required in v1.
-6. **`.c64-re-tools/knowledge.db` is the single persistent toolkit-owned knowledge store.** There is no mirrored JSON/JSONL representation.
-7. **Knowledge history lives in the database.** Accepted knowledge changes create revisions; prior values remain reviewable and queryable rather than relying on Git history.
-8. **Analyzer imports are deterministic and non-destructive.** DXA/Ghidra findings may be imported automatically through the application layer, while semantic LLM/user knowledge can supersede generated names/classifications without erasing their history.
-9. **The original C64 application remains where the developer places it inside the project.** c64-re-tools does not copy it into another registry or managed store.
-10. **The supported capability set is fixed.** A missing required capability means the installation/session is broken; there is no capability negotiation mode.
-11. **Functional behavior, not byte identity, defines a successful reconstruction.** Repeatable emulator tests provide evidence of equivalence.
-12. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
+2. **MCP is VICE-only.** Non-VICE host tools are invoked by skill scripts through short-lived Host Runtime requests; project knowledge stays local.
+3. **One Host Runtime serves many independent MCP sessions plus independent native-tool requests.** It owns VICE and native host tools because those belong on the graphical host, not in each devcontainer/headless agent environment.
+4. **The Host Runtime owns all VICE monitor communication.** Binary/text monitor details never cross into the LLM-facing API.
+5. **Skills own workflow; shared deterministic code owns mechanics.** Skills may contain thin scripts, but broker transport, staging, database mechanics and native-tool implementations remain shared infrastructure.
+6. **All skills follow one common behavioral model.** They define purpose, inputs, execution path, workflow, knowledge policy, result, conflict/failure behavior and handoffs.
+7. **Only actionable information reaches the LLM.** Infrastructure versions, protocol details, paths, request IDs and similar details stay internal unless a human explicitly requests diagnostics.
+8. **The project is the ordinary project directory.** No project manifest is required in v1.
+9. **`.c64-re-tools/knowledge.db` is the single persistent toolkit-owned knowledge store.** There is no mirrored JSON/JSONL representation.
+10. **Knowledge history lives in the database.** Accepted knowledge changes create revisions; prior values remain reviewable and queryable rather than relying on Git history.
+11. **Analyzer imports are deterministic and non-destructive.** DXA/Ghidra findings may be imported automatically through the local knowledge layer, while semantic LLM/user knowledge can supersede generated names/classifications without erasing history.
+12. **Packaging is portable and replaceable.** Agent Plugins provides the portable foundation; `@jalco/ap-sdk` is the preferred cross-harness packaging/install adapter and remains isolated to the distribution edge.
+13. **The original C64 application remains where the developer places it inside the project.** c64-re-tools does not copy it into another registry or managed store.
+14. **The supported capability set is fixed.** A missing required capability means the installation/session is broken; there is no capability negotiation mode.
+15. **Functional behavior, not byte identity, defines a successful reconstruction.** Repeatable emulator tests provide evidence of equivalence.
+16. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
