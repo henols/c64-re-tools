@@ -63,14 +63,13 @@ c64-re-tools does not claim to mathematically prove equivalence for arbitrary pr
 
 No core C64 capability may depend on Claude Code, Codex, Cursor or another specific harness.
 
-Supported integrations may expose the same Application API through:
-
-- MCP;
-- CLI;
-- automated tests;
-- future integrations.
-
 Harness-specific configuration belongs at the integration/installation edge only.
+
+The MCP surface is intentionally narrow: it exposes only stateful operations against the live VICE machine owned by that MCP process.
+
+Non-VICE operations such as static analysis, assembly, disk inspection, BASIC decoding and unpacking are invoked by skill-owned scripts that use the shared runtime/broker infrastructure.
+
+Project knowledge is read and written locally in the project environment and does not pass through the Host Runtime.
 
 ## 5. Host/runtime separation
 
@@ -83,19 +82,41 @@ VICE and native C64 tools belong on the host machine because:
 
 Therefore one Host Runtime per machine provides controlled access to VICE and native host tools.
 
+There are two host-side interaction patterns:
+
+```text
+MCP process
+   ↓ long-lived session connection
+Host Runtime
+   ↓
+one owned VICE instance
+```
+
+and:
+
+```text
+skill script
+   ↓ short-lived tool request
+Host Runtime
+   ↓
+native host tool
+```
+
+A skill-script host-tool request does not own or select a VICE instance.
+
 ## 6. Session invariant
 
-The following invariant is binding:
+The following invariant is binding for the stateful emulator path:
 
 ```text
 1 MCP process
       =
-1 Host Runtime connection/session
+1 Host Runtime VICE session
       =
 1 VICE instance
 ```
 
-One Host Runtime may serve many such independent sessions simultaneously.
+One Host Runtime may serve many such independent MCP sessions simultaneously, plus independent short-lived native-tool requests from skill scripts.
 
 An MCP process does not switch between emulator instances during its lifetime.
 
@@ -114,13 +135,92 @@ Skills contain workflow knowledge:
 - when to use a capability;
 - why to use it;
 - useful sequencing;
-- how to interpret results.
+- how to interpret results;
+- what durable knowledge should be read or written;
+- when to hand off to another skill.
 
-Skills must not implement parsers, address calculations, database behavior, VICE protocol handling, process management, file staging or duplicated project discovery.
+Skills may contain thin deterministic scripts for invoking their concrete operation.
 
-Deterministic/repetitive work belongs in tools/application code.
+Skill scripts may:
 
-## 9. Project requirements
+- validate inputs;
+- read project files;
+- read relevant project knowledge;
+- invoke typed Host Runtime operations;
+- normalize native-tool output;
+- pass durable findings to the local knowledge importer;
+- return compact structured results.
+
+Skill scripts must not independently reimplement:
+
+- VICE monitor clients;
+- Host Runtime transport/staging internals;
+- SQLite schema/revision logic;
+- native tool implementations;
+- duplicated broker/runtime infrastructure.
+
+Shared deterministic infrastructure belongs in the runtime/application package.
+
+## 9. Skill consistency requirements
+
+All skills shall follow the same behavioral lifecycle where applicable:
+
+```text
+establish context
+      ↓
+read relevant existing knowledge
+      ↓
+validate input
+      ↓
+perform deterministic operation
+      ↓
+interpret result
+      ↓
+persist only durable knowledge according to policy
+      ↓
+report conflicts/uncertainty
+      ↓
+verify completion
+      ↓
+hand off when another skill owns the next job
+```
+
+Each skill shall define:
+
+- its purpose and scope;
+- required inputs;
+- operations/tools/scripts it uses;
+- ordered workflow;
+- knowledge read/write policy;
+- completion condition;
+- conflict/failure behavior;
+- handoffs to other skills.
+
+Skill boundaries are based on user intent, not executable names. For example DXA and Ghidra belong to static analysis rather than separate tool-named skills.
+
+## 10. Actionability boundary
+
+Only information that can materially affect the LLM's reasoning, action selection or interpretation of a C64 result should be exposed to the LLM.
+
+Implementation details that the LLM neither needs nor can act on must remain below the boundary.
+
+Normally hidden details include:
+
+- broker/protocol/package versions;
+- database schema version;
+- wire-format versions;
+- TCP ports;
+- request IDs;
+- process IDs;
+- temporary staging paths;
+- raw native-tool command lines;
+- internal retry/parser/compatibility details.
+
+Internal failures are translated into domain-level or actionable operational failures before reaching the skill/LLM.
+
+Detailed infrastructure diagnostics may be available to a human through an explicit troubleshooting/diagnostic path, but they are not part of normal skill context or normal operation results.
+
+## 11. Project requirements
 
 A project is simply the developer's ordinary project directory/repository.
 
@@ -142,7 +242,7 @@ Machine-local and disposable data may live under:
 
 and must not be authoritative project knowledge.
 
-## 10. Knowledge requirements
+## 12. Knowledge requirements
 
 The knowledge store shall represent durable understanding that has clear value to reverse engineering:
 
@@ -154,9 +254,9 @@ The knowledge store shall represent durable understanding that has clear value t
 
 The database must preserve prior accepted values when knowledge changes. A rename, reclassification, correction or revert creates a new revision; it must not erase the earlier state.
 
-History must be queryable through the application API so later sessions can determine what changed, when it changed, where it came from and why.
+History must be queryable so later sessions can determine what changed, when it changed, where it came from and why.
 
-DXA and Ghidra findings that have durable structural value may be imported automatically by the application layer. Analyzer processes themselves never open the project database.
+DXA and Ghidra findings that have durable structural value may be imported automatically by the local knowledge layer after a skill script receives normalized analyzer findings from the Host Runtime. Analyzer processes and the Host Runtime never open the project database.
 
 LLM and user findings may add semantic names and interpretations that are more meaningful than generated analyzer names. These semantic edits are stored as new revisions, preserving the analyzer-derived history they supersede.
 
@@ -164,24 +264,27 @@ The schema must remain deliberately small. New tables/fields require a concrete 
 
 SQLite is the sole authoritative representation. The project shall not maintain synchronized JSON/JSONL mirrors.
 
-## 11. Installation requirements
+## 13. Installation requirements
 
 Installation of skills and MCP integrations shall use existing ecosystem package/configuration handlers. c64-re-tools shall not implement a competing general-purpose skills or MCP package manager.
 
 A convenience installer may orchestrate existing handlers.
 
-## 12. Reliability requirements
+Any runtime/package compatibility handling is internal infrastructure and must not be exposed to the LLM during normal operation.
+
+## 14. Reliability requirements
 
 - Refuse rather than silently guess when a required input is ambiguous or missing.
 - Never expose monitor protocol details to the agent-facing API.
 - Never automatically retry a state-changing emulator operation after a VICE crash.
-- Nothing the Host Runtime launches may intentionally outlive the Host Runtime/session that owns it.
+- Nothing the Host Runtime launches may intentionally outlive the request/session that owns it.
 - Project writes must be transactional.
 - A failed knowledge write must not leave a partially updated database or revision.
 - Automatic analyzer imports must never silently overwrite conflicting current knowledge.
 - Client and host must not assume they share the same filesystem paths.
+- Skill scripts must return structured, bounded results rather than requiring the LLM to parse native-tool output.
 
-## 13. Non-goals for v1
+## 15. Non-goals for v1
 
 The redesign does not initially require:
 
