@@ -502,7 +502,7 @@ test("handleSpriteInspect: format binary omits ascii/legend and matches renderSp
   assert.deepEqual(parsed.rows, renderSpriteBinary(Buffer.from(DATA_FIXTURE)));
 });
 
-test("handleSpriteInspect: format png_base64 is refused naming png_base64/ascii/binary/SHOT-01, zero sends", async () => {
+test("handleSpriteInspect: format png_base64 is refused naming png_base64 and the served formats, zero sends", async () => {
   const { session, calls } = makeSpriteSession();
   const result = await handleSpriteInspect({ sprite_number: 0, format: "png_base64" }, session, DEPS);
   assert.equal(result.isError, true);
@@ -510,7 +510,7 @@ test("handleSpriteInspect: format png_base64 is refused naming png_base64/ascii/
   assert.match(text, /png_base64/);
   assert.match(text, /ascii/);
   assert.match(text, /binary/);
-  assert.match(text, /SHOT-01/);
+  assert.match(text, /not supported/);
   assert.equal(calls.length, 0);
 });
 

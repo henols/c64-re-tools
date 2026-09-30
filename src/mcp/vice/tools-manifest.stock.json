@@ -52,7 +52,7 @@
     },
     {
       "name": "vice_memory_read",
-      "description": "Read a memory range (with optional bank selection). On stock this halts the machine (D-05); the answer's runState reports it. sideEffects defaults to false (DIRECT-01) -- side-effect-reading registers like $D019 requires opting in explicitly.",
+      "description": "Read a memory range, optionally from a named bank. The machine halts; the answer's runState reports it. sideEffects defaults to false: reading a register such as $D019 with side effects (which clears pending IRQ flags) needs sideEffects true.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -62,7 +62,7 @@
           },
           "size": {
             "type": "number",
-            "description": "Bytes to read (1-65535)"
+            "description": "Bytes to read (1-65536)"
           },
           "bank": {
             "type": "string",
@@ -70,7 +70,7 @@
           },
           "encoding": {
             "type": "string",
-            "description": "Optional: 'array' for legacy per-byte hex strings, or 'hex' for one compact hex string."
+            "description": "Optional: 'hex' (default) returns one compact hex string; 'array' returns the bytes as an array of numbers."
           },
           "sideEffects": {
             "type": "boolean",
@@ -146,6 +146,10 @@
             "items": {
               "type": "number"
             }
+          },
+          "bank": {
+            "type": "string",
+            "description": "Optional: memory bank name (for example 'ram' to write the RAM under ROM). Defaults to the CPU view, which follows $00/$01 banking. Use vice_memory_banks to list available banks."
           }
         },
         "required": [
@@ -269,13 +273,13 @@
     },
     {
       "name": "vice_registers_set",
-      "description": "Set CPU register value",
+      "description": "Set one CPU register. Values are integers within the register's width (8 or 16 bits). The answer reports the value the emulator read back.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "register": {
             "type": "string",
-            "description": "Register name: PC|A|X|Y|SP|N|V|B|D|I|Z|C"
+            "description": "Register name as vice_registers_available lists it (stock VICE 3.8: PC, A, X, Y, SP, 00, 01, FL, LIN, CYC). The processor flags are one register, FL; the single flag names N, V, B, D, I, Z and C are refused."
           },
           "value": {
             "type": "number",
@@ -459,7 +463,7 @@
     },
     {
       "name": "vice_execution_step",
-      "description": "Step one or more instructions. Refuses while runState is \"unknown\" (D-07) -- call vice_execution_pause or vice_execution_run first to establish a known state.",
+      "description": "Step one or more instructions. Refused while runState is \"unknown\": call vice_execution_pause or vice_execution_run first to establish a known state.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -511,7 +515,7 @@
     },
     {
       "name": "vice_execution_until_return",
-      "description": "Runs until the current subroutine returns (EXECUTE_UNTIL_RETURN). This is a different operation from vice_execution_step's stepOver, which steps over a single call rather than running out of the current one. Refuses while runState is \"unknown\" (D-07), identically to vice_execution_step.",
+      "description": "Run until the current subroutine returns. This differs from vice_execution_step with stepOver, which steps over one call instead of running out of the current one. Refused while runState is \"unknown\", like vice_execution_step.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
@@ -546,7 +550,7 @@
     },
     {
       "name": "vice_checkpoint_add",
-      "description": "Add checkpoint/breakpoint. stop:false requires acknowledgeTraceRisk:true -- a non-stopping checkpoint emits a CHECKPOINT_INFO frame per hit synchronously from inside the emulator's CPU loop and can stall the emulator on a hot address (D-11). No condition property here -- D-12 keeps the add-then-vice_checkpoint_set_condition split.",
+      "description": "Add a checkpoint (breakpoint). stop:false needs acknowledgeTraceRisk:true, because a non-stopping checkpoint reports every hit from inside the emulator's CPU loop and can stall the emulator on a hot address. Set a condition afterwards with vice_checkpoint_set_condition.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -572,7 +576,7 @@
           },
           "exec": {
             "type": "boolean",
-            "description": "Break on execution (default=true)"
+            "description": "Break on execution. Default true only when none of load, store and exec is given; if you give any of them, only the ones set true apply, and setting all false is refused."
           },
           "acknowledgeTraceRisk": {
             "type": "boolean",
@@ -863,7 +867,7 @@
     },
     {
       "name": "vice_checkpoint_set_condition",
-      "description": "Set checkpoint condition. Stock accepts EITHER a condition string (e.g. 'A == $42', using pseudo-registers RL/CY where relevant) OR a structured condition object with a 'kind' discriminator field -- see stock-condition.ts. Conditions are immutable once set: stock VICE cannot clear or replace one, so re-setting an existing checkpoint's condition is refused.",
+      "description": "Set a checkpoint condition, as a string (for example 'A == $42'; RL and CY name the raster line and the cycle in the line) or as an object with a 'kind' field ('comparison', 'and' or 'or'). A condition cannot be cleared or replaced once set, so setting one on a checkpoint that has one is refused.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -872,7 +876,7 @@
             "description": "Checkpoint number"
           },
           "condition": {
-            "description": "EITHER a condition expression string (e.g. 'A == $42') OR a structured condition object with a 'kind' discriminator field. This is the one inputSchema property in this manifest that deliberately omits \"type\" rather than contradicting the fork's own \"type\": \"string\" declaration -- the checker's supported subset has no union keyword (no oneOf/anyOf) to express \"string or object\"."
+            "description": "Either a condition expression string (for example 'A == $42') or an object with a 'kind' field ('comparison', 'and' or 'or'). This property declares no \"type\", because the schema subset the checker supports has no way to say \"string or object\"."
           }
         },
         "required": [
@@ -914,7 +918,7 @@
     },
     {
       "name": "vice_watch_add",
-      "description": "Add memory watchpoint with optional condition (shorthand for checkpoint with store/load). stop:false requires acknowledgeTraceRisk:true, identically to vice_checkpoint_add (D-11).",
+      "description": "Add a memory watchpoint with an optional condition (a checkpoint on load and store). stop:false needs acknowledgeTraceRisk:true, as for vice_checkpoint_add.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1015,7 +1019,7 @@
     },
     {
       "name": "vice_machine_reset",
-      "description": "Reset the machine (soft or hard reset). run_after defaults to false -- D-05 forbids resuming a machine nobody asked to resume; pass run_after:true to resume explicitly after the reset.",
+      "description": "Reset the machine (soft or hard). run_after defaults to false, so the machine stays halted after the reset; pass run_after:true to resume it.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1025,7 +1029,7 @@
           },
           "run_after": {
             "type": "boolean",
-            "description": "Stock default is FALSE (diverges from the fork's default of true) -- resume execution after reset only if explicitly requested (D-05)."
+            "description": "Default false: the machine stays halted after the reset. Pass true to resume it."
           }
         }
       },
@@ -1120,7 +1124,7 @@
     },
     {
       "name": "vice_disk_attach",
-      "description": "Attach disk image to drive. Only unit 8 is reachable on stock -- AUTOSTART (the only wire route to attaching an image) has no drive-unit field, so units 9-11 are refused rather than silently retargeted to unit 8 (D-14). The attach is AUTOSTART with the run flag clear.",
+      "description": "Attach a disk image to a drive. Only unit 8 is reachable on stock VICE: units 9-11 are refused instead of being attached to unit 8. The attach is an AUTOSTART with the run flag clear.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1252,7 +1256,7 @@
     },
     {
       "name": "vice_snapshot_load",
-      "description": "Restore emulator state from a previously saved snapshot (UNDUMP). A missing snapshot refuses, naming the available snapshots found on disk (D-16 removed the separate enumeration tool).",
+      "description": "Restore emulator state from a saved snapshot. A missing snapshot is refused, and the refusal names the snapshots found on disk.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1300,7 +1304,7 @@
     },
     {
       "name": "vice_keyboard_type",
-      "description": "Type text (uppercase ASCII displays as uppercase on C64 by default). Bytes queue in the keyboard buffer of a now-halted machine (D-05) -- nothing consumes them until the agent explicitly resumes.",
+      "description": "Type text into the C64 keyboard buffer. By default both upper- and lowercase ASCII letters type as the capitals of the power-on charset, so BASIC commands work in either case. The machine halts; the bytes stay queued until you resume it.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1310,7 +1314,7 @@
           },
           "petscii_upper": {
             "type": "boolean",
-            "description": "Default true: uppercase ASCII displays as uppercase on C64. Set false for raw PETSCII (uppercase ASCII maps to graphics)"
+            "description": "Default true: ASCII A-Z and a-z both map to PETSCII $41-$5A (capitals in the power-on charset). Set false to send each byte unchanged (a-z then shows as graphics in the power-on charset)."
           }
         },
         "required": [
@@ -1403,13 +1407,13 @@
     },
     {
       "name": "vice_joystick_set",
-      "description": "Set joystick state. vice_joystick_tap is absent on stock: a tap needs the machine to run for a measured interval, which requires an unrequested resume (forbidden by D-05) plus a timing route stock does not have until Phase 7.",
+      "description": "Hold or release joystick switches on C64 control port 1 or 2. A hold attaches VICE's \"Joyport I/O simulation\" device to that port (the only device the binary monitor can drive); a release (direction center, fire false) puts back the port's previous device. While a switch is held, bits 5-7 of the port's CIA register read 0. The answer reports the CIA register ($DC01 for port 1, $DC00 for port 2) as read back. The machine halts; resume it to let the program see the switches.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "port": {
             "type": "number",
-            "description": "Joystick port 1 or 2 (default=1)"
+            "description": "C64 control port 1 or 2 (default 1)"
           },
           "direction": {
             "type": "string",
@@ -1445,6 +1449,23 @@
               "type": "string"
             }
           },
+          "lines": {
+            "type": "number"
+          },
+          "device": {
+            "type": "string",
+            "enum": [
+              "io-simulation",
+              "restored",
+              "unchanged"
+            ]
+          },
+          "ciaRegister": {
+            "type": "string"
+          },
+          "ciaValue": {
+            "type": "number"
+          },
           "runState": {
             "type": "string",
             "enum": [
@@ -1460,13 +1481,17 @@
           "fire",
           "value",
           "valueBits",
+          "lines",
+          "device",
+          "ciaRegister",
+          "ciaValue",
           "runState"
         ]
       }
     },
     {
       "name": "vice_disassemble",
-      "description": "Disassemble memory to 6502 instructions, computed client-side (DERIV-07) -- the binary monitor has no disassemble opcode. Behaviour to know: reading memory halts the machine and runState reports it (D-05); an illegal opcode ACME's !cpu 6510 cannot express renders as !byte with the mnemonic moved into a comment (D-09).",
+      "description": "Disassemble memory to 6502 instructions. The disassembly is computed in the client. Reading memory halts the machine, and runState reports it. An illegal opcode that ACME's !cpu 6510 cannot express shows as !byte with the mnemonic in a comment.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1485,6 +1510,10 @@
           "show_symbols": {
             "type": "boolean",
             "description": "Show symbol names where the operand's role and width prove substitution cannot change the encoding (default true). With no symbol store loaded this is a no-op and the answer says so."
+          },
+          "bank": {
+            "type": "string",
+            "description": "Optional: memory bank name (e.g. ram to disassemble the RAM under ROM). Defaults to the CPU view, which follows $00/$01 banking. Use vice_memory_banks to list available banks."
           }
         },
         "required": [
@@ -1500,6 +1529,7 @@
           "end": {
             "type": "number"
           },
+          "bank": {},
           "count": {
             "type": "number"
           },
@@ -1579,7 +1609,7 @@
     },
     {
       "name": "vice_memory_search",
-      "description": "Search memory for a byte pattern with an optional wildcard mask, computed client-side (DERIV-01) -- the binary monitor has no search opcode. pattern is refused when longer than the range searched or longer than 4096 bytes; mask must be exactly patterns length and is never padded; max_results defaults to 100 and is refused above 10000.",
+      "description": "Search memory for a byte pattern, with an optional wildcard mask. The search is computed in the client. The pattern is refused when it is longer than the range or longer than 4096 bytes. The mask must be exactly as long as the pattern. max_results defaults to 100 and is refused above 10000. A range of all 64K is allowed.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1689,7 +1719,7 @@
     },
     {
       "name": "vice_memory_compare",
-      "description": "Compare two live memory ranges byte-by-byte, computed client-side (DERIV-01) -- the binary monitor has no compare opcode. mode:ranges is served; mode:snapshot is refused with an explanatory message because there is no memory-only snapshot producer tool on either backend.",
+      "description": "Compare two memory ranges byte by byte. The comparison is computed in the client. mode:ranges is served. mode:snapshot is refused, because no tool saves a memory-only snapshot.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1837,7 +1867,7 @@
     },
     {
       "name": "vice_symbols_load",
-      "description": "Load a VICE-format label file into a client-side symbol table, computed client-side (DERIV-04) -- the binary monitor has no symbol-file command. Only auto and vice are served on stock; kickasm and simple are refused by name because no in-repo producer emits them.",
+      "description": "Load a VICE-format label file (lines 'al C:xxxx .name') into the client's symbol table. Relative paths resolve from the project root. A label name that ACME could not parse is refused. Only format auto and vice are served; kickasm and simple are refused by name.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1914,7 +1944,7 @@
     },
     {
       "name": "vice_symbols_lookup",
-      "description": "Look up a symbol by name or an address by symbol, against the client-side symbol table, computed client-side (DERIV-04) -- the binary monitor has no symbol-lookup command. Exactly one of name or address is required; supplying both is refused as mutually exclusive.",
+      "description": "Look up a symbol by name, or the symbol at an address, in the client's symbol table. Exactly one of name or address is required; both together are refused.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1923,8 +1953,8 @@
             "description": "Symbol name to look up (returns address). Exactly one of name or address is required."
           },
           "address": {
-            "type": "number",
-            "description": "Address to look up (returns symbol name). Exactly one of name or address is required."
+            "type": "string",
+            "description": "Address to look up (returns symbol name): number, $hex string or symbol name. Exactly one of name or address is required."
           }
         }
       },
@@ -1976,7 +2006,7 @@
     },
     {
       "name": "vice_vicii_get_state",
-      "description": "Get the VIC-II chip state, computed client-side (DERIV-05) from a single sidefx:false MEM_GET over the $D000-$D02E register block -- the binary monitor has no VIC-II command. $D018's screen/charset/bitmap pointers are reported BANK-RELATIVE; vice_cia_get_state (cia:2) or vice_sprite_get resolves them to absolute addresses (D-05-10). Six internal-only fields (raster IRQ latch, video/row counters, bad-line condition, border flip-flops, sprite DMA state) are not exposed by the binary monitor's register map at all and are reported under `unavailable` as {available:false, reason} rather than as 0.",
+      "description": "Get the VIC-II chip state, decoded in the client from one read of the $D000-$D02E registers. The pointers in $D018 are bank-relative: vice_cia_get_state (cia:2) or vice_sprite_get gives absolute addresses. Six internal fields (raster IRQ latch, video and row counters, bad-line condition, border flip-flops, sprite DMA state) cannot be read from the binary monitor and are listed under `unavailable` as {available:false, reason}, never as 0.",
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -2440,7 +2470,7 @@
     },
     {
       "name": "vice_cia_get_state",
-      "description": "Get CIA1 and/or CIA2 state, computed client-side (DERIV-05) from one sidefx:false MEM_GET per requested chip over its 16-byte register block -- the binary monitor has no CIA command. The read is sidefx:false so $DC0D/$DD0D are not cleared on read. Three read/write address collisions are reported as two distinct named fields each: the readable side is named for what it is (e.g. timerA.current, interruptStatus), and the write-only side is a separate `unavailable` field (D-05-11) -- timerALatch, timerBLatch, interruptEnableMask, todAlarmTime and todLatchState are the write side of addresses whose read side returns something else, and are reported as {available:false, reason}, never 0.",
+      "description": "Get CIA1 and/or CIA2 state, decoded in the client from one read per chip of its 16 registers. The read has no side effects, so $DC0D and $DD0D are not cleared. Some addresses read back something other than what is written there. The readable side has its own name (for example timerA.current, interruptStatus). The write-only side (timerALatch, timerBLatch, interruptEnableMask, todAlarmTime, todLatchState) is listed under `unavailable` as {available:false, reason}, never as 0.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3020,7 +3050,7 @@
     },
     {
       "name": "vice_sprite_get",
-      "description": "Get sprite position, colour and control-bit state for one or all 8 sprites, computed client-side (DERIV-06) by resolving the VIC bank ($DD00), screen base ($D018) and 8-entry sprite pointer table over three sidefx:false MEM_GET reads. Sprite pointers are resolved to absolute dataAddress values (D-05-10); omit `sprite` to get all eight.",
+      "description": "Get position, colour and control bits for one sprite or all eight. The client resolves the VIC bank ($DD00), the screen base ($D018) and the sprite pointer table with three reads. Sprite pointers are given as absolute dataAddress values. Omit `sprite` to get all eight.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3188,7 +3218,7 @@
     },
     {
       "name": "vice_sprite_inspect",
-      "description": "Render one sprite's 63-byte data block as an ASCII or binary grid, computed client-side (DERIV-06) at native resolution (24 columns hi-res / 12 columns multicolour, always 21 rows) -- no scaling by the X/Y expansion bits. format:'png_base64' is refused by name: it was cut from this milestone with SHOT-01..SHOT-05, since no shipped skill calls it.",
+      "description": "Render one sprite's 63-byte data block as an ASCII or binary grid at native resolution (24 columns high-res, 12 columns multicolour, always 21 rows), with no scaling for the X/Y expansion bits. format:'png_base64' is not supported and is refused by name.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3202,7 +3232,7 @@
               "ascii",
               "binary"
             ],
-            "description": "Output format: 'ascii' (default) or 'binary'. 'png_base64' is refused by name (cut with SHOT-01..SHOT-05, D-05-03) -- no skill calls it."
+            "description": "Output format: 'ascii' (default) or 'binary'. 'png_base64' is not supported and is refused by name."
           }
         },
         "required": [
@@ -3444,7 +3474,7 @@
     },
     {
       "name": "vice_run_until",
-      "description": "Run until an address is reached. \"cycles\" is NOT implemented on stock and is refused whenever present, including alongside \"address\" (it used to be silently dropped while the answer still said reached:true); unexpected argument names are refused by name too. timeout_ms (stock-only) bounds the wait; an address that never executes returns a timedOut answer rather than hanging. machineHalted is stamped on every answer (never omitted, so an absent field can never be read as false) and is DERIVED, not asserted: true on a hit and on a timeout whose cleanup CHECKPOINT_DELETE was answered over a live socket, false when that delete failed or the socket is gone and the run-state projection does not say stopped. machineHalted false means the state could not be established, NOT that the machine is running -- machineHaltedNote says which case applies and names vice_execution_run (halted) or vice_execution_pause then vice_registers_get (unestablished) as the next call. A timed-out wait racing its own cleanup CHECKPOINT_DELETE against a fired-but-unreported checkpoint is resolved from a live program-counter read: raceResolved is pc_at_address (confirmed reached), pc_elsewhere (confirmed not reached), or unresolved (the PC read itself failed, in which case reached is omitted entirely and reachedUnknown is true rather than asserting a guessed value either way). reproducible (stock-only, absent by default) runs the whole reproducible-run protocol instead of the ordinary path -- arm the frame anchor and the target while halted, monitor-issued hard RESET, exactly one resume, then an event-driven wait on the target checkpoint's own id -- and answers with the four-term stop identity (pc, hitCount, line, cycle), where hitCount is the FRAME ANCHOR's count and targetHitCount is the target's own. It is a whole-procedure switch with no sub-flags (there is no skip_reset, no_anchor or reset_only, so a protocol-without-the-reset is not a callable option) and it REFUSES rather than degrades: reproducible: true without frame_anchor is refused naming why the frame term cannot otherwise be supplied, frame_anchor without reproducible is refused rather than accepted and ignored, and a build whose REGISTERS_AVAILABLE enumerates no PC/LIN/CYC is refused before anything is armed.",
+      "description": "Resume the machine and wait until it stops, with a temporary checkpoint at address. The wait ends on any stop: this address (reached true), another checkpoint or watch, a CPU JAM, or any other entry to the monitor. stoppedBy says what stopped it (kind target, checkpoint, jam or other) and pc gives the stop address. If nothing stops the machine within timeout_ms, the answer has timedOut true. machineHalted is on every answer; when it is false the run state is unknown, and machineHaltedNote names the next call. cycles is not supported and is refused. Unknown argument names are refused.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3454,19 +3484,11 @@
           },
           "cycles": {
             "type": "number",
-            "description": "Not implemented on stock, and REFUSED whenever present -- including alongside \"address\", where it used to be silently dropped while the answer still reported reached:true. Bound the wait with \"timeout_ms\" instead."
+            "description": "Not supported, and refused whenever present. Bound the wait with timeout_ms instead."
           },
           "timeout_ms": {
             "type": "number",
-            "description": "Stock-only. Milliseconds to wait for the address to be reached before giving up; default 30000, clamped to a ceiling of 600000."
-          },
-          "reproducible": {
-            "type": "boolean",
-            "description": "Stock-only. Absent by default. When true, runs the reproducible-run protocol (REPRO-02) rather than the ordinary run-until path: the frame anchor and the target are armed while the machine is halted, a monitor-issued hard RESET is issued, exactly ONE resume is sent, and the wait resolves on the target checkpoint's own CHECKPOINT_INFO. Requires frame_anchor. A whole-procedure switch, never composable sub-flags -- there is no skip_reset, no_anchor or reset_only, because a shipped protocol-without-the-reset would be exactly the second route a caller can forget it took. Must be a boolean; a string is refused rather than coerced, since the string \"false\" is truthy."
-          },
-          "frame_anchor": {
-            "type": "string",
-            "description": "Stock-only. Absent by default, and REQUIRED whenever reproducible is true -- an address (number, hex, or symbol) of a site executed once per frame, whose hit count IS the frame term of the stop identity (PC, hit_count, (LIN, CYC)). No default is supplied and none would be safe to guess: the once-per-frame site is release-specific, and a cracked release almost always takes over the IRQ, so a KERNAL site such as $EA31 may never execute at all. Omitting it with reproducible: true is REFUSED rather than degraded to a two-term identity -- (LIN, CYC) is a within-frame position, not a monotonic clock, so without the frame term two stops one whole frame apart certify as the same stop. Supplying it WITHOUT reproducible is also refused, rather than accepted and ignored. May equal address: the procedure still arms two distinct checkpoints (the anchor non-temporary, the target temporary) and waits on the target's own id."
+            "description": "Milliseconds to wait for a stop before giving up; default 30000, clamped to 600000."
           }
         }
       },
@@ -3540,71 +3562,11 @@
           "raceNote": {
             "type": "string"
           },
-          "protocol": {
-            "type": "string"
-          },
-          "reproducibleStop": {
-            "type": "boolean"
-          },
-          "reproducibleStopNote": {
-            "type": "string"
-          },
-          "frameAnchor": {
-            "type": "number"
-          },
-          "targetCheckpointId": {
-            "type": "number"
-          },
-          "anchorCheckpointId": {
-            "type": "number"
-          },
-          "targetHitCount": {
-            "type": "number"
-          },
-          "anchorHitsObserved": {
-            "type": "number"
-          },
-          "anchorHitCountObserved": {
-            "type": "number"
-          },
-          "anchorStoppedFirst": {
-            "type": "boolean"
-          },
-          "anchorStoppedFirstNote": {
-            "type": "string"
-          },
-          "anchorCleanup": {
-            "type": "string"
-          },
-          "anchorCleanupError": {
-            "type": "string"
-          },
-          "cleanupNote": {
-            "type": "string"
-          },
           "pc": {
             "type": "number"
           },
-          "line": {
-            "type": "number"
-          },
-          "cycle": {
-            "type": "number"
-          },
-          "hitCountNote": {
-            "type": "string"
-          },
-          "stopIdentityTerms": {
-            "type": "array"
-          },
-          "stopIdentityNote": {
-            "type": "string"
-          },
-          "resumes": {
-            "type": "number"
-          },
-          "resumesNote": {
-            "type": "string"
+          "stoppedBy": {
+            "type": "object"
           }
         },
         "required": [
@@ -3700,16 +3662,12 @@
         "type": "object",
         "properties": {
           "startAddress": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535,
-            "description": "Inclusive lower bound of the projection filter. Defaults to 0. Applied after parsing, never sent to the text monitor."
+            "type": "string",
+            "description": "Inclusive lower bound of the projection filter: number, $hex string or symbol name. Defaults to 0. Applied after parsing, never sent to the text monitor."
           },
           "endAddress": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535,
-            "description": "Inclusive upper bound of the projection filter. Defaults to 65535. Applied after parsing, never sent to the text monitor."
+            "type": "string",
+            "description": "Inclusive upper bound of the projection filter: number, $hex string or symbol name. Defaults to 65535. Applied after parsing, never sent to the text monitor."
           },
           "maxRanges": {
             "type": "integer",
@@ -4265,10 +4223,8 @@
         "type": "object",
         "properties": {
           "address": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535,
-            "description": "REQUIRED. The C64 address whose covering chip is decoded."
+            "type": "string",
+            "description": "REQUIRED. The C64 address whose covering chip is decoded: number, $hex string or symbol name."
           }
         },
         "required": [
@@ -4395,7 +4351,7 @@
           },
           "address": {
             "type": "string",
-            "description": "OPTIONAL. Load address overriding the file's two-byte header, as VICE's `load` allows: number or hex string ($0801)."
+            "description": "OPTIONAL. Load address overriding the file's two-byte header, as VICE's `load` allows: number, $hex string or symbol name."
           }
         },
         "required": [

@@ -805,12 +805,10 @@ export interface JoyportSetBodyOptions {
 /**
  * JOYPORT_SET (0xa2) request body -- 4 bytes, `port(u16LE) value(u16LE)`,
  * read directly out of monitor_binary.c's own JOYPORT_SET request decoder.
- *
- * The body SHAPE is cited; the BIT MEANING of `value` (which bit is
- * up/down/left/right/fire) is [ASSUMED] -- RESEARCH.md Assumptions Log row
- * A3 -- and is mapped in stock-input.ts, not here. This encoder
- * deliberately takes a raw, already-composed value so the assumed mapping
- * lives in exactly one place a future probe session can correct.
+ * `port` is VICE's 0-based joyport index (0 = C64 control port 1, 1 = C64
+ * control port 2). The command only reaches the CIA when that port's
+ * device is the I/O simulation device (see joyportDeviceSetBody()); the
+ * device then returns `value & 0x1f` as the active-low joystick lines.
  */
 export function joyportSetBody({ port, value }: JoyportSetBodyOptions): Buffer {
   requireU16("port", port);
@@ -818,6 +816,40 @@ export function joyportSetBody({ port, value }: JoyportSetBodyOptions): Buffer {
   const body = Buffer.alloc(4);
   body.writeUInt16LE(port, 0);
   body.writeUInt16LE(value, 2);
+  return body;
+}
+
+/** VICE's joyport device id for "Joyport I/O simulation". VICE's joyport.h
+ * keeps its device-id enum order fixed across builds. */
+export const JOYPORT_DEVICE_IO_SIMULATION = 37;
+
+export interface JoyportDeviceSetBodyOptions {
+  /** C64 control port, 1 or 2. */
+  controlPort: number;
+  deviceId: number;
+}
+
+/**
+ * RESOURCE_SET (0x52) request body for `JoyPort<n>Device` only --
+ * `value_type(1)=1 (integer) name_length(1) name value_length(1)=4
+ * value(u32LE)`. This encoder takes no free resource name: other
+ * resources (for example MachineVideoStandard) power-cycle the machine
+ * when set, and this tree sets no other resource.
+ */
+export function joyportDeviceSetBody({ controlPort, deviceId }: JoyportDeviceSetBodyOptions): Buffer {
+  if (controlPort !== 1 && controlPort !== 2) {
+    throw new StockEncodingError(`joyportDeviceSetBody: controlPort must be 1 or 2, got ${String(controlPort)}`, { field: "controlPort" });
+  }
+  if (!Number.isInteger(deviceId) || deviceId < 0 || deviceId > 0xff) {
+    throw new StockEncodingError(`joyportDeviceSetBody: deviceId must be an integer 0-255, got ${String(deviceId)}`, { field: "deviceId" });
+  }
+  const name = Buffer.from(`JoyPort${controlPort}Device`, "ascii");
+  const body = Buffer.alloc(2 + name.length + 1 + 4);
+  body[0] = 0x01;
+  body[1] = name.length;
+  name.copy(body, 2);
+  body[2 + name.length] = 4;
+  body.writeUInt32LE(deviceId, 3 + name.length);
   return body;
 }
 
@@ -975,21 +1007,36 @@ export interface ResourceGetBodyOptions {
  * RESOURCE_GET (0x51) request body -- `name_length(1) name(ASCII, NOT
  * NUL-terminated)`. [CITED monitor_binary.c:918-935]
  *
- * READ-SIDE ONLY: this encoder exists so this phase's sole production
- * caller can read `MachineVideoStandard` to pick the right cycles-per-line
- * and lines-per-frame constants. There is no `RESOURCE_SET` (0x52) encoder
- * in this tree and this plan does not add one -- the SET side of
- * `MachineVideoStandard`, `VICIIModel` and `MachinePowerFrequency` reaches
- * `machine_trigger_reset(POWER_CYCLE)` one call deep (`c64/c64.c:1367`) and
- * destroys all emulation state (CLAUDE.md's Safety constraint). Do not add
- * a `resourceSetBody()` or a `case ResponseType.ResourceSet` beside this one
- * without re-deriving that deny-list boundary first.
+ * The one RESOURCE_SET encoder is joyportDeviceSetBody(), which names only
+ * `JoyPort1Device`/`JoyPort2Device`. Setting `MachineVideoStandard`,
+ * `VICIIModel` or `MachinePowerFrequency` power-cycles the machine and
+ * destroys all emulation state, so this tree has no free-name
+ * RESOURCE_SET encoder.
  */
 export function resourceGetBody({ name }: ResourceGetBodyOptions): Buffer {
   const nameBuf = requireResourceName(name);
   const body = Buffer.alloc(1 + nameBuf.length);
   body[0] = nameBuf.length;
   nameBuf.copy(body, 1);
+  return body;
+}
+
+export interface CpuHistoryGetBodyOptions {
+  count: number;
+  memspace?: number;
+}
+
+/**
+ * CPUHISTORY_GET (0x86) request body -- 5 bytes, `memspace(1) count(u32LE)`.
+ * `count` is at least 1: real VICE rejects 0 with InvalidParameter.
+ */
+export function cpuHistoryGetBody({ count, memspace }: CpuHistoryGetBodyOptions): Buffer {
+  if (!Number.isInteger(count) || count < 1 || count > 0xffffffff) {
+    throw new StockEncodingError(`cpuHistoryGetBody: count must be an integer in 1..4294967295, got ${String(count)}`, { field: "count" });
+  }
+  const body = Buffer.alloc(5);
+  body[0] = memspaceByte(memspace);
+  body.writeUInt32LE(count, 1);
   return body;
 }
 
@@ -2461,4 +2508,45 @@ export class ViceMonitorClient extends EventEmitter {
     this.#failAllPending("error");
     this.emit("transport-error", err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// readMemory() -- the one MEMORY_GET caller
+// ---------------------------------------------------------------------------
+
+/** The most bytes one MEMORY_GET reply can carry: its length field is a
+ * u16, so a 65536-byte read comes back with length 0 and no bytes. */
+export const MEMORY_GET_MAX_BYTES = 0xffff;
+
+export interface ReadMemoryOptions {
+  start: number;
+  /** Inclusive. */
+  end: number;
+  sidefx?: boolean;
+  memspace?: number;
+  bank?: number;
+  timeoutMs?: number;
+}
+
+/**
+ * Reads `start`..`end` (inclusive) with MEMORY_GET and returns the bytes.
+ * A range longer than MEMORY_GET_MAX_BYTES is split into two requests, so
+ * a full 64K read returns all 65536 bytes. Callers still check the length
+ * they got against the length they asked for.
+ */
+export async function readMemory(
+  client: Pick<ViceMonitorClient, "send">,
+  { start, end, sidefx = false, memspace, bank = 0x0000, timeoutMs }: ReadMemoryOptions,
+): Promise<Uint8Array> {
+  const parts: Uint8Array[] = [];
+  for (let chunkStart = start; chunkStart <= end; chunkStart += MEMORY_GET_MAX_BYTES) {
+    const chunkEnd = Math.min(end, chunkStart + MEMORY_GET_MAX_BYTES - 1);
+    const body = memGetBody({ sidefx, start: chunkStart, end: chunkEnd, memspace, bank });
+    const response = await client.send(CommandType.MemoryGet, body, timeoutMs === undefined ? {} : { timeoutMs });
+    if (response.type !== "memory_get") {
+      throw new StockResponseMismatchError(`got a "${response.type}" reply to MEMORY_GET, expected "memory_get"`, { expected: ResponseType.MemoryGet });
+    }
+    parts.push(response.bytes);
+  }
+  return parts.length === 1 ? parts[0]! : Uint8Array.from(Buffer.concat(parts));
 }

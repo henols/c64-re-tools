@@ -1,11 +1,7 @@
-// node:test coverage of stock-petscii.ts's asciiToPetscii() -- 03-RESEARCH.md
-// Pitfall 3's explicit requirement: an EXHAUSTIVE round-trip test over every
-// input code point 0x00-0xff, not a spot-check of a handful of letters.
-// Follows stock-protocol.test.ts's golden-fixture-table style: the expected
-// output for each byte is computed here, independently of asciiToPetscii()'s
-// own implementation, from the same range boundaries this file's own header
-// comment documents -- never by calling the function under test to derive
-// its own expectation.
+// node:test coverage of stock-petscii.ts's asciiToPetscii(): an exhaustive
+// sweep over every input code point 0x00-0xff, plus named cases. The expected
+// byte comes from an independent range table below, never from the function
+// under test.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -19,14 +15,14 @@ import { asciiToPetscii, PETSCII_RETURN, StockPetsciiError } from "../../src/mcp
 function expectedByte(byte: number, upper: boolean): number | null {
   if (byte === 0x0a || byte === 0x0d) return PETSCII_RETURN;
   if (byte >= 0x20 && byte <= 0x40) return byte;
-  if (byte >= 0x41 && byte <= 0x5a) return upper ? byte | 0x80 : byte;
+  if (byte >= 0x41 && byte <= 0x5a) return byte;
   if (byte >= 0x5b && byte <= 0x60) return byte;
   if (byte >= 0x61 && byte <= 0x7a) return upper ? byte - 0x20 : byte;
   if (byte >= 0x7b && byte <= 0x7e) return byte;
   return null;
 }
 
-test("asciiToPetscii: exhaustive round-trip over every input code point 0x00-0xff (upper: true, the default)", () => {
+test("asciiToPetscii: every code point 0x00-0xff converts or refuses as the range table says, with the default upper mapping", () => {
   for (let byte = 0; byte < 0x100; byte++) {
     const expected = expectedByte(byte, true);
     const input = String.fromCharCode(byte);
@@ -44,7 +40,7 @@ test("asciiToPetscii: exhaustive round-trip over every input code point 0x00-0xf
   }
 });
 
-test("asciiToPetscii: exhaustive round-trip over every input code point 0x00-0xff (upper: false, raw pass-through)", () => {
+test("asciiToPetscii: every code point 0x00-0xff converts or refuses as the range table says, with upper false", () => {
   for (let byte = 0; byte < 0x100; byte++) {
     const expected = expectedByte(byte, false);
     const input = String.fromCharCode(byte);
@@ -57,16 +53,22 @@ test("asciiToPetscii: exhaustive round-trip over every input code point 0x00-0xf
   }
 });
 
-test("asciiToPetscii: explicit named case -- 'A' becomes 0xc1 (uppercase ASCII -> shifted PETSCII, upper default true)", () => {
-  assert.deepEqual(asciiToPetscii("A"), Buffer.from([0xc1]));
+test("asciiToPetscii: 'A' becomes 0x41 by default, the capital A of the power-on charset", () => {
+  assert.deepEqual(asciiToPetscii("A"), Buffer.from([0x41]));
 });
 
-test("asciiToPetscii: explicit named case -- 'a' becomes 0x41 (lowercase ASCII -> unshifted PETSCII, upper default true)", () => {
+test("asciiToPetscii: 'a' also becomes 0x41 by default, so either case types a capital", () => {
   assert.deepEqual(asciiToPetscii("a"), Buffer.from([0x41]));
 });
 
-test("asciiToPetscii: explicit named case -- 'A' with upper: false passes through unchanged as 0x41", () => {
-  assert.deepEqual(asciiToPetscii("A", { upper: false }), Buffer.from([0x41]));
+test("asciiToPetscii: with upper false, 'A' stays 0x41 and 'a' stays 0x61", () => {
+  assert.deepEqual(asciiToPetscii("Aa", { upper: false }), Buffer.from([0x41, 0x61]));
+});
+
+test("asciiToPetscii: 'PRINT 7*6' in either case gives the same bytes BASIC tokenises as a PRINT statement", () => {
+  const expected = Buffer.from([0x50, 0x52, 0x49, 0x4e, 0x54, 0x20, 0x37, 0x2a, 0x36, 0x0d]);
+  assert.deepEqual(asciiToPetscii("PRINT 7*6\n"), expected);
+  assert.deepEqual(asciiToPetscii("print 7*6\n"), expected);
 });
 
 test("asciiToPetscii: explicit named case -- '\\n' (LF) becomes PETSCII_RETURN (0x0d)", () => {
@@ -79,7 +81,7 @@ test("asciiToPetscii: explicit named case -- '\\r' (CR) also becomes PETSCII_RET
 
 test('asciiToPetscii: explicit named case -- \'LOAD"*",8,1\\n\' produces the expected 12-byte sequence', () => {
   const result = asciiToPetscii('LOAD"*",8,1\n');
-  assert.deepEqual(result, Buffer.from([0xcc, 0xcf, 0xc1, 0xc4, 0x22, 0x2a, 0x22, 0x2c, 0x38, 0x2c, 0x31, 0x0d]));
+  assert.deepEqual(result, Buffer.from([0x4c, 0x4f, 0x41, 0x44, 0x22, 0x2a, 0x22, 0x2c, 0x38, 0x2c, 0x31, 0x0d]));
 });
 
 test("asciiToPetscii: refusal -- empty string", () => {
@@ -134,10 +136,10 @@ test("asciiToPetscii: refusal -- a non-string input", () => {
   assert.throws(() => asciiToPetscii(42), StockPetsciiError);
 });
 
-test("asciiToPetscii: boundary sweep -- the four range edges convert exactly as documented", () => {
+test("asciiToPetscii: the range edges convert as the range table says", () => {
   assert.equal(asciiToPetscii("\x40")[0], 0x40, "0x40 (last of the unchanged punctuation range) is unchanged");
-  assert.equal(asciiToPetscii("\x41")[0], 0xc1, "0x41 ('A', first of the uppercase case-swap range) becomes 0xc1");
-  assert.equal(asciiToPetscii("\x5a")[0], 0xda, "0x5a ('Z', last of the uppercase case-swap range) becomes 0xda");
+  assert.equal(asciiToPetscii("\x41")[0], 0x41, "0x41 ('A') is unchanged");
+  assert.equal(asciiToPetscii("\x5a")[0], 0x5a, "0x5a ('Z') is unchanged");
   assert.equal(asciiToPetscii("\x5b")[0], 0x5b, "0x5b (first of the unchanged bracket range) is unchanged");
   assert.equal(asciiToPetscii("\x60")[0], 0x60, "0x60 (last of the unchanged bracket range) is unchanged");
   assert.equal(asciiToPetscii("\x61")[0], 0x41, "0x61 ('a', first of the lowercase case-swap range) becomes 0x41");

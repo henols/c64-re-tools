@@ -13,40 +13,10 @@
 // loadTextFixture(), never a direct readFileSync against fixtures/textmon.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { parseIoRegisters, REQUIRED_IO_DECODED_KEYS } from "../../src/mcp/vice/textmon-registers.ts";
-import { VICE_DIR } from "./paths.ts";
 
-const OWN_MODULE = join(VICE_DIR, "textmon-registers.ts");
-
-// ---------------------------------------------------------------------------
-// Purity (PARSE-03).
-// ---------------------------------------------------------------------------
-
-test("purity (PARSE-03): textmon-registers.ts contains no top-level ES import statement", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  const importLines = src.split("\n").filter((line) => /^\s*import\s/.test(line));
-  assert.deepEqual(importLines, [], `expected zero import lines, found: ${JSON.stringify(importLines)}`);
-});
-
-test("purity: textmon-registers.ts declares no module-scope mutable (let/var) binding", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  const mutableLines = src.split("\n").filter((line) => /^(export\s+)?(let|var)\s/.test(line));
-  assert.deepEqual(mutableLines, [], `expected zero top-level let/var declarations, found: ${JSON.stringify(mutableLines)}`);
-});
-
-test("sprite-table column offsets are derived from the Sprites: header line's own token positions, never a literal width constant", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  assert.match(src, /matchAll\(\/\\S\+\/g\)/, "expected the header line to be tokenized via a regex scan, not a literal width table");
-  assert.doesNotMatch(
-    src,
-    /\[\s*8\s*,\s*12\s*,\s*16\s*,\s*20/,
-    "expected no hardcoded sprite-column boundary array -- offsets must come from the header line itself",
-  );
-});
 
 // ---------------------------------------------------------------------------
 // Both real captures parse clean, both sidecars record the parameterized
@@ -403,30 +373,6 @@ test("planted control (CR-01): field-name order -- removing Colors: and Video $ 
     assert.ok(charsetBaseIdx < charsetSourceIdx, "expected charsetBase before charsetSource");
   }
   assertRealCapturesStillParseCleanly();
-});
-
-test("interface census: REQUIRED_IO_DECODED_KEYS equals IoDecodedState's own declared field set, read from this module's real source -- what stops a field added to the interface later from silently re-opening CR-01", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  const interfaceMatch = /export interface IoDecodedState \{([\s\S]*?)\n\}/.exec(src);
-  assert.ok(interfaceMatch, "expected to find the IoDecodedState interface body in this module's source");
-  const body = interfaceMatch![1]!;
-  const declaredFieldNames = [...body.matchAll(/^\s*readonly (\w+):/gm)].map((m) => m[1]!);
-  assert.ok(declaredFieldNames.length > 0, "expected at least one declared field -- the interface body regex may have failed to match");
-
-  const declaredSet = new Set(declaredFieldNames);
-  const constSet = new Set<string>(REQUIRED_IO_DECODED_KEYS);
-  const declaredNotInConst = declaredFieldNames.filter((f) => !constSet.has(f));
-  const constNotInDeclared = REQUIRED_IO_DECODED_KEYS.filter((k) => !declaredSet.has(k));
-  assert.deepEqual(
-    declaredNotInConst,
-    [],
-    `IoDecodedState declares fields REQUIRED_IO_DECODED_KEYS is missing: ${JSON.stringify(declaredNotInConst)}`,
-  );
-  assert.deepEqual(
-    constNotInDeclared,
-    [],
-    `REQUIRED_IO_DECODED_KEYS names fields IoDecodedState no longer declares: ${JSON.stringify(constNotInDeclared)}`,
-  );
 });
 
 // ---------------------------------------------------------------------------

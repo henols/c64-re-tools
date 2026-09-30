@@ -94,6 +94,17 @@ test("emitCondition: literal 0x1234 zero-pads to 4 digits", () => {
 // emitCondition() -- refusal cases
 // ---------------------------------------------------------------------------
 
+test("emitCondition: RL literal 0x138 (past the last PAL line, 0x137) refuses; 0x137 is accepted", () => {
+  const rl = (value: number): ConditionNode => ({ kind: "comparison", left: { kind: "pseudo", name: "RL" }, op: "==", right: { kind: "literal", value } });
+  assert.equal(emitCondition(rl(0x137)), "(RL == $0137)");
+  assert.throws(() => emitCondition(rl(0x138)), StockConditionError);
+});
+
+test("emitCondition: CY literal 0x40 (NTSC's last cycle) is accepted", () => {
+  const cy = (value: number): ConditionNode => ({ kind: "comparison", left: { kind: "pseudo", name: "CY" }, op: "==", right: { kind: "literal", value } });
+  assert.equal(emitCondition(cy(0x40)), "(CY == $40)");
+});
+
 test("emitCondition: RL literal 0x139 (over the 312-line max) refuses", () => {
   const node: ConditionNode = {
     kind: "comparison",
@@ -103,21 +114,21 @@ test("emitCondition: RL literal 0x139 (over the 312-line max) refuses", () => {
   };
   assert.throws(() => emitCondition(node), (err: unknown) => {
     assert.ok(err instanceof StockConditionError);
-    assert.match(err.message, /0x138/);
+    assert.match(err.message, /0x137/);
     return true;
   });
 });
 
-test("emitCondition: CY literal 0x40 (over the 63-cycle max) refuses with '63'", () => {
+test("emitCondition: CY literal 0x41 (over the 65-cycle max) refuses naming 0x40", () => {
   const node: ConditionNode = {
     kind: "comparison",
     left: { kind: "pseudo", name: "CY" },
     op: "==",
-    right: { kind: "literal", value: 0x40 },
+    right: { kind: "literal", value: 0x41 },
   };
   assert.throws(() => emitCondition(node), (err: unknown) => {
     assert.ok(err instanceof StockConditionError);
-    assert.match(err.message, /63/);
+    assert.match(err.message, /0x40/);
     return true;
   });
 });

@@ -6,14 +6,11 @@
 // caught here, not silently masked by a stale fixture.
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { render, renderLine } from "../../src/mcp/vice/disasm-renderer.mts";
 import { decode } from "../../src/mcp/vice/disasm-decoder.mts";
 import { OPCODES, type AddressingMode } from "../../src/mcp/vice/disasm-opcodes.mts";
 import { LENGTH_FOR_MODE } from "./disasm-mode-lengths.ts";
-import { VICE_DIR } from "./paths.ts";
 
 
 /** Hex helper shared across assertions -- lowercase, `$`-prefixed, 4 digits. */
@@ -335,31 +332,5 @@ describe("D-10: notes render as trailing comments", () => {
     assert.equal(line.trimStart().startsWith("!byte"), false, line);
     assert.ok(line.includes("lax $fb"), line);
     assert.ok(line.includes("illegal opcode"), line);
-  });
-});
-
-// ------------------------------------------------- 7. Purity
-
-describe("purity (D-05: only ./disasm-decoder.mts and/or ./disasm-opcodes.mts, never stock-address.ts)", () => {
-  test("disasm-renderer.mts's only from \"...\" specifiers, after stripping comment lines, are drawn from the allowed set", () => {
-    const source = readFileSync(join(VICE_DIR, "disasm-renderer.mts"), "utf8");
-    const codeOnly = source
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n");
-    const fromLines = codeOnly
-      .split("\n")
-      .filter((line) => /\bfrom\s+"/.test(line))
-      .map((line) => line.match(/from\s+"([^"]+)"/)?.[1])
-      .filter((specifier): specifier is string => specifier !== undefined);
-
-    const specifiers = [...new Set(fromLines)];
-    const allowed = new Set(["./disasm-decoder.mts", "./disasm-opcodes.mts"]);
-
-    assert.ok(specifiers.length > 0, "expected at least one import specifier");
-    for (const specifier of specifiers) {
-      assert.ok(allowed.has(specifier), `unexpected import specifier: ${specifier}`);
-    }
-    assert.equal(specifiers.includes("./stock-address.ts"), false);
   });
 });

@@ -99,6 +99,31 @@ function checkpointInfoResponse(checkpoint: ParsedCheckpoint) {
   return { type: "checkpoint_info" as const, requestId: 1, errorCode: 0, checkpoint, related: [] };
 }
 
+function stoppedEvent(pc: number) {
+  return { type: "stopped" as const, requestId: 0xffffffff, errorCode: 0, programCounter: pc };
+}
+
+/** A sendImpl whose resume is followed by `events` (emitted in order), and
+ * whose CheckpointDelete succeeds -- for the stops that are not this call's
+ * own checkpoint. */
+function stopAfterResumeSendImpl(armedId: number, events: unknown[]) {
+  return async (commandType: number, _body: Buffer, emitter: EventEmitter): Promise<unknown> => {
+    if (commandType === CommandType.CheckpointSet) {
+      return checkpointInfoResponse(fakeCheckpoint({ id: armedId }));
+    }
+    if (commandType === CommandType.Exit) {
+      setImmediate(() => {
+        for (const event of events) emitter.emit("event", event);
+      });
+      return { type: "unknown", requestId: 1, errorCode: 0 };
+    }
+    if (commandType === CommandType.CheckpointDelete) {
+      return { type: "checkpoint_delete", requestId: 1, errorCode: 0 };
+    }
+    throw new Error(`unexpected commandType 0x${commandType.toString(16)}`);
+  };
+}
+
 function okText(result: { content: { type: "text"; text: string }[] }): Record<string, unknown> {
   return JSON.parse(result.content[0]!.text);
 }
@@ -158,6 +183,7 @@ function immediateHitSendImpl(checkpointId = 1) {
     if (commandType === CommandType.Exit) {
       setImmediate(() => {
         emitter.emit("event", checkpointInfoResponse(fakeCheckpoint({ id: checkpointId, hitCount: 1 })));
+        emitter.emit("event", stoppedEvent(0xc000));
       });
       return { type: "unknown", requestId: 1, errorCode: 0 };
     }
@@ -217,7 +243,7 @@ test("run_until: hit path answers reached:true, deletes nothing, resumes exactly
 // 3. Event narrowing
 // ---------------------------------------------------------------------------
 
-test("run_until: a mismatched checkpoint id and a mismatched event type are both ignored -- the wait still times out", async () => {
+test("run_until: a trace checkpoint that reports without stopping, and a non-stop event, do not end the wait", async () => {
   const armedId = 1;
   const { client, calls } = makeFakeClient(async (commandType, _body, emitter) => {
     if (commandType === CommandType.CheckpointSet) {
@@ -225,10 +251,9 @@ test("run_until: a mismatched checkpoint id and a mismatched event type are both
     }
     if (commandType === CommandType.Exit) {
       setImmediate(() => {
-        // Different checkpoint id, same type -- ignored.
-        emitter.emit("event", checkpointInfoResponse(fakeCheckpoint({ id: armedId + 100, hitCount: 1 })));
-        // Same id, different type -- ignored (narrowing keys on the parsed
-        // discriminant FIRST, never on id alone).
+        // A stop:false checkpoint reports a hit but the machine keeps running.
+        emitter.emit("event", checkpointInfoResponse(fakeCheckpoint({ id: armedId + 100, hitCount: 1, stopWhenHit: false })));
+        // Same id, different type -- not a stop.
         emitter.emit("event", { type: "resumed", requestId: 1, errorCode: 0, checkpoint: { id: armedId } });
       });
       return { type: "unknown", requestId: 1, errorCode: 0 };
@@ -246,6 +271,97 @@ test("run_until: a mismatched checkpoint id and a mismatched event type are both
   assert.equal(payload.reached, false);
   assert.equal(payload.timedOut, true);
   assert.equal(countCalls(calls, CommandType.CheckpointDelete), 1);
+});
+
+test("run_until: a foreign checkpoint that stops the machine ends the wait at once, names that checkpoint, and deletes this call's checkpoint", async () => {
+  const foreign = fakeCheckpoint({ id: 9, start: 0xea31, end: 0xea31, temporary: false, hitCount: 3 });
+  const { client, calls } = makeFakeClient(stopAfterResumeSendImpl(4, [checkpointInfoResponse(foreign), stoppedEvent(0xea31)]));
+  const started = Date.now();
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 5000 }, makeSession(client), FAKE_DEPS);
+  assert.ok(Date.now() - started < 2000, "the wait did not sit out the timeout");
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal(payload.reached, false);
+  assert.equal(payload.timedOut, undefined);
+  assert.deepEqual(payload.stoppedBy, { kind: "checkpoint", checkpointId: 9, start: 0xea31, end: 0xea31, operations: ["exec"], hitCount: 3, pc: 0xea31 });
+  assert.equal(payload.pc, 0xea31);
+  assert.equal(payload.cleanup, "deleted");
+  assert.equal(payload.machineHalted, true);
+  const deletes = calls.filter(([ct]) => ct === CommandType.CheckpointDelete);
+  assert.equal(deletes.length, 1);
+  assert.equal(deletes[0]![1].readUInt32LE(0), 4, "the delete targets this call's own checkpoint");
+});
+
+test("run_until: a store watch that stops the machine is reported with its operation", async () => {
+  const watch = fakeCheckpoint({ id: 2, start: 0xd020, end: 0xd020, operation: CheckpointOperation.Store, temporary: false, hitCount: 1 });
+  const { client } = makeFakeClient(stopAfterResumeSendImpl(5, [checkpointInfoResponse(watch), stoppedEvent(0xb82c)]));
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 5000 }, makeSession(client), FAKE_DEPS);
+  assertOk(result);
+  const stoppedBy = okText(result).stoppedBy as Record<string, unknown>;
+  assert.equal(stoppedBy.kind, "checkpoint");
+  assert.deepEqual(stoppedBy.operations, ["store"]);
+});
+
+test("run_until: a stop with no checkpoint report is reported as kind other, with the stop address", async () => {
+  const { client } = makeFakeClient(stopAfterResumeSendImpl(6, [stoppedEvent(0xc123)]));
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 5000 }, makeSession(client), FAKE_DEPS);
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal(payload.reached, false);
+  assert.deepEqual(payload.stoppedBy, { kind: "other", pc: 0xc123 });
+  assert.equal(payload.cleanup, "deleted");
+});
+
+test("run_until: VICE's stop/resume pair with no checkpoint report right after the resume does not end the wait", async () => {
+  const { client } = makeFakeClient(stopAfterResumeSendImpl(6, [stoppedEvent(0xe5cd), { type: "resumed", requestId: 0xffffffff, errorCode: 0, programCounter: 0xe5cd }]));
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 300 }, makeSession(client), FAKE_DEPS);
+  assertOk(result);
+  assert.equal(okText(result).timedOut, true);
+});
+
+test("run_until: this call's checkpoint firing and VICE resuming at once is reached, with machineHalted false", async () => {
+  const own = fakeCheckpoint({ id: 3, hitCount: 1 });
+  const { client } = makeFakeClient(
+    stopAfterResumeSendImpl(3, [checkpointInfoResponse(own), stoppedEvent(0xea31), { type: "resumed", requestId: 0xffffffff, errorCode: 0, programCounter: 0xea31 }]),
+  );
+  const result = await handleRunUntil({ address: "$ea31", timeout_ms: 5000 }, makeSession(client), FAKE_DEPS);
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal(payload.reached, true);
+  assert.equal(payload.pc, 0xea31);
+  assert.equal(payload.machineHalted, false);
+  assert.match(payload.machineHaltedNote as string, /vice_execution_pause/);
+});
+
+test("run_until: a JAM event ends the wait and is reported as kind jam", async () => {
+  const { client } = makeFakeClient(stopAfterResumeSendImpl(6, [{ type: "jam", requestId: 0xffffffff, errorCode: 0, programCounter: 0xc000 }]));
+  const result = await handleRunUntil({ address: "$c100", timeout_ms: 5000 }, makeSession(client), FAKE_DEPS);
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal(payload.reached, false);
+  assert.deepEqual(payload.stoppedBy, { kind: "jam", pc: 0xc000 });
+});
+
+test("run_until: this call's checkpoint firing together with a foreign one counts as reached", async () => {
+  const foreign = fakeCheckpoint({ id: 9, temporary: false, hitCount: 1 });
+  const own = fakeCheckpoint({ id: 3, hitCount: 1 });
+  const { client, calls } = makeFakeClient(stopAfterResumeSendImpl(3, [checkpointInfoResponse(foreign), checkpointInfoResponse(own), stoppedEvent(0xc000)]));
+  const result = await handleRunUntil({ address: "$c000", timeout_ms: 5000 }, makeSession(client), FAKE_DEPS);
+  assertOk(result);
+  const payload = okText(result);
+  assert.equal(payload.reached, true);
+  assert.equal((payload.stoppedBy as Record<string, unknown>).kind, "target");
+  assert.equal(countCalls(calls, CommandType.CheckpointDelete), 0);
+});
+
+test("run_until: reproducible and frame_anchor are refused as unknown arguments, nothing armed", async () => {
+  for (const args of [{ address: "$c000", reproducible: true }, { address: "$c000", frame_anchor: "$ea31" }]) {
+    const { client, calls } = makeFakeClient(timeoutOnlySendImpl());
+    const result = await handleRunUntil(args, makeSession(client), FAKE_DEPS);
+    assertErr(result);
+    assert.match(result.content[0]!.text, /^vice_run_until: unexpected argument/);
+    assert.equal(calls.length, 0);
+  }
 });
 
 // ---------------------------------------------------------------------------

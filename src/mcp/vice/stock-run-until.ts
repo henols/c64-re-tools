@@ -1,35 +1,29 @@
 #!/usr/bin/env node
 // stock-run-until.ts
 //
-// `vice_run_until` for the stock backend (TIME-02/TIME-03): arms a TEMPORARY,
-// stopping exec checkpoint at the requested address, resumes the machine
-// exactly once, waits event-driven for THAT checkpoint's own CHECKPOINT_INFO,
-// and takes a different, correct cleanup action on each of three paths --
-// hit, timeout, machine-restarted-mid-wait. Implements D-02: an optional,
-// stock-only `timeout_ms` argument defaulting to 30000, the same default
-// VICE_MCP_TIMEOUT_MS already uses, so one number governs both layers.
+// `vice_run_until` for the stock backend: arms a temporary, stopping exec
+// checkpoint at the requested address, resumes the machine exactly once, and
+// waits event-driven for the machine to stop -- at that checkpoint, at
+// another checkpoint or watch, on a CPU JAM, or for any other reason -- and
+// reports what stopped it. `timeout_ms` bounds the wait (default 30000).
 //
-// WHY THIS FILE EXISTS: without a timeout, a call against an address that
-// never executes is indistinguishable from a genuine wedge. This module is
-// what bounds that wait and tells the two apart.
+// WHY THIS FILE EXISTS: without a bound, a call against an address that
+// never executes is indistinguishable from a wedged emulator; and a wait
+// that only listens for its own checkpoint sits out the whole timeout after
+// something else has already stopped the machine.
 //
 // WHAT NOT TO DO:
-//   - Never wrap the three cleanup paths (hit / timeout / restarted) in one
-//     undifferentiated `finally { delete }` -- that is this design space's
-//     documented first-draft mistake (Pitfall 4). Each path takes its OWN,
-//     distinct action, and only the timeout path ever issues a delete.
+//   - Never wrap the cleanup paths in one undifferentiated
+//     `finally { delete }`. On a hit VICE has already deleted the temporary
+//     checkpoint; on a timeout or a foreign stop it is still armed and is
+//     deleted once; on a restart there is nothing left to delete.
 //   - Never call registerTraceCheckpoint() here -- that guard exists for
 //     `stop:false` trace checkpoints (stock-checkpoints.ts), and the
 //     checkpoint this file arms always stops.
-//   - Never send a second resume for one wait -- exactly one resume per
-//     call, in a stock-native (event-driven, not polling) form.
+//   - Never send a second resume for one wait.
 //   - Never invent a second wire-error converter -- an arming failure goes
-//     through convertWireError() directly (the established per-handler
-//     convention every sibling family module already follows); a failure
-//     surfacing from the resume/wait step is left to propagate uncaught, so
-//     the ONE existing converter seam (runBinary()'s own
-//     convertHandshakeError/convertWireError) produces the answer, not a
-//     second one written in this file.
+//     through convertWireError(); a failure from the resume/wait step
+//     propagates to runBinary()'s own converter.
 import {
   CommandType,
   CheckpointOperation,
@@ -45,10 +39,6 @@ import { parseAddress } from "./stock-address.ts";
 import { stockAnswer, isErrorText, convertWireError, type StockSessionHandler } from "./stock-handler.ts";
 import { readProgramCounter } from "./stock-timing.ts";
 import { runStateFor } from "./stock-runstate.ts";
-// The reproducible-run protocol (REPRO-02). Imported for exactly one branch
-// below -- this module is the ONLY non-test caller of runReproducible() in the
-// tree, which is the single-seam property REPRO-02 requires.
-import { runReproducible, REPRODUCIBLE_RUN_REQUIRED_SIBLINGS } from "./stock-reproducible-run.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention;
@@ -62,7 +52,7 @@ function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** D-02: the stock-only `timeout_ms` argument's default, in milliseconds. */
+/** The `timeout_ms` argument's default, in milliseconds. */
 export const RUN_UNTIL_DEFAULT_TIMEOUT_MS = 30000;
 
 /** A present `timeout_ms` above this ceiling is CLAMPED (not refused) to
@@ -72,23 +62,9 @@ export const RUN_UNTIL_DEFAULT_TIMEOUT_MS = 30000;
  * value is. */
 export const RUN_UNTIL_MAX_TIMEOUT_MS = 600000;
 
-/** EVERY argument name `vice_run_until` accepts, and the ONLY definition of
- * that set. Anything else is refused BY NAME (see handleRunUntil below).
- *
- * Hoisted to module scope and EXPORTED so `D-13`'s no-sub-flags rule is
- * ASSERTED rather than merely stated: `stock-reproducible-run.test.ts` pins
- * this array with a single `assert.deepEqual`, which is what makes a future
- * `skip_reset`, `no_anchor` or `reset_only` a RED TEST rather than a review
- * comment. Shipping a "protocol without the reset" option would ship exactly
- * the second route `REPRO-02` exists to prevent a caller forgetting -- and the
- * reset-removed CONTROL this phase records red is produced by an evidence
- * script calling `runReproducible()`'s pieces directly, never by a published
- * flag.
- *
- * `reproducible` and `frame_anchor` are STOCK-ONLY and both OPTIONAL: the fork
- * manifest's tool list is frozen byte-identical from v0.1.x, and stock may add
- * optional parameters but never removes, retypes, or newly-requires one. */
-export const RUN_UNTIL_KEYS: readonly string[] = ["address", "cycles", "timeout_ms", "reproducible", "frame_anchor"];
+/** Every argument name `vice_run_until` accepts. Anything else is refused
+ * by name. */
+export const RUN_UNTIL_KEYS: readonly string[] = ["address", "cycles", "timeout_ms"];
 
 /** Narrows an emitted `event` item to a CHECKPOINT_INFO event -- checked on
  * the parsed item's own `.type` discriminant, never on response type alone
@@ -101,73 +77,180 @@ function isCheckpointInfoEvent(item: unknown): item is ParsedCheckpointInfoRespo
   return isPlainObject(item) && item.type === "checkpoint_info" && isPlainObject(item.checkpoint);
 }
 
-type WaitOutcome = { status: "hit"; hitCount: number } | { status: "timeout" };
+/** The checkpoint operation bits, by name, for reporting a foreign stop. */
+function operationNames(operation: number): string[] {
+  const names: string[] = [];
+  if (operation & CheckpointOperation.Load) names.push("load");
+  if (operation & CheckpointOperation.Store) names.push("store");
+  if (operation & CheckpointOperation.Exec) names.push("exec");
+  return names;
+}
+
+/** How long a STOPPED event must stand without a RESUMED before the wait
+ * treats it as a real stop. */
+const STOP_SETTLE_MS = 100;
+
+/** What stopped the machine during the wait. `target` is this call's own
+ * checkpoint; `checkpoint` is any other checkpoint or watch; `jam` is a CPU
+ * JAM event; `other` is a stop with no checkpoint report (for example a JAM
+ * with VICE's JAM action set to enter the monitor). */
+export type StopCause =
+  | { kind: "target"; checkpointId: number; hitCount: number; pc: number }
+  | { kind: "checkpoint"; checkpointId: number; start: number; end: number; operations: string[]; hitCount: number; pc: number }
+  | { kind: "jam"; pc: number | null }
+  | { kind: "other"; pc: number };
+
+type WaitOutcome = { status: "stopped"; cause: StopCause; resumedAfterStop: boolean } | { status: "timeout" };
+
+function isStopEvent(item: unknown): item is { type: "stopped"; programCounter: number } | { type: "jam"; programCounter: number | null } {
+  return isPlainObject(item) && (item.type === "stopped" || item.type === "jam");
+}
 
 /**
- * Installs ONE `event` listener narrowed on the parsed event's own `.type`
- * discriminant, THEN the specific checkpoint id, sends the resume exactly
- * once, and races that against a single timeout deadline and the client's
- * own `close` signal. The listener is installed BEFORE the resume is sent,
- * so a checkpoint that fires immediately after cannot be missed in the gap
- * between "sent" and "listening".
+ * Watches the client's events for the next stop. Install it BEFORE arming the
+ * checkpoint: a machine that is already running can hit the temporary
+ * checkpoint before the arming reply is even processed, so a listener
+ * attached afterwards would miss the stop.
  *
- * Removes every listener and clears the timer in a `finally` on EVERY path
- * -- resolve, timeout, and rejection -- so a long session never accumulates
- * listeners (T-07-09).
+ * CHECKPOINT_INFO events are collected (a `stop:false` trace checkpoint
+ * reports one without stopping the machine). The wait settles on a STOPPED
+ * or JAM event and attributes it to the checkpoints reported since the
+ * watcher was installed, preferring this call's own checkpoint.
  *
- * A `close` event mid-wait settles the wait as a timeout rather than
- * sitting until the deadline: there is nothing left to wait ON once the
- * socket is gone, and the caller's own timeout-path cleanup attempt will
- * discover the dead connection on its own delete call rather than this
- * function guessing at it.
+ * Stock VICE 3.8 wraps every command sent to a running machine in a STOPPED
+ * / RESUMED pair. So a STOPPED settles the wait only when no RESUMED follows
+ * within STOP_SETTLE_MS, unless a checkpoint was reported: a checkpoint stop
+ * that VICE leaves again at once still counts, and the answer says the
+ * machine is running (resumedAfterStop).
  *
- * Any rejection from the resume send itself (a MachineRestartedError, or
- * any other error) propagates OUT of this function uncaught -- see
- * handleRunUntil's own comment, below, on why no delete is attempted for
- * that path.
+ * `dispose()` removes every listener and timer; the caller calls it on every
+ * path.
  */
-async function waitForCheckpointHit(client: ViceMonitorClient, checkpointId: number, timeoutMs: number): Promise<WaitOutcome> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let onEvent: ((item: unknown) => void) | undefined;
-  let onClose: (() => void) | undefined;
+interface StopWatcher {
+  outcome: Promise<WaitOutcome>;
+  /** Tells the watcher which checkpoint id is this call's own. */
+  setCheckpointId(id: number): void;
+  /** True while a STOPPED is waiting to settle, i.e. the machine is halted. */
+  isHalted(): boolean;
+  fail(err: unknown): void;
+  dispose(): void;
+}
 
+function watchForStop(client: ViceMonitorClient, timeoutMs: number): StopWatcher {
+  let ownId: number | undefined;
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  let resumedAfterStop = false;
+  const reported: ParsedCheckpointInfoResponse["checkpoint"][] = [];
+  let resolveOutcome!: (outcome: WaitOutcome) => void;
+  let rejectOutcome!: (err: unknown) => void;
+  const outcome = new Promise<WaitOutcome>((resolve, reject) => {
+    resolveOutcome = resolve;
+    rejectOutcome = reject;
+  });
+
+  const decide = (pc: number): void => {
+    const own = ownId === undefined ? undefined : reported.find((checkpoint) => checkpoint.id === ownId);
+    if (own !== undefined) {
+      resolveOutcome({ status: "stopped", cause: { kind: "target", checkpointId: own.id, hitCount: own.hitCount, pc }, resumedAfterStop });
+      return;
+    }
+    const foreign = reported.filter((checkpoint) => checkpoint.stopWhenHit).at(-1) ?? reported.at(-1);
+    if (foreign !== undefined) {
+      resolveOutcome({
+        status: "stopped",
+        cause: {
+          kind: "checkpoint",
+          checkpointId: foreign.id,
+          start: foreign.start,
+          end: foreign.end,
+          operations: operationNames(foreign.operation),
+          hitCount: foreign.hitCount,
+          pc,
+        },
+        resumedAfterStop,
+      });
+      return;
+    }
+    resolveOutcome({ status: "stopped", cause: { kind: "other", pc }, resumedAfterStop });
+  };
+
+  const onEvent = (item: unknown): void => {
+    if (isPlainObject(item) && item.type === "resumed") {
+      if (reported.length === 0) {
+        clearTimeout(settleTimer);
+        settleTimer = undefined;
+      } else if (settleTimer !== undefined) {
+        resumedAfterStop = true;
+      }
+      return;
+    }
+    if (isCheckpointInfoEvent(item)) {
+      reported.push(item.checkpoint);
+      return;
+    }
+    if (!isStopEvent(item)) return;
+    if (item.type === "jam") {
+      resolveOutcome({ status: "stopped", cause: { kind: "jam", pc: item.programCounter }, resumedAfterStop: false });
+      return;
+    }
+    const pc = item.programCounter;
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => decide(pc), STOP_SETTLE_MS);
+  };
+  // A close mid-wait settles the wait as a timeout: the cleanup delete then
+  // finds the dead connection itself.
+  const onClose = (): void => resolveOutcome({ status: "timeout" });
+  const timer = setTimeout(() => resolveOutcome({ status: "timeout" }), timeoutMs);
+
+  client.on("event", onEvent);
+  client.on("close", onClose);
+
+  return {
+    outcome,
+    setCheckpointId(id) {
+      ownId = id;
+    },
+    isHalted: () => settleTimer !== undefined,
+    fail: rejectOutcome,
+    dispose() {
+      client.off("event", onEvent);
+      client.off("close", onClose);
+      clearTimeout(settleTimer);
+      clearTimeout(timer);
+    },
+  };
+}
+
+type Cleanup = { cleanup: "deleted" | "already_gone" | "delete_failed"; cleanupError?: string };
+
+/** Deletes this call's temporary checkpoint once. ObjectMissing means VICE
+ * already deleted it (it fired); any other error is recorded, never thrown. */
+async function deleteTemporaryCheckpoint(session: Parameters<StockSessionHandler>[1], checkpointId: number): Promise<Cleanup> {
   try {
-    return await new Promise<WaitOutcome>((resolve, reject) => {
-      onEvent = (item: unknown) => {
-        if (!isCheckpointInfoEvent(item)) return;
-        if (item.checkpoint.id !== checkpointId) return;
-        resolve({ status: "hit", hitCount: item.checkpoint.hitCount });
-      };
-      onClose = () => {
-        resolve({ status: "timeout" });
-      };
-
-      client.on("event", onEvent);
-      client.on("close", onClose);
-      timer = setTimeout(() => resolve({ status: "timeout" }), timeoutMs);
-
-      // The one resume for this wait -- installed listener above fires
-      // BEFORE this send() call so a checkpoint hit racing the reply cannot
-      // slip through the gap.
-      client.send(CommandType.Exit).catch(reject);
-    });
-  } finally {
-    if (onEvent) client.off("event", onEvent);
-    if (onClose) client.off("close", onClose);
-    if (timer !== undefined) clearTimeout(timer);
+    await session.client.send(CommandType.CheckpointDelete, cpNumBody(checkpointId));
+    return { cleanup: "deleted" };
+  } catch (err) {
+    if (err instanceof StockProtocolError && err.errorCode === ErrorCode.ObjectMissing) {
+      return { cleanup: "already_gone" };
+    }
+    return { cleanup: "delete_failed", cleanupError: convertWireError("vice_run_until", err).content[0]!.text };
   }
 }
+
+const RESUMED_AFTER_STOP_NOTE =
+  "the machine stopped at pc, then VICE resumed it at once (it does this when the stop lands right after the resume). " +
+  "The machine is running; pc is where it stopped. Call vice_execution_pause to halt it.";
+
+const HALTED_BY_STOP_NOTE =
+  "the machine stopped and nothing here resumed it -- this is expected, not a wedge. Call vice_execution_run to resume.";
 
 export const handleRunUntil: StockSessionHandler = async (args, session, _deps) => {
   if (!isPlainObject(args)) {
     return isErrorText("vice_run_until: arguments must be an object");
   }
 
-  // WR-18 (07-REVIEW.md), part 1: refuse unexpected keys BY NAME, exactly as
-  // the sibling handler added in this same phase does (handleCyclesStopwatch,
-  // stock-timing.ts). Accepting them silently means a typo -- `timeoutMs` for
-  // `timeout_ms`, `addr` for `address` -- runs with the DEFAULT bound and
-  // reports a confident answer, and the caller has no way to tell.
+  // Refuse unexpected keys by name: a typo (`timeoutMs`, `addr`) would
+  // otherwise run with the default bound and report a confident answer.
   const unexpectedKeys = Object.keys(args).filter((key) => !RUN_UNTIL_KEYS.includes(key));
   if (unexpectedKeys.length > 0) {
     return isErrorText(
@@ -175,22 +258,10 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     );
   }
 
-  // WR-18, part 2: `cycles` is refused WHENEVER it is present, not only when
-  // `address` is absent.
-  //
-  // Before this, the "cycles-only mode not yet implemented" refusal was
-  // reachable only on the no-address path, so `{ address: "$c000", cycles: 5000 }`
-  // silently DROPPED the cycle bound and answered `reached: true` -- a caller
-  // who asked for "run to this address but give up after 5000 cycles" got an
-  // unbounded-by-cycles run reported as a success. Refusing is the honest
-  // answer: this backend has no cycles-bounded execution at all (TIME-03), and
-  // the fork never shipped one either.
+  // `cycles` is refused whenever it is present: this backend has no
+  // cycle-bounded execution, and dropping it would report an unbounded run
+  // as a success.
   if (args.cycles !== undefined) {
-    // The fork's own refusal wording (mcp_tools_debug.c:772), matched
-    // verbatim rather than inventing a cycles-bounded execution the fork
-    // never shipped -- TIME-03's own requirement. Extended with the
-    // address-present case, which the fork's wording does not cover because
-    // the fork never silently dropped the bound the way this handler did.
     return isErrorText(
       args.address === undefined
         ? "vice_run_until: cycles-only mode not yet implemented; provide an address"
@@ -210,13 +281,9 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     return isErrorText(`vice_run_until: ${describeError(err)}`);
   }
 
-  // D-02: timeout_ms validation. A non-finite, non-numeric, or non-positive
-  // value is REFUSED naming the offending value and the valid range -- never
-  // silently coerced to 0 (an instant spurious timeout) and never to the
-  // default. Fractional values truncate with Math.trunc AFTER the finiteness
-  // check, matching clampCpuHistoryCount()'s (stock-connect.ts) own
-  // discipline. A value above the ceiling is CLAMPED, not refused, and the
-  // answer says so via `timeoutClamped: true`.
+  // A non-finite, non-numeric or non-positive timeout_ms is refused; a
+  // fraction truncates; a value above the ceiling is clamped and the answer
+  // says so via `timeoutClamped: true`.
   let timeoutMs = RUN_UNTIL_DEFAULT_TIMEOUT_MS;
   let timeoutClamped = false;
   if (args.timeout_ms !== undefined) {
@@ -238,90 +305,10 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     }
   }
 
-  // D-12: `reproducible` is a BOOLEAN. Any other type is refused naming the
-  // offending value -- never coerced. `reproducible: "false"` is truthy in
-  // JavaScript, so a coercing gate would run the whole protocol (including the
-  // hard reset) for a caller who wrote the string "false" meaning to disable
-  // it. Refusing is the only reading that cannot be wrong.
-  if (args.reproducible !== undefined && typeof args.reproducible !== "boolean") {
-    return isErrorText(
-      `vice_run_until: reproducible must be a boolean, got ${JSON.stringify(args.reproducible)} -- it is not coerced, because ` +
-        `the string "false" is truthy in JavaScript and coercing it would run the whole protocol (hard reset included) for a ` +
-        `caller who meant to disable it.`,
-    );
-  }
-
-  // `frame_anchor` goes through parseAddress with a `what:` label, exactly as
-  // `address` does, so a malformed anchor is refused with the same wording a
-  // malformed target gets rather than a second, divergent message.
-  let frameAnchor: number | undefined;
-  if (args.frame_anchor !== undefined) {
-    try {
-      frameAnchor = parseAddress(args.frame_anchor, { what: "vice_run_until frame_anchor" });
-    } catch (err) {
-      return isErrorText(`vice_run_until: ${describeError(err)}`);
-    }
-  }
-
-  // An ACCEPTED-AND-IGNORED argument is the exact defect the by-name gate above
-  // exists to prevent, so `frame_anchor` without `reproducible` is refused
-  // rather than silently dropped. It is not merely inert: a caller who supplies
-  // an anchor has asked for the anchored protocol, and answering from the
-  // ordinary path would report a confident `reached: true` for a run that was
-  // never anchored to a frame at all.
-  if (args.frame_anchor !== undefined && args.reproducible !== true) {
-    return isErrorText(
-      `vice_run_until: "frame_anchor" has no meaning without "reproducible": true -- the frame anchor is armed by the ` +
-        `reproducible protocol and by nothing else, so on the ordinary path this argument would be accepted and IGNORED while ` +
-        `the answer still reported a stop. Refused rather than dropped. Pass reproducible: true to run the anchored protocol, ` +
-        `or remove "frame_anchor".`,
-    );
-  }
-
-  // ---------------------------------------------------------------------
-  // THE ONE CALL SITE of the reproducible-run protocol (`REPRO-02`).
-  //
-  // One procedure, one branch, no sub-flags. `reproducible` is a
-  // WHOLE-PROCEDURE switch: absent or false takes the pre-existing path below
-  // COMPLETELY unchanged and never reaches runReproducible(). There is no
-  // second tool and no partial mode, because a second route is a route a
-  // caller can forget it took.
-  //
-  // Do not restructure the path below to "share" steps with the procedure. The
-  // reproducible sequence's ordering IS its content -- arm both while halted,
-  // hard reset, exactly one resume -- and a shared helper is how a step gets
-  // lifted out of that ordering by a later edit that looks like a cleanup.
-  // ---------------------------------------------------------------------
-  if (args.reproducible === true) {
-    // D-14's refusal, in the `cycles`-refusal register: it refuses whenever the
-    // protocol is requested without its required sibling, and it explains WHY
-    // refusing beats degrading rather than just reporting that a field is
-    // missing.
-    //
-    // The required name is read from REPRODUCIBLE_RUN_REQUIRED_SIBLINGS, not
-    // repeated as a literal here -- a second copy is how the message and the
-    // gate drift apart after a rename.
-    if (frameAnchor === undefined) {
-      return isErrorText(
-        `vice_run_until: reproducible: true requires ${REPRODUCIBLE_RUN_REQUIRED_SIBLINGS.join(", ")} -- an address executed ` +
-          `once per frame, whose hit count IS the frame term of the stop identity (PC, hit_count, (LIN, CYC)). No default is ` +
-          `supplied because the once-per-frame site is RELEASE-SPECIFIC: a cracked release almost always takes over the IRQ, ` +
-          `so no KERNAL site -- $EA31 included -- is safe to guess, and an anchor that never executes would bound out as a ` +
-          `timeout while looking like a wedge. Refusing beats silently degrading to a two-term stop identity: (LIN, CYC) is a ` +
-          `WITHIN-FRAME position, not a monotonic clock, so without the frame term two stops one whole frame apart certify as ` +
-          `the same stop. Pass frame_anchor, or drop reproducible to run the ordinary unanchored path.`,
-      );
-    }
-    const { result } = await runReproducible(session, { address, frameAnchor, timeoutMs, timeoutClamped });
-    return result;
-  }
-
-  // Arm a temporary, stopping exec checkpoint at `address`. This is this
-  // codebase's first caller in this tree to pass the temporary flag as
-  // true: VICE itself auto-deletes a temporary checkpoint the instant it
-  // fires (mon_breakpoint.c:605-607), unlike every other caller in this
-  // tree (handleCheckpointAdd, stock-checkpoints.ts, always passes it
-  // false) -- this divergence is deliberate, not an oversight.
+  // Arm a temporary, stopping exec checkpoint at `address`. VICE deletes a
+  // temporary checkpoint itself the instant it fires.
+  let checkpointId = 0;
+  let outcome: WaitOutcome;
   const body = checkpointSetBody({
     start: address,
     end: address,
@@ -332,90 +319,67 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     memspace: 0x00,
   });
 
-  let response: ResolvedResponse;
+  const watcher = watchForStop(session.client, timeoutMs);
   try {
-    response = await session.client.send(CommandType.CheckpointSet, body);
-  } catch (err) {
-    return convertWireError("vice_run_until", err);
-  }
-  if (response.type !== "checkpoint_info") {
-    return isErrorText(`vice_run_until: unexpected reply type "${response.type}" from CHECKPOINT_SET`);
-  }
-  const checkpointId = response.checkpoint.id;
+    let response: ResolvedResponse;
+    try {
+      response = await session.client.send(CommandType.CheckpointSet, body);
+    } catch (err) {
+      return convertWireError("vice_run_until", err);
+    }
+    if (response.type !== "checkpoint_info") {
+      return isErrorText(`vice_run_until: unexpected reply type "${response.type}" from CHECKPOINT_SET`);
+    }
+    checkpointId = response.checkpoint.id;
+    watcher.setCheckpointId(checkpointId);
 
-  // No try/catch around the wait itself: a MachineRestartedError (or any
-  // other failure) surfacing from the resume/wait step propagates straight
-  // out of this handler, uncaught. Attempting a delete here would be wrong
-  // on every one of those failure causes -- when the machine has restarted,
-  // the instance and every checkpoint on it are already gone, so there is
-  // nothing to clean up, and the standard restarted wording is produced by
-  // the one existing convertHandshakeError()/convertWireError() seam
-  // (stock-handler.ts / runBinary()), not a second converter written
-  // here.
-  const outcome = await waitForCheckpointHit(session.client, checkpointId, timeoutMs);
+    // The one resume for this wait. It is skipped when the checkpoint has
+    // already stopped a machine that is still halted. A failure of the resume
+    // (a MachineRestartedError, say) propagates to runBinary()'s converter;
+    // on a restarted machine every checkpoint is gone, so nothing needs
+    // deleting.
+    if (!watcher.isHalted()) {
+      session.client.send(CommandType.Exit).catch(watcher.fail);
+    }
+    outcome = await watcher.outcome;
+  } finally {
+    watcher.dispose();
+  }
 
-  if (outcome.status === "hit") {
-    // Hit: VICE already deleted the temporary checkpoint itself
-    // (mon_breakpoint.c:605-607) -- issuing CHECKPOINT_DELETE here would
-    // target an object that no longer exists.
-    //
-    // machineHalted (07-14/WR-02): the checkpoint that just fired STOPPED
-    // the machine (it was armed with stop:true) -- on stock, any inbound
-    // byte halts the machine (CLAUDE.md, monitor_binary.c:281) and nothing
-    // in this handler resumes it. Emitted unconditionally, never only when
-    // true, so an absent field can never be read as "not halted" (the exact
-    // ambiguity WR-02 is about).
+  if (outcome.status === "stopped") {
+    const { cause } = outcome;
     const payload: Record<string, unknown> = {
       requested: "run_until",
-      reached: true,
+      reached: cause.kind === "target",
       address,
       checkpointId,
-      hitCount: outcome.hitCount,
       timeoutMs,
-      machineHalted: true,
-      machineHaltedNote:
-        "the checkpoint at the requested address stopped the emulated machine when it fired, and nothing here resumed it -- " +
-        "this is expected, not a wedge. Call vice_execution_run to resume.",
+      stoppedBy: cause,
+      machineHalted: !outcome.resumedAfterStop,
+      machineHaltedNote: outcome.resumedAfterStop ? RESUMED_AFTER_STOP_NOTE : HALTED_BY_STOP_NOTE,
     };
+    if (cause.pc !== null) payload.pc = cause.pc;
+    if (cause.kind === "target") {
+      // VICE already deleted the temporary checkpoint when it fired.
+      payload.hitCount = cause.hitCount;
+    } else {
+      // Something else stopped the machine first; this call's checkpoint is
+      // still armed.
+      const cleanup = await deleteTemporaryCheckpoint(session, checkpointId);
+      payload.cleanup = cleanup.cleanup;
+      if (cleanup.cleanupError !== undefined) payload.cleanupError = cleanup.cleanupError;
+    }
     if (timeoutClamped) payload.timeoutClamped = true;
     return stockAnswer(session.client, payload);
   }
 
-  // Timeout: the checkpoint never fired within timeoutMs. Delete it exactly
-  // once -- ObjectMissing (the hit landed between the deadline firing and
-  // this delete) is tolerated as benign; any other wire error is recorded on
-  // the answer, never thrown, so the caller still gets a bounded result.
-  let cleanup: "deleted" | "already_gone" | "delete_failed" = "deleted";
-  let cleanupError: string | undefined;
-  try {
-    await session.client.send(CommandType.CheckpointDelete, cpNumBody(checkpointId));
-  } catch (err) {
-    if (err instanceof StockProtocolError && err.errorCode === ErrorCode.ObjectMissing) {
-      cleanup = "already_gone";
-    } else {
-      cleanup = "delete_failed";
-      cleanupError = convertWireError("vice_run_until", err).content[0]!.text;
-    }
-  }
+  // Timeout: the machine did not stop within timeoutMs. Delete the
+  // checkpoint exactly once.
+  const { cleanup, cleanupError } = await deleteTemporaryCheckpoint(session, checkpointId);
 
-  // machineHalted (07-14/WR-02, corrected by 07-REVIEW.md WR-01).
-  //
-  // 07-14 hardcoded `true` here for all three cleanup branches, reasoning
-  // that the CHECKPOINT_DELETE above is itself an inbound byte and so halted
-  // the machine. That holds for "deleted" and "already_gone" -- both mean
-  // the delete travelled over the wire and was answered -- but NOT for
-  // "delete_failed", which is reachable precisely when the socket is already
-  // gone: waitForCheckpointHit()'s own `close` handler settles the wait as
-  // `{ status: "timeout" }`, the delete then rejects with
-  // StockConnectionClosedError, and a hardcoded `true` claims a halted
-  // machine over a dead connection while telling the caller to send
-  // vice_execution_run down it. stockAnswer() stamps runState into this same
-  // object, so that answer could read {"machineHalted": true, "runState":
-  // "running"} -- self-contradictory in one JSON body.
-  //
-  // So derive it, from stock-runstate.ts's runStateFor() seam, and keep the
-  // note honest per branch: a hand-passed state flag drifts from reality the
-  // moment a call site changes. Do not reintroduce a literal here.
+  // A delete that was answered halted the machine (on stock any inbound
+  // byte does). A failed delete -- typically a socket that is already gone
+  // -- establishes nothing, so fall back to the run-state projection.
   const deleteWasAnswered = cleanup !== "delete_failed";
   const machineHalted = deleteWasAnswered && session.client.connected ? true : runStateFor(session.client) === "stopped";
   const machineHaltedNote = machineHalted
@@ -445,13 +409,9 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
   if (cleanupError !== undefined) payload.cleanupError = cleanupError;
 
   if (cleanup === "already_gone") {
-    // WR-01: an ObjectMissing on this delete means the temporary checkpoint
-    // was already gone before the delete arrived -- VICE only does that the
-    // instant the checkpoint fires (mon_breakpoint.c:605-607), so the
-    // address almost certainly WAS reached, between the deadline expiring
-    // and this cleanup delete being sent. Never assert reached:false on
-    // this branch; resolve it from the program counter instead, or declare
-    // it unresolved -- never fabricate a PC value.
+    // ObjectMissing on the delete means the temporary checkpoint fired
+    // between the deadline and the delete. Resolve that race from the
+    // program counter, or declare it unresolved -- never guess.
     try {
       const pc = await readProgramCounter(session);
       if (pc === address) {
@@ -470,10 +430,6 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
           `0x${pc.toString(16)}, not the requested 0x${address.toString(16)} -- the race is resolved against a hit.`;
       }
     } catch (err) {
-      // The one path where this tool genuinely does not know: never emit
-      // `reached` and `reachedUnknown` together, and never emit
-      // `reached: false` here -- that would assert a falsehood exactly as
-      // confidently as the defect this plan closes.
       payload.reachedUnknown = true;
       payload.raceResolved = "unresolved";
       payload.pcReadError = convertWireError("vice_run_until", err).content[0]!.text;
@@ -482,9 +438,6 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
         "counter could not be read to confirm it -- read the program counter yourself (vice_registers_get) to settle it.";
     }
   } else {
-    // "deleted" and "delete_failed": the checkpoint provably still existed
-    // at cleanup time (or its state is reported separately via
-    // cleanupError), so no race resolution is warranted.
     payload.reached = false;
   }
 

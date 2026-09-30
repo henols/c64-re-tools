@@ -69,6 +69,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * accept either case. */
 const VICE_LABEL_LINE_RE = /^al\s+C:([0-9a-fA-F]{1,4})\s+\.(\S+)/;
 
+/** An ACME label name: ASCII letters, digits and underscore, not starting
+ * with a digit. */
+const ACME_IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 /** T-05-02-03: three independent resource ceilings, each refusing with both
  * the observed value and the limit named. `MAX_LABEL_FILE_BYTES` is exported
  * (11-08, Rule A20) so a caller outside this module can apply the SAME
@@ -115,8 +119,9 @@ function isContained(candidate: string, root: string): boolean {
   return candidate === root || candidate.startsWith(root + sep);
 }
 
-/** Resolves `pathArg` against `repoRoot()`, refusing anything that escapes
- * the workspace either directly or via a symlink, and returns the ONE
+/** Resolves `pathArg` against the project root (repoRoot() walking up from
+ * the current directory), refusing anything that escapes the workspace
+ * either directly or via a symlink, and returns the ONE
  * canonical path that is checked, opened and reported. The rule (WR-08): the
  * path that is containment-checked is the path that is opened and the path
  * that is reported -- returning the pre-`realpathSync` string made the
@@ -127,7 +132,7 @@ function resolveLabelFilePath(pathArg: unknown): string {
     throw new StockSymbolsError(`path must be a non-empty string, got ${typeof pathArg === "string" ? "an empty/whitespace-only string" : typeof pathArg}`);
   }
 
-  const root = repoRoot();
+  const root = repoRoot({ from: process.cwd() });
   const resolved = resolve(root, pathArg.trim());
 
   if (!isContained(resolved, root)) {
@@ -214,8 +219,8 @@ export function parseViceLabelFile(text: string): {
   let skippedLines = 0;
   let duplicateNames = 0;
 
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]!.trim();
     if (line === "") {
       skippedLines += 1;
       continue;
@@ -234,6 +239,13 @@ export function parseViceLabelFile(text: string): {
       continue;
     }
     const name = match[2]!;
+    // Names are substituted into ACME listings, so a name ACME could not
+    // parse as a label is refused rather than carried into them.
+    if (!ACME_IDENTIFIER_RE.test(name)) {
+      throw new StockSymbolsError(
+        `line ${lineIndex + 1}: label name "${name}" is not a valid ACME identifier (ASCII letters, digits and underscore, not starting with a digit) -- fix or remove the line and load again`,
+      );
+    }
     if (byName.has(name)) {
       duplicateNames += 1;
     }

@@ -96,6 +96,20 @@ test(
 );
 
 test(
+  "vice_symbols_load: a label name ACME could not parse is refused, naming the line and the name, and the previous table stays",
+  withTempWorkspace(async (dir) => {
+    writeFileSync(join(dir, "good.lbl"), "al C:0810 .start\n");
+    assert.equal((await handleSymbolsLoad({ path: "good.lbl" }, DEPS)).isError, false);
+    writeFileSync(join(dir, "bad.lbl"), "al C:0810 .fine\nal C:0820 .9lives\n");
+    const result = await handleSymbolsLoad({ path: "bad.lbl" }, DEPS);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /^vice_symbols_load: line 2: label name "9lives"/);
+    const lookup = await handleSymbolsLookup({ name: "start" }, DEPS);
+    assert.equal(lookup.isError, false);
+  }),
+);
+
+test(
   "vice_symbols_lookup: uppercase hex parses -- 0xffd2 resolves to chrout after a load",
   withTempWorkspace(async (dir) => {
     writeFileSync(join(dir, "labels.lbl"), FIXTURE);

@@ -18,7 +18,7 @@ import {
   registerTraceCheckpoint,
   autoDisableReportFor,
   conditionTextFor,
-  forgetConditionsForOtherTargets,
+  syncCheckpointStateForSession,
   _conditionRegistryTargetsForTest,
   resetCheckpointStateForTest,
   TRACE_HITS_PER_SECOND_LIMIT,
@@ -189,6 +189,27 @@ test("watch add (WR-01): a STRING stop is refused outright, never coerced, with 
   assertErr(result);
   assert.match(result.content[0]!.text, /stop must be a boolean, got string/);
   assert.equal(calls.length, 0, "a refused argument must never reach the wire");
+});
+
+test("checkpoint add: load alone breaks on load only; no operation flag at all breaks on exec", async () => {
+  const { client, calls } = makeFakeClient(async () => checkpointInfoResponse(fakeCheckpoint()));
+  const session = makeSession(client);
+  await handleCheckpointAdd({ start: "$c000", load: true }, session, FAKE_DEPS);
+  await handleCheckpointAdd({ start: "$c000" }, session, FAKE_DEPS);
+  assert.equal(calls[0]![1][6], CheckpointOperation.Load);
+  assert.equal(calls[1]![1][6], CheckpointOperation.Exec);
+});
+
+test("checkpoint add: every operation flag false, or a non-boolean flag, is refused with zero sends", async () => {
+  const { client, calls } = makeFakeClient(async () => checkpointInfoResponse(fakeCheckpoint()));
+  const session = makeSession(client);
+  const none = await handleCheckpointAdd({ start: "$c000", exec: false }, session, FAKE_DEPS);
+  assertErr(none);
+  assert.match(none.content[0]!.text, /watches nothing/);
+  const text = await handleCheckpointAdd({ start: "$c000", exec: "true" }, session, FAKE_DEPS);
+  assertErr(text);
+  assert.match(text.content[0]!.text, /exec must be a boolean, got string/);
+  assert.equal(calls.length, 0);
 });
 
 test("checkpoint add: end below start refuses with zero sends", async () => {
@@ -368,7 +389,11 @@ test("set condition: both ConditionSet and CheckpointDelete fail -- one refusal 
 // entry per distinct instance the broker ever hands it, forever.
 // ---------------------------------------------------------------------------
 
-test("WR-03: forgetConditionsForOtherTargets drops every other target's conditions and keeps the active target's", async () => {
+function sessionWithEpoch(client: ViceMonitorClient, targetId: string, baselineEpoch: number | null): StockConnectSession {
+  return { client, targetId, baselineEpoch } as unknown as StockConnectSession;
+}
+
+test("syncCheckpointStateForSession drops every other target's conditions and keeps the active target's", async () => {
   const { client: clientA } = makeFakeClient(async () => ({ type: "condition_set" as const }));
   assertOk(await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "A == $42" }, makeSession(clientA, "target-a"), FAKE_DEPS));
   const { client: clientB } = makeFakeClient(async () => ({ type: "condition_set" as const }));
@@ -376,20 +401,48 @@ test("WR-03: forgetConditionsForOtherTargets drops every other target's conditio
   const { client: clientC } = makeFakeClient(async () => ({ type: "condition_set" as const }));
   assertOk(await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "Y == $02" }, makeSession(clientC, "target-c"), FAKE_DEPS));
 
-  assert.deepEqual(_conditionRegistryTargetsForTest(), ["target-a", "target-b", "target-c"], "setup: three distinct targets have recorded conditions");
+  assert.deepEqual(_conditionRegistryTargetsForTest(), ["target-a", "target-b", "target-c"]);
 
-  forgetConditionsForOtherTargets("target-b");
+  syncCheckpointStateForSession(sessionWithEpoch(clientB, "target-b", 1));
 
-  assert.deepEqual(_conditionRegistryTargetsForTest(), ["target-b"], "WR-03 REGRESSION: the registry still holds abandoned targets");
-  assert.equal(conditionTextFor(makeSession(clientB, "target-b"), 1), "(X == $01)", "the ACTIVE target's condition text must survive eviction");
-  assert.equal(conditionTextFor(makeSession(clientA, "target-a"), 1), undefined, "an abandoned target's condition text must be gone");
+  assert.deepEqual(_conditionRegistryTargetsForTest(), ["target-b"]);
+  assert.equal(conditionTextFor(makeSession(clientB, "target-b"), 1), "(X == $01)");
+  assert.equal(conditionTextFor(makeSession(clientA, "target-a"), 1), undefined);
 });
 
-test("WR-03: forgetConditionsForOtherTargets is idempotent and a no-op on an empty registry", () => {
-  forgetConditionsForOtherTargets("target-never-seen");
+test("syncCheckpointStateForSession is idempotent and a no-op on an empty registry", () => {
+  const { client } = makeFakeClient(async () => ({ type: "ok" }));
+  syncCheckpointStateForSession(sessionWithEpoch(client, "target-never-seen", 1));
+  syncCheckpointStateForSession(sessionWithEpoch(client, "target-never-seen", 1));
   assert.deepEqual(_conditionRegistryTargetsForTest(), []);
-  forgetConditionsForOtherTargets("target-never-seen");
-  assert.deepEqual(_conditionRegistryTargetsForTest(), []);
+});
+
+test("a machine restart (new epoch, same target) forgets the recorded conditions; the same epoch keeps them", async () => {
+  const { client } = makeFakeClient(async () => ({ type: "condition_set" as const }));
+  const session = sessionWithEpoch(client, "target-r", 4);
+  syncCheckpointStateForSession(session);
+  assertOk(await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "A == $42" }, session, FAKE_DEPS));
+
+  syncCheckpointStateForSession(sessionWithEpoch(client, "target-r", 4));
+  assert.equal(conditionTextFor(session, 1), "(A == $42)", "same epoch: the checkpoint is still armed");
+
+  syncCheckpointStateForSession(sessionWithEpoch(client, "target-r", 5));
+  assert.equal(conditionTextFor(session, 1), undefined, "new epoch: the restart took the checkpoint with it");
+});
+
+test("trace guard: after a reconnect the new client still auto-disables a hot stop:false checkpoint", async () => {
+  const first = makeFakeClient(async () => ({ type: "checkpoint_toggle" as const }));
+  const clock = makeClock();
+  registerTraceCheckpoint(sessionWithEpoch(first.client, "target-t", 2), 42, { now: clock.now });
+
+  // Reconnect to the same machine: a new client, the same target id and epoch.
+  const second = makeFakeClient(async () => ({ type: "checkpoint_toggle" as const }));
+  syncCheckpointStateForSession(sessionWithEpoch(second.client, "target-t", 2));
+
+  for (let i = 1; i <= 21; i++) emitHit(second.emitter, 42, i);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(second.calls.filter(([ct]) => ct === 0x15).length, 1, "the toggle goes out on the reconnected client");
+  assert.equal(first.calls.filter(([ct]) => ct === 0x15).length, 0);
 });
 
 // ---------------------------------------------------------------------------

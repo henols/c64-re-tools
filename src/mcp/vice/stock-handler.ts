@@ -66,6 +66,12 @@ export type DerivedPureHandler = (args: Record<string, unknown>, deps: StockSess
 // an agent must never mistake for a wedged emulator.
 // ---------------------------------------------------------------------------
 
+/** `message` with the `toolName: ` prefix every refusal carries; a message
+ * that already starts with it is returned unchanged. */
+export function prefixedWithTool(toolName: string, message: string): string {
+  return message.startsWith(`${toolName}:`) ? message : `${toolName}: ${message}`;
+}
+
 export function convertHandshakeError(toolName: string, err: unknown): StockErrorResult {
   if (err instanceof MonitorOwnershipError) {
     return isErrorText(

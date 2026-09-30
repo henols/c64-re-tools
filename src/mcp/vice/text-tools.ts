@@ -78,7 +78,7 @@ import {
 } from "./text-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { ChannelLockTimeoutError } from "./channel-lock.ts";
-import { isErrorText, derivedAnswer, convertHandshakeError, convertWireError, type StockToolResult } from "./stock-handler.ts";
+import { isErrorText, derivedAnswer, convertHandshakeError, convertWireError, prefixedWithTool, type StockToolResult } from "./stock-handler.ts";
 import { parseAccessMap, accessMapRanges, type AccessMap, type AccessMapRangesOptions } from "./textmon-memmap.mts";
 import { parseCpuHistory } from "./textmon-cpuhistory.ts";
 import { parseBacktrace } from "./textmon-backtrace.ts";
@@ -128,7 +128,7 @@ async function withTextTool(
 ): Promise<StockToolResult> {
   const leaseOutcome = await deps.ensureLease();
   if (!leaseOutcome.ok) {
-    return isErrorText(leaseOutcome.message);
+    return isErrorText(prefixedWithTool(toolName, leaseOutcome.message));
   }
   const lease = leaseOutcome.lease;
   if (lease === null) {
@@ -267,15 +267,6 @@ export async function handleWarpSet(args: Record<string, unknown>, deps: StockSe
   });
 }
 
-/** True iff `value` is a representable, non-negative whole number bounded
- * to the C64's 16-bit address space -- the shared narrowing for
- * `startAddress`/`endAddress`. Declared locally, per this module tree's
- * own "repeated per file, never centrally imported" convention
- * (disasm-decoder.mts). */
-function isValidAddressArg(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 0xffff;
-}
-
 /** True iff `value` is a representable integer 1 through 4096 -- the
  * `maxRanges` narrowing. */
 function isValidMaxRangesArg(value: unknown): value is number {
@@ -316,30 +307,20 @@ function executeCounts(map: AccessMap): { io: number; rom: number; ram: number }
  * line/lineNumber -- never a partial or best-effort access map.
  */
 export async function handleMemmapShow(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
-  const { startAddress, endAddress, maxRanges } = args;
+  const { startAddress: rawStart, endAddress: rawEnd, maxRanges } = args;
 
-  if (startAddress !== undefined && !isValidAddressArg(startAddress)) {
-    return isErrorText(
-      `vice_memmap_show: "startAddress" must be an integer 0 through 65535 (got ${JSON.stringify(startAddress)}) -- ` +
-        `refusing before any text-monitor byte is written`,
-    );
+  let startAddress: number | undefined;
+  let endAddress: number | undefined;
+  try {
+    if (rawStart !== undefined) startAddress = parseAddress(rawStart, { what: "startAddress" });
+    if (rawEnd !== undefined) endAddress = parseAddress(rawEnd, { what: "endAddress" });
+  } catch (err) {
+    return isErrorText(`vice_memmap_show: ${err instanceof Error ? err.message : String(err)} -- refusing before any text-monitor byte is written`);
   }
-  if (endAddress !== undefined && !isValidAddressArg(endAddress)) {
+  if (startAddress !== undefined && endAddress !== undefined && startAddress > endAddress) {
     return isErrorText(
-      `vice_memmap_show: "endAddress" must be an integer 0 through 65535 (got ${JSON.stringify(endAddress)}) -- ` +
-        `refusing before any text-monitor byte is written`,
-    );
-  }
-  if (
-    startAddress !== undefined &&
-    endAddress !== undefined &&
-    isValidAddressArg(startAddress) &&
-    isValidAddressArg(endAddress) &&
-    startAddress > endAddress
-  ) {
-    return isErrorText(
-      `vice_memmap_show: "startAddress" (${JSON.stringify(startAddress)}) must not be greater than "endAddress" ` +
-        `(${JSON.stringify(endAddress)}) -- refusing before any text-monitor byte is written`,
+      `vice_memmap_show: "startAddress" (${JSON.stringify(rawStart)}) must not be greater than "endAddress" ` +
+        `(${JSON.stringify(rawEnd)}) -- refusing before any text-monitor byte is written`,
     );
   }
   if (maxRanges !== undefined && !isValidMaxRangesArg(maxRanges)) {
@@ -373,8 +354,8 @@ export async function handleMemmapShow(args: Record<string, unknown>, deps: Stoc
     }
 
     const rangesOpts: AccessMapRangesOptions = {};
-    if (isValidAddressArg(startAddress)) rangesOpts.startAddress = startAddress;
-    if (isValidAddressArg(endAddress)) rangesOpts.endAddress = endAddress;
+    if (startAddress !== undefined) rangesOpts.startAddress = startAddress;
+    if (endAddress !== undefined) rangesOpts.endAddress = endAddress;
     if (isValidMaxRangesArg(maxRanges)) rangesOpts.maxRanges = maxRanges;
     const projection = accessMapRanges(parsed.value, rangesOpts);
 
@@ -772,7 +753,13 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
         `covering ONE address) -- refusing before any text-monitor byte is written`,
     );
   }
-  const built = buildTextCommand("io", address);
+  let ioAddress: number;
+  try {
+    ioAddress = parseAddress(address, { what: "address" });
+  } catch (err) {
+    return isErrorText(`vice_io_registers: ${err instanceof Error ? err.message : String(err)} -- refusing before any text-monitor byte is written`);
+  }
+  const built = buildTextCommand("io", ioAddress);
   if (!built.ok) {
     return isErrorText(`vice_io_registers: ${built.message} -- refusing before any text-monitor byte is written`);
   }

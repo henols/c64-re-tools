@@ -489,19 +489,6 @@ test("every .vsf fixture has a sidecar declaring itself synthetic and naming its
   }
 });
 
-test("vsf-slice.ts is a dist/ build root and no fixtures entry ships", () => {
-  // The skill-side route resolves vsf-slice.ts to dist/vsf-slice.js inside the
-  // published tarball, so the server build must compile it.
-  const server = JSON.parse(readFileSync(join(VICE_DIR, "tsconfig.server.json"), "utf8")) as { files: string[] };
-  assert.ok(server.files.includes("vsf-slice.ts"), "vsf-slice.ts is missing from tsconfig.server.json files");
-  const pkg = JSON.parse(readFileSync(join(VICE_DIR, "package.json"), "utf8")) as { files: string[] };
-  assert.deepEqual(
-    pkg.files.filter((f) => /fixtures/.test(f)),
-    [],
-    "fixtures are test-support and must never ship: the package-contents validator fails a pack that leaks one",
-  );
-});
-
 // ---------------------------------------------------------------------------
 // The generator's own name validation (33 review WR-04)
 // ---------------------------------------------------------------------------

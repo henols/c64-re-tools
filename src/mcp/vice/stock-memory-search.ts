@@ -41,7 +41,7 @@
 //     permits and vice_memory_read's own `sideEffects` already precedents),
 //     resolve it through stock-memory.ts's ONE resolveBank() seam, and REPORT
 //     the view they actually read on the answer.
-import { CommandType, memGetBody } from "./stock-protocol.ts";
+import { readMemory } from "./stock-protocol.ts";
 import { parseAddress, parseByteCount } from "./stock-address.ts";
 import { resolveBank } from "./stock-memory.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler, type StockErrorResult } from "./stock-handler.ts";
@@ -191,29 +191,20 @@ export const handleMemorySearch: StockSessionHandler = async (args, session, _de
 
   // --------------------------------------------------------- bounded memory read (Phase 3 D-05: halts, never resumes)
 
-  const body = memGetBody({ sidefx: false, start, end, memspace: 0x00, bank: bankResolution.id });
-
-  let response;
+  let bytes: Uint8Array;
   try {
-    response = await session.client.send(CommandType.MemoryGet, body);
+    bytes = await readMemory(session.client, { sidefx: false, start, end, memspace: 0x00, bank: bankResolution.id });
   } catch (err) {
     return convertWireError("vice_memory_search", err);
   }
-
-  if (response.type !== "memory_get") {
+  if (bytes.length !== searched) {
     return isErrorText(
-      `vice_memory_search: the binary monitor replied with an unexpected response type ("${response.type}"), expected "memory_get"`,
-    );
-  }
-  if (response.bytes.length !== searched) {
-    return isErrorText(
-      `vice_memory_search: expected ${searched} byte(s), got ${response.bytes.length} -- a short read is a wrong answer, not a partial success`,
+      `vice_memory_search: expected ${searched} byte(s), got ${bytes.length} -- a short read is a wrong answer, not a partial success`,
     );
   }
 
   // --------------------------------------------------------- client-side scan (overlapping matches, bounded)
 
-  const bytes = response.bytes;
   const matches: number[] = [];
   let truncated = false;
   for (let offset = 0; offset <= bytes.length - pattern.length; offset += 1) {
@@ -232,11 +223,12 @@ export const handleMemorySearch: StockSessionHandler = async (args, session, _de
       }
     }
     if (isMatch) {
-      matches.push(start + offset);
+      // `truncated` means a match exists past the ones returned.
       if (matches.length === maxResults) {
         truncated = true;
         break;
       }
+      matches.push(start + offset);
     }
   }
 
@@ -364,57 +356,41 @@ export const handleMemoryCompare: StockSessionHandler = async (args, session, _d
   // two reads are consistent with each other for a stopped machine; neither
   // issues a resume between them.
 
-  const body1 = memGetBody({ sidefx: false, start: range1Start, end: range1End, memspace: 0x00, bank: bankResolution.id });
-  let response1;
-  try {
-    response1 = await session.client.send(CommandType.MemoryGet, body1);
-  } catch (err) {
-    return convertWireError("vice_memory_compare", err);
-  }
-  if (response1.type !== "memory_get") {
-    return isErrorText(
-      `vice_memory_compare: the binary monitor replied with an unexpected response type ("${response1.type}") for range 1, expected "memory_get"`,
-    );
-  }
-  if (response1.bytes.length !== length) {
-    return isErrorText(
-      `vice_memory_compare: expected ${length} byte(s) for range 1, got ${response1.bytes.length} -- a short read is a wrong answer, not a partial success`,
-    );
-  }
-
-  const body2 = memGetBody({ sidefx: false, start: range2Start, end: range2End, memspace: 0x00, bank: bankResolution.id });
-  let response2;
-  try {
-    response2 = await session.client.send(CommandType.MemoryGet, body2);
-  } catch (err) {
-    return convertWireError("vice_memory_compare", err);
-  }
-  if (response2.type !== "memory_get") {
-    return isErrorText(
-      `vice_memory_compare: the binary monitor replied with an unexpected response type ("${response2.type}") for range 2, expected "memory_get"`,
-    );
-  }
-  if (response2.bytes.length !== length) {
-    return isErrorText(
-      `vice_memory_compare: expected ${length} byte(s) for range 2, got ${response2.bytes.length} -- a short read is a wrong answer, not a partial success`,
-    );
+  const ranges = [
+    { label: "range 1", start: range1Start, end: range1End },
+    { label: "range 2", start: range2Start, end: range2End },
+  ];
+  const read: Uint8Array[] = [];
+  for (const range of ranges) {
+    let bytes: Uint8Array;
+    try {
+      bytes = await readMemory(session.client, { sidefx: false, start: range.start, end: range.end, memspace: 0x00, bank: bankResolution.id });
+    } catch (err) {
+      return convertWireError("vice_memory_compare", err);
+    }
+    if (bytes.length !== length) {
+      return isErrorText(
+        `vice_memory_compare: expected ${length} byte(s) for ${range.label}, got ${bytes.length} -- a short read is a wrong answer, not a partial success`,
+      );
+    }
+    read.push(bytes);
   }
 
   // --------------------------------------------------------- diff, bounded at max_differences
 
-  const bytes1 = response1.bytes;
-  const bytes2 = response2.bytes;
+  const [bytes1, bytes2] = read as [Uint8Array, Uint8Array];
   const differences: { offset: number; address1: number; address2: number; value1: number; value2: number }[] = [];
   let truncated = false;
   for (let offset = 0; offset < length; offset += 1) {
     const value1 = bytes1[offset]!;
     const value2 = bytes2[offset]!;
     if (value1 !== value2) {
-      differences.push({ offset, address1: range1Start + offset, address2: range2Start + offset, value1, value2 });
+      // `truncated` means a difference exists past the ones returned.
       if (differences.length === maxDifferences) {
         truncated = true;
         break;
       }
+      differences.push({ offset, address1: range1Start + offset, address2: range2Start + offset, value1, value2 });
     }
   }
 

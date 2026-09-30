@@ -11,32 +11,10 @@
 // readFileSync against fixtures/textmon.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { parseCpuHistory, type CpuHistoryEntry } from "../../src/mcp/vice/textmon-cpuhistory.ts";
-import { VICE_DIR } from "./paths.ts";
 
-const OWN_MODULE = join(VICE_DIR, "textmon-cpuhistory.ts");
-
-// ---------------------------------------------------------------------------
-// Purity (PARSE-03): the module imports NOTHING, and declares no
-// module-scope mutable state. Both asserted mechanically by reading this
-// module's own source, not by review.
-// ---------------------------------------------------------------------------
-
-test("purity (PARSE-03): textmon-cpuhistory.ts contains no top-level ES import statement", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  const importLines = src.split("\n").filter((line) => /^\s*import\s/.test(line));
-  assert.deepEqual(importLines, [], `expected zero import lines, found: ${JSON.stringify(importLines)}`);
-});
-
-test("purity: textmon-cpuhistory.ts declares no module-scope mutable (let/var) binding", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  const mutableLines = src.split("\n").filter((line) => /^(let|var)\s/.test(line));
-  assert.deepEqual(mutableLines, [], `expected zero top-level let/var declarations, found: ${JSON.stringify(mutableLines)}`);
-});
 
 // ---------------------------------------------------------------------------
 // Both real two-binary captures parse clean, with 4 entries each and

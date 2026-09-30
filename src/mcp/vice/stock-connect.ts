@@ -43,6 +43,7 @@ import type { Socket } from "node:net";
 import {
   ViceMonitorClient,
   CommandType,
+  cpuHistoryGetBody,
   ErrorCode,
   StockProtocolError,
   StockFramingError,
@@ -205,9 +206,7 @@ interface CpuHistoryProbe {
 
 async function probeCpuHistory(client: ViceMonitorClient): Promise<CpuHistoryProbe> {
   const count = clampCpuHistoryCount(1);
-  const body = Buffer.alloc(5);
-  body[0] = 0x00; // memspace: main
-  body.writeUInt32LE(count, 1);
+  const body = cpuHistoryGetBody({ count, memspace: 0x00 });
   try {
     await client.send(CommandType.CpuHistoryGet, body);
     return { capability: "available", source: "wire" };

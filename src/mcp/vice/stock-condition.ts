@@ -104,10 +104,12 @@ const REGISTER_NAMES: readonly string[] = ["A", "X", "Y", "SP", "PC", "FL"];
 const PSEUDO_NAMES: readonly string[] = ["RL", "CY"];
 const CONDITION_OPS: readonly string[] = ["==", "!=", "<", ">", "<=", ">="];
 
-/** 312 PAL raster lines, 0-indexed -- the largest legal RL comparison value. */
-const RASTER_LINE_MAX = 0x138;
-/** 63 cycles per raster line, 0-indexed -- the largest legal CY comparison value. */
-const CYCLE_MAX = 0x3f;
+/** The most raster lines of any video standard is 312 (PAL), numbered 0..311:
+ * the largest legal RL comparison value. */
+const RASTER_LINE_MAX = 0x137;
+/** The most cycles per line of any video standard is 65 (NTSC), numbered
+ * 0..64: the largest legal CY comparison value. */
+const CYCLE_MAX = 0x40;
 
 /** D-09/T-3-04: a pathological nested object or an absurd chain of
  * comparisons must not be able to blow the 255-byte wire limit or the
@@ -145,15 +147,15 @@ function formatLiteral(value: number): string {
 function checkPseudoLiteralRange(pseudo: ConditionPseudo, literalValue: number): void {
   if (pseudo === "RL" && literalValue > RASTER_LINE_MAX) {
     throw new StockConditionError(
-      `RL (raster line) literal ${formatLiteral(literalValue)} exceeds the maximum 0x138 (312 PAL raster ` +
-        `lines, 0-indexed) -- VICE's condition lexer reads bare integers as hex by default (monitor.c:1597), ` +
+      `RL (raster line) literal ${formatLiteral(literalValue)} exceeds the maximum 0x137 (the 312 PAL raster ` +
+        `lines are numbered 0-311) -- VICE's condition lexer reads bare integers as hex by default (monitor.c:1597), ` +
         `so double-check the intended raster line before widening this condition`,
     );
   }
   if (pseudo === "CY" && literalValue > CYCLE_MAX) {
     throw new StockConditionError(
-      `CY (cycle within line) literal ${formatLiteral(literalValue)} exceeds the maximum 0x3f (63 cycles per ` +
-        `line, 0-indexed) -- VICE's condition lexer reads bare integers as hex by default (monitor.c:1597), ` +
+      `CY (cycle within line) literal ${formatLiteral(literalValue)} exceeds the maximum 0x40 (NTSC has 65 cycles per ` +
+        `line, numbered 0-64) -- VICE's condition lexer reads bare integers as hex by default (monitor.c:1597), ` +
         `so double-check the intended cycle before widening this condition`,
     );
   }

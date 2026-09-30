@@ -1,21 +1,13 @@
-// capture-predicate.mts -- the ONE authoritative place in this repo holding the
-// RUN-EQUIVALENCE predicate for two flat 64K captures: the enumerated
-// transient allow-list and its committed size cap, the `$0000`/`$0001`
-// 6510-port normalisation, the byte-by-byte comparison that decides
-// equivalence, and the argv identity digest a reproducible run is keyed by.
+// capture-predicate.mts -- the reference RUN-EQUIVALENCE predicate for two
+// flat 64K captures: the enumerated transient allow-list and its size cap,
+// the `$0000`/`$0001` 6510-port normalisation, and the byte-by-byte
+// comparison that decides equivalence.
 //
-// CONSUMER STATUS: NOT YET WIRED INTO A SHIPPED TOOL. No SHIPPED MCP tool and
-// no production caller reaches this module. So read "the ONE authoritative
-// place" above as A DESIGN CONSTRAINT ON FUTURE CALLERS -- when the predicate
-// is called, it is called here -- rather than as a claim about the production
-// surface.
-//
-// This is deliberate and is not a defect to be closed by inventing a caller:
-// phase 33 built the capture substrate ahead of phases 34-38 consuming it. The
-// status is recorded HERE, in the header a later reader will actually reach,
-// because "authoritative", "in use" and "validated" are easy to conflate and
-// the difference decides whether an edit here is safe. When a production
-// consumer lands, this paragraph is what should be updated or removed.
+// CONSUMER STATUS: test-side only. No shipped MCP tool, no production module
+// and no skill script imports it. It is the reference predicate that
+// test/skills/c64-ram-capture/derive-transients.test.ts checks
+// skills/c64-ram-capture/scripts/derive-transients.ts against, and
+// capture-predicate.test.ts proves it can fail.
 //
 // This module performs NO filesystem and NO network I/O: every function takes
 // bytes, an already-parsed JSON value, or a string array, and returns values.
@@ -72,18 +64,10 @@
 //     frame-exact, which is a fact the gate must hear rather than a threshold
 //     to move. Raising the cap after seeing the number converts a measurement
 //     into an excuse.
-//   - Never spend two allow-list slots on `$0000`/`$0001`. They are
-//     normalised, in code, by `normalisePorts()`, and this is the ONE
-//     normalisation site (`D-24`). Do not re-derive it in a caller, and do not
-//     fold it into the slicer -- the slicer returns the port bytes precisely so
-//     this module can apply them exactly once.
+//   - Never spend two allow-list slots on `$0000`/`$0001`. `normalisePorts()`
+//     normalises them in code; the caller passes the port bytes it read.
 //   - Never give any function here a filesystem PATH parameter, and never
 //     import either of this repo's host/container path-translation seams.
-//   - Never import `stop-oracle.ts` from here, on any route, static or
-//     dynamic. The captured 64K is the DEPENDENT VARIABLE the stop-identity
-//     oracle certifies; a predicate that could reach the oracle -- or an oracle
-//     that could reach the predicate -- would let a capture participate in
-//     certifying its own stop (`CAP-03`).
 
 /** A flat capture is exactly this long, always. Named rather than inlined
  * because every refusal below quotes it back to the caller. */
@@ -346,7 +330,7 @@ export function parseAllowList(json: unknown): TransientAllowList {
 }
 
 /** Substitute the CPU-visible 6510 port read-back values over RAM `$0000` and
- * `$0001`, returning a COPY. This is the ONE normalisation site (`D-24`).
+ * `$0001`, returning a COPY.
  *
  * NOTE THE ADDRESS ORDER, WHICH IS THE HALF THAT GETS WRITTEN BACKWARDS:
  * `$0000` is the DIRECTION register and takes `dirRead`; `$0001` is DATA and

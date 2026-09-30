@@ -20,13 +20,14 @@ import {
   isErrorText,
   convertHandshakeError,
   convertWireError,
+  prefixedWithTool,
   type StockToolResult,
   type StockSessionHandler,
   type DerivedPureHandler,
 } from "./stock-handler.ts";
 import { attachRunStateTracker } from "./stock-runstate.ts";
 import { acquireChannelLock, ChannelLockTimeoutError } from "./channel-lock.ts";
-import { forgetConditionsForOtherTargets } from "./stock-checkpoints.ts";
+import { syncCheckpointStateForSession } from "./stock-checkpoints.ts";
 import { forgetTimingForOtherTargets } from "./stock-timing.ts";
 
 /**
@@ -173,7 +174,24 @@ export function clearHeldStockSession(): void {
  * the never-throw conversion into a well-formed tool result is runBinary()'s
  * job, not this function's.
  */
-export async function ensureStockSession(deps: StockSessionDeps): Promise<EnsureStockSessionOutcome> {
+export function ensureStockSession(deps: StockSessionDeps): Promise<EnsureStockSessionOutcome> {
+  // Two calls that overlap while no session is held share one establishment
+  // instead of each acquiring and connecting. The entry is cleared when the
+  // attempt settles, so a failure is retried by the next call.
+  if (ensureInFlight === null) {
+    const pending = establishStockSession(deps);
+    ensureInFlight = pending;
+    const clear = (): void => {
+      if (ensureInFlight === pending) ensureInFlight = null;
+    };
+    pending.then(clear, clear);
+  }
+  return ensureInFlight;
+}
+
+let ensureInFlight: Promise<EnsureStockSessionOutcome> | null = null;
+
+async function establishStockSession(deps: StockSessionDeps): Promise<EnsureStockSessionOutcome> {
   const connectFn = deps.connect ?? stockConnect;
   const reconnectFn = deps.reconnect ?? stockReconnect;
 
@@ -210,6 +228,7 @@ export async function ensureStockSession(deps: StockSessionDeps): Promise<Ensure
       // second time on a client already tracked elsewhere and fire its side
       // effect (a CHECKPOINT_TOGGLE) more than once per real event.
       attachRunStateTracker(heldSession.client);
+      syncCheckpointStateForSession(heldSession);
       return { ok: true, session: heldSession };
     } catch (err) {
       clearHeldStockSession();
@@ -280,7 +299,7 @@ export async function ensureStockSession(deps: StockSessionDeps): Promise<Ensure
   // stockReconnect() and its stale targetId was never handed to a teardown at
   // all. The reuse and reconnect branches return before this line, so a
   // reconnect to the SAME machine never evicts anything.
-  forgetConditionsForOtherTargets(session.targetId);
+  syncCheckpointStateForSession(session);
   // WR-14 (07-REVIEW.md): stock-timing.ts's two targetId-keyed caches (the
   // video-standard cache and the stopwatch baseline store) are evicted from the
   // SAME line, for the same reasons, so the registries can never drift apart on
@@ -353,11 +372,8 @@ export function grantEpochReader(control: Pick<BrokerControlSession, "status">, 
  *
  * This is what makes the lock's critical section span a whole LOGICAL
  * operation, not a single wire command: `vice_run_until`'s wait
- * (stock-run-until.ts's `waitForCheckpointHit()`) and the reproducible-run
- * path's wait (stock-reproducible-run.ts's `waitForReproducibleStop()`,
- * reached through `runReproducible()`) both run INSIDE the wrapped `fn`, so
- * the lock stays held across resume -> wait -> observe without either wait
- * path being re-cut.
+ * (stock-run-until.ts's `waitForStop()`) runs inside the wrapped `fn`, so
+ * the lock stays held across resume -> wait -> observe.
  *
  * FORBIDDEN ALTERNATIVE, named here because it is the obvious-looking wrong
  * design: acquiring and releasing this lock around each individual wire
@@ -445,7 +461,7 @@ export async function runBinary(
     return convertHandshakeError(toolName, err);
   }
   if (!outcome.ok) {
-    return isErrorText(outcome.message);
+    return isErrorText(prefixedWithTool(toolName, outcome.message));
   }
   const session = outcome.session;
   return withChannelLockHeld(toolName, deps.channelLockTimeoutMs, session, async () => {

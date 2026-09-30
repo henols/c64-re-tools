@@ -1,6 +1,5 @@
-// capture-predicate.test.ts -- `CAP-02`'s and `REPRO-03`'s behavioural half:
-// the run-equivalence predicate, the `$0000`/`$0001` port normalisation, the
-// argv identity digest, and the three-term stop-identity oracle.
+// capture-predicate.test.ts -- the run-equivalence predicate and the
+// `$0000`/`$0001` port normalisation in test/vice/capture-predicate.mts.
 //
 // THE ONE PROPERTY THIS FILE EXISTS TO PROVE: that the predicate can FAIL. A
 // predicate that cannot fail passes every control put to it, and a fail-ability
@@ -10,7 +9,7 @@
 // rather than to the fixture, to the harness, or to an unrelated refusal firing
 // first. A control that could not have gone green is not a control.
 //
-// This file drives behaviour through the two modules' exported functions.
+// This file drives behaviour through the module's exported functions.
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -25,10 +24,7 @@ import {
   normalisePorts,
   parseAllowList,
   popcount,
-  TRANSIENT_ALLOW_LIST_CAP,
 } from "./capture-predicate.mts";
-import { compareStopIdentity, ORACLE_TERMS, StopOracleError } from "../../src/mcp/vice/stop-oracle.ts";
-import type { StopIdentity } from "../../src/mcp/vice/stop-oracle.ts";
 
 
 /** A full-length synthetic capture, filled with a repeatable pattern rather
@@ -60,20 +56,6 @@ function allowListOf(addresses: number[]) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. The committed contracts
-// ---------------------------------------------------------------------------
-
-test("the committed transient allow-list size cap is 64, and the oracle has four scalar terms", () => {
-  // Pinned as literals rather than read from the modules and compared to
-  // themselves: both numbers are PRE-COMMITMENTS, and a test that derived them
-  // from the code would go green on any drift in either direction.
-  assert.equal(TRANSIENT_ALLOW_LIST_CAP, 64);
-  assert.equal(IMAGE_BYTES, 65536);
-  assert.deepEqual([...ORACLE_TERMS], ["pc", "hitCount", "line", "cycle"]);
-  assert.equal(ORACLE_TERMS.length, 4);
-});
-
-// ---------------------------------------------------------------------------
 // 2. The tracer: one synthetic pair through the predicate to a verdict
 // ---------------------------------------------------------------------------
 
@@ -100,18 +82,6 @@ test("compareCaptures: three differing addresses, two allow-listed -- the third 
   assert.equal(clean.pass, true);
   assert.deepEqual(clean.differing, []);
   assert.deepEqual(clean.allowed, [0x1000, 0x2000]);
-});
-
-test("compareStopIdentity: two identical stops are identical, and a differing frame line reports exactly that term", () => {
-  const stop: StopIdentity = { pc: 0xea31, hitCount: 1, line: 257, cycle: 57 };
-  const same = compareStopIdentity(stop, { ...stop });
-  assert.equal(same.identical, true);
-  assert.deepEqual(same.differingTerms, []);
-  assert.equal(same.frameTermAsserted, true);
-
-  const oneFrameOff = compareStopIdentity(stop, { ...stop, line: 258 });
-  assert.equal(oneFrameOff.identical, false);
-  assert.deepEqual(oneFrameOff.differingTerms, ["line"]);
 });
 
 // ---------------------------------------------------------------------------
@@ -210,25 +180,6 @@ test("formatComparison refuses a negative limit rather than silently meaning unl
 // ---------------------------------------------------------------------------
 // 6. The oracle refuses a partial record
 // ---------------------------------------------------------------------------
-
-test("compareStopIdentity refuses a stop record missing a term, naming the term and the side", () => {
-  const whole: StopIdentity = { pc: 0xea31, hitCount: 1, line: 257, cycle: 57 };
-  // The clean control: the same shape, complete, compares fine.
-  assert.equal(compareStopIdentity(whole, { ...whole }).identical, true);
-
-  const partial = { pc: 0xea31, line: 257, cycle: 57 } as unknown as StopIdentity;
-  assert.throws(
-    () => compareStopIdentity(whole, partial),
-    (err: unknown) => {
-      assert.ok(err instanceof StopOracleError);
-      assert.equal(err.term, "hitCount");
-      assert.equal(err.side, "b");
-      assert.match(err.message, /hitCount/);
-      assert.match(err.message, /side b/);
-      return true;
-    },
-  );
-});
 
 // ---------------------------------------------------------------------------
 // 7. D-25's corpus-free half: the planted ONE-BIT control, with its clean
@@ -525,55 +476,3 @@ test("normalisePorts refuses a wrong-length image and a non-byte port value, nam
 // 15. Oracle edges
 // ---------------------------------------------------------------------------
 
-test("REPRO-03 adjacency: identical pc and hitCount but a frame position one frame apart is NOT identical", () => {
-  const stop: StopIdentity = { pc: 0xea31, hitCount: 1, line: 257, cycle: 57 };
-  // Clean control on the same record.
-  assert.equal(compareStopIdentity(stop, { ...stop }).identical, true);
-
-  const oneFrame = compareStopIdentity(stop, { ...stop, line: stop.line + 1 });
-  assert.equal(oneFrame.identical, false, "the frame term is what makes a two-term oracle insufficient");
-  assert.deepEqual(oneFrame.differingTerms, ["line"]);
-
-  const oneCycle = compareStopIdentity(stop, { ...stop, cycle: stop.cycle + 1 });
-  assert.equal(oneCycle.identical, false);
-  assert.deepEqual(oneCycle.differingTerms, ["cycle"]);
-});
-
-test("compareStopIdentity is symmetric, and differingTerms is ordered as ORACLE_TERMS", () => {
-  const a: StopIdentity = { pc: 0xea31, hitCount: 1, line: 257, cycle: 57 };
-  const b: StopIdentity = { pc: 0x0816, hitCount: 2, line: 100, cycle: 12 };
-
-  const ab = compareStopIdentity(a, b);
-  const ba = compareStopIdentity(b, a);
-  assert.equal(ab.identical, ba.identical);
-  assert.deepEqual(ab.differingTerms, ba.differingTerms, "the verdict must not depend on argument order");
-  assert.deepEqual(ab.differingTerms, [...ORACLE_TERMS], "all four differ, reported in the declared order");
-
-  // A subset, still in declared order rather than in the order they were found.
-  const subset = compareStopIdentity(a, { ...a, cycle: 99, pc: 0x1234 });
-  assert.deepEqual(subset.differingTerms, ["pc", "cycle"]);
-});
-
-test("compareStopIdentity refuses every absent or non-integer term, on either side, naming both", () => {
-  const whole: StopIdentity = { pc: 0xea31, hitCount: 1, line: 257, cycle: 57 };
-  assert.equal(compareStopIdentity(whole, { ...whole }).identical, true);
-
-  for (const term of ORACLE_TERMS) {
-    const partial = { ...whole } as Record<string, number>;
-    delete partial[term];
-    assert.throws(
-      () => compareStopIdentity(partial as unknown as StopIdentity, whole),
-      (err: unknown) => {
-        assert.ok(err instanceof StopOracleError);
-        assert.equal(err.term, term);
-        assert.equal(err.side, "a");
-        return true;
-      },
-      `an absent ${term} must be refused rather than silently passed`,
-    );
-  }
-
-  assert.throws(() => compareStopIdentity(whole, { ...whole, cycle: 1.5 }), /not a finite integer on side b/);
-  assert.throws(() => compareStopIdentity(whole, { ...whole, line: Number.NaN }), /not a finite integer on side b/);
-  assert.throws(() => compareStopIdentity(null as unknown as StopIdentity, whole), /side a is not a stop record/);
-});

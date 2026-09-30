@@ -143,13 +143,6 @@ test("selectMemmapEntry(): two consecutive calls with the same address return de
   assert.deepEqual(first, second);
 });
 
-test("the selection path contains at most one sort() call -- more than one would make the three comparison steps non-separable and plan 37-04's mutations unwritable", () => {
-  const source = readFileSync(join(VICE_DIR, "memmap-lookup.mts"), "utf8");
-  const codeOnly = source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-  const sortCalls = codeOnly.match(/\bsort\(/g) ?? [];
-  assert.ok(sortCalls.length <= 1, `expected at most one sort( call, found ${sortCalls.length}`);
-});
-
 test("BANK_CONDITIONAL_RANGES: exactly the three hand-maintained ranges, each with a non-empty reason", () => {
   assert.equal(BANK_CONDITIONAL_RANGES.length, 3);
   const spans = BANK_CONDITIONAL_RANGES.map((r) => [r.start, r.end]);

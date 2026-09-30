@@ -88,6 +88,40 @@ test("handleMemorySearch: masked match wildcards trailing bytes genuinely, match
   assert.equal(parsed.count, 2);
 });
 
+/** A fake MEMORY_GET that answers like stock VICE: the reply's length field
+ * is a u16, so a 65536-byte request comes back with no bytes. */
+function viceLikeMemory(memory: Uint8Array) {
+  return (commandType: number, body: Buffer) => {
+    assert.equal(commandType, CommandType.MemoryGet);
+    const start = body.readUInt16LE(1);
+    const end = body.readUInt16LE(3);
+    const length = (end - start + 1) & 0xffff;
+    return memoryGetReply(Array.from(memory.subarray(start, start + length)));
+  };
+}
+
+test("handleMemorySearch: a search of all 64K finds a pattern in the last two bytes", async () => {
+  const memory = new Uint8Array(0x10000);
+  memory[0xfffe] = 0x12;
+  memory[0xffff] = 0x34;
+  const { session, calls } = makeSession(viceLikeMemory(memory));
+  const result = await handleMemorySearch({ start: "$0000", end: "$ffff", pattern: [0x12, 0x34] }, session, DEPS);
+  assert.equal(result.isError, false, result.content[0]!.text);
+  const parsed = parseAnswer(result);
+  assert.deepEqual(parsed.matches, [0xfffe]);
+  assert.equal(parsed.searched, 0x10000);
+  assert.equal(calls.length, 2, "the 64K range goes out as two MEMORY_GETs");
+});
+
+test("handleMemorySearch: exactly max_results matches is not truncated", async () => {
+  const corpus = [0xaa, 0x00, 0xaa, 0x00];
+  const { session } = makeSession(() => memoryGetReply(corpus));
+  const result = await handleMemorySearch({ start: "$1000", end: "$1003", pattern: [0xaa], max_results: 2 }, session, DEPS);
+  const parsed = parseAnswer(result);
+  assert.deepEqual(parsed.matches, [0x1000, 0x1002]);
+  assert.equal(parsed.truncated, false);
+});
+
 test("handleMemorySearch: max_results truncation stops the scan and flags truncated", async () => {
   const corpus = [0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa];
   const { session } = makeSession(() => memoryGetReply(corpus));
@@ -313,6 +347,32 @@ test("handleMemoryCompare: max_differences truncates and identical is false", as
   assert.equal((parsed.differences as unknown[]).length, 1);
   assert.equal(parsed.truncated, true);
   assert.equal(parsed.identical, false);
+});
+
+test("handleMemoryCompare: exactly max_differences differences is not truncated", async () => {
+  let call = 0;
+  const { session } = makeSession(() => {
+    call += 1;
+    return memoryGetReply(call === 1 ? [0x00, 0x01, 0x02] : [0x00, 0x01, 0xff]);
+  });
+  const result = await handleMemoryCompare(
+    { mode: "ranges", range1_start: "$2000", range1_end: "$2002", range2_start: "$3000", max_differences: 1 },
+    session,
+    DEPS,
+  );
+  const parsed = parseAnswer(result);
+  assert.equal((parsed.differences as unknown[]).length, 1);
+  assert.equal(parsed.truncated, false);
+  assert.equal(parsed.identical, false);
+});
+
+test("handleMemoryCompare: a 32K range read of each half of memory compares every byte", async () => {
+  const memory = new Uint8Array(0x10000);
+  memory[0xffff] = 0x01;
+  const { session } = makeSession(viceLikeMemory(memory));
+  const result = await handleMemoryCompare({ mode: "ranges", range1_start: "$0000", range1_end: "$7fff", range2_start: "$8000" }, session, DEPS);
+  const parsed = parseAnswer(result);
+  assert.deepEqual(parsed.differences, [{ offset: 0x7fff, address1: 0x7fff, address2: 0xffff, value1: 0, value2: 1 }]);
 });
 
 test("handleMemoryCompare: range2_start so high that range2_end would exceed $ffff refuses with zero sends", async () => {
