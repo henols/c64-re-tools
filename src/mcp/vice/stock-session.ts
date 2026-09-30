@@ -20,13 +20,14 @@ import {
   isErrorText,
   convertHandshakeError,
   convertWireError,
+  prefixedWithTool,
   type StockToolResult,
   type StockSessionHandler,
   type DerivedPureHandler,
 } from "./stock-handler.ts";
 import { attachRunStateTracker } from "./stock-runstate.ts";
 import { acquireChannelLock, ChannelLockTimeoutError } from "./channel-lock.ts";
-import { forgetConditionsForOtherTargets } from "./stock-checkpoints.ts";
+import { syncCheckpointStateForSession } from "./stock-checkpoints.ts";
 import { forgetTimingForOtherTargets } from "./stock-timing.ts";
 
 /**
@@ -210,6 +211,7 @@ export async function ensureStockSession(deps: StockSessionDeps): Promise<Ensure
       // second time on a client already tracked elsewhere and fire its side
       // effect (a CHECKPOINT_TOGGLE) more than once per real event.
       attachRunStateTracker(heldSession.client);
+      syncCheckpointStateForSession(heldSession);
       return { ok: true, session: heldSession };
     } catch (err) {
       clearHeldStockSession();
@@ -280,7 +282,7 @@ export async function ensureStockSession(deps: StockSessionDeps): Promise<Ensure
   // stockReconnect() and its stale targetId was never handed to a teardown at
   // all. The reuse and reconnect branches return before this line, so a
   // reconnect to the SAME machine never evicts anything.
-  forgetConditionsForOtherTargets(session.targetId);
+  syncCheckpointStateForSession(session);
   // WR-14 (07-REVIEW.md): stock-timing.ts's two targetId-keyed caches (the
   // video-standard cache and the stopwatch baseline store) are evicted from the
   // SAME line, for the same reasons, so the registries can never drift apart on
@@ -442,7 +444,7 @@ export async function runBinary(
     return convertHandshakeError(toolName, err);
   }
   if (!outcome.ok) {
-    return isErrorText(outcome.message);
+    return isErrorText(prefixedWithTool(toolName, outcome.message));
   }
   const session = outcome.session;
   return withChannelLockHeld(toolName, deps.channelLockTimeoutMs, session, async () => {

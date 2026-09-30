@@ -72,7 +72,7 @@ import {
   type ConditionNode,
 } from "./stock-condition.ts";
 import { parseAddress, parseByteCount } from "./stock-address.ts";
-import { stockAnswer, isErrorText, convertWireError, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
+import { stockAnswer, isErrorText, convertWireError, prefixedWithTool, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not an
@@ -141,29 +141,37 @@ const STOP_FALSE_HAZARD_TEXT =
 
 let conditionRegistry = new Map<string, Map<number, string>>();
 
-/** Drops every registered target's condition map EXCEPT `activeTargetId`'s --
- * the WR-03 eviction hook, and the only thing that ever shrinks this registry.
- *
- * Called from stock-session.ts's ensureStockSession() immediately after a
- * FRESH stockConnect() installs a new held session. At that moment exactly one
- * target is reachable through this module (conditionTextFor() is only ever
- * consulted with the live session), so every other key is unreachable
- * bookkeeping for an instance that has already been torn down. Pruning "all
- * but the live one" -- rather than only the single session that was just
- * discarded -- also covers the path where the holder was cleared by a failed
- * stockReconnect() and the stale targetId was therefore never handed to a
- * teardown at all.
- *
- * Deliberately NOT called on the reuse or reconnect branches: a reconnect
- * re-proves it is the SAME machine, whose checkpoints (and their attached
- * conditions) are still armed on the wire, and stock cannot read condition
- * text back off the wire to rebuild what this dropped. Idempotent, and a no-op
- * the first time a session is established (the registry is empty). */
-export function forgetConditionsForOtherTargets(activeTargetId: string): void {
-  for (const targetId of conditionRegistry.keys()) {
-    if (targetId !== activeTargetId) {
-      conditionRegistry.delete(targetId);
+/** The emulator epoch each registered target was last seen with. A different
+ * epoch for the same target id means the machine restarted, and a restart
+ * takes every checkpoint (and its condition) with it. */
+let registryEpochs = new Map<string, number | null>();
+
+/** Brings this module's per-target state in line with a session that was
+ * just established (a fresh connect or a reconnect):
+ *   - drops the condition and trace-guard state of every other target, which
+ *     is an instance that has been torn down;
+ *   - drops the state of this target when its epoch changed, because the
+ *     machine restarted and its checkpoints are gone;
+ *   - attaches the trace guard's listener to the session's client, so the
+ *     `stop:false` checkpoints of a reconnected machine keep their guard.
+ * Idempotent. */
+export function syncCheckpointStateForSession(session: StockConnectSession): void {
+  const targetId = session.targetId;
+  for (const other of [...conditionRegistry.keys(), ...traceGuards.keys()]) {
+    if (other !== targetId) {
+      conditionRegistry.delete(other);
+      registryEpochs.delete(other);
+      traceGuards.delete(other);
     }
+  }
+  if (registryEpochs.has(targetId) && registryEpochs.get(targetId) !== session.baselineEpoch) {
+    conditionRegistry.delete(targetId);
+    traceGuards.delete(targetId);
+  }
+  registryEpochs.set(targetId, session.baselineEpoch);
+  const state = traceGuards.get(targetId);
+  if (state !== undefined) {
+    attachTraceGuardListener(session.client, state);
   }
 }
 
@@ -231,6 +239,13 @@ function nodeFromConditionArg(condition: unknown): ConditionNode {
  * CHECKPOINT_DELETE also fails, BOTH failures are named in the one refusal
  * returned -- the second is never swallowed.
  */
+/** The wire converter's explanation of `err`, without the tool-name prefix
+ * (the caller's refusal already starts with it). */
+function wireErrorText(toolName: string, err: unknown): string {
+  const text = convertWireError(toolName, err).content[0]!.text;
+  return text.startsWith(`${toolName}: `) ? text.slice(toolName.length + 2) : text;
+}
+
 async function setConditionFailClosed(
   session: StockConnectSession,
   checkpointNum: number,
@@ -244,14 +259,14 @@ async function setConditionFailClosed(
     try {
       await session.client.send(CommandType.CheckpointDelete, cpNumBody(checkpointNum));
       return isErrorText(
-        `${toolName}: setting the condition on checkpoint ${checkpointNum} failed (${describeError(setErr)}) -- ` +
+        `${toolName}: setting the condition on checkpoint ${checkpointNum} failed (${wireErrorText(toolName, setErr)}) -- ` +
           `the checkpoint was DELETED to avoid leaving a full-range, UNCONDITIONED breakpoint armed; re-add the ` +
           `checkpoint and try the condition again.`,
       );
     } catch (deleteErr) {
       return isErrorText(
-        `${toolName}: setting the condition on checkpoint ${checkpointNum} failed (${describeError(setErr)}), and ` +
-          `deleting that checkpoint to clean up ALSO failed (${describeError(deleteErr)}) -- checkpoint ` +
+        `${toolName}: setting the condition on checkpoint ${checkpointNum} failed (${wireErrorText(toolName, setErr)}), and ` +
+          `deleting that checkpoint to clean up ALSO failed (${wireErrorText(toolName, deleteErr)}) -- checkpoint ` +
           `${checkpointNum} may still be armed WITHOUT its condition and must be deleted manually.`,
       );
     }
@@ -259,10 +274,12 @@ async function setConditionFailClosed(
 }
 
 // ---------------------------------------------------------------------------
-// D-11: the trace guard for `stop:false` checkpoints. Per-client state (a
-// checkpoint id is only ever unique within one emulator instance), attached
-// idempotently to the client's own 'event' stream -- exactly one listener per
-// client, matching stock-runstate.ts's attachRunStateTracker() discipline.
+// The trace guard for `stop:false` checkpoints. State is keyed on the target
+// id (a checkpoint id is only unique within one emulator instance, and the
+// checkpoints survive a reconnect to the same machine). The listener is
+// attached idempotently to each client's own 'event' stream -- exactly one
+// per client -- and syncCheckpointStateForSession() re-attaches it to the new
+// client after a reconnect.
 //
 // Planner decision (RESEARCH.md Focus Item 5 offered two designs): the
 // disabling toggle send is deferred out of the event-listener's call stack
@@ -297,13 +314,18 @@ interface TraceGuardState {
   now: () => number;
 }
 
-let traceGuards = new WeakMap<ViceMonitorClient, TraceGuardState>();
+let traceGuards = new Map<string, TraceGuardState>();
+
+/** The clients that already carry the trace guard's listener. */
+let guardedClients = new WeakSet<ViceMonitorClient>();
 
 function isCheckpointInfoEvent(item: unknown): item is ParsedCheckpointInfoResponse {
   return isPlainObject(item) && item.type === "checkpoint_info" && isPlainObject(item.checkpoint);
 }
 
 function attachTraceGuardListener(client: ViceMonitorClient, state: TraceGuardState): void {
+  if (guardedClients.has(client)) return;
+  guardedClients.add(client);
   client.on("event", (item: unknown) => {
     if (!isCheckpointInfoEvent(item)) return;
     const id = item.checkpoint.id;
@@ -359,8 +381,9 @@ function attachTraceGuardListener(client: ViceMonitorClient, state: TraceGuardSt
   });
 }
 
-function traceGuardStateFor(client: ViceMonitorClient, now: () => number): TraceGuardState {
-  let state = traceGuards.get(client);
+function traceGuardStateFor(session: StockConnectSession, now: () => number): TraceGuardState {
+  const client = session.client;
+  let state = traceGuards.get(session.targetId);
   if (!state) {
     state = {
       traceCheckpoints: new Set(),
@@ -369,9 +392,9 @@ function traceGuardStateFor(client: ViceMonitorClient, now: () => number): Trace
       autoDisabled: new Map(),
       now,
     };
-    traceGuards.set(client, state);
-    attachTraceGuardListener(client, state);
+    traceGuards.set(session.targetId, state);
   }
+  attachTraceGuardListener(client, state);
   return state;
 }
 
@@ -382,12 +405,12 @@ function traceGuardStateFor(client: ViceMonitorClient, now: () => number): Trace
  * pass it (the default is the platform clock). */
 export function registerTraceCheckpoint(session: StockConnectSession, checkpointId: number, opts: { now?: () => number } = {}): void {
   const nowFn = opts.now ?? Date.now;
-  const state = traceGuardStateFor(session.client, nowFn);
+  const state = traceGuardStateFor(session, nowFn);
   state.traceCheckpoints.add(checkpointId);
 }
 
 function forgetTraceState(session: StockConnectSession, checkpointNum: number): void {
-  const state = traceGuards.get(session.client);
+  const state = traceGuards.get(session.targetId);
   if (!state) return;
   state.traceCheckpoints.delete(checkpointNum);
   state.window.delete(checkpointNum);
@@ -401,7 +424,7 @@ function forgetTraceState(session: StockConnectSession, checkpointNum: number): 
 export function autoDisableReportFor(
   session: StockConnectSession,
 ): Array<{ checkpointNum: number; reason: string; at: number; hitsPerSecond: number }> {
-  const state = traceGuards.get(session.client);
+  const state = traceGuards.get(session.targetId);
   if (!state) return [];
   return Array.from(state.autoDisabled.entries()).map(([checkpointNum, entry]) => ({ checkpointNum, ...entry }));
 }
@@ -411,7 +434,9 @@ export function autoDisableReportFor(
  * stock-runstate.ts. */
 export function resetCheckpointStateForTest(): void {
   conditionRegistry = new Map();
-  traceGuards = new WeakMap();
+  registryEpochs = new Map();
+  traceGuards = new Map();
+  guardedClients = new WeakSet();
 }
 
 // ---------------------------------------------------------------------------
@@ -442,39 +467,38 @@ export const handleCheckpointAdd: StockSessionHandler = async (args, session, _d
     return isErrorText(`vice_checkpoint_add: end (${end}) must be >= start (${start})`);
   }
 
-  // WR-01 (03-REVIEW.md): a STRICT type check, never Boolean() coercion.
-  // vice-proxy.ts's rawJsonSchemaAsStandardSchema() wraps every manifest
-  // inputSchema with a validate that performs no actual type checking, so a
-  // type-mismatched argument reaches this handler untouched and these checks
-  // are the ONLY enforcement there is. `Boolean("false")` is `true`, so the
-  // old coercion silently turned a caller's `stop: "false"` -- a plausible
-  // shape for an LLM-driven MCP client that formats values as strings -- into
-  // the opposite of the non-stopping trace mode it asked for, with no error
-  // and no warning. Every other boolean-shaped argument in this file and in
-  // its sibling family modules already refuses a non-boolean outright; this
-  // one was the sole exception.
-  if (args.stop !== undefined && typeof args.stop !== "boolean") {
-    return isErrorText(`vice_checkpoint_add: stop must be a boolean, got ${typeof args.stop}`);
+  // Strict type checks, never Boolean() coercion: the manifest schema is not
+  // enforced at the proxy, so a type-mismatched argument reaches this handler
+  // untouched, and `Boolean("false")` would be true.
+  for (const name of ["stop", "acknowledgeTraceRisk", "load", "store", "exec"] as const) {
+    if (args[name] !== undefined && typeof args[name] !== "boolean") {
+      return isErrorText(`vice_checkpoint_add: ${name} must be a boolean, got ${typeof args[name]}`);
+    }
   }
-  const stop = args.stop === undefined ? true : args.stop;
+  const stop = args.stop === undefined ? true : args.stop === true;
   const acknowledgeTraceRisk = args.acknowledgeTraceRisk === true;
   if (!stop && !acknowledgeTraceRisk) {
     return isErrorText(`vice_checkpoint_add: ${STOP_FALSE_HAZARD_TEXT}`);
   }
 
+  // With none of load, store, exec given the checkpoint breaks on execution.
+  // With any of them given, exactly the ones set true apply, and none set
+  // true is refused.
   let operation = 0;
   if (args.load === true) operation |= CheckpointOperation.Load;
   if (args.store === true) operation |= CheckpointOperation.Store;
   if (args.exec === true) operation |= CheckpointOperation.Exec;
   let operationDefaulted = false;
   if (operation === 0) {
-    operation = CheckpointOperation.Exec;
-    operationDefaulted = true;
+    if (args.load === undefined && args.store === undefined && args.exec === undefined) {
+      operation = CheckpointOperation.Exec;
+      operationDefaulted = true;
+    } else {
+      return isErrorText("vice_checkpoint_add: load, store and exec are all false -- a checkpoint that watches nothing; set at least one to true");
+    }
   }
 
-  // temporary is ALWAYS false in Phase 3 -- the fork exposes no such
-  // argument, and a "never delete a VICE-marked temporary checkpoint"
-  // invariant is a fork-side concern this module never touches.
+  // Checkpoints added here are never temporary.
   const body = checkpointSetBody({ start, end, stop, enabled: true, operation, temporary: false });
 
   let response;
@@ -555,7 +579,7 @@ export const handleCheckpointList: StockSessionHandler = async (_args, session, 
   const totalReported = response.total;
   const entriesReceived = relatedCheckpoints.length;
 
-  const traceState = traceGuards.get(session.client);
+  const traceState = traceGuards.get(session.targetId);
 
   const checkpoints = relatedCheckpoints.map((entry) => {
     const cp = entry.checkpoint;
@@ -624,7 +648,7 @@ export const handleCheckpointToggle: StockSessionHandler = async (args, session,
 
   let autoDisableCleared = false;
   if (enabled) {
-    const state = traceGuards.get(session.client);
+    const state = traceGuards.get(session.targetId);
     if (state?.autoDisabled.has(checkpointNum)) {
       state.autoDisabled.delete(checkpointNum);
       autoDisableCleared = true;
@@ -670,10 +694,10 @@ export const handleCheckpointSetCondition: StockSessionHandler = async (args, se
     node = nodeFromConditionArg(args.condition);
     expression = emitCondition(node);
   } catch (err) {
-    // A StockConditionError is returned as its own refusal text verbatim --
-    // never re-worded, and never a fallback to sending the raw input.
+    // Refuse with the condition parser's own reason; never fall back to
+    // sending the raw input.
     if (err instanceof StockConditionError) {
-      return isErrorText(err.message);
+      return isErrorText(prefixedWithTool("vice_checkpoint_set_condition", err.message));
     }
     return isErrorText(`vice_checkpoint_set_condition: ${describeError(err)}`);
   }
@@ -745,7 +769,7 @@ export const handleWatchAdd: StockSessionHandler = async (args, session, _deps) 
       expression = emitCondition(node);
     } catch (err) {
       if (err instanceof StockConditionError) {
-        return isErrorText(err.message);
+        return isErrorText(prefixedWithTool("vice_watch_add", err.message));
       }
       return isErrorText(`vice_watch_add: ${describeError(err)}`);
     }

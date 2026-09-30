@@ -78,7 +78,7 @@ import {
 } from "./text-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { ChannelLockTimeoutError } from "./channel-lock.ts";
-import { isErrorText, derivedAnswer, convertHandshakeError, convertWireError, type StockToolResult } from "./stock-handler.ts";
+import { isErrorText, derivedAnswer, convertHandshakeError, convertWireError, prefixedWithTool, type StockToolResult } from "./stock-handler.ts";
 import { parseAccessMap, accessMapRanges, type AccessMap, type AccessMapRangesOptions } from "./textmon-memmap.mts";
 import { parseCpuHistory } from "./textmon-cpuhistory.ts";
 import { parseBacktrace } from "./textmon-backtrace.ts";
@@ -128,7 +128,7 @@ async function withTextTool(
 ): Promise<StockToolResult> {
   const leaseOutcome = await deps.ensureLease();
   if (!leaseOutcome.ok) {
-    return isErrorText(leaseOutcome.message);
+    return isErrorText(prefixedWithTool(toolName, leaseOutcome.message));
   }
   const lease = leaseOutcome.lease;
   if (lease === null) {

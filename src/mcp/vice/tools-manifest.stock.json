@@ -572,7 +572,7 @@
           },
           "exec": {
             "type": "boolean",
-            "description": "Break on execution (default=true)"
+            "description": "Break on execution. Default true only when none of load, store and exec is given; if you give any of them, only the ones set true apply, and setting all false is refused."
           },
           "acknowledgeTraceRisk": {
             "type": "boolean",

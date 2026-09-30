@@ -717,7 +717,7 @@ function handleResultContinue(args: Record<string, unknown>): ToolCallResult {
   const token = args && typeof args.token === "string" ? args.token : null;
   if (!token || !CONTINUATION_STORE.has(token)) {
     return isErrorText(
-      `vice: continuation token "${token}" is unknown or has already expired. Re-issue the ` +
+      `vice_result_continue: continuation token "${token}" is unknown or has already expired. Re-issue the ` +
         `original tools/call with a narrower range instead of resuming.`
     );
   }
