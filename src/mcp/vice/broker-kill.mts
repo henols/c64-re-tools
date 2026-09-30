@@ -293,10 +293,8 @@ export const _HANDLED_SIGNALS: readonly NodeJS.Signals[] = HANDLED_SIGNALS;
  * without touching the actual test-runner process (which node:test itself
  * depends on staying alive and un-signalled). */
 export interface ProcessLike {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- must accept
-  // whatever shape node:events' EventEmitter#once (and the real Node
-  // `process` global) actually declare, so a real EventEmitter instance is
-  // structurally assignable without a cast at every call site.
+  // Accepts whatever shape node:events' EventEmitter#once (and the real Node
+  // `process` global) declare, so a real EventEmitter is assignable.
   once(event: string, listener: (...args: any[]) => void): unknown;
   exitCode?: number | null;
 }
@@ -322,16 +320,13 @@ export interface RegisterShutdownHandlersDeps extends ShutdownDeps {
  * terminate a hundred milliseconds later is a shape this project has
  * already seen (2026-08-02).
  *
- * Registers NOTHING for SIGKILL or SIGSTOP, and builds no mechanism to
- * prevent orphans after one -- both are UNCATCHABLE at the OS level; a
- * process receiving either executes no handler, no exit hook, no cleanup
- * block, and in a one-process design there is no supervisor left standing
- * to be told anything happened. Orphaned emulators after such a kill are
- * accepted and cleaned up by hand (T-01.6.2-29) -- the NEXT broker start's
- * unconditional reap (reapOrphanedInstances() below) is the actual recovery
- * mechanism, not anything registered here. Two kernel-level alternatives (a
- * watchdog process, a cgroup-wide kill) were considered during this phase's
- * own design discussion and dropped as over-engineering, not deferred.
+ * Registers NOTHING for SIGKILL or SIGSTOP: both are uncatchable, so no
+ * handler runs. A SIGKILL of the broker is covered by the watchdog process
+ * (broker-watchdog.mts, started by vice-broker.mts): it holds the process
+ * group of every emulator and host tool the broker tracked, and stops them
+ * all when the broker's IPC channel closes. The next broker start's reap
+ * (reapOrphanedInstances() below) is the second line: it kills any recorded
+ * emulator the watchdog could not reach, such as after a reboot.
  *
  * The 'exit' listener is registered identically to the other five, but
  * carries an honest limitation worth stating rather than hiding: Node's
@@ -391,8 +386,6 @@ export function registerShutdownHandlers(deps: RegisterShutdownHandlersDeps): ()
       });
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches
-  // ProcessLike#once's own listener shape (node:events' EventEmitter#once).
   const registrations: Array<[string, (...args: any[]) => void]> = [];
   const register = (event: string, listener: (...args: any[]) => void): void => {
     proc.once(event, listener);

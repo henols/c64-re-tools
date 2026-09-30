@@ -59,6 +59,9 @@ import type { MonitorChannel } from "./broker-state.mjs";
 // backend-detect.mts is the type's one home (narrowed to a single literal
 // now that the fork backend has been removed).
 import type { ViceBackend } from "./backend-detect.mjs";
+import { HELLO_PROTOCOL_MAGIC } from "./broker-endpoint.mts";
+import { resolveRelayKeepAliveMs } from "./broker-relay.mts";
+import { DEV_PLACEHOLDER } from "./version.mts";
 
 // The message set, one op per concern. A new host tool is a new entry in
 // host-tool.mts's HOST_TOOL_IDS, never a new member here.
@@ -577,54 +580,13 @@ export type ControlResponse =
   // parallel channel for the one op that needs an extra field).
   | { kind: "error"; code: ControlErrorCode; message: string; holder?: MonitorHolder };
 
-const MAX_LINE_BYTES = 65536;
-// Phase 65 (plan 65-03, D-11): exported as a SEPARATE statement, never
-// folded into the declaration above -- host-tool-transport.test.ts parses
-// that exact `const MAX_LINE_BYTES = <n>;` line by regex, off this module's
-// own source text, and an `export const` form would break that parse.
-// host-tool-endpoint.mts's own HOST_TOOL_STAGE_LINE_MAX_BYTES (a mirrored,
-// duplicated constant -- this module is host-bound and that one is not, per
-// this file's own leaf-module posture) is kept at or under this value by a
-// relation test that imports both modules directly.
-export { MAX_LINE_BYTES };
+/** The longest request line the listener accepts, in bytes. */
+export const MAX_LINE_BYTES = 65536;
 
-/** Plan 63-04 Task 2 (SESS-04) DEFAULT, mirrored -- NOT imported -- from
- * broker-relay.mts's own DEFAULT_RELAY_KEEPALIVE_MS. Keeping the two
- * literal values in agreement is this module's own job, same as the
- * `HELLO_PROTOCOL_MAGIC` string mirrored a few lines below from
- * broker-endpoint.mts: a byte-identical sync test is what actually holds
- * the agreement together, not a shared import. */
-const DEFAULT_RELAY_KEEPALIVE_MS_LOCAL = 30000;
 
-/** DUPLICATES broker-relay.mts's own resolveRelayKeepAliveMs() rather than
- * value-importing it -- see this function's own call site (inside
- * attachControlProtocol() below) for the full boundary reason. Same
- * absent/non-numeric/zero/negative-falls-back-to-default discipline,
- * logged by name, never silently disabling the setting. */
-function resolveRelayKeepAliveMsLocal(): number {
-  const raw = process.env.VICE_BROKER_RELAY_KEEPALIVE_MS;
-  if (raw === undefined || raw === "") return DEFAULT_RELAY_KEEPALIVE_MS_LOCAL;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) {
-    console.error(
-      `broker-control: rejected VICE_BROKER_RELAY_KEEPALIVE_MS=${JSON.stringify(raw)} (must be a positive number) -- falling back to the default of ${DEFAULT_RELAY_KEEPALIVE_MS_LOCAL}ms`,
-    );
-    return DEFAULT_RELAY_KEEPALIVE_MS_LOCAL;
-  }
-  return n;
-}
-
-/** The magic string identifying THIS project's own handshake protocol on
- * the wire -- specific enough that a bare TCP accept by an unrelated
- * service can never be mistaken for it. This is the one authoritative
- * definition (plan 62-01, D-06); `broker-endpoint.mts`, the container-side
- * dialling client, MIRRORS this literal rather than importing it (this
- * module is host-bound and compiled into `resources/`, so a container-side
- * source file cannot value-import it) -- broker-endpoint.test.ts asserts
- * the two copies are byte-identical by reading both files' source, so the
- * two cannot silently drift. Keep this comment's claim true if you ever
- * change the string: update both places in the SAME change. */
-export const HELLO_PROTOCOL_MAGIC = "vice-mcp-broker-hello-v1";
+// The handshake magic is defined once, in broker-endpoint.mts, which both the
+// client and this listener load.
+export { HELLO_PROTOCOL_MAGIC };
 
 /** This module's own directory, computed once at module load -- mirrors
  * tool-location.mts's own `HERE` constant and its two-candidate locate
@@ -636,22 +598,13 @@ export const HELLO_PROTOCOL_MAGIC = "vice-mcp-broker-hello-v1";
  * both forms find the same `package.json`. */
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** The placeholder a git checkout (or a resolve/parse failure) reports as
- * this broker's own handshake version. Mirrored, not imported, from
- * version.mts's own `DEV_PLACEHOLDER` -- that module is container-side and
- * this one is host-bound, compiled away from it (see version.mts's own
- * header for why importing it here is forbidden). Kept byte-identical to
- * that constant so a published client reads the same placeholder string on
- * either side of the boundary. */
-const HELLO_DEV_PLACEHOLDER = "0.0.0-dev";
-
 /** Resolves the broker's own package version for the `hello` handshake
  * reply, reading `package.json` from two candidates relative to `here` --
  * beside it, then one directory up -- the same locate idiom
  * tool-location.mts's readDeclaration() already uses for a different data
  * file crossing this same source/compiled boundary. Never throws: any
  * missing file, unreadable file, unparsable JSON, or a missing/non-string
- * `.version` field degrades to HELLO_DEV_PLACEHOLDER rather than crashing
+ * `.version` field degrades to DEV_PLACEHOLDER rather than crashing
  * the listener over a version string. Exported so a test can call it
  * directly with an injected `here`; production dispatch calls it with no
  * argument and lets it default to this module's own real location. */
@@ -668,7 +621,7 @@ export function resolveBrokerVersion(here: string = HERE): string {
       // fall through to the placeholder below.
     }
   }
-  return HELLO_DEV_PLACEHOLDER;
+  return DEV_PLACEHOLDER;
 }
 
 /** The one refusal wording for a target-naming op whose `target_id` is
@@ -1025,17 +978,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
     // comment). The OWNED bound is the relay's own idle deadline
     // (broker-relay.mts's resolveRelayIdleMs()), never this setting.
     //
-    // resolveRelayKeepAliveMsLocal() below DUPLICATES broker-relay.mts's own
-    // resolveRelayKeepAliveMs() rather than value-importing it -- the SAME
-    // boundary reason vice-broker.mts's own classifyBrokerLivenessLocal()/
-    // isWildcardBindHostLocal() duplicate rather than import a sibling: this
-    // module is routinely loaded UNBUILT (`.mts` source directly, never
-    // resources/broker-control.mjs) by nine of its own test files, and a
-    // VALUE import of a sibling host-bound module would require a real
-    // "./broker-relay.mjs" file to sit beside this SOURCE file on disk --
-    // which only exists once built. A TYPE-ONLY import stays safe (erased);
-    // a value import does not.
-    socket.setKeepAlive(true, resolveRelayKeepAliveMsLocal());
+    socket.setKeepAlive(true, resolveRelayKeepAliveMs());
 
     // Buffer-mode carry (Phase 63, SESS-02) -- REPLACES the earlier
     // string accumulator (`let buffer = ""`) for every connection, not

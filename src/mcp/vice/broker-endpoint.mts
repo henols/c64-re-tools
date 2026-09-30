@@ -34,14 +34,9 @@ import { fileURLToPath } from "node:url";
 
 import { runtimeVersion, DEV_PLACEHOLDER } from "./version.mts";
 
-/** Mirrors broker-control.mts's own HELLO_PROTOCOL_MAGIC literal, character
- * for character. broker-control.mts is the one authoritative definition
- * (see that module's own comment on this constant) -- it is host-bound and
- * compiled into resources/, so this container-side source file cannot
- * value-import it and instead carries its own copy. Update BOTH places in
- * the SAME change if this string ever changes; broker-endpoint.test.ts
- * reads both files' source and asserts the two literals are byte-identical,
- * so an edit to only one side goes red rather than silently drifting. */
+/** The magic string identifying this project's handshake on the wire --
+ * specific enough that a bare TCP accept by an unrelated service can never be
+ * mistaken for it. This is the one definition; broker-control.mts imports it. */
 export const HELLO_PROTOCOL_MAGIC = "vice-mcp-broker-hello-v1";
 
 /** The fixed, ordered dial candidates: the IPv4 loopback literal first, the
@@ -312,6 +307,9 @@ function dialOneCandidate(
       clearTimeout(connectTimer);
       if (replyTimer) clearTimeout(replyTimer);
       socket.removeAllListeners();
+      // A kept socket can still reset later; with no 'error' listener that
+      // would be an uncaught exception in the caller's process.
+      socket.on("error", () => {});
       resolvePromise({ host, resolved, classification: classifyHelloReply({ connected, raw }, clientVersion) });
     }
 
@@ -771,6 +769,82 @@ function performAttach(
   socket.write(`${JSON.stringify({ op: "attach", target_id: opts.targetId, channel: opts.channel, handle: opts.handle })}\n`);
 }
 
+// ---------------------------------------------------------------------------
+// raceHello() -- the one two-candidate hello race the relay, transfer,
+// host-tool and control dials share.
+// ---------------------------------------------------------------------------
+
+interface HelloRaceOptions {
+  port: number;
+  candidates: readonly string[];
+  connectTimeoutMs: number;
+  replyTimeoutMs: number;
+  connectFn: BrokerEndpointConnectFn;
+  clientVersion: string;
+  tag?: string;
+}
+
+type HelloRaceOutcome = { ok: true; socket: Socket; host: string } | { ok: false; reason: string };
+
+/** Dials every candidate at once under `tag` and resolves with the first to
+ * complete a hello, keeping that socket and destroying the others. When none
+ * completes, resolves with describeDialFailure()'s ranked text. Never
+ * throws. The kept socket keeps an 'error' listener (see dialOneCandidate()),
+ * so a later reset cannot surface as an uncaught exception. */
+function raceHello(o: HelloRaceOptions): Promise<HelloRaceOutcome> {
+  return new Promise<HelloRaceOutcome>((resolveOuter) => {
+    const sockets: (Socket | null)[] = o.candidates.map(() => null);
+    const observations: (DialCandidateObservation | undefined)[] = o.candidates.map(() => undefined);
+    let settledCount = 0;
+    let outerSettled = false;
+
+    o.candidates.forEach((host, idx) => {
+      dialOneCandidate(
+        host,
+        o.port,
+        o.connectTimeoutMs,
+        o.replyTimeoutMs,
+        o.connectFn,
+        o.clientVersion,
+        (socket) => {
+          sockets[idx] = socket;
+        },
+        o.tag,
+      ).then((outcome) => {
+        settledCount++;
+        if (outerSettled) return;
+        const classification = outcome.classification;
+        if (classification.completed) {
+          outerSettled = true;
+          sockets.forEach((s, i) => {
+            if (i !== idx && s && !s.destroyed) s.destroy();
+          });
+          const winner = sockets[idx];
+          if (!winner) {
+            resolveOuter({ ok: false, reason: "vice: internal error -- the dial completed with no live socket" });
+            return;
+          }
+          resolveOuter({ ok: true, socket: winner, host: outcome.host });
+          return;
+        }
+        observations[idx] = {
+          host: outcome.host,
+          resolved: outcome.resolved,
+          rank: classification.rank,
+          version: classification.rank === 4 ? classification.version : undefined,
+        };
+        if (settledCount === o.candidates.length) {
+          outerSettled = true;
+          for (const s of sockets) if (s && !s.destroyed) s.destroy();
+          const finalObservations = observations as DialCandidateObservation[];
+          const highestRank = finalObservations.reduce<DialRank>((max, x) => (x.rank > max ? x.rank : max), 1);
+          resolveOuter({ ok: false, reason: describeDialFailure({ ok: false, port: o.port, clientVersion: o.clientVersion, rank: highestRank, observations: finalObservations }) });
+        }
+      });
+    });
+  });
+}
+
 /** Dials the fixed endpoint for a relay connection: the SAME two-candidate
  * hello race dialBrokerEndpoint() runs, tagged RELAY_TAG_BINARY/
  * RELAY_TAG_TEXT, but on the FIRST completed handshake this function keeps
@@ -796,70 +870,11 @@ export function dialMonitorRelay(options: DialMonitorRelayOptions): Promise<Dial
   const clientVersion = options.clientVersion ?? CLIENT_VERSION;
   const tag = options.channel === "text" ? RELAY_TAG_TEXT : RELAY_TAG_BINARY;
 
-  return new Promise<DialMonitorRelayResult>((resolveOuter) => {
-    const sockets: (Socket | null)[] = candidates.map(() => null);
-    const observations: (DialCandidateObservation | undefined)[] = candidates.map(() => undefined);
-    let settledCount = 0;
-    let outerSettled = false;
-
-    function destroyAllSockets(): void {
-      for (const s of sockets) {
-        if (s && !s.destroyed) s.destroy();
-      }
-    }
-
-    function destroyLosers(winnerIdx: number): void {
-      sockets.forEach((s, idx) => {
-        if (idx !== winnerIdx && s && !s.destroyed) s.destroy();
-      });
-    }
-
-    candidates.forEach((host, idx) => {
-      dialOneCandidate(
-        host,
-        port,
-        connectTimeoutMs,
-        replyTimeoutMs,
-        connectFn,
-        clientVersion,
-        (socket) => {
-          sockets[idx] = socket;
-        },
-        tag,
-      ).then((outcome) => {
-        settledCount++;
-        if (outerSettled) return;
-        const classification = outcome.classification;
-        if (classification.completed) {
-          outerSettled = true;
-          destroyLosers(idx);
-          const winnerSocket = sockets[idx];
-          if (!winnerSocket) {
-            // Structurally unreachable: dialOneCandidate's own onSocket
-            // callback fires synchronously before this .then() can ever
-            // run. Guarded anyway -- never a throw out of this function.
-            resolveOuter({ ok: false, reason: "vice: internal error -- relay dial completed with no live socket" });
-            return;
-          }
-          performAttach(winnerSocket, outcome.host, port, options, attachReplyTimeoutMs, resolveOuter);
-          return;
-        }
-        observations[idx] = {
-          host: outcome.host,
-          resolved: outcome.resolved,
-          rank: classification.rank,
-          version: classification.rank === 4 ? classification.version : undefined,
-        };
-        if (settledCount === candidates.length && !outerSettled) {
-          outerSettled = true;
-          destroyAllSockets();
-          const finalObservations = observations as DialCandidateObservation[];
-          const highestRank = finalObservations.reduce<DialRank>((max, o) => (o.rank > max ? o.rank : max), 1);
-          resolveOuter({ ok: false, reason: describeDialFailure({ ok: false, port, clientVersion, rank: highestRank, observations: finalObservations }) });
-        }
-      });
-    });
-  });
+  return raceHello({ port, candidates, connectTimeoutMs, replyTimeoutMs, connectFn, clientVersion, tag }).then((raced) =>
+    raced.ok
+      ? new Promise<DialMonitorRelayResult>((resolveOuter) => performAttach(raced.socket, raced.host, port, options, attachReplyTimeoutMs, resolveOuter))
+      : { ok: false as const, reason: raced.reason },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1043,70 +1058,11 @@ export function dialFileTransfer(options: DialFileTransferOptions): Promise<Dial
   const connectFn = options.connect ?? connect;
   const clientVersion = options.clientVersion ?? CLIENT_VERSION;
 
-  return new Promise<DialFileTransferResult>((resolveOuter) => {
-    const sockets: (Socket | null)[] = candidates.map(() => null);
-    const observations: (DialCandidateObservation | undefined)[] = candidates.map(() => undefined);
-    let settledCount = 0;
-    let outerSettled = false;
-
-    function destroyAllSockets(): void {
-      for (const s of sockets) {
-        if (s && !s.destroyed) s.destroy();
-      }
-    }
-
-    function destroyLosers(winnerIdx: number): void {
-      sockets.forEach((s, idx) => {
-        if (idx !== winnerIdx && s && !s.destroyed) s.destroy();
-      });
-    }
-
-    candidates.forEach((host, idx) => {
-      dialOneCandidate(
-        host,
-        port,
-        connectTimeoutMs,
-        replyTimeoutMs,
-        connectFn,
-        clientVersion,
-        (socket) => {
-          sockets[idx] = socket;
-        },
-        TRANSFER_TAG,
-      ).then((outcome) => {
-        settledCount++;
-        if (outerSettled) return;
-        const classification = outcome.classification;
-        if (classification.completed) {
-          outerSettled = true;
-          destroyLosers(idx);
-          const winnerSocket = sockets[idx];
-          if (!winnerSocket) {
-            // Structurally unreachable: dialOneCandidate's own onSocket
-            // callback fires synchronously before this .then() can ever
-            // run. Guarded anyway -- never a throw out of this function.
-            resolveOuter({ ok: false, reason: "vice: internal error -- transfer dial completed with no live socket" });
-            return;
-          }
-          performTransfer(winnerSocket, outcome.host, port, options, replyTimeoutMs, resolveOuter);
-          return;
-        }
-        observations[idx] = {
-          host: outcome.host,
-          resolved: outcome.resolved,
-          rank: classification.rank,
-          version: classification.rank === 4 ? classification.version : undefined,
-        };
-        if (settledCount === candidates.length && !outerSettled) {
-          outerSettled = true;
-          destroyAllSockets();
-          const finalObservations = observations as DialCandidateObservation[];
-          const highestRank = finalObservations.reduce<DialRank>((max, o) => (o.rank > max ? o.rank : max), 1);
-          resolveOuter({ ok: false, reason: describeDialFailure({ ok: false, port, clientVersion, rank: highestRank, observations: finalObservations }) });
-        }
-      });
-    });
-  });
+  return raceHello({ port, candidates, connectTimeoutMs, replyTimeoutMs, connectFn, clientVersion, tag: TRANSFER_TAG }).then((raced) =>
+    raced.ok
+      ? new Promise<DialFileTransferResult>((resolveOuter) => performTransfer(raced.socket, raced.host, port, options, replyTimeoutMs, resolveOuter))
+      : { ok: false as const, reason: raced.reason },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1465,70 +1421,9 @@ function dialKeptSocket(tag: string, options: DialHostToolSessionOptions): Promi
   const connectFn = options.connect ?? connect;
   const clientVersion = options.clientVersion ?? CLIENT_VERSION;
 
-  return new Promise<DialKeptSocketResult>((resolveOuter) => {
-    const sockets: (Socket | null)[] = candidates.map(() => null);
-    const observations: (DialCandidateObservation | undefined)[] = candidates.map(() => undefined);
-    let settledCount = 0;
-    let outerSettled = false;
-
-    function destroyAllSockets(): void {
-      for (const s of sockets) {
-        if (s && !s.destroyed) s.destroy();
-      }
-    }
-
-    function destroyLosers(winnerIdx: number): void {
-      sockets.forEach((s, idx) => {
-        if (idx !== winnerIdx && s && !s.destroyed) s.destroy();
-      });
-    }
-
-    candidates.forEach((host, idx) => {
-      dialOneCandidate(
-        host,
-        port,
-        connectTimeoutMs,
-        replyTimeoutMs,
-        connectFn,
-        clientVersion,
-        (socket) => {
-          sockets[idx] = socket;
-        },
-        tag,
-      ).then((outcome) => {
-        settledCount++;
-        if (outerSettled) return;
-        const classification = outcome.classification;
-        if (classification.completed) {
-          outerSettled = true;
-          destroyLosers(idx);
-          const winnerSocket = sockets[idx];
-          if (!winnerSocket) {
-            // Structurally unreachable: dialOneCandidate's own onSocket
-            // callback fires synchronously before this .then() can ever
-            // run. Guarded anyway -- never a throw out of this function.
-            resolveOuter({ ok: false, reason: "vice: internal error -- the dial completed with no live socket" });
-            return;
-          }
-          resolveOuter({ ok: true, socket: winnerSocket });
-          return;
-        }
-        observations[idx] = {
-          host: outcome.host,
-          resolved: outcome.resolved,
-          rank: classification.rank,
-          version: classification.rank === 4 ? classification.version : undefined,
-        };
-        if (settledCount === candidates.length && !outerSettled) {
-          outerSettled = true;
-          destroyAllSockets();
-          const finalObservations = observations as DialCandidateObservation[];
-          const highestRank = finalObservations.reduce<DialRank>((max, o) => (o.rank > max ? o.rank : max), 1);
-          resolveOuter({ ok: false, reason: describeDialFailure({ ok: false, port, clientVersion, rank: highestRank, observations: finalObservations }) });
-        }
-      });
-    });
-  });
+  return raceHello({ port, candidates, connectTimeoutMs, replyTimeoutMs, connectFn, clientVersion, tag }).then((raced) =>
+    raced.ok ? { ok: true as const, socket: raced.socket } : { ok: false as const, reason: raced.reason },
+  );
 }
 
 /** Dials the fixed endpoint for a host-tool session (tag `HOST_TOOL_TAG`). */

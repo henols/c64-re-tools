@@ -1501,6 +1501,9 @@ export interface HostToolLocator {
    * When set, it answers the `tools.json` layer in place of any file on the
    * broker's disk. */
   toolsJson?: string;
+  /** The directory holding `vendor/dxa/dxa`, in place of this module's own
+   * directory. A test seam: no production caller sets it. */
+  vendorRoot?: string;
 }
 
 /** `resolveTool()` for `loc`: with `loc.toolsJson` set, the `tools.json`
@@ -1798,7 +1801,7 @@ export function buildHostToolArgv(
     // hardcoded build-script sentence's text by coincidence of two
     // independently-authored strings, and after this change there is one
     // source.
-    const dxaFound = findDxaBinary(HERE);
+    const dxaFound = findDxaBinary(loc.vendorRoot ?? HERE);
     if (dxaFound.path === null) {
       return {
         ok: false,
@@ -2241,6 +2244,8 @@ export interface HostToolDeps {
   /** The client project's `tools.json` text, sent with the request; see
    * `HostToolLocator.toolsJson`. */
   toolsJson?: string;
+  /** Test seam; see `HostToolLocator.vendorRoot`. */
+  vendorRoot?: string;
   /** Where `ghidra.analyze` creates each run's project directory -- an
    * executor option no request can set. The broker sets it to
    * broker-home.mts's brokerGhidraDir(); in-process callers name their own.
@@ -2914,6 +2919,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
     projectRoot: projectRootAbs,
     here: deps.here,
     ...(deps.toolsJson === undefined ? {} : { toolsJson: deps.toolsJson }),
+    ...(deps.vendorRoot === undefined ? {} : { vendorRoot: deps.vendorRoot }),
   };
 
   let built: BuildHostToolArgvResult;

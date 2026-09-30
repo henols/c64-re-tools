@@ -62,6 +62,7 @@ import {
   // the argv builder's own resolution and this file's relay-dial resolution
   // below both go through this single function, never a second literal.
   resolveBinmonHost,
+  isWildcardHost,
 } from "./broker-launch.mjs";
 // A VALUE import of the splice primitive (Phase 63, SESS-02) -- safe here
 // for the SAME reason every other sibling value import in this file is:
@@ -272,19 +273,6 @@ function resolveCeilingForRecord(): number {
   if (raw === undefined || raw === "") return 16;
   const n = Number(raw);
   return Number.isFinite(n) ? n : 16;
-}
-
-/** Classifies a bare hostname as a wildcard bind address, in the IPv4 and
- * IPv6 "listen on everything" spellings this project cares about --
- * DELIBERATELY RE-STATED here rather than imported from
- * vice-broker-client.ts's own `isWildcardBindHost()`: that module is
- * container-side and this one is host-bound, compiled away from it. Used ONLY to refuse an explicitly-set
- * VICE_BROKER_CONTROL_HOST value before ever attempting to bind it (D-09) --
- * never applied to an enumerated host, which can never be a wildcard by
- * construction. */
-function isWildcardBindHostLocal(host: string): boolean {
-  const bare = host.replace(/^\[/, "").replace(/\]$/, "");
-  return bare === "0.0.0.0" || bare === "::" || /^(0{1,4}:){7}0{1,4}$/.test(bare);
 }
 
 /** Builds a spawn function that redirects the child's stdout/stderr into a
@@ -552,9 +540,8 @@ export interface HandleAcquireDeps {
 //
 // THE DECISION, stated out loud because two of the three available answers
 // are wrong in ways the CALLER CANNOT DETECT:
-//   - Refuse the acquire outright when a mismatched warm instance exists ->
-//     warp becomes unusable whenever a warm floor exists (the default is 1,
-//     so: essentially always).
+//   - Refuse the acquire outright when a mismatched ready instance exists ->
+//     warp becomes unusable whenever any ready instance exists.
 //   - Serve the request with the mismatched instance -> the caller asked for
 //     warp, got an unwarped machine, and received a confident grant. The knob
 //     is a lie and nothing in the response says so.
@@ -2176,7 +2163,7 @@ async function run(args: ParsedArgs): Promise<void> {
   const explicitControlHost = process.env.VICE_BROKER_CONTROL_HOST;
   let bindHosts: string[];
   if (explicitControlHost !== undefined && explicitControlHost !== "") {
-    if (isWildcardBindHostLocal(explicitControlHost)) {
+    if (isWildcardHost(explicitControlHost)) {
       process.stderr.write(
         `vice-broker: FATAL -- VICE_BROKER_CONTROL_HOST is set to "${explicitControlHost}", a wildcard bind address. ` +
           `The settled bind rule (D-09) never binds the wildcard address, even when an operator asks for it explicitly. ` +

@@ -123,7 +123,7 @@ let warnedRemoteMonitorBindWidened = false;
  * target as it is for a launch flag.
  */
 /** True for the IPv4 and IPv6 "listen on everything" spellings. */
-function isWildcardHost(host: string): boolean {
+export function isWildcardHost(host: string): boolean {
   const bare = host.replace(/^\[/, "").replace(/\]$/, "");
   return bare === "0.0.0.0" || bare === "::" || /^(0{1,4}:){7}0{1,4}$/.test(bare);
 }
@@ -978,9 +978,9 @@ export interface ProbeDeps {
   httpProbe?: (port: number, timeoutMs: number) => Promise<boolean>;
   /** Which readiness route this port speaks. Threaded in exactly like
    * buildViceArgs() already receives it -- from the ONE `resolvedBackend()` call
-   * the broker makes at startup, never re-detected here. Omitted defaults to
-   * "stock", the only value `ViceBackend` has now that the fork backend is
-   * gone. */
+   * the broker makes at startup, never re-detected here. Omitted selects
+   * the HTTP route; the broker always passes "stock", the only value
+   * `ViceBackend` has. */
   backend?: ViceBackend;
   /** The binary-monitor readiness check, used for `backend: "stock"`.
    * Defaults to the real one-PING-then-EXIT exchange below; tests inject a
@@ -1303,13 +1303,9 @@ export async function promoteLaunchingInstances(deps: PromoteLaunchingInstancesD
 // ---------------------------------------------------------------------------
 
 export interface BrokerPassDeps {
-  /** Serves pending acquires for this pass. Under this project's TCP
-   * control plane, an acquire is already served immediately, per
-   * connection, by vice-broker.mts's own onAcquire callback -- there is no
-   * file-based request queue left to iterate. This concern stays a named,
-   * orderable step (rather than being dropped) because a later addition
-   * adds the real arrival-ordered queue here; until then it is a no-op
-   * by construction, not a stub standing in for missing work. */
+  /** Serves the queued acquires for this pass: retries, in arrival order,
+   * every acquire that was queued because a launch was in flight
+   * (broker-control.mts's drainPendingAcquires()). */
   serveAcquires: () => Promise<void> | void;
   /** The second concern, RENAMED from the retired warm-floor field this
    * replaces -- the warm floor itself is gone; this is now ONLY the

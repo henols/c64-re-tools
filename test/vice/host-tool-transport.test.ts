@@ -22,7 +22,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { connect } from "node:net";
-import { readFileSync, mkdtempSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, chmodSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,35 +45,8 @@ import { build } from "../../src/mcp/vice/build.ts";
 // host-bound APIs and ships no build step).
 import { HOST_TOOL_STAGE_LINE_MAX_BYTES } from "../../src/mcp/vice/host-tool-endpoint.mts";
 
-// ---------------------------------------------------------------------------
-// The cap, read from the module under test -- never a hand-written literal
-// anywhere in this file. `broker-control.mts` declares it as a private,
-// non-exported module-level const, so the ONE `const MAX_LINE_BYTES = `
-// declaration is parsed out of its own source text. A parse failure throws
-// immediately (loud), rather than silently defaulting to zero and passing
-// every "destroyed" case for the wrong reason.
-// ---------------------------------------------------------------------------
-function readCapFromBrokerControlSource(): number {
-  const source = readFileSync(new URL("../../src/mcp/vice/broker-control.mts", import.meta.url), "utf8");
-  const match = source.match(/^const MAX_LINE_BYTES = (\d+);$/m);
-  if (!match) {
-    throw new Error(
-      "host-tool-transport.test.ts: could not find the 'const MAX_LINE_BYTES = <n>;' declaration in broker-control.mts's own source text -- the module under test may have renamed or restructured its cap constant.",
-    );
-  }
-  return Number(match[1]);
-}
-
-const CAP = readCapFromBrokerControlSource();
-
-test("the parsed cap is a positive integer read from broker-control.mts's own source -- a parse failure here is loud, never a silent zero", () => {
-  assert.equal(Number.isInteger(CAP), true);
-  assert.ok(CAP > 0);
-});
-
-test("the exported MAX_LINE_BYTES binding matches the source-parsed cap above -- proving the export is the same value, not a second, drifted copy", () => {
-  assert.equal(MAX_LINE_BYTES, CAP);
-});
+// The cap under test is the listener's own exported line limit.
+const CAP = MAX_LINE_BYTES;
 
 test("Phase 65-03 Task 2 Test 6: HOST_TOOL_STAGE_LINE_MAX_BYTES (host-tool-endpoint.mts) is at or below broker-control.mts's own exported MAX_LINE_BYTES", () => {
   assert.ok(
@@ -200,7 +173,7 @@ test(`a line of exactly the cap's own byte count (${CAP}), no trailing newline, 
   const listener = await startTransportListener();
   try {
     const line = "x".repeat(CAP);
-    assert.equal(Buffer.byteLength(line, "utf8"), CAP, "the probe line's own byte length must equal the parsed cap for this case to test what it claims");
+    assert.equal(Buffer.byteLength(line, "utf8"), CAP, "the probe line's own byte length must equal the cap for this case to test what it claims");
     const outcome = await dialAndSendLine(listener.port, line, 300);
     assert.equal(outcome.closed, false, "a line at exactly the cap must not be destroyed within the bounded wait");
   } finally {
