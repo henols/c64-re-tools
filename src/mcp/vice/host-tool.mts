@@ -1506,9 +1506,9 @@ export interface HostToolLocator {
   vendorRoot?: string;
 }
 
-/** `resolveTool()` for `loc`: with `loc.toolsJson` set, the `tools.json`
- * layer reads that text instead of a file. */
-function resolveToolAt(id: string, loc: HostToolLocator): ReturnType<typeof resolveTool> {
+/** The `resolveTool()` deps for `loc`: with `loc.toolsJson` set, the
+ * `tools.json` layer reads that text instead of a file. */
+function toolLocationDeps(loc: HostToolLocator): ResolveToolDeps {
   const deps: ResolveToolDeps = { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here };
   if (loc.toolsJson !== undefined) {
     const text = loc.toolsJson;
@@ -1516,7 +1516,7 @@ function resolveToolAt(id: string, loc: HostToolLocator): ReturnType<typeof reso
     deps.exists = (p: string): boolean => p === file || existsSync(p);
     deps.readFile = (p: string): string => (p === file ? text : readFileSync(p, "utf8"));
   }
-  return resolveTool(id, deps);
+  return deps;
 }
 
 /** Returns `locate` verbatim when supplied, or -- when absent -- a locator
@@ -1583,7 +1583,7 @@ export function buildHostToolArgv(
     // This existence check is NEW behaviour (T-60-08): today there is none at
     // all, and a missing ACME surfaces only as a raw operating-system spawn
     // error inside spawnErrorMessage.
-    const acmeResolved = resolveToolAt("acme", loc);
+    const acmeResolved = resolveTool("acme", toolLocationDeps(loc));
     if (acmeResolved.refusal) {
       return { ok: false, message: `host_tool "acme.build" refuses: ${acmeResolved.refusal}` };
     }
@@ -1664,7 +1664,7 @@ export function buildHostToolArgv(
     // fallback by design (unlike ACME's library, PD-07 below), so this
     // preserves today's env-only-then-refuse behaviour exactly while adding
     // the file layer between the environment and the refusal.
-    const ghidraResolved = resolveToolAt("ghidra", loc);
+    const ghidraResolved = resolveTool("ghidra", toolLocationDeps(loc));
     if (ghidraResolved.path === null) {
       return {
         ok: false,
@@ -1851,7 +1851,7 @@ export function buildHostToolArgv(
     // same posture buildAnalyzeHeadlessArgv()'s own independent dot-segment
     // re-check takes for a caller that bypassed the resolution branch
     // entirely.
-    const ghidraResolved = resolveToolAt("ghidra", loc);
+    const ghidraResolved = resolveTool("ghidra", toolLocationDeps(loc));
     if (ghidraResolved.path === null) {
       return {
         ok: false,
@@ -2719,7 +2719,7 @@ function findAcmeLib(locate?: HostToolLocator): { path: string | null; tried: st
   // surfaced separately -- the caller's own conditional stderr hint (below,
   // in runHostTool()) already treats a null `path` uniformly regardless of
   // why.
-  const seamResolved = resolveToolAt("acme-lib", loc);
+  const seamResolved = resolveTool("acme-lib", toolLocationDeps(loc));
   tried.push(...seamResolved.tried);
   if (seamResolved.path !== null) return { path: seamResolved.path, tried };
 
@@ -2825,7 +2825,7 @@ function findSiblingBinary(
   const tried: string[] = [];
 
   // Layer 1 (PD-08): the tools.json seam, ahead of the sibling candidate.
-  const seamResolved = resolveToolAt(binaryName, loc);
+  const seamResolved = resolveTool(binaryName, toolLocationDeps(loc));
   tried.push(...seamResolved.tried);
   if (seamResolved.refusal) {
     // WR-01 (plan 60-07): the seam's own reason is carried verbatim rather
@@ -3091,7 +3091,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
     }
     const sourceDirResolved = { path: vendoredExt.path };
 
-    const ghidraResolvedPre = resolveToolAt("ghidra", hostToolLocator);
+    const ghidraResolvedPre = resolveTool("ghidra", toolLocationDeps(hostToolLocator));
     if (ghidraResolvedPre.path === null) {
       return {
         ok: false,
