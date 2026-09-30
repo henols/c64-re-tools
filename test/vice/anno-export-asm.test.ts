@@ -77,9 +77,10 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { writeExportAsmTree } from "../../src/mcp/vice/anno-tree-writer.mts";
 import { fileURLToPath } from "node:url";
 
 import { build } from "../../src/mcp/vice/build.ts";
@@ -5828,4 +5829,33 @@ test("split table: a split range crossing a scope boundary gets the ORDINARY bou
   );
 
   assert.deepEqual(readdirSync(outDir), [], "the output directory must still be empty after a refusal -- nothing was written before the throw");
+});
+
+test("writeExportAsmTree with force refuses a planted symlink under a planned name and writes nothing through it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "anno-tree-"));
+  try {
+    const outside = join(dir, "outside.txt");
+    writeFileSync(outside, "untouched");
+    const out = join(dir, "out");
+    mkdirSync(out);
+    symlinkSync(outside, join(out, "symbols.a"));
+    const plan = {
+      files: [
+        { name: "symbols.a", bytes: new TextEncoder().encode("; symbols\n") },
+        { name: "root.a", bytes: new TextEncoder().encode("; root\n") },
+      ],
+      sourceOrder: ["symbols.a"],
+    };
+    assert.throws(() => writeExportAsmTree(out, plan, true), /not a regular file/);
+    assert.equal(readFileSync(outside, "utf8"), "untouched");
+    assert.deepEqual(readdirSync(out), ["symbols.a"], "nothing else was written");
+
+    rmSync(join(out, "symbols.a"));
+    writeFileSync(join(out, "symbols.a"), "old");
+    writeExportAsmTree(out, plan, true);
+    assert.equal(readFileSync(join(out, "symbols.a"), "utf8"), "; symbols\n");
+    assert.deepEqual(readdirSync(out).sort(), ["root.a", "symbols.a"], "no temp file is left behind");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
