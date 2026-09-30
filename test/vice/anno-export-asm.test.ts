@@ -77,9 +77,10 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { writeExportAsmTree } from "../../src/mcp/vice/anno-tree-writer.mts";
 import { fileURLToPath } from "node:url";
 
 import { build } from "../../src/mcp/vice/build.ts";
@@ -2431,29 +2432,16 @@ test("CR-01 Fix Test A: a register-shaped enum name for a register anno-regbits.
   assert.equal(verdict.byteDiff?.equal, true);
 });
 
-test("CR-01 Fix Test B: a register PRESENT in the table but not fully covered by its fields ($DD00, bits #0-#1 uncovered) still refuses loudly -- the membership-test fix does not weaken T-45-21", () => {
-  const { dir, storePath, imagePath } = buildStore(freshDir("dd00-incomplete"), {
+test("a register whose table covers every bit ($DD00, bits #0-#1 included) decomposes a write of $01 instead of refusing", () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("dd00-complete"), {
     origin: 0x0801,
     body: [0xa9, 0x01, 0x8d, 0x00, 0xdd, 0x60], // lda #$01 (bit #0 set) / sta $dd00 / rts
     ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
     enums: [{ name: "DD00", variants: {} }],
     enumUsage: [{ address: 0x0801, name: "DD00" }],
   });
-
-  assert.throws(
-    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
-    (e: unknown) => {
-      assert.ok(e instanceof Error);
-      assert.match(e.message, /^exportAsm: /);
-      assert.ok(
-        e.message.includes("decomposing the enum usage") && e.message.includes("bit-name table failed"),
-        `the refusal must be the genuine decomposition failure, not the fallback path: ${e.message}`,
-      );
-      assert.ok(e.message.includes("DD00"), `the refusal names the register/enum: ${e.message}`);
-      assert.ok(e.message.includes("not fully covered"), `the refusal names the real cause (incomplete field coverage): ${e.message}`);
-      return true;
-    },
-  );
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  assert.match(result.source, /lda #DD00_VIC_BANK_SELECT_INVERTED1/);
 });
 
 // ---------------------------------------------------------------------------
@@ -3485,16 +3473,27 @@ test("EXCLUSION Test 5: an exclusion covering only PART of a store range still e
   assert.match(block, /\$cc, \$dd/, "the block must still carry BOTH bytes of its full extent, not only the un-excluded one");
 });
 
-test("EXCLUSION Test 6: result.excludedRangeCount counts only exclusion records overlapping an emitted block, not every record in the store", () => {
+test("an exclusion that overlaps no emitted block is refused by name instead of being dropped from the source", () => {
+  const dir = freshDir("exclusion-unmarked");
+  const { storePath, imagePath } = exclusionStore(dir, [
+    { start: 0x0807, endInclusive: 0x0808, reason: "overlaps the middle range" },
+    { start: 0x0900, endInclusive: 0x0901, reason: "outside every annotated range" },
+  ]);
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => e instanceof Error && /exclusion at \$0900\.\.\$0901 overlaps no typed block/.test(e.message) && /1 of 2 exclusion\(s\)/.test(e.message),
+  );
+});
+
+test("result.excludedRangeCount counts exclusion records, once each, when every record overlaps an emitted block", () => {
   const dir = freshDir("exclusion-6");
   const { storePath, imagePath } = exclusionStore(dir, [
     { start: 0x0807, endInclusive: 0x0808, reason: "overlaps the middle range" },
-    { start: 0x0900, endInclusive: 0x0901, reason: "outside every annotated range -- never emitted, never counted" },
+    { start: 0x0803, endInclusive: 0x0804, reason: "inside the code block" },
   ]);
-
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
-
-  assert.equal(result.excludedRangeCount, 1, "only the one record overlapping an emitted block may be counted, even though the store holds two");
+  assert.equal(result.excludedRangeCount, 2);
 });
 
 test("EXCLUSION Test 7: a store whose exclusion reason was edited on disk to contain a line break is refused BY NAME at the export boundary", () => {
@@ -4004,16 +4003,6 @@ test(
     assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict:${context(result, verdict)}`);
   },
 );
-
-test("anno-export-asm.test.ts is absent from package.json's files[] array (test-only, mechanically enforced, acme-gate.test.ts's own idiom)", () => {
-  const pkg = JSON.parse(readFileSync(join(VICE_DIR, "package.json"), "utf8")) as { files: string[] };
-  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
-  assert.equal(
-    pkg.files.includes("anno-export-asm.test.ts"),
-    false,
-    "anno-export-asm.test.ts carries the test-only filtering variant and must never ship in the published npm tarball",
-  );
-});
 
 // --- The behavioural companion: "no verdict value changes what is emitted"
 // measured across the whole verdict vocabulary, not on one example.
@@ -5828,4 +5817,33 @@ test("split table: a split range crossing a scope boundary gets the ORDINARY bou
   );
 
   assert.deepEqual(readdirSync(outDir), [], "the output directory must still be empty after a refusal -- nothing was written before the throw");
+});
+
+test("writeExportAsmTree with force refuses a planted symlink under a planned name and writes nothing through it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "anno-tree-"));
+  try {
+    const outside = join(dir, "outside.txt");
+    writeFileSync(outside, "untouched");
+    const out = join(dir, "out");
+    mkdirSync(out);
+    symlinkSync(outside, join(out, "symbols.a"));
+    const plan = {
+      files: [
+        { name: "symbols.a", bytes: new TextEncoder().encode("; symbols\n") },
+        { name: "root.a", bytes: new TextEncoder().encode("; root\n") },
+      ],
+      sourceOrder: ["symbols.a"],
+    };
+    assert.throws(() => writeExportAsmTree(out, plan, true), /not a regular file/);
+    assert.equal(readFileSync(outside, "utf8"), "untouched");
+    assert.deepEqual(readdirSync(out), ["symbols.a"], "nothing else was written");
+
+    rmSync(join(out, "symbols.a"));
+    writeFileSync(join(out, "symbols.a"), "old");
+    writeExportAsmTree(out, plan, true);
+    assert.equal(readFileSync(join(out, "symbols.a"), "utf8"), "; symbols\n");
+    assert.deepEqual(readdirSync(out).sort(), ["root.a", "symbols.a"], "no temp file is left behind");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

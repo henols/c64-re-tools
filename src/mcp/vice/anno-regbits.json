@@ -368,6 +368,12 @@
         "kind": "numeric"
       },
       {
+        "mask": 112,
+        "shift": 4,
+        "name": "IRQ_FLAG_UNUSED",
+        "kind": "numeric"
+      },
+      {
         "mask": 128,
         "shift": 7,
         "name": "SET_ON_ANY_ENABLED_VIC_IRQ_CONDITION",
@@ -673,6 +679,12 @@
         "shift": 0,
         "name": "VOICE_1_PULSE_WAVEFORM_WIDTH_HIGH_NYBBLE",
         "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "VOICE_1_UNUSED",
+        "kind": "numeric"
       }
     ]
   },
@@ -771,6 +783,12 @@
         "shift": 0,
         "name": "VOICE_2_PULSE_WAVEFORM_WIDTH_HIGH_NYBBLE",
         "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "VOICE_2_UNUSED",
+        "kind": "numeric"
       }
     ]
   },
@@ -868,6 +886,12 @@
         "mask": 15,
         "shift": 0,
         "name": "VOICE_3_PULSE_WAVEFORM_WIDTH_HIGH_NYBBLE",
+        "kind": "numeric"
+      },
+      {
+        "mask": 240,
+        "shift": 4,
+        "name": "VOICE_3_UNUSED",
         "kind": "numeric"
       }
     ]
@@ -969,9 +993,15 @@
         "kind": "numeric"
       },
       {
+        "mask": 2,
+        "shift": 1,
+        "name": "FILTER_VOICE_2_OUTPUT_1_YES_0_NO",
+        "kind": "numeric"
+      },
+      {
         "mask": 4,
         "shift": 2,
-        "name": "FILTER_VOICE_3_OUTPUT_1_YES_0_NO_FILTER_VOICE_2_OUTPUT_1_YES_0_NO",
+        "name": "FILTER_VOICE_3_OUTPUT_1_YES_0_NO",
         "kind": "numeric"
       },
       {
@@ -1079,6 +1109,12 @@
         "kind": "numeric"
       },
       {
+        "mask": 96,
+        "shift": 5,
+        "name": "CIA_IRQ_UNUSED",
+        "kind": "numeric"
+      },
+      {
         "mask": 128,
         "shift": 7,
         "name": "IRQ_FLAG_SET_CLEAR_FLAG",
@@ -1165,6 +1201,12 @@
   "$DD00": {
     "label": "Data Port A (Serial Bus, RS-232, VIC Memory Control)",
     "fields": [
+      {
+        "mask": 3,
+        "shift": 0,
+        "name": "VIC_BANK_SELECT_INVERTED",
+        "kind": "numeric"
+      },
       {
         "mask": 4,
         "shift": 2,
@@ -1272,6 +1314,12 @@
         "kind": "numeric"
       },
       {
+        "mask": 4,
+        "shift": 2,
+        "name": "TIME_OF_DAY_CLOCK_ALARM_INTERRUPT",
+        "kind": "numeric"
+      },
+      {
         "mask": 8,
         "shift": 3,
         "name": "SERIAL_PORT_INTERRUPT",
@@ -1281,6 +1329,12 @@
         "mask": 16,
         "shift": 4,
         "name": "FLAG1_NMI",
+        "kind": "numeric"
+      },
+      {
+        "mask": 96,
+        "shift": 5,
+        "name": "CIA_NMI_UNUSED",
         "kind": "numeric"
       },
       {

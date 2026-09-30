@@ -3,15 +3,19 @@
 //
 // WHY THIS FILE EXISTS: writes an exported ACME source tree -- planned as file
 // names and bytes by anno-export-asm.mts -- into a directory, under the
-// output-directory contract. It holds no store, so the client writes a tree
-// the broker planned with the same code a local export uses.
+// output-directory contract. It holds no store: the CLI writes the tree the
+// export-asm report planned from the project's store.
 //
 // WHAT NOT TO DO:
 //   - Never import the store here, directly or through another module: the
 //     client loads this file.
 //   - Never delete anything to make room. A directory holding an entry this
 //     tree would not write is refused by name.
-import { existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+//   - Never write through an existing entry. A planned name that is a
+//     symlink (or anything but a regular file) is refused, and every file is
+//     written to a temp name and renamed into place, so a write can never
+//     follow a link out of the directory.
+import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** D47-B: the tree's three fixed file names. DERIVED from nothing but this
@@ -49,9 +53,13 @@ export interface ExportAsmTreePlan {
  * Anything in the directory that is NOT one of the planned names is refused by
  * name; nothing is ever deleted to make room for it.
  *
- * `root.a` is written LAST, through a temp name in the same directory followed
- * by a rename into place, so an interrupted write leaves no root an assembler
- * could start from.
+ * Rule three, always: an existing entry under a planned name must be a
+ * regular file. A symlink there is refused by name, because a write through
+ * it would land wherever it points.
+ *
+ * Every file is written to a temp name in the same directory and renamed into
+ * place, and `root.a` is renamed LAST, so an interrupted write leaves no root
+ * an assembler could start from.
  */
 export function writeExportAsmTree(outDir: string, plan: ExportAsmTreePlan, force: boolean): void {
   const namesToWrite = plan.files.map((file) => file.name);
@@ -75,17 +83,21 @@ export function writeExportAsmTree(outDir: string, plan: ExportAsmTreePlan, forc
           `or point --out at an empty directory.`,
       );
     }
+    const notFiles = existingEntries.filter((entry) => !lstatSync(join(outDir, entry)).isFile());
+    if (notFiles.length > 0) {
+      throw new Error(
+        `exportAsmTree: the output directory "${outDir}" holds ${JSON.stringify(notFiles)} under a name this export writes, and it is ` +
+          `not a regular file (a symlink or a directory) -- refusing the overwrite, because a write there would land wherever it ` +
+          `points. Remove it yourself, or point --out at an empty directory.`,
+      );
+    }
   }
   mkdirSync(outDir, { recursive: true });
 
-  for (const file of plan.files) {
-    if (file.name === ROOT_FILE_NAME) continue;
-    writeFileSync(join(outDir, file.name), file.bytes);
-  }
-  const root = plan.files.find((file) => file.name === ROOT_FILE_NAME);
-  if (root !== undefined) {
-    const rootTmpPath = join(outDir, `${ROOT_FILE_NAME}.tmp-${process.pid}`);
-    writeFileSync(rootTmpPath, root.bytes);
-    renameSync(rootTmpPath, join(outDir, ROOT_FILE_NAME));
+  const ordered = [...plan.files.filter((file) => file.name !== ROOT_FILE_NAME), ...plan.files.filter((file) => file.name === ROOT_FILE_NAME)];
+  for (const file of ordered) {
+    const tmpPath = join(outDir, `.${file.name}.tmp-${process.pid}`);
+    writeFileSync(tmpPath, file.bytes, { flag: "wx" });
+    renameSync(tmpPath, join(outDir, file.name));
   }
 }

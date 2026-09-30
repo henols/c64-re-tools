@@ -124,7 +124,7 @@ export function composeAddressDetails(
           reason:
             `no typed range covers ${hex4(at)}: the paint index resolves it to nothing, which means this address sits in a gap ` +
             "between the ranges a human has typed rather than in an untyped part of one. Type a range covering it with " +
-            "anno-store.mts's setDataType to make this component answerable.",
+            "anno_set_data_type to make this component answerable.",
         }
       : composeRange(handle, rowId, at);
 
@@ -135,7 +135,7 @@ export function composeAddressDetails(
           reason:
             `cross-references to ${hex4(at)} are DERIVED from program bytes on every query and no bytes were supplied: the store ` +
             "holds no program image, so this component is answerable only when the caller names the image it wants derived " +
-            "from. The stored non-derivable rows alone are readable through anno-store.mts's listXrefs.",
+            "from. Name the image on the call, or use anno_get_cross_references, which takes one.",
         }
       : { available: true, value: crossReferencesTo(handle, image, origin, at) };
 

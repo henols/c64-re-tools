@@ -2059,6 +2059,19 @@ export function exportAsmFrom(source: ExportAsmSource): ExportAsmResult {
     );
   }
 
+  // A recorded exclusion that overlaps no emitted block would leave no marker
+  // anywhere in the source: the silent drop the exclusion record exists to
+  // prevent. It is refused by name instead.
+  const unmarked = excludedRanges.filter((row) => !excludedRangeIdsEmitted.has(row.id));
+  if (unmarked.length > 0) {
+    const first = unmarked[0]!;
+    throw new Error(
+      `exportAsm: the exclusion at ${hex4(first.start)}..${hex4(first.endInclusive)} overlaps no typed block, so the export has no place ` +
+        `for its marker (${unmarked.length} of ${excludedRanges.length} exclusion(s) are in this state). Refusing to export while silently ` +
+        "dropping them -- type a range over it, or remove the exclusion with anno_include_range.",
+    );
+  }
+
   // `expectedBytes` is built from the IMAGE, never from `lines`. Gaps between
   // blocks stay `$00`, matching ACME `-f plain`'s measured zero-fill.
   const minStart = blocks[0]!.start;

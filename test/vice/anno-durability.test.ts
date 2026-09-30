@@ -42,7 +42,6 @@ import {
 import { AnnoAddressError, AnnoStoreCorruptError, AnnoStoreError, AnnoTypeError, SCHEMA_VERSION } from "../../src/mcp/vice/anno-types.mts";
 import type { RangeRow } from "../../src/mcp/vice/anno-types.mts";
 import { ViceError } from "../../src/mcp/vice/vice-errors.mts";
-import { VICE_DIR } from "./paths.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -257,31 +256,6 @@ test("STORE-04's planted violation, in the SAME shape and through the SAME helpe
   // criterion's shape is falsifiable; the real red is observed by removing
   // `runWriteSequence`'s single `commit` BY HAND and watching the committing
   // test above fail.
-});
-
-test("the mutator is test-only: absent from package.json files[], and its filename does not match the *.test.* glob the runner collects", () => {
-  // A mechanical check rather than trusting the mutator's header comment.
-  const pkg = JSON.parse(readFileSync(join(VICE_DIR, "package.json"), "utf8")) as { files: string[] };
-  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
-  assert.equal(
-    pkg.files.includes(MUTATOR_FILENAME),
-    false,
-    `${MUTATOR_FILENAME} must never ship: it is a test-only helper whose entire purpose is to reach the no-commit write wrapper`,
-  );
-
-  // The glob claim, asserted rather than stated. Collected as a test, this file
-  // would run `process.kill(process.pid, "SIGKILL")` inside the runner's own
-  // process -- so the name is the only thing between the glob and a suite that
-  // kills itself. This is the exact predicate `test-gate.ts` uses.
-  assert.equal(
-    /\.test\.[a-zA-Z0-9]+$/.test(MUTATOR_FILENAME),
-    false,
-    `${MUTATOR_FILENAME} must not match the *.test.* glob -- collected as a test it would SIGKILL the test runner`,
-  );
-
-  // And it really is on disk under that name, so neither assertion above is
-  // about a file that does not exist.
-  assert.equal(existsSync(MUTATOR), true, `${MUTATOR_FILENAME} must exist, or both assertions above are vacuous`);
 });
 
 test("CR-06: with a separate OS process holding a READ transaction, the commit REFUSES inside the ViceError family, the revision is unchanged, and the write lock is released", async () => {

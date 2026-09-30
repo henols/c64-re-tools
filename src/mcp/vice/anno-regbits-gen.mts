@@ -161,6 +161,12 @@ export interface RegbitsRegisterOverride {
   /** Per-bit overrides, matched against this address's own memmap `bits`
    * entries by their `bit` string. */
   fields?: readonly RegbitsFieldOverride[];
+  /** Fields for bits memmap.json's `bits` list leaves out (unused or
+   * undocumented bits). Added after the memmap fields, and only where their
+   * mask does not overlap a field already claimed. Every register the table
+   * lists must cover all eight bits, or a write of a common value could not be
+   * decomposed. */
+  extraFields?: readonly RegBitsField[];
   /** A COMPLETE field list for an address memmap.json's `io` parser produced
    * no `bits` entry for at all -- used only when no
    * memmap entry exists for this address, never to replace one that does. */
@@ -233,6 +239,12 @@ export const OVERRIDES: readonly RegbitsRegisterOverride[] = [
     // than via a per-bit override.
     address: 56589, // $DD0D -- CIA2 Interrupt Control Register
     label: "CIA Interrupt Control Register (Read NMIs/Write Mask)",
+    // WHY: memmap lists no bit 2 (time-of-day alarm, as on CIA 1) or bits 6-5 (unused) of this
+    // register.
+    extraFields: [
+      { mask: 0x04, shift: 2, name: "TIME_OF_DAY_CLOCK_ALARM_INTERRUPT", kind: "numeric" },
+      unusedBits("CIA_NMI_UNUSED", 0x60, 5),
+    ],
   },
   {
     // WHY: memmap.json's `io` parser produced no `bits` entry at all for this address,
@@ -281,7 +293,52 @@ export const OVERRIDES: readonly RegbitsRegisterOverride[] = [
     label: "Sprite X-Expand",
     synthetic: spriteBitFields("XEXP"),
   },
+  {
+    // WHY: memmap lists no bits 6-4 of the VIC interrupt flag register; they read as 1 and a
+    // write of $FF (clear every flag) must decompose.
+    address: 53273, // $D019 -- VIC Interrupt Flag Register
+    extraFields: [unusedBits("IRQ_FLAG_UNUSED", 0x70, 4)],
+  },
+  {
+    // WHY: memmap lists only bits 3-0 of each pulse width high nybble; bits 7-4 are unused.
+    address: 54275, // $D403 -- Voice 1 pulse width high
+    extraFields: [unusedBits("VOICE_1_UNUSED", 0xf0, 4)],
+  },
+  {
+    // WHY: same as $D403, for voice 2.
+    address: 54282, // $D40A -- Voice 2 pulse width high
+    extraFields: [unusedBits("VOICE_2_UNUSED", 0xf0, 4)],
+  },
+  {
+    // WHY: same as $D403, for voice 3.
+    address: 54289, // $D411 -- Voice 3 pulse width high
+    extraFields: [unusedBits("VOICE_3_UNUSED", 0xf0, 4)],
+  },
+  {
+    // WHY: memmap runs the voice 3 and voice 2 filter bits into one description on bit 2 and
+    // lists no bit 1. Bit 1 is the voice 2 filter switch and bit 2 the voice 3 one.
+    address: 54295, // $D417 -- Filter Resonance Control / Voice Input Control
+    fields: [
+      { bit: "2", name: "FILTER_VOICE_3_OUTPUT_1_YES_0_NO", kind: "numeric" },
+    ],
+    extraFields: [{ mask: 0x02, shift: 1, name: "FILTER_VOICE_2_OUTPUT_1_YES_0_NO", kind: "numeric" }],
+  },
+  {
+    // WHY: memmap lists no bits 6-5 of the CIA 1 interrupt control register; they are unused.
+    address: 56333, // $DC0D -- CIA 1 Interrupt Control Register
+    extraFields: [unusedBits("CIA_IRQ_UNUSED", 0x60, 5)],
+  },
+  {
+    // WHY: memmap lists no bits 1-0 of CIA 2 port A; they select the VIC bank (inverted).
+    address: 56576, // $DD00 -- CIA 2 Data Port A
+    extraFields: [{ mask: 0x03, shift: 0, name: "VIC_BANK_SELECT_INVERTED", kind: "numeric" }],
+  },
 ];
+
+/** An unused-bits field: a numeric field that reads as zero in a normal write. */
+function unusedBits(name: string, mask: number, shift: number): RegBitsField {
+  return { mask, shift, name, kind: "numeric" };
+}
 
 function findOverride(address: number): RegbitsRegisterOverride | undefined {
   return OVERRIDES.find((o) => o.address === address);
@@ -323,6 +380,10 @@ function buildFieldsForEntry(entry: MemmapEntry, override: RegbitsRegisterOverri
       );
     }
     claimed.push({ mask, shift, name, kind: "numeric" });
+  }
+  for (const extra of override?.extraFields ?? []) {
+    if (claimed.some((f) => (f.mask & extra.mask) !== 0)) continue;
+    claimed.push({ ...extra });
   }
   claimed.sort((a, b) => a.shift - b.shift);
   return claimed;

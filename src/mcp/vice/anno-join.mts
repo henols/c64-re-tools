@@ -16,10 +16,9 @@
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: reading `listXrefs()`'s
 // distinct target addresses, classifying each one (inside the loaded image,
 // no `memmap.json` entry, or annotated) and writing the resulting comment
-// through `setComment()`. This module's own criterion -- no agent, no queue
-// walk, no skill invocation -- is checked STRUCTURALLY over this module's own
-// source in `anno-join.test.ts`, not merely asserted here in
-// prose.
+// through `setComment()`. A line comment the join did not write (one with no
+// memmap provenance token) is never replaced. Every write of one join runs in
+// one transaction: a refusal part-way leaves the store as it was.
 //
 // WHAT NOT TO DO:
 //   - Never import anything under `skills/`. This function's entire
@@ -52,7 +51,7 @@
 // "nothing reaches this point" into a stated absence rather than a silent
 // default.
 
-import { listXrefs, setComment, setDataType } from "./anno-store.mts";
+import { applyAtomically, listComments, listXrefs, setComment, setDataType } from "./anno-store.mts";
 import type { AnnoStoreHandle } from "./anno-store.mts";
 import {
   decodeBankState,
@@ -62,6 +61,7 @@ import {
 } from "./anno-bank.mts";
 import type { BankedRegion } from "./anno-bank.mts";
 import type { ConstWriteFact } from "./anno-import.mts";
+import { AnnoStoreError, assertRangeShape } from "./anno-types.mts";
 import type { ContradictedComment, SplitTableReinterpretation, XrefRow } from "./anno-types.mts";
 import { loadMemmap, memmapDigest, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "./memmap-lookup.mts";
 import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.mts";
@@ -141,12 +141,11 @@ function computeReachingValues(
   return { kind: "several", values: reaching };
 }
 
-/** Raised when `runMemmapJoin()`'s own inputs cannot support a join at all --
- * currently only the zero-byte-image refusal below. Follows `anno-import.mts`'s
- * `AnnoImportError` construction idiom (a bare `Error` subclass, not
- * `AnnoStoreError`, since this module never touches the store's own
- * persistence). */
-export class AnnoJoinError extends Error {
+/** Raised when `runMemmapJoin()`'s own inputs cannot support a join: a
+ * zero-byte image, or a graphics map index or range the derivation cannot
+ * back. Part of the store's error family, so a caller catches it with the
+ * rest. */
+export class AnnoJoinError extends AnnoStoreError {
   constructor(message: string) {
     super(message);
     this.name = "AnnoJoinError";
@@ -154,7 +153,7 @@ export class AnnoJoinError extends Error {
 }
 
 /** What one `runMemmapJoin()` call reports. `addressesConsidered` is always
- * the sum of the next four fields. The three `graphics*` fields are always
+ * the sum of the next five fields. The three `graphics*` fields are always
  * present and `0` when `constWrites` is omitted or when
  * the selected map derives zero ranges -- never absent, so a caller reads
  * them unconditionally instead of guarding on them, mirroring
@@ -165,6 +164,8 @@ export interface JoinCounts {
   annotated: number;
   skippedInImage: number;
   skippedNoMapEntry: number;
+  /** Addresses whose line comment someone else wrote: left as they are. */
+  skippedExistingComment: number;
   declined: number;
   commentsChanged: number;
   graphicsRangesWritten: number;
@@ -196,7 +197,7 @@ export interface GraphicsWriteBack {
  * `label` it wrote. */
 export interface JoinDecision {
   address: number;
-  outcome: "annotated" | "skipped-in-image" | "skipped-no-entry" | "declined";
+  outcome: "annotated" | "skipped-in-image" | "skipped-no-entry" | "skipped-existing-comment" | "declined";
   reason?: string;
   label?: string;
 }
@@ -221,6 +222,9 @@ export interface RunMemmapJoinArgs {
    * of range for the derived map count refuses BY NAME (`AnnoJoinError`)
    * rather than silently clamping or picking a default. */
   graphicsMapIndex?: number;
+  /** The whole join's compare-and-swap guard, checked under the write lock
+   * before the first write. */
+  baseRevision?: number;
 }
 
 /**
@@ -233,9 +237,12 @@ export interface RunMemmapJoinArgs {
  * contract says an
  * in-image address is "never looked up in memmap.json", a claim about what
  * runs, not merely about what the caller sees back. An address with no
- * containing `memmap.json` entry is skipped for that reason instead;
- * everything else is annotated with the selected entry's label via
- * `setComment()`. Running this twice over an unchanged store re-classifies
+ * containing `memmap.json` entry is skipped for that reason instead, and so
+ * is an address whose line comment the join did not write (it carries no
+ * memmap provenance token): a human's comment is never replaced. Everything
+ * else is annotated with the selected entry's label via `setComment()`. All
+ * writes run in one transaction, after the graphics map is checked, so a
+ * refusal leaves the store unchanged. Running this twice over an unchanged store re-classifies
  * every address identically and reports `commentsChanged: 0` on the second
  * run, because `setComment()` itself reports `changed: false` for a
  * byte-identical repeat.
@@ -261,31 +268,66 @@ export function runMemmapJoin(
     );
   }
 
-  // Computed ONCE per join run and reused for every annotated row,
-  // never recomputed per row -- two comments written in the same run are
-  // therefore GUARANTEED to carry byte-identical tokens, not merely likely
-  // to (the file cannot change mid-run, but a per-row recompute would still
-  // be wasted work re-reading and re-hashing the same bytes for nothing).
+  // The graphics map is chosen and checked BEFORE the first write, so an
+  // index or a range the derivation cannot back refuses a join that has
+  // written nothing. Several distinct register-value combinations describe
+  // mutually contradicting layouts, so only the selected map is written.
+  let selectedGraphics: { mapIndex: number; map: GraphicsMap } | undefined;
+  if (args.constWrites !== undefined) {
+    const maps = deriveGraphicsRanges(args.constWrites);
+    const mapIndex = args.graphicsMapIndex ?? 0;
+    const map: GraphicsMap | undefined = maps[mapIndex];
+    if (map === undefined) {
+      throw new AnnoJoinError(
+        `runMemmapJoin refused: graphicsMapIndex ${mapIndex} is out of range -- deriveGraphicsRanges() produced ` +
+          `${maps.length} map(s) for this run's own constWrites. Nothing was written.`,
+      );
+    }
+    for (const range of map.ranges) {
+      try {
+        assertRangeShape(range.start, range.endInclusive, range.dataType);
+      } catch (err) {
+        throw new AnnoJoinError(
+          `runMemmapJoin refused: graphics map ${mapIndex} derived a ${range.kind} range $${range.start.toString(16)}-` +
+            `$${range.endInclusive.toString(16)} the store cannot hold (${err instanceof Error ? err.message : String(err)}). Nothing was written.`,
+        );
+      }
+    }
+    selectedGraphics = { mapIndex, map };
+  }
+
+  return applyAtomically(handle, () => joinInsideTransaction(handle, args, entries, selectEntry, selectedGraphics), {
+    baseRevision: args.baseRevision,
+  });
+}
+
+function joinInsideTransaction(
+  handle: AnnoStoreHandle,
+  args: RunMemmapJoinArgs,
+  entries: readonly MemmapEntry[],
+  selectEntry: (address: number, entries: readonly MemmapEntry[]) => MemmapSelection | undefined,
+  selectedGraphics: { mapIndex: number; map: GraphicsMap } | undefined,
+): { counts: JoinCounts; decisions: JoinDecision[]; graphics?: GraphicsWriteBack } {
+  // Computed ONCE per join run, so two comments written in the same run
+  // carry byte-identical tokens.
   const digest = memmapDigest();
 
   const xrefs = listXrefs(handle);
   const targets = [...new Set(xrefs.map((xref) => xref.toAddress))].sort((a, b) => a - b);
 
-  // Built ONCE per run, over the SAME xref graph the unconstrained
-  // path already reads via `listXrefs()` above -- reused for every address's
-  // own reachability walk below. `undefined` `args.constWrites` means the
-  // bank-state block is never entered at all, so this adjacency map is built
-  // but simply never consulted -- negligible cost, and keeps the "no
-  // constWrites -> no-op" contract a single conditional rather than two
-  // divergent code paths.
+  // Built once per run and reused for every address's reachability walk.
+  // Only consulted when `args.constWrites` is supplied.
   const bankAdjacency = buildAdjacency(xrefs);
 
-  // The inclusive image range, computed ONCE from the LoadedImage's own body
-  // bytes -- never from `totalBytes` (the file's own byte count,
-  // which on the .prg route includes the two-byte load-address header and
-  // would shift this whole range by two bytes) and never a caller-supplied
-  // number pair that could silently widen or narrow the program's own
-  // extent.
+  // The line comment already at each address, read under the write lock.
+  const lineComments = new Map<number, string>();
+  for (const row of listComments(handle)) {
+    if (row.commentType === "line") lineComments.set(row.address, row.text);
+  }
+
+  // The inclusive image range, from the image's body bytes -- never from
+  // the file's byte count, which on the .prg route includes the two-byte
+  // load-address header.
   const imageStart = args.imageOrigin;
   const imageEnd = args.imageOrigin + args.imageByteLength - 1;
 
@@ -293,13 +335,35 @@ export function runMemmapJoin(
   let annotated = 0;
   let skippedInImage = 0;
   let skippedNoMapEntry = 0;
+  let skippedExistingComment = 0;
   let declined = 0;
   let commentsChanged = 0;
 
+  // Writes the join's comment at `address`, unless a line comment the join
+  // did not write is already there. setComment() -> assertCommentText()
+  // refuses (never truncates) a text that overflows MAX_COMMENT_BYTES; that
+  // refusal propagates, because a truncated provenance token would be a
+  // wrong answer that reports success.
+  const writeJoinComment = (address: number, label: string, commentText: string, reason?: string): void => {
+    const existing = lineComments.get(address);
+    if (existing !== undefined && !existing.includes(PROVENANCE_TOKEN_PREFIX)) {
+      skippedExistingComment += 1;
+      decisions.push({
+        address,
+        outcome: "skipped-existing-comment",
+        reason: `$${address.toString(16)} already carries a line comment the join did not write; it is left as it is`,
+      });
+      return;
+    }
+    const write = setComment(handle, { address, commentType: "line", text: commentText });
+    annotated += 1;
+    if (write.changed) commentsChanged += 1;
+    decisions.push({ address, outcome: "annotated", label, ...(reason !== undefined ? { reason } : {}) });
+  };
+
   for (const address of targets) {
-    // THE GUARD: one early-return, before selectEntry() is ever called. A
-    // single textual deletion of this block removes it cleanly -- that
-    // deletion is this file's own observed-red control.
+    // THE GUARD: an in-image address is a program address, and it is skipped
+    // before selectEntry() is ever called.
     if (address >= imageStart && address <= imageEnd) {
       skippedInImage += 1;
       decisions.push({
@@ -312,13 +376,9 @@ export function runMemmapJoin(
       continue;
     }
 
-    // THE BANK-STATE BLOCK. Only
-    // entered when the caller supplied `constWrites` AT ALL (`undefined`
-    // skips this whole block, falling through to the unconstrained path
-    // below exactly as pre-37-06) AND the address is inside one of the
-    // three bank-conditional ranges -- outside them, bank state is
-    // irrelevant and the candidate set stays unconstrained regardless of
-    // `constWrites`.
+    // THE BANK-STATE BLOCK. Only entered when the caller supplied
+    // `constWrites` AND the address is inside one of the bank-conditional
+    // ranges; everywhere else the candidate set stays unconstrained.
     if (args.constWrites !== undefined && isBankConditionalAddress(address)) {
       const reaching = computeReachingValues(address, args.constWrites, bankAdjacency);
 
@@ -332,11 +392,8 @@ export function runMemmapJoin(
         continue;
       }
 
-      // Resolves ONE region (or refuses) for a single reaching value, applies
-      // it as a candidate constraint BEFORE selection runs (never a
-      // post-filter), and pushes the matching decision. Shared by
-      // both the single-value and the several-values-same-region branches
-      // below, so the annotate path is written exactly once.
+      // Resolves the entry for one region, applied as a candidate constraint
+      // BEFORE selection runs (never a post-filter).
       const annotateUnderRegion = (region: Exclude<BankedRegion, "not_applicable">, bankNote: string): void => {
         const constrained = entries.filter((entry) => regionAdmitsEntry(entry, region));
         const selection = selectEntry(address, constrained);
@@ -350,15 +407,11 @@ export function runMemmapJoin(
           return;
         }
         const commentText = `${selection.entry.label} ${BANK_PROVENANCE_PREFIX}${bankNote}] ${PROVENANCE_TOKEN_PREFIX}${digest}`;
-        const write = setComment(handle, { address, commentType: "line", text: commentText });
-        annotated += 1;
-        if (write.changed) commentsChanged += 1;
-        decisions.push({
-          address,
-          outcome: "annotated",
-          label: selection.entry.label,
-          ...(reaching.kind === "several" ? { reason: `reached under differing processor-port values (${bankNote}) that all resolve to the same region (${region})` } : {}),
-        });
+        const reason =
+          reaching.kind === "several"
+            ? `reached under differing processor-port values (${bankNote}) that all resolve to the same region (${region})`
+            : undefined;
+        writeJoinComment(address, selection.entry.label, commentText, reason);
       };
 
       if (reaching.kind === "one") {
@@ -409,59 +462,27 @@ export function runMemmapJoin(
       continue;
     }
 
-    // The full comment text: the selected entry's label, one space, the
-    // provenance prefix, then the full 64-character digest -- always LAST,
-    // never truncated. setComment() -> assertCommentText() refuses
-    // (never truncates) a text that overflows MAX_COMMENT_BYTES; that
-    // refusal is left to propagate here rather than being pre-checked and
-    // silently worked around, because a truncated provenance token would be
-    // a wrong answer that reports success.
-    const commentText = `${selection.entry.label} ${PROVENANCE_TOKEN_PREFIX}${digest}`;
-    const write = setComment(handle, { address, commentType: "line", text: commentText });
-    annotated += 1;
-    if (write.changed) commentsChanged += 1;
-    decisions.push({ address, outcome: "annotated", label: selection.entry.label });
+    // The selected entry's label, one space, the provenance prefix, then the
+    // full 64-character digest -- always LAST, never truncated.
+    writeJoinComment(address, selection.entry.label, `${selection.entry.label} ${PROVENANCE_TOKEN_PREFIX}${digest}`);
   }
 
-  // THE GRAPHICS WRITE-BACK. Runs AFTER the main
-  // per-address loop above, as its own step -- graphics ranges are derived
-  // from register VALUES, never from the cross-reference targets the loop
-  // above walks, so there is no reason to interleave the two. Gated on the
-  // SAME `constWrites !== undefined` condition the bank-state block uses:
-  // omitting `constWrites` entirely is a complete no-op here too, exactly
-  // like the bank-state block above.
+  // THE GRAPHICS WRITE-BACK, after the per-address loop: graphics ranges are
+  // derived from register VALUES, never from the cross-reference targets.
   let graphics: GraphicsWriteBack | undefined;
-  if (args.constWrites !== undefined) {
-    const maps = deriveGraphicsRanges(args.constWrites);
-    const mapIndex = args.graphicsMapIndex ?? 0;
-    const selectedMap: GraphicsMap | undefined = maps[mapIndex];
-    if (selectedMap === undefined) {
-      throw new AnnoJoinError(
-        `runMemmapJoin refused: graphicsMapIndex ${mapIndex} is out of range -- deriveGraphicsRanges() produced ` +
-          `${maps.length} map(s) for this run's own constWrites`,
-      );
-    }
-
-    // Write ONLY the selected map's own ranges -- never every map
-    // deriveGraphicsRanges() returned. Several distinct register-value
-    // combinations describe MUTUALLY CONTRADICTING layouts (the reason
-    // several maps exist at all); writing more than one into the
-    // same store would write ranges that disagree with each other by
-    // construction.
+  if (selectedGraphics !== undefined) {
     let rangesWritten = 0;
     const contradictedComments: ContradictedComment[] = [];
     const reinterpretedSplitTables: SplitTableReinterpretation[] = [];
-    for (const range of selectedMap.ranges) {
+    for (const range of selectedGraphics.map.ranges) {
       const write = setDataType(handle, { start: range.start, endInclusive: range.endInclusive, dataType: range.dataType });
       rangesWritten += 1;
       // Disclosures a successful range write can carry -- surfaced, never
-      // dropped (must_haves.truths): a comment whose recorded confidence now
-      // contradicts the type this write just assigned, or a split table this
-      // write fragmented.
+      // dropped.
       contradictedComments.push(...write.contradictedComments);
       reinterpretedSplitTables.push(...write.reinterpretedSplitTables);
     }
-    graphics = { mapIndex, rangesWritten, contradictedComments, reinterpretedSplitTables };
+    graphics = { mapIndex: selectedGraphics.mapIndex, rangesWritten, contradictedComments, reinterpretedSplitTables };
   }
 
   const counts: JoinCounts = {
@@ -469,6 +490,7 @@ export function runMemmapJoin(
     annotated,
     skippedInImage,
     skippedNoMapEntry,
+    skippedExistingComment,
     declined,
     commentsChanged,
     graphicsRangesWritten: graphics?.rangesWritten ?? 0,

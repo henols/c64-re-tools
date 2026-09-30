@@ -42,9 +42,7 @@
 //   to have one. The verb that would have exposed it is folded into
 //   `anno_disassemble`'s explicit address argument. Nothing on this surface --
 //   no identifier, no schema property, no dispatch branch -- names a cursor or
-//   a current address, and `anno-tools.test.ts` asserts that over this file's
-//   comment-and-string-stripped source so this paragraph cannot satisfy the
-//   check by containing the word.
+//   a current address.
 //
 // TWO REFUSAL CHANNELS, AND THE DIFFERENCE IS DELIBERATE:
 //
@@ -133,7 +131,7 @@
 // below is a CALLER-side change and nothing more.
 import { extname } from "node:path";
 import { addExcludedRange, addScope, applyEnumUsage, applyWrite, clearEnumUsage, createProjectEnum, currentRevision, deleteExecObservationsForRun, insertExecObservations, listComments, listEnumUsage, listExcludedRanges, listExecObservations, listLabels, listObservedRuns, listProjectEnums, listRanges, listScopes, listXrefs, removeExcludedRange, removeScope, setComment, setDataType, setLabel, updateProjectEnum, type AnnoStoreHandle } from "./anno-store.mts";
-import { AnnoStoreError, AnnoStoreStaleRevisionError, assertCommentType, assertDataType, parseStoreAddress, parseVariantKey, type CommentRow, type EnumUsageRow, type LabelRow, type ProjectEnumRow } from "./anno-types.mts";
+import { AnnoStoreError, assertCommentType, assertDataType, parseStoreAddress, parseVariantKey, type CommentRow, type EnumUsageRow, type LabelRow, type ProjectEnumRow } from "./anno-types.mts";
 import { crossReferencesTo, searchAnnotations } from "./anno-derive.mts";
 import { composeAddressDetails } from "./anno-details.mts";
 import { decode, type Instruction } from "./disasm-decoder.mts";
@@ -149,6 +147,7 @@ import { flatImageOrigin, parsePrg } from "./prg-image.mts";
 import { blocksFromStore } from "./block-class.mts";
 import {
   okText,
+  failureText,
   toolFailure,
   AnnoUncuratedToolError,
   AnnoToolArgumentError,
@@ -391,45 +390,26 @@ function dispatchSaveProject(handle: AnnoStoreHandle): unknown {
   };
 }
 
-/** Enforces `base_revision` as a whole-call precondition rather than
- * threading it through each of the many writes `importGhidraExport()` and
- * `runMemmapJoin()` may issue: both verbs commit several writes per call, and
- * a single up-front comparison against the revision the caller computed its
- * batch against is the coherent point to apply an optimistic-concurrency
- * guard for a multi-write verb -- checked BEFORE anything is written, exactly
- * like every other refusal on this surface. */
-function assertNotStale(name: string, handle: AnnoStoreHandle, baseRevision: number | undefined): void {
-  if (baseRevision === undefined) return;
-  const rev = currentRevision(handle);
-  if (baseRevision !== rev) {
-    throw new AnnoStoreStaleRevisionError(
-      `${name} refused: base revision ${baseRevision} is not the current on-disk revision ${rev}. Nothing was written.`,
-      { baseRevision, currentRevision: rev },
-    );
-  }
-}
-
+/** Both multi-write verbs take `base_revision` as a whole-call guard: the
+ * verb checks it under the write lock and runs every write in one
+ * transaction, so a stale guard or a refusal part-way writes nothing. */
 function dispatchImportGhidraExport(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): unknown {
   const bag = argBag(args);
   const baseRevision = assertBaseRevisionArg("anno_import_ghidra_export", args);
-  assertNotStale("anno_import_ghidra_export", handle, baseRevision);
   const exportFile = stagedInputFile("anno_import_ghidra_export", "export_path", bag.export_path, inputs);
   return importGhidraExport(handle, {
     exportName: exportFile.name,
     exportBytes: exportFile.bytes,
     expectedSha256: bag.sha256 as string | undefined,
+    ...(baseRevision !== undefined ? { baseRevision } : {}),
   });
 }
 
 function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown, inputs: AnnoInputs): unknown {
   const baseRevision = assertBaseRevisionArg("anno_join_memmap", args);
-  assertNotStale("anno_join_memmap", handle, baseRevision);
   const image = loadImage("anno_join_memmap", args, inputs);
-  // CR-01 fix: `const_writes`/`graphics_map_index` are threaded into
-  // `runMemmapJoin()` exactly as its own `RunMemmapJoinArgs` documents --
-  // OMISSION (not `[]`) is what keeps every pre-existing call (no
-  // const_writes at all) a byte-identical no-op for the bank-state and
-  // graphics machinery.
+  // OMITTING `const_writes` (not sending `[]`) is what keeps the bank-state
+  // and graphics steps off.
   const constWrites = assertConstWritesArg("anno_join_memmap", args);
   const graphicsMapIndex = assertGraphicsMapIndexArg("anno_join_memmap", args);
   return runMemmapJoin(handle, {
@@ -437,6 +417,7 @@ function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown, inputs: Anno
     imageByteLength: image.body.length,
     ...(constWrites !== undefined ? { constWrites } : {}),
     ...(graphicsMapIndex !== undefined ? { graphicsMapIndex } : {}),
+    ...(baseRevision !== undefined ? { baseRevision } : {}),
   });
 }
 
@@ -585,14 +566,12 @@ function dispatchEvidRuns(handle: AnnoStoreHandle, args: unknown): unknown {
  * `vice_memmap_zap`. Derives the run identity through `runIdentityFrom()`
  * from `evid-ingest.mts` -- the SAME single digest site `anno_evid_ingest`
  * uses -- never a second hashing site here, and never a caller-supplied
- * digest. `observationsRemoved` is read from a `listExecObservations()`
- * query taken BEFORE the delete, so the answer names exactly how many rows
- * this call removed rather than leaving a caller to infer it from `changed`
- * alone. `baseRevision` is threaded straight into
+ * digest. `observationsRemoved` is the delete's own row count, read
+ * inside the same transaction, so the answer names exactly how many rows this
+ * call removed. `baseRevision` is threaded straight into
  * `deleteExecObservationsForRun()`, which enforces staleness itself through
  * `applyWrite()` -- the same "let the store's own write sequence check it"
- * discipline `dispatchEvidIngest()` above already uses, so there is no
- * second, redundant `assertNotStale()` call here.
+ * discipline `dispatchEvidIngest()` above already uses.
  */
 function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
   const bag = argBag(args);
@@ -601,11 +580,6 @@ function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
     imageSha256: bag.image_sha256 as string,
     argv: bag.argv as string[],
     seed: bag.seed as string,
-  });
-  const existing = listExecObservations(handle, {
-    imageSha256: identity.imageSha256,
-    argvDigest: identity.argvDigest,
-    seed: identity.seed,
   });
   const written = deleteExecObservationsForRun(handle, {
     imageSha256: identity.imageSha256,
@@ -616,7 +590,7 @@ function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
   return {
     revision: written.revision,
     changed: written.changed,
-    observationsRemoved: existing.length,
+    observationsRemoved: written.deletedCount,
     // `denominator` travels beside `observationsRemoved` for the same reason
     // it travels beside every other count this evidence layer reports
     // (EVID-04, plan 43-07's own structural guard): a bare count invites the
@@ -624,7 +598,7 @@ function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
     // `existing.length` rows before the delete, so that is what
     // `observationsRemoved` is a fraction of -- a full reset makes the two
     // numbers equal, but the field is never omitted just because it agrees.
-    denominator: existing.length,
+    denominator: written.deletedCount,
   };
 }
 
@@ -930,6 +904,9 @@ function dispatchDisassemble(handle: AnnoStoreHandle, args: unknown, inputs: Ann
   const last = image.origin + image.body.length - 1;
   // An omitted end is the CAP, not the whole image: the default has to be the
   // bound, or the default is the hazard.
+  // An omitted end cannot make sense of a start outside the image: the span
+  // would run backwards. Answered as unanswerable for the one address named.
+  if (bag.end_address === undefined && (start < image.origin || start > last)) return outsideImage("anno_disassemble", image, start, start);
   const requestedEnd = bag.end_address !== undefined ? parseStoreAddress(bag.end_address, { what: "end_address" }) : Math.min(start + cap - 1, last);
   if (bag.end_address !== undefined) assertWithinRegionCap("anno_disassemble", start, requestedEnd, undefined);
   // Sliced on the span the CALLER named, never on one narrowed down to the
@@ -1103,11 +1080,8 @@ async function dispatchBatchExecute(handle: AnnoStoreHandle, args: unknown, inpu
       const value = name === "anno_batch_execute" ? await dispatchBatchExecute(handle, innerArgs, inputs) : await dispatch(name, innerArgs, handle, inputs);
       results.push({ index, name, status: "success", result: value });
     } catch (err) {
-      // NAMED BY CLASS, exactly as the outer boundary names it, so a per-item
-      // failure is as diagnosable as a whole-call one.
-      const errName = err instanceof Error ? err.name : "Error";
-      const errMessage = err instanceof Error ? err.message : String(err);
-      results.push({ index, name, status: "error", error: `[${errName}] ${errMessage}` });
+      // Spelled by the same converter as a whole-call failure.
+      results.push({ index, name, status: "error", error: failureText(name, err) });
     }
   }
   const failed = results.filter((entry) => entry.status === "error").length;

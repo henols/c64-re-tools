@@ -20,7 +20,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import {
   assertAnnoTool,
   clientFileKeys,
-  READ_ONLY_ANNO_VERBS,
+  isReadOnlyCall,
   toolFailure,
   AnnoToolArgumentError,
   type ToolCallResult,
@@ -74,19 +74,19 @@ function argBag(args: unknown): Record<string, unknown> {
 /** Confines one file argument to the workspace and refuses an absent file by
  * name, before anything is sent. */
 function confineClientFile(name: string, key: string, raw: string, workspaceRoot: string): string {
+  const what = key === "image" ? "image" : key === "export_path" ? "transfer file" : `file for "${key}"`;
   let path: string;
   try {
-    path = storePathWithinWorkspace(raw, workspaceRoot);
+    path = storePathWithinWorkspace(raw, workspaceRoot, what);
   } catch (err) {
     if (err instanceof AnnoStorePathError) {
-      throw new AnnoStorePathError(`${name} refused: ${key} ${err.message}`, { path: err.path, workspaceRoot: err.workspaceRoot });
+      throw new AnnoStorePathError(`${name} refused: ${err.message}`, { path: err.path, workspaceRoot: err.workspaceRoot });
     }
     throw err;
   }
   if (!existsSync(path)) {
-    const what = key === "image" ? "image" : key === "export_path" ? "transfer file" : `file for "${key}"`;
     throw new AnnoStorePathError(
-      `${name} refused: no ${what} exists at ${JSON.stringify(path)} -- a file that is not there is a different fact from a ` +
+      `${name} refused: no ${what} exists at ${JSON.stringify(raw)} -- a file that is not there is a different fact from a ` +
         "file with nothing in it. Nothing was read, nothing was written.",
       { path },
     );
@@ -204,7 +204,7 @@ export async function runAnnoTool(name: string, args: unknown, deps: AnnoCallDep
     const workspaceRoot = deps.workspaceRoot ?? repoRoot();
     const staged = stageClientFiles(name, args, workspaceRoot);
     const runAnno = annoRunner({ runAnno: deps.runAnno, workspaceRoot });
-    const mode = READ_ONLY_ANNO_VERBS.includes(name) ? "read" : "write";
+    const mode = isReadOnlyCall(name, args) ? "read" : "write";
     const result = await runAnno({ mode, kind: "tool", name, args: staged.args, files: staged.files });
     if (!result.ok) throw annoRefusal(name, result);
     if (result.type !== "tool") throw new AnnoCallError(`a tool call was answered with a ${result.type} answer`, "internal");

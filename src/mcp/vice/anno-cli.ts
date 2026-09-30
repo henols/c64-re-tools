@@ -7,57 +7,15 @@
 // remedy text, and `npx -y` installs.
 //
 // ---------------------------------------------------------------------------
-// FIVE VERBS. THAT IS THE WHOLE SURFACE -- narrowed to two, then grown back
-// one verb at a time as each earned a real route over this project's own
-// annotation store: a third verb landed first; a fourth, `evid-disagreements`,
-// followed as the CLI route for the disagreement query, so a planted test has
-// three RENDERED, textually-distinguishable states to compare rather than
-// only the MCP tool's JSON, which a test can only inspect structurally; a
-// fifth, `decomp-completeness`, followed as the CLI route for the
-// decomposition-completeness report's ONLY data path into a real store. Each
-// raise of the count DELIBERATELY SUPERSEDES the prior "THAT IS THE WHOLE
-// SURFACE" framing rather than silently reopening it -- this is the second
-// raise over that framing, not the first.
-//
-// A SEVENTH VERB, `call`, landed 2026-09-25 (D-12, plan 65-02) for a
-// different reason than the first six: D-13 deletes the whole `anno_*` MCP
-// tool family from `tools/list` in the same change. `CURATED_ANNO_TOOLS`
-// (anno-tools.mts) MEASURED at 28 names at this commit -- the plan that
-// authored this verb estimated 25 and named exactly two as colliding with a
-// CLI verb name (hazard-report, evid-disagreements); the measured count is
-// higher, but the same two are still the only ones that collide, so 26 of
-// the 28 had no CLI route before this verb. `call` is the ONE generic route
-// for the other twenty-six -- it takes a curated tool name and one JSON
-// argument object and hands both to `runAnnoTool()` unchanged, so none of
-// the 28 is reimplemented here a second time.
+// NINE VERBS: render-memmap, coverage, export-asm, evid-disagreements,
+// decomp-completeness, hazard-report, export-project, import-project and
+// `call`. Eight are named reports over the workspace's own annotation
+// project; `call` is the one generic route to the curated `anno_*` tools
+// (`CURATED_ANNO_TOOLS` in anno-tool-defs.mts): it takes a tool name and one
+// JSON argument object and hands both to `runAnnoTool()` unchanged, so no
+// tool is reimplemented here. The bootstrap, verify, gen-enums, export-lbl
+// and import-lbl verbs of an earlier analyser-backed CLI have no route.
 // ---------------------------------------------------------------------------
-// This file used to carry eight. Six were removed in one commit because they
-// were delivery paths for the retired external analyser this project used to
-// rent an annotation store from: three drove its child process directly and
-// three reached it through capability modules that did. Removing the analyser
-// without removing them would have left six verbs that typecheck, dispatch,
-// and then fail at the first call. That paragraph is kept rather than deleted:
-// it records what went and why, and it stays true.
-//
-// What went, and where it stands now:
-//   - `bootstrap`, `export-asm`, `verify` -- the analyser's own routes.
-//     `export-asm` RETURNED on 2026-08-31 as a REBUILD OVER THE ANNOTATION
-//     STORE behind a real-ACME byte-diff oracle -- not as restored code, and
-//     not sharing a line with the deleted implementation. It is the third
-//     verb below. `bootstrap` and `verify` did not come back: `bootstrap`
-//     created the analyser's own project file, which no longer exists as a
-//     format this repo produces, and `verify` drove the analyser's own
-//     checker.
-//   - `gen-enums`, `export-lbl`, `import-lbl` -- the enum generator and the
-//     VICE-label round trip. These did NOT return with `export-asm`. No
-//     requirement and no success criterion of the phase that rebuilt
-//     `export-asm` covers any of them, and NO PHASE CURRENTLY OWNS THEM, so
-//     the symbol round trip still has NO route at all. That is recorded as a
-//     withdrawal in this project's own capability record rather than left for
-//     a reader to discover by running it. The exact wording of those
-//     withdrawal notices across the skill docs is kept in exactly one
-//     place; this file states the code fact and does not restate their text,
-//     so the two edits cannot contradict each other.
 //
 // WHAT NOT TO DO, named concretely:
 //   - Never auto-pick an input when the caller does not name one. A
@@ -137,6 +95,7 @@ import type { CoverageReport } from "./anno-coverage.mts";
 import type { HazardReport } from "./anno-hazard-report.mts";
 import type { EvidReconciliation } from "./evid-reconcile.mts";
 import { AnnoProjectError, storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.mts";
+import { jsonParsePosition } from "./anno-memmap-render.mts";
 import { repoRoot } from "./repo-root.ts";
 // `call`'s one generic runner. A STATIC import is safe here -- `vice-proxy.ts`
 // reaches this whole module only through its own dynamic import, so it never
@@ -338,7 +297,7 @@ verbs:
       Such an annotation is never silently dropped while this command
       reports success.
 
-  evid-disagreements [--json]
+  evid-disagreements [--run IMAGE_SHA256:ARGV_DIGEST:SEED] [--json]
       Answers where this workspace's byte-derived block classification (its
       own typed ranges) and the observed-execution evidence (anno_evid_exec
       rows, written by anno_evid_ingest) DISAGREE -- the SAME reconciliation
@@ -352,7 +311,8 @@ verbs:
       a reader summing every line gets what the block table covers, never
       what the program is. No percentage, rate or coverage figure is ever
       printed. --json prints the raw JSON answer instead of the rendered
-      report.
+      report. --run picks the recorded run to answer for; a project that
+      holds several runs refuses without it, and one run needs no --run.
       Requires an EXISTING annotation project; creates none and writes
       nothing.
 
@@ -466,7 +426,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
   "render-memmap": ["--provenance", "--out", "--force", "--check"],
   coverage: ["--out", "--force", "--sample"],
   "export-asm": ["--out", "--ledger", "--force"],
-  "evid-disagreements": ["--json"],
+  "evid-disagreements": ["--run", "--json"],
   "decomp-completeness": ["--fixture", "--disagreements", "--manifest", "--json"],
   "hazard-report": ["--image", "--json"],
   "export-project": ["--out", "--force"],
@@ -597,9 +557,9 @@ function isMissingOptionValue(value: string | undefined): boolean {
 
 /** Confines one caller path to the workspace, printing the refusal when it
  * escapes. The ONE confinement seam, for every path every verb takes. */
-function confine(verb: string, raw: string, workspaceRoot: string): string | undefined {
+function confine(verb: string, raw: string, workspaceRoot: string, what = "path"): string | undefined {
   try {
-    return storePathWithinWorkspace(raw, workspaceRoot);
+    return storePathWithinWorkspace(raw, workspaceRoot, what);
   } catch (err) {
     console.error(`${verb}: ${errMsg(err)}`);
     return undefined;
@@ -716,13 +676,13 @@ async function cmdRenderMemmap(rest: string[], ctx: CliContext): Promise<number>
   }
 
   const workspaceRoot = ctx.workspaceRoot();
-  const provenancePath = confine("render-memmap", provenance, workspaceRoot);
+  const provenancePath = confine("render-memmap", provenance, workspaceRoot, "--provenance path");
   if (provenancePath === undefined) return 1;
   if (!existsSync(provenancePath)) {
     console.error(`render-memmap: provenance sidecar not found: ${provenancePath}`);
     return 1;
   }
-  const outPath = confine("render-memmap", out, workspaceRoot);
+  const outPath = confine("render-memmap", out, workspaceRoot, "--out path");
   if (outPath === undefined) return 1;
 
   // The banner records the sidecar's WORKSPACE-RELATIVE location, so a
@@ -745,10 +705,6 @@ async function cmdRenderMemmap(rest: string[], ctx: CliContext): Promise<number>
     if (result.status === "in-sync") {
       console.log(`render-memmap: in sync (${outPath})`);
       return 0;
-    }
-    if (result.status === "missing") {
-      console.error(`render-memmap: missing -- ${outPath} does not exist yet. Run render-memmap without --check first.`);
-      return 1;
     }
     console.error(`render-memmap: drifted at line ${result.line}`);
     console.error(`  expected: ${result.expected}`);
@@ -1017,9 +973,9 @@ async function cmdCoverage(rest: string[], ctx: CliContext): Promise<number> {
   }
 
   const workspaceRoot = ctx.workspaceRoot();
-  const projectPath = confine("coverage", project, workspaceRoot);
+  const projectPath = confine("coverage", project, workspaceRoot, "image path");
   if (projectPath === undefined) return 1;
-  const outPath = out === undefined ? undefined : confine("coverage", out, workspaceRoot);
+  const outPath = out === undefined ? undefined : confine("coverage", out, workspaceRoot, "--out path");
   if (out !== undefined && outPath === undefined) return 1;
   if (!existsSync(projectPath)) {
     console.error(`coverage: project file not found: ${projectPath}`);
@@ -1185,9 +1141,9 @@ async function cmdExportAsm(rest: string[], ctx: CliContext): Promise<number> {
   }
 
   const workspaceRoot = ctx.workspaceRoot();
-  const imagePath = confine("export-asm", positional[0]!, workspaceRoot);
+  const imagePath = confine("export-asm", positional[0]!, workspaceRoot, "image path");
   if (imagePath === undefined) return 1;
-  const ledgerPath = ledger === undefined ? undefined : confine("export-asm", ledger, workspaceRoot);
+  const ledgerPath = ledger === undefined ? undefined : confine("export-asm", ledger, workspaceRoot, "--ledger path");
   if (ledger !== undefined && ledgerPath === undefined) return 1;
   if (!existsSync(imagePath)) {
     console.error(`export-asm: image not found: ${imagePath}`);
@@ -1200,7 +1156,7 @@ async function cmdExportAsm(rest: string[], ctx: CliContext): Promise<number> {
     );
     return 1;
   }
-  const outPath = confine("export-asm", out, workspaceRoot);
+  const outPath = confine("export-asm", out, workspaceRoot, "--out path");
   if (outPath === undefined) return 1;
   // The project's own database lives inside the workspace, so an --out at or
   // above it would put the tree among the annotations it was exported from.
@@ -1255,6 +1211,8 @@ async function cmdExportAsm(rest: string[], ctx: CliContext): Promise<number> {
 
 interface EvidDisagreementsParsedArgs {
   positional: string[];
+  run?: string;
+  runMissingValue?: boolean;
   json?: boolean;
   unknownOption?: string;
 }
@@ -1266,18 +1224,27 @@ interface EvidDisagreementsParsedArgs {
 function parseEvidDisagreementsArgs(rest: string[]): EvidDisagreementsParsedArgs {
   const positional: string[] = [];
   let json = false;
+  let run: string | undefined;
+  let runMissingValue = false;
   let unknownOption: string | undefined;
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
     if (a === "--json") {
       json = true;
+    } else if (a === "--run") {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith("-")) runMissingValue = true;
+      else {
+        run = value;
+        i += 1;
+      }
     } else if (a.startsWith("--")) {
       unknownOption ??= a;
     } else {
       positional.push(a);
     }
   }
-  return { positional, json, unknownOption };
+  return { positional, run, runMissingValue, json, unknownOption };
 }
 
 /**
@@ -1326,10 +1293,15 @@ function printEvidDisagreementsReport(label: string, r: EvidReconciliation): voi
  * three states.
  */
 async function cmdEvidDisagreements(rest: string[], ctx: CliContext): Promise<number> {
-  const { positional, json, unknownOption } = parseEvidDisagreementsArgs(rest);
+  const { positional, run, runMissingValue, json, unknownOption } = parseEvidDisagreementsArgs(rest);
 
   if (unknownOption) {
     console.error(`evid-disagreements: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (runMissingValue) {
+    console.error("evid-disagreements: --run requires a value\n");
     console.log(USAGE);
     return 1;
   }
@@ -1338,9 +1310,20 @@ async function cmdEvidDisagreements(rest: string[], ctx: CliContext): Promise<nu
     return 1;
   }
 
+  let selector: { image_sha256: string; argv_digest: string; seed: string } | undefined;
+  if (run !== undefined) {
+    const first = run.indexOf(":");
+    const second = first < 0 ? -1 : run.indexOf(":", first + 1);
+    if (first < 0 || second < 0 || second === run.length - 1) {
+      console.error("evid-disagreements: --run must read IMAGE_SHA256:ARGV_DIGEST:SEED");
+      return 1;
+    }
+    selector = { image_sha256: run.slice(0, first), argv_digest: run.slice(first + 1, second), seed: run.slice(second + 1) };
+  }
+
   let answer: ReportAnswer;
   try {
-    answer = await runReport(ctx, "evid-disagreements", {}, {});
+    answer = await runReport(ctx, "evid-disagreements", selector === undefined ? {} : { run: selector }, {});
   } catch (err) {
     return reportFailure("evid-disagreements", err);
   }
@@ -1483,9 +1466,9 @@ async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<n
   }
 
   const workspaceRoot = ctx.workspaceRoot();
-  const disagreementsPath = confine("decomp-completeness", disagreements, workspaceRoot);
+  const disagreementsPath = confine("decomp-completeness", disagreements, workspaceRoot, "--disagreements path");
   if (disagreementsPath === undefined) return 1;
-  const manifestPath = confine("decomp-completeness", manifest, workspaceRoot);
+  const manifestPath = confine("decomp-completeness", manifest, workspaceRoot, "--manifest path");
   if (manifestPath === undefined) return 1;
   if (!existsSync(disagreementsPath)) {
     console.error(`decomp-completeness: --disagreements file not found: ${disagreementsPath}`);
@@ -1500,7 +1483,8 @@ async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<n
   try {
     manifestDoc = JSON.parse(readFileSync(manifestPath, "utf8"));
   } catch (err) {
-    console.error(`decomp-completeness: --manifest file is not valid JSON: ${errMsg(err)}`);
+    // Never the parser's own message: it quotes the file's bytes.
+    console.error(`decomp-completeness: --manifest file is not valid JSON${jsonParsePosition(err)}`);
     return 1;
   }
   if (typeof manifestDoc !== "object" || manifestDoc === null || !Array.isArray((manifestDoc as Record<string, unknown>).fixtures)) {
@@ -1522,7 +1506,10 @@ async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<n
   // The fixture's own bytes -- the manifest entry's path, resolved beside the
   // manifest file, never a second guess at where the image lives. An image
   // that is not there is not sent; the report says so by name.
-  const fixtureImagePath = join(dirname(manifestPath), manifestEntry.path);
+  // The derived path goes through the same confinement seam as every other
+  // path: an entry that climbs out of the workspace is refused by name.
+  const fixtureImagePath = confine("decomp-completeness", join(dirname(manifestPath), manifestEntry.path), workspaceRoot, "the manifest entry's image path");
+  if (fixtureImagePath === undefined) return 1;
   let report: DecompCompletenessReport;
   try {
     const answer = await runReport(ctx, "decomp-completeness", { manifest_entry: manifestEntry }, {
@@ -1797,7 +1784,7 @@ async function cmdHazardReport(rest: string[], ctx: CliContext): Promise<number>
     return 1;
   }
 
-  const imagePath = confine("hazard-report", image, ctx.workspaceRoot());
+  const imagePath = confine("hazard-report", image, ctx.workspaceRoot(), "image path");
   if (imagePath === undefined) return 1;
   if (!existsSync(imagePath)) {
     console.error(`hazard-report: image not found: ${imagePath}`);
@@ -1890,7 +1877,7 @@ async function cmdExportProject(rest: string[], ctx: CliContext): Promise<number
     console.log(USAGE);
     return 1;
   }
-  const outPath = confine("export-project", out, ctx.workspaceRoot());
+  const outPath = confine("export-project", out, ctx.workspaceRoot(), "--out path");
   if (outPath === undefined) return 1;
   if (!refuseOverwrite(outPath, force, "export-project")) return 1;
 
@@ -1920,7 +1907,7 @@ async function cmdImportProject(rest: string[], ctx: CliContext): Promise<number
     console.error("import-project: usage: import-project <file> -- exactly one export-project document");
     return 1;
   }
-  const documentPath = confine("import-project", positional[0]!, ctx.workspaceRoot());
+  const documentPath = confine("import-project", positional[0]!, ctx.workspaceRoot(), "document path");
   if (documentPath === undefined) return 1;
   if (!existsSync(documentPath)) {
     console.error(`import-project: document not found: ${documentPath}`);
@@ -2003,7 +1990,7 @@ function parseCallArgs(rest: string[]): CallParsedArgs {
  *
  * `--args-file`'s path IS a caller-supplied path and goes through the SAME
  * ONE confinement seam every other path this CLI accepts uses,
- * `storePathWithinWorkspace()` against `repoRoot()` -- read BEFORE the file
+ * `storePathWithinWorkspace()` against `ctx.workspaceRoot()` -- read BEFORE the file
  * is opened, so a path outside the workspace root never reaches
  * `readFileSync` at all. A JSON parse failure never echoes the file's bytes
  * back (the CR-03 posture this file's header names): the refusal names only
@@ -2050,10 +2037,10 @@ async function cmdCall(rest: string[], ctx: CliContext): Promise<number> {
 
   let raw: string;
   if (argsFile !== undefined) {
-    const workspaceRoot = repoRoot();
+    const workspaceRoot = ctx.workspaceRoot();
     let argsFilePath: string;
     try {
-      argsFilePath = storePathWithinWorkspace(argsFile, workspaceRoot);
+      argsFilePath = storePathWithinWorkspace(argsFile, workspaceRoot, "--args-file");
     } catch (err) {
       console.error(`call: ${errMsg(err)}`);
       return 1;

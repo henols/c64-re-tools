@@ -10,8 +10,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closeStore, listComments, listRanges, openStore, putXref, setComment } from "../../src/mcp/vice/anno-store.mts";
-import { AnnoCommentError, MAX_COMMENT_BYTES } from "../../src/mcp/vice/anno-types.mts";
+import { closeStore, currentRevision, listComments, listRanges, openStore, putXref, setComment } from "../../src/mcp/vice/anno-store.mts";
+import { AnnoCommentError, AnnoStoreStaleRevisionError, MAX_COMMENT_BYTES } from "../../src/mcp/vice/anno-types.mts";
 import { AnnoJoinError, runMemmapJoin } from "../../src/mcp/vice/anno-join.mts";
 import { memmapDigest, PROVENANCE_TOKEN_PREFIX } from "../../src/mcp/vice/memmap-lookup.mts";
 import type { MemmapEntry, MemmapSelection } from "../../src/mcp/vice/memmap-lookup.mts";
@@ -296,37 +296,71 @@ test("runMemmapJoin: setComment() refuses, by name, a synthetic label long enoug
   });
 });
 
-// ---------------------------------------------------------------------------
-// THE STRUCTURAL PROOF (AUTO-01): no agent invocation, no queue module, no
-// skill invocation anywhere in the join's module graph. Checked mechanically
-// over the source of the three modules this phase lands, not asserted in
-// prose.
-// ---------------------------------------------------------------------------
+test("runMemmapJoin: a line comment a human wrote at a mapped address survives the join, and the decision says why it was skipped", () => {
+  inTempDir((dir) => {
+    const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+    putXref(handle, { fromAddress: 0x0801, toAddress: 0xd020, accessKind: "WRITE" });
+    setComment(handle, { address: 0xd020, commentType: "line", text: "flashes the border on a hit" });
 
-// Phase 37, plan 37-08: anno-graphics.mts joins the scan -- anno-join.mts now
-// imports it (the graphics write-back), so it is genuinely part of the
-// join's own module graph and must be covered by AUTO-01's structural proof
-// exactly like anno-bank.mts was added in plan 37-06.
-test("the structural proof's non-vacuity assertion is itself non-vacuous: deleting it would let the scan pass over an empty file list", () => {
-  // Confirmed by hand rather than executed here (an empty-list run would
-  // require duplicating the scan over zero files, which proves nothing this
-  // test doesn't already state): removing the `allSpecifiers.length > 0`
-  // assertion above and pointing `SCANNED_MODULES` at an empty array makes
-  // every subsequent `assert.deepEqual([...], [])` in the prior test PASS
-  // trivially, because `[].filter(...)` is always `[]`. This test exists so
-  // that hand-confirmed fact is recorded as a committed assertion rather than
-  // left in a plan document.
-  const emptyScanSpecifiers: string[] = [];
-  assert.deepEqual(
-    emptyScanSpecifiers.filter((s) => s.includes("/skills/")),
-    [],
-    "an empty specifier list trivially passes the skills-import absence check",
-  );
-  assert.equal(
-    emptyScanSpecifiers.length > 0,
-    false,
-    "confirms the non-vacuity guard is what would have caught an empty scan -- it correctly reports false here",
-  );
+    const { counts, decisions } = runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100 }, SYNTHETIC_ENTRIES);
+    assert.deepEqual(
+      listComments(handle).map((c) => c.text),
+      ["flashes the border on a hit"],
+    );
+    assert.equal(counts.annotated, 0);
+    assert.equal(counts.skippedExistingComment, 1);
+    assert.equal(counts.commentsChanged, 0);
+    assert.equal(counts.addressesConsidered, counts.annotated + counts.skippedInImage + counts.skippedNoMapEntry + counts.skippedExistingComment + counts.declined);
+    assert.equal(decisions[0]!.outcome, "skipped-existing-comment");
+    assert.match(decisions[0]!.reason!, /\$d020 already carries a line comment/);
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin: a comment an earlier join wrote is replaced when the map's label changes", () => {
+  inTempDir((dir) => {
+    const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+    putXref(handle, { fromAddress: 0x0801, toAddress: 0xd020, accessKind: "WRITE" });
+    runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100 }, SYNTHETIC_ENTRIES);
+    const renamed: MemmapEntry[] = [{ ...SYNTHETIC_ENTRIES[0]!, label: "Border colour" }];
+    const second = runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100 }, renamed);
+    assert.equal(second.counts.annotated, 1);
+    assert.equal(second.counts.commentsChanged, 1);
+    assert.match(listComments(handle)[0]!.text, /^Border colour /);
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin: a refusal part-way through the join leaves the revision and every row as they were", () => {
+  inTempDir((dir) => {
+    const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0xd020, accessKind: "WRITE" });
+    putXref(handle, { fromAddress: 0x0000, toAddress: 0xd021, accessKind: "WRITE" });
+    const entries: MemmapEntry[] = [
+      { start: 0xd020, end: 0xd020, label: "Border color", section: "test", desc: "", src: "test" },
+      { start: 0xd021, end: 0xd021, label: "x".repeat(MAX_COMMENT_BYTES), section: "test", desc: "", src: "test" },
+    ];
+    const revisionBefore = currentRevision(handle);
+    assert.throws(() => runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 60 }, entries), AnnoCommentError);
+    assert.equal(currentRevision(handle), revisionBefore);
+    assert.deepEqual(listComments(handle), [], "the comment written before the refusal was rolled back");
+    closeStore(handle);
+  });
+});
+
+test("runMemmapJoin: a stale base revision is refused before anything is written", () => {
+  inTempDir((dir) => {
+    const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+    putXref(handle, { fromAddress: 0x0801, toAddress: 0xd020, accessKind: "WRITE" });
+    const revisionBefore = currentRevision(handle);
+    assert.throws(
+      () => runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100, baseRevision: revisionBefore - 1 }, SYNTHETIC_ENTRIES),
+      AnnoStoreStaleRevisionError,
+    );
+    assert.equal(currentRevision(handle), revisionBefore);
+    assert.deepEqual(listComments(handle), []);
+    closeStore(handle);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -420,11 +454,16 @@ test("runMemmapJoin (graphics write-back): several derived maps -- only the call
     const rangesAfterSecond = listRanges(handle);
     assert.equal(rangesAfterSecond.length, selectedSecond.graphics!.rangesWritten, "only the selected map's own ranges were written -- never every map");
 
+    putXref(handle, { fromAddress: 0x0801, toAddress: 0xd020, accessKind: "WRITE" });
+    const revisionBefore = currentRevision(handle);
+    const commentsBefore = listComments(handle);
     assert.throws(
       () => runMemmapJoin(handle, { imageOrigin: 0x0800, imageByteLength: 0x0100, constWrites: twoMapFacts, graphicsMapIndex: 5 }, SYNTHETIC_ENTRIES),
       AnnoJoinError,
       "an out-of-range graphicsMapIndex must refuse by name rather than silently clamping or defaulting",
     );
+    assert.equal(currentRevision(handle), revisionBefore, "the refused join wrote nothing");
+    assert.deepEqual(listComments(handle), commentsBefore);
     closeStore(handle);
   });
 });

@@ -5,11 +5,11 @@
 // query or write an annotation store file; every other module reaches the
 // store through the functions below.
 //
-// ONE DATABASE, MANY PROJECTS. The database holds every project on the machine.
-// A handle is bound to one project id when it is made (`projectStore`), and
-// every read and write below touches only that project's rows: no function
-// takes a project id as an argument, so no caller can widen or switch the
-// scope, and there is no cross-project query.
+// ONE FILE, ONE PROJECT. A workspace's annotations.db holds exactly one
+// project (`soleProjectStore` refuses a file with more). A handle is bound to
+// that project's id when it is made, and every read and write below touches
+// only that project's rows: no function takes a project id as an argument,
+// and there is no cross-project query.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
@@ -199,10 +199,10 @@ export interface AnnoWriteResult {
  * in one directory sharing one ring and a directory rename plus one
  * write destroying the whole revert history. The column is DROPPED at
  * `SCHEMA_VERSION` 2 and the location is computed from the handle by
- * `snapshotDirFor()` at every read and every delete, so there is no persisted
+ * the handle at every read and every delete, so there was no persisted
  * absolute string left for a second namespace -- a bind mount seen from the
  * host and from a container is this repo's own everyday case -- to disagree
- * with. `anno-types.mts`'s `SCHEMA_VERSION` doc comment carries the whole
+ * with. (The snapshot ring and `anno_snapshot` are gone since version 6.) `anno-types.mts`'s `SCHEMA_VERSION` doc comment carries the whole
  * argument and the reason a version-1 store is refused rather than migrated.
  *
  * THE VERSION 2 DDL CHANGE TOUCHED ONLY `anno_snapshot`. Every other table's
@@ -255,11 +255,11 @@ export interface AnnoWriteResult {
  * `ExcludedRangeRow`'s own doc comment gives -- an exclusion is a statement
  * about the subject program, not a memory view.
  *
- * AT `SCHEMA_VERSION` 6 THE FILE HOLDS EVERY PROJECT ON THE MACHINE.
- * `anno_project` holds each project's id and its own revision, and
+ * AT `SCHEMA_VERSION` 6 EVERY TABLE IS KEYED BY PROJECT.
+ * `anno_project` holds the project's id and its revision, and
  * `anno_meta` keeps only the schema version. Every other table carries
- * `project_id`, and every UNIQUE constraint and index leads with it: a label
- * name is unique within its project, not across the machine.
+ * `project_id`, and every UNIQUE constraint and index leads with it. A
+ * workspace's file holds one project (`soleProjectStore`).
  * `anno_snapshot` is gone with the snapshot ring. See `anno-types.mts`'s
  * `SCHEMA_VERSION` doc comment.
  */
@@ -449,10 +449,11 @@ export function scopeOf(handle: AnnoStoreHandle): ScopedDb {
  * confine. Every such call site carries a one-line comment naming the derived
  * value that produced its path.
  *
- * When `workspaceRoot` is supplied the path is confined to it first. The
- * fresh-versus-existing decision is made with `existsSync` BEFORE the
- * connection is constructed, because constructing `DatabaseSync` creates the
- * file -- after that point there is no way left to ask the question.
+ * When `workspaceRoot` is supplied the path is confined to it first. Whether
+ * the file existed is asked with `existsSync` BEFORE the connection is
+ * constructed, because constructing `DatabaseSync` creates the file. Whether
+ * to create the schema is then decided under the write lock
+ * (`initialiseUnderWriteLock`), so racing first writers agree.
  *
  * `timeout` is set so a genuinely concurrent writer WAITS for the lock rather
  * than failing `SQLITE_BUSY` on contact. No other connection option is passed:
@@ -508,7 +509,7 @@ export function openAnnoDatabase(
     );
   }
 
-  const resolved = opts.workspaceRoot === undefined ? resolve(path) : storePathWithinWorkspace(path, opts.workspaceRoot);
+  const resolved = opts.workspaceRoot === undefined ? resolve(path) : storePathWithinWorkspace(path, opts.workspaceRoot, "annotation database path");
   const fresh = !existsSync(resolved);
 
   // REFUSED BEFORE THE CONNECTION IS CONSTRUCTED, and the position is the whole
@@ -539,30 +540,17 @@ export function openAnnoDatabase(
   }
   const adb: AnnoDatabase = { db, path: resolved };
 
-  if (fresh) {
-    // WRAPPED FOR THE CONNECTION, NOT ONLY FOR THE MESSAGE. The most plausible
-    // failure in this block is a SECOND process that also saw
-    // the file absent, giving `table anno_meta already exists` -- and
-    // unwrapped that left BOTH the connection and the transaction open, so the
-    // caller lost the file handle and the lock with no way to reach either.
-    // The rollback is attempted inside its own swallowing `try` for the same
-    // reason the write sequence does it: there is nothing useful to do with a
-    // second error, and reporting it would replace the real one.
+  if (opts.mustExist !== true) {
+    // WRAPPED FOR THE CONNECTION, NOT ONLY FOR THE MESSAGE: an unwrapped
+    // failure would leave both the connection and the transaction open, and
+    // the caller could reach neither.
     try {
-      db.exec("begin immediate");
-      db.exec(DDL);
-      db.prepare("insert into anno_meta(id, schema_version) values (1, ?)").run(SCHEMA_VERSION);
-      commitTransaction(db);
+      initialiseUnderWriteLock(db, fresh);
     } catch (e) {
-      try {
-        db.exec("rollback");
-      } catch {
-        // deliberately ignored -- see above
-      }
+      rollBackConnectionQuietly(db);
       db.close();
       throw new AnnoStoreError(`${resolved}: failed to initialise a fresh annotation store (${(e as Error).message})`);
     }
-    return adb;
   }
 
   let meta: { schema_version: number } | undefined;
@@ -624,6 +612,54 @@ export function openAnnoDatabase(
   }
 
   return adb;
+}
+
+/** True when the file already holds the store's own `anno_meta` table.
+ * Throws when the file is not a SQLite database at all. */
+function hasMetaTable(db: DatabaseSync): boolean {
+  const row = db.prepare("select count(*) as n from sqlite_master where type = 'table' and name = 'anno_meta'").get() as { n: number };
+  return row.n > 0;
+}
+
+function rollBackConnectionQuietly(db: DatabaseSync): void {
+  try {
+    db.exec("rollback");
+  } catch {
+    // no open transaction, or a second error: the first one is the one to report
+  }
+}
+
+/**
+ * Creates the schema when the file holds none yet, deciding under the write
+ * lock. Two first writers racing on an absent file both reach this point;
+ * the second one waits on `begin immediate`, then sees the first one's
+ * committed `anno_meta` and creates nothing. A caller that opens the file
+ * while a first writer is still initialising it waits the same way, instead
+ * of reading the half-made file as a corrupt one.
+ *
+ * `fresh` says the file did not exist before this open. Only then is the
+ * schema created: a file that existed and still holds no store after the
+ * wait is a truncated or foreign file, and the checks after this refuse it.
+ * A file that is not a SQLite database at all is left to those checks too.
+ *
+ * Residual: a file another process has created but not yet locked (the few
+ * statements between its constructor and its `begin immediate`) still reads
+ * as a file with no store.
+ */
+function initialiseUnderWriteLock(db: DatabaseSync, fresh: boolean): void {
+  try {
+    if (hasMetaTable(db)) return;
+  } catch {
+    return;
+  }
+  db.exec("begin immediate");
+  if (!hasMetaTable(db) && fresh) {
+    db.exec(DDL);
+    db.prepare("insert into anno_meta(id, schema_version) values (1, ?)").run(SCHEMA_VERSION);
+    commitTransaction(db);
+    return;
+  }
+  db.exec("rollback");
 }
 
 /** Closes the database's connection. Safe to call once. */
@@ -778,12 +814,7 @@ function runWriteSequence<T>(
   let result: T;
   try {
     rev = readProjectRevision(handle);
-    if (baseRevision !== undefined && baseRevision !== rev) {
-      throw new AnnoStoreStaleRevisionError(
-        `refusing the write: base revision ${baseRevision} is not the current on-disk revision ${rev}`,
-        { baseRevision, currentRevision: rev },
-      );
-    }
+    assertBaseRevisionMatches(baseRevision, rev);
     handle.db.prepare("update anno_project set revision = revision + 1 where project_id = ?").run(handle.projectId);
     result = mutate(scopeOf(handle));
   } catch (e) {
@@ -794,6 +825,17 @@ function runWriteSequence<T>(
   if (doCommit && !joined) commitOrRollBack(handle, rev);
 
   return { revision: rev + 1, result };
+}
+
+/** Refuses a write whose `baseRevision` is not the revision read under the
+ * write lock. `undefined` means an unconditional write. */
+function assertBaseRevisionMatches(baseRevision: number | undefined, rev: number): void {
+  if (baseRevision !== undefined && baseRevision !== rev) {
+    throw new AnnoStoreStaleRevisionError(
+      `refusing the write: base revision ${baseRevision} is not the current on-disk revision ${rev}. Nothing was written.`,
+      { baseRevision, currentRevision: rev },
+    );
+  }
 }
 
 /** Handles inside `applyAtomically()`: their writes join its transaction. */
@@ -864,15 +906,23 @@ function commitOrRollBack(handle: AnnoStoreHandle, rev: number): void {
  * writes made one by one would have left it.
  *
  * Nested calls on the same handle run inside the outer transaction.
+ *
+ * `baseRevision` is the whole call's compare-and-swap guard: it is compared
+ * with the revision read under the write lock, before `body` runs, and a
+ * mismatch refuses the call with nothing written.
  */
-export function applyAtomically<T>(handle: AnnoStoreHandle, body: () => T): T {
-  if (joinedTransactions.has(handle)) return body();
+export function applyAtomically<T>(handle: AnnoStoreHandle, body: () => T, opts: { baseRevision?: number } = {}): T {
+  if (joinedTransactions.has(handle)) {
+    assertBaseRevisionMatches(opts.baseRevision, readProjectRevision(handle));
+    return body();
+  }
   beginWriteTransaction(handle);
   joinedTransactions.add(handle);
   let rev: number;
   let result: T;
   try {
     rev = readProjectRevision(handle);
+    assertBaseRevisionMatches(opts.baseRevision, rev);
     result = body();
   } catch (e) {
     rollBackQuietly(handle);
@@ -2488,7 +2538,7 @@ export function listObservedRuns(handle: AnnoStoreHandle): { runs: ObservedRunRo
 export function deleteExecObservationsForRun(
   handle: AnnoStoreHandle,
   args: { imageSha256: unknown; argvDigest: unknown; seed: unknown; baseRevision?: number },
-): AnnoWriteResult {
+): AnnoWriteResult & { deletedCount: number } {
   const imageSha256 = assertRunIdentityDigest(args.imageSha256, "imageSha256");
   const argvDigest = assertRunIdentityDigest(args.argvDigest, "argvDigest");
   const seed = assertRunIdentitySeed(args.seed);
@@ -2497,11 +2547,11 @@ export function deleteExecObservationsForRun(
     handle,
     (db) => {
       const info = db.prepare("delete from anno_evid_exec where project_id = $pid and image_sha256 = ? and argv_digest = ? and seed = ?").run(imageSha256, argvDigest, seed);
-      return Number(info.changes) > 0;
+      return Number(info.changes);
     },
     { baseRevision: args.baseRevision },
   );
-  return { revision, changed: result };
+  return { revision, changed: result > 0, deletedCount: result };
 }
 
 /**

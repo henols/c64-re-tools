@@ -17,6 +17,7 @@
 import { decode } from "./disasm-decoder.mts";
 import type { Instruction } from "./disasm-decoder.mts";
 import {
+  applyAtomically,
   listComments,
   listExecObservations,
   listLabels,
@@ -88,10 +89,6 @@ export class AnnoReportRefusal extends Error {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 function stringArg(verb: string, args: Record<string, unknown>, key: string): string {
@@ -711,15 +708,38 @@ function exportAsmReport(handle: AnnoStoreHandle, args: Record<string, unknown>,
   };
 }
 
-/** evid-disagreements: where runtime evidence disagrees with the typed ranges.
- * `runIdentity` rides beside the reconciliation, `null` unless the store
- * holds exactly one run -- an ambiguous "which run" is refused by the
- * consuming verb, never guessed here. */
-function evidDisagreementsReport(handle: AnnoStoreHandle): AnnoReportResult {
+/** evid-disagreements: where runtime evidence disagrees with the typed ranges,
+ * for ONE run. `args.run` (`{image_sha256, argv_digest, seed}`) picks the run;
+ * without it the store must hold at most one. Several runs and no choice is
+ * refused by name -- mixing two runs' observations would answer for neither.
+ * `runIdentity` rides beside the reconciliation, `null` when the store holds
+ * no run. */
+function evidDisagreementsReport(handle: AnnoStoreHandle, args: Record<string, unknown>): AnnoReportResult {
   const blocks = blocksFromStore(listRanges(handle));
-  const reconciliation = reconcileObservedExecution({ blocks, observations: listExecObservations(handle) });
   const { runs } = listObservedRuns(handle);
-  const run = runs.length === 1 ? runs[0]! : undefined;
+  let run: (typeof runs)[number] | undefined;
+  if (args.run !== undefined) {
+    const sel = args.run;
+    if (!isPlainObject(sel) || typeof sel.image_sha256 !== "string" || typeof sel.argv_digest !== "string" || typeof sel.seed !== "string") {
+      throw new AnnoReportRefusal("evid-disagreements: the run selector must carry image_sha256, argv_digest and seed as strings");
+    }
+    run = runs.find((r) => r.imageSha256 === sel.image_sha256 && r.argvDigest === sel.argv_digest && r.seed === sel.seed);
+    if (run === undefined) {
+      throw new AnnoReportRefusal(
+        `evid-disagreements: no recorded run matches the selector (${runs.length} run(s) are recorded) -- name a run the project holds.`,
+      );
+    }
+  } else if (runs.length > 1) {
+    throw new AnnoReportRefusal(
+      `evid-disagreements: the project holds ${runs.length} recorded runs and none was chosen -- mixing their observations would ` +
+        "answer for none of them. Name one with --run IMAGE_SHA256:ARGV_DIGEST:SEED (`anno call anno_evid_runs` lists them).",
+    );
+  } else {
+    run = runs[0];
+  }
+  const observations =
+    run === undefined ? listExecObservations(handle) : listExecObservations(handle, { imageSha256: run.imageSha256, argvDigest: run.argvDigest, seed: run.seed });
+  const reconciliation = reconcileObservedExecution({ blocks, observations });
   const runIdentity = run === undefined ? null : { imageSha256: run.imageSha256, argvDigest: run.argvDigest, seed: run.seed };
   return { json: { runIdentity, ...reconciliation }, files: [] };
 }
@@ -747,7 +767,7 @@ function decompCompletenessReport(handle: AnnoStoreHandle, args: Record<string, 
   try {
     disagreementDoc = JSON.parse(utf8(disagreementsFile.bytes));
   } catch (err) {
-    throw new AnnoReportRefusal(`decomp-completeness: --disagreements file is not valid JSON: ${errMsg(err)}`);
+    throw new AnnoReportRefusal(`decomp-completeness: --disagreements file is not valid JSON${jsonParsePosition(err)}`);
   }
   const validated = validateDisagreementDocumentShape(disagreementDoc);
   if (typeof validated === "string") throw new AnnoReportRefusal(validated);
@@ -917,7 +937,9 @@ function exportProjectReport(handle: AnnoStoreHandle): AnnoReportResult {
  * Fills an EMPTY project from an export document, in one transaction. A
  * project that already holds any row is refused and left untouched: merging
  * two sets of annotations is a decision about which one is right, and this
- * verb does not make it.
+ * verb does not make it. The emptiness check runs inside the same
+ * transaction as the import, so a write that lands between the check and the
+ * import cannot be merged into.
  */
 function importProjectReport(handle: AnnoStoreHandle, args: Record<string, unknown>, inputs: AnnoInputs): AnnoReportResult {
   const file = stagedInputFile("import-project", "document", args.document, inputs);
@@ -937,16 +959,17 @@ function importProjectReport(handle: AnnoStoreHandle, args: Record<string, unkno
     }
   }
 
-  const held = Object.entries(documentCounts(exportStoreDocument(handle))).filter(([, n]) => n > 0);
-  if (held.length > 0) {
-    throw new AnnoReportRefusal(
-      `import-project: this workspace's project already holds annotations (${held.map(([k, n]) => `${n} ${k}`).join(", ")}) -- ` +
-        "import-project fills an EMPTY project only and never merges. To replace it, save it first with " +
-        "`anno export-project --out FILE`, delete .c64-re-tools/annotations.db, and import into the new, empty project.",
-    );
-  }
-
-  const imported = importStoreDocument(handle, doc as unknown as StoreExportDocument);
+  const imported = applyAtomically(handle, () => {
+    const held = Object.entries(documentCounts(exportStoreDocument(handle))).filter(([, n]) => n > 0);
+    if (held.length > 0) {
+      throw new AnnoReportRefusal(
+        `import-project: this workspace's project already holds annotations (${held.map(([k, n]) => `${n} ${k}`).join(", ")}) -- ` +
+          "import-project fills an EMPTY project only and never merges. To replace it, save it first with " +
+          "`anno export-project --out FILE`, delete .c64-re-tools/annotations.db, and import into the new, empty project.",
+      );
+    }
+    return importStoreDocument(handle, doc as unknown as StoreExportDocument);
+  });
   return { json: { imported }, files: [] };
 }
 
@@ -965,7 +988,7 @@ export async function runAnnoReportOnHandle(handle: AnnoStoreHandle, name: strin
     case "export-asm":
       return exportAsmReport(handle, bag, inputs);
     case "evid-disagreements":
-      return evidDisagreementsReport(handle);
+      return evidDisagreementsReport(handle, bag);
     case "decomp-completeness":
       return decompCompletenessReport(handle, bag, inputs);
     case "hazard-report":
