@@ -51,8 +51,7 @@
 //      plain data the caller already fetched (`listRanges()` and
 //      `listExecObservations()` respectively); this module never opens a
 //      store, reaches a transport, or names a filesystem/child-process
-//      specifier. A structural source assertion in this module's own test
-//      file bars exactly that.
+//      specifier.
 //   2. NEVER compare a store block-type string here. That is `block-class.mts`'s
 //      job and its own trap 2 ("never compare a store vocabulary string
 //      outside this module") -- this module borrows `blockClassAt`'s answer
@@ -72,6 +71,10 @@
 //      that field's own doc comment below.
 import { blockClassAt, type BlockClass, type BlockEntry, type BlockClassifier } from "./block-class.mts";
 import type { EvidExecRow, EvidSourceBank, RuntimeExecClass } from "./anno-types.mts";
+
+/** The 6510 address space. Block ranges are clamped to it before counting. */
+const ADDRESS_MIN = 0x0000;
+const ADDRESS_MAX = 0xffff;
 
 /**
  * Plain data the caller already fetched -- this module never fetches either
@@ -233,65 +236,109 @@ export function reconcileObservedExecution(input: EvidReconcileInput): EvidRecon
     }
   }
 
-  // The addresses the block table covers -- a `null`/`undefined` hole in
-  // `blocks` is skipped, exactly as `blockClassAt` itself skips one, so this
-  // module's own defences match the classifier's documented ones (trap 2's
-  // boundary is the vocabulary comparison, not this geometric coverage
-  // check, which every well-behaved `BlockClassifier` -- production or
-  // substituted -- agrees on: both ends inclusive, first-match-wins never
+  // The addresses the block table covers, clamped to the 6510 address space
+  // $0000-$FFFF -- a `null`/`undefined` hole in `blocks` is skipped, exactly
+  // as `blockClassAt` itself skips one (trap 2's boundary is the vocabulary
+  // comparison, not this geometric coverage check, which every well-behaved
+  // `BlockClassifier` agrees on: both ends inclusive, first-match-wins never
   // changes which addresses are covered, only which class they map to).
-  const coveredAddresses = new Set<number>();
+  //
+  // One pass over the block boundaries: every start and every end + 1 cuts
+  // the address space into elementary intervals, and the class of an address
+  // cannot change inside one. The classifier is called once per covered
+  // interval, and each interval's observed addresses are found by binary
+  // search over the sorted observed addresses -- never once per address.
+  const clamped: Array<[number, number]> = [];
   for (const block of blocks) {
     if (!block) continue;
     const start = block.start_address;
     const end = block.end_address;
     if (!Number.isInteger(start) || !Number.isInteger(end)) continue;
-    for (let address = start; address <= end; address++) {
-      coveredAddresses.add(address);
-    }
+    const lo = Math.max(start, ADDRESS_MIN);
+    const hi = Math.min(end, ADDRESS_MAX);
+    if (lo <= hi) clamped.push([lo, hi]);
   }
+  const cuts = new Set<number>();
+  for (const [lo, hi] of clamped) {
+    cuts.add(lo);
+    cuts.add(hi + 1);
+  }
+  const sortedCuts = [...cuts].sort((a, b) => a - b);
+  // Merged coverage, ascending, to test each interval's first address.
+  const byStart = [...clamped].sort((a, b) => a[0] - b[0]);
+  const union: Array<[number, number]> = [];
+  for (const [lo, hi] of byStart) {
+    const last = union[union.length - 1];
+    if (last !== undefined && lo <= last[1] + 1) last[1] = Math.max(last[1], hi);
+    else union.push([lo, hi]);
+  }
+  const coveredAt = (address: number, from: number): number => {
+    let k = from;
+    while (k < union.length && union[k]![1] < address) k++;
+    return k;
+  };
+
+  const observedSorted = [...observationBanks.keys()].sort((a, b) => a - b);
+  const lowerBound = (value: number): number => {
+    let lo = 0;
+    let hi = observedSorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (observedSorted[mid]! < value) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
 
   const disagreements: EvidDisagreement[] = [];
   let disagreementCount = 0;
   let agreementCount = 0;
   let blockCoveredNeverObservedCount = 0;
+  let denominator = 0;
 
-  for (const address of coveredAddresses) {
-    const byteDerived = classifier(blocks, address);
-    const banks = observationBanks.get(address);
-    const hasObservation = banks !== undefined && banks.length > 0;
+  let unionIndex = 0;
+  for (let c = 0; c + 1 < sortedCuts.length; c++) {
+    const from = sortedCuts[c]!;
+    const to = sortedCuts[c + 1]! - 1;
+    unionIndex = coveredAt(from, unionIndex);
+    const range = union[unionIndex];
+    if (range === undefined || from < range[0]) continue; // a gap between blocks
+    const size = to - from + 1;
+    denominator += size;
+
+    const byteDerived = classifier(blocks, from);
+    const first = lowerBound(from);
+    const after = lowerBound(to + 1);
+    const observedCount = after - first;
 
     if (byteDerived === "data") {
-      if (hasObservation) {
+      for (let k = first; k < after; k++) {
+        const address = observedSorted[k]!;
         disagreements.push({
           address,
           byteDerived: "data",
           runtime: "code",
-          sourceBanks: sortSourceBanksAscending(banks!),
+          sourceBanks: sortSourceBanksAscending(observationBanks.get(address)!),
         });
-        disagreementCount++;
-      } else {
-        blockCoveredNeverObservedCount++;
       }
+      disagreementCount += observedCount;
+      blockCoveredNeverObservedCount += size - observedCount;
     } else if (byteDerived === "code") {
-      if (hasObservation) {
-        agreementCount++;
-      } else {
-        blockCoveredNeverObservedCount++;
-      }
-    } else if (!hasObservation) {
+      agreementCount += observedCount;
+      blockCoveredNeverObservedCount += size - observedCount;
+    } else {
       // byteDerived is "undefined", or (defensively) a substituted classifier
       // failed to classify a geometrically-covered address at all. Neither
       // case was ever claimed as code or data, so an UNOBSERVED address here
       // is exactly the never-observed population -- and an OBSERVED one is
       // deliberately left uncounted here; the walk below names it instead.
-      blockCoveredNeverObservedCount++;
+      blockCoveredNeverObservedCount += size - observedCount;
     }
   }
 
   let observedOutsideAnyBlockCount = 0;
   let observedAtUndefinedBlockCount = 0;
-  for (const address of observationBanks.keys()) {
+  for (const address of observedSorted) {
     const byteDerived = classifier(blocks, address);
     if (byteDerived === null) {
       observedOutsideAnyBlockCount++;
@@ -308,7 +355,7 @@ export function reconcileObservedExecution(input: EvidReconcileInput): EvidRecon
     blockCoveredNeverObservedCount,
     observedOutsideAnyBlockCount,
     observedAtUndefinedBlockCount,
-    denominator: coveredAddresses.size,
+    denominator,
     positiveClass: "code",
     tier: "runtime-observed",
   };
