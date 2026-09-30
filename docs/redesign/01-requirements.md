@@ -144,11 +144,21 @@ and must not be authoritative project knowledge.
 
 ## 10. Knowledge requirements
 
-The knowledge store shall initially represent only durable understanding that has clear value to reverse engineering:
+The knowledge store shall represent durable understanding that has clear value to reverse engineering:
 
 - symbols;
 - classified address regions;
-- comments.
+- comments;
+- references between addresses;
+- the revision history of that knowledge.
+
+The database must preserve prior accepted values when knowledge changes. A rename, reclassification, correction or revert creates a new revision; it must not erase the earlier state.
+
+History must be queryable through the application API so later sessions can determine what changed, when it changed, where it came from and why.
+
+DXA and Ghidra findings that have durable structural value may be imported automatically by the application layer. Analyzer processes themselves never open the project database.
+
+LLM and user findings may add semantic names and interpretations that are more meaningful than generated analyzer names. These semantic edits are stored as new revisions, preserving the analyzer-derived history they supersede.
 
 The schema must remain deliberately small. New tables/fields require a concrete feature requirement.
 
@@ -167,7 +177,8 @@ A convenience installer may orchestrate existing handlers.
 - Never automatically retry a state-changing emulator operation after a VICE crash.
 - Nothing the Host Runtime launches may intentionally outlive the Host Runtime/session that owns it.
 - Project writes must be transactional.
-- A failed knowledge write must not leave a partially updated database.
+- A failed knowledge write must not leave a partially updated database or revision.
+- Automatic analyzer imports must never silently overwrite conflicting current knowledge.
 - Client and host must not assume they share the same filesystem paths.
 
 ## 13. Non-goals for v1
@@ -179,8 +190,8 @@ The redesign does not initially require:
 - multiple VICE instances per MCP process;
 - a project manifest/build manifest;
 - a generalized knowledge graph;
-- event sourcing;
-- storage of every analysis observation;
+- generalized event sourcing of every runtime/tool event;
+- storage of every analysis observation or raw analyzer output;
 - formal proof of program equivalence;
 - byte-identical reconstructed binaries;
 - compatibility with current MCP tool names or database schema;
