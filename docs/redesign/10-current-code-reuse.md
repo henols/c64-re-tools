@@ -62,7 +62,9 @@ The current repository contains important hard-won knowledge that should be syst
 ### Native host tools
 
 - ACME invocation and real assembly gates;
-- Ghidra headless integration and custom 6502 language/scripts;
+- Ghidra headless integration and the custom NMOS 6502/6510 language covering all 105 undocumented opcode bytes;
+- SLEIGH compile gates and full undocumented-opcode sweep tests;
+- conservative userop treatment of electrically unstable undocumented instructions and JAM/KIL no-fallthrough behavior;
 - dxa behavior/build requirements;
 - c1541/petcat usage;
 - tool-location/remediation knowledge.
