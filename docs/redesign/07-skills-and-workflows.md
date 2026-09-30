@@ -44,15 +44,17 @@ identify/load subject
   ↓
 inspect BASIC/entry path
   ↓
-trace execution
+trace execution in VICE
   ↓
-disassemble relevant ranges
+DXA first-pass disassembly / structural discovery
   ↓
-classify regions
+combine static findings with runtime evidence
   ↓
-name routines/data
+record justified symbols/regions/comments
   ↓
-record comments
+Ghidra deeper analysis when useful
+  ↓
+refine justified knowledge
   ↓
 reconstruct source
   ↓
@@ -60,6 +62,13 @@ build
   ↓
 compare behavior
 ```
+
+DXA and Ghidra are complementary rather than competing analyzers:
+
+- **DXA normally comes first** for an unfamiliar program because it is the fast 6502 disassembly/structural pass.
+- **Ghidra normally comes later** when established entry points, known data regions or a deeper control-flow/data-flow question justify the heavier analysis.
+- DXA findings do not become Ghidra facts automatically. The skill combines them with VICE/runtime evidence and existing knowledge.
+- Neither analyzer writes directly to `knowledge.db`; analyzer output remains a finding until the skill/LLM deliberately persists justified knowledge through the knowledge API.
 
 The skill invokes deterministic MCP operations for each concrete action.
 
