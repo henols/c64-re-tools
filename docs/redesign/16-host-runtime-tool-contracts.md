@@ -16,6 +16,8 @@ c1541 disk inspection/extraction
 petcat BASIC decoding
 ~~~
 
+DXA has no special packaging or ownership status. It is an external host-native prerequisite discovered, validated and invoked through the Host Runtime in exactly the same architectural manner as the other native tools.
+
 Packer/unpacker tooling is defined separately when its concrete implementation is selected.
 
 ## 2. Two boundaries
@@ -859,9 +861,9 @@ Examples:
 
 ~~~text
 ACME installation/library
+DXA installation
 Ghidra installation/custom 6502 language
-VICE sibling tools such as c1541/petcat
-vendored DXA binary
+c1541/petcat installation supplied with or alongside VICE
 ~~~
 
 A normal skill request does not carry configuration for these.
