@@ -42,6 +42,7 @@ const brokerTransferModule = (await import(new URL("../../src/mcp/vice/resources
     pending?: Buffer;
     capBytes?: number;
     beforePublish?: () => Promise<void>;
+    inactivityMs?: number;
   }) => Promise<
     { ok: true; byteLength: number; sha256: string } | { ok: false; reason: string; code: "bad_request" | "internal"; wireReason: string }
   >;
@@ -1022,4 +1023,77 @@ test("stageHostToolRequest: refuses a manifest whose declared aggregate exceeds 
     }
     assert.deepEqual(after, before, "a refused stage request must create no directory at all");
   });
+});
+
+test("stageHostToolRequest: a manifest that names a path and a file beneath it, or the same path twice, is refused", async () => {
+  await withStagingFixture(async () => {
+    for (const rels of [["a", "a/b"], ["a/b", "a"], ["x/y", "x/y"]]) {
+      const result = stageHostToolRequest({ files: rels.map((rel) => ({ tree: 0, rel, byteLength: 1 })) });
+      assert.equal(result.ok, false, rels.join(" + "));
+    }
+    assert.equal(stageHostToolRequest({ files: [{ tree: 0, rel: "a", byteLength: 1 }, { tree: 1, rel: "a/b", byteLength: 1 }] }).ok, true, "different trees do not collide");
+  });
+});
+
+test("stageFileSlot: a grant may stage only a bounded number of distinct slots, and restaging a slot is still allowed", async () => {
+  await withStagingFixture(async () => {
+    for (let i = 0; i < 16; i++) assert.equal(stageFileSlot({ grantId: "g-slots", slot: `s${i}` }).ok, true);
+    assert.equal(stageFileSlot({ grantId: "g-slots", slot: "one-too-many" }).ok, false);
+    assert.equal(stageFileSlot({ grantId: "g-slots", slot: "s3" }).ok, true);
+  });
+});
+
+test("receivePayloadToFile: a destination whose directory cannot be created returns a refusal instead of throwing", async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-nodir-"));
+  try {
+    writeFileSync(join(fixtureDir, "blocker"), "a file, not a directory");
+    const server = createServer();
+    const done = new Promise<{ ok: boolean; wireReason?: string }>((resolve, reject) => {
+      server.on("connection", (socket) => {
+        readHeaderFromSocket(socket)
+          .then(({ header, pending }) => receivePayloadToFile({ socket, destPath: join(fixtureDir, "blocker", "dest.bin"), header, pending }))
+          .then(resolve, reject);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const client = netConnect({ host: "127.0.0.1", port: (server.address() as AddressInfo).port });
+    await new Promise<void>((resolve) => client.once("connect", resolve));
+    writeTransferHeader(client, { kind: "file", byteLength: 1, sha256: "x" });
+    client.write(Buffer.from("a"));
+    const result = await done;
+    assert.equal(result.ok, false);
+    assert.ok(!String(result.wireReason).includes(fixtureDir), "the wire text names no broker path");
+    client.destroy();
+    server.close();
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+test("receivePayloadToFile: a sender that goes silent is abandoned after the inactivity limit and leaves no file", async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-stall-"));
+  try {
+    const destPath = join(fixtureDir, "dest", "stalled.bin");
+    const server = createServer();
+    const done = new Promise<{ ok: boolean }>((resolve, reject) => {
+      server.on("connection", (socket) => {
+        readHeaderFromSocket(socket)
+          .then(({ header, pending }) => receivePayloadToFile({ socket, destPath, header, pending, inactivityMs: 150 }))
+          .then(resolve, reject);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const client = netConnect({ host: "127.0.0.1", port: (server.address() as AddressInfo).port });
+    await new Promise<void>((resolve) => client.once("connect", resolve));
+    client.on("error", () => {});
+    writeTransferHeader(client, { kind: "file", byteLength: 1024, sha256: "x" });
+    client.write(Buffer.alloc(10, 0x41));
+    const result = await done;
+    assert.equal(result.ok, false);
+    assert.equal(existsSync(destPath), false);
+    client.destroy();
+    server.close();
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
 });
