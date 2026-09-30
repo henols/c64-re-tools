@@ -686,9 +686,11 @@ function writeCliResult(result: { ok: boolean; message?: string } & Record<strin
   process.exitCode = result.ok ? 0 : 1;
 }
 
-const IS_ENTRY_POINT = process.argv[1] !== undefined && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url);
+// The real path on both sides, so a symlinked path still counts as a direct
+// invocation.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
-if (IS_ENTRY_POINT) {
+if (invokedDirectly) {
   const usage = "usage: host-tool-endpoint run --tool <id> --args <json> --tools-root <dir> [--base-dir <dir>]";
   const [, , command, ...rest] = process.argv;
   const flags = parseRunCliArgs(rest);

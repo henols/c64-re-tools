@@ -10,8 +10,8 @@
 // Imports node: builtins ONLY plus this phase's own sibling modules --
 // mcp__vice__* stays the only route to the emulator; nothing here opens a
 // connection to it.
-import { mkdirSync, openSync, existsSync } from "node:fs";
-import { join, basename, dirname, relative, resolve as resolvePath } from "node:path";
+import { mkdirSync, openSync, existsSync, realpathSync } from "node:fs";
+import { join, basename, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn, fork, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -2534,6 +2534,9 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 }
 
 // -------------------------------------------------------------------- CLI
-if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// The real path on both sides, so an npm bin symlink still counts as a
+// direct invocation.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
   main();
 }
