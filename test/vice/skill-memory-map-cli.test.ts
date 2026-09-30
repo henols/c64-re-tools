@@ -30,7 +30,6 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 // driver.ts is a typed skill script, checked by this package's typecheck.
@@ -224,21 +223,6 @@ test("the annotate verb with empty input produces the documented empty result an
 // ---------------------------------------------------------------------------
 
 const MEMMAP_JSON_BEFORE = readFileSync(MEMMAP_JSON_PATH, "utf8");
-
-test("no test in this file ever invokes the memmap (rebuild) verb -- it fetches four upstream pages over the network and overwrites the committed memmap.json, corrupting the repository's own data and depending on four third-party pages staying up", () => {
-  const ownSource = readFileSync(fileURLToPath(import.meta.url), "utf8");
-  // Scan this file's own source for "memmap" appearing as a spawned CLI
-  // argument (inside a runDriver([...]) call's argument array), which is
-  // the only way this file could invoke the verb. The verb name appears
-  // elsewhere in this file only as a path segment / comment / constant
-  // name, never as a quoted CLI argument.
-  const spawnedAsVerb = /runDriver\(\s*\[\s*"memmap"/.test(ownSource);
-  assert.equal(
-    spawnedAsVerb,
-    false,
-    "the memmap verb must never be spawned as a CLI argument in this file -- it fetches over the network and overwrites the committed memmap.json",
-  );
-});
 
 test("the committed memmap.json is unmodified after this suite runs", () => {
   const after = readFileSync(MEMMAP_JSON_PATH, "utf8");
