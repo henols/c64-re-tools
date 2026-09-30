@@ -24,6 +24,8 @@ A reconstructed application does **not** need byte-identical machine code. Given
 | 08 | [Installation and distribution](08-installation-and-distribution.md) | Portable Agent Plugins foundation with AP SDK at the distribution edge |
 | 09 | [Build, test and release](09-build-test-release.md) | Development, functional equivalence, CI and release principles |
 | 10 | [Current-code reuse](10-current-code-reuse.md) | How the existing implementation may inform the rewrite |
+| 11 | [Skill contracts](11-skill-contracts.md) | Exact purpose, inputs, workflow, persistence, completion and handoff contract for every first-class skill |
+| 12 | [Static analysis and knowledge import](12-static-analysis-knowledge-import.md) | Normalized analyzer findings, atomic import, authoritative coverage and stale-fact reconciliation |
 
 ## Core decisions
 
@@ -37,7 +39,7 @@ A reconstructed application does **not** need byte-identical machine code. Given
 8. **The project is the ordinary project directory.** No project manifest is required in v1.
 9. **`.c64-re-tools/knowledge.db` is the single persistent toolkit-owned knowledge store.** There is no mirrored JSON/JSONL representation.
 10. **Knowledge history lives in the database.** Accepted knowledge changes create revisions; prior values remain reviewable and queryable rather than relying on Git history.
-11. **Analyzer imports are deterministic and non-destructive.** DXA/Ghidra findings may be imported automatically through the local knowledge layer, while semantic LLM/user knowledge can supersede generated names/classifications without erasing history.
+11. **Analyzer imports are deterministic, historical and coverage-aware.** DXA/Ghidra findings may be imported automatically through the local knowledge layer; later authoritative re-analysis can retire that analyzer's stale findings inside declared coverage while preserving history and protecting semantic LLM/user knowledge.
 12. **Packaging is portable and replaceable.** Agent Plugins provides the portable foundation; `@jalco/ap-sdk` is the preferred cross-harness packaging/install adapter and remains isolated to the distribution edge.
 13. **The original C64 application remains where the developer places it inside the project.** c64-re-tools does not copy it into another registry or managed store.
 14. **The supported capability set is fixed.** A missing required capability means the installation/session is broken; there is no capability negotiation mode.
