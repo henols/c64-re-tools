@@ -1949,8 +1949,8 @@
             "description": "Symbol name to look up (returns address). Exactly one of name or address is required."
           },
           "address": {
-            "type": "number",
-            "description": "Address to look up (returns symbol name). Exactly one of name or address is required."
+            "type": "string",
+            "description": "Address to look up (returns symbol name): number, $hex string or symbol name. Exactly one of name or address is required."
           }
         }
       },
@@ -3658,16 +3658,12 @@
         "type": "object",
         "properties": {
           "startAddress": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535,
-            "description": "Inclusive lower bound of the projection filter. Defaults to 0. Applied after parsing, never sent to the text monitor."
+            "type": "string",
+            "description": "Inclusive lower bound of the projection filter: number, $hex string or symbol name. Defaults to 0. Applied after parsing, never sent to the text monitor."
           },
           "endAddress": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535,
-            "description": "Inclusive upper bound of the projection filter. Defaults to 65535. Applied after parsing, never sent to the text monitor."
+            "type": "string",
+            "description": "Inclusive upper bound of the projection filter: number, $hex string or symbol name. Defaults to 65535. Applied after parsing, never sent to the text monitor."
           },
           "maxRanges": {
             "type": "integer",
@@ -4223,10 +4219,8 @@
         "type": "object",
         "properties": {
           "address": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535,
-            "description": "REQUIRED. The C64 address whose covering chip is decoded."
+            "type": "string",
+            "description": "REQUIRED. The C64 address whose covering chip is decoded: number, $hex string or symbol name."
           }
         },
         "required": [
@@ -4353,7 +4347,7 @@
           },
           "address": {
             "type": "string",
-            "description": "OPTIONAL. Load address overriding the file's two-byte header, as VICE's `load` allows: number or hex string ($0801)."
+            "description": "OPTIONAL. Load address overriding the file's two-byte header, as VICE's `load` allows: number, $hex string or symbol name."
           }
         },
         "required": [

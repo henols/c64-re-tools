@@ -502,7 +502,7 @@ test("handleMemmapShow: issues exactly 'memmapshow' and returns a parsed, bounde
   );
 });
 
-test("handleMemmapShow: refuses a non-integer startAddress by name, no lease resolved, no byte written", async () => {
+test("handleMemmapShow: refuses an unparseable startAddress by name, no lease resolved, no byte written", async () => {
   let leaseCalled = false;
   const deps: StockSessionDeps = {
     ensureLease: async () => {
@@ -512,7 +512,7 @@ test("handleMemmapShow: refuses a non-integer startAddress by name, no lease res
   };
   const result = await handleMemmapShow({ startAddress: "not a number" }, deps);
   assert.equal(result.isError, true);
-  assert.match(result.content[0]!.text, /"startAddress" must be an integer/);
+  assert.match(result.content[0]!.text, /startAddress: .*not a number/);
   assert.equal(leaseCalled, false, "no lease should ever be resolved before the argument check runs");
 });
 
@@ -1096,7 +1096,14 @@ test("handleIoRegisters: refuses a missing address argument outright -- it is RE
   assert.equal(leaseCalled, false);
 });
 
-test("handleIoRegisters: refuses an out-of-range address by name, via buildTextCommand's own message, no lease resolved", async () => {
+test("handleIoRegisters: a $hex string address is accepted and dialed as the same io command", async () => {
+  const deps: StockSessionDeps = { ensureLease: async () => ({ ok: true, lease: null }) };
+  const result = await handleIoRegisters({ address: "$d020" }, deps);
+  // The lease is null, so the tool refuses later -- but not at the address.
+  assert.doesNotMatch(result.content[0]!.text, /address:/);
+});
+
+test("handleIoRegisters: refuses an out-of-range address by name, no lease resolved", async () => {
   let leaseCalled = false;
   const deps: StockSessionDeps = {
     ensureLease: async () => {
@@ -1107,7 +1114,7 @@ test("handleIoRegisters: refuses an out-of-range address by name, via buildTextC
   const result = await handleIoRegisters({ address: 70000 }, deps);
   assert.equal(result.isError, true);
   assert.match(result.content[0]!.text, /vice_io_registers/);
-  assert.match(result.content[0]!.text, /"io" requires an integer between 0 and 65535/);
+  assert.match(result.content[0]!.text, /address: 70000 is out of range/);
   assert.equal(leaseCalled, false);
 });
 
