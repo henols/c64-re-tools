@@ -42,7 +42,7 @@
 //     real target lies outside the tree (D-05) -- there is no partial/best-
 //     effort upload.
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
-import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { dialHostToolSession, DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, type DialHostToolSessionOptions, type HostToolSession, type HostToolStageFileSpec, type BrokerEndpointConnectFn } from "./broker-endpoint.mts";
@@ -132,7 +132,7 @@ export const HOST_TOOL_KIND_DIR: Readonly<Record<string, string>> = Object.freez
 
 export const HOST_TOOL_FILE_INPUT_KEYS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "acme.build": Object.freeze(["source"]),
-  "ghidra.analyze": Object.freeze(["importPath", "preScript", "postScript", "entrypointsPath", "dataRangesPath"]),
+  "ghidra.analyze": Object.freeze(["importPath", "entrypointsPath", "dataRangesPath"]),
   "oracle.run": Object.freeze(["source"]),
   "dxa.disassemble": Object.freeze(["image", "entrypointsPath", "datablocksPath", "labelsPath"]),
   "c1541.bam": Object.freeze(["image"]),
@@ -146,14 +146,12 @@ export const HOST_TOOL_FILE_INPUT_KEYS: Readonly<Record<string, readonly string[
 /** Phase 65 (plan 65-03, D-04): the frozen per-tool table of path-bearing
  * keys this route uploads as a whole DIRECTORY TREE rather than a single
  * file -- `acme.build`'s `includes` (an ARRAY of `-I` directories, one tree
- * per entry) and `ghidra.analyze`'s `scriptPath` (Ghidra's own `-scriptPath`
- * flag names a directory). Mirrors `host-tool.mts`'s own
+ * per entry). Mirrors `host-tool.mts`'s own
  * `HOST_TOOL_TREE_ARG_KEYS` (the SERVER side of this same seam) -- the two
  * tables are independently declared but must agree in practice;
  * `host-tool.test.ts`'s own both-directions census proves they do. */
 export const HOST_TOOL_TREE_INPUT_KEYS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "acme.build": Object.freeze(["includes"]),
-  "ghidra.analyze": Object.freeze(["scriptPath"]),
 });
 
 /** Phase 65 (plan 65-03, D-03): the frozen per-tool table of path-bearing
@@ -178,6 +176,10 @@ export const HOST_TOOL_OUTPUT_NAME_KEYS: Readonly<Record<string, readonly string
  * the whole host-bound seam (this file's own header). */
 export const HOST_TOOL_STAGE_LINE_MAX_BYTES = 65536;
 
+/** The most `tools.json` text a run request carries; the request line must
+ * stay under the broker's line cap. */
+export const HOST_TOOL_TOOLS_JSON_MAX_BYTES = 16384;
+
 export interface RunHostToolOverEndpointOptions {
   /** The caller's own local directory a result is written under -- REQUIRED.
    * A result's own `HOST_TOOL_KIND_DIR[tool]` subdirectory (or `toolsRoot`
@@ -188,6 +190,9 @@ export interface RunHostToolOverEndpointOptions {
   /** Every relative file-input path in `args` resolves against this
    * directory -- defaults to `process.cwd()`. */
   baseDir?: string;
+  /** The project whose `.c64-re-tools/local/tools.json` is sent with the
+   * request -- defaults to `baseDir`. */
+  projectRoot?: string;
   port?: number;
   candidates?: readonly string[];
   connect?: BrokerEndpointConnectFn;
@@ -376,8 +381,9 @@ function detokenizeResponseFields(response: Record<string, unknown>, localTreeRo
  * `finally` on every path. Never throws: every failure resolves
  * `{ ok: false, message }`.
  */
-export async function runHostToolOverEndpoint(tool: string, args: Record<string, unknown>, options: RunHostToolOverEndpointOptions): Promise<HostToolClientResult> {
+export async function runHostToolOverEndpoint(tool: string, inputArgs: Record<string, unknown>, options: RunHostToolOverEndpointOptions): Promise<HostToolClientResult> {
   const baseDir = options.baseDir ?? process.cwd();
+  let args = inputArgs;
   const dialOptions: DialHostToolSessionOptions = {
     port: options.port,
     candidates: options.candidates,
@@ -394,6 +400,37 @@ export async function runHostToolOverEndpoint(tool: string, args: Record<string,
     const fileInputKeys = HOST_TOOL_FILE_INPUT_KEYS[tool] ?? [];
     const treeInputKeys = HOST_TOOL_TREE_INPUT_KEYS[tool] ?? [];
     const outputNameKeys = HOST_TOOL_OUTPUT_NAME_KEYS[tool] ?? [];
+
+    // ghidra.analyze runs only the scripts the broker vendors: a script is
+    // named, never uploaded, and a script directory is refused.
+    if (tool === "ghidra.analyze") {
+      if ("scriptPath" in args) {
+        return { ok: false, message: 'runHostToolOverEndpoint: ghidra.analyze takes no "scriptPath"; only the vendored Ghidra scripts run, named by "preScript" and "postScript"' };
+      }
+      for (const key of ["preScript", "postScript"]) {
+        const value = args[key];
+        if (value === undefined) continue;
+        if (typeof value !== "string" || value === "") {
+          return { ok: false, message: `runHostToolOverEndpoint: "${key}" must be the name of a vendored Ghidra script; got ${JSON.stringify(value)}` };
+        }
+        args = { ...args, [key]: basename(value) };
+      }
+    }
+
+    // The project's tools.json travels as text with the run request; the
+    // broker never reads a file for it.
+    let toolsJson: string | undefined;
+    const toolsJsonFile = join(options.projectRoot ?? baseDir, ".c64-re-tools", "local", "tools.json");
+    if (existsSync(toolsJsonFile)) {
+      try {
+        toolsJson = readFileSync(toolsJsonFile, "utf8");
+      } catch (e) {
+        return { ok: false, message: `runHostToolOverEndpoint: cannot read ${toolsJsonFile}: ${(e as Error).message}` };
+      }
+      if (Buffer.byteLength(toolsJson, "utf8") > HOST_TOOL_TOOLS_JSON_MAX_BYTES) {
+        return { ok: false, message: `runHostToolOverEndpoint: ${toolsJsonFile} is larger than ${HOST_TOOL_TOOLS_JSON_MAX_BYTES} bytes` };
+      }
+    }
 
     const manifest: HostToolStageFileSpec[] = [];
     const uploadLocalPaths: string[] = [];
@@ -617,7 +654,7 @@ export async function runHostToolOverEndpoint(tool: string, args: Record<string,
     }
 
     const replyTimeoutMs = hostToolRequestTimeoutMs(tool);
-    const runResult = await session.run(tool, boundArgs, stageResult.request, replyTimeoutMs);
+    const runResult = await session.run(tool, boundArgs, stageResult.request, replyTimeoutMs, toolsJson === undefined ? undefined : { toolsJson });
     if (!runResult.ok) return { ok: false, message: runResult.reason };
 
     // Phase 65 (plan 65-03, D-10): detokenize BEFORE reading any text field

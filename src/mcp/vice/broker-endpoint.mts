@@ -1334,7 +1334,7 @@ export type HostToolSessionRunResult = { ok: true; response: unknown } | { ok: f
 
 export interface HostToolSession {
   stage(files: HostToolStageFileSpec[], replyTimeoutMs?: number): Promise<HostToolSessionStageResult>;
-  run(tool: string, args: Record<string, unknown>, request: string, replyTimeoutMs?: number): Promise<HostToolSessionRunResult>;
+  run(tool: string, args: Record<string, unknown>, request: string, replyTimeoutMs?: number, extra?: { toolsJson?: string }): Promise<HostToolSessionRunResult>;
   close(): void;
 }
 
@@ -1437,8 +1437,10 @@ function makeHostToolSession(socket: Socket): HostToolSession {
       }
       return { ok: true, request: value.request, trees: value.trees as string[], files: value.files as string[] };
     },
-    async run(tool, args, request, replyTimeoutMs = DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS): Promise<HostToolSessionRunResult> {
-      const result = await sendHostToolLineAwaitReply(socket, { op: "host_tool_run", tool, args, request }, replyTimeoutMs);
+    async run(tool, args, request, replyTimeoutMs = DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, extra): Promise<HostToolSessionRunResult> {
+      const line: Record<string, unknown> = { op: "host_tool_run", tool, args, request };
+      if (extra?.toolsJson !== undefined) line.toolsJson = extra.toolsJson;
+      const result = await sendHostToolLineAwaitReply(socket, line, replyTimeoutMs);
       if (!result.ok) return result;
       return { ok: true, response: result.value };
     },
