@@ -52,7 +52,7 @@
     },
     {
       "name": "vice_memory_read",
-      "description": "Read a memory range (with optional bank selection). On stock this halts the machine (D-05); the answer's runState reports it. sideEffects defaults to false (DIRECT-01) -- side-effect-reading registers like $D019 requires opting in explicitly.",
+      "description": "Read a memory range, optionally from a named bank. The machine halts; the answer's runState reports it. sideEffects defaults to false: reading a register such as $D019 with side effects (which clears pending IRQ flags) needs sideEffects true.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -70,7 +70,7 @@
           },
           "encoding": {
             "type": "string",
-            "description": "Optional: 'array' for legacy per-byte hex strings, or 'hex' for one compact hex string."
+            "description": "Optional: 'hex' (default) returns one compact hex string; 'array' returns the bytes as an array of numbers."
           },
           "sideEffects": {
             "type": "boolean",
@@ -146,6 +146,10 @@
             "items": {
               "type": "number"
             }
+          },
+          "bank": {
+            "type": "string",
+            "description": "Optional: memory bank name (for example 'ram' to write the RAM under ROM). Defaults to the CPU view, which follows $00/$01 banking. Use vice_memory_banks to list available banks."
           }
         },
         "required": [
@@ -459,7 +463,7 @@
     },
     {
       "name": "vice_execution_step",
-      "description": "Step one or more instructions. Refuses while runState is \"unknown\" (D-07) -- call vice_execution_pause or vice_execution_run first to establish a known state.",
+      "description": "Step one or more instructions. Refused while runState is \"unknown\": call vice_execution_pause or vice_execution_run first to establish a known state.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -511,7 +515,7 @@
     },
     {
       "name": "vice_execution_until_return",
-      "description": "Runs until the current subroutine returns (EXECUTE_UNTIL_RETURN). This is a different operation from vice_execution_step's stepOver, which steps over a single call rather than running out of the current one. Refuses while runState is \"unknown\" (D-07), identically to vice_execution_step.",
+      "description": "Run until the current subroutine returns. This differs from vice_execution_step with stepOver, which steps over one call instead of running out of the current one. Refused while runState is \"unknown\", like vice_execution_step.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
@@ -546,7 +550,7 @@
     },
     {
       "name": "vice_checkpoint_add",
-      "description": "Add checkpoint/breakpoint. stop:false requires acknowledgeTraceRisk:true -- a non-stopping checkpoint emits a CHECKPOINT_INFO frame per hit synchronously from inside the emulator's CPU loop and can stall the emulator on a hot address (D-11). No condition property here -- D-12 keeps the add-then-vice_checkpoint_set_condition split.",
+      "description": "Add a checkpoint (breakpoint). stop:false needs acknowledgeTraceRisk:true, because a non-stopping checkpoint reports every hit from inside the emulator's CPU loop and can stall the emulator on a hot address. Set a condition afterwards with vice_checkpoint_set_condition.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -863,7 +867,7 @@
     },
     {
       "name": "vice_checkpoint_set_condition",
-      "description": "Set checkpoint condition. Stock accepts EITHER a condition string (e.g. 'A == $42', using pseudo-registers RL/CY where relevant) OR a structured condition object with a 'kind' discriminator field -- see stock-condition.ts. Conditions are immutable once set: stock VICE cannot clear or replace one, so re-setting an existing checkpoint's condition is refused.",
+      "description": "Set a checkpoint condition, as a string (for example 'A == $42'; RL and CY name the raster line and the cycle in the line) or as an object with a 'kind' field ('comparison', 'and' or 'or'). A condition cannot be cleared or replaced once set, so setting one on a checkpoint that has one is refused.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -872,7 +876,7 @@
             "description": "Checkpoint number"
           },
           "condition": {
-            "description": "EITHER a condition expression string (e.g. 'A == $42') OR a structured condition object with a 'kind' discriminator field. This is the one inputSchema property in this manifest that deliberately omits \"type\" rather than contradicting the fork's own \"type\": \"string\" declaration -- the checker's supported subset has no union keyword (no oneOf/anyOf) to express \"string or object\"."
+            "description": "Either a condition expression string (for example 'A == $42') or an object with a 'kind' field ('comparison', 'and' or 'or'). This property declares no \"type\", because the schema subset the checker supports has no way to say \"string or object\"."
           }
         },
         "required": [
@@ -914,7 +918,7 @@
     },
     {
       "name": "vice_watch_add",
-      "description": "Add memory watchpoint with optional condition (shorthand for checkpoint with store/load). stop:false requires acknowledgeTraceRisk:true, identically to vice_checkpoint_add (D-11).",
+      "description": "Add a memory watchpoint with an optional condition (a checkpoint on load and store). stop:false needs acknowledgeTraceRisk:true, as for vice_checkpoint_add.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1015,7 +1019,7 @@
     },
     {
       "name": "vice_machine_reset",
-      "description": "Reset the machine (soft or hard reset). run_after defaults to false -- D-05 forbids resuming a machine nobody asked to resume; pass run_after:true to resume explicitly after the reset.",
+      "description": "Reset the machine (soft or hard). run_after defaults to false, so the machine stays halted after the reset; pass run_after:true to resume it.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1025,7 +1029,7 @@
           },
           "run_after": {
             "type": "boolean",
-            "description": "Stock default is FALSE (diverges from the fork's default of true) -- resume execution after reset only if explicitly requested (D-05)."
+            "description": "Default false: the machine stays halted after the reset. Pass true to resume it."
           }
         }
       },
@@ -1120,7 +1124,7 @@
     },
     {
       "name": "vice_disk_attach",
-      "description": "Attach disk image to drive. Only unit 8 is reachable on stock -- AUTOSTART (the only wire route to attaching an image) has no drive-unit field, so units 9-11 are refused rather than silently retargeted to unit 8 (D-14). The attach is AUTOSTART with the run flag clear.",
+      "description": "Attach a disk image to a drive. Only unit 8 is reachable on stock VICE: units 9-11 are refused instead of being attached to unit 8. The attach is an AUTOSTART with the run flag clear.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1252,7 +1256,7 @@
     },
     {
       "name": "vice_snapshot_load",
-      "description": "Restore emulator state from a previously saved snapshot (UNDUMP). A missing snapshot refuses, naming the available snapshots found on disk (D-16 removed the separate enumeration tool).",
+      "description": "Restore emulator state from a saved snapshot. A missing snapshot is refused, and the refusal names the snapshots found on disk.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1487,7 +1491,7 @@
     },
     {
       "name": "vice_disassemble",
-      "description": "Disassemble memory to 6502 instructions, computed client-side (DERIV-07) -- the binary monitor has no disassemble opcode. Behaviour to know: reading memory halts the machine and runState reports it (D-05); an illegal opcode ACME's !cpu 6510 cannot express renders as !byte with the mnemonic moved into a comment (D-09).",
+      "description": "Disassemble memory to 6502 instructions. The disassembly is computed in the client. Reading memory halts the machine, and runState reports it. An illegal opcode that ACME's !cpu 6510 cannot express shows as !byte with the mnemonic in a comment.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1605,7 +1609,7 @@
     },
     {
       "name": "vice_memory_search",
-      "description": "Search memory for a byte pattern with an optional wildcard mask, computed client-side (DERIV-01) -- the binary monitor has no search opcode. pattern is refused when longer than the range searched or longer than 4096 bytes; mask must be exactly patterns length and is never padded; max_results defaults to 100 and is refused above 10000.",
+      "description": "Search memory for a byte pattern, with an optional wildcard mask. The search is computed in the client. The pattern is refused when it is longer than the range or longer than 4096 bytes. The mask must be exactly as long as the pattern. max_results defaults to 100 and is refused above 10000. A range of all 64K is allowed.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1715,7 +1719,7 @@
     },
     {
       "name": "vice_memory_compare",
-      "description": "Compare two live memory ranges byte-by-byte, computed client-side (DERIV-01) -- the binary monitor has no compare opcode. mode:ranges is served; mode:snapshot is refused with an explanatory message because there is no memory-only snapshot producer tool on either backend.",
+      "description": "Compare two memory ranges byte by byte. The comparison is computed in the client. mode:ranges is served. mode:snapshot is refused, because no tool saves a memory-only snapshot.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1863,7 +1867,7 @@
     },
     {
       "name": "vice_symbols_load",
-      "description": "Load a VICE-format label file into a client-side symbol table, computed client-side (DERIV-04) -- the binary monitor has no symbol-file command. Only auto and vice are served on stock; kickasm and simple are refused by name because no in-repo producer emits them.",
+      "description": "Load a VICE-format label file (lines 'al C:xxxx .name') into the client's symbol table. Relative paths resolve from the project root. A label name that ACME could not parse is refused. Only format auto and vice are served; kickasm and simple are refused by name.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1940,7 +1944,7 @@
     },
     {
       "name": "vice_symbols_lookup",
-      "description": "Look up a symbol by name or an address by symbol, against the client-side symbol table, computed client-side (DERIV-04) -- the binary monitor has no symbol-lookup command. Exactly one of name or address is required; supplying both is refused as mutually exclusive.",
+      "description": "Look up a symbol by name, or the symbol at an address, in the client's symbol table. Exactly one of name or address is required; both together are refused.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2002,7 +2006,7 @@
     },
     {
       "name": "vice_vicii_get_state",
-      "description": "Get the VIC-II chip state, computed client-side (DERIV-05) from a single sidefx:false MEM_GET over the $D000-$D02E register block -- the binary monitor has no VIC-II command. $D018's screen/charset/bitmap pointers are reported BANK-RELATIVE; vice_cia_get_state (cia:2) or vice_sprite_get resolves them to absolute addresses (D-05-10). Six internal-only fields (raster IRQ latch, video/row counters, bad-line condition, border flip-flops, sprite DMA state) are not exposed by the binary monitor's register map at all and are reported under `unavailable` as {available:false, reason} rather than as 0.",
+      "description": "Get the VIC-II chip state, decoded in the client from one read of the $D000-$D02E registers. The pointers in $D018 are bank-relative: vice_cia_get_state (cia:2) or vice_sprite_get gives absolute addresses. Six internal fields (raster IRQ latch, video and row counters, bad-line condition, border flip-flops, sprite DMA state) cannot be read from the binary monitor and are listed under `unavailable` as {available:false, reason}, never as 0.",
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -2466,7 +2470,7 @@
     },
     {
       "name": "vice_cia_get_state",
-      "description": "Get CIA1 and/or CIA2 state, computed client-side (DERIV-05) from one sidefx:false MEM_GET per requested chip over its 16-byte register block -- the binary monitor has no CIA command. The read is sidefx:false so $DC0D/$DD0D are not cleared on read. Three read/write address collisions are reported as two distinct named fields each: the readable side is named for what it is (e.g. timerA.current, interruptStatus), and the write-only side is a separate `unavailable` field (D-05-11) -- timerALatch, timerBLatch, interruptEnableMask, todAlarmTime and todLatchState are the write side of addresses whose read side returns something else, and are reported as {available:false, reason}, never 0.",
+      "description": "Get CIA1 and/or CIA2 state, decoded in the client from one read per chip of its 16 registers. The read has no side effects, so $DC0D and $DD0D are not cleared. Some addresses read back something other than what is written there. The readable side has its own name (for example timerA.current, interruptStatus). The write-only side (timerALatch, timerBLatch, interruptEnableMask, todAlarmTime, todLatchState) is listed under `unavailable` as {available:false, reason}, never as 0.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3046,7 +3050,7 @@
     },
     {
       "name": "vice_sprite_get",
-      "description": "Get sprite position, colour and control-bit state for one or all 8 sprites, computed client-side (DERIV-06) by resolving the VIC bank ($DD00), screen base ($D018) and 8-entry sprite pointer table over three sidefx:false MEM_GET reads. Sprite pointers are resolved to absolute dataAddress values (D-05-10); omit `sprite` to get all eight.",
+      "description": "Get position, colour and control bits for one sprite or all eight. The client resolves the VIC bank ($DD00), the screen base ($D018) and the sprite pointer table with three reads. Sprite pointers are given as absolute dataAddress values. Omit `sprite` to get all eight.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3214,7 +3218,7 @@
     },
     {
       "name": "vice_sprite_inspect",
-      "description": "Render one sprite's 63-byte data block as an ASCII or binary grid, computed client-side (DERIV-06) at native resolution (24 columns hi-res / 12 columns multicolour, always 21 rows) -- no scaling by the X/Y expansion bits. format:'png_base64' is refused by name: it was cut from this milestone with SHOT-01..SHOT-05, since no shipped skill calls it.",
+      "description": "Render one sprite's 63-byte data block as an ASCII or binary grid at native resolution (24 columns high-res, 12 columns multicolour, always 21 rows), with no scaling for the X/Y expansion bits. format:'png_base64' is not supported and is refused by name.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3228,7 +3232,7 @@
               "ascii",
               "binary"
             ],
-            "description": "Output format: 'ascii' (default) or 'binary'. 'png_base64' is refused by name (cut with SHOT-01..SHOT-05, D-05-03) -- no skill calls it."
+            "description": "Output format: 'ascii' (default) or 'binary'. 'png_base64' is not supported and is refused by name."
           }
         },
         "required": [
