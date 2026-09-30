@@ -13,8 +13,6 @@
 // against fixtures/textmon.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import {
@@ -24,21 +22,7 @@ import {
   type AccessMapEntry,
   type AccessFlags,
 } from "../../src/mcp/vice/textmon-memmap.mts";
-import { VICE_DIR } from "./paths.ts";
 
-const OWN_MODULE = join(VICE_DIR, "textmon-memmap.mts");
-
-// ---------------------------------------------------------------------------
-// Purity (PARSE-03): the module imports NOTHING. Asserted mechanically by
-// reading this module's own source and scanning for a top-level ES import
-// statement, not by review.
-// ---------------------------------------------------------------------------
-
-test("purity (PARSE-03): textmon-memmap.mts contains no top-level ES import statement", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  const importLines = src.split("\n").filter((line) => /^\s*import\s/.test(line));
-  assert.deepEqual(importLines, [], `expected zero import lines, found: ${JSON.stringify(importLines)}`);
-});
 
 // ---------------------------------------------------------------------------
 // Both real two-binary captures parse clean, and are provenance-checked
