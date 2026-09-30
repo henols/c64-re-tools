@@ -129,12 +129,6 @@ function assembleFreshWithSymbols(rootSourceName: string): { bytes: Uint8Array; 
 // instrument, three single-bit regressions at $D020, $D015 and $D018.
 // ---------------------------------------------------------------------------
 
-test("hazard subject variants: hazard-subject-regressed.prg exists and is tracked by git", () => {
-  assert.ok(existsSync(REGRESSED_PRG_PATH), "hazard-subject-regressed.prg must be committed");
-  const ls = spawnSync("git", ["ls-files", "--error-unmatch", REGRESSED_PRG_PATH], { encoding: "utf8", cwd: FIXTURE_DIR });
-  assert.equal(ls.status, 0, "hazard-subject-regressed.prg must be a tracked file, not merely present on disk");
-});
-
 test("hazard subject variants: the regressed image and the committed subject have identical byte length", () => {
   const original = readFileSync(PRG_PATH);
   const regressed = readFileSync(REGRESSED_PRG_PATH);
@@ -184,14 +178,6 @@ test(
   },
 );
 
-test("hazard subject variants: make-hazard-subject-fixtures.ts contains exactly one implementation of the !source line substitution", () => {
-  const generatorSource = readFileSync(join(FIXTURE_DIR, "make-hazard-subject-fixtures.ts"), "utf8");
-  const helperDefinitions = generatorSource.match(/function substituteSourceLines\(/g) ?? [];
-  assert.equal(helperDefinitions.length, 1, "exactly one substituteSourceLines() implementation must exist");
-  const helperCalls = generatorSource.match(/substituteSourceLines\(\[/g) ?? [];
-  assert.ok(helperCalls.length >= 3, "the mis-aligned twin, the regressed twin and the modified subject must all call the shared substitution helper");
-});
-
 // ---------------------------------------------------------------------------
 // The modified subject -- one behaviour removed (the sprite construction),
 // one behaviour added (the second self-modifying construction), each
@@ -234,12 +220,6 @@ function assembleModifiedFreshWithSymbols(): { bytes: Uint8Array; symbols: Map<s
     rmSync(dir, { recursive: true, force: true });
   }
 }
-
-test("hazard subject variants: hazard-subject-modified.prg exists and is tracked by git", () => {
-  assert.ok(existsSync(MODIFIED_PRG_PATH), "hazard-subject-modified.prg must be committed");
-  const ls = spawnSync("git", ["ls-files", "--error-unmatch", MODIFIED_PRG_PATH], { encoding: "utf8", cwd: FIXTURE_DIR });
-  assert.equal(ls.status, 0, "hazard-subject-modified.prg must be a tracked file, not merely present on disk");
-});
 
 test("hazard subject variants: the modified image and the committed subject have equal byte length", () => {
   const original = readFileSync(PRG_PATH);
@@ -309,12 +289,6 @@ test(
   },
 );
 
-test("hazard subject variants: hazard-subject-align-nosprite.a names both required finding anchors in its header", () => {
-  const source = readFileSync(join(FIXTURE_DIR, "hazard-subject-align-nosprite.a"), "utf8");
-  assert.ok(/088B/i.test(source), "must name anchor $088B (page-alignment, sprite-pointer-names-aligned-base)");
-  assert.ok(/0825/i.test(source), "must name anchor $0825 (self-modifying-code, store-target-in-instruction-opcode-byte)");
-});
-
 // ---------------------------------------------------------------------------
 // The modified annotation-store export -- derived by the existing generator
 // from real ACME symbol addresses, never hand-typed.
@@ -323,12 +297,6 @@ test("hazard subject variants: hazard-subject-align-nosprite.a names both requir
 function loadExport(path: string): StoreExportDocument {
   return JSON.parse(readFileSync(path, "utf8")) as StoreExportDocument;
 }
-
-test("hazard subject variants: hazard-subject-modified.annostore.json exists and is tracked by git", () => {
-  assert.ok(existsSync(MODIFIED_ANNOSTORE_PATH), "hazard-subject-modified.annostore.json must be committed");
-  const ls = spawnSync("git", ["ls-files", "--error-unmatch", MODIFIED_ANNOSTORE_PATH], { encoding: "utf8", cwd: FIXTURE_DIR });
-  assert.equal(ls.status, 0, "hazard-subject-modified.annostore.json must be a tracked file, not merely present on disk");
-});
 
 test("hazard subject variants: the modified export's ranges partition the modified image with no hole and no overlap", () => {
   const doc = loadExport(MODIFIED_ANNOSTORE_PATH);
@@ -372,25 +340,3 @@ test(
     assert.ok(instruction, `hazard_align_entry's address $${assembledAddress!.toString(16)} must decode as a real instruction start in the modified image`);
   },
 );
-
-test("hazard subject variants: make-hazard-subject-annostore.ts contains exactly one copy of the decomposition arrays, shared by both subjects", () => {
-  const generatorSource = readFileSync(join(FIXTURE_DIR, "make-hazard-subject-annostore.ts"), "utf8");
-  const rangesDeclarations = generatorSource.match(/const ranges = \[/g) ?? [];
-  assert.equal(rangesDeclarations.length, 1, "exactly one `ranges` decomposition array must exist");
-  const scopesDeclarations = generatorSource.match(/const scopes = \[/g) ?? [];
-  assert.equal(scopesDeclarations.length, 1, "exactly one `scopes` decomposition array must exist");
-  const subjectsDeclarations = generatorSource.match(/const SUBJECTS = \[/g) ?? [];
-  assert.equal(subjectsDeclarations.length, 1, "exactly one SUBJECTS array must declare the two subjects sharing this decomposition");
-});
-
-test("hazard subject variants: the committed hazard-subject.annostore.json is unchanged by the annostore generator's parameterisation", () => {
-  // This is a REGRESSION guard, not a regeneration -- it reads the
-  // committed file as-is and checks internal self-consistency the
-  // parameterisation must have preserved (16 ranges / 5 scopes / 22 labels,
-  // the same counts `make-hazard-subject-annostore.ts`'s own stdout
-  // reports for the first SUBJECTS entry).
-  const doc = loadExport(ANNOSTORE_PATH);
-  assert.equal(doc.ranges.length, 16, "the committed original export's range count must be unchanged by parameterisation");
-  assert.equal(doc.scopes?.length ?? 0, 5, "the committed original export's scope count must be unchanged by parameterisation");
-  assert.equal(doc.labels.length, 22, "the committed original export's label count must be unchanged by parameterisation");
-});

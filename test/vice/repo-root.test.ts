@@ -91,6 +91,20 @@ test("repoRoot() branch 0: CLAUDE_PROJECT_DIR wins over BOTH a .git walk and a c
   );
 });
 
+test("repoRoot(): C64RE_PROJECT_ROOT wins over CLAUDE_PROJECT_DIR, the .git walk and a containing CONTAINER_WORKSPACE_PATH", () => {
+  const checkout = mkdtempSync(join(tmpdir(), "reporoot-c64re-checkout-"));
+  mkdirSync(join(checkout, ".git"));
+  const from = join(checkout, "src", "mcp", "vice");
+  mkdirSync(from, { recursive: true });
+  const project = mkdtempSync(join(tmpdir(), "reporoot-c64re-project-"));
+  const claude = mkdtempSync(join(tmpdir(), "reporoot-c64re-claude-"));
+
+  assert.equal(repoRoot({ from, env: { C64RE_PROJECT_ROOT: project, CLAUDE_PROJECT_DIR: claude } }), project);
+  assert.equal(repoRoot({ from, env: { C64RE_PROJECT_ROOT: project, CONTAINER_WORKSPACE_PATH: checkout } }), project);
+  // Without it, CLAUDE_PROJECT_DIR still applies.
+  assert.equal(repoRoot({ from, env: { CLAUDE_PROJECT_DIR: claude } }), claude);
+});
+
 test("repoRoot() last-resort fallback (quick-260731-p8a, path-anchor regression; phase 16-04 rebuilt this fixture at src/mcp/vice): climbs THREE levels from a <root>/src/mcp/<server> path, not four", () => {
   // Deliberately has no .git ancestor and no CONTAINER_WORKSPACE_PATH, so the
   // ladder falls all the way through to branch 4 -- the fixed-hop last
@@ -203,6 +217,8 @@ test("path agreement (D-3, D-6, THE regression this task exists to catch): the l
   for (const k of Object.keys(cleanEnv)) {
     if (k.startsWith("VICE_")) delete cleanEnv[k];
   }
+  delete cleanEnv.C64RE_PROJECT_ROOT;
+  delete cleanEnv.CLAUDE_PROJECT_DIR;
 
   const { stdout: launcherOut } = await execFileP("bash", [launcherScript, "--print-paths"], { env: cleanEnv });
   const { stdout: resourcesLauncherOut } = await execFileP("bash", [resourcesLauncherScript, "--print-paths"], { env: cleanEnv });
@@ -263,6 +279,8 @@ test("path agreement without CONTAINER_WORKSPACE_PATH (D-6): the .git-walk branc
     if (k.startsWith("VICE_")) delete hostEnv[k];
   }
   delete hostEnv.CONTAINER_WORKSPACE_PATH;
+  delete hostEnv.C64RE_PROJECT_ROOT;
+  delete hostEnv.CLAUDE_PROJECT_DIR;
 
   const { stdout: resourcesOut } = await execFileP("bash", [resourcesLauncherScript, "--print-paths"], { env: hostEnv });
   const { stdout: toolsOut } = await execFileP("bash", [launcherScript, "--print-paths"], { env: hostEnv });
