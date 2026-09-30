@@ -1234,6 +1234,23 @@ test("CR-01: an OMITTED end_address still defaults to the image's own bound -- r
   );
 });
 
+test("anno_disassemble with an address outside the image and no end_address is answered as unanswerable for that address, not with an inverted span", async () => {
+  await withStore(
+    () => {},
+    async (ws, _store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+      for (const [address, shown] of [["$1004", "$1004..$1004"], ["$0fff", "$0fff..$0fff"], ["$ffff", "$ffff..$ffff"]] as const) {
+        const result = await runAnnoTool("anno_disassemble", { image, address });
+        assert.equal(result.isError, false, address);
+        const answer = (await body(result)) as { available: boolean; reason: string; end_address?: number };
+        assert.equal(answer.available, false);
+        assert.ok(answer.reason.includes(shown), answer.reason);
+        assert.equal(answer.end_address, undefined);
+      }
+    },
+  );
+});
+
 test("anno_get_binary_info reports the load address, origin and lengths for a real PRG, and refuses a non-PRG by name", async () => {
   await withStore(
     () => {},

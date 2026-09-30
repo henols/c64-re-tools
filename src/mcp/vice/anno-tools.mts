@@ -907,6 +907,9 @@ function dispatchDisassemble(handle: AnnoStoreHandle, args: unknown, inputs: Ann
   const last = image.origin + image.body.length - 1;
   // An omitted end is the CAP, not the whole image: the default has to be the
   // bound, or the default is the hazard.
+  // An omitted end cannot make sense of a start outside the image: the span
+  // would run backwards. Answered as unanswerable for the one address named.
+  if (bag.end_address === undefined && (start < image.origin || start > last)) return outsideImage("anno_disassemble", image, start, start);
   const requestedEnd = bag.end_address !== undefined ? parseStoreAddress(bag.end_address, { what: "end_address" }) : Math.min(start + cap - 1, last);
   if (bag.end_address !== undefined) assertWithinRegionCap("anno_disassemble", start, requestedEnd, undefined);
   // Sliced on the span the CALLER named, never on one narrowed down to the
