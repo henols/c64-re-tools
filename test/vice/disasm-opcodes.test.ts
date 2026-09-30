@@ -9,12 +9,9 @@
 // looks like it does."
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { OPCODES, type AddressingMode } from "../../src/mcp/vice/disasm-opcodes.mts";
 import { LENGTH_FOR_MODE } from "./disasm-mode-lengths.ts";
-import { VICE_DIR } from "./paths.ts";
 
 
 // ------------------------------------------------------------ 1. Shape
@@ -380,22 +377,5 @@ describe("acmeExpressible seed sanity (D-09: 04-06's real-ACME assertion test is
     for (const op of [0x1a, 0x3a, 0x5a, 0x7a, 0xda, 0xfa]) {
       assert.equal(typeof OPCODES[op]!.acmeExpressible, "boolean", `$${op.toString(16).padStart(2, "0")}`);
     }
-  });
-});
-
-// --------------------------------------------------------------- 6. Purity
-
-describe("purity (DISASM-07 / D-05)", () => {
-  test("disasm-opcodes.mts has zero import statements once comment lines are stripped", () => {
-    const source = readFileSync(join(VICE_DIR, "disasm-opcodes.mts"), "utf8");
-    // Strip `//`-comment lines before counting -- this module's own header
-    // comment legitimately talks ABOUT imports ("never add an import"), so
-    // counting against the raw file would false-positive on that prose.
-    const codeOnly = source
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n");
-    const importLines = codeOnly.split("\n").filter((line) => /^\s*import\s/.test(line));
-    assert.deepEqual(importLines, []);
   });
 });

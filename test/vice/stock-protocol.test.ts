@@ -704,9 +704,10 @@ test("WR-03: a large in-progress frame delivered in chunks is reassembled, with 
       const desyncs: unknown[] = [];
       const responses: unknown[] = [];
       client.on("desync", (e) => desyncs.push(e));
+      const parsed = new Promise<void>((resolve) => client.once("response", () => resolve()));
       client.on("response", (r) => responses.push(r));
       await client.connect("127.0.0.1", port);
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await parsed;
       assert.deepEqual(desyncs, [], "a legitimately large in-progress frame is not a desync");
       assert.equal(responses.length, 1, "the frame must be reassembled and parsed exactly once");
       assert.equal((responses[0] as { type: string }).type, "memory_get");

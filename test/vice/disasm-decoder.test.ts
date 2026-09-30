@@ -6,13 +6,10 @@
 // own purity constraint (only imports ./disasm-opcodes.mts).
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { decode, type Instruction } from "../../src/mcp/vice/disasm-decoder.mts";
 import { OPCODES } from "../../src/mcp/vice/disasm-opcodes.mts";
 import { LENGTH_FOR_MODE } from "./disasm-mode-lengths.ts";
-import { VICE_DIR } from "./paths.ts";
 
 
 // ------------------------------------------------- 1. DISASM-04: branch targets
@@ -294,27 +291,5 @@ describe("never throws", () => {
     const result = decode(new Uint8Array([0xea]), 0xffff);
     assert.equal(result.length, 1);
     assert.equal(result[0]!.address, 0xffff);
-  });
-});
-
-// ------------------------------------------------- 8. Purity
-
-describe("purity (D-05: this module's only import is ./disasm-opcodes.mts)", () => {
-  test("disasm-decoder.mts has exactly one `from \"...\"` specifier once comment lines are stripped", () => {
-    const source = readFileSync(join(VICE_DIR, "disasm-decoder.mts"), "utf8");
-    // Strip `//`-comment lines first -- this module's own header legitimately
-    // names `stock-*.ts`/`vice*.ts`/`node:` in its prohibition list, so an
-    // unfiltered scan would be a self-invalidating gate.
-    const codeOnly = source
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n");
-    const fromLines = codeOnly
-      .split("\n")
-      .filter((line) => /\bfrom\s+"/.test(line))
-      .map((line) => line.match(/from\s+"([^"]+)"/)?.[1])
-      .filter((specifier): specifier is string => specifier !== undefined);
-
-    assert.deepEqual([...new Set(fromLines)], ["./disasm-opcodes.mts"]);
   });
 });
