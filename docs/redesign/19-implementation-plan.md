@@ -464,6 +464,11 @@ Add Ghidra only after the normalized analyzer/knowledge path already works with 
 
 - headless Ghidra invocation;
 - required C64/NMOS-6502 integration scripts;
+- c64-re-tools NMOS SLEIGH language layered on the external Ghidra 6502 language;
+- complete undocumented-opcode support for all 105 undocumented bytes;
+- correct semantics for deterministic undocumented instructions;
+- conservative opaque semantics for genuinely unstable/bus-dependent instructions;
+- correct NMOS decimal behavior for deterministic decimal-sensitive instructions;
 - disposable project creation;
 - seed current semantic labels/routines/data;
 - function/region/reference export;
@@ -477,7 +482,16 @@ Do not create a parallel Ghidra-specific knowledge write path.
 
 ### Acceptance
 
-Prove the intended iterative loop:
+Before accepting any analyzer result, prove the Ghidra CPU-language layer itself:
+
+1. compile the NMOS SLEIGH language successfully;
+2. sweep all 105 undocumented opcode bytes and verify each decodes as code with the expected instruction length/addressing form;
+3. verify representative p-code semantics for SLO/RLA/SRE/RRA, SAX/LAX, DCP/ISC and immediate undocumented families;
+4. verify all JAM/KIL opcodes prevent false fall-through;
+5. verify unstable XAA/LXA/AHX/TAS/SHX/SHY-style behavior is represented conservatively, not as invented deterministic C expressions;
+6. verify deterministic decimal-sensitive arithmetic behaves as NMOS 6502/6510 decimal arithmetic.
+
+Then prove the intended iterative loop:
 
 ~~~text
 DXA
