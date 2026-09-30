@@ -2,22 +2,25 @@
 
 ## 1. Purpose
 
-The Application API is the C64-centric contract used by MCP, CLI and automated tests. It exposes deterministic operations, not reverse-engineering workflows.
+The public integration surface is split by responsibility.
 
-Skills combine these operations into workflows.
+The MCP exposes only stateful operations against the live VICE machine owned by that MCP process.
+
+Non-VICE deterministic operations are invoked through skill-owned scripts backed by shared runtime/application code.
+
+Project knowledge is accessed locally through the knowledge component.
 
 ## 2. API design rules
 
-1. Prefer one meaningful developer action per operation.
-2. Keep frequent emulator primitives explicit.
-3. Group CRUD-like actions only where they are naturally one concept.
-4. Do not create giant generic dispatchers.
-5. Do not expose implementation details such as monitor commands, broker file handles, SQLite queries or raw host argv.
-6. Repetitive deterministic loops belong in the implementation, not in the LLM.
+1. Expose only C64-domain concepts to the LLM.
+2. Keep stateful VICE primitives explicit in MCP.
+3. Keep non-VICE native-tool operations out of MCP.
+4. Keep knowledge operations local to the project environment.
+5. Do not expose broker sockets, monitor commands, SQLite queries, host argv or staging paths.
+6. Repetitive deterministic loops belong below the LLM.
+7. Internal compatibility/version details stay below the LLM-facing boundary.
 
-The final MCP surface should remain moderate in size (roughly tens of tools, not hundreds).
-
-## 3. Machine operations
+## 3. MCP: stateful VICE operations only
 
 Representative operations:
 
@@ -43,15 +46,7 @@ machine.joystick
 machine.screen.capture
 machine.snapshot.save
 machine.snapshot.restore
-```
 
-The public operation never states whether the implementation used the VICE binary or text monitor.
-
-## 4. Debug operations
-
-Representative operations:
-
-```text
 debug.step
 debug.next
 debug.continue
@@ -69,38 +64,56 @@ debug.history
 debug.backtrace
 ```
 
-Where one operation supports a small natural action family, the MCP adapter may expose a grouped tool (for example breakpoint `add|remove|list`) rather than three near-identical MCP schemas.
+The MCP never exposes which VICE monitor interface or command was used.
 
-## 5. Analysis operations
+It also does not expose DXA, Ghidra, ACME, c1541, petcat, SQLite or arbitrary Host Runtime calls.
 
-Analysis operations remain deterministic and bounded. Representative examples:
+## 4. Skill-script operations
+
+Non-VICE work is owned by the relevant skill and implemented through thin deterministic scripts plus shared runtime/application code.
+
+Representative capabilities:
 
 ```text
-analysis.disassemble
-analysis.memory.compare
-analysis.disk.inspect
-analysis.basic.decode
-analysis.staticAnalyze
-analysis.trace
+static analysis
+  DXA first-pass disassembly
+  Ghidra deeper analysis
+
+build
+  ACME assembly
+
+disk
+  c1541 inspection/extraction
+
+BASIC
+  petcat decoding
+
+unpacking
+  host-side unpack/decrunch operations as required
 ```
 
-`analysis.disassemble` and `analysis.staticAnalyze` are deliberately different operations, not interchangeable engines behind one generic analyzer.
+These scripts use typed short-lived Host Runtime requests when they need native host tools.
 
-### DXA and Ghidra
+The LLM sees the C64-domain result, not the broker/tool execution details.
 
-DXA is the fast first-pass disassembly and structural-discovery engine for an unknown binary. It backs `analysis.disassemble` / `c64_disassemble` and is used to obtain a quick 6502 listing, code/data candidates and initial structural information.
+## 5. DXA and Ghidra
 
-Ghidra is the deeper static-analysis engine. It backs `analysis.staticAnalyze` / `c64_static_analyze` and is used when richer function, control-flow, cross-reference, data-flow and decompilation information is useful.
+DXA is the fast first-pass disassembly and structural-discovery engine for an unknown binary.
+
+Ghidra is the deeper static-analysis engine used when richer function, control-flow, cross-reference, data-flow and decompilation information is useful.
 
 The normal relationship is:
 
 ```text
 unknown application
       ↓
-     DXA
-fast structural discovery
+static-analysis skill
       ↓
-automatic import of compatible structural knowledge
+DXA through Host Runtime
+      ↓
+normalized structural findings
+      ↓
+local automatic knowledge import
       ↓
 knowledge.db
       ↓
@@ -108,28 +121,38 @@ LLM + VICE investigation
       ↓
 semantic knowledge
       ↓
-Ghidra seeded by current knowledge
+static-analysis skill reads current knowledge
       ↓
-automatic import of compatible structural knowledge
+Ghidra through Host Runtime
+      ↓
+normalized structural findings
+      ↓
+local automatic knowledge import
       ↓
 knowledge.db
 ```
 
-DXA and Ghidra themselves never open `knowledge.db`. They return structured findings to the Application API.
+DXA and Ghidra never open `knowledge.db`.
 
-The Application analysis layer may automatically import durable findings through the knowledge layer in one revision/transaction. Typical durable imports are code/data ranges, function starts/generated names and references. Full listings, raw logs, complete CFGs and decompiler text are not copied into the database merely because they exist.
+The static-analysis script normalizes their output. The local knowledge importer then persists only durable reusable findings in one revision/transaction.
+
+Typical durable imports are:
+
+- code/data regions;
+- function starts/generated names;
+- calls/jumps/reads/writes/references.
+
+Full listings, raw logs, complete CFGs and decompiler text are not stored merely because they exist.
 
 Automatic imports fill gaps and add compatible structure. They never silently overwrite conflicting semantic knowledge.
 
-Current project knowledge is also an input to later analysis. For Ghidra, current routine symbols can seed entry points, known non-code regions can seed data ranges, and known names can seed labels where supported.
-
-Do not normalize DXA and Ghidra into an `engine=` switch on one operation merely because both perform static analysis. Their roles and result semantics are different.
+Current project knowledge is an input to later Ghidra analysis. Current routine symbols may seed entry points, known non-code regions may seed data ranges, and known names may seed labels where supported.
 
 ## 6. Knowledge operations
 
-The knowledge API exposes current knowledge, semantic edits, analyzer imports and reviewable history.
+Knowledge is project-local and exposed through a local knowledge script/component rather than MCP.
 
-### Current-state CRUD
+Representative operations:
 
 ```text
 knowledge.symbol.set
@@ -149,19 +172,20 @@ knowledge.comment.list
 
 knowledge.reference.list
 knowledge.search
+
+knowledge.at
+knowledge.history
+knowledge.revisions
+knowledge.revision
 ```
 
 LLM/user edits create semantic knowledge revisions. For example, replacing Ghidra's generated `FUN_2100` with `update_player` creates a new current symbol while retaining the generated name in history.
 
-The application assigns the write origin from caller/context (`user`, `llm`, `dxa`, `ghidra`); callers do not impersonate analyzer origins.
+The application assigns write origin from context; callers do not impersonate analyzer origins.
 
 ### Address-centric lookup
 
-```text
-knowledge.at(address)
-```
-
-returns the current useful context for an address, including:
+`knowledge.at(address)` returns the current useful context for an address:
 
 - primary symbol;
 - containing region;
@@ -171,37 +195,25 @@ returns the current useful context for an address, including:
 
 ### History
 
-```text
-knowledge.history(address)
-knowledge.history(entity)
-knowledge.revisions(...)
-knowledge.revision(id)
-```
-
 History operations expose prior values and the revision metadata that caused each change. They are used to diagnose bad analyzer imports, incorrect LLM conclusions, renames/reclassifications and later corrections.
 
 ### Analyzer import result
 
-Analysis operations that persist findings return a summary such as:
+Analyzer imports return a compact result such as:
 
 ```text
-revision
 inserted
 unchanged
 conflicts
 ```
 
-A conflict leaves the contradictory current knowledge unchanged and reports it for the skill/LLM to investigate.
+Revision bookkeeping is internal unless revision identity is useful for later knowledge-history operations.
 
-All writes support transactional revision checks so stale concurrent modifications can be refused.
+A conflict leaves contradictory current knowledge unchanged and reports the actionable conflict to the skill/LLM.
 
 ## 7. Build operations
 
-The first supported build primitive is explicit assembly rather than a project build system:
-
-```text
-build.assemble
-```
+Assembly is invoked by the assembler skill through its script, not through MCP.
 
 Conceptual inputs:
 
@@ -211,53 +223,45 @@ entrySource
 outputName/options where required
 ```
 
-The implementation transfers the source root to the Host Runtime and runs the configured host assembler there.
+The script transfers the source root through shared runtime infrastructure and invokes ACME on the host.
 
 The toolkit does not require a project-level build manifest in v1.
 
-## 8. MCP mapping
+## 8. LLM-facing result design
 
-The MCP adapter exposes a practical subset of the Application API using clear C64-oriented names. Representative shape:
+The LLM sees only information it can use.
+
+Useful examples:
 
 ```text
-c64_status
-c64_reset
-c64_memory_read
-c64_memory_write
-c64_memory_search
-c64_registers
-c64_screen
-c64_snapshot
-c64_disk_attach
-c64_keyboard
-c64_joystick
-
-c64_execution
-c64_breakpoint
-c64_watchpoint
-c64_cpu_history
-
-c64_disassemble
-c64_memory_compare
-c64_disk_inspect
-c64_basic_decode
-c64_static_analyze
-
-c64_symbol
-c64_region
-c64_comment
-c64_knowledge_at
-c64_knowledge_search
-c64_knowledge_history
-
-c64_assemble
+$2100 is a routine
+$3000-$30ff conflicts with an existing sprite classification
+Ghidra found incoming references to $2100
+VICE state was lost
+ACME reports an error at main.a:42
+required static-analysis capability is unavailable
 ```
 
-This list is a design target, not a frozen schema. Exact names/arguments are settled during implementation while preserving the boundaries above.
+Normally hidden examples:
 
-## 9. Explicitly excluded API shapes
+```text
+broker protocol version
+runtime/package version
+database schema version
+wire-format version
+request ID
+TCP port
+PID
+temporary staging path
+raw native-tool argv
+internal parser/retry details
+```
 
-The agent-facing API must not contain operations such as:
+An explicit human diagnostics path may expose infrastructure details for troubleshooting.
+
+## 9. Explicitly excluded LLM-facing shapes
+
+Do not expose operations such as:
 
 ```text
 broker_connect
@@ -271,4 +275,4 @@ reverse_engineer_application
 understand_program
 ```
 
-The first group leaks infrastructure. The final group incorrectly embeds workflows/reasoning into deterministic tools.
+Infrastructure stays below the LLM-facing boundary. High-level reverse-engineering workflows remain in skills rather than deterministic tools.
