@@ -870,10 +870,8 @@ type BrokerLeaseResult = { ok: true; lease: HeldLease | null } | { ok: false; me
 
 /**
  * Builds the HeldLease a stock handler needs from state read FRESH on every
- * call -- activeInstance() and grantId -- never memoised here:
- * handleGrantedInstanceUnreachable() overwrites both on a replacement
- * acquisition, and a cached lease would keep pointing at the retired
- * instance. `host` is the hostname of the active instance's `url`; the
+ * call -- activeInstance() and grantId -- never memoised here, so the lease
+ * always names the instance the session currently holds. `host` is the hostname of the active instance's `url`; the
  * monitor dial itself goes through the broker endpoint's relay, not to this
  * host. `port` is activeInstance().port (the broker allocates one
  * port per instance and passes it to -binarymonitoraddress on the stock
@@ -906,9 +904,26 @@ function buildHeldLease(session: BrokerControlSession): HeldLease {
   };
 }
 
-async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
-  if (controlSession) return { ok: true, lease: buildHeldLease(controlSession) };
-  if (process.env.VICE_MCP_URL) return { ok: true, lease: null }; // explicit override -- broker never contacted, nothing to claim a monitor socket through
+/** The acquisition in progress, so two first calls that overlap share one
+ * acquire instead of taking two grants. Cleared when it settles, so a failure
+ * is retried by the next call. */
+let leaseInFlight: Promise<BrokerLeaseResult> | null = null;
+
+function ensureBrokerLease(): Promise<BrokerLeaseResult> {
+  if (controlSession) return Promise.resolve({ ok: true, lease: buildHeldLease(controlSession) });
+  if (process.env.VICE_MCP_URL) return Promise.resolve({ ok: true, lease: null }); // explicit override -- broker never contacted, nothing to claim a monitor socket through
+  if (leaseInFlight === null) {
+    const pending = acquireBrokerLease();
+    leaseInFlight = pending;
+    const clear = (): void => {
+      if (leaseInFlight === pending) leaseInFlight = null;
+    };
+    pending.then(clear, clear);
+  }
+  return leaseInFlight;
+}
+
+async function acquireBrokerLease(): Promise<BrokerLeaseResult> {
 
   // Dial the fixed endpoint. Nothing is read from disk, and a failed dial is
   // never cached: the call after a human starts the broker just works, with
@@ -947,27 +962,18 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
     return { ok: false, message: brokerLaunchFailedMessage(result.message) };
   }
 
-  // adoptGrant() is the ONE seam that inverts the grant's host-local
-  // coordinates (D-1, quick task 260801-ccn) and adopts them as this
-  // session's active instance -- the LAST point before the coordinates
-  // become the session's identity: the endpoint every later tool call is
-  // sent to. Plan 08 (D-13) reuses this
-  // EXACT function for a replacement acquisition too (see
-  // handleGrantedInstanceUnreachable() below) -- one code path for adopting
-  // an instance, never a second one for a replacement.
+  // adoptGrant() inverts the grant's host-local coordinates and adopts them
+  // as this session's active instance -- the last point before they become
+  // the session's identity.
   adoptGrant({ ...result.grant });
   controlSession = session;
   return { ok: true, lease: buildHeldLease(session) };
 }
 
 /**
- * The ONE adoption seam (D-13): check a grant (checkGrant()) and adopt it
- * as this session's active instance, recording
- * the grant id. Called by ensureBrokerLease() above for an ORDINARY
- * acquisition and by handleGrantedInstanceUnreachable() below for BOTH of
- * its replacement acquisitions (the same-session retry and the
- * fresh-session retry) -- never a second, parallel adoption path for a
- * replacement.
+ * The one adoption seam: check a grant (checkGrant()) and adopt it as this
+ * session's active instance, recording the grant id. Called by
+ * ensureBrokerLease() above.
  */
 function adoptGrant(grant: Record<string, unknown>): void {
   grantId = typeof grant.id === "string" ? grant.id : null;

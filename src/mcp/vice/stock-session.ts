@@ -174,7 +174,24 @@ export function clearHeldStockSession(): void {
  * the never-throw conversion into a well-formed tool result is runBinary()'s
  * job, not this function's.
  */
-export async function ensureStockSession(deps: StockSessionDeps): Promise<EnsureStockSessionOutcome> {
+export function ensureStockSession(deps: StockSessionDeps): Promise<EnsureStockSessionOutcome> {
+  // Two calls that overlap while no session is held share one establishment
+  // instead of each acquiring and connecting. The entry is cleared when the
+  // attempt settles, so a failure is retried by the next call.
+  if (ensureInFlight === null) {
+    const pending = establishStockSession(deps);
+    ensureInFlight = pending;
+    const clear = (): void => {
+      if (ensureInFlight === pending) ensureInFlight = null;
+    };
+    pending.then(clear, clear);
+  }
+  return ensureInFlight;
+}
+
+let ensureInFlight: Promise<EnsureStockSessionOutcome> | null = null;
+
+async function establishStockSession(deps: StockSessionDeps): Promise<EnsureStockSessionOutcome> {
   const connectFn = deps.connect ?? stockConnect;
   const reconnectFn = deps.reconnect ?? stockReconnect;
 

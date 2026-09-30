@@ -181,10 +181,9 @@ export async function resolveVideoStandard(session: StockConnectSession): Promis
     //
     // Rethrow the three typed conditions that mean "the connection or the
     // machine, not the value": handleCyclesStopwatch()'s own
-    // convertWireError() and handleDiagnoseStock()'s classifier both know what
-    // to do with them. Keep the PAL fallback for value-shaped failures only
-    // (an unexpected reply shape, an unrecognised standard, a build with no
-    // such resource). Do NOT widen this back to a bare catch.
+    // convertWireError() knows what to do with them. Keep the PAL fallback
+    // for value-shaped failures only (an unexpected reply shape, an
+    // unrecognised standard, a build with no such resource). Do NOT widen this back to a bare catch.
     if (err instanceof MachineRestartedError || err instanceof StockConnectionClosedError || err instanceof StockRequestTimeoutError) {
       throw err;
     }

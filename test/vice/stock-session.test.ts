@@ -140,6 +140,42 @@ test("lease: a lease of null (the VICE_MCP_URL override) never calls stockConnec
   assert.equal(connectCalls, 0);
 });
 
+test("lease: two overlapping first calls share one lease and one connect", async () => {
+  let leaseCalls = 0;
+  let connectCalls = 0;
+  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-overlap", brokerControl: STUB_BROKER_CONTROL });
+  const deps: StockSessionDeps = {
+    ensureLease: async () => {
+      leaseCalls++;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { ok: true, lease };
+    },
+    connect: async (opts) => {
+      connectCalls++;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return fakeSession(opts);
+    },
+  };
+  const [first, second] = await Promise.all([ensureStockSession(deps), ensureStockSession(deps)]);
+  assert.ok(first.ok && second.ok);
+  assert.strictEqual(first.session, second.session);
+  assert.equal(leaseCalls, 1);
+  assert.equal(connectCalls, 1);
+});
+
+test("lease: a failed first attempt is not remembered, so the next call tries again", async () => {
+  let leaseCalls = 0;
+  const deps: StockSessionDeps = {
+    ensureLease: async () => {
+      leaseCalls++;
+      return { ok: false, message: "broker: not running" };
+    },
+  };
+  await ensureStockSession(deps);
+  await ensureStockSession(deps);
+  assert.equal(leaseCalls, 2);
+});
+
 test("lease: two successive calls with the same targetId call stockConnect exactly once -- the held session is reused", async () => {
   let connectCalls = 0;
   const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
