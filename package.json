@@ -1,0 +1,24 @@
+{
+  "name": "@henols/c64-re-tools",
+  "version": "0.0.0-dev",
+  "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing.",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "c64-re-tools": "./dist/cli/main.js",
+    "c64-re-tools-mcp": "./dist/mcp/main.js",
+    "c64-re-tools-host": "./dist/host/main.js"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test test/scaffold/scaffold.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2"
+  }
+}
