@@ -234,13 +234,7 @@ The only mandatory persistent toolkit-owned state is:
 .c64-re-tools/knowledge.db
 ```
 
-Machine-local and disposable data may live under:
-
-```text
-.c64-re-tools/local/
-```
-
-and must not be authoritative project knowledge.
+Runtime/session/tool scratch data stays outside the project. `.c64-re-tools/` is reserved for durable project knowledge.
 
 ## 12. Knowledge requirements
 
@@ -263,6 +257,24 @@ LLM and user findings may add semantic names and interpretations that are more m
 The schema must remain deliberately small. New tables/fields require a concrete feature requirement.
 
 SQLite is the sole authoritative representation. The project shall not maintain synchronized JSON/JSONL mirrors.
+
+## 12.1 Ghidra CPU-language requirements
+
+Ghidra analysis for C64 software must use a dedicated NMOS 6502/6510 language that understands the complete 256-byte opcode space.
+
+This includes:
+
+- all 151 documented NMOS 6502 opcodes;
+- all 105 undocumented opcode bytes used by real 6502/6510 software;
+- correct instruction length/addressing mode for every opcode;
+- p-code semantics for deterministic undocumented instruction families;
+- no false fall-through after JAM/KIL instructions;
+- conservative/opaque modeling for electrically unstable instructions whose exact result depends on analog/bus/chip behavior rather than inventing deterministic semantics;
+- correct NMOS decimal-mode semantics for deterministic decimal-sensitive instructions rather than knowingly treating decimal mode as binary arithmetic.
+
+The supported C64 Ghidra language is part of c64-re-tools integration behavior. Stock Ghidra 6502 decoding alone is insufficient when it leaves undocumented 6510 opcodes undefined.
+
+The Ghidra integration must be regression-tested across all 105 undocumented opcode bytes.
 
 ## 13. Installation requirements
 
