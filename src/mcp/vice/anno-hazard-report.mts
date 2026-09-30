@@ -762,6 +762,9 @@ function evaluateGraphicsFacts(facts: readonly GraphicsConstWriteFact[], imageSt
   return { findings, incompleteAreas, spriteRanges };
 }
 
+/** The size of one VIC-II bank, the unit a sprite pointer is relative to. */
+const VIC_BANK_BYTES = 0x4000;
+
 const SPRITE_STORE_TO_LOAD: Readonly<Record<string, string>> = Object.freeze({ sta: "lda", stx: "ldx", sty: "ldy" });
 
 /**
@@ -770,7 +773,7 @@ const SPRITE_STORE_TO_LOAD: Readonly<Record<string, string>> = Object.freeze({ s
  * deliberately does not promise (it derives the pointer TABLE range only,
  * never a shape's own address). When the value stored is an immediate
  * literal, the blocked address is that value times 64 (the fixed sprite
- * granularity); otherwise the dependency is real but its target is not
+ * granularity) inside the VIC bank of the matched pointer range; otherwise the dependency is real but its target is not
  * statically known, reported at the weakest strength with no blocked
  * address.
  */
@@ -789,14 +792,18 @@ function detectSpritePointerStores(
     if (!expectedLoad) continue;
     const target = literalOperandTarget(instr);
     if (target === null) continue;
-    if (!spriteRanges.some((r) => target >= r.start && target <= r.endInclusive)) continue;
+    const matched = spriteRanges.find((r) => target >= r.start && target <= r.endInclusive);
+    if (matched === undefined) continue;
 
     const prev = i > 0 ? instructions[i - 1] : undefined;
     const sourcedFromImmediate = !!prev && prev.mnemonic === expectedLoad && prev.operand?.role === "immediate";
 
     if (sourcedFromImmediate) {
       const value = prev!.operand!.value;
-      const blockedAddress = value * 64;
+      // The pointer is an offset inside the VIC bank; the matched range's own
+      // address carries the bank the recovered $DD00 value selected.
+      const vicBankBase = Math.floor(matched.start / VIC_BANK_BYTES) * VIC_BANK_BYTES;
+      const blockedAddress = vicBankBase + value * 64;
       if (blockedAddress < imageStart || blockedAddress > imageEndInclusive) continue; // not in this image -- no finding
       findings.push({
         hazardClass: "page-alignment",

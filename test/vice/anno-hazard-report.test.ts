@@ -403,6 +403,20 @@ test("hazard class-3: a store of an immediate literal into the derived sprite po
   assert.equal(finding!.blockedAddress, 64, "the blocked address is the literal value times 64");
 });
 
+test("hazard class-3: a sprite pointer store in VIC banks 1 to 3 blocks the aligned base inside that bank, not at the bank-relative offset", () => {
+  for (const [bankSelect, base] of [[0x02, 0x4000], [0x01, 0x8000], [0x00, 0xc000]] as const) {
+    const bytes = new Uint8Array(100).fill(0xea);
+    bytes.set([0xa9, bankSelect, 0x8d, 0x00, 0xdd], 0); // lda #bank ; sta $dd00
+    bytes.set([0xa9, 0x10, 0x8d, 0x18, 0xd0], 5); // lda #$10 ; sta $d018 (screen at bank + $0400)
+    const table = base + 0x07f8;
+    bytes.set([0xa9, 0x01, 0x8d, table & 0xff, table >> 8], 10); // lda #1 ; sta table
+    const report = buildHazardReport({ bytes, origin: base });
+    const finding = report.findings.find((f) => f.hazardClass === "page-alignment" && f.mechanism === "sprite-pointer-names-aligned-base");
+    assert.ok(finding, `bank at $${base.toString(16)}: a literal pointer store must produce a finding`);
+    assert.equal(finding!.blockedAddress, base + 64, `bank at $${base.toString(16)}: the blocked address is the bank base plus the literal times 64`);
+  }
+});
+
 test("hazard class-3: the same store whose scaled product lies outside the loaded image yields no finding", () => {
   const bytes = new Uint8Array(100).fill(0xea);
   bytes.set([0xa9, 0x3f, 0x8d, 0x00, 0xdd], 0);
