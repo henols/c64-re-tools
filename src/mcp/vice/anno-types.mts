@@ -1481,12 +1481,12 @@ function realpathOfNearestExisting(p: string): string {
  * The path is deliberately NOT translated -- see trap 7 in `anno-store.mts`'s
  * header for what a translated store path would do.
  */
-export function storePathWithinWorkspace(path: string, workspaceRoot: string): string {
+export function storePathWithinWorkspace(path: string, workspaceRoot: string, what = "path"): string {
   const resolvedRoot = realpathOfNearestExisting(workspaceRoot);
   const resolvedPath = realpathOfNearestExisting(path);
   if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(resolvedRoot + sep)) {
     throw new AnnoStorePathError(
-      `store path ${JSON.stringify(resolvedPath)} is outside the workspace root ${JSON.stringify(resolvedRoot)} -- refusing to open a store there`,
+      `${what} ${JSON.stringify(path)} is outside the workspace root -- refusing it. Use a path inside the project.`,
       { path: resolvedPath, workspaceRoot: resolvedRoot },
     );
   }

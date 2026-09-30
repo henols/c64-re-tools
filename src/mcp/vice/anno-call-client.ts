@@ -74,19 +74,19 @@ function argBag(args: unknown): Record<string, unknown> {
 /** Confines one file argument to the workspace and refuses an absent file by
  * name, before anything is sent. */
 function confineClientFile(name: string, key: string, raw: string, workspaceRoot: string): string {
+  const what = key === "image" ? "image" : key === "export_path" ? "transfer file" : `file for "${key}"`;
   let path: string;
   try {
-    path = storePathWithinWorkspace(raw, workspaceRoot);
+    path = storePathWithinWorkspace(raw, workspaceRoot, what);
   } catch (err) {
     if (err instanceof AnnoStorePathError) {
-      throw new AnnoStorePathError(`${name} refused: ${key} ${err.message}`, { path: err.path, workspaceRoot: err.workspaceRoot });
+      throw new AnnoStorePathError(`${name} refused: ${err.message}`, { path: err.path, workspaceRoot: err.workspaceRoot });
     }
     throw err;
   }
   if (!existsSync(path)) {
-    const what = key === "image" ? "image" : key === "export_path" ? "transfer file" : `file for "${key}"`;
     throw new AnnoStorePathError(
-      `${name} refused: no ${what} exists at ${JSON.stringify(path)} -- a file that is not there is a different fact from a ` +
+      `${name} refused: no ${what} exists at ${JSON.stringify(raw)} -- a file that is not there is a different fact from a ` +
         "file with nothing in it. Nothing was read, nothing was written.",
       { path },
     );

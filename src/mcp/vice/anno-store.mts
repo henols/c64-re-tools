@@ -509,7 +509,7 @@ export function openAnnoDatabase(
     );
   }
 
-  const resolved = opts.workspaceRoot === undefined ? resolve(path) : storePathWithinWorkspace(path, opts.workspaceRoot);
+  const resolved = opts.workspaceRoot === undefined ? resolve(path) : storePathWithinWorkspace(path, opts.workspaceRoot, "annotation database path");
   const fresh = !existsSync(resolved);
 
   // REFUSED BEFORE THE CONNECTION IS CONSTRUCTED, and the position is the whole

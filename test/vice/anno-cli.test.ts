@@ -185,17 +185,21 @@ function withTempDir<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
   return Promise.resolve(fn(dir)).finally(() => rmSync(dir, { recursive: true, force: true }));
 }
 
-/** A temp directory INSIDE the workspace root.
+/** A temp directory that is the workspace root for the duration of the body.
  *
- * `coverage` confines both of its caller-supplied paths with
- * `storePathWithinWorkspace()` against `repoRoot()`, so a system tmpdir path
- * is refused BY DESIGN -- that refusal is the mitigation for T-29-28, not an
- * inconvenience to route around. Any test that drives the coverage verb for
- * real must therefore work inside the tree, exactly as the store's own tests
- * do. */
+ * The verbs confine their paths against the workspace root, which they read
+ * from CLAUDE_PROJECT_DIR when no root is injected. The directory lives under
+ * the system temp directory and is made the root for the body, so the shipped
+ * confinement is exercised and nothing is written inside the repository. */
 function withWorkspaceTempDir<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(VICE_DIR, ".anno-cli-test-"));
-  return Promise.resolve(fn(dir)).finally(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = mkdtempSync(join(tmpdir(), "anno-cli-ws-"));
+  const previous = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = dir;
+  return Promise.resolve(fn(dir)).finally(() => {
+    if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = previous;
+    rmSync(dir, { recursive: true, force: true });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2478,5 +2482,24 @@ test("call, Test 5: --args-file outside the workspace root is refused through st
 test("call, Test 6: Test 1's write-then-read pair still succeeds with PATH narrowed to only process.execPath's own directory (no x64sc reachable)", async () => {
   await withWorkspaceTempDir(async (ws) => {
     await spawnedWriteThenRead(ws, "call_test6_label", 0xc020, (env) => ({ ...env, PATH: dirname(process.execPath) }));
+  });
+});
+
+test("decomp-completeness: a manifest entry whose image path climbs out of the workspace is refused by name and its existence is not reported", async () => {
+  await withTempDir(async (ws) => {
+    const outside = mkdtempSync(join(tmpdir(), "anno-cli-outside-"));
+    try {
+      writeFileSync(join(outside, "escape.prg"), "x");
+      writeFileSync(join(ws, "disagreements.json"), "{}");
+      writeFileSync(join(ws, "manifest.json"), JSON.stringify({ fixtures: [{ path: `../${outside.split("/").pop()}/escape.prg`, execution: "executed", reason: null }] }));
+      const { result, stderr, stdout } = await withCapturedConsole(() =>
+        runAnnoCliWith(["decomp-completeness", "--fixture", "escape", "--disagreements", join(ws, "disagreements.json"), "--manifest", join(ws, "manifest.json")], { workspaceRoot: ws }),
+      );
+      assert.notEqual(result, 0);
+      assert.match(stderr, /the manifest entry's image path .* is outside the workspace root/);
+      assert.ok(!stdout.includes("imageUnavailable"));
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

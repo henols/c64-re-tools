@@ -137,6 +137,7 @@ import type { CoverageReport } from "./anno-coverage.mts";
 import type { HazardReport } from "./anno-hazard-report.mts";
 import type { EvidReconciliation } from "./evid-reconcile.mts";
 import { AnnoProjectError, storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.mts";
+import { jsonParsePosition } from "./anno-memmap-render.mts";
 import { repoRoot } from "./repo-root.ts";
 // `call`'s one generic runner. A STATIC import is safe here -- `vice-proxy.ts`
 // reaches this whole module only through its own dynamic import, so it never
@@ -597,9 +598,9 @@ function isMissingOptionValue(value: string | undefined): boolean {
 
 /** Confines one caller path to the workspace, printing the refusal when it
  * escapes. The ONE confinement seam, for every path every verb takes. */
-function confine(verb: string, raw: string, workspaceRoot: string): string | undefined {
+function confine(verb: string, raw: string, workspaceRoot: string, what = "path"): string | undefined {
   try {
-    return storePathWithinWorkspace(raw, workspaceRoot);
+    return storePathWithinWorkspace(raw, workspaceRoot, what);
   } catch (err) {
     console.error(`${verb}: ${errMsg(err)}`);
     return undefined;
@@ -716,13 +717,13 @@ async function cmdRenderMemmap(rest: string[], ctx: CliContext): Promise<number>
   }
 
   const workspaceRoot = ctx.workspaceRoot();
-  const provenancePath = confine("render-memmap", provenance, workspaceRoot);
+  const provenancePath = confine("render-memmap", provenance, workspaceRoot, "--provenance path");
   if (provenancePath === undefined) return 1;
   if (!existsSync(provenancePath)) {
     console.error(`render-memmap: provenance sidecar not found: ${provenancePath}`);
     return 1;
   }
-  const outPath = confine("render-memmap", out, workspaceRoot);
+  const outPath = confine("render-memmap", out, workspaceRoot, "--out path");
   if (outPath === undefined) return 1;
 
   // The banner records the sidecar's WORKSPACE-RELATIVE location, so a
@@ -1017,9 +1018,9 @@ async function cmdCoverage(rest: string[], ctx: CliContext): Promise<number> {
   }
 
   const workspaceRoot = ctx.workspaceRoot();
-  const projectPath = confine("coverage", project, workspaceRoot);
+  const projectPath = confine("coverage", project, workspaceRoot, "image path");
   if (projectPath === undefined) return 1;
-  const outPath = out === undefined ? undefined : confine("coverage", out, workspaceRoot);
+  const outPath = out === undefined ? undefined : confine("coverage", out, workspaceRoot, "--out path");
   if (out !== undefined && outPath === undefined) return 1;
   if (!existsSync(projectPath)) {
     console.error(`coverage: project file not found: ${projectPath}`);
@@ -1185,9 +1186,9 @@ async function cmdExportAsm(rest: string[], ctx: CliContext): Promise<number> {
   }
 
   const workspaceRoot = ctx.workspaceRoot();
-  const imagePath = confine("export-asm", positional[0]!, workspaceRoot);
+  const imagePath = confine("export-asm", positional[0]!, workspaceRoot, "image path");
   if (imagePath === undefined) return 1;
-  const ledgerPath = ledger === undefined ? undefined : confine("export-asm", ledger, workspaceRoot);
+  const ledgerPath = ledger === undefined ? undefined : confine("export-asm", ledger, workspaceRoot, "--ledger path");
   if (ledger !== undefined && ledgerPath === undefined) return 1;
   if (!existsSync(imagePath)) {
     console.error(`export-asm: image not found: ${imagePath}`);
@@ -1200,7 +1201,7 @@ async function cmdExportAsm(rest: string[], ctx: CliContext): Promise<number> {
     );
     return 1;
   }
-  const outPath = confine("export-asm", out, workspaceRoot);
+  const outPath = confine("export-asm", out, workspaceRoot, "--out path");
   if (outPath === undefined) return 1;
   // The project's own database lives inside the workspace, so an --out at or
   // above it would put the tree among the annotations it was exported from.
@@ -1483,9 +1484,9 @@ async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<n
   }
 
   const workspaceRoot = ctx.workspaceRoot();
-  const disagreementsPath = confine("decomp-completeness", disagreements, workspaceRoot);
+  const disagreementsPath = confine("decomp-completeness", disagreements, workspaceRoot, "--disagreements path");
   if (disagreementsPath === undefined) return 1;
-  const manifestPath = confine("decomp-completeness", manifest, workspaceRoot);
+  const manifestPath = confine("decomp-completeness", manifest, workspaceRoot, "--manifest path");
   if (manifestPath === undefined) return 1;
   if (!existsSync(disagreementsPath)) {
     console.error(`decomp-completeness: --disagreements file not found: ${disagreementsPath}`);
@@ -1500,7 +1501,8 @@ async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<n
   try {
     manifestDoc = JSON.parse(readFileSync(manifestPath, "utf8"));
   } catch (err) {
-    console.error(`decomp-completeness: --manifest file is not valid JSON: ${errMsg(err)}`);
+    // Never the parser's own message: it quotes the file's bytes.
+    console.error(`decomp-completeness: --manifest file is not valid JSON${jsonParsePosition(err)}`);
     return 1;
   }
   if (typeof manifestDoc !== "object" || manifestDoc === null || !Array.isArray((manifestDoc as Record<string, unknown>).fixtures)) {
@@ -1522,7 +1524,10 @@ async function cmdDecompCompleteness(rest: string[], ctx: CliContext): Promise<n
   // The fixture's own bytes -- the manifest entry's path, resolved beside the
   // manifest file, never a second guess at where the image lives. An image
   // that is not there is not sent; the report says so by name.
-  const fixtureImagePath = join(dirname(manifestPath), manifestEntry.path);
+  // The derived path goes through the same confinement seam as every other
+  // path: an entry that climbs out of the workspace is refused by name.
+  const fixtureImagePath = confine("decomp-completeness", join(dirname(manifestPath), manifestEntry.path), workspaceRoot, "the manifest entry's image path");
+  if (fixtureImagePath === undefined) return 1;
   let report: DecompCompletenessReport;
   try {
     const answer = await runReport(ctx, "decomp-completeness", { manifest_entry: manifestEntry }, {
@@ -1797,7 +1802,7 @@ async function cmdHazardReport(rest: string[], ctx: CliContext): Promise<number>
     return 1;
   }
 
-  const imagePath = confine("hazard-report", image, ctx.workspaceRoot());
+  const imagePath = confine("hazard-report", image, ctx.workspaceRoot(), "image path");
   if (imagePath === undefined) return 1;
   if (!existsSync(imagePath)) {
     console.error(`hazard-report: image not found: ${imagePath}`);
@@ -1890,7 +1895,7 @@ async function cmdExportProject(rest: string[], ctx: CliContext): Promise<number
     console.log(USAGE);
     return 1;
   }
-  const outPath = confine("export-project", out, ctx.workspaceRoot());
+  const outPath = confine("export-project", out, ctx.workspaceRoot(), "--out path");
   if (outPath === undefined) return 1;
   if (!refuseOverwrite(outPath, force, "export-project")) return 1;
 
@@ -1920,7 +1925,7 @@ async function cmdImportProject(rest: string[], ctx: CliContext): Promise<number
     console.error("import-project: usage: import-project <file> -- exactly one export-project document");
     return 1;
   }
-  const documentPath = confine("import-project", positional[0]!, ctx.workspaceRoot());
+  const documentPath = confine("import-project", positional[0]!, ctx.workspaceRoot(), "document path");
   if (documentPath === undefined) return 1;
   if (!existsSync(documentPath)) {
     console.error(`import-project: document not found: ${documentPath}`);
@@ -2003,7 +2008,7 @@ function parseCallArgs(rest: string[]): CallParsedArgs {
  *
  * `--args-file`'s path IS a caller-supplied path and goes through the SAME
  * ONE confinement seam every other path this CLI accepts uses,
- * `storePathWithinWorkspace()` against `repoRoot()` -- read BEFORE the file
+ * `storePathWithinWorkspace()` against `ctx.workspaceRoot()` -- read BEFORE the file
  * is opened, so a path outside the workspace root never reaches
  * `readFileSync` at all. A JSON parse failure never echoes the file's bytes
  * back (the CR-03 posture this file's header names): the refusal names only
@@ -2050,10 +2055,10 @@ async function cmdCall(rest: string[], ctx: CliContext): Promise<number> {
 
   let raw: string;
   if (argsFile !== undefined) {
-    const workspaceRoot = repoRoot();
+    const workspaceRoot = ctx.workspaceRoot();
     let argsFilePath: string;
     try {
-      argsFilePath = storePathWithinWorkspace(argsFile, workspaceRoot);
+      argsFilePath = storePathWithinWorkspace(argsFile, workspaceRoot, "--args-file");
     } catch (err) {
       console.error(`call: ${errMsg(err)}`);
       return 1;

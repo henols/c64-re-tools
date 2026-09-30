@@ -91,10 +91,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 function stringArg(verb: string, args: Record<string, unknown>, key: string): string {
   const value = args[key];
   if (typeof value !== "string") throw new AnnoReportRefusal(`${verb}: "${key}" must be a string, got ${JSON.stringify(value)}`);
@@ -748,7 +744,7 @@ function decompCompletenessReport(handle: AnnoStoreHandle, args: Record<string, 
   try {
     disagreementDoc = JSON.parse(utf8(disagreementsFile.bytes));
   } catch (err) {
-    throw new AnnoReportRefusal(`decomp-completeness: --disagreements file is not valid JSON: ${errMsg(err)}`);
+    throw new AnnoReportRefusal(`decomp-completeness: --disagreements file is not valid JSON${jsonParsePosition(err)}`);
   }
   const validated = validateDisagreementDocumentShape(disagreementDoc);
   if (typeof validated === "string") throw new AnnoReportRefusal(validated);
