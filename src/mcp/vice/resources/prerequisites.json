@@ -333,7 +333,7 @@
             "ecosystem": "generic",
             "text": "Set the GHIDRA_HOME environment variable to name a Ghidra installation directory.",
             "provenance": "carried",
-            "source": "src/mcp/vice/host-tool.mts:1352"
+            "source": "src/mcp/vice/host-tool.mts"
           }
         ]
       }
@@ -357,9 +357,9 @@
         "universal": [
           {
             "ecosystem": "generic",
-            "text": "bash vendor/dxa/build.bash build",
+            "text": "cd src/mcp/vice && bash vendor/dxa/build.bash build",
             "provenance": "carried",
-            "source": "src/mcp/vice/host-tool.mts:1472"
+            "source": "src/mcp/vice/vendor/dxa/build.bash"
           }
         ]
       }
