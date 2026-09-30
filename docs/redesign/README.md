@@ -31,6 +31,7 @@ A reconstructed application does **not** need byte-identical machine code. Given
 | 15 | [VICE MCP schemas](15-vice-mcp-schemas.md) | Frozen v1 addresses, conditions, tool actions, bounds and input/output result shapes |
 | 16 | [Host Runtime native-tool contracts](16-host-runtime-tool-contracts.md) | Frozen v1 skill-side contracts for ACME, DXA, Ghidra, c1541 and petcat |
 | 17 | [Project root and local state](17-project-root-and-local-state.md) | Harness working directory as project root and minimal project-local state ownership |
+| 18 | [Repository structure](18-repository-structure.md) | One-package flat source layout, dependency direction, skill bundling and test/build placement |
 
 ## Core decisions
 
@@ -53,4 +54,5 @@ A reconstructed application does **not** need byte-identical machine code. Given
 17. **The v1 VICE MCP schema is frozen.** Addresses are canonical hex strings, conditions are typed rather than monitor expressions, read-only observations preserve run state, mutation/execution behavior is explicit, and the public tool list is fixed in the schema chapter.
 18. **Native host tools use typed skill-side facades.** ACME, DXA, Ghidra, c1541 and petcat accept domain inputs and return structured results; file staging, argv construction, tool paths, temporary files and large-result transfer remain private runtime details.
 19. **The harness working directory is the project root.** There is no root discovery, upward search, marker lookup or environment override. `.c64-re-tools/knowledge.db` is created directly under that directory when durable knowledge is first written; runtime/session/tool scratch stays outside the project.
-20. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
+20. **The implementation is one repository and one npm package.** `src/` is flat by ownership (`mcp`, `host`, `host-client`, `knowledge`, `cli`), skills remain first-class directories, native tools stay external, and no workspace/package graph is introduced until a concrete need exists.
+21. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
