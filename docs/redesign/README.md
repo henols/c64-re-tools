@@ -32,6 +32,7 @@ A reconstructed application does **not** need byte-identical machine code. Given
 | 16 | [Host Runtime native-tool contracts](16-host-runtime-tool-contracts.md) | Frozen v1 skill-side contracts for ACME, DXA, Ghidra, c1541 and petcat |
 | 17 | [Project root and local state](17-project-root-and-local-state.md) | Harness working directory as project root and minimal project-local state ownership |
 | 18 | [Repository structure](18-repository-structure.md) | One-package flat source layout, dependency direction, skill bundling and test/build placement |
+| 19 | [Implementation plan](19-implementation-plan.md) | Vertical milestones, acceptance gates and recommended build order from scaffold to release |
 
 ## Core decisions
 
@@ -55,4 +56,5 @@ A reconstructed application does **not** need byte-identical machine code. Given
 18. **Native host tools use typed skill-side facades.** ACME, DXA, Ghidra, c1541 and petcat accept domain inputs and return structured results; file staging, argv construction, tool paths, temporary files and large-result transfer remain private runtime details.
 19. **The harness working directory is the project root.** There is no root discovery, upward search, marker lookup or environment override. `.c64-re-tools/knowledge.db` is created directly under that directory when durable knowledge is first written; runtime/session/tool scratch stays outside the project.
 20. **The implementation is one repository and one npm package.** `src/` is flat by ownership (`mcp`, `host`, `host-client`, `knowledge`, `cli`), skills remain first-class directories, native tools stay external, and no workspace/package graph is introduced until a concrete need exists.
-21. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
+21. **Implementation proceeds by vertical slices with real acceptance gates.** The first slice proves MCP → Host Runtime → VICE → real machine state; later milestones add knowledge, native tools, analyzers, equivalence testing, specialist skills and distribution in dependency order.
+22. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
