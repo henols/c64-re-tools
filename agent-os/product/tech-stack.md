@@ -5,12 +5,13 @@
 - **TypeScript is the only allowed programming language for new code.**
   JavaScript is never an allowed language: do not write new `.js`/`.mjs`
   files. Settings: ES2022, NodeNext modules, `strict`, `erasableSyntaxOnly`.
-  Code that must run where Node cannot strip types is written as `.mts` and
-  compiled by `build.ts`.
+  Code that must run where Node cannot strip types is written as `.mts`;
+  `build.ts` compiles the ones named in its `HOST_BOUND_ARTIFACTS` and
+  `ENTRY_ARTIFACTS` lists (see `agent-os/standards/broker/host-bound-modules.md`).
 - **Generated JavaScript**, never edited by hand: `resources/*.mjs` (host-bound,
   committed), `vice-cli.mjs` (the package bin, committed) and `dist/` (the npm
   server build, made at publish time, never committed). No hand-written
-  `.mjs`/`.js` exists; `no-handwritten-mjs.test.ts` enforces it.
+  `.mjs`/`.js` exists; review enforces this, and `build.ts` owns every emitted `.mjs`.
 - **Bash**: the host launcher (`resources/vice-launcher.sh`) and `dxa`'s build
   script.
 - **6502/6510 assembly (ACME dialect)**: skill templates and the exported
@@ -56,12 +57,12 @@ declared in `src/mcp/vice/prerequisites.json`.
 | `c1541`, `petcat` | from VICE | Found as siblings of `x64sc`. `c1541` is the only `.d64` reader. |
 | ACME + library | 0.97 | Assembler for `c64-assembler`, and the oracle that proves the exported source reassembles to the same bytes. |
 | Ghidra | 12.1.3 | Headless `analyzeHeadless`, not vendored. The NMOS 6502 SLEIGH extension is vendored in `vendor/ghidra-ext`. |
-| dxa | 0.1.5 | Vendored source in `vendor/dxa`, built by the user (`bash vendor/dxa/build.bash build`). |
+| dxa | 0.1.5 | A pinned upstream tarball, downloaded and built by the user (`cd src/mcp/vice && bash vendor/dxa/build.bash build`). No dxa source is committed. |
 
 ## Build, Test, CI
 
-- `build.ts` compiles the host-side `.mts` modules into committed
-  `resources/*.mjs`. CI regenerates every committed generated artifact and
+- `build.ts` compiles the host-bound `.mts` modules (its `HOST_BOUND_ARTIFACTS`
+  list) into committed `resources/*.mjs`. CI regenerates every committed generated artifact and
   fails when the tree then differs.
 - Tests use Node's built-in `node --test`. Server tests, their helpers and
   fixtures live in `test/vice/`; skill-script tests live in `test/skills/<skill>/`.

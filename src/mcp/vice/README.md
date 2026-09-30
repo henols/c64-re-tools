@@ -117,7 +117,7 @@ particular, the client-side default never sends more than the working directory'
 username or hostname reaches another session's `status` reply.
 
 **The session label carries no authority.** It is a display and diagnosis value
-only. No control operation — `monitor_claim`, `monitor_release`, `recycle`,
+only. No control operation — `monitor_claim`, `monitor_release`,
 `attach`, or `operation` — ever accepts a session label as a target selector; the
 only credential this protocol recognises is the grant a connection itself holds (and,
 for a relay attach, the per-claim handle minted from that grant). A request that
