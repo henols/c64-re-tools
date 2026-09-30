@@ -7,7 +7,7 @@
 // written into this checkout.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -17,9 +17,14 @@ import { VICE_DIR } from "./paths.ts";
 
 const LOG_OK = "INFO  Using Language/Compiler: 6502:LE:16:nmos:default (ProgramLoader)\n";
 
+/** A .prg that loads at $0801: `lda #$00`, `rts`. */
+const PRG_0801 = Uint8Array.from([0x01, 0x08, 0xa9, 0x00, 0x60]);
+
+/** Runs `fn` in a scratch directory that holds `g.prg` (PRG_0801). */
 function withScratch(fn: (dir: string) => Promise<void> | void): () => Promise<void> {
   return async () => {
     const dir = mkdtempSync(join(tmpdir(), "ghidra-run-cli-"));
+    writeFileSync(join(dir, "g.prg"), PRG_0801);
     try {
       await fn(dir);
     } finally {
@@ -99,6 +104,59 @@ test(
     });
     assert.equal(seen[0]?.tool, "ghidra.analyze");
     assert.equal(seen[0]?.args.importPath, join(dir, "g.prg"));
+  }),
+);
+
+/** A runner that records each request and returns a clean run. */
+function recordingRun(dir: string, seen: Record<string, unknown>[]): GhidraRunFn {
+  return async (tool, args) => {
+    seen.push(args);
+    return { ok: true, tool, exitStatus: 0, results: [{ path: join(dir, "l.log"), sha256: "", byteLength: 0 }], stderrTail: "" };
+  };
+}
+
+test(
+  "runGhidraCli: with no loader base, a .prg run sends the base two bytes below the image's load address",
+  withScratch(async (dir) => {
+    const seen: Record<string, unknown>[] = [];
+    const run = recordingRun(dir, seen);
+    const opts = ["--project-root", dir, "--tools-root", dir];
+    const r = await runGhidraCli([...BASE, ...opts], { run, runLogText: LOG_OK }, dir);
+    assert.equal(r.ok, true, r.ok ? "" : r.message);
+    assert.equal(seen[0]?.loaderBaseAddr, "0x7ff");
+
+    writeFileSync(join(dir, "hi.prg"), Uint8Array.from([0x00, 0xc0, 0x60]));
+    const hi = await runGhidraCli(["--run-id", "g", "--import-path", "hi.prg", "--processor", "6502:LE:16:nmos", "--import-route", "prg", ...opts], { run, runLogText: LOG_OK }, dir);
+    assert.equal(hi.ok, true, hi.ok ? "" : hi.message);
+    assert.equal(seen[1]?.loaderBaseAddr, "0xbffe");
+  }),
+);
+
+test(
+  "runGhidraCli: an explicit loader base is sent as given, and the flat64k route sends none",
+  withScratch(async (dir) => {
+    const seen: Record<string, unknown>[] = [];
+    const run = recordingRun(dir, seen);
+    const opts = ["--project-root", dir, "--tools-root", dir];
+    await runGhidraCli([...BASE, "--loader-base-addr", "0x1000", ...opts], { run, runLogText: LOG_OK }, dir);
+    assert.equal(seen[0]?.loaderBaseAddr, "0x1000");
+    await runGhidraCli(["--run-id", "g", "--import-path", "g.bin", "--processor", "6502:LE:16:nmos", "--import-route", "flat64k", ...opts], { run, runLogText: LOG_OK }, dir);
+    assert.equal("loaderBaseAddr" in seen[1]!, false);
+  }),
+);
+
+test(
+  "runGhidraCli: a .prg with no load address to read is refused before any request",
+  withScratch(async (dir) => {
+    const seen: Record<string, unknown>[] = [];
+    const run = recordingRun(dir, seen);
+    const opts = ["--project-root", dir, "--tools-root", dir];
+    writeFileSync(join(dir, "short.prg"), Uint8Array.from([0x01, 0x08]));
+    const short = await runGhidraCli(["--run-id", "g", "--import-path", "short.prg", "--processor", "6502:LE:16:nmos", "--import-route", "prg", ...opts], { run }, dir);
+    assert.match(short.ok ? "" : short.message, /not a \.prg: 2 byte\(s\)/);
+    const missing = await runGhidraCli(["--run-id", "g", "--import-path", "none.prg", "--processor", "6502:LE:16:nmos", "--import-route", "prg", ...opts], { run }, dir);
+    assert.match(missing.ok ? "" : missing.message, /cannot read the \.prg image/);
+    assert.equal(seen.length, 0);
   }),
 );
 

@@ -46,6 +46,7 @@ import { parseArgs } from "node:util";
 import { runHostToolOverEndpoint, type HostToolClientResult, type RunHostToolOverEndpointOptions } from "./host-tool-endpoint.mts";
 import { repoRoot as findRepoRoot, toolsDirUnder } from "./repo-root.ts";
 import { ensureLocalDir } from "./project-local.mts";
+import { prgLoaderBaseAddr } from "./ghidra-project.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -192,15 +193,32 @@ export function classifyGhidraRunLog(logText: string): GhidraRunLogVerdict {
  */
 export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptions = {}): Promise<GhidraRunResult> {
   const run = opts.run ?? runHostToolOverEndpoint;
+  const root = opts.repoRoot ?? findRepoRoot({ from: HERE });
+
+  // The .prg route imports the whole file, header included, so the base is
+  // two bytes below the image's own load address. With no explicit base,
+  // read the image here and send that base, so every address in the run is
+  // the program's real address.
+  let loaderBaseAddr = args.loaderBaseAddr;
+  if (loaderBaseAddr === undefined && args.importRoute === "prg") {
+    const imageAbs = resolvePath(root, args.importPath);
+    let bytes: Uint8Array;
+    try {
+      bytes = readFileSync(imageAbs);
+    } catch (e) {
+      throw new Error(`runGhidraAnalyze: cannot read the .prg image ${imageAbs} to find its load address: ${(e as Error).message}`);
+    }
+    const base = prgLoaderBaseAddr(bytes);
+    if (!base.ok) throw new Error(`runGhidraAnalyze: ${imageAbs}: ${base.message}`);
+    loaderBaseAddr = base.base;
+  }
 
   const wireArgs: Record<string, unknown> = { runId: args.runId, importPath: args.importPath, processor: args.processor };
   if (args.preScript !== undefined) wireArgs.preScript = args.preScript;
   if (args.postScript !== undefined) wireArgs.postScript = args.postScript;
-  // Plan 36-02's own fields -- included ONLY when the caller supplies them,
-  // so a caller of this module today (before that plan lands) never sends
-  // a key host-tool.mts does not yet accept.
+  // Each optional field goes on the wire only when it has a value.
   if (args.importRoute !== undefined) wireArgs.importRoute = args.importRoute;
-  if (args.loaderBaseAddr !== undefined) wireArgs.loaderBaseAddr = args.loaderBaseAddr;
+  if (loaderBaseAddr !== undefined) wireArgs.loaderBaseAddr = loaderBaseAddr;
   if (args.noanalysis !== undefined) wireArgs.noanalysis = args.noanalysis;
   if (args.scriptPath !== undefined) wireArgs.scriptPath = args.scriptPath;
   if (args.entrypointsPath !== undefined) wireArgs.entrypointsPath = args.entrypointsPath;
@@ -208,7 +226,6 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
   if (args.expectedClassificationLines !== undefined) wireArgs.expectedClassificationLines = args.expectedClassificationLines;
   if (args.dataRangesPath !== undefined) wireArgs.dataRangesPath = args.dataRangesPath;
 
-  const root = opts.repoRoot ?? findRepoRoot({ from: HERE });
   const runOpts: RunHostToolOverEndpointOptions = { baseDir: root, toolsRoot: opts.toolsRoot ?? ensureLocalDir(toolsDirUnder(root)) };
   if (opts.port !== undefined) runOpts.port = opts.port;
 
