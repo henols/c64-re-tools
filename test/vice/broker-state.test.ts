@@ -116,7 +116,7 @@ test("nextFreePort: every candidate in the scan window taken returns a typed no_
   assert.deepEqual(result, { ok: false, reason: "no_free_port" });
 });
 
-test("nextFreePort: a port the injected port-in-use probe reports as in use is skipped and appears in the blocked set afterwards", async () => {
+test("nextFreePort: a port the injected port-in-use probe reports as in use is skipped and offered again once it is free", async () => {
   const state = createBrokerState();
   const inUsePorts = new Set([6600, 6601]);
   const probedPorts: number[] = [];
@@ -127,9 +127,11 @@ test("nextFreePort: a port the injected port-in-use probe reports as in use is s
 
   const result = await nextFreePort(state, { portInUse: probe });
   assert.deepEqual(result, { ok: true, port: 6602 });
-  assert.ok(isPortBlocked(state, 6600), "6600 must be blocked after the probe reported it in use");
-  assert.ok(isPortBlocked(state, 6601), "6601 must be blocked after the probe reported it in use");
-  assert.ok(!isPortBlocked(state, 6602), "the eventually-allocated port must not itself be blocked");
+  assert.ok(!isPortBlocked(state, 6600), "a busy port is never blocked for good");
+  assert.ok(!isPortBlocked(state, 6601), "a busy port is never blocked for good");
+  inUsePorts.clear();
+  assert.deepEqual(await nextFreePort(state, { portInUse: probe }), { ok: true, port: 6600 }, "the port is offered again once its emulator has gone");
+  probedPorts.splice(3);
   assert.deepEqual(probedPorts, [6600, 6601, 6602]);
 });
 

@@ -1807,3 +1807,19 @@ test("handleStatus: two unrelated grants on two unrelated instances are each nam
   assert.equal(byPort.get(6601)?.sessionLabel, "session-y");
   assert.equal(byPort.get(6601)?.grantId, "grant-y");
 });
+
+test("handleAcquire: with no VICE binary on the host the acquire is refused by name and nothing is spawned", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const state = createState();
+  let spawned = false;
+  const outcome = await handleAcquire("g-x", "/tmp/unused-state", state, {
+    launchRefusal: "vice: the VICE emulator binary \"x64sc\" was not found on this host",
+    buildColdSpawnFactory: () => () => {
+      spawned = true;
+      throw new Error("must not spawn");
+    },
+  });
+  assert.deepEqual(outcome, { ok: false, reason: "vice_not_found", message: "vice: the VICE emulator binary \"x64sc\" was not found on this host" });
+  assert.equal(spawned, false);
+  assert.equal(state.instances.size, 0);
+});

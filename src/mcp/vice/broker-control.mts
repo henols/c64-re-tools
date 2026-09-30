@@ -103,7 +103,9 @@ export type ControlErrorCode =
   | "at_capacity"
   | "internal"
   | "monitor_owned"
-  | "emulator_unreachable";
+  | "emulator_unreachable"
+  // The broker found no VICE binary; the message names the remedy.
+  | "vice_not_found";
 
 export interface ControlRequest {
   op: string;
@@ -154,7 +156,7 @@ export type AcquireOutcome =
   // primary/only allocation failing). See ControlErrorCode's own comment
   // for why this is a separate code rather than collapsing into the
   // existing `no_free_port` reason.
-  | { ok: false; reason: "no_free_port" | "no_free_text_port" | "at_capacity" | "launch_in_flight" | "internal" };
+  | { ok: false; reason: "no_free_port" | "no_free_text_port" | "at_capacity" | "launch_in_flight" | "internal" | "vice_not_found"; message?: string };
 
 export interface StatusInstanceEntry {
   port: number;
@@ -1072,17 +1074,24 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
 
     socket.on("data", (chunk: Buffer) => {
       if (relayMode) return;
-      const combined = Buffer.concat([carry, chunk]);
-      if (combined.length > MAX_LINE_BYTES) {
-        socket.destroy();
-        return;
-      }
-      let cursor = combined;
+      let cursor = carry.length === 0 ? chunk : Buffer.concat([carry, chunk]);
       let newlineIdx: number;
       while ((newlineIdx = cursor.indexOf(0x0a)) !== -1) {
+        // The cap applies to one line, not to a chunk that holds several.
+        if (newlineIdx > MAX_LINE_BYTES) {
+          socket.destroy();
+          return;
+        }
         const lineBuf = cursor.subarray(0, newlineIdx);
         const remainder = cursor.subarray(newlineIdx + 1);
-        handleLine(lineBuf.toString("utf8"), remainder);
+        try {
+          handleLine(lineBuf.toString("utf8"), remainder);
+        } catch (err) {
+          // A handler fault must not stop the broker: answer this request
+          // with an internal error and keep the connection.
+          console.error(`broker-control: a request handler threw: ${String(err)}`);
+          writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "the broker could not handle the request" });
+        }
         if (relayMode) {
           // The line just handled was `attach`, and it has already handed
           // `remainder` to onRelayAttach() as `pending` -- those bytes are
@@ -1092,7 +1101,11 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         }
         cursor = remainder;
       }
-      carry = cursor;
+      if (cursor.length > MAX_LINE_BYTES) {
+        socket.destroy();
+        return;
+      }
+      carry = Buffer.from(cursor);
     });
 
     socket.on("close", () => {
@@ -1100,19 +1113,25 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
       // SIGKILL, since "close" always fires either way. Idempotent: an
       // explicit `release` already having cleared
       // requestIdForThisConnection makes this a no-op.
+      // A throw from a 'close' handler would stop the whole broker, so each
+      // cleanup step logs its own failure and the next one still runs.
       if (requestIdForThisConnection) {
         const id = requestIdForThisConnection;
         requestIdForThisConnection = null;
-        opts.onRelease(id);
+        try {
+          opts.onRelease(id);
+        } catch (err) {
+          console.error(`broker-control: releasing grant ${id} threw: ${String(err)}`);
+        }
       }
-      // Phase 65 (D-09): the SAME connection-close-is-the-cleanup-signal
-      // posture as the release above, for a `host_tool_stage` request's own
-      // per-request scratch -- fires on an explicit close and on a bare
-      // socket death (SIGKILL) alike, since "close" always fires either way.
       if (hostToolRequestKey) {
         const key = hostToolRequestKey;
         hostToolRequestKey = null;
-        opts.onHostToolEnd?.(key);
+        try {
+          opts.onHostToolEnd?.(key);
+        } catch (err) {
+          console.error(`broker-control: ending host-tool request ${key} threw: ${String(err)}`);
+        }
       }
     });
 
@@ -1221,7 +1240,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           }
           if (socket.destroyed) return true; // no grant was produced -- nothing to release, nothing left to answer
           const code: ControlErrorCode = outcome.reason === "internal" ? "internal" : outcome.reason;
-          writeLine(socket, { kind: "error", code, message: `acquire failed: ${outcome.reason}` });
+          writeLine(socket, { kind: "error", code, message: outcome.message ?? `acquire failed: ${outcome.reason}` });
           return true;
         })
         .catch(() => {

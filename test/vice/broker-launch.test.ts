@@ -1677,9 +1677,9 @@ test("buildViceArgs: widening the stock bind away from 127.0.0.1 emits exactly o
     return true;
   }) as typeof process.stderr.write;
   try {
-    buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0" });
-    buildViceArgs(6511, { backend: "stock", binmonHost: "0.0.0.0" });
-    buildViceArgs(6512, { backend: "stock", binmonHost: "0.0.0.0" });
+    buildViceArgs(6510, { backend: "stock", binmonHost: "172.17.0.1" });
+    buildViceArgs(6511, { backend: "stock", binmonHost: "172.17.0.1" });
+    buildViceArgs(6512, { backend: "stock", binmonHost: "172.17.0.1" });
   } finally {
     process.stderr.write = originalWrite;
   }
@@ -1688,7 +1688,7 @@ test("buildViceArgs: widening the stock bind away from 127.0.0.1 emits exactly o
 });
 
 test("buildViceArgs: stock backend honours an explicit binmonHost override", () => {
-  const args = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0" });
+  const args = buildViceArgs(6510, { backend: "stock", binmonHost: "172.17.0.1" });
   assert.deepEqual(args, [
     "-default",
     "-drive8type",
@@ -1704,7 +1704,7 @@ test("buildViceArgs: stock backend honours an explicit binmonHost override", () 
     "+autostart-delay-random",
     "-binarymonitor",
     "-binarymonitoraddress",
-    "ip4://0.0.0.0:6510",
+    "ip4://172.17.0.1:6510",
   ]);
 });
 
@@ -2128,9 +2128,9 @@ test("buildViceArgs (33-05, edge: idempotency): three calls on the widened-bind 
   let second: string[];
   let third: string[];
   try {
-    first = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0", remoteMonitorPort: 6511 });
-    second = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0", remoteMonitorPort: 6511 });
-    third = buildViceArgs(6510, { backend: "stock", binmonHost: "0.0.0.0", remoteMonitorPort: 6511 });
+    first = buildViceArgs(6510, { backend: "stock", binmonHost: "172.17.0.1", remoteMonitorPort: 6511 });
+    second = buildViceArgs(6510, { backend: "stock", binmonHost: "172.17.0.1", remoteMonitorPort: 6511 });
+    third = buildViceArgs(6510, { backend: "stock", binmonHost: "172.17.0.1", remoteMonitorPort: 6511 });
   } finally {
     process.stderr.write = originalWrite;
   }
@@ -2265,4 +2265,97 @@ test("buildViceArgs (33-06, T-33-04): a profile carrying a STRING value cannot r
   // Recorded as an observation, not a complaint: the flag is a fixed literal
   // either way, so the smuggled VALUE is still unreachable.
   assert.ok(args.includes("-warp"), "a truthy value switches the fixed literal flag on; the value itself remains unreachable");
+});
+
+test("buildViceArgs: a wildcard binmon host is refused by name, IPv4 and IPv6", () => {
+  for (const host of ["0.0.0.0", "::", "[::]", "0:0:0:0:0:0:0:0"]) {
+    assert.throws(() => buildViceArgs(6510, { backend: "stock", binmonHost: host }), /wildcard bind address/, host);
+  }
+});
+
+test("a granted instance that crashes stays granted, and its grant follows the replacement process", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-granted-"));
+  try {
+    let spawnCount = 0;
+    const deps = makeSuperviseDeps(dir, {
+      spawn: () => {
+        spawnCount++;
+        return spawnCount === 1 ? realSpawn("/bin/true", []) : realSpawn("/bin/sleep", ["300"]);
+      },
+    });
+    const record = superviseChild("acquire", 6600, deps, 6650);
+    assert.ok(record);
+    record!.state = "granted";
+    deps.state.grants.set("g-1", { id: "g-1", port: 6600, grantedAt: 0, pid: record!.pid, operation: null, sessionLabel: null });
+
+    const respawned = await waitFor(() => {
+      const rec = deps.state.instances.get(6600);
+      return rec && rec.epoch === 2 ? rec : null;
+    });
+    assert.ok(respawned, "the instance must be respawned");
+    assert.equal(respawned!.state, "granted", "a respawn of a granted instance must not become grantable to another session");
+    assert.equal(deps.state.grants.get("g-1")!.pid, respawned!.pid, "the grant follows the new process");
+
+    respawned!.deliberateKill = true;
+    if (typeof respawned!.pid === "number") process.kill(respawned!.pid, "SIGKILL");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a crash respawn that finds the launch slot busy waits for it instead of dropping the instance", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "supervise-slot-busy-"));
+  try {
+    let spawnCount = 0;
+    const deps = makeSuperviseDeps(dir, {
+      spawn: () => {
+        spawnCount++;
+        return spawnCount === 1 ? realSpawn("/bin/true", []) : realSpawn("/bin/sleep", ["300"]);
+      },
+      sleepMs: (ms: number) => new Promise<void>((r) => setTimeout(r, Math.min(ms, 20))),
+    });
+    const record = superviseChild("acquire", 6600, deps, 6650);
+    assert.ok(record, "the supervised launch happens before the slot holder claims the slot");
+    let releaseSlot: (() => void) | undefined;
+    const slotHolder = acquirePortAndLaunch("acquire", {
+      state: deps.state,
+      stateDir: dir,
+      allocatePort: () => new Promise((resolvePort) => { releaseSlot = () => resolvePort({ ok: false, reason: "no_free_port" }); }),
+      log: () => {},
+    });
+    await new Promise((r) => setTimeout(r, 150));
+    assert.ok(deps.state.instances.has(6600), "the record survives while the slot is busy");
+    releaseSlot?.();
+    await slotHolder;
+    const respawned = await waitFor(() => {
+      const rec = deps.state.instances.get(6600);
+      return rec && rec.epoch === 2 ? rec : null;
+    });
+    assert.ok(respawned, "the respawn happens once the slot is free");
+    respawned!.deliberateKill = true;
+    if (typeof respawned!.pid === "number") process.kill(respawned!.pid, "SIGKILL");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a spawn failure reported through the child's error event is logged and the record is dropped, not thrown", () => {
+  const state = createBrokerState();
+  const child = new EventEmitter() as unknown as ChildProcess;
+  const lines: string[] = [];
+  const record = tryLaunchOne("acquire", 6601, {
+    state,
+    supervisorDir: "/tmp/unused",
+    epochFile: "/tmp/unused/epoch.json",
+    spawn: () => child,
+    viceBin: "/nonexistent/x64sc",
+    backend: "stock",
+    remoteMonitorPort: 6651,
+    log: (line) => lines.push(line),
+  });
+  assert.ok(record);
+  assert.equal(record!.pid, null);
+  assert.doesNotThrow(() => child.emit("error", new Error("spawn ENOENT")));
+  assert.equal(state.instances.has(6601), false);
+  assert.ok(lines.some((l) => /failed: spawn ENOENT/.test(l)));
 });

@@ -2146,7 +2146,7 @@ test("handleRelayDeath: a fired deadline produces one incident record with the i
   );
 });
 
-test("handleRelayDeath: a writer that throws stops the teardown before any claim is cleared", async () => {
+test("handleRelayDeath: a writer that throws does not throw out of the handler, and the channel is still released", async () => {
   let clearCalled = false;
   const deps: TestHandleRelayDeathDeps = {
     writeIncident: () => {
@@ -2163,19 +2163,34 @@ test("handleRelayDeath: a writer that throws stops the teardown before any claim
         await claimAndDialRelay(state, listenerPort, "grant-death-throws");
         assert.ok(state.relaySessions.has(relaySessionKey("grant-death-throws", "binary")));
 
-        assert.throws(
-          () => handleRelayDeath("grant-death-throws", "binary", "relay_error", state, deps),
-          /simulated disk failure/,
-          "a throwing writer must propagate, not be swallowed",
-        );
-        assert.equal(clearCalled, false, "the claim must NEVER be cleared when the incident write itself failed");
+        assert.doesNotThrow(() => handleRelayDeath("grant-death-throws", "binary", "relay_error", state, deps));
+        assert.equal(clearCalled, true, "the claim is cleared even though the incident could not be written");
         assert.ok(
-          state.relaySessions.has(relaySessionKey("grant-death-throws", "binary")),
-          "the session must remain in the map -- nothing was released because evidence could not be written",
+          !state.relaySessions.has(relaySessionKey("grant-death-throws", "binary")),
+          "the session leaves the map: a failing incident write must not keep a dead channel registered",
         );
       });
     },
   );
+});
+
+test("handleRelease: a writer that throws does not throw out of the handler, and the instance is still killed", async () => {
+  const state = setupBrokerState(16602, "grant-release-throws");
+  state.grants.get("grant-release-throws")!.operation = { name: "vice_capture_run", declaredAt: Date.now() };
+  let killed = false;
+  assert.doesNotThrow(() =>
+    handleRelease("grant-release-throws", state, {
+      writeIncident: () => {
+        throw new Error("simulated disk failure");
+      },
+      kill: async () => {
+        killed = true;
+        return "sigterm";
+      },
+    } as TestHandleReleaseDeps),
+  );
+  assert.equal(killed, true);
+  assert.equal(state.grants.has("grant-release-throws"), false);
 });
 
 // ===========================================================================

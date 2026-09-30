@@ -225,7 +225,9 @@ export type ControlFailureKind =
   // same reason every other member already is (this client and the broker
   // run in separate processes -- the shared surface is the wire format, not
   // a TypeScript type).
-  | "monitor_owned";
+  | "monitor_owned"
+  // No VICE binary on the host; the message names the remedy.
+  | "vice_not_found";
 
 export type ControlAcquireResult = { ok: true; grant: AcquireGrant } | { ok: false; kind: ControlFailureKind; message: string };
 
