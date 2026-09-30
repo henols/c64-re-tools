@@ -89,6 +89,12 @@ function runAcme(args: string[], _opts: { libraryFree?: boolean } = {}): { statu
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
+/** The last stdout line, parsed: every script ends with one JSON result. */
+function lastJson(stdout: string): { ok: boolean; message?: string; [key: string]: unknown } {
+  const lines = stdout.trim().split("\n");
+  return JSON.parse(lines[lines.length - 1]!);
+}
+
 function withTempDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "acme-cli-test-"));
   try {
@@ -102,29 +108,37 @@ function withTempDir<T>(fn: (dir: string) => T): T {
 // Cases needing neither the acme binary nor its library -- always run.
 // ---------------------------------------------------------------------------
 
-test("no arguments: prints usage and exits 0", () => {
+test("no arguments: refuses with the usage text as the JSON message and exits 1", () => {
   const r = runAcme([]);
-  assert.equal(r.status, 0);
-  assert.match(r.stdout, /usage: node .*acme\.ts <command>/);
+  assert.equal(r.status, 1);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /usage: node .*acme\.ts <command>/);
 });
 
-test("an unknown verb: prints usage and exits 1", () => {
+test("an unknown verb: refuses with the usage text as the JSON message and exits 1", () => {
   const r = runAcme(["bogus-verb"]);
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /usage: node .*acme\.ts <command>/);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /unknown command[\s\S]*usage: node .*acme\.ts <command>/);
 });
 
 test("the build verb with a missing source path: exits 1 with the documented message", () => {
   const r = runAcme(["build"]);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /error: no source file given/);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /no source file given/);
 });
 
 test("the build verb with a path that does not exist: exits 1 with the documented message", () => {
   withTempDir((dir) => {
     const r = runAcme(["build", join(dir, "does-not-exist.a")]);
     assert.equal(r.status, 1);
-    assert.match(r.stderr, /error: no such source file:/);
+    const j = lastJson(r.stdout);
+    assert.equal(j.ok, false);
+    assert.match(j.message ?? "", /no such source file:/);
   });
 });
 
@@ -133,6 +147,7 @@ test("the scaffold verb writes a source file at the requested path; run twice ag
     const target = join(dir, "game.a");
     const first = runAcme(["new", target], { libraryFree: true });
     assert.equal(first.status, 0);
+    assert.equal(lastJson(first.stdout).ok, true);
     assert.ok(existsSync(target));
     const firstContent = readFileSync(target, "utf8");
     assert.match(firstContent, /!cpu 6510/);
@@ -141,7 +156,9 @@ test("the scaffold verb writes a source file at the requested path; run twice ag
     // rather than overwriting.
     const second = runAcme(["new", target], { libraryFree: true });
     assert.equal(second.status, 1);
-    assert.match(second.stderr, /already exists/);
+    const refusal = lastJson(second.stdout);
+    assert.equal(refusal.ok, false);
+    assert.match(refusal.message ?? "", /already exists/);
     assert.equal(readFileSync(target, "utf8"), firstContent, "a refused second scaffold must not touch the existing file");
   });
 });
@@ -168,7 +185,9 @@ test("the scaffold verb writes a `; Build:` line naming the consumer's installed
 test("the scaffold verb with a missing path argument: exits 1 with the documented usage message", () => {
   const r = runAcme(["new"]);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /usage: new <file\.a>/);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /usage: new <file\.a>/);
 });
 
 // ---------------------------------------------------------------------------
@@ -228,7 +247,9 @@ test(
 
       const r = runAcme(["sym", src, "--json"], { libraryFree: true });
       assert.equal(r.status, 0);
-      const symbols = JSON.parse(r.stdout) as { name: string; isAddress: boolean; value: string }[];
+      const result = lastJson(r.stdout);
+      assert.equal(result.ok, true);
+      const symbols = result.symbols as { name: string; isAddress: boolean; value: string }[];
       assert.ok(symbols.length > 0, "expected at least one used symbol");
       const addressTyped = symbols.filter((s) => s.isAddress);
       assert.ok(addressTyped.length > 0, "expected at least one address-typed symbol (template.a declares several via !address)");

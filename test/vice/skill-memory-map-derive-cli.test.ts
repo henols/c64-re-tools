@@ -55,6 +55,12 @@ function runDerive(args: string[]): { status: number | null; stdout: string; std
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
+/** The last stdout line, parsed: a refusal is one JSON line. */
+function lastJson(stdout: string): { ok: boolean; message?: string; text?: string } {
+  const lines = stdout.trim().split("\n");
+  return JSON.parse(lines[lines.length - 1]!);
+}
+
 function withTempDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "derive-cli-test-"));
   try {
@@ -89,10 +95,13 @@ test("-h: prints the same usage text and exits 0", () => {
   assert.match(r.stdout, new RegExp(USAGE_MARKER));
 });
 
-test("an unknown verb: prints usage and exits 2 -- a different code from the no-argument case, which is itself the specification", () => {
+test("an unknown verb: refuses with a JSON line carrying the usage and exits 1, unlike the no-argument case which exits 0", () => {
   const r = runDerive(["bogus-verb"]);
-  assert.equal(r.status, 2);
-  assert.match(r.stdout, new RegExp(USAGE_MARKER));
+  assert.equal(r.status, 1);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /unknown verb/);
+  assert.match(j.message ?? "", new RegExp(USAGE_MARKER));
 });
 
 // ---------------------------------------------------------------------------
@@ -118,17 +127,37 @@ test("vic verb with all four registers from its own usage example decodes bank/s
   assert.match(r.stdout, /mode: standard text {2}\(ECM=0 BMM=0 MCM=0\)/);
 });
 
-test("vic verb with only the two required registers: the two optional registers take their documented defaults ($1B/$C8) and the run still exits 0", () => {
-  const withDefaults = runDerive(["vic", "--dd00", "3E", "--d018", "18"]);
-  const explicit = runDerive(["vic", "--dd00", "3E", "--d018", "18", "--d011", "1B", "--d016", "C8"]);
-  assert.equal(withDefaults.status, 0);
-  assert.equal(withDefaults.stdout, explicit.stdout, "omitting --d011/--d016 must match the explicit $1B/$C8 defaults byte-for-byte");
+test("vic verb with only --dd00 and --d018: there are no defaults, so the run refuses naming the first missing register (--d011)", () => {
+  const r = runDerive(["vic", "--dd00", "3E", "--d018", "18"]);
+  assert.equal(r.status, 1);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /missing --d011/);
+});
+
+test("vic verb with --d016 omitted: refuses naming --d016", () => {
+  const r = runDerive(["vic", "--dd00", "3E", "--d018", "18", "--d011", "1B"]);
+  assert.equal(r.status, 1);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /missing --d016/);
+});
+
+test("vic verb with --json: prints one {ok:true,text} line whose text is the decoded output", () => {
+  const plain = runDerive(["vic", "--dd00", "3E", "--d018", "18", "--d011", "1B", "--d016", "C8"]);
+  const r = runDerive(["vic", "--dd00", "3E", "--d018", "18", "--d011", "1B", "--d016", "C8", "--json"]);
+  assert.equal(r.status, 0);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, true);
+  assert.equal(j.text, plain.stdout.trimEnd());
 });
 
 test("vic verb with a required argument missing (--d018 omitted): exits 1 naming the missing argument", () => {
   const r = runDerive(["vic", "--dd00", "3E"]);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /error: missing --d018/);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /missing --d018/);
 });
 
 test("vic verb: radix markers (bare hex, dollar-prefixed, 0x-prefixed, binary) for the same values all produce byte-identical stdout", () => {
@@ -176,29 +205,12 @@ test("sprites verb with the pointer list from its own usage example: exits 0 and
   assert.match(r.stdout, /\$20\s+\$4800-\$483E/);
 });
 
-test("sprites verb with the enable mask omitted: the documented default ($FF) is used", () => {
-  const withDefault = runDerive([
-    "sprites",
-    "--dd00",
-    "3E",
-    "--d018",
-    "18",
-    "--ptrs",
-    "20,21,22,23,24,25,26,27",
-  ]);
-  const explicitFF = runDerive([
-    "sprites",
-    "--dd00",
-    "3E",
-    "--d018",
-    "18",
-    "--d015",
-    "FF",
-    "--ptrs",
-    "20,21,22,23,24,25,26,27",
-  ]);
-  assert.equal(withDefault.status, 0);
-  assert.equal(withDefault.stdout, explicitFF.stdout, "omitting --d015 must match the documented $FF default");
+test("sprites verb with the enable mask omitted: there is no default, so the run refuses naming --d015", () => {
+  const r = runDerive(["sprites", "--dd00", "3E", "--d018", "18", "--ptrs", "20,21,22,23,24,25,26,27"]);
+  assert.equal(r.status, 1);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /missing --d015/);
 });
 
 test("sprites verb with an empty pointer list: exits 0 and emits the documented degenerate result rather than crashing (observed, not assumed)", () => {
@@ -244,20 +256,24 @@ test("vectors verb against an image one byte short and one byte long: both exit 
 
     const short = runDerive(["vectors", shortPath]);
     assert.equal(short.status, 1);
-    assert.match(short.stderr, /expected a 65536-byte image, got 65535/);
+    assert.equal(lastJson(short.stdout).ok, false);
+    assert.match(lastJson(short.stdout).message ?? "", /expected a 65536-byte image, got 65535/);
 
     const long = runDerive(["vectors", longPath]);
     assert.equal(long.status, 1);
-    assert.match(long.stderr, /expected a 65536-byte image, got 65537/);
+    assert.equal(lastJson(long.stdout).ok, false);
+    assert.match(lastJson(long.stdout).message ?? "", /expected a 65536-byte image, got 65537/);
   });
 });
 
 test("vectors verb with no path, and with a path-shaped argument that is actually a flag: exits 1 with the documented message", () => {
   const noPath = runDerive(["vectors"]);
   assert.equal(noPath.status, 1);
-  assert.match(noPath.stderr, /error: vectors needs an image path/);
+  assert.equal(lastJson(noPath.stdout).ok, false);
+  assert.match(lastJson(noPath.stdout).message ?? "", /vectors needs an image path/);
 
   const flagAsPath = runDerive(["vectors", "--all"]);
   assert.equal(flagAsPath.status, 1);
-  assert.match(flagAsPath.stderr, /error: vectors needs an image path/);
+  assert.equal(lastJson(flagAsPath.stdout).ok, false);
+  assert.match(lastJson(flagAsPath.stdout).message ?? "", /vectors needs an image path/);
 });
