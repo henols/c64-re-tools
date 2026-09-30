@@ -84,7 +84,39 @@ analysis.staticAnalyze
 analysis.trace
 ```
 
-External engine names should not unnecessarily shape the domain API. For example `staticAnalyze` may use Ghidra internally. Explicit engine selection may be provided when it serves a real user need.
+`analysis.disassemble` and `analysis.staticAnalyze` are deliberately different operations, not interchangeable engines behind one generic analyzer.
+
+### DXA and Ghidra
+
+DXA is the fast first-pass disassembly and structural-discovery engine for an unknown binary. It backs `analysis.disassemble` / `c64_disassemble` and is used to obtain a quick 6502 listing, code/data candidates and initial structural information.
+
+Ghidra is the deeper static-analysis engine. It backs `analysis.staticAnalyze` / `c64_static_analyze` and is used when richer function, control-flow, cross-reference, data-flow and decompilation information is useful.
+
+The normal relationship is:
+
+```text
+unknown application
+      ↓
+     DXA
+fast structural discovery
+      ↓
+LLM + VICE evidence
+      ↓
+accepted knowledge
+      ↓
+    Ghidra
+deeper static analysis using known entry points/data ranges
+      ↓
+LLM reasoning
+      ↓
+accepted knowledge
+```
+
+DXA output is not authoritative input to Ghidra by itself. The agent/skill combines DXA findings with runtime evidence and other inspection, records justified knowledge, and may then provide established entry points and known data ranges to Ghidra.
+
+Neither DXA nor Ghidra writes directly to `knowledge.db`. Both return deterministic findings. The skill/LLM decides which findings are sufficiently justified to persist through the knowledge API.
+
+Do not normalize DXA and Ghidra into an `engine=` switch on one operation merely because both perform static analysis. Their roles and result semantics are different.
 
 An analysis operation may return suggestions/findings; it does not automatically convert every intermediate result into durable project knowledge.
 
