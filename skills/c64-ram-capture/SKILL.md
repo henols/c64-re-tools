@@ -27,8 +27,8 @@ node $L add-dump --from set.json                 # record the dump in the regist
 node $L list                                     # the valid --release ids
 
 node $C digest  dump.bin                         # sha256 + size, for the capture record
-node $C compare a.bin b.bin                      # classify each difference, exit 1 on FAIL
-node $C floor   a.bin b.bin c.bin                # drift floor across a capture set
+node $C compare a.bin b.bin --route memory-read  # classify each difference, exit 1 on FAIL
+node $C floor   a.bin b.bin c.bin --route memory-read   # drift floor across a capture set
 
 node $CX cross original.bin rebuild.bin --route memory-read   # two DIFFERENT binaries
 
@@ -180,10 +180,12 @@ Void a run when you cannot prove that the machine stayed the same:
 ## Compare two captures
 
 Do not classify differences by hand. `compare.ts` applies the same rules each
-time. It exits 1 on a FAIL, so a script can use it as a gate:
+time. It exits 1 on a FAIL, so a script can use it as a gate. Give the
+capture route with `--route memory-read` or `--route snapshot`. The script
+refuses to run without it:
 
 ```bash
-node $C compare capture-a.bin capture-b.bin
+node $C compare capture-a.bin capture-b.bin --route memory-read
 ```
 
 ```
@@ -204,6 +206,7 @@ total differing addresses: 161 of 65536
 
 VERDICT: PASS
 Drift candidates present — pass, but record them with the capture.
+{"ok":true,"verdict":"PASS","route":"memory-read",...}
 ```
 
 `--limit 0` prints all rows. `node $C` with no arguments prints the rules.
@@ -212,16 +215,17 @@ The three classes:
 
 | Class | Rule | Effect on the verdict |
 |---|---|---|
-| volatile | `$0000-$0001`, `$0100-$01FF`, `$0200-$03FF`, **`$D000-$DFFF`** | counted and listed, never fails |
+| volatile | `$0000-$0001`, `$0100-$01FF`, `$0200-$03FF`, and **`$D000-$DFFF`** on the memory-read route only | counted and listed, never fails |
 | drift | exactly one bit differs | listed as a candidate, passes |
 | divergence | two or more bits differ | listed, **fails** |
 
-**`$D000-$DFFF` is volatile because it is I/O, not RAM.** The VIC-II
+**On the memory-read route, `$D000-$DFFF` is volatile because it is I/O, not RAM.** The VIC-II
 registers repeat every `$40` across `$D000-$D3FF`. The SID registers repeat
 across `$D400-$D7FF`. A read of that range samples live hardware, so two
 captures can never agree there. An earlier rule that left this range out
 failed five of six committed pairings, on `$D344`, `$D625` and `$D628`. Apply
-the region rule first, then the bit count.
+the region rule first, then the bit count. On the snapshot route, the image
+holds the RAM below the I/O area, so `compare.ts` does not mask that range.
 
 `$E000-$FFFF` (RAM below the KERNAL ROM when HIRAM = 0) is **not** excluded on
 purpose. `$FAD8` and `$FC51` differ across captures. That is only two
@@ -234,7 +238,7 @@ It reports each address that differed in any pairing, with the values it
 saw:
 
 ```bash
-node $C floor run1.bin run2.bin run3.bin
+node $C floor run1.bin run2.bin run3.bin --route memory-read
 ```
 
 Capture the power-on image as the first action on a new machine. Then do two
@@ -488,7 +492,8 @@ writes no artifact.
 | A new `.map.json` says `classification_state: "bucketed"` | Wrong. A new capture is `"ranges-only"`. Only the provenance diff sets `"bucketed"`. |
 | The checkpoint never fired | Most reads stop the machine. Do all reads, then resume one time. See `c64-emulator`. |
 | Two captures of the same checkpoint differ | This is expected. Run `compare` and read the verdict. Do not judge by eye. |
-| `compare` fails on an address in `$D000`-`$DFFF` | It cannot. `compare.ts` masks that range. You applied the rules by hand. Use `compare.ts`. |
+| `compare` fails on an address in `$D000`-`$DFFF` | With `--route memory-read` it cannot: `compare.ts` masks that range. With `--route snapshot` the failure is real, because the image holds RAM there. |
+| `compare needs --route memory-read or --route snapshot` | Give the route of the two captures. The route decides the `$D000-$DFFF` rule. |
 | `cross` fails on an address in `$D000`-`$DFFF` | This is expected. `compare-cross-binary.ts` masks less on purpose. The failure is a real finding. |
 | `cross` refuses with "capture routes differ" | The two `--state` sidecars declare different `route` values. Capture both the same way, or give the correct `--route`. |
 | `cross` refuses with "logical checkpoints differ" | The two sidecars declare different `checkpoint_name` values. Capture both at the same named checkpoint, or correct the sidecar. |
