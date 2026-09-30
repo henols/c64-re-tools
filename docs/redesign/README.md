@@ -28,6 +28,7 @@ A reconstructed application does **not** need byte-identical machine code. Given
 | 12 | [Static analysis and knowledge import](12-static-analysis-knowledge-import.md) | Normalized analyzer findings, atomic import, authoritative coverage and stale-fact reconciliation |
 | 13 | [Testing and functional equivalence](13-testing-and-functional-equivalence.md) | Routine, semantic-state, visual/gameplay and human verification of reconstructed behavior |
 | 14 | [VICE MCP surface](14-vice-mcp-surface.md) | Public stateful C64/VICE tool surface, machine profiles, drive8 access, visual baselines and atomic observations |
+| 15 | [VICE MCP schemas](15-vice-mcp-schemas.md) | Frozen v1 addresses, conditions, tool actions, bounds and input/output result shapes |
 
 ## Core decisions
 
@@ -47,4 +48,5 @@ A reconstructed application does **not** need byte-identical machine code. Given
 14. **The supported capability set is fixed.** A missing required capability means the installation/session is broken; there is no capability negotiation mode.
 15. **Functional behavior, not byte identity, defines a successful reconstruction.** Evidence is layered: routine/state checks, checkpointed visual/gameplay scenarios, then human playtesting. Automated tests return PASS, FAIL or INCONCLUSIVE and never claim more equivalence than the exercised scenarios establish.
 16. **The VICE MCP is a compact C64-domain interface.** Sessions have a fixed PAL/NTSC profile, support c64 and drive8 debugging spaces, keep project symbols outside the MCP, and provide temporary visual baselines plus atomic observations for testing.
-17. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
+17. **The v1 VICE MCP schema is frozen.** Addresses are canonical hex strings, conditions are typed rather than monitor expressions, read-only observations preserve run state, mutation/execution behavior is explicit, and the public tool list is fixed in the schema chapter.
+18. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
