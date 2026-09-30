@@ -1202,10 +1202,9 @@ function makeTransferGrantedInstance(port: number, overrides: Partial<InstanceRe
   };
 }
 
-function setupTransferBrokerState(emulatorPort: number, targetId: string): BrokerState {
+function setupTransferBrokerState(emulatorPort: number): BrokerState {
   const state = createBrokerState();
   state.instances.set(emulatorPort, makeTransferGrantedInstance(emulatorPort));
-  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
   return state;
 }
 
@@ -1235,10 +1234,10 @@ async function startTransferControlListener(
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    onAcquire: async (): Promise<AcquireOutcome> => ({
-      ok: true,
-      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` },
-    }),
+    onAcquire: async (id: string): Promise<AcquireOutcome> => {
+      state.grants.set(id, { id, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+      return { ok: true, grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` } };
+    },
     onRelease: (requestId: string) => handleRelease(requestId, state),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
@@ -1315,8 +1314,8 @@ test("stockConnect: publish lands late -- the production upload resolves only on
   transferModule.resetStagingForTest();
 
   const emulatorPort = nextTransferEmulatorPortValue();
-  const grantId = "req-64-13-t1-publish-late";
-  const state = setupTransferBrokerState(emulatorPort, grantId);
+  let grantId = ""; // minted by the broker; read from the acquire reply
+  const state = setupTransferBrokerState(emulatorPort);
 
   // Set/read AT CALL TIME by startTransferControlListener()'s own
   // onFileTransfer wiring -- armed to a 300ms delay right before the
@@ -1337,8 +1336,9 @@ test("stockConnect: publish lands late -- the production upload resolves only on
   try {
     let handle: string;
     let emulatorFilename: string;
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
+    const acquireReply = await control.sendAndRead({ op: "acquire" });
     assert.equal(acquireReply.kind, "grant");
+    grantId = acquireReply.id as string;
     const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
     assert.equal(stageReply.kind, "file_staged");
     handle = stageReply.handle as string;

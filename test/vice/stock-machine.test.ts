@@ -960,10 +960,9 @@ function makeGrantedRoundTripInstance(port: number, overrides: Partial<InstanceR
   };
 }
 
-function setupRoundTripBrokerState(emulatorPort: number, targetId: string): BrokerState {
+function setupRoundTripBrokerState(emulatorPort: number): BrokerState {
   const state = createBrokerState();
   state.instances.set(emulatorPort, makeGrantedRoundTripInstance(emulatorPort));
-  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
   return state;
 }
 
@@ -982,10 +981,10 @@ async function startRoundTripListener(
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    onAcquire: async (): Promise<AcquireOutcome> => ({
-      ok: true,
-      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` },
-    }),
+    onAcquire: async (id: string): Promise<AcquireOutcome> => {
+      state.grants.set(id, { id, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+      return { ok: true, grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` } };
+    },
     onRelease: (requestId: string) => handleRelease(requestId, state),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
@@ -1184,8 +1183,8 @@ test("vice_snapshot_save/vice_snapshot_load round trip (publish lands late, G-64
   resetStagingForTest();
 
   const emulatorPort = nextRoundTripEmulatorPort();
-  const grantId = "req-64-04-roundtrip";
-  const state = setupRoundTripBrokerState(emulatorPort, grantId);
+  let grantId = ""; // minted by the broker; read from the acquire reply
+  const state = setupRoundTripBrokerState(emulatorPort);
   // G-64-3 (plan 64-13): a 300ms pre-publish hook holds the broker's own
   // rename back deterministically -- the UNDUMP stub below reads the staged
   // file SYNCHRONOUSLY, with no polling, proving transferFile() really does
@@ -1194,8 +1193,9 @@ test("vice_snapshot_save/vice_snapshot_load round trip (publish lands late, G-64
   const { listener } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
   const control = makeRoundTripControlClient(listener.port);
   try {
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
+    const acquireReply = await control.sendAndRead({ op: "acquire" });
     assert.equal(acquireReply.kind, "grant");
+    grantId = acquireReply.id as string;
 
     const payload = fullByteRangeRoundTripPayload();
 
@@ -1281,8 +1281,8 @@ test("vice_snapshot_load refusal (G-64-3, plan 64-13): a publish that fails befo
   resetStagingForTest();
 
   const emulatorPort = nextRoundTripEmulatorPort();
-  const grantId = "req-64-13-t2-refusal";
-  const state = setupRoundTripBrokerState(emulatorPort, grantId);
+  let grantId = ""; // minted by the broker; read from the acquire reply
+  const state = setupRoundTripBrokerState(emulatorPort);
   // Starts undefined -- the save's own DOWNLOAD is unaffected by this hook
   // (it only applies to an upload's own receivePayloadToFile() call).
   // Armed to a REJECTING hook only right before the load's own upload,
@@ -1291,8 +1291,9 @@ test("vice_snapshot_load refusal (G-64-3, plan 64-13): a publish that fails befo
   const { listener } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
   const control = makeRoundTripControlClient(listener.port);
   try {
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
+    const acquireReply = await control.sendAndRead({ op: "acquire" });
     assert.equal(acquireReply.kind, "grant");
+    grantId = acquireReply.id as string;
 
     const payload = fullByteRangeRoundTripPayload();
     const { session, sends } = makeSession((commandType, body) => {
@@ -1355,8 +1356,8 @@ test("vice_snapshot_load refusal on a real fs fault (CR-01, G-64-5): the staging
   resetStagingForTest();
 
   const emulatorPort = nextRoundTripEmulatorPort();
-  const grantId = "req-64-15-t1-realfault";
-  const state = setupRoundTripBrokerState(emulatorPort, grantId);
+  let grantId = ""; // minted by the broker; read from the acquire reply
+  const state = setupRoundTripBrokerState(emulatorPort);
   // Starts undefined -- the save's own DOWNLOAD is unaffected by this hook.
   // Armed to a REAL-fault hook only right before the load's own upload,
   // below, so the save can succeed first and produce a real local snapshot.
@@ -1364,8 +1365,9 @@ test("vice_snapshot_load refusal on a real fs fault (CR-01, G-64-5): the staging
   const { listener } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
   const control = makeRoundTripControlClient(listener.port);
   try {
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
+    const acquireReply = await control.sendAndRead({ op: "acquire" });
     assert.equal(acquireReply.kind, "grant");
+    grantId = acquireReply.id as string;
 
     const payload = fullByteRangeRoundTripPayload();
     const { session, sends } = makeSession((commandType, body) => {
