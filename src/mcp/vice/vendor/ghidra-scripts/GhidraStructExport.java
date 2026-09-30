@@ -11,8 +11,8 @@
 // any kind), then `## DECOMPILED_TEXT` (one function per entry: its entry
 // point, its name, and its full decompiled C body verbatim, in
 // `MODE_DECOMPINTERFACE` only -- see the note below on why this section
-// exists and REFERENCES does not answer the same question), then, SEVENTH
-// and ADDITIVE (Phase 37 plan 37-02, `AUTO-04`/`AUTO-06`), `## CONST_WRITES`
+// exists and REFERENCES does not answer the same question), then, seventh,
+// `## CONST_WRITES`
 // (one line per resolved immediate store to a watched address -- the
 // processor port and three VIC/CIA registers -- in the form
 // `<store-address> <target-address> <constant-value>`, with an explicit
@@ -92,8 +92,8 @@
 // 6502; that emptiness is the control's own finding, not a bug in the
 // control.
 //
-// THE TWO DEFECTS THIS PROMOTION FIXES, RELATIVE TO ITS DIRECT ANCESTOR
-// (the Phase 23 evidence script `ExportAnalysis23.java`):
+// THE TWO DEFECTS THIS SCRIPT FIXES, RELATIVE TO THE EARLIER EVIDENCE
+// SCRIPT IT REPLACES:
 //
 //   1. THE CLASSIFICATION EXPECTATION IS NOW THE SCRIPT'S OWN BLOCK TOTAL,
 //      NEVER THE IMAGE SIZE. The ancestor compared the observed
@@ -518,10 +518,11 @@ public class GhidraStructExport extends GhidraScript {
             }
 
             // SELF_MODIFYING_WRITE -- a WRITE reference whose destination
-            // address falls inside an existing instruction's own body.
+            // address falls inside an existing instruction: its opcode byte
+            // or an operand byte (`sta patch+1` writes the operand).
             boolean selfModifyingFound = false;
             for (Reference rf : allReferences) {
-                if (rf.getReferenceType().isWrite() && lst.getInstructionAt(rf.getToAddress()) != null) {
+                if (rf.getReferenceType().isWrite() && lst.getInstructionContaining(rf.getToAddress()) != null) {
                     structuralSection.append("STRUCTURAL_FACT SELF_MODIFYING_WRITE found from=")
                             .append(rf.getFromAddress()).append(" to=").append(rf.getToAddress()).append("\n");
                     selfModifyingFound = true;
@@ -555,7 +556,7 @@ public class GhidraStructExport extends GhidraScript {
             dispatchSection.append(site).append("\n");
         }
 
-        // ---- ## CONST_WRITES : SEVENTH, ADDITIVE (Phase 37 plan 37-02). See
+        // ---- ## CONST_WRITES : SEVENTH. See
         // this file's own header for why this section exists and is derived
         // from p-code, never from decompiled C text. `constWriteFacts` was
         // populated above, inside the MODE_DECOMPINTERFACE per-function loop

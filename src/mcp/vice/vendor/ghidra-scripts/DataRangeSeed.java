@@ -5,8 +5,8 @@
 // as undefined DATA -- so this project's own code-discovery analysis (the
 // `analyzeAll()` call `VolatileCarve.java`'s own `run()` makes, or Ghidra's
 // own default post-import analysis when no such call is made) never treats
-// those bytes as instructions. This is Phase 37 plan 37-08's (`AUTO-07`)
-// Ghidra-side half of the graphics-range feedback loop: the derived
+// those bytes as instructions. This is the Ghidra-side half of the
+// graphics-range feedback loop: the derived
 // character-set/bitmap/screen-matrix/sprite-pointer ranges this project's own
 // `anno-graphics.mts` computes are fed back here so the analyser stops minting
 // PHANTOM labels and cross-references inside a region that is actually
@@ -48,7 +48,7 @@
 // SILENTLY. This script's own output is what a run log is read for when
 // something about the feedback did not take -- silence on a bad line would
 // let a range fail to seed with no visible trace, exactly the "confident
-// wrong output with no error" failure mode this whole phase exists to
+// wrong output with no error" failure mode this script exists to
 // prevent. A refused line does not abort the run: the remaining lines are
 // still processed, and the summary count still reports how many ranges
 // actually seeded.
