@@ -196,7 +196,7 @@ Remove the wrong scope with `anno_remove_scope`. The project keeps no history.
 **Batches.** Name the image one time, at the top level of the batch. Every
 inner call gets it, also through nested batches. A batch runs in two phases:
 
-1. The batch checks the whole payload first. If one entry is bad, it refuses
+1. The batch reads the whole payload first. If one entry is bad, it refuses
    the WHOLE batch by index and runs nothing. Examples: an empty `calls` array, an
    unknown name, an illegal label, or a range above the read cap.
 2. Then it runs every entry to the end, and records a status for each one.
@@ -292,7 +292,7 @@ never truncates. To read a large binary, read consecutive ranges. For careful
 classification, read 256 to 512 bytes at a time.
 
 Both calls decode the image bytes again on each call, and they write nothing.
-Thus reading a range does not classify it. Record the range that you checked
+Thus reading a range does not classify it. Record the range that you examined
 with `anno_set_data_type`. An opcode that ACME cannot express comes out as `!byte`,
 with the mnemonic in a comment.
 
@@ -304,7 +304,7 @@ To read the RAM of a running machine, use `c64-emulator`.
 put its findings into the project. Run them in this order:
 
 1. **`anno_import_ghidra_export`** reads the file at `export_path`. It writes one
-   cross-reference row for each reference. It DELETES the transfer file after
+   cross-reference row for each reference. It removes the transfer file after
    every write commits. It reports:
    - `referencesSeen`
    - `xrefsWritten`
@@ -314,9 +314,9 @@ put its findings into the project. Run them in this order:
    - `constWrites`: the recovered constant stores to `$01`, `$D011`, `$D018` and
      `$DD00`.
 
-   **Keep `constWrites`.** The call deletes the transfer file, so this answer is the
+   **Keep `constWrites`.** The call removes the transfer file, so this answer is the
    only copy. The call refuses a malformed, truncated or digest-mismatched file,
-   and names the section and the line. On a refusal it writes and deletes nothing.
+   and names the section and the line. On a refusal it writes and removes nothing.
    `sha256` is optional. When you give it, a digest mismatch refuses the call.
 2. **`anno_join_memmap`** reads every cross-reference target in the project. It
    skips the addresses inside the loaded image. It writes a comment with the
@@ -572,17 +572,23 @@ Each of the three arguments is necessary. None has a default.
 An omitted query and a query that found nothing must never give the same report.
 
 `completeness-report.ts` renders the verb's `--json` answer. **Its exit code
-is the gate.** It exits 0 only when all five conditions pass:
+is the gate.** It exits 0 only when all six conditions pass:
 
-1. The project has no `undefined` byte.
-2. No `code` range holds an auto-named label.
-3. Each entry point has a name that is not an auto-name, and a comment with all four of
+1. The answer has a byte census with an `undefinedCount`, and the verb found
+   the fixture's image (`imageUnavailable` is not `true`). A missing census,
+   or an unavailable image, fails the gate.
+2. The project has no `undefined` byte.
+3. No `code` range holds an auto-named label.
+4. Each entry point has a name that is not an auto-name, and a comment with all four of
    `function:`, `inputs:`, `outputs:` and `side effects:` (any case).
-4. Each referenced non-hardware address has a name or a `DECLINED:` comment.
-5. Each disagreement has a `DISAGREEMENT-ACCEPTED:` comment.
+5. Each referenced non-hardware address has a name or a `DECLINED:` comment.
+6. Each disagreement has a `DISAGREEMENT-ACCEPTED:` comment.
 
-A non-zero exit names each failed measure and its address. Read the exit code,
-not the rendered text.
+A non-zero exit names each failed measure and its address. The last stdout
+line is one JSON result: `{"ok":true,"gate":"PASS"}`, or `{"ok":false,
+"message":"GATE: FAIL (<n>)","failures":[…]}`. The script refuses a
+disagreement census that has more unresolved entries than rows. Read the exit
+code or that line, not the rendered text.
 
 ## Failure shape
 
@@ -606,10 +612,10 @@ it cannot get the report, or when one gate condition fails. It prints the reason
 
 | Symptom | Correct |
 |---|---|
-| `this workspace has no annotation project yet` | No call wrote to the project yet. Do a write first, or check that the workspace root is the correct project. |
+| `this workspace has no annotation project yet` | No call wrote to the project yet. Do a write first, or make sure that the workspace root is the correct project. |
 | `refused: "store" is not an argument` | Remove `store`. Every call uses the workspace project. |
-| `call: unknown anno tool "<name>"` | The message lists the accepted names. Check the spelling in `references/tools.md`. |
-| `anno: unknown verb "<verb>"` | The CLI has nine verbs. `export-lbl`, `import-lbl` and `gen-enums` do not exist. |
+| `call: unknown anno tool "<name>"` | The message lists the accepted names. Compare the spelling with `references/tools.md`. |
+| `anno: unknown verb "<verb>"` | Use one of the nine verbs that the CLI lists. |
 | `"max_results" must be a positive integer` | Give `max_results`. It has no default. |
 | `[AnnoRegionRangeError]` | The range is above 4096 bytes. Read consecutive ranges. |
 | `a flat 64K capture must be exactly 65536 bytes` | The capture is too short. Capture it again. |

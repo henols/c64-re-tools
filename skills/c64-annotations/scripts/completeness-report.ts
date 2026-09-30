@@ -178,6 +178,8 @@ export interface CompletenessAnswer {
   byteCensus?: ByteCensus;
   survivors?: Survivor[];
   rangeProvenance?: RangeProvenanceRow[];
+  /** True when the verb could not read the fixture's own image bytes. */
+  imageUnavailable?: boolean;
   entryPoints?: EntryPoint[];
   referencedAddresses?: Partial<ReferencedAddresses>;
   disagreementInput?: DisagreementInput | null;
@@ -193,6 +195,7 @@ export interface CompletenessReport {
   byteCensus: ByteCensus | undefined;
   survivors: Survivor[];
   rangeProvenance: RangeProvenanceRow[];
+  imageUnavailable: boolean;
   entryPoints: EntryPoint[];
   referencedAddresses: ReferencedAddresses;
   disagreementInput: DisagreementInput | null | undefined;
@@ -232,6 +235,13 @@ export function buildCompletenessReport(raw: unknown): CompletenessReport {
   }
   const answer = raw as CompletenessAnswer;
   const disagreementInput = answer.disagreementInput;
+  const givenResolution = answer.disagreementResolution;
+  if (givenResolution && Array.isArray(givenResolution.rows) && typeof givenResolution.unresolvedCount === "number" && givenResolution.unresolvedCount > givenResolution.rows.length) {
+    throw new Error(
+      `buildCompletenessReport: the disagreement resolution census is inconsistent -- ${givenResolution.unresolvedCount} unresolved ` +
+        `but only ${givenResolution.rows.length} row(s); refusing rather than reporting a negative accepted count`,
+    );
+  }
   const disagreementResolution =
     answer.disagreementResolution && typeof answer.disagreementResolution === "object"
       ? {
@@ -257,6 +267,7 @@ export function buildCompletenessReport(raw: unknown): CompletenessReport {
     byteCensus: answer.byteCensus,
     survivors: Array.isArray(answer.survivors) ? answer.survivors : [],
     rangeProvenance: Array.isArray(answer.rangeProvenance) ? answer.rangeProvenance : [],
+    imageUnavailable: answer.imageUnavailable === true,
     entryPoints: Array.isArray(answer.entryPoints) ? answer.entryPoints : [],
     referencedAddresses:
       answer.referencedAddresses && typeof answer.referencedAddresses === "object"
@@ -325,12 +336,13 @@ export function renderCompletenessReport(report: CompletenessReport): string {
   }
   lines.push("");
 
-  const census: ByteCensus = report.byteCensus ?? { byType: {}, undefinedCount: 0, denominator: 0 };
+  if (report.byteCensus === undefined) lines.push("  BYTE CENSUS: MISSING -- the answer carried no byte census, so nothing is known about Undefined bytes");
+  const census: ByteCensus = report.byteCensus ?? { byType: {}, denominator: 0 };
   lines.push(`  BYTE CENSUS (denominator ${census.denominator ?? 0})`);
   for (const [type, count] of Object.entries(census.byType ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     lines.push(`    ${type}: ${count} of ${census.denominator ?? 0}`);
   }
-  lines.push(`    undefined: ${census.undefinedCount ?? 0} of ${census.denominator ?? 0}`);
+  lines.push(`    undefined: ${census.undefinedCount ?? "unknown"} of ${census.denominator ?? 0}`);
   for (const gap of Array.isArray(census.undefinedRanges) ? census.undefinedRanges : []) {
     lines.push(`      UNDEFINED: ${addr(gap.start)}-${addr(gap.endInclusive)}`);
   }
@@ -380,6 +392,14 @@ export function renderCompletenessReport(report: CompletenessReport): string {
     }
   }
   lines.push("");
+
+  if (report.imageUnavailable) {
+    lines.push(
+      "  IMAGE UNAVAILABLE: the fixture's own image bytes could not be located -- entry points and referenced " +
+        "addresses below are degraded to what the stored xrefs establish. The gate FAILS until the image is supplied.",
+    );
+    lines.push("");
+  }
 
   const entryPoints = report.entryPoints ?? [];
   const fullyDocumented = entryPoints.filter(
@@ -447,11 +467,17 @@ export function renderCompletenessReport(report: CompletenessReport): string {
 export function computeGateFailures(report: CompletenessReport): string[] {
   const failures: string[] = [];
 
-  const undefinedCount = report?.byteCensus?.undefinedCount ?? 0;
-  if (undefinedCount !== 0) {
+  const undefinedCount = report?.byteCensus?.undefinedCount;
+  if (typeof undefinedCount !== "number") {
+    failures.push("byte census: missing -- the answer has no undefinedCount, so the zero-Undefined measure cannot be checked");
+  } else if (undefinedCount !== 0) {
     const gaps = Array.isArray(report?.byteCensus?.undefinedRanges) ? report.byteCensus.undefinedRanges : [];
     const named = gaps.length > 0 ? gaps.map((g) => (g.start === g.endInclusive ? addr(g.start) : `${addr(g.start)}-${addr(g.endInclusive)}`)).join(", ") : "(address not reported)";
     failures.push(`byte census: ${undefinedCount} Undefined byte(s) remain at ${named} (must be 0)`);
+  }
+
+  if (report?.imageUnavailable === true) {
+    failures.push("image unavailable: the fixture's own image bytes could not be located, so entry points and referenced addresses are not checked against the image");
   }
 
   const survivors = Array.isArray(report?.survivors) ? report.survivors : [];
@@ -507,7 +533,7 @@ export function fetchCompletenessReport(argv: string[]): CompletenessReport {
     );
   }
   const fullArgv = ["anno", "decomp-completeness", ...argv, "--json"];
-  const run = spawnSync(process.execPath, [resolved.path, ...fullArgv], { encoding: "utf8" });
+  const run = spawnSync(process.execPath, [resolved.path, ...fullArgv], { encoding: "utf8", maxBuffer: 512 * 1024 * 1024 });
   if (run.error) {
     throw new Error(`completeness-report.ts: could not run ${resolved.path}: ${run.error.message}`);
   }
@@ -533,24 +559,37 @@ export function fetchCompletenessReport(argv: string[]): CompletenessReport {
  * is reported with its own message and nothing more (the refusal IS the
  * report); any other thrown error is reported the same way, verbatim,
  * never swallowed. On a SUCCESSFULLY RENDERED report, the exit code is THE
- * GATE's own verdict (`computeGateFailures()`), never a bare 0 -- this is
- * the numeric stop condition, and softening it here is exactly the
- * regression planted controls 1/2 (task 2) exist to catch. */
+ * GATE's own verdict (`computeGateFailures()`), never a bare 0. The last
+ * stdout line is one JSON result: `{ ok: true, gate: "PASS" }`,
+ * `{ ok: false, message, failures }` for a failed gate, or
+ * `{ ok: false, message }` for a refusal. */
 export function main(argv: string[]): number {
   let report: CompletenessReport;
+  const refuse = (err: unknown): number => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(message);
+    console.log(JSON.stringify({ ok: false, message }));
+    return 1;
+  };
   try {
     report = fetchCompletenessReport(argv);
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    return 1;
+    return refuse(err);
   }
+  let text: string;
   try {
-    console.log(renderCompletenessReport(report));
-    return computeGateFailures(report).length === 0 ? 0 : 1;
+    text = renderCompletenessReport(report);
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
-    return 1;
+    return refuse(err);
   }
+  console.log(text);
+  const failures = computeGateFailures(report);
+  if (failures.length === 0) {
+    console.log(JSON.stringify({ ok: true, gate: "PASS" }));
+    return 0;
+  }
+  console.log(JSON.stringify({ ok: false, message: `GATE: FAIL (${failures.length})`, failures }));
+  return 1;
 }
 
 // True when this file is the process entry point, also when it runs through a symlink.
