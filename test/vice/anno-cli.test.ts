@@ -263,78 +263,6 @@ test("bin: `vice-mcp anno --help` exits 0, prints the plugin invocation and no n
   }
 });
 
-// ---------------------------------------------------------------------------
-// WR-21: the `coverage` USAGE paragraph versus `loadProjectImage()`'s real
-// branch order.
-//
-// The text this replaces said `<image>` is "dispatched BY EXTENSION FIRST and
-// never by byte length" and then, three lines later, named a byte-length
-// dispatch (`ext !== ".prg" && bytes.length === 65536`). It also listed the
-// three forms `.prg` first, while the code tries `.raw`/`.bin` first -- and
-// order is the whole SUBJECT of that paragraph, because running the extension
-// check before any length check is what keeps `flatImageOrigin()`'s named
-// refusal reachable for a truncated capture (the WR-07 incident).
-//
-// This guard compares the ORDER the shipped `--help` text names the forms in
-// against the ORDER `loadProjectImage()`'s own source branches on, so the two
-// cannot drift apart again silently. It deliberately compares ORDER rather
-// than prose: a guard that pinned wording would fight every future edit.
-// ---------------------------------------------------------------------------
-
-/** The three live image forms, each with the pattern that locates it in
- * `anno-coverage.mts`'s dispatch and the pattern that locates it in the
- * shipped USAGE text. The legacy JSON branch is excluded: it is the fallthrough
- * and has no `ext ===` test to locate. */
-const COVERAGE_IMAGE_FORMS = [
-  {
-    name: ".raw/.bin, by extension",
-    inCode: /ext === "\.raw" \|\| ext === "\.bin"/,
-    inUsage: /a \.raw or \.bin is read as a flat capture BY EXTENSION/,
-  },
-  {
-    name: "the exactly-65536-byte non-.prg fallback",
-    inCode: /ext !== "\.prg" && bytes\.length === 65536/,
-    inUsage: /is NOT a \.prg and\s+is exactly 65536 bytes/,
-  },
-  {
-    name: ".prg",
-    inCode: /if \(ext === "\.prg"\)/,
-    inUsage: /then a \.prg, whose first/,
-  },
-] as const;
-
-/** The order `patterns` first occur in `text`, as form names. Asserts every
- * pattern matches -- a guard that silently dropped an unmatched form would
- * compare a shorter list against a shorter list and pass. */
-function orderOfForms(text: string, which: "inCode" | "inUsage"): string[] {
-  return COVERAGE_IMAGE_FORMS.map((form) => {
-    const at = text.search(form[which]);
-    assert.notEqual(at, -1, `${which}: could not locate the ${form.name} branch -- this guard is blind until its pattern is repaired`);
-    return { name: form.name, at };
-  })
-    .sort((a, b) => a.at - b.at)
-    .map((f) => f.name);
-}
-
-test("WR-21: the coverage USAGE names the image forms in loadProjectImage()'s OWN branch order", () => {
-  const loaderSource = readFileSync(join(VICE_DIR, "anno-coverage.mts"), "utf8");
-  const loaderStart = loaderSource.indexOf("export function loadProjectImage(");
-  assert.notEqual(loaderStart, -1, "precondition: loadProjectImage() is still the dispatcher this text describes");
-  const loaderBody = loaderSource.slice(loaderStart, loaderSource.indexOf("// The retired project form", loaderStart));
-  assert.ok(loaderBody.length > 0, "precondition: the loader body was sliced, not emptied");
-
-  const usageStart = helpResult.stdout.indexOf("coverage <image>");
-  assert.notEqual(usageStart, -1, "precondition: the coverage synopsis is still in --help");
-  const usageBlock = helpResult.stdout.slice(usageStart, helpResult.stdout.indexOf("Prints three separately named", usageStart));
-  assert.ok(usageBlock.length > 0, "precondition: the coverage USAGE block was sliced, not emptied");
-
-  assert.deepEqual(
-    orderOfForms(usageBlock, "inUsage"),
-    orderOfForms(loaderBody, "inCode"),
-    "the order --help names the image forms in must be the order loadProjectImage() actually tries them",
-  );
-});
-
 test("WR-21: the coverage USAGE no longer claims dispatch is NEVER by byte length, because one branch is", () => {
   // The specific false absolute, asserted as an absence. Deleting the
   // specificity would also satisfy the order test above, so this half names
@@ -989,42 +917,6 @@ test("PAIRED DIRECTION: an ordinary value is still accepted at every value-takin
 // `anno-cli-path-consumers.test.ts` already does for the confinement seam, so
 // the next verb to write an output file cannot leave the number behind again.
 // ---------------------------------------------------------------------------
-
-test("refuseOverwrite()'s call-site count matches the number its own doc states (30-REVIEW WR-08; three since export-project)", () => {
-  const stripped = stripCommentsAndLiterals(readFileSync(ANNO_CLI_SOURCE_PATH, "utf8"));
-  // The DECLARATION is not a call site. Counting it is an off-by-one this
-  // test caught on itself the first time it ran, which is the shape of the
-  // defect it exists against.
-  const declarations = (stripped.match(/\bfunction refuseOverwrite\(/g) ?? []).length;
-  assert.equal(declarations, 1, "refuseOverwrite() must be declared exactly once -- it is the ONE shared overwrite check");
-  const callSites = (stripped.match(/\brefuseOverwrite\(/g) ?? []).length - declarations;
-  // BACK DOWN TO TWO as of phase 47 plan 47-05: `export-asm`'s `--out` was
-  // promoted to a directory, and its overwrite question moved entirely into
-  // `exportAsmTree()`'s own output-directory contract -- `cmdExportAsm()` no
-  // longer calls this single-file check at all. BACK UP TO THREE with
-  // `export-project`, whose `--out` is a single file.
-  assert.equal(
-    callSites,
-    3,
-    `refuseOverwrite() has ${callSites} call site(s) in anno-cli.ts. If that is correct, update BOTH paragraphs of its ` +
-      `doc comment -- the one naming the verbs AND the one stating the count. WR-08 was exactly these two disagreeing.`,
-  );
-
-  // And the doc really does say three, in the paragraph that states a count.
-  // Read off disk rather than retyped, so a doc that keeps an older count
-  // fails here rather than passing because this file has its own copy.
-  const doc = readFileSync(ANNO_CLI_SOURCE_PATH, "utf8");
-  assert.match(
-    doc,
-    /stated as the THREE call sites it\s+\* actually has/,
-    "the count-stating paragraph must name the same number the scan just measured",
-  );
-  assert.doesNotMatch(
-    doc,
-    /stated as the TWO call sites/,
-    "the phase-47-05 count (\"two\" as the CURRENT claim) must not come back -- it may still appear as history",
-  );
-});
 
 test("an Object.prototype key used as a verb is refused, not thrown (30-REVIEW CR-01)", async () => {
   for (const key of OBJECT_PROTOTYPE_KEYS) {

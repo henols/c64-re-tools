@@ -1892,6 +1892,10 @@ test("WR-01: anno_join_memmap's const_writes argument reaches runMemmapJoin() th
     },
     async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const unconstrained = await runAnnoTool("anno_join_memmap", { image });
+      assert.equal(unconstrained.isError, false, unconstrained.content[0]?.text);
+      const unconstrainedDecision = ((await body(unconstrained)) as unknown as JoinMemmapBody).decisions.find((d) => d.address === 0xd020);
+      assert.equal(unconstrainedDecision?.label, "Border color (only bits #0-#3)", "without const_writes $d020 reads as the border colour");
       const constrained = await runAnnoTool("anno_join_memmap", {
         image,
         const_writes: [{ store_address: 0x0815, target_address: 0x0001, value: 0x34 }],
@@ -1903,9 +1907,8 @@ test("WR-01: anno_join_memmap's const_writes argument reaches runMemmapJoin() th
       // $34 decodes to all-RAM at the I/O range (anno-bank.test.ts's own
       // real-capture case): $d020 is annotated, but NEVER as the border
       // colour -- proving const_writes reached runMemmapJoin(), not merely
-      // validated and dropped, since the PREVIOUS test (same store shape,
-      // const_writes omitted) reports the border-colour label for the same
-      // address.
+      // validated and dropped, since the unconstrained join above reports
+      // the border-colour label for the same address.
       assert.equal(decision!.outcome, "annotated");
       assert.notEqual(
         decision!.label,

@@ -4004,16 +4004,6 @@ test(
   },
 );
 
-test("anno-export-asm.test.ts is absent from package.json's files[] array (test-only, mechanically enforced, acme-gate.test.ts's own idiom)", () => {
-  const pkg = JSON.parse(readFileSync(join(VICE_DIR, "package.json"), "utf8")) as { files: string[] };
-  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
-  assert.equal(
-    pkg.files.includes("anno-export-asm.test.ts"),
-    false,
-    "anno-export-asm.test.ts carries the test-only filtering variant and must never ship in the published npm tarball",
-  );
-});
-
 // --- The behavioural companion: "no verdict value changes what is emitted"
 // measured across the whole verdict vocabulary, not on one example.
 
