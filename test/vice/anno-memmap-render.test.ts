@@ -98,7 +98,7 @@ interface CheckRenderedMemoryMapOptions {
  */
 async function checkRenderedMemoryMap(
   opts: CheckRenderedMemoryMapOptions,
-): Promise<CheckRenderedMemoryMapResult> {
+): Promise<CheckRenderedMemoryMapResult | { status: "missing"; path: string }> {
   const { storePath, provenancePath, renderedPath, workspaceRoot } = opts;
 
   if (!existsSync(renderedPath)) {

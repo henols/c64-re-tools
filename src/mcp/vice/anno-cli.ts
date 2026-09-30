@@ -747,10 +747,6 @@ async function cmdRenderMemmap(rest: string[], ctx: CliContext): Promise<number>
       console.log(`render-memmap: in sync (${outPath})`);
       return 0;
     }
-    if (result.status === "missing") {
-      console.error(`render-memmap: missing -- ${outPath} does not exist yet. Run render-memmap without --check first.`);
-      return 1;
-    }
     console.error(`render-memmap: drifted at line ${result.line}`);
     console.error(`  expected: ${result.expected}`);
     console.error(`  actual:   ${result.actual}`);

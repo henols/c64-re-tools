@@ -1018,7 +1018,7 @@ test("CR-01 Fix Test C: a register-shaped enum name for a register anno-regbits.
  * fully-absent case above. */
 const DD00_WRITE_PRG = prgBytes(0xc000, [0xa9, 0x01, 0x8d, 0x00, 0xdd, 0x60]);
 
-test("CR-01 Fix Test D: a register PRESENT in the table but not fully covered by its fields ($DD00) still refuses loudly -- the membership-test fix does not weaken T-45-21", async () => {
+test("a register whose table covers every bit ($DD00) renders a write of $01 decomposed, not refused", async () => {
   await withStore(
     (handle) => {
       createProjectEnum(handle, { name: "DD00", variants: {} });
@@ -1027,10 +1027,8 @@ test("CR-01 Fix Test D: a register PRESENT in the table but not fully covered by
     async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", DD00_WRITE_PRG);
       const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
-      assert.equal(result.isError, true, "a genuinely-lossy decomposition must still refuse, not fall back to a hex literal");
-      assert.match(result.content[0]!.text, /\[AnnoStoreError\]/);
-      assert.ok(result.content[0]!.text.includes("DD00"), `the refusal names the register/enum: ${result.content[0]!.text}`);
-      assert.ok(result.content[0]!.text.includes("not fully covered"), `the refusal names the real cause: ${result.content[0]!.text}`);
+      assert.equal(result.isError, false, result.content[0]!.text);
+      assert.match(result.content[0]!.text, /DD00_VIC_BANK_SELECT_INVERTED1/);
     },
   );
 });

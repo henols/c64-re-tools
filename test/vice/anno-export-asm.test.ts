@@ -2432,29 +2432,16 @@ test("CR-01 Fix Test A: a register-shaped enum name for a register anno-regbits.
   assert.equal(verdict.byteDiff?.equal, true);
 });
 
-test("CR-01 Fix Test B: a register PRESENT in the table but not fully covered by its fields ($DD00, bits #0-#1 uncovered) still refuses loudly -- the membership-test fix does not weaken T-45-21", () => {
-  const { dir, storePath, imagePath } = buildStore(freshDir("dd00-incomplete"), {
+test("a register whose table covers every bit ($DD00, bits #0-#1 included) decomposes a write of $01 instead of refusing", () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("dd00-complete"), {
     origin: 0x0801,
     body: [0xa9, 0x01, 0x8d, 0x00, 0xdd, 0x60], // lda #$01 (bit #0 set) / sta $dd00 / rts
     ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
     enums: [{ name: "DD00", variants: {} }],
     enumUsage: [{ address: 0x0801, name: "DD00" }],
   });
-
-  assert.throws(
-    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
-    (e: unknown) => {
-      assert.ok(e instanceof Error);
-      assert.match(e.message, /^exportAsm: /);
-      assert.ok(
-        e.message.includes("decomposing the enum usage") && e.message.includes("bit-name table failed"),
-        `the refusal must be the genuine decomposition failure, not the fallback path: ${e.message}`,
-      );
-      assert.ok(e.message.includes("DD00"), `the refusal names the register/enum: ${e.message}`);
-      assert.ok(e.message.includes("not fully covered"), `the refusal names the real cause (incomplete field coverage): ${e.message}`);
-      return true;
-    },
-  );
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  assert.match(result.source, /lda #DD00_VIC_BANK_SELECT_INVERTED1/);
 });
 
 // ---------------------------------------------------------------------------

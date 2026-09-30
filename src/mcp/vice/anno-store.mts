@@ -2538,7 +2538,7 @@ export function listObservedRuns(handle: AnnoStoreHandle): { runs: ObservedRunRo
 export function deleteExecObservationsForRun(
   handle: AnnoStoreHandle,
   args: { imageSha256: unknown; argvDigest: unknown; seed: unknown; baseRevision?: number },
-): AnnoWriteResult {
+): AnnoWriteResult & { deletedCount: number } {
   const imageSha256 = assertRunIdentityDigest(args.imageSha256, "imageSha256");
   const argvDigest = assertRunIdentityDigest(args.argvDigest, "argvDigest");
   const seed = assertRunIdentitySeed(args.seed);
@@ -2547,11 +2547,11 @@ export function deleteExecObservationsForRun(
     handle,
     (db) => {
       const info = db.prepare("delete from anno_evid_exec where project_id = $pid and image_sha256 = ? and argv_digest = ? and seed = ?").run(imageSha256, argvDigest, seed);
-      return Number(info.changes) > 0;
+      return Number(info.changes);
     },
     { baseRevision: args.baseRevision },
   );
-  return { revision, changed: result };
+  return { revision, changed: result > 0, deletedCount: result };
 }
 
 /**

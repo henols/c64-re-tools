@@ -568,10 +568,9 @@ function dispatchEvidRuns(handle: AnnoStoreHandle, args: unknown): unknown {
  * `vice_memmap_zap`. Derives the run identity through `runIdentityFrom()`
  * from `evid-ingest.mts` -- the SAME single digest site `anno_evid_ingest`
  * uses -- never a second hashing site here, and never a caller-supplied
- * digest. `observationsRemoved` is read from a `listExecObservations()`
- * query taken BEFORE the delete, so the answer names exactly how many rows
- * this call removed rather than leaving a caller to infer it from `changed`
- * alone. `baseRevision` is threaded straight into
+ * digest. `observationsRemoved` is the delete's own row count, read
+ * inside the same transaction, so the answer names exactly how many rows this
+ * call removed. `baseRevision` is threaded straight into
  * `deleteExecObservationsForRun()`, which enforces staleness itself through
  * `applyWrite()` -- the same "let the store's own write sequence check it"
  * discipline `dispatchEvidIngest()` above already uses, so there is no
@@ -585,11 +584,6 @@ function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
     argv: bag.argv as string[],
     seed: bag.seed as string,
   });
-  const existing = listExecObservations(handle, {
-    imageSha256: identity.imageSha256,
-    argvDigest: identity.argvDigest,
-    seed: identity.seed,
-  });
   const written = deleteExecObservationsForRun(handle, {
     imageSha256: identity.imageSha256,
     argvDigest: identity.argvDigest,
@@ -599,7 +593,7 @@ function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
   return {
     revision: written.revision,
     changed: written.changed,
-    observationsRemoved: existing.length,
+    observationsRemoved: written.deletedCount,
     // `denominator` travels beside `observationsRemoved` for the same reason
     // it travels beside every other count this evidence layer reports
     // (EVID-04, plan 43-07's own structural guard): a bare count invites the
@@ -607,7 +601,7 @@ function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
     // `existing.length` rows before the delete, so that is what
     // `observationsRemoved` is a fraction of -- a full reset makes the two
     // numbers equal, but the field is never omitted just because it agrees.
-    denominator: existing.length,
+    denominator: written.deletedCount,
   };
 }
 
