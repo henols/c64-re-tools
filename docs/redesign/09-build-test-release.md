@@ -2,6 +2,9 @@
 
 ## 1. Build philosophy
 
+The product is built from one repository and one npm package. There is no workspace-package graph in v1. `pnpm build` produces the CLI, MCP, Host Runtime and bundled skill artifacts described in [18 — Repository structure](18-repository-structure.md).
+
+
 c64-re-tools is not a general project build system in v1.
 
 The caller/skill provides explicit build inputs, for example:
