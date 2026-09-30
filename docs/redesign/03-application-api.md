@@ -100,29 +100,36 @@ unknown application
      DXA
 fast structural discovery
       ↓
-LLM + VICE evidence
+automatic import of compatible structural knowledge
       ↓
-accepted knowledge
+knowledge.db
       ↓
-    Ghidra
-deeper static analysis using known entry points/data ranges
+LLM + VICE investigation
       ↓
-LLM reasoning
+semantic knowledge
       ↓
-accepted knowledge
+Ghidra seeded by current knowledge
+      ↓
+automatic import of compatible structural knowledge
+      ↓
+knowledge.db
 ```
 
-DXA output is not authoritative input to Ghidra by itself. The agent/skill combines DXA findings with runtime evidence and other inspection, records justified knowledge, and may then provide established entry points and known data ranges to Ghidra.
+DXA and Ghidra themselves never open `knowledge.db`. They return structured findings to the Application API.
 
-Neither DXA nor Ghidra writes directly to `knowledge.db`. Both return deterministic findings. The skill/LLM decides which findings are sufficiently justified to persist through the knowledge API.
+The Application analysis layer may automatically import durable findings through the knowledge layer in one revision/transaction. Typical durable imports are code/data ranges, function starts/generated names and references. Full listings, raw logs, complete CFGs and decompiler text are not copied into the database merely because they exist.
+
+Automatic imports fill gaps and add compatible structure. They never silently overwrite conflicting semantic knowledge.
+
+Current project knowledge is also an input to later analysis. For Ghidra, current routine symbols can seed entry points, known non-code regions can seed data ranges, and known names can seed labels where supported.
 
 Do not normalize DXA and Ghidra into an `engine=` switch on one operation merely because both perform static analysis. Their roles and result semantics are different.
 
-An analysis operation may return suggestions/findings; it does not automatically convert every intermediate result into durable project knowledge.
-
 ## 6. Knowledge operations
 
-The knowledge API is intentionally small:
+The knowledge API exposes current knowledge, semantic edits, analyzer imports and reviewable history.
+
+### Current-state CRUD
 
 ```text
 knowledge.symbol.set
@@ -140,10 +147,53 @@ knowledge.comment.remove
 knowledge.comment.get
 knowledge.comment.list
 
+knowledge.reference.list
 knowledge.search
 ```
 
-Writes support transactional revision checks so stale concurrent modifications can be refused.
+LLM/user edits create semantic knowledge revisions. For example, replacing Ghidra's generated `FUN_2100` with `update_player` creates a new current symbol while retaining the generated name in history.
+
+The application assigns the write origin from caller/context (`user`, `llm`, `dxa`, `ghidra`); callers do not impersonate analyzer origins.
+
+### Address-centric lookup
+
+```text
+knowledge.at(address)
+```
+
+returns the current useful context for an address, including:
+
+- primary symbol;
+- containing region;
+- comments;
+- incoming references;
+- outgoing references.
+
+### History
+
+```text
+knowledge.history(address)
+knowledge.history(entity)
+knowledge.revisions(...)
+knowledge.revision(id)
+```
+
+History operations expose prior values and the revision metadata that caused each change. They are used to diagnose bad analyzer imports, incorrect LLM conclusions, renames/reclassifications and later corrections.
+
+### Analyzer import result
+
+Analysis operations that persist findings return a summary such as:
+
+```text
+revision
+inserted
+unchanged
+conflicts
+```
+
+A conflict leaves the contradictory current knowledge unchanged and reports it for the skill/LLM to investigate.
+
+All writes support transactional revision checks so stale concurrent modifications can be refused.
 
 ## 7. Build operations
 
@@ -196,7 +246,9 @@ c64_static_analyze
 c64_symbol
 c64_region
 c64_comment
+c64_knowledge_at
 c64_knowledge_search
+c64_knowledge_history
 
 c64_assemble
 ```
