@@ -1,63 +1,18 @@
-// The ONE shared place every module in this directory resolves the repo
-// root through (D-2), so there is exactly one definition of both "where
-// is the repo root" and "what is the shared state directory called".
+// repo-root.ts
 //
-// WHY THIS FILE EXISTS AT ALL: originally, each of the three modules
-// resolved the repo root with a fixed `resolve(dirname(SELF), "..", ...)` --
-// ONE level up from the module's own file. That was correct while the
-// modules lived in `tools/` (one level up from `tools/` IS the repo root),
-// but a move put them THREE levels deeper, at `.claude/skills/vice-session/`'s
-// `scripts/` directory (the original, now-retired home; plan 01.1-04
-// relocated it again, into the `vice-mcp-selector` skill, at the same
-// depth). A naive move that kept the old fixed `".."` would have silently
-// resolved to `.claude/skills/.vice-supervisor` or
-// `.claude/skills/vice-session/.vice-supervisor` instead of
-// `<repo>/.vice-supervisor` -- a directory the host-side shell launcher
-// (`tools/vice-launcher.sh`) never writes to. NOTHING would have
-// errored: the container would just read a permanently-empty
-// epoch/registry/session directory, and restart detection (and the pool,
-// and sessions) would quietly stop working while every command kept
-// "succeeding". That failure mode -- a broken invariant with no error
-// anywhere -- is exactly the class of bug this codebase keeps rejecting
-// elsewhere (see vice-errors.mts's MachineRestartedError). Do not reintroduce a fixed `".."` (or any other
-// relative-to-this-file hop count) in place of this resolver; if the
-// directory depth of this module tree ever changes again, the ladder below
-// still gets the right answer without anyone having to count directories by
-// hand.
+// The one place a client module resolves the project root, and the
+// tool-written directory under it. See repoRoot() for the precedence.
 //
-// THIRD MOVE (quick-260731-p8a): the implementation relocated again, out of
-// the `vice-mcp-selector` skill's `scripts/` into a new, flattened,
-// non-skill `.claude/mcp/vice/` directory -- ONE level SHALLOWER than the
-// old `.claude/skills/<skill>/scripts/` shape, since flattening removed the
-// `scripts/` segment. Branch 4's hop count below moved from four levels to
-// three to match. Branches 1-3 are depth-independent (an env var check, then
-// a `.git` ancestor walk) and needed no change.
+// WHAT NOT TO DO: never replace this resolver with a fixed `".."` hop count
+// relative to a module's own file. A wrong count errors nowhere: every
+// reader just sees an empty directory and every command keeps "succeeding".
 //
-// FOURTH MOVE (phase 16-04, 2026-08-23): the module directory relocated
-// again, from `.claude/mcp/vice/` to `src/mcp/vice/` (packaging and repo
-// shape). `src`/`mcp`/`vice` is the same three path segments below the
-// repository root as the old `.claude`/`mcp`/`vice` shape -- this is
-// reviewed and confirmed, not assumed, from the segment count itself. Branch
-// 4's hop count was therefore reviewed and deliberately left unchanged: this
-// move relocates the same flat, three-segment shape elsewhere directly under
-// the root, which is a different move from nesting authored sources one
-// level deeper INSIDE this directory (which would make four, and IS what
-// branches 1-3's depth-independence and branch 4's fixed hop count would not
-// survive). See repo-root.test.ts's own standing caution for that
-// distinction, drawn explicitly there for the first time by this move.
-//
-// COMPILED COPY (npm package): build.ts's buildServer() compiles this module
-// into dist/, one level below the package directory. Branch 4 therefore
-// counts its three hops from the PACKAGE directory, not blindly from
-// `from`: `from` itself when it holds a package.json, else `from`'s parent
-// when that one does (the dist/ case), else `from` unchanged. The marker
-// check keeps the hop count a property of the package directory's depth,
-// which is what the paragraph above pins.
+// The npm package compiles this module into dist/, one level below the
+// package directory, so the last-resort branch counts its hops from the
+// package directory (see packageDirFor()).
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, sep } from "node:path";
-
-import { ensureResourcesInstalled } from "./install-resources.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -70,9 +25,9 @@ let warnedNoMarkerFound = false;
 /** Options accepted by repoRoot()/supervisorDir(): `from` overrides the
  * caller location the ladder resolves relative to (defaults to this file's
  * own location, HERE), and `env` overrides the environment it reads
- * CONTAINER_WORKSPACE_PATH from (defaults to process.env) -- both exist so
- * the ladder is deterministically testable without mutating real process
- * state, per repo-root.test.ts's own injection idiom. */
+ * the project-root variables and CONTAINER_WORKSPACE_PATH from (defaults to
+ * process.env) -- both exist so the ladder is testable without mutating real
+ * process state. */
 export interface RepoRootOptions {
   from?: string;
   env?: NodeJS.ProcessEnv;
@@ -93,10 +48,9 @@ function isInside(child: string, parent: string): boolean {
   return c === p || c.startsWith(p.endsWith(sep) ? p : p + sep);
 }
 
-/** The package directory branch 4 counts its hops from: `from` when it
+/** The package directory the last-resort branch counts its hops from: `from` when it
  * holds a package.json, else `from`'s parent when that one does (the
- * compiled copy in dist/), else `from` unchanged. See the header's
- * "COMPILED COPY" paragraph. */
+ * compiled copy in dist/), else `from` unchanged. */
 function packageDirFor(from: string, exists: (path: string) => boolean): string {
   const here = resolve(from);
   if (exists(join(here, "package.json"))) return here;
@@ -106,49 +60,29 @@ function packageDirFor(from: string, exists: (path: string) => boolean): string 
 }
 
 /**
- * Resolve the repository root. Precedence, in order (D-2):
+ * Resolves the project root. Precedence, in order:
  *
- *   0. `env.CLAUDE_PROJECT_DIR`, when set -- the authoritative project root
- *      Claude Code exports for the workspace it is driving. This is the ONLY
- *      branch that is correct when this module is consumed as an installed
- *      plugin: the MCP's own files then live under the plugin install dir
- *      (e.g. `~/.claude/plugins/<marketplace>/<plugin>/src/mcp/vice/`),
- *      NOT inside the project the user is working in, so neither the
- *      `from`-relative `.git` walk (branch 2, which would find the plugin's
- *      OWN checkout) nor a CONTAINER_WORKSPACE_PATH containment check
- *      (branch 1, which fails the containment test) can reach the project
- *      root. In the in-repo, non-plugin layout this variable is either unset
- *      (the test injections below, a bare host) or already equal to the repo
- *      root, so honouring it first is a safe no-op there and the branches
- *      below are unchanged.
- *   1. `env.CONTAINER_WORKSPACE_PATH`, when set AND `from` resolves inside
- *      it -- this devcontainer sets it (`.devcontainer/devcontainer.json`'s
- *      `containerEnv`, value `/workspaces/c64-project`), and it is the most
- *      explicit signal available.
- *   2. Otherwise, walk up from `from` toward the filesystem root, returning
- *      the first directory containing a `.git` entry (`existsSync` on the
- *      joined path -- matches both a real `.git` directory and a worktree's
- *      `.git` file). This is what keeps the skill correct once exported into
- *      a project that sets no such variable at all.
- *   3. Otherwise, `env.CONTAINER_WORKSPACE_PATH` if it is set at all (just
- *      not containing `from` -- an exported copy of this skill living
- *      outside the mounted workspace the variable names). Silence here would
- *      be exactly the quiet-wrong-answer failure class this file exists to
- *      prevent, so this path emits a one-time stderr note naming both paths.
- *   4. Otherwise, three levels up from `from`, with a one-time stderr note.
- *      Last resort only -- three levels is what `<root>/src/mcp/<server>/`
- *      implies. In this repo branch 4 never actually runs (there is always a
- *      `.git` ancestor), which is exactly why the paired synthetic test in
- *      repo-root.test.ts is the only thing that would catch a wrong hop
- *      count here.
+ *   1. `env.C64RE_PROJECT_ROOT`, when set -- the explicit override a user or
+ *      a caller sets to name the project.
+ *   2. `env.CLAUDE_PROJECT_DIR`, when set -- the project Claude Code exports
+ *      for the workspace it drives. This is the branch that is right when this
+ *      module runs from an installed plugin, outside the user's project.
+ *   3. `env.CONTAINER_WORKSPACE_PATH`, when set AND `from` resolves inside it.
+ *   4. Otherwise, walk up from `from` and return the first directory holding
+ *      a `.git` entry (a directory, or a worktree's `.git` file).
+ *   5. Otherwise, `env.CONTAINER_WORKSPACE_PATH` if it is set at all, with a
+ *      one-time stderr note naming both paths.
+ *   6. Otherwise, three levels up from the package directory, with a
+ *      one-time stderr note -- the shape `<root>/src/mcp/<server>/` implies.
+ *
+ * `from` stays the start of the `.git` walk whatever the environment holds.
  */
 export function repoRoot({ from = HERE, env = process.env, exists = existsSync }: RepoRootOptions = {}): string {
-  // Branch 0 (plugin-consumption signal): Claude Code sets CLAUDE_PROJECT_DIR
-  // to the root of the workspace it is driving. When this module runs as an
-  // installed plugin its own files sit outside that workspace, so this is the
-  // only signal that points at the user's project rather than the plugin's
-  // install dir. Unset / equal-to-root in the in-repo layout, so it is a
-  // no-op there.
+  const explicitRoot = env.C64RE_PROJECT_ROOT;
+  if (explicitRoot) {
+    return resolve(explicitRoot);
+  }
+
   const projectDir = env.CLAUDE_PROJECT_DIR;
   if (projectDir) {
     return resolve(projectDir);
@@ -196,89 +130,12 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
   return fallback;
 }
 
-/** The ONE definition of the tool-written root every writer in this codebase
- * ultimately derives its location from (D-33, 2026-09-08 clean-break
- * consolidation): `join(repoRoot(...), ".c64-re-tools")`.
- *
- * CORRECTED 2026-09-08 (gap `G-40-1`): this comment used to
- * claim (a) that the Ghidra runs directory was among the writers resolving
- * through THIS function, and (b) that the literal string below had exactly
- * one non-comment occurrence in the codebase. Both were false when written,
- * and neither was ever measured before being written down. The corrected
- * picture:
- *
- *   - TWO files call `toolsDir()` directly: transfer-paths.ts
- *     (`snapshots` and the per-kind result directories) and vice-proxy.ts
- *     (the bare root, handed to backend-detect.mts's resolvedBackend()).
- *     No production module calls `supervisorDir()` any more: the epoch
- *     file it located is read by the broker only. The broker state directory
- *     is broker-home.mts's `brokerStateDir()`, never this function.
- *   - FIVE files cannot import this container-side module at all, so each
- *     joins `".c64-re-tools"` with its own trailing segment(s) directly,
- *     matching this function's shape by CONVENTION, never by shared code:
- *     install-resources.ts's `installTargetDir()` (`bin` -- module-cycle
- *     avoidance, since THIS file's own bottom-of-module call invokes it),
- *     vice-broker.mts's `run()` tool-location deps (the bare root --
- *     host-bound, compiled separately by build.ts; `parseArgs()`'s own
- *     state-dir resolution CORRECTED (Phase 64, plan 64-10, G-64-1): it no
- *     longer joins the literal itself, and calls broker-home.mts's
- *     `brokerStateDir()` unconditionally when no explicit `--state-dir` is
- *     given, whatever `--repo-root` says), host-tool.mts's
- *     `oracle.run` scratch directory (`runs/oracle` -- host-bound), and
- *     backend-detect.mts's `resolvedBackend()`
- *     cwd-relative fallback (the bare root -- host-bound, and the ONE place
- *     the emulator binary's own location is resolved, Phase 60 LOC-01/LOC-02).
- *     Every one of these must keep its literal
- *     equal to `join(toolsDir(...), <same segments>)`, by convention, or the
- *     two halves of this codebase silently disagree on where the root is.
- *
- * Ghidra projects do not live under this root at all: Ghidra refuses a
- * project location with a dot-prefixed segment, so the broker keeps them
- * under broker-home.mts's `brokerGhidraDir()` instead.
- *
- * The literal string ".c64-re-tools" therefore has exactly 9 non-comment
- * occurrences in this codebase, across 7 files. repo-root.test.ts's census
- * gate reads BOTH the count and this file list straight out of this
- * sentence and the bullet list below -- never duplicated by hand a second
- * time in the test -- and compares both against the real tree, with a
- * planted-violation control proving the comparison predicate actually
- * fires. That is the mechanism that stops this specific claim going false
- * again (threat `T-40-10-02`):
- *   - repo-root.ts -- this definition, the line below (1)
- *   - install-resources.ts -- `projectToolsDirOf()`, which `installTargetDir()`
- *     (`local/bin`) and the local/ creation both go through (1)
- *   - vice-broker.mts -- `run()`'s `toolsDir` for the once-per-process
- *     emulator-binary resolution (1). `parseArgs()`'s own state-dir
- *     resolution used to join the literal a second time, on the explicit
- *     `--repo-root` branch of a ternary -- CORRECTED (Phase 64, plan 64-10,
- *     G-64-1): that branch is gone, and `parseArgs()` now calls
- *     broker-home.mts's `brokerStateDir()` unconditionally whenever no
- *     explicit `--state-dir` was given, joining no literal of its own.
- *   - host-tool.mts -- `oracle.run`'s scratch-directory join (1), plus
- *     Phase 60 (LOC-01, plan 60-03)'s `HostToolLocator` plumbing:
- *     `locatorFrom()`'s `process.cwd()`-derived fallback (1) and
- *     `runHostTool()`'s own locator built from its already-resolved
- *     `repoRootAbs` (1) = 3
- *   - backend-detect.mts -- `resolvedBackend()`'s cwd-relative `toolsDir`
- *     fallback, used only when no caller supplied one (1)
- *   - broker-home.mts -- `TOOLS_DIR_NAME`, the machine-level root's own
- *     default directory name (BROKER-06, plan 62-02); host-bound and cannot
- *     import this file either, so it joins the literal directly by the same
- *     convention as the five files above (1)
- *   - broker-launch.mts -- `resolveConfigScratchRoot()`'s own duplicated
- *     derivation of broker-home.mts's `brokerConfigScratchDir()` (Phase 64,
- *     XFER-07/D-08); host-bound and cannot import broker-home.mjs either
- *     (the same unbuilt-import constraint), so it joins the literal
- *     directly by the same convention as every file above (1)
- *
- * This is a clean break, not a migration: no code path falls back to any of
- * the five previous locations when the new one is absent, and there is no
- * opt-back-in environment variable. A pre-existing tree at one of the old
- * locations is simply left on disk, unread, for the user to delete by hand.
- * `VICE_POOL_DIR` / `VICE_EPOCH_FILE` / `VICE_SUPERVISOR_DIR` /
- * `VICE_INCIDENTS_DIR` are unaffected by this move -- they still override
- * their respective resolved default, exactly as before; only the DEFAULT
- * moved. */
+/** The project's tool-written root: `join(repoRoot(...), ".c64-re-tools")`.
+ * Host-bound modules cannot import this container-side file, so the few that
+ * need the same directory name join the literal themselves. Ghidra projects
+ * never live here: Ghidra refuses a project location with a dot-prefixed
+ * segment, so the broker keeps them under broker-home.mts's
+ * `brokerGhidraDir()`. */
 export function toolsDir(opts: RepoRootOptions = {}): string {
   return toolsDirUnder(repoRoot(opts));
 }
@@ -296,34 +153,4 @@ export function toolsDirUnder(root: string): string {
  * a subdirectory of the single tool-written root `toolsDir()` owns. */
 export function supervisorDir(opts: RepoRootOptions = {}): string {
   return join(toolsDir(opts), "supervisor");
-}
-
-// Fires once per process, on whatever entry point happens to import THIS
-// module -- vice-proxy.ts (which imports repoRoot()) among other modules
-// in this tree. This one call is what makes the deploy-on-first-use check
-// (D-3) fire for every entry point without any of them referencing
-// install-resources.ts directly.
-//
-// POSITION IS LOAD-BEARING: this must run at the BOTTOM of this module body,
-// after HERE, repoRoot() and supervisorDir() are all initialised. Moving it
-// above HERE's initialisation reintroduces the exact module-cycle TDZ crash
-// install-resources.ts's own header describes ("Cannot access 'HERE' before
-// initialization") -- install-resources.ts takes the repo root as an
-// argument specifically so it never needs to import this file back.
-//
-// SKIPPED UNDER node_modules: an npm-installed copy (the compiled dist/
-// build) never deploys. The deploy copies the obsolete launcher, and with
-// no project marker above a global install, repoRoot() would resolve inside
-// <prefix>/lib and the deploy would write there. The plugin and a checkout
-// never run from under node_modules, so they still deploy as before.
-function runsUnderNodeModules(dir: string): boolean {
-  return resolve(dir).split(sep).includes("node_modules");
-}
-
-try {
-  if (!runsUnderNodeModules(HERE)) ensureResourcesInstalled({ root: repoRoot() });
-} catch {
-  // ensureResourcesInstalled() already never throws (D-3) -- this catch is
-  // belt-and-suspenders against a future change to that contract, not a
-  // signal that one is expected.
 }
