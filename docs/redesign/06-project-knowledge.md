@@ -330,10 +330,13 @@ Analyzer import results should report at least:
 
 ```text
 inserted
+changed_or_retired
 unchanged
 conflicts
 revision
 ```
+
+Re-analysis is coverage-aware. A complete analyzer snapshot may retire only that analyzer's own older findings inside the address ranges and finding categories it authoritatively covers. Partial/non-authoritative results may add compatible findings but may not retire older ones by absence. Semantic user/LLM knowledge is never retired by analyzer reconciliation. See [12 — Static analysis and knowledge import](12-static-analysis-knowledge-import.md).
 
 ## 6. Knowledge feeds later analysis
 
