@@ -390,6 +390,19 @@ Bounds:
 - at most 1024 data ranges;
 - at most 4096 labels.
 
+### Undocumented-opcode acceptance
+
+The installation is not considered a valid C64 Ghidra setup merely because Ghidra starts.
+
+The installed language must pass:
+
+- SLEIGH compilation of the c64-re-tools NMOS language;
+- a sweep proving every one of the 105 undocumented opcode bytes decodes under the C64 NMOS language;
+- representative semantic tests for deterministic RMW/load/store/immediate families;
+- JAM/KIL control-flow tests;
+- tests proving unstable instructions remain conservatively modeled rather than falsely simplified;
+- decimal-mode tests for deterministic decimal-sensitive instructions.
+
 ### Result
 
 ~~~json
@@ -486,12 +499,17 @@ flat64k
 Rules:
 
 - the C64/NMOS-6502 Ghidra language is fixed by the installation;
+- that language must decode the complete 256-byte NMOS 6502/6510 opcode space, including all 105 undocumented opcode bytes;
+- deterministic undocumented instructions must carry useful p-code semantics rather than mnemonic-only decoding;
+- JAM/KIL instructions must prevent false fall-through analysis;
+- electrically unstable instructions must preserve useful data-flow/address information while using conservative opaque semantics where exact transistor/bus behavior is not deterministic;
+- deterministic decimal-mode-sensitive instructions must model NMOS decimal behavior correctly rather than silently applying binary-mode arithmetic;
 - caller does not provide processor/language IDs;
 - caller does not provide loader names;
 - caller does not provide run/project IDs;
 - caller does not provide pre/post-script names or paths;
 - caller does not provide output paths;
-- vendored scripts and temporary Ghidra projects are Host Runtime implementation details;
+- c64-re-tools-owned Ghidra scripts/language integration and temporary Ghidra projects are Host Runtime implementation details;
 - Ghidra projects are disposable per request;
 - entryPoints, dataRanges and labels are optional current-knowledge seeds;
 - decompile is an optional bounded list of routine entry addresses for transient immediate reasoning.
