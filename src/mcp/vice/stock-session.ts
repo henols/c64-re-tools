@@ -353,11 +353,8 @@ export function grantEpochReader(control: Pick<BrokerControlSession, "status">, 
  *
  * This is what makes the lock's critical section span a whole LOGICAL
  * operation, not a single wire command: `vice_run_until`'s wait
- * (stock-run-until.ts's `waitForCheckpointHit()`) and the reproducible-run
- * path's wait (stock-reproducible-run.ts's `waitForReproducibleStop()`,
- * reached through `runReproducible()`) both run INSIDE the wrapped `fn`, so
- * the lock stays held across resume -> wait -> observe without either wait
- * path being re-cut.
+ * (stock-run-until.ts's `waitForStop()`) runs inside the wrapped `fn`, so
+ * the lock stays held across resume -> wait -> observe.
  *
  * FORBIDDEN ALTERNATIVE, named here because it is the obvious-looking wrong
  * design: acquiring and releasing this lock around each individual wire
