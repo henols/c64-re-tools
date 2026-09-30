@@ -125,9 +125,11 @@ The lightweight client/skill environment may depend on shared TypeScript/runtime
 
 Skills should not copy this infrastructure.
 
-Where practical, release builds may bundle the small shared runtime pieces needed by skill scripts into self-contained JavaScript artifacts. This avoids depending on harness-specific Node module resolution while preserving one maintained source implementation.
+Where practical, release builds bundle the small shared runtime pieces needed by skill scripts into self-contained JavaScript artifacts. This avoids depending on harness-specific Node module resolution while preserving one maintained source implementation.
 
-The exact package/bundling layout is an implementation choice.
+In particular, released skill scripts must not locate MCP internals through filesystem ladders or sibling-package path probing. Project-root discovery, project-relative path validation, knowledge access and the Host Runtime client come from maintained shared source and are bundled/packaged deterministically. See [17 — Project root and local state](17-project-root-and-local-state.md).
+
+The exact source-package names remain an implementation choice.
 
 ## 7. MCP distribution
 
