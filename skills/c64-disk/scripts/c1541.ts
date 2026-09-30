@@ -42,7 +42,11 @@ function selfPath() {
   return !r || r.startsWith("..") || isAbsolute(r) ? SELF : r;
 }
 
-const die: (m: string) => never = (m) => { console.error(`error: ${m}`); process.exit(1); };
+/** Every result this script prints. The last stdout line is always one of
+ * these, as JSON. */
+export type ScriptResult = { ok: true; [key: string]: unknown } | { ok: false; message: string; [key: string]: unknown };
+
+const refuse = (message: string): ScriptResult => ({ ok: false, message });
 
 // -------------------------------------------------------------------- types
 
@@ -281,6 +285,10 @@ export function salvageFirstTsFromRefusal(message: string): SalvagedFirstTs | nu
 export function auditEntries(records: AuditRecord[], { bamAllocated }: { bamAllocated: Map<number, Set<number>> }): AuditResult {
   const visitedFirstTS = new Set([`${DIRECTORY_START_TRACK}/${DIRECTORY_START_SECTOR}`]);
   const visitedNextDir = new Set([`${DIRECTORY_START_TRACK}/${DIRECTORY_START_SECTOR}`]);
+  // Every entry of one directory sector reports that sector's next-sector
+  // pointer, so a pointer equal to the previous entry's is the same sector,
+  // not a revisit. Only a pointer that comes back after a different one is.
+  let lastNextKey: string | null = null;
   let chainError: string | null = null;
   const entries: AuditedEntry[] = [];
 
@@ -330,10 +338,13 @@ export function auditEntries(records: AuditRecord[], { bamAllocated }: { bamAllo
 
     if (!r.entryFailed && r.nextDirTrack !== null && r.nextDirTrack !== 0) {
       const nextKey = `${r.nextDirTrack}/${r.nextDirSector}`;
-      if (visitedNextDir.has(nextKey) && chainError === null) {
-        chainError = `directory chain revisited ${nextKey} -- stopped to avoid an infinite loop (self-referential or cyclic next-sector pointer)`;
+      if (nextKey !== lastNextKey) {
+        if (visitedNextDir.has(nextKey) && chainError === null) {
+          chainError = `directory chain revisited ${nextKey} -- a self-referential or cyclic next-sector pointer`;
+        }
+        visitedNextDir.add(nextKey);
+        lastNextKey = nextKey;
       }
-      visitedNextDir.add(nextKey);
     }
 
     entries.push({
@@ -350,17 +361,15 @@ export function auditEntries(records: AuditRecord[], { bamAllocated }: { bamAllo
 }
 
 /** Reads back the produced listing file for an `ok:true` seam response's
- * first result -- mirrors `augmentEntryResponse()`'s own read-back
- * convention above (display-purposed parsing over an already-decided
- * response, never a second oracle). Returns `""` if the file cannot be
- * read. */
-function readSeamOutputText(response: HostToolSuccess): string {
+ * first result. Throws, naming `what`, when there is no file or it cannot be
+ * read: an audit of an unreadable listing must not report success. */
+function readSeamOutputText(response: HostToolSuccess, what: string): string {
   const path = response.results?.[0]?.path;
-  if (!path) return "";
+  if (!path) throw new Error(`audit: the ${what} call returned no output file`);
   try {
     return readFileSync(path, "utf8");
-  } catch {
-    return "";
+  } catch (e) {
+    throw new Error(`audit: cannot read the ${what} output ${path}: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -372,9 +381,9 @@ function readSeamOutputText(response: HostToolSuccess): string {
  * a fallback that works on the developer's own host and silently fails
  * inside a container is the exact failure this seam exists to remove.
  */
-async function runAudit(argv: string[]) {
+async function runAudit(argv: string[]): Promise<ScriptResult> {
   const o = parseOpts(argv);
-  if (!o.image) die(`usage: audit --image <path.d64> [--out-dir <dir>] [--json]`);
+  if (!o.image) return refuse(`usage: audit --image <path.d64> [--out-dir <dir>] [--json]`);
 
   const imageAbs = resolve(o.image);
   const outDirAbs = o.outDir ? resolve(o.outDir) : dirname(imageAbs);
@@ -382,24 +391,24 @@ async function runAudit(argv: string[]) {
   const seam = { destDir: outDirAbs };
 
   const dirResp = await invokeHostTool("c1541.dir", baseArgs, seam);
-  if (!dirResp.ok) {
-    report(dirResp, o);
-    process.exit(1);
+  if (!dirResp.ok) return refuse(`c1541 call FAILED: ${dirResp.message}`);
+  const names = parseDirListing(readSeamOutputText(dirResp, "c1541.dir"));
+  if (names.length === 0) {
+    return refuse(`audit: the directory listing of ${imageAbs} has no file entry -- an empty or unreadable listing is not a clean disk`);
   }
-  const names = parseDirListing(readSeamOutputText(dirResp));
 
   const bamResp = await invokeHostTool("c1541.bam", baseArgs, seam);
-  if (!bamResp.ok) {
-    report(bamResp, o);
-    process.exit(1);
+  if (!bamResp.ok) return refuse(`c1541 call FAILED: ${bamResp.message}`);
+  const bamAllocated = parseBamAllocation(readSeamOutputText(bamResp, "c1541.bam"));
+  if (bamAllocated.size === 0) {
+    return refuse(`audit: the block allocation map of ${imageAbs} has no track row -- cannot check any first sector`);
   }
-  const bamAllocated = parseBamAllocation(readSeamOutputText(bamResp));
 
   const records: AuditRecord[] = [];
   for (const { name, blocks } of names) {
     const entryResp = await invokeHostTool("c1541.entry", { ...baseArgs, name }, seam);
     if (entryResp.ok) {
-      const fields = parseEntryFields(readSeamOutputText(entryResp));
+      const fields = parseEntryFields(readSeamOutputText(entryResp, "c1541.entry"));
       // The entry's own block count overrides the listing's.
       records.push(fields ? { name, ...fields } : { name, blocks, entryFailed: true, reason: "entry response carried no T/S: line" });
     } else {
@@ -416,16 +425,14 @@ async function runAudit(argv: string[]) {
   }
 
   const result = auditEntries(records, { bamAllocated });
-  if (o.json) {
-    console.log(JSON.stringify(result));
-  } else {
+  if (!o.json) {
     for (const e of result.entries) {
       const flag = e.suspicious ? ` SUSPICIOUS: ${e.suspicious_reasons.join("; ")}` : "";
       console.log(`"${e.name}" first=${e.first_track}/${e.first_sector} blocks=${e.blocks}${flag}`);
     }
     if (result.chain_error) console.log(`chain error: ${result.chain_error}`);
   }
-  process.exit(0);
+  return { ok: true, ...result };
 }
 
 /** `entry`/`chain`/`read` all require a CBM name -- the seam itself refuses
@@ -444,14 +451,14 @@ const VERBS_REQUIRING_NAME = new Set(["entry", "chain", "read"]);
  * `entry`, whose own listing file this script additionally parses for the
  * first track/sector (see augmentEntryResponse() below).
  */
-async function runCapability(verb: CapabilityVerb, argv: string[]) {
+async function runCapability(verb: CapabilityVerb, argv: string[]): Promise<ScriptResult> {
   const tool = VERB_TO_TOOL[verb];
-  if (!tool) die(`unknown c1541 capability: ${verb}`);
+  if (!tool) return refuse(`unknown c1541 capability: ${verb}`);
 
   const o = parseOpts(argv);
-  if (!o.image) die(`usage: ${verb} --image <path.d64> [--name <cbm-name>] [--out-dir <dir>] [--json]`);
+  if (!o.image) return refuse(`usage: ${verb} --image <path.d64> [--name <cbm-name>] [--out-dir <dir>] [--json]`);
   if (VERBS_REQUIRING_NAME.has(verb) && !o.name) {
-    die(`usage: ${verb} --image <path.d64> --name <cbm-name> [--out-dir <dir>] [--json]`);
+    return refuse(`usage: ${verb} --image <path.d64> --name <cbm-name> [--out-dir <dir>] [--json]`);
   }
 
   const imageAbs = resolve(o.image);
@@ -461,8 +468,8 @@ async function runCapability(verb: CapabilityVerb, argv: string[]) {
 
   let response: C1541Response = await invokeHostTool(tool, args, { destDir: outDirAbs });
   if (verb === "entry") response = augmentEntryResponse(response);
-  report(response, o);
-  process.exit(response.ok ? 0 : 1);
+  if (!o.json) report(response);
+  return response;
 }
 
 /** Reads `c1541.entry`'s own listing file back and parses its `T/S:
@@ -488,15 +495,8 @@ function augmentEntryResponse(response: C1541Response): C1541Response {
   return { ...response, firstTrack: Number(m[1]), firstSector: Number(m[2]) };
 }
 
-function report(response: C1541Response, { json }: { json: boolean }) {
-  if (json) {
-    console.log(JSON.stringify(response));
-    return;
-  }
-  if (!response.ok) {
-    console.error(`c1541 call FAILED: ${response.message}`);
-    return;
-  }
+function report(response: C1541Response) {
+  if (!response.ok) return;
   for (const r of response.results ?? []) {
     console.log(`${r.path}  (${r.byteLength} bytes, sha256 ${r.sha256})`);
   }
@@ -528,19 +528,7 @@ function parseOpts(argv: string[]): C1541Opts {
 // True when this file is the process entry point, also when it runs through a symlink.
 const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
-if (invokedDirectly) {
-  const [cmd, ...rest] = process.argv.slice(2);
-  const VERBS = {
-    bam: (argv: string[]) => runCapability("bam", argv),
-    dir: (argv: string[]) => runCapability("dir", argv),
-    entry: (argv: string[]) => runCapability("entry", argv),
-    chain: (argv: string[]) => runCapability("chain", argv),
-    read: (argv: string[]) => runCapability("read", argv),
-    audit: (argv: string[]) => runAudit(argv),
-  } satisfies Record<string, (argv: string[]) => Promise<void>>;
-  const isVerb = (name: string): name is keyof typeof VERBS => Object.hasOwn(VERBS, name);
-  if (!cmd || !isVerb(cmd)) {
-    console.log(`usage: node ${selfPath()} <command> [options]
+const USAGE = (self: string) => `usage: node ${self} <command> [options]
 
   bam    --image <path.d64> [--out-dir <dir>] [--json]                  block allocation map
   dir    --image <path.d64> [--out-dir <dir>] [--json]                  directory listing
@@ -550,9 +538,33 @@ if (invokedDirectly) {
   audit  --image <path.d64> [--out-dir <dir>] [--json]                  find fabricated/corrupted directory entries
 
 Read-only -- no -format/-write/-bwrite/-delete verb is reachable from this script.
+The last stdout line is one JSON result.
 
-options: --image PATH  --name CBM-NAME  --out-dir DIR  --json`);
-    process.exit(cmd ? 1 : 0);
+options: --image PATH  --name CBM-NAME  --out-dir DIR  --json`;
+
+/** The whole CLI as a function. Never rejects. */
+export async function main(argv: string[]): Promise<ScriptResult> {
+  const [cmd, ...rest] = argv;
+  const VERBS = {
+    bam: (a: string[]) => runCapability("bam", a),
+    dir: (a: string[]) => runCapability("dir", a),
+    entry: (a: string[]) => runCapability("entry", a),
+    chain: (a: string[]) => runCapability("chain", a),
+    read: (a: string[]) => runCapability("read", a),
+    audit: (a: string[]) => runAudit(a),
+  } satisfies Record<string, (argv: string[]) => Promise<ScriptResult>>;
+  if (!cmd || !Object.hasOwn(VERBS, cmd)) {
+    return refuse(cmd ? `unknown command ${JSON.stringify(cmd)}\n${USAGE(selfPath())}` : USAGE(selfPath()));
   }
-  await VERBS[cmd](rest);
+  try {
+    return await VERBS[cmd as keyof typeof VERBS](rest);
+  } catch (e) {
+    return refuse(e instanceof Error ? e.message : String(e));
+  }
+}
+
+if (invokedDirectly) {
+  const result = await main(process.argv.slice(2));
+  console.log(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
 }

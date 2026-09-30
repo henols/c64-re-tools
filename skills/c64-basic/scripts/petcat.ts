@@ -41,7 +41,11 @@ function selfPath() {
   return !r || r.startsWith("..") || isAbsolute(r) ? SELF : r;
 }
 
-const die: (m: string) => never = (m) => { console.error(`error: ${m}`); process.exit(1); };
+/** Every result this script prints. The last stdout line is always one of
+ * these, as JSON. */
+export type ScriptResult = { ok: true; [key: string]: unknown } | { ok: false; message: string; [key: string]: unknown };
+
+const refuse = (message: string): ScriptResult => ({ ok: false, message });
 
 /** Parsed CLI options. */
 export interface PetcatOpts {
@@ -61,33 +65,26 @@ export interface PetcatOpts {
  * entrypointReason }` / `{ ok: false, message }`), so no reshaping happens
  * here.
  */
-async function runDecode(argv: string[]) {
+async function runDecode(argv: string[]): Promise<ScriptResult> {
   const o = parseOpts(argv);
-  if (!o.image) die(`usage: decode --image <path.prg> [--out-dir <dir>] [--json]`);
+  if (!o.image) return refuse(`usage: decode --image <path.prg> [--out-dir <dir>] [--json]`);
 
   const imageAbs = resolve(o.image);
   const outDirAbs = o.outDir ? resolve(o.outDir) : dirname(imageAbs);
 
   const response = await invokeHostTool("petcat.decode", { image: imageAbs }, { destDir: outDirAbs });
-  report(response, o);
-  process.exit(response.ok ? 0 : 1);
+  if (!o.json) report(response);
+  return response;
 }
 
-function report(response: HostToolResponse, { json }: { json: boolean }) {
-  if (json) {
-    console.log(JSON.stringify(response));
-    return;
-  }
-  if (!response.ok) {
-    console.error(`petcat call FAILED: ${response.message}`);
-    return;
-  }
-  // WHAT NOT TO DO (this file's own header): never guess an entry point --
-  // print exactly what the seam reported, decline included.
-  if (response.entrypoint !== null) {
+function report(response: HostToolResponse) {
+  if (!response.ok) return;
+  // Print exactly what the seam reported, decline included. Never guess an
+  // entry point. A missing entrypoint is a decline, like a null one.
+  if (response.entrypoint !== null && response.entrypoint !== undefined) {
     console.log(`entry point: ${response.entrypoint} (${response.entrypointReason})`);
   } else {
-    console.log(`entry point not resolved: ${response.entrypointReason}`);
+    console.log(`entry point not resolved: ${response.entrypointReason ?? "the seam gave no reason"}`);
   }
   for (const r of response.results ?? []) {
     console.log(`${r.path}  (${r.byteLength} bytes, sha256 ${r.sha256})`);
@@ -119,22 +116,30 @@ export function parseOpts(argv: string[]): PetcatOpts {
 // True when this file is the process entry point, also when it runs through a symlink.
 const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
-if (invokedDirectly) {
-  const [cmd, ...rest] = process.argv.slice(2);
-  const VERBS = {
-    decode: (argv: string[]) => runDecode(argv),
-  } satisfies Record<string, (argv: string[]) => Promise<void>>;
-  const isVerb = (name: string): name is keyof typeof VERBS => Object.hasOwn(VERBS, name);
-  if (!cmd || !isVerb(cmd)) {
-    console.log(`usage: node ${selfPath()} <command> [options]
+/** The whole CLI as a function. Never rejects. */
+export async function main(argv: string[]): Promise<ScriptResult> {
+  const [cmd, ...rest] = argv;
+  if (cmd !== "decode") {
+    const usage = `usage: node ${selfPath()} <command> [options]
 
   decode --image <path.prg> [--out-dir <dir>] [--json]   detokenize a BASIC program and resolve its SYS handover point
 
 Never invokes petcat directly and never guesses an entry point -- a computed
-SYS argument is reported as a named decline, never an address.
+SYS argument is reported as a named decline, never an address. The last stdout
+line is one JSON result.
 
-options: --image PATH  --out-dir DIR  --json`);
-    process.exit(cmd ? 1 : 0);
+options: --image PATH  --out-dir DIR  --json`;
+    return refuse(cmd ? `unknown command ${JSON.stringify(cmd)}\n${usage}` : usage);
   }
-  await VERBS[cmd](rest);
+  try {
+    return await runDecode(rest);
+  } catch (e) {
+    return refuse(e instanceof Error ? e.message : String(e));
+  }
+}
+
+if (invokedDirectly) {
+  const result = await main(process.argv.slice(2));
+  console.log(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
 }

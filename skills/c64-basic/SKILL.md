@@ -20,9 +20,7 @@ runs `petcat` on the host. `c64-project` describes that connection.
 
 The script requires `--image`. `--out-dir` is optional. Its default is the
 directory of the image, the same default that `c64-assembler` uses. The script
-resolves both paths **workspace-relative** to the smallest ancestor directory
-that contains both. This occurs before the request goes to the seam.
-`c64-assembler` and `c64-disk` use the same resolution.
+resolves both paths against the current working directory.
 
 Options: `--image PATH` `--out-dir DIR` `--json`.
 
@@ -136,9 +134,10 @@ the same result. The seam never reports a success envelope with an empty or
 guessed verdict. `petcat` itself exits `0` also on garbage input. So the
 classifier of the seam decides success, not the exit code.
 
-Without `--json`, a failed call prints `petcat call FAILED: <message>` on
-stderr. A missing `--image` prints `error: usage: decode --image <path.prg>
-[--out-dir <dir>] [--json]` and exits 1.
+The last line on stdout is always the JSON result. Without `--json`, text
+lines about the entry point and the listing file come first. A missing
+`--image` gives `{"ok":false,"message":"usage: decode --image <path.prg>
+[--out-dir <dir>] [--json]"}` and exit code 1.
 
 ## What this skill does NOT do
 
@@ -158,6 +157,6 @@ stderr. A missing `--image` prints `error: usage: decode --image <path.prg>
 
 | Symptom | Correct |
 |---|---|
-| `error: usage: decode --image <path.prg> [--out-dir <dir>] [--json]` | Give `--image` with the path of the `.prg`. |
+| `usage: decode --image <path.prg> [--out-dir <dir>] [--json]` in the `message` | Give `--image` with the path of the `.prg`. |
 | `"entrypoint":null` | Not a failure. Read `entrypointReason`. It quotes the expression or says that no handover exists. |
-| `petcat call FAILED: …` | The seam refused the file or the call. Read the message. Start the broker by hand when it is not running (see `c64-project`). |
+| `{"ok":false,"message":"…"}` from `decode` | The seam refused the file or the call. Read the message. Start the broker by hand when it is not running (see `c64-project`). |

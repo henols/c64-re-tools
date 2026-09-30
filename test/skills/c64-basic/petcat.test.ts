@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-// petcat.test.ts -- coverage for this skill script's own CLI plumbing
-// Added in a code-review fix pass:
-// petcat.ts shipped in the same phase as c1541.ts, wrapping the SAME
-// host-tool seam pattern (invokeSeam(), commonAncestorDir()/toRel(),
-// selfPath()), but had no test file at all -- c1541.ts's own
-// c1541.test.ts was the model this file mirrors.
+// petcat.test.ts -- coverage for this skill script's own CLI plumbing and,
+// when petcat is installed, its live decode results.
 //
 // Two tiers, deliberately separated (same split as c1541.test.ts):
 //
@@ -70,7 +66,7 @@ test("parseOpts: --out-dir is optional and independent of --image", () => {
 
 // ---------------------------------------------------------------------------
 // Tier 2: LIVE, gated on petcat actually being resolvable. CI has no VICE
-// install (40-02/40-03's own SUMMARYs) -- this skips there, never fails.
+// install -- this skips there, never fails.
 // ---------------------------------------------------------------------------
 
 function findPetcatOnPath() {
@@ -96,10 +92,9 @@ after(async () => {
 });
 const execScript = (args: string[]) => execFileP(process.execPath, args, { env: broker?.childEnv ?? process.env });
 
-// decode's own exit code is response.ok ? 0 : 1 (unlike c1541's `audit`
-// verb, which always exits 0) -- execFile's promisified form rejects on a
-// non-zero exit, so a refused decode is read off the REJECTED error's own
-// `.stdout`, not a resolved value.
+// decode's exit code is 0 for ok:true and 1 otherwise. execFile's promisified
+// form rejects on a non-zero exit, so a refused decode is read off the
+// REJECTED error's own `.stdout`, not a resolved value.
 async function runDecodeCli(imagePath: string, outDir: string): Promise<HostToolResponse> {
   const args = [SCRIPT, "decode", "--image", imagePath, "--out-dir", outDir, "--json"];
   try {
