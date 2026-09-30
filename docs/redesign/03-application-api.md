@@ -66,6 +66,8 @@ debug.backtrace
 
 The MCP never exposes which VICE monitor interface or command was used.
 
+The public VICE surface also supports fixed per-session PAL/NTSC machine profiles, explicit c64/drive8 debugging spaces, deterministic frame advancement, temporary named visual baselines and an atomic composite observation operation for checkpoint testing. Project semantic symbols are resolved before MCP calls rather than managed inside the MCP. See [14 — VICE MCP surface](14-vice-mcp-surface.md).
+
 It also does not expose DXA, Ghidra, ACME, c1541, petcat, SQLite or arbitrary Host Runtime calls.
 
 ## 4. Skill-script operations
