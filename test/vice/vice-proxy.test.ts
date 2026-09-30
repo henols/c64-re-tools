@@ -552,6 +552,19 @@ test("stdout carries only valid JSON-RPC messages", async () => {
 // the construction-time enforcement layer's own text.
 // -----------------------------------------------------------------------
 
+test("a successful call to a tool with an outputSchema also carries the answer as structuredContent", async () => {
+  const proxy = startProxy({});
+  try {
+    await handshake(proxy);
+    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_symbols_lookup", arguments: { name: "no_such_symbol" } } });
+    const resp = await proxy.nextMessage();
+    assert.equal(resp.result.isError, false, resp.result.content?.[0]?.text);
+    assert.deepEqual(resp.result.structuredContent, JSON.parse(resp.result.content[0].text));
+  } finally {
+    proxy.child.kill("SIGKILL");
+  }
+});
+
 test("tools/list's vice_ping entry has an inputSchema deep-equal to the manifest's own raw schema", async () => {
   // The manifest's own raw schema for vice_ping, read independently of the
   // proxy -- not re-derived from any in-memory constant this file or
@@ -653,6 +666,12 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
         manifestSchemaByName[name],
         `"${name}"'s wire inputSchema must be byte-for-byte the manifest's own raw schema`
       );
+    }
+
+    // (b2) the manifest's outputSchema reaches clients too.
+    for (const manifestTool of manifest.tools) {
+      const wireEntry = tools.find((t: any) => t.name === manifestTool.name);
+      assert.deepEqual(wireEntry.outputSchema, manifestTool.outputSchema, `"${manifestTool.name}"'s wire outputSchema must be the manifest's own`);
     }
 
     // (c) every tool entry (manifest-derived AND synthetic) carries the

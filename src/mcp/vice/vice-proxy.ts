@@ -1140,8 +1140,25 @@ function rawJsonSchemaAsStandardSchema(schema: unknown): StandardSchemaWithJSON 
  * pass-through, since the two shapes are structurally identical. The whole
  * point of the CallToolRequestSchema override below building the response
  * itself is that no translation or mangling happens here. */
-function toolCallResultToWire(result: ToolCallResult): { content: ToolCallResult["content"]; isError: boolean } {
-  return { content: result.content, isError: result.isError };
+function toolCallResultToWire(result: ToolCallResult, structuredContent?: Record<string, unknown>): {
+  content: ToolCallResult["content"];
+  isError: boolean;
+  structuredContent?: Record<string, unknown>;
+} {
+  return { content: result.content, isError: result.isError, ...(structuredContent !== undefined ? { structuredContent } : {}) };
+}
+
+/** The JSON object a successful single-text result carries, or `undefined`.
+ * A tool that advertises an outputSchema must return it as structuredContent,
+ * or MCP clients reject the result. */
+function structuredContentOf(result: ToolCallResult): Record<string, unknown> | undefined {
+  if (result.isError || result.content.length !== 1 || result.content[0]!.type !== "text") return undefined;
+  try {
+    const parsed: unknown = JSON.parse(result.content[0]!.text);
+    return isPlainObject(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Narrows an `unknown` execute() return value to this file's own
@@ -1164,6 +1181,7 @@ function buildViceTool(def: ToolDefinition, run: (args: Record<string, unknown>)
     id: def.name,
     description: def.description ?? "",
     inputSchema: rawJsonSchemaAsStandardSchema(def.inputSchema),
+    ...(isPlainObject(def.outputSchema) ? { outputSchema: rawJsonSchemaAsStandardSchema(def.outputSchema) } : {}),
     mcp: {
       _meta: {
         ...((def._meta as Record<string, unknown> | undefined) || {}),
@@ -1249,10 +1267,11 @@ server.getServer().setRequestHandler(CallToolRequestSchema, async (request) => {
     // continuation replies, or any future multi-item producer) must never be
     // wrapped a second time -- this one condition keeps both out without
     // naming either by name.
+    const structured = tool.outputSchema !== undefined ? structuredContentOf(raw) : undefined;
     if (raw.isError === false && raw.content.length === 1 && raw.content[0].type === "text" && typeof raw.content[0].text === "string") {
-      return toolCallResultToWire(wrapPossiblyChunked(raw.content[0].text));
+      return toolCallResultToWire(wrapPossiblyChunked(raw.content[0].text), structured);
     }
-    return toolCallResultToWire(raw);
+    return toolCallResultToWire(raw, structured);
   } catch (e) {
     // The never-throw discipline this file already lives by (matching the
     // retired handleToolsCall()'s own "NEVER rethrow past this point"
