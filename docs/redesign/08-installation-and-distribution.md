@@ -171,7 +171,7 @@ It should not need duplicate installations of:
 - VICE;
 - ACME;
 - Ghidra;
-- dxa;
+- DXA;
 - c1541;
 - petcat;
 - other host-native tools.
