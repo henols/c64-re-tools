@@ -16,7 +16,7 @@ import { connect as netConnect, type Socket } from "node:net";
 import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { build } from "../../src/mcp/vice/build.ts";
 import {
@@ -53,6 +53,8 @@ const { resetStagingForTest, resolveStagedFile } = brokerTransferModule;
 
 const viceBrokerModule = (await import(new URL("../../src/mcp/vice/resources/vice-broker.mjs", HERE_MODULE_URL).href)) as unknown as {
   handleRelease: (requestId: string, state: BrokerState) => void;
+  handleHostToolStage: (files: Array<{ tree: number; rel: string; byteLength: number }>) => { ok: true; requestKey: string; fileHandles: string[] } | { ok: false; code: string; message: string };
+  handleHostToolRun: (requestKey: string, raw: unknown) => Promise<Record<string, unknown>>;
   handleStageFile: (grantId: string, slot: string, state: BrokerState) => StageFileOutcome;
   handleFileTransfer: (
     request: FileTransferRequest,
@@ -62,7 +64,7 @@ const viceBrokerModule = (await import(new URL("../../src/mcp/vice/resources/vic
     deps?: { beforePublish?: () => Promise<void> },
   ) => FileTransferOutcome;
 };
-const { handleRelease, handleStageFile, handleFileTransfer } = viceBrokerModule;
+const { handleRelease, handleStageFile, handleFileTransfer, handleHostToolStage, handleHostToolRun } = viceBrokerModule;
 
 // ---------------------------------------------------------------------------
 // Fixtures -- mirrors broker-relay.test.ts's own makeGrantedInstance()/
@@ -713,5 +715,62 @@ test("vice-broker startup reap (64-05, D-07/D-08): a fixture broker root's lefto
     assert.ok(existsSync(aliveConfigScratchDir), "the alive config-scratch directory must still exist");
     assert.equal(stagingResult.removed, 1, "the leftover staging session directory must be removed");
     assert.equal(existsSync(staleStagingDir), false, "the leftover staging session directory must be gone");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// host_tool_run: the tools.json text the client sends, and the failure shape.
+// ---------------------------------------------------------------------------
+
+function stageOneUpload(rel: string, content: string): { requestKey: string; handle: string } {
+  const staged = handleHostToolStage([{ tree: 0, rel, byteLength: Buffer.byteLength(content) }]);
+  if (!staged.ok) throw new Error(staged.message);
+  const handle = staged.fileHandles[0]!;
+  const entry = resolveStagedFile(handle);
+  if (!entry.ok) throw new Error("no staged entry");
+  mkdirSync(dirname(entry.entry.path), { recursive: true });
+  writeFileSync(entry.entry.path, content);
+  return { requestKey: staged.requestKey, handle };
+}
+
+test("vice-broker-staging: host_tool_run resolves a tool from the tools.json text in the request, not from any file on the broker", async () => {
+  await withStagingFixture(async () => {
+    const { requestKey, handle } = stageOneUpload("a.a", "; source\n");
+    const missing = "/nonexistent-dir-for-test/acme";
+    const reply = await handleHostToolRun(requestKey, {
+      tool: "acme.build",
+      args: { source: handle },
+      toolsJson: JSON.stringify({ acme: missing }),
+    });
+    assert.equal(reply.ok, false);
+    assert.match(String(reply.message), /tools\.json entry/);
+    assert.ok(String(reply.message).includes(missing), "the refusal must quote the path from the sent tools.json");
+  });
+});
+
+test("vice-broker-staging: host_tool_run refuses a toolsJson that is not a string", async () => {
+  await withStagingFixture(async () => {
+    const { requestKey, handle } = stageOneUpload("a.a", "; source\n");
+    const reply = await handleHostToolRun(requestKey, { tool: "acme.build", args: { source: handle }, toolsJson: { acme: "/x" } });
+    assert.equal(reply.ok, false);
+    assert.match(String(reply.message), /toolsJson must be a string/);
+  });
+});
+
+test("vice-broker-staging: a failed oracle.run reply carries message, reason and stdout", async () => {
+  await withStagingFixture(async () => {
+    const { requestKey, handle } = stageOneUpload("in.prg", "abc");
+    const previous = process.env.UNP64;
+    process.env.UNP64 = "/nonexistent-dir-for-test/unp64";
+    try {
+      const reply = await handleHostToolRun(requestKey, { tool: "oracle.run", args: { source: handle } });
+      assert.equal(reply.ok, false);
+      assert.equal(typeof reply.message, "string");
+      assert.match(String(reply.reason), /UNP64 does not exist/);
+      assert.equal(reply.stdout, "");
+    } finally {
+      if (previous === undefined) delete process.env.UNP64;
+      else process.env.UNP64 = previous;
+    }
   });
 });

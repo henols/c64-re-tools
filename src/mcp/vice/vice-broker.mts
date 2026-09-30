@@ -89,7 +89,7 @@ import {
 // HOST_BOUND_ARTIFACTS). handleRelayDeath() below is this module's one and
 // only production call site -- see that function's own header comment.
 import { writeBrokerIncident, type BrokerIncidentInput } from "./broker-incident.mjs";
-import { trackChild, stopAllChildren, killAllChildrenNow } from "./broker-children.mjs";
+import { trackChild, stopAllChildren, killAllChildrenNow, signalGroup } from "./broker-children.mjs";
 // resolvedBackend() resolves the emulator binary's identity -- ViceBackend's
 // own definition lives in backend-detect.mts too (narrowed to a single
 // literal now that the fork backend has been removed entirely), so
@@ -1230,6 +1230,9 @@ export function handleHostToolStage(files: HostToolStageFileSpec[]): HostToolSta
  * `broker-transfer.mts`'s own `formatPathFreeFault()` posture of naming a
  * fixed replacement rather than attempting to scrub an unbounded shape. */
 const STAGED_REQUEST_TOKEN = "<staged-request>";
+/** The most `tools.json` text a run request may carry. Mirrors the client's
+ * limit; the two modules cannot import each other. */
+const HOST_TOOL_TOOLS_JSON_MAX_BYTES = 16384;
 /** The same, for the broker's Ghidra projects root (brokerGhidraDir()). */
 const GHIDRA_PROJECTS_TOKEN = "<ghidra-projects>";
 
@@ -1237,25 +1240,24 @@ function redactScratchRoot(value: string, scratchRoot: string, ghidraRoot: strin
   return value.split(scratchRoot).join(STAGED_REQUEST_TOKEN).split(ghidraRoot).join(GHIDRA_PROJECTS_TOKEN);
 }
 
+/** Host-tool runs in flight, by request key: the process groups each run
+ * started, and whether its connection has closed. */
+const hostToolRuns = new Map<string, { pids: Set<number>; ended: boolean }>();
+
 /** Answers `host_tool_run`: verifies every staged upload for this request
- * has actually finished transferring (D-09's own "not every declared file
- * has arrived yet" case), binds every path-bearing wire key to its
- * scratch-relative path via `bindStagedInputs()` (host-tool.mts), runs
- * `runHostTool()` against the REQUEST'S OWN scratch root (never this
- * broker's own `--repo-root`) for `repoRoot`, while `projectRoot` IS this
- * broker's own `--repo-root` (`args.repoRoot` at the call site below), so the
- * `tools.json` locator layer keeps resolving where it always has, and
- * `ghidraProjectsRoot` is brokerGhidraDir(). `clearDeclaredOutputs: true` generalises
- * the c1541.read-only stale-output unlink to every tool (D-08). Then
- * rewrites the response: every `results[]` entry becomes a download handle
- * via `registerHostToolResult()` (D-07's first live producer), and every
- * remaining string field is scrubbed of the scratch root (D-10, T-65-06).
- * Never rejects -- every failure resolves `{ ok: false, message }`,
- * mirroring `runHostTool()`'s own contract. */
+ * has actually finished transferring, binds every path-bearing wire key to
+ * its scratch-relative path via `bindStagedInputs()`, and runs
+ * `runHostTool()` against the request's own scratch root. The `tools.json`
+ * layer reads the text the client sent in `raw.toolsJson`; the broker's own
+ * working directory and project are never consulted. Then rewrites the
+ * response: every `results[]` entry becomes a download handle, and every
+ * remaining string field is scrubbed of the scratch root. When the
+ * connection closes during the run, the tool is stopped and its results are
+ * dropped. Never rejects -- every failure resolves `{ ok: false, message }`;
+ * a failed `oracle.run` also carries `reason` and `stdout`. */
 export async function handleHostToolRun(
   requestKey: string,
   raw: unknown,
-  projectRoot: string,
   deps: { log?: (line: string) => void; state?: BrokerState } = {},
 ): Promise<unknown> {
   if (deps.state?.shuttingDown) {
@@ -1268,13 +1270,18 @@ export async function handleHostToolRun(
     }
   }
 
+  let toolsJson: string | undefined;
+  const toolsJsonRaw = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>).toolsJson : undefined;
+  if (toolsJsonRaw !== undefined) {
+    if (typeof toolsJsonRaw !== "string" || Buffer.byteLength(toolsJsonRaw, "utf8") > HOST_TOOL_TOOLS_JSON_MAX_BYTES) {
+      return { ok: false, message: `vice: host_tool_run: toolsJson must be a string of at most ${HOST_TOOL_TOOLS_JSON_MAX_BYTES} bytes` };
+    }
+    toolsJson = toolsJsonRaw;
+  }
+
   const scratchRoot = join(brokerStagingDir(), requestKey);
-  // Phase 65 (plan 65-03, D-03): created BEFORE the run, unconditionally --
-  // ghidra.analyze's own exportPath output-name binding (host-tool.mts's
-  // bindStagedInputs()) resolves to "out/<name>" under this directory, and
-  // `resolveWorkspacePath()`'s own ancestor-realpath walk requires SOME
-  // existing ancestor to walk from. A tool with no output-name key stages
-  // an empty, harmless directory here.
+  // Created BEFORE the run, unconditionally: the output-name binding
+  // resolves to "out/<name>" under this directory.
   mkdirSync(join(scratchRoot, "out"), { recursive: true });
   const lookup: HostToolStagedInputLookup = {
     fileHandle: (handle: string) => {
@@ -1282,11 +1289,8 @@ export async function handleHostToolRun(
       if (!resolved.ok || resolved.entry.grantId !== requestKey) return undefined;
       return relative(scratchRoot, resolved.entry.path);
     },
-    // Phase 65 (plan 65-03, D-04): a tree handle resolves to its own tree
-    // INDEX (resolveHostToolTree()), never a path -- the relative directory
-    // it names is always `in/<tree>`, the SAME layout
-    // stageHostToolRequest() (broker-transfer.mts) already wrote every
-    // manifest entry for that tree under.
+    // A tree handle resolves to its tree index, never a path; the directory
+    // is always `in/<tree>`, the layout stageHostToolRequest() wrote.
     treeHandle: (handle: string) => {
       const resolved = resolveHostToolTree(requestKey, handle);
       if (!resolved.ok) return undefined;
@@ -1299,22 +1303,43 @@ export async function handleHostToolRun(
     return { ok: false, message: bound.message };
   }
 
+  const run = hostToolRuns.get(requestKey) ?? { pids: new Set<number>(), ended: false };
+  hostToolRuns.set(requestKey, run);
+  if (run.ended) return { ok: false, message: "vice: host_tool_run: the connection closed" };
+
   const ghidraRoot = brokerGhidraDir();
   const response = await runHostTool(bound.request, {
     repoRoot: scratchRoot,
-    projectRoot,
+    // A directory inside the request's own scratch: the tools.json layer
+    // reads `toolsJson`, so nothing on the broker's disk names a project.
+    projectRoot: join(scratchRoot, "project"),
+    ...(toolsJson === undefined ? {} : { toolsJson }),
     ghidraProjectsRoot: ghidraRoot,
     clearDeclaredOutputs: true,
     outputDir: join(scratchRoot, "out"),
     log: deps.log,
-    ...(deps.state ? { trackChild: (child: ChildProcess) => trackChild(deps.state!, child, "host-tool") } : {}),
+    trackChild: (child: ChildProcess) => {
+      if (typeof child.pid === "number") run.pids.add(child.pid);
+      if (deps.state) trackChild(deps.state, child, "host-tool");
+      if (run.ended && typeof child.pid === "number") signalGroup(child.pid, "SIGKILL");
+    },
   });
+  hostToolRuns.delete(requestKey);
+  if (run.ended) return { ok: false, message: "vice: host_tool_run: the connection closed during the run" };
 
   const responseObj = response as unknown as Record<string, unknown>;
 
   if (!response.ok) {
-    const message = typeof responseObj.message === "string" ? responseObj.message : "vice: the host tool refused";
-    return { ok: false, message: redactScratchRoot(message, scratchRoot, ghidraRoot) };
+    const redact = (text: string): string => redactScratchRoot(text, scratchRoot, ghidraRoot);
+    const reason = typeof responseObj.reason === "string" ? responseObj.reason : undefined;
+    const message =
+      typeof responseObj.message === "string" ? responseObj.message : reason !== undefined ? reason : "vice: the host tool refused";
+    const failure: Record<string, unknown> = { ok: false, message: redact(message) };
+    if (responseObj.tool === "oracle.run") {
+      failure.reason = redact(reason ?? message);
+      failure.stdout = redact(typeof responseObj.stdout === "string" ? responseObj.stdout : "");
+    }
+    return failure;
   }
 
   const rewritten: Record<string, unknown> = { ...responseObj };
@@ -1325,7 +1350,7 @@ export async function handleHostToolRun(
       return { name: basename(result.path), handle, sha256: result.sha256, byteLength: result.byteLength };
     });
   }
-  for (const key of ["message", "stderrTail", "reason", "entrypointReason"]) {
+  for (const key of ["message", "stderrTail", "reason", "entrypointReason", "stdout"]) {
     const value = rewritten[key];
     if (typeof value === "string") {
       rewritten[key] = redactScratchRoot(value, scratchRoot, ghidraRoot);
@@ -1334,10 +1359,15 @@ export async function handleHostToolRun(
   return rewritten;
 }
 
-/** Answers the connection close that ends a `host_tool_stage` request
- * (D-09): reuses `clearStagingForSession()` unchanged, exactly like
- * `handleRelease()` already does for an `acquire` grant's own release. */
+/** Answers the connection close that ends a `host_tool_stage` request:
+ * stops any tool still running for it, then clears its staging like
+ * `handleRelease()` does for an `acquire` grant. */
 export function handleHostToolEnd(requestKey: string): void {
+  const run = hostToolRuns.get(requestKey);
+  if (run) {
+    run.ended = true;
+    for (const pid of run.pids) signalGroup(pid, "SIGKILL");
+  }
   clearStagingForSession(requestKey);
 }
 
@@ -2279,7 +2309,7 @@ async function run(args: ParsedArgs): Promise<void> {
       // brokerStagingDir(), never this broker's acquire/release map.
       onHostToolStage: (files) => handleHostToolStage(files),
       onHostToolRun: (requestKey, raw) =>
-        handleHostToolRun(requestKey, raw, args.repoRoot, {
+        handleHostToolRun(requestKey, raw, {
           log: (line: string) => process.stderr.write(`${line}\n`),
           state,
         }),
