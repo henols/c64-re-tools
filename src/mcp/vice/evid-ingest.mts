@@ -90,6 +90,9 @@ export function argvDigest(argv: readonly string[]): string {
     if (typeof argv[i] !== "string") {
       throw new TypeError(`argvDigest: argv[${i}] is not a string`);
     }
+    if (argv[i]!.includes(ARGV_SEPARATOR)) {
+      throw new TypeError(`argvDigest: argv[${i}] contains a NUL byte, the separator the digest joins on`);
+    }
   }
   return createHash("sha256").update(argv.join(ARGV_SEPARATOR), "utf8").digest("hex");
 }
@@ -105,18 +108,12 @@ export interface ExecObservation {
 
 /** Exactly 64 lowercase hex characters -- the shape a sha256 digest (an
  * image hash, or `argvDigest()`'s own output) always takes. This module's
- * OWN copy of the check, deliberately not imported from `anno-types.mts`
- * (this file's import list is closed to exactly the five named imports
- * above): the caller-supplied `imageSha256` never reaches a digest
- * function here, so there is nothing to route through `argvDigest`'s own
- * shape, and duplicating a four-line regex check is cheaper than widening
- * this module's import surface for it. */
+ * own copy of the check: the caller-supplied `imageSha256` never reaches a
+ * digest function here, so there is nothing to route through
+ * `argvDigest`'s shape. */
 const RUN_IDENTITY_DIGEST_RE = /^[0-9a-f]{64}$/;
 
-/** The exact launch identity a caller must supply. `runClass` exists ONLY
- * on plan 43-01's `promote` branch decision and is never read by this
- * module's `no-change` implementation -- carried in the type so a future
- * `promote` branch has somewhere to put it without a second interface. */
+/** The exact launch identity a caller must supply. */
 export interface IngestRunIdentity {
   readonly imageSha256: string;
   readonly argv: readonly string[];

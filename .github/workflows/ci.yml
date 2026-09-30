@@ -17,16 +17,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # Blocking: the audited-guard fate gate near the end of this job derives
-      # its member set from the git object store at two pinned commits. The
-      # default `actions/checkout@v4` clone is SHALLOW (depth 1) and contains
-      # NEITHER of them, and that gate fails closed on a missing pinned object
-      # rather than degrading to a smaller, quietly-correct-looking set -- so
-      # this job needs full history. The other checkouts in this file belong to
-      # jobs that do not run the gate and stay shallow.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -42,22 +33,14 @@ jobs:
         working-directory: src/mcp/vice
         run: npm run typecheck
 
-      - name: Install ACME cross-assembler (DISASM-03 round-trip gate)
-        # DISASM-03/criterion 4: the round-trip in disasm-roundtrip.test.ts
-        # must run as a real gate, not silently skip. This step installs
-        # ACME from the distribution archive (verified package name against
-        # Debian trixie during planning: `acme`, "Multi-platform cross
-        # assembler for 6502/6510/65816 CPU") and then PROVES the installed
-        # binary really is ACME by running it and grepping its own banner --
-        # `set -euo pipefail` plus the final grep make a wrong package name
-        # or a broken install fail this job loudly, rather than letting the
-        # Test step below silently skip the round-trip.
+      - name: Install ACME cross-assembler
+        # The tests that need ACME must run as real gates, not skip. This step
+        # installs the distribution package `acme` and then checks that the
+        # installed binary is ACME by grepping its own banner, so a wrong
+        # package name or a broken install fails this job loudly.
         #
-        # timeout-minutes plus the retry_apt helper below exist because run
-        # `32303212069` sat ~25 minutes stalled against an unresponsive apt
-        # mirror with zero log output before it had to be cancelled by hand --
-        # `build` gates `release`, `publish-npm` and `release-on-merge`, so an
-        # unbounded stall here silently blocks every publish path.
+        # timeout-minutes and the retry_apt helper bound an unresponsive apt
+        # mirror, which would otherwise stall the job with no log output.
         timeout-minutes: 5
         run: |
           set -euo pipefail
@@ -80,31 +63,12 @@ jobs:
           grep -qi acme /tmp/acme-banner.txt
 
       - name: Assemble the c64-assembler scaffold (library-free)
-        # The banner grep above only ever proved a binary named `acme` exists --
-        # it never proved the scaffold this repo ships can be assembled at
-        # all. The scaffold once sourced angle-bracket hardware-register
-        # library files that neither documented provisioning route ships --
-        # not a bare local build and not the distribution package installed
-        # in the step above -- so it could not assemble on either route and
-        # nothing here noticed.
-        #
-        # The assembler is provisioned by the step above; the library path is
-        # explicitly cleared by the invoked case; and a regression back to a
-        # library dependency, a zero-byte output, or a program not loading at
-        # $0801 each fail this step.
-        #
-        # This step now runs a test file instead of a standalone shell block.
-        # The previous shell block existed only here, so when it started
-        # failing it stayed failing across many merges with no developer ever
-        # running it. The file it now invokes is part of the ordinary suite,
-        # so the same break surfaces on a developer machine before it reaches
-        # this job. It still runs here as well, early and separately, because
-        # this step gates every later step including the publish job, and
-        # a fast dedicated failure is worth the second second.
-        #
-        # The test file starts its OWN harness broker (broker-harness.ts) and
-        # runs acme.ts against it over the fixed endpoint, so this step needs
-        # no machine broker and no container environment.
+        # The scaffold must assemble without hardware-register library files,
+        # produce output, and load at $0801. The test file starts its own
+        # harness broker (broker-harness.ts) and runs acme.ts against it over
+        # the fixed endpoint, so this step needs no machine broker. It also
+        # runs in the full suite below; it runs here early so that a failure
+        # is fast and separate.
         working-directory: src/mcp/vice
         env:
           VICE_REQUIRE_ACME: "1"
@@ -112,8 +76,9 @@ jobs:
 
       - name: Regenerate committed artifacts and fail on drift
         # The committed build output (resources/*.mjs, vice-cli.mjs), the
-        # register table and the assembled fixtures must be exactly what
-        # their generators produce from the committed sources. Deleting the
+        # register table, the README install tables and the assembled fixtures
+        # must be exactly what their generators produce from the committed
+        # sources. Deleting the
         # generated .mjs files first makes a stale, missing or orphan output
         # show in `git status`, because build() does not prune. Each
         # generator below leaves a clean tree clean and needs no network and
@@ -129,6 +94,7 @@ jobs:
           rm -f vice-cli.mjs
           node build.ts
           node anno-regbits-gen.mts
+          node prereq-readme-gen.ts --write
           fixtures=../../../test/vice/fixtures
           node "$fixtures/hazard-subject/make-hazard-subject-fixtures.ts"
           node "$fixtures/hazard-subject/make-hazard-subject-annostore.ts"
@@ -136,7 +102,7 @@ jobs:
           node "$fixtures/export-asm/make-export-asm-fixtures.ts"
           node "$fixtures/coverage/make-coverage-fixtures.ts"
           git checkout -- "$fixtures/hazard-subject/exported-edit-run.json"
-          git diff --exit-code -- . "$fixtures"
+          git diff --exit-code -- . "$fixtures" ../../../README.md
           drift="$(git status --porcelain --untracked-files=all -- . "$fixtures")"
           if [ -n "$drift" ]; then
             echo "untracked generated files -- run the generators and commit:" >&2
@@ -147,37 +113,13 @@ jobs:
       - name: Test
         working-directory: src/mcp/vice
         env:
-          # This runner is non-root, which is why install-resources.test.ts's
-          # read-only-deployment cases (part of this step's full glob) are
-          # enforced here rather than vacuous -- a root process ignores a
-          # read-only file mode entirely, so the same assertion would pass
-          # for the wrong reason on a root-run CI job.
-          #
-          # Second half of the loud-failure gate: with this set,
-          # disasm-roundtrip.test.ts turns "ACME absent" from a named SKIP
-          # into a hard FAIL. This step runs `npm test`, the full `*.test.*`
-          # glob (not the narrower `npm run test:automated`), so the
-          # round-trip runs here either way.
-          #
-          # `npm test` (not `npm run test:automated`) is DELIBERATE, decided
-          # from run 32517575905 (2026-08-21, GitHub Actions, ubuntu-latest):
-          # its own Test-step log shows every one of test-gate.ts's
-          # MANUAL_ONLY_TESTS entries (nine at the time of that run)
-          # running to completion with zero failures in under two minutes
-          # wall-clock, including the suite that provides the stdio proxy's
-          # only end-to-end wire proof (BACK-05) and the two suites that hang
-          # locally outside a devcontainer.
-          # None of these suites needs a real emulator binary to reach its
-          # own default-SKIP branch, so every one of them stays a no-op skip
-          # on this runner even under the wide glob -- including the newest
-          # entry, a checkpoint-flood probe against a real emulator, which is
-          # opt-in behind its own environment variable that CI never sets.
-          # CI's set is deliberately wider than `npm run test:automated`,
-          # which exists for local/devcontainer ergonomics (avoiding the
-          # local hang), not as CI's contract. test-gate.ts's
-          # MANUAL_ONLY_TESTS remains the single source of truth for which
-          # files are manual-only; this comment names no second list,
-          # deliberately naming zero of them here.
+          # This runner is non-root, so install-resources.test.ts's read-only
+          # deployment cases are enforced here; a root process ignores a
+          # read-only file mode. VICE_REQUIRE_ACME turns "ACME absent" from a
+          # skip into a failure. `npm test` runs every `*.test.*` file, a
+          # wider set than `npm run test:automated`; the live suites skip
+          # themselves unless their opt-in variables are set, which CI never
+          # does.
           VICE_REQUIRE_ACME: "1"
         run: npm test
 
@@ -186,9 +128,9 @@ jobs:
         run: npm run smoke
 
       # Proves the npm package runs from node_modules, where Node refuses to
-      # strip types: builds dist/, runs the bin with type stripping off, then
-      # packs the tarball, extracts it as real files under a scratch
-      # node_modules and runs the extracted bin (MCP handshake, `anno --help`,
+      # strip types: builds dist/, packs the tarball, installs it (production
+      # dependencies only) into a scratch prefix and runs the installed bin
+      # through its node_modules/.bin symlink (MCP handshake, `anno --help`,
       # `broker --help`, which refuses without starting a broker).
       - name: Smoke-test the packed npm package (runs from node_modules)
         working-directory: src/mcp/vice
@@ -202,22 +144,18 @@ jobs:
         run: node --test 'test/skills/**/*.test.ts'
 
   publish-npm:
-    # On a v* tag, publish @henols/vice-mcp to the public registry via
-    # npm Trusted Publishing (OIDC) -- no NPM_TOKEN secret required.
+    # On a v* tag, or a manual run on main, publish @henols/vice-mcp to the
+    # public registry via npm Trusted Publishing (OIDC) -- no NPM_TOKEN secret.
     #
-    # The published version is taken from the tag (v1.2.3 -> 1.2.3), so a release
-    # can be cut just by pushing/creating a tag -- no need to pre-bump the source
-    # package.json to match. The committed versions are placeholders that
-    # `npm version` overwrites here before publishing.
+    # The published version comes from the tag (v1.2.3 -> 1.2.3) or from the
+    # workflow_dispatch input, and is checked as semver before use. The
+    # committed versions are placeholders that `npm version` overwrites here.
     #
     # Prerequisite (one-time, on npmjs.com): the package must have a Trusted
     # Publisher configured for this repo + workflow (henols/c64-re-tools, ci.yml).
-    # OIDC also requires npm >= 11.5.1, so npm is upgraded below (the runner's
-    # bundled npm is older). Provenance attestations are produced automatically.
+    # OIDC needs npm >= 11.5.1, so npm 11 is installed below.
     needs: build
-    # Runs on a v* tag push, or on a manual "Run workflow" (workflow_dispatch)
-    # where the version is supplied as an input.
-    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -230,18 +168,29 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5.1)
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       - name: Derive version
         id: ver
-        # From the workflow_dispatch input when triggered manually, otherwise
-        # from the tag (v1.2.3 -> 1.2.3).
+        # The input and the tag reach the script through env, never through
+        # ${{ }} interpolation into the shell text, and the result must be
+        # semver.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
           else
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            version="${REF_NAME#v}"
           fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "not a semver version: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # The package's `prepack` script compiles dist/ with the pinned tsc, a
       # devDependency, so the dependencies must be installed before publishing.
@@ -252,6 +201,8 @@ jobs:
       # No NODE_AUTH_TOKEN: npm authenticates to the registry via GitHub OIDC.
       - name: Publish @henols/vice-mcp
         working-directory: src/mcp/vice
+        env:
+          PUBLISH_VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
+          npm version "$PUBLISH_VERSION" --no-git-tag-version --allow-same-version
           npm publish

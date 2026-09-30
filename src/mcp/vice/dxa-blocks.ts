@@ -77,13 +77,19 @@ export const DATA_BEARING_TYPES: readonly DataType[] = Object.freeze(
 );
 
 const DATA_BEARING_SET: ReadonlySet<DataType> = new Set(DATA_BEARING_TYPES);
+const KNOWN_DATA_TYPES: ReadonlySet<string> = new Set(DATA_TYPES);
+
+/** The label names emitLabels() writes: an identifier, so no tab, newline
+ * or `=` can break the one-line-per-label xa65 labels file. */
+const LABEL_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** One known-data row, as this module consumes it. `start`/`endInclusive`
  * mirror `anno-types.mts`'s own `RangeRow` shape (inclusive at both ends);
  * `sym`, when present, is the name `emitLabels()` binds to `start` in the
- * xa65-format labels file. A row with no `sym` is silently omitted from the
- * labels file -- never synthesised (a synthesised name would enter dxa's
- * output indistinguishable from one the store actually holds). */
+ * xa65-format labels file. It must match `^[A-Za-z_][A-Za-z0-9_]*$`. A row
+ * with no `sym` is left out of the labels file -- never synthesised (a
+ * synthesised name would enter dxa's output indistinguishable from one the
+ * store actually holds). */
 export interface KnownDataRow {
   readonly start: number;
   readonly endInclusive: number;
@@ -118,8 +124,14 @@ function hexRange(start: number, endInclusive: number): string {
 /** Rows whose `dataType` is one of the ten data-bearing members -- the ONE
  * selection predicate both `emitDataBlocks()` and `emitLabels()` use, so
  * "counts as known data for this module's purposes" has exactly one
- * definition. */
-function selectDataBearingRows(rows: readonly KnownDataRow[]): KnownDataRow[] {
+ * definition. A row whose `dataType` is not a `DATA_TYPES` member is
+ * refused by name, never dropped. */
+function selectDataBearingRows(rows: readonly KnownDataRow[], context: string): KnownDataRow[] {
+  for (const row of rows) {
+    if (!KNOWN_DATA_TYPES.has(row.dataType)) {
+      throw new Error(`${context}: row has unknown dataType ${JSON.stringify(row.dataType)}; expected one of ${DATA_TYPES.join(", ")}`);
+    }
+  }
   return rows.filter((row) => DATA_BEARING_SET.has(row.dataType));
 }
 
@@ -180,10 +192,10 @@ function assertNoOverlaps(sorted: readonly KnownDataRow[], context: string): voi
  * Writes the ten data-bearing `DATA_TYPES` members among `rows` to
  * `outputPath` as a `-B` datablocks file: one lower-case, four-hex-digit,
  * inclusive `xxxx-yyyy` line per range, sorted ascending by start address.
- * Rows whose `dataType` is `"code"` or `"undefined"` are silently excluded
- * (they are not this module's concern); a selected row with an inverted or
- * out-of-range address, or two selected ranges that overlap, throws BEFORE
- * anything is written.
+ * Rows whose `dataType` is `"code"` or `"undefined"` are excluded (they
+ * are not this module's concern); a row with an unknown `dataType`, a
+ * selected row with an inverted or out-of-range address, or two selected
+ * ranges that overlap, throws BEFORE anything is written.
  *
  * Writes NOTHING and returns `{ rangesCount: 0, path: undefined }` when zero
  * rows are selected -- see this module's header for why an empty file is
@@ -192,7 +204,7 @@ function assertNoOverlaps(sorted: readonly KnownDataRow[], context: string): voi
  * never appends, never accumulates.
  */
 export function emitDataBlocks(rows: readonly KnownDataRow[], outputPath: string): EmitDataBlocksResult {
-  const selected = selectDataBearingRows(rows);
+  const selected = selectDataBearingRows(rows, "emitDataBlocks");
   for (const row of selected) assertRowShape(row, "emitDataBlocks");
   const sorted = [...selected].sort((a, b) => a.start - b.start);
   assertNoOverlaps(sorted, "emitDataBlocks");
@@ -212,7 +224,8 @@ export function emitDataBlocks(rows: readonly KnownDataRow[], outputPath: string
  * (lower-case, no leading zeros -- the exact shape the Phase 23 evidence
  * fixture's labels file demonstrates for a comment-less row), one line per symbol-bearing row, sorted ascending by
  * address. Rows with no `sym` are omitted -- never synthesised (see this
- * module's header). A selected row with an inverted or out-of-range address
+ * module's header). A row with an unknown `dataType`, a `sym` that is not an
+ * identifier, or a selected row with an inverted or out-of-range address
  * throws BEFORE anything is written, exactly as `emitDataBlocks()` does; no
  * overlap check applies here, since a label names a single address, not a
  * range.
@@ -221,8 +234,15 @@ export function emitDataBlocks(rows: readonly KnownDataRow[], outputPath: string
  * selected row carries a `sym`.
  */
 export function emitLabels(rows: readonly KnownDataRow[], outputPath: string): EmitLabelsResult {
-  const selected = selectDataBearingRows(rows).filter((row) => row.sym !== undefined && row.sym !== "");
-  for (const row of selected) assertRowShape(row, "emitLabels");
+  const selected = selectDataBearingRows(rows, "emitLabels").filter((row) => row.sym !== undefined && row.sym !== "");
+  for (const row of selected) {
+    assertRowShape(row, "emitLabels");
+    if (typeof row.sym !== "string" || !LABEL_NAME_PATTERN.test(row.sym)) {
+      throw new Error(
+        `emitLabels: row ${hexRange(row.start, row.endInclusive)} has sym ${JSON.stringify(row.sym)}, which is not a label name (${LABEL_NAME_PATTERN.source})`,
+      );
+    }
+  }
   const sorted = [...selected].sort((a, b) => a.start - b.start);
 
   if (sorted.length === 0) {

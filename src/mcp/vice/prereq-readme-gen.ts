@@ -1,29 +1,27 @@
 // prereq-readme-gen.ts
 //
 // The one place that turns `src/mcp/vice/prerequisites.json` into README.md's
-// install tables. `prereq-readme-gen.test.ts`, colocated beside this module,
-// is the guard that fails the build the moment the two drift -- it parses
-// the committed README region back into records and compares those against
-// this module's own derivation, never against rendered bytes (D-10).
+// install tables. `node prereq-readme-gen.ts --write` regenerates the tables
+// and `prereq-readme-gen.test.ts` (in test/vice/) fails the moment the two
+// drift: it parses the committed README region back into records and
+// compares those against this module's own derivation, never against
+// rendered bytes.
 //
 // WHAT NOT TO DO:
-// - Do not import from `tool-location.mts`. That module is `.mts` --
-//   host-bound, compiled into `resources/` by `build.ts` -- and this module
-//   is plain repo tooling that never crosses that seam (see CONVENTIONS.md's
-//   `.mts` vs `.ts` rule). Mirror its declaration-reading shape; do not
-//   import it.
-// - Do not add a label map for the ecosystem ids. `src/mcp/vice/prerequisites.json`
-//   is frozen (D-02, Phase 61 61-CONTEXT.md); the ecosystem column IS the raw
-//   declaration id (D-03), and a generator-side label map would reintroduce
-//   exactly the second place that can disagree with the first -- the failure
-//   this milestone exists to remove.
+// - Do not import a host-bound `.mts` module (such as `tool-location.mts`).
+//   Those are compiled into `resources/` by `build.ts`; this module is plain
+//   repo tooling that never crosses that seam. Read the declaration file
+//   directly instead.
+// - Do not add a label map for the ecosystem ids. The ecosystem column IS
+//   the raw declaration id, and a generator-side label map would add a
+//   second place that can disagree with the first.
 // - Do not wrap, reformat, escape, or otherwise touch a rendered cell's text.
-//   A cell is the declaration's `text`, character for character (D-05); the
+//   A cell is the declaration's `text`, character for character; the
 //   guard compares cells by exact string equality because of this.
 // - Never run, spawn, or imply that this project runs a remedy command on
 //   the user's behalf. Every rendered remedy stays a line the user types.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** One entry of a `remedies.<platform>` array: a single ecosystem's install
@@ -163,7 +161,7 @@ export const OVERVIEW_REGION = "prerequisite-overview";
 export const OVERVIEW_TABLE_COLUMNS: readonly string[] = [
   "Prerequisite",
   "Unblocks (skills)",
-  "Unblocks (MCP tools)",
+  "Unblocks (host tools)",
   "Remedy",
   "Location override",
 ];
@@ -240,7 +238,7 @@ export function deriveEcosystemRows(
     const entries = record.remedies[platform] ?? [];
     const label = PLATFORM_LABELS[platform];
     for (const entry of entries) {
-      const key = `${entry.ecosystem} ${entry.text}`;
+      const key = `${entry.ecosystem}\0${entry.text}`;
       const existing = index.get(key);
       if (existing) {
         if (!existing.platforms.includes(label)) existing.platforms.push(label);
@@ -415,7 +413,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // CLI entry point, guarded on being the main module. `--write` resolves
 // `declPath` as `prerequisites.json` beside this module and `readmePath` as
 // `README.md` at the repository root, then writes any changed regions.
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolvePath(process.argv[1])) {
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
   const args = process.argv.slice(2);
   if (args.includes("--write")) {
     const repoRoot = findRepoRoot(HERE);

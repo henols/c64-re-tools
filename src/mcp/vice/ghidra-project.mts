@@ -136,16 +136,35 @@ export const GHIDRA_IMPORT_ROUTES: readonly GhidraImportRoute[] = Object.freeze(
  * script name here already resolves against. Never a wire field. */
 export const DATA_RANGE_SEED_SCRIPT_NAME = "DataRangeSeed.java";
 
-/** The route's own fixed loader base address, as a lowercase-hex string
- * matching `LOADER_BASE_ADDR_PATTERN`. The flat-64K route bases at zero --
- * the whole 64K address space IS the image; the `.prg` route bases at
- * `0x801`, the C64 BASIC program start address (MEASURED, carried from
- * `36-RESEARCH.md`'s own recorded `analyzeHeadless` invocations) -- a
- * `.prg`'s load address is a property of the IMAGE, not of the route, which
- * is why `loaderBaseAddr` stays a separately overridable field on the `prg`
- * route (D-36-07) rather than being folded into this function entirely. */
+/** The route's default loader base address, as a lowercase-hex string
+ * matching `LOADER_BASE_ADDR_PATTERN`. The flat-64K route bases at zero:
+ * the whole 64K address space is the image. The `.prg` route imports the
+ * whole file, 2-byte load-address header included, with `BinaryLoader`, so
+ * the base is two bytes below the load address. The default `0x7ff` is
+ * right for a program that loads at `$0801` (the C64 BASIC start). A `.prg`'s
+ * load address is a property of the image, so a caller that has the bytes
+ * uses `prgLoaderBaseAddr()` instead of this default. */
 export function importRouteBaseAddr(route: GhidraImportRoute): string {
-  return route === "flat64k" ? "0x0" : "0x801";
+  return route === "flat64k" ? "0x0" : "0x7ff";
+}
+
+/** The `.prg` route's loader base address for one image: two bytes below
+ * the load address in the image's first two bytes, so the header lands at
+ * load-2..load-1 and the body at its real address. Refuses an image too
+ * short to carry a header and one body byte, and a load address below 2
+ * (no room for the header below it). */
+export function prgLoaderBaseAddr(bytes: Uint8Array): { ok: true; base: string; loadAddress: number } | { ok: false; message: string } {
+  if (bytes.length < 3) {
+    return { ok: false, message: `not a .prg: ${bytes.length} byte(s), fewer than a 2-byte load address and one body byte` };
+  }
+  const loadAddress = bytes[0]! | (bytes[1]! << 8);
+  if (loadAddress < 2) {
+    return {
+      ok: false,
+      message: `the .prg load address $${loadAddress.toString(16).padStart(4, "0")} leaves no room for the 2-byte header below it; pass a loader base address`,
+    };
+  }
+  return { ok: true, base: `0x${(loadAddress - 2).toString(16)}`, loadAddress };
 }
 
 /** The three stock 6502-processor language files `6502_nmos.slaspec` and

@@ -1,44 +1,33 @@
 #!/usr/bin/env bash
 # build.bash
 #
-# Phase 35, plan 35-01 (DXA-01): THIS IS THE ONE AUTHORITATIVE PLACE that
-# turns the pinned dxa 0.1.5 tarball into a built, digest-verified `dxa`
-# binary. Two verbs, `verify` and `build`, both gated by a sha256 DIGEST
-# COMPARISON -- never by whether a spawned command merely exited zero. A
-# spawned command (curl, tar, make) can succeed while producing the wrong
-# bytes (a stale cache, a corrupted download, a toolchain drift); a digest
-# comparison cannot lie that way, so it is the only signal either verb
-# trusts to decide pass/fail.
+# Turns the pinned dxa 0.1.5 tarball into a built, checked `dxa` binary.
+# Two verbs:
 #
-# `verify`: re-materialises the pinned tarball (a cached copy is reused
-# when its digest already matches the pin; fetched otherwise) and checks it
-# against the committed pin.
-# `build`: runs `make` in the extracted tree and compares the produced
-# binary's sha256 against the pinned build digest.
+# `verify`: gets the pinned tarball (a cached copy is used when its sha256
+# matches the pin; else it is downloaded) and checks its sha256 against the
+# committed pin.
+# `build`: does `verify`, runs `make` in a scratch extraction, then runs the
+# built binary on a small inline C64 image and compares its listing with the
+# known listing. Only a binary that gives that exact listing is installed as
+# `vendor/dxa/dxa`. The check is on behaviour, not on the binary's bytes, so a
+# different compiler, libc or architecture can build a correct dxa.
 #
-# ORDER OF EXECUTION, not merely order in the file: both verbs read the pin
-# file and refuse BY NAME when it is absent or malformed BEFORE any `curl`
-# runs -- a run with no pin file makes no network request at all.
+# Order of execution: both verbs read and validate the pin file before any
+# download, so a run with no valid pin makes no network request.
 #
-# WHAT NOT TO DO:
-#   - Never decide pass/fail from a spawned command's exit status alone
-#     where a digest is available -- `sha256sum -c`'s own exit code is
-#     read here, but only ever as a companion to printing the two digests
-#     being compared, never as the sole signal for `make`'s own success.
-#   - Never fetch before the pin file has been read and validated.
-#   - Never commit the built binary or any `.o` object file -- see the two
-#     `.gitignore` entries this same commit adds.
-#   - Never silently accept a truncated or upper-case-mismatched digest --
-#     digest comparison lowercases and compares the full 64-character hex
-#     string, never a prefix.
+# A downloaded tarball is written to the cache only after its sha256 matches
+# the pin. The cache write goes through a temporary file and a rename, so a
+# stopped run never leaves a partial cache file.
+#
+# Never commit the built binary or any `.o` file (both are gitignored).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIN_FILE="${HERE}/dxa-0.1.5.tar.gz.sha256"
 TARBALL_URL="https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz"
-CACHE_DIR="${HOME}/.cache/c64-re-tools/phase23"
+CACHE_DIR="${XDG_CACHE_HOME:-${HOME}/.cache}/c64-re-tools/dxa"
 CACHED_TARBALL="${CACHE_DIR}/dxa-0.1.5.tar.gz"
-BUILT_BINARY_SHA256="0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523"
 
 verb="${1:-}"
 if [[ "${verb}" != "verify" && "${verb}" != "build" ]]; then
@@ -47,8 +36,7 @@ if [[ "${verb}" != "verify" && "${verb}" != "build" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Pin-file gate. Read BEFORE any fetch is attempted, in EITHER verb -- the
-# order of these lines is the order of execution, not just narrative.
+# Pin-file gate. Read before any download, in either verb.
 # ---------------------------------------------------------------------------
 if [[ ! -f "${PIN_FILE}" ]]; then
   echo "build.bash: refusing -- pin file missing: ${PIN_FILE}" >&2
@@ -58,9 +46,8 @@ fi
 
 pin_line="$(head -n1 "${PIN_FILE}" 2>/dev/null || true)"
 pin_digest_raw="$(printf '%s' "${pin_line}" | awk '{print $1}')"
-# Lowercase, exact-length comparison: never a prefix match, never
-# case-sensitive-only. A truncated (e.g. 32-character) or non-hex digest is
-# refused BY NAME here, before it is ever compared to anything.
+# Lowercase, full-length comparison: a truncated or non-hex digest is
+# refused by name here, before it is compared to anything.
 pin_digest="$(printf '%s' "${pin_digest_raw}" | tr '[:upper:]' '[:lower:]')"
 if [[ ! "${pin_digest}" =~ ^[0-9a-f]{64}$ ]]; then
   echo "build.bash: refusing -- pin file does not carry a well-formed 64-character lowercase hex sha256 (got: ${pin_digest_raw:-<empty>})" >&2
@@ -69,26 +56,28 @@ if [[ ! "${pin_digest}" =~ ^[0-9a-f]{64}$ ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Materialise the tarball into a scratch directory. Extraction and
-# verification happen ONLY in scratch -- this directory is never written
-# except for the final binary, so a second concurrent run can at worst
-# repeat work, never corrupt the pin.
+# Get the tarball into a scratch directory. Extraction, build and the
+# functional check happen only in scratch; this directory gets only the
+# final, checked binary.
 # ---------------------------------------------------------------------------
 scratch="$(mktemp -d)"
 trap 'rm -rf "${scratch}"' EXIT
 
 tarball="${scratch}/dxa-0.1.5.tar.gz"
+downloaded=0
 
 if [[ -f "${CACHED_TARBALL}" ]]; then
   cached_digest="$(sha256sum "${CACHED_TARBALL}" | awk '{print $1}')"
   if [[ "${cached_digest}" == "${pin_digest}" ]]; then
     cp "${CACHED_TARBALL}" "${tarball}"
+    echo "build.bash: using cached tarball ${CACHED_TARBALL}"
   fi
 fi
 
 if [[ ! -f "${tarball}" ]]; then
   echo "build.bash: fetching ${TARBALL_URL}" >&2
   curl -fsSL -o "${tarball}" "${TARBALL_URL}"
+  downloaded=1
 fi
 
 fetched_digest="$(sha256sum "${tarball}" | awk '{print $1}')"
@@ -97,6 +86,18 @@ echo "build.bash: tarball digest  = ${fetched_digest}"
 if [[ "${fetched_digest}" != "${pin_digest}" ]]; then
   echo "build.bash: refusing -- tarball sha256 does not match the committed pin" >&2
   exit 1
+fi
+
+if [[ "${downloaded}" == "1" ]]; then
+  # A cache that cannot be written only costs a download next time.
+  if mkdir -p "${CACHE_DIR}" 2>/dev/null \
+    && cp "${tarball}" "${CACHED_TARBALL}.tmp.$$" 2>/dev/null \
+    && mv -f "${CACHED_TARBALL}.tmp.$$" "${CACHED_TARBALL}" 2>/dev/null; then
+    echo "build.bash: cached the verified tarball at ${CACHED_TARBALL}"
+  else
+    rm -f "${CACHED_TARBALL}.tmp.$$" 2>/dev/null || true
+    echo "build.bash: note -- could not write the tarball cache at ${CACHE_DIR}" >&2
+  fi
 fi
 
 extract_dir="${scratch}/extracted"
@@ -109,22 +110,60 @@ if [[ "${verb}" == "verify" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# build: compile in the SCRATCH extraction (never in this directory --
-# it is read-only to this script), then digest-compare the
-# produced binary against the pinned build digest.
+# build: compile in the scratch extraction, then check what the binary does.
 # ---------------------------------------------------------------------------
 (
   cd "${extract_dir}"
   make
 )
 
-built_digest="$(sha256sum "${extract_dir}/dxa" | awk '{print $1}')"
-echo "build.bash: pinned binary digest = ${BUILT_BINARY_SHA256}"
-echo "build.bash: built binary digest  = ${built_digest}"
-if [[ "${built_digest}" != "${BUILT_BINARY_SHA256}" ]]; then
-  echo "build.bash: refusing -- built binary sha256 does not match the pinned digest" >&2
+if [[ ! -x "${extract_dir}/dxa" ]]; then
+  echo "build.bash: refusing -- make did not produce an executable dxa" >&2
   exit 1
 fi
 
-cp "${extract_dir}/dxa" "${HERE}/dxa"
+# Functional check. The image is a 23-byte C64 program: load address $0801,
+# a `10 SYS 2064` BASIC stub, three pad bytes, then LDA #$00 / STA $D020 /
+# RTS at $0810. $0810 is given as the one known entry point. These are the
+# same flags the host-tool seam passes, so a pass means the listing parser
+# gets the lines it expects.
+check_dir="${scratch}/check"
+mkdir -p "${check_dir}"
+printf '\001\010\013\010\012\000\236\062\060\066\064\000\000\000\000\000\000\251\000\215\040\320\140' \
+  > "${check_dir}/check.prg"
+printf '0810\n' > "${check_dir}/check.entrypoints"
+
+expected="${check_dir}/expected.txt"
+{
+  printf '              \t.word $0801\n'
+  printf '              \t* = $0801\n'
+  printf '\n'
+  printf '0801 0b 08 0a \t.byt $0b,$08,$0a\n'
+  printf '0804 00 9e 32 \t.byt $00,$9e,$32\n'
+  printf '0807 30 36 34 \t.byt $30,$36,$34\n'
+  printf '080a 00 00 00 \t.byt $00,$00,$00\n'
+  printf '080d 00 00 00 \t.byt $00,$00,$00\n'
+  printf '0810          l810:\n'
+  printf '0810 a9 00    \tlda #$00\n'
+  printf '0812 8d 20 d0 \tsta $d020\n'
+  printf '0815 60       \trts\n'
+} > "${expected}"
+
+actual="${check_dir}/actual.txt"
+if ! "${extract_dir}/dxa" -p all-nmos6502 -d skip-scanning -t detect-internal \
+  -R "${check_dir}/check.entrypoints" -a dump "${check_dir}/check.prg" > "${actual}" 2> "${check_dir}/stderr.txt"; then
+  echo "build.bash: refusing -- the built dxa exited non-zero on the check image" >&2
+  cat "${check_dir}/stderr.txt" >&2
+  exit 1
+fi
+
+if ! cmp -s "${expected}" "${actual}"; then
+  echo "build.bash: refusing -- the built dxa gave an unexpected listing for the check image" >&2
+  diff -u "${expected}" "${actual}" >&2 || true
+  exit 1
+fi
+echo "build.bash: functional check OK -- the built dxa gives the expected listing"
+
+cp "${extract_dir}/dxa" "${HERE}/dxa.tmp.$$"
+mv -f "${HERE}/dxa.tmp.$$" "${HERE}/dxa"
 echo "build.bash: build OK -- ${HERE}/dxa"

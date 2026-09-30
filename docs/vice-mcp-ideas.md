@@ -1,3 +1,5 @@
+> Early design notes on what the VICE monitor protocols allow. They are not a description of the shipped tool set; `src/mcp/vice/README.md` and the tool manifest are.
+
 If by **VICE remote protocol** you mean the **Binary Monitor Protocol**, it gives you enough control to build an external debugger, automated test runner, reverse-engineering tool, or even an AI-controlled C64 environment.
 
 Start VICE with, for example:

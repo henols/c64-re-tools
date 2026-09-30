@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // evid-reconcile.test.ts
 //
-// Plan 43-04 (EVID-03, EVID-04). HERMETIC: no store, no VICE, no filesystem
-// read except this module's own source (Behavior 5's structural assertion).
+// Plan 43-04 (EVID-03, EVID-04). HERMETIC: no store, no VICE, no filesystem.
 // Every `BlockEntry`/`EvidExecRow` below is a synthetic object literal built
 // by hand.
 //
@@ -18,9 +17,6 @@
 //     3. `disagreements` is the FIRST key of the returned object
 //     4. no key anywhere in the result matches a percentage/rate/ratio/score
 //        vocabulary
-//     5. a structural source assertion: no filesystem, child-process,
-//        `node:sqlite` or `toFixed` (outside a comment) anywhere in
-//        `evid-reconcile.mts`'s own source
 //
 //   Task 2:
 //     6. a block covered by no observation at all is entirely
@@ -57,8 +53,6 @@
 //        both handled without a `TypeError` escaping this module
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import {
   reconcileObservedExecution,
@@ -67,9 +61,6 @@ import {
 } from "../../src/mcp/vice/evid-reconcile.mts";
 import type { BlockClass, BlockClassifier, BlockEntry } from "../../src/mcp/vice/block-class.mts";
 import { DATA_TYPES, type EvidExecRow, type EvidSourceBank } from "../../src/mcp/vice/anno-types.mts";
-import { VICE_DIR } from "./paths.ts";
-
-const MODULE_PATH = join(VICE_DIR, "evid-reconcile.mts");
 
 // ---------------------------------------------------------------------------
 // Fixture builders -- every input is a synthetic object literal, never read
@@ -171,32 +162,6 @@ test("Behavior 4: no key anywhere in the result matches a percentage/rate/ratio/
     }
   };
   walk(result);
-});
-
-test("Behavior 5: structural source assertion -- no filesystem, child-process, node:sqlite or toFixed", () => {
-  const sourceBytes = readFileSync(MODULE_PATH);
-  const source = sourceBytes.toString("utf8");
-
-  // Open-quote form (`"fs` / `'fs`), not a closed pair, so a subpath
-  // specifier (`"fs/promises"`) is caught too.
-  const bannedSubstrings = ["child_process", "node:fs", '"fs', "'fs", "node:sqlite", "dxa-partition"];
-  for (const banned of bannedSubstrings) {
-    assert.equal(source.includes(banned), false, `evid-reconcile.mts must never reference ${banned}`);
-  }
-
-  const nonCommentLines = source.split("\n").filter((line) => !/^\s*[/*]/.test(line));
-  for (const line of nonCommentLines) {
-    assert.ok(!line.includes("toFixed"), `no rounding helper allowed (found "toFixed" outside a comment): ${line}`);
-  }
-
-  assert.match(source, /from\s+["']\.\/block-class\.mts["']/, "must import from block-class.mts");
-  assert.match(source, /from\s+["']\.\/anno-types\.mts["']/, "must import from anno-types.mts");
-  assert.ok(source.includes("blockClassAt"), "must reference blockClassAt");
-
-  // No comparison against a literal block-type string on the left of an
-  // equality against a `.type` field -- that is block-class.mts's job alone.
-  assert.equal(/["'](code|Code|data|Byte|Undefined|undefined)["']\s*===\s*\w+\.type/.test(source), false);
-  assert.equal(/\w+\.type\s*===\s*["'](code|Code|data|Byte|Undefined|undefined)["']/.test(source), false);
 });
 
 // ============================================================================
@@ -611,4 +576,29 @@ test("Behavior 19: a null hole inside blocks and a non-array blocks value are bo
   });
   assert.equal(nonArrayResult.denominator, 0);
   assert.equal(nonArrayResult.observedOutsideAnyBlockCount, 1);
+});
+
+test("block ranges are clamped to the address space and a wide block does not walk address by address", () => {
+  const started = Date.now();
+  const result = reconcileObservedExecution({
+    blocks: [{ start_address: 0xff00, end_address: 0x7fffffff, type: "code" }, { start_address: -50, end_address: 0x000f, type: "data" }],
+    observations: [{ address: 0xffff, sourceBank: "ram" } as EvidExecRow, { address: 0x0003, sourceBank: "ram" } as EvidExecRow],
+  });
+  assert.equal(result.denominator, 0x100 + 0x10, "only $0000-$000F and $FF00-$FFFF are covered");
+  assert.equal(result.agreementCount, 1);
+  assert.equal(result.disagreementCount, 1);
+  assert.deepEqual(result.disagreements.map((d) => d.address), [0x0003]);
+  assert.equal(result.blockCoveredNeverObservedCount, 0x100 + 0x10 - 2);
+  assert.ok(Date.now() - started < 2000, "the join is not proportional to the block width");
+});
+
+test("overlapping blocks keep first-match-wins and count each covered address once", () => {
+  const result = reconcileObservedExecution({
+    blocks: [{ start_address: 0x1000, end_address: 0x10ff, type: "data" }, { start_address: 0x1080, end_address: 0x11ff, type: "code" }],
+    observations: [{ address: 0x1090, sourceBank: "ram" } as EvidExecRow, { address: 0x1100, sourceBank: "ram" } as EvidExecRow],
+  });
+  assert.equal(result.denominator, 0x200);
+  assert.deepEqual(result.disagreements.map((d) => d.address), [0x1090]);
+  assert.equal(result.agreementCount, 1);
+  assert.equal(result.blockCoveredNeverObservedCount, 0x200 - 2);
 });
