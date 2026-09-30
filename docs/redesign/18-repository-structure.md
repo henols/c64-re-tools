@@ -2,26 +2,74 @@
 
 ## 1. Goal
 
-Keep the implementation structure as small as the architecture allows.
+Keep the implementation easy to understand, build, test and release.
 
-c64-re-tools is one repository and one npm package.
+c64-re-tools is one repository and one npm package. Organize source by concrete ownership, not by architectural patterns.
 
-Do not create a workspace/monorepo package graph unless a future concrete requirement proves that independently versioned packages are necessary.
+Do not create a workspace/monorepo package graph unless a future concrete requirement proves independently versioned packages are necessary.
 
-## 2. Top-level layout
-
-The v1 source layout is:
+## 2. Frozen v1 layout
 
 ~~~text
 c64-re-tools/
 ├── src/
-│   ├── mcp/
-│   ├── host/
-│   ├── host-client/
-│   ├── knowledge/
-│   ├── cli/
+│   ├── c64.ts
+│   ├── project.ts
 │   ├── protocol.ts
-│   └── project.ts
+│   │
+│   ├── mcp/
+│   │   ├── main.ts
+│   │   ├── server.ts
+│   │   └── tools/
+│   │       ├── machine.ts
+│   │       ├── execution.ts
+│   │       ├── debug.ts
+│   │       ├── memory.ts
+│   │       ├── video.ts
+│   │       ├── input.ts
+│   │       └── media.ts
+│   │
+│   ├── host-client/
+│   │   ├── connect.ts
+│   │   ├── vice-session.ts
+│   │   ├── tools.ts
+│   │   └── transfer.ts
+│   │
+│   ├── host/
+│   │   ├── main.ts
+│   │   ├── server.ts
+│   │   ├── staging.ts
+│   │   ├── processes.ts
+│   │   ├── vice/
+│   │   │   ├── session.ts
+│   │   │   ├── process.ts
+│   │   │   ├── adapter.ts
+│   │   │   ├── binary-monitor.ts
+│   │   │   ├── text-monitor.ts
+│   │   │   └── screen.ts
+│   │   └── tools/
+│   │       ├── index.ts
+│   │       ├── discover.ts
+│   │       ├── acme.ts
+│   │       ├── dxa.ts
+│   │       ├── c1541.ts
+│   │       ├── petcat.ts
+│   │       └── ghidra/
+│   │           ├── index.ts
+│   │           └── scripts/
+│   │
+│   ├── knowledge/
+│   │   ├── database.ts
+│   │   ├── schema.ts
+│   │   ├── read.ts
+│   │   ├── write.ts
+│   │   ├── history.ts
+│   │   └── import.ts
+│   │
+│   └── cli/
+│       ├── main.ts
+│       ├── host.ts
+│       └── diagnose.ts
 │
 ├── skills/
 │   ├── c64-reverse-engineering/
@@ -37,6 +85,8 @@ c64-re-tools/
 │   └── c64-provenance/
 │
 ├── distribution/
+│   └── plugin.ts
+│
 ├── test/
 │   ├── fixtures/
 │   ├── integration/
@@ -48,315 +98,530 @@ c64-re-tools/
 └── pnpm-lock.yaml
 ~~~
 
-Do not add top-level packages/ or vendor/ directories in v1.
+This is the intended starting structure. Do not pre-create empty files/directories merely to match the diagram; create them as their responsibility is implemented.
 
-## 3. One npm package
+Do not add top-level packages/, vendor/, common/, core/ or shared/ directories in v1.
 
-Publish one npm package for the product.
+## 3. Shared leaf files
 
-Conceptually:
+Only a few concepts genuinely belong to multiple owners.
+
+### src/c64.ts
+
+Keep small C64-wide primitives here:
+
+- canonical $0000-$ffff address type/parser/formatter;
+- address-range validation;
+- byte/range helpers that are truly shared.
+
+Do not turn this into a generic domain layer.
+
+### src/project.ts
+
+Project handling is deliberately tiny:
+
+~~~text
+projectRoot = process.cwd()
+~~~
+
+It owns:
+
+- the harness working directory as project root;
+- resolving project-relative paths;
+- refusing absolute paths/project escape;
+- safe file/tree checks before staging.
+
+It does not discover projects, inspect Git or read harness-specific environment variables.
+
+### src/protocol.ts
+
+This is the one maintained private Host Runtime wire contract shared by host and host-client.
+
+It owns:
+
+- request/reply message types;
+- VICE-session requests;
+- native-tool request/result types;
+- attachment metadata;
+- framing/encoding rules;
+- protocol validation needed on the private boundary.
+
+Start with one file. Split into src/protocol/ only if real size/ownership pressure appears.
+
+Protocol details never become an LLM-facing API.
+
+## 4. MCP
+
+src/mcp is only the stateful VICE MCP.
+
+### main.ts
+
+Executable entry point.
+
+Its job is only to:
+
+1. create one Host Runtime VICE-session connection;
+2. start the MCP server;
+3. close the Host Runtime session when the MCP process exits.
+
+This preserves:
+
+~~~text
+1 MCP process = 1 Host Runtime VICE session = 1 VICE instance
+~~~
+
+### server.ts
+
+Owns:
+
+- MCP server creation;
+- registration of tool groups;
+- common MCP error/result translation.
+
+It does not contain VICE monitor logic.
+
+### tools/
+
+Group the frozen public tools by C64 responsibility rather than one file per tool.
+
+~~~text
+machine.ts
+  c64_status
+  c64_reset
+  c64_warp
+
+execution.ts
+  c64_execution
+  c64_run_until
+
+debug.ts
+  c64_breakpoint
+  c64_watchpoint
+  c64_cpu_history
+  c64_backtrace
+  c64_profile
+  c64_memmap
+  c64_timing
+
+memory.ts
+  c64_memory_read
+  c64_memory_write
+  c64_memory_search
+  c64_memory_compare
+  c64_registers
+  c64_disassemble
+
+video.ts
+  c64_vicii
+  c64_sprite
+  c64_cia
+  c64_sid
+  c64_screen
+  c64_observe
+
+input.ts
+  c64_keyboard
+  c64_joystick
+
+media.ts
+  c64_autostart
+  c64_program_load
+  c64_disk_attach
+  c64_snapshot
+~~~
+
+Keep each tool's public input schema beside its handler in the owning group.
+
+Do not create parallel schemas/, handlers/, commands/ and services/ trees for the same tools.
+
+A handler validates public input, calls vice-session.ts and shapes the C64-domain result. Nothing more.
+
+## 5. Host client
+
+src/host-client is the only client implementation for the Host Runtime.
+
+### connect.ts
+
+Owns deterministic connection to the local/host Host Runtime endpoint and internal compatibility checks.
+
+### vice-session.ts
+
+Owns the long-lived stateful connection used by the MCP.
+
+It exposes C64-domain operations corresponding to the private Host Runtime VICE request contract.
+
+It does not expose VICE monitor commands, ports or process identifiers.
+
+### tools.ts
+
+Owns short-lived typed requests used by skill scripts:
+
+~~~text
+ACME
+DXA
+Ghidra
+c1541
+petcat
+future unpacker tool
+~~~
+
+It exposes typed logical operations, never generic process execution.
+
+### transfer.ts
+
+Owns byte/tree upload/download and bounded attachment transfer.
+
+It does not know which native tool will consume the bytes.
+
+No skill implements another transport/staging client.
+
+## 6. Host Runtime
+
+src/host contains everything that must run on the host machine.
+
+### main.ts
+
+Host Runtime executable entry point.
+
+### server.ts
+
+Owns:
+
+- private transport listener;
+- connection/request dispatch;
+- creation of VICE sessions for long-lived MCP connections;
+- dispatch of independent native-tool requests;
+- shutdown coordination.
+
+### staging.ts
+
+Owns request/session temporary workspaces and safe materialization of transferred files/trees.
+
+All staging is outside the user's project.
+
+### processes.ts
+
+Owns child-process supervision:
+
+- register child;
+- terminate owned child/process group;
+- bounded shutdown;
+- cleanup after disconnected client/runtime termination.
+
+There is one process-supervision implementation rather than separate ad hoc cleanup in every tool adapter.
+
+## 7. Host Runtime VICE implementation
+
+src/host/vice owns every VICE-specific implementation detail.
+
+### session.ts
+
+The central per-emulator stateful object.
+
+It owns:
+
+- the VICE process;
+- binary/text monitor connections;
+- serialized operation queue;
+- breakpoints/watchpoints/session-local IDs;
+- snapshots/visual baselines/session-local state;
+- restart-after-crash behavior.
+
+Nothing outside host/vice needs to know which monitor implements an operation.
+
+### process.ts
+
+Owns VICE launch, readiness, restart and termination.
+
+### adapter.ts
+
+Implements the private C64-machine operations requested by vice-session.ts.
+
+It translates C64-domain operations into whichever VICE monitor mechanism is required.
+
+This is where workarounds for VICE quirks belong.
+
+### binary-monitor.ts
+
+Owns binary-monitor framing, request/response correlation and decoding.
+
+### text-monitor.ts
+
+Owns text-monitor command/response interaction only for operations that genuinely require it.
+
+Raw monitor syntax never escapes this file/adapter boundary.
+
+### screen.ts
+
+Owns canonical emulator-frame capture, baseline storage/comparison and diff production.
+
+Desktop screenshots do not belong here.
+
+## 8. Host Runtime native tools
+
+src/host/tools contains the native-tool adapters.
+
+### index.ts
+
+A small typed dispatcher for the supported host-tool operations.
+
+There is no generic executable/argv route.
+
+### discover.ts
+
+One shared host-tool discovery/configuration implementation.
+
+ACME, DXA, Ghidra, c1541 and petcat are peers. None has special vendor status.
+
+### acme.ts
+
+Owns:
+
+- ACME argv construction;
+- execution;
+- diagnostic parsing;
+- symbol parsing;
+- PRG/result validation.
+
+Returns the frozen acme.assemble result.
+
+### dxa.ts
+
+Owns:
+
+- DXA argv construction;
+- temporary seed-file generation where DXA requires files;
+- output parsing/validation;
+- typed DXA result construction.
+
+DXA is external like every other native tool.
+
+### c1541.ts
+
+Owns all five typed c1541 actions:
+
+~~~text
+directory
+bam
+entry
+chain
+read
+~~~
+
+### petcat.ts
+
+Owns BASIC V2 decoding, decoded-output validation and SYS handoff extraction.
+
+### ghidra/
+
+Ghidra is the one adapter allowed a directory because structured headless analysis needs c64-re-tools-owned Ghidra integration scripts/assets.
+
+~~~text
+ghidra/
+├── index.ts
+└── scripts/
+~~~
+
+index.ts owns temporary Ghidra project creation, headless invocation, seed preparation and parsed typed results.
+
+scripts/ contains only c64-re-tools-owned Ghidra scripts required to seed/export analysis.
+
+These files are product integration code, not vendored Ghidra.
+
+If a custom Ghidra language/extension is required for the supported C64 processor contract, keep its c64-re-tools-owned files under this same ghidra/ ownership boundary rather than creating vendor/.
+
+## 9. Knowledge
+
+src/knowledge is the sole implementation allowed to understand the knowledge database.
+
+### database.ts
+
+Owns:
+
+- .c64-re-tools/knowledge.db path;
+- open/create;
+- SQLite connection settings;
+- transaction helper.
+
+### schema.ts
+
+Owns the schema and deterministic forward migrations.
+
+### read.ts
+
+Owns current-state operations such as:
+
+~~~text
+at(address)
+search(...)
+symbols(...)
+regions(...)
+references(...)
+comments(...)
+~~~
+
+### write.ts
+
+Owns semantic user/LLM mutations:
+
+~~~text
+rename symbol
+classify/reclassify region
+set/remove comment
+add/remove structural reference
+revert where implemented
+~~~
+
+Every accepted mutation creates a revision transaction.
+
+### history.ts
+
+Owns:
+
+~~~text
+history(address/entity)
+revisions(...)
+revision(id)
+~~~
+
+### import.ts
+
+Owns deterministic analyzer reconciliation:
+
+- validate complete normalized findings before mutation;
+- coverage/category authority rules;
+- same-analyzer retirement;
+- semantic-knowledge protection;
+- conflict reporting;
+- one revision/transaction per accepted analyzer import.
+
+DXA/Ghidra-specific parsers do not live here. They belong to their Host Runtime adapters/static-analysis skill adapter.
+
+## 10. CLI and distribution
+
+Keep the human CLI small.
+
+### src/cli/main.ts
+
+Parses top-level commands and delegates.
+
+### src/cli/host.ts
+
+Human-facing Host Runtime install/start/status/autostart operations.
+
+### src/cli/diagnose.ts
+
+Explicit human diagnostics. This is where internal paths/versions/configuration may be shown when useful.
+
+Normal LLM-facing paths do not call it.
+
+Cross-harness plugin installation remains in distribution/plugin.ts using AP SDK.
+
+Only the CLI/distribution edge may depend on packaging APIs. MCP, Host Runtime, knowledge and skill workflow code do not.
+
+## 11. Skills
+
+Keep each skill as small as its job allows.
+
+Recommended starting contents:
+
+~~~text
+c64-reverse-engineering
+  SKILL.md
+  references/...
+
+c64-emulator
+  SKILL.md
+  references/...
+
+c64-static-analysis
+  SKILL.md
+  scripts/analyze.ts
+  references/...
+
+c64-knowledge
+  SKILL.md
+  scripts/knowledge.ts
+
+c64-assembler
+  SKILL.md
+  scripts/assemble.ts
+
+c64-testing
+  SKILL.md
+  references/...
+
+c64-disk
+  SKILL.md
+  scripts/disk.ts
+
+c64-basic
+  SKILL.md
+  scripts/basic.ts
+
+c64-unpacker
+  SKILL.md
+  scripts/unpack.ts
+  references/...
+
+c64-memory-map
+  SKILL.md
+  scripts/lookup.ts
+  references/...
+
+c64-provenance
+  SKILL.md
+  references/...
+~~~
+
+Do not add a script merely because every skill could have one.
+
+Rules:
+
+- orchestration/reasoning stays in SKILL.md;
+- repeatable deterministic mechanics go in scripts/;
+- detailed domain material goes in references/;
+- assets/ exists only when a real skill output needs bundled assets.
+
+Skill scripts may import src/ source during development/build.
+
+Installed skill scripts are bundled/self-contained and never resolve repository-relative src/ imports at runtime.
+
+## 12. One npm package
+
+Publish one product package, conceptually:
 
 ~~~text
 @henols/c64-re-tools
 ~~~
 
-The exact package name may be finalized when implementation begins, but the architecture assumes one published package.
-
-It exposes three executable roles:
+Expose three executables:
 
 ~~~text
-c64-re-tools
-c64-re-tools-mcp
-c64-re-tools-host
+c64-re-tools       → dist/cli/main.js
+c64-re-tools-mcp   → dist/mcp/main.js
+c64-re-tools-host  → dist/host/main.js
 ~~~
 
-Responsibilities:
-
-~~~text
-c64-re-tools       installer/update/status/diagnose CLI
-c64-re-tools-mcp   stateful VICE MCP
-c64-re-tools-host  Host Runtime
-~~~
-
-One package means:
+One package provides:
 
 - one version;
 - one release;
 - one dependency graph;
-- no internal package-version synchronization;
-- no separate runtime/MCP/host package publishing.
+- one provenance chain;
+- no internal package synchronization.
 
-## 4. src/mcp
+## 13. Build
 
-src/mcp contains only the stateful VICE MCP.
-
-Typical internal shape may become:
+The build has three application entry points:
 
 ~~~text
-src/mcp/
-├── server.ts
-├── tools/
-└── session.ts
+src/cli/main.ts
+src/mcp/main.ts
+src/host/main.ts
 ~~~
 
-It owns:
-
-- MCP server startup;
-- public VICE tool schemas;
-- mapping MCP operations to the Host Runtime VICE-session client;
-- LLM-facing result/error shaping.
-
-It does not own:
-
-- ACME;
-- DXA;
-- Ghidra;
-- c1541;
-- petcat;
-- knowledge.db;
-- project workflows.
-
-## 5. src/host
-
-src/host contains everything that must execute on the graphical/native host.
-
-Typical shape:
-
-~~~text
-src/host/
-├── server.ts
-├── vice/
-│   ├── session.ts
-│   ├── monitor.ts
-│   └── ...
-├── tools/
-│   ├── acme.ts
-│   ├── dxa.ts
-│   ├── ghidra.ts
-│   ├── c1541.ts
-│   └── petcat.ts
-└── staging/
-~~~
-
-All native tools are peers.
-
-DXA receives no special vendoring, packaging or repository ownership.
-
-The Host Runtime owns:
-
-- VICE process lifecycle;
-- VICE monitor integration;
-- native-tool discovery/execution;
-- temporary request/session storage;
-- process supervision;
-- host side of file transfer/staging.
-
-## 6. src/host-client
-
-src/host-client contains the deterministic client used by both MCP and broker-backed skill scripts.
-
-It owns:
-
-- Host Runtime connection/discovery;
-- long-lived VICE-session connection client;
-- short-lived native-tool request client;
-- binary/tree transfer;
-- private protocol request/result validation.
-
-It contains no C64 workflow decisions.
-
-Skill scripts do not reimplement transport or staging.
-
-## 7. src/knowledge
-
-src/knowledge contains the single local knowledge implementation.
-
-Typical shape may become:
-
-~~~text
-src/knowledge/
-├── database.ts
-├── schema.ts
-├── queries.ts
-├── writes.ts
-├── history.ts
-└── import.ts
-~~~
-
-It owns:
-
-- .c64-re-tools/knowledge.db;
-- creation/opening;
-- schema/migrations;
-- transactions/revisions;
-- current/history queries;
-- analyzer reconciliation/import.
-
-The Host Runtime never imports this directory.
-
-## 8. src/cli
-
-src/cli is thin orchestration for human installation and diagnostics.
-
-It may implement:
-
-~~~text
-c64-re-tools install
-c64-re-tools update
-c64-re-tools uninstall
-c64-re-tools status
-c64-re-tools diagnose
-
-c64-re-tools host install
-c64-re-tools host status
-~~~
-
-It does not contain emulator, analyzer or knowledge workflow logic.
-
-## 9. src/protocol.ts
-
-The Host Runtime private wire contract needs one maintained definition shared by host-client and host.
-
-Start with one source file:
-
-~~~text
-src/protocol.ts
-~~~
-
-Do not create a protocol package.
-
-If the file genuinely becomes too large, split it into src/protocol/ later.
-
-The protocol remains private infrastructure and its version/details remain below the LLM-facing boundary.
-
-## 10. src/project.ts
-
-Project handling is intentionally tiny.
-
-src/project.ts owns:
-
-- projectRoot = process.cwd();
-- validation/resolution of project-relative paths;
-- prevention of project escape.
-
-It does not discover a project.
-
-Do not create a project package or project service.
-
-## 11. Skills
-
-Each first-class skill remains a normal Agent Skill directory:
-
-~~~text
-skills/c64-static-analysis/
-├── SKILL.md
-├── agents/
-│   └── openai.yaml
-├── scripts/
-└── references/
-~~~
-
-Only include scripts/references/assets when that skill needs them.
-
-Skill scripts may import maintained source from src/ during development/build.
-
-Installed skills must not depend on repository-relative imports.
-
-The release build bundles the deterministic code required by each skill script into its distributable artifact.
-
-Conceptually:
-
-~~~text
-skill source script
-   + src/host-client
-   + src/knowledge where needed
-   + small deterministic helpers
-            ↓
-          bundle
-            ↓
-installed self-contained skill script
-~~~
-
-This prevents copying shared mechanics across skills without requiring separate npm packages.
-
-## 12. Distribution
-
-distribution/ is the only area that knows about the cross-harness packaging adapter.
-
-Conceptually:
-
-~~~text
-distribution/
-├── plugin.ts
-└── ...
-~~~
-
-It may depend on @jalco/ap-sdk.
-
-Nothing under src/ or skills/ depends on AP SDK runtime APIs.
-
-Distribution consumes the built MCP executable/declaration and built skill artifacts and maps them to harness-specific installation forms.
-
-## 13. External native tools
-
-The repository contains adapters for native tools, not the tools themselves.
-
-Do not add:
-
-~~~text
-vendor/dxa
-vendor/acme
-vendor/ghidra
-vendor/vice
-~~~
-
-or equivalent bundled third-party source/binary trees.
-
-VICE, ACME, DXA, Ghidra, c1541 and petcat are external host-native prerequisites handled uniformly by Host Runtime installation/discovery.
-
-If a future external tool needs a patched build, solve that as an installation/dependency problem rather than silently turning this repository into its source vendor.
-
-## 14. Tests
-
-Keep unit tests beside the source they test:
-
-~~~text
-src/knowledge/database.ts
-src/knowledge/database.test.ts
-~~~
-
-Use the top-level test/ tree only when a test crosses implementation boundaries or needs reusable fixtures.
-
-~~~text
-test/
-├── fixtures/
-│   ├── asm/
-│   ├── prg/
-│   ├── d64/
-│   └── analysis/
-│
-├── integration/
-│   ├── vice/
-│   ├── acme/
-│   ├── dxa/
-│   ├── ghidra/
-│   ├── c1541/
-│   └── petcat/
-│
-└── e2e/
-~~~
-
-Definitions:
-
-- unit: one module/component, no external native program;
-- integration: real boundary or real external tool;
-- e2e: installed/assembled product workflow across multiple boundaries.
-
-Do not create separate test packages.
-
-## 15. Build outputs
-
-One normal build should produce everything required for development/release.
+and the skill script entry points that actually exist.
 
 Conceptually:
 
@@ -370,72 +635,139 @@ dist/
 └── skills/
 ~~~
 
-The exact generated filenames are implementation details.
+Use normal TypeScript bundling/build tooling. Do not invent a runtime module loader for skills.
 
-Important properties:
+Repository/distribution metadata and non-JavaScript skill files are copied/package-generated as release artifacts.
 
-- MCP is directly executable from the npm package;
-- Host Runtime is directly executable from the npm package;
-- skill scripts are bundled/self-contained;
-- distribution consumes built outputs;
-- generated dist/ content is not treated as hand-maintained source.
+## 14. Tests
 
-## 16. Dependency direction
-
-The intended source dependencies are small and explicit:
+Keep unit tests beside source:
 
 ~~~text
-src/mcp
-   ↓
-src/host-client
-   ↓
+src/knowledge/import.ts
+src/knowledge/import.test.ts
+
+src/host/tools/acme.ts
+src/host/tools/acme.test.ts
+~~~
+
+Use test/ for boundary-crossing tests and fixtures:
+
+~~~text
+test/
+├── fixtures/
+│   ├── asm/
+│   ├── prg/
+│   ├── d64/
+│   ├── basic/
+│   └── analysis/
+│
+├── integration/
+│   ├── vice/
+│   ├── acme/
+│   ├── dxa/
+│   ├── ghidra/
+│   ├── c1541/
+│   └── petcat/
+│
+└── e2e/
+    ├── reverse-engineering/
+    └── development/
+~~~
+
+Definitions:
+
+- unit = one implementation unit, no external native tool;
+- integration = real boundary or real native tool;
+- e2e = complete installed product workflow.
+
+## 15. Dependency rules
+
+Allowed direction:
+
+~~~text
+src/c64.ts
+src/project.ts
 src/protocol.ts
+       ↑
+       ├──────── src/host-client
+       │              ↑
+       │              ├──── src/mcp
+       │              └──── skill scripts
+       │
+       ├──────── src/host
+       │
+       └──────── src/knowledge (c64/project only)
 
-skills/* scripts
-   ├── src/host-client
-   ├── src/knowledge
-   └── src/project.ts
+skill scripts ──────── src/knowledge where required
 
-src/host
-   └── src/protocol.ts
-
-src/knowledge
-   └── src/project.ts
-
-src/cli
-   └── installation/distribution orchestration
+src/cli/distribution edge ── installation/diagnostics only
 ~~~
 
-Prohibited directions:
+More concretely:
 
-- src/host → src/knowledge;
-- src/mcp → src/knowledge;
-- src/mcp → native-tool adapters;
-- src/knowledge → src/host;
-- core src/ → distribution/AP SDK;
-- one skill importing another skill's implementation.
+- mcp may import host-client, protocol and c64;
+- host-client may import protocol, c64 and project;
+- host may import protocol and c64;
+- knowledge may import c64 and project;
+- skill scripts may import host-client/knowledge/project/c64 as their job requires;
+- distribution may consume built artifacts;
+- CLI may delegate to distribution/host diagnostics.
 
-## 17. Add structure only when pressure exists
+Prohibited:
 
-Do not pre-create abstraction directories such as:
+- host → knowledge;
+- mcp → knowledge;
+- mcp → native-tool adapters;
+- knowledge → host/host-client;
+- host-client → knowledge;
+- core implementation → skill implementation;
+- one skill → another skill's scripts;
+- native-tool adapter → project knowledge;
+- AP SDK imports outside distribution/CLI installation edge.
+
+## 16. File-size rule
+
+Do not split code by pattern pre-emptively.
+
+A file earns a split when it has two independently changing responsibilities or has become difficult to understand/test as one unit.
+
+Do not automatically create:
 
 ~~~text
-domain/
-core/
-common/
-shared/
-platform/
-services/
-adapters/
-repositories/
+types.ts
+interfaces.ts
+models.ts
+utils.ts
+constants.ts
+service.ts
+repository.ts
+factory.ts
+manager.ts
 ~~~
 
-merely to classify code.
+for every feature.
 
-A new directory/module boundary should solve an observed ownership or size problem.
+Keep types/constants/helpers next to the code that owns them until multiple real consumers justify moving them.
 
-Prefer a clear file in the owning component over a speculative architectural layer.
+## 17. External native tools
+
+The repository contains integration adapters, not copies of external native tools.
+
+Do not add:
+
+~~~text
+vendor/
+third_party/
+tools/bin/
+~~~
+
+for VICE, ACME, DXA, Ghidra, c1541 or petcat.
+
+Treat them uniformly as Host Runtime prerequisites.
+
+c64-re-tools-owned integration assets, such as required Ghidra analysis scripts, stay with the adapter that owns them and are not considered vendored third-party code.
 
 ## 18. Invariant
 
-> One repository, one npm package, a small flat src/ organized by actual ownership, first-class skill directories, external native tools, and no package graph until reality requires one.
+> One repository, one npm package, three executable entry points, a small ownership-based src/, first-class skills, colocated unit tests, external native tools, and no abstraction/package layer without a concrete reason.
