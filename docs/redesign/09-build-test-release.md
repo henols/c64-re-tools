@@ -35,41 +35,51 @@ same relevant environment + same relevant inputs
 
 Because universal equivalence cannot generally be proven, c64-re-tools supplies repeatable emulator tests/scenarios as evidence.
 
-## 4. Functional test primitive
+## 4. Functional test model
 
-A test/scenario conceptually performs:
+Testing is layered rather than based on one universal assertion mechanism:
 
 ```text
-start from known machine/program state
-        ↓
-perform deterministic inputs/actions
-        ↓
-run/wait for deterministic condition
-        ↓
-inspect observable state
-        ↓
-assert expected behavior
+routine-level equivalence
+        ↑
+checkpointed machine-state behavior
+        ↑
+visual/gameplay scenarios
+        ↑
+human playtesting
 ```
 
-Possible observations include, where appropriate:
+A scenario has five conceptual parts:
 
-- memory values/ranges;
-- registers/PC state;
-- reached/not-reached execution locations;
-- screen state/capture;
-- VIC/CIA-visible state;
-- keyboard/joystick-driven behavior;
-- disk-visible behavior;
-- timing boundaries when behavior depends on timing;
-- no JAM/crash/unexpected stop.
+```text
+Setup
+Actions
+Checkpoint
+Observations
+Comparison
+```
 
-The same mechanism supports:
+Checkpoint synchronization should use C64/emulator state rather than wall-clock sleeps wherever practical.
 
-- reverse-engineering characterization of the original;
-- verification of reconstructed source;
-- regression testing of new C64 development.
+For original-vs-reconstruction tests, compare semantic symbols/behavior rather than assuming identical addresses. Original-side semantic locations come from project knowledge; rebuild-side locations can come from assembler/source symbols.
 
-Exact scenario file format is intentionally deferred until implementation of the test API. Avoid designing a large scenario language before concrete tests demand it.
+Visual comparison is first-class for games. Screenshots should be captured at verified checkpoints and may be paired with VIC-II/screen/sprite state so a visual mismatch can be diagnosed rather than merely counted.
+
+Automated results are exactly:
+
+```text
+PASS
+FAIL
+INCONCLUSIVE
+```
+
+`INCONCLUSIVE` is used when a valid comparable state could not be established; infrastructure/setup failure is not a behavioral failure.
+
+Human playtesting remains the final acceptance layer for control feel, animation quality, audio, progression and unanticipated behavior outside automated coverage.
+
+The complete semantics are defined in [13 — Testing and functional equivalence](13-testing-and-functional-equivalence.md).
+
+Exact scenario serialization remains intentionally deferred. Avoid designing a large scenario language before implementation experience demands it.
 
 ## 5. Test layers for the implementation
 
