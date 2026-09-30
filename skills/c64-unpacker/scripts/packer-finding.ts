@@ -82,8 +82,8 @@
 // process below is launched with an argument ARRAY and an explicitly disabled
 // interpreter, and a configured oracle path that does not exist on disk is
 // treated as oracle-absent rather than being placed into any command anywhere
-// (T-19-18). The oracle's standard output reaches exactly one field, through
-// one bounded parser that evaluates nothing (T-19-19).
+//. The oracle's standard output reaches exactly one field, through
+// one bounded parser that evaluates nothing.
 //
 // ---------------------------------------------------------------------------
 // STATUS OF THE ORACLE BRANCH (recorded, deliberate)
@@ -240,12 +240,12 @@ export const PACKED_ENTROPY_THRESHOLD = 7.5;
 const ORACLE_ENV_VARS = Object.freeze(["UNP64", "UNP64_PATH"]);
 
 /** Every child process here is bounded. A hung identifier is treated exactly
- * like an absent one (T-19-23). */
+ * like an absent one. */
 const ORACLE_TIMEOUT_MS = 20_000;
 
 /** Hard cap on how much of the oracle's standard output the parser will even
  * look at. Longer than this is rejected outright rather than scanned
- * (T-19-19). */
+ *. */
 export const MAX_ORACLE_STDOUT_BYTES = 64 * 1024;
 
 /** Hard cap on the length of a parsed packer name. */
@@ -310,8 +310,7 @@ export function shannonEntropy(bytes: Uint8Array | readonly number[] | null | un
  * Answers `null` when no oracle variable is set in `env`. Otherwise answers
  * a non-empty string naming WHICH variable was set and stating that the
  * seam consults the host broker process's own environment instead --
- * NEVER interpolating the variable's value (T-19-18, unchanged by this
- * migration).
+ * NEVER interpolating the variable's value.
  */
 export function oracleConfigurationHint(env: EnvRecord | null | undefined = process.env): string | null {
   const source = env ?? {};
@@ -378,10 +377,10 @@ export function probeUnp64(env: EnvRecord | null | undefined = process.env): Ora
  *
  * The input file is never modified: any unpacked output the identifier writes
  * goes to a scratch path under the system temporary directory, which is
- * removed before this function returns (T-19-24). The child is launched with
+ * removed before this function returns. The child is launched with
  * an argument ARRAY and an explicitly disabled command interpreter, so neither
  * the configured command nor the caller's filename is ever parsed as a
- * command (T-19-18).
+ * command.
  *
  * Never throws: every failure is reported as `{ ok: false, reason }`.
  */
@@ -411,7 +410,7 @@ export function runUnp64(probe: OracleProbe | null | undefined, filePath: string
 /**
  * Parses a packer name out of the oracle's standard output.
  *
- * Defensive by construction (T-19-19): an explicit byte cap before anything
+ * Defensive by construction: an explicit byte cap before anything
  * is scanned, no evaluation of any kind, a narrow accepted character set, and
  * a length cap on the result. Empty, truncated, over-long and unrecognised
  * input all return null WITHOUT throwing -- a parser that throws inside a
