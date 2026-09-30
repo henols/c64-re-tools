@@ -22,14 +22,15 @@ TD=recovery/transients              # the allow-lists live in your project's dat
 
 node $A assemble  --chunks chunks.json           # size + digest, writes nothing
 node $A write-set --release <id> --label <label> \
-                  --chunks chunks.json --raw raw.json    # the four artifacts
+                  --chunks chunks.json --raw raw.json > set.json   # the four artifacts
+node $L add-dump --from set.json                 # record the dump in the registry
 node $L list                                     # the valid --release ids
 
 node $C digest  dump.bin                         # sha256 + size, for the capture record
 node $C compare a.bin b.bin                      # classify each difference, exit 1 on FAIL
 node $C floor   a.bin b.bin c.bin                # drift floor across a capture set
 
-node $CX cross original.bin rebuild.bin          # two DIFFERENT binaries
+node $CX cross original.bin rebuild.bin --route memory-read   # two DIFFERENT binaries
 
 node $T derive --release <id> --out $TD/<id>.json a.bin b.bin c.bin
 node $T check  --allow-list $TD/<id>.json a.bin b.bin
@@ -80,6 +81,14 @@ before you drive the machine.
      `vice_vicii_get_state`, `vice_sprite_get` and `vice_registers_get`.
    - `port01_raw` is `$0001`. `dd00_raw` is `$DD00`. `d018_raw` is `$D018`.
    - `sprite_pointers` is the eight bytes at `screen_base+$3F8`.
+   - `captured_at` is the time of the reads, as an ISO time string.
+   - `route` is `memory-read` for `vice_memory_read` chunks, or `snapshot`
+     for an image sliced from a `.vsf` file.
+   - `dd00_direct_read` is optional. Add it only when you read `$DD00` a
+     second time.
+
+   `chip-state` and `write-set` refuse a missing or bad field, and name it.
+   They never use a default value in place of a register reading.
 6. Write all four artifacts with one command:
 
    ```bash
@@ -92,11 +101,16 @@ before you drive the machine.
    `.state.json`, `.map.json` and `.capture.json` in
    `recovery/<release>/dumps/`. It returns their paths and the SHA-256. It
    also calculates `vic_bank`, `screen_base`, `charset_base` and
-   `sprite_data_addresses`. Do not calculate them by hand.
-7. `vice_checkpoint_delete` the checkpoint.
-8. `vice_checkpoint_list`. Make sure that it reports zero checkpoints. Only
+   `sprite_data_addresses`. Do not calculate them by hand. If the four files
+   exist already, `write-set` refuses. Use `--force` only to replace a dump
+   set on purpose.
+7. Record the dump in the registry: `node $L add-dump --from set.json`.
+   Label the primary dump of a release `run1`. `watch-loads.ts` and
+   `c64-provenance` read that dump.
+8. `vice_checkpoint_delete` the checkpoint.
+9. `vice_checkpoint_list`. Make sure that it reports zero checkpoints. Only
    this list is proof. Record the count.
-9. `vice_execution_run`, one time, to let the machine run.
+10. `vice_execution_run`, one time, to let the machine run.
 
 `assemble` does the same checks and writes nothing. Use it for a quick check
 of a chunk set before you commit it.
@@ -124,6 +138,7 @@ Chunks made from a committed image, then given to `assemble`:
 ```
 $ node $A assemble --chunks chunks.json
 65536 bytes, sha256 e1b8428c55bc7606b7e77846e8928bff23e9cf0c8241da479aadc1bc092faa26
+{"ok":true,"bytes":65536,"sha256":"e1b8428c55bc7606b7e77846e8928bff23e9cf0c8241da479aadc1bc092faa26"}
 ```
 
 That digest is the same as the `sha256` field in that capture's committed
@@ -134,10 +149,10 @@ Then break the chunks on purpose, to see what the checks say:
 
 ```
 $ node $A assemble --chunks gap.json      # one chunk removed
-Error: assembleImage: gap before address $3000 -- next chunk starts at $4000
+{"ok":false,"message":"assembleImage: gap before address $3000 -- next chunk starts at $4000"}
 
 $ node $A assemble --chunks short.json    # last chunk 2 bytes short
-Error: assembleImage: assembled 65534 bytes ending at $FFFE, expected exactly 65536
+{"ok":false,"message":"assembleImage: assembled 65534 bytes ending at $FFFE, expected exactly 65536"}
 ```
 
 Each message gives an address to read again. Do not fill a gap with padding.
@@ -239,6 +254,11 @@ node $CX cross original.bin rebuild.bin \
   --allowlist allow.json --checkpoint hazard_raster_entry
 ```
 
+The `--state` files are the `.state.json` sidecars that `write-set` writes.
+The script compares the 47 VIC-II register bytes in `registers.registersHex`.
+Without `--state`, give `--route snapshot` or `--route memory-read`. The
+script refuses to guess the route.
+
 Three rules are different from `compare.ts`, because the same-binary rules
 are wrong for two different binaries:
 
@@ -252,8 +272,8 @@ are wrong for two different binaries:
   `$D800`-`$DBFF`, `$DC00`-`$DCFF`, `$DD00`-`$DDFF` and `$DE00`-`$DFFF`. So
   `$D015`, `$D018` and `$D020` stay in the verdict.
 - **The capture route counts.** Each state sidecar declares its `route`
-  (`snapshot` or `memory-read`). The script refuses to compare a snapshot
-  capture with a memory-read capture. The two routes disagree about what
+  (`snapshot` or `memory-read`). A sidecar with no `route` is refused. The
+  script refuses to compare a snapshot capture with a memory-read capture. The two routes disagree about what
   `$D000-$DFFF` is (see
   [Slice the image out of a snapshot](#slice-the-image-out-of-a-snapshot)).
 

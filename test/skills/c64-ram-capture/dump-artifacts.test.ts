@@ -1,11 +1,15 @@
-// Coverage for the artifact renderer (01-04 Task 1, Part B): chunk
+// Coverage for the artifact renderer: chunk
 // contiguity and the 65536-byte assertion, the gap and overlap refusals,
 // the VIC-bank/screen-base/charset-base derivations against the committed
 // sidecars' own recorded values, and the power-on-pattern run detection
 // that produces `unused` ranges. Runs entirely with no emulator present.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { assembleImage, sha256Buffer, buildChipState, vicBank, screenBase, buildRangeManifest } from "../../../skills/c64-ram-capture/scripts/dump-artifacts.ts";
 import { allDumpArtifacts, skipUnless } from "./test-corpus.ts";
@@ -83,6 +87,8 @@ test("buildChipState reproduces every committed sidecar's recorded vic_bank, scr
       d018_raw: committed.derived.d018_raw,
       port01_raw: committed.derived.port01.raw,
       sprite_pointers: committed.derived.sprite_pointers,
+      captured_at: committed.captured_at ?? "unrecorded",
+      route: committed.route ?? "memory-read",
     };
     const result = buildChipState(raw);
     const where = `${release}/${label}`;
@@ -126,4 +132,111 @@ test("buildRangeManifest's ranges union covers $0000-$FFFF with no gap and no ov
     expected = r.end + 1;
   }
   assert.equal(expected, 65536);
+});
+
+// ------------------------------------------------------------ buildChipState refusals
+
+const GOOD_RAW = {
+  dd00_raw: 0xc1,
+  d018_raw: 0x31,
+  port01_raw: 0x35,
+  sprite_pointers: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27],
+  captured_at: "2026-09-29T00:00:00Z",
+  route: "memory-read" as const,
+};
+
+test("buildChipState refuses, naming the field, when a register reading is missing", () => {
+  for (const key of ["dd00_raw", "d018_raw", "port01_raw", "sprite_pointers", "captured_at", "route"] as const) {
+    const raw: Record<string, unknown> = { ...GOOD_RAW };
+    delete raw[key];
+    assert.throws(() => buildChipState(raw as unknown as typeof GOOD_RAW), new RegExp(key), `missing ${key} must be refused`);
+  }
+  assert.throws(() => buildChipState({ ...GOOD_RAW, sprite_pointers: [1, 2, 3] }), /sprite_pointers/);
+  assert.throws(() => buildChipState({ ...GOOD_RAW, dd00_raw: 256 }), /dd00_raw/);
+});
+
+test("buildChipState records dd00_direct_read only when it was measured, and carries the route", () => {
+  const without = buildChipState(GOOD_RAW);
+  assert.equal("dd00_direct_read" in without.derived, false);
+  assert.equal(without.route, "memory-read");
+  assert.equal(without.captured_at, GOOD_RAW.captured_at);
+  const withRead = buildChipState({ ...GOOD_RAW, dd00_direct_read: 0xc3 });
+  assert.equal((withRead.derived as { dd00_direct_read?: number }).dd00_direct_read, 0xc3);
+});
+
+test("buildRangeManifest stops an unused run at $D000, so it never overlaps the io range", () => {
+  const image = Buffer.alloc(65536, 0xaa);
+  image.fill(0x00, 0xcf00, 0xd100);
+  const manifest = buildRangeManifest(image, { release: "fake", label: "run1" });
+  const unused = manifest.ranges.find((r) => r.start === 0xcf00);
+  assert.ok(unused);
+  assert.equal(unused.kind, "unused");
+  assert.equal(unused.end, 0xcfff);
+  assert.equal(manifest.ranges.find((r) => r.start === 0xd000)?.kind, "io");
+});
+
+// ------------------------------------------------------------------ write-set CLI
+
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "skills", "c64-ram-capture", "scripts", "dump-artifacts.ts");
+
+function writeSetProject() {
+  const root = mkdtempSync(join(tmpdir(), "dump-artifacts-test-"));
+  mkdirSync(join(root, ".git"));
+  mkdirSync(join(root, "recovery"));
+  writeFileSync(join(root, "recovery", "RELEASES.json"), JSON.stringify({ releases: [{ id: "rel", disk_image: "rel.d64", dumps: [] }] }));
+  const chunks = Array.from({ length: 16 }, (_, i) => ({ address: `$${(i * 4096).toString(16).padStart(4, "0")}`, hex: "aa".repeat(4096) }));
+  writeFileSync(join(root, "chunks.json"), JSON.stringify(chunks));
+  writeFileSync(join(root, "raw.json"), JSON.stringify(GOOD_RAW));
+  const run = (...argv: string[]) => {
+    const r = spawnSync(process.execPath, [SCRIPT, ...argv], { cwd: root, encoding: "utf8", env: { ...process.env, C64RE_PROJECT_ROOT: root, C64RE_DATA_DIR: "", C64RE_REGISTRY: "" }, timeout: 30_000 });
+    return { status: r.status, result: JSON.parse(r.stdout.trim().split("\n").pop() ?? "") };
+  };
+  return { root, run, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+}
+
+test("write-set writes the four artifacts, returns the add-dump shape, and refuses to overwrite them without --force", () => {
+  const p = writeSetProject();
+  try {
+    const argv = ["write-set", "--release", "rel", "--label", "run1", "--chunks", "chunks.json", "--raw", "raw.json", "--json"];
+    const first = p.run(...argv);
+    assert.equal(first.status, 0, JSON.stringify(first.result));
+    assert.equal(first.result.release, "rel");
+    assert.equal(first.result.label, "run1");
+    assert.equal(first.result.bin, "recovery/rel/dumps/rel-run1.bin");
+    assert.ok(existsSync(join(p.root, "recovery", "rel", "dumps", "rel-run1.state.json")));
+    const state = JSON.parse(readFileSync(join(p.root, "recovery", "rel", "dumps", "rel-run1.state.json"), "utf8"));
+    assert.equal(state.route, "memory-read");
+
+    const second = p.run(...argv);
+    assert.equal(second.status, 1);
+    assert.match(second.result.message, /already exist.*--force/);
+    assert.equal(p.run(...argv, "--force").status, 0);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("write-set with incomplete raw readings is refused and writes nothing", () => {
+  const p = writeSetProject();
+  try {
+    writeFileSync(join(p.root, "raw.json"), JSON.stringify({}));
+    const r = p.run("write-set", "--release", "rel", "--label", "run1", "--chunks", "chunks.json", "--raw", "raw.json");
+    assert.equal(r.status, 1);
+    assert.match(r.result.message, /dd00_raw/);
+    assert.equal(existsSync(join(p.root, "recovery", "rel", "dumps")), false);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("chip-state with an empty object is refused instead of reporting VIC bank 3", () => {
+  const p = writeSetProject();
+  try {
+    writeFileSync(join(p.root, "empty.json"), "{}");
+    const r = p.run("chip-state", "--raw", "empty.json");
+    assert.equal(r.status, 1);
+    assert.equal(r.result.ok, false);
+  } finally {
+    p.cleanup();
+  }
 });

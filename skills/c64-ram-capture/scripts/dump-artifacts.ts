@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // dump-artifacts.ts
 //
-// The artifact renderer (01-04 Task 1, Part B). This module exists because
+// The artifact renderer. This module exists because
 // of a structural fact worth stating up front: the executing agent can
 // write text, not binary, so the only shape a committable 65536-byte image
 // can take under the one permitted route to the emulator is *the agent
 // serialises what it fetched via mcp__plugin_c64-re-tools_vice__* tool calls, and a pure
 // function renders it*. Every function below takes already-fetched data as
 // an argument -- nothing here contacts the emulator.
-import { readFileSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { join, resolve, relative } from "node:path";
@@ -26,13 +26,19 @@ export interface MemoryChunk {
   hex: string;
 }
 
+/** How the image bytes were read: `vice_memory_read` (the I/O register view
+ * at $D000-$DFFF) or a sliced `.vsf` snapshot (the RAM under I/O). */
+export type CaptureRoute = "memory-read" | "snapshot";
+
 /** The register/state readings `buildChipState()` derives the sidecar from.
  * `registers`, `sprites` and `cpu` pass through verbatim. */
 export interface ChipStateRaw {
   dd00_raw: number;
   d018_raw: number;
   port01_raw: number;
-  sprite_pointers?: number[];
+  sprite_pointers: number[];
+  captured_at: string;
+  route: CaptureRoute;
   registers?: unknown;
   sprites?: unknown;
   cpu?: unknown;
@@ -40,7 +46,8 @@ export interface ChipStateRaw {
   label?: string;
   snapshot_name?: string | null;
   dd00_direct_read?: number;
-  captured_at?: string;
+  checkpoint_name?: string;
+  checkpoint_address?: number;
 }
 
 /** The descriptive fields a range manifest carries next to its ranges. */
@@ -71,12 +78,12 @@ export interface WriteDumpSetInput {
   captureExtra?: Record<string, unknown>;
 }
 
-const REPO_ROOT = projectRoot();
-
-const die: (m: string) => never = (m) => { console.error(`error: ${m}`); process.exit(1); };
+/** Every result this script prints. The last stdout line is always one of
+ * these, as JSON. */
+export type ScriptResult = { ok: true; [key: string]: unknown } | { ok: false; message: string };
 
 function rel(p: string): string {
-  return relative(REPO_ROOT, p);
+  return relative(projectRoot(), p);
 }
 
 // ---------------------------------------------------------------- assembleImage
@@ -155,32 +162,56 @@ function charsetBase(d018Raw: number, dd00Raw: number): number {
 
 // -------------------------------------------------------------- buildChipState
 
+function byteField(raw: Record<string, unknown>, key: string): number {
+  const v = raw[key];
+  if (!Number.isInteger(v) || (v as number) < 0 || (v as number) > 0xff) {
+    throw new Error(`chip-state: "${key}" must be the byte read from the machine (an integer 0-255), got ${JSON.stringify(v)}`);
+  }
+  return v as number;
+}
+
 /**
- * Build the chip-state sidecar in the exact shape the committed
- * primary sidecars already use (same top-level keys, same `derived` field
- * set), from the register/state readings the agent recorded. `raw` carries
- * whatever the agent fetched via vice_registers_get / vice_sprite_get /
- * vice_memory_read, keyed to match: `registers`, `sprites`, `cpu` pass
- * through verbatim; `dd00_raw`, `d018_raw`, `port01_raw` and
- * `sprite_pointers` (the bytes read from the sprite-pointer table at
- * screen_base+$3F8..$3FF) feed the derivation.
+ * Build the chip-state sidecar from the register/state readings the agent
+ * recorded. `raw` carries whatever the agent fetched via vice_vicii_get_state
+ * / vice_sprite_get / vice_registers_get / vice_memory_read: `registers`,
+ * `sprites` and `cpu` pass through verbatim. `dd00_raw`, `d018_raw`,
+ * `port01_raw` and `sprite_pointers` (the eight bytes read from the
+ * sprite-pointer table at screen_base+$3F8..$3FF) feed the derivation.
+ *
+ * Refuses, naming the field, when a derivation input, `captured_at` or
+ * `route` is missing or malformed. No field gets a default: a guessed $DD00
+ * gives a wrong VIC bank with no error. `derived.dd00_direct_read` is present
+ * only when the agent measured it.
  */
 export function buildChipState(raw: ChipStateRaw) {
-  const dd00 = raw.dd00_raw;
-  const d018 = raw.d018_raw;
+  if (typeof raw !== "object" || raw === null) throw new Error("chip-state: the raw readings must be a JSON object");
+  const r = raw as unknown as Record<string, unknown>;
+  const dd00 = byteField(r, "dd00_raw");
+  const d018 = byteField(r, "d018_raw");
+  const port01raw = byteField(r, "port01_raw");
+  const spritePointers = raw.sprite_pointers;
+  if (!Array.isArray(spritePointers) || spritePointers.length !== 8 || !spritePointers.every((p) => Number.isInteger(p) && p >= 0 && p <= 0xff)) {
+    throw new Error(`chip-state: "sprite_pointers" must be the eight bytes at screen_base+$3F8, got ${JSON.stringify(spritePointers)}`);
+  }
+  if (typeof raw.captured_at !== "string" || raw.captured_at.trim() === "") {
+    throw new Error("chip-state: \"captured_at\" must name when the readings were taken (an ISO time string)");
+  }
+  if (raw.route !== "memory-read" && raw.route !== "snapshot") {
+    throw new Error(`chip-state: "route" must be "memory-read" or "snapshot", got ${JSON.stringify(raw.route)}`);
+  }
+  if (raw.dd00_direct_read !== undefined) byteField(r, "dd00_direct_read");
   const bank = vicBank(dd00);
   const bankBase = bank * 16384;
-  const screenBaseAddr = screenBase(d018, dd00);
-  const charsetBaseAddr = charsetBase(d018, dd00);
-  const port01raw = raw.port01_raw;
-  const spritePointers = raw.sprite_pointers ?? [];
   const spriteDataAddresses = spritePointers.map((p) => bankBase + p * 64);
 
   return {
     schema_version: 1,
     release: raw.release,
     label: raw.label,
+    route: raw.route,
     snapshot_name: raw.snapshot_name ?? null,
+    ...(raw.checkpoint_name !== undefined ? { checkpoint_name: raw.checkpoint_name } : {}),
+    ...(raw.checkpoint_address !== undefined ? { checkpoint_address: raw.checkpoint_address } : {}),
     registers: raw.registers,
     sprites: raw.sprites,
     cpu: raw.cpu,
@@ -192,15 +223,15 @@ export function buildChipState(raw: ChipStateRaw) {
         charen: !!(port01raw & 4),
       },
       dd00_raw: dd00,
-      dd00_direct_read: raw.dd00_direct_read ?? dd00,
+      ...(raw.dd00_direct_read !== undefined ? { dd00_direct_read: raw.dd00_direct_read } : {}),
       vic_bank: bank,
       d018_raw: d018,
-      screen_base: screenBaseAddr,
-      charset_base: charsetBaseAddr,
+      screen_base: screenBase(d018, dd00),
+      charset_base: charsetBase(d018, dd00),
       sprite_pointers: spritePointers,
       sprite_data_addresses: spriteDataAddresses,
     },
-    captured_at: raw.captured_at ?? new Date().toISOString(),
+    captured_at: raw.captured_at,
   };
 }
 
@@ -209,11 +240,14 @@ export function buildChipState(raw: ChipStateRaw) {
 const IO_START = 0xd000;
 const IO_END = 0xdfff;
 
+/** Length of the $00 or $FF run at `start`. A run below the I/O window
+ * stops at $D000, so an `unused` range never reaches into it. */
 function powerOnRunLength(image: Uint8Array, start: number): number {
   const b = image[start];
   if (b !== 0x00 && b !== 0xff) return 0;
+  const limit = start < IO_START ? IO_START : image.length;
   let end = start;
-  while (end < image.length && image[end] === b) end++;
+  while (end < limit && image[end] === b) end++;
   return end - start;
 }
 
@@ -267,26 +301,35 @@ export function buildRangeManifest(image: Uint8Array, meta: RangeManifestMeta = 
 
 // -------------------------------------------------------------- writeDumpSet
 
+/** A dump label is part of four file names, so it must be one plain segment. */
+const LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 /**
  * Render and write the four-file dump set from a committed chunk file's
  * contents plus the chip-state raw readings. Returns the written paths and
- * the image digest, so a caller can register a `dumps[]` entry.
+ * the image digest, in the shape `releases.ts add-dump` reads. Every check
+ * runs before the first write. An existing dump set is refused unless
+ * `force` is set.
  */
-export function writeDumpSet({ releaseId, label, chunks, chipStateRaw, meta = {}, captureExtra = {} }: WriteDumpSetInput) {
+export function writeDumpSet({ releaseId, label, chunks, chipStateRaw, meta = {}, captureExtra = {}, force = false }: WriteDumpSetInput & { force?: boolean }) {
+  if (!LABEL.test(label)) throw new Error(`write-set: label ${JSON.stringify(label)} must match ${LABEL.source}`);
   const image = assembleImage(chunks);
   const digest = sha256Buffer(image);
+  const stateOut = buildChipState({ ...chipStateRaw, release: releaseId, label });
+  const manifestOut = buildRangeManifest(image, { release: releaseId, label, ...meta });
   const dumpsDir = join(releaseDir(releaseId), "dumps");
+  const binPath = join(dumpsDir, `${releaseId}-${label}.bin`);
+  const statePath = join(dumpsDir, `${releaseId}-${label}.state.json`);
+  const mapPath = join(dumpsDir, `${releaseId}-${label}.map.json`);
+  const capturePath = join(dumpsDir, `${releaseId}-${label}.capture.json`);
+  const existing = [binPath, statePath, mapPath, capturePath].filter((p) => existsSync(p));
+  if (existing.length > 0 && !force) {
+    throw new Error(`write-set: ${existing.map(rel).join(", ")} already exist(s) -- a committed dump set is evidence; pass --force to replace it`);
+  }
   mkdirSync(dumpsDir, { recursive: true });
 
-  const binPath = join(dumpsDir, `${releaseId}-${label}.bin`);
   writeFileSync(binPath, image);
-
-  const stateOut = buildChipState({ ...chipStateRaw, release: releaseId, label });
-  const statePath = join(dumpsDir, `${releaseId}-${label}.state.json`);
   writeFileSync(statePath, JSON.stringify(stateOut, null, 2) + "\n");
-
-  const manifestOut = buildRangeManifest(image, { release: releaseId, label, ...meta });
-  const mapPath = join(dumpsDir, `${releaseId}-${label}.map.json`);
   writeFileSync(mapPath, JSON.stringify(manifestOut, null, 2) + "\n");
 
   const captureOut = {
@@ -296,10 +339,11 @@ export function writeDumpSet({ releaseId, label, chunks, chipStateRaw, meta = {}
     bytes: image.length,
     ...captureExtra,
   };
-  const capturePath = join(dumpsDir, `${releaseId}-${label}.capture.json`);
   writeFileSync(capturePath, JSON.stringify(captureOut, null, 2) + "\n");
 
   return {
+    release: releaseId,
+    label,
     bin: rel(binPath),
     state: rel(statePath),
     map: rel(mapPath),
@@ -310,66 +354,86 @@ export function writeDumpSet({ releaseId, label, chunks, chipStateRaw, meta = {}
 
 // -------------------------------------------------------------------- CLI
 
-function optValue(rest: string[], name: string): string | undefined {
+function optValue(rest: readonly string[], name: string): string | undefined {
   const i = rest.indexOf(`--${name}`);
-  return i === -1 ? undefined : rest[i + 1];
+  if (i === -1) return undefined;
+  const v = rest[i + 1];
+  if (v === undefined || v.startsWith("--")) throw new Error(`--${name} needs a value`);
+  return v;
 }
 
-function readJsonArg<T>(rest: string[], name: string): T | undefined {
+function readJsonArg<T>(rest: readonly string[], name: string): T | undefined {
   const p = optValue(rest, name);
   if (!p) return undefined;
-  return JSON.parse(readFileSync(resolve(p), "utf8"));
+  const path = resolve(p);
+  if (!existsSync(path)) throw new Error(`--${name}: no file at ${path}`);
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (e) {
+    throw new Error(`--${name}: ${path} is not valid JSON -- ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
-const VERBS: Record<string, (rest: string[]) => void> = {
-  assemble(rest) {
+type Say = (line: string) => void;
+
+const VERBS: Record<string, (rest: string[], say: Say) => ScriptResult> = {
+  assemble(rest, say) {
     const chunks = readJsonArg<MemoryChunk[]>(rest, "chunks");
-    if (!chunks) die("usage: assemble --chunks <chunks.json> [--json]");
+    if (!chunks) return { ok: false, message: "usage: assemble --chunks <chunks.json> [--json]" };
     const image = assembleImage(chunks);
     const digest = sha256Buffer(image);
-    const result = { bytes: image.length, sha256: digest };
-    console.log(rest.includes("--json") ? JSON.stringify(result, null, 2) : `${result.bytes} bytes, sha256 ${result.sha256}`);
+    say(`${image.length} bytes, sha256 ${digest}`);
+    return { ok: true, bytes: image.length, sha256: digest };
   },
 
   "chip-state"(rest) {
     const raw = readJsonArg<ChipStateRaw>(rest, "raw");
-    if (!raw) die("usage: chip-state --raw <raw.json> [--json]");
-    const result = buildChipState(raw);
-    console.log(JSON.stringify(result, null, 2));
+    if (!raw) return { ok: false, message: "usage: chip-state --raw <raw.json> [--json]" };
+    return { ok: true, chip_state: buildChipState(raw) };
   },
 
   manifest(rest) {
     const chunks = readJsonArg<MemoryChunk[]>(rest, "chunks");
     const metaArg = readJsonArg<RangeManifestMeta>(rest, "meta") ?? {};
-    if (!chunks) die("usage: manifest --chunks <chunks.json> [--meta <meta.json>] [--json]");
-    const image = assembleImage(chunks);
-    const result = buildRangeManifest(image, metaArg);
-    console.log(JSON.stringify(result, null, 2));
+    if (!chunks) return { ok: false, message: "usage: manifest --chunks <chunks.json> [--meta <meta.json>] [--json]" };
+    return { ok: true, manifest: buildRangeManifest(assembleImage(chunks), metaArg) };
   },
 
-  "write-set"(rest) {
+  "write-set"(rest, say) {
     const releaseId = optValue(rest, "release");
     const label = optValue(rest, "label");
     const chunks = readJsonArg<MemoryChunk[]>(rest, "chunks");
     const chipStateRaw = readJsonArg<ChipStateRaw>(rest, "raw");
     const metaArg = readJsonArg<RangeManifestMeta>(rest, "meta") ?? {};
     if (!releaseId || !label || !chunks || !chipStateRaw) {
-      die("usage: write-set --release <id> --label <label> --chunks <chunks.json> --raw <raw.json> [--meta <meta.json>] [--json]");
+      return { ok: false, message: "usage: write-set --release <id> --label <label> --chunks <chunks.json> --raw <raw.json> [--meta <meta.json>] [--force] [--json]" };
     }
-    const result = writeDumpSet({ releaseId, label, chunks, chipStateRaw, meta: metaArg });
-    console.log(JSON.stringify(result, null, 2));
+    const result = writeDumpSet({ releaseId, label, chunks, chipStateRaw, meta: metaArg, force: rest.includes("--force") });
+    say(`wrote ${result.bin}, ${result.state}, ${result.map}, ${result.capture}`);
+    return { ok: true, ...result };
   },
 };
+
+/** The whole CLI as a function. `say` receives the human-readable lines. Never throws. */
+export function main(argv: readonly string[], say: Say = () => {}): ScriptResult {
+  const [cmd, ...rest] = argv.filter((a) => a !== "--json");
+  if (!cmd || !Object.hasOwn(VERBS, cmd)) {
+    const usage = `usage: node ${fileURLToPath(import.meta.url)} <assemble|chip-state|manifest|write-set> [--json]`;
+    return { ok: false, message: cmd ? `unknown command ${JSON.stringify(cmd)}\n${usage}` : usage };
+  }
+  try {
+    return VERBS[cmd](rest, say);
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
 
 // True when this file is the process entry point, also when it runs through a symlink.
 const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (invokedDirectly) {
-  const [cmd, ...rest] = process.argv.slice(2);
-  if (!cmd || !VERBS[cmd]) {
-    console.log(`usage: node ${fileURLToPath(import.meta.url)} <assemble|chip-state|manifest|write-set> [--json]`);
-    process.exitCode = cmd ? 1 : 0;
-  } else {
-    VERBS[cmd](rest);
-  }
+  const argv = process.argv.slice(2);
+  const result = main(argv, argv.includes("--json") ? () => {} : (line) => console.log(line));
+  console.log(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
 }

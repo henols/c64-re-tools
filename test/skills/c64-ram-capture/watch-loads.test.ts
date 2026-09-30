@@ -212,6 +212,8 @@ test("buildChipState reproduces a committed sidecar's recorded derivations from 
     registers: committed.registers,
     sprites: committed.sprites,
     cpu: committed.cpu,
+    captured_at: committed.captured_at ?? "unrecorded",
+    route: committed.route ?? "memory-read",
   };
   const result = buildChipState(raw);
   assert.equal(result.derived.vic_bank, committed.derived.vic_bank);

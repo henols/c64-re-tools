@@ -93,11 +93,17 @@ interface Allowlist {
 }
 
 interface StateDoc {
-  route?: string;
-  registers?: Record<string, number>;
+  route: Route;
+  registers?: { registersHex?: unknown; [key: string]: unknown } | null;
   checkpoint_name?: string;
   checkpoint_address?: number;
 }
+
+type Route = "snapshot" | "memory-read";
+
+/** Every result this script prints. The last stdout line is always one of
+ * these, as JSON. */
+export type ScriptResult = { ok: true; [key: string]: unknown } | { ok: false; message: string; [key: string]: unknown };
 
 interface ClassifyInput {
   imgA: Uint8Array;
@@ -213,44 +219,50 @@ const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
 
 // ---------------------------------------------------------------------- state
 
-// --state <a.state.json> loads a per-capture sidecar this module defines its
-// own way -- distinct from, but inspired by, `dump-artifacts.ts`'s
-// chip-state output shape (`registers`/`sprites`/`cpu`), since no committed
-// chip-state sidecar carries $Dxxx register values directly today. The shape
-// this module reads:
+// --state <a.state.json> loads the chip-state sidecar that
+// `dump-artifacts.ts write-set` writes. This module reads three parts of it:
 //
 //   {
-//     "route": "snapshot" | "memory-read",
-//     "registers": { "$D011": 27, "53272": 21, "0xD020": 14 }
+//     "route": "snapshot" | "memory-read",           required
+//     "registers": { "registersHex": "<94 hex chars>", ... },
+//     "checkpoint_name": "...", "checkpoint_address": 4290
 //   }
 //
-// `registers` keys may be a "$Dxxx" hex string, a "0xNNNN" hex string, or a
-// bare decimal string -- whatever the caller already has to hand. Every key
-// must parse as an address or the sidecar is refused by name. `registers` is
-// optional: a capture with no chip-state evidence compares on the image
-// alone.
-function loadState(path: string): StateDoc {
-  return JSON.parse(readFileSync(path, "utf8"));
-}
+// `registers` is the `vice_vicii_get_state` answer, unchanged. Its
+// `registersHex` holds the 47 bytes at $D000-$D02E, which this module
+// compares register by register. `registers` is optional: a capture with no
+// chip-state evidence compares on the image alone. A `registers` object
+// without a well-formed `registersHex` is refused by name.
 
-function parseAddrKey(k: string): number | null {
-  if (/^\$[0-9a-fA-F]+$/.test(k)) return parseInt(k.slice(1), 16);
-  if (/^0x[0-9a-fA-F]+$/i.test(k)) return parseInt(k, 16);
-  if (/^\d+$/.test(k)) return parseInt(k, 10);
-  return null;
+const VIC_REGISTER_COUNT = 47;
+
+function loadState(path: string): StateDoc {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(readFileSync(path, "utf8"));
+  } catch (e) {
+    throw new Error(`${path}: cannot read the state sidecar -- ${(e as Error).message}`);
+  }
+  if (typeof doc !== "object" || doc === null) throw new Error(`${path}: the state sidecar is not a JSON object`);
+  const route = (doc as { route?: unknown }).route;
+  if (route !== "snapshot" && route !== "memory-read") {
+    throw new Error(`${path}: the state sidecar declares route ${JSON.stringify(route)} -- it must be "snapshot" or "memory-read"`);
+  }
+  return doc as StateDoc;
 }
 
 function normalizeRegisters(stateDoc: StateDoc, path: string): Map<number, number> {
   const map = new Map<number, number>();
-  const raw = stateDoc?.registers;
-  if (!raw) return map;
-  for (const [k, v] of Object.entries(raw)) {
-    const addr = parseAddrKey(k);
-    if (addr === null) {
-      throw new Error(`${path}: register key "${k}" is not a parseable address -- refused`);
-    }
-    map.set(addr, v);
+  const regs = stateDoc.registers;
+  if (regs === undefined || regs === null) return map;
+  const hexText = regs.registersHex;
+  if (typeof hexText !== "string" || !/^[0-9a-fA-F]*$/.test(hexText) || hexText.length !== VIC_REGISTER_COUNT * 2) {
+    throw new Error(
+      `${path}: registers carries no registersHex of ${VIC_REGISTER_COUNT} bytes -- record the vice_vicii_get_state answer unchanged -- refused`,
+    );
   }
+  const bytes = Buffer.from(hexText, "hex");
+  for (let i = 0; i < bytes.length; i++) map.set(0xd000 + i, bytes[i]);
   return map;
 }
 
@@ -392,20 +404,22 @@ export function classify({ imgA, imgB, route, regMapA, regMapB, allowlist }: Cla
 
 // ------------------------------------------------------------------- printing
 
+type Say = (line: string) => void;
+
 const fmtDiffRow = (r: DiffRecord) =>
   `  ${hex4(r.addr)}  ${hex2(r.a)} ${bin8(r.a)}  ->  ${hex2(r.b)} ${bin8(r.b)}   [${r.domain}]`;
 
-function printList(title: string, rows: DiffRecord[], limit: number | undefined) {
-  console.log(`\n${title}: ${rows.length}`);
+function printList(say: Say, title: string, rows: DiffRecord[], limit: number | undefined) {
+  say(`\n${title}: ${rows.length}`);
   if (!rows.length) return;
   // --limit 0 means unlimited, matching the usage text. Anything else caps.
   const shown = limit ? rows.slice(0, limit) : rows;
   for (const r of shown) {
     const why = r.why ? `  -- ${r.why}` : "";
-    console.log(fmtDiffRow(r) + why);
+    say(fmtDiffRow(r) + why);
   }
   if (shown.length < rows.length) {
-    console.log(`  … ${rows.length - shown.length} more (--limit 0 for all)`);
+    say(`  … ${rows.length - shown.length} more (--limit 0 for all)`);
   }
 }
 
@@ -417,25 +431,35 @@ function parseCrossArgs(argv: string[]) {
   let allowlistPath: string | null = null;
   let noAllowlist = false;
   let checkpointAssert: string | null = null;
-  let routeAssert: string | null = null;
+  let routeAssert: Route | null = null;
   let limit: number | undefined;
 
+  const value = (i: number, flag: string): string => {
+    const v = argv[i];
+    if (v === undefined || v.startsWith("--")) throw new Error(`${flag} needs a value`);
+    return v;
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--state") {
-      statePaths = [argv[++i], argv[++i]];
+      statePaths = [value(i + 1, "--state"), value(i + 2, "--state")];
+      i += 2;
     } else if (a === "--allowlist") {
-      allowlistPath = argv[++i];
+      allowlistPath = value(++i, a);
     } else if (a === "--no-allowlist") {
       noAllowlist = true;
     } else if (a === "--checkpoint") {
-      checkpointAssert = argv[++i];
+      checkpointAssert = value(++i, a);
     } else if (a === "--route") {
-      routeAssert = argv[++i];
+      const r = value(++i, a);
+      if (r !== "snapshot" && r !== "memory-read") throw new Error(`--route must be "snapshot" or "memory-read", got ${JSON.stringify(r)}`);
+      routeAssert = r;
     } else if (a === "--limit") {
-      const n = Number(argv[++i]);
+      const n = Number(value(++i, a));
       if (!Number.isInteger(n) || n < 0) throw new Error("--limit needs a non-negative integer");
       limit = n;
+    } else if (a.startsWith("--")) {
+      throw new Error(`unknown flag ${a}`);
     } else {
       positional.push(a);
     }
@@ -453,7 +477,7 @@ function parseCrossArgs(argv: string[]) {
   };
 }
 
-function cmdCross(argv: string[]): number {
+function cmdCross(argv: string[], say: Say): ScriptResult {
   const opts = parseCrossArgs(argv);
   const [pa, pb] = opts.imagePaths;
   const imgA = loadImage(pa);
@@ -462,15 +486,24 @@ function cmdCross(argv: string[]): number {
   const stateA = opts.statePaths ? loadState(opts.statePaths[0]) : null;
   const stateB = opts.statePaths ? loadState(opts.statePaths[1]) : null;
 
-  const routeA = stateA?.route ?? opts.routeAssert ?? "memory-read";
-  const routeB = stateB?.route ?? opts.routeAssert ?? "memory-read";
-  if (routeA !== routeB) {
-    throw new Error(
-      `capture routes differ -- A declares "${routeA}", B declares "${routeB}". Comparing a ` +
-        `snapshot-route capture against a memory-read-route capture is meaningless; refused.`,
-    );
+  // The route decides whether $D000-$DFFF is masked, so it is never assumed.
+  let route: Route;
+  if (stateA && stateB) {
+    if (stateA.route !== stateB.route) {
+      throw new Error(
+        `capture routes differ -- A declares "${stateA.route}", B declares "${stateB.route}". Comparing a ` +
+          `snapshot-route capture against a memory-read-route capture is meaningless; refused.`,
+      );
+    }
+    if (opts.routeAssert && opts.routeAssert !== stateA.route) {
+      throw new Error(`--route asserted "${opts.routeAssert}", the state sidecars declare "${stateA.route}" -- refused`);
+    }
+    route = stateA.route;
+  } else if (opts.routeAssert) {
+    route = opts.routeAssert;
+  } else {
+    throw new Error('cross needs the capture route: pass --state <a> <b>, or --route "snapshot" or "memory-read"');
   }
-  const route = routeA;
 
   const checkpointA = stateA?.checkpoint_name ?? null;
   const checkpointB = stateB?.checkpoint_name ?? null;
@@ -498,48 +531,56 @@ function cmdCross(argv: string[]): number {
   const haA = sha256(imgA);
   const haB = sha256(imgB);
 
-  console.log(`A  ${basename(pa)}  sha256 ${haA}`);
-  console.log(`B  ${basename(pb)}  sha256 ${haB}`);
-  console.log(`MASK_NARROWED_AT: ${MASK_VERSION}`);
+  say(`A  ${basename(pa)}  sha256 ${haA}`);
+  say(`B  ${basename(pb)}  sha256 ${haB}`);
+  say(`MASK_NARROWED_AT: ${MASK_VERSION}`);
   if (checkpointA) {
-    console.log(`A  checkpoint ${checkpointA} @ ${hex4(stateA!.checkpoint_address ?? 0)}`);
+    say(`A  checkpoint ${checkpointA} @ ${hex4(stateA!.checkpoint_address ?? 0)}`);
   }
   if (checkpointB) {
-    console.log(`B  checkpoint ${checkpointB} @ ${hex4(stateB!.checkpoint_address ?? 0)}`);
+    say(`B  checkpoint ${checkpointB} @ ${hex4(stateB!.checkpoint_address ?? 0)}`);
   }
 
   const byteIdentical = haA === haB;
-  console.log(`\nBYTE_IDENTICAL: ${byteIdentical ? "yes" : "no"}`);
-  console.log("  (a recorded extra -- the VERDICT line below is the acceptance signal, not this one)");
+  say(`\nBYTE_IDENTICAL: ${byteIdentical ? "yes" : "no"}`);
+  say("  (a recorded extra -- the VERDICT line below is the acceptance signal, not this one)");
 
   // Always classify, even when the images are byte-identical: a chip-state-
-  // only regression must still be caught. Unlike compare.ts's cmdCompare(),
-  // there is no early return on equal digests here -- see this plan's
-  // assumption_delta_decision, which demotes byte-identity to a recorded
-  // extra and promotes behavioural equivalence (the full classification) to
-  // the actual acceptance criterion.
+  // only regression must still be caught. Byte identity is a recorded extra,
+  // and the full classification is the acceptance criterion.
   const r = classify({ imgA, imgB, route, regMapA, regMapB, allowlist });
 
-  printList("volatile (excluded from the verdict)", r.volatile, opts.limit);
-  printList("allowlisted (intentional difference, excluded from the verdict)", r.allowlisted, opts.limit);
-  printList("DIVERGENCE — fails the comparison", r.divergence, opts.limit);
+  printList(say, "volatile (excluded from the verdict)", r.volatile, opts.limit);
+  printList(say, "allowlisted (intentional difference, excluded from the verdict)", r.allowlisted, opts.limit);
+  printList(say, "DIVERGENCE — fails the comparison", r.divergence, opts.limit);
 
   const total = r.volatile.length + r.allowlisted.length + r.divergence.length;
-  console.log(`\ntotal differing addresses (image + register): ${total}`);
-  console.log(`\nVERDICT: ${r.pass ? "PASS" : "FAIL"}`);
-  return r.pass ? 0 : 1;
+  say(`\ntotal differing addresses (image + register): ${total}`);
+  say(`\nVERDICT: ${r.pass ? "PASS" : "FAIL"}`);
+
+  const record = {
+    verdict: r.pass ? "PASS" : "FAIL",
+    route,
+    maskVersion: MASK_VERSION,
+    byteIdentical,
+    sha256: { a: haA, b: haB },
+    checkpoint: checkpointName,
+    counts: { volatile: r.volatile.length, allowlisted: r.allowlisted.length, divergence: r.divergence.length },
+    divergence: r.divergence.map((d) => ({ addr: hex4(d.addr), a: d.a, b: d.b, domain: d.domain })),
+  };
+  if (r.pass) return { ok: true, ...record };
+  return { ok: false, message: `VERDICT: FAIL -- ${r.divergence.length} divergence(s)`, ...record };
 }
 
 // -------------------------------------------------------------------- dispatch
 
-const commands: Record<string, (argv: string[]) => number> = { cross: cmdCross };
+const commands: Record<string, (argv: string[], say: Say) => ScriptResult> = { cross: cmdCross };
 
-function usage() {
+export function usage() {
   return `usage: node compare-cross-binary.ts <command>
 
-  cross <a.bin> <b.bin> [--state <a.state.json> <b.state.json>]
-        [--allowlist <path>] [--no-allowlist] [--checkpoint <name>]
-        [--route <snapshot|memory-read>] [--limit N]
+  cross <a.bin> <b.bin> (--state <a.state.json> <b.state.json> | --route <snapshot|memory-read>)
+        [--allowlist <path>] [--no-allowlist] [--checkpoint <name>] [--limit N] [--json]
     classify every difference between two captures of DIFFERENT binaries and
     print a single VERDICT line.
 
@@ -548,27 +589,25 @@ regardless of bit count -- unlike compare.ts, which is for two captures of
 the SAME binary. Volatile registers (excluded): $D011, $D012, $D019,
 $D01E-$D01F, $D400-$D7FF, $D800-$DBFF, $DC00-$DCFF, $DD00-$DDFF, $DE00-$DFFF
 (mirrored across $D000-$D3FF where applicable). $D015, $D018 and $D020 are
-deliberately NOT masked.
---limit 0 prints every row. Exit status is 1 on a FAIL verdict, non-zero on
-any refusal (mismatched route, mismatched checkpoint, a malformed allowlist,
-a malformed image).
+deliberately NOT masked. The route comes from the state sidecars, or from
+--route when there are none.
+--limit 0 prints every row. The last stdout line is one JSON result; ok is
+false on a FAIL verdict and on any refusal.
 
 Captures come from the procedure in c64-ram-capture/SKILL.md, via
 mcp__plugin_c64-re-tools_vice__*. This script contacts nothing.`;
 }
 
-function main() {
-  const [cmd, ...rest] = process.argv.slice(2);
-  if (!cmd || !commands[cmd]) {
-    console.error(usage());
-    process.exit(cmd ? 1 : 0);
-    return;
+/** The whole CLI as a function. `say` receives the human-readable lines. Never throws. */
+export function main(argv: readonly string[], say: Say = () => {}): ScriptResult {
+  const [cmd, ...rest] = argv.filter((a) => a !== "--json");
+  if (!cmd || !Object.hasOwn(commands, cmd)) {
+    return { ok: false, message: cmd ? `unknown command ${JSON.stringify(cmd)}\n${usage()}` : usage() };
   }
   try {
-    process.exit(commands[cmd](rest));
+    return commands[cmd](rest, say);
   } catch (e) {
-    console.error(`error: ${(e as Error).message}`);
-    process.exit(1);
+    return { ok: false, message: (e as Error).message };
   }
 }
 
@@ -576,5 +615,8 @@ function main() {
 const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (invokedDirectly) {
-  main();
+  const argv = process.argv.slice(2);
+  const result = main(argv, argv.includes("--json") ? () => {} : (line) => console.log(line));
+  console.log(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
 }
