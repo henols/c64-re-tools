@@ -59,8 +59,7 @@ constant stores to `$01`, `$D011`, `$D018` and `$DD00`. Only the Ghidra
 export goes into the annotation project.
 
 The two passes help each other. Give Ghidra the entry points that dxa and
-your own reading found. Give dxa the data ranges that you know. For the
-full method, read [docs/dissambler-workflow.md](../../docs/dissambler-workflow.md).
+your own reading found. Give dxa the data ranges that you know.
 
 ## Install the Ghidra 6502 extension
 
