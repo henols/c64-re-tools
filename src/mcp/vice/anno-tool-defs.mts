@@ -748,7 +748,7 @@ export function assertWithinRegionCap(name: string, start: number, end: number, 
   }
 }
 
-/** Narrows the universally-required `image` argument (D-07) to a non-empty
+/** Narrows the universally-required `image` argument to a non-empty
  * path (as the client sees it) or a staged reference (as this engine does).
  * Containment and reading are the client's. */
 function assertImageArg(name: string, args: unknown, batchIndex?: number): void {

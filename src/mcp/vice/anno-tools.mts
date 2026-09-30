@@ -42,9 +42,7 @@
 //   to have one. The verb that would have exposed it is folded into
 //   `anno_disassemble`'s explicit address argument. Nothing on this surface --
 //   no identifier, no schema property, no dispatch branch -- names a cursor or
-//   a current address, and `anno-tools.test.ts` asserts that over this file's
-//   comment-and-string-stripped source so this paragraph cannot satisfy the
-//   check by containing the word.
+//   a current address.
 //
 // TWO REFUSAL CHANNELS, AND THE DIFFERENCE IS DELIBERATE:
 //
@@ -573,8 +571,7 @@ function dispatchEvidRuns(handle: AnnoStoreHandle, args: unknown): unknown {
  * call removed. `baseRevision` is threaded straight into
  * `deleteExecObservationsForRun()`, which enforces staleness itself through
  * `applyWrite()` -- the same "let the store's own write sequence check it"
- * discipline `dispatchEvidIngest()` above already uses, so there is no
- * second, redundant `assertNotStale()` call here.
+ * discipline `dispatchEvidIngest()` above already uses.
  */
 function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
   const bag = argBag(args);

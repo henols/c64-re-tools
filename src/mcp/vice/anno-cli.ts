@@ -7,57 +7,15 @@
 // remedy text, and `npx -y` installs.
 //
 // ---------------------------------------------------------------------------
-// FIVE VERBS. THAT IS THE WHOLE SURFACE -- narrowed to two, then grown back
-// one verb at a time as each earned a real route over this project's own
-// annotation store: a third verb landed first; a fourth, `evid-disagreements`,
-// followed as the CLI route for the disagreement query, so a planted test has
-// three RENDERED, textually-distinguishable states to compare rather than
-// only the MCP tool's JSON, which a test can only inspect structurally; a
-// fifth, `decomp-completeness`, followed as the CLI route for the
-// decomposition-completeness report's ONLY data path into a real store. Each
-// raise of the count DELIBERATELY SUPERSEDES the prior "THAT IS THE WHOLE
-// SURFACE" framing rather than silently reopening it -- this is the second
-// raise over that framing, not the first.
-//
-// A SEVENTH VERB, `call`, landed 2026-09-25 (D-12, plan 65-02) for a
-// different reason than the first six: D-13 deletes the whole `anno_*` MCP
-// tool family from `tools/list` in the same change. `CURATED_ANNO_TOOLS`
-// (anno-tools.mts) MEASURED at 28 names at this commit -- the plan that
-// authored this verb estimated 25 and named exactly two as colliding with a
-// CLI verb name (hazard-report, evid-disagreements); the measured count is
-// higher, but the same two are still the only ones that collide, so 26 of
-// the 28 had no CLI route before this verb. `call` is the ONE generic route
-// for the other twenty-six -- it takes a curated tool name and one JSON
-// argument object and hands both to `runAnnoTool()` unchanged, so none of
-// the 28 is reimplemented here a second time.
+// NINE VERBS: render-memmap, coverage, export-asm, evid-disagreements,
+// decomp-completeness, hazard-report, export-project, import-project and
+// `call`. Eight are named reports over the workspace's own annotation
+// project; `call` is the one generic route to the curated `anno_*` tools
+// (`CURATED_ANNO_TOOLS` in anno-tool-defs.mts): it takes a tool name and one
+// JSON argument object and hands both to `runAnnoTool()` unchanged, so no
+// tool is reimplemented here. The bootstrap, verify, gen-enums, export-lbl
+// and import-lbl verbs of an earlier analyser-backed CLI have no route.
 // ---------------------------------------------------------------------------
-// This file used to carry eight. Six were removed in one commit because they
-// were delivery paths for the retired external analyser this project used to
-// rent an annotation store from: three drove its child process directly and
-// three reached it through capability modules that did. Removing the analyser
-// without removing them would have left six verbs that typecheck, dispatch,
-// and then fail at the first call. That paragraph is kept rather than deleted:
-// it records what went and why, and it stays true.
-//
-// What went, and where it stands now:
-//   - `bootstrap`, `export-asm`, `verify` -- the analyser's own routes.
-//     `export-asm` RETURNED on 2026-08-31 as a REBUILD OVER THE ANNOTATION
-//     STORE behind a real-ACME byte-diff oracle -- not as restored code, and
-//     not sharing a line with the deleted implementation. It is the third
-//     verb below. `bootstrap` and `verify` did not come back: `bootstrap`
-//     created the analyser's own project file, which no longer exists as a
-//     format this repo produces, and `verify` drove the analyser's own
-//     checker.
-//   - `gen-enums`, `export-lbl`, `import-lbl` -- the enum generator and the
-//     VICE-label round trip. These did NOT return with `export-asm`. No
-//     requirement and no success criterion of the phase that rebuilt
-//     `export-asm` covers any of them, and NO PHASE CURRENTLY OWNS THEM, so
-//     the symbol round trip still has NO route at all. That is recorded as a
-//     withdrawal in this project's own capability record rather than left for
-//     a reader to discover by running it. The exact wording of those
-//     withdrawal notices across the skill docs is kept in exactly one
-//     place; this file states the code fact and does not restate their text,
-//     so the two edits cannot contradict each other.
 //
 // WHAT NOT TO DO, named concretely:
 //   - Never auto-pick an input when the caller does not name one. A

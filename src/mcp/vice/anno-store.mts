@@ -199,10 +199,10 @@ export interface AnnoWriteResult {
  * in one directory sharing one ring and a directory rename plus one
  * write destroying the whole revert history. The column is DROPPED at
  * `SCHEMA_VERSION` 2 and the location is computed from the handle by
- * `snapshotDirFor()` at every read and every delete, so there is no persisted
+ * the handle at every read and every delete, so there was no persisted
  * absolute string left for a second namespace -- a bind mount seen from the
  * host and from a container is this repo's own everyday case -- to disagree
- * with. `anno-types.mts`'s `SCHEMA_VERSION` doc comment carries the whole
+ * with. (The snapshot ring and `anno_snapshot` are gone since version 6.) `anno-types.mts`'s `SCHEMA_VERSION` doc comment carries the whole
  * argument and the reason a version-1 store is refused rather than migrated.
  *
  * THE VERSION 2 DDL CHANGE TOUCHED ONLY `anno_snapshot`. Every other table's
