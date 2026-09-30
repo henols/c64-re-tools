@@ -168,7 +168,7 @@ A native-tool request does not select or inherit an MCP-owned VICE instance.
 
 ### Disposable/local
 
-Caches, temporary captures and other recreatable material may live under `.c64-re-tools/local/`.
+Caches, temporary captures and other recreatable material stay outside the project under Host Runtime, MCP-session or request-owned temporary storage. `.c64-re-tools/` is reserved for durable project knowledge.
 
 ## 7. Dependency direction
 
@@ -242,3 +242,7 @@ No layer should translate a structural failure into a plausible successful resul
 ## 11. No compatibility architecture
 
 The new architecture is not constrained by current internal APIs. Compatibility shims are added only if a future concrete distribution requirement justifies them; they are not part of this design baseline.
+
+## 12. Repository implementation shape
+
+The greenfield implementation uses one repository and one npm package with a small flat `src/` organized by ownership (`mcp`, `host`, `host-client`, `knowledge`, `cli`) plus first-class `skills/`. See [18 — Repository structure](18-repository-structure.md).
