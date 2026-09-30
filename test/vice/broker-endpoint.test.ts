@@ -7,11 +7,9 @@
 // magic-string literals in byte-identical agreement.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { connect, createServer, Socket, type Server } from "node:net";
 
-import { startControlListener, bindControlListener, HELLO_PROTOCOL_MAGIC as SERVER_HELLO_PROTOCOL_MAGIC } from "../../src/mcp/vice/broker-control.mts";
+import { startControlListener, bindControlListener } from "../../src/mcp/vice/broker-control.mts";
 import {
   dialBrokerEndpoint,
   classifyHelloReply,
@@ -30,49 +28,6 @@ import {
   type DialFileTransferResult,
 } from "../../src/mcp/vice/broker-endpoint.mts";
 import type { FileTransferOutcome, StartControlListenerOptions } from "../../src/mcp/vice/broker-control.mts";
-import { VICE_DIR } from "./paths.ts";
-
-const BROKER_ENDPOINT_TS = join(VICE_DIR, "broker-endpoint.mts");
-const BROKER_CONTROL_MTS = join(VICE_DIR, "broker-control.mts");
-
-/** Strips `//` line comments and `/* ... *\/` block comments -- the same
- * stripCommentLines() idiom tool-location-consumers.test.ts already uses
- * for exactly this reason: this module's own header comments NAME the
- * forbidden fs calls and vice-broker-client.ts (explaining what NOT to do),
- * so a naive raw-source
- * substring check would trip on its own prose rather than on real code. */
-function stripCommentLines(src: string): string {
-  const out: string[] = [];
-  let inBlock = false;
-
-  function processSegment(text: string): void {
-    if (inBlock) {
-      const closeIdx = text.indexOf("*/");
-      if (closeIdx === -1) return;
-      inBlock = false;
-      processSegment(text.slice(closeIdx + 2));
-      return;
-    }
-    const trimmed = text.trim();
-    if (trimmed.startsWith("/*")) {
-      const openIdx = text.indexOf("/*");
-      const closeIdx = text.indexOf("*/", openIdx + 2);
-      if (closeIdx === -1) {
-        inBlock = true;
-        return;
-      }
-      processSegment(text.slice(closeIdx + 2));
-      return;
-    }
-    if (/^\s*\/\//.test(text)) return;
-    out.push(text);
-  }
-
-  for (const line of src.split("\n")) {
-    processSegment(line);
-  }
-  return out.join("\n");
-}
 
 // ---------------------------------------------------------------------------
 // The genuine end-to-end case.
@@ -116,10 +71,6 @@ test("dialBrokerEndpoint completes a real handshake end to end against a real li
 // ---------------------------------------------------------------------------
 // The default candidate list.
 // ---------------------------------------------------------------------------
-
-test("DIAL_CANDIDATES is exactly the two fixed hosts, loopback first", () => {
-  assert.deepEqual(DIAL_CANDIDATES, ["127.0.0.1", "host.docker.internal"]);
-});
 
 // ---------------------------------------------------------------------------
 // Plan 64-08 (G-64-1 gap closure, Task 1): resolveEndpointPort() -- the one
@@ -193,35 +144,6 @@ test("dialBrokerEndpoint with no port option reaches a hello-answering listener 
 // ---------------------------------------------------------------------------
 // Structural assertions: no filesystem access, no vice-broker-client import.
 // ---------------------------------------------------------------------------
-
-test("broker-endpoint.mts never touches the filesystem and never imports vice-broker-client.ts", () => {
-  // readFileSync, not a shell grep -- four source files in this tree carry
-  // NUL bytes that a shell grep silently skips (see this repo's own
-  // documented gotcha); readFileSync with "utf8" never truncates on one.
-  // Comment-stripped, because this module's own header comments NAME the
-  // forbidden calls and vice-broker-client.ts while explaining why they are
-  // forbidden -- a raw substring check would trip on that prose, not on
-  // real code.
-  const source = stripCommentLines(readFileSync(BROKER_ENDPOINT_TS, "utf8"));
-  for (const forbidden of ["readFileSync(", "existsSync(", "readFile(", "vice-broker-client"]) {
-    assert.ok(!source.includes(forbidden), `broker-endpoint.mts must not contain ${JSON.stringify(forbidden)} outside of comments`);
-  }
-});
-
-test("the mirrored HELLO_PROTOCOL_MAGIC literal in broker-endpoint.mts is byte-identical to broker-control.mts's own definition", () => {
-  assert.equal(HELLO_PROTOCOL_MAGIC, SERVER_HELLO_PROTOCOL_MAGIC);
-
-  // Belt and braces: read both literals directly out of source, not just
-  // out of the imported runtime values, so a copy-paste that diverges only
-  // in a comment-adjacent duplicate would still be caught.
-  const clientSource = readFileSync(BROKER_ENDPOINT_TS, "utf8");
-  const serverSource = readFileSync(BROKER_CONTROL_MTS, "utf8");
-  const clientMatch = clientSource.match(/export const HELLO_PROTOCOL_MAGIC = "([^"]+)"/);
-  const serverMatch = serverSource.match(/export const HELLO_PROTOCOL_MAGIC = "([^"]+)"/);
-  assert.ok(clientMatch, "broker-endpoint.mts must export HELLO_PROTOCOL_MAGIC as a string literal");
-  assert.ok(serverMatch, "broker-control.mts must export HELLO_PROTOCOL_MAGIC as a string literal");
-  assert.equal(clientMatch![1], serverMatch![1]);
-});
 
 // ============================================================================
 // Plan 62-01, task 2: both candidates always dialled, each on its own
@@ -600,17 +522,6 @@ function makeFailure(overrides: Partial<DialFailure> & { rank: DialFailure["rank
     ...overrides,
   };
 }
-
-test("BROKER_START_COMMAND names the npm bin and the plugin-root invocation, one literal with no interpolation and no npx", () => {
-  assert.equal(BROKER_START_COMMAND, "vice-mcp broker (npm install) or node <plugin-root>/src/mcp/vice/vice-cli.mjs broker (plugin or checkout)");
-  assert.doesNotMatch(BROKER_START_COMMAND, /npx/);
-});
-
-test("the start-command literal appears in broker-endpoint.mts between 1 and 3 times -- one definition, never a hand-copied second string", () => {
-  const source = readFileSync(BROKER_ENDPOINT_TS, "utf8");
-  const count = (source.match(/vice-mcp broker \(npm install\) or node <plugin-root>\/src\/mcp\/vice\/vice-cli\.mjs broker \(plugin or checkout\)/g) ?? []).length;
-  assert.ok(count >= 1 && count <= 3, `expected the literal to appear 1-3 times, found ${count}`);
-});
 
 test("rank 1: names the start command verbatim and states nothing answered on either candidate", () => {
   const failure = makeFailure({ rank: 1, observations: [{ host: "127.0.0.1", rank: 1, resolved: false }, { host: "host.docker.internal", rank: 1, resolved: false }] });

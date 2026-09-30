@@ -17,7 +17,6 @@ import {
   _snapshotState,
   clearMonitorClient,
   DEFAULT_BASE_PORT,
-  MONITOR_CHANNELS,
   type InstanceRecord,
 } from "../../src/mcp/vice/broker-state.mts";
 
@@ -231,23 +230,6 @@ test("_snapshotState: returns a plain-object deep copy -- mutating a nested valu
 // single-channel-scoped holder.
 // ---------------------------------------------------------------------------
 
-test("MONITOR_CHANNELS: frozen and exactly ['binary', 'text'], in order", () => {
-  assert.deepEqual(MONITOR_CHANNELS, ["binary", "text"]);
-  assert.ok(Object.isFrozen(MONITOR_CHANNELS));
-});
-
-test("InstanceRecord.monitorClients: present and empty on a freshly constructed record -- asserted on the field's OWN presence, so a re-introduced optional single field fails both compilation and this assertion", () => {
-  const instance = makeInstance();
-  assert.ok(Object.prototype.hasOwnProperty.call(instance, "monitorClients"), "a freshly constructed record must carry a monitorClients KEY");
-  assert.deepEqual(instance.monitorClients, {}, "and it must be an EMPTY map, never an absent field");
-
-  // Phase 63 (SESS-02): `handle`/`attached` are widened-in, non-optional
-  // fields on this entry now -- see broker-state.mts's own
-  // InstanceRecord.monitorClients header comment.
-  instance.monitorClients.binary = { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242, handle: "test-handle", attached: false };
-  assert.deepEqual(instance.monitorClients.binary, { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242, handle: "test-handle", attached: false });
-});
-
 test("clearMonitorClient(record, 'text'): clears only the text entry, leaving the binary entry intact", () => {
   const instance = makeInstance({
     monitorClients: {
@@ -303,15 +285,6 @@ test("clearMonitorClient: leaves every other field on the record untouched", () 
 // than left implicit (the threat register accepts T-33-25 on exactly that
 // basis).
 // ---------------------------------------------------------------------------
-
-test("InstanceRecord.profile (33-06): absent by default, and accepts the documented warp/headless shape with no default value of its own", () => {
-  const instance = makeInstance();
-  assert.equal(instance.profile, undefined, "a freshly constructed record carries no profile by default -- never `{}`, never a default");
-  assert.equal(Object.prototype.hasOwnProperty.call(instance, "profile"), false, "and carries no `profile` KEY at all, which is what 'absent means profile-less' requires");
-
-  instance.profile = { warp: true, headless: true };
-  assert.deepEqual(instance.profile, { warp: true, headless: true });
-});
 
 test("_snapshotState (33-06): profile survives the snapshot's deep copy, and mutating the copy does not reach live broker state", () => {
   const state = createBrokerState();

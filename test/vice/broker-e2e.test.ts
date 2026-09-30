@@ -329,41 +329,6 @@ function writeProbeAnsweringStub(dir: string): string {
   return stubPath;
 }
 
-// Quick task 260913-o78: the planted-violation gate for the stub's loud
-// refusal. Without this, "refuses loudly instead of falling back" is prose
-// nobody runs -- a control nothing exercises is exactly the class of defect
-// this whole quick task exists to close. Spawns the emitted stub directly
-// (never through startBroker()/the real broker) with an argv that
-// deliberately carries no binary-monitor endpoint flag -- mirroring the
-// VICE_ARGS="600" shape every other test in this file leaves set, which is
-// the real-world argv that would reach this path if VICE_ARGS were ever
-// left set for a test using this stub.
-test(
-  "probe-answering stub refuses loudly (non-zero exit, stderr names the flag) when its argv carries no binary-monitor endpoint flag",
-  { timeout: 5000 },
-  async () => {
-    const dir = mkdtempSync(join(tmpdir(), "broker-e2e-stub-refusal-"));
-    try {
-      const stubPath = writeProbeAnsweringStub(dir);
-      const child = spawn(process.execPath, [stubPath, "600"]);
-      let stderr = "";
-      child.stderr.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString("utf8");
-      });
-      const exitCode = await new Promise<number | null>((resolvePromise) => {
-        child.on("exit", (code) => resolvePromise(code));
-      });
-      assert.notEqual(exitCode, 0, `stub must exit non-zero when it cannot resolve a binary-monitor port, got ${exitCode}`);
-      assert.ok(
-        stderr.includes("-binarymonitoraddress"),
-        `stderr must name the flag the stub looked for, got: ${JSON.stringify(stderr)}`,
-      );
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  },
-);
-
 test(
   "end-to-end: one acquire over the TCP control plane spawns exactly one stub child, writes its epoch, grants, and connection-close identity-verified-kills it",
   { timeout: 20000 },

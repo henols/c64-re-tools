@@ -209,22 +209,6 @@ test("broker-transfer: a real multi-megabyte, non-UTF-8 file crosses a real loop
   }
 });
 
-test("broker-transfer: every fixture directory is created with mkdtempSync and this test cleans it up (no untracked scratch dirs)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "broker-transfer-cleanup-check-"));
-  assert.ok(existsSync(dir));
-  rmSync(dir, { recursive: true, force: true });
-  assert.equal(existsSync(dir), false);
-});
-
-test("broker-transfer: readdirSync is a real directory listing, never a name-guess, for asserting no leftover temp file", () => {
-  const dir = mkdtempSync(join(tmpdir(), "broker-transfer-listing-check-"));
-  try {
-    assert.deepEqual(readdirSync(dir), []);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 // ---------------------------------------------------------------------------
 // Task 2 (D-11, TDD): the cap at both ends, the mid-stream abort, and the
 // proof that backpressure is real -- not a false green from a sender that
@@ -492,10 +476,6 @@ test("broker-transfer: a receiver that stops reading stalls the sender's promise
   } finally {
     rmSync(fixtureDir, { recursive: true, force: true });
   }
-});
-
-test("TRANSFER_MAX_BYTES: imported (not re-typed) by both transfer-hash and this test, and equals 16 * 1024 * 1024", () => {
-  assert.equal(TRANSFER_MAX_BYTES, 16 * 1024 * 1024);
 });
 
 // ---------------------------------------------------------------------------

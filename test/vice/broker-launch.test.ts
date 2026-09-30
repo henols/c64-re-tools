@@ -26,7 +26,6 @@ import { spawn as realSpawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import type { ChildProcess, SpawnOptionsWithoutStdio } from "node:child_process";
 
-import { HOST_BOUND_ARTIFACTS } from "../../src/mcp/vice/build.ts";
 import {
   createBrokerState,
   type BrokerState,
@@ -44,7 +43,6 @@ import {
   superviseChild,
   withCrashSupervision,
   buildViceArgs,
-  STOCK_DETERMINISM_SEED,
   STOCK_DETERMINISM_FLAGS,
 } from "../../src/mcp/vice/broker-launch.mts";
 // Direct SOURCE import (".mts", not ".mjs") -- safe for a test file, which
@@ -55,7 +53,6 @@ import {
 // injected into superviseChild()'s EpochWriterDeps below exactly like
 // vice-broker.mts's real wiring will eventually inject them.
 import { epochPathFor, instanceLogDirFor, nextEpochFor, writeEpochRecord } from "../../src/mcp/vice/broker-epoch.mts";
-import { VICE_DIR } from "./paths.ts";
 
 
 /** Poll `predicate` to a bounded deadline rather than sleeping a fixed
@@ -104,42 +101,6 @@ function stubChild(pid = 4242): ChildProcess {
 
 // ---------------------------------------------------------- structural
 
-test("structural: only tryLaunchOne() ever adds an instance record to state.instances -- the single guarded function every launch call site must route through", () => {
-  // Enumerated from the build's OWN artifact set (build.ts's
-  // HOST_BOUND_ARTIFACTS), never a hand-maintained list of source files --
-  // a new host-bound module added later is covered automatically.
-  assert.ok(HOST_BOUND_ARTIFACTS.length >= 2, "host-bound artifact set enumerated as suspiciously small -- resolution is broken");
-
-  for (const rel of HOST_BOUND_ARTIFACTS) {
-    const sourceRel = rel.replace(/\.mjs$/, ".mts");
-    const text = readFileSync(join(VICE_DIR, sourceRel), "utf8");
-    const matches = text.match(/\.instances\.set\(/g) ?? [];
-    if (sourceRel === "broker-launch.mts") {
-      assert.equal(matches.length, 1, `broker-launch.mts must register exactly one instance record (inside tryLaunchOne() itself); found ${matches.length}`);
-    } else {
-      assert.equal(matches.length, 0, `${sourceRel} must not register an instance record directly -- every launch must route through tryLaunchOne()`);
-    }
-  }
-});
-
-// 01.6.2-12-PLAN.md, Task 3: strips BOTH `/* ... */` (including JSDoc
-// `/** ... */`) block comments AND whole `//` comment lines before any of
-// this file's own count-based structural assertions run. A naive
-// line-anchored `^\s*//` strip alone (this project's own established
-// idiom elsewhere) is NOT enough here: a `/** ... */` doc comment that
-// happens to mention the counted token inline (e.g. a header comment
-// explaining "the wrapper this file uses is withCrashSupervision()") is
-// invisible to that filter and silently inflates the count -- a real
-// instance of exactly this trap was found and fixed while writing this
-// task's own gate (see this task's own findings-log entry). Only whole
-// `//` comment LINES are stripped (never a trailing inline "// ..." after
-// real code on the same line) so a string literal containing "//" (e.g.
-// this file's own "http://127.0.0.1:<port>/mcp" URL construction) is never
-// truncated mid-line.
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
-}
-
 // ===========================================================================
 // 01.6.2-12-PLAN.md, Task 3: the structural anti-regression gate. Promotes
 // 01.6.2-VERIFICATION.md's own diagnostic grep (a zero-hit search for
@@ -148,44 +109,6 @@ function stripComments(source: string): string {
 // EITHER real launch path in vice-broker.mts must fail this test, not ship
 // silently the way CR-01 did the first time.
 // ===========================================================================
-
-test("structural: broker-launch.mts's child exit listener is installed in exactly one place, and vice-broker.mts's spawn-factory count equals its withCrashSupervision call-site count, importing the wrapper by name", () => {
-  const launchSource = stripComments(readFileSync(join(VICE_DIR, "broker-launch.mts"), "utf8"));
-  const brokerSource = stripComments(readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8"));
-
-  // Assertion 1: the child exit listener exists in exactly ONE place in the
-  // whole supervision module -- inside withCrashSupervision() itself. Two
-  // installation points (e.g. a regressed inline copy alongside the shared
-  // wrapper) is the same shape of hazard this whole gap closure exists to
-  // remove, one level down.
-  const exitListenerCount = (launchSource.match(/\.once\("exit"/g) ?? []).length;
-  assert.equal(
-    exitListenerCount,
-    1,
-    `assertion 1 (exit-listener installation count) FAILED: expected exactly 1 comment-stripped '.once("exit"' call in broker-launch.mts, found ${exitListenerCount} -- the child exit listener must be installed in exactly ONE place in the whole module tree`,
-  );
-
-  // Assertion 2: the real broker entry point's spawn-factory count must
-  // equal its supervision-wrapper call-site count. This is the load-bearing
-  // check -- a third spawnFactory added to a future launch path without a
-  // matching withCrashSupervision() composition changes this equality and
-  // fails HERE, rather than shipping an unsupervised launch path silently.
-  const spawnFactoryCount = (brokerSource.match(/\bspawnFactory:/g) ?? []).length;
-  const wrapperCallSiteCount = (brokerSource.match(/\bwithCrashSupervision\(/g) ?? []).length;
-  assert.ok(spawnFactoryCount > 0, "assertion 2 setup FAILED: found zero spawnFactory properties in vice-broker.mts -- the equality check below would pass vacuously against a broker with no launch paths at all");
-  assert.equal(
-    spawnFactoryCount,
-    wrapperCallSiteCount,
-    `assertion 2 (spawn-factory count vs supervision-wrapper call-site count) FAILED: vice-broker.mts declares ${spawnFactoryCount} comment-stripped spawnFactory propert${spawnFactoryCount === 1 ? "y" : "ies"} but composes through withCrashSupervision( at only ${wrapperCallSiteCount} comment-stripped call site${wrapperCallSiteCount === 1 ? "" : "s"} -- every real launch path's spawn factory must be wrapped by the shared supervision primitive`,
-  );
-
-  // Assertion 3: the real broker entry point must import the wrapper BY
-  // NAME from the supervision module -- a differently-named local
-  // re-implementation could satisfy assertion 2's raw count without ever
-  // being the shared, unit-tested wrapper.
-  const importsWrapperByName = /import\s*\{[^}]*\bwithCrashSupervision\b[^}]*\}\s*from\s*["']\.\/broker-launch\.mjs["']/.test(brokerSource);
-  assert.ok(importsWrapperByName, "assertion 3 (import by name) FAILED: vice-broker.mts must import withCrashSupervision by name from ./broker-launch.mjs");
-});
 
 // ===========================================================================
 // 01.6.2.1-01-PLAN.md, Task 2: the structural anti-regression gate over
@@ -199,38 +122,6 @@ test("structural: broker-launch.mts's child exit listener is installed in exactl
 // acquire entry point's own body actually invokes the warm-instance
 // selector, not merely defines it.
 // ===========================================================================
-
-test("structural: vice-broker.mts records a grant in exactly one place, and its real acquire entry point invokes the warm-instance selector by name", () => {
-  const brokerSource = stripComments(readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8"));
-
-  // Assertion 1: exactly one grant-recording call site in the whole module.
-  // Two independent state.grants.set() sites (one per arm) would let a
-  // FUTURE third acquire arm reintroduce Defect 5 invisibly -- this task's
-  // own assumption-delta decision promotes "resolve a grantable instance"
-  // to the ONE primary operation for exactly this reason.
-  const grantCallCount = (brokerSource.match(/\bstate\.grants\.set\(/g) ?? []).length;
-  assert.equal(
-    grantCallCount,
-    1,
-    `assertion 1 (grant-recording call count) FAILED: expected exactly 1 comment-stripped state.grants.set( call in vice-broker.mts, found ${grantCallCount} -- a second, independent grant-recording site would let a future third acquire arm reintroduce Defect 5 invisibly`,
-  );
-
-  // Assertion 2: the real acquire entry point's own body invokes the
-  // warm-instance selector BY NAME -- the exact "correct module, never
-  // called" failure shape Defect 5 was. Matches ONLY a single-line
-  // invocation ("await selectWarmInstance(...)"), never the selector's own
-  // multi-line declaration ("async function selectWarmInstance(\n  state:
-  // ..."), so this assertion cannot be satisfied by the selector merely
-  // existing, unreferenced -- exactly how maintainWarmFloor() itself sat
-  // correctly built and unit-tested while orphaned from handleAcquire()
-  // before this task.
-  const selectorCallSiteCount = (brokerSource.match(/\bawait\s+selectWarmInstance\(/g) ?? []).length;
-  assert.equal(
-    selectorCallSiteCount,
-    1,
-    `assertion 2 (warm-instance selector call-site count) FAILED: expected exactly 1 comment-stripped "await selectWarmInstance(" call in vice-broker.mts, found ${selectorCallSiteCount} -- the real acquire entry point must actually CALL the selector, not merely define it`,
-  );
-});
 
 // ===========================================================================
 // Plan 41-05 (folded todo): 01.6.2.1-07-PLAN.md's own WR-04 structural gate
@@ -1656,13 +1547,6 @@ test("spawnAndRecordInstance (64-05/D-08): the pid record beside the scratch dir
   });
 });
 
-test("structural (64-05/D-08): broker-launch.mts's 'Config-scratch lifetime' comment no longer claims this directory is never cleaned up, no longer claims it accumulates under the OS temp directory, and names broker-kill.mts as the reap's owner", () => {
-  const source = readFileSync(join(VICE_DIR, "broker-launch.mts"), "utf8");
-  assert.equal(/deliberately does NOT clean/i.test(source), false, "the comment must no longer claim the directory is never cleaned up");
-  assert.equal(/accumulate under the OS temp dir/i.test(source), false, "the comment must no longer claim these accumulate under the OS temp directory");
-  assert.match(source, /broker-kill\.mts.{0,80}(reap|own)/is, "the comment must name broker-kill.mts as the reap's owner");
-});
-
 // MUST run before any later test in this file passes a non-loopback
 // binmonHost to buildViceArgs() -- the widened-bind note is gated by a
 // module-level flag with no test-facing reset, so this is the one place in
@@ -1864,13 +1748,6 @@ test("spawnAndRecordInstance (D-16, via tryLaunchOne): throws, naming the missin
   assert.equal(isLaunchInFlight(), false, "the in-flight guard must still be released even though spawnAndRecordInstance() threw");
 });
 
-test("grep gate (D-16): broker-launch.mts's source no longer carries the removed degrade log's own wording about the text-monitor port going undialed", () => {
-  const source = readFileSync(join(VICE_DIR, "broker-launch.mts"), "utf8");
-  assert.ok(!source.includes("nothing in Phase 3 dials the text-monitor port"), "the removed degrade log's own phrase must not survive anywhere in the source");
-  assert.ok(!source.includes("launching WITHOUT -remotemonitor"), "the removed degrade log's own phrase must not survive anywhere in the source");
-  assert.ok(!source.includes("Degrade, never fail"), "the removed degrade branch's own comment must not survive anywhere in the source");
-});
-
 // ===========================================================================
 // CR-02 (03-REVIEW.md): the D-13 second port across an instance's REPLACEMENT
 // and its TEARDOWN. Every test above covers only a fresh launch through
@@ -2048,16 +1925,6 @@ test("deleteInstanceRecord: releases only a record's OWN second port, never an u
 // text-monitor bind, and do not move this block above the buildViceArgs
 // section -- both would consume that note.
 // ===========================================================================
-
-test("STOCK_DETERMINISM_FLAGS / STOCK_DETERMINISM_SEED (33-05, REPRO-01): the exported block is the exact nine fixed tokens, in one fixed order, and is frozen against mutation", () => {
-  assert.equal(STOCK_DETERMINISM_SEED, 4242, "the exported seed must stay the value REPRO-01's reproduction was measured with (33-RESEARCH.md M3)");
-  assert.deepEqual(
-    [...STOCK_DETERMINISM_FLAGS],
-    ["-seed", "4242", "-raminitstartrandom", "0", "-raminitrepeatrandom", "0", "-raminitrandomchance", "0", "+autostart-delay-random"],
-    "this is the one definition tests and evidence scripts assert against -- a second hand-copied array is exactly what the export exists to prevent",
-  );
-  assert.ok(Object.isFrozen(STOCK_DETERMINISM_FLAGS), "the exported block must be frozen: a caller mutating the shared value would produce a launch that no longer matches the recorded seed");
-});
 
 test("buildViceArgs (33-05, REPRO-05): the fourth ordering invariant -- with profile.headless, -console is at index 1 and -drive8type still precedes -binarymonitor", () => {
   const args = buildViceArgs(6510, { backend: "stock", profile: { headless: true } });

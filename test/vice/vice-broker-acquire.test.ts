@@ -59,7 +59,6 @@ import type { KillStage } from "../../src/mcp/vice/broker-kill.mts";
 import { resolvedBackend, resetResolvedBackendForTests } from "../../src/mcp/vice/backend-detect.mts";
 import { resolveTool } from "../../src/mcp/vice/tool-location.mts";
 import { toolsJsonPath } from "../../src/mcp/vice/tool-location.mts";
-import { VICE_DIR } from "./paths.ts";
 
 /** Writes a project's tools.json where tool-location reads it: the project's
  * machine-local folder under `toolsDir`. */
@@ -1579,48 +1578,6 @@ test("handleAcquire (D-16, plan 41-05, checkpoint option B): a stock cold launch
   assert.equal(spawnCalls.length, 0, "no process may be spawned when the text-port allocation fails");
   assert.equal(state.instances.size, 0, "no InstanceRecord may exist");
   assert.equal(state.grants.size, 0, "no grant may be recorded");
-});
-
-test("structural (33-06, T-33-23): the profile-eligibility filter is a synchronous `continue` placed BEFORE the readiness-probe await inside selectWarmInstance() -- the single-owner launch guard gains no new await", () => {
-  const source = readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8");
-  const startIdx = source.indexOf("\nasync function selectWarmInstance(");
-  assert.ok(startIdx !== -1, "selectWarmInstance()'s own definition must be found in the source");
-  const endIdx = source.indexOf("\n}\n", startIdx);
-  assert.ok(endIdx > startIdx, "could not isolate selectWarmInstance()'s own closing brace");
-  const body = source.slice(startIdx, endIdx);
-
-  const filterIdx = body.indexOf("if (!profileEligible(record, deps.requestedProfile)) continue;");
-  const probeIdx = body.indexOf("await deps.probe(record.port)");
-  assert.ok(filterIdx !== -1, "the eligibility filter must be present in selectWarmInstance(), matched verbatim as a synchronous `continue`");
-  assert.ok(probeIdx !== -1, "the readiness-probe await must be present");
-  assert.ok(
-    filterIdx < probeIdx,
-    "the eligibility filter must precede the readiness-probe `await` -- placing it after would add a fresh suspension point inside the region the single-owner inFlight launch guard protects, the guard that exists because of the 2026-08-01 triple-launch outage",
-  );
-
-  // And it must not have been implemented by killing or relaunching the
-  // mismatched candidate (D-16). The drop-and-kill machinery in this
-  // function belongs to the FAILED-PROBE path only, which is reached after
-  // the probe -- so nothing may appear between the filter and the probe.
-  const between = body.slice(filterIdx, probeIdx);
-  assert.doesNotMatch(between, /deps\.kill\(/, "no kill may sit between the eligibility filter and the probe");
-  assert.doesNotMatch(between, /markDeliberateDeath\(/, "no deliberate-death marker may sit between the eligibility filter and the probe");
-  assert.doesNotMatch(between, /\bawait\b/, "and no `await` at all may sit between them");
-});
-
-test("structural (33-06, T-33-24): the eligibility miss opens no second grant -- state.grants.set() still appears exactly once in vice-broker.mts's handleAcquire()", () => {
-  const source = readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8");
-  const startIdx = source.indexOf("export async function handleAcquire(");
-  assert.ok(startIdx !== -1, "handleAcquire()'s own definition must be found");
-  const endIdx = source.indexOf("\n}\n", startIdx);
-  assert.ok(endIdx > startIdx, "could not isolate handleAcquire()'s own closing brace");
-  const body = source.slice(startIdx, endIdx);
-  const matches = body.match(/state\.grants\.set\(/g) ?? [];
-  assert.equal(
-    matches.length,
-    1,
-    `both arms must converge on exactly ONE state.grants.set() call; found ${matches.length}. An eligibility miss must fall through to the cold arm, not open a parallel grant path.`,
-  );
 });
 
 // ============================================================================

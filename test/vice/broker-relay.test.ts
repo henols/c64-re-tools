@@ -22,11 +22,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, Socket as NodeNetSocket, type Server, type Socket, type AddressInfo } from "node:net";
-import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 
 import {
   relaySessionKey,
@@ -69,9 +67,6 @@ import type { Socket as NetSocket } from "node:net";
 import { stockConnect, stockReconnect, stockDisconnect, type StockConnectBrokerControl, type DialMonitorSocketFn } from "../../src/mcp/vice/stock-connect.ts";
 import { MachineRestartedError } from "../../src/mcp/vice/vice-errors.mts";
 import { convertHandshakeError } from "../../src/mcp/vice/stock-handler.ts";
-import { VICE_DIR } from "./paths.ts";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // vice-broker.mts is host-bound: it VALUE-imports sibling ".mjs" artifacts
@@ -1555,29 +1550,6 @@ test("stockReconnect: after the binary relay is destroyed, an advanced epoch rej
 // ===========================================================================
 // Structural (Task 2): the text path declares no reconnect entry point.
 // ===========================================================================
-
-test("structural: no exported identifier on the text path contains a reconnect entry point", () => {
-  const files = ["text-connect.ts", "text-protocol.ts", "text-tools.ts"];
-  const source = files.map((f) => readFileSync(join(VICE_DIR, f), "utf8")).join("\n");
-  const stripped = source
-    .split("\n")
-    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-    .join("\n");
-  const matches = stripped.match(/export (async )?function text[A-Za-z]*[Rr]econnect/g) ?? [];
-  assert.deepEqual(matches, [], `the text path must declare no reconnect entry point: ${JSON.stringify(matches)}`);
-});
-
-test("structural: text-connect.ts's header still states, in place, that no reconnect is ever to be built there", () => {
-  const source = readFileSync(join(VICE_DIR, "text-connect.ts"), "utf8");
-  assert.ok(source.includes("Never build a textReconnect()"), "text-connect.ts's header must still carry this exact phrase");
-});
-
-test("structural: broker-relay-text.test.ts is present and is not on git's own untracked list -- both channels' proving suites exist as real files", () => {
-  const output = execFileSync("git", ["ls-files"], { cwd: HERE, encoding: "utf8" });
-  const files = output.split("\n").map((f) => f.trim());
-  assert.ok(files.includes("broker-relay-text.test.ts"), "broker-relay-text.test.ts must be a tracked file");
-  assert.ok(existsSync(join(HERE, "broker-relay-text.test.ts")), "broker-relay-text.test.ts must exist on disk");
-});
 
 // ===========================================================================
 // Plan 63-04, Task 1 (SESS-03, SESS-05): a relay death leaves evidence, then

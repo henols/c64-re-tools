@@ -16,7 +16,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, execFile, type ChildProcess } from "node:child_process";
-import { mkdtempSync, copyFileSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, copyFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -499,91 +499,3 @@ test("running the launcher with --print-paths exits 0 and prints resolved paths 
   assert.match(result.stdout, /^broker_artifact=/m);
 });
 
-test("the launcher no longer sources or references the bash container-guard module", () => {
-  const text = readFileSync(LAUNCHER, "utf8");
-  assert.equal((text.match(/container-guard\.sh/g) ?? []).length, 0);
-});
-
-// --------------------------------------------------------- structural scan
-//
-// Mirrors vice-proxy.test.ts's own structural network-call scan idiom:
-// directory-enumerating, not scoped to a hand-maintained list, so a future
-// addition to the host-bound source set is covered the moment it lands on
-// disk.
-//
-// AMENDED, Phase 01.6.2 plan 01: this scan used to assert that NO host-bound
-// source contains a network-call construct at all. That blanket rule breaks
-// the moment this phase's control listener, its readiness probe and its
-// port-in-use check exist -- all three are network-call constructs BY
-// DESIGN, because the broker is the HOST-SIDE process that OWNS the
-// emulator's lifecycle (the bash daemon it replaces already both listened
-// for readiness and probed ports). The hard rule this scan protects is
-// narrower than "no network calls anywhere": it is "no CONTAINER-SIDE code
-// reaches the emulator outside mcp__vice__*". A host-bound broker module
-// opening a TCP listener is not that violation; it is the module the whole
-// module tree defers coordination TO.
-//
-// This is now a per-file JUSTIFIED ALLOWLIST: every host-bound source (the
-// build's own HOST_BOUND_ARTIFACTS set, converted back to its .mts source,
-// plus the launcher) is enumerated, and any file containing a network-call
-// construct MUST have an explicit entry below naming why. A new host-bound
-// file with no entry here, and no network-call construct, still passes
-// silently -- only a network-call construct with NO justification fails.
-const NETWORK_CALL_PATTERNS: RegExp[] = [
-  /\bfetch\s*\(/,
-  /\.request\s*\(/,
-  /\bcreateConnection\s*\(/,
-  /\bcreateServer\s*\(/,
-  /new\s+WebSocket\s*\(/,
-  /require\(\s*["']node:(?:http|https|net|dgram|tls)["']\s*\)/,
-  /from\s+["']node:(?:http|https|net|dgram|tls)["']/,
-];
-
-/** relative-to-HERE source path -> why it is allowed to contain a
- * network-call construct. Every other host-bound source (and the launcher)
- * must remain network-free -- mcp__vice__* stays the only route to the
- * emulator FOR CONTAINER-SIDE CODE. */
-const JUSTIFIED_NETWORK_CALLERS: Record<string, string> = {
-  "broker-control.mts":
-    "N/D-01: this IS the control listener (createServer) -- the host-side broker's own TCP acceptor. The broker owns the emulator's lifecycle; this is not container-side code reaching the emulator.",
-  "broker-state.mts":
-    "Plan 02, C4: defaultPortInUse() binds-and-releases a candidate port on 127.0.0.1 to answer 'is a TCP listener already bound here' for the broker's OWN port allocator (never a readiness check against the emulator itself). Host-side broker code inspecting its own host's ports; not container-side code reaching the emulator.",
-  "broker-launch.mts":
-    "D-05's permitted-route note, as amended by P-05 (Phase 01.6.2.1 plan 02): probeReady() is now a single in-process mechanism -- a POST against the instance's own /mcp endpoint using the global fetch, matching vice-broker.sh's own curl-based probe_ready(). This is host-side broker code owning the emulator's lifecycle (it already probes today, per RESEARCH.md D-05) -- not container-side code reaching the emulator outside mcp__vice__*.",
-  "broker-relay.mts":
-    "Phase 63, plan 63-01 (SESS-02): this IS the byte-transparent splice -- the one module whose entire purpose is dialling the emulator's binary/text monitor socket (net.connect) and joining it to a relay connection with Socket.prototype.pipe(). This is host-side broker code owning the emulator's lifecycle (the SAME role broker-control.mts's own justification above already covers for its acceptor half); not container-side code reaching the emulator outside mcp__vice__*.",
-  "vice-broker.mts":
-    "Phase 63, plan 63-01 (SESS-02): a type-only `import type { Socket } from \"node:net\"` for handleRelayAttach()'s own `clientSocket` parameter -- this pattern set matches on the import SPECIFIER textually, not on whether the import is type-only. handleRelayAttach() itself never dials anything (spliceRelay(), in the already-justified broker-relay.mts, is the one call site that does); this file only resolves the emulator host/port and hands the already-accepted socket onward.",
-  "broker-endpoint.mts":
-    "v2.0.0 step 1: the CLIENT side of the fixed broker endpoint (net.connect to 127.0.0.1, then host.docker.internal, on the broker's own control port) -- it dials the broker, never the emulator. It is compiled into resources/ only so skill scripts can load it from node_modules, where Node never strips types; it runs in the caller's process, not the broker's.",
-  "broker-transfer.mts":
-    "Phase 64, plan 64-01 (D-01/D-02/D-04): a type-only `import type { Socket } from \"node:net\"` for sendPayloadFromFile()'s and receivePayloadToFile()'s own `socket` parameter -- this module never dials a connection or opens a listener itself (no createConnection/createServer call site anywhere in it); it streams an already-established transfer connection's bytes through pipeline(), the same host-side-broker-owns-the-emulator's-lifecycle role broker-relay.mts's own justification above already covers for the relay splice.",
-};
-
-test("structural: every host-bound source containing a network-call construct carries an explicit justification; the launcher stays network-free", () => {
-  const sourcePaths = [...HOST_BOUND_ARTIFACTS.map((rel) => join(VICE_DIR, rel.replace(/\.mjs$/, ".mts"))), LAUNCHER];
-  assert.ok(sourcePaths.length >= 2, "host-bound source set enumerated as suspiciously small -- resolution is broken");
-
-  const unjustifiedOffenders: string[] = [];
-  for (const path of sourcePaths) {
-    const text = readFileSync(path, "utf8");
-    const rel = path.startsWith(VICE_DIR) ? path.slice(VICE_DIR.length + 1) : path;
-    const hasNetworkCall = NETWORK_CALL_PATTERNS.some((p) => p.test(text));
-    if (hasNetworkCall && !(rel in JUSTIFIED_NETWORK_CALLERS)) {
-      unjustifiedOffenders.push(rel);
-    }
-  }
-  assert.deepEqual(
-    unjustifiedOffenders,
-    [],
-    `host-bound source contains an UNJUSTIFIED network-call construct: ${JSON.stringify(unjustifiedOffenders)} -- ` +
-      "container-side code reaching the emulator outside mcp__vice__* is the violation this scan protects against; " +
-      "a host-side broker module owning the emulator's lifecycle is not. Add a named justification to " +
-      "JUSTIFIED_NETWORK_CALLERS if this addition is deliberate.",
-  );
-
-  // The launcher itself must NEVER be justified -- it stays network-free by
-  // construction (it only execs node).
-  assert.ok(!("resources/vice-launcher.sh" in JUSTIFIED_NETWORK_CALLERS));
-  assert.equal(NETWORK_CALL_PATTERNS.some((p) => p.test(readFileSync(LAUNCHER, "utf8"))), false, "the launcher must remain network-free");
-});

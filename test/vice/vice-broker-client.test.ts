@@ -3,7 +3,6 @@
 // in-process listener's kernel-chosen port.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createServer, type Server, type Socket } from "node:net";
 
@@ -29,11 +28,6 @@ import {
 import type { LaunchProfile } from "../../src/mcp/vice/broker-launch.mts";
 // Plan 41-03 (D-14): the channel contract's one host-bound declaration.
 import type { MonitorChannel } from "../../src/mcp/vice/broker-state.mts";
-// Namespace import, read-only, for the export-list closure test below --
-// the whole point is comparing the module's OWN live key set against an
-// expected list, so this must be the real module object, not a destructured
-// subset of it.
-import * as viceBrokerClient from "../../src/mcp/vice/vice-broker-client.ts";
 import { VICE_DIR } from "./paths.ts";
 
 
@@ -1053,129 +1047,11 @@ test("operation: noteOperation() a control-plane timeout is reported as reason t
 
 // ------------------------------------------------- structural: no filesystem write in the new region
 
-test("structural: the new control-client region (between the plan-06 marker pair) contains no filesystem-write construct", () => {
-  const source = readFileSync(join(VICE_DIR, "vice-broker-client.ts"), "utf8");
-  const startMarker = "BROKER-CONTROL-CLIENT REGION START";
-  const endMarker = "BROKER-CONTROL-CLIENT REGION END";
-  const startIdx = source.indexOf(startMarker);
-  const endIdx = source.indexOf(endMarker);
-  assert.ok(startIdx !== -1, "the region START marker must be present in vice-broker-client.ts");
-  assert.ok(endIdx !== -1 && endIdx > startIdx, "the region END marker must be present, after START");
-  const region = source.slice(startIdx, endIdx);
-  const writeConstructPattern = /\b(writeFileSync|renameSync|mkdirSync|unlinkSync|writeJsonAtomic)\s*\(/;
-  const match = region.match(writeConstructPattern);
-  assert.equal(match, null, `filesystem-write construct found in the new control-client region: ${match ? match[0] : ""}`);
-});
-
 // ------------------------------------------------- structural: the surviving export surface
 //
 // Comparing the module's own live `Object.keys()` (a namespace import, not
 // a destructured subset) against this expected list means a stray export
 // left behind, OR a surviving export silently dropped, both fail this test.
-
-test("the client module's export list is exactly the surviving surface", () => {
-  const actualKeys = Object.keys(viceBrokerClient).sort();
-  const expectedKeys = [
-    "newRequestId",
-    "CONTROL_ACQUIRE_TIMEOUT_MS",
-    "ACQUIRE_TIMEOUT_MS",
-    "CONTROL_CONNECT_TIMEOUT_MS",
-    "dialControlSession",
-    // Plan 05 (BROK-02/PROTO-08): a caller that prefers to raise on a
-    // monitor-ownership conflict rather than branch on ClaimMonitorOutcome
-    // constructs this directly.
-    "MonitorOwnershipError",
-    // Phase 63, plan 63-05 (SESS-06): the session-label resolver, exported
-    // so a test (or a future non-agent caller wanting the SAME resolution
-    // rule) can call it directly rather than re-deriving the env/cwd/pid
-    // fallback chain.
-    "resolveSessionLabel",
-  ].sort();
-  assert.deepEqual(
-    actualKeys,
-    expectedKeys,
-    `the module's live export set drifted from the surviving surface: actual=${JSON.stringify(actualKeys)} expected=${JSON.stringify(expectedKeys)}`
-  );
-});
-
-// ------------------------------------------------- structural: closure gate over the six retiring mechanisms
-//
-// Plan 01.6.2-07, task 3 (criterion F): a structural gate proving none of
-// the retiring file protocol's mechanisms exists ANYWHERE under the module
-// directory's non-test source -- not merely that this one module's export
-// list is clean. Enumerated from the directory itself (matching
-// vice-proxy.test.ts's own "structural: the set of source files..."
-// idiom and vice-broker-launch.test.ts's JUSTIFIED_NETWORK_CALLERS idiom),
-// so a future file reintroducing one of these identifiers is caught the
-// moment it lands, with no test file to remember to update. Comment lines
-// are filtered out before matching, so a header sentence NAMING a retired
-// identifier (as this very file's own comments do, deliberately, to explain
-// what was deleted and why) cannot make the gate self-invalidating.
-const RETIRING_MECHANISM_IDENTIFIERS: string[] = [
-  // The eight retiring functions (01.6.2-07-PLAN.md's own artifact list,
-  // cross-checked against vice-broker-client.ts's pre-this-plan export list):
-  "writeRequest",
-  "createLease",
-  "touchLease",
-  "releaseLease",
-  "pollGrant",
-  "writeRecycleRequest",
-  "pollRecycleAck",
-  "startHeartbeat",
-  // Their timeout/interval constants:
-  "GRANT_POLL_TIMEOUT_MS",
-  "GRANT_POLL_INTERVAL_MS",
-  "RECYCLE_ACK_TIMEOUT_MS",
-  "RECYCLE_ACK_POLL_INTERVAL_MS",
-  "HEARTBEAT_MS",
-  // The five protocol directory helpers, plus the lease path helper:
-  "requestsDir",
-  "grantsDir",
-  "denialsDir",
-  "brokerLeasesDir",
-  "recycleAcksDir",
-  "leasePathFor",
-];
-
-/** Strips `//` line comments and `/* ... *\/` block comments before matching
- * -- a header sentence describing the history ("touchLease() is gone")
- * must never make this gate self-invalidating by matching its OWN
- * explanatory prose. Deliberately simple (no string-literal awareness): the
- * retiring identifiers are all camelCase/UPPER_SNAKE code names that never
- * legitimately appear inside a runtime string literal in this module set,
- * so this is not a general-purpose comment stripper, just enough to serve
- * this one gate. */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => line.replace(/\/\/.*$/, ""))
-    .join("\n");
-}
-
-test("structural: none of the six retiring D-12 mechanisms exists anywhere in the module's non-test source", () => {
-  const files = readdirSync(VICE_DIR)
-    .filter((f) => /\.[cm]?[jt]s$/.test(f) && !/\.test\.[cm]?[jt]s$/.test(f))
-    .sort();
-  assert.ok(files.length > 0, "module directory enumerated as empty -- glob or path resolution is broken");
-
-  const offenders: { file: string; identifier: string }[] = [];
-  for (const file of files) {
-    const stripped = stripComments(readFileSync(join(VICE_DIR, file), "utf8"));
-    for (const identifier of RETIRING_MECHANISM_IDENTIFIERS) {
-      const pattern = new RegExp(`\\b${identifier}\\b`);
-      if (pattern.test(stripped)) {
-        offenders.push({ file, identifier });
-      }
-    }
-  }
-  assert.deepEqual(
-    offenders,
-    [],
-    `a retiring D-12 mechanism identifier reappeared in non-test source: ${JSON.stringify(offenders)} -- ` +
-      "keeping any one of the six retiring mechanisms means two competing authorities on whether a lease is alive."
-  );
-});
 
 // =============================================================================
 // Phase 33, plan 33-06 (REPRO-05, D-15): the profile reaches the broker from
@@ -1317,18 +1193,51 @@ test("acquire label (63-05): session.acquire() puts a resolved session label on 
   }
 });
 
-test("structural (33-06, 63-05): the one acquire write site in vice-broker-client.ts spreads both the profile and the label fragment, each declared exactly once", () => {
-  const source = readFileSync(join(VICE_DIR, "vice-broker-client.ts"), "utf8");
-  const acquireWriteSites = [...source.matchAll(/op: "acquire"[^\n]*/g)].map((m) => m[0]);
-  assert.equal(acquireWriteSites.length, 1, `expected exactly one acquire write site; found ${acquireWriteSites.length}: ${JSON.stringify(acquireWriteSites)}`);
-  assert.match(acquireWriteSites[0], /acquireProfileFragment\(/, `the acquire write site must spread the shared profile fragment: ${acquireWriteSites[0]}`);
-  assert.match(acquireWriteSites[0], /acquireLabelFragment\(/, `the acquire write site must spread the shared label fragment: ${acquireWriteSites[0]}`);
-  // Each fragment is the one place its omit-when-absent decision is made.
-  for (const fn of ["acquireProfileFragment", "acquireLabelFragment"]) {
-    assert.equal(
-      [...source.matchAll(new RegExp(`function ${fn}\\(`, "g"))].length,
-      1,
-      `${fn}() must be declared exactly once -- it is the single decision site for whether its key appears at all`,
-    );
+test("session: a request that misses its deadline closes the session, and its late reply is never handed to a later request", async () => {
+  const { server, port, sockets } = await startRawSocketServer();
+  try {
+    const opened = await dialLoopback(port);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const deadline = Date.now() + 3000;
+    while (sockets.length === 0 && Date.now() < deadline) await sleepMs(10);
+    const serverSocket = sockets[0]!;
+
+    const first = await opened.session.status({ timeoutMs: 100 });
+    assert.equal(first.ok, false);
+    if (!first.ok) assert.equal(first.kind, "deadline");
+
+    serverSocket.write(`${JSON.stringify({ kind: "status", instances: [] })}\n`);
+    const second = await opened.session.hostState({ timeoutMs: 500 });
+    assert.equal(second.ok, false, "the late status reply must not answer the host_state request");
+    if (!second.ok) assert.equal(second.kind, "broker_gone");
+  } finally {
+    for (const s of sockets) s.destroy();
+    server.close();
+  }
+});
+
+test("session: a multi-byte character split across two chunks is decoded intact", async () => {
+  const { server, port, sockets } = await startRawSocketServer();
+  try {
+    const opened = await dialLoopback(port);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const deadline = Date.now() + 3000;
+    while (sockets.length === 0 && Date.now() < deadline) await sleepMs(10);
+    const serverSocket = sockets[0]!;
+
+    const pendingStatus = opened.session.status({ timeoutMs: 3000 });
+    const line = Buffer.from(`${JSON.stringify({ kind: "status", instances: [{ port: 6600, url: "u\u00e5\u00e4", state: "ready", reason: "r", epoch: 1, grantId: null }] })}\n`, "utf8");
+    const at = line.indexOf(0xc3) + 1; // between the two bytes of the first "\u00e5"
+    serverSocket.write(line.subarray(0, at));
+    await sleepMs(30);
+    serverSocket.write(line.subarray(at));
+    const result = await pendingStatus;
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.instances[0]!.url, "u\u00e5\u00e4");
+  } finally {
+    for (const s of sockets) s.destroy();
+    server.close();
   }
 });

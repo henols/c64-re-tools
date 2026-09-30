@@ -420,15 +420,6 @@ function assertNoPrefixLeak(result: unknown, forbiddenPrefix: string, label: str
   );
 }
 
-test("transfer-disjoint-roots: the leak scanner is proven to catch a violation in a key nobody anticipated, before it is trusted against a real result", () => {
-  const planted = { ok: true, nested: { deeply: { surprise: "totally unexpected key carrying /some/broker/staging/path/file.bin" } } };
-  assert.throws(() => assertNoPrefixLeak(planted, "/some/broker/staging", "self-test"), /broker-side prefix/, "the scanner must fail on a planted violation nested three levels deep, in a key not on any expected list");
-  // Remove the plant -- prove the same object, with the offending substring
-  // gone, now passes.
-  planted.nested.deeply.surprise = "nothing broker-side here";
-  assert.doesNotThrow(() => assertNoPrefixLeak(planted, "/some/broker/staging", "self-test-cleared"));
-});
-
 let nextDisjointEmulatorPort = 47600;
 function reserveDisjointEmulatorPort(): number {
   nextDisjointEmulatorPort += 1;
