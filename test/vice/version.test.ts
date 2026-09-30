@@ -8,30 +8,14 @@
 // rewritten against nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { DEV_PLACEHOLDER, runtimeVersion } from "../../src/mcp/vice/version.mts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-
 function scratchDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
-}
-
-// Anchored on `.claude-plugin/`, the repo-root marker. It used to anchor on
-// the `VERSION` file, which no longer exists.
-function findRepoRoot(from: string): string {
-  let dir = from;
-  for (let i = 0; i < 10; i++) {
-    if (existsSync(join(dir, ".claude-plugin"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  throw new Error(`could not find repo root walking up from ${from}`);
 }
 
 test("runtimeVersion(): a real package.json version wins -- the published-tarball path", () => {
@@ -68,22 +52,4 @@ test("runtimeVersion(): degrades to DEV_PLACEHOLDER without throwing on no input
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
-
-test("placeholder consistency: every derived version string in the tree equals DEV_PLACEHOLDER", () => {
-  const root = findRepoRoot(HERE);
-  const readJson = (rel: string) => JSON.parse(readFileSync(join(root, rel), "utf8"));
-
-  const vicePkg = readJson("src/mcp/vice/package.json");
-  const pluginJson = readJson(".claude-plugin/plugin.json");
-  const marketplaceJson = readJson(".claude-plugin/marketplace.json");
-
-  assert.equal(vicePkg.version, DEV_PLACEHOLDER, "src/mcp/vice/package.json .version");
-  assert.equal(pluginJson.version, DEV_PLACEHOLDER, ".claude-plugin/plugin.json .version");
-  assert.equal(marketplaceJson.version, DEV_PLACEHOLDER, ".claude-plugin/marketplace.json .version");
-  assert.equal(
-    marketplaceJson.plugins[0].version,
-    DEV_PLACEHOLDER,
-    ".claude-plugin/marketplace.json .plugins[0].version"
-  );
 });

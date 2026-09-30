@@ -22,13 +22,11 @@
 // and the header's claim is true for the first time.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 
 import { build } from "../../src/mcp/vice/build.ts";
-import { VICE_DIR } from "./paths.ts";
 
 
 // Build BEFORE importing the artifact -- host-tool.test.ts's own idiom --
@@ -39,6 +37,8 @@ const hostTool = (await import(new URL("../../src/mcp/vice/resources/host-tool.m
   buildHostToolArgv: (
     request: { tool: string; args: Record<string, unknown> },
     resolved: Record<string, unknown>,
+    log?: (line: string) => void,
+    locate?: { toolsDir: string; projectRoot: string; vendorRoot?: string },
   ) => { ok: true; toolPath: string; argv: string[]; outputs: string[] } | { ok: false; message: string };
   runHostTool: (
     raw: unknown,
@@ -79,65 +79,27 @@ const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath
 // to be shared rather than duplicated).
 // ---------------------------------------------------------------------------
 
-/** Plants a throwaway, deterministic fake `dxa` at the FIRST location
- * findDxaBinary() (host-tool.mts) probes -- resources/vendor/dxa/dxa, which
- * this repository never populates itself -- so this case never touches the
- * real vendor/dxa/dxa (the SECOND candidate) and never requires it to have
- * been built.
- *
- * D-27 (40-05) ASSESSMENT -- why this site does NOT take the unique-directory
- * idiom:
- *
- * findDxaBinary(here)'s candidate list is `[join(here, "vendor", "dxa",
- * "dxa"), join(here, "..", "vendor", "dxa", "dxa")]` -- a FIXED,
- * project-vendored path computed from the executing module's own directory
- * (host-tool.mts's own header explicitly contrasts this with the c1541/petcat
- * probe's per-call COMPUTED candidate). There is no env var or test-injected
- * override consulted before that fixed list, unlike findAcmeLib()'s
- * `process.env.ACME`-first candidate. So this case cannot plant its fixture
- * under a unique per-invocation directory and still reach the code path under
- * test -- the binary must exist at exactly the first candidate path, because
- * that is the one production code will actually probe. Redirecting it would
- * mean adding a new override to host-tool.mts itself (mirroring
- * findAcmeLib()'s ACME-env pattern), which is a production-code change this
- * doc/test-hygiene plan does not make.
- *
- * What observes the planted subtree, checked directly rather than assumed:
- * `resources-sync.test.ts` walks the whole committed `resources/` tree, but
- * filters to `GENERATED_EXTENSIONS = [".mjs"]` before checking anything --
- * this planted file is named `dxa`, carries no extension, and is filtered out
- * before its check runs, so it cannot flip that test's verdict.
- * `resources/vendor/dxa/`. No committed test file's own walk reads this exact
- * path and branches on its presence, so -- unlike the fixed-name scratch file
- * in `skills/c64-assembler/` -- this site has no currently-measured
- * concurrent-scanner hazard. */
-function plantFakeDxaBinary(): { binPath: string; cleanupDir: string } {
-  const vendorDir = join(VICE_DIR, "resources", "vendor", "dxa");
-  mkdirSync(vendorDir, { recursive: true });
-  const binPath = join(vendorDir, "dxa");
-  writeFileSync(binPath, `#!/usr/bin/env bash\nprintf '0801 0b 08 0a \\t.byt \\$0b,\\$08,\\$0a\\n'\n`, "utf8");
-  spawnSync("chmod", ["+x", binPath]);
-  return { binPath, cleanupDir: join(VICE_DIR, "resources", "vendor") };
+/** Writes a fake dxa under a fresh temporary vendor root, runs `fn` with that
+ * root, and removes it afterwards. The root reaches the code under test
+ * through the locator's `vendorRoot`, so nothing under the repository tree is
+ * written. */
+async function withPlantedDxa<T>(fn: (vendorRoot: string) => T | Promise<T>): Promise<T> {
+  const root = mkdtempSync(join(tmpdir(), "dxa-seam-vendor-"));
+  try {
+    const vendorDir = join(root, "vendor", "dxa");
+    mkdirSync(vendorDir, { recursive: true });
+    const binPath = join(vendorDir, "dxa");
+    writeFileSync(binPath, `#!/usr/bin/env bash\nprintf '0801 0b 08 0a \\t.byt \\$0b,\\$08,\\$0a\\n'\n`, "utf8");
+    chmodSync(binPath, 0o755);
+    return await fn(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
-/** Plants the fake dxa, runs `fn`, and removes the planted directory in a
- * `finally` -- so a thrown assertion inside `fn` still cleans up. Cases in a
- * single file run SEQUENTIALLY under `node --test` (Node runs one file's
- * `test()` registrations one after another within that file's own process),
- * so nesting a plant/remove pair four times within THIS file races nothing;
- * the hazard this project has actually measured is only ACROSS files that
- * import the same compiled artifact and therefore resolve the same fixed
- * plant path concurrently (see host-tool.test.ts's own gated case for that
- * measurement). This file keeps the plant owned by itself alone -- it is
- * the only file with the plant/remove pair, so no other file's `finally` can
- * delete this file's fixture mid-run. */
-async function withPlantedDxa<T>(fn: () => T | Promise<T>): Promise<T> {
-  const fake = plantFakeDxaBinary();
-  try {
-    return await fn();
-  } finally {
-    rmSync(fake.cleanupDir, { recursive: true, force: true });
-  }
+/** A locator that finds the planted dxa under `vendorRoot`. */
+function locatorWith(vendorRoot: string) {
+  return { toolsDir: join(vendorRoot, ".c64-re-tools"), projectRoot: vendorRoot, vendorRoot };
 }
 
 // ---------------------------------------------------------------------------
@@ -145,9 +107,9 @@ async function withPlantedDxa<T>(fn: () => T | Promise<T>): Promise<T> {
 // ---------------------------------------------------------------------------
 
 test('dxa.disassemble with imageKind: "flat64k": argv contains -g immediately followed by 0000', async () => {
-  await withPlantedDxa(() => {
+  await withPlantedDxa((vendorRoot) => {
     const resolved = { imagePath: "/ws/x.bin", outDirPath: "/ws" };
-    const built = buildHostToolArgv({ tool: "dxa.disassemble", args: { image: "x.bin", imageKind: "flat64k" } }, resolved);
+    const built = buildHostToolArgv({ tool: "dxa.disassemble", args: { image: "x.bin", imageKind: "flat64k" } }, resolved, undefined, locatorWith(vendorRoot));
     assert.equal(built.ok, true, built.ok ? "" : (built as { ok: false; message: string }).message);
     if (!built.ok) return;
     const gIdx = built.argv.indexOf("-g");
@@ -157,9 +119,9 @@ test('dxa.disassemble with imageKind: "flat64k": argv contains -g immediately fo
 });
 
 test('dxa.disassemble with imageKind: "prg": argv contains NO -g at all', async () => {
-  await withPlantedDxa(() => {
+  await withPlantedDxa((vendorRoot) => {
     const resolved = { imagePath: "/ws/x.prg", outDirPath: "/ws" };
-    const built = buildHostToolArgv({ tool: "dxa.disassemble", args: { image: "x.prg", imageKind: "prg" } }, resolved);
+    const built = buildHostToolArgv({ tool: "dxa.disassemble", args: { image: "x.prg", imageKind: "prg" } }, resolved, undefined, locatorWith(vendorRoot));
     assert.equal(built.ok, true, built.ok ? "" : (built as { ok: false; message: string }).message);
     if (!built.ok) return;
     // Explicit ABSENCE, not merely "the flat64k case has it" -- the two
@@ -170,7 +132,7 @@ test('dxa.disassemble with imageKind: "prg": argv contains NO -g at all', async 
 });
 
 test("dxa.disassemble argv orders fixed flags first, -R/-B/-l for present optional paths in that order, then -a dump, then the image path last", async () => {
-  await withPlantedDxa(() => {
+  await withPlantedDxa((vendorRoot) => {
     const resolved = {
       imagePath: "/ws/x.prg",
       outDirPath: "/ws",
@@ -181,6 +143,8 @@ test("dxa.disassemble argv orders fixed flags first, -R/-B/-l for present option
     const built = buildHostToolArgv(
       { tool: "dxa.disassemble", args: { image: "x.prg", imageKind: "prg", entrypointsPath: "e", datablocksPath: "b", labelsPath: "l" } },
       resolved,
+      undefined,
+      locatorWith(vendorRoot),
     );
     assert.equal(built.ok, true, built.ok ? "" : (built as { ok: false; message: string }).message);
     if (!built.ok) return;
@@ -257,10 +221,10 @@ test("HOST_TOOL_PATH_ARG_KEYS[dxa.disassemble]: every declared path key refuses 
 // ---------------------------------------------------------------------------
 
 test("dxa.disassemble success response carries results[].path/.sha256/.byteLength and NO field holding listing text -- the response object's own key set is asserted", async () => {
-  await withPlantedDxa(async () => {
+  await withPlantedDxa(async (vendorRoot) => {
     await withTempDir(async (dir) => {
       writeFileSync(join(dir, "tracer.prg"), "tiny\n", "utf8");
-      const response = await runHostTool({ tool: "dxa.disassemble", args: { image: "tracer.prg", imageKind: "prg" } }, { repoRoot: dir });
+      const response = await runHostTool({ tool: "dxa.disassemble", args: { image: "tracer.prg", imageKind: "prg" } }, { repoRoot: dir, vendorRoot } as Parameters<typeof runHostTool>[1]);
       assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
       if (!response.ok) return;
       assert.deepEqual(Object.keys(response).sort(), ["exitStatus", "ok", "results", "stderrTail", "tool"].sort());

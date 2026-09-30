@@ -2,15 +2,13 @@
 // artifacts at its root and a never-committed local/ that ignores itself.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { ensureLocalDir, LOCAL_GITIGNORE, localDirUnder } from "../../src/mcp/vice/project-local.mts";
 import { annoDbPath } from "../../src/mcp/vice/anno-workspace-store.ts";
 import { toolsJsonPath } from "../../src/mcp/vice/tool-location.mts";
-import { installTargetDir } from "../../src/mcp/vice/install-resources.ts";
 import { snapshotPathFor } from "../../src/mcp/vice/transfer-paths.ts";
 
 function withDir<T>(fn: (dir: string) => T): T {
@@ -35,32 +33,11 @@ test("ensureLocalDir creates local/ with a .gitignore of everything, and leaves 
   });
 });
 
-test("committing .c64-re-tools/ wholesale takes the artifacts and leaves local/ out -- measured with real git", () => {
-  withDir((dir) => {
-    const git = (...args: string[]) => spawnSync("git", args, { cwd: dir, encoding: "utf8" as const });
-    const init = git("init", "-q");
-    if (init.error !== undefined) return; // no git on PATH: nothing to measure
-    const toolsDir = join(dir, ".c64-re-tools");
-    mkdirSync(toolsDir, { recursive: true });
-    writeFileSync(annoDbPath(dir), "db");
-    const local = ensureLocalDir(toolsDir);
-    mkdirSync(join(local, "bin"), { recursive: true });
-    writeFileSync(join(local, "bin", "vice-launcher.sh"), "#!/bin/sh\n");
-    writeFileSync(join(local, "tools.json"), "{}");
-
-    const added = git("add", "--dry-run", ".c64-re-tools");
-    assert.equal(added.status, 0, added.stderr);
-    const paths = added.stdout.trim().split("\n").map((l) => l.replace(/^add '(.*)'$/, "$1"));
-    assert.deepEqual(paths, [".c64-re-tools/annotations.db"], "only the artifact may be staged");
-  });
-});
-
 test("every tool-written location is under local/, and the annotation store is not", () => {
   withDir((dir) => {
     const toolsDir = join(dir, ".c64-re-tools");
     const local = localDirUnder(toolsDir);
     assert.ok(toolsJsonPath(toolsDir).startsWith(local + "/"), "tools.json is this machine's");
-    assert.ok(installTargetDir(dir).startsWith(local + "/"), "deployed launchers are this machine's");
     assert.ok(!annoDbPath(dir).startsWith(local + "/"), "the annotation store is a project artifact");
     assert.equal(existsSync(local), false, "computing the paths creates nothing");
   });

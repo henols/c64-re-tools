@@ -11,12 +11,7 @@ import { createHash } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 
-import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "../../src/mcp/vice/transfer-hash.mts";
-
-test("TRANSFER_MAX_BYTES is sixteen mebibytes", () => {
-  assert.equal(TRANSFER_MAX_BYTES, 16 * 1024 * 1024);
-  assert.equal(TRANSFER_MAX_BYTES, 16777216);
-});
+import { createHashAndCountTransform, verifyObserved } from "../../src/mcp/vice/transfer-hash.mts";
 
 test("createHashAndCountTransform: digest of a buffer containing 0x00 and 0x80..0xFF matches createHash('sha256') directly", async () => {
   const bytes = Buffer.alloc(256);

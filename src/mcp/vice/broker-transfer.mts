@@ -314,7 +314,13 @@ export interface ReceivePayloadToFileOptions {
    * leaves this hook's shape unchanged: no path in, nothing out, and the
    * real broker's `run()` wiring still supplies none. */
   beforePublish?: () => Promise<void>;
+  /** How long the sender may send no byte before the upload is abandoned.
+   * Defaults to RECEIVE_INACTIVITY_MS. */
+  inactivityMs?: number;
 }
+
+/** The default time a sender may stay silent during an upload. */
+export const RECEIVE_INACTIVITY_MS = 30_000;
 
 /**
  * Receives one transfer's payload from `socket` into `destPath`: validates
@@ -351,6 +357,7 @@ export async function receivePayloadToFile({
   pending,
   capBytes = TRANSFER_MAX_BYTES,
   beforePublish,
+  inactivityMs = RECEIVE_INACTIVITY_MS,
 }: ReceivePayloadToFileOptions): Promise<ReceivePayloadToFileResult> {
   // The declared byteLength is untrusted input (D-11) -- validated here,
   // independently of whatever check `readTransferHeader()` may already have
@@ -369,7 +376,16 @@ export async function receivePayloadToFile({
     socket.unshift(pending);
   }
 
-  mkdirSync(dirname(destPath), { recursive: true });
+  try {
+    mkdirSync(dirname(destPath), { recursive: true });
+  } catch (e) {
+    return {
+      ok: false,
+      code: "internal",
+      reason: `vice: cannot create the directory for ${destPath}: ${(e as Error).message}`,
+      wireReason: formatPathFreeFault("vice: the broker could not prepare the upload", e),
+    };
+  }
   // Phase 65 (plan 65-03, D-09/SEAM-03/concurrency): the SAME collision-
   // resistance fix as transfer-client.mts's own download-side tmpPath --
   // see that file's comment for the measured race this closes.
@@ -386,9 +402,14 @@ export async function receivePayloadToFile({
 
   const expected: ExpectedTransfer = { byteLength: header.byteLength, sha256: header.sha256 };
   const transform = createHashAndCountTransform({ capBytes });
+  // A sender that stalls must not hold the transfer open for ever.
+  socket.setTimeout(inactivityMs);
+  socket.once("timeout", () => socket.destroy(new Error("the upload stalled")));
   try {
     await pipeline(socket, transform, createWriteStream(tmpPath));
+    socket.setTimeout(0);
   } catch (e) {
+    socket.setTimeout(0);
     cleanupTmp();
     // Classify by the transform's OWN observed count, never by the caught
     // error's text or class -- the same pipeline() rejection covers both
@@ -534,6 +555,9 @@ const slotIndex = new Map<string, string>();
  * same reason (T-64-16). */
 const inFlightHandles = new Set<string>();
 
+/** The most distinct slots one grant may stage at once. */
+export const MAX_SLOTS_PER_GRANT = 16;
+
 function stagingSlotKey(grantId: string, slot: string): string {
   return `${grantId}\u0000${slot}`;
 }
@@ -581,14 +605,27 @@ export function stageFileSlot({ grantId, slot, now = Date.now }: StageFileSlotOp
   const slotCheck = refuseUnsafeSegment(slot, "slot");
   if (!slotCheck.ok) return { ok: false, reason: slotCheck.reason };
 
+  const key = stagingSlotKey(grantId, slot);
+  const previousHandle = slotIndex.get(key);
+  if (previousHandle === undefined) {
+    let held = 0;
+    const prefix = `${grantId}\u0000`;
+    for (const existing of slotIndex.keys()) if (existing.startsWith(prefix)) held += 1;
+    if (held >= MAX_SLOTS_PER_GRANT) {
+      return { ok: false, reason: `vice: a grant may stage at most ${MAX_SLOTS_PER_GRANT} slots` };
+    }
+  }
+
   const sessionDir = join(brokerStagingDir(), grantId);
-  ensureBrokerDir(sessionDir);
+  try {
+    ensureBrokerDir(sessionDir);
+  } catch (e) {
+    return { ok: false, reason: `vice: cannot create the staging directory: ${(e as Error).message}` };
+  }
 
   const handle = randomBytes(16).toString("hex");
   const stagedPath = join(sessionDir, handle);
 
-  const key = stagingSlotKey(grantId, slot);
-  const previousHandle = slotIndex.get(key);
   if (previousHandle) {
     const previousEntry = handleIndex.get(previousHandle);
     handleIndex.delete(previousHandle);
@@ -665,12 +702,17 @@ export function clearTransferInFlight(handle: string): void {
  * sends no goodbye, only a socket close -- still loses its staging.
  */
 export function clearStagingForSession(grantId: string): void {
-  const sessionDir = join(brokerStagingDir(), grantId);
-  try {
-    rmSync(sessionDir, { recursive: true, force: true });
-  } catch {
-    // Best-effort -- a directory that never existed (no slot was ever
-    // staged for this grant) must not be treated as a failure.
+  // The id becomes a path segment only once it passes the same check
+  // stageFileSlot() applies; an id that fails it can own no staging
+  // directory, so there is nothing on disk to remove.
+  if (refuseUnsafeSegment(grantId, "grant id").ok) {
+    const sessionDir = join(brokerStagingDir(), grantId);
+    try {
+      rmSync(sessionDir, { recursive: true, force: true });
+    } catch {
+      // Best-effort -- a directory that never existed (no slot was ever
+      // staged for this grant) must not be treated as a failure.
+    }
   }
 
   const prefix = `${grantId}\u0000`;
@@ -819,9 +861,26 @@ export function stageHostToolRequest({
     }
   }
 
+  // One path must not be both a file and the directory of another file.
+  const seenRels = new Map<number, string[]>();
+  for (const file of files) {
+    const earlier = seenRels.get(file.tree) ?? [];
+    for (const other of earlier) {
+      if (other === file.rel || other.startsWith(`${file.rel}/`) || file.rel.startsWith(`${other}/`)) {
+        return { ok: false, reason: `vice: the manifest names both "${other}" and "${file.rel}", which cannot both be files` };
+      }
+    }
+    earlier.push(file.rel);
+    seenRels.set(file.tree, earlier);
+  }
+
   const requestKey = `ht-${randomBytes(16).toString("hex")}`;
   const sessionDir = join(brokerStagingDir(), requestKey);
-  ensureBrokerDir(sessionDir);
+  try {
+    ensureBrokerDir(sessionDir);
+  } catch (e) {
+    return { ok: false, reason: `vice: cannot create the staging directory: ${(e as Error).message}` };
+  }
 
   const seenTrees: number[] = [];
   const treeHandles: string[] = [];

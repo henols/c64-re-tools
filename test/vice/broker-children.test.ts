@@ -1,7 +1,8 @@
 // broker-children.test.ts -- the child registry stops whole process groups.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 
 import { createBrokerState } from "../../src/mcp/vice/broker-state.mts";
 import { trackChild, stopAllChildren, killAllChildrenNow, isGroupAlive, signalGroup, type ChildEvent } from "../../src/mcp/vice/broker-children.mts";
@@ -86,4 +87,16 @@ test("signalGroup and isGroupAlive fall back to the pid for a process that leads
   assert.equal(child.signalCode, "SIGKILL");
   assert.doesNotThrow(() => signalGroup(pid, "SIGKILL"));
   assert.equal(isGroupAlive(999999999), false);
+});
+
+test("trackChild: when a tracked process exits, only its group is signalled, never the bare pid", () => {
+  const state = createBrokerState();
+  const child = new EventEmitter() as unknown as ChildProcess;
+  (child as unknown as { pid: number }).pid = 424242;
+  const signalled: number[] = [];
+  trackChild(state, child, "emulator", (pid) => {
+    signalled.push(pid);
+  });
+  child.emit("exit");
+  assert.deepEqual(signalled, [-424242]);
 });

@@ -219,6 +219,9 @@ export interface InstanceRecord {
   /** The launch profile this instance was spawned with -- see the banner
    * above. Absent means profile-less; never defaulted. */
   profile?: LaunchProfile;
+  /** The per-launch config-scratch directory this instance's emulator uses as
+   * `XDG_CONFIG_HOME`; removed once the emulator process has ended. */
+  configScratchDir?: string;
 }
 
 /** Clears ONE channel's entry when `channel` is passed (an explicit
@@ -547,7 +550,8 @@ export async function nextFreePort(state: BrokerState, opts: NextFreePortOptions
     if (opts.exclude?.has(port)) continue;
     if (isPortBlocked(state, port)) continue;
     if (await portInUse(port)) {
-      blockPort(state, port);
+      // Skipped for this call only: a port that is busy now (an emulator
+      // still shutting down) may be free on the next allocation.
       checked++;
       if (checked % YIELD_EVERY_N_CANDIDATES === 0) {
         await new Promise((resolvePromise) => setImmediate(resolvePromise));

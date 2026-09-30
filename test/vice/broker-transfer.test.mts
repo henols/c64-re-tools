@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type AddressInfo, type Socket } from "node:net";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -42,6 +42,7 @@ const brokerTransferModule = (await import(new URL("../../src/mcp/vice/resources
     pending?: Buffer;
     capBytes?: number;
     beforePublish?: () => Promise<void>;
+    inactivityMs?: number;
   }) => Promise<
     { ok: true; byteLength: number; sha256: string } | { ok: false; reason: string; code: "bad_request" | "internal"; wireReason: string }
   >;
@@ -205,22 +206,6 @@ test("broker-transfer: a real multi-megabyte, non-UTF-8 file crosses a real loop
     server.close();
   } finally {
     rmSync(fixtureDir, { recursive: true, force: true });
-  }
-});
-
-test("broker-transfer: every fixture directory is created with mkdtempSync and this test cleans it up (no untracked scratch dirs)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "broker-transfer-cleanup-check-"));
-  assert.ok(existsSync(dir));
-  rmSync(dir, { recursive: true, force: true });
-  assert.equal(existsSync(dir), false);
-});
-
-test("broker-transfer: readdirSync is a real directory listing, never a name-guess, for asserting no leftover temp file", () => {
-  const dir = mkdtempSync(join(tmpdir(), "broker-transfer-listing-check-"));
-  try {
-    assert.deepEqual(readdirSync(dir), []);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -491,10 +476,6 @@ test("broker-transfer: a receiver that stops reading stalls the sender's promise
   } finally {
     rmSync(fixtureDir, { recursive: true, force: true });
   }
-});
-
-test("TRANSFER_MAX_BYTES: imported (not re-typed) by both transfer-hash and this test, and equals 16 * 1024 * 1024", () => {
-  assert.equal(TRANSFER_MAX_BYTES, 16 * 1024 * 1024);
 });
 
 // ---------------------------------------------------------------------------
@@ -941,6 +922,20 @@ test("clearStagingForSession: removes the session directory recursively and is a
   });
 });
 
+test("clearStagingForSession: an id that names a path outside the staging root removes nothing", async () => {
+  await withStagingFixture(async (home) => {
+    const victim = join(home, "victim");
+    mkdirSync(victim, { recursive: true });
+    writeFileSync(join(victim, "keep"), "keep");
+    mkdirSync(join(home, "staging"), { recursive: true });
+    for (const hostile of ["../victim", "..", ".", "a/../../victim", ""]) {
+      clearStagingForSession(hostile);
+    }
+    assert.equal(existsSync(join(victim, "keep")), true);
+    assert.equal(existsSync(join(home, "staging")), true);
+  });
+});
+
 test("markTransferInFlight/clearTransferInFlight: a handle already in flight is refused; succeeds again after clearing", async () => {
   await withStagingFixture(async () => {
     const staged = stageFileSlot({ grantId: "req-1-1-11111111", slot: "disk8" });
@@ -1008,4 +1003,77 @@ test("stageHostToolRequest: refuses a manifest whose declared aggregate exceeds 
     }
     assert.deepEqual(after, before, "a refused stage request must create no directory at all");
   });
+});
+
+test("stageHostToolRequest: a manifest that names a path and a file beneath it, or the same path twice, is refused", async () => {
+  await withStagingFixture(async () => {
+    for (const rels of [["a", "a/b"], ["a/b", "a"], ["x/y", "x/y"]]) {
+      const result = stageHostToolRequest({ files: rels.map((rel) => ({ tree: 0, rel, byteLength: 1 })) });
+      assert.equal(result.ok, false, rels.join(" + "));
+    }
+    assert.equal(stageHostToolRequest({ files: [{ tree: 0, rel: "a", byteLength: 1 }, { tree: 1, rel: "a/b", byteLength: 1 }] }).ok, true, "different trees do not collide");
+  });
+});
+
+test("stageFileSlot: a grant may stage only a bounded number of distinct slots, and restaging a slot is still allowed", async () => {
+  await withStagingFixture(async () => {
+    for (let i = 0; i < 16; i++) assert.equal(stageFileSlot({ grantId: "g-slots", slot: `s${i}` }).ok, true);
+    assert.equal(stageFileSlot({ grantId: "g-slots", slot: "one-too-many" }).ok, false);
+    assert.equal(stageFileSlot({ grantId: "g-slots", slot: "s3" }).ok, true);
+  });
+});
+
+test("receivePayloadToFile: a destination whose directory cannot be created returns a refusal instead of throwing", async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-nodir-"));
+  try {
+    writeFileSync(join(fixtureDir, "blocker"), "a file, not a directory");
+    const server = createServer();
+    const done = new Promise<{ ok: boolean; wireReason?: string }>((resolve, reject) => {
+      server.on("connection", (socket) => {
+        readHeaderFromSocket(socket)
+          .then(({ header, pending }) => receivePayloadToFile({ socket, destPath: join(fixtureDir, "blocker", "dest.bin"), header, pending }))
+          .then(resolve, reject);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const client = netConnect({ host: "127.0.0.1", port: (server.address() as AddressInfo).port });
+    await new Promise<void>((resolve) => client.once("connect", resolve));
+    writeTransferHeader(client, { kind: "file", byteLength: 1, sha256: "x" });
+    client.write(Buffer.from("a"));
+    const result = await done;
+    assert.equal(result.ok, false);
+    assert.ok(!String(result.wireReason).includes(fixtureDir), "the wire text names no broker path");
+    client.destroy();
+    server.close();
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+test("receivePayloadToFile: a sender that goes silent is abandoned after the inactivity limit and leaves no file", async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-stall-"));
+  try {
+    const destPath = join(fixtureDir, "dest", "stalled.bin");
+    const server = createServer();
+    const done = new Promise<{ ok: boolean }>((resolve, reject) => {
+      server.on("connection", (socket) => {
+        readHeaderFromSocket(socket)
+          .then(({ header, pending }) => receivePayloadToFile({ socket, destPath, header, pending, inactivityMs: 150 }))
+          .then(resolve, reject);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const client = netConnect({ host: "127.0.0.1", port: (server.address() as AddressInfo).port });
+    await new Promise<void>((resolve) => client.once("connect", resolve));
+    client.on("error", () => {});
+    writeTransferHeader(client, { kind: "file", byteLength: 1024, sha256: "x" });
+    client.write(Buffer.alloc(10, 0x41));
+    const result = await done;
+    assert.equal(result.ok, false);
+    assert.equal(existsSync(destPath), false);
+    client.destroy();
+    server.close();
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
 });

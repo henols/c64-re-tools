@@ -81,10 +81,18 @@ export interface BrokerIncidentInput {
   reason?: unknown;
 }
 
+/** Renders one frontmatter value. A string is single-quoted with its control
+ * characters removed, so no field value can end the line or the frontmatter
+ * block it sits in. */
 function yamlScalar(value: unknown): string {
   if (value === null || value === undefined) return "null";
   if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return `'${String(value).replace(/'/g, "''")}'`;
+  return `'${stripControlChars(String(value)).replace(/'/g, "''")}'`;
+}
+
+/** Removes C0 control characters and DEL, which include both line terminators. */
+function stripControlChars(text: string): string {
+  return text.replace(/[\u0000-\u001f\u007f]/g, "");
 }
 
 interface ParsedOperation {

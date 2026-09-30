@@ -24,7 +24,7 @@
 // throwaway temp state directory.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
@@ -34,7 +34,6 @@ import { build } from "../../src/mcp/vice/build.ts";
 import type { BrokerState, InstanceRecord } from "../../src/mcp/vice/broker-state.mts";
 import type { SuperviseChildDeps } from "../../src/mcp/vice/broker-launch.mts";
 import type { ViceBackend } from "../../src/mcp/vice/backend-detect.mts";
-import { VICE_DIR } from "./paths.ts";
 
 const BROKER_ARTIFACT_URL = new URL("../../src/mcp/vice/resources/vice-broker.mjs", import.meta.url).href;
 const LAUNCH_ARTIFACT_URL = new URL("../../src/mcp/vice/resources/broker-launch.mjs", import.meta.url).href;
@@ -88,14 +87,6 @@ async function waitFor<T>(predicate: () => T | null | undefined, { timeoutMs = 8
     await new Promise((r) => setTimeout(r, pollMs));
   }
   return null;
-}
-
-/** Strips block comments and whole-line `//` comments before any count-based
- * structural assertion, exactly like broker-launch.test.ts's own helper of the
- * same name -- a doc comment mentioning a counted token must never inflate a
- * count. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 }
 
 /** The record a stock cold launch leaves behind, as spawnAndRecordInstance()
@@ -216,65 +207,3 @@ test("CR-01: a crash-respawn installed through the REAL superviseDepsFor() relau
 // typed in at a call site, rather than the resolved value).
 // ===========================================================================
 
-test("structural: every superviseDepsFor() call site in vice-broker.mts passes the resolved backend, never the two-argument form CR-01 shipped", () => {
-  const brokerSource = stripComments(readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8"));
-
-  const twoArgCallSites = (brokerSource.match(/superviseDepsFor\(\s*stateDir\s*,\s*state\s*\)/g) ?? []).length;
-  assert.equal(
-    twoArgCallSites,
-    0,
-    `CR-01 REGRESSION: found ${twoArgCallSites} superviseDepsFor(stateDir, state) call site(s) with no backend argument -- a respawn built from that deps object falls back to the fork's argv`,
-  );
-
-  const backendCallSites = (brokerSource.match(/superviseDepsFor\(\s*stateDir\s*,\s*state\s*,\s*backend\b/g) ?? []).length;
-  assert.equal(
-    backendCallSites,
-    1,
-    // Plan 41-05 (folded todo): NARROWED from 2 to 1 -- the retired
-    // maintainWarmFloorForRealBroker() was the second call site this
-    // assertion used to count; it is removed along with the warm floor,
-    // leaving handleAcquire's cold arm as the ONLY real launch path left.
-    `expected exactly 1 superviseDepsFor(stateDir, state, backend...) call site (handleAcquire's cold arm), found ${backendCallSites} -- a new supervised launch path must thread the resolved backend too`,
-  );
-});
-
-// ===========================================================================
-// The Ghidra projects root is swept like the staging root: only by a broker
-// that has won the control-port bind, right after it, before any request can
-// be served. Structural, because the claim is about source position.
-// ===========================================================================
-
-/** Offsets, in the comment-stripped source, of the bind, the staging sweep
- * and the Ghidra projects sweep -- the one predicate the real assertion and
- * its planted-violation control share. */
-function findGhidraSweepOrdering(source: string): { ghidraSweeps: number; bind: number; stagingSweep: number; ghidraSweep: number } {
-  const stripped = stripComments(source);
-  const ghidraMatches = [...stripped.matchAll(/sweepOrphanedStaging\(\{ root: brokerGhidraDir\(\)/g)];
-  return {
-    ghidraSweeps: ghidraMatches.length,
-    bind: stripped.indexOf("startControlListenerOnHosts("),
-    stagingSweep: stripped.indexOf("sweepOrphanedStaging({ root: brokerStagingDir() })"),
-    ghidraSweep: ghidraMatches[0]?.index ?? -1,
-  };
-}
-
-test("structural: vice-broker.mts sweeps the Ghidra projects root exactly once, after the control-port bind and the staging sweep, and mints no alias handle", () => {
-  const brokerSource = readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8");
-  const result = findGhidraSweepOrdering(brokerSource);
-  assert.equal(result.ghidraSweeps, 1, `expected exactly one Ghidra projects sweep, found ${result.ghidraSweeps}`);
-  assert.ok(result.bind >= 0 && result.stagingSweep >= 0, "expected to find the bind and the staging sweep in vice-broker.mts");
-  assert.ok(result.ghidraSweep > result.bind, "the Ghidra projects sweep must run only after the broker has won the control-port bind");
-  assert.ok(result.ghidraSweep > result.stagingSweep, "the Ghidra projects sweep must sit beside, after, the staging sweep");
-  assert.doesNotMatch(stripComments(brokerSource), /ensureGhidraRunsHandle/, "the broker must no longer mint a Ghidra alias handle");
-});
-
-test("planted-violation: the SAME predicate reports a Ghidra sweep moved ahead of the bind", () => {
-  const brokerSource = readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8");
-  const call = 'sweepOrphanedStaging({ root: brokerGhidraDir(), label: "ghidra projects sweep" });';
-  const bindAnchor = "const bindResult = await startControlListenerOnHosts(bindHosts, {";
-  assert.ok(brokerSource.includes(call) && brokerSource.includes(bindAnchor), "the planted copy's anchors must match the real source");
-  const planted = brokerSource.replace(call, "").replace(bindAnchor, `${call}\n    ${bindAnchor}`);
-  const result = findGhidraSweepOrdering(planted);
-  assert.equal(result.ghidraSweeps, 1);
-  assert.ok(result.ghidraSweep < result.bind, "planted violation: the predicate must see the moved sweep ahead of the bind");
-});

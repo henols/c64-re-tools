@@ -94,10 +94,7 @@ export const CONTROL_ACQUIRE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER
  * left for a reader to discover, because a fully-tested chain reads as a
  * live one.
  *
- * Do NOT close this by inventing a call site. Note also that the profile is
- * refused outright on the fork backend (broker-control.mts):
- * it maps to stock-only launch flags, so the first real consumer has to be on
- * stock. */
+ * Do NOT close this by inventing a call site. */
 export interface AcquireProfileOptions {
   profile?: LaunchProfile;
 }
@@ -201,6 +198,10 @@ export const ACQUIRE_TIMEOUT_MS: number = CONTROL_ACQUIRE_TIMEOUT_MS;
  * from an environment variable. */
 export const CONTROL_CONNECT_TIMEOUT_MS = 5000;
 
+/** The longest reply line the session accepts, in bytes. A longer one ends
+ * the session. */
+const MAX_REPLY_LINE_BYTES = 1024 * 1024;
+
 /** Every way a session-level request can fail to produce its expected
  * success line: no broker answering the dial, a refused TCP connection, a per-request deadline, the broker dropping the connection
  * mid-request, a malformed/non-object response line, and the broker's own
@@ -225,7 +226,9 @@ export type ControlFailureKind =
   // same reason every other member already is (this client and the broker
   // run in separate processes -- the shared surface is the wire format, not
   // a TypeScript type).
-  | "monitor_owned";
+  | "monitor_owned"
+  // No VICE binary on the host; the message names the remedy.
+  | "vice_not_found";
 
 export type ControlAcquireResult = { ok: true; grant: AcquireGrant } | { ok: false; kind: ControlFailureKind; message: string };
 
@@ -250,7 +253,6 @@ interface ControlHostStateFields {
   started_at: string;
   node_version: string;
   vice_bin: string;
-  warm_floor: number;
   max_instances: number;
   base_port: number;
   /** Narrowed from `"fork" | "stock" | null` to
@@ -512,12 +514,9 @@ export interface HeldLease {
  * EXACTLY ONE of: a response line arriving (createSession()'s own "data"
  * handler), the per-request deadline elapsing, or the broker closing/erroring
  * the connection (which drains and settles every entry still in the queue).
- * FIFO order is sound here because every session method awaits its own
- * sendAndAwaitLine() call to settle before this client ever writes a second
- * request line -- responses can therefore never arrive out of the order
- * their requests were sent in, so matching purely by arrival order (rather
- * than by echoing the request id back, which several response kinds do not
- * even carry) is correct. */
+ * FIFO order is sound because the broker answers requests in the order it
+ * reads them, and a request that misses its deadline closes the session, so
+ * no late reply can be handed to a later request. */
 interface PendingLineEntry {
   handle(line: Record<string, unknown> | null, brokerGone: boolean): void;
 }
@@ -552,16 +551,22 @@ function extractHolder(raw: unknown, requestedChannel: MonitorClaimChannel): Mon
  * settlement on "close"/"error", then exposes the five typed request
  * methods over it. */
 function createSession(socket: Socket): BrokerControlSession {
-  let buffer = "";
+  let carry: Buffer = Buffer.alloc(0);
   let closed = false;
   const pending: PendingLineEntry[] = [];
 
   socket.on("data", (chunk: Buffer) => {
-    buffer += chunk.toString("utf8");
+    // Bytes are split into lines before they are decoded: a multi-byte
+    // character can straddle two chunks.
+    let cursor = carry.length === 0 ? chunk : Buffer.concat([carry, chunk]);
     let newlineIdx: number;
-    while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, newlineIdx);
-      buffer = buffer.slice(newlineIdx + 1);
+    while ((newlineIdx = cursor.indexOf(0x0a)) !== -1) {
+      if (newlineIdx > MAX_REPLY_LINE_BYTES) {
+        socket.destroy();
+        return;
+      }
+      const line = cursor.subarray(0, newlineIdx).toString("utf8");
+      cursor = cursor.subarray(newlineIdx + 1);
       if (line.trim() === "") continue;
       const entry = pending.shift();
       if (!entry) continue; // unsolicited line -- this protocol never pushes one; ignored defensively
@@ -579,6 +584,11 @@ function createSession(socket: Socket): BrokerControlSession {
       }
       entry.handle(parsed as Record<string, unknown>, false);
     }
+    if (cursor.length > MAX_REPLY_LINE_BYTES) {
+      socket.destroy();
+      return;
+    }
+    carry = Buffer.from(cursor);
   });
 
   function settleAllBrokerGone(): void {
@@ -649,7 +659,12 @@ function createSession(socket: Socket): BrokerControlSession {
         settled = true;
         const idx = pending.indexOf(entry);
         if (idx !== -1) pending.splice(idx, 1);
-        resolvePromise({ ok: false, kind: "deadline", message: `vice-broker-client: no response within ${timeoutMs}ms` });
+        // Replies are matched to requests by arrival order. A reply that
+        // comes after its deadline would be handed to the next request, so
+        // the session ends here instead.
+        closed = true;
+        if (!socket.destroyed) socket.destroy();
+        resolvePromise({ ok: false, kind: "deadline", message: `vice-broker-client: no response within ${timeoutMs}ms; the session is closed` });
       }, timeoutMs);
       if (typeof timer.unref === "function") timer.unref();
 
@@ -733,7 +748,6 @@ function createSession(socket: Socket): BrokerControlSession {
         started_at: String(line.started_at),
         node_version: String(line.node_version),
         vice_bin: String(line.vice_bin),
-        warm_floor: Number(line.warm_floor),
         max_instances: Number(line.max_instances),
         base_port: Number(line.base_port),
         // Narrowed at the boundary, never cast --

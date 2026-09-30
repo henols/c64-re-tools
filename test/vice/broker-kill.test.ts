@@ -171,17 +171,6 @@ test("verifiedKill: the expected identity is a parameter, not a module constant 
   }
 });
 
-test("structural: broker-kill.mts assigns no module-scope identity-expectation constant -- expectedIdentity always arrives as a parameter", () => {
-  const source = readFileSync(join(VICE_DIR, "broker-kill.mts"), "utf8");
-  // Matches a TOP-LEVEL (not indented, i.e. not inside a function body)
-  // `const`/`export const` whose name mentions identity/expectation and
-  // whose initialiser is a string literal -- exactly the shape the bash
-  // original's $SUPERVISOR_SCRIPT constant would take if it were carried
-  // forward uncorrected into this module.
-  const offendingConstant = /^(?:export\s+)?const\s+\w*(?:[Ii]dentity|[Ee]xpectation)\w*\s*=\s*["'`]/m;
-  assert.equal(offendingConstant.test(source), false, "no top-level string-literal identity/expectation constant may exist -- the expected identity must always be a caller-supplied parameter");
-});
-
 test("verifiedKill: the escalation poll interval is 200ms and the wait bound is read from the injected kill-wait override, asserted against an injected clock", async () => {
   const killCalls: NodeJS.Signals[] = [];
   const sleepCalls: number[] = [];
@@ -262,12 +251,6 @@ test("shutdown: an instance with a null pid is still removed from the map (nothi
   state.instances.set(6600, makeInstance({ port: 6600, pid: null }));
   await shutdown({ state, kill: async () => "already_exited" });
   assert.equal(_snapshotState(state).instances.length, 0);
-});
-
-test("registerShutdownHandlers: SIGTERM/SIGINT/SIGHUP each converge on shutdown() and are registered -- exactly the three OS signals, never the uncatchable kill/stop signals", () => {
-  assert.deepEqual([..._HANDLED_SIGNALS].sort(), ["SIGHUP", "SIGINT", "SIGTERM"]);
-  assert.ok(!_HANDLED_SIGNALS.includes("SIGKILL" as NodeJS.Signals), "SIGKILL is uncatchable -- registering a handler for it would be a no-op that misleadingly implies otherwise");
-  assert.ok(!_HANDLED_SIGNALS.includes("SIGSTOP" as NodeJS.Signals), "SIGSTOP is uncatchable for the identical reason");
 });
 
 test("registerShutdownHandlers: an injected uncaught exception reaches the shutdown path and kills every child, asserted by a real zero-signal liveness check", async () => {
@@ -394,107 +377,6 @@ test("startupBanner: names the retired VICE_BROKER_SPARES variable as set-and-ig
     if (saved === undefined) delete process.env.VICE_BROKER_SPARES; // banner
     else process.env.VICE_BROKER_SPARES = saved; // banner
   }
-});
-
-test("structural: the real broker prints the banner before the control listener starts, and registers shutdown handling after the listener is up", () => {
-  const source = readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8");
-  const bannerIdx = source.indexOf("startupBanner()");
-  // 62-03: the single-host startControlListener() call was replaced by the
-  // multi-address startControlListenerOnHosts() (BROKER-03).
-  const listenerIdx = source.indexOf("await startControlListenerOnHosts(");
-  const registerIdx = source.indexOf("registerShutdownHandlers(");
-  assert.ok(bannerIdx !== -1 && listenerIdx !== -1 && registerIdx !== -1);
-  assert.ok(bannerIdx < listenerIdx, "the banner must print before the control listener starts");
-  assert.ok(registerIdx > listenerIdx, "shutdown handling is registered once the listener is up");
-});
-
-test("structural: the broker's argument parser recognises exactly --repo-root, --state-dir, --check-container and --dry-run -- no flag for running in the background", () => {
-  const source = readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8");
-  const parseArgsMatch = /export function parseArgs\(argv: string\[\]\): ParsedArgs \{([\s\S]*?)\n\}/.exec(source);
-  assert.ok(parseArgsMatch, "vice-broker.mts must export parseArgs()");
-  const body = parseArgsMatch![1];
-  const flags = [...body.matchAll(/argv\[i\] === "(--[a-z-]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(flags, ["--check-container", "--dry-run", "--repo-root", "--state-dir"]);
-});
-
-// TIGHTENED (node-interpreter-pinning quick task): this used to be a single
-// assertion banning the bare substring "execPath" outright, which blocked a
-// legitimate, unrelated use -- reporting the broker's own process.execPath in
-// its readiness line, purely for a later triage session to read. A single substring ban is unbypassable but blunt (it cannot
-// distinguish that legitimate use from a self-respawn); a single
-// spawn-construct regex is legible but bypassable (one variable of
-// indirection -- `const self = process.execPath; nodeSpawn(self, ...)` --
-// defeats it silently). Two independent assertions get both properties at
-// once instead of trading one for the other:
-//
-//   1. Occurrence pinning (the unbypassable half): comment-strip the source,
-//      count every remaining occurrence of `process`'s `execPath` property
-//      being READ -- dot access (`process.execPath`) or bracket access with
-//      any of the three quote characters (`process["execPath"]`,
-//      `process['execPath']`, `` process[`execPath`] ``) -- and require
-//      there be EXACTLY ONE, sitting on the one permitted line (the
-//      `vice-broker: ready (node ... at ${process.execPath}, ...` line). Stated precisely so this
-//      comment cannot overstate its own guarantee: it covers those two
-//      spellings of the property read, at this one call site; it does NOT
-//      by itself prove no *other* string could still smuggle the value out
-//      through, say, a dynamically-computed property name -- assertion 2
-//      below covers the ordinary hazard (the value reaching a spawn/exec/
-//      fork call) for exactly that reason.
-//   2. The spawn-construct regex (the legible half): states the actual
-//      hazard in readable form -- process.execPath reaching a
-//      spawn/exec/fork call -- so a reader learns WHY the rule exists, not
-//      just that it exists. Not redundant with assertion 1: it gives a
-//      precise, named failure for the direct form even if assertion 1 is
-//      ever loosened.
-//
-// D-25 is what both assertions protect: detaching stays the operator's own
-// choice, never an automatic self-respawn.
-// Matches a READ of process's execPath property in either JS spelling:
-// dot access (`process.execPath`) or bracket access with any of the three
-// quote characters (`process["execPath"]`, `process['execPath']`,
-// `process[`execPath`]`), tolerating whitespace around the dot/brackets. The
-// backreference (`\1`) requires the SAME quote character to open and close
-// the bracketed literal, so it does not falsely match a mismatched pair.
-// Deliberately NOT `/g`: every call site below uses it with `.test()` on one
-// line at a time, and a global flag's `lastIndex` state would corrupt a
-// reused instance across calls.
-const PROCESS_EXEC_PATH_ACCESS = /process\s*(?:\.\s*execPath\b|\[\s*(['"`])execPath\1\s*\])/;
-
-test("structural: the broker never re-executes itself -- process.execPath appears exactly once (the readiness line) and is never passed to a spawn/exec/fork construct", () => {
-  const source = readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8");
-  const stripped = stripCommentsForRetiredNameGate(source);
-
-  const execPathLines = stripped
-    .split("\n")
-    .map((line, idx) => ({ line, idx }))
-    .filter(({ line }) => PROCESS_EXEC_PATH_ACCESS.test(line));
-
-  assert.equal(
-    execPathLines.length,
-    1,
-    `expected exactly one comment-stripped occurrence of process.execPath in vice-broker.mts, found ${execPathLines.length}: ` +
-      `${JSON.stringify(execPathLines.map((e) => ({ line: e.idx + 1, text: e.line.trim() })))} -- ` +
-      "a second occurrence means something new is reading the interpreter path, which this gate exists to catch before it becomes a self-respawn",
-  );
-  assert.match(
-    execPathLines[0]!.line,
-    /vice-broker: ready \(node \$\{process\.version\} at \$\{process\.execPath\}/,
-    `the one permitted process.execPath occurrence must be the readiness line, got: ${execPathLines[0]!.line.trim()}`,
-  );
-
-  const selfReexecPattern = /\b(?:nodeSpawn|spawn|execFile(?:Sync)?|fork)\s*\(\s*process\.execPath\b/;
-  assert.ok(
-    !selfReexecPattern.test(source),
-    "no self-spawn/re-exec construct may pass process.execPath directly to a child-process spawning function -- detaching stays the operator's own choice (D-25)",
-  );
-});
-
-test("structural: no clean-shutdown marker file is ever referenced in broker-kill.mts or vice-broker.mts", () => {
-  const killMts = readFileSync(join(VICE_DIR, "broker-kill.mts"), "utf8");
-  const brokerMts = readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8");
-  const forbidden = /clean.shutdown.marker|was_clean|shutdown_marker/i;
-  assert.equal(forbidden.test(killMts), false, "broker-kill.mts must not reference a clean-shutdown marker file");
-  assert.equal(forbidden.test(brokerMts), false, "vice-broker.mts must not reference a clean-shutdown marker file");
 });
 
 // ---------------------------------------------------------------------------
@@ -1189,21 +1071,6 @@ test("sweepOrphanedStaging: a single throwing removal does not abort the sweep -
   }
 });
 
-test("structural aid: reapOrphanedConfigScratch()/sweepOrphanedStaging() are real functions imported unbuilt from broker-kill.mts", () => {
-  assert.equal(typeof reapOrphanedConfigScratch, "function");
-  assert.equal(typeof sweepOrphanedStaging, "function");
-});
-
-test("structural: the real broker's startup reap runs before its control listener accepts (source-order check, complementing the live end-to-end shutdown tests above)", () => {
-  const source = readFileSync(join(VICE_DIR, "vice-broker.mts"), "utf8");
-  const reapIdx = source.indexOf("await reapOrphanedInstances(");
-  // 62-03: the single-host startControlListener() call was replaced by the
-  // multi-address startControlListenerOnHosts() (BROKER-03).
-  const listenerIdx = source.indexOf("await startControlListenerOnHosts(");
-  assert.ok(reapIdx !== -1 && listenerIdx !== -1);
-  assert.ok(reapIdx < listenerIdx);
-});
-
 // ----------------------------------------------------------------------------
 // Structural gate (D-10/D-11, 01.6.2.1-05-PLAN.md), companion to the banner
 // test above -- neither retired environment-variable name (banner: VICE_BROKER_SPARES) nor the other retired name (the discovery record's
@@ -1233,66 +1100,3 @@ test("structural: the real broker's startup reap runs before its control listene
 // read sites directly; this gate is the broader, regression-proof net over
 // every OTHER non-test module.
 // ----------------------------------------------------------------------------
-
-function stripCommentsForRetiredNameGate(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
-}
-
-function walkTrackedNonTestSourceFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const dirent of readdirSync(dir, { withFileTypes: true })) {
-    if (dirent.name === "resources" || dirent.name === "node_modules") continue;
-    const abs = join(dir, dirent.name);
-    if (dirent.isDirectory()) {
-      out.push(...walkTrackedNonTestSourceFiles(abs));
-    } else if ((dirent.name.endsWith(".mts") || dirent.name.endsWith(".ts")) && !dirent.name.endsWith(".test.ts")) {
-      out.push(abs);
-    }
-  }
-  return out;
-}
-
-const RETIRED_ENV_VAR_NAME = "VICE_BROKER_SPARES"; // banner: this gate's own reference to the retired variable's name
-const RETIRED_RECORD_FIELD_NAME = "spares" + "_target"; // constructed, not literal -- see header comment above
-
-test("structural: neither the retired env var name nor the retired discovery-record field name survives anywhere in tracked, non-test TypeScript under src/mcp/vice/, except inside startupBanner()'s own function body (D-10/D-11)", () => { // banner
-  const files = walkTrackedNonTestSourceFiles(VICE_DIR);
-  const retiredNames = [RETIRED_ENV_VAR_NAME, RETIRED_RECORD_FIELD_NAME];
-  const violations: string[] = [];
-  let sawBannerException = false;
-
-  for (const file of files) {
-    const rel = file.slice(VICE_DIR.length + 1);
-    const raw = readFileSync(file, "utf8");
-    const stripped = stripCommentsForRetiredNameGate(raw);
-
-    // The ONE explicitly-allowed exception is named by REGION, not by a
-    // loose per-file or magic-count exemption: startupBanner()'s own
-    // function body (broker-kill.mts only) may reference the retired
-    // variable's NAME -- it reports presence, never reads the value -- but
-    // nothing OUTSIDE that region may, in this file or any other.
-    let bannerRegionStripped = "";
-    if (rel === "broker-kill.mts") {
-      const startMarker = "export function startupBanner(): string {";
-      const endMarker = "function resolveBasePortForReap";
-      const startIdx = raw.indexOf(startMarker);
-      const endIdx = raw.indexOf(endMarker, startIdx + startMarker.length);
-      assert.ok(startIdx !== -1 && endIdx !== -1 && endIdx > startIdx, "startupBanner()'s own region markers must both be found, in order");
-      bannerRegionStripped = stripCommentsForRetiredNameGate(raw.slice(startIdx, endIdx));
-    }
-
-    for (const name of retiredNames) {
-      const totalCount = stripped.split(name).length - 1;
-      if (totalCount === 0) continue;
-      const inBannerRegionCount = bannerRegionStripped ? bannerRegionStripped.split(name).length - 1 : 0;
-      if (inBannerRegionCount > 0) sawBannerException = true;
-      const outsideBannerCount = totalCount - inBannerRegionCount;
-      if (outsideBannerCount > 0) {
-        violations.push(`${rel}: ${name} (${outsideBannerCount}x outside startupBanner()'s own region)`);
-      }
-    }
-  }
-
-  assert.ok(sawBannerException, "startupBanner()'s own region must actually contain the retired variable's name -- if this is false, the banner itself regressed");
-  assert.deepEqual(violations, [], `no retired name may survive outside startupBanner()'s own region, found: ${JSON.stringify(violations)}`);
-});

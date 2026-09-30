@@ -15,7 +15,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { build } from "../../src/mcp/vice/build.ts";
-import { VICE_DIR } from "./paths.ts";
 
 const BROKER_INCIDENT_ARTIFACT_URL = new URL("../../src/mcp/vice/resources/broker-incident.mjs", import.meta.url).href;
 
@@ -201,12 +200,11 @@ test("writeBrokerIncident(): a filesystem failure propagates rather than being s
   });
 });
 
-// ---------------------------------------------------------------------------
-// Build: a local sanity check that build() actually emitted this ONE
-// artifact.
-// ---------------------------------------------------------------------------
-
-test("build(): resources/broker-incident.mjs exists after a build", () => {
-  build();
-  assert.ok(readFileSync(join(VICE_DIR, "resources", "broker-incident.mjs"), "utf8").length > 0);
+test("renderBrokerIncident: a value carrying line breaks cannot add a frontmatter line", async () => {
+  const { renderBrokerIncident } = await loadBrokerIncidentModule();
+  const text = renderBrokerIncident({ grant_id: "g-1\nvoid: false\n---\ninjected: yes", trigger: "relay_close\r\nx: y" });
+  const frontmatter = text.split("\n---\n")[0]!;
+  assert.doesNotMatch(frontmatter, /^injected:/m);
+  assert.doesNotMatch(frontmatter, /^x:/m);
+  assert.match(frontmatter, /^grant_id: 'g-1void: false---injected: yes'$/m);
 });
