@@ -8,7 +8,8 @@
 // and RAM as a file, and performs only the arithmetic that a lookup table
 // cannot: register bits -> concrete addresses.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const HEX = /^(?:\$|0x)?([0-9a-f]+)h?$/i;
 
@@ -224,15 +225,29 @@ function decodePort(v: number): { loram: number; hiram: number; charen: number }
   return { loram, hiram, charen };
 }
 
+/** What the CPU sees at $A000, $D000 and $E000 for a $01 value, from the
+ * C64 PLA table with no cartridge. BASIC ROM needs LORAM and HIRAM. KERNAL
+ * ROM needs HIRAM. At $D000, LORAM = HIRAM = 0 gives RAM whatever CHAREN is;
+ * otherwise CHAREN selects I/O (1) or character ROM (0). */
+export function plaMap(port: number): { basic: 'rom' | 'ram'; d000: 'io' | 'char rom' | 'ram'; kernal: 'rom' | 'ram' } {
+  const { loram, hiram, charen } = decodePort(port);
+  return {
+    basic: loram && hiram ? 'rom' : 'ram',
+    d000: !loram && !hiram ? 'ram' : charen ? 'io' : 'char rom',
+    kernal: hiram ? 'rom' : 'ram',
+  };
+}
+
 // Blocks the CPU cannot currently be dispatching through, given $01. Their
 // bytes are real, but nothing maintains them, so "retargeted" says nothing.
 function dormantReason(
   title: string,
-  { loram, hiram }: { loram: number; hiram: number },
+  { hiram }: { loram: number; hiram: number },
   cbm80: boolean,
+  basicVisible: boolean,
 ): string | null {
-  if (title.startsWith('BASIC indirects') && !loram) return 'BASIC ROM banked out — nothing maintains these';
-  if (title.startsWith('BASIC ROM entry') && !loram) return 'BASIC ROM banked out — this is RAM';
+  if (title.startsWith('BASIC indirects') && !basicVisible) return 'BASIC ROM banked out — nothing maintains these';
+  if (title.startsWith('BASIC ROM entry') && !basicVisible) return 'BASIC ROM banked out — this is RAM';
   if (title.startsWith('KERNAL') && !hiram) return 'KERNAL ROM banked out — nothing maintains these';
   if (title.startsWith('Autostart') && !cbm80) return 'no CBM80 signature — the KERNAL ignores these words';
   if (title.startsWith('Hardware') && hiram) return 'KERNAL ROM banked in — the ROM vectors, not the program\'s';
@@ -268,9 +283,11 @@ function vectors(buf: Uint8Array, portOverride: number | undefined, showAll: boo
   const cbm80 = CBM80.every((b, i) => buf[0x8004 + i] === b);
 
   out.push(`$01 = ${hex(port, 2)} ${bin8(port)}`);
-  out.push(`  bit 0 LORAM  = ${loram}  BASIC ROM  ${loram ? 'in' : 'out (RAM at $A000-$BFFF)'}`);
-  out.push(`  bit 1 HIRAM  = ${hiram}  KERNAL ROM ${hiram ? 'in' : 'out (RAM at $E000-$FFFF)'}`);
-  out.push(`  bit 2 CHAREN = ${charen}  ${charen ? 'I/O at $D000-$DFFF' : 'character ROM at $D000-$DFFF'}`);
+  const pla = plaMap(port);
+  out.push(`  bit 0 LORAM  = ${loram}  BASIC ROM needs LORAM = 1 and HIRAM = 1: ${pla.basic === 'rom' ? 'in' : 'out (RAM at $A000-$BFFF)'}`);
+  out.push(`  bit 1 HIRAM  = ${hiram}  KERNAL ROM ${pla.kernal === 'rom' ? 'in' : 'out (RAM at $E000-$FFFF)'}`);
+  const d000 = pla.d000 === 'io' ? 'I/O at $D000-$DFFF' : pla.d000 === 'char rom' ? 'character ROM at $D000-$DFFF' : 'RAM at $D000-$DFFF (LORAM = HIRAM = 0)';
+  out.push(`  bit 2 CHAREN = ${charen}  ${d000}`);
   out.push('');
   out.push(`LIVE VECTOR PAIR: ${hiram ? '$0314/$0315 (KERNAL path — the RAM vectors are live)'
     : '$FFFE/$FFFF (KERNAL banked OUT — the hardware vectors are live)'}`);
@@ -283,7 +300,7 @@ function vectors(buf: Uint8Array, portOverride: number | undefined, showAll: boo
   const residue: VectorRow[] = [];      // dormant block, non-default — leftover bytes, NOT a divert
 
   for (const [title, block] of VECTOR_BLOCKS) {
-    const dormant = dormantReason(title, banking, cbm80);
+    const dormant = dormantReason(title, banking, cbm80, pla.basic === 'rom');
     const rows = block.map((v) => vectorRow(buf, v));
     for (const r of rows) {
       if (r.status !== '*** RETARGETED ***') continue;
@@ -349,49 +366,56 @@ const USAGE = `usage:
   derive.ts sprites --dd00 3E --d018 18 --d015 FF --ptrs 20,21,22,23,24,25,26,27
   derive.ts vectors <image.bin> [--port 35] [--all]
 
+Every register flag of vic and sprites is required. Add --json for a
+{ "ok": true, "text": "..." } result. A refusal is { "ok": false, "message": "..." }.
 Values are hex by default ($3E, 0x3E, 3E all work); %00111110 for binary.
 Register values come from mcp__plugin_c64-re-tools_vice__vice_vicii_get_state / vice_memory_read.
 <image.bin> is a 65536-byte capture (see the c64-ram-capture skill).`;
 
-function main(argv: string[]): void {
+/** Every result this script prints. On success the text of the verb is the
+ * output; `--json` gives `{ ok: true, text }` instead. A refusal is always
+ * `{ ok: false, message }` on stdout with exit code 1. */
+export type ScriptResult = { ok: true; text: string } | { ok: false; message: string };
+
+/** A required register: a missing flag is refused, never defaulted. */
+function required(argv: string[], name: string): number {
+  const raw = flag(argv, name);
+  if (raw === undefined) throw new Error(`missing --${name}`);
+  return parseNum(raw, `--${name}`);
+}
+
+export function main(argv: string[]): ScriptResult {
   const verb = argv[0];
   try {
     if (verb === 'vic') {
-      const g = (n: string, d?: number): number => {
-        const raw = flag(argv, n);
-        if (raw === undefined) {
-          if (d === undefined) throw new Error(`missing --${n}`);
-          return d;
-        }
-        return parseNum(raw, `--${n}`);
-      };
-      console.log(vic({ dd00: g('dd00'), d018: g('d018'), d011: g('d011', 0x1b), d016: g('d016', 0xc8) }));
+      return { ok: true, text: vic({ dd00: required(argv, 'dd00'), d018: required(argv, 'd018'), d011: required(argv, 'd011'), d016: required(argv, 'd016') }) };
     } else if (verb === 'sprites') {
       const raw = flag(argv, 'ptrs');
       const ptrs = raw === undefined ? [] : raw.split(',').map((s) => parseNum(s, '--ptrs'));
-      // A missing --dd00/--d018 is not refused here: undefined reaches the
-      // arithmetic and prints NaN, which is this verb's long-standing behaviour.
-      console.log(sprites({
-        dd00: parseNum(flag(argv, 'dd00'), '--dd00') as number,
-        d018: parseNum(flag(argv, 'd018'), '--d018') as number,
-        d015: parseNum(flag(argv, 'd015') ?? 'FF', '--d015'),
-        ptrs,
-      }));
+      return { ok: true, text: sprites({ dd00: required(argv, 'dd00'), d018: required(argv, 'd018'), d015: required(argv, 'd015'), ptrs }) };
     } else if (verb === 'vectors') {
       const path = argv[1];
       if (!path || path.startsWith('--')) throw new Error('vectors needs an image path');
       const buf = readFileSync(path);
       if (buf.length !== 65536) throw new Error(`expected a 65536-byte image, got ${buf.length}`);
       const p = flag(argv, 'port');
-      console.log(vectors(buf, p === undefined ? undefined : parseNum(p, '--port'), argv.includes('--all')));
-    } else {
-      console.log(USAGE);
-      process.exit(verb === undefined || verb === '--help' || verb === '-h' ? 0 : 2);
+      return { ok: true, text: vectors(buf, p === undefined ? undefined : parseNum(p, '--port'), argv.includes('--all')) };
     }
+    if (verb === undefined || verb === '--help' || verb === '-h') return { ok: true, text: USAGE };
+    return { ok: false, message: `unknown verb ${JSON.stringify(verb)}\n${USAGE}` };
   } catch (e) {
-    console.error(`error: ${(e as Error).message}`);
-    process.exit(1);
+    return { ok: false, message: (e as Error).message };
   }
 }
 
-main(process.argv.slice(2));
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  const argv = process.argv.slice(2);
+  const result = main(argv);
+  if (!result.ok) console.log(JSON.stringify(result));
+  else if (argv.includes('--json')) console.log(JSON.stringify(result));
+  else console.log(result.text);
+  process.exitCode = result.ok ? 0 : 1;
+}

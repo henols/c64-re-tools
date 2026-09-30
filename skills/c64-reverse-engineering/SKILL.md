@@ -444,6 +444,14 @@ Stand up a buildable tree early, include the unidentified bulk as binary, and re
 real source as you prove them. The correctness bar is behavioural equivalence at checkpoints.
 See [references/reconstruction.md](references/reconstruction.md).
 
+## Failure shape
+
+This skill has no script. Each step refuses in the tool or script that it
+calls, and that refusal names the cause. A step that cannot prove its claim
+ends as an open item in the backlog. It is never recorded as done.
+`completeness-report.ts` gives the numeric stop condition. When it fails,
+work on the address that it names.
+
 ## What this skill does NOT do
 
 - Drive the emulator (memory, registers, checkpoints, watches, chip state, input, symbols, and

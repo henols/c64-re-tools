@@ -17,8 +17,8 @@ node $A sym game.asm          # the symbols the program uses
 ```
 
 The script wraps `acme` and nothing else. It only assembles: source in,
-`.prg` out. It has no `run` verb, and that is not an omission (`acme.ts:3-4`
-says so).
+`.prg` out. It has no `run` verb, and that is not an omission. Running a
+program belongs to `c64-emulator`.
 
 Options: `-o FILE` `--out-dir DIR` `-f FORMAT` `--setpc ADDR` `-DSYM=VAL`
 `-I DIR` `--no-report` `--json`. The comments in `scripts/acme.ts` are the
@@ -169,12 +169,17 @@ this claim can be re-checked on any machine.
 
 ## Failure shape
 
-A failed build exits 1. With `--json` it prints the build result with
-`"ok": false` and a `diags` array. Each diagnostic carries `file`, `line`,
-`severity`, `zone` and `message`. Without `--json` it prints each diagnostic
-and then `build FAILED (<n> error(s))`. A missing source file or a host-tool
-refusal (no broker, no `acme` on the host `$PATH`) prints `error: <message>`
-on stderr and exits 1. The script never falls back to spawning `acme` itself.
+The last line on stdout is always one JSON result. A failed build gives exit
+code 1 and `"ok": false`, a `message` (`build FAILED (<n> error(s)): …`) and a
+`diags` array. Each diagnostic carries `file`, `line`, `severity`, `zone` and
+`message`. Without `--json`, text lines with each diagnostic come first. A
+missing source file or a host-tool refusal (no broker, no `acme` on the host
+`$PATH`) gives `"ok": false` with the reason in `message`, and exit code 1.
+The script never falls back to spawning `acme` itself.
+
+`build -o other.prg` writes only `other.prg`, `other.sym`, `other.vs` and
+`other.rep`. It does not touch an existing `<source>.prg`. `sym --json`
+gives `{"ok": true, "symbols": [...]}`.
 
 ## What this skill does NOT do
 
@@ -189,8 +194,8 @@ on stderr and exits 1. The script never falls back to spawning `acme` itself.
 
 | Symptom | Correct |
 |---|---|
-| `install the ACME cross assembler and put acme on PATH` | Install ACME. |
-| `for <...> includes, set $ACME to …` | `export ACME=<dir holding cbm/c64/vic.a>`. |
+| `the ACME binary was not found (tried: …)` | Install ACME on the host and put `acme` on the `$PATH` of the host broker. The message lists each place that the broker tried. |
+| `for <...> includes, set $ACME to …` | `export ACME=<dir holding cbm/c64/vic.a>` in the environment of the host broker. |
 | `Value not defined (kernal_chrout)` | Use the `k_` prefix: `k_chrout`. `node $A sym` lists what resolved. |
 | `Label name not in leftmost column` + `Syntax error` on a mnemonic | Add `!cpu 6510`. |
 | `Output file already chosen` | Remove `!to` from the source and keep `-o`. |

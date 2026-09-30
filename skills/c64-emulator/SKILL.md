@@ -83,10 +83,9 @@ Rules for checkpoints:
   `vice_execution_pause` and `vice_registers_get`.
 - When the address is only a guess, use `vice_checkpoint_add` and a polling
   loop with a limit. Do not use a long `vice_run_until` wait.
-- `vice_run_until` with `reproducible: true` and `frame_anchor` runs the full
-  reproducible-run protocol. The protocol arms the anchor and the target,
-  does a hard reset, resumes once and waits for the target. The answer gives
-  the stop identity (`pc`, `hitCount`, `line`, `cycle`).
+- `vice_run_until` ends on any stop: its own target, another checkpoint of
+  yours, a watch or a JAM. The answer says which stop ended the wait. Read
+  it before you assume that the target address was reached.
 - `vice_execution_step` and `vice_execution_until_return` refuse while the
   run state is `unknown`. Call `vice_execution_pause` or `vice_execution_run`
   first.
@@ -264,6 +263,14 @@ reply and no EOF, so it looks like a hang. Look for these causes:
 - another 6502 debugger that connects to the port.
 
 If nothing answers at all, ask the user to restart the broker.
+
+## Failure shape
+
+A `vice_*` tool that cannot do its work returns an error that names the
+cause, or an answer with `ok: false` and a reason. A timed-out
+`vice_run_until` is not an error. It reports that the machine is stopped.
+The tools never fill a missing value with a default. A refused call changes
+nothing on the machine.
 
 ## Hazards
 

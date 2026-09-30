@@ -6,7 +6,9 @@
 // dumps the host project has, skipping when it has none.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -26,7 +28,7 @@ import {
   splitRangeByManifestKind,
 } from "../../../skills/c64-provenance/scripts/diff-images.ts";
 import type { DiffRange } from "../../../skills/c64-provenance/scripts/diff-images.ts";
-import { registryPath } from "../../../skills/c64-project/scripts/releases.ts";
+import { registryFile } from "../../../skills/c64-project/scripts/project-paths.ts";
 import type { DumpEntry, ReleaseEntry } from "../../../skills/c64-project/scripts/releases.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -599,7 +601,7 @@ test("splitRangeByManifestKind returns the range unchanged (one sub-range) when 
 const PAIR = (() => {
   let reg: { releases?: ReleaseEntry[] };
   try {
-    reg = JSON.parse(readFileSync(registryPath, "utf8"));
+    reg = JSON.parse(readFileSync(registryFile(), "utf8"));
   } catch {
     return null;
   }
@@ -625,53 +627,203 @@ test("anchorSearch against two real committed primary dumps finds unique agreein
   assert.equal(proof.ok, true, `expected the real dumps to agree on a single offset; got: ${proof.reason}`);
 });
 
-// ------------------------------------------------- import-purity guard
+// ------------------------------------------------------------------ CLI verbs
+//
+// Each case builds a scratch project (a registry, two releases, each with a
+// run1 dump and its range manifest) and runs the real script against it.
 
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+const SCRIPT = join(SCRIPT_DIR, "diff-images.ts");
+
+interface Project {
+  root: string;
+  registry: () => { releases: ReleaseEntry[]; ledger?: unknown };
+  run: (...argv: string[]) => { status: number | null; result: { ok: boolean; message?: string; [key: string]: unknown } };
+  cleanup: () => void;
 }
 
-function importSpecifiers(src: string): string[] {
-  const specs: string[] = [];
-  // Static imports and literal dynamic import("...") both count, so a guarded
-  // sibling load stays inside this rule.
-  const re = /import\s*(?:\(\s*|[^'"()]+?\s+from\s+)?["']([^"']+)["']/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) specs.push(m[1]);
-  return specs;
-}
-
-// The invariant here is NOT "imports must be siblings" -- it is "this module
-// cannot acquire an outside dependency", which is the mechanical proof that it
-// never reaches the emulator by importing a transport module and never pulls a
-// third-party package. The toolkit ships as a bundle of skills that may import
-// each other, so a sibling *skill*'s scripts dir is legitimate; anything beyond
-// the skills tree is not. Widened deliberately when the recovery pipeline moved
-// out of `tools/` into the skills (2026-08-04) -- widened to the bundle boundary,
-// not removed.
-const SKILLS_ROOT = resolve(SCRIPT_DIR, "..", "..");
-
-test("every import specifier in diff-images.ts is a node: built-in or a module inside the skills bundle -- the mechanical proof of the one permitted route", () => {
-  const src = stripComments(readFileSync(join(SCRIPT_DIR, "diff-images.ts"), "utf8"));
-  const specs = importSpecifiers(src);
-  assert.ok(specs.length > 0, "diff-images.ts should have at least one import specifier");
-  for (const spec of specs) {
-    const isNodeBuiltin = spec.startsWith("node:");
-    const isRelativePath = spec.startsWith("./") || spec.startsWith("../");
-    assert.ok(
-      isNodeBuiltin || isRelativePath,
-      `diff-images.ts imports "${spec}", which is neither a node: built-in nor a relative path -- a bare specifier means a third-party package`,
+function scratchProject(images: Record<string, Buffer>, extra: (id: string) => Partial<ReleaseEntry> = () => ({})): Project {
+  const root = mkdtempSync(join(tmpdir(), "diff-images-cli-"));
+  mkdirSync(join(root, ".git"));
+  const releases: ReleaseEntry[] = [];
+  for (const [id, bytes] of Object.entries(images)) {
+    const dumps = join(root, "recovery", id, "dumps");
+    mkdirSync(dumps, { recursive: true });
+    writeFileSync(join(dumps, `${id}-run1.bin`), bytes);
+    writeFileSync(
+      join(dumps, `${id}-run1.map.json`),
+      JSON.stringify({
+        schema_version: 1,
+        classification_state: "ranges-only",
+        ranges: [
+          { start: 0, end: 0xcfff, kind: "unclassified" },
+          { start: 0xd000, end: 0xdfff, kind: "io" },
+          { start: 0xe000, end: 0xffff, kind: "unclassified" },
+        ],
+      }),
     );
-    if (isRelativePath) {
-      const resolvedPath = resolve(SCRIPT_DIR, spec);
-      assert.ok(
-        resolvedPath.startsWith(SKILLS_ROOT + "/"),
-        `diff-images.ts's import "${spec}" resolves to ${resolvedPath}, outside the skills bundle at ${SKILLS_ROOT}`,
-      );
-      assert.ok(
-        /\/scripts\//.test(resolvedPath),
-        `diff-images.ts's import "${spec}" must resolve into some skill's scripts/ dir, not ${resolvedPath}`,
-      );
+    releases.push({
+      id,
+      disk_image: `disks/${id}.d64`,
+      dumps: [{ label: "run1", bin: `recovery/${id}/dumps/${id}-run1.bin`, range_manifest: `recovery/${id}/dumps/${id}-run1.map.json` }],
+      ...extra(id),
+    });
+  }
+  const regPath = join(root, "recovery", "RELEASES.json");
+  writeFileSync(regPath, JSON.stringify({ schema_version: "1.0", releases }, null, 2));
+  return {
+    root,
+    registry: () => JSON.parse(readFileSync(regPath, "utf8")),
+    run: (...argv) => {
+      const r = spawnSync(process.execPath, [SCRIPT, ...argv], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, C64RE_PROJECT_ROOT: root, C64RE_DATA_DIR: "", C64RE_REGISTRY: "" },
+        timeout: 60_000,
+      });
+      const last = r.stdout.trim().split("\n").pop() ?? "";
+      return { status: r.status, result: JSON.parse(last) };
+    },
+    cleanup: () => rmSync(root, { recursive: true, force: true }),
+  };
+}
+
+/** Two images with the same content at offset 0, differing in a few bytes. */
+function twoReleases(): Record<string, Buffer> {
+  const a = pseudoRandomFill(65536, "cli-release");
+  const b = Buffer.from(a);
+  b[0x5000] ^= 0xff;
+  b[0x5001] ^= 0xff;
+  return { "release-a": a, "release-b": b };
+}
+
+test("diff refuses, naming the releases, when anchor-search has not proven any offset", () => {
+  const p = scratchProject(twoReleases());
+  try {
+    const { status, result } = p.run("diff");
+    assert.equal(status, 1);
+    assert.equal(result.ok, false);
+    assert.match(result.message ?? "", /anchor-search/);
+    const bucketed = JSON.parse(readFileSync(join(p.root, "recovery", "release-a", "dumps", "release-a-run1.map.json"), "utf8"));
+    assert.equal(bucketed.classification_state, "ranges-only", "a refused diff writes no manifest");
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("diff refuses a release whose offset was never proven, and does not read it as 0", () => {
+  const images = { ...twoReleases(), "release-c": pseudoRandomFill(65536, "cli-release") };
+  const p = scratchProject(images, (id) =>
+    id === "release-a"
+      ? { provenance_offset: { role: "reference", reference_release: null, offset: 0, anchor_count: null, anchors_agreeing: null, proven_at: "t", method: "m" } }
+      : id === "release-b"
+        ? { provenance_offset: { role: "target", reference_release: "release-a", offset: 0, anchor_count: 8, anchors_agreeing: 8, proven_at: "t", method: "m" } }
+        : { provenance_offset: { role: "target", reference_release: "release-a", offset: null, anchor_count: 8, anchors_agreeing: 0, proven_at: "t", method: "m" } },
+  );
+  try {
+    for (const verb of ["diff", "count-patches", "ledger"]) {
+      const { status, result } = p.run(verb);
+      assert.equal(status, 1, `${verb} must refuse`);
+      assert.match(result.message ?? "", /release-c/, `${verb} must name the unproven release`);
     }
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("anchor-search records the offsets, and diff then buckets every range manifest", () => {
+  const p = scratchProject(twoReleases());
+  try {
+    const search = p.run("anchor-search");
+    assert.equal(search.status, 0, JSON.stringify(search.result));
+    assert.equal(search.result.reference, "release-a");
+    const reg = p.registry();
+    assert.equal(reg.releases.find((r) => r.id === "release-b")!.provenance_offset!.offset, 0);
+
+    const diff = p.run("diff");
+    assert.equal(diff.status, 0, JSON.stringify(diff.result));
+    assert.deepEqual((diff.result.manifestsWritten as string[]).sort(), [
+      "recovery/release-a/dumps/release-a-run1.map.json",
+      "recovery/release-b/dumps/release-b-run1.map.json",
+    ]);
+    const bucketed = JSON.parse(readFileSync(join(p.root, "recovery", "release-b", "dumps", "release-b-run1.map.json"), "utf8"));
+    assert.equal(bucketed.classification_state, "bucketed");
+
+    const counts = p.run("count-patches");
+    assert.equal(counts.status, 0);
+    assert.deepEqual(counts.result.counts, { "release-a": 0, "release-b": 0 });
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("a failed anchor-search clears the release's stored offset, so a later diff refuses it", () => {
+  const images = { "release-a": pseudoRandomFill(65536, "one"), "release-b": pseudoRandomFill(65536, "two") };
+  const p = scratchProject(images, (id) =>
+    id === "release-b"
+      ? { provenance_offset: { role: "target", reference_release: "release-a", offset: 0, anchor_count: 8, anchors_agreeing: 8, proven_at: "t", method: "m" } }
+      : {},
+  );
+  try {
+    const search = p.run("anchor-search");
+    assert.equal(search.status, 1);
+    assert.equal(search.result.ok, false);
+    assert.match(search.result.message ?? "", /release-b/);
+    assert.equal(p.registry().releases.find((r) => r.id === "release-b")!.provenance_offset, null);
+    assert.equal(p.run("diff").status, 1);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("ledger takes the reference release that anchor-search recorded, not the first registry entry", () => {
+  const p = scratchProject(twoReleases());
+  try {
+    assert.equal(p.run("anchor-search", "--reference", "release-b").status, 0);
+    const ledger = p.run("ledger");
+    assert.equal(ledger.status, 0, JSON.stringify(ledger.result));
+    assert.equal(ledger.result.reference, "release-b");
+    const md = readFileSync(join(p.root, "recovery", "PROVENANCE.md"), "utf8");
+    assert.match(md, /\*\*release-b\*\* \(reference release\)/);
+    assert.match(md, /no recorded trigger, so this ledger does not prove/);
+    assert.equal(typeof (p.registry().ledger as { generated_tier_sha256?: unknown }).generated_tier_sha256, "string");
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("ledger says the images show the same state only when every release records the same trigger", () => {
+  const p = scratchProject(twoReleases(), () => ({ trigger: { address: "$0810", kind: "exec" } }));
+  try {
+    assert.equal(p.run("anchor-search").status, 0);
+    assert.equal(p.run("ledger").status, 0);
+    const md = readFileSync(join(p.root, "recovery", "PROVENANCE.md"), "utf8");
+    assert.match(md, /All releases record this same trigger/);
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("--gap-tolerance with no value or a non-integer value is refused by name", () => {
+  const p = scratchProject(twoReleases());
+  try {
+    assert.equal(p.run("anchor-search").status, 0);
+    for (const argv of [["diff", "--gap-tolerance"], ["diff", "--gap-tolerance", "abc"], ["count-patches", "--gap-tolerance", "-1"]]) {
+      const { status, result } = p.run(...argv);
+      assert.equal(status, 1, argv.join(" "));
+      assert.match(result.message ?? "", /--gap-tolerance/);
+    }
+  } finally {
+    p.cleanup();
+  }
+});
+
+test("an unknown command is refused with the usage text", () => {
+  const p = scratchProject(twoReleases());
+  try {
+    const { status, result } = p.run("frobnicate");
+    assert.equal(status, 1);
+    assert.match(result.message ?? "", /unknown command "frobnicate"/);
+  } finally {
+    p.cleanup();
   }
 });

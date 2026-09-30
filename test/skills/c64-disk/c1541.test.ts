@@ -191,14 +191,27 @@ test("auditEntries: a next-directory pointer that refers back to the directory's
   assert.equal(entries[1].suspicious, true, "entry two's OWN independent flag (0 blocks) must still be reported");
 });
 
-test("auditEntries: a repeated (non-starting) next-directory pointer is also a chain error, terminating in a bounded number of records regardless -- no unbounded loop is possible by construction", () => {
+test("auditEntries: a next-directory pointer that returns after a different one is a chain error, and the audit stays bounded", () => {
   const records = [
     { name: "a", blocks: 1, firstTrack: 17, firstSector: 0, nextDirTrack: 19, nextDirSector: 0 },
-    { name: "b", blocks: 1, firstTrack: 17, firstSector: 1, nextDirTrack: 19, nextDirSector: 0 },
+    { name: "b", blocks: 1, firstTrack: 17, firstSector: 1, nextDirTrack: 20, nextDirSector: 0 },
+    { name: "c", blocks: 1, firstTrack: 17, firstSector: 2, nextDirTrack: 19, nextDirSector: 0 },
   ];
   const { chain_error, entries } = auditEntries(records, { bamAllocated: CLEAN_BAM });
   assert.match(chain_error ?? "", /revisited 19\/0/);
-  assert.equal(entries.length, 2);
+  assert.equal(entries.length, 3);
+});
+
+test("auditEntries: many entries in one directory sector share a next pointer and are not a cycle", () => {
+  const records = Array.from({ length: 9 }, (_, i) => ({
+    name: `f${i}`,
+    blocks: 1,
+    firstTrack: 17,
+    firstSector: i,
+    nextDirTrack: 18,
+    nextDirSector: 4,
+  }));
+  assert.equal(auditEntries(records, { bamAllocated: CLEAN_BAM }).chain_error, null);
 });
 
 // ---------------------------------------------------------------------------

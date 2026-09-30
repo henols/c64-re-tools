@@ -80,16 +80,20 @@
 //     every later comparison pass on bytes nobody vetted, which is the silent
 //     widening the void exists to prevent. The artifact is written once, in
 //     full, only after the cap check clears.
-//   - Never add `$0000`/`$0001` to a derived allow-list by hand. They are
-//     normalised in code by `normalisePorts()` on the snapshot route,
-//     and spending two of the cap's 64 slots on them would hide a real
-//     difference behind a known one. They can legitimately appear in a
-//     derivation taken from un-normalised images -- see `check`'s note below.
+//   - Never add `$0000`/`$0001` to a derived allow-list by hand. Spending two
+//     of the cap's 64 slots on them would hide a real difference behind a
+//     known one. This script compares the images exactly as given and
+//     normalises nothing, so the two addresses appear in a derivation only
+//     when the images differ there.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
 
 const IMAGE_BYTES = 65536;
+
+/** Every result this script prints. The last stdout line is always one of
+ * these, as JSON. */
+type ScriptResult = { ok: true; [key: string]: unknown } | { ok: false; message: string; [key: string]: unknown };
 
 /** A parsed flag bag: a value-taking flag holds its string, a boolean flag `true`. */
 type Flags = Record<string, string | true>;
@@ -325,7 +329,7 @@ function capFrom(flags: Flags): number {
   return n;
 }
 
-function cmdDerive(argv: string[]): number {
+function cmdDerive(argv: string[]): ScriptResult {
   const { flags, positionals } = parseArgv("derive", argv);
   const release = requiredFlag("derive", flags, "--release");
   const out = requiredFlag("derive", flags, "--out");
@@ -354,7 +358,11 @@ function cmdDerive(argv: string[]): number {
   console.log(`cap: ${cap} (committed cap ${TRANSIENT_ALLOW_LIST_CAP})`);
 
   if (entries.length > cap) {
-    console.error(
+    return {
+      ok: false,
+      transientCount: entries.length,
+      cap,
+      message:
       `VOID: the derivation over ${imgs.length} runs of release "${release}" yields ${entries.length} ` +
         `differing addresses, above the cap of ${cap}.\n` +
         `The derivation is VOID. What that means is not "the list is a bit long": it means THE STOP IS ` +
@@ -363,8 +371,7 @@ function cmdDerive(argv: string[]): number {
         `and do not truncate the union to fit it, which would make every later comparison pass on bytes ` +
         `nobody vetted.\n` +
         `No artifact was written to ${out}.`,
-    );
-    return 1;
+    };
   }
 
   const artifact = {
@@ -383,7 +390,7 @@ function cmdDerive(argv: string[]): number {
   // exists at any point on the void path.
   writeFileSync(out, JSON.stringify(artifact, null, 2) + "\n");
   console.log(`wrote ${out}: release "${release}", ${entries.length} entries, ${pairs.length} pairs`);
-  return 0;
+  return { ok: true, release, out, transientCount: entries.length, pairCount: pairs.length, cap };
 }
 
 // ---------------------------------------------------------------- check
@@ -504,7 +511,7 @@ function printRows(title: string, rows: DiffRow[], limit: number) {
   }
 }
 
-function cmdCheck(argv: string[]): number {
+function cmdCheck(argv: string[]): ScriptResult {
   const { flags, positionals } = parseArgv("check", argv);
   const listPath = requiredFlag("check", flags, "--allow-list");
   const limit = flags["--limit"] === undefined ? 40 : Number(flags["--limit"]);
@@ -540,7 +547,15 @@ function cmdCheck(argv: string[]): number {
   printRows("DIVERGENCE -- outside the allow-list, fails at any bit count", r.divergence, limit);
 
   console.log(`\nCHECK_VERDICT: ${r.verdict}`);
-  return r.verdict === "equivalent" ? 0 : 1;
+  const record = {
+    verdict: r.verdict,
+    release,
+    allowed: r.allowed.length,
+    divergence: r.divergence.map((d) => hex4(d.addr)),
+  };
+  return r.verdict === "equivalent"
+    ? { ok: true, ...record }
+    : { ok: false, message: `CHECK_VERDICT: not-equivalent -- ${r.divergence.length} address(es) outside the allow-list differ`, ...record };
 }
 
 // ---------------------------------------------------------------- CLI
@@ -552,11 +567,10 @@ function cmdCheck(argv: string[]): number {
 // documented usage was never printed and the failure surfaced as a confusing
 // message from process.exit() about its argument type instead. Same idiom this
 // file already uses for its flag bag, applied one level up.
-const commands: Record<string, (argv: string[]) => number> = Object.assign(Object.create(null), { derive: cmdDerive, check: cmdCheck });
+const commands: Record<string, (argv: string[]) => ScriptResult> = Object.assign(Object.create(null), { derive: cmdDerive, check: cmdCheck });
 
-const [cmd, ...rest] = process.argv.slice(2);
-if (!cmd || !commands[cmd]) {
-  console.error(`usage: node derive-transients.ts <command>
+function usage(): string {
+  return `usage: node derive-transients.ts <command>
 
   derive --release <id> --out <path> [--cap N] [--force] <a.bin> <b.bin> <c.bin> [...]
         Derive the per-release transient allow-list: the union of addresses differing across
@@ -576,18 +590,23 @@ its drift-passes rule are NOT inherited here -- see this file's header for why, 
 The method is re-derived per release and NO address set is ever inherited between releases;
 re-deriving over an existing artifact is refused without --force. \`--cap\` only narrows.
 
-\`check\` compares the images exactly as given. On the snapshot route the \`$0000\`/\`$0001\`
-6510-port overlay is normalised in code by the MCP-side predicate, so a derivation
-taken from un-normalised images can legitimately carry those two addresses.
+Both commands compare the images exactly as given and normalise nothing, including the
+\`$0000\`/\`$0001\` 6510 port bytes.
 
-Images come from the capture procedure in this skill's SKILL.md. This script contacts
-nothing and spawns nothing.`);
-  process.exit(cmd ? 1 : 0);
+The last stdout line is one JSON result. Images come from the capture procedure in this
+skill's SKILL.md. This script contacts nothing and spawns nothing.`;
 }
 
-try {
-  process.exit(commands[cmd](rest));
-} catch (e) {
-  console.error(`error: ${(e as Error).message}`);
-  process.exit(1);
+const [cmd, ...rest] = process.argv.slice(2);
+let result: ScriptResult;
+if (!cmd || !commands[cmd]) {
+  result = { ok: false, message: cmd ? `unknown command ${JSON.stringify(cmd)}\n${usage()}` : usage() };
+} else {
+  try {
+    result = commands[cmd](rest);
+  } catch (e) {
+    result = { ok: false, message: (e as Error).message };
+  }
 }
+console.log(JSON.stringify(result));
+process.exitCode = result.ok ? 0 : 1;

@@ -15,7 +15,7 @@
 // CRACKER-PATCH verdicts wholesale, so every function below either proves
 // its own precondition (proveOffset refuses a majority vote) or refuses to
 // emit at all (renderLedger) rather than launder an assumption as evidence.
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { join, resolve, relative } from "node:path";
@@ -24,15 +24,15 @@ import type { DumpEntry, LoaderRange, ProvenanceOffsetRecord, Registry, ReleaseE
 import { loadSibling, siblingOrRefuse } from "./sibling.ts";
 
 // The c64-project skill's modules. A missing sibling skill is a named
-// refusal (exit 1 as a CLI, a thrown Error when imported), not a crash.
-const { projectRoot, dataRoot } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/project-paths.ts"), "project-paths.ts", "c64-provenance"), import.meta.url);
-const { loadRegistry, registryPath, upsertRelease } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/releases.ts"), "releases.ts", "c64-provenance"), import.meta.url);
+// refusal (exit 1 as a CLI, a thrown Error when imported), not a crash. The
+// project root and the data root are computed on each call, never at import.
+const { projectRoot, dataRoot, registryFile } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/project-paths.ts"), "project-paths.ts", "c64-provenance"), import.meta.url);
+const { loadRegistry, upsertRelease, recordLedger, PRIMARY_DUMP_LABEL } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/releases.ts"), "releases.ts", "c64-provenance"), import.meta.url);
 const { addrNum, hex4 } = siblingOrRefuse(await loadSibling(() => import("../../c64-project/scripts/address.ts"), "address.ts", "c64-provenance"), import.meta.url);
 
-const REPO_ROOT = projectRoot();
-const RECOVERY_DIR = dataRoot();
-
-const die: (m: string) => never = (m) => { console.error(`error: ${m}`); process.exit(1); };
+/** Every result this script prints. The last stdout line is always one of
+ * these, as JSON. */
+export type ScriptResult = { ok: true; [key: string]: unknown } | { ok: false; message: string; [key: string]: unknown };
 
 // ------------------------------------------------------------------- types
 
@@ -143,7 +143,7 @@ export interface LedgerRow extends AddrRange {
 }
 
 function rel(p: string): string {
-  return relative(REPO_ROOT, p);
+  return relative(projectRoot(), p);
 }
 
 function sha256Hex(bufOrStr: string | Buffer): string {
@@ -182,15 +182,15 @@ function hasBin(d: DumpEntry | undefined): d is DumpEntry & { bin: string } {
 }
 
 function primaryDumpEntry(release: ReleaseEntry): DumpEntry & { bin: string } {
-  const dump = (release.dumps ?? []).find((d) => d.label === "run1");
+  const dump = (release.dumps ?? []).find((d) => d.label === PRIMARY_DUMP_LABEL);
   if (!hasBin(dump)) {
-    throw new Error(`primaryDumpEntry: release "${release.id}" has no run1 dump with a .bin recorded`);
+    throw new Error(`primaryDumpEntry: release "${release.id}" has no ${PRIMARY_DUMP_LABEL} dump with a .bin recorded`);
   }
   return dump;
 }
 
 function readImage(binPath: string): Buffer {
-  const buf = readFileSync(join(REPO_ROOT, binPath));
+  const buf = readFileSync(join(projectRoot(), binPath));
   if (buf.length !== 65536) {
     throw new Error(`readImage: ${binPath} is ${buf.length} bytes, expected exactly 65536`);
   }
@@ -384,16 +384,45 @@ export function applyOffset(address: number | string, offset: number): OffsetApp
 
 // -------------------------------------------------------- provenance offset
 
-function loadOffsets(registry: Registry): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const r of registry.releases) {
-    const po = r.provenance_offset;
-    out[r.id] = po && typeof po.offset === "number" ? po.offset : 0;
+/**
+ * The recorded reference release and every release's anchor-proven offset
+ * against it. `anchor-search` records both. Throws, naming each release, when
+ * no single release is recorded as the reference, or when any other release
+ * has no integer offset proven against that reference. A missing offset is
+ * never read as 0: a diff at an assumed offset is the wrong answer this
+ * pipeline exists to refuse.
+ */
+export function provenOffsets(registry: { releases: readonly Pick<ReleaseEntry, "id" | "provenance_offset">[] }): { referenceId: string; offsets: Record<string, number> } {
+  const refs = registry.releases.filter((r) => r.provenance_offset?.role === "reference");
+  if (refs.length !== 1) {
+    throw new Error(
+      refs.length === 0
+        ? "no release is recorded as the anchor-search reference -- run anchor-search first"
+        : `more than one release is recorded as the anchor-search reference (${refs.map((r) => r.id).join(", ")}) -- run anchor-search again`,
+    );
   }
-  return out;
+  const referenceId = refs[0].id;
+  const offsets: Record<string, number> = { [referenceId]: 0 };
+  const unproven: string[] = [];
+  for (const r of registry.releases) {
+    if (r.id === referenceId) continue;
+    const po = r.provenance_offset;
+    if (po && po.role === "target" && po.reference_release === referenceId && Number.isInteger(po.offset)) {
+      offsets[r.id] = po.offset as number;
+    } else {
+      unproven.push(r.id);
+    }
+  }
+  if (unproven.length > 0) {
+    throw new Error(
+      `no anchor-proven offset against reference "${referenceId}" for release(s) ${unproven.join(", ")} -- ` +
+        "run anchor-search; this tool never diffs at an unproven offset",
+    );
+  }
+  return { referenceId, offsets };
 }
 
-function recordProvenanceOffset(releaseId: string, data: ProvenanceOffsetRecord): ReleaseEntry {
+function recordProvenanceOffset(releaseId: string, data: ProvenanceOffsetRecord | null): ReleaseEntry {
   return upsertRelease(releaseId, (r) => ({ ...r, provenance_offset: data }));
 }
 
@@ -451,16 +480,13 @@ export function findCracktroRuns(
 
 // ------------------------------------------------------------- diffRanges
 
-// The four alternatives an UNKNOWN verdict must have ruled out before it is
-// honest. Stated generically: each clause names the precondition the pipeline
-// itself enforces, so the sentence is true for any corpus this runs against
-// rather than describing one project's dumps.
+// What a differing-byte verdict has and has not ruled out. Each clause names
+// only a check this pipeline itself enforces, so the sentence is true for any
+// corpus it runs against. The ledger's prose tier states each release's
+// recorded capture trigger.
 const RULED_OUT_ALTERNATIVES =
-  "Alternatives checked and ruled out: not a revision difference (all releases were captured at the same " +
-  "recorded trigger, so they are the same build state); not a read error (each release's own multi-run " +
-  "reproducibility verdict passed before its primary dump was accepted); not a packer artifact (every image " +
-  "is captured post-load at that same fully-loaded trigger, which is the normalisation requirement); not " +
-  "relocation (the anchor-proven offset for this pair is recorded above and used here).";
+  "Ruled out: relocation (each release's anchor-proven offset is applied here). Not checked by this tool: a " +
+  "revision difference, a read error and a packer artifact -- see each release's recorded trigger in the prose tier.";
 
 /**
  * N-way per-address comparison, aligned via each image's own anchor-proven
@@ -507,7 +533,7 @@ export function diffRanges(images: readonly DiffImage[], { gapTolerance = 16 }: 
         rec = {
           verdict: "ORIGINAL",
           agreeing_releases: available.length,
-          evidence: `identical across ${available.length} independently-cracked releases (${available.map((a) => a.id).join(", ")}), at the anchor-proven offset`,
+          evidence: `identical across ${available.length} independently-cracked releases (${available.map((a) => a.id).join(", ")}), at each release's anchor-proven offset`,
           reason: "",
         };
       } else {
@@ -524,7 +550,7 @@ export function diffRanges(images: readonly DiffImage[], { gapTolerance = 16 }: 
           const applied = applyOffset(addr, img.offset ?? 0);
           if (!applied.inRange) continue;
           if ((img.loaderRanges ?? []).some((lr: AddrRange) => applied.target >= lr.start && applied.target <= lr.end)) {
-            technique = "loader replacement/relocation -- this address is inside a crack's own earned loader_ranges entry (each crack replaces the original loader with its own, per Pitfall 4)";
+            technique = "loader replacement/relocation -- this address is inside a crack's own earned loader_ranges entry (each crack replaces the original loader with its own)";
             techniqueRelease = img.id;
             break;
           }
@@ -534,7 +560,7 @@ export function diffRanges(images: readonly DiffImage[], { gapTolerance = 16 }: 
             const applied = applyOffset(addr, img.offset ?? 0);
             if (!applied.inRange) continue;
             if ((img.cracktroRuns ?? []).some((cr: AddrRange) => applied.target >= cr.start && applied.target <= cr.end)) {
-              technique = "intro/cracktro splice -- this address is inside a printable-text run found by the cracktro banner/credit scan (per Pitfall 4)";
+              technique = "intro/cracktro splice -- this address is inside a printable-text run found by the cracktro banner/credit scan";
               techniqueRelease = img.id;
               break;
             }
@@ -868,39 +894,63 @@ export function renderLedger({
 
 // ------------------------------------------------------------------- helpers
 
-function loadImagesForDiff(registry: Registry): DiffImage[] {
-  const offsets = loadOffsets(registry);
-  return registry.releases.map((r) => {
+function loadImagesForDiff(registry: Registry): { referenceId: string; images: DiffImage[] } {
+  const { referenceId, offsets } = provenOffsets(registry);
+  const images = registry.releases.map((r) => {
     const dump = primaryDumpEntry(r);
     const bytes = readImage(dump.bin);
     const loaderRanges = (r.loader_ranges ?? []).map((lr) => ({ start: addrNum(lr.start), end: addrNum(lr.end), note: lr.note, evidence: lr.evidence }));
     const cracktroRuns = findCracktroRuns(bytes, { minLength: 8 });
-    return { id: r.id, bytes, offset: offsets[r.id] ?? 0, loaderRanges, cracktroRuns };
+    return { id: r.id, bytes, offset: offsets[r.id], loaderRanges, cracktroRuns };
   });
+  return { referenceId, images };
 }
 
 function readManifest(manifestPath: string): RangeManifest {
-  return JSON.parse(readFileSync(join(REPO_ROOT, manifestPath), "utf8"));
+  return JSON.parse(readFileSync(join(projectRoot(), manifestPath), "utf8"));
 }
 
 function writeManifest(manifestPath: string, manifest: RangeManifest): void {
-  writeFileSync(join(REPO_ROOT, manifestPath), JSON.stringify(manifest, null, 2) + "\n");
+  writeFileSync(join(projectRoot(), manifestPath), JSON.stringify(manifest, null, 2) + "\n");
+}
+
+/** The primary dump's range manifest path, or a refusal that names the release. */
+function primaryManifestPath(release: ReleaseEntry): string {
+  const dump = primaryDumpEntry(release);
+  if (!dump.range_manifest) {
+    throw new Error(`release "${release.id}" has no range_manifest on its ${PRIMARY_DUMP_LABEL} dump`);
+  }
+  return dump.range_manifest;
 }
 
 // -------------------------------------------------------------------- CLI
 
 function optValue(rest: readonly string[], name: string): string | undefined {
   const i = rest.indexOf(`--${name}`);
-  return i === -1 ? undefined : rest[i + 1];
+  if (i === -1) return undefined;
+  const v = rest[i + 1];
+  if (v === undefined || v.startsWith("--")) throw new Error(`--${name} needs a value`);
+  return v;
 }
 
-const VERBS: Record<string, (rest: string[]) => void> = {
-  "anchor-search"(rest) {
+/** `--gap-tolerance N`, a non-negative integer, or 16 when the flag is absent. */
+function gapToleranceFrom(rest: readonly string[]): number {
+  const raw = optValue(rest, "gap-tolerance");
+  if (raw === undefined) return 16;
+  if (!/^[0-9]+$/.test(raw)) throw new Error(`--gap-tolerance needs a non-negative integer, got ${JSON.stringify(raw)}`);
+  return Number(raw);
+}
+
+type Say = (line: string) => void;
+type Verb = (rest: string[], say: Say, json: boolean) => ScriptResult;
+
+const VERBS: Record<string, Verb> = {
+  "anchor-search"(rest, say, json) {
     const reg = loadRegistry();
-    if (reg.releases.length < 2) die("anchor-search needs at least two releases in the registry");
+    if (reg.releases.length < 2) return { ok: false, message: "anchor-search needs at least two releases in the registry" };
     const referenceId = optValue(rest, "reference") ?? reg.releases[0].id;
     const reference = reg.releases.find((r) => r.id === referenceId);
-    if (!reference) die(`unknown reference release "${referenceId}"`);
+    if (!reference) return { ok: false, message: `unknown reference release "${referenceId}"` };
     const refBytes = readImage(primaryDumpEntry(reference).bin);
 
     const provenAt = new Date().toISOString();
@@ -923,85 +973,99 @@ const VERBS: Record<string, (rest: string[]) => void> = {
       const anchors = anchorSearch(refBytes, targetBytes);
       const proof = proveOffset(anchors);
       results[r.id] = { anchors, proof };
-      if (proof.ok) {
-        recordProvenanceOffset(r.id, {
-          role: "target",
-          reference_release: referenceId,
-          offset: proof.offset,
-          anchor_count: anchors.length,
-          anchors_agreeing: proof.usable.length,
-          proven_at: provenAt,
-          method: "anchor-proven via .claude/skills/c64-provenance/scripts/diff-images.ts anchor-search -- see NOTES.md for the full narrative",
-        });
-      }
+      // A failed search clears the release's old offset, so a later diff
+      // refuses it instead of reading a stale one.
+      recordProvenanceOffset(
+        r.id,
+        proof.ok
+          ? {
+              role: "target",
+              reference_release: referenceId,
+              offset: proof.offset,
+              anchor_count: anchors.length,
+              anchors_agreeing: proof.usable.length,
+              proven_at: provenAt,
+              method: "anchor-proven via .claude/skills/c64-provenance/scripts/diff-images.ts anchor-search",
+            }
+          : null,
+      );
     }
 
-    if (rest.includes("--json")) {
-      console.log(JSON.stringify({ reference: referenceId, results }, null, 2));
-    } else {
-      for (const [id, { proof }] of Object.entries(results)) {
-        console.log(`${referenceId} -> ${id}: ok=${proof.ok} offset=${proof.offset} (${proof.reason})`);
-      }
+    for (const [id, { proof }] of Object.entries(results)) {
+      say(`${referenceId} -> ${id}: ok=${proof.ok} offset=${proof.offset} (${proof.reason})`);
     }
-    process.exitCode = Object.values(results).every((r) => r.proof.ok) ? 0 : 1;
+    const summary = Object.fromEntries(
+      Object.entries(results).map(([id, { anchors, proof }]) => [id, json ? { anchors, proof } : { ok: proof.ok, offset: proof.offset, reason: proof.reason }]),
+    );
+    const failed = Object.entries(results).filter(([, r]) => !r.proof.ok);
+    if (failed.length > 0) {
+      return {
+        ok: false,
+        message: `no offset proven for release(s) ${failed.map(([id, r]) => `${id} (${r.proof.reason})`).join("; ")} -- their stored offsets were cleared`,
+        reference: referenceId,
+        results: summary,
+      };
+    }
+    return { ok: true, reference: referenceId, results: summary };
   },
 
-  diff(rest) {
-    const gapTolerance = rest.includes("--gap-tolerance") ? Number(optValue(rest, "gap-tolerance")) : 16;
+  diff(rest, say, json) {
+    const gapTolerance = gapToleranceFrom(rest);
     const reg = loadRegistry();
-    const images = loadImagesForDiff(reg);
+    const { referenceId, images } = loadImagesForDiff(reg);
     const result = diffRanges(images, { gapTolerance });
-    if (rest.includes("--json")) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`diff: ${result.ranges.length} range(s), gap_tolerance=${gapTolerance}, coalesced=${result.coalesced}`);
-    }
+    say(`diff: ${result.ranges.length} range(s), gap_tolerance=${gapTolerance}, coalesced=${result.coalesced}`);
 
     // Write back the three-bucket partition for every dumps[] entry in the
     // registry, enumerated -- never a hardcoded pair.
-    for (const { release: releaseId, bin, manifestPath } of enumerateManifests(reg)) {
-      // Both are present: enumerateManifests() read the entry out of `reg`,
-      // and a dumps[] entry is a four-file set.
+    const manifestsWritten: string[] = [];
+    for (const { release: releaseId, label, bin, manifestPath } of enumerateManifests(reg)) {
+      if (!bin) throw new Error(`release "${releaseId}" dump "${label}" has a range_manifest but no bin`);
       const releaseEntry = reg.releases.find((r) => r.id === releaseId)!;
-      const image = readImage(bin!);
-      const manifest = readManifest(manifestPath);
-      const loaderRanges = releaseEntry.loader_ranges ?? [];
-      const bucketed = bucketManifest(image, manifest, { loaderRanges });
+      const bucketed = bucketManifest(readImage(bin), readManifest(manifestPath), { loaderRanges: releaseEntry.loader_ranges ?? [] });
       writeManifest(manifestPath, bucketed);
+      manifestsWritten.push(manifestPath);
     }
+    say(`bucketed ${manifestsWritten.length} range manifest(s)`);
+
+    const verdicts: Record<string, number> = {};
+    for (const r of result.ranges) verdicts[r.verdict] = (verdicts[r.verdict] ?? 0) + 1;
+    return {
+      ok: true,
+      reference: referenceId,
+      gapTolerance,
+      rangeCount: result.ranges.length,
+      kept: result.kept,
+      coalesced: result.coalesced,
+      verdicts,
+      manifestsWritten,
+      ...(json ? { ranges: result.ranges, imageIds: result.imageIds } : {}),
+    };
   },
 
-  "count-patches"(rest) {
-    const gapTolerance = rest.includes("--gap-tolerance") ? Number(optValue(rest, "gap-tolerance")) : 16;
+  "count-patches"(rest, say) {
+    const gapTolerance = gapToleranceFrom(rest);
     const reg = loadRegistry();
-    const images = loadImagesForDiff(reg);
+    const { images } = loadImagesForDiff(reg);
     const diffResult = diffRanges(images, { gapTolerance });
     const bucketedManifestsByRelease: Record<string, RangeManifest> = {};
-    for (const r of reg.releases) {
-      const dump = primaryDumpEntry(r);
-      bucketedManifestsByRelease[r.id] = readManifest(dump.range_manifest!);
-    }
+    for (const r of reg.releases) bucketedManifestsByRelease[r.id] = readManifest(primaryManifestPath(r));
     const counts = countPatches(images, diffResult, bucketedManifestsByRelease);
-    if (rest.includes("--json")) {
-      console.log(JSON.stringify({ counts }, null, 2));
-    } else {
-      for (const [id, n] of Object.entries(counts)) console.log(`${id}: ${n}`);
-    }
+    for (const [id, n] of Object.entries(counts)) say(`${id}: ${n}`);
+    return { ok: true, gapTolerance, counts };
   },
 
-  ledger(rest) {
-    const gapTolerance = rest.includes("--gap-tolerance") ? Number(optValue(rest, "gap-tolerance")) : 16;
+  ledger(rest, say) {
+    const gapTolerance = gapToleranceFrom(rest);
     const reg = loadRegistry();
-    const images = loadImagesForDiff(reg);
+    const { referenceId, images } = loadImagesForDiff(reg);
     const diffResult = diffRanges(images, { gapTolerance });
 
-    const referenceId = reg.releases[0].id;
     const referenceEntry = reg.releases.find((r) => r.id === referenceId)!;
-    const referenceManifest = readManifest(primaryDumpEntry(referenceEntry).range_manifest!);
+    const referenceManifest = readManifest(primaryManifestPath(referenceEntry));
     // Split every diff range against the reference manifest's own kind
     // boundaries -- never resolve kind from a range's start address alone
-    // (see splitRangeByManifestKind's own comment for the real bug this
-    // fixes).
+    // (see splitRangeByManifestKind's own comment).
     const generatedRanges = diffResult.ranges.flatMap((r) => splitRangeByManifestKind(r, referenceManifest.ranges));
 
     // Project narrative is read from a file the project owns, never hardcoded
@@ -1014,38 +1078,41 @@ const VERBS: Record<string, (rest: string[]) => void> = {
         .replace(/\{\{gapTolerance\}\}/g, String(gapTolerance))
         .trim();
     } else {
-      console.error(
+      say(
         `ledger: no project prose at ${rel(prosePath)} -- emitting the derived prose only. ` +
           `Create that file (or pass --prose <path>) to add project-specific narrative.`,
       );
     }
 
     const prose = buildProse({ reg, images, gapTolerance, referenceId, projectProse });
-    let markdown: string;
-    try {
-      markdown = renderLedger({ generatedRanges, gapTolerance, prose });
-    } catch (e) {
-      console.error(`ledger: ${(e as Error).message}`);
-      process.exitCode = 1;
-      return;
-    }
-    const outPath = join(RECOVERY_DIR, "PROVENANCE.md");
+    const markdown = renderLedger({ generatedRanges, gapTolerance, prose });
+    const outPath = join(dataRoot(), "PROVENANCE.md");
     writeFileSync(outPath, markdown);
 
     // Record the generated tier's digest so a later phase can detect drift.
     const generatedTierText = markdown.split("## Prose tier")[0];
     const digest = sha256Hex(generatedTierText);
-    const rawReg = JSON.parse(readFileSync(registryPath, "utf8"));
-    rawReg.ledger = { generated_tier_sha256: digest, gap_tolerance: gapTolerance, generated_at: new Date().toISOString() };
-    writeFileSync(registryPath, JSON.stringify(rawReg, null, 2) + "\n");
+    recordLedger({ generated_tier_sha256: digest, gap_tolerance: gapTolerance, generated_at: new Date().toISOString() });
 
-    console.log(`wrote ${rel(outPath)} (generated tier sha256 ${digest})`);
+    say(`wrote ${rel(outPath)} (generated tier sha256 ${digest})`);
+    return { ok: true, path: rel(outPath), reference: referenceId, gapTolerance, generatedTierSha256: digest, projectProse: projectProse !== null ? rel(prosePath) : null };
   },
 };
 
 /** Where the hand-maintained project narrative lives. Overridable per run. */
 export function defaultProsePath(): string {
   return join(dataRoot(), "PROVENANCE.prose.md");
+}
+
+/** One trigger address in a comparable form, or null when it is not recorded. */
+function triggerKey(r: ReleaseEntry): string | null {
+  const t = r.trigger;
+  if (!t || t.address === undefined || t.address === null || !t.kind) return null;
+  try {
+    return `${hex4(addrNum(t.address))}/${t.kind}`;
+  } catch {
+    return `${String(t.address)}/${t.kind}`;
+  }
 }
 
 /**
@@ -1070,7 +1137,7 @@ function buildProse({
   referenceId: string;
   projectProse: string | null;
 }): string {
-  const registryName = relative(projectRoot(), registryPath);
+  const registryName = relative(projectRoot(), registryFile());
 
   const offsetLines = images
     .map((img) => {
@@ -1080,16 +1147,20 @@ function buildProse({
       if (img.id === referenceId) {
         return `- **${img.id}** (reference release): offset 0 by definition -- every other release's offset is proven against this one's primary dump.`;
       }
-      if (!po) {
-        return `- **${img.id}**: no provenance_offset recorded yet -- run the \`anchor-search\` verb first.`;
-      }
-      return `- **${img.id}**: proven offset **${po.offset}**, from ${po.anchor_count} anchor(s), all agreeing. Machine record in \`${registryName}\`'s \`provenance_offset\` field. Proven ${po.proven_at}.`;
+      // loadImagesForDiff() refused any release without a proven offset.
+      return `- **${img.id}**: proven offset **${po!.offset}**, from ${po!.anchor_count} anchor(s), all agreeing. Machine record in \`${registryName}\`'s \`provenance_offset\` field. Proven ${po!.proven_at}.`;
     })
     .join("\n");
 
-  const dumpTriggerLines = reg.releases
-    .map((r) => `- **${r.id}**: dump trigger \`${r.trigger?.address ?? "unrecorded"}\` (\`${r.trigger?.kind ?? "unrecorded"}\`). All releases' captures were taken at this same trigger, so the images are directly comparable.`)
+  const triggerLines = reg.releases
+    .map((r) => `- **${r.id}**: dump trigger \`${r.trigger?.address ?? "unrecorded"}\` (\`${r.trigger?.kind ?? "unrecorded"}\`).`)
     .join("\n");
+  const keys = reg.releases.map(triggerKey);
+  const triggerVerdict = keys.some((k) => k === null)
+    ? "At least one release has no recorded trigger, so this ledger does not prove that the images show the same program state."
+    : new Set(keys).size === 1
+      ? "All releases record this same trigger, so the images show the same program state."
+      : "The releases record different triggers, so the images are not proven to show the same program state.";
 
   const method =
 `### The offset used, and how it was proven
@@ -1105,7 +1176,9 @@ ${offsetLines}
 
 ### The state the images were normalised to
 
-${dumpTriggerLines}
+${triggerLines}
+
+${triggerVerdict}
 
 ### The gap-coalescing tolerance
 
@@ -1132,13 +1205,38 @@ the manifests, and the bytes stay verbatim evidence.
   return projectProse ? `${method}\n${projectProse}` : method;
 }
 
+export function usage(): string {
+  return `usage: node ${fileURLToPath(import.meta.url)} <command> [--json]
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [cmd, ...rest] = process.argv.slice(2);
-  if (!cmd || !VERBS[cmd]) {
-    console.log(`usage: node ${fileURLToPath(import.meta.url)} <anchor-search|diff|count-patches|ledger> [--gap-tolerance N] [--reference <id>] [--json]`);
-    process.exitCode = cmd ? 1 : 0;
-  } else {
-    VERBS[cmd](rest);
+  anchor-search [--reference <id>]            prove each release's offset        [writes the registry]
+  diff [--gap-tolerance N]                    N-way byte diff at the proven offsets [writes range manifests]
+  count-patches [--gap-tolerance N]           CRACKER-PATCH bytes in game code
+  ledger [--gap-tolerance N] [--prose <path>] regenerate PROVENANCE.md           [writes it and the registry]
+
+Every release needs a "${PRIMARY_DUMP_LABEL}" dump. diff, count-patches and ledger refuse a
+release with no anchor-proven offset. The last stdout line is one JSON result.`;
+}
+
+/** The whole CLI as a function. `say` receives the human-readable lines. Never throws. */
+export function main(argv: readonly string[], say: Say = () => {}): ScriptResult {
+  const json = argv.includes("--json");
+  const [cmd, ...rest] = argv.filter((a) => a !== "--json");
+  if (!cmd || !Object.hasOwn(VERBS, cmd)) {
+    return { ok: false, message: cmd ? `unknown command ${JSON.stringify(cmd)}\n${usage()}` : usage() };
   }
+  try {
+    return VERBS[cmd](rest, say, json);
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  const argv = process.argv.slice(2);
+  const result = main(argv, argv.includes("--json") ? () => {} : (line) => console.log(line));
+  console.log(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
 }

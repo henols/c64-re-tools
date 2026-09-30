@@ -8,11 +8,11 @@
 // TWO different real file names through the identical code path.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { publishedSubpath, resolveMcpModule, refusalMessage, TARGET_PACKAGE } from "../../../skills/c64-project/scripts/mcp-module.ts";
+import { invokeHostTool, invokeHostToolSync, publishedSubpath, resolveMcpModule, refusalMessage } from "../../../skills/c64-project/scripts/mcp-module.ts";
 
 /** Runs `fn` with `process.env.VICE_MCP_DIR` set to `value` (or deleted when
  * `value` is `undefined`), always restoring the prior value afterward -- this
@@ -30,10 +30,6 @@ function withViceMcpDir<T>(value: string | undefined, fn: () => T): T {
     else delete process.env.VICE_MCP_DIR;
   }
 }
-
-test("TARGET_PACKAGE is the published MCP-side package name", () => {
-  assert.equal(TARGET_PACKAGE, "@henols/vice-mcp");
-});
 
 test("resolveMcpModule: with VICE_MCP_DIR cleared, resolves the in-repo relative rung for vsf-slice.ts", () => {
   withViceMcpDir(undefined, () => {
@@ -128,3 +124,85 @@ test("publishedSubpath: a TypeScript target maps to its compiled dist/ copy, sin
   assert.equal(publishedSubpath("resources/host-tool-endpoint.mjs"), "resources/host-tool-endpoint.mjs");
   assert.equal(publishedSubpath("memmap.json"), "memmap.json");
 });
+
+// ---------------------------------------------------------------------------
+// invokeHostTool with a stand-in endpoint client. The client is written into a
+// scratch VICE_MCP_DIR at test time; it reads --tools-root and --args from its
+// argv like the real one, writes the files the args name, and prints a reply.
+// ---------------------------------------------------------------------------
+
+const FAKE_CLIENT = `
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+const argv = process.argv;
+const arg = (name) => argv[argv.indexOf(name) + 1];
+const args = JSON.parse(arg("--args"));
+const root = arg("--tools-root");
+if (args.fail) {
+  console.log(JSON.stringify({ ok: false, message: args.fail }));
+} else {
+  const results = args.files.map((name) => {
+    const path = join(root, name);
+    writeFileSync(path, "produced " + name);
+    return { path, sha256: "x", byteLength: 1 };
+  });
+  console.log("noise before the reply");
+  console.log(JSON.stringify({ ok: true, tool: "fake", results }));
+}
+`;
+
+function fakeEndpoint(): string {
+  const dir = mkdtempSync(join(tmpdir(), "mcp-module-endpoint-"));
+  mkdirSync(join(dir, "resources"));
+  writeFileSync(join(dir, "resources", "host-tool-endpoint.mjs"), FAKE_CLIENT);
+  return dir;
+}
+
+test("invokeHostTool moves each produced file into destDir and removes its staging directory", async () => {
+  const endpoint = fakeEndpoint();
+  const dest = mkdtempSync(join(tmpdir(), "mcp-module-dest-"));
+  try {
+    const response = await withViceMcpDirAsync(endpoint, () => invokeHostTool("fake", { files: ["a.txt", "b.txt"] }, { destDir: dest }));
+    assert.equal(response.ok, true);
+    assert.deepEqual(readdirSync(dest).sort(), ["a.txt", "b.txt"]);
+    assert.equal(readFileSync(join(dest, "a.txt"), "utf8"), "produced a.txt");
+    assert.deepEqual(response.results?.map((r) => r.path).sort(), [join(dest, "a.txt"), join(dest, "b.txt")]);
+  } finally {
+    rmSync(endpoint, { recursive: true, force: true });
+    rmSync(dest, { recursive: true, force: true });
+  }
+});
+
+test("invokeHostTool passes a client failure reply through and leaves destDir empty", async () => {
+  const endpoint = fakeEndpoint();
+  const dest = mkdtempSync(join(tmpdir(), "mcp-module-dest-"));
+  try {
+    const response = await withViceMcpDirAsync(endpoint, () => invokeHostTool("fake", { fail: "no broker" }, { destDir: dest }));
+    assert.deepEqual(response, { ok: false, message: "no broker" });
+    assert.deepEqual(readdirSync(dest), []);
+  } finally {
+    rmSync(endpoint, { recursive: true, force: true });
+    rmSync(dest, { recursive: true, force: true });
+  }
+});
+
+test("invokeHostToolSync returns the client's reply and removes its staging directory", () => {
+  const endpoint = fakeEndpoint();
+  try {
+    const response = withViceMcpDir(endpoint, () => invokeHostToolSync("fake", { files: [] }));
+    assert.equal(response.ok, true);
+  } finally {
+    rmSync(endpoint, { recursive: true, force: true });
+  }
+});
+
+async function withViceMcpDirAsync<T>(value: string, fn: () => Promise<T>): Promise<T> {
+  const prior = process.env.VICE_MCP_DIR;
+  process.env.VICE_MCP_DIR = value;
+  try {
+    return await fn();
+  } finally {
+    if (prior === undefined) delete process.env.VICE_MCP_DIR;
+    else process.env.VICE_MCP_DIR = prior;
+  }
+}
