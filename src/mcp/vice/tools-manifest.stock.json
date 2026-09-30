@@ -269,13 +269,13 @@
     },
     {
       "name": "vice_registers_set",
-      "description": "Set CPU register value",
+      "description": "Set one CPU register. Values are integers within the register's width (8 or 16 bits). The answer reports the value the emulator read back.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "register": {
             "type": "string",
-            "description": "Register name: PC|A|X|Y|SP|N|V|B|D|I|Z|C"
+            "description": "Register name as vice_registers_available lists it (stock VICE 3.8: PC, A, X, Y, SP, 00, 01, FL, LIN, CYC). The processor flags are one register, FL; the single flag names N, V, B, D, I, Z and C are refused."
           },
           "value": {
             "type": "number",
