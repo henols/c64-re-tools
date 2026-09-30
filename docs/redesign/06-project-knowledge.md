@@ -34,7 +34,7 @@ The only authoritative persistent toolkit-owned project state in v1 is:
 
 Do not create a general project-local runtime/cache tree under `.c64-re-tools`. Host Runtime state, screenshots, snapshots, analyzer scratch, staging and logs belong outside the project. See [17 — Project root and local state](17-project-root-and-local-state.md).
 
-The `.c64-re-tools/` directory itself also acts as an explicit project-root marker when present.
+The project root is the harness working directory. `.c64-re-tools/` is storage only; it is not used for project discovery.
 
 ## 3. One representation
 
