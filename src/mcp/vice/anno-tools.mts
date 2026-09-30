@@ -149,6 +149,7 @@ import { flatImageOrigin, parsePrg } from "./prg-image.mts";
 import { blocksFromStore } from "./block-class.mts";
 import {
   okText,
+  failureText,
   toolFailure,
   AnnoUncuratedToolError,
   AnnoToolArgumentError,
@@ -1085,11 +1086,8 @@ async function dispatchBatchExecute(handle: AnnoStoreHandle, args: unknown, inpu
       const value = name === "anno_batch_execute" ? await dispatchBatchExecute(handle, innerArgs, inputs) : await dispatch(name, innerArgs, handle, inputs);
       results.push({ index, name, status: "success", result: value });
     } catch (err) {
-      // NAMED BY CLASS, exactly as the outer boundary names it, so a per-item
-      // failure is as diagnosable as a whole-call one.
-      const errName = err instanceof Error ? err.name : "Error";
-      const errMessage = err instanceof Error ? err.message : String(err);
-      results.push({ index, name, status: "error", error: `[${errName}] ${errMessage}` });
+      // Spelled by the same converter as a whole-call failure.
+      results.push({ index, name, status: "error", error: failureText(name, err) });
     }
   }
   const failed = results.filter((entry) => entry.status === "error").length;

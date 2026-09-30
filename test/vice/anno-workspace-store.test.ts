@@ -58,7 +58,7 @@ test("a read with no annotations.db is refused naming the file, and creates noth
   await withWorkspace(async (ws) => {
     const tool = await runAnnoTool("anno_get_symbols", { max_results: 10 }, deps(ws));
     assert.equal(tool.isError, true);
-    assert.match(tool.content[0]!.text, /anno_get_symbols failed: \[AnnoProjectError\] anno_get_symbols refused: this workspace has no annotation project yet/);
+    assert.match(tool.content[0]!.text, /^\[AnnoProjectError\] anno_get_symbols refused: this workspace has no annotation project yet/);
     assert.ok(tool.content[0]!.text.includes(annoDbPath(ws)), "the refusal names the file it looked for");
 
     const report = await withCapturedConsole(() => runAnnoCli(["evid-disagreements"], deps(ws)));

@@ -2,8 +2,10 @@
 // anno-tool-defs.mts
 //
 // WHY THIS FILE EXISTS: the curated `anno_*` tool surface without its
-// engine -- the definitions, the allow-list derived from them, every per-verb
-// argument validator, and the staged-file vocabulary. A client validates a
+// engine -- the verb list and the file arguments each verb names, the
+// allow-list derived from it, every per-verb argument validator, and the
+// staged-file vocabulary. The verbs run through `anno call`; their
+// arguments are documented in the c64-annotations skill. A client validates a
 // call and finds its file arguments here without loading the store; the
 // engine (`anno-tools.mts`) dispatches the same definitions against a handle.
 //
@@ -15,29 +17,14 @@
 import { AnnoRevisionArgumentError, AnnoStoreError, assertCommentText, assertCommentType, assertDataType, assertEnumName, assertLabelKind, assertLegalLabel, assertRangeShape, parseStoreAddress, type AnnoStoreErrorOptions } from "./anno-types.mts";
 import type { ConstWriteFact } from "./anno-import.mts";
 
-// ---------------------------------------------------------------------------
-// The wire shapes this module produces/consumes. Deliberately NOT imported
-// from vice-proxy.ts (that file has no exported ToolDefinition/ToolCallResult
-// -- both are file-local types there); these are structurally identical so a
-// value built here is interchangeable wherever vice-proxy.ts combines it with
-// its own manifest-sourced tools.
-// ---------------------------------------------------------------------------
-
+/** One curated verb: its name, and the argument keys that name a file the
+ * CLIENT reads and stages. */
 export interface AnnoToolDefinition {
   name: string;
-  description: string;
-  inputSchema: {
-    type: "object";
-    properties: Record<string, unknown>;
-    required?: string[];
-  };
-  // Structural compatibility with vice-errors.mts's ToolInfo (vice-proxy.ts's
-  // ToolDefinition alias), which carries this index signature -- lets
-  // vice-proxy.ts's buildViceTool() accept an AnnoToolDefinition directly,
-  // with no per-call cast at the registration site.
-  [key: string]: unknown;
+  clientFiles: readonly string[];
 }
 
+/** One call's answer: its text, and whether it is a failure. */
 export interface ToolCallResult {
   content: { type: "text"; text: string }[];
   isError: boolean;
@@ -51,18 +38,20 @@ export function okText(text: string): ToolCallResult {
   return { content: [{ type: "text", text }], isError: false };
 }
 
-function errText(text: string): ToolCallResult {
-  return { content: [{ type: "text", text }], isError: true };
-}
-
-/** The one spelling of a failed call, named by class (D18-12), so a caller can
- * tell an `AnnoStoreCorruptError` from an `AnnoToolArgumentError` from the
- * text alone. Shared with `anno-call-client.ts`, whose own refusals must read
- * the same. */
-export function toolFailure(name: string, err: unknown): ToolCallResult {
+/** The one spelling of a failed call or batch entry, named by class so a
+ * caller can tell an `AnnoStoreCorruptError` from an `AnnoToolArgumentError`
+ * from the text alone. The verb is named once: a message that already starts
+ * with it ("anno_x refused: ...") is used as it is. */
+export function failureText(name: string, err: unknown): string {
   const errName = err instanceof Error ? err.name : "Error";
   const errMessage = err instanceof Error ? err.message : String(err);
-  return errText(`${name} failed: [${errName}] ${errMessage}`);
+  return errMessage.startsWith(`${name} `) ? `[${errName}] ${errMessage}` : `[${errName}] ${name} failed: ${errMessage}`;
+}
+
+/** `failureText` as a failed call's answer. Shared with `anno-call-client.ts`,
+ * whose own refusals must read the same. */
+export function toolFailure(name: string, err: unknown): ToolCallResult {
+  return { content: [{ type: "text", text: failureText(name, err) }], isError: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +197,7 @@ export function assertBaseRevisionArg(name: string, args: unknown, batchIndex?: 
     throw new AnnoRevisionArgumentError(
       `${name} refused${whereOf(batchIndex)}: "base_revision" must be a non-negative integer, got ${JSON.stringify(raw)} -- ` +
         "a numeric STRING in particular is refused here rather than left to SQLite's column affinity, which turns an argument " +
-        "error into a corruption refusal (WR-22).",
+        "error into a corruption refusal.",
       { value: raw, parameter: "base_revision" },
     );
   }
@@ -238,853 +227,53 @@ function assertLegalLabelArg(name: string, args: unknown, batchIndex?: number): 
 }
 
 // ---------------------------------------------------------------------------
-// The curated tool definitions.
-//
-// No definition carries a store: the handle is bound to one project before
-// the call arrives. A property marked `clientFile: true` names a file the
-// CLIENT reads; the engine receives it as a staged reference. Each description
-// is written for an AGENT: what the verb answers, what it costs, and what it
-// will refuse.
+// The curated verbs. No verb takes a store: the handle is bound to one
+// project before the call arrives. `clientFiles` names the arguments that
+// are files the CLIENT reads; the engine receives each as a staged reference.
 // ---------------------------------------------------------------------------
 
 /** How deep a nested `anno_batch_execute` may go before the payload is refused
- * by name rather than walked (T-29-24). Four levels is far past any legitimate
- * use -- a batch of batches of batches has no procedure behind it -- and is
- * chosen to be obviously sufficient rather than tuned. */
+ * by name rather than walked. Four levels is far past any legitimate use -- a
+ * batch of batches of batches has no procedure behind it -- and is chosen to
+ * be obviously sufficient rather than tuned. */
 export const ANNO_MAX_BATCH_DEPTH = 4;
 
-const IMAGE_PROPERTY = {
-  image: {
-    type: "string",
-    clientFile: true,
-    description:
-      "Absolute or workspace-relative path to the program image this answer is DERIVED from -- a .prg (2-byte " +
-      "little-endian load address plus payload) or an exactly-65536-byte flat capture (.raw/.bin, dispatched by " +
-      "extension before any length check). REQUIRED on every derived read (D-07): the store holds annotations and " +
-      "never bytes, so an omitted image would read as a plausible success against whatever was recorded last. " +
-      "The client reads the file and sends its bytes; refused if it resolves outside the workspace root, including " +
-      "via a symlink.",
-  },
-} as const;
+const verb = (name: string, clientFiles: readonly string[] = []): AnnoToolDefinition => Object.freeze({ name, clientFiles: Object.freeze([...clientFiles]) });
 
-const BASE_REVISION_PROPERTY = {
-  base_revision: {
-    type: "integer",
-    description:
-      "Optional compare-and-swap guard: the revision this edit was computed against. The write is refused with a " +
-      "named stale-revision error if the store has moved on. Omit it for an unconditional write. A numeric STRING " +
-      "is refused rather than coerced.",
-  },
-} as const;
+export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = Object.freeze([
+  verb("anno_set_label_name"),
+  verb("anno_set_comment"),
+  verb("anno_set_data_type"),
+  verb("anno_add_scope"),
+  verb("anno_remove_scope"),
+  verb("anno_exclude_range"),
+  verb("anno_include_range"),
+  verb("anno_get_symbols"),
+  verb("anno_get_comments"),
+  verb("anno_get_blocks"),
+  verb("anno_create_project_enum"),
+  verb("anno_update_project_enum"),
+  verb("anno_apply_enum_usage"),
+  verb("anno_save_project"),
+  verb("anno_disassemble", ["image"]),
+  verb("anno_read_region", ["image"]),
+  verb("anno_get_binary_info", ["image"]),
+  verb("anno_get_cross_references", ["image"]),
+  verb("anno_search", ["image"]),
+  verb("anno_get_address_details", ["image"]),
+  verb("anno_batch_execute", ["image"]),
+  verb("anno_import_ghidra_export", ["export_path"]),
+  verb("anno_join_memmap", ["image"]),
+  verb("anno_evid_ingest"),
+  verb("anno_evid_disagreements"),
+  verb("anno_evid_runs"),
+  verb("anno_evid_reset"),
+  verb("anno_hazard_report", ["image"]),
+]);
 
-export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
-  {
-    name: "anno_set_label_name",
-    description:
-      "Binds a name to one address in the annotation store, so a disassembly reads as `jsr irq_handler` rather than " +
-      "`jsr $c000`. Costs one store open, one write and one close. REFUSES, never rewrites: a name that is not a legal " +
-      "ACME identifier (letter or underscore, then letters/digits/underscores) or that is a 6502/6510 mnemonic is " +
-      "rejected with the offending name in the message, because the store's printed name must never diverge from the " +
-      "symbol an export would emit. Also refuses a name already bound to a DIFFERENT address rather than rebinding it. " +
-      "Setting the same name at the same address again SUCCEEDS and reports `changed: false` -- re-running an " +
-      "annotation pass is not an error.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        address: {
-          description:
-            "The address to name. An integer 0..65535, a \"$hex\" string, or a \"0x\" string; an unprefixed numeric " +
-            "string is refused on purpose, because a mis-based address written into the store is persistent and silently wrong.",
-        },
-        name: {
-          type: "string",
-          description:
-            "The label name. Must be a legal ACME identifier and must not be a 6502/6510 mnemonic. An illegal name is " +
-            "REJECTED, never sanitized or quoted.",
-        },
-        kind: {
-          type: "string",
-          enum: ["User", "Auto", "System", "Platform"],
-          description:
-            "Provenance of the name. 'User' (the default when omitted) = a human chose it; 'Auto' = generated; " +
-            "'System'/'Platform' = a known ROM or hardware name.",
-        },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["address", "name"],
-    },
-  },
-  {
-    name: "anno_set_comment",
-    description:
-      "Stores a comment at one address, replacing whatever that placement held. 'line' comments sit on their own line " +
-      "before the instruction; 'side' comments sit inline on the same line. The two placements coexist at one address. " +
-      "Carrier for the [confirmed-code]/[probable-code]/[confirmed-data]/[probable-data]/[unknown] confidence-prefix " +
-      "convention. Do NOT include a leading ';' -- the store holds the words and the exporter adds the prefix, so a " +
-      "stored ';' would be emitted twice and is refused. Over-long text is REFUSED rather than truncated, and the bound " +
-      "is measured in UTF-8 BYTES, so a multi-byte comment is bounded by what actually lands in the file. A " +
-      "byte-identical repeat SUCCEEDS and reports `changed: false`.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        address: { description: "The address to comment. Integer, \"$hex\" or \"0x\" string; an unprefixed numeric string is refused." },
-        comment: { type: "string", description: "The comment text, without the ';' prefix." },
-        type: {
-          type: "string",
-          enum: ["line", "side"],
-          description: "'line' = own line before the instruction. 'side' = inline on the same line.",
-        },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["address", "comment", "type"],
-    },
-  },
-  {
-    name: "anno_set_data_type",
-    description:
-      "Types an inclusive address range, preserving whatever the overlapping rows said about the addresses outside it. " +
-      "A SUCCESSFUL result can carry two disclosures, and both are always present in the body: `contradictedComments` " +
-      "names comments whose recorded confidence now contradicts the type just applied, and `reinterpretedSplitTables` " +
-      "names every split table this write FRAGMENTED, with the entry-address pairs it read before, the pairs each " +
-      "surviving remainder reads now, and the pairs preserved. Neither is an error and neither is dropped: a split " +
-      "table's entries re-pair as a function of the row's start AND its length, so a fragment decodes to different " +
-      "16-bit values than the ones a human recorded, and a success that hid that would be worse than a refusal. " +
-      "A split layout REFUSES an odd byte count (the low half and the high half must be the same length). Retyping the " +
-      "same range the same way SUCCEEDS and reports `changed: false`.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        start_address: { description: "Start of the range, INCLUSIVE. Integer, \"$hex\" or \"0x\" string." },
-        end_address: { description: "End of the range, INCLUSIVE. A one-byte range has end_address === start_address." },
-        data_type: {
-          type: "string",
-          enum: [
-            "code",
-            "byte",
-            "word",
-            "address",
-            "petscii",
-            "screencode",
-            "lo_hi_address",
-            "hi_lo_address",
-            "lo_hi_word",
-            "hi_lo_word",
-            "external_file",
-            "undefined",
-          ],
-          description:
-            "code=6502/6510 instructions; byte=raw 8-bit data (sprites, charset, tables, unknowns); word=16-bit LE " +
-            "values; address=16-bit LE pointers (produces cross-references, use for jump tables and vectors); " +
-            "petscii=PETSCII text; screencode=screen-code text; lo_hi_address=split address table, low bytes first " +
-            "then high bytes (even count required); hi_lo_address=split address table, high bytes first (even count " +
-            "required); lo_hi_word=split word table, low bytes first (e.g. SID frequency tables); hi_lo_word=split " +
-            "word table, high bytes first; external_file=large binary blob to export as-is; undefined=reset the range " +
-            "to unknown.",
-        },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["start_address", "end_address", "data_type"],
-    },
-  },
-  {
-    name: "anno_add_scope",
-    description:
-      "Adds a lexical scope over an inclusive range, so symbols inside it are local to it. Nested and overlapping " +
-      "scopes are UNSUPPORTED by the schema this store mirrors and are REFUSED, naming both the incoming span and the " +
-      "existing scope's id and span; the incoming scope is neither trimmed nor split. Two scopes that merely TOUCH at " +
-      "a boundary are disjoint and both accepted. An identical repeat SUCCEEDS and reports `changed: false`. " +
-      "MIND THE ENDS: one transposed end (say $1000..$ffff instead of $1000..$10ff) makes every later scope above that " +
-      "start refuse -- use anno_remove_scope to undo it; the store keeps no revert history.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        start_address: { description: "Start of the scope, INCLUSIVE. Integer, \"$hex\" or \"0x\" string." },
-        end_address: { description: "End of the scope, INCLUSIVE." },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["start_address", "end_address"],
-    },
-  },
-  {
-    name: "anno_remove_scope",
-    description:
-      "Removes the scope whose span is EXACTLY start_address..end_address -- the inverse of anno_add_scope, and the " +
-      "recovery route for a transposed span, which nothing else can undo. The span must match both stored ends exactly: a scope is never trimmed, split or partially " +
-      "removed, because a partial removal would leave a shape nothing downstream can express while reporting success. " +
-      "Read the stored spans with anno_get_blocks (include: [\"scopes\"]) first if you are unsure. Removing a scope " +
-      "that is not there SUCCEEDS and reports `changed: false`.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        start_address: { description: "Start of the scope to remove, INCLUSIVE. Must match the stored start exactly." },
-        end_address: { description: "End of the scope to remove, INCLUSIVE. Must match the stored end exactly." },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["start_address", "end_address"],
-    },
-  },
-  {
-    name: "anno_exclude_range",
-    description:
-      "Records the user's request to leave an inclusive span out, WITH the reason, as a durable row (BUILD-05/BUILD-07). " +
-      "RECORDING AN EXCLUSION DOES NOT REMOVE ANYTHING: the export still emits every byte of that span; the record is " +
-      "what makes the request VISIBLE in the output instead of invisible as a gap. What gets reversed, kept or left out " +
-      "is the end-user's decision, and this verb is how the user states it -- it is not the tool deciding. An " +
-      "overlapping span is REFUSED naming both spans; two records that merely TOUCH at a boundary are disjoint and both " +
-      "accepted; an identical repeat SUCCEEDS reporting `changed: false`; the same extent with a DIFFERENT reason is " +
-      "REFUSED rather than overwriting the stored reason. MIND THE ENDS: one transposed end makes every later exclusion " +
-      "overlapping that start refuse -- use anno_include_range to undo it; the store keeps no revert history.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        start_address: { description: "Start of the excluded span, INCLUSIVE. Integer, \"$hex\" or \"0x\" string." },
-        end_address: { description: "End of the excluded span, INCLUSIVE." },
-        reason: {
-          type: "string",
-          description:
-            "Why the user asked for this span to be left out. REQUIRED and must be non-empty: a reason column " +
-            "satisfied by an empty string records that something was excluded and loses WHY.",
-        },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["start_address", "end_address", "reason"],
-    },
-  },
-  {
-    name: "anno_include_range",
-    description:
-      "Removes the exclusion whose span is EXACTLY start_address..end_address -- the exact inverse of anno_exclude_range. " +
-      "Both stored ends must match exactly, because a record is never trimmed, split or partially removed. Read the " +
-      "stored spans with anno_exclude_range's sibling read (the excludedRanges list on either verb's own success body) " +
-      "first if you are unsure. Removing an exclusion that is not there SUCCEEDS and reports `changed: false`.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        start_address: { description: "Start of the exclusion to remove, INCLUSIVE. Must match the stored start exactly." },
-        end_address: { description: "End of the exclusion to remove, INCLUSIVE. Must match the stored end exactly." },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["start_address", "end_address"],
-    },
-  },
-  {
-    name: "anno_get_symbols",
-    description:
-      "Returns labels held in an annotation store, in ascending insertion order, optionally narrowed to " +
-      "an address range. Every call names its own store (there is no ambient 'current store') and the " +
-      "store is opened and closed within the call. `max_results` is REQUIRED and has no default on this " +
-      "surface: pass an explicit ceiling and compare the returned count against it to detect truncation.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        max_results: {
-          type: "integer",
-          description:
-            "Maximum number of labels to return. REQUIRED -- no default on this surface, so a truncated " +
-            "answer is always the caller's own explicit ceiling rather than a silent one.",
-        },
-        start_address: {
-          description:
-            "Optional lower bound (inclusive) of the address range to filter by. An integer 0..65535, a " +
-            "\"$hex\" string, or a \"0x\" string; an unprefixed numeric string is refused.",
-        },
-        end_address: {
-          description:
-            "Optional upper bound (inclusive) of the address range to filter by. Same accepted forms as " +
-            "start_address.",
-        },
-      },
-      required: ["max_results"],
-    },
-  },
-  {
-    name: "anno_get_comments",
-    description:
-      "Returns stored comments, each with its address, its placement ('line' or 'side') and its text, in ascending " +
-      "insertion order. Filters are combined with AND: specific `addresses`, an inclusive `start_address`/`end_address` " +
-      "window, and a placement `type`. The confidence-prefix convention lives in the returned text -- filter by prefix " +
-      "on your own side, or use anno_search. `max_results` is REQUIRED with no default; the true match count is " +
-      "returned beside the truncated list, so truncation is a fact you are told rather than one you infer.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        max_results: { type: "integer", description: "Maximum number of comments to return. REQUIRED -- no default on this surface." },
-        addresses: {
-          type: "array",
-          description: "Optional list of specific addresses. Integers, \"$hex\" or \"0x\" strings; unprefixed numeric strings are refused.",
-        },
-        start_address: { description: "Optional lower bound (inclusive) of the address window." },
-        end_address: { description: "Optional upper bound (inclusive) of the address window." },
-        type: { type: "string", enum: ["line", "side"], description: "Optional placement filter." },
-      },
-      required: ["max_results"],
-    },
-  },
-  {
-    name: "anno_get_blocks",
-    description:
-      "Returns the typed ranges (blocks) this store holds -- each with its inclusive span and its data type -- " +
-      "optionally narrowed by `block_type`. This is also the read route for the store's other structural annotations: " +
-      "pass `include` to add `scopes` (every lexical scope's id and span, which anno_remove_scope needs to match " +
-      "exactly), `enums` (every project enum with its variants mapping) and `enum_usage` (every address-to-enum " +
-      "association, with the enum's name resolved through its id at read time). `max_results` is REQUIRED with no " +
-      "default and bounds the RANGE list; the true match count is returned beside it.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        max_results: { type: "integer", description: "Maximum number of ranges to return. REQUIRED -- no default on this surface." },
-        block_type: {
-          type: "string",
-          description: "Optional exact data-type filter, e.g. 'code' or 'lo_hi_address'. Must be one of the twelve data types.",
-        },
-        include: {
-          type: "array",
-          items: { type: "string", enum: ["scopes", "enums", "enum_usage"] },
-          description:
-            "Optional extra structural annotations to return alongside the ranges. Each is returned whole (these " +
-            "collections are small by construction), so they are not governed by max_results.",
-        },
-      },
-      required: ["max_results"],
-    },
-  },
-  {
-    name: "anno_create_project_enum",
-    description:
-      "Creates a project-local enum -- a name, a variants mapping and an optional description -- embedded in the " +
-      "annotation store rather than anywhere machine-global. Variant keys are numeric strings in decimal, 0x/$ hex or " +
-      "0b/% binary; two keys naming the SAME number are refused, because that would mean two variant names for one " +
-      "value and nothing downstream could say which. A name already held with DIFFERENT contents is refused rather " +
-      "than overwritten -- use anno_update_project_enum, which replaces the variants mapping wholesale and says so. " +
-      "An identical re-create SUCCEEDS and reports `changed: false`. The body returns every enum the store now holds.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Unique identifier: a letter or underscore, then letters/digits/underscores. Refused, never sanitized." },
-        variants: {
-          type: "object",
-          description: "Variant mapping. Keys are numeric strings (decimal, 0x/$ hex, 0b/% binary); values are variant names.",
-        },
-        description: { type: "string", description: "Optional summary explaining the enum's purpose." },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["name", "variants"],
-    },
-  },
-  {
-    name: "anno_update_project_enum",
-    description:
-      "Renames a project enum, replaces its variants mapping, replaces its description, or any combination. THE " +
-      "VARIANTS MAPPING IS REPLACED WHOLESALE when supplied, never merged: a merge would make a variant impossible to " +
-      "REMOVE, since there would be no way to express its absence. A rename onto a name another enum already holds is " +
-      "refused rather than merging two enums into one. Renaming does NOT orphan an enum usage: usages are associated " +
-      "by enum id, not by name. Updating an enum that does not exist is refused. A no-op update SUCCEEDS and reports " +
-      "`changed: false`. The body returns every enum the store now holds.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Existing name of the enum to update." },
-        new_name: { type: "string", description: "Optional new name. Same identifier rule; refused, never sanitized." },
-        variants: { type: "object", description: "Optional COMPLETE replacement variants mapping. Omit to leave the mapping alone." },
-        description: { type: "string", description: "Optional replacement description." },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["name"],
-    },
-  },
-  {
-    name: "anno_apply_enum_usage",
-    description:
-      "Associates one address with one project enum, so an immediate operand or constant reference at that address " +
-      "formats as a variant name. OMITTING `name`, or passing an empty string, CLEARS the association at that address " +
-      "instead -- that is the schema's own contract for this verb, and clearing an address that carries none SUCCEEDS " +
-      "reporting `changed: false`. One address carries at most one enum, so applying a different enum REPLACES rather " +
-      "than refuses. Applying an enum that does not exist is refused rather than creating it implicitly, because a " +
-      "mistyped name would otherwise become a real, empty enum that formats nothing and looks deliberate. The body " +
-      "returns every address-to-enum association the store now holds.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        address: { description: "The instruction address. Integer, \"$hex\" or \"0x\" string; an unprefixed numeric string is refused." },
-        name: { type: "string", description: "The enum to apply. OMIT, or pass an empty string, to CLEAR the association at this address." },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["address"],
-    },
-  },
-  {
-    name: "anno_save_project",
-    description:
-      "Reports the store's current revision. IT PERFORMS NO WRITE, and it exists to say so: every mutating verb on " +
-      "this surface has ALREADY committed and fsynced its own write by the time it returns, so there is no unsaved " +
-      "state for an explicit save to flush and no window in which a crash could lose an edit this verb would have " +
-      "rescued. Durability belongs to the store, not to a verb an agent has to remember to call. Use this to read the " +
-      "revision -- for a subsequent `base_revision` compare-and-swap, or to confirm that a pass advanced the store as " +
-      "far as expected. The body states the no-write property alongside the revision, so a caller is never left " +
-      "inferring it from an empty success.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      required: [],
-    },
-  },
-  {
-    name: "anno_disassemble",
-    description:
-      "Renders ACME-ready `!cpu 6510` source for the instructions starting AT AN EXPLICIT ADDRESS you supply. " +
-      "There is no cursor and no 'current address' on this surface -- upstream's own procedure text says never to rely " +
-      "on one and this project has no editor to have one, so the address is always yours and always in the call. " +
-      "Decoded fresh from the image bytes on every call; nothing is cached and nothing is written. An opcode ACME " +
-      "cannot express is emitted as `!byte` with the mnemonic moved into a comment, never as a mnemonic that would " +
-      "fail to reassemble. The extent is bounded by the SAME byte cap that governs anno_read_region -- one cap, both " +
-      "views, so there is no per-view rule to get subtly wrong -- and defaults to that cap when end_address is " +
-      "omitted. A wider range is REFUSED by name with the cap and the requested width in the message, never " +
-      "silently truncated. A register write bound to a project enum (via anno_apply_enum_usage) renders through " +
-      "its named member instead of a hex literal -- a single-field register as `#<enum>_<VARIANT>`, or, for a " +
-      "multi-field register, as its bits OR-ed together by name (`#D018_SELECT..0 | D018_CHARACTER..2 | " +
-      "D018_VIDEO..0`) with a trailing comment naming every field and its decoded value, so a bound write reads " +
-      "the same way here as it does in the exported ACME source.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ...IMAGE_PROPERTY,
-        address: {
-          description:
-            "The address to start decoding at, EXPLICITLY. Integer 0..65535, \"$hex\" or \"0x\" string; an unprefixed " +
-            "numeric string is refused.",
-        },
-        end_address: {
-          description:
-            "Optional last address to decode, INCLUSIVE. Omitted, the extent is the byte cap (or the end of the image, " +
-            "whichever comes first).",
-        },
-      },
-      required: ["image", "address"],
-    },
-  },
-  {
-    name: "anno_read_region",
-    description:
-      "Reads ONE routine or table at an explicit inclusive address range, instead of exporting the whole program. " +
-      "`view: 'disasm'` is what routine documentation wants; `view: 'hexdump'` is what data-table classification and " +
-      "table extraction want; omitted, the view is 'disasm'. The combined byte count (end_address - start_address + 1) " +
-      "is capped, and the SAME cap governs anno_disassemble -- one cap, both views. A request above the cap is REFUSED " +
-      "by name, naming the cap and the requested width, rather than silently truncated: a full-64K disassembly view " +
-      "dumped into an agent's context is exactly the hazard the cap exists to prevent, and this family is not chunked, " +
-      "so the cap is the only bound there is.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ...IMAGE_PROPERTY,
-        start_address: { description: "Start of the range, INCLUSIVE. Integer, \"$hex\" or \"0x\" string." },
-        end_address: { description: "End of the range, INCLUSIVE." },
-        view: {
-          type: "string",
-          enum: ["disasm", "hexdump"],
-          description: "'disasm' = rendered 6510 source. 'hexdump' = raw hex bytes. Omitted defaults to 'disasm'.",
-        },
-      },
-      required: ["image", "start_address", "end_address"],
-    },
-  },
-  {
-    name: "anno_get_binary_info",
-    description:
-      "Reports what the named image FILE is: how it was dispatched (a .prg's 2-byte little-endian load address, or a " +
-      "flat 64K capture's origin of 0), the origin, the total byte length, the payload byte length, and the Shannon " +
-      "entropy of the payload -- a value above 7.5 suggests the image is compressed or packed and that a depack pass " +
-      "is needed before any of it will decode sensibly. DISPATCH IS BY EXTENSION FIRST, never by byte length: a " +
-      "truncated .raw capture that fell through to the .prg parser once produced an origin read backwards out of its " +
-      "own payload bytes, exited zero, and made every downstream address silently wrong. A file too short to be a .prg " +
-      "is REFUSED by name.",
-    inputSchema: {
-      type: "object",
-      properties: { ...IMAGE_PROPERTY },
-      required: ["image"],
-    },
-  },
-  {
-    name: "anno_get_cross_references",
-    description:
-      "Every address that references the address you name, unioned from three sources and returned ascending and " +
-      "de-duplicated: the instructions decoded fresh out of every range typed `code`, the typed split ADDRESS tables " +
-      "(the `_address` forms produce cross-references and the `_word` forms do not -- that is the schema's own " +
-      "distinction, not a judgement made here), and the stored rows, which are the only half on disk and only because " +
-      "a computed dispatch or a hand-asserted edge cannot be recovered from bytes at all. DERIVED ON EVERY CALL AND " +
-      "NEVER CACHED: a cached derivation is a second on-disk truth that can disagree with the range table it came " +
-      "from. `max_results` is REQUIRED with no default; the true total rides beside the truncated list.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ...IMAGE_PROPERTY,
-        address: { description: "The target address to find references TO. Integer, \"$hex\" or \"0x\" string." },
-        max_results: { type: "integer", description: "Maximum number of referencing addresses to return. REQUIRED -- no default." },
-      },
-      required: ["image", "address", "max_results"],
-    },
-  },
-  {
-    name: "anno_search",
-    description:
-      "Searches three corpora for a substring: label names, comment text, and the instruction text rendered from every " +
-      "range typed `code`. MATCHING IS BYTE-EXACT AND CASE-SENSITIVE, applied identically to all three, and the rule " +
-      "is restated in the body so an empty answer tells you which rule produced it. Every corpus is named in the body " +
-      "with the number of entries it held, so a genuine zero over a real corpus is distinguishable from a corpus this " +
-      "surface does not have. NAMING A CORPUS THIS SURFACE DOES NOT HAVE (any search_<name> other than the three) is " +
-      "answered with `{available:false, reason}` in a SUCCESSFUL body -- not an error, because the request was " +
-      "well-formed, and not an empty result set, because an empty result set for an unanswerable question is a lie " +
-      "that reads like an answer. `max_results` is REQUIRED with no default: an implicit default would silently " +
-      "truncate a full-program pass.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ...IMAGE_PROPERTY,
-        query: { type: "string", description: "The substring to find. Case-sensitive and byte-exact. An empty query is refused -- that is a listing, not a search." },
-        max_results: { type: "integer", description: "Maximum number of hits to return. REQUIRED -- no default on this surface." },
-        search_labels: { type: "boolean", description: "Search the label-name corpus. Defaults to true." },
-        search_comments: { type: "boolean", description: "Search the comment-text corpus. Defaults to true." },
-        search_instructions: { type: "boolean", description: "Search the rendered instruction corpus. Defaults to true. This is the expensive one: it decodes every code range." },
-      },
-      required: ["image", "query", "max_results"],
-    },
-  },
-  {
-    name: "anno_get_address_details",
-    description:
-      "Everything this project knows about ONE address, composed from four reads: the labels bound there, the comments " +
-      "there, the typed range that covers it (resolved narrowest-range-wins through the paint index, never by a " +
-      "start/end bracket scan), and the cross-references that reach it. THE COMPOSITION IS DISCLOSED: the body carries " +
-      "`composed_client_side` and a `composed_from` list naming all four sources, so a composition is never mistaken " +
-      "for something the store held whole. A component with no answer comes back as `{available:false, reason}` rather " +
-      "than as an empty list, so an address that genuinely has no comments stays distinguishable from a question this " +
-      "composition could not put. Nothing is written on any path.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ...IMAGE_PROPERTY,
-        address: { description: "The address to inspect. Integer, \"$hex\" or \"0x\" string." },
-      },
-      required: ["image", "address"],
-    },
-  },
-  {
-    name: "anno_batch_execute",
-    description:
-      "Executes several curated anno_* calls against ONE store, in order, inside one open/close pair. Use it for a " +
-      "multi-edit pass -- marking many regions, renaming many labels -- and not for calls that depend on each other's " +
-      "results. The image, when the inner calls need one, is named ONCE at the top level and every inner call " +
-      "inherits it, INCLUDING through nesting -- a batch inside a batch inherits it too, and so do that batch's own " +
-      "inner calls. TWO PHASES, and the difference matters " +
-      "when you read the answer. FIRST, the whole payload is pre-validated before anything is opened: a malformed " +
-      "payload, an EMPTY calls array, a malformed entry, an inner name outside the curated set at any depth, an " +
-      "illegal label name, or an over-cap region range refuses the WHOLE batch by index, and nothing executes. " +
-      "SECOND, execution runs to COMPLETION, pushing a success or error status for every entry and never aborting on " +
-      "the first failure. So `isError:true` means this batch should never have been sent; an error ENTRY inside a " +
-      "successful result means that one call did not work. Nesting deeper than " +
-      String(ANNO_MAX_BATCH_DEPTH) +
-      " levels is refused by name rather than walked.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        image: {
-          type: "string",
-          clientFile: true,
-          description:
-            "Optional program image, inherited by every inner call that derives an answer from bytes. Required only " +
-            "if the batch contains such a call.",
-        },
-        calls: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              name: { type: "string", description: "The curated anno_* verb to run. An uncurated name refuses the WHOLE batch." },
-              arguments: { type: "object", description: "That verb's own arguments, minus the image, which the batch supplies." },
-            },
-            required: ["name", "arguments"],
-          },
-          description: "The calls to run, in order. Must be a NON-EMPTY array: an empty batch is refused, never run as a zero-length success.",
-        },
-      },
-      required: ["calls"],
-    },
-  },
-  {
-    name: "anno_import_ghidra_export",
-    description:
-      "Imports a host-written Ghidra export transfer file (GhidraStructExport.java's `## `-delimited format) into " +
-      "the store, writing one anno_xref row per surviving `## REFERENCES` line and DELETING the transfer file once " +
-      "every write has durably committed. Costs one store open and one close. REFUSES, writes nothing and deletes " +
-      "nothing: on a malformed, truncated or digest-mismatched export (naming the section and the offending line), " +
-      "on an export_path that resolves outside the workspace root, or on an absent transfer file. Reports " +
-      "referencesSeen, xrefsWritten, xrefsAlreadyPresent (duplicate references are deduped, never double-counted), " +
-      "and kindsSeenNotImported -- reference types this store's four-member vocabulary does not carry, dropped and " +
-      "counted rather than refused, because a real corpus binary carries ordinary jump and call references " +
-      "constantly. Every written row's bank column is null: this verb does not resolve bank state itself. Also " +
-      "reports constWrites -- the export's `## CONST_WRITES` facts (recovered $01/$D011/$D018/$DD00 stores), always " +
-      "present (possibly empty). The transfer file naming them is DELETED by this same call (IMP-02), so this " +
-      "return value is the only place they survive: pass the SAME constWrites array, unchanged, to a following " +
-      "anno_join_memmap call's own const_writes argument to activate bank-state resolution (AUTO-04/AUTO-05) and " +
-      "VIC-register graphics-range derivation (AUTO-06/AUTO-07) for this image.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        export_path: {
-          type: "string",
-          clientFile: true,
-          description:
-            "Absolute or workspace-relative path to the host-written transfer file. CONSUMED AND DELETED by a " +
-            "successful call -- refused if it resolves outside the workspace root, including via a symlink.",
-        },
-        sha256: {
-          type: "string",
-          description:
-            "Optional sha256 digest the producer reported for the transfer file's bytes. When supplied, a mismatch " +
-            "against the file's own computed digest refuses the whole call before anything is read further -- a " +
-            "corruption/drift detector, never a security boundary.",
-        },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["export_path"],
-    },
-  },
-  {
-    name: "anno_join_memmap",
-    description:
-      "The mechanical join: reads every distinct cross-reference target the store already holds, skips addresses " +
-      "inside the supplied image's own loaded range (those are program addresses, never looked up), and annotates " +
-      "every remaining address with the narrowest c64-memory-map/memmap.json entry containing it. No agent " +
-      "call, no queue walk and no skill invocation anywhere in this call. Reports addressesConsidered, annotated, " +
-      "skippedInImage, skippedNoMapEntry, declined and commentsChanged, plus a per-address decisions array naming " +
-      "the outcome and, for every skip, WHY. Running this twice over an unchanged store reports commentsChanged: 0 " +
-      "on the second run -- re-running a join pass is not an error. Passing const_writes (typically the SAME " +
-      "constWrites array anno_import_ghidra_export just returned for this image, unchanged) additionally activates " +
-      "bank-state resolution: a $01-conditional address (AUTO-04) declines with a named reason rather than " +
-      "guessing when the reaching processor-port value is absent or disagreeing (AUTO-05), and VIC-register " +
-      "graphics ranges are derived and written back (AUTO-06/AUTO-07, graphics_map_index selects which of several " +
-      "derived combinations when more than one exists, default 0). Omitting const_writes entirely is a complete " +
-      "no-op for both of these -- every address resolves exactly as if this argument did not exist.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ...IMAGE_PROPERTY,
-        ...BASE_REVISION_PROPERTY,
-        const_writes: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              store_address: { type: "integer", description: "The instruction's own address that performed the store." },
-              target_address: { type: "integer", description: "The watched hardware address ($0001/$D011/$D018/$DD00) written to." },
-              value: { type: "integer", description: "The compile-time constant value written." },
-            },
-            required: ["store_address", "target_address", "value"],
-          },
-          description:
-            "Optional recovered const-write facts (AUTO-04/AUTO-05/AUTO-06/AUTO-07) -- pass back the constWrites " +
-            "array anno_import_ghidra_export returned for the SAME image, unchanged. Supplying it (even []) " +
-            "activates bank-state resolution and graphics-range derivation/write-back; omitting it entirely is a " +
-            "complete no-op for both.",
-        },
-        graphics_map_index: {
-          type: "integer",
-          description:
-            "Which of several derived VIC-register-value combinations to write back as graphics ranges, when " +
-            "const_writes yields more than one distinct combination (D-37-27: several valid maps are never merged " +
-            "into one). Defaults to 0. Consulted ONLY when const_writes is supplied at all. Out of range for the " +
-            "derived map count REFUSES the whole call rather than silently clamping or picking a default.",
-        },
-      },
-      required: ["image"],
-    },
-  },
-  {
-    name: "anno_evid_ingest",
-    description:
-      "Turns one raw memmapshow reply plus one run identity into durable runtime-execution evidence rows, so a later " +
-      "session can query what the emulator actually executed instead of re-running the program. Writes a row ONLY for " +
-      "an OBSERVED execute bit: an address memmapshow mentioned with read or write access but no execute gets NO row, " +
-      "and an address the reply never mentioned at all gets NO row either -- an address with no row is the ABSENCE of " +
-      "an assertion, never an assertion that the address is data. Requires the EXACT launch argv and digests it itself " +
-      "(argv_digest is never accepted as an argument), so a caller cannot invent a run identity. A memmapshow reply " +
-      "this surface cannot parse is REFUSED, naming its refusal code and offending line, rather than partially " +
-      "absorbed -- nothing is written on a refusal. Re-ingesting the SAME reply for the SAME run identity succeeds " +
-      "and reports changed:false with observationsWritten:0 -- re-running an ingest pass is not an error. Every count " +
-      "in the answer carries a denominator (addressesQueried) beside it; no percentage is ever reported.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        memmap_text: {
-          type: "string",
-          description:
-            "The raw memmapshow reply exactly as the text monitor returned it -- never a pre-parsed object. A reply " +
-            "this parser cannot decode is REFUSED, naming its refusal code and offending line; nothing is written.",
-        },
-        image_sha256: {
-          type: "string",
-          description:
-            "The program image this run executed, named by the sha256 digest of its own bytes -- exactly 64 " +
-            "lowercase hex characters. This verb does not read image bytes itself and accepts no path to one.",
-        },
-        argv: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "The EXACT emulator launch argument vector, including argv[0] -- a different binary is a different " +
-            "launch. This verb digests it itself; a pre-computed digest is never accepted, so a caller cannot invent " +
-            "a run identity.",
-        },
-        seed: {
-          type: "string",
-          description: "The determinism seed the launch pinned. A non-empty string; not a digest and carries no shape beyond that.",
-        },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["memmap_text", "image_sha256", "argv", "seed"],
-    },
-  },
-  {
-    name: "anno_evid_disagreements",
-    description:
-      "Answers where the byte-derived block classification and the observed-execution evidence DISAGREE, with the " +
-      "disagreements reported FIRST: an address the block table calls 'data' at which the emulator was observed " +
-      "executing is proof a byte-derived guess was wrong, from a source (real execution) that never saw the guess. " +
-      "Agreement (block table says 'code', evidence confirms it) is reported as agreementCount ONLY -- never as rows, " +
-      "because a wall of agreeing rows would bury the one output this query exists to surface. An address the block " +
-      "table covers with NO observation anywhere is blockCoveredNeverObservedCount, and is NOT evidence that the " +
-      "address is data -- an address never observed executing proves nothing. Two further counts " +
-      "(observedOutsideAnyBlockCount, observedAtUndefinedBlockCount) name evidence about addresses the block table " +
-      "does not classify as code or data at all, so the denominator can never quietly drop real evidence. This verb " +
-      "READS the block table and the runtime evidence table; it writes to NEITHER, and a repeated call never changes " +
-      "either. Optional image_sha256/argv_digest/seed scope the question to ONE run identity's observations rather " +
-      "than the union across every run that has ever contributed -- supply all three together or none; a partial " +
-      "identity is refused. max_results bounds the returned disagreements array only, and is OPTIONAL (an empty or " +
-      "small disagreement report is the ordinary, sound case, so no ceiling is forced); the true disagreement count " +
-      "and whether truncation occurred are always reported beside it. Every count in the answer carries denominator " +
-      "beside it; no percentage or rate is ever formed.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        max_results: {
-          type: "integer",
-          description:
-            "Optional bound on the returned disagreements array only. Unlike every other list-returning anno_* verb, " +
-            "this is NOT required -- an empty or small disagreement report is the ordinary, sound case. When " +
-            "supplied, must be a positive integer.",
-        },
-        image_sha256: {
-          type: "string",
-          description:
-            "Optional run-identity filter: the program image this run executed, exactly 64 lowercase hex characters. " +
-            "Supply image_sha256, argv_digest AND seed together to scope to one run, or omit all three to see the " +
-            "union across every run this store holds.",
-        },
-        argv_digest: {
-          type: "string",
-          description:
-            "Optional run-identity filter: the exact digest anno_evid_ingest/anno_evid_runs already computed for a " +
-            "run's launch argv, exactly 64 lowercase hex characters. Never invented by a caller -- pass back what " +
-            "anno_evid_runs reported. Required alongside image_sha256/seed when filtering by run identity.",
-        },
-        seed: {
-          type: "string",
-          description:
-            "Optional run-identity filter: the determinism seed that run's launch pinned. A non-empty string. " +
-            "Required alongside image_sha256/argv_digest when filtering by run identity.",
-        },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "anno_evid_runs",
-    description:
-      "Answers every run identity the store holds an observed-execution row for, with its accumulated observation " +
-      "count and the denominator that count is a fraction of -- so a later session can see what evidence already " +
-      "exists without re-running the program. However many runs contribute observations, their union is NEVER " +
-      "exhaustive coverage of the image: observationCount is a count against denominator, never a rate, and this " +
-      "verb forms no percentage from it.",
-    inputSchema: {
-      type: "object",
-      properties: {
-      },
-      required: [],
-    },
-  },
-  {
-    name: "anno_evid_reset",
-    description:
-      "Clears every observed-execution row for ONE run identity, so that bracket can be re-measured from nothing. " +
-      "Touches no other run identity's rows and no row of the byte-derived block table. Requires the EXACT launch " +
-      "argv and digests it itself (a pre-computed digest is never accepted), so a caller cannot invent a run identity " +
-      "-- the same discipline anno_evid_ingest uses. A run identity holding no observations SUCCEEDS and reports " +
-      "changed:false and observationsRemoved:0 -- resetting an empty bracket is the ordinary thing, not a mistake. " +
-      "Clearing the emulator's own accumulated access map is a DIFFERENT operation, reached through vice_memmap_zap " +
-      "-- a caller re-measuring a bracket from nothing does BOTH: vice_memmap_zap on the emulator side, " +
-      "anno_evid_reset on the store side.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        image_sha256: {
-          type: "string",
-          description:
-            "The program image this run executed, named by the sha256 digest of its own bytes -- exactly 64 " +
-            "lowercase hex characters. This verb does not read image bytes itself and accepts no path to one.",
-        },
-        argv: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "The EXACT emulator launch argument vector, including argv[0] -- a different binary is a different " +
-            "launch. This verb digests it itself; a pre-computed digest is never accepted, so a caller cannot invent " +
-            "a run identity.",
-        },
-        seed: {
-          type: "string",
-          description: "The determinism seed the launch pinned. A non-empty string; not a digest and carries no shape beyond that.",
-        },
-        ...BASE_REVISION_PROPERTY,
-      },
-      required: ["image_sha256", "argv", "seed"],
-    },
-  },
-  {
-    name: "anno_hazard_report",
-    description:
-      "Enumerates what blocks a program's code or data from being MOVED, relocated, rebased or stripped, across " +
-      "the movement-hazard constructions this surface can detect from decoded bytes alone. It REPORTS " +
-      "and changes NOTHING: it never removes, strips, relocates or rebases any part of the image, and it never " +
-      "emits an instruction, flag or field a caller could act on as an automatic relocation -- the operator " +
-      "decides what happens to the bytes it describes. Each finding carries its own detection mechanism and a " +
-      "detection-strength token (observed-corroborated, static-shape-matched, static-signature-only) -- a " +
-      "SEPARATE, smaller vocabulary from this store's own five-grade confidence grades, answering a different " +
-      "question (how strong is this ONE static signal, never what does this address classify as). Every checked " +
-      "region reports exactly one of three outcomes -- hazard-reported, no-signal, unclassified -- and NONE of " +
-      "them is a safety claim: a region with no finding is explicitly NOT a claim that the region is safe to " +
-      "move, clean, or hazard-free, only that nothing this report knows how to look for fired there. " +
-      "Always-emitted named limits (for example, a self-modification through a runtime-computed pointer is " +
-      "undetected by construction) accompany every answer. Opens the store READ-ONLY and reads no other table: " +
-      "this verb creates nothing and writes nothing.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        ...IMAGE_PROPERTY,
-        max_results: {
-          type: "integer",
-          description:
-            "Optional bound on the returned findings array only. Unlike most list-returning anno_* verbs, this is " +
-            "NOT required -- an empty or small finding set is the ordinary, sound case. When supplied, must be a " +
-            "positive integer.",
-        },
-      },
-      required: ["image"],
-    },
-  },
-];
-
-/** The allow-list, DERIVED from the definitions above rather than hand-typed
- * (T-29-02): a name cannot be curated in one place and absent from the other,
- * because there is only one place. */
+/** The allow-list, DERIVED from the definitions above rather than hand-typed:
+ * a name cannot be curated in one place and absent from the other, because
+ * there is only one place. */
 export const CURATED_ANNO_TOOLS: readonly string[] = ANNO_TOOL_DEFINITIONS.map((def) => def.name);
 
 // ---------------------------------------------------------------------------
@@ -1570,7 +759,7 @@ function assertImageArg(name: string, args: unknown, batchIndex?: number): void 
       name,
       "image",
       '"image" must be a non-empty string naming the program image this answer is derived from -- the store holds ' +
-        "annotations, never bytes, and an omitted image would read as a plausible success against whatever was recorded last (D-07).",
+        "annotations, never bytes, and an omitted image would read as a plausible success against whatever was recorded last.",
       batchIndex,
     );
   }
@@ -1687,63 +876,78 @@ function assertAddressDetailsArgs(args: unknown, batchIndex?: number): void {
  */
 export function assertAnnoBatch(args: unknown, depth = 0): void {
   if (depth > ANNO_MAX_BATCH_DEPTH) {
-    throw new AnnoUncuratedToolError(
+    throw new AnnoToolArgumentError(
       `anno_batch_execute refused: nesting deeper than ${ANNO_MAX_BATCH_DEPTH} levels -- refused BY NAME rather than walked, ` +
-        "because an unbounded walk over an attacker-shaped payload is a stack-exhaustion route (T-29-24). Flatten the batch.",
-      { toolName: "anno_batch_execute" },
+        "because an unbounded walk over an attacker-shaped payload is a stack-exhaustion route. Flatten the batch.",
+      { toolName: "anno_batch_execute", argument: "calls" },
     );
   }
   if (!isPlainObject(args) || !Array.isArray(args.calls)) {
-    throw new AnnoUncuratedToolError(
+    throw new AnnoToolArgumentError(
       'anno_batch_execute refused: "calls" must be an array of {name, arguments} objects -- a malformed batch payload is ' +
         "treated as a REFUSAL, never as an empty batch that passes through.",
-      { toolName: "anno_batch_execute" },
+      { toolName: "anno_batch_execute", argument: "calls" },
     );
   }
   const calls = args.calls as unknown[];
   if (calls.length === 0) {
-    throw new AnnoUncuratedToolError(
+    throw new AnnoToolArgumentError(
       'anno_batch_execute refused: "calls" is an EMPTY array. A zero-length batch is an ambiguous request, and running it as a ' +
         "zero-length success would be a plausible-looking zero -- the caller would be told a pass completed when nothing was asked for.",
-      { toolName: "anno_batch_execute" },
+      { toolName: "anno_batch_execute", argument: "calls" },
     );
   }
   calls.forEach((call, i) => {
     if (!isPlainObject(call) || typeof call.name !== "string") {
-      throw new AnnoUncuratedToolError(
+      throw new AnnoToolArgumentError(
         `anno_batch_execute refused WHOLE: calls[${i}] is malformed (missing a string "name") -- treated as a refusal, never ` +
           "as an empty batch that passes through.",
-        { toolName: "anno_batch_execute", batchIndex: i },
+        { toolName: "anno_batch_execute", argument: "calls", batchIndex: i },
       );
     }
     if (!CURATED_ANNO_TOOLS.includes(call.name)) {
       throw new AnnoUncuratedToolError(
         `anno_batch_execute refused WHOLE: calls[${i}].name "${call.name}" is outside the curated anno_* tool surface -- a batch ` +
-          "is refused whole if any inner name is outside the curated set (D-33).",
+          "is refused whole if any inner name is outside the curated set.",
         { toolName: call.name, batchIndex: i },
       );
     }
-    if (call.name === "anno_batch_execute") {
-      // RECURSES ON THE EFFECTIVE ARGUMENTS, NOT THE RAW BAG, and that is the
-      // whole of CR-06. Phase two -- `dispatchBatchExecute()` -- has always
-      // recursed on `batchArgumentsFor(bag, call)`; phase one used to recurse
-      // on `call.arguments`. The two phases therefore disagreed about what the
-      // inner payload WAS, and a nested batch written the documented way (the
-      // image named ONCE at the top, every inner call inheriting it) was
-      // refused whole at every depth. Read this line as a pair with the executor's recursion:
-      // one function, `batchArgumentsFor()`, defines an inner call's effective
-      // arguments, and both phases ask it.
-      assertAnnoBatch(batchArgumentsFor(args, call), depth + 1);
-      return;
+    // Recurses on the EFFECTIVE arguments, the ones the executor runs:
+    // `batchArgumentsFor()` defines them for both phases. A refusal from a
+    // shared validator is re-thrown with this entry's index, so the caller can
+    // find the offending call at any depth.
+    try {
+      const effective = batchArgumentsFor(args, call, i);
+      if (call.name === "anno_batch_execute") assertAnnoBatch(effective, depth + 1);
+      else assertVerbArgs(call.name, effective, i);
+    } catch (err) {
+      throw withBatchIndex(err, i, call.name);
     }
-    assertVerbArgs(call.name, batchArgumentsFor(args, call), i);
   });
 }
 
+/** `err` with `calls[i]` named in its message, when it does not name it
+ * already. The class and every field stay as they were. */
+function withBatchIndex(err: unknown, index: number, name: string): unknown {
+  if (!(err instanceof Error) || err.message.includes(`calls[${index}]`)) return err;
+  err.message = `anno_batch_execute refused WHOLE (calls[${index}], ${name}): ${err.message}`;
+  return err;
+}
+
 /** An inner call's effective arguments: its own, plus the batch's image when
- * the batch names one, which overrides an inner image. */
-export function batchArgumentsFor(batchArgs: Record<string, unknown>, call: Record<string, unknown>): Record<string, unknown> {
-  return { ...argBag(call.arguments), ...(batchArgs.image !== undefined ? { image: batchArgs.image } : {}) };
+ * the batch names one. An inner call that names a DIFFERENT image is refused:
+ * the batch never silently replaces what a call asked for. */
+export function batchArgumentsFor(batchArgs: Record<string, unknown>, call: Record<string, unknown>, index?: number): Record<string, unknown> {
+  const own = argBag(call.arguments);
+  if (batchArgs.image === undefined) return { ...own };
+  if (own.image !== undefined && JSON.stringify(own.image) !== JSON.stringify(batchArgs.image)) {
+    throw new AnnoToolArgumentError(
+      `anno_batch_execute refused${whereOf(index)}: the inner call names image ${JSON.stringify(own.image)}, but the batch names ` +
+        `${JSON.stringify(batchArgs.image)}. Name the image once, on the batch or on the call, or split the batch.`,
+      { toolName: "anno_batch_execute", argument: "image", batchIndex: index },
+    );
+  }
+  return { ...own, image: batchArgs.image };
 }
 
 /**
@@ -1811,10 +1015,11 @@ export function assertAnnoTool(name: string, args?: unknown): void {
   assertVerbArgs(name, args);
 }
 
-/** The verbs that only READ. A caller may open a read-only connection for
- * them, which is strictly the safer open. Derived from nothing -- it is a
- * hand-listed property of each verb, and a verb missing from here is merely
- * opened writably, never wrongly refused. */
+/** The verbs that only READ. A call to one never creates the annotation
+ * database or its project. It is a hand-listed property of each verb, and a
+ * verb missing from here is merely opened writably, never wrongly refused.
+ * `anno_batch_execute` is read-only when every inner call is: see
+ * `isReadOnlyCall`. */
 export const READ_ONLY_ANNO_VERBS: readonly string[] = Object.freeze([
   "anno_get_symbols",
   "anno_get_comments",
@@ -1830,6 +1035,17 @@ export const READ_ONLY_ANNO_VERBS: readonly string[] = Object.freeze([
   "anno_evid_runs",
   "anno_hazard_report",
 ]);
+
+/** True when the call only reads: a read-only verb, or a batch whose every
+ * inner call, at any depth, is one. A malformed or over-deep batch is not
+ * read-only; its validator refuses it anyway. */
+export function isReadOnlyCall(name: string, args: unknown, depth = 0): boolean {
+  if (name !== "anno_batch_execute") return READ_ONLY_ANNO_VERBS.includes(name);
+  if (depth > ANNO_MAX_BATCH_DEPTH) return false;
+  const calls = argBag(args).calls;
+  if (!Array.isArray(calls) || calls.length === 0) return false;
+  return calls.every((call: unknown) => isPlainObject(call) && typeof call.name === "string" && isReadOnlyCall(call.name, call.arguments, depth + 1));
+}
 
 /** A file argument as the engine receives it: a reference to bytes the client
  * staged beside the call, never a path. */
@@ -1854,11 +1070,7 @@ export function isAnnoFileRef(value: unknown): value is AnnoFileRef {
 /** The argument keys of `name`'s definition that name a client file. The batch
  * verb's `calls` carry their own verbs' keys; see `anno-call-client.ts`. */
 export function clientFileKeys(name: string): readonly string[] {
-  const definition = ANNO_TOOL_DEFINITIONS.find((d) => d.name === name);
-  if (definition === undefined) return [];
-  return Object.entries(definition.inputSchema.properties)
-    .filter(([, schema]) => isPlainObject(schema) && schema.clientFile === true)
-    .map(([key]) => key);
+  return ANNO_TOOL_DEFINITIONS.find((d) => d.name === name)?.clientFiles ?? [];
 }
 
 /** Resolves a file argument to its staged bytes. A plain string is refused: it

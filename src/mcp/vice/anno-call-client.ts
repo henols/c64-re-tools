@@ -20,7 +20,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import {
   assertAnnoTool,
   clientFileKeys,
-  READ_ONLY_ANNO_VERBS,
+  isReadOnlyCall,
   toolFailure,
   AnnoToolArgumentError,
   type ToolCallResult,
@@ -204,7 +204,7 @@ export async function runAnnoTool(name: string, args: unknown, deps: AnnoCallDep
     const workspaceRoot = deps.workspaceRoot ?? repoRoot();
     const staged = stageClientFiles(name, args, workspaceRoot);
     const runAnno = annoRunner({ runAnno: deps.runAnno, workspaceRoot });
-    const mode = READ_ONLY_ANNO_VERBS.includes(name) ? "read" : "write";
+    const mode = isReadOnlyCall(name, args) ? "read" : "write";
     const result = await runAnno({ mode, kind: "tool", name, args: staged.args, files: staged.files });
     if (!result.ok) throw annoRefusal(name, result);
     if (result.type !== "tool") throw new AnnoCallError(`a tool call was answered with a ${result.type} answer`, "internal");
