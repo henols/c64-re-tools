@@ -74,7 +74,7 @@ This keeps project knowledge ownership outside the MCP.
 
 ## 6. Proposed tool families
 
-The exact schemas are defined separately during implementation, but the intended public responsibilities are:
+The exact v1 schemas are frozen in [15 — VICE MCP schemas](15-vice-mcp-schemas.md). The public responsibilities are:
 
 ### Machine
 
