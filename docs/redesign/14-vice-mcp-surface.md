@@ -297,14 +297,8 @@ screen/state comparison
 
 Original and rebuild normally run sequentially through the same MCP session.
 
-## 14. Next design step
+## 14. Schema status
 
-Freeze the exact input/output schemas for these tool families, with particular attention to:
+The v1 schema baseline is frozen in [15 — VICE MCP schemas](15-vice-mcp-schemas.md).
 
-- execution/run-until stop reasons;
-- breakpoint/watchpoint conditions;
-- screen baseline/compare representation;
-- bounded composite observations;
-- drive8 space semantics;
-- snapshot naming/lifetime;
-- state-changing versus read-only behavior.
+That chapter defines canonical addresses, shared enums/bounds, execution-state semantics, typed conditions, tool actions, result shapes and the frozen public tool list.
