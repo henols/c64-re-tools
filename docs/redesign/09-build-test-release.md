@@ -2,6 +2,8 @@
 
 ## 1. Build philosophy
 
+Implementation order is defined in [19 — Implementation plan](19-implementation-plan.md). Build vertically and require a real acceptance test at each architectural boundary rather than completing disconnected subsystems first.
+
 The product is built from one repository and one npm package. There is no workspace-package graph in v1. `pnpm build` produces the CLI, MCP, Host Runtime and bundled skill artifacts described in [18 — Repository structure](18-repository-structure.md).
 
 
