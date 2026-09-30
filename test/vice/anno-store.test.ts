@@ -76,6 +76,7 @@ import {
 } from "../../src/mcp/vice/anno-store.mts";
 import { CONFIDENCE_GRADES, parseConfidencePrefix } from "../../src/mcp/vice/anno-confidence.mts";
 import { ViceError } from "../../src/mcp/vice/vice-errors.mts";
+import { MAX_ACME_IDENTIFIER_LENGTH } from "../../src/mcp/vice/anno-acme-ident.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -2329,4 +2330,21 @@ test("EVID-02 concurrency: two parallel opens of a version-3 store both refuse b
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a label name longer than the ACME identifier ceiling is refused at write time, and one at the ceiling is stored", () => {
+  inTempDir((dir) => {
+    const handle = openStore(join(dir, "cap.annostore"), { workspaceRoot: dir });
+    try {
+      const atCeiling = `l${"a".repeat(MAX_ACME_IDENTIFIER_LENGTH - 1)}`;
+      setLabel(handle, { address: 0xc000, name: atCeiling, kind: "User" });
+      assert.throws(
+        () => setLabel(handle, { address: 0xc001, name: `${atCeiling}b`, kind: "User" }),
+        (err: unknown) => err instanceof AnnoLabelError && /longer than the 200-character ACME identifier ceiling/.test(err.message),
+      );
+      assert.deepEqual(listLabels(handle).map((l) => l.name), [atCeiling]);
+    } finally {
+      closeStore(handle);
+    }
+  });
 });

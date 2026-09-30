@@ -112,6 +112,7 @@
 import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import { MAX_ACME_IDENTIFIER_LENGTH } from "./anno-acme-ident.mts";
 import { OPCODES } from "./disasm-opcodes.mts";
 import { ViceError, type ViceErrorOptions } from "./vice-errors.mts";
 
@@ -1651,6 +1652,13 @@ export function assertLegalLabel(name: unknown): string {
       `label name ${JSON.stringify(name)} is not a legal identifier -- expected a non-empty string starting with a letter or underscore, ` +
         `then letters, digits and underscores only. An illegal name is REFUSED, never sanitised or quoted.`,
       { identifier: typeof name === "string" ? name : undefined, reason: "not a non-empty string" },
+    );
+  }
+  if (name.length > MAX_ACME_IDENTIFIER_LENGTH) {
+    throw new AnnoLabelError(
+      `label name of ${name.length} characters is longer than the ${MAX_ACME_IDENTIFIER_LENGTH}-character ACME identifier ceiling -- ` +
+        "an export could not assemble it. It is REFUSED, never truncated.",
+      { identifier: name.slice(0, 40), reason: "too long" },
     );
   }
   if (!LEGAL_IDENTIFIER_RE.test(name)) {
