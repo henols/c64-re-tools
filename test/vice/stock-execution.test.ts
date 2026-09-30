@@ -293,6 +293,30 @@ test("step: reports programCounter when a settled \"stopped\" event exposes one"
   assert.equal(payload.programCounter, 0xc000);
 });
 
+test("step: a stopped event that arrives after the reply still supplies the program counter", async () => {
+  const { client } = fakeClient(async (commandType, _body) => {
+    setTimeout(() => client.emit("event", { type: "stopped", requestId: 0xffffffff, errorCode: 0, programCounter: 0xe5d4 }), 30);
+    return { type: "unknown", requestId: 1, errorCode: 0, responseType: commandType, related: [] } as unknown as ResolvedResponse;
+  });
+  attachRunStateTracker(client);
+  client.emit("event", { type: "stopped", requestId: 0xffffffff, errorCode: 0, programCounter: 0x1000 });
+
+  const payload = payloadOf(await handleExecutionStep({}, fakeSession(client), NO_DEPS));
+  assert.equal(payload.programCounter, 0xe5d4);
+});
+
+test("step: the pre-step program counter in a resumed event is never reported", async () => {
+  const { client } = fakeClient(async (commandType, _body) => {
+    client.emit("event", { type: "resumed", requestId: 0xffffffff, errorCode: 0, programCounter: 0xe5d1 });
+    return { type: "unknown", requestId: 1, errorCode: 0, responseType: commandType, related: [] } as unknown as ResolvedResponse;
+  });
+  attachRunStateTracker(client);
+  client.emit("event", { type: "stopped", requestId: 0xffffffff, errorCode: 0, programCounter: 0x1000 });
+
+  const payload = payloadOf(await handleExecutionStep({}, fakeSession(client), NO_DEPS));
+  assert.equal("programCounter" in payload, false);
+});
+
 // --------------------------------------------------------- handleExecutionUntilReturn
 
 test("untilReturn: sends EXECUTE_UNTIL_RETURN with a zero-length body when the derived state is \"stopped\"", async () => {

@@ -69,34 +69,47 @@ function hasParsedType(item: ParsedResponse | StockProtocolError | StockFramingE
   return "type" in item;
 }
 
+/** How long a step waits for the STOPPED event that reports where the
+ * machine stopped. Stock VICE sends it after the command reply. */
+const STOPPED_EVENT_WAIT_MS = 500;
+
 /**
- * A scoped, single-call capture of the last STOPPED/RESUMED event's program
- * counter observed while awaiting a step/until-return round trip. This is
- * NOT a second persistent tracker -- RESEARCH.md Pitfall 4 is about
- * attachRunStateTracker()'s own idempotent-attach guarantee, a different
- * concern from a listener that is attached immediately before send() and
- * ALWAYS removed via `finish()` right after settleEvents() resolves, so it
- * never outlives a single handler invocation and never accumulates
- * listeners across calls.
+ * A scoped, single-call capture of the program counter in the STOPPED event
+ * that follows a step or until-return command. A RESUMED event carries the PC
+ * from before the step, so it is never used. This is not a second persistent
+ * tracker: the listener is attached just before send() and always removed by
+ * `finish()`.
  *
- * REGISTER_INFO-based program-counter extraction is deliberately NOT
- * implemented here: mapping a register id to "this is the PC" requires the
- * register name/id catalog Family A (plans 03-06/03-07) owns, which is not
- * a dependency of this plan. Only a STOPPED/RESUMED event's own
- * `programCounter` field is used.
+ * `finish()` waits up to STOPPED_EVENT_WAIT_MS for the STOPPED event and
+ * returns its PC, or `undefined` when none arrived -- the answer then omits
+ * the program counter rather than report a stale one.
  */
-function beginProgramCounterCapture(client: ViceMonitorClient): { finish(): number | undefined } {
+function beginProgramCounterCapture(client: ViceMonitorClient): { finish(): Promise<number | undefined>; abandon(): void } {
   let programCounter: number | undefined;
+  let onStopped: (() => void) | undefined;
   const listener = (item: ParsedResponse | StockProtocolError | StockFramingError) => {
-    if (hasParsedType(item) && (item.type === "stopped" || item.type === "resumed")) {
+    if (hasParsedType(item) && item.type === "stopped") {
       programCounter = item.programCounter;
+      onStopped?.();
     }
   };
   client.on("event", listener);
   return {
-    finish: () => {
+    finish: async () => {
+      if (programCounter === undefined) {
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, STOPPED_EVENT_WAIT_MS);
+          onStopped = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+      }
       client.off("event", listener);
       return programCounter;
+    },
+    abandon: () => {
+      client.off("event", listener);
     },
   };
 }
@@ -263,10 +276,9 @@ export const handleExecutionStep: StockSessionHandler = async (args, session) =>
   try {
     response = await session.client.send(CommandType.AdvanceInstructions, body);
   } catch (err) {
-    capture.finish();
+    capture.abandon();
     return convertWireError("vice_execution_step", err);
   }
-  await settleEvents();
   // WR-02 (03-REVIEW.md): finish() is called UNCONDITIONALLY, and only its
   // RETURN VALUE participates in the `??` fallback. Behind `??` the removal of
   // the 'event' listener would be skipped on any call where the reply itself
@@ -275,7 +287,7 @@ export const handleExecutionStep: StockSessionHandler = async (args, session) =>
   // that function exists precisely so a future parser extension is picked up
   // for free, and the day it is, this handler would leak one listener on the
   // long-lived, reused session.client per call, forever.
-  const capturedProgramCounter = capture.finish();
+  const capturedProgramCounter = await capture.finish();
   const programCounter = programCounterFromReply(response) ?? capturedProgramCounter;
 
   const payload: Record<string, unknown> = { requested: "step", count, stepOver, stateBefore };
@@ -314,13 +326,12 @@ export const handleExecutionUntilReturn: StockSessionHandler = async (args, sess
   try {
     response = await session.client.send(CommandType.ExecuteUntilReturn);
   } catch (err) {
-    capture.finish();
+    capture.abandon();
     return convertWireError("vice_execution_until_return", err);
   }
-  await settleEvents();
   // WR-02: unconditional finish(), for exactly the reason handleExecutionStep's
   // own identical line above spells out.
-  const capturedProgramCounter = capture.finish();
+  const capturedProgramCounter = await capture.finish();
   const programCounter = programCounterFromReply(response) ?? capturedProgramCounter;
 
   const payload: Record<string, unknown> = { requested: "untilReturn", stateBefore };
