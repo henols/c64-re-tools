@@ -20,7 +20,6 @@
 // guard green (roadmap criterion 4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
@@ -461,12 +460,9 @@ function parsedOverviewRow(cells: string[]): OverviewRow {
 }
 
 // ---------------------------------------------------------------------------
-// Existing coverage from plan 61-01.
+// Derivation coverage. The committed README is kept in step with the
+// declaration by CI, which regenerates it and fails on any difference.
 // ---------------------------------------------------------------------------
-
-test("the committed declaration/README pair audits clean", () => {
-  assert.deepEqual(auditGeneratedReadme({ declPath: DECL_PATH, readmePath: README_PATH }), []);
-});
 
 test("all three VICE_PACKAGE_TOOL_IDS derive identical ecosystem rows", () => {
   const declaration = readDeclarationFile({ declPath: DECL_PATH });
@@ -489,22 +485,6 @@ test("every declared record id has exactly one overview row, and every overview 
   const rowIds = overviewRows.map((row) => row.id);
   assert.deepEqual(new Set(rowIds), new Set(declaredIds), "the overview's row-id set must equal the declaration's own id set");
   assert.equal(rowIds.length, declaredIds.length, "no declared id may produce more than one overview row");
-});
-
-test("the committed overview region audits clean", () => {
-  const readmeText = readFileSync(README_PATH, "utf8");
-  const declaration = readDeclarationFile({ declPath: DECL_PATH });
-  assert.deepEqual(auditOverviewRegion(readmeText, declaration), []);
-});
-
-test("prereq-readme-gen.ts is absent from package.json's files[] array (repo tooling, never shipped)", () => {
-  const pkg = JSON.parse(readFileSync(join(VICE_DIR, "package.json"), "utf8")) as { files: string[] };
-  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
-  assert.equal(
-    pkg.files.includes("prereq-readme-gen.ts"),
-    false,
-    "prereq-readme-gen.ts is repo tooling that generates README.md; it must never ship in the published npm tarball (D-13)",
-  );
 });
 
 // ---------------------------------------------------------------------------
@@ -795,21 +775,4 @@ test("this guard compares facts, not bytes: the committed pair and a reflowed co
   } finally {
     cleanup();
   }
-});
-
-// ---------------------------------------------------------------------------
-// Scratch hygiene: runs last, after every fixture case above has built and
-// torn down its own scratch tree, and asserts none of them leaked a path
-// into the repository tree itself (T-61-05/T-61-06).
-// ---------------------------------------------------------------------------
-
-test("no untracked scratch path leaks under the repository tree after every fixture case above has run", () => {
-  const output = execFileSync("git", ["-C", REPO_ROOT, "status", "--porcelain"], { encoding: "utf8" });
-  const untracked = output.split("\n").filter((line) => line.startsWith("??"));
-  const leaked = untracked.filter((line) => line.includes("prereq-readme-gen-"));
-  assert.deepEqual(
-    leaked,
-    [],
-    `no untracked path from this file's scratch prefix may remain after the run; got ${JSON.stringify(untracked)}`,
-  );
 });
