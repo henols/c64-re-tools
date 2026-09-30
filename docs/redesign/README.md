@@ -19,7 +19,7 @@ A reconstructed application does **not** need byte-identical machine code. Given
 | 03 | [Application API](03-application-api.md) | Deterministic C64 operations available to MCP, CLI and tests |
 | 04 | [Host Runtime](04-host-runtime.md) | Host/client split, sessions, transport, tools and file staging |
 | 05 | [VICE integration](05-vice-integration.md) | Emulator lifecycle and monitor abstraction |
-| 06 | [Project and knowledge](06-project-knowledge.md) | Project model and the minimal SQLite knowledge database |
+| 06 | [Project and knowledge](06-project-knowledge.md) | Project model and the versioned SQLite knowledge database |
 | 07 | [Skills and workflows](07-skills-and-workflows.md) | What belongs in skills and what must remain implementation |
 | 08 | [Installation and distribution](08-installation-and-distribution.md) | Installation through existing skill/MCP package handlers |
 | 09 | [Build, test and release](09-build-test-release.md) | Development, functional equivalence, CI and release principles |
@@ -33,7 +33,9 @@ A reconstructed application does **not** need byte-identical machine code. Given
 4. **Tools are deterministic operations; skills own workflows.** Skills explain when and how to combine capabilities but contain no application implementation.
 5. **The project is the ordinary project directory.** No project manifest is required in v1.
 6. **`.c64-re-tools/knowledge.db` is the single persistent toolkit-owned knowledge store.** There is no mirrored JSON/JSONL representation.
-7. **The original C64 application remains where the developer places it inside the project.** c64-re-tools does not copy it into another registry or managed store.
-8. **The supported capability set is fixed.** A missing required capability means the installation/session is broken; there is no capability negotiation mode.
-9. **Functional behavior, not byte identity, defines a successful reconstruction.** Repeatable emulator tests provide evidence of equivalence.
-10. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
+7. **Knowledge history lives in the database.** Accepted knowledge changes create revisions; prior values remain reviewable and queryable rather than relying on Git history.
+8. **Analyzer imports are deterministic and non-destructive.** DXA/Ghidra findings may be imported automatically through the application layer, while semantic LLM/user knowledge can supersede generated names/classifications without erasing their history.
+9. **The original C64 application remains where the developer places it inside the project.** c64-re-tools does not copy it into another registry or managed store.
+10. **The supported capability set is fixed.** A missing required capability means the installation/session is broken; there is no capability negotiation mode.
+11. **Functional behavior, not byte identity, defines a successful reconstruction.** Repeatable emulator tests provide evidence of equivalence.
+12. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
