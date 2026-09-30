@@ -1,7 +1,7 @@
 // GENERATED FILE -- DO NOT EDIT.
 // Compiled by `tsc` from host-tool-endpoint.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
-// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
+// deployed to the host on their own -- install-resources.ts copies THIS file's on-disk contents
 // verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // host-tool-endpoint.mts
@@ -48,7 +48,7 @@
 //     real target lies outside the tree (D-05) -- there is no partial/best-
 //     effort upload.
 import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
-import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dialHostToolSession, DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS } from "./broker-endpoint.mjs";
 import { transferFileOverEndpoint, validateContainedDestination } from "./transfer-client.mjs";
@@ -112,7 +112,7 @@ export const HOST_TOOL_KIND_DIR = Object.freeze({
 // ---------------------------------------------------------------------------
 export const HOST_TOOL_FILE_INPUT_KEYS = Object.freeze({
     "acme.build": Object.freeze(["source"]),
-    "ghidra.analyze": Object.freeze(["importPath", "preScript", "postScript", "entrypointsPath", "dataRangesPath"]),
+    "ghidra.analyze": Object.freeze(["importPath", "entrypointsPath", "dataRangesPath"]),
     "oracle.run": Object.freeze(["source"]),
     "dxa.disassemble": Object.freeze(["image", "entrypointsPath", "datablocksPath", "labelsPath"]),
     "c1541.bam": Object.freeze(["image"]),
@@ -125,14 +125,12 @@ export const HOST_TOOL_FILE_INPUT_KEYS = Object.freeze({
 /** Phase 65 (plan 65-03, D-04): the frozen per-tool table of path-bearing
  * keys this route uploads as a whole DIRECTORY TREE rather than a single
  * file -- `acme.build`'s `includes` (an ARRAY of `-I` directories, one tree
- * per entry) and `ghidra.analyze`'s `scriptPath` (Ghidra's own `-scriptPath`
- * flag names a directory). Mirrors `host-tool.mts`'s own
+ * per entry). Mirrors `host-tool.mts`'s own
  * `HOST_TOOL_TREE_ARG_KEYS` (the SERVER side of this same seam) -- the two
  * tables are independently declared but must agree in practice;
  * `host-tool.test.ts`'s own both-directions census proves they do. */
 export const HOST_TOOL_TREE_INPUT_KEYS = Object.freeze({
     "acme.build": Object.freeze(["includes"]),
-    "ghidra.analyze": Object.freeze(["scriptPath"]),
 });
 /** Phase 65 (plan 65-03, D-03): the frozen per-tool table of path-bearing
  * keys that carry NO upload at all -- a bare OUTPUT NAME the tool WRITES,
@@ -154,6 +152,9 @@ export const HOST_TOOL_OUTPUT_NAME_KEYS = Object.freeze({
  * a host-bound sibling, and this module must stay a leaf with respect to
  * the whole host-bound seam (this file's own header). */
 export const HOST_TOOL_STAGE_LINE_MAX_BYTES = 65536;
+/** The most `tools.json` text a run request carries; the request line must
+ * stay under the broker's line cap. */
+export const HOST_TOOL_TOOLS_JSON_MAX_BYTES = 16384;
 /**
  * Walks `root` (a local directory) and returns every FILE beneath it, in a
  * stable SORTED order (D-05's own "SEAM-03/ordering" must-have: two runs
@@ -307,8 +308,9 @@ function detokenizeResponseFields(response, localTreeRoots) {
  * `finally` on every path. Never throws: every failure resolves
  * `{ ok: false, message }`.
  */
-export async function runHostToolOverEndpoint(tool, args, options) {
+export async function runHostToolOverEndpoint(tool, inputArgs, options) {
     const baseDir = options.baseDir ?? process.cwd();
+    let args = inputArgs;
     const dialOptions = {
         port: options.port,
         candidates: options.candidates,
@@ -323,6 +325,37 @@ export async function runHostToolOverEndpoint(tool, args, options) {
         const fileInputKeys = HOST_TOOL_FILE_INPUT_KEYS[tool] ?? [];
         const treeInputKeys = HOST_TOOL_TREE_INPUT_KEYS[tool] ?? [];
         const outputNameKeys = HOST_TOOL_OUTPUT_NAME_KEYS[tool] ?? [];
+        // ghidra.analyze runs only the scripts the broker vendors: a script is
+        // named, never uploaded, and a script directory is refused.
+        if (tool === "ghidra.analyze") {
+            if ("scriptPath" in args) {
+                return { ok: false, message: 'runHostToolOverEndpoint: ghidra.analyze takes no "scriptPath"; only the vendored Ghidra scripts run, named by "preScript" and "postScript"' };
+            }
+            for (const key of ["preScript", "postScript"]) {
+                const value = args[key];
+                if (value === undefined)
+                    continue;
+                if (typeof value !== "string" || value === "") {
+                    return { ok: false, message: `runHostToolOverEndpoint: "${key}" must be the name of a vendored Ghidra script; got ${JSON.stringify(value)}` };
+                }
+                args = { ...args, [key]: basename(value) };
+            }
+        }
+        // The project's tools.json travels as text with the run request; the
+        // broker never reads a file for it.
+        let toolsJson;
+        const toolsJsonFile = join(options.projectRoot ?? baseDir, ".c64-re-tools", "local", "tools.json");
+        if (existsSync(toolsJsonFile)) {
+            try {
+                toolsJson = readFileSync(toolsJsonFile, "utf8");
+            }
+            catch (e) {
+                return { ok: false, message: `runHostToolOverEndpoint: cannot read ${toolsJsonFile}: ${e.message}` };
+            }
+            if (Buffer.byteLength(toolsJson, "utf8") > HOST_TOOL_TOOLS_JSON_MAX_BYTES) {
+                return { ok: false, message: `runHostToolOverEndpoint: ${toolsJsonFile} is larger than ${HOST_TOOL_TOOLS_JSON_MAX_BYTES} bytes` };
+            }
+        }
         const manifest = [];
         const uploadLocalPaths = [];
         let treeIndex = 0;
@@ -550,7 +583,7 @@ export async function runHostToolOverEndpoint(tool, args, options) {
             boundArgs[key] = base;
         }
         const replyTimeoutMs = hostToolRequestTimeoutMs(tool);
-        const runResult = await session.run(tool, boundArgs, stageResult.request, replyTimeoutMs);
+        const runResult = await session.run(tool, boundArgs, stageResult.request, replyTimeoutMs, toolsJson === undefined ? undefined : { toolsJson });
         if (!runResult.ok)
             return { ok: false, message: runResult.reason };
         // Phase 65 (plan 65-03, D-10): detokenize BEFORE reading any text field
@@ -615,8 +648,10 @@ function writeCliResult(result) {
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exitCode = result.ok ? 0 : 1;
 }
-const IS_ENTRY_POINT = process.argv[1] !== undefined && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url);
-if (IS_ENTRY_POINT) {
+// The real path on both sides, so a symlinked path still counts as a direct
+// invocation.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
     const usage = "usage: host-tool-endpoint run --tool <id> --args <json> --tools-root <dir> [--base-dir <dir>]";
     const [, , command, ...rest] = process.argv;
     const flags = parseRunCliArgs(rest);

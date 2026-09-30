@@ -8,14 +8,9 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// The MCP proxy validates NOTHING. `vice-proxy.ts:3224` declares
-// `rawJsonSchemaAsStandardSchema()`, and its validator at `:3230` is literally
-// `validate: (value: unknown) => ({ value })` -- by design, and documented as
-// such right there, because that is what keeps `tools/list`'s wire output
-// byte-identical to the manifest's own raw schema. The consequence is that
-// every argument reaches the store UNVALIDATED: an address of 65536, a
-// misspelled data type, and a store path pointing outside the workspace all
-// look identical to the transport.
+// Nothing upstream of the store validates an argument: a call arrives as
+// JSON, and an address of 65536, a misspelled data type, or a store path
+// pointing outside the workspace all look the same until something checks.
 //
 // So validation lives here, at the store's own entry, and throws named
 // `ViceError` subclasses whose messages embed the offending value AND the
@@ -112,6 +107,7 @@
 import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import { MAX_ACME_IDENTIFIER_LENGTH } from "./anno-acme-ident.mts";
 import { OPCODES } from "./disasm-opcodes.mts";
 import { ViceError, type ViceErrorOptions } from "./vice-errors.mts";
 
@@ -140,9 +136,8 @@ import { ViceError, type ViceErrorOptions } from "./vice-errors.mts";
  *     path at once, after which `retainedRevisions()` reported none and the
  *     next accepted write's prune destroyed the entire revert history.
  *
- * Version 2 drops `anno_snapshot.path` -- there is no persisted string left for
- * a second namespace to disagree with -- and derives the location from the
- * handle at every read and every delete via `snapshotDirFor()`.
+ * Version 2 dropped `anno_snapshot.path`. The snapshot ring itself is gone
+ * (version 6), so no persisted location remains.
  *
  * A VERSION-1 STORE IS REFUSED, NOT UPGRADED, and the reason is that the
  * version-1 ring's OWNERSHIP is not recoverable: two stores may
@@ -1480,12 +1475,12 @@ function realpathOfNearestExisting(p: string): string {
  * The path is deliberately NOT translated -- see trap 7 in `anno-store.mts`'s
  * header for what a translated store path would do.
  */
-export function storePathWithinWorkspace(path: string, workspaceRoot: string): string {
+export function storePathWithinWorkspace(path: string, workspaceRoot: string, what = "path"): string {
   const resolvedRoot = realpathOfNearestExisting(workspaceRoot);
   const resolvedPath = realpathOfNearestExisting(path);
   if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(resolvedRoot + sep)) {
     throw new AnnoStorePathError(
-      `store path ${JSON.stringify(resolvedPath)} is outside the workspace root ${JSON.stringify(resolvedRoot)} -- refusing to open a store there`,
+      `${what} ${JSON.stringify(path)} is outside the workspace root -- refusing it. Use a path inside the project.`,
       { path: resolvedPath, workspaceRoot: resolvedRoot },
     );
   }
@@ -1651,6 +1646,13 @@ export function assertLegalLabel(name: unknown): string {
       `label name ${JSON.stringify(name)} is not a legal identifier -- expected a non-empty string starting with a letter or underscore, ` +
         `then letters, digits and underscores only. An illegal name is REFUSED, never sanitised or quoted.`,
       { identifier: typeof name === "string" ? name : undefined, reason: "not a non-empty string" },
+    );
+  }
+  if (name.length > MAX_ACME_IDENTIFIER_LENGTH) {
+    throw new AnnoLabelError(
+      `label name of ${name.length} characters is longer than the ${MAX_ACME_IDENTIFIER_LENGTH}-character ACME identifier ceiling -- ` +
+        "an export could not assemble it. It is REFUSED, never truncated.",
+      { identifier: name.slice(0, 40), reason: "too long" },
     );
   }
   if (!LEGAL_IDENTIFIER_RE.test(name)) {

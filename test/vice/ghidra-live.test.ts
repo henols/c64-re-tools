@@ -215,10 +215,8 @@ function generateFlat64kVariant(ws: ScratchWorkspace): string {
   return relPath;
 }
 
-/** A generic labelled-integer extraction over the export FILE's own text --
- * distinct from `classifyGhidraRunLog()`'s own classification pattern (which
- * reads RUN-LOG text, printed via `println()` with a trailing colon); the
- * export file's own lines carry no colon (`GhidraStructExport.java`'s
+/** A generic labelled-integer extraction over the export FILE's own text;
+ * the export file's own lines carry no colon (`GhidraStructExport.java`'s
  * `classificationSection.append("CLASSIFICATION_EXPECTED_FROM_BLOCKS "
  * ).append(...)`). Returns `null` for either field when its own labelled line
  * is absent -- never an accidental zero. */
@@ -290,7 +288,6 @@ test(
               processor: NMOS_LANGUAGE_ID,
               importRoute: "prg",
               noanalysis: true,
-              scriptPath: "vendor/ghidra-scripts",
               postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
               exportPath: exportRel,
               expectedClassificationLines: 1,
@@ -339,7 +336,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "prg",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
           exportPath: exportRel,
         },
@@ -394,7 +390,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "prg",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
           exportPath: exportRel,
         },
@@ -436,7 +431,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
           exportPath: exportRel,
         },
@@ -490,7 +484,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "prg",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
           exportPath: exportRel,
         },
@@ -554,33 +547,20 @@ test(
 // referenced by its own full workspace-relative path).
 // ---------------------------------------------------------------------------
 
-/** The `.prg` route's own entry point for `bank.prg` -- MEASURED, this plan:
- * `ghidra.analyze`'s "prg" route loads the file through `BinaryLoader` with
- * NO awareness of the `.prg` format's own two-byte load-address header --
- * those two bytes ($01,$08) are loaded as ordinary CONTENT at the base
- * address, so every address `bank.a` labels lands two bytes LATER than the
- * source's own label once loaded through this route. The flat-64K route's
- * own `generateFlat64kVariant()` strips the header before embedding the body
- * (`bankPrg.subarray(2)`), so it uses the source's own UNSHIFTED addressing.
- * See `fixtures/ghidra/README.md`'s corrected table (this plan) for both
- * routes' own reference-dump lines and the root cause. */
-const PRG_ROUTE_ENTRYPOINT = "$0812";
+/** The entry point for `bank.prg` on each route. The "prg" route loads the
+ * whole file, 2-byte load-address header included, with `BinaryLoader` at a
+ * base two bytes below the load address, so the body lands at its real
+ * address. The flat-64K route's `generateFlat64kVariant()` strips the header
+ * and puts the body at its load address. Both routes therefore use the
+ * source's own addresses. */
+const PRG_ROUTE_ENTRYPOINT = "$0810";
 const FLAT64K_ROUTE_ENTRYPOINT = "$0810";
 
-/** The fixture's seven hardware-access reference lines this fixture yields
- * under a correct volatile carve, per route -- MEASURED this plan, real
- * Ghidra 12.1.3, `fixtures/ghidra/README.md`'s corrected table. Four writes
- * to the processor port ($0001), two writes to the border-colour register
- * ($d020), one read of it. Access kind is asserted, never the address alone. */
-const WITH_FLAG_REFERENCE_LINES_PRG: readonly string[] = [
-  "0814 -> 0001 WRITE",
-  "0818 -> d020 WRITE",
-  "081e -> 0001 WRITE",
-  "0822 -> d020 WRITE",
-  "0825 -> d020 READ",
-  "082a -> 0001 WRITE",
-  "0839 -> 0001 WRITE",
-];
+/** The fixture's seven hardware-access reference lines under a correct
+ * volatile carve (real Ghidra 12.1.3). Four writes to the processor port
+ * ($0001), two writes to the border-colour register ($d020), one read of
+ * it. Access kind is asserted, never the address alone. Both routes load
+ * the body at its real address, so both give the same lines. */
 const WITH_FLAG_REFERENCE_LINES_FLAT64K: readonly string[] = [
   "0812 -> 0001 WRITE",
   "0816 -> d020 WRITE",
@@ -590,6 +570,7 @@ const WITH_FLAG_REFERENCE_LINES_FLAT64K: readonly string[] = [
   "0828 -> 0001 WRITE",
   "0837 -> 0001 WRITE",
 ];
+const WITH_FLAG_REFERENCE_LINES_PRG: readonly string[] = WITH_FLAG_REFERENCE_LINES_FLAT64K;
 
 /** The decompiled-C literal statements this fixture yields under a correct
  * (with-flag) volatile carve -- MEASURED this plan, real Ghidra 12.1.3,
@@ -737,7 +718,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "prg",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: entrypointsRel,
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -794,7 +774,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: entrypointsRel,
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -854,7 +833,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "prg",
           noanalysis: true,
-          scriptPath: scriptDir,
           preScript: join(scriptDir, "VolatileCarve.java"),
           entrypointsPath: entrypointsRel,
           postScript: join(scriptDir, "GhidraStructExport.java"),
@@ -911,7 +889,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: scriptDir,
           preScript: join(scriptDir, "VolatileCarve.java"),
           entrypointsPath: entrypointsRel,
           postScript: join(scriptDir, "GhidraStructExport.java"),
@@ -979,7 +956,6 @@ test(
               processor: NMOS_LANGUAGE_ID,
               importRoute: "flat64k",
               noanalysis: true,
-              scriptPath: scriptDir,
               preScript: join(scriptDir, "VolatileCarve.java"),
               postScript: join(scriptDir, "GhidraStructExport.java"),
               exportPath: exportRel,
@@ -1050,7 +1026,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
         },
         { repoRoot: ws.root },
@@ -1111,7 +1086,7 @@ const CORPUS_SKIP_REASON: string | false =
  * against `danish.d64`'s own first entry) -- duplicated here, not imported,
  * per this file's own established convention. See that file's own comment
  * for the full derivation of each. */
-const CORPUS_ENTRY_POINTS: readonly string[] = ["$081b", "$b70a", "$b74c", "$b7e7", "$b790"];
+const CORPUS_ENTRY_POINTS: readonly string[] = ["$0819", "$b70a", "$b74c", "$b7e7", "$b790"];
 
 /** The smallest common ancestor directory of two absolute paths -- computed,
  * never a fixed guess, so the seam request's `repoRoot` for THIS call is
@@ -1301,7 +1276,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "prg",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: "release.entrypoints",
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -1418,7 +1392,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
           exportPath: exportRel,
         },
@@ -1536,7 +1509,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "prg",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: "release.entrypoints",
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -1602,12 +1574,10 @@ test(
 // hermetic, JVM-free half over that same committed capture.
 // ---------------------------------------------------------------------------
 
-/** This fixture's own entry point (`start:`), per route -- see
- * `fixtures/ghidra/README.md`'s address trace. Same +2 `.prg`-route offset
- * as `bank.prg` above, for the same reason (the loader never strips the
- * file's own two-byte load-address header on that route). */
+/** This fixture's own entry point (`start:`), per route. Both routes use the
+ * source's own addresses (see PRG_ROUTE_ENTRYPOINT above). */
 const PATH_DEPENDENT_FLAT64K_ENTRYPOINT = "$0810";
-const PATH_DEPENDENT_PRG_ENTRYPOINT = "$0812";
+const PATH_DEPENDENT_PRG_ENTRYPOINT = "$0810";
 
 /** Generates the flat-64K variant of the NEW two-caller path-dependent
  * fixture -- mirrors `generateFlat64kVariant()` above in shape, kept as a
@@ -1662,7 +1632,6 @@ function runConstWritesRoute(
       processor: NMOS_LANGUAGE_ID,
       importRoute: route,
       noanalysis: true,
-      scriptPath: "vendor/ghidra-scripts",
       preScript: "vendor/ghidra-scripts/VolatileCarve.java",
       entrypointsPath: entrypointsRel,
       postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -1695,13 +1664,8 @@ function assertConstWritesPortValuesDiffer(exportText: string): ConstWriteLine[]
 
 /** The shared program point's own store address (the single `sta $d020`
  * inside `probe`) must differ from every processor-port store address --
- * otherwise this would not be a path-dependent site at all. Asserted ONLY on
- * the flat-64K route: MEASURED this plan (see `fixtures/ghidra/README.md`'s
- * own "NEW finding" paragraph), the `.prg` route's own internal-`jsr` target
- * is NOT corrected for the two-byte header shift, so `probe` is never
- * actually reached on THAT route -- `## REFERENCES` carries no border-colour
- * access there at all, which would make this exact assertion fail for a
- * reason unrelated to what it exists to prove. */
+ * otherwise this would not be a path-dependent site at all. Both routes
+ * load the body at its real address, so both reach `probe`. */
 function assertSharedSubroutineReachedFromDistinctCallers(exportText: string, portWrites: ConstWriteLine[]): void {
   const references = parseReferences(exportText);
   const borderWrites = references.filter((r) => /^0*d020$/.test(r.to) && r.kind === "WRITE");
@@ -1749,15 +1713,8 @@ test(
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the prg-route CONST_WRITES case must not throw");
       const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
-      assertConstWritesPortValuesDiffer(exportText);
-      // The shared-subroutine-reached-from-two-callers assertion is
-      // deliberately NOT run on this route -- see this function's own
-      // sibling above and `fixtures/ghidra/README.md`'s "NEW finding"
-      // paragraph: the `.prg` route's own internal-`jsr` defect means
-      // `probe` is never actually reached here, which is exactly why the
-      // COMMITTED capture uses this route (matching every other committed
-      // export/run-log fixture's size) while the flat-64K route above
-      // carries the structural proof.
+      const portWrites = assertConstWritesPortValuesDiffer(exportText);
+      assertSharedSubroutineReachedFromDistinctCallers(exportText, portWrites);
 
       // This is the SAME route, fixture, entry point and script pair used to
       // produce the committed capture fixture -- a fresh run here must
@@ -1776,10 +1733,8 @@ test(
 
 // ---------------------------------------------------------------------------
 // Plan 37-08 (AUTO-07): the phantom-label before/after proof over the new
-// graphics-feedback fixture (`charset-phantom.a`/`.prg`). Flat-64K route
-// ONLY -- see `fixtures/ghidra/README.md`'s own paragraph on why the `.prg`
-// route's two-byte shift misaligns the register-derived range against where
-// this fixture's charset bytes actually land.
+// graphics-feedback fixture (`charset-phantom.a`/`.prg`), on the flat-64K
+// route. The `.prg`-route case below checks only the CONST_WRITES half.
 // ---------------------------------------------------------------------------
 
 /** This fixture's own entry point (`start:`), flat-64K route (source labels,
@@ -1863,7 +1818,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: entrypointsRel,
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -1918,7 +1872,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: entrypointsRel,
           dataRangesPath: dataRangesRel,
@@ -1951,9 +1904,8 @@ test(
   async () => {
     const ws = makeScratchWorkspace();
     try {
-      // .prg-route entry point: +2 over the flat64k route's own, per the
-      // fixtures README's documented per-route offset.
-      const entrypointsRel = writeEntrypointsFile(ws, "$0812", "charset-phantom-prg-entrypoints.txt");
+      // The .prg route uses the source's own addresses, like flat64k.
+      const entrypointsRel = writeEntrypointsFile(ws, "$0810", "charset-phantom-prg-entrypoints.txt");
       const exportRel = "charset-phantom-prg-export.txt";
       const result = await runGhidraAnalyze(
         {
@@ -1962,7 +1914,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "prg",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: entrypointsRel,
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -1981,13 +1932,8 @@ test(
       assert.equal(maps.length, 1);
       const charsetRange = maps[0]!.ranges.find((r) => r.kind === "character-set");
       assert.ok(charsetRange !== undefined, "a character-set range must derive on the prg route too, from the same register values");
-      // Deliberately NOT asserting a phantom-label count here -- see
-      // fixtures/ghidra/README.md's own paragraph: this route's own
-      // two-byte shift means the charset bytes actually load two bytes
-      // later than the derived range's own hardware-address boundaries,
-      // so a before/after label-count proof on this route would compare
-      // the wrong window. This case exists to prove the CONST_WRITES/
-      // derivation half still works here, not the phantom-label half.
+      // This case checks the CONST_WRITES/derivation half on this route;
+      // the flat64k cases above carry the phantom-label proof.
     } finally {
       removeScratchWorkspace(ws);
     }
@@ -2022,7 +1968,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           dataRangesPath: dataRangesRel,
         },
         { repoRoot: ws.root },

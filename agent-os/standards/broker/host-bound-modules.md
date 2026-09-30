@@ -14,8 +14,7 @@ import type { BrokerState } from "./broker-state.mjs";   // type-only: loads unb
   module must also load unbuilt (from tests), and inject functions via
   Deps instead of value-importing them.
 - Never value-import a container-side `.ts` (e.g. repo-root.ts).
-  Mirror the constant or shape instead, and pin the
-  agreement with a sync test.
+  Mirror the constant or shape instead.
 - Run `node build.ts` after editing. Commit the regenerated `.mjs`.
   CI rebuilds and fails on drift.
 - A new host-bound module goes in both lists. build() fails on any

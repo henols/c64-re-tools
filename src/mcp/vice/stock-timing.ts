@@ -37,6 +37,7 @@
 //     only, and only for this one resource name.
 import {
   CommandType,
+  cpuHistoryGetBody,
   memspaceBody,
   resourceGetBody,
   StockConnectionClosedError,
@@ -181,10 +182,9 @@ export async function resolveVideoStandard(session: StockConnectSession): Promis
     //
     // Rethrow the three typed conditions that mean "the connection or the
     // machine, not the value": handleCyclesStopwatch()'s own
-    // convertWireError() and handleDiagnoseStock()'s classifier both know what
-    // to do with them. Keep the PAL fallback for value-shaped failures only
-    // (an unexpected reply shape, an unrecognised standard, a build with no
-    // such resource). Do NOT widen this back to a bare catch.
+    // convertWireError() knows what to do with them. Keep the PAL fallback
+    // for value-shaped failures only (an unexpected reply shape, an
+    // unrecognised standard, a build with no such resource). Do NOT widen this back to a bare catch.
     if (err instanceof MachineRestartedError || err instanceof StockConnectionClosedError || err instanceof StockRequestTimeoutError) {
       throw err;
     }
@@ -273,9 +273,7 @@ export async function readCycleBaseline(session: StockConnectSession): Promise<C
     // Route A: CPUHISTORY_GET(count:1) -- NEVER count:0, which real VICE
     // rejects with InvalidParameter (the Wave-0 defect 07-01 fixed).
     const count = clampCpuHistoryCount(1);
-    const body = Buffer.alloc(5);
-    body[0] = 0x00; // memspace: main
-    body.writeUInt32LE(count, 1);
+    const body = cpuHistoryGetBody({ count, memspace: 0x00 });
     const response = await session.client.send(CommandType.CpuHistoryGet, body);
     if (response.type !== "cpu_history") {
       throw new Error(`readCycleBaseline: expected a cpu_history reply, got "${response.type}"`);

@@ -90,6 +90,7 @@ import {
   splitEntryAddressPairs,
 } from "./anno-types.mts";
 import type { AnnoStoreErrorOptions, DataType, RangeRow } from "./anno-types.mts";
+import { assertMaxResults } from "./anno-tool-defs.mts";
 import { decode } from "./disasm-decoder.mts";
 import type { Instruction } from "./disasm-decoder.mts";
 import { renderLine } from "./disasm-renderer.mts";
@@ -437,25 +438,19 @@ function assertQuery(query: unknown): string {
 /** `max_results` is REQUIRED with no default, and `0` is refused by name. An
  * implicit ceiling makes a truncated answer indistinguishable from a complete
  * one; a ceiling of zero asks for an answer that cannot carry information. */
-function assertMaxResults(request: SearchRequest | undefined): number {
-  const raw = request?.max_results;
-  if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0) {
-    throw new AnnoDeriveArgumentError(
-      `"max_results" must be a positive integer, got ${JSON.stringify(raw)} -- it is REQUIRED and has no default on this surface. ` +
-        "Pass an explicit ceiling and compare the returned count against it to detect truncation; the true total comes back beside " +
-        "the truncated list.",
-      { argument: "max_results", value: raw },
-    );
-  }
-  return raw;
-}
-
-/** True when the request did not explicitly disable this corpus. Enabled is the
- * default for all three, matching `anno_search_disassembly`'s advertised
- * shape. */
+/** True unless the request explicitly disables this corpus. Enabled is the
+ * default for all three. A flag that is neither absent nor a boolean is
+ * refused: reading "no" as "yes" would search a corpus the caller turned off. */
 function corpusEnabled(request: SearchRequest, corpus: CorpusName): boolean {
   const flag = request[`search_${corpus}`];
-  return flag !== false;
+  if (flag === undefined) return true;
+  if (typeof flag !== "boolean") {
+    throw new AnnoDeriveArgumentError(
+      `"search_${corpus}" must be true or false when supplied, got ${JSON.stringify(flag)}.`,
+      { argument: `search_${corpus}`, value: flag },
+    );
+  }
+  return flag;
 }
 
 /** Every `search_*` key naming something outside the frozen three. */
@@ -533,7 +528,7 @@ export function searchAnnotations(
   const base = assertOrigin(origin);
   const bag: SearchRequest = (typeof request === "object" && request !== null ? request : {}) as SearchRequest;
   const query = assertQuery(bag.query);
-  const maxResults = assertMaxResults(bag);
+  const maxResults = assertMaxResults("anno_search", bag);
 
   const unavailable: Record<string, UnavailableCorpus> = {};
   for (const name of unsupportedCorpora(bag)) unavailable[name] = unavailableCorpus(name);

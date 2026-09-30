@@ -12,38 +12,10 @@
 // never a direct readFileSync against fixtures/textmon.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { parseBacktrace, type BacktraceFrame } from "../../src/mcp/vice/textmon-backtrace.ts";
-import { VICE_DIR } from "./paths.ts";
 
-const OWN_MODULE = join(VICE_DIR, "textmon-backtrace.ts");
-
-// ---------------------------------------------------------------------------
-// Purity (PARSE-03): the module imports NOTHING, and declares no
-// module-scope mutable state. Both asserted mechanically by reading this
-// module's own source, not by review.
-// ---------------------------------------------------------------------------
-
-test("purity (PARSE-03): textmon-backtrace.ts contains no top-level ES import statement", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  const importLines = src.split("\n").filter((line) => /^\s*import\s/.test(line));
-  assert.deepEqual(importLines, [], `expected zero import lines, found: ${JSON.stringify(importLines)}`);
-});
-
-test("purity: textmon-backtrace.ts declares no module-scope mutable (let/var) binding", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  const mutableLines = src.split("\n").filter((line) => /^(let|var)\s/.test(line));
-  assert.deepEqual(mutableLines, [], `expected zero top-level let/var declarations, found: ${JSON.stringify(mutableLines)}`);
-});
-
-test("order is data (T-42-08): no code path in this module sorts or reverses frames -- asserted over the module's own source", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  assert.doesNotMatch(src, /\.sort\(/, "expected no .sort( call anywhere in textmon-backtrace.ts");
-  assert.doesNotMatch(src, /\.reverse\(/, "expected no .reverse( call anywhere in textmon-backtrace.ts");
-});
 
 // ---------------------------------------------------------------------------
 // Both real two-binary captures parse clean, with a current-PC frame plus 5

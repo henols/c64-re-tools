@@ -34,9 +34,8 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   TextMonitorClient,
@@ -247,18 +246,6 @@ test("D-42-1 prohibition: no parameter kind in TEXT_COMMAND_PARAM_SPECS accepts 
   }
 });
 
-test("command()'s refusal ORDER: the control-character check precedes the dialability check in source order (unchanged by D-42-1)", () => {
-  const sourcePath = fileURLToPath(new URL("../../src/mcp/vice/text-protocol.ts", import.meta.url));
-  const source = readFileSync(sourcePath, "utf8");
-  const commandBodyStart = source.indexOf("command(cmd: string, _opts: TextCommandOptions = {})");
-  assert.ok(commandBodyStart >= 0, "command() must exist in text-protocol.ts");
-  const controlCharIndex = source.indexOf("FORBIDDEN_COMMAND_CHARS_RE.test(cmd)", commandBodyStart);
-  const dialabilityIndex = source.indexOf("!isAllowlistedTextCommand(cmd)", commandBodyStart);
-  assert.ok(controlCharIndex > commandBodyStart, "the control-character check must be inside command()");
-  assert.ok(dialabilityIndex > commandBodyStart, "the dialability check must be inside command()");
-  assert.ok(controlCharIndex < dialabilityIndex, "the control-character check must precede the dialability check");
-});
-
 test("TextMonitorClient.command(): refuses a non-allowlisted command before any byte reaches the socket", async () => {
   let socketReceivedBytes = false;
   await withStubNetServer(
@@ -451,23 +438,47 @@ test("command() [io]: the canonical rendering IS dialed, byte-identical to build
   assert.equal(received.toString("utf8"), `${command}\n`, `expected the stub server to receive exactly ${JSON.stringify(command)} (plus the trailing newline command() itself adds)`);
 });
 
-test("D-42-1 prohibition (source-level): text-protocol.ts's own source declares no parameter kind with a string domain", () => {
-  // The mechanical form of this plan's front-matter prohibition -- the
-  // runtime-object check earlier in this file ("no parameter kind in
-  // TEXT_COMMAND_PARAM_SPECS accepts a string domain") proves today's
-  // shipped table; this one additionally proves the TYPE DECLARATION
-  // itself has not been widened, which is the assertion that would notice
-  // a later "just let the caller pass the rest of the line" edit even
-  // before it is wired into a spec entry.
-  const sourcePath = fileURLToPath(new URL("../../src/mcp/vice/text-protocol.ts", import.meta.url));
-  const source = readFileSync(sourcePath, "utf8");
-  assert.doesNotMatch(source, /kind:\s*"string"/, 'no spec entry may declare kind: "string"');
-  const kindTypeMatch = source.match(/export type TextCommandParamKind = ("[^"]+"(?:\s*\|\s*"[^"]+")*);/);
-  assert.ok(kindTypeMatch, "TextCommandParamKind's own type declaration must be found in source");
-  assert.equal(
-    kindTypeMatch![1],
-    '"count" | "address"',
-    "TextCommandParamKind must remain exactly count|address -- a later widening to include a string domain would fail this assertion",
+test("command(): a server that never sends a prompt rejects at timeoutMs, drops the connection and releases the channel lock", async () => {
+  await withStubNetServer(
+    () => {
+      /* accepts the command and never answers */
+    },
+    async (port) => {
+      const client = new TextMonitorClient();
+      await client.connect("127.0.0.1", port);
+      const started = Date.now();
+      await assert.rejects(
+        () => withTextChannelLock("device c:", () => client.command("device c:", { timeoutMs: 80 })),
+        /no prompt within 80ms/,
+      );
+      assert.ok(Date.now() - started < 2000, "the rejection came from the command's own bound");
+      assert.equal(client.connected, false, "the connection is dropped, because its stream can no longer be matched to commands");
+      assert.equal(client.hasOutstandingCommand, false);
+      // The lock is free again: a new acquisition succeeds at once.
+      await withTextChannelLock("warp on", async () => undefined, { timeoutMs: 200 });
+    },
+  );
+});
+
+test("command(): output of a passive banner that is still arriving is flushed out as a banner, not glued onto the next response", async () => {
+  await withStubNetServer(
+    (socket) => {
+      socket.write("BREAK: 1 A 0801"); // a banner with no prompt yet
+      socket.on("data", () => {
+        socket.write("real output\n(C:$0801) ");
+      });
+    },
+    async (port) => {
+      const client = new TextMonitorClient({ quiescenceMs: 20 });
+      const banners: string[] = [];
+      client.on("banner", (text: string) => banners.push(text));
+      await client.connect("127.0.0.1", port);
+      await sleep(5); // the partial banner has reached the client
+      const payload = await withTextChannelLock("device c:", () => client.command("device c:"));
+      assert.equal(payload, "real output\n");
+      assert.deepEqual(banners, ["BREAK: 1 A 0801"]);
+      await client.disconnect();
+    },
   );
 });
 

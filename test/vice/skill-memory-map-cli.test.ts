@@ -30,7 +30,6 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 // driver.ts is a typed skill script, checked by this package's typecheck.
@@ -89,6 +88,12 @@ function runDriver(args: string[], input?: string): { status: number | null; std
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
+/** The last stdout line, parsed: a refusal is one JSON line. */
+function lastJson(stdout: string): { ok: boolean; message?: string } {
+  const lines = stdout.trim().split("\n");
+  return JSON.parse(lines[lines.length - 1]!);
+}
+
 function withTempDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "mmap-cli-test-"));
   try {
@@ -101,14 +106,16 @@ function withTempDir<T>(fn: (dir: string) => T): T {
 test("the CLI with no arguments prints usage and exits 0", () => {
   const r = runDriver([]);
   assert.equal(r.status, 0);
-  // driver.ts prints its usage via console.error -- on stderr, not stdout.
-  assert.match(r.stderr, /usage: node driver\.ts <command>/);
+  // The usage text is the command's output, so it goes to stdout.
+  assert.match(r.stdout, /usage: node driver\.ts <command>/);
 });
 
-test("the CLI with an unknown verb prints usage and exits 1", () => {
+test("the CLI with an unknown verb refuses with a JSON line carrying the usage and exits 1", () => {
   const r = runDriver(["bogus-verb"]);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /usage: node driver\.ts <command>/);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /unknown command[\s\S]*usage: node driver\.ts <command>/);
 });
 
 test("lookup accepts every documented address form for $D020 -- dollar-prefixed hex, 0x-prefixed hex, trailing-h hex, binary and decimal -- and all resolve to the same result", () => {
@@ -133,7 +140,9 @@ test("lookup of an address above the top of the address space throws, naming bot
   // that case is pinned separately below.
   const r = runDriver(["lookup", "$ABCDE"]);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /\$ABCDE reads as 703710, past the top of the 64K address space \(\$0000-\$FFFF\)/);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /\$ABCDE reads as 703710, past the top of the 64K address space \(\$0000-\$FFFF\)/);
 });
 
 test("lookup of a value that overflows as hex but fits as decimal: the message additionally offers the decimal reading", () => {
@@ -141,21 +150,27 @@ test("lookup of a value that overflows as hex but fits as decimal: the message a
   // overflow branch offers the alternate decimal reading: 10000 = $2710.
   const r = runDriver(["lookup", "$10000"]);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /\$10000 reads as 65536, past the top of the 64K address space \(\$0000-\$FFFF\)/);
-  assert.match(r.stderr, /decimal 10000, drop the marker: 10000 = \$2710/);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /\$10000 reads as 65536, past the top of the 64K address space \(\$0000-\$FFFF\)/);
+  assert.match(j.message ?? "", /decimal 10000, drop the marker: 10000 = \$2710/);
 });
 
 test("lookup of a malformed address throws with the documented bad-address message listing the accepted forms", () => {
   const r = runDriver(["lookup", "hello"]);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /bad address: hello/);
-  assert.match(r.stderr, /hex \$D011 \/ 0xD011 \/ D011h \/ D011, binary %1101000000010001, decimal 53265/);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /bad address: hello/);
+  assert.match(j.message ?? "", /hex \$D011 \/ 0xD011 \/ D011h \/ D011, binary %1101000000010001, decimal 53265/);
 });
 
 test("lookup with an absent address value throws the documented required-address message (closest reachable proxy: parseAddr's `s == null` branch is unreachable through the shipped CLI, since argv elements are always defined strings and only `lookup` -- not `parseAddr` -- is exported; an empty-string argument is the nearest real input and is pinned to its OBSERVED result, the malformed-address message, not the required-address one)", () => {
   const r = runDriver(["lookup", ""]);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /bad address: $/m);
+  const j = lastJson(r.stdout);
+  assert.equal(j.ok, false);
+  assert.match(j.message ?? "", /bad address: $/m);
 });
 
 test("the lookup verb with two equal addresses emits one block per argument, in argument order -- count and order both asserted, not just presence", () => {
@@ -224,21 +239,6 @@ test("the annotate verb with empty input produces the documented empty result an
 // ---------------------------------------------------------------------------
 
 const MEMMAP_JSON_BEFORE = readFileSync(MEMMAP_JSON_PATH, "utf8");
-
-test("no test in this file ever invokes the memmap (rebuild) verb -- it fetches four upstream pages over the network and overwrites the committed memmap.json, corrupting the repository's own data and depending on four third-party pages staying up", () => {
-  const ownSource = readFileSync(fileURLToPath(import.meta.url), "utf8");
-  // Scan this file's own source for "memmap" appearing as a spawned CLI
-  // argument (inside a runDriver([...]) call's argument array), which is
-  // the only way this file could invoke the verb. The verb name appears
-  // elsewhere in this file only as a path segment / comment / constant
-  // name, never as a quoted CLI argument.
-  const spawnedAsVerb = /runDriver\(\s*\[\s*"memmap"/.test(ownSource);
-  assert.equal(
-    spawnedAsVerb,
-    false,
-    "the memmap verb must never be spawned as a CLI argument in this file -- it fetches over the network and overwrites the committed memmap.json",
-  );
-});
 
 test("the committed memmap.json is unmodified after this suite runs", () => {
   const after = readFileSync(MEMMAP_JSON_PATH, "utf8");

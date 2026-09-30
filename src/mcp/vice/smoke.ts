@@ -19,8 +19,9 @@
 //     smoke test must not need.
 //   - Never pass the child a shell string; spawn takes an argv array.
 import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TIMEOUT_MS = 30_000;
@@ -163,7 +164,8 @@ export function mcpHandshake(cmd: string, args: string[], cwd?: string): Promise
 }
 
 // -------------------------------------------------------------------- CLI
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
   const target = process.argv[2];
   const [cmd, args]: [string, string[]] = target ? [target, []] : ["node", [join(HERE, "vice-proxy.ts")]];
   try {

@@ -1,7 +1,7 @@
 // GENERATED FILE -- DO NOT EDIT.
 // Compiled by `tsc` from broker-kill.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
-// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
+// deployed to the host on their own -- install-resources.ts copies THIS file's on-disk contents
 // verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // broker-kill.mts
@@ -222,16 +222,13 @@ export const _HANDLED_SIGNALS = HANDLED_SIGNALS;
  * terminate a hundred milliseconds later is a shape this project has
  * already seen (2026-08-02).
  *
- * Registers NOTHING for SIGKILL or SIGSTOP, and builds no mechanism to
- * prevent orphans after one -- both are UNCATCHABLE at the OS level; a
- * process receiving either executes no handler, no exit hook, no cleanup
- * block, and in a one-process design there is no supervisor left standing
- * to be told anything happened. Orphaned emulators after such a kill are
- * accepted and cleaned up by hand (T-01.6.2-29) -- the NEXT broker start's
- * unconditional reap (reapOrphanedInstances() below) is the actual recovery
- * mechanism, not anything registered here. Two kernel-level alternatives (a
- * watchdog process, a cgroup-wide kill) were considered during this phase's
- * own design discussion and dropped as over-engineering, not deferred.
+ * Registers NOTHING for SIGKILL or SIGSTOP: both are uncatchable, so no
+ * handler runs. A SIGKILL of the broker is covered by the watchdog process
+ * (broker-watchdog.mts, started by vice-broker.mts): it holds the process
+ * group of every emulator and host tool the broker tracked, and stops them
+ * all when the broker's IPC channel closes. The next broker start's reap
+ * (reapOrphanedInstances() below) is the second line: it kills any recorded
+ * emulator the watchdog could not reach, such as after a reboot.
  *
  * The 'exit' listener is registered identically to the other five, but
  * carries an honest limitation worth stating rather than hiding: Node's
@@ -290,8 +287,6 @@ export function registerShutdownHandlers(deps) {
             exit(exitCode);
         });
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches
-    // ProcessLike#once's own listener shape (node:events' EventEmitter#once).
     const registrations = [];
     const register = (event, listener) => {
         proc.once(event, listener);

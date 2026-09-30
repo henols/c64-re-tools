@@ -1,41 +1,28 @@
 #!/usr/bin/env node
 // stock-petscii.ts
 //
-// THE one ASCII<->PETSCII conversion in this tree. No such table exists
-// anywhere else in this codebase or its skills -- the custom fork did this
-// conversion server-side in C (docs/03-RESEARCH.md's own grep confirmed
-// zero hits). stock-input.ts's handleKeyboardType() is the only production
-// call site; nothing else may hand-roll a second version.
+// The one ASCII->PETSCII conversion in this tree. stock-input.ts's
+// handleKeyboardType() is the only production call site.
 //
 // WHY THIS FILE EXISTS: KEYBOARD_FEED (0x72) only accepts PETSCII bytes on
 // the wire, but the `vice_keyboard_type` tool's `text` argument is an
-// ordinary ASCII/JS string. Something has to sit between the two, and it
-// has to get the case-swap and control-code boundaries exactly right --
-// PETSCII's unshifted/shifted case-swap region is a frequent source of
-// off-by-one and reversed-case bugs when hand-transcribed (03-RESEARCH.md
-// Pitfall 3), because the letter ranges "look like" a uniform 0x20 XOR but
-// the boundary and control regions do not follow that rule. The mapping
-// below matches VICE's own charset_p_topetscii() case-swap behaviour.
+// ordinary ASCII/JS string. This module converts between the two.
+//
+// The default mapping targets the power-on upper/graphics charset: the
+// unshifted PETSCII letters $41-$5A show as capitals there, and BASIC reads
+// them as keywords. So both ASCII `A`-`Z` and ASCII `a`-`z` map to $41-$5A.
+// With `upper: false` every mapped byte passes through unchanged.
 //
 // WHAT NOT TO DO:
 //   - Never write a second inline ASCII->PETSCII conversion at a call site.
-//     Five inconsistent hand-rolled versions scattered across handlers is
-//     exactly the failure mode this module exists to prevent -- import
-//     asciiToPetscii() instead.
+//     Import asciiToPetscii() instead.
 //   - Never pass an unmapped byte through silently. A raw PETSCII control
-//     code such as 0x93 (clear screen) landing in an LLM-supplied string
-//     would silently corrupt the debugged program's display the moment it
-//     reaches the keyboard buffer. Every byte this table does not
-//     explicitly map is refused, naming the offending index and hex code --
-//     never truncated, never passed through, never silently dropped.
-//   - Never assume the letter ranges are a uniform 0x20 XOR. The boundary
-//     bytes (0x40/0x41, 0x5a/0x5b, 0x60/0x61, 0x7a/0x7b) and the control-code
-//     regions do not follow that rule uniformly; each range below is
-//     checked explicitly, not derived from a single arithmetic shortcut.
+//     code such as 0x93 (clear screen) in an agent-supplied string would
+//     change the debugged program's display. Every byte this table does not
+//     map is refused, naming the offending index and hex code.
 import { ViceError } from "./vice-errors.mts";
 
-/** PETSCII's Return code. Both ASCII LF (`\n`) and CR (`\r`) map here -- this
- * is what the fork's own "Use \n for Return" tool description promises. */
+/** PETSCII's Return code. Both ASCII LF (`\n`) and CR (`\r`) map here. */
 export const PETSCII_RETURN = 0x0d;
 
 export interface StockPetsciiErrorOptions {
@@ -59,21 +46,18 @@ export class StockPetsciiError extends ViceError {
 }
 
 export interface AsciiToPetsciiOptions {
-  /** Default true: uppercase ASCII (`A`-`Z`) displays as uppercase on the
-   * C64 -- the fork's own petscii_upper default-true semantic. Setting this
-   * false is a deliberate pass-through of the raw ASCII byte for both case
-   * ranges, mirroring the fork's "raw PETSCII (uppercase ASCII maps to
-   * graphics)" documented behaviour. The case-swap this option performs
-   * when true is exactly what makes uppercase ASCII display as uppercase in
-   * both the unshifted and mixed-case C64 charsets. */
+  /** Default true: map ASCII `A`-`Z` and `a`-`z` to the unshifted PETSCII
+   * letters $41-$5A, which show as capitals in the power-on upper/graphics
+   * charset and which BASIC reads as keywords. False: send each mapped
+   * ASCII byte unchanged (ASCII `a`-`z` then lands on $61-$7A, which shows
+   * as graphics in the power-on charset). */
   upper?: boolean;
 }
 
 /**
  * Converts one input byte (already narrowed to 0x00-0xff by the caller) to
  * its PETSCII equivalent, or throws a StockPetsciiError naming `index` if
- * the byte has no mapping. Matches VICE's own charset_p_topetscii() case-
- * swap rule, byte range by byte range -- never a single 0x20 XOR shortcut.
+ * the byte has no mapping.
  */
 function convertByte(byte: number, index: number, upper: boolean): number {
   if (byte === 0x0a || byte === 0x0d) {
@@ -83,7 +67,7 @@ function convertByte(byte: number, index: number, upper: boolean): number {
     return byte;
   }
   if (byte >= 0x41 && byte <= 0x5a) {
-    return upper ? (byte | 0x80) : byte;
+    return byte;
   }
   if (byte >= 0x5b && byte <= 0x60) {
     return byte;

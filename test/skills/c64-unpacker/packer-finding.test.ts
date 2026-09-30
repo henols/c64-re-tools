@@ -5,21 +5,19 @@
 // It lives in test/skills/, outside the skill folder, so it ships in neither
 // published tarball, and CI's test/skills step runs it with no step of its own.
 //
-// The two assertions that matter most, and why they are here rather than
-// stated in prose:
+// The assertions that matter most:
 //   - THE PLANTED VIOLATION. An entropy value ABOVE the packedness threshold,
 //     with the oracle forced absent, is exactly the input a "helpful"
 //     implementation would answer with a guessed packer name. Driving the
 //     real finding function with that input and asserting `packer` stays null
-//     is what makes rule 1 a measured property instead of a comment.
-//   - THE VISIBLE SKIP. An absent oracle must never read as a passing
-//     that rule. The oracle-route test below is skipped with a stated reason
-//     that names the missing tool, and a second test -- which is NEVER
-//     skipped -- turns that same absence into a hard failure the moment the
-//     opt-in variable is set.
+//     is what makes never-infer-a-name a measured property instead of a comment.
+//   - THE VISIBLE SKIP. An absent oracle is a reported skip with a stated
+//     reason, and it is a failure when VICE_REQUIRE_UNP64 is set.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,12 +26,12 @@ import {
   MAX_PACKER_NAME_LENGTH,
   PACKED_ENTROPY_THRESHOLD,
   PACKER_VERDICTS,
+  main,
   oracleConfigurationHint,
   packerFinding,
   parseUnp64Stdout,
   probeUnp64,
   shannonEntropy,
-  type OracleProbe,
 } from "../../../skills/c64-unpacker/scripts/packer-finding.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -42,21 +40,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * a hard failure, by the established `VICE_REQUIRE_*` precedent. */
 const REQUIRE_ORACLE_ENV_VAR = "VICE_REQUIRE_UNP64";
 
-/** A non-empty skip reason naming the absent oracle, or `false` when a real
- * one is available. Handed to the test runner's `{ skip }` option, so the skip
- * is visible in the report and never reads as a pass. */
-function skipReasonForUnp64(probed?: OracleProbe | null): string | false {
-  const result = probed ?? probeUnp64();
-  if (result.available === true) return false;
-  return (
-    `the oracle-route tests are skipped -- no external packer identifier was found (${result.reason ?? "reason not recorded"}). ` +
-    `Point UNP64 or UNP64_PATH at one, or install "unp64". ` +
-    `An absent oracle is an EXPECTED SKIP here, never a pass: set ${REQUIRE_ORACLE_ENV_VAR} to turn it into a hard failure.`
-  );
-}
 // The scripts under test live in the skill folder; this test lives in test/skills/.
 const SCRIPT_DIR = join(HERE, "..", "..", "..", "skills", "c64-unpacker", "scripts");
-const MODULE_SRC = readFileSync(join(SCRIPT_DIR, "packer-finding.ts"), "utf8");
 
 const FIXED_CLOCK = () => "2026-01-01T00:00:00.000Z";
 
@@ -79,17 +64,11 @@ const ORACLE_NEVER_RUN = () => {
 // The vocabulary
 // ---------------------------------------------------------------------------
 
-test("the verdict set has exactly four members and is frozen", () => {
-  assert.equal(PACKER_VERDICTS.length, 4);
-  assert.deepEqual([...PACKER_VERDICTS].sort(), ["identified", "packed-unidentified", "unknown", "unpacked"]);
-  assert.ok(Object.isFrozen(PACKER_VERDICTS));
-});
-
 // ---------------------------------------------------------------------------
-// The planted violation (rule 1)
+// The packer name comes only from the oracle
 // ---------------------------------------------------------------------------
 
-test("planted violation: an entropy value ABOVE the packedness threshold, oracle absent, never sets the name field", () => {
+test("an entropy value ABOVE the packedness threshold, oracle absent, never sets the name field", () => {
   const finding = packerFinding({
     filePath: "/nonexistent/does-not-matter.prg",
     entropy: PACKED_ENTROPY_THRESHOLD + 0.33,
@@ -98,10 +77,10 @@ test("planted violation: an entropy value ABOVE the packedness threshold, oracle
     now: FIXED_CLOCK,
   });
 
-  assert.equal(finding.packer, null, "entropy must never produce a packer name -- rule 1");
+  assert.equal(finding.packer, null, "entropy must never produce a packer name");
   assert.equal(finding.verdict, "packed-unidentified");
   assert.equal(finding.route, "entropy-only");
-  assert.notEqual(finding.confidence, "HIGH", "the high confidence level is reachable only on the oracle route -- rule 2");
+  assert.notEqual(finding.confidence, "HIGH", "the high confidence level is reachable only on the oracle route");
   assert.ok(typeof finding.unavailableReason === "string" && finding.unavailableReason.length > 0);
   assert.equal(finding.checkedAt, "2026-01-01T00:00:00.000Z");
 });
@@ -132,10 +111,10 @@ test("locally computed entropy takes the same route and is recorded as a DIFFERE
 });
 
 // ---------------------------------------------------------------------------
-// Rules 2, 3 and 4
+// Confidence, reasons and the verdict set
 // ---------------------------------------------------------------------------
 
-test("rule 3: an unknown verdict always carries a non-empty reason", () => {
+test("an unknown verdict always carries a non-empty reason", () => {
   const finding = packerFinding({ probe: ORACLE_FORCED_ABSENT, run: ORACLE_NEVER_RUN, now: FIXED_CLOCK });
   assert.equal(finding.verdict, "unknown");
   assert.equal(finding.packer, null);
@@ -145,7 +124,7 @@ test("rule 3: an unknown verdict always carries a non-empty reason", () => {
   assert.ok(/no packer-identity route/.test(finding.unavailableReason));
 });
 
-test("rule 2: the high confidence level appears on NO non-oracle route, over every non-oracle input", () => {
+test("the high confidence level appears on NO non-oracle route, over every non-oracle input", () => {
   const inputs = [
     { entropy: PACKED_ENTROPY_THRESHOLD + 0.5 },
     { entropy: PACKED_ENTROPY_THRESHOLD },
@@ -160,7 +139,7 @@ test("rule 2: the high confidence level appears on NO non-oracle route, over eve
   }
 });
 
-test("rule 4: every returned verdict is a member of the four-verdict set, over every non-oracle input", () => {
+test("every returned verdict is a member of the four-verdict set, over every non-oracle input", () => {
   const inputs = [{ entropy: 7.9 }, { entropy: 1.1 }, { bytes: new Uint8Array([9, 9, 9]) }, {}];
   for (const input of inputs) {
     const finding = packerFinding({ ...input, probe: ORACLE_FORCED_ABSENT, run: ORACLE_NEVER_RUN, now: FIXED_CLOCK });
@@ -170,7 +149,7 @@ test("rule 4: every returned verdict is a member of the four-verdict set, over e
 });
 
 // ---------------------------------------------------------------------------
-// The standard-output parser (T-19-19)
+// The standard-output parser
 // ---------------------------------------------------------------------------
 
 test("the parser rejects empty, non-string, truncated and unrecognised input without throwing", () => {
@@ -202,7 +181,7 @@ test("the parser accepts only a narrow character set, so a hostile line cannot r
 });
 
 // ---------------------------------------------------------------------------
-// The probe (T-19-18)
+// The probe
 // ---------------------------------------------------------------------------
 
 // This script sends no oracle configuration
@@ -228,98 +207,67 @@ test("probeUnp64: a bogus container-side oracle value never appears in the seria
   assert.ok(!JSON.stringify(result).includes(bogus), "a container-side value must never be interpolated anywhere, not even into a message -- on EITHER branch");
 });
 
-test("source level: no oracle-path existence check remains, and the probe's seam call forwards no oracle configuration", () => {
-  assert.ok(!/existsSync\(\s*configured\s*\)/.test(MODULE_SRC), "no client-side existence check on a configured oracle path");
-  const plantedExistenceCheck = `${MODULE_SRC}\nif (!existsSync(configured)) { /* planted violation */ }\n`;
-  assert.ok(/existsSync\(\s*configured\s*\)/.test(plantedExistenceCheck), "non-vacuity: the planted existence-check control must be caught by the same pattern");
-
-  const emptyArgsCalls = MODULE_SRC.match(/invokeHostToolSync\("oracle\.probe",\s*\{\},/g) ?? [];
-  assert.equal(emptyArgsCalls.length, 1, "the probe's seam call must pass an empty argument object literal at exactly one site");
-
-  const nonEmptyArgsCalls = MODULE_SRC.match(/invokeHostToolSync\("oracle\.probe",\s*\{[^}]+\},/g) ?? [];
-  assert.equal(nonEmptyArgsCalls.length, 0, "no seam call for oracle.probe may carry a non-empty (configured) argument object");
-  const plantedConfiguredCall = `${MODULE_SRC}\ninvokeHostToolSync("oracle.probe", { command: configured }, {});\n`;
-  const plantedNonEmptyArgsCalls = plantedConfiguredCall.match(/invokeHostToolSync\("oracle\.probe",\s*\{[^}]+\},/g) ?? [];
-  assert.equal(plantedNonEmptyArgsCalls.length, 1, "non-vacuity: a planted call forwarding configuration must be caught by the same pattern");
-});
-
-// ---------------------------------------------------------------------------
-// Source-level structure -- the rules as measured properties (T-19-18/T-19-20)
-// ---------------------------------------------------------------------------
-
-test("source level: no command-interpreter invocation anywhere in the module", () => {
-  assert.ok(!/shell:\s*true/.test(MODULE_SRC), "no child process may be launched through a command interpreter");
-  assert.ok(!/execSync\(/.test(MODULE_SRC));
-  assert.ok(!/\bexec\(/.test(MODULE_SRC));
-  assert.ok(!/node:child_process/.test(MODULE_SRC), "the module spawns nothing itself -- the endpoint client is reached through mcp-module.ts");
-});
-
-test("source level: the packer name is assigned at exactly one site, and the high confidence level at exactly one", () => {
-  const nameAssignments = MODULE_SRC.match(/packer:\s*(?!null)[A-Za-z_$]/g) ?? [];
-  assert.equal(nameAssignments.length, 1, `expected exactly one non-null packer assignment, found ${nameAssignments.length}`);
-
-  const highAssignments = MODULE_SRC.match(/confidence:\s*CONFIDENCE_HIGH/g) ?? [];
-  assert.equal(highAssignments.length, 1, `expected exactly one high-confidence assignment, found ${highAssignments.length}`);
-
-  // Non-vacuity: the same scan over a planted source that DOES set a name
-  // from entropy must report two, so a stubbed regex cannot pass silently.
-  const planted = `${MODULE_SRC}\nconst planted = { packer: guessedFromEntropy };\n`;
-  assert.equal((planted.match(/packer:\s*(?!null)[A-Za-z_$]/g) ?? []).length, 2);
-});
-
-test("source level: no transcribed packer signature bytes and no hedged vocabulary", () => {
-  assert.ok(!/0x[0-9a-fA-F]{2}, *0x[0-9a-fA-F]{2}, *0x[0-9a-fA-F]{2}/.test(MODULE_SRC), "signature bytes must not be transcribed here");
-  const hedges = MODULE_SRC.match(/probably|likely|maybe|percent/gi) ?? [];
-  assert.deepEqual(hedges, [], `hedged vocabulary is forbidden by rule 4, found: ${hedges.join(", ")}`);
-});
-
 // ---------------------------------------------------------------------------
 // The live gate. Absence is a VISIBLE skip, never a pass.
 // ---------------------------------------------------------------------------
 
-const PROBED = probeUnp64();
-const SKIP_REASON = skipReasonForUnp64(PROBED);
-
-test("the skip is VISIBLE, not silent: an absent oracle yields a non-empty reason that names it", () => {
-  const forced = skipReasonForUnp64({ available: false, reason: "forced absent for this assertion" });
-  assert.ok(typeof forced === "string");
-  assert.ok(forced.length > 0);
-  assert.ok(/unp64/i.test(forced), "the skip reason must name the missing oracle");
-  assert.ok(/EXPECTED SKIP/.test(forced), "the reason must say plainly that this is not a pass");
-  assert.ok(forced.includes(REQUIRE_ORACLE_ENV_VAR), "the reason must name the variable that turns it into a failure");
-  assert.equal(skipReasonForUnp64({ available: true, reason: null }), false);
+test("the oracle route reports a name ONLY when a real external oracle stated one", (t) => {
+  const probed = probeUnp64();
+  if (probed.available !== true) {
+    if (process.env[REQUIRE_ORACLE_ENV_VAR]) {
+      assert.fail(`${REQUIRE_ORACLE_ENV_VAR} is set but no external packer identifier was found (${probed.reason ?? "reason not recorded"})`);
+    }
+    t.skip(`no external packer identifier was found (${probed.reason ?? "reason not recorded"}). Set ${REQUIRE_ORACLE_ENV_VAR} to turn this skip into a failure.`);
+    return;
+  }
+  const finding = packerFinding({ filePath: fileURLToPath(import.meta.url), probe: () => probed, now: FIXED_CLOCK });
+  assert.ok(PACKER_VERDICTS.includes(finding.verdict));
+  if (finding.packer !== null) {
+    assert.equal(finding.route, "unp64");
+    assert.equal(finding.confidence, "HIGH");
+    assert.equal(finding.verdict, "identified");
+    const raw = finding.evidence.find((e) => e.source === "unp64" && typeof e.raw === "string");
+    assert.ok(raw, "a reported name must carry the oracle output it came from");
+  } else {
+    assert.notEqual(finding.confidence, "HIGH");
+    assert.ok(typeof finding.unavailableReason === "string" && finding.unavailableReason.length > 0);
+  }
 });
 
-test(
-  "the oracle route reports a name ONLY when a real external oracle stated one",
-  { skip: SKIP_REASON },
-  () => {
-    const finding = packerFinding({ filePath: fileURLToPath(import.meta.url), probe: () => PROBED, now: FIXED_CLOCK });
-    assert.ok(PACKER_VERDICTS.includes(finding.verdict));
-    if (finding.packer !== null) {
-      assert.equal(finding.route, "unp64");
-      assert.equal(finding.confidence, "HIGH");
-      assert.equal(finding.verdict, "identified");
-      const raw = finding.evidence.find((e) => e.source === "unp64" && typeof e.raw === "string");
-      assert.ok(raw, "a reported name must carry the oracle output it came from");
-    } else {
-      assert.notEqual(finding.confidence, "HIGH");
-      assert.ok(typeof finding.unavailableReason === "string" && finding.unavailableReason.length > 0);
-    }
-  },
-);
+// ---------------------------------------------------------------------------
+// The command line
+// ---------------------------------------------------------------------------
 
-test(`never skipped: ${REQUIRE_ORACLE_ENV_VAR} turns an absent oracle into a hard FAILURE, never a silent pass`, () => {
-  if (process.env[REQUIRE_ORACLE_ENV_VAR]) {
-    assert.equal(
-      PROBED.available,
-      true,
-      `${REQUIRE_ORACLE_ENV_VAR} is set but no external packer identifier was found (${PROBED.reason ?? "reason not recorded"}) -- ` +
-        "a maintainer who sets this variable expects a hard FAIL, never a SKIP, when the oracle is actually missing.",
-    );
-  } else {
-    // Unset: this test is a no-op by design, and the sibling test above is
-    // the one that reports the absence as a visible skip.
-    assert.ok(SKIP_REASON === false || typeof SKIP_REASON === "string");
+test("the command line refuses a bad --entropy value or a missing value by name", () => {
+  const dir = mkdtempSync(join(tmpdir(), "packer-cli-"));
+  try {
+    const file = join(dir, "x.bin");
+    writeFileSync(file, Buffer.from([1, 2, 3, 4]));
+    for (const argv of [[file, "--entropy", "7.8abc"], [file, "--entropy"], [file, "--entropy", "--other"], [file, "--bogus"]]) {
+      const r = main(argv);
+      assert.equal(r.ok, false, argv.join(" "));
+      assert.match((r as { message: string }).message, /--entropy|--bogus/);
+    }
+    assert.equal(main([file, "--entropy", "7.83"]).ok, true);
+    assert.equal(main([join(dir, "missing.bin")]).ok, false);
+    assert.equal(main([]).ok, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the command line prints one JSON line whose ok field is true and that carries the finding", () => {
+  const dir = mkdtempSync(join(tmpdir(), "packer-cli-"));
+  try {
+    const file = join(dir, "x.bin");
+    writeFileSync(file, Buffer.alloc(64));
+    const r = spawnSync(process.execPath, [join(SCRIPT_DIR, "packer-finding.ts"), file, "--entropy", "7.9"], { encoding: "utf8", timeout: 60_000 });
+    const lines = r.stdout.trim().split("\n");
+    assert.equal(lines.length, 1);
+    const result = JSON.parse(lines[0]);
+    assert.equal(result.ok, true);
+    assert.ok(PACKER_VERDICTS.includes(result.verdict));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

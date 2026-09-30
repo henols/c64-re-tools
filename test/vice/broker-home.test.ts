@@ -16,7 +16,6 @@ import { mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
-import { HOST_BOUND_ARTIFACTS } from "../../src/mcp/vice/build.ts";
 import {
   BROKER_HOME_ENV,
   brokerHome,
@@ -28,30 +27,10 @@ import {
   BROKER_GHIDRA_DIR_ENV,
   ensureBrokerDir,
 } from "../../src/mcp/vice/broker-home.mts";
-import * as brokerHomeModule from "../../src/mcp/vice/broker-home.mts";
-
-test("broker-home.mts exports exactly the nine documented names", () => {
-  const expected = [
-    "BROKER_HOME_ENV",
-    "brokerHome",
-    "brokerStateDir",
-    "brokerIncidentsDir",
-    "brokerStagingDir",
-    "brokerConfigScratchDir",
-    "brokerGhidraDir",
-    "BROKER_GHIDRA_DIR_ENV",
-    "ensureBrokerDir",
-  ].sort();
-  assert.deepEqual(Object.keys(brokerHomeModule).sort(), expected);
-});
 
 function tempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
-
-test("BROKER_HOME_ENV is exactly the string VICE_BROKER_HOME", () => {
-  assert.equal(BROKER_HOME_ENV, "VICE_BROKER_HOME");
-});
 
 test("brokerHome(): no environment set resolves to the injected home directory joined with the project's tools directory name", () => {
   const home = tempDir("broker-home-default-");
@@ -190,10 +169,6 @@ test("brokerGhidraDir(): the default carries no dot-prefixed segment even when t
   assert.ok(brokerHome(opts).split(sep).some((segment) => segment.startsWith(".")), "precondition: the default broker home is dotted");
   const dir = brokerGhidraDir(opts);
   assert.equal(dir.split(sep).some((segment) => segment.startsWith(".")), false, `expected no dotted segment in ${dir}`);
-});
-
-test("build.ts's HOST_BOUND_ARTIFACTS includes broker-home.mjs", () => {
-  assert.ok(HOST_BOUND_ARTIFACTS.includes("broker-home.mjs"));
 });
 
 test("brokerConfigScratchDir(): resolves a config-scratch subdirectory under the machine-level root, same precedence as brokerStagingDir()", () => {

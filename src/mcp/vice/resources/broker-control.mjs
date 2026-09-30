@@ -1,7 +1,7 @@
 // GENERATED FILE -- DO NOT EDIT.
 // Compiled by `tsc` from broker-control.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
-// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
+// deployed to the host on their own -- install-resources.ts copies THIS file's on-disk contents
 // verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // broker-control.mts
@@ -39,54 +39,19 @@
 // the bridge set is enumerated rather than dropped outright. Port: 19510
 // default via VICE_BROKER_CONTROL_PORT.
 import { createServer } from "node:net";
+import { randomUUID } from "node:crypto";
 import { networkInterfaces as osNetworkInterfaces } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-const MAX_LINE_BYTES = 65536;
-// Phase 65 (plan 65-03, D-11): exported as a SEPARATE statement, never
-// folded into the declaration above -- host-tool-transport.test.ts parses
-// that exact `const MAX_LINE_BYTES = <n>;` line by regex, off this module's
-// own source text, and an `export const` form would break that parse.
-// host-tool-endpoint.mts's own HOST_TOOL_STAGE_LINE_MAX_BYTES (a mirrored,
-// duplicated constant -- this module is host-bound and that one is not, per
-// this file's own leaf-module posture) is kept at or under this value by a
-// relation test that imports both modules directly.
-export { MAX_LINE_BYTES };
-/** Plan 63-04 Task 2 (SESS-04) DEFAULT, mirrored -- NOT imported -- from
- * broker-relay.mts's own DEFAULT_RELAY_KEEPALIVE_MS. Keeping the two
- * literal values in agreement is this module's own job, same as the
- * `HELLO_PROTOCOL_MAGIC` string mirrored a few lines below from
- * broker-endpoint.mts: a byte-identical sync test is what actually holds
- * the agreement together, not a shared import. */
-const DEFAULT_RELAY_KEEPALIVE_MS_LOCAL = 30000;
-/** DUPLICATES broker-relay.mts's own resolveRelayKeepAliveMs() rather than
- * value-importing it -- see this function's own call site (inside
- * attachControlProtocol() below) for the full boundary reason. Same
- * absent/non-numeric/zero/negative-falls-back-to-default discipline,
- * logged by name, never silently disabling the setting. */
-function resolveRelayKeepAliveMsLocal() {
-    const raw = process.env.VICE_BROKER_RELAY_KEEPALIVE_MS;
-    if (raw === undefined || raw === "")
-        return DEFAULT_RELAY_KEEPALIVE_MS_LOCAL;
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n <= 0) {
-        console.error(`broker-control: rejected VICE_BROKER_RELAY_KEEPALIVE_MS=${JSON.stringify(raw)} (must be a positive number) -- falling back to the default of ${DEFAULT_RELAY_KEEPALIVE_MS_LOCAL}ms`);
-        return DEFAULT_RELAY_KEEPALIVE_MS_LOCAL;
-    }
-    return n;
-}
-/** The magic string identifying THIS project's own handshake protocol on
- * the wire -- specific enough that a bare TCP accept by an unrelated
- * service can never be mistaken for it. This is the one authoritative
- * definition (plan 62-01, D-06); `broker-endpoint.mts`, the container-side
- * dialling client, MIRRORS this literal rather than importing it (this
- * module is host-bound and compiled into `resources/`, so a container-side
- * source file cannot value-import it) -- broker-endpoint.test.ts asserts
- * the two copies are byte-identical by reading both files' source, so the
- * two cannot silently drift. Keep this comment's claim true if you ever
- * change the string: update both places in the SAME change. */
-export const HELLO_PROTOCOL_MAGIC = "vice-mcp-broker-hello-v1";
+import { HELLO_PROTOCOL_MAGIC } from "./broker-endpoint.mjs";
+import { resolveRelayKeepAliveMs } from "./broker-relay.mjs";
+import { DEV_PLACEHOLDER } from "./version.mjs";
+/** The longest request line the listener accepts, in bytes. */
+export const MAX_LINE_BYTES = 65536;
+// The handshake magic is defined once, in broker-endpoint.mts, which both the
+// client and this listener load.
+export { HELLO_PROTOCOL_MAGIC };
 /** This module's own directory, computed once at module load -- mirrors
  * tool-location.mts's own `HERE` constant and its two-candidate locate
  * idiom (beside `here`, then one directory up), because this module ships
@@ -96,21 +61,13 @@ export const HELLO_PROTOCOL_MAGIC = "vice-mcp-broker-hello-v1";
  * is `src/mcp/vice/resources/`). The two-candidate join below is what lets
  * both forms find the same `package.json`. */
 const HERE = dirname(fileURLToPath(import.meta.url));
-/** The placeholder a git checkout (or a resolve/parse failure) reports as
- * this broker's own handshake version. Mirrored, not imported, from
- * version.mts's own `DEV_PLACEHOLDER` -- that module is container-side and
- * this one is host-bound, compiled away from it (see version.mts's own
- * header for why importing it here is forbidden). Kept byte-identical to
- * that constant so a published client reads the same placeholder string on
- * either side of the boundary. */
-const HELLO_DEV_PLACEHOLDER = "0.0.0-dev";
 /** Resolves the broker's own package version for the `hello` handshake
  * reply, reading `package.json` from two candidates relative to `here` --
  * beside it, then one directory up -- the same locate idiom
  * tool-location.mts's readDeclaration() already uses for a different data
  * file crossing this same source/compiled boundary. Never throws: any
  * missing file, unreadable file, unparsable JSON, or a missing/non-string
- * `.version` field degrades to HELLO_DEV_PLACEHOLDER rather than crashing
+ * `.version` field degrades to DEV_PLACEHOLDER rather than crashing
  * the listener over a version string. Exported so a test can call it
  * directly with an injected `here`; production dispatch calls it with no
  * argument and lets it default to this module's own real location. */
@@ -130,7 +87,7 @@ export function resolveBrokerVersion(here = HERE) {
             // fall through to the placeholder below.
         }
     }
-    return HELLO_DEV_PLACEHOLDER;
+    return DEV_PLACEHOLDER;
 }
 /** The one refusal wording for a target-naming op whose `target_id` is
  * not the grant the asking connection itself holds. Deliberately worded as an
@@ -284,8 +241,11 @@ function writeHostToolLine(socket, obj) {
         socket.write(`${JSON.stringify(obj)}\n`);
     }
 }
-function defaultRequestId(prefix) {
-    return `${prefix}-${process.pid}-${Date.now()}`;
+/** Mints the id of a new grant. The broker is the only source of grant ids:
+ * a grant id names a staging directory and is the identity every
+ * target-naming op is checked against, so a caller never chooses it. */
+function mintGrantId() {
+    return `g-${randomUUID()}`;
 }
 /** Appends to the BACK of the queue -- the only mutation this structure
  * ever performs on receipt. Nothing here sorts or re-orders; arrival order
@@ -433,17 +393,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
         // comment). The OWNED bound is the relay's own idle deadline
         // (broker-relay.mts's resolveRelayIdleMs()), never this setting.
         //
-        // resolveRelayKeepAliveMsLocal() below DUPLICATES broker-relay.mts's own
-        // resolveRelayKeepAliveMs() rather than value-importing it -- the SAME
-        // boundary reason vice-broker.mts's own classifyBrokerLivenessLocal()/
-        // isWildcardBindHostLocal() duplicate rather than import a sibling: this
-        // module is routinely loaded UNBUILT (`.mts` source directly, never
-        // resources/broker-control.mjs) by nine of its own test files, and a
-        // VALUE import of a sibling host-bound module would require a real
-        // "./broker-relay.mjs" file to sit beside this SOURCE file on disk --
-        // which only exists once built. A TYPE-ONLY import stays safe (erased);
-        // a value import does not.
-        socket.setKeepAlive(true, resolveRelayKeepAliveMsLocal());
+        socket.setKeepAlive(true, resolveRelayKeepAliveMs());
         // Buffer-mode carry (Phase 63, SESS-02) -- REPLACES the earlier
         // string accumulator (`let buffer = ""`) for every connection, not
         // only a relay one, because the corruption this guards against
@@ -459,6 +409,9 @@ function attachControlProtocol(server, opts, pendingAcquires) {
         // `JSON.parse()` call, never the accumulator as a whole.
         let carry = Buffer.alloc(0);
         let requestIdForThisConnection = null;
+        // True from an accepted `acquire` until it settles (granted, refused, or
+        // its connection closed), so a second `acquire` cannot race the first.
+        let acquirePending = false;
         // Phase 65 (SEAM-01, D-03/D-09): the request key `host_tool_stage`
         // minted and bound to THIS connection -- `null` until a stage succeeds,
         // never re-read from a later `host_tool_run` line's own `request`
@@ -478,17 +431,25 @@ function attachControlProtocol(server, opts, pendingAcquires) {
         socket.on("data", (chunk) => {
             if (relayMode)
                 return;
-            const combined = Buffer.concat([carry, chunk]);
-            if (combined.length > MAX_LINE_BYTES) {
-                socket.destroy();
-                return;
-            }
-            let cursor = combined;
+            let cursor = carry.length === 0 ? chunk : Buffer.concat([carry, chunk]);
             let newlineIdx;
             while ((newlineIdx = cursor.indexOf(0x0a)) !== -1) {
+                // The cap applies to one line, not to a chunk that holds several.
+                if (newlineIdx > MAX_LINE_BYTES) {
+                    socket.destroy();
+                    return;
+                }
                 const lineBuf = cursor.subarray(0, newlineIdx);
                 const remainder = cursor.subarray(newlineIdx + 1);
-                handleLine(lineBuf.toString("utf8"), remainder);
+                try {
+                    handleLine(lineBuf.toString("utf8"), remainder);
+                }
+                catch (err) {
+                    // A handler fault must not stop the broker: answer this request
+                    // with an internal error and keep the connection.
+                    console.error(`broker-control: a request handler threw: ${String(err)}`);
+                    writeLine(socket, { kind: "error", code: "internal", message: "the broker could not handle the request" });
+                }
                 if (relayMode) {
                     // The line just handled was `attach`, and it has already handed
                     // `remainder` to onRelayAttach() as `pending` -- those bytes are
@@ -498,26 +459,38 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 }
                 cursor = remainder;
             }
-            carry = cursor;
+            if (cursor.length > MAX_LINE_BYTES) {
+                socket.destroy();
+                return;
+            }
+            carry = Buffer.from(cursor);
         });
         socket.on("close", () => {
             // Connection close IS the release -- including on the client's own
             // SIGKILL, since "close" always fires either way. Idempotent: an
             // explicit `release` already having cleared
             // requestIdForThisConnection makes this a no-op.
+            // A throw from a 'close' handler would stop the whole broker, so each
+            // cleanup step logs its own failure and the next one still runs.
             if (requestIdForThisConnection) {
                 const id = requestIdForThisConnection;
                 requestIdForThisConnection = null;
-                opts.onRelease(id);
+                try {
+                    opts.onRelease(id);
+                }
+                catch (err) {
+                    console.error(`broker-control: releasing grant ${id} threw: ${String(err)}`);
+                }
             }
-            // Phase 65 (D-09): the SAME connection-close-is-the-cleanup-signal
-            // posture as the release above, for a `host_tool_stage` request's own
-            // per-request scratch -- fires on an explicit close and on a bare
-            // socket death (SIGKILL) alike, since "close" always fires either way.
             if (hostToolRequestKey) {
                 const key = hostToolRequestKey;
                 hostToolRequestKey = null;
-                opts.onHostToolEnd?.(key);
+                try {
+                    opts.onHostToolEnd?.(key);
+                }
+                catch (err) {
+                    console.error(`broker-control: ending host-tool request ${key} threw: ${String(err)}`);
+                }
             }
         });
         socket.on("error", () => {
@@ -625,7 +598,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 if (socket.destroyed)
                     return true; // no grant was produced -- nothing to release, nothing left to answer
                 const code = outcome.reason === "internal" ? "internal" : outcome.reason;
-                writeLine(socket, { kind: "error", code, message: `acquire failed: ${outcome.reason}` });
+                writeLine(socket, { kind: "error", code, message: outcome.message ?? `acquire failed: ${outcome.reason}` });
                 return true;
             })
                 .catch(() => {
@@ -893,7 +866,18 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 return;
             }
             if (req.op === "acquire") {
-                const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("req");
+                // One grant per connection: the connection is the lease, so a second
+                // grant on it could never be released on its own.
+                if (requestIdForThisConnection !== null || acquirePending) {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "bad_request",
+                        message: "acquire: this connection already holds or is waiting for a grant; open a new connection for another grant",
+                    });
+                    return;
+                }
+                // The request's own `id` is never the grant id: the broker mints it.
+                const requestId = mintGrantId();
                 // Narrow BEFORE attemptAcquire, so a malformed profile never
                 // reaches onAcquire and therefore never reaches the port allocator,
                 // a spawn, or argv construction. A refusal also does NOT enqueue --
@@ -919,9 +903,15 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 // declared name already goes through. An absent or hostile value
                 // collapses to `null`, never fabricated.
                 const label = sanitiseSessionLabel(req.label);
-                void attemptAcquire(requestId, profile, label).then((settled) => {
+                acquirePending = true;
+                const attempt = () => attemptAcquire(requestId, profile, label).then((settled) => {
+                    if (settled)
+                        acquirePending = false;
+                    return settled;
+                });
+                void attempt().then((settled) => {
                     if (!settled) {
-                        enqueueAcquire(pendingAcquires, { requestId, attempt: () => attemptAcquire(requestId, profile, label) });
+                        enqueueAcquire(pendingAcquires, { requestId, attempt });
                     }
                 });
             }
@@ -934,7 +924,10 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 writeLine(socket, { kind: "released" });
             }
             else if (req.op === "status") {
-                writeLine(socket, { kind: "status", instances: opts.onStatus() });
+                // A grant id is shown only to the connection that holds it: it is the
+                // identity every target-naming op checks, so it is never published.
+                const instances = opts.onStatus().map((entry) => entry.grantId !== null && entry.grantId !== requestIdForThisConnection ? { ...entry, grantId: null } : entry);
+                writeLine(socket, { kind: "status", instances });
             }
             else if (req.op === "host_state") {
                 const hs = opts.onHostState();
@@ -968,7 +961,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     });
                     return;
                 }
-                const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("claim");
+                const requestId = typeof req.id === "string" ? req.id : "";
                 const outcome = opts.onMonitorClaim(requestId, targetId, channel);
                 if (outcome.ok) {
                     writeLine(socket, { kind: "monitor_claimed", handle: outcome.handle });
@@ -1018,7 +1011,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     });
                     return;
                 }
-                const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("release-monitor");
+                const requestId = typeof req.id === "string" ? req.id : "";
                 const outcome = opts.onMonitorRelease(requestId, targetId, channel);
                 if (outcome.ok) {
                     writeLine(socket, { kind: "monitor_released" });

@@ -194,8 +194,9 @@ marker for them.
 node $V vic --dd00 3E --d018 18 --d011 1B --d016 C8
 ```
 
-`--dd00` and `--d018` are necessary. `--d011` has the default `1B` and
-`--d016` has the default `C8`. The verb prints:
+All four registers are necessary. The verb refuses a missing flag (`missing
+--d011`) and does not use a default. Read `$D011` and `$D016` from the
+machine. The verb prints:
 
 - **The VIC bank.** `$DD00` bits 0-1 select the bank, **inverted**:
   bank = 3 − bits, base = bank × `$4000`. This is the most common cause of a
@@ -225,8 +226,8 @@ node $V vic --dd00 3E --d018 18 --d011 1B --d016 C8
 node $V sprites --dd00 3E --d018 18 --d015 FF --ptrs 20,21,22,23,24,25,26,27
 ```
 
-For each of the 8 sprites, the verb prints if it is enabled (`$D015`, default
-`FF`), its pointer, and its data address: base + pointer × 64. Each sprite
+For each of the 8 sprites, the verb prints if it is enabled (`$D015`, required),
+its pointer, and its data address: base + pointer × 64. Each sprite
 uses 63 bytes of its 64-byte block. `$D010` holds bit 8 of X for X > 255.
 The other registers of a disabled sprite hold old values. Do not decode them.
 
@@ -239,7 +240,10 @@ node $V vectors image.bin --port 35  # use this $01 value, not the image's
 ```
 
 The image must be exactly 65536 bytes. The verb decodes `$01` (from the image,
-or from `--port`) into LORAM, HIRAM and CHAREN. Then it states:
+or from `--port`) into LORAM, HIRAM and CHAREN. Then it states what the CPU
+sees. BASIC ROM needs LORAM = 1 **and** HIRAM = 1. KERNAL ROM needs HIRAM = 1.
+At `$D000`, LORAM = 0 and HIRAM = 0 gives RAM, for example with `$01` = `$34`.
+Otherwise CHAREN selects I/O (1) or character ROM (0).
 
 - **The live vector pair.** With HIRAM = 1, `$0314/$0315` (the KERNAL path).
   With HIRAM = 0, `$FFFE/$FFFF` (the hardware vectors). `$FFFA-$FFFF` in a RAM
@@ -316,22 +320,21 @@ Do these steps:
 
 ## Failure shape
 
-Both scripts print `error: <message>` on stderr and exit 1 when they cannot
-do the work.
+Both scripts print the text of the result. A refusal is one JSON line on
+stdout, `{"ok":false,"message":"…"}`, with exit code 1. `derive.ts` takes
+`--json` and then prints `{"ok":true,"text":"…"}`.
 
 - `driver.ts` with no command prints its usage and exits 0. An unknown command
-  prints the usage and exits 1. A missing table gives
+  gives a refusal that carries the usage. A missing table gives
   `no …/memmap.json; run: node driver.ts memmap`. A failed rebuild gives
   `no entries from <url> — layout changed?` or
   `only <n> entries total — layout changed?`, and writes nothing.
 - `derive.ts` with no verb or `--help` prints its usage and exits 0. An unknown
-  verb prints the usage and exits 2. `vic` refuses a missing `--dd00` or
-  `--d018` (`missing --dd00`). `vectors` refuses a missing path
+  verb gives a refusal that carries the usage. `vic` and `sprites` refuse a
+  missing register (`missing --dd00`). `vectors` refuses a missing path
   (`vectors needs an image path`) and an image of the wrong size
   (`expected a 65536-byte image, got <n>`). A value it cannot parse gives
   `cannot parse --<name>: <value>`.
-- **`sprites` does not refuse a missing `--dd00` or `--d018`.** It prints
-  `NaN` addresses. Give both values.
 
 ## What this skill does NOT do
 

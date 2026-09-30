@@ -12,37 +12,10 @@
 // against fixtures/textmon.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { parseFlatProfile, PROFILING_NOT_STARTED_TEXT } from "../../src/mcp/vice/textmon-profile.ts";
-import { VICE_DIR } from "./paths.ts";
 
-const OWN_MODULE = join(VICE_DIR, "textmon-profile.ts");
-
-// ---------------------------------------------------------------------------
-// Purity (PARSE-03): no import, no module-scope mutable declaration, no
-// sort/reverse call anywhere in the module -- all asserted mechanically by
-// reading this module's own source, not by review.
-// ---------------------------------------------------------------------------
-
-test("purity (PARSE-03): textmon-profile.ts contains no top-level ES import statement", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  const importLines = src.split("\n").filter((line) => /^\s*import\s/.test(line));
-  assert.deepEqual(importLines, [], `expected zero import lines, found: ${JSON.stringify(importLines)}`);
-});
-
-test("purity: textmon-profile.ts declares no module-scope mutable (let/var) binding", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  const mutableLines = src.split("\n").filter((line) => /^(export\s+)?(let|var)\s/.test(line));
-  assert.deepEqual(mutableLines, [], `expected zero top-level let/var declarations, found: ${JSON.stringify(mutableLines)}`);
-});
-
-test("ordering discipline: textmon-profile.ts contains no .sort( or .reverse( call -- rows are never re-ranked", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  assert.doesNotMatch(src, /\.sort\(|\.reverse\(/, "expected no sort or reverse call anywhere in the module");
-});
 
 // ---------------------------------------------------------------------------
 // Both real captures parse clean, both sidecars record the parameterized

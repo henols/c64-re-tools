@@ -1,7 +1,7 @@
 // GENERATED FILE -- DO NOT EDIT.
 // Compiled by `tsc` from broker-incident.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
-// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
+// deployed to the host on their own -- install-resources.ts copies THIS file's on-disk contents
 // verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // broker-incident.mts
@@ -46,12 +46,19 @@ export function brokerIncidentPath({ dir, homeOpts, ...stemOpts } = {}) {
     const resolvedDir = dir ?? brokerIncidentsDir(homeOpts);
     return join(resolvedDir, `${brokerIncidentStem(stemOpts)}.md`);
 }
+/** Renders one frontmatter value. A string is single-quoted with its control
+ * characters removed, so no field value can end the line or the frontmatter
+ * block it sits in. */
 function yamlScalar(value) {
     if (value === null || value === undefined)
         return "null";
     if (typeof value === "number" || typeof value === "boolean")
         return String(value);
-    return `'${String(value).replace(/'/g, "''")}'`;
+    return `'${stripControlChars(String(value)).replace(/'/g, "''")}'`;
+}
+/** Removes C0 control characters and DEL, which include both line terminators. */
+function stripControlChars(text) {
+    return text.replace(/[\u0000-\u001f\u007f]/g, "");
 }
 /** Never-throw extraction of the two fields this module actually reads off
  * a caller-supplied `operation` value -- an absent, null, or malformed

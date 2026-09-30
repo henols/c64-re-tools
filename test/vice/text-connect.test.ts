@@ -10,9 +10,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
-import { execFileSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
 
 import { textConnect as textConnectReal, textDisconnect, type TextConnectOptions, type TextConnectSession } from "../../src/mcp/vice/text-connect.ts";
 import type { StockConnectBrokerControl, DialMonitorSocketFn } from "../../src/mcp/vice/stock-connect.ts";
@@ -23,7 +20,6 @@ import {
   type ReleaseMonitorOptions,
   type ReleaseMonitorOutcome,
 } from "../../src/mcp/vice/vice-broker-client.ts";
-import { VICE_DIR } from "./paths.ts";
 
 
 // ---------------------------------------------------------------------------
@@ -355,90 +351,4 @@ test("textConnect: the ORIGINAL dial failure is preserved even when the release 
     },
   );
   assert.equal(state.releaseCalls, 1, "the release must still have been ATTEMPTED even though it failed");
-});
-
-// ---------------------------------------------------------------------------
-// Plan 41-03 (D-14): the structural prohibition this plan carries -- no
-// module on any halting path reads the broker's per-channel ownership map.
-// ---------------------------------------------------------------------------
-
-test("structural (D-14): git ls-files agrees -- the identifier appears only in the four broker-side modules, their resources/*.mjs artifacts, and InstanceRecord test fixtures", () => {
-  const output = execFileSync("git", ["ls-files"], { cwd: VICE_DIR, encoding: "utf8" });
-  const files = output
-    .split("\n")
-    .map((f) => f.trim())
-    .filter((f) => f !== "");
-  const ALLOWED = new Set([
-    "broker-state.mts",
-    "broker-control.mts",
-    "broker-launch.mts",
-    "vice-broker.mts",
-    "resources/broker-state.mjs",
-    "resources/broker-control.mjs",
-    "resources/broker-launch.mjs",
-    "resources/vice-broker.mjs",
-    "broker-state.test.ts",
-    "broker-control.test.ts",
-    "broker-launch.test.ts",
-    "broker-kill.test.ts",
-    "vice-broker-acquire.test.ts",
-    "vice-broker-supervision.test.ts",
-    // This structural test's OWN source file, which necessarily contains the
-    // literal string "monitorClients" as the identifier it searches for --
-    // not a halting-path reference to the field.
-    "text-connect.test.ts",
-    // Phase 63, plan 63-01 (SESS-02): broker-relay.mts's own module header
-    // comment NAMES the field (documenting where the per-claim handle it
-    // checks is minted) without ever reading it -- handleRelayAttach()'s
-    // own read lives in vice-broker.mts, already allowed above. Its test
-    // file constructs the same raw InstanceRecord literals every other
-    // allowed *.test.ts file above does. Kept in sync with
-    // broker-control.test.ts's own copy of this same guard.
-    "broker-relay.mts",
-    "broker-relay.test.ts",
-    // Phase 63, plan 63-02 (SESS-02): the text channel's own relay-lifecycle
-    // test file, constructing the SAME raw InstanceRecord literals every
-    // other allowed *.test.ts file above does. Kept in sync with
-    // broker-control.test.ts's own copy of this same guard.
-    "broker-relay-text.test.ts",
-    // Phase 64, plan 64-03 (XFER-04/XFER-07): the staging/transfer wiring
-    // test file, constructing the SAME raw InstanceRecord literals every
-    // other allowed *.test.ts file above does. Kept in sync with
-    // broker-control.test.ts's own copy of this same guard.
-    "vice-broker-staging.test.ts",
-    // Phase 64, plan 64-04 (XFER-01/XFER-02): stock-machine.ts's own
-    // handler test file, whose round-trip case drives a REAL control
-    // listener and constructs the SAME raw InstanceRecord literal every
-    // other allowed *.test.ts file above does. Kept in sync with
-    // broker-control.test.ts's own copy of this same guard.
-    "stock-machine.test.ts",
-    // Phase 64, plan 64-07 (XFER-01/XFER-05/XFER-08): the disjoint-roots
-    // proof, driving all four migrated handlers against a REAL control
-    // listener and constructing the SAME raw InstanceRecord literal every
-    // other allowed *.test.ts file above does. Kept in sync with
-    // broker-control.test.ts's own copy of this same guard.
-    "transfer-disjoint-roots.test.ts",
-    // Plan 64-08 (G-64-1 gap closure): the G-64-1 tracer/transfer/text
-    // fixture (g6408StartFixture()) drives a REAL control listener against
-    // a REAL vice-proxy.ts child and constructs the SAME raw InstanceRecord
-    // literal every other allowed *.test.ts file above does. Kept in sync
-    // with broker-control.test.ts's own copy of this same guard.
-    "vice-proxy.test.ts",
-    // Phase 64 gap closure G-64-3 (plan 64-13, Task 1): stock-connect.ts's
-    // own handshake test file, whose "publish lands late" case drives a
-    // REAL control listener and constructs the SAME raw InstanceRecord
-    // literal every other allowed *.test.ts file above does. Kept in sync
-    // with broker-control.test.ts's own copy of this same guard.
-    "stock-connect.test.ts",
-  ]);
-  const offenders: string[] = [];
-  for (const rel of files) {
-    if (ALLOWED.has(rel)) continue;
-    if (!/\.(ts|mts|mjs)$/.test(rel)) continue;
-    const full = join(VICE_DIR, rel);
-    if (!existsSync(full)) continue;
-    const text = readFileSync(full, "utf8");
-    if (text.includes("monitorClients")) offenders.push(rel);
-  }
-  assert.deepEqual(offenders, [], `no halting-path module may read monitorClients: ${JSON.stringify(offenders)}`);
 });

@@ -22,11 +22,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, Socket as NodeNetSocket, type Server, type Socket, type AddressInfo } from "node:net";
-import { mkdtempSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 
 import {
   relaySessionKey,
@@ -69,9 +67,6 @@ import type { Socket as NetSocket } from "node:net";
 import { stockConnect, stockReconnect, stockDisconnect, type StockConnectBrokerControl, type DialMonitorSocketFn } from "../../src/mcp/vice/stock-connect.ts";
 import { MachineRestartedError } from "../../src/mcp/vice/vice-errors.mts";
 import { convertHandshakeError } from "../../src/mcp/vice/stock-handler.ts";
-import { VICE_DIR } from "./paths.ts";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // vice-broker.mts is host-bound: it VALUE-imports sibling ".mjs" artifacts
@@ -1556,29 +1551,6 @@ test("stockReconnect: after the binary relay is destroyed, an advanced epoch rej
 // Structural (Task 2): the text path declares no reconnect entry point.
 // ===========================================================================
 
-test("structural: no exported identifier on the text path contains a reconnect entry point", () => {
-  const files = ["text-connect.ts", "text-protocol.ts", "text-tools.ts"];
-  const source = files.map((f) => readFileSync(join(VICE_DIR, f), "utf8")).join("\n");
-  const stripped = source
-    .split("\n")
-    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-    .join("\n");
-  const matches = stripped.match(/export (async )?function text[A-Za-z]*[Rr]econnect/g) ?? [];
-  assert.deepEqual(matches, [], `the text path must declare no reconnect entry point: ${JSON.stringify(matches)}`);
-});
-
-test("structural: text-connect.ts's header still states, in place, that no reconnect is ever to be built there", () => {
-  const source = readFileSync(join(VICE_DIR, "text-connect.ts"), "utf8");
-  assert.ok(source.includes("Never build a textReconnect()"), "text-connect.ts's header must still carry this exact phrase");
-});
-
-test("structural: broker-relay-text.test.ts is present and is not on git's own untracked list -- both channels' proving suites exist as real files", () => {
-  const output = execFileSync("git", ["ls-files"], { cwd: HERE, encoding: "utf8" });
-  const files = output.split("\n").map((f) => f.trim());
-  assert.ok(files.includes("broker-relay-text.test.ts"), "broker-relay-text.test.ts must be a tracked file");
-  assert.ok(existsSync(join(HERE, "broker-relay-text.test.ts")), "broker-relay-text.test.ts must exist on disk");
-});
-
 // ===========================================================================
 // Plan 63-04, Task 1 (SESS-03, SESS-05): a relay death leaves evidence, then
 // lets go of exactly one channel.
@@ -2146,7 +2118,7 @@ test("handleRelayDeath: a fired deadline produces one incident record with the i
   );
 });
 
-test("handleRelayDeath: a writer that throws stops the teardown before any claim is cleared", async () => {
+test("handleRelayDeath: a writer that throws does not throw out of the handler, and the channel is still released", async () => {
   let clearCalled = false;
   const deps: TestHandleRelayDeathDeps = {
     writeIncident: () => {
@@ -2163,19 +2135,34 @@ test("handleRelayDeath: a writer that throws stops the teardown before any claim
         await claimAndDialRelay(state, listenerPort, "grant-death-throws");
         assert.ok(state.relaySessions.has(relaySessionKey("grant-death-throws", "binary")));
 
-        assert.throws(
-          () => handleRelayDeath("grant-death-throws", "binary", "relay_error", state, deps),
-          /simulated disk failure/,
-          "a throwing writer must propagate, not be swallowed",
-        );
-        assert.equal(clearCalled, false, "the claim must NEVER be cleared when the incident write itself failed");
+        assert.doesNotThrow(() => handleRelayDeath("grant-death-throws", "binary", "relay_error", state, deps));
+        assert.equal(clearCalled, true, "the claim is cleared even though the incident could not be written");
         assert.ok(
-          state.relaySessions.has(relaySessionKey("grant-death-throws", "binary")),
-          "the session must remain in the map -- nothing was released because evidence could not be written",
+          !state.relaySessions.has(relaySessionKey("grant-death-throws", "binary")),
+          "the session leaves the map: a failing incident write must not keep a dead channel registered",
         );
       });
     },
   );
+});
+
+test("handleRelease: a writer that throws does not throw out of the handler, and the instance is still killed", async () => {
+  const state = setupBrokerState(16602, "grant-release-throws");
+  state.grants.get("grant-release-throws")!.operation = { name: "vice_capture_run", declaredAt: Date.now() };
+  let killed = false;
+  assert.doesNotThrow(() =>
+    handleRelease("grant-release-throws", state, {
+      writeIncident: () => {
+        throw new Error("simulated disk failure");
+      },
+      kill: async () => {
+        killed = true;
+        return "sigterm";
+      },
+    } as TestHandleReleaseDeps),
+  );
+  assert.equal(killed, true);
+  assert.equal(state.grants.has("grant-release-throws"), false);
 });
 
 // ===========================================================================

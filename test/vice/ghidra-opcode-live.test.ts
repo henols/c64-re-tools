@@ -452,7 +452,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: entrypointsRel,
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -497,7 +496,6 @@ test(
           processor: DEFAULT_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: entrypointsRel,
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -626,7 +624,6 @@ test(
           processor: NMOS_LANGUAGE_ID,
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: entrypointsRel,
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -774,7 +771,6 @@ test(
           processor: "65C02:LE:16:default",
           importRoute: "flat64k",
           noanalysis: true,
-          scriptPath: "vendor/ghidra-scripts",
           preScript: "vendor/ghidra-scripts/VolatileCarve.java",
           entrypointsPath: entrypointsRel,
           postScript: "vendor/ghidra-scripts/GhidraStructExport.java",
@@ -851,30 +847,24 @@ const CORPUS_SKIP_REASON: string | false =
           `gitignored); obtain the corpus release separately and place it there.`
         : false;
 
-/** The `.prg` route's own fixed default base address (`importRouteBaseAddr("prg")`,
- * `ghidra-project.mts`) -- `BinaryLoader` maps file byte 0 (the `.prg`
- * format's own 2-byte load-address header) to this address, so a Ghidra
- * address maps back to a body (post-header) file offset via
- * `address - PRG_ROUTE_BASE_ADDR - PRG_HEADER_SIZE`. Same rule
- * `ghidra-live.test.ts`'s own `PRG_ROUTE_ENTRYPOINT` documents (MEASURED
- * there against `bank.prg`; re-confirmed here against the real corpus
- * release). */
-const PRG_ROUTE_BASE_ADDR = 0x0801;
+/** The `.prg` route's base address for a program that loads at `$0801`:
+ * two bytes below the load address. `BinaryLoader` maps file byte 0 (the
+ * `.prg` format's own 2-byte load-address header) to this address, so the
+ * body lands at its real address and a Ghidra address maps back to a body
+ * (post-header) file offset via
+ * `address - PRG_ROUTE_BASE_ADDR - PRG_HEADER_SIZE`. */
+const PRG_ROUTE_BASE_ADDR = 0x07ff;
 const PRG_HEADER_SIZE = 2;
 
-/** MEASURED this plan, real Ghidra 12.1.3 against the real corpus release
+/** Real Ghidra 12.1.3 against the real corpus release
  * (`danish.d64`'s first entry, "BRUCE LEE (DC)"): three entry points make the
  * depacker's own real code -- including a real undocumented-opcode byte --
  * reachable from a static disassembly pass over the raw `.prg` image.
  *
- *   - `$081b`: the BASIC stub's own "SYS 2073" call (2073 decimal = `$0819`),
- *     shifted +2 for the `.prg` route's own `BinaryLoader` header-inclusion
- *     (the same +2 rule `ghidra-live.test.ts`'s own `PRG_ROUTE_ENTRYPOINT`
- *     documents against `bank.prg`; this release's own header also encodes
- *     `$0801`, so the same shift applies).
- *   - `$b70a`: reached from `$081b`'s own direct `JMP` (an `UNCONDITIONAL_CALL`
+ *   - `$0819`: the BASIC stub's own "SYS 2073" call (2073 decimal = `$0819`).
+ *   - `$b70a`: reached from `$0819`'s own direct `JMP` (an `UNCONDITIONAL_CALL`
  *     reference once decoded); seeded explicitly too so it disassembles even
- *     under a language where the `$081b` stub itself fails to decode.
+ *     under a language where the `$0819` stub itself fails to decode.
  *   - `$b74c`, `$b7e7`: the depacker's own two self-relocating copy-loop
  *     SOURCE addresses (read directly off `$b70a`'s own decompiled text:
  *     `(&DAT_0110)[bVar1] = (&DAT_b74c)[bVar1]`, and a second loop copying
@@ -898,7 +888,7 @@ const PRG_HEADER_SIZE = 2;
  * byte, nor anything downstream of it (including a real `JMP $a7ae` at
  * `$b810` and the KERNAL-calling function it targets) -- while this
  * project's own extension decodes it and continues. */
-const CORPUS_ENTRY_MAIN = "$081b";
+const CORPUS_ENTRY_MAIN = "$0819";
 const CORPUS_ENTRY_RELOCATE_TARGET = "$b70a";
 const CORPUS_ENTRY_RELOCATE_SOURCE_1 = "$b74c";
 const CORPUS_ENTRY_RELOCATE_SOURCE_2 = "$b7e7";
@@ -1032,7 +1022,6 @@ test(
             processor,
             importRoute: "prg",
             noanalysis: true,
-            scriptPath: "vendor/ghidra-scripts",
             preScript: "vendor/ghidra-scripts/VolatileCarve.java",
             entrypointsPath: "release.entrypoints",
             postScript: "vendor/ghidra-scripts/GhidraStructExport.java",

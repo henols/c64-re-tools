@@ -19,10 +19,8 @@
   crash) first stops taking work and blocks respawns, then stops every group,
   descendants included. A SIGKILL of the broker is covered by a watchdog it
   forks at startup, which stops every tracked group when the broker is gone.
-- Reproducible runs: a hard reset plus pinned launch settings makes two runs of
-  the same program stop in the same frame. A flat 64K RAM capture is sliced from
-  a `.vsf` snapshot, with no hex transcription. Runs stay frame-exact through
-  anchor hit 50; exactness is lost from anchor hit 75.
+- A flat 64K RAM capture is sliced from a `.vsf` snapshot, with no hex
+  transcription.
 
 **Annotation store**
 - Each project keeps its annotations in ONE SQLite file (`node:sqlite`, schema
@@ -56,7 +54,9 @@
   depends on the execution path.
 - The host tools (ACME, dxa, Ghidra, `c1541`, `petcat`) are reached only through
   the broker's fixed endpoint: inputs upload as bytes, results download by
-  handle, and no request names a broker-side path.
+  handle, and no request names a broker-side path. The client sends the
+  project's `.c64-re-tools/local/tools.json` as bytes with the request, and
+  Ghidra runs only the vendored scripts.
 
 **Rebuild**
 - The store exports as a directory of ACME source: one file per scope, joined
@@ -92,7 +92,7 @@
   `package.json`), repo-only tools and fixture generators are `.ts`, and the
   package bin `vice-cli` is an `.mts` source that `build.ts` compiles beside
   itself (`ENTRY_ARTIFACTS`).
-  `no-handwritten-mjs.test.ts` fails on any other `.mjs`/`.js`. Spec:
+  Review enforces this, and `build.ts` owns every emitted `.mjs`. Spec:
   `agent-os/specs/2026-09-26-1946-mjs-to-ts-no-auto-install/`.
 
 **One broker, one socket (v2.0.0)**

@@ -70,8 +70,8 @@ and keep the voided artifacts on disk.
 
 ## Comparison against sibling runs
 
-`node scripts/compare.ts compare <a>.bin <b>.bin` for each pairing, and
-`node scripts/compare.ts floor <a>.bin <b>.bin <c>.bin` across the set.
+`node scripts/compare.ts compare <a>.bin <b>.bin --route <route>` for each pairing, and
+`node scripts/compare.ts floor <a>.bin <b>.bin <c>.bin --route <route>` across the set.
 
 | Pairing | volatile | drift (1 bit) | divergence (2+ bits) | verdict |
 |---|---|---|---|---|

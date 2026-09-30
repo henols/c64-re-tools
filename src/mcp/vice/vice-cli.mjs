@@ -21,8 +21,7 @@
 //     pull the broker or proxy graph into this file's standalone compile.
 //   - Never list this file as host-bound: it is an entry artifact, and
 //     install-resources must never deploy it.
-import { existsSync, readFileSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 const PACKAGE_JSON_PATH = new URL("./package.json", import.meta.url);
 const DEFAULT_PACKAGE_NAME = "@henols/vice-mcp";
@@ -42,15 +41,6 @@ function proxyEntry() {
  * here, never re-derived, so the two refusals are indistinguishable to
  * anything watching exit codes. */
 export const FLOOR_REFUSAL_EXIT_CODE = 4;
-/** Test-only escape hatch, never documented to end users and inert unless
- * this exact env var is set: lets a test drive the below-floor refusal path
- * without installing a second, genuinely below-floor Node interpreter. This
- * file already runs under the interpreter it is checking, so injecting a
- * simulated major is the only way to exercise that path at all. Never
- * reachable from a real invocation -- the check is against a specific,
- * unambiguous env var name no real caller would ever set. Mirrors
- * vice-proxy.ts's own VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES hatch. */
-const SIMULATED_NODE_MAJOR_ENV = "VICE_CLI_TEST_SIMULATED_NODE_MAJOR";
 /** Extracts the first integer found in `str`, or `null` when `str` is not a
  * string or contains no digits. Shared arithmetic for both a semver RANGE
  * (`">=24.0.0"`) and a plain version string (`"24.13.3"`), since both need
@@ -114,16 +104,9 @@ export function meetsFloor(runningMajor, floorMajor) {
 export function brokerArgvFrom(argv) {
     return argv.slice(3);
 }
-/** Resolves the major version this process is actually running under,
- * honouring the test-only simulated-major escape hatch above when set.
- * Returns `null` if the simulated value cannot be parsed as a number, or if
- * `process.versions.node` (which should never happen) carries no digits. */
+/** The major version this process is running under, or `null` when
+ * `process.versions.node` carries no digits. */
 function resolveRunningMajor() {
-    const simulated = process.env[SIMULATED_NODE_MAJOR_ENV];
-    if (simulated !== undefined) {
-        const parsed = Number(simulated);
-        return Number.isFinite(parsed) ? parsed : null;
-    }
     return firstIntegerIn(process.versions.node);
 }
 async function main() {
@@ -147,9 +130,7 @@ async function main() {
     }
     const runningMajor = resolveRunningMajor();
     if (!meetsFloor(runningMajor, floorMajor)) {
-        const simulated = process.env[SIMULATED_NODE_MAJOR_ENV];
         process.stderr.write(`${packageName}: refusing to start -- running under Node ${process.versions.node}` +
-            (simulated !== undefined ? ` (simulated major ${runningMajor} for testing)` : "") +
             `, which is below the required floor v${floorMajor}.x. Install a Node >= v${floorMajor} and put it ` +
             `on PATH, or set VICE_BROKER_NODE to an absolute path to one that satisfies the floor.\n`);
         process.exit(FLOOR_REFUSAL_EXIT_CODE);
@@ -175,12 +156,11 @@ async function main() {
 }
 // -------------------------------------------------------------------- CLI
 //
-// Only runs main() when THIS file is the actual process entry point --
-// never on a plain `import` (e.g. a test importing the pure functions
-// above), which would otherwise re-run the floor check and the dispatch
-// against the IMPORTER's own argv as an unwanted side effect of loading the
-// module. Mirrors vice-broker.mts's own bottom-of-file CLI guard exactly.
-if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Runs main() only when this file is the process entry point, never on a
+// plain `import` (a test importing the pure functions above). Both sides are
+// real paths, so an npm bin symlink still counts as a direct invocation.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
     main().catch((e) => {
         process.stderr.write(`vice-cli: ${e instanceof Error ? e.message : String(e)}\n`);
         process.exitCode = 1;

@@ -92,6 +92,7 @@ const hostTool = (await import(new URL("../../src/mcp/vice/resources/host-tool.m
   // tables -- the SERVER side of the same two-sided census
   // host-tool-endpoint.mts's own HOST_TOOL_TREE_INPUT_KEYS/
   // HOST_TOOL_OUTPUT_NAME_KEYS mirror.
+  findAcmeHostPathReference: (dir: string) => string | null;
   HOST_TOOL_TREE_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
   HOST_TOOL_OUTPUT_NAME_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
   bindStagedInputs: (
@@ -2530,33 +2531,40 @@ test("buildHostToolArgv: ghidra.analyze reads preScript/postScript from resolved
   });
 });
 
-test("runHostTool: a ghidra.analyze preScript that escapes the workspace root is refused with the workspace-escape message, and the log spy recorded zero lines", async () => {
+test("runHostTool: a ghidra.analyze script that is not a vendored script name is refused by name, and nothing is spawned", async () => {
   await withTempDir(async (dir) => {
     writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
     const logLines: string[] = [];
-    const response = await runHostTool(
-      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", preScript: "../../etc/evil.java" } },
-      { repoRoot: dir, log: (line) => logLines.push(line) },
-    );
-    assert.equal(response.ok, false);
-    if (!response.ok) assert.match(response.message, /escapes the workspace root/);
+    for (const [key, value] of [
+      ["preScript", "../../etc/evil.java"],
+      ["postScript", "/etc/evil.java"],
+      ["preScript", "pre.java"],
+      ["postScript", "sub/GhidraStructExport.java"],
+    ] as const) {
+      const response = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", [key]: value } },
+        { repoRoot: dir, log: (line) => logLines.push(line) },
+      );
+      assert.equal(response.ok, false, `${key}=${value} must be refused`);
+      if (!response.ok) assert.match(response.message, new RegExp(`args\\.${key} must be the name of a vendored Ghidra script`));
+    }
     assert.equal(logLines.length, 0, "no child was spawned, so no log line should have been recorded");
   });
 });
 
-test("runHostTool: an absolute ghidra.analyze postScript is refused with the not-absolute message", async () => {
+test("runHostTool: a ghidra.analyze request carrying scriptPath is refused as an unknown key", async () => {
   await withTempDir(async (dir) => {
     writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
     const response = await runHostTool(
-      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", postScript: "/etc/evil.java" } },
+      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", scriptPath: dir } },
       { repoRoot: dir },
     );
     assert.equal(response.ok, false);
-    if (!response.ok) assert.match(response.message, /must be relative to the workspace root, not absolute/);
+    if (!response.ok) assert.match(response.message, /unknown key\(s\) scriptPath/);
   });
 });
 
-test("runHostTool: an accepted in-workspace ghidra.analyze preScript reaches the spawned argv as an absolute resolved path, never the bare relative string", async () => {
+test("runHostTool: an accepted vendored ghidra.analyze preScript reaches the spawned argv by name, with -scriptPath naming the broker's own vendored directory", async () => {
   await withTempDir(async (dir) => {
     const previousGhidraHome = process.env.GHIDRA_HOME;
     const supportDir = join(dir, "support");
@@ -2585,19 +2593,21 @@ test("runHostTool: an accepted in-workspace ghidra.analyze preScript reaches the
     process.env.GHIDRA_HOME = dir;
     try {
       writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
-      writeFileSync(join(dir, "pre.java"), "// pre\n", "utf8");
       const response = await runHostTool(
-      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", preScript: "pre.java" } },
+      { tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", preScript: "VolatileCarve.java" } },
       { repoRoot: dir },
     );
       assert.equal(response.ok, true);
       const echoedArgv = JSON.parse(readFileSync(echoPath, "utf8")) as string[];
       const preIdx = echoedArgv.indexOf("-preScript");
       assert.ok(preIdx !== -1);
-      const preValue = echoedArgv[preIdx + 1];
-      assert.ok(isAbsolute(preValue));
-      assert.equal(preValue, resolvePath(dir, "pre.java"));
-      assert.ok(!echoedArgv.includes("pre.java"), "argv must never carry the bare relative preScript string");
+      assert.equal(echoedArgv[preIdx + 1], "VolatileCarve.java");
+      const scriptPathIdx = echoedArgv.indexOf("-scriptPath");
+      assert.ok(scriptPathIdx !== -1, "the vendored script directory must be passed as -scriptPath");
+      const scriptDir = echoedArgv[scriptPathIdx + 1]!;
+      assert.ok(isAbsolute(scriptDir));
+      assert.ok(existsSync(join(scriptDir, "VolatileCarve.java")), "-scriptPath must name a directory that holds the vendored script");
+      assert.notEqual(resolvePath(scriptDir), resolvePath(dir), "-scriptPath must not be the request's workspace");
     } finally {
       if (previousGhidraHome === undefined) delete process.env.GHIDRA_HOME;
       else process.env.GHIDRA_HOME = previousGhidraHome;
@@ -2659,7 +2669,7 @@ const GHIDRA_ANALYZE_FIELD_REFUSAL_CASES: ReadonlyArray<{ name: string; args: Re
       importPath: "x.bin",
       processor: "6502:LE:16:default",
       importRoute: "flat64k",
-      postScript: "Post.java",
+      postScript: "GhidraStructExport.java",
       exportPath: "o.txt",
       expectedClassificationLines: 4887.5,
     },
@@ -2672,7 +2682,7 @@ const GHIDRA_ANALYZE_FIELD_REFUSAL_CASES: ReadonlyArray<{ name: string; args: Re
       importPath: "x.bin",
       processor: "6502:LE:16:default",
       importRoute: "flat64k",
-      postScript: "Post.java",
+      postScript: "GhidraStructExport.java",
       exportPath: "o.txt",
       expectedClassificationLines: -1,
     },
@@ -2685,7 +2695,7 @@ const GHIDRA_ANALYZE_FIELD_REFUSAL_CASES: ReadonlyArray<{ name: string; args: Re
       importPath: "x.bin",
       processor: "6502:LE:16:default",
       importRoute: "flat64k",
-      postScript: "Post.java",
+      postScript: "GhidraStructExport.java",
       exportPath: "o.txt",
       expectedClassificationLines: "4887",
     },
@@ -2703,7 +2713,7 @@ const GHIDRA_ANALYZE_FIELD_REFUSAL_CASES: ReadonlyArray<{ name: string; args: Re
   },
   {
     name: "expectedClassificationLines with no exportPath",
-    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", postScript: "Post.java", expectedClassificationLines: 3 },
+    args: { runId: "r1", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k", postScript: "GhidraStructExport.java", expectedClassificationLines: 3 },
     messagePattern: /expectedClassificationLines/,
   },
   {
@@ -2756,18 +2766,17 @@ test("HOST_TOOL_ARG_KEYS/HOST_TOOL_PATH_ARG_KEYS: ghidra.analyze and ghidra.inst
       "preScript",
       "processor",
       "runId",
-      "scriptPath",
     ].sort(),
   );
   assert.deepEqual(
     [...HOST_TOOL_PATH_ARG_KEYS["ghidra.analyze"]].sort(),
-    ["dataRangesPath", "entrypointsPath", "exportPath", "importPath", "postScript", "preScript", "scriptPath"].sort(),
+    ["dataRangesPath", "entrypointsPath", "exportPath", "importPath"].sort(),
   );
   assert.deepEqual([...HOST_TOOL_ARG_KEYS["ghidra.installExtension"]].sort(), ["moduleName"]);
   assert.deepEqual([...HOST_TOOL_PATH_ARG_KEYS["ghidra.installExtension"]].sort(), []);
 });
 
-test("runHostTool: a scriptPath/entrypointsPath/exportPath reaching outside the workspace root through a symlink is refused, naming the resolved path and the root", async () => {
+test("runHostTool: an entrypointsPath/exportPath reaching outside the workspace root through a symlink is refused, naming the resolved path and the root", async () => {
   await withSymlinkFixture(async (ws, outside) => {
     symlinkSync(outside, join(ws, "escape"), "dir");
     writeFileSync(join(ws, "x.bin"), "tiny\n", "utf8");
@@ -2776,11 +2785,11 @@ test("runHostTool: a scriptPath/entrypointsPath/exportPath reaching outside the 
       importPath: "x.bin",
       processor: "6502:LE:16:default",
       importRoute: "flat64k" as const,
-      preScript: "Pre.java",
-      postScript: "Post.java",
+      preScript: "VolatileCarve.java",
+      postScript: "GhidraStructExport.java",
     };
     const escapedResolvedPath = join(outside, "x");
-    for (const key of ["scriptPath", "entrypointsPath", "exportPath"] as const) {
+    for (const key of ["entrypointsPath", "exportPath"] as const) {
       const response = await runHostTool({ tool: "ghidra.analyze", args: { ...baseArgs, [key]: "escape/x" } }, { repoRoot: ws });
       assert.equal(response.ok, false, `${key}: expected a refusal`);
       if (!response.ok) {
@@ -2827,7 +2836,6 @@ test("runHostTool: a full ghidra.analyze invocation reports results[0] naming a 
     process.env.GHIDRA_HOME = dir;
     try {
       writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
-      writeFileSync(join(dir, "post.java"), "// post\n", "utf8");
       const response = await runHostTool(
         {
           tool: "ghidra.analyze",
@@ -2836,7 +2844,7 @@ test("runHostTool: a full ghidra.analyze invocation reports results[0] naming a 
             importPath: "x.bin",
             processor: FAKE_GHIDRA_HOME_LANGUAGE_ID,
             importRoute: "flat64k",
-            postScript: "post.java",
+            postScript: "GhidraStructExport.java",
             exportPath: "exp.out",
           },
         },
@@ -3111,7 +3119,7 @@ const HOST_TOOL_ARG_KEYS_REMAINDER: Readonly<Record<string, readonly string[]>> 
   // Phase 36, plan 36-02: importRoute/loaderBaseAddr/noanalysis/
   // expectedClassificationLines join runId/processor as the tool's own
   // non-path keys.
-  "ghidra.analyze": Object.freeze(["runId", "processor", "importRoute", "loaderBaseAddr", "noanalysis", "expectedClassificationLines"]),
+  "ghidra.analyze": Object.freeze(["runId", "processor", "importRoute", "loaderBaseAddr", "noanalysis", "expectedClassificationLines", "preScript", "postScript"]),
   "oracle.probe": Object.freeze([]),
   "oracle.run": Object.freeze([]),
   // Phase 35, plan 35-01: `imageKind` is the one accepted key that is an
@@ -3154,8 +3162,8 @@ const HOST_TOOL_MINIMAL_VALID_ARGS: Readonly<Record<string, () => Record<string,
     importPath: "x.bin",
     processor: "6502:LE:16:default",
     importRoute: "flat64k",
-    preScript: "Pre.java",
-    postScript: "Post.java",
+    preScript: "VolatileCarve.java",
+    postScript: "GhidraStructExport.java",
   }),
   "oracle.probe": () => ({}),
   "oracle.run": () => ({ source: "a.bin" }),
@@ -3220,7 +3228,7 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key is a member of that tool'
   // v2.0.0 step 1 lowered it from 29 to 20: outDir left acme.build,
   // dxa.disassemble, the five c1541.* ids and petcat.decode (8), and
   // sourceDir left ghidra.installExtension (1).
-  assert.equal(totalDeclared, 20, "the declared path-key total across all tools must be 20 -- a different count means a key was added or dropped without updating this census");
+  assert.equal(totalDeclared, 17, "the declared path-key total across all tools must be 17 -- a different count means a key was added or dropped without updating this census");
 });
 
 test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value and an absolute value, with the executed-assertion count equal to twice the declared total (non-vacuity)", async () => {
@@ -3258,7 +3266,7 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value
       // image/outDir pairs). Phase 40, plan 40-03 raised it from 27 to 29
       // (petcat.decode's own image/outDir pair). v2.0.0 step 1 lowered it
       // from 29 to 20 (outDir and sourceDir removed).
-      assert.equal(totalDeclared, 20, "sanity: the declared path-key total must still be 20");
+      assert.equal(totalDeclared, 17, "sanity: the declared path-key total must still be 17");
       assert.equal(executed, totalDeclared * 2, "the executed-assertion count must equal twice the declared total (one escaping + one absolute check per key)");
     });
   } finally {
@@ -3366,13 +3374,13 @@ test("cross-seam ordering: for every HOST_TOOL_IDS member, the client-side reque
 // caller-supplied input or output name, never the project location.
 // ---------------------------------------------------------------------------
 
-test("HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] names exactly the seven caller-supplied path fields, and none of them names the project location, its name or the runs root -- those are broker-side and never cross the wire", () => {
+test("HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] names exactly the four caller-supplied path fields, and none of them names the project location, its name or the runs root -- those are broker-side and never cross the wire", () => {
   const keys = hostTool.HOST_TOOL_PATH_ARG_KEYS["ghidra.analyze"] ?? [];
-  const expected = ["importPath", "preScript", "postScript", "scriptPath", "entrypointsPath", "exportPath", "dataRangesPath"];
+  const expected = ["importPath", "entrypointsPath", "exportPath", "dataRangesPath"];
   assert.deepEqual(
     [...keys].sort(),
     [...expected].sort(),
-    `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] must name exactly the seven caller-supplied path fields, got ${JSON.stringify([...keys].sort())}`,
+    `HOST_TOOL_PATH_ARG_KEYS['ghidra.analyze'] must name exactly the four caller-supplied path fields, got ${JSON.stringify([...keys].sort())}`,
   );
   for (const forbidden of ["projectLocation", "projectName", "runsRoot", "runId"]) {
     assert.ok(
@@ -3687,7 +3695,7 @@ test("Phase 65-03 Task 1 Test 1: HOST_TOOL_PATH_ARG_KEYS minus {outDir, sourceDi
   }
 });
 
-test("Phase 65-03 Task 1 Test 2: bindStagedInputs maps acme includes (tree handles) to in/<idx>, ghidra scriptPath (one tree handle) to in/<idx>, and ghidra exportPath (a name) to out/<name>; refuses an unsafe exportPath by name", () => {
+test("Phase 65-03 Task 1 Test 2: bindStagedInputs maps acme includes (tree handles) to in/<idx> and ghidra exportPath (a name) to out/<name>; refuses an unsafe exportPath by name", () => {
   const lookup = {
     fileHandle: (handle: string) => (handle === "file-handle" ? "in/0/source.a" : undefined),
     treeHandle: (handle: string) => {
@@ -3704,12 +3712,6 @@ test("Phase 65-03 Task 1 Test 2: bindStagedInputs maps acme includes (tree handl
   }
 
   const ghidraBaseArgs = { runId: "r", importPath: "file-handle", processor: "6502:LE:16:default", importRoute: "flat64k" };
-
-  const scriptPathResult = bindStagedInputs({ tool: "ghidra.analyze", args: { ...ghidraBaseArgs, scriptPath: "tree-handle-0" } }, lookup);
-  assert.equal(scriptPathResult.ok, true, scriptPathResult.ok ? "" : scriptPathResult.message);
-  if (scriptPathResult.ok) {
-    assert.equal(scriptPathResult.request.args.scriptPath, "in/0", "a single scriptPath tree handle must map to its own in/<idx> directory");
-  }
 
   const exportPathResult = bindStagedInputs({ tool: "ghidra.analyze", args: { ...ghidraBaseArgs, exportPath: "classify.json" } }, lookup);
   assert.equal(exportPathResult.ok, true, exportPathResult.ok ? "" : exportPathResult.message);
@@ -3809,7 +3811,7 @@ test("Phase 65-03 Task 1 Test 7 (RESEARCH Pitfall 4): for every HOST_TOOL_IDS me
       // Fixture files matching every name HOST_TOOL_MINIMAL_VALID_ARGS uses,
       // across every tool id -- the endpoint route's own client-side stat()
       // calls must succeed before this call ever reaches the (faked) dial.
-      for (const name of ["a.a", "a.bin", "x.bin", "x.d64", "x.prg", "Pre.java", "Post.java"]) {
+      for (const name of ["a.a", "a.bin", "x.bin", "x.d64", "x.prg", "VolatileCarve.java", "GhidraStructExport.java"]) {
         writeFileSync(join(dir, name), "tiny\n", "utf8");
       }
 
@@ -3855,4 +3857,67 @@ test("Phase 65-03 Task 1 Test 7 (RESEARCH Pitfall 4): for every HOST_TOOL_IDS me
       );
     });
   }
+});
+
+test("acme.build refuses a format or setpc value that names a path or another option", () => {
+  for (const [key, value] of [
+    ["format", "/tmp/x"],
+    ["format", "-o"],
+    ["format", "../x"],
+    ["setpc", "-I"],
+    ["setpc", "a/b"],
+  ] as const) {
+    const result = normaliseHostToolRequest({ tool: "acme.build", args: { source: "a.a", [key]: value } });
+    assert.equal(result.ok, false, `${key}=${value} must be refused`);
+    if (!result.ok) assert.match(result.message, new RegExp(`args\\.${key}`));
+  }
+  assert.equal(normaliseHostToolRequest({ tool: "acme.build", args: { source: "a.a", format: "cbm", setpc: "$0801" } }).ok, true);
+});
+
+test("acme.build refuses a staged source whose file pseudo-op names an absolute path or a parent directory, and accepts a relative one", async () => {
+  for (const [line, refused] of [
+    ['!source "/etc/passwd"', true],
+    ['  !SRC "../secret.a"', true],
+    ['!binary "sub/../../x.bin", 2', true],
+    ['!bin "/dev/zero"', true],
+    ['!to "/tmp/out.prg", cbm', true],
+    ['!source "lib/macros.a"', false],
+    ['!binary "data/sprites.bin"', false],
+  ] as const) {
+    await withTempDir(async (dir) => {
+      writeFileSync(join(dir, "a.a"), `* = $0801\n${line}\n`, "utf8");
+      const found = hostTool.findAcmeHostPathReference(dir);
+      assert.equal(found !== null, refused, `${line}: ${String(found)}`);
+      if (refused) assert.match(String(found), /a\.a names a file outside the source tree/);
+    });
+  }
+});
+
+test("runHostTool: acme.build with a refused source names the file and never spawns", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), '!source "/etc/passwd"\n', "utf8");
+    const logLines: string[] = [];
+    const response = await runHostTool({ tool: "acme.build", args: { source: "a.a" } }, { repoRoot: dir, log: (line) => logLines.push(line) });
+    assert.equal(response.ok, false);
+    if (!response.ok) assert.match(response.message, /a\.a names a file outside the source tree with !source/);
+    assert.equal(logLines.length, 0);
+  });
+});
+
+test("runHostTool: the tools.json text passed in the request answers the tools.json layer", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; source\n", "utf8");
+    const previous = process.env.ACME_BIN;
+    delete process.env.ACME_BIN;
+    try {
+      const response = await runHostTool(
+        { tool: "acme.build", args: { source: "a.a" } },
+        { repoRoot: dir, projectRoot: join(dir, "nowhere"), toolsJson: JSON.stringify({ acme: "/nonexistent-dir-for-test/acme" }) } as Parameters<typeof runHostTool>[1],
+      );
+      assert.equal(response.ok, false);
+      if (!response.ok) assert.match(response.message, /"acme"'s tools\.json entry \(\/nonexistent-dir-for-test\/acme\) does not exist on disk/);
+    } finally {
+      if (previous !== undefined) process.env.ACME_BIN = previous;
+    }
+  });
 });

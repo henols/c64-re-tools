@@ -7,7 +7,7 @@
 // written into this checkout.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -17,9 +17,14 @@ import { VICE_DIR } from "./paths.ts";
 
 const LOG_OK = "INFO  Using Language/Compiler: 6502:LE:16:nmos:default (ProgramLoader)\n";
 
+/** A .prg that loads at $0801: `lda #$00`, `rts`. */
+const PRG_0801 = Uint8Array.from([0x01, 0x08, 0xa9, 0x00, 0x60]);
+
+/** Runs `fn` in a scratch directory that holds `g.prg` (PRG_0801). */
 function withScratch(fn: (dir: string) => Promise<void> | void): () => Promise<void> {
   return async () => {
     const dir = mkdtempSync(join(tmpdir(), "ghidra-run-cli-"));
+    writeFileSync(join(dir, "g.prg"), PRG_0801);
     try {
       await fn(dir);
     } finally {
@@ -48,7 +53,7 @@ test("parseGhidraCli: an unknown flag and a bad route are refused", () => {
 
 test("parseGhidraCli: input paths resolve against cwd; the export name is passed as given", () => {
   const r = parseGhidraCli(
-    [...BASE, "--script-path", "s", "--pre-script", "s/Pre.java", "--post-script", "s/Post.java", "--entrypoints-path", "ep", "--data-ranges-path", "dr", "--export-path", "g.export.txt", "--noanalysis", "--loader-base-addr", "0x7ff", "--expected-classification-lines", "12", "--project-root", "proj", "--tools-root", "t", "--port", "6510"],
+    [...BASE, "--pre-script", "s/Pre.java", "--post-script", "s/Post.java", "--entrypoints-path", "ep", "--data-ranges-path", "dr", "--export-path", "g.export.txt", "--noanalysis", "--loader-base-addr", "0x7ff", "--expected-classification-lines", "12", "--project-root", "proj", "--tools-root", "t", "--port", "6510"],
     "/work",
   );
   assert.ok(r.ok, r.ok ? "" : r.message);
@@ -59,7 +64,6 @@ test("parseGhidraCli: input paths resolve against cwd; the export name is passed
     importRoute: "prg",
     loaderBaseAddr: "0x7ff",
     noanalysis: true,
-    scriptPath: "/work/s",
     preScript: "/work/s/Pre.java",
     postScript: "/work/s/Post.java",
     entrypointsPath: "/work/ep",
@@ -102,6 +106,59 @@ test(
   }),
 );
 
+/** A runner that records each request and returns a clean run. */
+function recordingRun(dir: string, seen: Record<string, unknown>[]): GhidraRunFn {
+  return async (tool, args) => {
+    seen.push(args);
+    return { ok: true, tool, exitStatus: 0, results: [{ path: join(dir, "l.log"), sha256: "", byteLength: 0 }], stderrTail: "" };
+  };
+}
+
+test(
+  "runGhidraCli: with no loader base, a .prg run sends the base two bytes below the image's load address",
+  withScratch(async (dir) => {
+    const seen: Record<string, unknown>[] = [];
+    const run = recordingRun(dir, seen);
+    const opts = ["--project-root", dir, "--tools-root", dir];
+    const r = await runGhidraCli([...BASE, ...opts], { run, runLogText: LOG_OK }, dir);
+    assert.equal(r.ok, true, r.ok ? "" : r.message);
+    assert.equal(seen[0]?.loaderBaseAddr, "0x7ff");
+
+    writeFileSync(join(dir, "hi.prg"), Uint8Array.from([0x00, 0xc0, 0x60]));
+    const hi = await runGhidraCli(["--run-id", "g", "--import-path", "hi.prg", "--processor", "6502:LE:16:nmos", "--import-route", "prg", ...opts], { run, runLogText: LOG_OK }, dir);
+    assert.equal(hi.ok, true, hi.ok ? "" : hi.message);
+    assert.equal(seen[1]?.loaderBaseAddr, "0xbffe");
+  }),
+);
+
+test(
+  "runGhidraCli: an explicit loader base is sent as given, and the flat64k route sends none",
+  withScratch(async (dir) => {
+    const seen: Record<string, unknown>[] = [];
+    const run = recordingRun(dir, seen);
+    const opts = ["--project-root", dir, "--tools-root", dir];
+    await runGhidraCli([...BASE, "--loader-base-addr", "0x1000", ...opts], { run, runLogText: LOG_OK }, dir);
+    assert.equal(seen[0]?.loaderBaseAddr, "0x1000");
+    await runGhidraCli(["--run-id", "g", "--import-path", "g.bin", "--processor", "6502:LE:16:nmos", "--import-route", "flat64k", ...opts], { run, runLogText: LOG_OK }, dir);
+    assert.equal("loaderBaseAddr" in seen[1]!, false);
+  }),
+);
+
+test(
+  "runGhidraCli: a .prg with no load address to read is refused before any request",
+  withScratch(async (dir) => {
+    const seen: Record<string, unknown>[] = [];
+    const run = recordingRun(dir, seen);
+    const opts = ["--project-root", dir, "--tools-root", dir];
+    writeFileSync(join(dir, "short.prg"), Uint8Array.from([0x01, 0x08]));
+    const short = await runGhidraCli(["--run-id", "g", "--import-path", "short.prg", "--processor", "6502:LE:16:nmos", "--import-route", "prg", ...opts], { run }, dir);
+    assert.match(short.ok ? "" : short.message, /not a \.prg: 2 byte\(s\)/);
+    const missing = await runGhidraCli(["--run-id", "g", "--import-path", "none.prg", "--processor", "6502:LE:16:nmos", "--import-route", "prg", ...opts], { run }, dir);
+    assert.match(missing.ok ? "" : missing.message, /cannot read the \.prg image/);
+    assert.equal(seen.length, 0);
+  }),
+);
+
 test(
   "runGhidraCli: a thrown script and a language mismatch are refusals, never ok:true",
   withScratch(async (dir) => {
@@ -131,5 +188,35 @@ test(
     const parsed = JSON.parse(lines[0]!);
     assert.equal(parsed.ok, false);
     assert.match(parsed.message, /--import-path is required/);
+  }),
+);
+
+/** Spawns ghidra-run.ts from `cwd` with no project-root variables set. */
+function spawnGhidraRun(cwd: string, script: string, args: string[]) {
+  const env = { ...process.env };
+  delete env.CLAUDE_PROJECT_DIR;
+  delete env.C64RE_PROJECT_ROOT;
+  return spawnSync(process.execPath, [script, ...args], { cwd, encoding: "utf8", timeout: 30_000, env });
+}
+
+test(
+  "the entry runs when the script is reached through a symlink",
+  withScratch((dir) => {
+    const link = join(dir, "ghidra-run-link.ts");
+    symlinkSync(join(VICE_DIR, "ghidra-run.ts"), link);
+    const r = spawnGhidraRun(dir, link, ["--run-id", "g"]);
+    assert.equal(r.status, 1);
+    assert.match(JSON.parse(r.stdout.trim()).message, /--import-path is required/);
+  }),
+);
+
+test(
+  "the CLI with no --project-root uses the project found from the current directory",
+  withScratch((dir) => {
+    mkdirSync(join(dir, ".git"));
+    // Port 1 refuses the connection, so the run fails after the tools root is made.
+    const r = spawnGhidraRun(dir, join(VICE_DIR, "ghidra-run.ts"), [...BASE, "--port", "1"]);
+    assert.equal(r.status, 1, r.stderr);
+    assert.ok(existsSync(join(dir, ".c64-re-tools", "local")), "the tools root is under the project found from the cwd");
   }),
 );

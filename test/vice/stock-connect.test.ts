@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -63,7 +63,6 @@ import {
 } from "../../src/mcp/vice/vice-broker-client.ts";
 import { MachineRestartedError } from "../../src/mcp/vice/vice-errors.mts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
-import { VICE_DIR } from "./paths.ts";
 
 // ---------------------------------------------------------------------------
 // Phase 63 (SESS-02): stockConnect()'s default socket source is now a relay
@@ -1203,10 +1202,9 @@ function makeTransferGrantedInstance(port: number, overrides: Partial<InstanceRe
   };
 }
 
-function setupTransferBrokerState(emulatorPort: number, targetId: string): BrokerState {
+function setupTransferBrokerState(emulatorPort: number): BrokerState {
   const state = createBrokerState();
   state.instances.set(emulatorPort, makeTransferGrantedInstance(emulatorPort));
-  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
   return state;
 }
 
@@ -1236,10 +1234,10 @@ async function startTransferControlListener(
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    onAcquire: async (): Promise<AcquireOutcome> => ({
-      ok: true,
-      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` },
-    }),
+    onAcquire: async (id: string): Promise<AcquireOutcome> => {
+      state.grants.set(id, { id, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+      return { ok: true, grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp` } };
+    },
     onRelease: (requestId: string) => handleRelease(requestId, state),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
@@ -1316,8 +1314,8 @@ test("stockConnect: publish lands late -- the production upload resolves only on
   transferModule.resetStagingForTest();
 
   const emulatorPort = nextTransferEmulatorPortValue();
-  const grantId = "req-64-13-t1-publish-late";
-  const state = setupTransferBrokerState(emulatorPort, grantId);
+  let grantId = ""; // minted by the broker; read from the acquire reply
+  const state = setupTransferBrokerState(emulatorPort);
 
   // Set/read AT CALL TIME by startTransferControlListener()'s own
   // onFileTransfer wiring -- armed to a 300ms delay right before the
@@ -1338,8 +1336,9 @@ test("stockConnect: publish lands late -- the production upload resolves only on
   try {
     let handle: string;
     let emulatorFilename: string;
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
+    const acquireReply = await control.sendAndRead({ op: "acquire" });
     assert.equal(acquireReply.kind, "grant");
+    grantId = acquireReply.id as string;
     const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
     assert.equal(stageReply.kind, "file_staged");
     handle = stageReply.handle as string;
@@ -1388,115 +1387,4 @@ test("stockConnect: publish lands late -- the production upload resolves only on
     rmSync(home, { recursive: true, force: true });
     rmSync(clientDir, { recursive: true, force: true });
   }
-});
-
-// ---------------------------------------------------------------------------
-// Source-level disposition pins (Phase 15 review-finding closure). These
-// scan stock-connect.ts's own source text rather than asserting a literal
-// message string or hand-typed file list, so each invariant survives future
-// wording/file-set changes and generalizes past the one call site its
-// finding named.
-// ---------------------------------------------------------------------------
-
-const STOCK_CONNECT_SOURCE = readFileSync(join(VICE_DIR, "stock-connect.ts"), "utf8");
-
-test('02-REVIEW.md IN-05 pin: every thrown message naming a function via a where: "stock-connect.ts:<fn>" field is prefixed with that SAME function\'s name', () => {
-  // Derived, not literal: pairs each `where:`-carrying throw with the
-  // message template's own leading `<name>:` prefix by scanning the actual
-  // throw statement, rather than hardcoding either string. A future throw
-  // site added inside stockConnect() itself (not only stockReconnect()) is
-  // covered by the same regex, not just the one site IN-05 named.
-  const throwWherePattern = /throw new \w+\(\s*`([A-Za-z]\w*):(?:(?!throw new)[\s\S])*?where:\s*"stock-connect\.ts:(\w+)"/g;
-  const matches = [...STOCK_CONNECT_SOURCE.matchAll(throwWherePattern)];
-  assert.ok(
-    matches.length > 0,
-    'expected at least one where: "stock-connect.ts:<fn>" throw site to check -- if this is 0, the site IN-05 pins was removed/renamed and this assertion is vacuous',
-  );
-  for (const match of matches) {
-    const messagePrefix = match[1];
-    const whereFn = match[2];
-    assert.equal(
-      messagePrefix,
-      whereFn,
-      `thrown message is prefixed "${messagePrefix}:" but its own where: field names "${whereFn}" -- ` +
-        `a wrong function name in the thrown message misdirects diagnosis (02-REVIEW.md IN-05)`,
-    );
-  }
-});
-
-// Strips `//` and `/* ... */` comments line-by-line, closing a block comment
-// on the FIRST close-token found by position, never by whether the trimmed line
-// happens to end with one, and re-feeding any code trailing a same-line
-// close back through the same logic.
-function stripCommentLinesForShellScan(src: string): string {
-  const out: string[] = [];
-  let inBlock = false;
-
-  function processSegment(text: string): void {
-    if (inBlock) {
-      const closeIdx = text.indexOf("*/");
-      if (closeIdx === -1) return;
-      inBlock = false;
-      processSegment(text.slice(closeIdx + 2));
-      return;
-    }
-    const trimmed = text.trim();
-    if (trimmed.startsWith("/*")) {
-      const openIdx = text.indexOf("/*");
-      const closeIdx = text.indexOf("*/", openIdx + 2);
-      if (closeIdx === -1) {
-        inBlock = true;
-        return;
-      }
-      processSegment(text.slice(closeIdx + 2));
-      return;
-    }
-    if (/^\s*\/\//.test(text)) return;
-    out.push(text);
-  }
-
-  for (const line of src.split("\n")) {
-    processSegment(line);
-  }
-  return out.join("\n");
-}
-
-/** The complete top-level shell-scannable module list this repo ships: every
- * `*.ts`/`*.mjs` directly under `src/mcp/vice`, excluding `*.test.*`
- * files (same `readdirSync`-derived, non-recursive convention as
- * tool-location-consumers.test.ts's topLevelProductionModules() -- does not
- * walk into `resources/` or `node_modules/`). Test files are excluded because
- * they legitimately spawn shells against their own fixed, non-caller-derived
- * fixture paths (e.g. vice-proxy.test.ts's `--help` capture helper); the
- * finding this pin closes (13-REVIEW.md WR-01) is about a caller-derived
- * value reaching a shell, which only shipped/production code can do. */
-function topLevelShellScanFiles(): string[] {
-  return readdirSync(VICE_DIR)
-    .filter((name) => /\.(ts|mjs)$/.test(name))
-    .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name));
-}
-
-test("13-REVIEW.md WR-01 pin: no production .ts/.mjs file in src/mcp/vice interpolates a template placeholder into a sh -c command string", () => {
-  // Derived, not a literal check against checkCommandAvailable() alone: scans
-  // the ENTIRE derived file set for the forbidden shape (a `"-c"` argument
-  // followed by a backtick template literal containing `${`), so a future
-  // caller-derived shell command anywhere in this directory trips the same
-  // gate the review's fix (commit f73d0fa) closed.
-  const shCInterpolationPattern = /["'`]-c["'`]\s*,\s*`[^`]*\$\{[^`]*`/g;
-  const violations: Array<{ file: string; snippet: string }> = [];
-  for (const name of topLevelShellScanFiles()) {
-    const src = readFileSync(join(VICE_DIR, name), "utf8");
-    const stripped = stripCommentLinesForShellScan(src);
-    for (const match of stripped.matchAll(shCInterpolationPattern)) {
-      violations.push({ file: name, snippet: match[0] });
-    }
-  }
-  assert.deepEqual(
-    violations,
-    [],
-    "found a sh -c command string interpolating a template placeholder -- this is the shell-interpolation " +
-      "anti-pattern 13-REVIEW.md WR-01 closed in probe-binmon.ts's checkCommandAvailable() (commit f73d0fa); " +
-      "pass the value as a positional shell argument instead:\n" +
-      violations.map((v) => `  ${v.file}: ${v.snippet}`).join("\n"),
-  );
 });

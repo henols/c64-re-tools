@@ -62,11 +62,9 @@
 //   - Never copy a snapshot byte offset, a module body length or a module
 //     name into this file, not even in a comment as documentation, and not
 //     even into the usage text. The next person to update the layout will
-//     update `vsf-slice.ts` and will not know to look here. Its colocated
-//     test asserts the absence mechanically, so this is a red gate rather
-//     than a promise. (The `$D000-$DFFF` range in the usage below is a C64
-//     address range and a fact about the memory-read route, not a snapshot
-//     layout constant.)
+//     update `vsf-slice.ts` and will not know to look here. (The
+//     `$D000-$DFFF` range in the usage below is a C64 address range and a
+//     fact about the memory-read route, not a snapshot layout constant.)
 import { spawnSync } from "node:child_process";
 
 // The resolution ladder used to live HERE,
@@ -86,43 +84,41 @@ const TARGET_FILE = "vsf-slice.ts";
 
 /** Forwards argv to the MCP-side entry point with stdio inherited, so its
  * stdout and stderr reach the caller unmodified and its exit status is this
- * script's exit status. */
+ * script's exit status. A refusal made here also ends with a one-line JSON
+ * `{ ok: false, message }` result on stdout. */
+function refuse(message: string): number {
+  console.error(message);
+  console.log(JSON.stringify({ ok: false, message }));
+  return 1;
+}
+
 function forward(argv: string[]): number {
   const resolved = resolveMcpModule(TARGET_FILE);
 
   if (!resolved.ok) {
-    console.error(
+    return refuse(
       `vsf-slice.ts: ${refusalMessage(TARGET_FILE, resolved.rungs)}\n` +
         `${TARGET_FILE} is where the .vsf layout lives. Refusing rather than slicing the snapshot ` +
         `here: a second copy of a version-sensitive byte layout is how a wrong image gets produced ` +
         `with no error.`,
     );
-    return 1;
   }
 
   const run = spawnSync(process.execPath, [resolved.path, ...argv], { stdio: "inherit" });
   if (run.error) {
-    console.error(`vsf-slice.ts: could not run ${resolved.path}: ${run.error.message}`);
-    return 1;
+    return refuse(`vsf-slice.ts: could not run ${resolved.path}: ${run.error.message}`);
   }
   if (run.signal) {
-    console.error(`vsf-slice.ts: ${resolved.path} was killed by ${run.signal}`);
-    return 1;
+    return refuse(`vsf-slice.ts: ${resolved.path} was killed by ${run.signal}`);
   }
   return run.status ?? 1;
 }
 
 // Both verbs forward identically. The table exists so an unknown verb is
 // answered here, with this script's usage, rather than by a subprocess whose
-// own usage names a file the caller did not run.
-//
-// Prototype-less, via Object.create(null). A plain object
-// literal inherits Object.prototype, so `commands["constructor"]` and
-// `commands["toString"]` are truthy FUNCTIONS: an unknown verb that happens to
-// be a prototype member passed the known-verb test and was then CALLED, so the
-// documented usage was never printed and the failure surfaced as a confusing
-// message from process.exit() about its argument type instead. Same idiom this
-// file already uses for its flag bag, applied one level up.
+// own usage names a file the caller did not run. It has no prototype
+// (Object.create(null)), so a verb such as "constructor" or "toString" is
+// unknown, not an inherited function.
 const commands: Record<string, (argv: string[]) => number> = Object.assign(Object.create(null), { slice: forward, digest: forward });
 
 const [cmd, ...rest] = process.argv.slice(2);

@@ -95,9 +95,9 @@ export interface HostToolFileResult {
  * fields a success carries depends on the tool (`results`/`stderrTail`/
  * `exitStatus` for the file-producing tools, `entrypoint` for
  * petcat.decode, `available`/`command`/`version` for oracle.probe,
- * `stdout` for oracle.run). oracle.run reports its own not-ok verdict as
- * `{ ok: false, stdout, reason }`, so a caller of that tool must not rely
- * on `message` being present. */
+ * `stdout` for oracle.run). Every failure reply carries `message`. An
+ * oracle.run failure also carries `reason` and `stdout`, so a caller of that
+ * tool reads `reason ?? message`. */
 export type HostToolResponse =
   | {
       ok: true;
@@ -355,7 +355,12 @@ export function invokeHostTool(tool: string, args: object, { destDir, baseDir = 
 export function invokeHostToolSync(tool: string, args: object, { baseDir = process.cwd(), timeoutMs }: InvokeHostToolSyncOptions = {}): HostToolResponse {
   const resolved = resolveMcpModule(HOST_TOOL_CLIENT_FILE);
   if (!resolved.ok) return { ok: false, message: refusalMessage(HOST_TOOL_CLIENT_FILE, resolved.rungs) };
-  const staging = mkdtempSync(join(tmpdir(), "c64re-host-tool-"));
+  let staging: string;
+  try {
+    staging = mkdtempSync(join(tmpdir(), "c64re-host-tool-"));
+  } catch (e) {
+    return { ok: false, message: `cannot prepare a staging directory: ${e instanceof Error ? e.message : String(e)}` };
+  }
   try {
     const r = spawnSync(process.execPath, clientCliArgs(resolved.path, tool, args, staging, baseDir), {
       encoding: "utf8",

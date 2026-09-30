@@ -31,10 +31,8 @@ disk image.
 Options: `--image PATH` `--name CBM-NAME` `--out-dir DIR` `--json`.
 
 The default `--out-dir` is the directory of the image, the same default that
-`c64-assembler` uses. The script resolves `--image` and `--out-dir`
-**workspace-relative** to the smallest ancestor directory that contains both.
-This occurs before the request goes to the seam. `c64-assembler` uses the same
-resolution for `source` and `--out-dir`. The seam sends `--name` to `c1541`
+`c64-assembler` uses. The script resolves `--image` and `--out-dir` against
+the current working directory. The seam sends `--name` to `c1541`
 unchanged and never resolves it as a path. The seam refuses a value that
 starts with `-` before it starts a child process. Otherwise the CLI of
 `c1541` would read that value as a flag.
@@ -124,13 +122,14 @@ never only a boolean**, when one of these conditions is true:
 A directory chain is cyclic or self-referential in two cases: two entries
 claim the same first track/sector, or a "next directory" pointer points back
 to a sector already seen. That sector can be the start sector of the
-directory. In both cases the command does not loop. It reports a top-level
+directory. All entries in one directory sector share the same pointer. So
+the same pointer on consecutive entries is one sector, not a repeat. In both cases the command does not loop. It reports a top-level
 `chain_error` that names the repeated pointer. Then it audits all remaining
 entries. A chain error on one entry never hides an independent flag on a
 different entry.
 
 ```json
-{"entries":[{"name":"basicstub","blocks":1,"first_track":17,"first_sector":0,"suspicious":false,"suspicious_reasons":[]}],"chain_error":null}
+{"ok":true,"entries":[{"name":"basicstub","blocks":1,"first_track":17,"first_sector":0,"suspicious":false,"suspicious_reasons":[]}],"chain_error":null}
 ```
 
 **A flag is a signal to investigate, not a verdict.** Three causes can give a
@@ -148,11 +147,13 @@ result. `c1541` itself exits `0` also on a genuine failure. It prints its own
 `Error - ...` lines to stdout. So the classifier of the seam decides success,
 not the exit code.
 
-Without `--json`, a failed call prints `c1541 call FAILED: <message>` on
-stderr. A missing `--image`, or a missing `--name` for `entry`, `chain` or
-`read`, prints `error: usage: …` and exits 1. The script does not call the
-seam in that case. `audit` fails as a whole when its `dir` call or its `bam`
-call fails, and it prints that refusal unchanged. A failed `entry` call for
+The last line on stdout is always the JSON result. Without `--json`, text
+lines come first. A missing `--image`, or a missing `--name` for `entry`,
+`chain` or `read`, gives `{"ok":false,"message":"usage: …"}` and exit code
+1. The script does not call the seam in that case. `audit` fails as a whole
+when its `dir` call or its `bam` call fails, and it gives that refusal
+unchanged. It also fails when the listing has no file entry or the
+allocation map has no track row: an empty listing is not a clean disk. A failed `entry` call for
 one name does not stop the audit. The audit records that entry with the
 refusal as its reason.
 
@@ -173,5 +174,5 @@ refusal as its reason.
 
 | Symptom | Correct |
 |---|---|
-| `error: usage: entry --image <path.d64> --name <cbm-name> [--out-dir <dir>] [--json]` | `entry`, `chain` and `read` need `--name`, a CBM filename or glob, never a path. |
+| `usage: entry --image <path.d64> --name <cbm-name> [--out-dir <dir>] [--json]` in the `message` | `entry`, `chain` and `read` need `--name`, a CBM filename or glob, never a path. |
 | `"suspicious":true` on an `audit` entry | A signal to investigate, not a verdict. Read its `suspicious_reasons`. |

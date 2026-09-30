@@ -98,11 +98,11 @@ export const SPRITE_ASCII_LEGEND_HIRES = "'.' = transparent (bit clear), '#' = s
 export const SPRITE_ASCII_LEGEND_MULTICOLOUR =
   "'.' = transparent (00), '#' = sprite colour (10), '@' = multicolour 1 (01), '%' = multicolour 2 (11)";
 
-/** vice_sprite_inspect's `format` values actually served on stock (D-05-03). */
+/** vice_sprite_inspect's `format` values served. */
 export const SERVED_INSPECT_FORMATS = ["ascii", "binary"];
 
-/** vice_sprite_inspect's `format` values refused by name (D-05-03) -- built
- * for a value nothing calls, mirroring the SHOT-01..SHOT-05 cut. */
+/** vice_sprite_inspect's `format` values refused by name: no skill uses a
+ * PNG rendering, so none is built. */
 export const REFUSED_INSPECT_FORMATS = ["png_base64"];
 
 // ---------------------------------------------------------------------------
@@ -594,7 +594,7 @@ export const handleSpriteInspect: StockSessionHandler = async (args, session, _d
     }
     if (REFUSED_INSPECT_FORMATS.includes(args.format)) {
       return isErrorText(
-        `${toolName}: format "png_base64" was cut from this milestone with SHOT-01..SHOT-05 -- no skill calls it. ` +
+        `${toolName}: format "png_base64" is not supported. ` +
           `Served formats are: ${SERVED_INSPECT_FORMATS.join(", ")}.`,
       );
     }

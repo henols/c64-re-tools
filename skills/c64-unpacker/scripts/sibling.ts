@@ -16,13 +16,23 @@
 //     consuming skill carries one because the helper cannot
 //     live in c64-project itself.
 
-import { resolve } from "node:path";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export type SiblingLoad<T> = { ok: true; mod: T } | { ok: false; message: string };
 
 /** The one skill the other skills reach into. */
 export const SIBLING_SKILL = "c64-project";
+
+/** True when Node's not-found message names exactly the sibling file
+ * `file`, and not a file inside an installed sibling. Node words it as
+ * `Cannot find module '<path>' imported from <importer>`. */
+function isMissingSibling(message: string, file: string): boolean {
+  const named = /Cannot find module '([^']+)'/.exec(message);
+  if (named === null) return false;
+  const path = named[1].split("\\").join("/");
+  return path.endsWith(`/${SIBLING_SKILL}/scripts/${file}`);
+}
 
 /** Runs `load` (a literal `() => import("../../c64-project/scripts/<file>")`).
  * Returns the module, or a refusal when `file` itself is not installed.
@@ -33,7 +43,7 @@ export async function loadSibling<T>(load: () => Promise<T>, file: string, who: 
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     const message = String(err.message);
-    if (err.code === "ERR_MODULE_NOT_FOUND" && message.includes(SIBLING_SKILL) && message.includes(file)) {
+    if (err.code === "ERR_MODULE_NOT_FOUND" && isMissingSibling(message, file)) {
       return {
         ok: false,
         message:
@@ -50,7 +60,8 @@ export async function loadSibling<T>(load: () => Promise<T>, file: string, who: 
  * refusal and exits 1; when imported it throws it. Pass `import.meta.url`. */
 export function siblingOrRefuse<T>(load: SiblingLoad<T>, importMetaUrl: string): T {
   if (load.ok) return load.mod;
-  if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(importMetaUrl)) {
+  // realpathSync(): the entry point may run through a symlinked install.
+  if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(importMetaUrl)) {
     console.error(`error: ${load.message}`);
     process.exit(1);
   }

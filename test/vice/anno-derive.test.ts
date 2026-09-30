@@ -38,6 +38,7 @@ import {
 import type { AnnoStoreHandle } from "../../src/mcp/vice/anno-store.mts";
 import { NO_ROW, resolveAt } from "../../src/mcp/vice/anno-index.mts";
 import { AnnoAddressError } from "../../src/mcp/vice/anno-types.mts";
+import { AnnoToolArgumentError } from "../../src/mcp/vice/anno-tool-defs.mts";
 import { parsePrg } from "../../src/mcp/vice/prg-image.mts";
 import {
   AnnoDeriveArgumentError,
@@ -338,11 +339,11 @@ test("STORE-06: max_results is REQUIRED with no default, and 0 is refused by nam
   withFixture((fx) => {
     assert.throws(
       () => searchAnnotations(fx.handle, fx.image, fx.origin, { query: "jsr" } as never),
-      (err: unknown) => err instanceof AnnoDeriveArgumentError && /max_results/.test((err as Error).message),
+      (err: unknown) => err instanceof AnnoToolArgumentError && /max_results/.test((err as Error).message),
     );
     assert.throws(
       () => searchAnnotations(fx.handle, fx.image, fx.origin, { query: "jsr", max_results: 0 }),
-      (err: unknown) => err instanceof AnnoDeriveArgumentError && /max_results/.test((err as Error).message),
+      (err: unknown) => err instanceof AnnoToolArgumentError && /max_results/.test((err as Error).message),
     );
   });
 });

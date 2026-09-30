@@ -15,6 +15,7 @@ import {
   parseBitRange,
   type RegBitsField,
 } from "../../src/mcp/vice/anno-regbits-gen.mts";
+import { decomposeRegisterValue } from "../../src/mcp/vice/anno-enum-gen.mts";
 import { REPO_ROOT, VICE_DIR } from "./paths.ts";
 
 const ACME_IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -163,25 +164,27 @@ test("the table also contains $D011 and $01 (address 1)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// OVERRIDES WHY-comment coverage (mechanical, not eyeballed): every override
-// field/register entry in the SOURCE has a "// WHY:" comment directly above
-// it. Counts both and reports them, per this plan's acceptance criteria.
+// Every listed register covers all eight bits, so any byte written to it
+// decomposes.
 // ---------------------------------------------------------------------------
 
-test("OVERRIDES: every field/register override entry carries a WHY comment (grep-counted, not eyeballed)", () => {
-  const src = readFileSync(join(VICE_DIR, "anno-regbits-gen.mts"), "utf8");
-  const overridesSection = src.slice(src.indexOf("export const OVERRIDES"), src.indexOf("function findOverride"));
-  const whyComments = overridesSection.match(/\/\/ WHY:/g) ?? [];
-  // Count override "entries" as field-override objects (each carries its own bit) plus
-  // register-level overrides that are label-only or synthetic-only (no fields[] array).
-  const fieldEntries = overridesSection.match(/\{ bit: "/g) ?? [];
-  const registerEntries = overridesSection.match(/address: \d+, \/\//g) ?? [];
-  console.log(
-    `anno-regbits-gen.mts OVERRIDES: ${whyComments.length} WHY comments, ${fieldEntries.length} field-level entries, ` +
-      `${registerEntries.length} register-level (label/synthetic) entries needing their own WHY`,
-  );
-  assert.ok(whyComments.length >= fieldEntries.length, "every field-level override entry must carry its own WHY comment");
-  assert.ok(whyComments.length > 0, "OVERRIDES must carry at least one WHY comment");
+test("decomposeRegisterValue: every byte $00-$FF decomposes for every register in the table, and the terms OR back to the byte", () => {
+  const doc = readCommittedDoc();
+  // $0001 is left out: its enum name starts with a digit, so every term is refused as an illegal ACME identifier by design.
+  const registers = Object.keys(doc).filter((key) => key !== "_generated" && key !== "$0001");
+  assert.ok(registers.length > 20, "the table lists its registers");
+  for (const key of registers) {
+    const address = Number.parseInt(key.slice(1), 16);
+    for (let value = 0; value <= 0xff; value++) {
+      let decomposition;
+      try {
+        decomposition = decomposeRegisterValue(address, value);
+      } catch (err) {
+        assert.fail(`${key} value $${value.toString(16)} did not decompose: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      assert.equal(decomposition.terms.reduce((acc, term) => acc | term.value, 0), value, `${key} $${value.toString(16)} terms OR back to the byte`);
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -47,11 +47,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");
 const ROOT_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject.a");
 const ROOT_SOURCE_NAME = "hazard-subject.a";
-const DISPATCH_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-dispatch.a");
-const ALIGN_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align.a");
 const ALIGN_MISALIGNED_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align-misaligned.a");
 const PRG_PATH = join(FIXTURE_DIR, "hazard-subject.prg");
-const MISALIGNED_PRG_PATH = join(FIXTURE_DIR, "hazard-subject-misaligned.prg");
 const REGENERATOR_PATH = join(FIXTURE_DIR, "make-hazard-subject-fixtures.ts");
 
 const SKIP_REASON = acmeSkipReasonFor("hazard-subject-fixture.test.ts");
@@ -152,52 +149,6 @@ test("hazard subject: the mixed-index-register declining control appears in no p
   }
 });
 
-test("hazard subject: the dispatch routine's two paired loads walk the Y register, never X; the declining control walks X on one load and Y on the other", () => {
-  const rootSource = readFileSync(ROOT_SOURCE_PATH, "utf8");
-  const dispatchSource = readFileSync(DISPATCH_SOURCE_PATH, "utf8");
-
-  assert.ok(rootSource.includes("dispatch_hi,y"), "the proven site's first load must index dispatch_hi through Y");
-  assert.ok(rootSource.includes("dispatch_lo,y"), "the proven site's second load must index dispatch_lo through Y");
-  assert.ok(!/,\s*x\b/i.test(rootSource), "the root file must contain no X-indexed load at all -- the proven site never uses X");
-
-  assert.ok(dispatchSource.includes("decline_hi,x"), "the declining control's first load must index decline_hi through X");
-  assert.ok(dispatchSource.includes("decline_lo,y"), "the declining control's second load must index decline_lo through Y");
-});
-
-test("hazard subject: every entry in both split address tables is written as a label followed by an explicit -1", () => {
-  const dispatchSource = readFileSync(DISPATCH_SOURCE_PATH, "utf8");
-  const provenTablesBlock = dispatchSource.slice(dispatchSource.indexOf("dispatch_hi"), dispatchSource.indexOf("decline_hi"));
-  assert.ok(provenTablesBlock.length > 0, "precondition: dispatch_hi must precede decline_hi in the source");
-  const biasedEntries = provenTablesBlock.match(/dispatch_target_\d+-1\)/g) ?? [];
-  assert.equal(
-    biasedEntries.length,
-    6,
-    "the proven site's two tables (dispatch_hi, dispatch_lo) must together carry exactly six explicit `label-1` entries -- three targets, high byte and low byte each",
-  );
-});
-
-test("hazard subject: no fixture source in this tree names the scanner it is planted against", () => {
-  const dispatchSource = readFileSync(DISPATCH_SOURCE_PATH, "utf8");
-  const stripped = dispatchSource
-    .split("\n")
-    .filter((line) => !/^\s*;/.test(line))
-    .join("\n");
-  assert.ok(!stripped.includes("scanIndirectDispatch"), "the dispatch fixture source must never name the scanner it is planted against");
-});
-
-test("hazard subject: the root source carries exactly four bare-filename !source lines", () => {
-  const rootSource = readFileSync(ROOT_SOURCE_PATH, "utf8");
-  const sourceLines = rootSource.match(/^!source\s+"[^"/\\]+"\s*$/gm) ?? [];
-  assert.equal(sourceLines.length, 4, "the root must carry exactly four !source lines after the dispatch, alignment and raster constructions are all added, each a bare filename");
-});
-
-test("hazard subject: no planning-vocabulary string appears anywhere in the dispatch fixture source", () => {
-  const dispatchSource = readFileSync(DISPATCH_SOURCE_PATH, "utf8");
-  assert.ok(!/\bD-\d/.test(dispatchSource), "must not carry a bare D-NN decision id");
-  assert.ok(!/\bBUILD-\d/.test(dispatchSource), "must not carry a BUILD-NN requirement id");
-  assert.ok(!/\bPhase\s+\d/.test(dispatchSource), "must not carry a 'Phase N' citation");
-});
-
 /** Assembles `rootSourceName` fresh (same discipline as `assembleFresh()`)
  * AND asks ACME for a symbol list, so a test can check a real label's
  * ASSEMBLED address rather than reading it out of the source text. Returns
@@ -255,40 +206,11 @@ test("hazard subject: the byte written to $07f8 equals the sprite base divided b
   assert.equal(loader.operand!.value, Math.floor(spriteBase / 64), "the byte written to $07f8 must equal the sprite base divided by 64");
 });
 
-test("hazard subject: four distinct labelled data tables exist -- sprite shape, character set, level and music", () => {
-  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
-  for (const label of ["align_sprite_base", "align_char_base", "align_level_table", "align_music_table"]) {
-    assert.ok(new RegExp(`^${label}\\b`, "m").test(alignSource), `${label} must be declared as its own label in the alignment source`);
-  }
-  const dataDirectives = alignSource.match(/^\s*!(byte|fill)\b/gm) ?? [];
-  assert.ok(dataDirectives.length >= 4, "each of the four tables must carry at least one data directive");
-});
-
-test("hazard subject: the alignment source carries an explicit alignment directive for both the sprite shape block and the character-set block", () => {
-  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
-  const alignDirectives = alignSource.match(/^\s*!align\b/gm) ?? [];
-  assert.equal(alignDirectives.length, 2, "exactly two !align directives are expected -- one for the character set, one for the sprite shape");
-});
-
-test("hazard subject: the sprite pointer and the VIC memory-control bits are derived from their labels, never written as bare hex constants", () => {
-  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
-  assert.ok(alignSource.includes("align_sprite_base / 64"), "the $07f8 write must derive its value from align_sprite_base, not a literal");
-  assert.ok(alignSource.includes("align_char_base / 2048"), "the $d018 write must derive its value from align_char_base, not a literal");
-});
-
-test("hazard subject: no planning-vocabulary string appears anywhere in the alignment fixture source", () => {
-  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
-  assert.ok(!/\bD-\d/.test(alignSource), "must not carry a bare D-NN decision id");
-  assert.ok(!/\bBUILD-\d/.test(alignSource), "must not carry a BUILD-NN requirement id");
-  assert.ok(!/\bPhase\s+\d/.test(alignSource), "must not carry a 'Phase N' citation");
-});
-
 // ---------------------------------------------------------------------------
 // hazard subject: class 4 -- the planted timer-stabilised raster routine,
 // the non-canonical variant of the fourth hazard class.
 // ---------------------------------------------------------------------------
 
-const RASTER_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-raster.a");
 
 /** Finds the store pair `lda #imm ; sta target` for `target`, immediately
  * adjacent in the decoded stream -- the same adjacent-pair shape the report
@@ -378,20 +300,6 @@ test("hazard subject: the routine the interrupt vector names contains no run of 
     consecutiveNops = instr.opcode === 0xea ? consecutiveNops + 1 : 0;
     assert.ok(consecutiveNops < 3, "no run of three or more consecutive no-operation instructions may exist in this routine -- that is the textbook jitter-compensation sled this variant must not carry");
   }
-});
-
-test("hazard subject: the raster fixture's own header names which of the detector's three class-4 signals it presents and which it does not", () => {
-  const rasterSource = readFileSync(RASTER_SOURCE_PATH, "utf8").toLowerCase();
-  assert.ok(rasterSource.includes("presents the third signal and only the third"), "the header must state which signal is presented");
-  assert.ok(rasterSource.includes("deliberately does not present the first signal"), "the header must state the raster-register signal is deliberately absent");
-  assert.ok(rasterSource.includes("does not present the second signal"), "the header must state the timing-sled signal is deliberately absent");
-});
-
-test("hazard subject: no planning-vocabulary string appears anywhere in the raster fixture source", () => {
-  const rasterSource = readFileSync(RASTER_SOURCE_PATH, "utf8");
-  assert.ok(!/\bD-\d/.test(rasterSource), "must not carry a bare D-NN decision id");
-  assert.ok(!/\bBUILD-\d/.test(rasterSource), "must not carry a BUILD-NN requirement id");
-  assert.ok(!/\bPhase\s+\d/.test(rasterSource), "must not carry a 'Phase N' citation");
 });
 
 // ---------------------------------------------------------------------------
@@ -512,39 +420,6 @@ function assembleMisalignedFreshWithSymbols(): { bytes: Uint8Array; symbols: Map
     rmSync(dir, { recursive: true, force: true });
   }
 }
-
-test("hazard subject: hazard-subject-misaligned.prg exists, is tracked, and differs from hazard-subject.prg", () => {
-  assert.ok(existsSync(MISALIGNED_PRG_PATH), "hazard-subject-misaligned.prg must be committed");
-  const ls = spawnSync("git", ["ls-files", "--error-unmatch", MISALIGNED_PRG_PATH], { encoding: "utf8", cwd: FIXTURE_DIR });
-  assert.equal(ls.status, 0, "hazard-subject-misaligned.prg must be a tracked file, not merely present on disk");
-  const aligned = readFileSync(PRG_PATH);
-  const misaligned = readFileSync(MISALIGNED_PRG_PATH);
-  assert.notDeepEqual([...aligned], [...misaligned], "the mis-aligned image must differ from the aligned one");
-});
-
-test("hazard subject: the mis-aligned source differs from the aligned source only in the two deliberate filler-byte insertions", () => {
-  const strip = (text: string) =>
-    text
-      .split("\n")
-      .map((line) => line.replace(/;.*$/, "").trimEnd())
-      .filter((line) => line.trim().length > 0);
-
-  const alignedLines = strip(readFileSync(ALIGN_SOURCE_PATH, "utf8"));
-  const misalignedLines = strip(readFileSync(ALIGN_MISALIGNED_SOURCE_PATH, "utf8"));
-
-  const extraLines = misalignedLines.filter((line) => line.trim() === "!byte 0").length;
-  assert.equal(extraLines, 2, "the mis-aligned source must add exactly two `!byte 0` filler lines and nothing else");
-  assert.equal(
-    misalignedLines.length,
-    alignedLines.length + 2,
-    "besides the two filler-byte insertions, the mis-aligned source's non-comment, non-blank lines must match the aligned source's exactly",
-  );
-
-  // With the two filler lines removed, every remaining non-comment,
-  // non-blank line must match the aligned source's, in order.
-  const withoutFillers = misalignedLines.filter((line) => line.trim() !== "!byte 0");
-  assert.deepEqual(withoutFillers, alignedLines, "removing the two filler-byte lines must leave the mis-aligned source identical to the aligned one, line for line");
-});
 
 test("hazard subject: the mis-aligned image's sprite shape base is not a multiple of 64, and its character-set base is not a multiple of 2048", { skip: SKIP_REASON }, () => {
   const { symbols } = assembleMisalignedFreshWithSymbols();

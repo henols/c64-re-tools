@@ -1189,9 +1189,23 @@ conformanceTest("vice_keyboard_petscii", async () => {
 });
 
 conformanceTest("vice_joystick_set", async () => {
-  const session = buildConformanceSession("conformance-vice_joystick_set", (commandType) => {
+  let device = 1;
+  const session = buildConformanceSession("conformance-vice_joystick_set", (commandType, body) => {
+    if (commandType === CommandType.BanksAvailable) {
+      return { type: "banks_available" as const, requestId: 1, errorCode: 0, banks: [{ id: 3, name: "io" }], related: [] };
+    }
+    if (commandType === CommandType.ResourceGet) {
+      return { type: "resource_get" as const, requestId: 1, errorCode: 0, valueType: "integer" as const, value: device, related: [] };
+    }
+    if (commandType === CommandType.ResourceSet) {
+      device = body.readUInt32LE(body.length - 4);
+      return conformanceAckReply(CommandType.ResourceSet);
+    }
     if (commandType === CommandType.JoyportSet) {
       return conformanceAckReply(CommandType.JoyportSet);
+    }
+    if (commandType === CommandType.MemoryGet) {
+      return { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.of(0x0e), related: [] };
     }
     throw new Error(`vice_joystick_set: unexpected commandType ${commandType}`);
   });

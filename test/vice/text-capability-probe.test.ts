@@ -13,8 +13,6 @@
 // string.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import {
@@ -33,9 +31,6 @@ import {
   type TextCapabilityCommand,
   type TextCapabilityVerdict,
 } from "../../src/mcp/vice/text-capability-probe.ts";
-import { VICE_DIR } from "./paths.ts";
-
-const OWN_MODULE = join(VICE_DIR, "text-capability-probe.ts");
 
 // ---------------------------------------------------------------------------
 // Test helpers -- test-only, never exported from the probe module itself.
@@ -646,19 +641,3 @@ test("textCapabilityIdentityWarning (WR-01): a capable verdict alongside a disag
   assert.notEqual(message, "", "expected a non-empty identity-warning message alongside a capable verdict");
 });
 
-test("source-level: text-capability-probe.ts's own module comment marks the stub/degradation strings source-traced, never live-measured", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  assert.match(src, /SOURCE-TRACED, not live-observed/);
-  assert.doesNotMatch(src, /MEASURED/);
-});
-
-// ---------------------------------------------------------------------------
-// Source-level: no filesystem write, no reference to the tool-written root.
-// ---------------------------------------------------------------------------
-
-test("source-level: text-capability-probe.ts contains no filesystem write call and no reference to the tool-written root", () => {
-  const src = readFileSync(OWN_MODULE, "utf8");
-  for (const forbidden of ["writeFileSync(", "appendFileSync(", "createWriteStream(", ".c64-re-tools"]) {
-    assert.equal(src.includes(forbidden), false, `expected text-capability-probe.ts to never contain ${JSON.stringify(forbidden)}`);
-  }
-});

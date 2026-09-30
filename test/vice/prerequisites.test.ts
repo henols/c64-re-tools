@@ -442,7 +442,8 @@ test("tools.dxa.remedies has the single key universal with exactly one entry nam
   assert.equal(remedies.universal!.length, 1);
   const entry = remedies.universal![0]!;
   assert.match(entry.text, /vendor\/dxa\/build\.bash build/);
-  assert.match(entry.source, /^src\/mcp\/vice\/host-tool\.mts:/);
+  assert.match(entry.text, /^cd src\/mcp\/vice && /, "the remedy says which directory to run in");
+  assert.equal(entry.source, "src/mcp/vice/vendor/dxa/build.bash");
 });
 
 test("assertNoStrayVersionFloor: passes on the real, unmodified document", () => {

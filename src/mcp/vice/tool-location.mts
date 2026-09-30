@@ -182,15 +182,10 @@ export interface ResolveToolResult {
   refusal: string | null;
   /** The non-empty value the declared environment variable held for this
    * call, or `null` when the record declares no variable, or the variable
-   * was unset or empty (PD-13/PD-16, LOC-03 gap closure). Populated on
-   * EVERY return path of `resolveTool()`, whatever the outcome. Exists so a
-   * CONSUMER of this seam's result -- most pointedly `backend-detect.mts`'s
-   * `resolvedBackend()` -- can report or attempt what the developer
-   * actually typed without itself reading the variable by name: LOC-02's
-   * closed-consumer-set scan (`tool-location-consumers.test.ts`) stays
-   * empty only if no sibling module re-reads one of the four declared names
-   * to recover this same information, and this field is what makes that
-   * re-read unnecessary. */
+   * was unset or empty. Populated on every return path of `resolveTool()`.
+   * It lets a consumer of this result (`backend-detect.mts`'s
+   * `resolvedBackend()`) report or try what the developer typed without
+   * reading the variable itself. */
   envCandidate: string | null;
 }
 

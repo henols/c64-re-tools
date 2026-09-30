@@ -3,8 +3,9 @@
 Run each call with `anno call <name> --args '<json>'`. `../SKILL.md` gives the
 three install forms of the command.
 
-The source of these definitions is `src/mcp/vice/anno-tool-defs.mts`. The
-`call` verb refuses a name that is not in the list below.
+`src/mcp/vice/anno-tool-defs.mts` holds only the call names and the argument
+keys that name a client file. This file documents the arguments. The `call`
+verb refuses a name that is not in the list below.
 
 ## Argument rules for all calls
 
@@ -35,7 +36,7 @@ The source of these definitions is `src/mcp/vice/anno-tool-defs.mts`. The
 | `anno_update_project_enum` | **`name`**, `new_name`, `variants`, `description`, `base_revision` | `variants` replaces the whole mapping |
 | `anno_apply_enum_usage` | **`address`**, `name`, `base_revision` | An omitted or empty `name` removes the binding |
 | `anno_batch_execute` | **`calls`** (array of `{name, arguments}`), `image` | Inner calls get `image` from the top level. Maximum depth 4 |
-| `anno_import_ghidra_export` | **`export_path`**, `sha256`, `base_revision` | Deletes the transfer file on success. Returns `constWrites` |
+| `anno_import_ghidra_export` | **`export_path`**, `sha256`, `base_revision` | Removes the transfer file on success. Returns `constWrites` |
 | `anno_join_memmap` | **`image`**, `const_writes`, `graphics_map_index`, `base_revision` | `const_writes` items are `{store_address, target_address, value}` |
 | `anno_evid_ingest` | **`memmap_text`**, **`image_sha256`**, **`argv`**, **`seed`**, `base_revision` | Writes a row only for an observed execute bit |
 | `anno_evid_reset` | **`image_sha256`**, **`argv`**, **`seed`**, `base_revision` | Removes the rows of one run identity only |

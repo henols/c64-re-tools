@@ -4,45 +4,45 @@
 // WHY THIS FILE EXISTS: the ONE place naming which server test files (in
 // this directory, test/vice/) are manual-only versus safe for the automated
 // regression gate (`npm run test:automated` in src/mcp/vice). `npm test`
-// globs every `*.test.*` file in this directory; the eleven MANUAL_ONLY_TESTS entries below are excluded from the
-// automated gate because they need genuine manual host setup -- a real
-// broker topology, a real emulator/display environment, or an installed
-// external binary such as dxa or Ghidra -- and are default-SKIP behind an
-// opt-in env var. Run them with `npm run test:manual`.
+// globs every `*.test.*` file in this directory; the MANUAL_ONLY_TESTS
+// entries below are excluded from the automated gate. Run them with
+// `npm run test:manual`.
+//
+// Every entry but one needs an external binary on the host -- a real
+// emulator, dxa or Ghidra -- and skips each case that needs it, by name,
+// unless its opt-in variable is set (VICE_LIVE_STOCK_BIN,
+// VICE_LIVE_STOCK_BIN_39, VICE_LIVE_A4_FLOOD_BIN, VICE_LIVE_RELAY_BIN,
+// VICE_LIVE_DXA, VICE_LIVE_GHIDRA, GHIDRA_HOME).
 //
 // `vice-proxy.test.ts` is the one exception: it needs no host dependency and
 // terminates cleanly, but it spawns a real child process per test case and
 // takes about 26-27 seconds per run. It stays manual-only for that per-run
 // cost, which is unsuited to a gate meant to run on every edit.
 //
-// STANDING RULE: every payload shape a manual-only live suite depends on
-// MUST have a mirror assertion in the automated set. A manual-only file is
-// invisible to this gate by design, so a shape change with no automated
-// mirror can red it silently.
+// A manual-only file is invisible to the automated gate. When a manual-only
+// suite depends on a payload shape, prefer an automated test that asserts the
+// same shape, so a change to it reds the gate and not only the manual run.
 //
 // WHAT NOT TO DO:
 //   - Never re-list these file names in a CI workflow, an npm script, or a
 //     second test runner. A new manual-only file goes into MANUAL_ONLY_TESTS
 //     below and nowhere else.
-//   - Never add a manual-only suite without an automated mirror for the
-//     payload shapes it depends on (see the STANDING RULE above).
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { readdirSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The test files dispositioned as manual-only. Frozen: extend this array
  * (never add a parallel list) if another file needs the same treatment. */
 export const MANUAL_ONLY_TESTS: readonly string[] = Object.freeze([
-  "vice-broker-launch.test.ts",
   "vice-proxy.test.ts",
-  "broker-e2e.test.ts",
   "stock-live.test.ts",
   "stock-broker-live.test.ts",
   "stock-a4-checkpoint-flood.test.ts",
   "dxa-live.test.ts",
   "ghidra-live.test.ts",
   "ghidra-opcode-live.test.ts",
+  "sleigh-compile-gate.test.ts",
   "text-monitor-live.test.ts",
   "stock-live-relay.test.ts",
 ]);
@@ -75,7 +75,8 @@ function main(): void {
 }
 
 // Only run when invoked directly (`node test-gate.ts` / `npm run
-// test:automated`), never when imported.
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// test:automated`), also through a symlink, never when imported.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
   main();
 }

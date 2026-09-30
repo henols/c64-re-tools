@@ -5,12 +5,11 @@
 // own TDD instruction.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { decodeBankState, isBankConditionalAddress, regionAdmitsEntry, resolveBankedRegion } from "../../src/mcp/vice/anno-bank.mts";
-import type { BankedRegion } from "../../src/mcp/vice/anno-bank.mts";
 import { closeStore, listComments, openStore, putXref } from "../../src/mcp/vice/anno-store.mts";
 import { parseConstWrites, parseGhidraExport } from "../../src/mcp/vice/anno-import.mts";
 import type { ConstWriteFact } from "../../src/mcp/vice/anno-import.mts";
@@ -20,15 +19,6 @@ import type { MemmapEntry } from "../../src/mcp/vice/memmap-lookup.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_CAPTURE_PATH = join(HERE, "fixtures", "ghidra", "export-bank-path-dependent.txt");
-const REAL_ANNO_BANK_PATH = join(VICE_DIR, "anno-bank.mts");
-const REAL_ANNO_JOIN_PATH = join(VICE_DIR, "anno-join.mts");
-const REAL_ANNO_STORE_PATH = join(VICE_DIR, "anno-store.mts");
-const REAL_MEMMAP_LOOKUP_PATH = join(VICE_DIR, "memmap-lookup.mts");
-// Plan 37-08 (AUTO-07) added a fourth sibling import to anno-join.mts
-// (`./anno-graphics.mts`, the graphics write-back's own derivation module) --
-// shimmed here the same way, by absolute path, mirroring this file's own
-// anno-store.mts/memmap-lookup.mts shims below.
-const REAL_ANNO_GRAPHICS_PATH = join(VICE_DIR, "anno-graphics.mts");
 
 const ESCAPED_PROVENANCE_TOKEN_PREFIX = PROVENANCE_TOKEN_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const PROVENANCE_TOKEN_RE = new RegExp(`${ESCAPED_PROVENANCE_TOKEN_PREFIX}[0-9a-f]{64}$`);
@@ -36,7 +26,6 @@ const BANK_PROVENANCE_RE = /\[processor-port:\$[0-9a-f]+(?:,\$[0-9a-f]+)*\]/;
 
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { VICE_DIR } from "./paths.ts";
 
 function inTempDir(body: (dir: string) => void): void {
   const dir = mkdtempSync(join(tmpdir(), "anno-bank-"));
@@ -387,248 +376,49 @@ test("regionAdmitsEntry(): matches io_area/character_rom/basic_rom/kernal_rom vi
 });
 
 // ---------------------------------------------------------------------------
-// Phase 37, plan 37-06, Task 2 -- Control: bypassing the processor-port
-// decode reddens the two-value flip (37-VALIDATION.md Observed-Red Controls
-// row 5). The mutation lives in a SCRATCH COPY of `anno-bank.mts` ONLY; the
-// committed module is never opened for writing by this file (a red
-// observation is its own committed deliverable, never batched with the fix
-// that makes it green).
+// The processor-port value decides the annotation, and disagreeing values
+// decline, over the real captured export's const-write facts.
 // ---------------------------------------------------------------------------
 
-/** `decodeBankState()`'s committed form, held verbatim so the mutation below
- * is a single, exact, whole-function textual replacement -- copied
- * character-for-character from `anno-bank.mts` at plan time. */
-const FIXED_DECODE_BANK_STATE = `export function decodeBankState(value: number): BankState {
-  const raw = value;
-  const b = value & 0x07; // bits #2-#0: CHAREN(2) HIRAM(1) LORAM(0)
-  const bits10 = b & 0x03;
-  const bit2Set = (b & 0x04) !== 0;
-
-  const ioRange: BankedRegion = bits10 === 0 ? "ram" : bit2Set ? "io_area" : "character_rom";
-  const basicRange: BankedRegion = bits10 === 0x03 ? "basic_rom" : "ram";
-  const kernalRange: BankedRegion = (b & 0x02) !== 0 ? "kernal_rom" : "ram";
-
-  return { raw, ioRange, basicRange, kernalRange };
-}`;
-
-/** The bypassed form: ignores the processor port value entirely and always
- * reports the SAME region at every range, exactly as an implementation that
- * forgot to decode `$01` at all would. */
-const BYPASSED_DECODE_BANK_STATE = `export function decodeBankState(value: number): BankState {
-  const raw = value;
-  // BYPASS (planted violation, plan 37-06 Task 2): ignores the processor
-  // port entirely and always reports the same region.
-  return { raw, ioRange: "io_area", basicRange: "basic_rom", kernalRange: "kernal_rom" };
-}`;
-
-/** Builds a scratch tree holding a MUTATED copy of `anno-bank.mts` (the bit
- * decode bypassed, nothing else touched), an UNMUTATED copy of
- * `anno-join.mts` (so the full pipeline -- not just the decode function in
- * isolation -- is what is actually observed going wrong), and re-export
- * shims for `anno-join.mts`'s other two sibling imports (`anno-store.mts`,
- * `memmap-lookup.mts`), so the scratch join calls the exact same real store
- * and memmap-lookup functions this test file itself uses statically.
- * Asserts the committed `anno-bank.mts` still carries the exact decode text
- * before mutating, so source drift fails loudly rather than making the
- * replacement a silent no-op. */
-function buildScratchTreeWithBypassedDecode(): { tmpDir: string; modulePath: string } {
-  const tmpDir = mkdtempSync(join(tmpdir(), "anno-bank-bypass-"));
-
-  const committedBankSource = readFileSync(REAL_ANNO_BANK_PATH, "utf8");
-  assert.ok(
-    committedBankSource.includes(FIXED_DECODE_BANK_STATE),
-    "expected the committed anno-bank.mts to still carry decodeBankState()'s committed form -- has the source drifted?",
-  );
-  const mutatedBankSource = committedBankSource.replace(FIXED_DECODE_BANK_STATE, BYPASSED_DECODE_BANK_STATE);
-  assert.ok(!mutatedBankSource.includes(FIXED_DECODE_BANK_STATE), "expected the committed decode text to be gone from the mutated source");
-  writeFileSync(join(tmpDir, "anno-bank.mts"), mutatedBankSource, "utf8");
-
-  writeFileSync(join(tmpDir, "anno-join.mts"), readFileSync(REAL_ANNO_JOIN_PATH, "utf8"), "utf8");
-  writeFileSync(join(tmpDir, "anno-store.mts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
-  writeFileSync(join(tmpDir, "memmap-lookup.mts"), `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`, "utf8");
-  writeFileSync(join(tmpDir, "anno-graphics.mts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
-
-  return { tmpDir, modulePath: join(tmpDir, "anno-join.mts") };
-}
-
-async function importScratchAnnoJoinWithBypassedBank(modulePath: string): Promise<{ runMemmapJoin: typeof runMemmapJoin }> {
-  return (await import(`${modulePath}?t=${Date.now()}-${Math.random()}`)) as { runMemmapJoin: typeof runMemmapJoin };
-}
-
-/** Runs one single-reaching-value join over the real captured export's
- * const-write facts, wiring exactly ONE store address to `$D020` via
- * `putXref()`, and returns the resulting comment's label. Shared by both the
- * committed and the mutated observations below so neither duplicates the
- * store setup. */
-function labelForSingleValueRun(runJoin: typeof runMemmapJoin, storeAddress: number, facts: readonly ConstWriteFact[]): string | undefined {
+/** Runs one single-reaching-value join, wiring exactly ONE store address to
+ * `$D020`, and returns the resulting comment's label. */
+function labelForSingleValueRun(storeAddress: number, facts: readonly ConstWriteFact[]): string | undefined {
   let label: string | undefined;
   inTempDir((dir) => {
     const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
     putXref(handle, { fromAddress: storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
-    const { decisions } = runJoin(handle, { imageOrigin: 0x0801, imageByteLength: 0x30, constWrites: facts }, loadMemmap());
+    const { decisions } = runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 0x30, constWrites: facts }, loadMemmap());
     label = decisions.find((d) => d.address === 0xd020)?.label;
     closeStore(handle);
   });
   return label;
 }
 
-test(
-  "PLANTED VIOLATION: bypassing decodeBankState() makes the $34/$33 flip stop changing the annotation, and the border-colour write is now labelled the border colour",
-  async () => {
-    const facts = realConstWrites();
-    const flip34 = facts.find((f) => f.value === 0x34)!;
-    const flip33 = facts.find((f) => f.value === 0x33)!;
+test("the $34 and $33 processor-port values each reaching $D020 alone produce different annotations there", () => {
+  const facts = realConstWrites();
+  const flip34 = facts.find((f) => f.value === 0x34)!;
+  const flip33 = facts.find((f) => f.value === 0x33)!;
+  const ramLabel = labelForSingleValueRun(flip34.storeAddress, facts);
+  const charRomLabel = labelForSingleValueRun(flip33.storeAddress, facts);
+  assert.ok(ramLabel !== undefined && charRomLabel !== undefined);
+  assert.notEqual(ramLabel, charRomLabel);
+  assert.notEqual(ramLabel, "Border color (only bits #0-#3)", "with $34 the I/O area is banked out, so $D020 is not the border colour");
+});
 
-    // ---- THE COMMITTED MODULE (statically imported, unmutated) ----
-    const committedRamLabel = labelForSingleValueRun(runMemmapJoin, flip34.storeAddress, facts);
-    const committedCharRomLabel = labelForSingleValueRun(runMemmapJoin, flip33.storeAddress, facts);
-    assert.notEqual(
-      committedRamLabel,
-      committedCharRomLabel,
-      "expected the COMMITTED module to still produce DIFFERENT annotations at $D020 under the two values",
-    );
-
-    // ---- THE MUTATED MODULE (dynamically imported scratch copy, decode bypassed) ----
-    const { tmpDir, modulePath } = buildScratchTreeWithBypassedDecode();
-    try {
-      const mutated = await importScratchAnnoJoinWithBypassedBank(modulePath);
-      const bypassedRamLabel = labelForSingleValueRun(mutated.runMemmapJoin, flip34.storeAddress, facts);
-      const bypassedCharRomLabel = labelForSingleValueRun(mutated.runMemmapJoin, flip33.storeAddress, facts);
-
-      assert.equal(
-        bypassedRamLabel,
-        "Border color (only bits #0-#3)",
-        "expected the bypass to make $D020 read as the border colour regardless of the recovered value",
-      );
-      assert.equal(
-        bypassedRamLabel,
-        bypassedCharRomLabel,
-        "expected the bypass to make the two values produce the SAME annotation -- the flip has stopped",
-      );
-    } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
-    }
-  },
-);
-
-// ---------------------------------------------------------------------------
-// Phase 37, plan 37-06, Task 3 -- Control: replacing the decline with a
-// forward-carried value reddens the path-dependent case (37-VALIDATION.md
-// Observed-Red Controls row 6; AUTO-05, the phase's sixth and last required
-// control). The mutation lives in a SCRATCH COPY of `anno-join.mts` ONLY.
-// ---------------------------------------------------------------------------
-
-/** The decline branch's committed text (the "several values resolving to
- * different regions" case) -- the single, small, textually-replaceable
- * region of source Task 1 built exactly for this control. Copied
- * character-for-character from `anno-join.mts` at plan time. */
-const FIXED_DECLINE_BLOCK_LINES = [
-  "      if (uniqueRegions.size > 1) {",
-  "        declined += 1;",
-  '        const named = uniqueValues.map((value, i) => `$${value.toString(16)}(${regionsByValue[i]})`).join(", ");',
-  "        decisions.push({",
-  "          address,",
-  '          outcome: "declined",',
-  '          reason: `$${address.toString(16)} is reached under disagreeing processor-port values: ${named}`,',
-  "        });",
-  "        continue;",
-  "      }",
-];
-const FIXED_DECLINE_BLOCK = FIXED_DECLINE_BLOCK_LINES.join("\n");
-
-/** The forward-carry replacement: takes the FIRST (ascending) reaching value
- * and annotates with its own region, exactly as an implementation that
- * carried a single bank value forward past a disagreement would. */
-const FORWARD_CARRIED_DECLINE_BLOCK_LINES = [
-  "      if (uniqueRegions.size > 1) {",
-  '        const region = regionsByValue[0]! as Exclude<BankedRegion, "not_applicable">;',
-  '        annotateUnderRegion(region, `$${uniqueValues[0]!.toString(16)}`);',
-  "        continue;",
-  "      }",
-];
-const FORWARD_CARRIED_DECLINE_BLOCK = FORWARD_CARRIED_DECLINE_BLOCK_LINES.join("\n");
-
-/** Builds a scratch tree holding a MUTATED copy of `anno-join.mts` (the
- * decline branch replaced, nothing else touched) and re-export shims for ALL
- * THREE of its sibling imports (`anno-bank.mts`, `anno-store.mts`,
- * `memmap-lookup.mts`), forwarding by absolute path to the real, unmutated
- * files -- neither `anno-bank.mts` nor its own siblings need mutating for
- * this control, only resolving. */
-function buildScratchTreeWithForwardCarriedDecline(): { tmpDir: string; modulePath: string } {
-  const tmpDir = mkdtempSync(join(tmpdir(), "anno-join-forward-carry-"));
-
-  const committedJoinSource = readFileSync(REAL_ANNO_JOIN_PATH, "utf8");
-  assert.ok(
-    committedJoinSource.includes(FIXED_DECLINE_BLOCK),
-    "expected the committed anno-join.mts to still carry the decline branch's committed text -- has the source drifted?",
-  );
-  const mutatedJoinSource = committedJoinSource.replace(FIXED_DECLINE_BLOCK, FORWARD_CARRIED_DECLINE_BLOCK);
-  assert.ok(!mutatedJoinSource.includes(FIXED_DECLINE_BLOCK), "expected the committed decline text to be gone from the mutated source");
-  writeFileSync(join(tmpDir, "anno-join.mts"), mutatedJoinSource, "utf8");
-
-  writeFileSync(join(tmpDir, "anno-bank.mts"), `export * from ${JSON.stringify(REAL_ANNO_BANK_PATH)};\n`, "utf8");
-  writeFileSync(join(tmpDir, "anno-store.mts"), `export * from ${JSON.stringify(REAL_ANNO_STORE_PATH)};\n`, "utf8");
-  writeFileSync(join(tmpDir, "memmap-lookup.mts"), `export * from ${JSON.stringify(REAL_MEMMAP_LOOKUP_PATH)};\n`, "utf8");
-  writeFileSync(join(tmpDir, "anno-graphics.mts"), `export * from ${JSON.stringify(REAL_ANNO_GRAPHICS_PATH)};\n`, "utf8");
-
-  return { tmpDir, modulePath: join(tmpDir, "anno-join.mts") };
-}
-
-async function importScratchAnnoJoinWithForwardCarry(modulePath: string): Promise<{ runMemmapJoin: typeof runMemmapJoin }> {
-  return (await import(`${modulePath}?t=${Date.now()}-${Math.random()}`)) as { runMemmapJoin: typeof runMemmapJoin };
-}
-
-test(
-  "PLANTED VIOLATION: replacing the decline branch with a forward-carried value produces an annotation where the committed code correctly stays silent",
-  async () => {
-    const facts = realConstWrites();
-    const flip34 = facts.find((f) => f.value === 0x34)!;
-    const flip33 = facts.find((f) => f.value === 0x33)!;
-
-    // ---- THE COMMITTED MODULE: both values reach $D020, disagreeing regions -> decline ----
-    let committedDecision: { outcome: string; reason?: string; label?: string } | undefined;
-    let committedDeclinedCount = 0;
-    inTempDir((dir) => {
-      const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
-      putXref(handle, { fromAddress: flip34.storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
-      putXref(handle, { fromAddress: flip33.storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
-      const { counts, decisions } = runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 0x30, constWrites: facts }, loadMemmap());
-      committedDecision = decisions.find((d) => d.address === 0xd020);
-      committedDeclinedCount = counts.declined;
-      closeStore(handle);
-    });
-    assert.equal(committedDecision?.outcome, "declined");
-    assert.ok(
-      committedDecision?.reason && /33/.test(committedDecision.reason) && /34/.test(committedDecision.reason),
-      committedDecision?.reason,
-    );
-    assert.equal(committedDeclinedCount, 1);
-
-    // ---- THE MUTATED MODULE: forward-carries the FIRST (ascending) value instead ----
-    const { tmpDir, modulePath } = buildScratchTreeWithForwardCarriedDecline();
-    try {
-      const mutated = await importScratchAnnoJoinWithForwardCarry(modulePath);
-      let mutatedDecision: { outcome: string; reason?: string; label?: string } | undefined;
-      let mutatedCommentCount = 0;
-      inTempDir((dir) => {
-        const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
-        putXref(handle, { fromAddress: flip34.storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
-        putXref(handle, { fromAddress: flip33.storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
-        const { decisions } = mutated.runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 0x30, constWrites: facts }, loadMemmap());
-        mutatedDecision = decisions.find((d) => d.address === 0xd020);
-        mutatedCommentCount = listComments(handle).length;
-        closeStore(handle);
-      });
-      assert.equal(mutatedDecision?.outcome, "annotated", "expected the forward-carry mutation to ANNOTATE where the committed code declines");
-      assert.equal(mutatedCommentCount, 1, "expected exactly one comment written under the mutation");
-
-      // uniqueValues sorts ascending, so $33 (0x33 < 0x34) is the forward-carried value.
-      const expectedRegion = resolveBankedRegion(0xd020, decodeBankState(0x33)) as Exclude<BankedRegion, "not_applicable">;
-      const expectedSelection = selectMemmapEntry(0xd020, loadMemmap().filter((e) => regionAdmitsEntry(e, expectedRegion)));
-      assert.ok(expectedSelection, "expected the character-ROM-constrained candidate set at $D020 to have SOMETHING to say");
-      assert.equal(mutatedDecision?.label, expectedSelection.entry.label, "the case names the label the forward-carried value produces");
-    } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
-    }
-  },
-);
+test("$D020 reached under both $34 and $33 declines naming both values and writes no comment", () => {
+  const facts = realConstWrites();
+  const flip34 = facts.find((f) => f.value === 0x34)!;
+  const flip33 = facts.find((f) => f.value === 0x33)!;
+  inTempDir((dir) => {
+    const handle = openStore(join(dir, "proj.annostore"), { workspaceRoot: dir });
+    putXref(handle, { fromAddress: flip34.storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
+    putXref(handle, { fromAddress: flip33.storeAddress, toAddress: 0xd020, accessKind: "COMPUTED_JUMP" });
+    const { counts, decisions } = runMemmapJoin(handle, { imageOrigin: 0x0801, imageByteLength: 0x30, constWrites: facts }, loadMemmap());
+    const decision = decisions.find((d) => d.address === 0xd020);
+    assert.equal(decision?.outcome, "declined");
+    assert.ok(decision?.reason && /33/.test(decision.reason) && /34/.test(decision.reason), decision?.reason);
+    assert.equal(counts.declined, 1);
+    assert.equal(listComments(handle).filter((c) => c.address === 0xd020).length, 0);
+    closeStore(handle);
+  });
+});

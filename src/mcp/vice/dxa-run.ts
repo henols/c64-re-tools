@@ -12,7 +12,9 @@
 //
 // The endpoint client uploads every input by bytes and downloads the listing
 // under the caller's tools root, so the listing path is a local path, read
-// as given.
+// as given. The image is read here only to compute the parser's window; like
+// every other input, it is a client path the caller chose, so it is not
+// confined to the project root.
 //
 // The parser's window comes from the IMAGE FILE, never from the listing:
 // deriving the window from the text being checked against it would make the
@@ -29,13 +31,11 @@
 // WHAT NOT TO DO:
 //   - Never import `node:child_process` here or spawn dxa. Every run goes
 //     through the one host-tool route; dxa lives on the host.
-//   - Never read the image from outside the project root. The local read
-//     that computes the window goes through confineToWorkspace().
 //   - Never default `--image-kind` on the CLI. The kind is required and is
 //     never guessed from the file name or size.
 //   - Never print anything to stdout from the CLI except the one JSON line.
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { basename, dirname, join, sep, resolve as resolvePath } from "node:path";
+import { basename, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -46,20 +46,17 @@ import { parsePrg, flatImageOrigin } from "./prg-image.mts";
 import { parseDumpListing, type DumpListingMap } from "./dxa-listing.ts";
 import { emitDataBlocks, emitLabels, type KnownDataRow } from "./dxa-blocks.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-
 /** The one wire-shaped request this module ever sends -- mirrors
  * `DxaDisassembleArgs` (host-tool.mts) field-for-field. `image` and every
- * optional path are workspace-relative strings; resolution against the
- * workspace root happens host-side, at `host-tool.mts`'s own
- * `resolveWorkspacePath()` site -- never re-derived here. */
+ * optional path are client paths: absolute, or relative to the root. The
+ * endpoint client reads each one and uploads its bytes. */
 export interface DxaRunArgs {
   image: string;
   imageKind: "prg" | "flat64k";
   entrypointsPath?: string;
   datablocksPath?: string;
   labelsPath?: string;
-  /** Phase 35, plan 35-04 (DXA-03). AN ALTERNATIVE to supplying
+  /** An alternative to supplying
    * `datablocksPath`/`labelsPath` directly: this module emits `knownDataRows`
    * to per-invocation `-B`/`-l` files (`dxa-blocks.ts`'s `emitDataBlocks()`/
    * `emitLabels()`) in a per-run input directory under the tools root
@@ -85,7 +82,7 @@ export interface DxaRunOptions {
   run?: DxaRunFn;
   /** The local root: relative paths in the args resolve against it, and
    * every result downloads under `<repoRoot>/.c64-re-tools/`. Defaults to
-   * this checkout's own root. */
+   * the project root found from the current working directory. */
   repoRoot?: string;
   /** Where results download; defaults to `<repoRoot>/.c64-re-tools`. */
   toolsRoot?: string;
@@ -110,94 +107,22 @@ export interface DxaRunResult {
    * a caller need not reach into the map for the one field PLAN.md names
    * explicitly. */
   outOfWindow: string[];
-  /** The listing path the seam reported (already container-translated when
-   * applicable). */
+  /** The local path of the downloaded listing. */
   listingPath: string;
 }
 
-/** Reads `relativePath` (workspace-relative, the SAME string this module
- * also sends on the wire) from the local filesystem, resolved against
- * `root`. Used only to compute the parser's window locally -- never sent
- * anywhere, never re-derived from the listing. */
-function isContained(candidate: string, root: string): boolean {
-  return candidate === root || candidate.startsWith(root + sep);
-}
-
-/** Canonicalises `p`, or -- when `p` does not exist yet (the write path:
- * a `-B`/`-l` file this module is about to create) -- the deepest ancestor
- * of `p` that does exist, with the non-existent tail re-appended. Mirrors
- * `anno-types.mts`'s own `realpathOfNearestExisting()`, which is not
- * exported, and `host-tool.mts`'s, which is host-bound and must not be
- * imported from this container-side module. */
-function realpathOfNearestExisting(p: string): string {
-  const resolved = resolvePath(p);
-  const tail: string[] = [];
-  let current = resolved;
-  for (;;) {
-    try {
-      return tail.length === 0 ? realpathSync(current) : join(realpathSync(current), ...tail);
-    } catch {
-      const parent = dirname(current);
-      if (parent === current) return resolved;
-      tail.unshift(basename(current));
-      current = parent;
-    }
+/** Reads the image at `image` (absolute, or relative to `root`) to compute
+ * the parser's window. Refuses by name when it cannot be read. */
+function readLocalImageBytes(root: string, image: string): Uint8Array {
+  if (typeof image !== "string" || image.trim() === "") {
+    throw new Error(`runDxaDisassemble: image must be a non-empty path, got ${typeof image === "string" ? "an empty string" : typeof image}`);
   }
-}
-
-/**
- * Resolves a workspace-relative `relative` against `root` and refuses
- * anything that escapes the workspace, directly (`../`, or an absolute
- * path) or via a symlink. Returns the canonical, containment-checked
- * absolute path.
- *
- * WHY THIS EXISTS, AND WHY IT IS LOCAL (`35-REVIEW.md` CR-01). This module
- * sends workspace-relative strings on the wire and correctly leaves WIRE
- * path resolution to `host-tool.mts`'s `resolveWorkspacePath()` -- but it
- * ALSO performs its own local filesystem I/O that never crosses the seam:
- * it reads the image to compute the parser's window, and writes the
- * `-B`/`-l` files for `knownDataRows`. That local I/O had no confinement at
- * all, so `image: "../sibling/secret.prg"` read outside the workspace and
- * `outDir: "../sibling-dir"` wrote outside it -- both reproduced. The check
- * is local because `resolveWorkspacePath()` is host-bound `.mts`; this is the
- * same shape, and the same stated rules, as `stock-symbols.ts`'s own
- * `resolveLabelFilePath()`, which is this repository's established pattern
- * for exactly this situation rather than a second copy of a seam.
- *
- * WR-05: both sides are canonicalised before comparison -- comparing a
- * canonical path against a possibly-symlinked `root` refuses every path in
- * a workspace whose own path contains a symlinked component.
- * WR-08: the returned path is the CHECKED path, never the pre-canonical
- * spelling -- returning the latter makes the check advisory, because
- * `readFileSync`/`writeFileSync` re-traverse symlinks independently.
- */
-function confineToWorkspace(root: string, relative: string, what: string): string {
-  if (typeof relative !== "string" || relative.trim() === "") {
-    throw new Error(
-      `runDxaDisassemble: ${what} must be a non-empty workspace-relative string, got ${typeof relative === "string" ? "an empty/whitespace-only string" : typeof relative}`,
-    );
+  const abs = resolvePath(root, image);
+  try {
+    return readFileSync(abs);
+  } catch (e) {
+    throw new Error(`runDxaDisassemble: cannot read the image ${abs}: ${(e as Error).message}`);
   }
-
-  const resolved = resolvePath(root, relative.trim());
-  if (!isContained(resolved, root)) {
-    throw new Error(
-      `runDxaDisassemble: ${what} ${JSON.stringify(relative)} resolves to ${JSON.stringify(resolved)}, which is outside the workspace root (${root}) -- refusing`,
-    );
-  }
-
-  const real = realpathOfNearestExisting(resolved);
-  const realRoot = realpathOfNearestExisting(root);
-  if (!isContained(real, realRoot)) {
-    throw new Error(
-      `runDxaDisassemble: ${what} ${JSON.stringify(relative)} resolves (via symlink) to ${JSON.stringify(real)}, which is outside the workspace root (${realRoot === root ? realRoot : `${root}, canonically ${realRoot}`}) -- refusing`,
-    );
-  }
-
-  return real;
-}
-
-function readLocalImageBytes(root: string, relativePath: string): Uint8Array {
-  return readFileSync(confineToWorkspace(root, relativePath, "image"));
 }
 
 /**
@@ -209,7 +134,7 @@ function readLocalImageBytes(root: string, relativePath: string): Uint8Array {
  *   `parseDumpListing()`'s own window predicate refuses the listing.
  */
 export async function runDxaDisassemble(args: DxaRunArgs, opts: DxaRunOptions = {}): Promise<DxaRunResult> {
-  const root = opts.repoRoot ?? repoRoot({ from: HERE });
+  const root = opts.repoRoot ?? repoRoot({ from: process.cwd() });
 
   const imageBytes = opts.imageBytes ?? readLocalImageBytes(root, args.image);
   let origin: number;
@@ -223,10 +148,8 @@ export async function runDxaDisassemble(args: DxaRunArgs, opts: DxaRunOptions = 
     imageSize = imageBytes.length;
   }
 
-  // Phase 35, plan 35-04 (DXA-03): knownDataRows is mutually exclusive with a
-  // caller-supplied datablocksPath/labelsPath -- refuse BY NAME rather than
-  // silently letting one win, exactly like host-tool.mts's own "first
-  // refusal wins" discipline for its resolved paths.
+  // knownDataRows is mutually exclusive with a caller-supplied
+  // datablocksPath/labelsPath: refuse by name rather than let one win.
   let datablocksPath = args.datablocksPath;
   let labelsPath = args.labelsPath;
   // Host-tool output is regenerable, so it lands in the project's local/.
@@ -436,7 +359,8 @@ export async function runDxaCli(
   }
 }
 
-if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
   const result = await runDxaCli(process.argv.slice(2));
   process.stdout.write(JSON.stringify(result) + "\n");
   process.exitCode = result.ok ? 0 : 1;

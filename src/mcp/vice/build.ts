@@ -1,8 +1,8 @@
 // build.ts
 //
-// Compiles the host-bound TypeScript sources (today: vice-broker.mts only --
-// see tsconfig.build.json's `include`, which IS the definition of host-bound)
-// into banner-marked, committed JavaScript under resources/. Run directly as
+// Compiles the host-bound TypeScript sources (the modules listed in
+// HOST_BOUND_ARTIFACTS and in tsconfig.build.json's `include`) into
+// banner-marked, committed JavaScript under resources/. Run directly as
 // `node build.ts` (native type stripping, no tsc needed to run THIS file --
 // only to run the compiler it shells out to).
 //
@@ -12,10 +12,12 @@
 //
 // This file itself must stay inside erasableSyntaxOnly's restrictions (no
 // enum/namespace/constructor parameter properties) so it can run unflagged
-// under bare `node`, exactly like vice-broker.mts.
+// under bare `node`.
 import { execFileSync } from "node:child_process";
 import {
+  chmodSync,
   copyFileSync,
+  realpathSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -26,7 +28,7 @@ import {
   writeFileSync,
   statSync,
 } from "node:fs";
-import { dirname, join, resolve as resolvePath } from "node:path";
+import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -36,11 +38,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * this module's own directory. Shared by build() and the CLI success
  * message below so the two never drift apart. */
 function resolveOutDirAbs(outDir: string): string {
-  return resolvePath(outDir).startsWith("/") && outDir.startsWith("/") ? outDir : join(HERE, outDir);
+  return isAbsolute(outDir) ? outDir : join(HERE, outDir);
 }
 
-/** The literal expected emitted relative paths -- today exactly the one
- * broker artifact. This list IS the host-bound artifact set: build() asserts
+/** The literal expected emitted relative paths: the host-bound artifact set.
+ * build() asserts
  * the emitted file set equals this exactly, so an unexpected addition or a
  * silent omission both fail loudly rather than deploying something nobody
  * reviewed. */
@@ -102,7 +104,7 @@ export function GENERATED_BANNER(relSourcePath: string): string {
     "// GENERATED FILE -- DO NOT EDIT.\n" +
     `// Compiled by \`tsc\` from ${relSourcePath}. Edit the TypeScript source and rebuild;\n` +
     "// changes made directly to this file are silently overwritten by the next build, and are never\n" +
-    "// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents\n" +
+    "// deployed to the host on their own -- install-resources.ts copies THIS file's on-disk contents\n" +
     "// verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next\n" +
     "// rebuild.\n"
   );
@@ -240,6 +242,14 @@ export function build({ outDir = "resources" }: BuildOptions = {}): void {
           `  unexpected: ${JSON.stringify(unexpected)}`
       );
     }
+    // Any other file the compiler wrote (a declaration or map file, say) is
+    // one this list does not describe: refuse before anything moves.
+    const leftovers = allFilesUnder(stagingDir).filter((f) => !expected.includes(f));
+    if (leftovers.length > 0) {
+      throw new Error(
+        `build: the compiler emitted file(s) that are not in HOST_BOUND_ARTIFACTS: ${JSON.stringify(leftovers)}`,
+      );
+    }
 
     // Banner every staged artifact BEFORE any rename -- a half-bannered
     // file must never become reachable at an `outDir` path.
@@ -270,10 +280,8 @@ export function build({ outDir = "resources" }: BuildOptions = {}): void {
 
     // HOST_BOUND_DATA_FILES: a plain copy, never compiled by tsc and never
     // part of the emitted-file-set assertion above (that check is
-    // `.mjs`-only). Staged and renamed the SAME atomic way as every
-    // compiled artifact -- never exposed at an `outDir` path half-written --
-    // so it must be moved into place BEFORE the leftover check below, or its
-    // own staged copy would itself register as an unexplained leftover.
+    // `.mjs`-only). Staged and renamed the same atomic way as every
+    // compiled artifact, so it is never exposed half-written.
     for (const { from, to: rel } of HOST_BOUND_DATA_FILES) {
       const staged = join(stagingDir, rel);
       copyFileSync(join(REPO_ROOT, from), staged);
@@ -284,18 +292,6 @@ export function build({ outDir = "resources" }: BuildOptions = {}): void {
         const detail = (e as NodeJS.ErrnoException).code === "EXDEV" ? " (EXDEV: staging dir and outDir are on different filesystems -- outDir must be reachable via a same-filesystem sibling)" : "";
         throw new Error(`build: failed to move staged data file into place: ${staged} -> ${to}${detail}`, { cause: e });
       }
-    }
-
-    // tsc emits exactly HOST_BOUND_ARTIFACTS today (verified). A leftover
-    // here means the compiler started emitting something this list does not
-    // describe -- fail loudly rather than silently drop a file that used to
-    // reach outDir.
-    const leftovers = readdirSync(stagingDir);
-    if (leftovers.length > 0) {
-      throw new Error(
-        `build: staging directory still holds file(s) after moving every HOST_BOUND_ARTIFACTS entry -- ` +
-          `the compiler emitted something not in that list: ${JSON.stringify(leftovers)}`
-      );
     }
   } finally {
     rmSync(stagingDir, { recursive: true, force: true });
@@ -450,14 +446,14 @@ export interface ServerBuildOptions {
  * dist/vice-proxy.js instead of vice-proxy.ts.
  *
  * Same discipline as build() and buildEntries(): stage on outDir's own
- * filesystem (resolveStagingParent), assert the emitted set while staged,
- * then rename each finished file into place, so no reader ever sees a
- * partial file. The asserts: every SERVER_ROOTS artifact exists, and every
- * emitted file is `.js` or `.mjs` (a `.ts`/`.mts` in the output would fail
- * under node_modules). SERVER_DATA_FILES are copied into the staging
- * directory and moved the same way. Files in `outDir` that the new build
- * did not produce are removed afterwards: `outDir` is wholly build-owned
- * and gitignored, and a stale module left there could still be imported.
+ * filesystem (resolveStagingParent) and assert the emitted set while staged.
+ * The asserts: every SERVER_ROOTS artifact exists, and every emitted file is
+ * `.js` or `.mjs` (a `.ts`/`.mts` in the output would fail under
+ * node_modules). SERVER_DATA_FILES are copied into the staging directory.
+ * Then the finished tree replaces `outDir` in one swap (see below), so a
+ * failed build leaves the old output whole. `outDir` is wholly build-owned
+ * and gitignored, and a stale module left there could still be imported, so
+ * nothing from the old output is kept.
  *
  * Plain `node build.ts` never calls this. `node build.ts --server` does,
  * and the package's `prepack` script runs that.
@@ -491,21 +487,24 @@ export function buildServer({ outDir = "dist" }: ServerBuildOptions = {}): strin
     }
 
     const produced = allFilesUnder(stagingDir);
-    for (const rel of produced) {
-      const from = join(stagingDir, rel);
-      const to = join(outDirAbs, rel);
-      mkdirSync(dirname(to), { recursive: true });
-      try {
-        renameSync(from, to);
-      } catch (e) {
-        const detail = (e as NodeJS.ErrnoException).code === "EXDEV" ? " (EXDEV: staging dir and outDir are on different filesystems)" : "";
-        throw new Error(`buildServer: failed to move staged file into place: ${from} -> ${to}${detail}`, { cause: e });
-      }
-    }
 
-    for (const rel of allFilesUnder(outDirAbs)) {
-      if (!produced.includes(rel)) rmSync(join(outDirAbs, rel), { force: true });
+    // The whole tree is staged. Swap it in with two directory renames: the old
+    // output moves aside, the staged tree takes its place, and the old output
+    // is removed. A failure in the second rename puts the old output back, so
+    // outDir is always either the old build or the new one, never a mix.
+    // outDir is wholly build-owned, so nothing else in it needs to survive.
+    chmodSync(stagingDir, 0o755);
+    const aside = `${outDirAbs}.old-${process.pid}`;
+    rmSync(aside, { recursive: true, force: true });
+    renameSync(outDirAbs, aside);
+    try {
+      renameSync(stagingDir, outDirAbs);
+    } catch (e) {
+      renameSync(aside, outDirAbs);
+      const detail = (e as NodeJS.ErrnoException).code === "EXDEV" ? " (EXDEV: staging dir and outDir are on different filesystems)" : "";
+      throw new Error(`buildServer: failed to move the staged build into place: ${stagingDir} -> ${outDirAbs}${detail}`, { cause: e });
     }
+    rmSync(aside, { recursive: true, force: true });
     return produced;
   } finally {
     rmSync(stagingDir, { recursive: true, force: true });
@@ -524,15 +523,17 @@ function parseCliArgs(argv: string[]): BuildOptions {
   return outDir ? { outDir } : {};
 }
 
-if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url) && process.argv.includes("--server")) {
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly && process.argv.includes("--server")) {
   try {
-    const produced = buildServer();
-    process.stderr.write(`build: wrote ${produced.length} server file(s) to ${resolveOutDirAbs("dist")}\n`);
+    const opts = parseCliArgs(process.argv.slice(2).filter((a) => a !== "--server"));
+    const produced = buildServer(opts);
+    process.stderr.write(`build: wrote ${produced.length} server file(s) to ${resolveOutDirAbs(opts.outDir ?? "dist")}\n`);
   } catch (e) {
     process.stderr.write(`build: FAILED -- ${(e as Error).message}\n`);
     process.exitCode = 1;
   }
-} else if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+} else if (invokedDirectly) {
   const opts = parseCliArgs(process.argv.slice(2));
   try {
     build(opts);

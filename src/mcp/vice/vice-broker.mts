@@ -10,8 +10,8 @@
 // Imports node: builtins ONLY plus this phase's own sibling modules --
 // mcp__vice__* stays the only route to the emulator; nothing here opens a
 // connection to it.
-import { mkdirSync, openSync, existsSync } from "node:fs";
-import { join, basename, dirname, relative, resolve as resolvePath } from "node:path";
+import { mkdirSync, openSync, closeSync, existsSync, realpathSync } from "node:fs";
+import { join, basename, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn, fork, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -41,6 +41,9 @@ import {
 import {
   acquirePortAndLaunch,
   deleteInstanceRecord,
+  detachInstanceRecord,
+  freeRemoteMonitorPort,
+  removeConfigScratch,
   // Replaces maintainWarmFloor -- the warm floor itself is retired (the
   // connection is the lease now, so there is no separate floor left to
   // keep warm); this is ONLY the launching -> ready promotion sweep the
@@ -59,6 +62,7 @@ import {
   // the argv builder's own resolution and this file's relay-dial resolution
   // below both go through this single function, never a second literal.
   resolveBinmonHost,
+  isWildcardHost,
 } from "./broker-launch.mjs";
 // A VALUE import of the splice primitive (Phase 63, SESS-02) -- safe here
 // for the SAME reason every other sibling value import in this file is:
@@ -89,7 +93,7 @@ import {
 // HOST_BOUND_ARTIFACTS). handleRelayDeath() below is this module's one and
 // only production call site -- see that function's own header comment.
 import { writeBrokerIncident, type BrokerIncidentInput } from "./broker-incident.mjs";
-import { trackChild, stopAllChildren, killAllChildrenNow } from "./broker-children.mjs";
+import { trackChild, stopAllChildren, killAllChildrenNow, signalGroup } from "./broker-children.mjs";
 // resolvedBackend() resolves the emulator binary's identity -- ViceBackend's
 // own definition lives in backend-detect.mts too (narrowed to a single
 // literal now that the fork backend has been removed entirely), so
@@ -101,6 +105,7 @@ import { trackChild, stopAllChildren, killAllChildrenNow } from "./broker-childr
 // same build.ts pass, so "./backend-detect.mjs" always exists as a real
 // sibling file by the time this import resolves.
 import { resolvedBackend, type ViceBackend } from "./backend-detect.mjs";
+import { remedyTextsFor } from "./tool-location.mjs";
 import {
   verifiedKill,
   registerShutdownHandlers,
@@ -147,7 +152,7 @@ import {
 // below -- it answers only when no explicit --state-dir, no VICE_POOL_DIR,
 // and no --repo-root apply, which is exactly BROKER-01/BROKER-06's "no
 // project argument at all" case (D-13).
-import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir, brokerGhidraDir } from "./broker-home.mjs";
+import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir, brokerGhidraDir, ensurePrivateDir } from "./broker-home.mjs";
 // The endpoint dialler, for the hello probe that arbitrates a busy control port.
 import { dialBrokerEndpoint, describeDialFailure } from "./broker-endpoint.mjs";
 // A VALUE import of the staging/transfer primitives (Phase 64, plan 64-03,
@@ -270,19 +275,6 @@ function resolveCeilingForRecord(): number {
   return Number.isFinite(n) ? n : 16;
 }
 
-/** Classifies a bare hostname as a wildcard bind address, in the IPv4 and
- * IPv6 "listen on everything" spellings this project cares about --
- * DELIBERATELY RE-STATED here rather than imported from
- * vice-broker-client.ts's own `isWildcardBindHost()`: that module is
- * container-side and this one is host-bound, compiled away from it. Used ONLY to refuse an explicitly-set
- * VICE_BROKER_CONTROL_HOST value before ever attempting to bind it (D-09) --
- * never applied to an enumerated host, which can never be a wildcard by
- * construction. */
-function isWildcardBindHostLocal(host: string): boolean {
-  const bare = host.replace(/^\[/, "").replace(/\]$/, "");
-  return bare === "0.0.0.0" || bare === "::" || /^(0{1,4}:){7}0{1,4}$/.test(bare);
-}
-
 /** Builds a spawn function that redirects the child's stdout/stderr into a
  * FRESH per-launch log file under logDir (so per-instance boot/crash logs
  * survive under .c64-re-tools/supervisor/<port>/logs/, same paths, same
@@ -310,9 +302,17 @@ function makeLoggingSpawn(logDir: string, viceBin?: string): { spawn: (cmd: stri
   mkdirSync(logDir, { recursive: true });
   const viceBinForLog = basename(viceBin ?? "x64sc");
   const logName = `${viceBinForLog}-${Date.now()}.log`;
-  const logFd = openSync(join(logDir, logName), "a");
   return {
-    spawn: (cmd, cmdArgs, options) => nodeSpawn(cmd, cmdArgs, { ...options, stdio: ["ignore", logFd, logFd] }),
+    spawn: (cmd, cmdArgs, options) => {
+      // Opened for this one launch and closed here: the child keeps its own
+      // copy of the descriptor.
+      const logFd = openSync(join(logDir, logName), "a");
+      try {
+        return nodeSpawn(cmd, cmdArgs, { ...options, stdio: ["ignore", logFd, logFd] });
+      } finally {
+        closeSync(logFd);
+      }
+    },
     logRelPath: `logs/${logName}`,
   };
 }
@@ -529,6 +529,9 @@ export interface HandleAcquireDeps {
    * is above: the real broker wiring (run()'s onAcquire callback below)
    * already constructs a fresh bag PER ACQUIRE. */
   sessionLabel?: string | null;
+  /** Set when the host has no VICE binary: every acquire is refused with this
+   * text, which names the binary and the remedy, and nothing is spawned. */
+  launchRefusal?: string;
   log?: (line: string) => void;
 }
 
@@ -537,9 +540,8 @@ export interface HandleAcquireDeps {
 //
 // THE DECISION, stated out loud because two of the three available answers
 // are wrong in ways the CALLER CANNOT DETECT:
-//   - Refuse the acquire outright when a mismatched warm instance exists ->
-//     warp becomes unusable whenever a warm floor exists (the default is 1,
-//     so: essentially always).
+//   - Refuse the acquire outright when a mismatched ready instance exists ->
+//     warp becomes unusable whenever any ready instance exists.
 //   - Serve the request with the mismatched instance -> the caller asked for
 //     warp, got an unwarped machine, and received a confident grant. The knob
 //     is a lie and nothing in the response says so.
@@ -689,7 +691,7 @@ async function selectWarmInstance(
     // (`-remotemonitor`) port stops being spoken for -- deleteInstanceRecord()
     // is the ONE place both mutations happen together, so a drop can never
     // leak a port out of the fixed allocation band.
-    deleteInstanceRecord(state, record.port);
+    detachInstanceRecord(state, record.port);
     // Distinct wording from shutdown()'s own "shutdown complete" line
     // (broker-kill.mts) -- the standing constraint that a lifecycle decision must be
     // reconstructable from the log after an incident (both 2026-08-01 and
@@ -719,6 +721,10 @@ async function selectWarmInstance(
       .catch(() => {
         // best-effort; nothing further to report on this path, matching
         // handleRelease()'s own posture at its own verifiedKill(...).catch(...) call site.
+      })
+      .finally(() => {
+        freeRemoteMonitorPort(state, record);
+        if (record.configScratchDir !== undefined) removeConfigScratch(record.configScratchDir);
       });
   }
   return null;
@@ -768,6 +774,10 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
   if (state.shuttingDown) {
     log(`vice-broker: refusing acquire ${requestId} -- the broker is shutting down`);
     return { ok: false, reason: "internal" };
+  }
+
+  if (deps.launchRefusal !== undefined) {
+    return { ok: false, reason: "vice_not_found", message: deps.launchRefusal };
   }
 
   const winner = await selectWarmInstance(state, { probe, kill, log, requestedProfile: deps.profile });
@@ -1180,19 +1190,27 @@ export function handleFileTransfer(request: FileTransferRequest, socket: Socket,
       header: { kind: "file", byteLength: request.byteLength, sha256: request.sha256 },
       pending,
       beforePublish: deps.beforePublish,
-    }).then((result) => {
-      if (!result.ok) {
-        process.stderr.write(`vice-broker: upload transfer failed for handle ${request.handle}: ${result.reason}\n`);
-      }
-      clearTransferInFlight(request.handle);
-      writeUploadCompletionReply(socket, result);
-    });
+    })
+      .then((result) => {
+        if (!result.ok) {
+          process.stderr.write(`vice-broker: upload transfer failed for handle ${request.handle}: ${result.reason}\n`);
+        }
+        clearTransferInFlight(request.handle);
+        writeUploadCompletionReply(socket, result);
+      })
+      .catch((err: unknown) => {
+        process.stderr.write(`vice-broker: upload transfer threw for handle ${request.handle}: ${String(err)}\n`);
+        settle();
+      });
   } else {
     sendPayloadFromFile({ socket, sourcePath: entry.path, kind: "transfer_payload" })
       .then((result) => {
         if (!result.ok) {
           process.stderr.write(`vice-broker: download transfer failed for handle ${request.handle}: ${result.reason}\n`);
         }
+      })
+      .catch((err: unknown) => {
+        process.stderr.write(`vice-broker: download transfer threw for handle ${request.handle}: ${String(err)}\n`);
       })
       .finally(settle);
   }
@@ -1230,6 +1248,9 @@ export function handleHostToolStage(files: HostToolStageFileSpec[]): HostToolSta
  * `broker-transfer.mts`'s own `formatPathFreeFault()` posture of naming a
  * fixed replacement rather than attempting to scrub an unbounded shape. */
 const STAGED_REQUEST_TOKEN = "<staged-request>";
+/** The most `tools.json` text a run request may carry. Mirrors the client's
+ * limit; the two modules cannot import each other. */
+const HOST_TOOL_TOOLS_JSON_MAX_BYTES = 16384;
 /** The same, for the broker's Ghidra projects root (brokerGhidraDir()). */
 const GHIDRA_PROJECTS_TOKEN = "<ghidra-projects>";
 
@@ -1237,25 +1258,24 @@ function redactScratchRoot(value: string, scratchRoot: string, ghidraRoot: strin
   return value.split(scratchRoot).join(STAGED_REQUEST_TOKEN).split(ghidraRoot).join(GHIDRA_PROJECTS_TOKEN);
 }
 
+/** Host-tool runs in flight, by request key: the process groups each run
+ * started, and whether its connection has closed. */
+const hostToolRuns = new Map<string, { pids: Set<number>; ended: boolean }>();
+
 /** Answers `host_tool_run`: verifies every staged upload for this request
- * has actually finished transferring (D-09's own "not every declared file
- * has arrived yet" case), binds every path-bearing wire key to its
- * scratch-relative path via `bindStagedInputs()` (host-tool.mts), runs
- * `runHostTool()` against the REQUEST'S OWN scratch root (never this
- * broker's own `--repo-root`) for `repoRoot`, while `projectRoot` IS this
- * broker's own `--repo-root` (`args.repoRoot` at the call site below), so the
- * `tools.json` locator layer keeps resolving where it always has, and
- * `ghidraProjectsRoot` is brokerGhidraDir(). `clearDeclaredOutputs: true` generalises
- * the c1541.read-only stale-output unlink to every tool (D-08). Then
- * rewrites the response: every `results[]` entry becomes a download handle
- * via `registerHostToolResult()` (D-07's first live producer), and every
- * remaining string field is scrubbed of the scratch root (D-10, T-65-06).
- * Never rejects -- every failure resolves `{ ok: false, message }`,
- * mirroring `runHostTool()`'s own contract. */
+ * has actually finished transferring, binds every path-bearing wire key to
+ * its scratch-relative path via `bindStagedInputs()`, and runs
+ * `runHostTool()` against the request's own scratch root. The `tools.json`
+ * layer reads the text the client sent in `raw.toolsJson`; the broker's own
+ * working directory and project are never consulted. Then rewrites the
+ * response: every `results[]` entry becomes a download handle, and every
+ * remaining string field is scrubbed of the scratch root. When the
+ * connection closes during the run, the tool is stopped and its results are
+ * dropped. Never rejects -- every failure resolves `{ ok: false, message }`;
+ * a failed `oracle.run` also carries `reason` and `stdout`. */
 export async function handleHostToolRun(
   requestKey: string,
   raw: unknown,
-  projectRoot: string,
   deps: { log?: (line: string) => void; state?: BrokerState } = {},
 ): Promise<unknown> {
   if (deps.state?.shuttingDown) {
@@ -1268,13 +1288,18 @@ export async function handleHostToolRun(
     }
   }
 
+  let toolsJson: string | undefined;
+  const toolsJsonRaw = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>).toolsJson : undefined;
+  if (toolsJsonRaw !== undefined) {
+    if (typeof toolsJsonRaw !== "string" || Buffer.byteLength(toolsJsonRaw, "utf8") > HOST_TOOL_TOOLS_JSON_MAX_BYTES) {
+      return { ok: false, message: `vice: host_tool_run: toolsJson must be a string of at most ${HOST_TOOL_TOOLS_JSON_MAX_BYTES} bytes` };
+    }
+    toolsJson = toolsJsonRaw;
+  }
+
   const scratchRoot = join(brokerStagingDir(), requestKey);
-  // Phase 65 (plan 65-03, D-03): created BEFORE the run, unconditionally --
-  // ghidra.analyze's own exportPath output-name binding (host-tool.mts's
-  // bindStagedInputs()) resolves to "out/<name>" under this directory, and
-  // `resolveWorkspacePath()`'s own ancestor-realpath walk requires SOME
-  // existing ancestor to walk from. A tool with no output-name key stages
-  // an empty, harmless directory here.
+  // Created BEFORE the run, unconditionally: the output-name binding
+  // resolves to "out/<name>" under this directory.
   mkdirSync(join(scratchRoot, "out"), { recursive: true });
   const lookup: HostToolStagedInputLookup = {
     fileHandle: (handle: string) => {
@@ -1282,11 +1307,8 @@ export async function handleHostToolRun(
       if (!resolved.ok || resolved.entry.grantId !== requestKey) return undefined;
       return relative(scratchRoot, resolved.entry.path);
     },
-    // Phase 65 (plan 65-03, D-04): a tree handle resolves to its own tree
-    // INDEX (resolveHostToolTree()), never a path -- the relative directory
-    // it names is always `in/<tree>`, the SAME layout
-    // stageHostToolRequest() (broker-transfer.mts) already wrote every
-    // manifest entry for that tree under.
+    // A tree handle resolves to its tree index, never a path; the directory
+    // is always `in/<tree>`, the layout stageHostToolRequest() wrote.
     treeHandle: (handle: string) => {
       const resolved = resolveHostToolTree(requestKey, handle);
       if (!resolved.ok) return undefined;
@@ -1299,22 +1321,50 @@ export async function handleHostToolRun(
     return { ok: false, message: bound.message };
   }
 
+  const run = hostToolRuns.get(requestKey) ?? { pids: new Set<number>(), ended: false };
+  hostToolRuns.set(requestKey, run);
+  if (run.ended) return { ok: false, message: "vice: host_tool_run: the connection closed" };
+
   const ghidraRoot = brokerGhidraDir();
+  if (bound.request.tool === "ghidra.analyze") {
+    try {
+      ensurePrivateDir(ghidraRoot);
+    } catch (e) {
+      return { ok: false, message: `vice: ghidra.analyze refused: the Ghidra projects directory is unusable: ${(e as Error).message}` };
+    }
+  }
   const response = await runHostTool(bound.request, {
     repoRoot: scratchRoot,
-    projectRoot,
+    // A directory inside the request's own scratch: the tools.json layer
+    // reads `toolsJson`, so nothing on the broker's disk names a project.
+    projectRoot: join(scratchRoot, "project"),
+    ...(toolsJson === undefined ? {} : { toolsJson }),
     ghidraProjectsRoot: ghidraRoot,
     clearDeclaredOutputs: true,
     outputDir: join(scratchRoot, "out"),
     log: deps.log,
-    ...(deps.state ? { trackChild: (child: ChildProcess) => trackChild(deps.state!, child, "host-tool") } : {}),
+    trackChild: (child: ChildProcess) => {
+      if (typeof child.pid === "number") run.pids.add(child.pid);
+      if (deps.state) trackChild(deps.state, child, "host-tool");
+      if (run.ended && typeof child.pid === "number") signalGroup(child.pid, "SIGKILL");
+    },
   });
+  hostToolRuns.delete(requestKey);
+  if (run.ended) return { ok: false, message: "vice: host_tool_run: the connection closed during the run" };
 
   const responseObj = response as unknown as Record<string, unknown>;
 
   if (!response.ok) {
-    const message = typeof responseObj.message === "string" ? responseObj.message : "vice: the host tool refused";
-    return { ok: false, message: redactScratchRoot(message, scratchRoot, ghidraRoot) };
+    const redact = (text: string): string => redactScratchRoot(text, scratchRoot, ghidraRoot);
+    const reason = typeof responseObj.reason === "string" ? responseObj.reason : undefined;
+    const message =
+      typeof responseObj.message === "string" ? responseObj.message : reason !== undefined ? reason : "vice: the host tool refused";
+    const failure: Record<string, unknown> = { ok: false, message: redact(message) };
+    if (responseObj.tool === "oracle.run") {
+      failure.reason = redact(reason ?? message);
+      failure.stdout = redact(typeof responseObj.stdout === "string" ? responseObj.stdout : "");
+    }
+    return failure;
   }
 
   const rewritten: Record<string, unknown> = { ...responseObj };
@@ -1325,7 +1375,7 @@ export async function handleHostToolRun(
       return { name: basename(result.path), handle, sha256: result.sha256, byteLength: result.byteLength };
     });
   }
-  for (const key of ["message", "stderrTail", "reason", "entrypointReason"]) {
+  for (const key of ["message", "stderrTail", "reason", "entrypointReason", "stdout"]) {
     const value = rewritten[key];
     if (typeof value === "string") {
       rewritten[key] = redactScratchRoot(value, scratchRoot, ghidraRoot);
@@ -1334,10 +1384,15 @@ export async function handleHostToolRun(
   return rewritten;
 }
 
-/** Answers the connection close that ends a `host_tool_stage` request
- * (D-09): reuses `clearStagingForSession()` unchanged, exactly like
- * `handleRelease()` already does for an `acquire` grant's own release. */
+/** Answers the connection close that ends a `host_tool_stage` request:
+ * stops any tool still running for it, then clears its staging like
+ * `handleRelease()` does for an `acquire` grant. */
 export function handleHostToolEnd(requestKey: string): void {
+  const run = hostToolRuns.get(requestKey);
+  if (run) {
+    run.ended = true;
+    for (const pid of run.pids) signalGroup(pid, "SIGKILL");
+  }
   clearStagingForSession(requestKey);
 }
 
@@ -1464,16 +1519,16 @@ export function handleRelayDeath(targetId: string, channel: MonitorChannel, trig
       reason: `relay death on target ${targetId}, channel ${channel}: ${trigger}`,
     });
   } catch (err) {
+    // This runs from a socket 'close' handler: a throw here would stop the
+    // whole broker. The failure is logged and the teardown goes on.
+    recordPath = "(not written)";
     process.stderr.write(
-      `vice-broker: FAILED to write the incident record for a relay death on target ${targetId} channel ${channel} (trigger ${trigger}) -- ` +
-        `refusing to release the claim, destroy either socket, or signal anything until this is fixed: ${String(err)}\n`,
+      `vice-broker: FAILED to write the incident record for a relay death on target ${targetId} channel ${channel} (trigger ${trigger}): ${String(err)}\n`,
     );
-    throw err;
   }
 
-  // Only now: the record is durably on disk (writeIncident()'s own atomic
-  // tmp-then-rename write already completed synchronously above) --
-  // release exactly one channel, never the instance or the grant.
+  // The record is on disk (or its failure is logged): release exactly one
+  // channel, never the instance or the grant.
   state.relaySessions.delete(key);
   if (instance) clearClaim(instance, channel);
   session.close(trigger);
@@ -1984,11 +2039,13 @@ export function handleRelease(requestId: string, state: BrokerState, deps: Handl
           reason: `control connection closed on target ${requestId} with a declared operation in flight`,
         });
       } catch (err) {
+        // This runs from a socket 'close' handler: a throw would stop the
+        // whole broker, and a release that never happens would leave the
+        // emulator running with no owner. Log the failure and release.
+        recordPath = "(not written)";
         process.stderr.write(
-          `vice-broker: FAILED to write the incident record for a control-connection release on target ${requestId} -- ` +
-            `refusing to release the claim, delete the instance record, or kill anything until this is fixed: ${String(err)}\n`,
+          `vice-broker: FAILED to write the incident record for a control-connection release on target ${requestId}: ${String(err)}\n`,
         );
-        throw err;
       }
       process.stderr.write(`vice-broker: control-connection release on target ${requestId} with a declared operation (${grant.operation.name}) -- incident recorded at ${recordPath}\n`);
     }
@@ -2021,13 +2078,20 @@ export function handleRelease(requestId: string, state: BrokerState, deps: Handl
     // delete of one directory; never per-file bookkeeping.
     clearStagingForSession(requestId);
     state.grants.delete(requestId);
-    // Kill-never-recycle means this instance is gone for good, so its
-    // second (`-remotemonitor`) port must go back to the allocator with it.
-    deleteInstanceRecord(state, grant.port);
+    // Kill-never-recycle: this instance is gone for good. Its record leaves
+    // the map now; its second (`-remotemonitor`) port and config directory
+    // are freed only after the process has ended, so no new launch is handed
+    // a port the old process still holds.
+    detachInstanceRecord(state, grant.port);
     const kill = deps.kill ?? ((opts: { pid: number | null; expectedIdentity: string }) => verifiedKill(opts));
-    kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity }).catch(() => {
-      // best-effort; nothing further to report on this path this task
-    });
+    kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity })
+      .catch(() => {
+        // best-effort; nothing further to report on this path
+      })
+      .finally(() => {
+        freeRemoteMonitorPort(state, instance);
+        if (instance.configScratchDir !== undefined) removeConfigScratch(instance.configScratchDir);
+      });
     return;
   }
 
@@ -2099,7 +2163,7 @@ async function run(args: ParsedArgs): Promise<void> {
   const explicitControlHost = process.env.VICE_BROKER_CONTROL_HOST;
   let bindHosts: string[];
   if (explicitControlHost !== undefined && explicitControlHost !== "") {
-    if (isWildcardBindHostLocal(explicitControlHost)) {
+    if (isWildcardHost(explicitControlHost)) {
       process.stderr.write(
         `vice-broker: FATAL -- VICE_BROKER_CONTROL_HOST is set to "${explicitControlHost}", a wildcard bind address. ` +
           `The settled bind rule (D-09) never binds the wildcard address, even when an operator asks for it explicitly. ` +
@@ -2126,53 +2190,15 @@ async function run(args: ParsedArgs): Promise<void> {
     }
   }
   const loopbackBindHost = bindHosts[0];
+  try {
+    resolveBinmonHost();
+  } catch (e) {
+    process.stderr.write(`vice-broker: FATAL -- ${(e as Error).message}\n`);
+    process.exitCode = 1;
+    return;
+  }
 
-  // The unconditional startup reap runs BEFORE the
-  // control listener accepts and before anything is launched. A SIGKILLed
-  // prior broker never ran a shutdown path, so this is the only place the
-  // "every emulator this project's port band could be squatting is either
-  // ours or a human's own work" guarantee can be enforced -- no marker file
-  // is consulted, per this reap's own header comment in broker-kill.mts.
-  //
-  // NOTE: this reap runs UNCONDITIONALLY, before the bind attempt
-  // below -- including for a process that goes on to LOSE the singleton
-  // race a moment later (see the EADDRINUSE handling below). That ordering
-  // is deliberate and already established and tested
-  // (broker-kill.test.ts's own structural source-order check); this task
-  // does not change it. A losing second broker's own reap pass is an
-  // accepted, pre-existing consequence of "the reap is unconditional" --
-  // not something the singleton guard below is required to prevent.
-  await reapOrphanedInstances({
-    stateDir: args.stateDir,
-    epochPathFor,
-    nextEpochFor,
-    writeEpochRecord,
-  });
-
-  // Phase 64 (XFER-07, D-08): one MORE startup-only reap, beside the
-  // unconditional reap directly above -- never reordering or gating it (its
-  // own placement, before the bind attempt and unconditional even for a
-  // process that goes on to lose the singleton race, is unchanged, and is
-  // already covered by broker-kill.test.ts's own structural source-order
-  // check). This pass's own mandatory live-pid and identity guard (D-08)
-  // makes it safe here, unconditional, even in a process that goes on to
-  // lose the singleton race a moment later: a config-scratch directory whose
-  // recorded process is still alive and still identifies as the expected
-  // binary is left completely untouched, so a losing second broker's own
-  // pass here cannot touch a live emulator's configuration.
-  //
-  // The staging sweep used to run in this same unconditional block. It has
-  // no liveness guard of any kind: a second broker that had not yet lost
-  // its bind ran this sweep here and removed a live broker's staging -- see
-  // sweepOrphanedStaging()'s own call site, below the confirmed bind, for
-  // the fix and the reasoning. A periodic timer was offered and declined
-  // for both passes (D-07): it adds an interval to tune and a window where
-  // a sweep can race a live transfer, which the startup-only variant
-  // structurally cannot. Do not add one back as an "improvement".
-  reapOrphanedConfigScratch({ root: brokerConfigScratchDir() });
-
-  // Resolved ONCE here, after the unconditional
-  // startup reap and BEFORE the control listener binds -- never re-read per
+  // Resolved ONCE here, BEFORE the control listener binds -- never re-read per
   // launch, and never called from inside broker-launch.mts's `inFlight`
   // single-owner guard (this call sits entirely outside it; no launch is
   // even possible yet at this point in run()). `supervisorDir: args.stateDir`
@@ -2205,6 +2231,15 @@ async function run(args: ParsedArgs): Promise<void> {
   // (below) and onHostState's own `viceBin` field (task 2). Never re-read
   // from resolvedBackend() a second time and never re-derived locally.
   const resolvedViceBin = backendResult.binPath;
+  // Without a resolved binary every acquire is refused by name: spawning the
+  // bare name would depend on the broker's own PATH and fail later.
+  const launchRefusal: string | undefined = backendResult.binPathResolved
+    ? undefined
+    : [
+        `vice: the VICE emulator binary "${backendResult.binPath}" was not found on this host`,
+        ...(backendResult.locationRefusal === null ? [] : [backendResult.locationRefusal]),
+        ...remedyTextsFor("x64sc"),
+      ].join(" -- ");
   process.stderr.write(
     `vice-broker: backend "${backend}" (binary: ${backendResult.binPath})\n`,
   );
@@ -2222,13 +2257,20 @@ async function run(args: ParsedArgs): Promise<void> {
   }
 
   // The singleton guarantee holds only while the control port keeps its default -- two brokers deliberately configured onto different ports are two brokers, and no code prevents that.
+  let markStartupReapDone: () => void = () => {};
+  const startupReapDone = new Promise<void>((resolveDone) => {
+    markStartupReapDone = resolveDone;
+  });
   let listener: { host: string; port: number; pendingAcquires: PendingAcquireQueue };
   let controlServers: Array<{ server: { close(): void } }> = [];
   {
     const bindResult = await startControlListenerOnHosts(bindHosts, {
       port: controlPort,
-      onAcquire: (requestId, profile, label) =>
-        handleAcquire(requestId, args.stateDir, state, {
+      onAcquire: async (requestId, profile, label) => {
+        // No launch starts until the startup reap has finished: the reap
+        // kills recorded pids, and a new launch writes a record it could hit.
+        await startupReapDone;
+        return handleAcquire(requestId, args.stateDir, state, {
           backend,
           // The ONCE-resolved `resolvedViceBin` local from this function's
           // own top (LOC-01/LOC-02) -- found missing here by Plan 60-05's
@@ -2260,7 +2302,9 @@ async function run(args: ParsedArgs): Promise<void> {
           // single sanitising site, and it ran before this callback was
           // ever invoked.
           sessionLabel: label,
-        }),
+          launchRefusal,
+        });
+      },
       onRelease: (requestId) => handleRelease(requestId, state),
       onStatus: () => handleStatus(state),
       onMonitorClaim: (requestId, targetId, channel) => handleMonitorClaim(requestId, targetId, channel, state),
@@ -2279,7 +2323,7 @@ async function run(args: ParsedArgs): Promise<void> {
       // brokerStagingDir(), never this broker's acquire/release map.
       onHostToolStage: (files) => handleHostToolStage(files),
       onHostToolRun: (requestKey, raw) =>
-        handleHostToolRun(requestKey, raw, args.repoRoot, {
+        handleHostToolRun(requestKey, raw, {
           log: (line: string) => process.stderr.write(`${line}\n`),
           state,
         }),
@@ -2439,7 +2483,12 @@ async function run(args: ParsedArgs): Promise<void> {
   // The Ghidra projects root, by the same reasoning: a run's project
   // directory outlives its run only when a broker died mid-run, and no run of
   // this process can have started yet.
-  sweepOrphanedStaging({ root: brokerGhidraDir(), label: "ghidra projects sweep" });
+  try {
+    ensurePrivateDir(brokerGhidraDir());
+    sweepOrphanedStaging({ root: brokerGhidraDir(), label: "ghidra projects sweep" });
+  } catch (e) {
+    process.stderr.write(`vice-broker: the Ghidra projects directory is unusable, so ghidra.analyze will be refused and no sweep ran: ${(e as Error).message}\n`);
+  }
 
   // Every catchable shutdown path (SIGTERM/SIGINT/SIGHUP, an uncaught
   // exception, an unhandled rejection, normal exit) converges on ONE
@@ -2461,6 +2510,21 @@ async function run(args: ParsedArgs): Promise<void> {
     stopChildren: (s) => stopAllChildren(s, { killWaitMs: resolveKillWaitMs() }),
     killChildrenNow: (s) => killAllChildrenNow(s),
   });
+
+  // The startup reap runs only here, in the process that holds the control
+  // port: a second broker that lost the bind exits above without touching
+  // the live broker's emulators. Acquires wait on it (see onAcquire).
+  try {
+    await reapOrphanedInstances({
+      stateDir: args.stateDir,
+      epochPathFor,
+      nextEpochFor,
+      writeEpochRecord,
+    });
+    reapOrphanedConfigScratch({ root: brokerConfigScratchDir() });
+  } finally {
+    markStartupReapDone();
+  }
 
   // The readiness line. node_exec_path is process.execPath: exec() replaces
   // the process image, so whatever interpreter the launcher resolved IS this
@@ -2534,6 +2598,9 @@ export function main(argv: string[] = process.argv.slice(2)): void {
 }
 
 // -------------------------------------------------------------------- CLI
-if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// The real path on both sides, so an npm bin symlink still counts as a
+// direct invocation.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
   main();
 }

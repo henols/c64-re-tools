@@ -1,19 +1,14 @@
 # NMOS 6502 / 6510 undocumented opcodes for Ghidra SLEIGH
 #
-# Phase 36, plan 36-01 (OPC-01, OPC-04). Sourced from
-# docs/undocumented-opcodes-ghidra.md's fenced implementation, with the
-# eight sized-local fixes applied (MEASURED
-# during Phase 36's research, which found
-# the 8 failing SLEIGH constructors and verified the fix): a raw token
-# field (imm8/imm16) passed directly as a userop/macro argument, or
-# dereferenced directly, does not resolve its own size in this SLEIGH
-# compiler -- an explicitly sized local introduced first and used in its
-# place is the fix. The eight sites: :NOP imm16 (op=0x0c), :LAX "#"imm8
-# (op=0xab), :SBC "#"imm8 (op=0xeb), :XAA "#"imm8 (op=0x8b), :AHX imm16,Y
-# (op=0x9f), :TAS imm16,Y (op=0x9b), :SHY imm16,X (op=0x9c), :SHX imm16,Y
-# (op=0x9e). Reverting any one of the eight reproduces
-# "Could not resolve at least 1 variable size" naming that constructor's
-# line (evidence/36-01-sleigh-gate-red.md).
+# Eight constructors use an explicitly sized local: a raw token field
+# (imm8/imm16) passed directly as a userop/macro argument, or dereferenced
+# directly, does not resolve its own size in this SLEIGH compiler, so a
+# sized local is introduced first and used in its place. The eight sites:
+# :NOP imm16 (op=0x0c), :LAX "#"imm8 (op=0xab), :SBC "#"imm8 (op=0xeb),
+# :XAA "#"imm8 (op=0x8b), :AHX imm16,Y (op=0x9f), :TAS imm16,Y (op=0x9b),
+# :SHY imm16,X (op=0x9c), :SHX imm16,Y (op=0x9e). Reverting any one of the
+# eight makes the SLEIGH compiler fail with "Could not resolve at least 1
+# variable size", naming that constructor's line.
 #
 # Intended use:
 #

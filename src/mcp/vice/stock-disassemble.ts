@@ -30,7 +30,8 @@
 //     how an answer ships without `runState`.
 //   - Never re-derive address/byte-count parsing locally (D-04) --
 //     stock-address.ts's parseAddress()/parseByteCount() are the only seam.
-import { CommandType, memGetBody } from "./stock-protocol.ts";
+import { readMemory } from "./stock-protocol.ts";
+import { resolveBank } from "./stock-memory.ts";
 import { parseAddress, parseByteCount, symbolNameFor, hasSymbolStore } from "./stock-address.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler } from "./stock-handler.ts";
 import { decode, type Instruction } from "./disasm-decoder.mts";
@@ -168,41 +169,43 @@ export const handleDisassemble: StockSessionHandler = async (args, session, _dep
     showSymbols = args.show_symbols;
   }
 
-  // --------------------------------------------------------- bounded memory read (Phase 3 D-05: halts, never resumes)
+  // --------------------------------------------------------- bank (optional, defaults to the CPU view)
+
+  const bankResolution = await resolveBank("vice_disassemble", args.bank, session);
+  if (!bankResolution.ok) {
+    return bankResolution.result;
+  }
+
+  // --------------------------------------------------------- bounded memory read (halts, never resumes)
   //
-  // `end` form: over-read by two bytes so the last instruction that STARTS
-  // at or before `end` has its full length available; `count` form:
-  // over-read by up to two extra bytes per instruction (three is the
-  // maximum instruction length) so `count` instructions can always be
-  // decoded. Both clamped at $ffff -- a genuine memspace boundary, not a
-  // client bug.
-  const readEnd = end !== undefined ? Math.min(end + 2, 0xffff) : Math.min(address + effectiveCount * 3 - 1, 0xffff);
+  // `end` form: over-read by two bytes so the last instruction that starts
+  // at or before `end` has its full length available, but never more than
+  // MAX_INSTRUCTIONS + 1 maximum-length instructions -- the answer keeps
+  // MAX_INSTRUCTIONS and uses the next one for `nextAddress`. `count` form:
+  // three bytes (the maximum instruction length) per instruction. Both are
+  // clamped at $ffff, the end of the address space.
+  const readEnd =
+    end !== undefined
+      ? Math.min(end + 2, address + (MAX_INSTRUCTIONS + 1) * 3 - 1, 0xffff)
+      : Math.min(address + effectiveCount * 3 - 1, 0xffff);
 
-  const body = memGetBody({ sidefx: false, start: address, end: readEnd, memspace: 0x00, bank: 0x0000 });
-
-  let response;
+  let bytes: Uint8Array;
   try {
-    response = await session.client.send(CommandType.MemoryGet, body);
+    bytes = await readMemory(session.client, { sidefx: false, start: address, end: readEnd, memspace: 0x00, bank: bankResolution.id });
   } catch (err) {
     return convertWireError("vice_disassemble", err);
   }
 
-  if (response.type !== "memory_get") {
-    return isErrorText(
-      `vice_disassemble: the binary monitor replied with an unexpected response type ("${response.type}"), expected "memory_get"`,
-    );
-  }
-
   const expectedLength = readEnd - address + 1;
-  if (response.bytes.length !== expectedLength) {
+  if (bytes.length !== expectedLength) {
     return isErrorText(
-      `vice_disassemble: expected ${expectedLength} byte(s), got ${response.bytes.length} -- a short read is a wrong answer, not a partial success`,
+      `vice_disassemble: expected ${expectedLength} byte(s), got ${bytes.length} -- a short read is a wrong answer, not a partial success`,
     );
   }
 
   // --------------------------------------------------------- decode and render
 
-  const decoded = decode(response.bytes, address, end !== undefined ? { end } : { count: effectiveCount });
+  const decoded = decode(bytes, address, end !== undefined ? { end } : { count: effectiveCount });
 
   let limitReached = false;
   let nextAddress: number | undefined;
@@ -233,6 +236,7 @@ export const handleDisassemble: StockSessionHandler = async (args, session, _dep
   const payload: Record<string, unknown> = {
     address,
     ...(end !== undefined ? { end } : {}),
+    bank: bankResolution.name !== undefined ? { id: bankResolution.id, name: bankResolution.name } : bankResolution.id,
     count: kept.length,
     instructions,
     listing,

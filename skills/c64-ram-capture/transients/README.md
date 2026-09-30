@@ -115,12 +115,10 @@ anchor close, not what the seed does.
 
 ## `$0000` / `$0001` do not belong in a derived list by hand
 
-`normalisePorts()` normalises the 6510 port overlay **in code**, once, on
-the snapshot route. Spending two of the cap's 64 slots on those two addresses
-would hide a real difference behind a known one. They can legitimately appear in
-a derivation taken from un-normalised images — `derive` compares the bytes it is
-given — so if you see them in an artifact, that is what it is telling you about
-the images, not a rule to add.
+Spending two of the cap's 64 slots on those two addresses would hide a real
+difference behind a known one. `derive` and `check` compare the bytes they are
+given and normalise nothing. So if you see `$0000` or `$0001` in an artifact,
+the images differ there. That is a fact about the images, not a rule to add.
 
 ## What your allow-list directory must refuse, and why now
 

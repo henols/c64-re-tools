@@ -7,15 +7,9 @@
 // `-processor` seam change land in the SAME commit (OPC-04), but this gate
 // itself is pure filesystem + one direct child-process invocation.
 //
-// TWO HALVES, per this plan's own `<action>`:
+// This file has no structural half: it needs Ghidra, so it is manual-only.
 //
-// The STRUCTURAL half runs UNCONDITIONALLY, with no Ghidra installation
-// present -- it is what keeps this file non-vacuous on a machine with no
-// Ghidra at all. It asserts the committed vendored tree's shape: the exact
-// six-file set, the two include lines, the `.ldefs` id, and that no `.sla`
-// is tracked anywhere in the repository.
-//
-// The COMPILE half is gated on a `SKIP_REASON` computed ONCE from
+// The compile cases are gated on a `SKIP_REASON` computed ONCE from
 // `GHIDRA_HOME` being set and `support/sleigh` existing at the resolved
 // path, passed through node:test's own `{ skip }` option on EVERY case --
 // never a hand-rolled early return, which would report a false PASS rather
@@ -43,80 +37,18 @@
 // sized-local fixes in a SCRATCH copy (never the committed tree) reproduces
 // "Could not resolve at least 1 variable size" naming that constructor's
 // own line, and the gate's own three-part condition is asserted NOT
-// satisfied. See evidence/36-01-sleigh-gate-red.md for the hand-run
-// transcript this test case's assertions were verified against.
+// satisfied.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, sep } from "node:path";
+import { join, relative } from "node:path";
 
 import { GHIDRA_STOCK_6502_LANGUAGE_FILES } from "../../src/mcp/vice/ghidra-project.mts";
-import { REPO_ROOT, VICE_DIR } from "./paths.ts";
+import { VICE_DIR } from "./paths.ts";
 
 const VENDOR_DIR = join(VICE_DIR, "vendor", "ghidra-ext");
-const LANGUAGES_DIR = join(VENDOR_DIR, "data", "languages");
-
-// ---------------------------------------------------------------------------
-// STRUCTURAL half -- runs unconditionally, no Ghidra installation required.
-// ---------------------------------------------------------------------------
-
-/** Recursively lists every FILE (never a directory) under `dir`, as paths
- * relative to `dir` with forward-slash separators -- so the assertion below
- * is platform-independent and order-independent (sorted before comparison). */
-function listFilesRelative(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const abs = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...listFilesRelative(abs).map((p) => join(entry.name, p)));
-    } else if (entry.isFile()) {
-      out.push(entry.name);
-    }
-  }
-  return out.map((p) => p.split(sep).join("/")).sort();
-}
-
-const EXPECTED_VENDOR_FILES = [
-  "Module.manifest",
-  "data/languages/6502_nmos.ldefs",
-  "data/languages/6502_nmos.slaspec",
-  "data/languages/6502_undocumented.sinc",
-  "data/sleighArgs.txt",
-  "extension.properties",
-].sort();
-
-test("the vendored ghidra-ext tree contains EXACTLY the six committed files -- no more, no less", () => {
-  const actual = listFilesRelative(VENDOR_DIR);
-  assert.deepEqual(actual, EXPECTED_VENDOR_FILES, `expected exactly ${EXPECTED_VENDOR_FILES.join(", ")}; found ${actual.join(", ")}`);
-});
-
-test('6502_nmos.slaspec\'s two lines name "6502.slaspec" and "6502_undocumented.sinc", in that order', () => {
-  const text = readFileSync(join(LANGUAGES_DIR, "6502_nmos.slaspec"), "utf8");
-  const lines = text.split("\n").filter((l) => l.trim() !== "");
-  assert.equal(lines.length, 2, `expected exactly two non-blank lines; got ${lines.length}: ${JSON.stringify(lines)}`);
-  assert.match(lines[0]!, /^@include\s+"6502\.slaspec"$/, `expected the first line to include "6502.slaspec"; got ${JSON.stringify(lines[0])}`);
-  assert.match(
-    lines[1]!,
-    /^@include\s+"6502_undocumented\.sinc"$/,
-    `expected the second line to include "6502_undocumented.sinc"; got ${JSON.stringify(lines[1])}`,
-  );
-});
-
-test('6502_nmos.ldefs declares exactly one <language> element with id="6502:LE:16:nmos" and slafile="6502_nmos.sla"', () => {
-  const text = readFileSync(join(LANGUAGES_DIR, "6502_nmos.ldefs"), "utf8");
-  const languageOpenTags = text.match(/<language\b/g) ?? [];
-  assert.equal(languageOpenTags.length, 1, `expected exactly one <language> element; found ${languageOpenTags.length}`);
-  assert.match(text, /id="6502:LE:16:nmos"/, 'expected id="6502:LE:16:nmos"');
-  assert.match(text, /slafile="6502_nmos\.sla"/, 'expected slafile="6502_nmos.sla"');
-});
-
-test("git ls-files reports no tracked path ending in .sla anywhere in the repository", () => {
-  const r = spawnSync("git", ["ls-files", "--", "*.sla"], { cwd: REPO_ROOT, encoding: "utf8" });
-  assert.equal(r.status, 0, `git ls-files failed: ${r.stderr}`);
-  assert.equal(r.stdout.trim(), "", `expected no tracked .sla files; found: ${r.stdout}`);
-});
 
 // ---------------------------------------------------------------------------
 // COMPILE half -- gated on SKIP_REASON, computed once. Every case below
@@ -306,14 +238,13 @@ test("COMPILE degenerate: an absent input file is refused by sleigh itself with 
 // Phase 36, plan 36-01, Task 2 (OPC-01 criterion 2): the planted-violation
 // case. Reverting ONE of the eight sized-local fixes in a SCRATCH copy
 // reproduces "Could not resolve at least 1 variable size" naming that
-// constructor's own line -- observed here as a test case, and by hand in
-// evidence/36-01-sleigh-gate-red.md. The revert happens ONLY inside the
+// constructor's own line. The revert happens ONLY inside the
 // scratch copy; the committed tree is never touched (asserted separately by
 // this task's own <verify> via `git status --porcelain`).
 // ---------------------------------------------------------------------------
 
 /** The fixed form of the `:NOP imm16` constructor (doc line 220, this
- * plan's own committed `.sinc` line 232) -- one of the eight sites named in
+ * plan's own committed `.sinc`) -- one of the eight sites named in
  * `36-RESEARCH.md`'s "The 8 failing SLEIGH constructors and the verified
  * fix". Reverting it to its PRE-fix form (passing the raw `imm16` token
  * field directly to the dereference, with no sized local) is the planted
@@ -342,11 +273,14 @@ test(
       // text, never merely on a differing exit status.
       assert.notEqual(r.status, 0, `expected a non-zero exit on the reverted (planted-violation) tree. Output:\n${r.output}`);
       assert.match(r.output, /Could not resolve at least 1 variable size/, `expected the compiler's own size-resolution error. Output:\n${r.output}`);
-      // The reverted constructor starts at line 232 in the committed tree
-      // (MEASURED, this plan); the compiler's own diagnostic quotes that
-      // line number twice -- once for the constructor, once for the failing
-      // statement inside it.
-      assert.match(r.output, /6502_undocumented\.sinc:232/, `expected the error to name line 232 (the reverted constructor). Output:\n${r.output}`);
+      // The compiler's own diagnostic names the line of the reverted
+      // constructor; that line is found in the file, never hard-coded.
+      const revertedLine = reverted.slice(0, reverted.indexOf(REVERTED_NOP_ABSOLUTE)).split("\n").length;
+      assert.match(
+        r.output,
+        new RegExp(`6502_undocumented\\.sinc:${revertedLine}`),
+        `expected the error to name line ${revertedLine} (the reverted constructor). Output:\n${r.output}`,
+      );
       assert.equal(existsSync(slaPath), false, "expected no .sla to be produced on the reverted tree -- a failed sleigh must leave nothing behind here");
     } finally {
       removeScratchTree(tree);

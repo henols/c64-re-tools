@@ -1,7 +1,7 @@
 // GENERATED FILE -- DO NOT EDIT.
 // Compiled by `tsc` from broker-launch.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
-// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
+// deployed to the host on their own -- install-resources.ts copies THIS file's on-disk contents
 // verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // broker-launch.mts
@@ -29,7 +29,8 @@
 // deliberately-killed instance, and writes the per-instance boot/crash log
 // at the exact path shape the retiring bash supervisor used.
 import { spawn as nodeSpawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync, writeFileSync, renameSync } from "node:fs";
+import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync, writeFileSync, renameSync, chmodSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join, basename, resolve as resolvePath } from "node:path";
 import { homedir } from "node:os";
 // Module-level: this file, not the caller, owns the single boolean --
@@ -87,8 +88,16 @@ let warnedRemoteMonitorBindWidened = false;
  * once, since a widened bind is exactly as security-relevant for a splice
  * target as it is for a launch flag.
  */
+/** True for the IPv4 and IPv6 "listen on everything" spellings. */
+export function isWildcardHost(host) {
+    const bare = host.replace(/^\[/, "").replace(/\]$/, "");
+    return bare === "0.0.0.0" || bare === "::" || /^(0{1,4}:){7}0{1,4}$/.test(bare);
+}
 export function resolveBinmonHost(binmonHost) {
     const host = binmonHost ?? process.env.VICE_BROKER_BINMON_HOST ?? "127.0.0.1";
+    if (isWildcardHost(host)) {
+        throw new Error(`VICE_BROKER_BINMON_HOST is "${host}", a wildcard bind address. The emulator's monitor is unauthenticated, so it is never bound to the wildcard address; set a specific address or unset the variable.`);
+    }
     if (host !== "127.0.0.1" && !warnedBinmonBindWidened) {
         warnedBinmonBindWidened = true;
         process.stderr.write(`vice-broker: stock binary-monitor bind widened to ${host} -- VICE's binary monitor is ` +
@@ -351,7 +360,9 @@ function resolveConfigScratchRoot() {
  * fresh launch never observes a half-written record. */
 function writeConfigScratchOwnerRecord(scratchConfigDir, record) {
     const finalPath = `${scratchConfigDir}.json`;
-    const tmpPath = `${finalPath}.tmp-${process.pid}-${Date.now()}`;
+    const tmpPath = `${finalPath}.tmp-${process.pid}-${randomUUID()}`;
+    writeFileSync(tmpPath, "");
+    chmodSync(tmpPath, 0o600);
     writeFileSync(tmpPath, JSON.stringify(record));
     renameSync(tmpPath, finalPath);
 }
@@ -464,6 +475,17 @@ function spawnAndRecordInstance(reason, port, deps) {
     // group (broker-children.mts) -- never a pid alone.
     const child = spawnFn(viceBin, viceArgs, { ...(spawnOptions ?? {}), detached: true });
     deps.trackChild?.(child);
+    // A spawn failure (no such binary, no permission) arrives as an 'error'
+    // event; without a listener it would take the whole broker down.
+    child.on?.("error", (err) => {
+        log(`vice-broker: the emulator process for port ${port} failed: ${err.message}`);
+        const current = deps.state.instances.get(port);
+        if (current !== undefined && current.pid === null) {
+            if (current.configScratchDir !== undefined)
+                removeConfigScratch(current.configScratchDir);
+            deleteInstanceRecord(deps.state, port);
+        }
+    });
     if (scratchConfigDir !== undefined && typeof child.pid === "number") {
         // Ties the directory to the child's own pid AND this launch's own
         // resolved binary identity (viceBin) -- see ConfigScratchOwnerRecord's
@@ -504,6 +526,7 @@ function spawnAndRecordInstance(reason, port, deps) {
         // mutating its profile afterwards must not silently change what this
         // instance claims it was launched with.
         ...(deps.profile === undefined ? {} : { profile: { ...deps.profile } }),
+        ...(scratchConfigDir === undefined ? {} : { configScratchDir: scratchConfigDir }),
     };
     deps.state.instances.set(port, record);
     return record;
@@ -683,6 +706,31 @@ export async function acquirePortAndLaunch(reason, deps) {
  * test does. Callers outside this module import THIS function rather than
  * re-deriving the pair of mutations. Idempotent, and safe for a record that
  * never had a second port (every fork launch). */
+/** Removes a per-launch config-scratch directory and its owner record. Call
+ * it only once the emulator that used the directory has ended. */
+export function removeConfigScratch(dir) {
+    try {
+        rmSync(dir, { recursive: true, force: true });
+        rmSync(`${dir}.json`, { force: true });
+    }
+    catch {
+        // Best effort: the next broker start reaps what is left.
+    }
+}
+/** Removes the record from `state.instances` but keeps its second port
+ * blocked; the caller frees it with `freeRemoteMonitorPort()` once the
+ * emulator process has ended, so no new launch is handed a port the old
+ * process still holds. Returns the record. */
+export function detachInstanceRecord(state, port) {
+    const record = state.instances.get(port);
+    state.instances.delete(port);
+    return record;
+}
+/** Hands a detached record's second port back to the allocator. */
+export function freeRemoteMonitorPort(state, record) {
+    if (typeof record.remoteMonitorPort === "number")
+        state.blockedPorts.delete(record.remoteMonitorPort);
+}
 export function deleteInstanceRecord(state, port) {
     const record = state.instances.get(port);
     if (record && typeof record.remoteMonitorPort === "number") {
@@ -1030,6 +1078,10 @@ function resolveCount(envVar, defaultValue, override) {
  *   through launchSupervised() below -- the SAME tryLaunchOne() primitive
  *   plan 02 established, with the crash history and the NEXT (doubled,
  *   clamped) backoff threaded into the new record. */
+/** How many times, and how far apart, a crash respawn retries while another
+ * launch holds the single launch slot. */
+const RESPAWN_SLOT_RETRIES = 40;
+const RESPAWN_SLOT_RETRY_MS = 250;
 async function handleExit(reason, port, deps) {
     const record = deps.state.instances.get(port);
     if (!record) {
@@ -1058,6 +1110,8 @@ async function handleExit(reason, port, deps) {
     if (record.deliberateKill) {
         // A deliberate teardown is the END of this instance -- its
         // remote-monitor port must go back to the allocator with it.
+        if (record.configScratchDir !== undefined)
+            removeConfigScratch(record.configScratchDir);
         deleteInstanceRecord(deps.state, port);
         deps.onOutcome?.("deliberate_teardown", port);
         return;
@@ -1072,6 +1126,8 @@ async function handleExit(reason, port, deps) {
             `this is not a transient crash; check VICE_ARGS and whether the port is already bound`);
         // Giving up is likewise terminal for this instance -- release its
         // remote-monitor port rather than leaking it out of the allocation band.
+        if (record.configScratchDir !== undefined)
+            removeConfigScratch(record.configScratchDir);
         deleteInstanceRecord(deps.state, port);
         deps.onOutcome?.("given_up", port);
         return;
@@ -1094,7 +1150,29 @@ async function handleExit(reason, port, deps) {
     // replaced. Same reasoning applies to the launch profile -- an
     // unexplained crash must not silently strip `-warp`/`-console` off the
     // replacement while leaving the record claiming them.
-    const respawned = launchSupervised(reason, port, deps, crashTimes, nextBackoffMs, record.remoteMonitorPort, record.profile);
+    // A granted instance stays granted: its grant follows the replacement
+    // process, so the session that holds it keeps it and its release still
+    // stops the right process.
+    const carry = record.state === "granted" ? { grantedPid: record.pid } : undefined;
+    if (record.configScratchDir !== undefined)
+        removeConfigScratch(record.configScratchDir);
+    // Another launch may hold the single launch slot right now. Wait for it
+    // instead of dropping this instance.
+    let respawned = null;
+    for (let attempt = 0; attempt < RESPAWN_SLOT_RETRIES; attempt++) {
+        respawned = launchSupervised(reason, port, deps, crashTimes, nextBackoffMs, record.remoteMonitorPort, record.profile, carry);
+        if (respawned !== null)
+            break;
+        await sleepMs(RESPAWN_SLOT_RETRY_MS);
+        if (deps.state.shuttingDown || record.deliberateKill || deps.state.instances.get(port) !== record) {
+            log(`vice-broker: not respawning port ${port} -- the broker is shutting down or the instance was torn down while it waited for the launch slot`);
+            return;
+        }
+    }
+    if (respawned === null) {
+        log(`vice-broker: giving up on port ${port} -- the launch slot stayed busy for ${RESPAWN_SLOT_RETRIES} attempts; the instance record is dropped`);
+        deleteInstanceRecord(deps.state, port);
+    }
     deps.onOutcome?.(respawned ? "respawned" : "given_up", port);
 }
 /** The single exit-listener installation point in the whole module tree.
@@ -1168,7 +1246,7 @@ export function withCrashSupervision(reason, port, baseSpawn, deps) {
  * of its own left now that the warm floor is retired, but this module's
  * own unit tests still drive one directly -- and for every fork launch,
  * which is why this parameter is optional too. */
-function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonitorPort, profile) {
+function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonitorPort, profile, carry) {
     const supervisorDir = join(deps.stateDir, String(port));
     const epochFile = deps.epoch.epochPathFor(deps.stateDir, port);
     const logDir = deps.epoch.instanceLogDirFor(deps.stateDir, port);
@@ -1198,7 +1276,13 @@ function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonit
     // was isolated.
     const defaultRealSpawn = (cmd, args, options) => {
         const fd = openSync(logPath, "a");
-        return nodeSpawn(cmd, args, { ...options, stdio: ["ignore", fd, fd] });
+        try {
+            return nodeSpawn(cmd, args, { ...options, stdio: ["ignore", fd, fd] });
+        }
+        finally {
+            // The child holds its own copy of the descriptor.
+            closeSync(fd);
+        }
     };
     const baseSpawn = deps.spawnFactory ? deps.spawnFactory(port) : (deps.spawn ?? defaultRealSpawn);
     const wrappedSpawn = withCrashSupervision(reason, port, baseSpawn, deps);
@@ -1225,6 +1309,13 @@ function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonit
     // when nothing else has.
     if (!existsSync(logPath)) {
         closeSync(openSync(logPath, "a"));
+    }
+    if (carry !== undefined) {
+        record.state = "granted";
+        for (const grant of deps.state.grants.values()) {
+            if (grant.port === port && grant.pid === carry.grantedPid)
+                grant.pid = record.pid;
+        }
     }
     record.epoch = epoch;
     record.deliberateKill = false;

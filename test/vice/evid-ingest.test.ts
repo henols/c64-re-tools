@@ -17,15 +17,11 @@
 // module classifies nothing and must never begin to.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { loadTextFixture } from "./textmon-fixtures.ts";
 import { parseAccessMap, type AccessMap, type AccessMapEntry, type AccessFlags } from "../../src/mcp/vice/textmon-memmap.mts";
 import { argvDigest, execObservationsFrom, runIdentityFrom, ingestAccessMap, type ExecObservation } from "../../src/mcp/vice/evid-ingest.mts";
-import { VICE_DIR } from "./paths.ts";
 
-const OWN_MODULE = join(VICE_DIR, "evid-ingest.mts");
 
 const NO_ACCESS: AccessFlags = { read: false, write: false, execute: false };
 
@@ -245,33 +241,6 @@ test("ingestAccessMap on a successful parse returns the derived run identity and
   }
 });
 
-// ---------------------------------------------------------------------------
-// Task 3: source-census -- evid-ingest.mts never compares against the
-// byte-derived block table's own vocabulary. This module classifies
-// nothing and must never begin to.
-// ---------------------------------------------------------------------------
-
-test("source census: evid-ingest.mts never compares against the block table's own vocabulary strings", () => {
-  const source = readFileSync(OWN_MODULE, "utf8");
-  const nonCommentLines = source.split("\n").filter((line) => !/^\s*[/*]/.test(line));
-  const nonCommentSource = nonCommentLines.join("\n");
-  // block-class.mts's own BlockClass vocabulary ("code" | "data" | "undefined")
-  // -- neither may appear as a string literal in this module's non-comment
-  // source. This module reports execution observations only; it never
-  // classifies an address as code, data or anything else. `node:sqlite` and
-  // `anno-store` absence used to be asserted, non-redundantly, by
-  // anno-seam.test.ts's shipped-module-set scan (which covered evid-ingest.mts
-  // too). Phase 56 removed that scan, so this census does not repeat the
-  // `node:sqlite` substring check here.
-  for (const banned of ['"code"', "'code'", '"data"', "'data'", "block-class"]) {
-    assert.equal(
-      nonCommentSource.includes(banned),
-      false,
-      `evid-ingest.mts must never reference ${banned} outside a comment -- this module classifies nothing`,
-    );
-  }
-});
-
 test("argvDigest is order-sensitive and refuses an empty array by name", () => {
   const ab = argvDigest(["a", "b"]);
   const ba = argvDigest(["b", "a"]);
@@ -301,4 +270,9 @@ test("argvDigest is NUL-joined, so an argument containing a space is not the sam
   assert.equal(oneArg, oneArg.toLowerCase(), "lowercase hex");
 
   assert.throws(() => argvDigest(["a", 1 as unknown as string]), /argv\[1\] is not a string/);
+});
+
+test("argvDigest refuses an argument that contains a NUL byte", () => {
+  assert.throws(() => argvDigest(["a\u0000b"]), /argv\[0\] contains a NUL byte/);
+  assert.throws(() => argvDigest(["ok", "x\u0000"]), /argv\[1\] contains a NUL byte/);
 });

@@ -39,7 +39,7 @@
 //     where the emulator enumerated 6, and made resolveRequiredBank()'s
 //     refusal tell an agent a working bank name did not exist. Anything
 //     agent-facing reads `entries`, the verbatim wire list.
-import { CommandType, memGetBody, memSetBody } from "./stock-protocol.ts";
+import { CommandType, memSetBody, readMemory } from "./stock-protocol.ts";
 import { parseAddress, parseByteCount } from "./stock-address.ts";
 import { convertWireError, isErrorText, stockAnswer, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
@@ -84,7 +84,7 @@ export interface BankCatalog {
  * garbage-collected. Both the module-level holder below and
  * resetBankCatalogsForTest() call this rather than repeating the
  * constructor inline. */
-function freshCatalogCache(): WeakMap<object, BankCatalog> { return new WeakMap(); }
+function freshCatalogCache(): WeakMap<object, Promise<BankCatalog>> { return new WeakMap(); }
 
 let bankCatalogs = freshCatalogCache();
 
@@ -97,13 +97,11 @@ export function resetBankCatalogsForTest(): void {
 
 /**
  * Resolves (and caches, per session) the emulator's own bank enumeration.
- * On a cache miss, sends BANKS_AVAILABLE (0x82) with no body -- the opcode
- * takes an empty body, and client.send() already defaults to
- * Buffer.alloc(0), so there is no dedicated wire-body encoder to invent for
- * this command. Bank names are matched case-insensitively on lookup (the
- * lowercased name is the map key; the wire's own spelling is kept in
- * `byId` for reporting), because the fork's own tool description uses
- * lowercase 'ram'.
+ * The cache holds the in-flight promise, so concurrent callers share one
+ * BANKS_AVAILABLE (0x82) round trip; a rejection, including an empty
+ * enumeration, is evicted so the next call retries. Bank names are matched
+ * case-insensitively on lookup (the lowercased name is the map key; the
+ * wire's own spelling is kept in `byId` for reporting).
  */
 export async function bankCatalogFor(session: StockConnectSession): Promise<BankCatalog> {
   const existing = bankCatalogs.get(session);
@@ -111,28 +109,42 @@ export async function bankCatalogFor(session: StockConnectSession): Promise<Bank
     return existing;
   }
 
-  const response = await session.client.send(CommandType.BanksAvailable);
-  if (response.type !== "banks_available") {
-    throw new Error(`bankCatalogFor: expected a "banks_available" reply, got "${response.type}"`);
-  }
-
-  const byName = new Map<string, number>();
-  const byId = new Map<number, string>();
-  const entries: { id: number; name: string }[] = [];
-  for (const bank of response.banks) {
-    byName.set(bank.name.toLowerCase(), bank.id);
-    // WR-01: FIRST name per id wins here, so the reverse lookup is stable
-    // rather than "whichever alias the emulator listed last". Aliases are
-    // never lost -- they all live in `entries`.
-    if (!byId.has(bank.id)) {
-      byId.set(bank.id, bank.name);
+  const pending = (async (): Promise<BankCatalog> => {
+    const response = await session.client.send(CommandType.BanksAvailable);
+    if (response.type !== "banks_available") {
+      throw new Error(`bankCatalogFor: expected a "banks_available" reply, got "${response.type}"`);
     }
-    entries.push({ id: bank.id, name: bank.name });
-  }
+    if (response.banks.length === 0) {
+      throw new Error(
+        "bankCatalogFor: the connected VICE build enumerated zero banks via BANKS_AVAILABLE -- " +
+          "no bank name can be resolved, and this is not cached as an empty catalog",
+      );
+    }
 
-  const catalog: BankCatalog = { byName, byId, entries };
-  bankCatalogs.set(session, catalog);
-  return catalog;
+    const byName = new Map<string, number>();
+    const byId = new Map<number, string>();
+    const entries: { id: number; name: string }[] = [];
+    for (const bank of response.banks) {
+      byName.set(bank.name.toLowerCase(), bank.id);
+      // The first name per id wins in the reverse lookup, so it is stable
+      // rather than "whichever alias the emulator listed last". Aliases are
+      // never lost: they all live in `entries`.
+      if (!byId.has(bank.id)) {
+        byId.set(bank.id, bank.name);
+      }
+      entries.push({ id: bank.id, name: bank.name });
+    }
+    return { byName, byId, entries };
+  })();
+
+  bankCatalogs.set(session, pending);
+  // A failed fetch is retried by the next call, never memoised.
+  pending.catch(() => {
+    if (bankCatalogs.get(session) === pending) {
+      bankCatalogs.delete(session);
+    }
+  });
+  return pending;
 }
 
 /** Shared bank-argument resolution for every handler whose `bank` argument is
@@ -256,7 +268,7 @@ export const handleMemoryRead: StockSessionHandler = async (args, session, _deps
 
   let size: number;
   try {
-    size = parseByteCount(args.size, { max: 0xffff, what: "size" });
+    size = parseByteCount(args.size, { max: 0x10000, what: "size" });
   } catch (err) {
     return isErrorText(`vice_memory_read: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -289,25 +301,16 @@ export const handleMemoryRead: StockSessionHandler = async (args, session, _deps
     return bankResolution.result;
   }
 
-  // Memspace is fixed to 0x00 (main) in Phase 3 -- drive memspace is Phase
-  // 6's GAIN-03; there is deliberately no argument for it here.
-  const body = memGetBody({ sidefx: sideEffects, start: address, end, memspace: 0x00, bank: bankResolution.id });
-
-  let response;
+  // Memspace is fixed to 0x00 (main); there is no argument for it.
+  let bytes: Uint8Array;
   try {
-    response = await session.client.send(CommandType.MemoryGet, body);
+    bytes = await readMemory(session.client, { sidefx: sideEffects, start: address, end, memspace: 0x00, bank: bankResolution.id });
   } catch (err) {
     return convertWireError("vice_memory_read", err);
   }
 
-  if (response.type !== "memory_get") {
-    return isErrorText(
-      `vice_memory_read: the binary monitor replied with an unexpected response type ("${response.type}"), expected "memory_get"`,
-    );
-  }
-
-  if (response.bytes.length !== size) {
-    return isErrorText(`vice_memory_read: expected ${size} byte(s), got ${response.bytes.length} -- a short read is a wrong answer, not a partial success`);
+  if (bytes.length !== size) {
+    return isErrorText(`vice_memory_read: expected ${size} byte(s), got ${bytes.length} -- a short read is a wrong answer, not a partial success`);
   }
 
   const payload: Record<string, unknown> = {
@@ -319,9 +322,9 @@ export const handleMemoryRead: StockSessionHandler = async (args, session, _deps
     memspace: "main",
   };
   if (encoding === "hex") {
-    payload.hex = Buffer.from(response.bytes).toString("hex");
+    payload.hex = Buffer.from(bytes).toString("hex");
   } else {
-    payload.bytes = Array.from(response.bytes);
+    payload.bytes = Array.from(bytes);
   }
 
   return stockAnswer(session.client, payload);

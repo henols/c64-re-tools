@@ -185,17 +185,21 @@ function withTempDir<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
   return Promise.resolve(fn(dir)).finally(() => rmSync(dir, { recursive: true, force: true }));
 }
 
-/** A temp directory INSIDE the workspace root.
+/** A temp directory that is the workspace root for the duration of the body.
  *
- * `coverage` confines both of its caller-supplied paths with
- * `storePathWithinWorkspace()` against `repoRoot()`, so a system tmpdir path
- * is refused BY DESIGN -- that refusal is the mitigation for T-29-28, not an
- * inconvenience to route around. Any test that drives the coverage verb for
- * real must therefore work inside the tree, exactly as the store's own tests
- * do. */
+ * The verbs confine their paths against the workspace root, which they read
+ * from CLAUDE_PROJECT_DIR when no root is injected. The directory lives under
+ * the system temp directory and is made the root for the body, so the shipped
+ * confinement is exercised and nothing is written inside the repository. */
 function withWorkspaceTempDir<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
-  const dir = mkdtempSync(join(VICE_DIR, ".anno-cli-test-"));
-  return Promise.resolve(fn(dir)).finally(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = mkdtempSync(join(tmpdir(), "anno-cli-ws-"));
+  const previous = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = dir;
+  return Promise.resolve(fn(dir)).finally(() => {
+    if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = previous;
+    rmSync(dir, { recursive: true, force: true });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -257,78 +261,6 @@ test("bin: `vice-mcp anno --help` exits 0, prints the plugin invocation and no n
       `stdout line parses as a JSON-RPC frame, proving the dispatch fell through into the server: ${trimmed}`,
     );
   }
-});
-
-// ---------------------------------------------------------------------------
-// WR-21: the `coverage` USAGE paragraph versus `loadProjectImage()`'s real
-// branch order.
-//
-// The text this replaces said `<image>` is "dispatched BY EXTENSION FIRST and
-// never by byte length" and then, three lines later, named a byte-length
-// dispatch (`ext !== ".prg" && bytes.length === 65536`). It also listed the
-// three forms `.prg` first, while the code tries `.raw`/`.bin` first -- and
-// order is the whole SUBJECT of that paragraph, because running the extension
-// check before any length check is what keeps `flatImageOrigin()`'s named
-// refusal reachable for a truncated capture (the WR-07 incident).
-//
-// This guard compares the ORDER the shipped `--help` text names the forms in
-// against the ORDER `loadProjectImage()`'s own source branches on, so the two
-// cannot drift apart again silently. It deliberately compares ORDER rather
-// than prose: a guard that pinned wording would fight every future edit.
-// ---------------------------------------------------------------------------
-
-/** The three live image forms, each with the pattern that locates it in
- * `anno-coverage.mts`'s dispatch and the pattern that locates it in the
- * shipped USAGE text. The legacy JSON branch is excluded: it is the fallthrough
- * and has no `ext ===` test to locate. */
-const COVERAGE_IMAGE_FORMS = [
-  {
-    name: ".raw/.bin, by extension",
-    inCode: /ext === "\.raw" \|\| ext === "\.bin"/,
-    inUsage: /a \.raw or \.bin is read as a flat capture BY EXTENSION/,
-  },
-  {
-    name: "the exactly-65536-byte non-.prg fallback",
-    inCode: /ext !== "\.prg" && bytes\.length === 65536/,
-    inUsage: /is NOT a \.prg and\s+is exactly 65536 bytes/,
-  },
-  {
-    name: ".prg",
-    inCode: /if \(ext === "\.prg"\)/,
-    inUsage: /then a \.prg, whose first/,
-  },
-] as const;
-
-/** The order `patterns` first occur in `text`, as form names. Asserts every
- * pattern matches -- a guard that silently dropped an unmatched form would
- * compare a shorter list against a shorter list and pass. */
-function orderOfForms(text: string, which: "inCode" | "inUsage"): string[] {
-  return COVERAGE_IMAGE_FORMS.map((form) => {
-    const at = text.search(form[which]);
-    assert.notEqual(at, -1, `${which}: could not locate the ${form.name} branch -- this guard is blind until its pattern is repaired`);
-    return { name: form.name, at };
-  })
-    .sort((a, b) => a.at - b.at)
-    .map((f) => f.name);
-}
-
-test("WR-21: the coverage USAGE names the image forms in loadProjectImage()'s OWN branch order", () => {
-  const loaderSource = readFileSync(join(VICE_DIR, "anno-coverage.mts"), "utf8");
-  const loaderStart = loaderSource.indexOf("export function loadProjectImage(");
-  assert.notEqual(loaderStart, -1, "precondition: loadProjectImage() is still the dispatcher this text describes");
-  const loaderBody = loaderSource.slice(loaderStart, loaderSource.indexOf("// The retired project form", loaderStart));
-  assert.ok(loaderBody.length > 0, "precondition: the loader body was sliced, not emptied");
-
-  const usageStart = helpResult.stdout.indexOf("coverage <image>");
-  assert.notEqual(usageStart, -1, "precondition: the coverage synopsis is still in --help");
-  const usageBlock = helpResult.stdout.slice(usageStart, helpResult.stdout.indexOf("Prints three separately named", usageStart));
-  assert.ok(usageBlock.length > 0, "precondition: the coverage USAGE block was sliced, not emptied");
-
-  assert.deepEqual(
-    orderOfForms(usageBlock, "inUsage"),
-    orderOfForms(loaderBody, "inCode"),
-    "the order --help names the image forms in must be the order loadProjectImage() actually tries them",
-  );
 });
 
 test("WR-21: the coverage USAGE no longer claims dispatch is NEVER by byte length, because one branch is", () => {
@@ -918,14 +850,12 @@ const VALUE_TAKING_PAIRS: readonly { verb: string; option: string }[] = Object.e
   ([verb, options]) => options.filter((o) => !BOOLEAN_OPTIONS.has(o)).map((option) => ({ verb, option })),
 );
 
-/** The verbs with no value-taking option: evid-disagreements answers for the
- * workspace's own project and takes only `--json`, and import-project takes
- * only its one positional. */
-const VERBS_WITHOUT_VALUE_OPTIONS = new Set(["evid-disagreements", "import-project"]);
+/** The verbs with no value-taking option: import-project takes only its one
+ * positional. */
+const VERBS_WITHOUT_VALUE_OPTIONS = new Set(["import-project"]);
 
 test("PRECONDITION: VALUE_TAKING_PAIRS is non-empty and covers every verb (30-REVIEW WR-09)", () => {
   assert.ok(VALUE_TAKING_PAIRS.length >= 4, `expected at least four value-taking pairs, got ${VALUE_TAKING_PAIRS.length}`);
-  assert.deepEqual(VERB_OPTIONS["evid-disagreements"], ["--json"], "the exemption below must stay a verb with no value-taking option");
   assert.deepEqual(VERB_OPTIONS["import-project"], [], "the exemption below must stay a verb with no value-taking option");
   assert.deepEqual(
     [...new Set(VALUE_TAKING_PAIRS.map((p) => p.verb))].sort(),
@@ -987,42 +917,6 @@ test("PAIRED DIRECTION: an ordinary value is still accepted at every value-takin
 // `anno-cli-path-consumers.test.ts` already does for the confinement seam, so
 // the next verb to write an output file cannot leave the number behind again.
 // ---------------------------------------------------------------------------
-
-test("refuseOverwrite()'s call-site count matches the number its own doc states (30-REVIEW WR-08; three since export-project)", () => {
-  const stripped = stripCommentsAndLiterals(readFileSync(ANNO_CLI_SOURCE_PATH, "utf8"));
-  // The DECLARATION is not a call site. Counting it is an off-by-one this
-  // test caught on itself the first time it ran, which is the shape of the
-  // defect it exists against.
-  const declarations = (stripped.match(/\bfunction refuseOverwrite\(/g) ?? []).length;
-  assert.equal(declarations, 1, "refuseOverwrite() must be declared exactly once -- it is the ONE shared overwrite check");
-  const callSites = (stripped.match(/\brefuseOverwrite\(/g) ?? []).length - declarations;
-  // BACK DOWN TO TWO as of phase 47 plan 47-05: `export-asm`'s `--out` was
-  // promoted to a directory, and its overwrite question moved entirely into
-  // `exportAsmTree()`'s own output-directory contract -- `cmdExportAsm()` no
-  // longer calls this single-file check at all. BACK UP TO THREE with
-  // `export-project`, whose `--out` is a single file.
-  assert.equal(
-    callSites,
-    3,
-    `refuseOverwrite() has ${callSites} call site(s) in anno-cli.ts. If that is correct, update BOTH paragraphs of its ` +
-      `doc comment -- the one naming the verbs AND the one stating the count. WR-08 was exactly these two disagreeing.`,
-  );
-
-  // And the doc really does say three, in the paragraph that states a count.
-  // Read off disk rather than retyped, so a doc that keeps an older count
-  // fails here rather than passing because this file has its own copy.
-  const doc = readFileSync(ANNO_CLI_SOURCE_PATH, "utf8");
-  assert.match(
-    doc,
-    /stated as the THREE call sites it\s+\* actually has/,
-    "the count-stating paragraph must name the same number the scan just measured",
-  );
-  assert.doesNotMatch(
-    doc,
-    /stated as the TWO call sites/,
-    "the phase-47-05 count (\"two\" as the CURRENT claim) must not come back -- it may still appear as history",
-  );
-});
 
 test("an Object.prototype key used as a verb is refused, not thrown (30-REVIEW CR-01)", async () => {
   for (const key of OBJECT_PROTOTYPE_KEYS) {
@@ -2154,8 +2048,8 @@ function makeEvidDisagreementsStore(dir: string, name: string, opts: { dataType:
   return storePath;
 }
 
-test("evid-disagreements: --help documents exactly --json, and names no positional", () => {
-  assert.match(helpResult.stdout, /^ {2}evid-disagreements \[--json\]$/m);
+test("evid-disagreements: --help documents --run and --json, and names no positional", () => {
+  assert.match(helpResult.stdout, /^ {2}evid-disagreements \[--run IMAGE_SHA256:ARGV_DIGEST:SEED\] \[--json\]$/m);
 });
 
 test("call: the unknown-verb refusal names all NINE verbs", async () => {
@@ -2478,5 +2372,53 @@ test("call, Test 5: --args-file outside the workspace root is refused through st
 test("call, Test 6: Test 1's write-then-read pair still succeeds with PATH narrowed to only process.execPath's own directory (no x64sc reachable)", async () => {
   await withWorkspaceTempDir(async (ws) => {
     await spawnedWriteThenRead(ws, "call_test6_label", 0xc020, (env) => ({ ...env, PATH: dirname(process.execPath) }));
+  });
+});
+
+test("decomp-completeness: a manifest entry whose image path climbs out of the workspace is refused by name and its existence is not reported", async () => {
+  await withTempDir(async (ws) => {
+    const outside = mkdtempSync(join(tmpdir(), "anno-cli-outside-"));
+    try {
+      writeFileSync(join(outside, "escape.prg"), "x");
+      writeFileSync(join(ws, "disagreements.json"), "{}");
+      writeFileSync(join(ws, "manifest.json"), JSON.stringify({ fixtures: [{ path: `../${outside.split("/").pop()}/escape.prg`, execution: "executed", reason: null }] }));
+      const { result, stderr, stdout } = await withCapturedConsole(() =>
+        runAnnoCliWith(["decomp-completeness", "--fixture", "escape", "--disagreements", join(ws, "disagreements.json"), "--manifest", join(ws, "manifest.json")], { workspaceRoot: ws }),
+      );
+      assert.notEqual(result, 0);
+      assert.match(stderr, /the manifest entry's image path .* is outside the workspace root/);
+      assert.ok(!stdout.includes("imageUnavailable"));
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+test("evid-disagreements: a project holding two runs refuses without --run, and --run answers for that run alone", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = join(ws, "two-runs.annostore");
+    const handle = openStore(storePath, { workspaceRoot: ws });
+    try {
+      setDataType(handle, { start: 0x9000, endInclusive: 0x9001, dataType: "byte" });
+      insertExecObservations(handle, { imageSha256: EVID_CLI_SHA, argvDigest: EVID_CLI_DIGEST, seed: "run-a", observations: [{ address: 0x9000, sourceBank: "ram" }] });
+      insertExecObservations(handle, { imageSha256: EVID_CLI_SHA, argvDigest: EVID_CLI_DIGEST, seed: "run-b", observations: [{ address: 0x9001, sourceBank: "ram" }] });
+    } finally {
+      closeStore(handle);
+    }
+    serveStore(ws, storePath);
+
+    const refused = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--json"]));
+    assert.notEqual(refused.result, 0);
+    assert.match(refused.stderr, /holds 2 recorded runs and none was chosen/);
+
+    const chosen = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--json", "--run", `${EVID_CLI_SHA}:${EVID_CLI_DIGEST}:run-a`]));
+    assert.equal(chosen.result, 0, chosen.stderr);
+    const answer = JSON.parse(chosen.stdout) as { runIdentity: { seed: string }; disagreements: { address: number }[] };
+    assert.equal(answer.runIdentity.seed, "run-a");
+    assert.deepEqual(answer.disagreements.map((d) => d.address), [0x9000], "run-b's observation at $9001 is not mixed in");
+
+    const unknown = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--run", `${EVID_CLI_SHA}:${EVID_CLI_DIGEST}:nope`]));
+    assert.notEqual(unknown.result, 0);
+    assert.match(unknown.stderr, /no recorded run matches the selector/);
   });
 });

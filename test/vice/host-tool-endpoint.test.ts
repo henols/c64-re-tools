@@ -509,11 +509,11 @@ test("Task 2 Test 6: a tree whose manifest line would exceed HOST_TOOL_STAGE_LIN
   assert.equal(dialCalled, false, "dial must never be attempted once the stage-line budget refused");
 });
 
-test("Task 2 Test 7: a source that !source's a file outside every uploaded tree fails, and the result's stderrTail names the file and says to add an -I for its directory", { skip: SKIP_REASON }, async () => {
+test("Task 2 Test 7: a source that !source's a file that is not in any uploaded tree fails, and the result's stderrTail names the file and says to add an -I for its directory", { skip: SKIP_REASON }, async () => {
   const broker: HarnessBroker = await startHarnessBroker();
   try {
     const sourceDir = freshDir("missing-include-source");
-    writeFileSync(join(sourceDir, "hello.a"), '* = $0801\nstart\n\t!source "../outside.a"\n\trts\n', "utf8");
+    writeFileSync(join(sourceDir, "hello.a"), '* = $0801\nstart\n\t!source "missing-subfile.a"\n\trts\n', "utf8");
     const toolsRoot = freshDir("missing-include-tools-root");
 
     const result = await runHostToolOverEndpoint("acme.build", { source: join(sourceDir, "hello.a") }, { toolsRoot, port: broker.port, candidates: ["127.0.0.1"] });
@@ -521,11 +521,87 @@ test("Task 2 Test 7: a source that !source's a file outside every uploaded tree 
     assert.equal(result.ok, true, `expected ok:true (the ACME child itself fails, the seam does not); got ${JSON.stringify(result)}`);
     if (!result.ok) return;
     assert.notEqual(result.exitStatus, 0, "the ACME child itself must have failed to open the missing include");
-    assert.match(result.stderrTail, /outside\.a/, "the note must name the missing file");
+    assert.match(result.stderrTail, /missing-subfile\.a/, "the note must name the missing file");
     assert.match(result.stderrTail, /-I/, "the note must say to add an -I entry for its directory");
   } finally {
     await broker.stop();
   }
+});
+
+test("a source that !source's a file by a parent-directory path is refused by name before ACME runs", { skip: SKIP_REASON }, async () => {
+  const broker: HarnessBroker = await startHarnessBroker();
+  try {
+    const sourceDir = freshDir("parent-path-source");
+    writeFileSync(join(sourceDir, "hello.a"), '* = $0801\n\t!source "../outside.a"\n', "utf8");
+    const result = await runHostToolOverEndpoint("acme.build", { source: join(sourceDir, "hello.a") }, { toolsRoot: freshDir("parent-path-tools"), port: broker.port, candidates: ["127.0.0.1"] });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.message, /hello\.a names a file outside the source tree with !source/);
+  } finally {
+    await broker.stop();
+  }
+});
+
+/** A fake session that records what `run()` was sent. */
+function recordingSession(): { dialSession: () => Promise<{ ok: true; session: HostToolSession }>; runs: Array<{ args: Record<string, unknown>; extra?: { toolsJson?: string } }> } {
+  const runs: Array<{ args: Record<string, unknown>; extra?: { toolsJson?: string } }> = [];
+  const session: HostToolSession = {
+    stage: async () => ({ ok: true, request: "ht-fake", trees: ["t0", "t1", "t2"], files: ["f0", "f1", "f2"] }),
+    run: async (_tool, args, _request, _timeout, extra) => {
+      runs.push({ args, extra });
+      return { ok: true, response: { ok: false, message: "stub" } };
+    },
+    close: () => {},
+  };
+  return { dialSession: async () => ({ ok: true as const, session }), runs };
+}
+
+test("ghidra.analyze: a script is sent by name, never uploaded, and scriptPath is refused before any dial", async () => {
+  const dir = freshDir("ghidra-names");
+  const image = join(dir, "x.bin");
+  writeFileSync(image, "x", "utf8");
+  const { dialSession, runs } = recordingSession();
+  const base = { runId: "r", importPath: image, processor: "6502:LE:16:default", importRoute: "flat64k" };
+  await runHostToolOverEndpoint("ghidra.analyze", { ...base, preScript: "/some/where/VolatileCarve.java" }, {
+    toolsRoot: freshDir("ghidra-names-tools"),
+    dialSession,
+    transferFile: async () => ({ ok: true, byteLength: 1, sha256: "x" }),
+  });
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0]!.args.preScript, "VolatileCarve.java");
+
+  const refused = await runHostToolOverEndpoint("ghidra.analyze", { ...base, scriptPath: dir }, { toolsRoot: freshDir("ghidra-names-tools2"), dialSession });
+  assert.equal(refused.ok, false);
+  if (!refused.ok) assert.match(refused.message, /takes no "scriptPath"/);
+  assert.equal(runs.length, 1, "the refused request never dials");
+});
+
+test("the project's tools.json text travels with the run request", async () => {
+  const project = freshDir("toolsjson-project");
+  mkdirSync(join(project, ".c64-re-tools", "local"), { recursive: true });
+  writeFileSync(join(project, ".c64-re-tools", "local", "tools.json"), '{"acme":"/opt/acme"}', "utf8");
+  const src = join(project, "a.a");
+  writeFileSync(src, "; x\n", "utf8");
+  const { dialSession, runs } = recordingSession();
+  await runHostToolOverEndpoint("acme.build", { source: src }, {
+    toolsRoot: freshDir("toolsjson-tools"),
+    baseDir: project,
+    dialSession,
+    transferFile: async () => ({ ok: true, byteLength: 1, sha256: "x" }),
+  });
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0]!.extra?.toolsJson, '{"acme":"/opt/acme"}');
+
+  const bare = freshDir("toolsjson-bare");
+  const bareSrc = join(bare, "a.a");
+  writeFileSync(bareSrc, "; x\n", "utf8");
+  const second = recordingSession();
+  await runHostToolOverEndpoint("acme.build", { source: bareSrc }, {
+    toolsRoot: freshDir("toolsjson-tools2"),
+    baseDir: bare,
+    dialSession: second.dialSession,
+    transferFile: async () => ({ ok: true, byteLength: 1, sha256: "x" }),
+  });
+  assert.equal(second.runs[0]!.extra, undefined);
 });
 
 // ============================================================================

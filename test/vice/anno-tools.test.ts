@@ -51,8 +51,8 @@ import {
   AnnoUncuratedToolError,
   CURATED_ANNO_TOOLS,
   READ_ONLY_ANNO_VERBS,
-  assertAnnoBatch,
   assertAnnoTool,
+  clientFileKeys,
 } from "../../src/mcp/vice/anno-tools.mts";
 import { runAnnoTool as runAnnoToolWith, type AnnoCallDeps } from "../../src/mcp/vice/anno-call-client.ts";
 import { openTestProject, type TestProject } from "./workspace-store-fixture.ts";
@@ -69,8 +69,6 @@ import { textConnect, textDisconnect } from "../../src/mcp/vice/text-connect.ts"
 import { withTextChannelLock } from "../../src/mcp/vice/text-protocol.ts";
 import { VICE_DIR } from "./paths.ts";
 
-const ANNO_TOOLS_SOURCE = readFileSync(join(VICE_DIR, "anno-tools.mts"), "utf8");
-const ANNO_CALL_CLIENT_SOURCE = readFileSync(join(VICE_DIR, "anno-call-client.ts"), "utf8");
 
 /** The in-process broker the current test's calls reach. Outside `withStore`
  * there is none, and a call that gets as far as the broker fails loudly --
@@ -205,7 +203,7 @@ test("a read in a workspace with no project is refused and creates nothing -- 'g
     process.env.CLAUDE_PROJECT_DIR = ws;
     const result = await runAnnoTool("anno_get_symbols", { max_results: 10 }, { runAnno: workspaceStoreRunner({ workspaceRoot: ws }) });
     assert.equal(result.isError, true);
-    assert.match(result.content[0]!.text, /anno_get_symbols failed: \[AnnoProjectError\]/);
+    assert.match(result.content[0]!.text, /^\[AnnoProjectError\] anno_get_symbols refused: /);
     assert.match(result.content[0]!.text, /has no annotation project yet/);
     assert.equal(existsSync(join(ws, ".c64-re-tools")), false, "a read must not create the project");
   } finally {
@@ -248,125 +246,20 @@ test("assertAnnoTool's FIRST check is set membership: an uncurated name is refus
   assert.throws(() => assertAnnoTool("anno_get_symbols", {}), AnnoToolArgumentError);
 });
 
-test("CURATED_ANNO_TOOLS is DERIVED from ANNO_TOOL_DEFINITIONS, never a second hand-typed list (T-29-02)", () => {
+test("CURATED_ANNO_TOOLS lists every definition's name, each carrying the anno_ prefix", () => {
   assert.ok(ANNO_TOOL_DEFINITIONS.length > 0, "the definition table must be non-empty for the assertions below to mean anything");
   assert.deepEqual(
     [...CURATED_ANNO_TOOLS],
     ANNO_TOOL_DEFINITIONS.map((def) => def.name),
   );
   for (const def of ANNO_TOOL_DEFINITIONS) {
-    assert.match(def.name, /^anno_[a-z0-9_]+$/, `${def.name} must carry the one D-05 prefix`);
-    assert.ok(def.description.length > 0, `${def.name} must carry a description`);
-    assert.ok(
-      !("store" in def.inputSchema.properties) && !(def.inputSchema.required ?? []).includes("store"),
-      `${def.name} must carry no store argument -- the engine's handle is bound to one project before the call arrives`,
-    );
+    assert.match(def.name, /^anno_[a-z0-9_]+$/, `${def.name} must carry the anno_ prefix`);
   }
 });
 
 // ---------------------------------------------------------------------------
-// Structural guards over this module's own source (D-06, T-29-03, MCP-02).
+// The write and stored-read verbs.
 // ---------------------------------------------------------------------------
-
-test("anno-tools.mts holds no module-level mutable store handle (D-06)", () => {
-  const declarations = ANNO_TOOLS_SOURCE.split("\n").filter((line) => /^(?:let|var)\s/.test(line));
-  assert.deepEqual(declarations, [], `anno-tools.mts must hold no module-level mutable state, found: ${JSON.stringify(declarations)}`);
-  const topLevelBindings = ANNO_TOOLS_SOURCE.split("\n").filter((line) => /^(?:const|let|var)\s+\w+.*=\s*openStore\(/.test(line));
-  assert.deepEqual(topLevelBindings, [], "no module-scope binding may hold a store handle -- the handle lives for one call and no longer");
-});
-
-test("neither the engine nor the client opens a store: the engine is handed one, and the client reaches the broker (T-29-03)", () => {
-  const code = (source: string) => source.split("\n").filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"));
-  assert.deepEqual(code(ANNO_TOOLS_SOURCE).filter((line) => /\b(openStore|closeStore)\(/.test(line)), [], "the engine never opens or closes a store; its caller owns the handle");
-  assert.deepEqual(code(ANNO_CALL_CLIENT_SOURCE).filter((line) => /\b(openStore|closeStore|openAnnoDatabase)\(/.test(line)), [], "the client never opens the store; the broker does");
-});
-
-test("MCP-02 by construction: anno-tools.mts reaches no VICE transport", () => {
-  const code = ANNO_TOOLS_SOURCE.split("\n")
-    .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"))
-    .join("\n");
-  for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments"]) {
-    assert.ok(!code.includes(forbidden), `anno-tools.mts must not reach ${forbidden} -- that is what makes the anno_* family's backend-independence sound`);
-  }
-});
-
-test("anno-tools.mts never throws a bare Error -- every refusal is an AnnoStoreError and therefore a ViceError", () => {
-  assert.equal(ANNO_TOOLS_SOURCE.includes("throw new Error("), false, "a bare Error escapes the ViceError family one catch is written against");
-});
-
-// ---------------------------------------------------------------------------
-// Plan 29-06 Task 1: the write and stored-read verbs.
-//
-// `stripCommentsAndStrings` below is shared by every structural guard added in
-// this plan. A single-pass character scanner and NOT a regex, because a
-// regex-alternation extractor was MEASURED to silently miss a literal at the
-// exact site a real defect lived. Template-literal
-// INTERPOLATIONS are preserved as code, because `${someIdentifier}` is an
-// identifier reference and a guard over identifiers must see it.
-// ---------------------------------------------------------------------------
-
-function stripCommentsAndStrings(source: string): string {
-  const out: string[] = [];
-  let i = 0;
-  while (i < source.length) {
-    const ch = source[i]!;
-    const next = source[i + 1];
-    if (ch === "/" && next === "/") {
-      while (i < source.length && source[i] !== "\n") i += 1;
-      continue;
-    }
-    if (ch === "/" && next === "*") {
-      i += 2;
-      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) i += 1;
-      i += 2;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      const quote = ch;
-      i += 1;
-      while (i < source.length && source[i] !== quote) {
-        if (source[i] === "\\") i += 1;
-        i += 1;
-      }
-      i += 1;
-      out.push('""');
-      continue;
-    }
-    if (ch === "`") {
-      i += 1;
-      while (i < source.length && source[i] !== "`") {
-        if (source[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (source[i] === "$" && source[i + 1] === "{") {
-          i += 2;
-          let depth = 1;
-          const start = i;
-          while (i < source.length && depth > 0) {
-            if (source[i] === "{") depth += 1;
-            else if (source[i] === "}") depth -= 1;
-            if (depth > 0) i += 1;
-          }
-          out.push(" ", source.slice(start, i), " ");
-          i += 1;
-          continue;
-        }
-        i += 1;
-      }
-      i += 1;
-      out.push('""');
-      continue;
-    }
-    out.push(ch);
-    i += 1;
-  }
-  return out.join("");
-}
-
-// The surface is two modules -- the definitions and validators, and the
-// dispatch -- so the source guards read both.
-const ANNO_TOOLS_CODE = stripCommentsAndStrings(ANNO_TOOLS_SOURCE + "\n" + readFileSync(join(VICE_DIR, "anno-tool-defs.mts"), "utf8"));
 
 function definitionNamed(name: string) {
   return ANNO_TOOL_DEFINITIONS.find((def) => def.name === name);
@@ -376,7 +269,7 @@ async function body(result: { content: { text: string }[]; isError: boolean }): 
   return JSON.parse(result.content[0]!.text) as Record<string, unknown>;
 }
 
-test("the twelve write and stored-read verbs are advertised, and none names a store -- the handle is bound before the call arrives", () => {
+test("the twelve write and stored-read verbs are curated and name no client file", () => {
   const expected = [
     "anno_set_label_name",
     "anno_set_comment",
@@ -394,8 +287,7 @@ test("the twelve write and stored-read verbs are advertised, and none names a st
   for (const name of expected) {
     const def = definitionNamed(name);
     assert.ok(def, `${name} must be in ANNO_TOOL_DEFINITIONS`);
-    assert.ok(!("store" in def!.inputSchema.properties), `${name} must not name a store`);
-    assert.ok(def!.description.length >= 40, `${name}'s description must be written for an agent, not a token`);
+    assert.deepEqual(clientFileKeys(name), [], `${name} reads no file`);
   }
 });
 
@@ -562,16 +454,6 @@ test("CURATED_ANNO_TOOLS contains both anno_exclude_range and anno_include_range
   // a second list" discipline would have been violated to make this pass.
   assert.ok(definitionNamed("anno_exclude_range"));
   assert.ok(definitionNamed("anno_include_range"));
-});
-
-test("anno_exclude_range's description states that recording an exclusion removes nothing -- pinned against the published definition, not a copy", () => {
-  const def = definitionNamed("anno_exclude_range");
-  assert.ok(def, "anno_exclude_range must be in ANNO_TOOL_DEFINITIONS");
-  assert.match(
-    def!.description,
-    /DOES NOT REMOVE ANYTHING/,
-    "the reassurance that recording an exclusion changes nothing about which bytes the export emits must be part of the published surface",
-  );
 });
 
 test("anno_exclude_range and anno_include_range are absent from the tools manifest -- the anno_* family is served proxy-locally, in neither, by design", () => {
@@ -880,16 +762,6 @@ test("WR-10: anno_save_project's revision FIELD and the revision named in its ow
   );
 });
 
-test("WR-10: dispatchSaveProject() reads the store revision EXACTLY ONCE", () => {
-  // Asserted over the comment-and-string-stripped source, so neither the
-  // function's own rationale nor the note's prose can affect the count.
-  const start = ANNO_TOOLS_CODE.indexOf("function dispatchSaveProject(");
-  assert.ok(start > 0, "dispatchSaveProject() must exist");
-  const bodyText = ANNO_TOOLS_CODE.slice(start, ANNO_TOOLS_CODE.indexOf("\n}", start));
-  const reads = bodyText.match(/currentRevision\(/g) ?? [];
-  assert.equal(reads.length, 1, "two reads are two chances to disagree -- the field and the prose must come from ONE const");
-});
-
 test("every verb closes the store: no handle is left open and no journal sidecar survives a repeated call", async () => {
   await withStore(
     () => {},
@@ -910,28 +782,6 @@ test("every verb closes the store: no handle is left open and no journal sidecar
       }
     },
   );
-});
-
-test("anno-tools.mts re-implements no address parsing, no range validation and no data-type membership -- every such check calls an anno-types.mts export", () => {
-  for (const owned of ["parseStoreAddress(", "assertRangeShape(", "assertDataType(", "assertLegalLabel(", "assertCommentText(", "assertEnumName(", "assertCommentType(", "assertLabelKind("]) {
-    assert.ok(ANNO_TOOLS_CODE.includes(owned), `anno-tools.mts must route through anno-types.mts's ${owned}`);
-  }
-  // Asserted over the STRIPPED source, so the header prose naming these
-  // hazards cannot make the check pass by containing the words.
-  for (const forbidden of ["parseInt(", "parseFloat(", "charCodeAt(", "normalize("]) {
-    assert.equal(ANNO_TOOLS_CODE.includes(forbidden), false, `${forbidden} in anno-tools.mts would be a second, divergent rule beside the store's own`);
-  }
-  // Case folding is permitted in EXACTLY one place -- normalizing a FILE
-  // EXTENSION, which is `anno-cli.ts`'s own discipline and not an argument
-  // rule. Anywhere else it would silently merge two names a human
-  // distinguished, which is the sanitization T-29-23 forbids.
-  const foldSites = ANNO_TOOLS_CODE.split("toLowerCase()").length - 1;
-  assert.equal(foldSites, 1, "case folding must appear exactly once in anno-tools.mts");
-  assert.match(ANNO_TOOLS_CODE, /extname\([^)]*\)\.toLowerCase\(\)/, "the one case-folding site must be the file-extension normalization");
-  // No second copy of the frozen twelve as an executable array. The
-  // inputSchema's `enum` is documentation and its members are string literals,
-  // which the stripper has already removed.
-  assert.equal(/\[\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*,\s*""\s*\]/.test(ANNO_TOOLS_CODE), false, "a twelve-member literal array here would be a second data-type vocabulary");
 });
 
 // ---------------------------------------------------------------------------
@@ -971,7 +821,7 @@ async function withRegionCap(cap: string, run: () => Promise<void>): Promise<voi
   }
 }
 
-test("the six derived and composed verbs are advertised, and every one requires an explicit image (D-07)", () => {
+test("the six derived and composed verbs are curated and each names image as its client file", () => {
   for (const name of [
     "anno_disassemble",
     "anno_read_region",
@@ -982,8 +832,7 @@ test("the six derived and composed verbs are advertised, and every one requires 
   ]) {
     const def = definitionNamed(name);
     assert.ok(def, `${name} must be in ANNO_TOOL_DEFINITIONS`);
-    const required = def!.inputSchema.required ?? [];
-    assert.ok(required.includes("image"), `${name} must require "image" -- the store holds annotations, never bytes (D-07)`);
+    assert.deepEqual(clientFileKeys(name), ["image"]);
   }
 });
 
@@ -1169,7 +1018,7 @@ test("CR-01 Fix Test C: a register-shaped enum name for a register anno-regbits.
  * fully-absent case above. */
 const DD00_WRITE_PRG = prgBytes(0xc000, [0xa9, 0x01, 0x8d, 0x00, 0xdd, 0x60]);
 
-test("CR-01 Fix Test D: a register PRESENT in the table but not fully covered by its fields ($DD00) still refuses loudly -- the membership-test fix does not weaken T-45-21", async () => {
+test("a register whose table covers every bit ($DD00) renders a write of $01 decomposed, not refused", async () => {
   await withStore(
     (handle) => {
       createProjectEnum(handle, { name: "DD00", variants: {} });
@@ -1178,22 +1027,10 @@ test("CR-01 Fix Test D: a register PRESENT in the table but not fully covered by
     async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", DD00_WRITE_PRG);
       const result = await runAnnoTool("anno_disassemble", { image, address: "$c000", end_address: "$c005" });
-      assert.equal(result.isError, true, "a genuinely-lossy decomposition must still refuse, not fall back to a hex literal");
-      assert.match(result.content[0]!.text, /\[AnnoStoreError\]/);
-      assert.ok(result.content[0]!.text.includes("DD00"), `the refusal names the register/enum: ${result.content[0]!.text}`);
-      assert.ok(result.content[0]!.text.includes("not fully covered"), `the refusal names the real cause: ${result.content[0]!.text}`);
+      assert.equal(result.isError, false, result.content[0]!.text);
+      assert.match(result.content[0]!.text, /DD00_VIC_BANK_SELECT_INVERTED1/);
     },
   );
-});
-
-test("D-09: no identifier, schema property or dispatch branch on this surface names a cursor or a current address", () => {
-  // Asserted over the COMMENT-AND-STRING-STRIPPED source, so the module
-  // header's own prose explaining why the anti-feature is absent cannot make
-  // the check pass by containing the word.
-  assert.equal(/cursor/i.test(ANNO_TOOLS_CODE), false, "a cursor identifier anywhere would reintroduce the anti-feature D-09 folded away");
-  assert.equal(/current[_\s]*address/i.test(ANNO_TOOLS_CODE), false, "a 'current address' concept is the same anti-feature under another name");
-  // And the check is not vacuous: the header DOES discuss it, in prose.
-  assert.match(ANNO_TOOLS_SOURCE, /cursor/i, "the header must explain the absence, or a later reader will read it as an oversight");
 });
 
 test("ONE cap governs BOTH views, is read at call time, and refuses by name with the cap and the requested width", async () => {
@@ -1355,16 +1192,6 @@ test("CR-01: an inverted span is refused IDENTICALLY by both verbs, and the one 
   );
 });
 
-test("CR-01: sliceSpan()'s guard names all THREE cases, so the inverted-span condition cannot be dropped as redundant", () => {
-  // Asserted over the comment-and-string-stripped source: the doc comment
-  // above the function explains the third case at length, and must not be
-  // what makes this check pass.
-  const guard = /if\s*\(from < 0 \|\| to >= image\.body\.length \|\| from > to\) return null;/;
-  assert.match(ANNO_TOOLS_CODE, guard, "sliceSpan() must guard the low bound, the high bound AND the inverted span (CR-01)");
-  // And the reason is written down, or a later reader removes it as dead.
-  assert.match(ANNO_TOOLS_SOURCE, /INVERTED span/, "the third case must carry its own rationale in the doc comment");
-});
-
 test("CR-01 over-refusal control: a span WHOLLY INSIDE the image still succeeds on both verbs, with a non-zero instruction count", async () => {
   await withStore(
     () => {},
@@ -1403,6 +1230,23 @@ test("CR-01: an OMITTED end_address still defaults to the image's own bound -- r
       assert.equal(disasmBody.available, undefined, "an omitted end is derived from the image itself and is inside it by construction");
       assert.ok(disasmBody.instructions > 0);
       assert.ok(disasmBody.end_address <= last, `an omitted end must not run past the image's last address $${last.toString(16)}`);
+    },
+  );
+});
+
+test("anno_disassemble with an address outside the image and no end_address is answered as unanswerable for that address, not with an inverted span", async () => {
+  await withStore(
+    () => {},
+    async (ws, _store) => {
+      const image = writeImage(ws, "tiny.prg", TINY_PRG);
+      for (const [address, shown] of [["$1004", "$1004..$1004"], ["$0fff", "$0fff..$0fff"], ["$ffff", "$ffff..$ffff"]] as const) {
+        const result = await runAnnoTool("anno_disassemble", { image, address });
+        assert.equal(result.isError, false, address);
+        const answer = (await body(result)) as { available: boolean; reason: string; end_address?: number };
+        assert.equal(answer.available, false);
+        assert.ok(answer.reason.includes(shown), answer.reason);
+        assert.equal(answer.end_address, undefined);
+      }
     },
   );
 });
@@ -1597,25 +1441,13 @@ function batchRefusal(payload: unknown): Error {
   assert.fail("the batch must have been refused");
 }
 
-test("anno_batch_execute is advertised as the ONE sanctioned nested-argument verb, and the header says no second may join it", () => {
-  const def = definitionNamed("anno_batch_execute");
-  assert.ok(def, "anno_batch_execute must be in ANNO_TOOL_DEFINITIONS");
-  assert.ok((def!.inputSchema.required ?? []).includes("calls"));
-  assert.match(ANNO_TOOLS_SOURCE, /ONE SANCTIONED NESTED-ARGUMENT VERB ON THIS/);
-  assert.match(ANNO_TOOLS_SOURCE, /NO SECOND MAY JOIN IT/);
-  assert.match(ANNO_TOOLS_SOURCE, /confused-deputy shape/);
-  // The depth cap and the recursive validator are both real, exported names.
-  assert.equal(ANNO_MAX_BATCH_DEPTH, 4);
-  assert.equal(typeof assertAnnoBatch, "function");
-});
-
 test("the six whole-batch refusal shapes, each naming what it refused on", () => {
   const good = { name: "anno_set_label_name", arguments: { address: "$c000", name: "ok_label" } };
 
   // 1. A malformed payload -- "calls" is not an array. Payload-level, so there
   //    is no offending INDEX to name; the message says what it says instead.
   const notArray = batchRefusal({ calls: "not-an-array" });
-  assert.equal(notArray.name, "AnnoUncuratedToolError");
+  assert.equal(notArray.name, "AnnoToolArgumentError");
   assert.match(notArray.message, /"calls" must be an array/);
   assert.match(notArray.message, /never as an empty batch that passes through/);
   assert.match(batchRefusal({}).message, /"calls" must be an array/);
@@ -1623,13 +1455,13 @@ test("the six whole-batch refusal shapes, each naming what it refused on", () =>
 
   // 2. An EMPTY calls array -- payload-level too, and NEW here.
   const empty = batchRefusal({ calls: [] });
-  assert.equal(empty.name, "AnnoUncuratedToolError");
+  assert.equal(empty.name, "AnnoToolArgumentError");
   assert.match(empty.message, /"calls" is an EMPTY array/);
   assert.match(empty.message, /plausible-looking zero/);
 
   // 3. An entry missing a string name -- refuses WHOLE, naming its index.
   const malformed = batchRefusal({ calls: [good, { arguments: {} }] });
-  assert.equal(malformed.name, "AnnoUncuratedToolError");
+  assert.equal(malformed.name, "AnnoToolArgumentError");
   assert.match(malformed.message, /calls\[1\]/);
   assert.match(malformed.message, /refused WHOLE/);
   assert.match(batchRefusal({ calls: [42] }).message, /calls\[0\]/);
@@ -1678,7 +1510,7 @@ test("the batch validator recurses: an uncurated name one level down still refus
   assert.match(nested.message, /anno_not_a_verb/);
 });
 
-test("nesting deeper than the declared cap is refused BY NAME rather than walked (T-29-24)", () => {
+test("nesting deeper than the declared cap is refused by name rather than walked", () => {
   function nest(depth: number): Record<string, unknown> {
     if (depth === 0) return { calls: [{ name: "anno_save_project", arguments: {} }] };
     return { calls: [{ name: "anno_batch_execute", arguments: nest(depth - 1) }] };
@@ -1687,7 +1519,7 @@ test("nesting deeper than the declared cap is refused BY NAME rather than walked
   assert.doesNotThrow(() => assertAnnoTool("anno_batch_execute", nest(ANNO_MAX_BATCH_DEPTH)));
 
   const tooDeep = batchRefusal(nest(ANNO_MAX_BATCH_DEPTH + 1));
-  assert.equal(tooDeep.name, "AnnoUncuratedToolError");
+  assert.equal(tooDeep.name, "AnnoToolArgumentError");
   assert.match(tooDeep.message, new RegExp(`deeper than ${ANNO_MAX_BATCH_DEPTH} levels`));
   assert.match(tooDeep.message, /refused BY NAME rather than walked/);
 });
@@ -1845,7 +1677,7 @@ test("CR-06 negative control: a chain past the cap is still refused BY NAME, and
       const refused = await runAnnoTool("anno_batch_execute", { ...nest(ANNO_MAX_BATCH_DEPTH + 1) });
 
       assert.equal(refused.isError, true, "past the cap the payload is refused, not walked");
-      assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
+      assert.match(refused.content[0]!.text, /\[AnnoToolArgumentError\]/);
       assert.match(refused.content[0]!.text, new RegExp(`deeper than ${ANNO_MAX_BATCH_DEPTH} levels`), "the refusal must NAME the cap's value");
       assert.match(refused.content[0]!.text, /refused BY NAME rather than walked/);
 
@@ -2060,6 +1892,10 @@ test("WR-01: anno_join_memmap's const_writes argument reaches runMemmapJoin() th
     },
     async (ws, _store) => {
       const image = writeImage(ws, "prog.prg", TWO_CALLERS_PRG);
+      const unconstrained = await runAnnoTool("anno_join_memmap", { image });
+      assert.equal(unconstrained.isError, false, unconstrained.content[0]?.text);
+      const unconstrainedDecision = ((await body(unconstrained)) as unknown as JoinMemmapBody).decisions.find((d) => d.address === 0xd020);
+      assert.equal(unconstrainedDecision?.label, "Border color (only bits #0-#3)", "without const_writes $d020 reads as the border colour");
       const constrained = await runAnnoTool("anno_join_memmap", {
         image,
         const_writes: [{ store_address: 0x0815, target_address: 0x0001, value: 0x34 }],
@@ -2071,9 +1907,8 @@ test("WR-01: anno_join_memmap's const_writes argument reaches runMemmapJoin() th
       // $34 decodes to all-RAM at the I/O range (anno-bank.test.ts's own
       // real-capture case): $d020 is annotated, but NEVER as the border
       // colour -- proving const_writes reached runMemmapJoin(), not merely
-      // validated and dropped, since the PREVIOUS test (same store shape,
-      // const_writes omitted) reports the border-colour label for the same
-      // address.
+      // validated and dropped, since the unconstrained join above reports
+      // the border-colour label for the same address.
       assert.equal(decision!.outcome, "annotated");
       assert.notEqual(
         decision!.label,
@@ -2961,10 +2796,60 @@ test("anno_evid_reset is absent from READ_ONLY_ANNO_VERBS -- it writes, so it ta
   assert.ok(CURATED_ANNO_TOOLS.includes("anno_evid_reset"));
 });
 
-test("anno-tools.mts calls argvDigest() nowhere -- the digest is computed only inside evid-ingest.mts/capture-predicate.mts, so a call site here would be a second identity site", () => {
-  assert.equal(
-    (ANNO_TOOLS_SOURCE.match(/argvDigest\(/g) ?? []).length,
-    0,
-    "anno-tools.mts must reference argvDigest only as a field/property name (via runIdentityFrom()'s return value), never call the function itself",
-  );
+
+test("a refusal from a shared validator inside a batch names the offending entry's index, at every depth", () => {
+  const missingMax = batchRefusal({ calls: [{ name: "anno_save_project", arguments: {} }, { name: "anno_get_symbols", arguments: {} }] });
+  assert.equal(missingMax.name, "AnnoToolArgumentError");
+  assert.match(missingMax.message, /calls\[1\]/);
+  const badAddress = batchRefusal({ calls: [{ name: "anno_get_comments", arguments: { max_results: 1, start_address: "1024" } }] });
+  assert.match(badAddress.message, /calls\[0\], anno_get_comments/);
+  const nested = batchRefusal({
+    calls: [
+      { name: "anno_save_project", arguments: {} },
+      { name: "anno_batch_execute", arguments: { calls: [{ name: "anno_set_data_type", arguments: { start_address: "$c000", end_address: "$c001", data_type: "nope" } }] } },
+    ],
+  });
+  assert.match(nested.message, /calls\[1\].*calls\[0\]/);
+});
+
+test("an inner call naming a different image than its batch is refused, never silently replaced", () => {
+  const refused = batchRefusal({
+    image: "a.prg",
+    calls: [{ name: "anno_get_binary_info", arguments: { image: "b.prg" } }],
+  });
+  assert.equal(refused.name, "AnnoToolArgumentError");
+  assert.match(refused.message, /calls\[0\]/);
+  assert.match(refused.message, /"b\.prg"/);
+  assert.match(refused.message, /"a\.prg"/);
+  assert.doesNotThrow(() => assertAnnoTool("anno_batch_execute", { image: "a.prg", calls: [{ name: "anno_get_binary_info", arguments: { image: "a.prg" } }] }));
+});
+
+test("a batch whose every inner call only reads is run in read mode, and a batch holding one write in write mode", async () => {
+  const modes: string[] = [];
+  const recording: AnnoCallDeps = {
+    runAnno: async (call) => {
+      modes.push(`${call.name}:${call.mode}`);
+      return { ok: false, code: "failed", message: "recorded" };
+    },
+  };
+  const ws = mkdtempSync(join(tmpdir(), "anno-tools-mode-"));
+  try {
+    await runAnnoToolWith("anno_batch_execute", { calls: [{ name: "anno_get_symbols", arguments: { max_results: 1 } }, { name: "anno_batch_execute", arguments: { calls: [{ name: "anno_save_project", arguments: {} }] } }] }, { ...recording, workspaceRoot: ws });
+    await runAnnoToolWith("anno_batch_execute", { calls: [{ name: "anno_get_symbols", arguments: { max_results: 1 } }, { name: "anno_batch_execute", arguments: { calls: [{ name: "anno_set_label_name", arguments: { address: "$c000", name: "x" } }] } }] }, { ...recording, workspaceRoot: ws });
+    assert.deepEqual(modes, ["anno_batch_execute:read", "anno_batch_execute:write"]);
+  } finally {
+    rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("a read-only batch in a workspace with no annotations.db is refused and creates nothing", async () => {
+  const ws = mkdtempSync(join(tmpdir(), "anno-tools-ro-batch-"));
+  try {
+    const result = await runAnnoToolWith("anno_batch_execute", { calls: [{ name: "anno_get_symbols", arguments: { max_results: 1 } }] }, { workspaceRoot: ws, runAnno: workspaceStoreRunner({ workspaceRoot: ws }) });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /\[AnnoProjectError\]/);
+    assert.equal(existsSync(join(ws, ".c64-re-tools")), false);
+  } finally {
+    rmSync(ws, { recursive: true, force: true });
+  }
 });

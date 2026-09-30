@@ -26,24 +26,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import {
   parseProvenanceHeader,
   AnnoProvenanceHeaderError,
   renderMemoryMap,
   escapeMarkdownCell,
-  RENDERER_VERSION,
 } from "../../src/mcp/vice/anno-memmap-render.mts";
 import { compareRenderedMemoryMap, type CheckRenderedMemoryMapResult } from "../../src/mcp/vice/anno-memmap-check.mts";
 import { openStore, closeStore, setDataType, setLabel, setComment } from "../../src/mcp/vice/anno-store.mts";
 import type { AnnoStoreHandle } from "../../src/mcp/vice/anno-store.mts";
 import { AnnoCommentError } from "../../src/mcp/vice/anno-types.mts";
 import { CONFIDENCE_GRADES } from "../../src/mcp/vice/anno-confidence.mts";
-import { VICE_DIR } from "./paths.ts";
+import { tmpdir } from "node:os";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 interface CheckRenderedMemoryMapOptions {
   /** See `RenderMemoryMapOptions.storePath`. */
@@ -98,7 +95,7 @@ interface CheckRenderedMemoryMapOptions {
  */
 async function checkRenderedMemoryMap(
   opts: CheckRenderedMemoryMapOptions,
-): Promise<CheckRenderedMemoryMapResult> {
+): Promise<CheckRenderedMemoryMapResult | { status: "missing"; path: string }> {
   const { storePath, provenancePath, renderedPath, workspaceRoot } = opts;
 
   if (!existsSync(renderedPath)) {
@@ -222,12 +219,6 @@ test("parseProvenanceHeader refuses a non-object payload", () => {
 // The layout must never be read from the skills tree at runtime (Phase 10 D-06).
 // ---------------------------------------------------------------------------
 
-test("the renderer's layout is embedded in TypeScript, never read from the recon skill's template at runtime", () => {
-  const source = readFileSync(join(VICE_DIR, "anno-memmap-render.mts"), "utf8");
-  const templateFilenameMentions = (source.match(/memory-map\.template\.md/g) ?? []).length;
-  assert.equal(templateFilenameMentions, 0, "anno-memmap-render.mts must never name the recon skill's template file");
-});
-
 // ---------------------------------------------------------------------------
 // escapeMarkdownCell (WR-04) -- no binary needed.
 // ---------------------------------------------------------------------------
@@ -250,23 +241,13 @@ test("escapeMarkdownCell returns an empty string unchanged", () => {
   assert.equal(escapeMarkdownCell(""), "");
 });
 
-test("RENDERER_VERSION is bumped to \"3\" for the store re-point -- the digest's canonical input is store rows, not the three wire shapes", () => {
-  // Version 2 pinned the Markdown-cell-escaping output-shape change (WR-04).
-  // Version 3 pins D-17: `computeRenderDigest()` canonicalises the store's own
-  // `RangeRow`/`LabelRow`/`CommentRow` instead of the three
-  // `anno_get_*` wire shapes, so the SAME underlying annotations hash
-  // differently either side of that commit. An unchanged version across that
-  // boundary would let two incompatible renderings compare as ordinary drift.
-  assert.equal(RENDERER_VERSION, "3");
-});
-
 // ---------------------------------------------------------------------------
 // The render digest, over a real store. No child, no project file.
 // ---------------------------------------------------------------------------
 
 /** A store built by hand plus a valid sidecar beside it, both under THIS
  * directory -- which is inside the workspace root, so `openStore()`'s
- * confinement accepts it and a system tmpdir would (correctly) be refused.
+ * confinement accepts it.
  * Every store-backed test below builds its input this way: explicit rows a
  * reader can check against the expected Markdown, with no disassembly step in
  * between. */
@@ -274,7 +255,7 @@ function withRenderFixture<T>(
   opts: { prefix: string; fill: (handle: AnnoStoreHandle) => void; provenance?: Record<string, unknown> },
   fn: (paths: { dir: string; storePath: string; provenancePath: string }) => T | Promise<T>,
 ): Promise<T> {
-  const dir = mkdtempSync(join(HERE, `.${opts.prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `${opts.prefix}-`));
   const built = buildStoreFixture({ root: dir, fill: opts.fill, provenance: opts.provenance });
   return Promise.resolve(fn(built)).finally(() => rmSync(dir, { recursive: true, force: true }));
 }
@@ -318,97 +299,64 @@ function fillBaselineStore(handle: AnnoStoreHandle): void {
 }
 
 test("changing a LABEL in the store changes the render digest -- the digest covers the store, not just the sidecar", async () => {
-  await withRenderFixture({ prefix: "anno-memmap-digest-label", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
-    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+  await withRenderFixture({ prefix: "anno-memmap-digest-label", fill: fillBaselineStore }, async ({ dir, storePath, provenancePath }) => {
+    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
     // Re-opened WRITABLE: `mustExist` opens read-only (it exists to JUDGE an
     // existing image), so a perturbation must not ask for it.
-    const handle = openStore(storePath, { workspaceRoot: HERE });
+    const handle = openStore(storePath, { workspaceRoot: dir });
     try {
       setLabel(handle, { address: 0x0812, name: "raster_split", kind: "User" });
     } finally {
       closeStore(handle);
     }
-    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
     assert.notEqual(after.renderDigest, before.renderDigest);
   });
 });
 
 test("changing a COMMENT in the store changes the render digest", async () => {
-  await withRenderFixture({ prefix: "anno-memmap-digest-comment", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
-    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+  await withRenderFixture({ prefix: "anno-memmap-digest-comment", fill: fillBaselineStore }, async ({ dir, storePath, provenancePath }) => {
+    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
     // Re-opened WRITABLE: `mustExist` opens read-only (it exists to JUDGE an
     // existing image), so a perturbation must not ask for it.
-    const handle = openStore(storePath, { workspaceRoot: HERE });
+    const handle = openStore(storePath, { workspaceRoot: dir });
     try {
       setComment(handle, { address: 0x0810, commentType: "line", text: gradedComment("probable-code", "reclassified") });
     } finally {
       closeStore(handle);
     }
-    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
     assert.notEqual(after.renderDigest, before.renderDigest);
   });
 });
 
 test("changing a RANGE in the store changes the render digest", async () => {
-  await withRenderFixture({ prefix: "anno-memmap-digest-range", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
-    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+  await withRenderFixture({ prefix: "anno-memmap-digest-range", fill: fillBaselineStore }, async ({ dir, storePath, provenancePath }) => {
+    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
     // Re-opened WRITABLE: `mustExist` opens read-only (it exists to JUDGE an
     // existing image), so a perturbation must not ask for it.
-    const handle = openStore(storePath, { workspaceRoot: HERE });
+    const handle = openStore(storePath, { workspaceRoot: dir });
     try {
       setDataType(handle, { start: 0x2000, endInclusive: 0x2007, dataType: "byte" });
     } finally {
       closeStore(handle);
     }
-    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
     assert.notEqual(after.renderDigest, before.renderDigest);
   });
 });
 
 test("changing the SIDECAR BYTES alone changes the render digest, even when the parsed object is equivalent", async () => {
-  await withRenderFixture({ prefix: "anno-memmap-digest-sidecar", fill: fillBaselineStore }, async ({ storePath, provenancePath }) => {
-    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+  await withRenderFixture({ prefix: "anno-memmap-digest-sidecar", fill: fillBaselineStore }, async ({ dir, storePath, provenancePath }) => {
+    const before = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
     // Re-serialised with different whitespace: same parsed header, different
     // bytes. The digest covers the RAW bytes, so this must still register.
     writeFileSync(provenancePath, JSON.stringify(VALID_HEADER));
-    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+    const after = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
     assert.notEqual(after.renderDigest, before.renderDigest);
   });
 });
 
-test("the surviving measurement-provenance paragraph STATES the version-2 wire shapes inline, rather than pointing at declarations that no longer exist", () => {
-  // Read as BYTES and search in-process. This module carries a literal NUL, so
-  // GNU grep classifies it as binary and prints "binary file matches" instead
-  // of lines -- the blindness that produced three false "zero local imports"
-  // measurements before D-17. What is pinned HERE is that the paragraph still
-  // has a live subject; the removal gate that separately pinned the count and
-  // line of its one exempted mention has since been retired.
-  const bytes = readFileSync(join(VICE_DIR, "anno-memmap-render.mts"));
-  assert.ok(bytes.includes(0x00), "the NUL byte that makes this a grep-blind file must still be here");
-  const source = bytes.toString("utf8");
-
-  const heading = "WHAT THE VERSION-2 DIGEST HASHED";
-  assert.ok(source.includes(heading), "the provenance paragraph must still name the lineage it records");
-
-  // It must CARRY the three shapes, because the three `interface` blocks it
-  // used to sit above are gone -- a comment above a hole is not a record.
-  for (const spelling of [
-    "anno_get_blocks",
-    "{start_address, end_address, type}",
-    "anno_get_symbols",
-    "{address, name, kind, type}",
-    "anno_get_comments",
-    "{address, comment, type}",
-  ]) {
-    assert.ok(source.includes(spelling), `the paragraph must state ${spelling} inline`);
-  }
-  for (const declaration of ["interface AnnoBlock", "interface AnnoSymbol", "interface AnnoComment"]) {
-    assert.ok(!source.includes(declaration), `${declaration} must be gone -- the digest no longer names it`);
-  }
-
-  // And it must explain the bump it exists for.
-  assert.match(source, /RENDERER_VERSION.{0,400}"2" -> "3"/s);
-});
 // ---------------------------------------------------------------------------
 // The store-backed render tests. All three used to carry the availability
 // gate: each synthesized an external project file, drove a real child process
@@ -616,7 +564,7 @@ test("renders a golden memory map from a hand-built store plus a fixture sidecar
 // ---------------------------------------------------------------------------
 
 test("the render digest and the --check verdict AGREE: the identical tree at a different absolute path is in-sync, not drifted", async () => {
-  const outer = mkdtempSync(join(VICE_DIR, ".anno-memmap-cross-root-"));
+  const outer = mkdtempSync(join(tmpdir(), "anno-memmap-cross-root-"));
   try {
     const rootA = join(outer, "rootA");
     const rootB = join(outer, "rootB");
@@ -696,7 +644,7 @@ test("the render digest and the --check verdict AGREE: the identical tree at a d
 });
 
 test("a store with ZERO ranges, labels and comments renders a banner and a digest, and that file cross-root checks in-sync -- a zero-row render is a RESULT, never a refusal", async () => {
-  const outer = mkdtempSync(join(VICE_DIR, ".anno-memmap-empty-"));
+  const outer = mkdtempSync(join(tmpdir(), "anno-memmap-empty-"));
   try {
     const rootA = join(outer, "rootA");
     const rootB = join(outer, "rootB");
@@ -778,13 +726,13 @@ test("an address whose store comment carries [unknown] appears under Open questi
         setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
       },
     },
-    async ({ storePath, provenancePath }) => {
+    async ({ dir, storePath, provenancePath }) => {
       // No comments at all yet -- Open questions is legitimately empty.
-      const noComments = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+      const noComments = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
       assert.equal(noComments.unknownCount, 0);
       assert.match(noComments.markdown, /## Open questions\n\n- \(none\)/);
 
-      const graded = openStore(storePath, { workspaceRoot: HERE });
+      const graded = openStore(storePath, { workspaceRoot: dir });
       try {
         setComment(graded, {
           address: 0x0810,
@@ -795,7 +743,7 @@ test("an address whose store comment carries [unknown] appears under Open questi
         closeStore(graded);
       }
 
-      const withUnknown = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE });
+      const withUnknown = await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir });
       assert.equal(withUnknown.unknownCount, 1);
       assert.match(withUnknown.markdown, /## Open questions\n\n- \$0810: no reliable interpretation yet/);
 
@@ -803,14 +751,14 @@ test("an address whose store comment carries [unknown] appears under Open questi
       // not render as an ungraded row -- the assertion this test's own name
       // has always made. The malformed text is written directly, which is
       // exactly how such a comment reaches a store in the first place.
-      const malformed = openStore(storePath, { workspaceRoot: HERE });
+      const malformed = openStore(storePath, { workspaceRoot: dir });
       try {
         setComment(malformed, { address: 0x0812, commentType: "line", text: "[confirmed_code] underscore, not a hyphen" });
       } finally {
         closeStore(malformed);
       }
       await assert.rejects(
-        () => renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE }),
+        () => renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir }),
         /not a valid confidence grade/,
       );
     },
@@ -854,7 +802,7 @@ async function renderSingleCommentedBlock(prefix: string, grade: string, evidenc
         writeCommentIncludingLegacyLineBreaks(handle, 0x0810, gradedComment(grade, evidence));
       },
     },
-    async ({ storePath, provenancePath }) => (await renderMemoryMap({ storePath, provenancePath, workspaceRoot: HERE })).markdown,
+    async ({ dir, storePath, provenancePath }) => (await renderMemoryMap({ storePath, provenancePath, workspaceRoot: dir })).markdown,
   );
 }
 

@@ -412,18 +412,14 @@ export const TEXT_QUIESCENCE_MS: number = (() => {
   return Number.isFinite(n) && n >= 0 ? n : 50;
 })();
 
-/** Byte-safe tail scan for the prompt terminator. Deliberately decodes only a
- * short, fixed-size tail window through `latin1` (a 1-byte-to-1-code-unit
- * mapping that never throws and never depends on where a multi-byte UTF-8
- * sequence happens to be split) -- the prompt itself is pure ASCII, so this
- * can never miss a real terminator and can never be confused by a UTF-8
- * continuation byte living in the tail window. The AUTHORITATIVE decode of
- * the full payload still happens exactly once, with `utf8`, on the complete
- * assembled buffer, after a match is accepted as final -- see
- * #finishPending() below. */
+/** Tail scan for the prompt terminator. It decodes only a short, fixed-size
+ * tail window, with `utf8` like the final decode of the whole payload, so the
+ * scan and the payload agree. The prompt is pure ASCII, and a multi-byte
+ * sequence cut by the window start only yields a replacement character at the
+ * window start, away from the prompt. */
 function bufferEndsWithPrompt(buf: Buffer): boolean {
   const windowLen = Math.min(buf.length, 32);
-  const tail = buf.subarray(buf.length - windowLen).toString("latin1");
+  const tail = buf.subarray(buf.length - windowLen).toString("utf8");
   return PROMPT_RE.test(tail);
 }
 
@@ -498,8 +494,13 @@ export interface TextAttachOptions {
 }
 
 export interface TextCommandOptions {
+  /** How long to wait for the prompt after the command. Default
+   * TEXT_COMMAND_DEFAULT_TIMEOUT_MS. */
   timeoutMs?: number;
 }
+
+/** The wait for a command's prompt when the caller gives no bound. */
+export const TEXT_COMMAND_DEFAULT_TIMEOUT_MS = 30000;
 
 // ---------------------------------------------------------------------------
 // TextMonitorClient
@@ -671,7 +672,7 @@ export class TextMonitorClient extends EventEmitter {
    * byte is written (D-01). Only one command may be outstanding at a time --
    * the text protocol is not multiplexed.
    */
-  command(cmd: string, _opts: TextCommandOptions = {}): Promise<string> {
+  command(cmd: string, opts: TextCommandOptions = {}): Promise<string> {
     // Checked BEFORE the allowlist membership check, deliberately: every
     // TEXT_COMMAND_ALLOWLIST entry is already clean of these characters, so
     // ordering it first makes this refusal reachable and testable in its own
@@ -730,9 +731,58 @@ export class TextMonitorClient extends EventEmitter {
       return Promise.reject(new ViceError("text-protocol: a command is already outstanding on this connection"));
     }
 
+    return this.#drainBannerThenSend(cmd, opts.timeoutMs ?? TEXT_COMMAND_DEFAULT_TIMEOUT_MS);
+  }
+
+  /** Waits out any passive output that is still arriving, then writes `cmd`.
+   * Bytes of a banner that are still in the buffer when a command is written
+   * would become the head of that command's response, so they are flushed
+   * out as a banner first: the wait ends when the socket has been silent for
+   * a quiescence window. */
+  async #drainBannerThenSend(cmd: string, timeoutMs: number): Promise<string> {
+    while (this.#buffer.length > 0 || this.#quiescenceTimer !== null) {
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, this.#quiescenceMs + 5);
+        if (typeof timer.unref === "function") timer.unref();
+      });
+      if (this.#quiescenceTimer === null && this.#buffer.length > 0 && !this.#pending) {
+        // Silent for a whole window and still no prompt: the leftover is the
+        // rest of a banner. Emit it as one.
+        this.#finishBanner();
+      }
+    }
+    if (this.#closed || !this.connected || !this.#socket) {
+      throw new ViceError("text-protocol: refusing command -- the text channel's connection closed while the previous output was still arriving");
+    }
+    if (this.#pending) {
+      throw new ViceError("text-protocol: a command is already outstanding on this connection");
+    }
     const socket = this.#socket;
     return new Promise<string>((resolve, reject) => {
-      this.#pending = { resolve, reject, command: cmd };
+      const timer = setTimeout(() => {
+        if (this.#pending?.reject !== settleReject) return;
+        // No prompt within the bound. The stream can no longer be matched to
+        // commands, so the connection is dropped: the caller's lock is
+        // released as this rejection unwinds, and the next command needs a
+        // fresh session.
+        this.#pending = null;
+        void this.disconnect();
+        reject(
+          new ViceError(
+            `text-protocol: no prompt within ${timeoutMs}ms after ${JSON.stringify(cmd)}; the text-channel connection was closed -- ` +
+              `open a new session and retry`,
+          ),
+        );
+      }, timeoutMs);
+      const settleResolve = (value: string): void => {
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const settleReject = (reason: unknown): void => {
+        clearTimeout(timer);
+        reject(reason);
+      };
+      this.#pending = { resolve: settleResolve, reject: settleReject, command: cmd };
       socket.write(`${cmd}\n`);
     });
   }

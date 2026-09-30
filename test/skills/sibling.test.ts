@@ -101,3 +101,28 @@ for (const c of CASES) {
     }
   });
 }
+
+// A c64-project that IS installed but lacks one of its own files is a broken
+// install, not a missing skill. The refusal must not blame a missing
+// c64-project; the real cause must surface.
+test("c64-ram-capture/dump-artifacts.ts with c64-project installed but project-paths.ts missing reports the missing file, not a missing skill", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "sibling-test-"));
+  try {
+    mkdirSync(join(scratch, ".git"));
+    cpSync(join(SKILLS, "c64-ram-capture"), join(scratch, "skills", "c64-ram-capture"), { recursive: true });
+    cpSync(join(SKILLS, SIBLING), join(scratch, "skills", SIBLING), { recursive: true });
+    rmSync(join(scratch, "skills", SIBLING, "scripts", "project-paths.ts"));
+    const r = spawnSync(process.execPath, [join(scratch, "skills", "c64-ram-capture", "scripts", "dump-artifacts.ts")], {
+      cwd: scratch,
+      encoding: "utf8",
+      env: { ...process.env, C64RE_PROJECT_ROOT: scratch },
+      timeout: 30_000,
+    });
+    const out = `${r.stdout}\n${r.stderr}`;
+    assert.notEqual(r.status, 0);
+    assert.doesNotMatch(out, /needs the "c64-project" skill/);
+    assert.match(out, /project-paths\.ts/);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});

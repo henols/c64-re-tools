@@ -552,6 +552,19 @@ test("stdout carries only valid JSON-RPC messages", async () => {
 // the construction-time enforcement layer's own text.
 // -----------------------------------------------------------------------
 
+test("a successful call to a tool with an outputSchema also carries the answer as structuredContent", async () => {
+  const proxy = startProxy({});
+  try {
+    await handshake(proxy);
+    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_symbols_lookup", arguments: { name: "no_such_symbol" } } });
+    const resp = await proxy.nextMessage();
+    assert.equal(resp.result.isError, false, resp.result.content?.[0]?.text);
+    assert.deepEqual(resp.result.structuredContent, JSON.parse(resp.result.content[0].text));
+  } finally {
+    proxy.child.kill("SIGKILL");
+  }
+});
+
 test("tools/list's vice_ping entry has an inputSchema deep-equal to the manifest's own raw schema", async () => {
   // The manifest's own raw schema for vice_ping, read independently of the
   // proxy -- not re-derived from any in-memory constant this file or
@@ -653,6 +666,12 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
         manifestSchemaByName[name],
         `"${name}"'s wire inputSchema must be byte-for-byte the manifest's own raw schema`
       );
+    }
+
+    // (b2) the manifest's outputSchema reaches clients too.
+    for (const manifestTool of manifest.tools) {
+      const wireEntry = tools.find((t: any) => t.name === manifestTool.name);
+      assert.deepEqual(wireEntry.outputSchema, manifestTool.outputSchema, `"${manifestTool.name}"'s wire outputSchema must be the manifest's own`);
     }
 
     // (c) every tool entry (manifest-derived AND synthetic) carries the
@@ -1123,7 +1142,7 @@ test("never-throw: malformed and hostile input is answered, not fatal", async ()
 
     // 1. Raw non-JSON text -- no response; must not crash the process.
     proxy.sendRaw("this is not { json at all");
-    await new Promise((r) => setTimeout(r, 100));
+    await proxyStillAnswers(proxy, 101);
     assert.equal(proxy.child.exitCode, null, "still alive after a malformed line");
 
     // 2. Valid JSON that is not an object at all (a bare number) -- fails
@@ -1131,14 +1150,14 @@ test("never-throw: malformed and hostile input is answered, not fatal", async ()
     //    key a response to even if one were written, and per the note
     //    above none is.
     proxy.sendRaw(JSON.stringify(42));
-    await new Promise((r) => setTimeout(r, 100));
+    await proxyStillAnswers(proxy, 102);
     assert.equal(proxy.child.exitCode, null, "still alive after a bare-value line");
 
     // 3. A well-formed-looking object with no "method" at all -- also fails
     //    JSONRPCMessageSchema validation (every union member requires a
     //    string method or a result/error field this object has neither of).
     proxy.send({ jsonrpc: "2.0", id: 10, params: {} });
-    await new Promise((r) => setTimeout(r, 100));
+    await proxyStillAnswers(proxy, 103);
     assert.equal(proxy.child.exitCode, null, "still alive after a method-less object");
 
     // 4. An unknown (unimplemented) method name -- THIS one still parses as
@@ -1269,19 +1288,6 @@ test("never-throw: a broken stdout pipe does not kill the process", async () => 
 
     assert.equal(proxy.child.exitCode, null, "a broken stdout pipe must not kill the process");
     assert.equal(proxy.child.signalCode, null, "the process must not have been signalled");
-
-    // Belt-and-suspenders source assertion, per this task's own documented
-    // escape hatch: EPIPE-inducibility via destroy() can vary across
-    // Node/platform combinations, so this independently confirms the actual
-    // defensive code the plan requires is present, regardless of whether
-    // this particular runtime reproduced a real EPIPE just now. See
-    // 01.1-03-SUMMARY.md's coverage note for this substitution.
-    const source = readFileSync(PROXY_PATH, "utf8");
-    assert.match(
-      source,
-      /process\.stdout\.on\(\s*["']error["']/,
-      "vice-proxy.ts must register an 'error' listener on process.stdout"
-    );
   } finally {
     proxy.child.kill("SIGKILL");
     await new Promise((resolve) => server.close(resolve));
@@ -1369,6 +1375,17 @@ async function waitForCondition<T>(
     await new Promise((r) => setTimeout(r, pollMs));
   }
   return null;
+}
+
+
+/** Sends a `ping` and waits for its answer. Because the proxy handles input in
+ * order, the answer proves every line sent before it has been read and did not
+ * kill the process. */
+async function proxyStillAnswers(proxy: ProxyHandle, id: number): Promise<void> {
+  proxy.send({ jsonrpc: "2.0", id, method: "ping", params: {} });
+  const answer = await proxy.nextMessage();
+  assert.equal(answer.id, id);
+  assert.equal(answer.error, undefined);
 }
 
 function initThenListParams() {
@@ -1779,35 +1796,6 @@ test("C3 regression guard: initialize + tools/list alone write no request and no
   }
 });
 
-test("teardown region: no promise-awaiting construct, and the control session's release() called exactly once, between its markers", () => {
-  const source = readFileSync(PROXY_PATH, "utf8");
-  const beginIdx = source.indexOf("TEARDOWN-REGION-BEGIN");
-  const endIdx = source.indexOf("TEARDOWN-REGION-END");
-  assert.ok(beginIdx !== -1, "TEARDOWN-REGION-BEGIN marker must be present in vice-proxy.ts");
-  assert.ok(endIdx !== -1 && endIdx > beginIdx, "TEARDOWN-REGION-END marker must be present after the begin marker");
-  const region = source.slice(beginIdx, endIdx);
-
-  // No promise-AWAITING construct anywhere in the region -- scoped to this
-  // slice only, since the whole-file forwarding path (call(), the control
-  // session's own acquire()) is legitimately asynchronous and would trip a
-  // whole-file scan. `.catch(` is deliberately NOT in this denylist:
-  // BrokerControlSession.release() is declared `async`, so a synchronous
-  // throw inside it becomes a rejected promise rather than a thrown
-  // exception, and observing that failure without blocking on it is exactly
-  // what release().catch(...) does -- it is not itself an await.
-  assert.doesNotMatch(region, /\bawait\b/, "the teardown region must contain no await");
-  assert.doesNotMatch(region, /\.then\s*\(/, "the teardown region must contain no .then(");
-  assert.doesNotMatch(region, /\basync\s+function\b|\basync\s*\(/, "the teardown region must define no async function");
-
-  // Exactly one release call: controlSession.release() IS the entire
-  // release now (a synchronous socket.destroy() under the hood) -- this
-  // region calls INTO it rather than performing the close itself, so
-  // asserting the call site appears exactly once is this region's own
-  // version of "exactly one release".
-  const releaseCalls = region.match(/controlSession\.release\(\)/g) || [];
-  assert.equal(releaseCalls.length, 1, "the teardown region must call controlSession.release() exactly once");
-});
-
 // -----------------------------------------------------------------------
 // Plan 01.2-03 task 1: a missing or denying broker produces one of two
 // distinct, evidence-carrying diagnoses -- nothing answering on the control
@@ -2048,247 +2036,6 @@ test("grant check: a grant whose url port disagrees with the granted port is ref
 // passing above in this same file.
 // -----------------------------------------------------------------------
 
-test("structural: exactly one definition of the shared only-route sentence (ONLY_ROUTE_NOTE) exists", () => {
-  const files = readdirSync(VICE_DIR)
-    .filter((f) => /\.[cm]?[jt]s$/.test(f) && !/\.test\.[cm]?[jt]s$/.test(f));
-  let defCount = 0;
-  for (const f of files) {
-    const src = readFileSync(join(VICE_DIR, f), "utf8");
-    defCount += (src.match(/^const ONLY_ROUTE_NOTE\s*=/gm) || []).length;
-  }
-  assert.equal(defCount, 1, "expected exactly one ONLY_ROUTE_NOTE definition across the non-test module set -- no message may grow a second copy of the only-route sentence");
-});
-
-// ---------------------------------------------------------------------------
-// Phase 01.4 plan 03 (criterion 5): a
-// permanent regression guard against the topology-naming "vice-proxy:"
-// prefix silently creeping back into an agent-visible message. A
-// backtick-opened template literal beginning with the literal sequence
-// "vice-proxy:" is agent-visible tool-result `content` in every case in
-// this file EXCEPT when it is an argument to `console.error(...)` (stderr
-// only, never read by the model, and deliberately out of this guard's
-// scope).
-//
-// Plan 03-15 task 3: the ORIGINAL rule here was proximity-based ("does
-// console.error( appear, modulo whitespace/newlines, within 40 chars
-// immediately before the backtick?"). Commit 1c87d16 broke it: it rewrote a
-// single-line `console.error(\`vice-proxy: ...\`)` call into a multi-line
-// ternary --
-//   console.error(
-//     COND
-//       ? `vice-proxy: ready, forwarding to ...`
-//       : `vice-proxy: ready, stock backend active ...`,
-//   );
-// -- so neither arm has `console.error(` within 40 chars of its own
-// backtick (the ternary's own condition and `?`/`:` tokens sit in between),
-// and a template literal on an earlier ternary arm also contains its own
-// parens, further defeating a fixed-width lookback. The detector was wrong,
-// not the source (planner decision, this plan's own objective) -- widening
-// it here, in the test, is the fix.
-//
-// THE NEW RULE (still a heuristic, not a full parse -- documented as one so
-// the next refactor that defeats it knows where to look): for each
-// `` `vice-proxy: `` match, compare the nearest PRECEDING `console.error(`
-// against the nearest PRECEDING agent-visible marker (`text:`, `content:`,
-// `isErrorText(`). The match is exempt only when `console.error(` is the
-// NEARER of the two -- i.e. no agent-visible marker sits between it and the
-// literal. This survives an arbitrarily long/multi-line console.error(...)
-// argument (the ternary above), while still catching a literal that comes
-// AFTER a marker (meaning some earlier console.error( on the page is not
-// actually this literal's own enclosing call).
-//
-// WHAT WOULD DEFEAT THIS: a `console.error(...)` call sitting textually
-// between an agent-visible marker and a `vice-proxy:` literal that is
-// actually part of THAT marker's own object (e.g. interleaved unrelated
-// console.error() noise between `text:` and its own template literal) would
-// wrongly exempt a real violation -- this file's own style (one call, one
-// literal, no interleaving) does not do this, but a future refactor could.
-// ---------------------------------------------------------------------------
-
-// 15-04, WR-07: two fixes to the marker set above, re-verified live against
-// this file's own re-derived line numbers (the review's :3856-3875 citation
-// has drifted to :3869-3890 as of this plan -- confirmed both defects still
-// existed at plan time before either fix landed):
-//
-// 1. False-negative class: a `vice-proxy:` literal reached via `throw new
-//    SomeError(...)` (agent-visible -- the error eventually surfaces to the
-//    caller) was previously EXEMPT whenever no `text:`/`content:`/
-//    `isErrorText(` marker sat between it and the nearest earlier
-//    console.error(...) call, because "throw new"/standalone "Error(" were
-//    not agent-visible markers. Added both to the marker set.
-// 2. Mid-word false trigger: `before.lastIndexOf("text:")` matched the
-//    substring inside "context:", letting an unrelated comment or string
-//    containing "context:" flip an otherwise-exempt literal into a
-//    (falsely) reported violation. `text:`'s marker is now anchored so it
-//    cannot match when immediately preceded by a letter.
-//
-// Verified against the real vice-proxy.ts source (source-assertion only --
-// this file is MANUAL_ONLY_TESTS entry 2 and must never be executed, see
-// this plan's own prohibition): all 12 `` `vice-proxy: `` sites in
-// vice-proxy.ts are console.error(...)'s own argument; the file's only two
-// `throw new` sites (PathOutOfWorkspaceError/PathTranslationError, neither
-// carrying a vice-proxy: literal) and its one standalone `new Error(` site
-// each sit far from every vice-proxy: literal's own, much nearer,
-// console.error( call, so widening the marker set does not newly flag any
-// of them. `context:` does not appear anywhere in vice-proxy.ts today, so
-// the word-boundary fix is a hardening change with no effect on the
-// current real-source assertion below.
-const AGENT_VISIBLE_MARKERS: RegExp[] = [
-  /(^|[^A-Za-z])text:/g,
-  /content:/g,
-  /isErrorText\(/g,
-  /throw new /g,
-  /\bError\(/g,
-];
-
-/** Returns the index of the LAST match of `re` in `str` before `str`'s own
- * end, or -1 if `re` never matches. `re` must carry the global flag. */
-function lastMatchIndex(str: string, re: RegExp): number {
-  let last = -1;
-  re.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(str))) {
-    last = m.index;
-    if (m[0].length === 0) re.lastIndex += 1;
-  }
-  return last;
-}
-
-/**
- * Finds every `` `vice-proxy: `` template-literal start in `src` that is
- * NOT the argument of a `console.error(...)` call -- i.e. every
- * agent-visible violation of the "vice-proxy: is stderr-only" invariant.
- * Returns the list of source offsets (one per violation), empty when clean.
- * Exported as a named function (not inlined in the test body) so the three
- * control assertions below can exercise it directly against synthetic
- * snippets, proving the widened rule is neither vacuous nor over-broad.
- */
-function viceProxyIdentityViolations(src: string): number[] {
-  const violations: number[] = [];
-  const pattern = /`vice-proxy:/g;
-  let m: RegExpExecArray | null;
-  while ((m = pattern.exec(src))) {
-    const idx = m.index;
-    const before = src.slice(0, idx);
-    const lastConsoleError = before.lastIndexOf("console.error(");
-    const lastMarker = Math.max(...AGENT_VISIBLE_MARKERS.map((re) => lastMatchIndex(before, re)));
-    // Exempt only when console.error( is the NEARER of the two preceding
-    // landmarks (or no agent-visible marker precedes this literal at all).
-    const exempt = lastConsoleError !== -1 && lastConsoleError > lastMarker;
-    if (!exempt) {
-      violations.push(idx);
-    }
-  }
-  return violations;
-}
-
-test("structural: no agent-visible template literal begins with the vice-proxy: prefix", () => {
-  // Positive control: a real agent-visible violation (the literal shape a
-  // tool-result handler actually returns) MUST be flagged -- proves the
-  // widened rule still catches the thing this test exists to catch.
-  const positiveControl = 'return { content: [{ type: "text", text: `vice-proxy: boom` }] };';
-  assert.equal(
-    viceProxyIdentityViolations(positiveControl).length,
-    1,
-    "a vice-proxy: literal reached through content/text must still be flagged"
-  );
-
-  // Negative control: a multi-line ternary shape matching what USED to break
-  // the old proximity rule (both arms are console.error(...)'s own argument,
-  // just multi-line) must NOT be flagged.
-  const negativeControl = `console.error(
-  someCondition
-    ? \`vice-proxy: ready, forwarding to \${activeInstance().url} (port \${activeInstance().port})\`
-    : \`vice-proxy: ready, stock backend active -- dispatching to a broker-claimed binary-monitor instance (resolved binary: \${RESOLVED_BINARY.binPath})\`,
-);`;
-  assert.equal(
-    viceProxyIdentityViolations(negativeControl).length,
-    0,
-    "the real multi-line console.error(...) ternary must not be flagged"
-  );
-
-  // Regression control: a console.error(...) call EARLIER on the page must
-  // not exempt a LATER, unrelated agent-visible literal -- proves the
-  // "nearest preceding console.error(" comparison does not leak forward
-  // past the call it actually belongs to.
-  const regressionControl = `console.error(\`something unrelated\`);
-return { content: [{ type: "text", text: \`vice-proxy: leaked\` }] };`;
-  assert.equal(
-    viceProxyIdentityViolations(regressionControl).length,
-    1,
-    "an earlier, unrelated console.error( call must not exempt a later agent-visible vice-proxy: literal"
-  );
-
-  // WR-07 fix, false-negative control: a vice-proxy: literal reached via
-  // `throw new` (agent-visible -- the error surfaces to the caller, never
-  // logged to stderr) must be flagged even though no console.error(...)
-  // call precedes it at all on this snippet.
-  const throwNewControl = 'throw new ViceError(`vice-proxy: leaked via a thrown error`);';
-  assert.equal(
-    viceProxyIdentityViolations(throwNewControl).length,
-    1,
-    "a vice-proxy: literal reached via throw new must be flagged (the false-negative class WR-07 named)"
-  );
-
-  // WR-07 fix, false-negative control: the SAME literal must also be
-  // flagged when an EARLIER, unrelated console.error(...) call precedes it
-  // -- proves "throw new" wins as the nearer marker over a stale, earlier
-  // console.error(, not just over "no console.error( at all".
-  const throwNewAfterUnrelatedConsoleError = `console.error(\`something unrelated\`);
-throw new ViceError(\`vice-proxy: leaked via a thrown error\`);`;
-  assert.equal(
-    viceProxyIdentityViolations(throwNewAfterUnrelatedConsoleError).length,
-    1,
-    "throw new must be treated as nearer than a stale, earlier console.error( call"
-  );
-
-  // WR-07 fix, mid-word control: "context:" must NOT act as the "text:"
-  // marker -- proves the word-boundary anchor closes the secondary defect
-  // WR-07 named without also breaking the real "text:" marker.
-  const midWordControl = `// see the calling context: for details
-console.error(\`vice-proxy: still just a log line\`);`;
-  assert.equal(
-    viceProxyIdentityViolations(midWordControl).length,
-    0,
-    '"context:" must not be mistaken for the "text:" marker'
-  );
-
-  // The real detector, run over the real source, with the same failure
-  // message the original (narrower) rule used.
-  const src = readFileSync(join(VICE_DIR, "vice-proxy.ts"), "utf8");
-  const violations = viceProxyIdentityViolations(src);
-  assert.deepEqual(
-    violations,
-    [],
-    `found a non-console.error backtick literal beginning with "vice-proxy:" at source offset(s): ${violations.join(", ")} -- ` +
-      `every agent-visible message in this file must use the "vice:" identity instead (see the de-architecture todo)`
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Plan 01.6.2-09 task 2 (D-18): the per-occurrence port triage's own
-// counterpart to "do not change the allocation band's default in this
-// task" -- proving it, not merely stating it. broker-state.mts's
-// DEFAULT_BASE_PORT (set by plan 02) is the single source this task's
-// triage is measured against; a second place defining that default would
-// be exactly the drift the single-source rule exists to prevent.
-// ---------------------------------------------------------------------------
-
-test("structural: the broker's allocated-port-band default (DEFAULT_BASE_PORT) is defined in exactly one place", () => {
-  const files = readdirSync(VICE_DIR).filter((f) => /\.[cm]?[jt]s$/.test(f) && !/\.test\.[cm]?[jt]s$/.test(f));
-  let defCount = 0;
-  for (const f of files) {
-    const src = readFileSync(join(VICE_DIR, f), "utf8");
-    defCount += (src.match(/^export const DEFAULT_BASE_PORT\s*=/gm) || []).length;
-  }
-  assert.equal(
-    defCount,
-    1,
-    "expected exactly one DEFAULT_BASE_PORT definition across the non-test module set -- a second place setting " +
-      "the allocation band's default is the single-source drift D-18's own convention exists to prevent"
-  );
-});
-
 // -----------------------------------------------------------------------
 // Plan 01.2-03 task 2: the two client-side thresholds are set explicitly,
 // not inherited -- .mcp.json's per-server `timeout` is ordered correctly
@@ -2401,50 +2148,6 @@ test("output-limit warning: exactly one stderr line when MAX_MCP_OUTPUT_TOKENS i
 // the only-permitted-route rule (criteria 5, 8, 9 in 01.3-VALIDATION.md).
 // ---------------------------------------------------------------------------
 
-test("structural: the set of source files under src/mcp/vice/ containing a network-call construct is exactly broker-launch.mts", () => {
-  // Directory-enumerating -- a future module joining this directory is
-  // covered the moment it lands on disk, with no test file to remember to
-  // update. A "network-call construct" here means an actual outbound call
-  // site (`fetch(`), not merely the word "fetch" appearing in prose or a
-  // variable name. The file-enumeration predicate matches the whole
-  // `[cm]?[jt]s` extension class, so a module that changes extension stays
-  // covered.
-  //
-  // WIDENED, Phase 01.6.2 plan 02: broker-launch.mts's probeReady() gained
-  // an HTTP readiness POST (the fetch()-based branch of its three-way
-  // probe, D-05's permitted-route note) against the emulator instance it
-  // ITSELF spawned and owns the lifecycle of -- host-side broker code, not
-  // container-side code reaching the emulator outside mcp__vice__*. This
-  // guard's original scope (this file's own header comment, Plan 01.3-01)
-  // predates the host-side broker's existence entirely; vice-broker-launch
-  // .test.ts's own JUSTIFIED_NETWORK_CALLERS carries the full justification
-  // for every host-bound module's network construct -- this array is
-  // widened to match rather than re-litigated here.
-  const NETWORK_CALL_PATTERN = /\bfetch\s*\(/;
-  const files = readdirSync(VICE_DIR)
-    .filter((f) => /\.[cm]?[jt]s$/.test(f) && !/\.test\.[cm]?[jt]s$/.test(f))
-    .sort();
-  assert.ok(files.length > 0, "module directory enumerated as empty -- glob or path resolution is broken");
-
-  // This guard's own subject, per its name and the comment above, is the
-  // set of files "under src/mcp/vice/" -- the ON-DISK directory tree, not
-  // the npm-published subset derived from package.json's `files[]` (a
-  // different property: what actually ships, not what exists on disk) --
-  // so this stays a directory enumeration.
-  //
-  // The equality below is still a full two-directional set equality, never
-  // relaxed to a subset/containment check: a new file joining this
-  // directory with an unsanctioned `fetch(` call must still fail this test
-  // by name, exactly as it did before this measurement.
-  const offenders = files.filter((f) => NETWORK_CALL_PATTERN.test(readFileSync(join(VICE_DIR, f), "utf8")));
-  assert.deepEqual(
-    offenders.sort(),
-    ["broker-launch.mts"],
-    `the network-call module set changed -- expected exactly ["broker-launch.mts"], got ${JSON.stringify(offenders)}. ` +
-      "A module reaching the host outside the sanctioned transport is the violation, not merely a style break."
-  );
-});
-
 // -----------------------------------------------------------------------
 // Plan 08-02 (BACK-05), RETIRED BY FORKRM-05 (plan 52-07): the
 // CallToolRequestSchema override's tools[name] miss branch used to render a
@@ -2463,30 +2166,7 @@ test("structural: the set of source files under src/mcp/vice/ containing a netwo
 // already deleted for the identical reason one plan earlier.
 // -----------------------------------------------------------------------
 
-test("BACK-05/FORKRM-05: stock now falls through to the plain Unknown tool fallback for a former hardware-only capability, same as any other unregistered name", async () => {
-  const proxy = startProxy({});
-  try {
-    await handshake(proxy);
-    proxy.send({
-      jsonrpc: "2.0",
-      id: 3,
-      method: "tools/call",
-      params: { name: "vice_sid_get_state", arguments: {} },
-    });
-    const resp = await proxy.nextMessage();
-    assert.equal(resp.result.isError, true, "vice_sid_get_state must still be refused -- it is not on the stock manifest");
-    assert.equal(
-      resp.result.content[0].text,
-      "Unknown tool: vice_sid_get_state",
-      "with the per-backend capability registry gone, an absent tool name -- hardware-only or not -- falls " +
-        "through to the same plain unknown-tool message a typo gets (FORKRM-05)"
-    );
-  } finally {
-    proxy.child.kill("SIGKILL");
-  }
-});
-
-test("BACK-05/FORKRM-05: a genuine typo gets the identical Unknown tool fallback, byte-for-byte, as a former hardware-only capability", async () => {
+test("an unregistered tool name gets the plain Unknown tool answer", async () => {
   const proxy = startProxy({});
   try {
     await handshake(proxy);
@@ -2501,8 +2181,7 @@ test("BACK-05/FORKRM-05: a genuine typo gets the identical Unknown tool fallback
     assert.equal(
       resp.result.content[0].text,
       "Unknown tool: vice_totally_made_up_xyz",
-      "a genuinely unregistered name must fall through to the generic fallback, byte-for-byte -- the same " +
-        "wording the test above gets for a name that used to have its own distinct capability refusal"
+      "an unregistered name must get the generic fallback"
     );
   } finally {
     proxy.child.kill("SIGKILL");

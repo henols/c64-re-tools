@@ -3,7 +3,7 @@
 //
 // WHY THIS FILE EXISTS: the one comparison behind `render-memmap --check` --
 // a committed memory map's text against a fresh render -- with no store and no
-// filesystem, so the client can run the check on a render the broker returned.
+// filesystem. The CLI reads the committed file and passes both texts in.
 //
 // WHAT NOT TO DO:
 //   - Never import the store here, directly or through another module: the
@@ -12,8 +12,7 @@
 
 export type CheckRenderedMemoryMapResult =
   | { status: "in-sync" }
-  | { status: "drifted"; line: number; expected: string; actual: string }
-  | { status: "missing"; path: string };
+  | { status: "drifted"; line: number; expected: string; actual: string };
 
 /** Compares a rendered file's text with a fresh render, naming the first
  * differing line. Never auto-fixes. */

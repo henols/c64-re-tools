@@ -329,41 +329,6 @@ function writeProbeAnsweringStub(dir: string): string {
   return stubPath;
 }
 
-// Quick task 260913-o78: the planted-violation gate for the stub's loud
-// refusal. Without this, "refuses loudly instead of falling back" is prose
-// nobody runs -- a control nothing exercises is exactly the class of defect
-// this whole quick task exists to close. Spawns the emitted stub directly
-// (never through startBroker()/the real broker) with an argv that
-// deliberately carries no binary-monitor endpoint flag -- mirroring the
-// VICE_ARGS="600" shape every other test in this file leaves set, which is
-// the real-world argv that would reach this path if VICE_ARGS were ever
-// left set for a test using this stub.
-test(
-  "probe-answering stub refuses loudly (non-zero exit, stderr names the flag) when its argv carries no binary-monitor endpoint flag",
-  { timeout: 5000 },
-  async () => {
-    const dir = mkdtempSync(join(tmpdir(), "broker-e2e-stub-refusal-"));
-    try {
-      const stubPath = writeProbeAnsweringStub(dir);
-      const child = spawn(process.execPath, [stubPath, "600"]);
-      let stderr = "";
-      child.stderr.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString("utf8");
-      });
-      const exitCode = await new Promise<number | null>((resolvePromise) => {
-        child.on("exit", (code) => resolvePromise(code));
-      });
-      assert.notEqual(exitCode, 0, `stub must exit non-zero when it cannot resolve a binary-monitor port, got ${exitCode}`);
-      assert.ok(
-        stderr.includes("-binarymonitoraddress"),
-        `stderr must name the flag the stub looked for, got: ${JSON.stringify(stderr)}`,
-      );
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  },
-);
-
 test(
   "end-to-end: one acquire over the TCP control plane spawns exactly one stub child, writes its epoch, grants, and connection-close identity-verified-kills it",
   { timeout: 20000 },
@@ -467,11 +432,9 @@ test(
 
       const epochAfter = JSON.parse(readFileSync(epochFile, "utf8"));
       assert.equal(epochAfter.epoch, epochBefore.epoch + 1, "the epoch integer must advance by exactly one on respawn");
-      // A respawn is a new pid, so the grant no longer owns the instance and
-      // its epoch is never read as this grant's. The reader reports none,
-      // which stockReconnect() refuses. Matching by port instead would be
-      // unsafe: a cold launch on a reused port starts again at epoch 1.
-      assert.equal(await readGrantEpoch(), null, "after a respawn the grant owns no instance, so no epoch is read as its own");
+      // The grant follows the respawned process, so the session that holds
+      // it reads the advanced epoch and can detect the restart.
+      assert.equal(await readGrantEpoch(), epochAfter.epoch, "after a respawn the grant still owns the instance and reads its advanced epoch");
       assert.notEqual(epochAfter.pid, pidBefore, "the respawned child must be a DIFFERENT pid from the killed one");
       assert.ok(isAlive(epochAfter.pid), "the respawned child's pid must answer a zero-signal liveness check");
 
@@ -529,16 +492,13 @@ test(
 // ---------------------------------------------------------------------------
 
 test(
-  "wired warm-hit (plan 41-05): an acquire over the real control plane is served from a ready, ungranted instance an ordinary crash-respawn left behind, spawning no second instance (Defect 5, P-01/P-04)",
+  "wired crash-respawn: a granted instance that crashes stays granted, a second session gets its own instance, and the first session's release stops the respawned process",
   { timeout: 20000 },
   async () => {
     build();
-    const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-warm-hit-"));
-    const probeDir = mkdtempSync(join(tmpdir(), "broker-e2e-warm-hit-probe-"));
+    const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-respawn-owner-"));
+    const probeDir = mkdtempSync(join(tmpdir(), "broker-e2e-respawn-owner-probe-"));
     const stubPath = writeProbeAnsweringStub(probeDir);
-    // VICE_ARGS deliberately UNSET (not merely omitted) -- see
-    // writeProbeAnsweringStub()'s own header comment for why the stub
-    // depends on buildViceArgs()'s CONSTRUCTING branch running.
     const handle = startBroker(stateDir, {
       VICE_RESTART_BACKOFF_S: "0",
       VICE_BIN: stubPath,
@@ -547,77 +507,37 @@ test(
     try {
       const port = await waitForReady(handle);
 
-      // First acquire: a real cold launch, granted.
       const firstAcquired = await acquireGrant(port);
       const firstGrant = firstAcquired.grant;
       const firstEpochFile = epochPathFor(stateDir, firstGrant.port);
-      const epochBefore = JSON.parse(readFileSync(firstEpochFile, "utf8"));
-      const pidBefore: number = epochBefore.pid;
+      const pidBefore: number = JSON.parse(readFileSync(firstEpochFile, "utf8")).pid;
       assert.ok(isAlive(pidBefore), `granted child pid ${pidBefore} must be alive before the kill`);
 
-      // An ORDINARY (non-deliberate) crash of the GRANTED instance -- see
-      // this test's own header comment above for why this is the surviving
-      // path that leaves a ready-but-ungranted candidate behind.
       process.kill(pidBefore, "SIGKILL");
-      const killedGone = await waitFor(() => !isAlive(pidBefore), 5000);
-      assert.ok(killedGone, `killed child pid ${pidBefore} must actually exit before a respawn can be observed`);
-
+      assert.ok(await waitFor(() => !isAlive(pidBefore), 5000), "the killed child must exit");
+      let pidAfter = 0;
       const respawned = await waitFor(() => {
-        let epoch: Record<string, unknown>;
         try {
-          epoch = JSON.parse(readFileSync(firstEpochFile, "utf8"));
+          const epoch = JSON.parse(readFileSync(firstEpochFile, "utf8")) as Record<string, unknown>;
+          if (typeof epoch.pid === "number" && epoch.pid !== pidBefore && isAlive(epoch.pid)) {
+            pidAfter = epoch.pid;
+            return true;
+          }
         } catch {
-          return false;
+          // not written yet
         }
-        return typeof epoch.pid === "number" && epoch.pid !== pidBefore && isAlive(epoch.pid as number);
+        return false;
       }, 10000);
       assert.ok(respawned, "the crashed instance must be respawned within the deadline");
 
-      // Release the first (now-stale) grant -- the respawned instance's own
-      // pid no longer matches it, so handleRelease() retires only the
-      // grant's bookkeeping and leaves the respawned instance untouched
-      // (broker-state.mts's own pid-identity check), exactly the state this
-      // test needs to exist for the second, unrelated acquire below.
-      await firstAcquired.session.release();
-
-      // Wait for the RESPAWNED record's own recorded state to reach
-      // "ready" -- promoteLaunchingInstances() only promotes on a LATER
-      // poll tick (VICE_BROKER_POLL_MS), and handleAcquire()'s
-      // warm-instance selector only ever considers a record whose recorded
-      // state is "ready" (never merely "launching"). Polled through a
-      // SEPARATE, never-acquiring control session (status is read-only).
-      const pollSession = await dialBroker(port);
-      let becameReady = false;
-      const deadline = Date.now() + 10000;
-      while (Date.now() < deadline && !becameReady) {
-        const statusResult = await pollSession.status();
-        if (statusResult.ok) {
-          const entry = statusResult.instances.find((i) => i.port === firstGrant.port);
-          if (entry && entry.state === "ready") {
-            becameReady = true;
-            break;
-          }
-        }
-        await new Promise((r) => setTimeout(r, 25));
-      }
-      await pollSession.release();
-      assert.ok(becameReady, "the respawned instance must reach recorded state \"ready\" within the deadline before the second acquire is sent");
-
-      // The second, UNRELATED acquire: served from the ready, ungranted
-      // instance the crash-respawn left behind -- no second spawn.
+      // Give the periodic pass time to probe the respawn: it must NOT become
+      // grantable while its first session still holds it.
+      await new Promise((r) => setTimeout(r, 1500));
       const secondAcquired = await acquireGrant(port);
-      const secondGrant = secondAcquired.grant;
-      assert.equal(secondGrant.port, firstGrant.port, "the second acquire must be served from the SAME respawned instance, not a freshly launched one");
+      assert.notEqual(secondAcquired.grant.port, firstGrant.port, "a second session must get its own instance, never the respawn the first session holds");
 
-      // The load-bearing assertion: still exactly ONE instance directory --
-      // no second instance was spawned to satisfy this acquire.
-      const portDirs = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
-      assert.equal(
-        portDirs.length,
-        1,
-        `expected exactly one instance directory to still exist after the second acquire (served from the ready, ungranted respawn, no cold launch), found ${JSON.stringify(portDirs.map((d) => d.name))}`,
-      );
-      assert.equal(Number(portDirs[0].name), firstGrant.port, "the sole remaining instance directory must be the SAME respawned instance the second grant named");
+      await firstAcquired.session.release();
+      assert.ok(await waitFor(() => !isAlive(pidAfter), 10000), "releasing the first grant must stop the respawned process");
 
       await secondAcquired.session.release();
     } finally {

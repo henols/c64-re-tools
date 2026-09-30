@@ -1,7 +1,7 @@
 // GENERATED FILE -- DO NOT EDIT.
 // Compiled by `tsc` from broker-home.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
-// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
+// deployed to the host on their own -- install-resources.ts copies THIS file's on-disk contents
 // verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // broker-home.mts
@@ -68,7 +68,7 @@
 // WHAT NOT TO DO: never check-then-create a directory. ensureBrokerDir()
 // below is a single recursive, already-exists-tolerant mkdir so two brokers
 // (or two concurrent calls) racing on the same path both succeed.
-import { mkdirSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync } from "node:fs";
 import { homedir as osHomedir, tmpdir as osTmpdir } from "node:os";
 import { join, resolve } from "node:path";
 /** The single new environment-variable name naming the machine-level root
@@ -188,4 +188,22 @@ export function brokerGhidraDir(opts = {}) {
  * never uses it as a guard. */
 export function ensureBrokerDir(path) {
     mkdirSync(path, { recursive: true });
+}
+/** Creates `path` (owner-only) when absent and verifies it is a real
+ * directory, not a symbolic link, and owned by this user, and removes group
+ * and other access. Throws by name when it is not. The Ghidra projects root sits in the
+ * shared temp directory under a predictable name, so another user could have
+ * planted something there. */
+export function ensurePrivateDir(path) {
+    mkdirSync(path, { recursive: true, mode: 0o700 });
+    const info = lstatSync(path);
+    if (info.isSymbolicLink() || !info.isDirectory()) {
+        throw new Error(`${path} is not a plain directory (it is a symbolic link or another kind of file)`);
+    }
+    if (typeof process.getuid === "function" && info.uid !== process.getuid()) {
+        throw new Error(`${path} is owned by another user (uid ${info.uid})`);
+    }
+    // Ours and a real directory: tighten access left by an earlier version.
+    if ((info.mode & 0o077) !== 0)
+        chmodSync(path, 0o700);
 }

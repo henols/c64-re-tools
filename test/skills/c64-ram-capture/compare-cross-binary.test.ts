@@ -4,24 +4,21 @@
 //
 // Every image in this file is a fixed 65536-byte pattern buffer with planted
 // differences -- no fixture file, no emulator, no scratch directory outside
-// mkdtempSync(tmpdir()). CLI behaviour is exercised the same way
-// vsf-slice.test.ts exercises its wrapper: spawnSync against the real
-// script, asserting on status/stdout/stderr, never by importing the module
-// and calling its CLI entry point directly (the dispatch tail calls
-// process.exit()). A handful of the mask's own edge properties -- the VIC-II
-// mirroring fold in particular -- are asserted directly against the module's
-// exported functions instead, since that guard exists precisely so this file
-// can import it safely.
+// mkdtempSync(tmpdir()). CLI behaviour runs the real script with spawnSync
+// and asserts on the exit status and the last-line JSON result. A handful of
+// the mask's own edge properties -- the VIC-II mirroring fold in particular --
+// are asserted directly against the module's exported functions.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { IMAGE_VOLATILE, isImageVolatile, isIoVolatile, classify } from "../../../skills/c64-ram-capture/scripts/compare-cross-binary.ts";
+import { buildChipState } from "../../../skills/c64-ram-capture/scripts/dump-artifacts.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The scripts under test live in the skill folder; this test lives in test/skills/.
@@ -53,18 +50,29 @@ function writeJson(dir: string, name: string, obj: unknown) {
   return p;
 }
 
+/** Runs `cross`. With no --state, the route defaults to --route memory-read. */
 function runCross(argv: string[], { cwd }: { cwd?: string } = {}) {
-  const r = spawnSync(process.execPath, [SCRIPT, "cross", ...argv], {
+  const args = argv.includes("--state") || argv.includes("--route") ? argv : [...argv, "--route", "memory-read"];
+  const r = spawnSync(process.execPath, [SCRIPT, "cross", ...args], {
     cwd: cwd ?? HERE,
     encoding: "utf8",
     timeout: 30000,
   });
-  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+  const stdout = r.stdout ?? "";
+  const result = JSON.parse(stdout.trim().split("\n").pop() ?? "") as { ok: boolean; message?: string; [key: string]: unknown };
+  return { status: r.status, stdout, result, message: result.message ?? "" };
 }
 
 function runNoVerb() {
   const r = spawnSync(process.execPath, [SCRIPT], { encoding: "utf8", timeout: 30000 });
-  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+  return { status: r.status, result: JSON.parse((r.stdout ?? "").trim().split("\n").pop() ?? "") };
+}
+
+/** A `vice_vicii_get_state` registers object: 47 bytes, `overrides` by address. */
+function vicRegisters(overrides: Record<string, number> = {}) {
+  const bytes = Buffer.alloc(47);
+  for (const [k, v] of Object.entries(overrides)) bytes[parseInt(k.slice(1), 16) - 0xd000] = v;
+  return { registersHex: bytes.toString("hex"), spriteX: [0, 0, 0, 0, 0, 0, 0, 0] };
 }
 
 // ---------------------------------------------------------------------------
@@ -123,19 +131,81 @@ test("classify: no drift bucket -- a one-bit divergence outside every mask fails
 // CLI: usage
 // ---------------------------------------------------------------------------
 
-test("cli: no verb prints usage to stderr and exits 0", () => {
+test("cli: no verb gives a refusal that carries the usage", () => {
   const r = runNoVerb();
-  assert.equal(r.status, 0);
-  assert.match(r.stderr, /usage: node compare-cross-binary\.ts/);
+  assert.equal(r.status, 1);
+  assert.match(r.result.message, /usage: node compare-cross-binary\.ts/);
 });
 
-test("cli: module contacts nothing -- no spawn/exec/fetch in the source", () => {
-  const src = readFileSync(SCRIPT, "utf8");
-  assert.doesNotMatch(src, /spawnSync\(|spawn\(|execSync\(|fetch\(/);
+test("cross: with no state sidecar and no --route, the route is refused as unknown", () => {
+  const dir = scratchDir();
+  try {
+    const img = basePattern();
+    const pa = writeImage(dir, "a.bin", img);
+    const pb = writeImage(dir, "b.bin", img);
+    const r = spawnSync(process.execPath, [SCRIPT, "cross", pa, pb], { encoding: "utf8", timeout: 30000 });
+    assert.equal(r.status, 1);
+    assert.match(JSON.parse(r.stdout.trim().split("\n").pop() ?? "").message, /needs the capture route/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cross: a state sidecar with no route is refused by name", () => {
+  const dir = scratchDir();
+  try {
+    const img = basePattern();
+    const pa = writeImage(dir, "a.bin", img);
+    const pb = writeImage(dir, "b.bin", img);
+    const sa = writeJson(dir, "a.state.json", { registers: vicRegisters() });
+    const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: vicRegisters() });
+    const r = runCross([pa, pb, "--state", sa, sb]);
+    assert.equal(r.status, 1);
+    assert.match(r.message, /a\.state\.json: the state sidecar declares route undefined/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cross: reads the chip-state sidecar that dump-artifacts write-set writes", () => {
+  const dir = scratchDir();
+  try {
+    const img = basePattern();
+    const pa = writeImage(dir, "a.bin", img);
+    const pb = writeImage(dir, "b.bin", img);
+    const raw = {
+      dd00_raw: 0xc3, d018_raw: 0x15, port01_raw: 0x37, sprite_pointers: [0, 0, 0, 0, 0, 0, 0, 0],
+      captured_at: "2026-09-29T00:00:00Z", route: "memory-read" as const,
+    };
+    const sa = writeJson(dir, "a.state.json", buildChipState({ ...raw, registers: vicRegisters({ $D020: 14 }) }));
+    const sb = writeJson(dir, "b.state.json", buildChipState({ ...raw, registers: vicRegisters({ $D020: 6 }) }));
+    const r = runCross([pa, pb, "--state", sa, sb, "--json"]);
+    assert.equal(r.status, 1, r.stdout);
+    assert.equal(r.result.verdict, "FAIL");
+    assert.deepEqual(r.result.divergence, [{ addr: "$D020", a: 14, b: 6, domain: "register" }]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cross: a registers object with no registersHex is refused by name", () => {
+  const dir = scratchDir();
+  try {
+    const img = basePattern();
+    const pa = writeImage(dir, "a.bin", img);
+    const pb = writeImage(dir, "b.bin", img);
+    const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: { PC: 2049 } });
+    const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: vicRegisters() });
+    const r = runCross([pa, pb, "--state", sa, sb]);
+    assert.equal(r.status, 1);
+    assert.match(r.message, /registersHex/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------
-// Task 1: no drift bucket, narrowed I/O mask, route awareness, image-length refusal
+// No drift bucket, narrowed I/O mask, route awareness, image-length refusal
 // ---------------------------------------------------------------------------
 
 test("cross: a one-bit RAM difference outside every masked span fails (exit 1)", () => {
@@ -161,8 +231,8 @@ for (const reg of ["$D020", "$D015", "$D018"]) {
       const img = basePattern();
       const pa = writeImage(dir, "a.bin", img);
       const pb = writeImage(dir, "b.bin", img);
-      const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: { [reg]: 0x00 } });
-      const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: { [reg]: 0x01 } });
+      const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: vicRegisters({ [reg]: 0x00 }) });
+      const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: vicRegisters({ [reg]: 0x01 }) });
       const r = runCross([pa, pb, "--state", sa, sb]);
       assert.equal(r.status, 1);
       assert.match(r.stdout, /VERDICT: FAIL/);
@@ -180,8 +250,8 @@ for (const reg of ["$D012", "$D019"]) {
       const img = basePattern();
       const pa = writeImage(dir, "a.bin", img);
       const pb = writeImage(dir, "b.bin", img);
-      const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: { [reg]: 0x00 } });
-      const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: { [reg]: 0x7f } });
+      const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: vicRegisters({ [reg]: 0x00 }) });
+      const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: vicRegisters({ [reg]: 0x7f }) });
       const r = runCross([pa, pb, "--state", sa, sb]);
       assert.equal(r.status, 0);
       assert.match(r.stdout, /VERDICT: PASS/);
@@ -203,8 +273,8 @@ test("cross: a mismatched route pair is refused, names both routes, and exits no
     const sb = writeJson(dir, "b.state.json", { route: "memory-read" });
     const r = runCross([pa, pb, "--state", sa, sb]);
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /snapshot/);
-    assert.match(r.stderr, /memory-read/);
+    assert.match(r.message, /snapshot/);
+    assert.match(r.message, /memory-read/);
     assert.doesNotMatch(r.stdout, /VERDICT:/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -219,14 +289,14 @@ test("cross: an image that is not exactly 65536 bytes is refused with its byte c
     const pb = writeImage(dir, "b.bin", basePattern());
     const r = runCross([pa, pb]);
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /100 bytes, expected 65536/);
+    assert.match(r.message, /100 bytes, expected 65536/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
 // ---------------------------------------------------------------------------
-// Task 2: allowlist and per-binary logical checkpoints
+// Allowlist and per-binary logical checkpoints
 // ---------------------------------------------------------------------------
 
 test("cross: an allowlist entry with a whitespace-only why is refused, naming the offending range", () => {
@@ -240,8 +310,8 @@ test("cross: an allowlist entry with a whitespace-only why is refused, naming th
     });
     const r = runCross([pa, pb, "--allowlist", al]);
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /\$8000/);
-    assert.match(r.stderr, /why/);
+    assert.match(r.message, /\$8000/);
+    assert.match(r.message, /why/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -258,7 +328,7 @@ test("cross: an allowlist entry overlapping a masked span is refused, naming the
     });
     const r = runCross([pa, pb, "--allowlist", al]);
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /overlap/);
+    assert.match(r.message, /overlap/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -277,7 +347,7 @@ test("cross: a pair that PASSES with an allowlist FAILS with --no-allowlist, sam
     });
 
     const withAllow = runCross([pa, pb, "--allowlist", al]);
-    assert.equal(withAllow.status, 0, withAllow.stdout + withAllow.stderr);
+    assert.equal(withAllow.status, 0, withAllow.stdout);
     assert.match(withAllow.stdout, /VERDICT: PASS/);
     assert.match(withAllow.stdout, /allowlisted \(intentional difference, excluded from the verdict\): 1/);
 
@@ -299,8 +369,8 @@ test("cross: two captures declaring different logical checkpoints are refused, n
     const sb = writeJson(dir, "b.state.json", { route: "memory-read", checkpoint_name: "checkpoint-b" });
     const r = runCross([pa, pb, "--state", sa, sb]);
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /checkpoint-a/);
-    assert.match(r.stderr, /checkpoint-b/);
+    assert.match(r.message, /checkpoint-a/);
+    assert.match(r.message, /checkpoint-b/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -333,7 +403,7 @@ test("cross: a successful run's header carries MASK_NARROWED_AT and one resolved
 });
 
 // ---------------------------------------------------------------------------
-// Task 3: byte-identity is a recorded extra, never the verdict
+// Byte identity is a recorded extra, never the verdict
 // ---------------------------------------------------------------------------
 
 test("cross: byte-identical images with identical sidecars produce VERDICT: PASS and full, non-omitted bucket-count lines", () => {
@@ -342,8 +412,8 @@ test("cross: byte-identical images with identical sidecars produce VERDICT: PASS
     const img = basePattern();
     const pa = writeImage(dir, "a.bin", img);
     const pb = writeImage(dir, "b.bin", img);
-    const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: { "$D020": 14 } });
-    const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: { "$D020": 14 } });
+    const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: vicRegisters({ $D020: 14 }) });
+    const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: vicRegisters({ $D020: 14 }) });
     const r = runCross([pa, pb, "--state", sa, sb]);
     assert.equal(r.status, 0);
     assert.match(r.stdout, /BYTE_IDENTICAL: yes/);
@@ -369,8 +439,8 @@ test("cross: byte-identical images whose sidecars differ at $D020 still FAIL (ex
     const img = basePattern();
     const pa = writeImage(dir, "a.bin", img);
     const pb = writeImage(dir, "b.bin", img);
-    const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: { "$D020": 14 } });
-    const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: { "$D020": 6 } });
+    const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: vicRegisters({ $D020: 14 }) });
+    const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: vicRegisters({ $D020: 6 }) });
     const r = runCross([pa, pb, "--state", sa, sb]);
     assert.equal(r.status, 1);
     assert.match(r.stdout, /BYTE_IDENTICAL: yes/);

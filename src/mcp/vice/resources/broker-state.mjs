@@ -1,7 +1,7 @@
 // GENERATED FILE -- DO NOT EDIT.
 // Compiled by `tsc` from broker-state.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
-// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
+// deployed to the host on their own -- install-resources.ts copies THIS file's on-disk contents
 // verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // broker-state.mts
@@ -178,7 +178,8 @@ export async function nextFreePort(state, opts = {}) {
         if (isPortBlocked(state, port))
             continue;
         if (await portInUse(port)) {
-            blockPort(state, port);
+            // Skipped for this call only: a port that is busy now (an emulator
+            // still shutting down) may be free on the next allocation.
             checked++;
             if (checked % YIELD_EVERY_N_CANDIDATES === 0) {
                 await new Promise((resolvePromise) => setImmediate(resolvePromise));

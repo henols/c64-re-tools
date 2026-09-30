@@ -22,14 +22,15 @@ TD=recovery/transients              # the allow-lists live in your project's dat
 
 node $A assemble  --chunks chunks.json           # size + digest, writes nothing
 node $A write-set --release <id> --label <label> \
-                  --chunks chunks.json --raw raw.json    # the four artifacts
+                  --chunks chunks.json --raw raw.json > set.json   # the four artifacts
+node $L add-dump --from set.json                 # record the dump in the registry
 node $L list                                     # the valid --release ids
 
 node $C digest  dump.bin                         # sha256 + size, for the capture record
-node $C compare a.bin b.bin                      # classify each difference, exit 1 on FAIL
-node $C floor   a.bin b.bin c.bin                # drift floor across a capture set
+node $C compare a.bin b.bin --route memory-read  # classify each difference, exit 1 on FAIL
+node $C floor   a.bin b.bin c.bin --route memory-read   # drift floor across a capture set
 
-node $CX cross original.bin rebuild.bin          # two DIFFERENT binaries
+node $CX cross original.bin rebuild.bin --route memory-read   # two DIFFERENT binaries
 
 node $T derive --release <id> --out $TD/<id>.json a.bin b.bin c.bin
 node $T check  --allow-list $TD/<id>.json a.bin b.bin
@@ -80,6 +81,14 @@ before you drive the machine.
      `vice_vicii_get_state`, `vice_sprite_get` and `vice_registers_get`.
    - `port01_raw` is `$0001`. `dd00_raw` is `$DD00`. `d018_raw` is `$D018`.
    - `sprite_pointers` is the eight bytes at `screen_base+$3F8`.
+   - `captured_at` is the time of the reads, as an ISO time string.
+   - `route` is `memory-read` for `vice_memory_read` chunks, or `snapshot`
+     for an image sliced from a `.vsf` file.
+   - `dd00_direct_read` is optional. Add it only when you read `$DD00` a
+     second time.
+
+   `chip-state` and `write-set` refuse a missing or bad field, and name it.
+   They never use a default value in place of a register reading.
 6. Write all four artifacts with one command:
 
    ```bash
@@ -92,11 +101,16 @@ before you drive the machine.
    `.state.json`, `.map.json` and `.capture.json` in
    `recovery/<release>/dumps/`. It returns their paths and the SHA-256. It
    also calculates `vic_bank`, `screen_base`, `charset_base` and
-   `sprite_data_addresses`. Do not calculate them by hand.
-7. `vice_checkpoint_delete` the checkpoint.
-8. `vice_checkpoint_list`. Make sure that it reports zero checkpoints. Only
+   `sprite_data_addresses`. Do not calculate them by hand. If the four files
+   exist already, `write-set` refuses. Use `--force` only to replace a dump
+   set on purpose.
+7. Record the dump in the registry: `node $L add-dump --from set.json`.
+   Label the primary dump of a release `run1`. `watch-loads.ts` and
+   `c64-provenance` read that dump.
+8. `vice_checkpoint_delete` the checkpoint.
+9. `vice_checkpoint_list`. Make sure that it reports zero checkpoints. Only
    this list is proof. Record the count.
-9. `vice_execution_run`, one time, to let the machine run.
+10. `vice_execution_run`, one time, to let the machine run.
 
 `assemble` does the same checks and writes nothing. Use it for a quick check
 of a chunk set before you commit it.
@@ -124,6 +138,7 @@ Chunks made from a committed image, then given to `assemble`:
 ```
 $ node $A assemble --chunks chunks.json
 65536 bytes, sha256 e1b8428c55bc7606b7e77846e8928bff23e9cf0c8241da479aadc1bc092faa26
+{"ok":true,"bytes":65536,"sha256":"e1b8428c55bc7606b7e77846e8928bff23e9cf0c8241da479aadc1bc092faa26"}
 ```
 
 That digest is the same as the `sha256` field in that capture's committed
@@ -134,10 +149,10 @@ Then break the chunks on purpose, to see what the checks say:
 
 ```
 $ node $A assemble --chunks gap.json      # one chunk removed
-Error: assembleImage: gap before address $3000 -- next chunk starts at $4000
+{"ok":false,"message":"assembleImage: gap before address $3000 -- next chunk starts at $4000"}
 
 $ node $A assemble --chunks short.json    # last chunk 2 bytes short
-Error: assembleImage: assembled 65534 bytes ending at $FFFE, expected exactly 65536
+{"ok":false,"message":"assembleImage: assembled 65534 bytes ending at $FFFE, expected exactly 65536"}
 ```
 
 Each message gives an address to read again. Do not fill a gap with padding.
@@ -165,10 +180,12 @@ Void a run when you cannot prove that the machine stayed the same:
 ## Compare two captures
 
 Do not classify differences by hand. `compare.ts` applies the same rules each
-time. It exits 1 on a FAIL, so a script can use it as a gate:
+time. It exits 1 on a FAIL, so a script can use it as a gate. Give the
+capture route with `--route memory-read` or `--route snapshot`. The script
+refuses to run without it:
 
 ```bash
-node $C compare capture-a.bin capture-b.bin
+node $C compare capture-a.bin capture-b.bin --route memory-read
 ```
 
 ```
@@ -189,6 +206,7 @@ total differing addresses: 161 of 65536
 
 VERDICT: PASS
 Drift candidates present — pass, but record them with the capture.
+{"ok":true,"verdict":"PASS","route":"memory-read",...}
 ```
 
 `--limit 0` prints all rows. `node $C` with no arguments prints the rules.
@@ -197,16 +215,17 @@ The three classes:
 
 | Class | Rule | Effect on the verdict |
 |---|---|---|
-| volatile | `$0000-$0001`, `$0100-$01FF`, `$0200-$03FF`, **`$D000-$DFFF`** | counted and listed, never fails |
+| volatile | `$0000-$0001`, `$0100-$01FF`, `$0200-$03FF`, and **`$D000-$DFFF`** on the memory-read route only | counted and listed, never fails |
 | drift | exactly one bit differs | listed as a candidate, passes |
 | divergence | two or more bits differ | listed, **fails** |
 
-**`$D000-$DFFF` is volatile because it is I/O, not RAM.** The VIC-II
+**On the memory-read route, `$D000-$DFFF` is volatile because it is I/O, not RAM.** The VIC-II
 registers repeat every `$40` across `$D000-$D3FF`. The SID registers repeat
 across `$D400-$D7FF`. A read of that range samples live hardware, so two
 captures can never agree there. An earlier rule that left this range out
 failed five of six committed pairings, on `$D344`, `$D625` and `$D628`. Apply
-the region rule first, then the bit count.
+the region rule first, then the bit count. On the snapshot route, the image
+holds the RAM below the I/O area, so `compare.ts` does not mask that range.
 
 `$E000-$FFFF` (RAM below the KERNAL ROM when HIRAM = 0) is **not** excluded on
 purpose. `$FAD8` and `$FC51` differ across captures. That is only two
@@ -219,7 +238,7 @@ It reports each address that differed in any pairing, with the values it
 saw:
 
 ```bash
-node $C floor run1.bin run2.bin run3.bin
+node $C floor run1.bin run2.bin run3.bin --route memory-read
 ```
 
 Capture the power-on image as the first action on a new machine. Then do two
@@ -239,6 +258,11 @@ node $CX cross original.bin rebuild.bin \
   --allowlist allow.json --checkpoint hazard_raster_entry
 ```
 
+The `--state` files are the `.state.json` sidecars that `write-set` writes.
+The script compares the 47 VIC-II register bytes in `registers.registersHex`.
+Without `--state`, give `--route snapshot` or `--route memory-read`. The
+script refuses to guess the route.
+
 Three rules are different from `compare.ts`, because the same-binary rules
 are wrong for two different binaries:
 
@@ -252,8 +276,8 @@ are wrong for two different binaries:
   `$D800`-`$DBFF`, `$DC00`-`$DCFF`, `$DD00`-`$DDFF` and `$DE00`-`$DFFF`. So
   `$D015`, `$D018` and `$D020` stay in the verdict.
 - **The capture route counts.** Each state sidecar declares its `route`
-  (`snapshot` or `memory-read`). The script refuses to compare a snapshot
-  capture with a memory-read capture. The two routes disagree about what
+  (`snapshot` or `memory-read`). A sidecar with no `route` is refused. The
+  script refuses to compare a snapshot capture with a memory-read capture. The two routes disagree about what
   `$D000-$DFFF` is (see
   [Slice the image out of a snapshot](#slice-the-image-out-of-a-snapshot)).
 
@@ -359,7 +383,7 @@ node $W attribute  --release <id> --addr '$C000'   # which sentinel owns an addr
 node $W check-idle --release <id>                  # the idle gate, exit 1 on fail
 node $W signature  --hex <1000-byte-hex> --sprite-enable <n>
 node $W report     --release <id>                  # the hits, in a fixed order
-node $W render    [--release <id>]                 # writes recovery/LOADING.md
+node $W render    [--release <id>]                 # writes recovery/LOADING.md for all releases
 ```
 
 Each command takes `--json`.
@@ -396,8 +420,9 @@ ranges overlap, it refuses. It does not choose a winner.
    the fallback.
 3. Let the machine run with no input. Record the cycles in
    `idle_calibration.cycles_advanced` and the hits of each sentinel.
-   `check-idle` passes only when each `stopping` sentinel has zero hits and
-   `cycles_advanced` is more than zero. A machine that did not run proves
+   `check-idle` passes only when each `stopping` sentinel of the watch set
+   has a calibration entry with zero hits, and `cycles_advanced` is more than
+   zero. A missing entry fails the gate. A machine that did not run proves
    nothing.
 4. Play through the milestones. At each milestone, read the 1000 bytes of
    the screen matrix and `$D015`, and give them to `signature`. The digest is
@@ -405,7 +430,8 @@ ranges overlap, it refuses. It does not choose a winner.
    hashed.
 5. For each hit, record the program counter, a `vice_backtrace` and a
    `vice_disassemble`. Then set `classification` to `gameplay-write` or
-   `load-candidate`. A hit without all three is `unattributed`.
+   `load-candidate`. A hit without all three is `unattributed`, whatever its
+   `classification` field says.
 6. For a `load-candidate`, take a supplementary capture and record its path
    in `supplementary_dump`.
 7. Delete each checkpoint. Record the `vice_checkpoint_list` count in
@@ -420,7 +446,10 @@ proof.
 
 `report` sorts the hits by cycle, then address, then sentinel. The same log
 always gives the same report. `render` writes `recovery/LOADING.md` for each
-release that has a hit log.
+release that has a hit log. `--release <id>` keeps the other
+releases in the file. It only makes `render` refuse when that release is
+unknown or has no hit log. The load-event count of a release is the number
+of attributed `load-candidate` hits.
 
 - Set `run_status: "blocked"` when the live work did not finish. `render`
   then marks a count of 0 as **not an evidenced zero**, and a larger count as
@@ -437,11 +466,15 @@ the map is in `c64-annotations`.
 
 ## Failure shape
 
-Each script prints its result, or refuses with an `Error:` message and a
-non-zero exit code. A refusal writes nothing. `compare` and `cross` exit 1 on
-a FAIL verdict. `check` exits 1 when a pair is not equivalent. `check-idle`
-exits 1 when the idle gate fails. An over-cap `derive` exits non-zero and
-writes no artifact.
+The last line on stdout is one JSON result: `{"ok": true, ...}` with exit
+code 0, or `{"ok": false, "message": "..."}` with exit code 1. `--json` gives
+only that line. Without `--json`, text lines come first. `vsf-slice.ts`
+passes the output of the MCP module through without a change.
+
+A refusal writes nothing. `compare` and `cross` give `ok: false` on a FAIL
+verdict. `check` gives `ok: false` when a pair is not equivalent. `check-idle`
+gives `ok: false` when the idle gate fails. An over-cap `derive` gives
+`ok: false` and writes no artifact.
 
 ## What this skill does NOT do
 
@@ -468,7 +501,8 @@ writes no artifact.
 | A new `.map.json` says `classification_state: "bucketed"` | Wrong. A new capture is `"ranges-only"`. Only the provenance diff sets `"bucketed"`. |
 | The checkpoint never fired | Most reads stop the machine. Do all reads, then resume one time. See `c64-emulator`. |
 | Two captures of the same checkpoint differ | This is expected. Run `compare` and read the verdict. Do not judge by eye. |
-| `compare` fails on an address in `$D000`-`$DFFF` | It cannot. `compare.ts` masks that range. You applied the rules by hand. Use `compare.ts`. |
+| `compare` fails on an address in `$D000`-`$DFFF` | With `--route memory-read` it cannot: `compare.ts` masks that range. With `--route snapshot` the failure is real, because the image holds RAM there. |
+| `compare needs --route memory-read or --route snapshot` | Give the route of the two captures. The route decides the `$D000-$DFFF` rule. |
 | `cross` fails on an address in `$D000`-`$DFFF` | This is expected. `compare-cross-binary.ts` masks less on purpose. The failure is a real finding. |
 | `cross` refuses with "capture routes differ" | The two `--state` sidecars declare different `route` values. Capture both the same way, or give the correct `--route`. |
 | `cross` refuses with "logical checkpoints differ" | The two sidecars declare different `checkpoint_name` values. Capture both at the same named checkpoint, or correct the sidecar. |

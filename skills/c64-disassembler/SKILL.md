@@ -42,10 +42,10 @@ before it sends the request. The last stdout line is one JSON result.
   `support/analyzeHeadless`. The broker reads `GHIDRA_HOME` on the host.
   This project measured its runs with Ghidra 12.1.3 and JDK 21.
 - **dxa, for `listing`.** This project builds dxa from its vendored source.
-  Build it once in `src/mcp/vice`:
+  Build it once:
 
   ```bash
-  bash vendor/dxa/build.bash build
+  cd src/mcp/vice && bash vendor/dxa/build.bash build
   ```
 
 ## Choose `analyze` or `listing`
@@ -59,8 +59,7 @@ constant stores to `$01`, `$D011`, `$D018` and `$DD00`. Only the Ghidra
 export goes into the annotation project.
 
 The two passes help each other. Give Ghidra the entry points that dxa and
-your own reading found. Give dxa the data ranges that you know. For the
-full method, read [docs/dissambler-workflow.md](../../docs/dissambler-workflow.md).
+your own reading found. Give dxa the data ranges that you know.
 
 ## Install the Ghidra 6502 extension
 
@@ -225,7 +224,7 @@ the exit code, decides success. A run whose log names a language other than
 | `host_tool "ghidra.analyze" refuses: the requested processor "6502:LE:16:nmos" is not declared by any installed Ghidra language` | Run `node $S install-extension`. Or use `--processor 6502:LE:16:default`. |
 | `... but its slafile ... does not exist on disk -- run ghidra.installExtension to build it` | Run `node $S install-extension`. |
 | `host_tool "ghidra.installExtension" refuses: no Ghidra installation directory is known` | Set `GHIDRA_HOME` for the broker. Start the broker again. |
-| `host_tool "dxa.disassemble" refuses: the vendored dxa binary does not exist` | In `src/mcp/vice`, run `bash vendor/dxa/build.bash build`. |
+| `host_tool "dxa.disassemble" refuses: the vendored dxa binary does not exist` | Run `cd src/mcp/vice && bash vendor/dxa/build.bash build`. |
 | `runGhidraAnalyze: a script threw during this run` | Read the run log that the message names. Find the `ERROR REPORT SCRIPT ERROR:` line. |
 | `runGhidraAnalyze: language mismatch` | Ghidra used another language. Check the language ids in `GHIDRA_HOME`. |
 | `analyze: --kind flat64k needs an image of exactly 65536 bytes` | Use `--kind prg` for a `.prg`. Use `flat64k` only for a full 64K image. |

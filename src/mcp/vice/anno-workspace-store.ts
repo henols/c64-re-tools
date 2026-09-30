@@ -15,7 +15,7 @@
 //   - Never pick one of several projects in a file. `soleProjectStore()`
 //     refuses a file that holds more than one.
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 
 import { closeAnnoDatabase, openAnnoDatabase, soleProjectStore } from "./anno-store.mts";
 import { runAnnoToolOnHandle, type AnnoInputFile, type AnnoInputs, type ToolCallResult } from "./anno-tools.mts";
@@ -68,7 +68,7 @@ export function workspaceStoreRunner(opts: { workspaceRoot?: string; dbPath?: st
           ok: false,
           code: "no_project",
           message:
-            `this workspace has no annotation project yet (${path} does not exist) -- nothing has been annotated here, so there is ` +
+            `this workspace has no annotation project yet (${relative(root, path) || path} does not exist) -- nothing has been annotated here, so there is ` +
             "nothing to read. The first write creates it.",
         };
       }

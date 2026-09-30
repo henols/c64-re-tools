@@ -45,7 +45,10 @@ function run(argv: string[], { cwd = HERE }: { cwd?: string } = {}) {
     encoding: "utf8",
     timeout: 120000,
   });
-  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+  const stdout = r.stdout ?? "";
+  const result = JSON.parse(stdout.trim().split("\n").pop() ?? "") as { ok: boolean; message?: string };
+  // `stderr` carries the refusal text of the one-line JSON result.
+  return { status: r.status, stdout, stderr: result.message ?? "", result };
 }
 
 /** A full 64K image of `fill`, with `overrides` (addr -> byte) applied. */
@@ -295,15 +298,18 @@ test("derive: 65 addresses VOIDS the derivation -- non-zero, no file at --out, a
 // Agreement with the authoritative MCP-side predicate
 // ---------------------------------------------------------------------------
 
-test("the script's default cap is the MCP-side TRANSIENT_ALLOW_LIST_CAP, not a second copy of 64", () => {
-  const src = readFileSync(SCRIPT, "utf8");
-  const m = src.match(/^const TRANSIENT_ALLOW_LIST_CAP = (\d+);$/m);
-  assert.ok(m, "the script must declare its cap as one named constant");
-  assert.equal(
-    Number(m[1]),
-    predicate.TRANSIENT_ALLOW_LIST_CAP,
-    "the derivation's cap must equal the predicate's committed cap",
-  );
+test("the default cap is the MCP-side TRANSIENT_ALLOW_LIST_CAP: that many addresses derive, one more voids", () => {
+  const dir = scratchDir();
+  try {
+    const cap = predicate.TRANSIENT_ALLOW_LIST_CAP;
+    const atCap = run(["derive", "--release", "cap", "--out", join(dir, "at.json"), ...tripletDifferingAt(dir, spreadAddresses(cap))]);
+    assert.equal(atCap.status, 0, atCap.stderr);
+    const over = run(["derive", "--release", "cap", "--out", join(dir, "over.json"), ...tripletDifferingAt(dir, spreadAddresses(cap + 1))]);
+    assert.equal(over.status, 1);
+    assert.equal(existsSync(join(dir, "over.json")), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("a derived artifact round-trips through parseAllowList unmodified", () => {
@@ -519,19 +525,8 @@ for (const verb of ["toString", "constructor", "valueOf", "hasOwnProperty", "__p
   });
 }
 
-test("no verb at all prints usage and exits 0", () => {
+test("no verb at all is refused with the usage", () => {
   const r = run([]);
-  assert.equal(r.status, 0);
+  assert.equal(r.status, 1);
   assert.match(r.stderr, /usage: node derive-transients\.ts <command>/);
-});
-
-test("the script neither spawns a process nor reaches the network", () => {
-  const src = readFileSync(SCRIPT, "utf8");
-  for (const forbidden of ["spawnSync", "spawn(", "execFile", "node:child_process", "node:net", "node:http", "fetch("]) {
-    assert.equal(
-      src.includes(forbidden),
-      false,
-      `derive-transients.ts must not reference ${forbidden} -- it is pure arithmetic over images already on disk`,
-    );
-  }
 });

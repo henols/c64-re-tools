@@ -98,6 +98,22 @@ test('handleMemoryRead: a symbolic address refuses with "no symbol table" and re
   assert.equal(calls.length, 0);
 });
 
+test("handleMemoryRead: a 65536-byte read from $0000 returns all 64K through two MEMORY_GETs", async () => {
+  const { session, calls } = makeSession((_commandType, body) => {
+    const start = body.readUInt16LE(1);
+    const end = body.readUInt16LE(3);
+    // Stock VICE's reply length is a u16: a 65536-byte request gets 0 bytes.
+    const length = (end - start + 1) & 0xffff;
+    return memoryGetReply(Array.from({ length }, (_, index) => (start + index) & 0xff));
+  });
+  const result = await handleMemoryRead({ address: "$0000", size: 65536 }, session, DEPS);
+  assert.equal(result.isError, false, result.content[0]!.text);
+  assert.equal(calls.length, 2);
+  const hex = JSON.parse(result.content[0]!.text).hex as string;
+  assert.equal(hex.length, 65536 * 2);
+  assert.equal(hex.slice(-4), "feff");
+});
+
 test("handleMemoryRead: size: 0 refuses with zero sends", async () => {
   const { session, calls } = makeSession(() => memoryGetReply([0x00]));
   const result = await handleMemoryRead({ address: "$1000", size: 0 }, session, DEPS);
@@ -207,6 +223,25 @@ test("bankCatalogFor: a second call on the SAME session records no second send",
   await bankCatalogFor(session);
   await bankCatalogFor(session);
   assert.equal(calls.length, 1);
+});
+
+test("bankCatalogFor: two concurrent first calls share one BANKS_AVAILABLE round trip", async () => {
+  const { session, calls } = makeSession(async () => twoBankReply());
+  const [a, b] = await Promise.all([bankCatalogFor(session), bankCatalogFor(session)]);
+  assert.strictEqual(a, b);
+  assert.equal(calls.length, 1);
+});
+
+test("bankCatalogFor: an empty enumeration is refused and not cached, so the next call asks again", async () => {
+  let empty = true;
+  const { session, calls } = makeSession(() =>
+    empty ? { type: "banks_available" as const, requestId: 1, errorCode: 0, banks: [], related: [] } : twoBankReply(),
+  );
+  await assert.rejects(bankCatalogFor(session), /zero banks/);
+  empty = false;
+  const catalog = await bankCatalogFor(session);
+  assert.equal(catalog.byName.get("ram"), 0x0c);
+  assert.equal(calls.length, 2);
 });
 
 test("bankCatalogFor: a DIFFERENT session object triggers a fresh fetch", async () => {

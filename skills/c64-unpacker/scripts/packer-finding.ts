@@ -82,8 +82,8 @@
 // process below is launched with an argument ARRAY and an explicitly disabled
 // interpreter, and a configured oracle path that does not exist on disk is
 // treated as oracle-absent rather than being placed into any command anywhere
-// (T-19-18). The oracle's standard output reaches exactly one field, through
-// one bounded parser that evaluates nothing (T-19-19).
+//. The oracle's standard output reaches exactly one field, through
+// one bounded parser that evaluates nothing.
 //
 // ---------------------------------------------------------------------------
 // STATUS OF THE ORACLE BRANCH (recorded, deliberate)
@@ -96,7 +96,7 @@
 // a measurement. Installing the identifier and running it against a genuinely
 // packed fixture is the experiment that would settle it; until then the
 // oracle-route test SKIPS with a visible reason and never reads as a pass.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -240,12 +240,12 @@ export const PACKED_ENTROPY_THRESHOLD = 7.5;
 const ORACLE_ENV_VARS = Object.freeze(["UNP64", "UNP64_PATH"]);
 
 /** Every child process here is bounded. A hung identifier is treated exactly
- * like an absent one (T-19-23). */
+ * like an absent one. */
 const ORACLE_TIMEOUT_MS = 20_000;
 
 /** Hard cap on how much of the oracle's standard output the parser will even
  * look at. Longer than this is rejected outright rather than scanned
- * (T-19-19). */
+ *. */
 export const MAX_ORACLE_STDOUT_BYTES = 64 * 1024;
 
 /** Hard cap on the length of a parsed packer name. */
@@ -310,8 +310,7 @@ export function shannonEntropy(bytes: Uint8Array | readonly number[] | null | un
  * Answers `null` when no oracle variable is set in `env`. Otherwise answers
  * a non-empty string naming WHICH variable was set and stating that the
  * seam consults the host broker process's own environment instead --
- * NEVER interpolating the variable's value (T-19-18, unchanged by this
- * migration).
+ * NEVER interpolating the variable's value.
  */
 export function oracleConfigurationHint(env: EnvRecord | null | undefined = process.env): string | null {
   const source = env ?? {};
@@ -378,10 +377,10 @@ export function probeUnp64(env: EnvRecord | null | undefined = process.env): Ora
  *
  * The input file is never modified: any unpacked output the identifier writes
  * goes to a scratch path under the system temporary directory, which is
- * removed before this function returns (T-19-24). The child is launched with
+ * removed before this function returns. The child is launched with
  * an argument ARRAY and an explicitly disabled command interpreter, so neither
  * the configured command nor the caller's filename is ever parsed as a
- * command (T-19-18).
+ * command.
  *
  * Never throws: every failure is reported as `{ ok: false, reason }`.
  */
@@ -405,13 +404,13 @@ export function runUnp64(probe: OracleProbe | null | undefined, filePath: string
   if (!response || typeof response.ok !== "boolean") {
     return { ok: false, stdout: "", reason: message || "the oracle.run seam call failed" };
   }
-  return { ok: response.ok, stdout: typeof response.stdout === "string" ? response.stdout : "", reason: response.reason ?? null };
+  return { ok: response.ok, stdout: typeof response.stdout === "string" ? response.stdout : "", reason: response.reason ?? message ?? null };
 }
 
 /**
  * Parses a packer name out of the oracle's standard output.
  *
- * Defensive by construction (T-19-19): an explicit byte cap before anything
+ * Defensive by construction: an explicit byte cap before anything
  * is scanned, no evaluation of any kind, a narrow accepted character set, and
  * a length cap on the result. Empty, truncated, over-long and unrecognised
  * input all return null WITHOUT throwing -- a parser that throws inside a
@@ -619,7 +618,7 @@ export function packerFinding(options: PackerFindingOptions = {}): PackerFinding
 
 const USAGE = `usage: node skills/c64-unpacker/scripts/packer-finding.ts <file> [--entropy N]
 
-Prints ONE JSON object: the packer finding for <file>.
+Prints ONE JSON object: ok, plus the packer finding for <file>.
 
   packer            the packer name, or null. Non-null ONLY when an external
                     oracle stated it verbatim. This project never guesses one.
@@ -632,54 +631,59 @@ Prints ONE JSON object: the packer finding for <file>.
 
 --entropy overrides the locally computed value with one you already have (the
 curated binary-info tool reports it). The entropy gate answers PACKEDNESS and
-never identity.`;
+never identity. A bad input gives {"ok": false, "message": "..."} and exit 1.`;
 
-function readFlag(argv: string[], name: string): string | undefined {
-  const index = argv.indexOf(`--${name}`);
-  if (index === -1) return undefined;
-  const value = argv[index + 1];
-  if (value === undefined || value.startsWith("--")) return undefined;
-  return value;
+/** Every result this script prints. The last stdout line is always one of
+ * these, as JSON. */
+export type ScriptResult = ({ ok: true } & PackerFinding) | { ok: true; usage: string } | { ok: false; message: string };
+
+/** A plain decimal number, or null. `parseFloat` alone would take "7.8abc". */
+function parseDecimal(text: string): number | null {
+  return /^[0-9]+(\.[0-9]+)?$/.test(text) ? Number(text) : null;
 }
 
-function main(argv: string[]): void {
+/** The whole CLI as a function. Never throws. */
+export function main(argv: string[]): ScriptResult {
+  if (argv.includes("--help") || argv.includes("-h")) return { ok: true, usage: USAGE };
   const positional: string[] = [];
+  let entropy: number | null = null;
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (token === "--entropy") {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith("--")) return { ok: false, message: "packer-finding: --entropy needs a value, for example --entropy 7.83" };
+      entropy = parseDecimal(value);
+      if (entropy === null) return { ok: false, message: `packer-finding: --entropy must be a number, got "${value}"` };
       i++;
       continue;
     }
-    if (token.startsWith("--")) continue;
+    if (token.startsWith("--")) return { ok: false, message: `packer-finding: unknown flag ${token}\n${USAGE}` };
     positional.push(token);
   }
 
   const filePath = positional[0];
-  if (filePath === undefined || argv.includes("--help") || argv.includes("-h")) {
-    console.log(USAGE);
-    process.exit(filePath === undefined && !argv.includes("--help") && !argv.includes("-h") ? 2 : 0);
-  }
+  if (filePath === undefined) return { ok: false, message: USAGE };
+  if (positional.length > 1) return { ok: false, message: `packer-finding: give exactly one file, got ${positional.length}` };
 
-  let bytes: Buffer | null = null;
+  let bytes: Buffer;
   try {
     bytes = readFileSync(filePath);
   } catch (err) {
-    console.error(`packer-finding: could not read ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
+    return { ok: false, message: `packer-finding: could not read ${filePath}: ${err instanceof Error ? err.message : String(err)}` };
   }
 
-  const entropyRaw = readFlag(argv, "entropy");
-  const entropy = entropyRaw === undefined ? null : Number.parseFloat(entropyRaw);
-  if (entropyRaw !== undefined && !Number.isFinite(entropy)) {
-    console.error(`packer-finding: --entropy must be a number, got "${entropyRaw}"`);
-    process.exit(1);
+  try {
+    return { ok: true, ...packerFinding({ filePath, bytes, ...(entropy === null ? {} : { entropy }) }) };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
   }
-
-  const finding = packerFinding({ filePath, bytes, ...(entropy === null ? {} : { entropy }) });
-  console.log(JSON.stringify(finding, null, 2));
 }
 
-// Run only when invoked directly, never when imported by the colocated test.
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main(process.argv.slice(2));
+// True when this file is the process entry point, also when it runs through a symlink.
+const invokedDirectly = process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  const result = main(process.argv.slice(2));
+  console.log(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
 }

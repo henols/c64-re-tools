@@ -878,7 +878,7 @@ test("20. anno_import_ghidra_export: an export_path resolving outside the worksp
     const result = await runAnnoTool("anno_import_ghidra_export", { export_path: outsideFile }, { runAnno: broker.runAnno });
     broker.close();
     assert.equal(result.isError, true, "an export_path outside the workspace root must be refused, never read");
-    assert.match(result.content[0]!.text, /export_path/);
+    assert.match(result.content[0]!.text, /transfer file .* outside the workspace root/);
   } finally {
     if (previous === undefined) delete process.env.CLAUDE_PROJECT_DIR;
     else process.env.CLAUDE_PROJECT_DIR = previous;

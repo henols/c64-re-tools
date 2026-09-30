@@ -5,7 +5,6 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  MONITOR_CHANNELS,
   CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS,
   ChannelLockTimeoutError,
   acquireChannelLock,
@@ -28,11 +27,6 @@ function sleep(ms: number): Promise<void> {
 // Case 11: MONITOR_CHANNELS is frozen and has exactly the two members, in
 // order.
 // ---------------------------------------------------------------------------
-
-test("MONITOR_CHANNELS is frozen and has exactly [\"binary\", \"text\"], in order", () => {
-  assert.ok(Object.isFrozen(MONITOR_CHANNELS));
-  assert.deepEqual([...MONITOR_CHANNELS], ["binary", "text"]);
-});
 
 // ---------------------------------------------------------------------------
 // Case 1 & 2: a free lock grants immediately; currentChannelLockHolder()

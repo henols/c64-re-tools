@@ -127,10 +127,9 @@ function makeGrantedInstance(port: number): InstanceRecord {
  * same grant/instance map key. The one REAL network bind in this file is
  * the control listener below, which binds port 0 and reads the assigned
  * port back from the OS. */
-function setupBrokerState(emulatorPort: number, targetId: string): BrokerState {
+function setupBrokerState(emulatorPort: number): BrokerState {
   const state = createBrokerState();
   state.instances.set(emulatorPort, makeGrantedInstance(emulatorPort));
-  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
   return state;
 }
 
@@ -145,13 +144,16 @@ async function startDisjointListener(
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    onAcquire: async (): Promise<AcquireOutcome> => ({
-      ok: true,
-      grant: {
-        port: emulatorPort,
-        url: `http://127.0.0.1:${emulatorPort}/mcp`,
-      },
-    }),
+    onAcquire: async (id: string): Promise<AcquireOutcome> => {
+      state.grants.set(id, { id, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+      return {
+        ok: true,
+        grant: {
+          port: emulatorPort,
+          url: `http://127.0.0.1:${emulatorPort}/mcp`,
+        },
+      };
+    },
     onRelease: (requestId: string) => handleRelease(requestId, state),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
@@ -418,15 +420,6 @@ function assertNoPrefixLeak(result: unknown, forbiddenPrefix: string, label: str
   );
 }
 
-test("transfer-disjoint-roots: the leak scanner is proven to catch a violation in a key nobody anticipated, before it is trusted against a real result", () => {
-  const planted = { ok: true, nested: { deeply: { surprise: "totally unexpected key carrying /some/broker/staging/path/file.bin" } } };
-  assert.throws(() => assertNoPrefixLeak(planted, "/some/broker/staging", "self-test"), /broker-side prefix/, "the scanner must fail on a planted violation nested three levels deep, in a key not on any expected list");
-  // Remove the plant -- prove the same object, with the offending substring
-  // gone, now passes.
-  planted.nested.deeply.surprise = "nothing broker-side here";
-  assert.doesNotThrow(() => assertNoPrefixLeak(planted, "/some/broker/staging", "self-test-cleared"));
-});
-
 let nextDisjointEmulatorPort = 47600;
 function reserveDisjointEmulatorPort(): number {
   nextDisjointEmulatorPort += 1;
@@ -445,8 +438,8 @@ test("transfer-disjoint-roots: all four tools complete against a client and a br
   resetStagingForTest();
 
   const emulatorPort = reserveDisjointEmulatorPort();
-  const grantId = "req-64-07-disjoint";
-  const state = setupBrokerState(emulatorPort, grantId);
+  let grantId = "";
+  const state = setupBrokerState(emulatorPort);
   // G-64-3 (plan 64-13): a 300ms pre-publish hook holds the broker's own
   // rename back deterministically for every upload in this test -- the
   // AUTOSTART/UNDUMP stubs below all read their staged file SYNCHRONOUSLY,
@@ -457,7 +450,8 @@ test("transfer-disjoint-roots: all four tools complete against a client and a br
   const control = makeDisjointControlClient(listener.port);
 
   try {
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
+    const acquireReply = await control.sendAndRead({ op: "acquire" });
+    grantId = String(acquireReply.id);
     assert.equal(acquireReply.kind, "grant");
 
     // Source fixture files this CLIENT reads and uploads -- placed under

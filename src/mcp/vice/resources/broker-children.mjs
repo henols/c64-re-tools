@@ -1,7 +1,7 @@
 // GENERATED FILE -- DO NOT EDIT.
 // Compiled by `tsc` from broker-children.mts. Edit the TypeScript source and rebuild;
 // changes made directly to this file are silently overwritten by the next build, and are never
-// deployed to the host on their own -- install-resources.mjs copies THIS file's on-disk contents
+// deployed to the host on their own -- install-resources.ts copies THIS file's on-disk contents
 // verbatim to .c64-re-tools/local/bin/, so an edit made only here reaches the host but is lost on the very next
 // rebuild.
 // broker-children.mts
@@ -60,7 +60,15 @@ export function trackChild(state, child, kind, kill = defaultKill) {
     state.children.set(pid, { pid, kind });
     state.childListener?.({ op: "track", pid });
     child.once("exit", () => {
-        signalGroup(pid, "SIGKILL", kill);
+        // The child is reaped, so its pid may already belong to another process.
+        // Only the group it led is signalled: a group id stays ours while any
+        // descendant lives, and signalling it never reaches a reused bare pid.
+        try {
+            kill(-pid, "SIGKILL");
+        }
+        catch {
+            // no descendants left
+        }
         state.children.delete(pid);
         state.childListener?.({ op: "untrack", pid });
     });

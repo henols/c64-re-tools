@@ -90,8 +90,25 @@ test("with the mode bit clear the second range is a character set of the charact
   const bitmap = bitmapMap!.ranges.find((r) => r.kind === "character-set" || r.kind === "bitmap")!;
   assert.equal(bitmap.kind, "bitmap");
   assert.equal(bitmap.endInclusive - bitmap.start + 1, 8192);
-  // Same bank/screen base either way -- only the mode bit moved.
-  assert.equal(charset.start, bitmap.start);
+  // $D018 = 0x14: the character set sits at 2 * $800, the bitmap at bit 3 * $2000 (clear).
+  assert.equal(charset.start, 0x1000);
+  assert.equal(bitmap.start, 0x0000);
+});
+
+test("in bitmap mode only $D018 bit 3 selects the bitmap base, in the top VIC bank, and the range ends inside the address space", () => {
+  const facts = (d018: number): GraphicsConstWriteFact[] => [
+    { storeAddress: 0x1000, targetAddress: BANK_SELECT_ADDRESS, value: 0x00 }, // bank 3, base $C000
+    { storeAddress: 0x1004, targetAddress: MEMORY_CONTROL_ADDRESS, value: d018 },
+    { storeAddress: 0x1008, targetAddress: CONTROL_REGISTER_1_ADDRESS, value: 0x3b },
+  ];
+  const bitmapAt = (d018: number) => deriveGraphicsRanges(facts(d018))[0]!.ranges.find((r) => r.kind === "bitmap")!;
+
+  const high = bitmapAt(0x3c); // bit 3 set, bits 1-2 also set
+  assert.equal(high.start, 0xe000);
+  assert.equal(high.endInclusive, 0xffff);
+  const low = bitmapAt(0x34); // bit 3 clear: the low half of the bank
+  assert.equal(low.start, 0xc000);
+  assert.equal(low.endInclusive, 0xdfff);
 });
 
 test("the sprite-pointer range is exactly eight inclusive bytes, starting at the screen-matrix base plus the fixed sprite-pointer offset", () => {

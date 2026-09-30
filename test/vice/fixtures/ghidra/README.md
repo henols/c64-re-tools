@@ -38,30 +38,21 @@ source's own `* = $0810` directive skips ahead without emitting them
 explicitly); the fixture's actual code begins at `$0810` (the `start:`
 label).
 
-**CORRECTED 2026-09-04 (plan 36-05).** The table below was originally
-hand-traced assuming a real C64 loader's convention -- that the `.prg`
-file's own two-byte load-address header is STRIPPED before the remaining
-bytes are loaded at the header's own address. MEASURED this session, real
-Ghidra 12.1.3, against `ghidra.analyze`'s actual `"prg"` route: it is not.
-`BinaryLoader` (the loader `ghidra.analyze` always uses, a fixed literal on
-both routes) has no concept of the `.prg` format at all -- it loads the
-ENTIRE 60-byte file, header included, as raw content starting at
-`loaderBaseAddr` ($0801 by default). The header's own two bytes therefore
-occupy $0801-$0802 as ordinary memory content, and every address after them
-is shifted TWO BYTES LATER than `bank.a`'s own source labels. The fixture's
-actual first instruction (`lda #$37`, `start:` in the source) is therefore
-loaded at **$0812**, not $0810 -- an entry point of `$0810` on this route
-disassembles a padding zero byte (`BRK`) and stops immediately, MEASURED
-this session as the original symptom that surfaced this correction. The
-flat-64K route does not have this problem: `generateFlat64kVariant()`
-(`ghidra-live.test.ts`) strips the two header bytes itself before embedding
-the body, so `$0810` is the correct entry point THERE, and the table below's
-values were already correct for that route.
+**How each route loads the file.** `BinaryLoader` (the loader
+`ghidra.analyze` always uses) has no concept of the `.prg` format: it loads
+the ENTIRE 60-byte file, header included, as raw content starting at
+`loaderBaseAddr`. The `.prg` route therefore uses a base two bytes below the
+load address (`0x7ff` for these `$0801` fixtures; `ghidra-run.ts` reads it
+from the image), so the header lands at `$07ff-$0800` and the body at its
+real address. The flat-64K route's `generateFlat64kVariant()`
+(`ghidra-live.test.ts`) strips the two header bytes and puts the body at its
+load address. Both routes therefore use `bank.a`'s own source addresses, and
+the entry point is `$0810` on both.
 
-**MEASURED reference-dump lines this fixture yields under a correct volatile
-carve, flat-64K route** (`VolatileCarve.java`'s `SPLIT_AT`/`VOLATILE_RANGES`
-applied, then `GhidraStructExport.java`'s `## REFERENCES` section, entry
-point `$0810`) -- the four `sta $01`/`lda $01`-equivalent writes at
+**Reference-dump lines this fixture yields under a correct volatile carve,
+both routes** (`VolatileCarve.java`'s `SPLIT_AT`/`VOLATILE_RANGES` applied,
+then `GhidraStructExport.java`'s `## REFERENCES` section, entry point
+`$0810`) -- the four `sta $01`/`lda $01`-equivalent writes at
 `$0812`/`$081c`/`$0828`/`$0837`, the two `sta $d020` writes at
 `$0816`/`$0820`, and the one `lda $d020` read at `$0823`:
 
@@ -73,21 +64,6 @@ point `$0810`) -- the four `sta $01`/`lda $01`-equivalent writes at
 0823 -> d020 READ
 0828 -> 0001 WRITE
 0837 -> 0001 WRITE
-```
-
-**MEASURED reference-dump lines this fixture yields under a correct volatile
-carve, `.prg` route** (same script pair, `-loader-baseAddr 0x801`, entry
-point `$0812` -- every address TWO BYTES LATER than the flat-64K route's own,
-for the reason explained above):
-
-```
-0814 -> 0001 WRITE
-0818 -> d020 WRITE
-081e -> 0001 WRITE
-0822 -> d020 WRITE
-0825 -> d020 READ
-082a -> 0001 WRITE
-0839 -> 0001 WRITE
 ```
 
 **A note on a different, similarly-shaped set of lines.** `36-RESEARCH.md`
@@ -183,69 +159,25 @@ Run 2026-09-05 at `/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/`.
 `bank-path-dependent.prg`'s first two bytes are `$01 $08` -- a `.prg` load-address
 header for origin `$0801`, identical in shape to `bank.a`/`bank.prg` above.
 
-**The `.prg`-route two-byte offset applies here exactly as it does to
-`bank.a`/`bank.prg` above** (see the "CORRECTED 2026-09-04" paragraph in that
-section): `BinaryLoader` loads the entire file, header included, as raw
-content starting at `loaderBaseAddr` ($0801 by default), so every address on
-the `.prg` route is TWO BYTES LATER than this source's own labels. The
-flat-64K route strips the two header bytes before embedding the body (per
-`generateFlat64kVariant()`), so its addresses match the source's own labels
-unshifted.
+Both routes load the body at its real address (see "How each route loads
+the file" under `bank.a` above), so both use this source's own labels.
 
 **Address trace, read off a real ACME report (`acme -r`), never hand-traced:**
 
-| Instruction | Flat-64K route | `.prg` route |
-|---|---|---|
-| `start:` (`sei`) | `$0810` | `$0812` |
-| `sta $01` (call 1, `$01=$34`) | `$0813` | `$0815` |
-| `jsr probe` (call 1) | `$0815` | `$0817` |
-| `sta $01` (call 2, `$01=$33`) | `$081a` | `$081c` |
-| `jsr probe` (call 2) | `$081c` | `$081e` |
-| `probe:` (`lda #$aa`) | `$0825` | `$0827` |
-| `sta $d020` (the shared write) | `$0827` | `$0829` |
-| `lda $d000,x` (the shared read) | `$082c` | `$082e` |
+| Instruction | Address (both routes) |
+|---|---|
+| `start:` (`sei`) | `$0810` |
+| `sta $01` (call 1, `$01=$34`) | `$0813` |
+| `jsr probe` (call 1) | `$0815` |
+| `sta $01` (call 2, `$01=$33`) | `$081a` |
+| `jsr probe` (call 2) | `$081c` |
+| `probe:` (`lda #$aa`) | `$0825` |
+| `sta $d020` (the shared write) | `$0827` |
+| `lda $d000,x` (the shared read) | `$082c` |
 
-The `.prg`-route column is the source-label column shifted +2, confirmed by
-running `acme -f cbm -o /tmp/check.prg -r /tmp/report.txt
-fixtures/ghidra/bank-path-dependent.a` and reading the flat-64K-equivalent
-(source-label) addresses directly off the report's own byte-offset column,
-then applying the +2 correction measured on `bank.a`/`bank.prg` -- both
-routes are also confirmed against a real `analyzeHeadless` run in Task 3 of
-plan 37-02 (see `export-bank-path-dependent.txt`'s own README entry below).
-
-**A NEW finding this fixture exposes, `.prg` route ONLY: an internal `jsr`'s
-own operand target is NOT corrected for the two-byte shift, so `probe` is
-NOT reached correctly on this route.** `bank.a` has no internal control-flow
-instruction at all (no `jsr`/`jmp` to a label inside the same image), so this
-was never observable there -- MEASURED this plan, real Ghidra 12.1.3, first
-observation on this fixture. ACME assembles `jsr probe`'s two-byte absolute
-operand using the SOURCE's own address space (`probe:` at source label
-`$0825`), which assumes a real C64 loader strips the file's own two-byte
-header before loading -- exactly what `generateFlat64kVariant()` does, and
-exactly what `BinaryLoader` on the `.prg` route does NOT do (per the
-"CORRECTED 2026-09-04" paragraph above). The result: on the `.prg` route,
-both `jsr probe` instructions (now themselves at `$0817`/`$081e`, correctly
-shifted) still carry the UNSHIFTED operand value `$0825` baked in by ACME,
-which is TWO BYTES BEFORE `probe`'s real, shifted load address (`$0827`) --
-so the call lands on `$0825`, which under the `.prg` route's own byte
-layout is the tail end of the CALLER's own code (`cli` / `rts`, MEASURED:
-`FUN_0825` decompiles to an empty `{ return; }` body), never `probe` at all.
-Consequence, MEASURED: on the `.prg` route only, `probe`'s real body (the
-border-colour write, the character-ROM read) is never executed and never
-appears in `## REFERENCES` at all; the two `sta $01` writes at the CALLER
-level are UNAFFECTED (their own addresses and constant values are correct on
-both routes, since they involve no internal address reference) and are what
-`## CONST_WRITES` reads. The flat-64K route has no such defect -- its own
-call target (`$0825`) and `probe`'s own real load address (`$0825`) agree,
-because `generateFlat64kVariant()` strips the header exactly as a real C64
-loader would. Plan 37-02's own live tests therefore assert the
-"shared-program-point, reached from two distinct call sites" claim ONLY on
-the flat-64K route (where it is measurably true) and assert only the
-$01-differs claim on the `.prg` route (which remains true there). This is a
-general limitation of `ghidra.analyze`'s own `.prg` import route for ANY
-fixture with an internal absolute code reference, not specific to this
-fixture's own construction -- recorded here as the first fixture to expose
-it.
+Both `jsr probe` calls reach `probe` on both routes, so the live tests assert
+the "shared program point, reached from two distinct call sites" claim on
+both routes.
 
 ## `export-bank-path-dependent.txt` (37-02, Task 3 -- the real `## CONST_WRITES` capture)
 
@@ -253,13 +185,10 @@ A REAL, unedited `analyzeHeadless` export over `bank-path-dependent.prg`, the
 `.prg` route (chosen over the flat-64K route to match the size and format of
 every other committed export/run-log fixture in this directory -- a
 committed flat-64K capture would carry one `## CLASSIFICATION` line per byte
-of a 65,536-byte image, ~700KB, which no other fixture here does; see
-D-36-17's own "generated fresh, never committed" convention for flat-64K
-material). Per the finding immediately above, the `.prg` route's own
-internal-`jsr` defect means this specific capture's `## REFERENCES` section
-carries no border-colour or Character-ROM access at all -- `## CONST_WRITES`
-is unaffected (its facts come from the caller-level `sta $01` writes only)
-and is exactly what this capture exists to prove.
+of a 65,536-byte image, ~700KB, which no other fixture here does). Its
+`## REFERENCES` section carries the three caller-level `sta $01` writes, the
+two `jsr probe` calls, and `probe`'s border-colour write and Character-ROM
+read.
 
 **Command, version, date:**
 
@@ -272,27 +201,28 @@ This is ACME, release 0.97 ("Zem"), 31 Jan 2021
 `ghidra.analyze` arguments: `importPath: "bank-path-dependent.prg"`,
 `processor: "6502:LE:16:nmos"`, `importRoute: "prg"`, `noanalysis: true`,
 `preScript: "vendor/ghidra-scripts/VolatileCarve.java"`,
-`entrypointsPath` containing `$0812` (this fixture's own `.prg`-route entry
-point, per the address trace above), `postScript:
+`entrypointsPath` containing `$0810` (this fixture's own entry point, per
+the address trace above), no `loaderBaseAddr` (so `ghidra-run.ts` sends
+`0x7ff`, read from the image), `postScript:
 "vendor/ghidra-scripts/GhidraStructExport.java"`. Ghidra version: 12.1.3
 (read from the installation, per `EXPECTED_GHIDRA_VERSION` in
-`ghidra-live.test.ts`). Run 2026-09-05. Process exit status: **0**.
+`ghidra-live.test.ts`). Run 2026-09-30. Process exit status: **0**.
 
-**Committed fixture:** 4719 lines, 52417 bytes, sha256
-`d02a7a2705f171e07f21ea98fd608df2e175d507faed324e96e2512ae1497882`.
+**Committed fixture:** 4723 lines, 52481 bytes, sha256
+`a5d58489ccebfd13dc2f5026edac66f2296c594210e4f597fd8619c8b6e7a65c`.
 
 **The `## CONST_WRITES` section this capture carries, verbatim:**
 
 ```
 ## CONST_WRITES
-0815 0001 0x34
-081c 0001 0x33
-0823 0001 0x37
+0813 0001 0x34
+081a 0001 0x33
+0821 0001 0x37
 ## CONST_WRITES_COUNT 3
 ```
 
-Three facts: the two flip values (`0x34` at `$0815`, `0x33` at `$081c`) plus
-the trailing restore write (`0x37` at `$0823`) -- two distinct values already
+Three facts: the two flip values (`0x34` at `$0813`, `0x33` at `$081a`) plus
+the trailing restore write (`0x37` at `$0821`) -- two distinct values already
 satisfies this plan's own non-vacuity requirement, and the third is recorded
 rather than filtered, since the exporter's own contract is "every resolved
 constant store to a watched address", not "only the ones a later reader
@@ -365,43 +295,23 @@ fixture's real code begins at `$0810` (`start:`); a `* = $1000` directive
 after `start`'s own `rts` pads the gap (`$0823-$0fff`) with zero bytes before
 the charset block begins.
 
-**Address trace, read off a real ACME report (`acme -r`), never hand-traced,**
-flat-64K route (source labels, unshifted -- `generateFlat64kVariant()` strips
-the two header bytes before embedding the body, exactly as every prior
-fixture's own trace states):
+**Address trace, read off a real ACME report (`acme -r`), never hand-traced.**
+Both routes use the source's own labels (see "How each route loads the file"
+under `bank.a` above):
 
-| Instruction | Flat-64K route | `.prg` route |
-|---|---|---|
-| `start:` (`lda #$3f`) | `$0810` | `$0812` |
-| `sta $dd00` | `$0812` | `$0814` |
-| `sta $d018` | `$0817` | `$0819` |
-| `sta $d011` | `$081c` | `$081e` |
-| `jsr charset_start` | `$081f` | `$0821` |
-| `rts` (end of `start`) | `$0822` | `$0824` |
-| `charset_start:` | `$1000` | `$1002` |
+| Instruction | Address (both routes) |
+|---|---|
+| `start:` (`lda #$3f`) | `$0810` |
+| `sta $dd00` | `$0812` |
+| `sta $d018` | `$0817` |
+| `sta $d011` | `$081c` |
+| `jsr charset_start` | `$081f` |
+| `rts` (end of `start`) | `$0822` |
+| `charset_start:` | `$1000` |
 
-**The `.prg` route's own two-byte shift makes it UNUSABLE for this specific
-proof, and the phantom-label before/after comparison is therefore asserted
-on the flat-64K route ONLY.** This is a NEW consequence of the
-already-documented per-route offset (the "CORRECTED 2026-09-04" paragraph
-under `bank.a` above), not a new defect: `anno-graphics.mts`'s derived range
-(`$1000-$17ff`) is computed PURELY from the register VALUES this fixture
-writes -- a fact about the C64's own real hardware address space, entirely
-independent of where `ghidra.analyze` happens to import the image bytes.
-On the flat-64K route those two coordinate systems coincide (`charset_start`
-loads at `$1000`, matching the derived range exactly). On the `.prg` route
-`BinaryLoader`'s own header-inclusive load shifts EVERY address two bytes
-later, so `charset_start` loads at `$1002` -- the charset bytes and the
-register-derived range would disagree by two bytes, misclassifying the first
-two bytes of the real chain as outside the range and the last two bytes of
-whatever precedes it as inside. Asserting the before/after proof there would
-compare the wrong two-byte window rather than the fixture's own real charset
-block. `.prg`-route CONST_WRITES facts (the three register values themselves)
-are UNAFFECTED by this -- they carry no internal address reference, exactly
-like `bank-path-dependent.a`'s own caller-level `sta $01` writes -- so the
-`.prg` route's own gated case in `ghidra-live.test.ts` still exercises the
-CONST_WRITES parse and the graphics derivation's own arithmetic; only the
-live phantom-label capture is flat-64K-only, and its case says so.
+The phantom-label before/after comparison runs on the flat-64K route. The
+`.prg` route's gated case in `ghidra-live.test.ts` checks the CONST_WRITES
+parse and the graphics derivation's arithmetic on that route.
 
 ## `bank.annostore.json` (45-07, D-02/D-03 derived-half export, D-12 derive-first)
 
