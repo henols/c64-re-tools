@@ -112,9 +112,9 @@ status/diagnose
 
 These commands should remain thin orchestration around established package/configuration mechanisms.
 
-## 6. Shared runtime package
+## 6. Shared runtime source
 
-The lightweight client/skill environment may depend on shared TypeScript/runtime source that provides deterministic infrastructure such as:
+The lightweight client/skill environment uses maintained TypeScript source in the same repository for deterministic infrastructure such as:
 
 - Host Runtime client;
 - file staging/transfer client logic;
@@ -129,7 +129,7 @@ Where practical, release builds bundle the small shared runtime pieces needed by
 
 In particular, released skill scripts must not locate MCP internals through filesystem ladders or sibling-package path probing. The harness working directory is the project root; project-relative path validation, knowledge access and the Host Runtime client come from maintained shared source and are bundled/packaged deterministically. See [17 — Project root and local state](17-project-root-and-local-state.md).
 
-The exact source-package names remain an implementation choice.
+There are no separate internal runtime/knowledge/MCP npm packages in v1. The one published c64-re-tools package exposes the CLI, MCP and Host Runtime executables; skill scripts bundle the maintained source they need. See [18 — Repository structure](18-repository-structure.md).
 
 ## 7. MCP distribution
 
