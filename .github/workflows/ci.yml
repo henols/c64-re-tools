@@ -143,6 +143,32 @@ jobs:
       - name: Test the skills
         run: node --test 'test/skills/**/*.test.ts'
 
+
+  greenfield-scaffold:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install greenfield package dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Typecheck greenfield scaffold
+        run: pnpm typecheck
+
+      - name: Build greenfield scaffold
+        run: pnpm build
+
+      - name: Test greenfield scaffold
+        run: pnpm test
+
   publish-npm:
     # On a v* tag, or a manual run on main, publish @henols/vice-mcp to the
     # public registry via npm Trusted Publishing (OIDC) -- no NPM_TOKEN secret.
