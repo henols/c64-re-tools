@@ -7,7 +7,7 @@ turns them into small steps with a status each.
 
 Rules:
 
-- One step is one branch/PR. It ends with `pnpm typecheck && pnpm build && pnpm test` green.
+- One step is pushed straight to `main`, no PR. It ends with `pnpm typecheck && pnpm build && pnpm test` green.
 - Only the current milestone is expanded into steps. Expand the next one when you start it.
 - Everything is built new. Nothing from the deleted implementation is ported.
 - Open design points are decided once, in [Decisions](#decisions). Change a decision here first, then the code.
@@ -19,7 +19,7 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] 0.1 Delete the old tree: `src/mcp/vice`, `test/vice`, `test/skills`, `skills/`, `evidence/`, old docs, and `redesign/10-current-code-reuse.md`.
 - [x] 0.2 Commit the deletion together with the rewritten `.gitignore`, `.graphifyignore`, `README.md`, `CLAUDE.md`.
 - [x] 0.3 Remove design text that tells the rewrite to reuse old code: the README row and greenfield wording, 19 §15 (later sections renumbered) and the porting bullet in 19 §14, 04 §9, 05 §5–6, 09 §2, 12 §3, 16 §16.
-- [x] 0.4 The local `legacy-final` tag is gone; open the cleanup PR.
+- [x] 0.4 The local `legacy-final` tag is gone; land the cleanup on `main`.
 
 Done when no tracked file mentions `src/mcp/vice` or the legacy code.
 
