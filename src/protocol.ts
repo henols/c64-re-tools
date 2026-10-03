@@ -57,6 +57,10 @@ export type ExecutionAction = (typeof EXECUTION_ACTIONS)[number];
 /** Bounds of c64_execution counts (15 §10). */
 export const MAX_EXECUTION_COUNT = 10_000;
 
+/** File types each media operation accepts, by lowercase extension. */
+export const AUTOSTART_TYPES = ["prg", "p00", "t64", "tap", "d64", "d71", "d81", "g64", "x64", "crt"] as const;
+export const DISK_TYPES = ["d64", "d71", "d81", "g64", "x64"] as const;
+
 export const RESET_MODES = ["soft", "hard"] as const;
 export type ResetMode = (typeof RESET_MODES)[number];
 
@@ -141,6 +145,12 @@ export interface ViceOperations {
   memoryWrite: { params: MemoryWriteParams; result: { address: number; bytesWritten: number } };
   registersSet: { params: { space: Space; values: RegisterValues }; result: Registers };
   execution: { params: ExecutionParams; result: ExecutionResult };
+  /** Attachment: the PRG bytes, load address first. */
+  programLoad: { params: { address?: number }; result: { state: RunState; loadAddress: number; size: number } };
+  /** Attachment: the program or image bytes; `type` is the file's extension. */
+  autostart: { params: { type: string; index: number; run: boolean }; result: { state: RunState } };
+  /** Attachment: the disk image bytes; `type` is the file's extension. */
+  diskAttach: { params: { type: string }; result: { attached: boolean } };
   reset: { params: { mode: ResetMode; run: boolean }; result: { state: RunState } };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
 }
@@ -152,9 +162,17 @@ export const VICE_OPERATIONS = [
   "memoryWrite",
   "registersSet",
   "execution",
+  "programLoad",
+  "autostart",
+  "diskAttach",
   "reset",
   "warp",
 ] as const satisfies readonly ViceOperation[];
+
+/** How many attachments each operation takes. */
+export function attachmentCount(op: ViceOperation): number {
+  return op === "programLoad" || op === "autostart" || op === "diskAttach" ? 1 : 0;
+}
 
 // ---------------------------------------------------------------------------
 // Messages (D2, D3)
@@ -372,6 +390,20 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       if (counted) result.count = (params.count as number | undefined) ?? 1;
       return result as ViceOperations[O]["params"];
     }
+    case "programLoad": {
+      if (params.address !== undefined && !isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
+      return (params.address === undefined ? {} : { address: params.address }) as ViceOperations[O]["params"];
+    }
+    case "autostart": {
+      if (!isOneOf(AUTOSTART_TYPES, params.type)) invalid(`the file must be one of: ${AUTOSTART_TYPES.map((type) => `.${type}`).join(", ")}`);
+      if (!isInteger(params.index, 0, 0xffff)) invalid("index must be an integer from 0 to 65535");
+      if (typeof params.run !== "boolean") invalid("run must be true or false");
+      return { type: params.type, index: params.index, run: params.run } as ViceOperations[O]["params"];
+    }
+    case "diskAttach": {
+      if (!isOneOf(DISK_TYPES, params.type)) invalid(`the disk image must be one of: ${DISK_TYPES.map((type) => `.${type}`).join(", ")}`);
+      return { type: params.type } as ViceOperations[O]["params"];
+    }
     case "reset": {
       if (!isOneOf(RESET_MODES, params.mode)) invalid("mode must be soft or hard");
       if (typeof params.run !== "boolean") invalid("run must be true or false");
@@ -437,8 +469,18 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       if (!ok) throw new ProtocolError("execution result is malformed");
       break;
     }
-    case "reset": {
-      if (!isOneOf(RUN_STATES, value.state)) throw new ProtocolError("reset result is malformed");
+    case "reset":
+    case "autostart": {
+      if (!isOneOf(RUN_STATES, value.state)) throw new ProtocolError(`${op} result is malformed`);
+      break;
+    }
+    case "programLoad": {
+      const ok = isOneOf(RUN_STATES, value.state) && isInteger(value.loadAddress, 0, 0xffff) && isInteger(value.size, 1, 0x10000);
+      if (!ok) throw new ProtocolError("programLoad result is malformed");
+      break;
+    }
+    case "diskAttach": {
+      if (typeof value.attached !== "boolean") throw new ProtocolError("diskAttach result is malformed");
       break;
     }
     case "warp": {
@@ -452,46 +494,138 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
 }
 
 // ---------------------------------------------------------------------------
-// Framing (D1): 4-byte big-endian body length, then the UTF-8 JSON body.
+// Framing (D1): 4-byte big-endian body length, then the body. A message body
+// is UTF-8 JSON. A message may announce binary attachments with an
+// `attachments` array of byte sizes; each attachment then follows as raw
+// frames of at most MAX_FRAME_BYTES each, in order.
 
 const HEADER_BYTES = 4;
+/** Total attachment bytes one message may carry. */
+export const MAX_ATTACHMENT_BYTES = 16 * 1024 * 1024;
 
-export function encodeFrame(message: ClientMessage | HostMessage): Buffer {
-  const body = Buffer.from(JSON.stringify(message), "utf8");
-  if (body.length > MAX_FRAME_BYTES) throw new ProtocolError(`frame of ${body.length} bytes exceeds ${MAX_FRAME_BYTES}`);
-  const frame = Buffer.allocUnsafe(HEADER_BYTES + body.length);
-  frame.writeUInt32BE(body.length, 0);
-  body.copy(frame, HEADER_BYTES);
-  return frame;
+function frame(body: Uint8Array): Buffer {
+  const header = Buffer.allocUnsafe(HEADER_BYTES);
+  header.writeUInt32BE(body.length, 0);
+  return Buffer.concat([header, body]);
 }
 
-/** Reassembles frames from stream chunks. After a ProtocolError the decoder is unusable. */
-export class FrameDecoder {
-  #pending: Buffer = Buffer.alloc(0);
-  readonly #textDecoder = new TextDecoder("utf-8", { fatal: true });
+/** Encodes one message and its attachments as one buffer, so writes never interleave. */
+export function encodeFrame(message: ClientMessage | HostMessage, attachments: readonly Uint8Array[] = []): Buffer {
+  const total = attachments.reduce((sum, attachment) => sum + attachment.length, 0);
+  if (total > MAX_ATTACHMENT_BYTES) throw new ProtocolError(`attachments of ${total} bytes exceed ${MAX_ATTACHMENT_BYTES}`);
+  const announced = attachments.length === 0 ? message : { ...message, attachments: attachments.map((attachment) => attachment.length) };
+  const body = Buffer.from(JSON.stringify(announced), "utf8");
+  if (body.length > MAX_FRAME_BYTES) throw new ProtocolError(`frame of ${body.length} bytes exceeds ${MAX_FRAME_BYTES}`);
+  const frames = [frame(body)];
+  for (const attachment of attachments) {
+    for (let offset = 0; offset < attachment.length; offset += MAX_FRAME_BYTES) {
+      frames.push(frame(attachment.subarray(offset, offset + MAX_FRAME_BYTES)));
+    }
+  }
+  return Buffer.concat(frames);
+}
 
-  /** Returns every complete frame body, parsed as JSON. Throws ProtocolError. */
-  push(chunk: Buffer): unknown[] {
+/** Splits a stream into frame bodies. After a ProtocolError the decoder is unusable. */
+class RawFrameDecoder {
+  #pending: Buffer = Buffer.alloc(0);
+
+  push(chunk: Buffer): Buffer[] {
     this.#pending = this.#pending.length === 0 ? chunk : Buffer.concat([this.#pending, chunk]);
-    const messages: unknown[] = [];
+    const bodies: Buffer[] = [];
     while (this.#pending.length >= HEADER_BYTES) {
       const length = this.#pending.readUInt32BE(0);
       if (length > MAX_FRAME_BYTES) throw new ProtocolError(`frame of ${length} bytes exceeds ${MAX_FRAME_BYTES}`);
       if (this.#pending.length < HEADER_BYTES + length) break;
-      const body = this.#pending.subarray(HEADER_BYTES, HEADER_BYTES + length);
+      bodies.push(Buffer.from(this.#pending.subarray(HEADER_BYTES, HEADER_BYTES + length)));
       this.#pending = this.#pending.subarray(HEADER_BYTES + length);
-      let text: string;
-      try {
-        text = this.#textDecoder.decode(body);
-      } catch {
-        throw new ProtocolError("frame body is not valid UTF-8");
-      }
-      try {
-        messages.push(JSON.parse(text));
-      } catch {
-        throw new ProtocolError("frame body is not valid JSON");
-      }
     }
-    return messages;
+    return bodies;
+  }
+}
+
+export interface ReceivedMessage {
+  /** The parsed JSON body, with any `attachments` announcement removed. */
+  message: unknown;
+  attachments: Buffer[];
+}
+
+/** Reassembles messages and their attachments from stream chunks. Throws ProtocolError. */
+export class MessageReader {
+  readonly #frames = new RawFrameDecoder();
+  readonly #textDecoder = new TextDecoder("utf-8", { fatal: true });
+  #current: { message: unknown; sizes: number[]; done: Buffer[]; parts: Buffer[]; received: number } | undefined;
+
+  push(chunk: Buffer): ReceivedMessage[] {
+    const complete: ReceivedMessage[] = [];
+    for (const body of this.#frames.push(chunk)) {
+      if (this.#current === undefined) this.#start(body);
+      else this.#collect(body);
+      const finished = this.#finish();
+      if (finished !== undefined) complete.push(finished);
+    }
+    return complete;
+  }
+
+  #start(body: Buffer): void {
+    let text: string;
+    try {
+      text = this.#textDecoder.decode(body);
+    } catch {
+      throw new ProtocolError("frame body is not valid UTF-8");
+    }
+    let message: unknown;
+    try {
+      message = JSON.parse(text);
+    } catch {
+      throw new ProtocolError("frame body is not valid JSON");
+    }
+    let sizes: number[] = [];
+    if (isObject(message) && "attachments" in message) {
+      const announced = message.attachments;
+      if (!Array.isArray(announced) || !announced.every((size) => isInteger(size, 0, MAX_ATTACHMENT_BYTES))) {
+        throw new ProtocolError("attachments must be a list of byte sizes");
+      }
+      if (announced.reduce((sum: number, size: number) => sum + size, 0) > MAX_ATTACHMENT_BYTES) {
+        throw new ProtocolError(`attachments exceed ${MAX_ATTACHMENT_BYTES} bytes`);
+      }
+      sizes = announced as number[];
+      const { attachments: _announced, ...rest } = message;
+      message = rest;
+    }
+    this.#current = { message, sizes, done: [], parts: [], received: 0 };
+  }
+
+  #collect(body: Buffer): void {
+    const current = this.#current!;
+    const expected = current.sizes[current.done.length]!;
+    if (current.received + body.length > expected) throw new ProtocolError("attachment frame runs past its announced size");
+    current.parts.push(body);
+    current.received += body.length;
+  }
+
+  /** Completes attachments whose bytes are all here; returns the message once nothing is missing. */
+  #finish(): ReceivedMessage | undefined {
+    const current = this.#current!;
+    while (current.done.length < current.sizes.length && current.received === current.sizes[current.done.length]) {
+      current.done.push(Buffer.concat(current.parts));
+      current.parts = [];
+      current.received = 0;
+    }
+    if (current.done.length < current.sizes.length) return undefined;
+    this.#current = undefined;
+    return { message: current.message, attachments: current.done };
+  }
+}
+
+/** Reassembles attachment-free messages; kept for callers that never expect attachments. */
+export class FrameDecoder {
+  readonly #reader = new MessageReader();
+
+  /** Returns every complete message body, parsed as JSON. Throws ProtocolError, also on attachments. */
+  push(chunk: Buffer): unknown[] {
+    return this.#reader.push(chunk).map(({ message, attachments }) => {
+      if (attachments.length > 0) throw new ProtocolError("unexpected attachments");
+      return message;
+    });
   }
 }

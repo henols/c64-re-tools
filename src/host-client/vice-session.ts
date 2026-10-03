@@ -21,6 +21,7 @@ import {
   type ViceOperations,
 } from "../protocol.ts";
 import { HostConnection } from "./connect.ts";
+import { readProjectFile } from "./transfer.ts";
 
 const HOST_LOST =
   "The connection to the c64-re-tools host runtime was lost, and the emulator and its machine state went with it. " +
@@ -102,6 +103,24 @@ export class ViceSessionClient {
     return this.#request("execution", params);
   }
 
+  /** Loads a project PRG into memory without reset or start; finishes stopped. */
+  async programLoad(params: { path: string; address?: number }): Promise<{ state: RunState; loadAddress: number; size: number }> {
+    const file = readProjectFile(params.path);
+    return this.#request("programLoad", params.address === undefined ? {} : { address: params.address }, [file.bytes]);
+  }
+
+  /** Autostarts a project program or image, as VICE's autostart does. */
+  async autostart(params: { path: string; index: number; run: boolean }): Promise<{ state: RunState }> {
+    const file = readProjectFile(params.path);
+    return this.#request("autostart", { type: file.type, index: params.index, run: params.run }, [file.bytes]);
+  }
+
+  /** Attaches a project disk image to drive 8. */
+  async diskAttach(params: { path: string }): Promise<{ attached: boolean }> {
+    const file = readProjectFile(params.path);
+    return this.#request("diskAttach", { type: file.type }, [file.bytes]);
+  }
+
   reset(params: { mode: ResetMode; run: boolean }): Promise<{ state: RunState }> {
     return this.#request("reset", params);
   }
@@ -116,13 +135,17 @@ export class ViceSessionClient {
     await this.closed;
   }
 
-  #request<O extends ViceOperation>(op: O, params: ViceOperations[O]["params"]): Promise<ViceOperations[O]["result"]> {
+  #request<O extends ViceOperation>(
+    op: O,
+    params: ViceOperations[O]["params"],
+    attachments: readonly Uint8Array[] = [],
+  ): Promise<ViceOperations[O]["result"]> {
     if (this.#lost !== undefined) return Promise.reject(this.#lost);
     const id = this.#nextId;
     this.#nextId = this.#nextId >= 0xffff_ffff ? 1 : this.#nextId + 1;
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { op, resolve: resolve as (value: unknown) => void, reject });
-      this.#connection.send({ type: "request", id, op, params });
+      this.#connection.send({ type: "request", id, op, params }, attachments);
     });
   }
 

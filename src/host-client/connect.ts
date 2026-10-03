@@ -5,10 +5,10 @@ import { connect as connectTcp, type Socket } from "node:net";
 import {
   DEFAULT_HOST_PORT,
   encodeFrame,
-  FrameDecoder,
   HOST_PROTOCOL_ID,
   HOST_PROTOCOL_VERSION,
   parseHostMessage,
+  MessageReader,
   ProtocolError,
   WireFailure,
   type ErrorCode,
@@ -79,7 +79,7 @@ export class HostConnection {
   /** Settles when the connection is gone; carries the reason unless we closed it. */
   readonly closed: Promise<Error | undefined>;
   readonly #socket: Socket;
-  readonly #decoder = new FrameDecoder();
+  readonly #reader = new MessageReader();
   #listener: ((message: HostMessage) => void) | undefined;
   #failure: Error | undefined;
   #closedByUs = false;
@@ -93,7 +93,7 @@ export class HostConnection {
     socket.on("error", (error) => (this.#failure ??= error));
     socket.on("data", (chunk) => {
       try {
-        for (const raw of this.#decoder.push(chunk)) this.#listener?.(parseHostMessage(raw));
+        for (const { message } of this.#reader.push(chunk)) this.#listener?.(parseHostMessage(message));
       } catch (error) {
         if (!(error instanceof ProtocolError)) throw error;
         this.#failure = error;
@@ -157,8 +157,8 @@ export class HostConnection {
     this.#listener = listener;
   }
 
-  send(request: Request): void {
-    this.#send(request);
+  send(request: Request, attachments: readonly Uint8Array[] = []): void {
+    if (!this.#socket.destroyed) this.#socket.write(encodeFrame(request, attachments));
   }
 
   close(): Promise<void> {

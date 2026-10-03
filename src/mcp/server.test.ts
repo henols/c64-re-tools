@@ -16,9 +16,10 @@ import {
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
 import { executionTools } from "./tools/execution.ts";
 import { machineTools } from "./tools/machine.ts";
+import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 
-const ALL_TOOLS = [...machineTools, ...executionTools, ...memoryTools];
+const ALL_TOOLS = [...machineTools, ...executionTools, ...memoryTools, ...mediaTools];
 
 const REGISTERS: Registers = { pc: 0xe5cf, a: 0x42, x: 3, y: 0, sp: 0xf9, flags: { n: false, v: false, b: true, d: false, i: true, z: false, c: true } };
 
@@ -57,6 +58,20 @@ class FakeSession implements ViceSessionApi {
   async registersSet(space: "c64" | "drive8", values: RegisterValues) {
     this.registerWrites.push({ space, values });
     return { ...REGISTERS, ...values, flags: { ...REGISTERS.flags, ...values.flags } } as Registers;
+  }
+
+  media: Array<[string, unknown]> = [];
+  async programLoad(params: { path: string; address?: number }) {
+    this.media.push(["programLoad", params]);
+    return { state: "stopped" as const, loadAddress: params.address ?? 0x0801, size: 100 };
+  }
+  async autostart(params: { path: string; index: number; run: boolean }) {
+    this.media.push(["autostart", params]);
+    return { state: "running" as const };
+  }
+  async diskAttach(params: { path: string }) {
+    this.media.push(["diskAttach", params]);
+    return { attached: true };
   }
 
   executions: ExecutionParams[] = [];
@@ -105,9 +120,12 @@ test("the server lists exactly the implemented tools with object input and outpu
   const client = await connect(async () => new FakeSession());
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+    "c64_autostart",
+    "c64_disk_attach",
     "c64_execution",
     "c64_memory_read",
     "c64_memory_write",
+    "c64_program_load",
     "c64_registers",
     "c64_reset",
     "c64_status",
@@ -261,5 +279,24 @@ test("c64_registers set writes only the named registers; get refuses values", as
   assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { q: 1 } })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { a: 256 } })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "get", values: { a: 1 } })).code, "invalid-input");
+  await client.close();
+});
+
+test("media tools pass the project path and fill defaults", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  assert.deepEqual((await call(client, "c64_autostart", { path: "original/game.d64" })).structuredContent, { state: "running" });
+  assert.deepEqual((await call(client, "c64_program_load", { path: "build/game.prg", address: "$C000" })).structuredContent, {
+    state: "stopped",
+    loadAddress: "$c000",
+    size: 100,
+  });
+  assert.deepEqual((await call(client, "c64_disk_attach", { path: "original/game.d64" })).structuredContent, { attached: true });
+  assert.deepEqual(session.media, [
+    ["autostart", { path: "original/game.d64", index: 0, run: true }],
+    ["programLoad", { path: "build/game.prg", address: 0xc000 }],
+    ["diskAttach", { path: "original/game.d64" }],
+  ]);
+  assert.equal(errorOf(await call(client, "c64_disk_attach", { path: "" })).code, "invalid-input");
   await client.close();
 });

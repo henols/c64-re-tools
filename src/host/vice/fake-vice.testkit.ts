@@ -15,7 +15,10 @@
 //   prompt; VICE's extra entry prompt is reproduced.
 
 import { once } from "node:events";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { BinaryMonitor, Command, EVENT_REQUEST_ID } from "./binary-monitor.ts";
 import type { ViceProcess } from "./process.ts";
@@ -94,6 +97,10 @@ export class FakeVice {
   stepTo: number | undefined;
   /** When set, binary commands get no answer (a hung VICE). */
   hung = false;
+  /** Files given to autostart, with their run flag and index. */
+  readonly autostarts: Array<{ file: string; run: boolean; index: number; bytes: Buffer }> = [];
+  /** Disk images attached to drive 8. */
+  readonly attached: Buffer[] = [];
   readonly binaryServer: Server;
   readonly textServer: Server;
   #binary: Socket | undefined;
@@ -125,8 +132,10 @@ export class FakeVice {
     let exit!: (status: { code: number | null; signal: NodeJS.Signals | null }) => void;
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => (exit = resolve));
     const fake = this;
+    const scratchDir = mkdtempSync(join(tmpdir(), "c64-re-tools-fake-vice-"));
     const handle = {
       pid: 0,
+      scratchDir,
       monitor,
       text,
       exited,
@@ -137,6 +146,7 @@ export class FakeVice {
         await monitor.close();
         await text.close();
         fake.close();
+        rmSync(scratchDir, { recursive: true, force: true });
       },
       crash() {
         fake.#binary?.destroy();
@@ -311,6 +321,14 @@ export class FakeVice {
         }
         return void answer(this.#registerBody(body[0]!), 0x31);
       }
+      case Command.autostart: {
+        const run = body[0] !== 0;
+        const index = body.readUInt16LE(1);
+        const file = body.subarray(4, 4 + body[3]!).toString("utf8");
+        this.autostarts.push({ file, run, index, bytes: readFileSync(file) });
+        answer();
+        return this.#leaveMonitor(socket);
+      }
       case Command.exit:
         answer();
         return this.#leaveMonitor(socket);
@@ -358,6 +376,16 @@ export class FakeVice {
     }
   }
 
+  #load(file: string, address: string | undefined): string {
+    if (!existsSync(file)) return `Cannot open '${file}'.\n`;
+    const bytes = readFileSync(file);
+    const start = address === undefined ? bytes.readUInt16LE(0) : Number.parseInt(address, 16);
+    const data = bytes.subarray(2);
+    data.copy(this.ram, start);
+    const hex = (value: number, digits = 4) => value.toString(16).toUpperCase().padStart(digits, "0");
+    return `Loading '${file}' from ${hex(start)} to ${hex(start + data.length - 1)} (${hex(data.length)} bytes)\n`;
+  }
+
   #serveText(socket: Socket): void {
     this.#text = socket;
     let pending = "";
@@ -389,10 +417,18 @@ export class FakeVice {
       this.#enterMonitor(this.#binary!);
       output += prompt();
     }
+    const load = /^load "([^"]+)" 0(?: \$([0-9a-f]{4}))?$/.exec(line);
+    const attach = /^attach "([^"]+)" 8$/.exec(line);
     if (line === "warp") output += `Warp mode is ${this.warp ? "on" : "off"}.\n`;
     else if (line === "warp on") this.warp = true;
     else if (line === "warp off") this.warp = false;
-    else output += "ERROR -- Wrong syntax:\n";
+    else if (load !== null) output += this.#load(load[1]!, load[2]);
+    else if (attach !== null) {
+      // VICE prints nothing when it attaches an image and "Failed." when it cannot.
+      const ok = existsSync(attach[1]!) && statSync(attach[1]!).size === 174848;
+      if (ok) this.attached.push(readFileSync(attach[1]!));
+      else output += "Failed.\n";
+    } else output += "ERROR -- Wrong syntax:\n";
     socket.write(`${output}${prompt()}`);
   }
 }

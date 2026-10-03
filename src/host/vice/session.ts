@@ -11,6 +11,9 @@ import {
   type ViceOperation,
   type ViceOperations,
 } from "../../protocol.ts";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import type { ProcessSupervisor } from "../processes.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
 import { ViceAdapter } from "./adapter.ts";
@@ -56,6 +59,8 @@ export class ViceSession implements ViceSessionHandle {
   #queue: Promise<unknown> = Promise.resolve();
   #closed = false;
   #lost = false;
+  /** Counts staged media files, for unique names. */
+  #staged = 0;
 
   private constructor(vice: ViceProcess, videoStandard: VideoStandard, log: (line: string) => void, options: SessionOptions) {
     this.#vice = vice;
@@ -98,8 +103,12 @@ export class ViceSession implements ViceSessionHandle {
     return session;
   }
 
-  handle<O extends ViceOperation>(op: O, params: ViceOperations[O]["params"]): Promise<ViceOperations[O]["result"]> {
-    return this.#enqueue(() => this.#run(op, params)) as Promise<ViceOperations[O]["result"]>;
+  handle<O extends ViceOperation>(
+    op: O,
+    params: ViceOperations[O]["params"],
+    attachments: Buffer[] = [],
+  ): Promise<ViceOperations[O]["result"]> {
+    return this.#enqueue(() => this.#run(op, params, attachments)) as Promise<ViceOperations[O]["result"]>;
   }
 
   async close(): Promise<void> {
@@ -112,7 +121,7 @@ export class ViceSession implements ViceSessionHandle {
     return this.#adapter;
   }
 
-  async #run(op: ViceOperation, params: unknown): Promise<unknown> {
+  async #run(op: ViceOperation, params: unknown, attachments: Buffer[]): Promise<unknown> {
     switch (op) {
       case "status":
         return this.#status();
@@ -137,6 +146,20 @@ export class ViceSession implements ViceSessionHandle {
       }
       case "execution":
         return this.#execution(params as ExecutionParams);
+      case "programLoad":
+        return this.#programLoad(params as ViceOperations["programLoad"]["params"], attachments[0]!);
+      case "autostart": {
+        const { type, index, run } = params as ViceOperations["autostart"]["params"];
+        const file = this.#stage(attachments[0]!, type);
+        await this.#resumingCommand(() => this.#machine.autostart(file, index, run));
+        return { state: "running" };
+      }
+      case "diskAttach": {
+        const { type } = params as ViceOperations["diskAttach"]["params"];
+        const file = this.#stage(attachments[0]!, type);
+        await this.#observe(() => this.#machine.attachDisk(file));
+        return { attached: true };
+      }
       case "reset":
         return this.#reset(params as ViceOperations["reset"]["params"]);
       case "warp": {
@@ -211,6 +234,31 @@ export class ViceSession implements ViceSessionHandle {
     await this.#machine.deleteCheckpoint(checkpoint);
     if (!reached) throw new WireFailure("operation-failed", "The C64 did not reach its reset vector after the reset.");
     return { state: "stopped" };
+  }
+
+  /**
+   * Writes transferred bytes into this VICE's scratch directory. Media stay
+   * there for the session: VICE reads an attached image from its file.
+   */
+  #stage(bytes: Buffer, type: string): string {
+    this.#staged++;
+    const file = join(this.#vice.scratchDir, `media-${this.#staged}${type === "" ? "" : `.${type}`}`);
+    writeFileSync(file, bytes);
+    return file;
+  }
+
+  /** Loads a PRG without reset or start (15 §34); finishes stopped. */
+  async #programLoad(params: { address?: number }, bytes: Buffer): Promise<{ state: RunState; loadAddress: number; size: number }> {
+    if (bytes.length < 3) throw new WireFailure("invalid-input", "A PRG file needs a two-byte load address and at least one byte of data.");
+    const loadAddress = params.address ?? bytes.readUInt16LE(0);
+    const size = bytes.length - 2;
+    if (loadAddress + size > 0x10000) {
+      throw new WireFailure("invalid-input", "The program would run past $ffff at that load address.");
+    }
+    const file = this.#stage(bytes, "prg");
+    await this.#stop();
+    const loaded = await this.#machine.loadProgram(file, params.address);
+    return { state: "stopped", ...loaded };
   }
 
   /** Direct CPU-state writes need a stopped CPU (15 §4); they never pause it themselves. */

@@ -255,3 +255,53 @@ test("a register write sets only the named registers and merges flags", async ()
   assert.equal(fake.running, false);
   await session.close();
 });
+
+test("a program load stops the machine and loads at the PRG's own address", async () => {
+  const { fake, session } = await startSession();
+  const prg = Buffer.from([0x00, 0xc0, 0xa9, 0x01, 0x60]);
+  assert.deepEqual(await session.handle("programLoad", {}, [prg]), { state: "stopped", loadAddress: 0xc000, size: 3 });
+  assert.deepEqual([...fake.ram.subarray(0xc000, 0xc003)], [0xa9, 0x01, 0x60]);
+  assert.equal(fake.running, false);
+  await session.close();
+});
+
+test("a program load with an address skips the PRG's own address", async () => {
+  const { fake, session } = await startSession();
+  const prg = Buffer.from([0x00, 0xc0, 0xa9, 0x01, 0x60]);
+  assert.deepEqual(await session.handle("programLoad", { address: 0x2000 }, [prg]), { state: "stopped", loadAddress: 0x2000, size: 3 });
+  assert.deepEqual([...fake.ram.subarray(0x2000, 0x2003)], [0xa9, 0x01, 0x60]);
+  await session.close();
+});
+
+test("a program that is too short or runs past $ffff is refused before VICE sees it", async () => {
+  const { fake, session } = await startSession();
+  await assert.rejects(session.handle("programLoad", {}, [Buffer.from([0x00, 0xc0])]), failsWith("invalid-input"));
+  await assert.rejects(session.handle("programLoad", {}, [Buffer.from([0xff, 0xff, 1, 2])]), failsWith("invalid-input"));
+  assert.deepEqual(fake.textCommands, []);
+  assert.equal(fake.running, true);
+  await session.close();
+});
+
+test("autostart stages the bytes with their type and leaves the machine running", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("execution", { action: "pause", space: "c64" });
+  const image = Buffer.alloc(174848, 0x11);
+  assert.deepEqual(await session.handle("autostart", { type: "d64", index: 2, run: false }, [image]), { state: "running" });
+  assert.equal(fake.autostarts.length, 1);
+  assert.match(fake.autostarts[0]!.file, /\.d64$/);
+  assert.equal(fake.autostarts[0]!.run, false);
+  assert.equal(fake.autostarts[0]!.index, 2);
+  assert.ok(fake.autostarts[0]!.bytes.equals(image));
+  assert.equal(fake.running, true);
+  await session.close();
+});
+
+test("a disk attach keeps the run state; an image VICE refuses is a media error", async () => {
+  const { fake, session } = await startSession();
+  assert.deepEqual(await session.handle("diskAttach", { type: "d64" }, [Buffer.alloc(174848)]), { attached: true });
+  assert.equal(fake.attached.length, 1);
+  assert.equal(fake.running, true);
+  await assert.rejects(session.handle("diskAttach", { type: "d64" }, [Buffer.alloc(100)]), failsWith("media-error"));
+  assert.equal(fake.running, true, "a refused attach must not leave the machine stopped");
+  await session.close();
+});

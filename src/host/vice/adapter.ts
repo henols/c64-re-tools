@@ -32,6 +32,12 @@ async function registerIds(monitor: BinaryMonitor, space: Space): Promise<Regist
   return ids;
 }
 
+/** Quotes a host file path for a text-monitor command. Session scratch paths never contain quotes. */
+function quoted(path: string): string {
+  if (/["\r\n]/.test(path)) throw new Error(`a monitor file path cannot contain quotes or line breaks: ${path}`);
+  return `"${path}"`;
+}
+
 export function statusRegisterFromFlags(flags: Registers["flags"]): number {
   return (
     (flags.n ? 0x80 : 0) |
@@ -231,6 +237,36 @@ export class ViceAdapter {
     const body = Buffer.alloc(4);
     body.writeUInt32LE(number, 0);
     await this.#monitor.request(Command.checkpointDelete, body);
+  }
+
+  /**
+   * Loads a PRG file from the host file system into memory, where the CPU
+   * would write it, without reset or start. With `address`, the file's own
+   * load address is skipped. Returns where it went.
+   */
+  async loadProgram(file: string, address?: number): Promise<{ loadAddress: number; size: number }> {
+    const target = address === undefined ? "" : ` $${address.toString(16).padStart(4, "0")}`;
+    const answer = await this.#text.command(`load ${quoted(file)} 0${target}`);
+    const match = /from ([0-9A-Fa-f]{4}) to ([0-9A-Fa-f]{4}) \(([0-9A-Fa-f]+) bytes\)/.exec(answer);
+    if (match === null) throw new WireFailure("media-error", "The emulator could not load the program.");
+    return { loadAddress: Number.parseInt(match[1]!, 16), size: Number.parseInt(match[3]!, 16) };
+  }
+
+  /** Autostarts a program or image file from the host file system. The machine runs afterwards. */
+  async autostart(file: string, index: number, run: boolean): Promise<void> {
+    const name = Buffer.from(file, "utf8");
+    if (name.length > 255) throw new Error("autostart file path is too long");
+    const head = Buffer.alloc(4);
+    head[0] = run ? 1 : 0;
+    head.writeUInt16LE(index, 1);
+    head[3] = name.length;
+    await this.#monitor.request(Command.autostart, Buffer.concat([head, name]));
+  }
+
+  /** Attaches a disk image file from the host file system to drive 8. */
+  async attachDisk(file: string): Promise<void> {
+    const answer = await this.#text.command(`attach ${quoted(file)} 8`);
+    if (answer !== "") throw new WireFailure("media-error", "The emulator could not attach the disk image.");
   }
 
   async warp(): Promise<boolean> {

@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  attachmentCount,
   checkHello,
   encodeFrame,
   FrameDecoder,
   HOST_PROTOCOL_ID,
   HOST_PROTOCOL_VERSION,
+  MAX_ATTACHMENT_BYTES,
   MAX_FRAME_BYTES,
+  MessageReader,
   parseClientMessage,
   parseHostMessage,
   ProtocolError,
@@ -150,4 +153,57 @@ test("write parameters are validated with invalid-input", () => {
   for (const values of [{}, { q: 1 }, { a: 256 }, { pc: -1 }, { flags: { q: true } }, { flags: { c: 1 } }]) {
     assert.throws(() => validateViceParams("registersSet", { space: "c64", values }), WireFailure, JSON.stringify(values));
   }
+});
+
+test("attachments follow their message as raw frames and reassemble at any split", () => {
+  const request = { type: "request", id: 5, op: "diskAttach", params: { type: "d64" } } as const;
+  const image = Buffer.from(Array.from({ length: 300 }, (_, index) => index & 0xff));
+  const stream = Buffer.concat([encodeFrame(request, [image, Buffer.alloc(0), Buffer.from("ab")]), encodeFrame({ type: "hello", protocol: "p", version: 1, role: "tool" })]);
+  for (const split of [0, 1, 4, 50, 200, stream.length - 3, stream.length]) {
+    const reader = new MessageReader();
+    const received = [...reader.push(stream.subarray(0, split)), ...reader.push(stream.subarray(split))];
+    assert.equal(received.length, 2);
+    assert.deepEqual(received[0]!.message, request, "the announcement is removed from the message");
+    assert.deepEqual(received[0]!.attachments, [image, Buffer.alloc(0), Buffer.from("ab")]);
+    assert.deepEqual(received[1]!.attachments, []);
+  }
+});
+
+test("an attachment larger than one frame is split and rejoined", () => {
+  const big = Buffer.alloc(MAX_FRAME_BYTES * 2 + 17, 0x5a);
+  const [received] = new MessageReader().push(encodeFrame({ type: "request", id: 1, op: "autostart", params: {} }, [big]));
+  assert.equal(received!.attachments[0]!.length, big.length);
+  assert.ok(received!.attachments[0]!.equals(big));
+});
+
+test("bad attachment announcements and overlong attachment frames are refused", () => {
+  const raw = (value: unknown, ...extra: Buffer[]) => {
+    const body = Buffer.from(JSON.stringify(value));
+    const header = Buffer.alloc(4);
+    header.writeUInt32BE(body.length, 0);
+    return Buffer.concat([header, body, ...extra]);
+  };
+  const frameOf = (body: Buffer) => {
+    const header = Buffer.alloc(4);
+    header.writeUInt32BE(body.length, 0);
+    return Buffer.concat([header, body]);
+  };
+  assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [-1] })), ProtocolError);
+  assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: "3" })), ProtocolError);
+  assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [MAX_ATTACHMENT_BYTES, 1] })), ProtocolError);
+  assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [2] }, frameOf(Buffer.from("abc")))), /runs past/);
+  assert.throws(() => encodeFrame({ type: "ready" }, [Buffer.alloc(MAX_ATTACHMENT_BYTES + 1)]), ProtocolError);
+  assert.throws(() => new FrameDecoder().push(encodeFrame({ type: "ready" }, [Buffer.from("x")])), /unexpected attachments/);
+});
+
+test("media parameters are validated with invalid-input", () => {
+  assert.deepEqual(validateViceParams("autostart", { type: "d64", index: 0, run: true }), { type: "d64", index: 0, run: true });
+  assert.deepEqual(validateViceParams("diskAttach", { type: "g64" }), { type: "g64" });
+  assert.deepEqual(validateViceParams("programLoad", {}), {});
+  assert.deepEqual(validateViceParams("programLoad", { address: 0xc000 }), { address: 0xc000 });
+  assert.throws(() => validateViceParams("autostart", { type: "exe", index: 0, run: true }), /\.prg/);
+  assert.throws(() => validateViceParams("diskAttach", { type: "prg" }), /\.d64/);
+  assert.throws(() => validateViceParams("programLoad", { address: 0x10000 }), WireFailure);
+  assert.equal(attachmentCount("diskAttach"), 1);
+  assert.equal(attachmentCount("status"), 0);
 });

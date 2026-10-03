@@ -311,3 +311,25 @@ async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
+
+test("operations get exactly the attachments they take", async () => {
+  const seen: Buffer[][] = [];
+  const factory = stubFactory({ started: [], closed: 0 }, {
+    async handle(_op, _params, attachments) {
+      seen.push(attachments ?? []);
+      return { attached: true } as never;
+    },
+  });
+  const client = await RawClient.open(await serve(factory));
+  client.send(hello);
+  await client.next();
+  client.sendRaw(encodeFrame({ type: "request", id: 1, op: "diskAttach", params: { type: "d64" } }, [Buffer.from("disk")]));
+  assert.deepEqual(await client.next(), { type: "reply", id: 1, result: { attached: true } });
+  assert.deepEqual(seen, [[Buffer.from("disk")]]);
+  client.send({ type: "request", id: 2, op: "diskAttach", params: { type: "d64" } });
+  assert.equal(((await client.next()) as { error: { code: string } }).error.code, "invalid-input");
+  client.sendRaw(encodeFrame({ type: "request", id: 3, op: "status", params: {} }, [Buffer.from("x")]));
+  assert.equal(((await client.next()) as { error: { code: string } }).error.code, "invalid-input");
+  assert.equal(seen.length, 1);
+  client.end();
+});

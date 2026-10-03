@@ -14,7 +14,17 @@ import { MEMORY_VIEWS, SPACES, WireFailure, type WireError } from "../protocol.t
 /** The session operations tools may call. */
 export type ViceSessionApi = Pick<
   ViceSessionClient,
-  "status" | "memoryRead" | "registersGet" | "memoryWrite" | "registersSet" | "execution" | "reset" | "warp"
+  | "status"
+  | "memoryRead"
+  | "registersGet"
+  | "memoryWrite"
+  | "registersSet"
+  | "execution"
+  | "reset"
+  | "warp"
+  | "programLoad"
+  | "autostart"
+  | "diskAttach"
 >;
 
 /** Resolves the session, opening it on first use when the start-up attempt failed. */

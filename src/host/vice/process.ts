@@ -7,7 +7,8 @@
 // - `-default` selects drive type 1542, whose ROM stock installs often lack,
 //   so drive 8 is a plain 1541;
 // - the remote text monitor runs beside the binary one for the few
-//   operations only it offers; both act on the same machine.
+//   operations only it offers; both act on the same machine;
+// - autostart of a PRG needs `-autostartprgmode 1` (inject into RAM).
 
 import { accessSync, constants, mkdtempSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:net";
@@ -95,6 +96,9 @@ export function viceArguments(options: {
     options.videoStandard === "ntsc" ? "ntsc" : "c64",
     "-drive8type",
     "1541",
+    // Autostart injects a PRG into RAM; the default mode copies it to a disk image first.
+    "-autostartprgmode",
+    "1",
   ];
 }
 
@@ -111,6 +115,8 @@ export interface LaunchOptions {
 export interface ViceProcess {
   /** Host-internal; never leaves the Host Runtime. */
   readonly pid: number;
+  /** This VICE's private scratch directory, outside the project; removed by stop(). */
+  readonly scratchDir: string;
   readonly monitor: BinaryMonitor;
   readonly text: TextMonitor;
   /** Settles when VICE exits, for any reason. */
@@ -192,7 +198,7 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
     throw new WireFailure("machine-unavailable", "The emulator could not be started on the host.");
   }
   log(`VICE started (pid ${child.pid}, monitor ports ${port} and ${textPort})`);
-  return { pid: child.pid, monitor, text, exited: child.exited, outputTail, stop };
+  return { pid: child.pid, scratchDir: scratch, monitor, text, exited: child.exited, outputTail, stop };
 }
 
 async function waitForMonitor(port: number, hasExited: () => boolean, timeoutMs: number): Promise<BinaryMonitor> {

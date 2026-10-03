@@ -1,9 +1,10 @@
 import { createServer, type Server, type Socket } from "node:net";
 
 import {
+  attachmentCount,
   checkHello,
   encodeFrame,
-  FrameDecoder,
+  MessageReader,
   parseClientMessage,
   ProtocolError,
   validateViceParams,
@@ -18,8 +19,12 @@ import {
 
 /** One live VICE session, owned by one connection. */
 export interface ViceSessionHandle {
-  /** Runs one operation. The session serializes its own work. Throws WireFailure for domain failures. */
-  handle<O extends ViceOperation>(op: O, params: ViceOperations[O]["params"]): Promise<ViceOperations[O]["result"]>;
+  /**
+   * Runs one operation. The session serializes its own work. Throws
+   * WireFailure for domain failures. `attachments` holds the bytes the
+   * operation takes (see attachmentCount).
+   */
+  handle<O extends ViceOperation>(op: O, params: ViceOperations[O]["params"], attachments?: Buffer[]): Promise<ViceOperations[O]["result"]>;
   /** Stops the emulator and drops queued work. Safe to call more than once. */
   close(): Promise<void>;
 }
@@ -59,7 +64,7 @@ class Connection {
   #starting: Promise<ViceSessionHandle | undefined> | undefined;
   #shuttingDown = false;
   #isTool = false;
-  readonly #decoder = new FrameDecoder();
+  readonly #reader = new MessageReader();
   readonly #socket: Socket;
   readonly #options: HostServerOptions;
   readonly #log: (line: string) => void;
@@ -98,9 +103,9 @@ class Connection {
 
   #receive(chunk: Buffer): void {
     try {
-      for (const raw of this.#decoder.push(chunk)) {
+      for (const { message, attachments } of this.#reader.push(chunk)) {
         if (this.#state === "closed") return;
-        this.#dispatch(raw);
+        this.#dispatch(message, attachments);
       }
     } catch (error) {
       if (!(error instanceof ProtocolError)) throw error;
@@ -108,7 +113,7 @@ class Connection {
     }
   }
 
-  #dispatch(raw: unknown): void {
+  #dispatch(raw: unknown, attachments: Buffer[]): void {
     const message = parseClientMessage(raw);
     if (this.#state === "handshake") {
       if (message.type !== "hello") throw new ProtocolError("first message is not hello");
@@ -133,7 +138,7 @@ class Connection {
     }
     if (message.type !== "request") throw new ProtocolError("hello sent twice");
     if (this.#state !== "open") throw new ProtocolError("request sent before ready");
-    void this.#answer(message);
+    void this.#answer(message, attachments);
   }
 
   async #startSession(videoStandard: VideoStandard): Promise<void> {
@@ -154,13 +159,16 @@ class Connection {
     this.#send({ type: "ready" });
   }
 
-  async #answer(request: Request): Promise<void> {
+  async #answer(request: Request, attachments: Buffer[]): Promise<void> {
     try {
       if (this.#isTool || this.#session === undefined) {
         throw new WireFailure("invalid-input", `unknown operation: ${String(request.op)}`);
       }
       const params = validateViceParams(request.op, request.params);
-      const result = await this.#session.handle(request.op, params);
+      if (attachments.length !== attachmentCount(request.op)) {
+        throw new WireFailure("invalid-input", `${request.op} takes ${attachmentCount(request.op)} file attachment(s)`);
+      }
+      const result = await this.#session.handle(request.op, params, attachments);
       this.#send({ type: "reply", id: request.id, result });
     } catch (error) {
       if (!(error instanceof WireFailure)) {
