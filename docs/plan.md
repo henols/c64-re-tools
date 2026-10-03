@@ -43,7 +43,7 @@ Tools: `c64_status`, `c64_memory_read`, `c64_registers` (`get`).
 - [x] M1.5 **Binary-monitor client** — `src/host/vice/binary-monitor.ts`, from the VICE manual: framing, request-id correlation, unsolicited events, zero-length bodies; ping, memory get, registers available/get, exit. Byte-frame unit tests + live test. (Built before M1.4: VICE readiness needs the ping; the live test lands with M1.4.)
 - [x] M1.6 **VICE session** — `src/host/vice/session.ts`, `adapter.ts`: serialized queue, run state from events, pause-then-restore for reads (15 §4), status fields, crash → `machine-state-lost` (D11), connection close kills VICE.
 - [x] M1.7 **Host client** — `src/host-client/connect.ts`, `vice-session.ts`: endpoint list (D5), handshake, typed `status` / `memoryRead` / `registersGet`, 15 §5 error codes. Contract tests against a real host with a stub VICE adapter.
-- [ ] M1.8 **MCP server** — `src/mcp/main.ts`, `server.ts`, `tools/machine.ts`, `tools/memory.ts` (D9): session opened at MCP start, schemas exactly as 15 §7, §14, §18, errors as `isError` with `{code, message}`, no IDs/ports/paths/versions/VICE vocabulary in results.
+- [x] M1.8 **MCP server** — `src/mcp/main.ts`, `server.ts`, `tools/machine.ts`, `tools/memory.ts` (D9): session opened at MCP start, schemas exactly as 15 §7, §14, §18, errors as `isError` with `{code, message}`, no IDs/ports/paths/versions/VICE vocabulary in results.
 - [ ] M1.9 **Acceptance** — `test/integration/vice/`, real VICE, opt-in with `C64RT_LIVE_VICE=/usr/bin/x64sc`:
   1. host → MCP → one VICE; read KERNAL bytes at `$e000` and the registers; status reports stopped/running correctly;
   2. terminating MCP makes its VICE exit;
