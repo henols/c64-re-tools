@@ -255,6 +255,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
     case "memoryRead": {
       if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
       if (!isInteger(params.size, 1, MAX_MEMORY_READ)) invalid(`size must be an integer from 1 to ${MAX_MEMORY_READ}`);
+      if (params.address + params.size > 0x10000) invalid("the range runs past $ffff");
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       if (!isOneOf(MEMORY_VIEWS, params.view)) invalid("view must be cpu or ram");
       const result: MemoryReadParams = { address: params.address, size: params.size, space: params.space, view: params.view };

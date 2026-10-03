@@ -2,9 +2,10 @@
 
 import { parseArgs } from "node:util";
 
-import { DEFAULT_HOST_PORT, WireFailure } from "../protocol.ts";
+import { DEFAULT_HOST_PORT } from "../protocol.ts";
 import { ProcessSupervisor } from "./processes.ts";
 import { startHostServer } from "./server.ts";
+import { viceSessionFactory } from "./vice/session.ts";
 
 const HELP = `c64-re-tools-host
 
@@ -54,9 +55,7 @@ async function main(): Promise<number> {
     server = await startHostServer({
       port,
       log,
-      createViceSession: async () => {
-        throw new WireFailure("machine-unavailable", "This host runtime cannot start emulators yet.");
-      },
+      createViceSession: viceSessionFactory({ supervisor, log }),
     });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {

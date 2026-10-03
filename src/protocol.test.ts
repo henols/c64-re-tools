@@ -104,6 +104,7 @@ test("operation parameters are validated with invalid-input", () => {
     { address: 0x10000, size: 1, space: "c64", view: "cpu" },
     { address: 0, size: 0, space: "c64", view: "cpu" },
     { address: 0, size: 4097, space: "c64", view: "cpu" },
+    { address: 0xfff0, size: 17, space: "c64", view: "cpu" },
     { address: 0, size: 1, space: "drive9", view: "cpu" },
     { address: 0, size: 1, space: "c64", view: "rom" },
   ]) {
