@@ -38,7 +38,7 @@ Tools: `c64_status`, `c64_memory_read`, `c64_registers` (`get`).
 
 - [x] M1.1 **Private protocol v1** — `src/protocol.ts`: frames, handshake, request/reply/error types, validation (D1–D4).
 - [x] M1.2 **Host listener** — `src/host/server.ts`, `src/host/main.ts`: foreground `c64-re-tools-host`, bind (D5), handshake, one session per connection, dispatch. Socket tests: handshake, version mismatch refused, malformed frame closes the connection.
-- [ ] M1.3 **Process supervisor** — `src/host/processes.ts`: argv-array spawn in its own process group, child tracking, SIGTERM then SIGKILL after 5 s, stop all on exit/SIGINT/SIGTERM. Test: a forking stub leaves no descendant.
+- [x] M1.3 **Process supervisor** — `src/host/processes.ts`: argv-array spawn in its own process group, child tracking, SIGTERM then SIGKILL after 5 s, stop all on exit/SIGINT/SIGTERM. Test: a forking stub leaves no descendant.
 - [ ] M1.4 **VICE process** — `src/host/vice/process.ts`: find `x64sc` (D8), free monitor port, scratch config dir outside the project, readiness by monitor connect + ping with a timeout, termination. Live test.
 - [ ] M1.5 **Binary-monitor client** — `src/host/vice/binary-monitor.ts`, from the VICE manual: framing, request-id correlation, unsolicited events, zero-length bodies; ping, memory get, registers available/get, exit. Byte-frame unit tests + live test.
 - [ ] M1.6 **VICE session** — `src/host/vice/session.ts`, `adapter.ts`: serialized queue, run state from events, pause-then-restore for reads (15 §4), status fields, crash → `machine-state-lost` (D11), connection close kills VICE.

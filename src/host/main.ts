@@ -3,6 +3,7 @@
 import { parseArgs } from "node:util";
 
 import { DEFAULT_HOST_PORT, WireFailure } from "../protocol.ts";
+import { ProcessSupervisor } from "./processes.ts";
 import { startHostServer } from "./server.ts";
 
 const HELP = `c64-re-tools-host
@@ -43,6 +44,11 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  // Every emulator and tool is started through this one supervisor; however
+  // this process ends, the exit guard takes their process groups down with it.
+  const supervisor = new ProcessSupervisor();
+  supervisor.installExitGuard();
+
   let server;
   try {
     server = await startHostServer({
@@ -70,6 +76,7 @@ async function main(): Promise<number> {
     process.once("SIGTERM", stop);
   });
   await server.close();
+  await supervisor.stopAll();
   return 0;
 }
 
