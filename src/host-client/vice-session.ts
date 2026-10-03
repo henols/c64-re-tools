@@ -17,6 +17,8 @@ import {
   type RegisterValues,
   type ResetMode,
   type RunState,
+  type RunTarget,
+  type RunUntilResult,
   type MemoryReadParams,
   type MemoryReadResult,
   type Registers,
@@ -106,6 +108,10 @@ export class ViceSessionClient {
 
   execution(params: ExecutionParams): Promise<ExecutionResult> {
     return this.#request("execution", params);
+  }
+
+  runUntil(params: { target: RunTarget; timeoutFrames: number }): Promise<RunUntilResult> {
+    return this.#request("runUntil", params);
   }
 
   /** Loads a project PRG into memory without reset or start; finishes stopped. */

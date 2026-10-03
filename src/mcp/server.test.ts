@@ -87,6 +87,12 @@ class FakeSession implements ViceSessionApi {
     return { watchpoints: [] };
   }
 
+  runs: unknown[] = [];
+  async runUntil(params: { target: import("../protocol.ts").RunTarget; timeoutFrames: number }) {
+    this.runs.push(params);
+    return { reached: true, stopReason: "target" as const, state: "stopped" as const, pc: 0xc00b };
+  }
+
   async screenCapture() {
     return { width: 384, height: 272, png: Buffer.from("png-bytes").toString("base64") };
   }
@@ -162,6 +168,7 @@ test("the server lists exactly the implemented tools with object input and outpu
     "c64_program_load",
     "c64_registers",
     "c64_reset",
+    "c64_run_until",
     "c64_screen",
     "c64_status",
     "c64_warp",
@@ -431,5 +438,27 @@ test("c64_watchpoint fills size and space and needs access", async () => {
     condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
   });
   assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", address: "$c020" })).code, "invalid-input");
+  await client.close();
+});
+
+test("c64_run_until fills the timeout and passes typed targets", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const result = await call(client, "c64_run_until", { target: { kind: "address", address: "$c00b" } });
+  assert.deepEqual(result.structuredContent, { reached: true, stopReason: "target", state: "stopped", pc: "$c00b" });
+  await call(client, "c64_run_until", { target: { kind: "memory", address: "$c020", operator: "eq", value: 3 }, timeoutFrames: 10 });
+  await call(client, "c64_run_until", { target: { kind: "raster", line: 100, cycle: 20 } });
+  assert.deepEqual(session.runs, [
+    { target: { kind: "address", address: 0xc00b, space: "c64" }, timeoutFrames: 3000 },
+    { target: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" }, timeoutFrames: 10 },
+    { target: { kind: "raster", line: 100, cycle: 20 }, timeoutFrames: 3000 },
+  ]);
+  for (const args of [
+    { target: { kind: "address" } },
+    { target: { kind: "pc", address: "$c000" } },
+    { target: { kind: "raster", line: 1 }, timeoutFrames: 30001 },
+  ]) {
+    assert.equal(errorOf(await call(client, "c64_run_until", args)).code, "invalid-input", JSON.stringify(args));
+  }
   await client.close();
 });

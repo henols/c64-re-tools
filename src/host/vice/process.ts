@@ -10,7 +10,9 @@
 //   operations only it offers; both act on the same machine;
 // - autostart of a PRG needs `-autostartprgmode 1` (inject into RAM);
 // - the joyport command reaches the C64 only through the "Joyport I/O
-//   simulation" device (37), whose lines start all pressed until set.
+//   simulation" device (37), whose lines start all pressed until set;
+// - with the default JAM action a jammed CPU hangs silently; -jamaction 2
+//   enters the monitor instead.
 
 import { accessSync, constants, mkdtempSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:net";
@@ -101,6 +103,9 @@ export function viceArguments(options: {
     // Autostart injects a PRG into RAM; the default mode copies it to a disk image first.
     "-autostartprgmode",
     "1",
+    // A CPU JAM enters the monitor, so it stops the machine visibly instead of hanging it.
+    "-jamaction",
+    "2",
     // The binary monitor's joyport command drives only the "Joyport I/O simulation" device.
     "-controlport1device",
     "37",

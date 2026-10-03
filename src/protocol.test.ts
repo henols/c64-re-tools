@@ -248,3 +248,31 @@ test("checkpoint parameters and typed conditions are validated", () => {
     assert.throws(() => validateViceParams("watchpoint", params), WireFailure, JSON.stringify(params));
   }
 });
+
+test("advance-frames needs a count and run-until targets are validated", () => {
+  assert.throws(() => validateViceParams("execution", { action: "advance-frames", space: "c64" }), /needs count/);
+  assert.deepEqual(validateViceParams("execution", { action: "advance-frames", count: 20, space: "c64" }), {
+    action: "advance-frames",
+    count: 20,
+    space: "c64",
+  });
+  assert.deepEqual(validateViceParams("runUntil", { target: { kind: "raster", line: 100, cycle: 20 }, timeoutFrames: 3000 }), {
+    target: { kind: "raster", line: 100, cycle: 20 },
+    timeoutFrames: 3000,
+  });
+  assert.deepEqual(
+    validateViceParams("runUntil", {
+      target: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
+      timeoutFrames: 1,
+    }),
+    { target: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" }, timeoutFrames: 1 },
+  );
+  for (const params of [
+    { target: { kind: "address", address: 0xc000, space: "c64" }, timeoutFrames: 0 },
+    { target: { kind: "address", address: 0xc000, space: "c64" }, timeoutFrames: 30001 },
+    { target: { kind: "pc", address: 0xc000 }, timeoutFrames: 10 },
+    { target: { kind: "memory", address: 0xc020, operator: "eq", value: 300, space: "c64", view: "cpu" }, timeoutFrames: 10 },
+  ]) {
+    assert.throws(() => validateViceParams("runUntil", params), WireFailure, JSON.stringify(params));
+  }
+});

@@ -1,10 +1,18 @@
-// Execution tools: c64_execution (15 §10).
+// Execution tools: c64_execution (15 §10) and c64_run_until (15 §11).
 
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, RUN_STATES } from "../../protocol.ts";
-import { AddressOutput, defineTool, SpaceInput } from "../server.ts";
+import {
+  COMPARISONS,
+  EXECUTION_ACTIONS,
+  MAX_EXECUTION_COUNT,
+  MAX_TIMEOUT_FRAMES,
+  RUN_STATES,
+  STOP_REASONS,
+  type RunTarget,
+} from "../../protocol.ts";
+import { AddressInput, AddressOutput, Byte, ConditionInput, defineTool, MemoryViewInput, SpaceInput, toCondition } from "../server.ts";
 
 export const c64Execution = defineTool({
   name: "c64_execution",
@@ -14,11 +22,19 @@ export const c64Execution = defineTool({
     "step executes count instructions (default 1) and goes into subroutines. " +
     "next executes count instructions (default 1) and treats a JSR and its subroutine as one instruction. " +
     "until-return runs until the current subroutine returns (after the next RTS or RTI). " +
-    "step, next and until-return first stop a running CPU. Use count only with step and next.",
+    "advance-frames runs exactly count video frames (required), from the current raster position to the same position count frames later, and stops; " +
+    "a breakpoint or watchpoint can stop it earlier, and advancedFrames tells how many frames ran. " +
+    "step, next, until-return and advance-frames first stop a running CPU. Use count only with step, next and advance-frames.",
   inputSchema: z
     .object({
       action: z.enum(EXECUTION_ACTIONS),
-      count: z.number().int().min(1).max(MAX_EXECUTION_COUNT).optional().describe(`instructions for step and next, 1 to ${MAX_EXECUTION_COUNT}`),
+      count: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_EXECUTION_COUNT)
+        .optional()
+        .describe(`step and next: instructions (default 1); advance-frames: frames (required); 1 to ${MAX_EXECUTION_COUNT}`),
       space: SpaceInput,
     })
     .strict(),
@@ -26,6 +42,7 @@ export const c64Execution = defineTool({
     state: z.enum(RUN_STATES),
     pc: AddressOutput.optional(),
     executed: z.number().int().min(0).max(MAX_EXECUTION_COUNT).optional().describe("instructions executed by step or next"),
+    advancedFrames: z.number().int().min(0).max(MAX_EXECUTION_COUNT).optional().describe("frames advance-frames ran"),
   }),
   readOnly: false,
   async run(input, session) {
@@ -35,8 +52,70 @@ export const c64Execution = defineTool({
       state: result.state,
       ...(result.pc === undefined ? {} : { pc: formatC64Address(result.pc) }),
       ...(result.executed === undefined ? {} : { executed: result.executed }),
+      ...(result.advancedFrames === undefined ? {} : { advancedFrames: result.advancedFrames }),
     };
   },
 });
 
-export const executionTools = [c64Execution];
+const RunTargetInput = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("address"),
+      address: AddressInput,
+      space: SpaceInput,
+      condition: ConditionInput.optional().describe("stop at the address only when this is true"),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("memory"),
+      address: AddressInput,
+      operator: z.enum(COMPARISONS),
+      value: Byte,
+      space: SpaceInput,
+      view: MemoryViewInput,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("raster"),
+      line: z.number().int().min(0).describe("raster line: PAL 0-311, NTSC 0-262"),
+      cycle: z.number().int().min(0).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64; default 0"),
+    })
+    .strict(),
+]);
+
+export const c64RunUntil = defineTool({
+  name: "c64_run_until",
+  title: "Run the C64 until a target",
+  description:
+    "Run the CPU until a target happens, then stop. Target kind address stops before the instruction at an address executes (optionally only when a condition is true). " +
+    "Kind memory stops after a write makes a byte in memory compare true to a value. " +
+    "Kind raster stops at the first instruction at or after a raster line and cycle; if the machine is there already, it runs to the next frame's pass. " +
+    `timeoutFrames (1 to ${MAX_TIMEOUT_FRAMES}, default 3000) limits the run in video frames. ` +
+    "The result tells if the target was reached and why the CPU stopped: target, breakpoint, watchpoint, jam (the CPU hit a JAM opcode) or timeout. The CPU is always stopped afterwards.",
+  inputSchema: z
+    .object({
+      target: RunTargetInput,
+      timeoutFrames: z.number().int().min(1).max(MAX_TIMEOUT_FRAMES).default(3000),
+    })
+    .strict(),
+  outputSchema: z.object({ reached: z.boolean(), stopReason: z.enum(STOP_REASONS), state: z.enum(RUN_STATES), pc: AddressOutput }),
+  readOnly: false,
+  async run(input, session) {
+    const { target: given } = input;
+    let target: RunTarget;
+    if (given.kind === "address") {
+      target = { kind: "address", address: given.address, space: given.space };
+      if (given.condition !== undefined) target.condition = toCondition(given.condition);
+    } else if (given.kind === "memory") {
+      target = given;
+    } else {
+      target = given.cycle === undefined ? { kind: "raster", line: given.line } : { kind: "raster", line: given.line, cycle: given.cycle };
+    }
+    const result = await session.runUntil({ target, timeoutFrames: input.timeoutFrames });
+    return { ...result, pc: formatC64Address(result.pc) };
+  },
+});
+
+export const executionTools = [c64Execution, c64RunUntil];

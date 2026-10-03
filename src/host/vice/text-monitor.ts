@@ -8,7 +8,8 @@
 // followed by a sentinel `~ $nnnn` whose distinctive four-line answer marks
 // where the command's own output ends. The sentinel is sent only after a
 // prompt shows the command was taken: VICE drops the rest of an input chunk
-// when the command in it makes VICE enter the monitor.
+// when the command in it makes VICE enter the monitor. Only idempotent
+// commands go through here (see RESEND_AFTER_MS).
 
 import { connect, type Socket } from "node:net";
 
@@ -18,6 +19,12 @@ export class TextMonitorError extends Error {
 
 const PROMPT = /\((?:C|\d+):\$[0-9a-f]{4}\) /g;
 export const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
+/**
+ * How long to wait for the prompt before sending the command once more. Stock
+ * VICE very rarely drops a command line (seen once, never reproduced); every
+ * command this client sends is idempotent, so a repeat is harmless.
+ */
+const RESEND_AFTER_MS = 3_000;
 
 function sentinelPattern(nonce: number): RegExp {
   const hex = nonce.toString(16).padStart(4, "0");
@@ -75,8 +82,9 @@ export class TextMonitor {
   }
 
   /**
-   * Runs one command and returns its output without prompts. Commands run
-   * one at a time. A command makes VICE stop the machine if it was running.
+   * Runs one idempotent command and returns its output without prompts.
+   * Commands run one at a time. A command makes VICE stop the machine if it
+   * was running.
    */
   command(line: string, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS): Promise<string> {
     if (/[\r\n]/.test(line)) return Promise.reject(new TypeError("a monitor command must be one line"));
@@ -99,7 +107,15 @@ export class TextMonitor {
     // Anything left over belongs to no command; drop it so it cannot be misread.
     this.#buffer = "";
     this.#socket.write(`${line}\n`);
-    await this.#waitFor(() => new RegExp(PROMPT.source).test(this.#buffer), deadline, timeoutMs);
+    const prompted = () => new RegExp(PROMPT.source).test(this.#buffer);
+    const resendAt = Math.min(deadline, Date.now() + RESEND_AFTER_MS);
+    try {
+      await this.#waitFor(prompted, resendAt, timeoutMs);
+    } catch (error) {
+      if (this.#socket.destroyed || Date.now() >= deadline) throw error;
+      this.#socket.write(`${line}\n`);
+      await this.#waitFor(prompted, deadline, timeoutMs);
+    }
     this.#socket.write(`~ $${this.#nonce.toString(16)}\n`);
     let match: RegExpExecArray | null = null;
     await this.#waitFor(() => (match = sentinel.exec(this.#buffer)) !== null, deadline, timeoutMs);

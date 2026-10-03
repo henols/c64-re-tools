@@ -75,6 +75,41 @@ export function conditionExpression(condition: Condition, space: Space): string 
   }
 }
 
+/** Lines a raster window spans, so a DMA stall cannot skip every instruction start in it. */
+export const RASTER_WINDOW_LINES = 4;
+
+function rasterLine(line: number): string {
+  return `(RL == $${line.toString(16)})`;
+}
+
+/**
+ * True at the first instruction start at or after raster position
+ * (line, cycle): that line from the cycle on, or one of the next lines
+ * (wrapping at the end of the frame).
+ */
+export function rasterWindowExpression(line: number, cycle: number, linesPerFrame: number): string {
+  const parts = [`(${rasterLine(line)} && (CY >= $${cycle.toString(16)}))`];
+  for (let offset = 1; offset < RASTER_WINDOW_LINES; offset++) parts.push(rasterLine((line + offset) % linesPerFrame));
+  return parts.join(" || ");
+}
+
+/** True anywhere in RASTER_WINDOW_LINES lines from `line` (wrapping). */
+export function rasterLinesExpression(line: number, linesPerFrame: number): string {
+  const parts: string[] = [];
+  for (let offset = 0; offset < RASTER_WINDOW_LINES; offset++) parts.push(rasterLine((line + offset) % linesPerFrame));
+  return parts.join(" || ");
+}
+
+/** Whether a raster position lies inside the window rasterWindowExpression describes. */
+export function inRasterWindow(position: { line: number; cycle: number }, line: number, cycle: number, linesPerFrame: number): boolean {
+  if (position.line === line) return position.cycle >= cycle;
+  const ahead = (position.line - line + linesPerFrame) % linesPerFrame;
+  return ahead > 0 && ahead < RASTER_WINDOW_LINES;
+}
+
+/** The 12 opcodes that jam an NMOS 6502/6510. */
+export const JAM_OPCODES = new Set([0x02, 0x12, 0x22, 0x32, 0x42, 0x52, 0x62, 0x72, 0x92, 0xb2, 0xd2, 0xf2]);
+
 const DIRECTION_BITS: Record<JoystickState["direction"], number> = {
   center: 0,
   up: 0x01,
@@ -136,17 +171,21 @@ export class ViceAdapter {
   readonly #text: TextMonitor;
   readonly #registerIds: Record<Space, RegisterIds>;
   readonly #banks: Record<MemoryView | "rom", number>;
+  /** The C64's raster line and cycle registers. */
+  readonly #rasterIds: { line: number; cycle: number };
 
   private constructor(
     monitor: BinaryMonitor,
     text: TextMonitor,
     registerIdsBySpace: Record<Space, RegisterIds>,
     banks: Record<MemoryView | "rom", number>,
+    rasterIds: { line: number; cycle: number },
   ) {
     this.#monitor = monitor;
     this.#text = text;
     this.#registerIds = registerIdsBySpace;
     this.#banks = banks;
+    this.#rasterIds = rasterIds;
   }
 
   /** Looks up the register and bank ids this VICE uses. Stops the machine. */
@@ -157,11 +196,18 @@ export class ViceAdapter {
       if (bank === undefined) throw new Error(`VICE reports no ${name} memory bank`);
       return bank.id;
     };
+    const c64Registers = decodeRegistersAvailable((await monitor.request(Command.registersAvailable, Buffer.from([Memspace.main]))).body);
+    const rasterId = (name: string) => {
+      const register = c64Registers.find((candidate) => candidate.name === name);
+      if (register === undefined) throw new Error(`VICE reports no ${name} register`);
+      return register.id;
+    };
     return new ViceAdapter(
       monitor,
       text,
       { c64: await registerIds(monitor, "c64"), drive8: await registerIds(monitor, "drive8") },
       { cpu: bankId("cpu"), ram: bankId("ram"), rom: bankId("rom") },
+      { line: rasterId("LIN"), cycle: rasterId("CYC") },
     );
   }
 
@@ -237,6 +283,17 @@ export class ViceAdapter {
       sp: value("sp") & 0xff,
       flags: flagsFromStatusRegister(value("flags")),
     };
+  }
+
+  /** The raster line and the cycle in it where the C64 stopped. */
+  async rasterPosition(): Promise<{ line: number; cycle: number }> {
+    const values = decodeRegisters((await this.#monitor.request(Command.registersGet, Buffer.from([Memspace.main]))).body);
+    const value = (id: number) => {
+      const register = values.find((candidate) => candidate.id === id);
+      if (register === undefined) throw new Error("VICE returned no raster registers");
+      return register.value;
+    };
+    return { line: value(this.#rasterIds.line), cycle: value(this.#rasterIds.cycle) };
   }
 
   /** Leaves the monitor so the machine runs again. */

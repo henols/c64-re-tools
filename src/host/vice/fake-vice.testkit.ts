@@ -54,6 +54,8 @@ const REGISTERS = [
   { id: 2, name: "Y", bits: 8 },
   { id: 4, name: "SP", bits: 8 },
   { id: 5, name: "FL", bits: 8 },
+  { id: 53, name: "LIN", bits: 16 },
+  { id: 54, name: "CYC", bits: 16 },
 ];
 const BANKS = [
   { id: 0, name: "default" },
@@ -88,8 +90,16 @@ export class FakeVice {
   readonly ram = Buffer.alloc(0x10000);
   readonly rom = Buffer.alloc(0x10000);
   readonly drive = Buffer.alloc(0x10000);
-  registers: Record<string, number> = { PC: 0xe5cf, A: 0x42, X: 3, Y: 0, SP: 0xf9, FL: 0b1010_0101 };
-  driveRegisters: Record<string, number> = { PC: 0xec12, A: 0, X: 0, Y: 0, SP: 0x45, FL: 0b0010_0001 };
+  registers: Record<string, number> = { PC: 0xe5cf, A: 0x42, X: 3, Y: 0, SP: 0xf9, FL: 0b1010_0101, LIN: 100, CYC: 20 };
+  driveRegisters: Record<string, number> = { PC: 0xec12, A: 0, X: 0, Y: 0, SP: 0x45, FL: 0b0010_0001, LIN: 0, CYC: 0 };
+  /**
+   * Scripts what happens when the machine resumes, instead of the simple
+   * exec-checkpoint check: a stop at `pc` with the checkpoints it hits, or
+   * undefined to keep running.
+   */
+  onResume: ((fake: FakeVice) => { pc: number; hits: number[] } | undefined) | undefined;
+  /** Every condition set, in order, as [checkpoint number, expression]. */
+  readonly conditions: Array<[number, string]> = [];
   readonly checkpoints = new Map<number, FakeCheckpoint>();
   /** PC a pending execute-until-return stops at when completeReturn() is called. */
   returnTo: number | undefined;
@@ -212,7 +222,27 @@ export class FakeVice {
   #leaveMonitor(socket: Socket): void {
     this.running = true;
     socket.write(frame(0x63, EVENT_REQUEST_ID, this.#pc()));
-    this.#checkExec(socket);
+    if (this.onResume === undefined) return this.#checkExec(socket);
+    const stop = this.onResume(this);
+    if (stop === undefined) return;
+    this.registers.PC = stop.pc;
+    for (const number of stop.hits) {
+      const checkpoint = this.checkpoints.get(number) ?? {
+        number,
+        start: stop.pc,
+        end: stop.pc,
+        stop: true,
+        enabled: true,
+        operation: 0x04,
+        temporary: false,
+        memspace: 0,
+        hits: 0,
+        ignore: 0,
+      };
+      checkpoint.hits++;
+      socket.write(frame(0x11, EVENT_REQUEST_ID, this.#checkpointBody(checkpoint, true)));
+    }
+    this.#enterMonitor(socket);
   }
 
   /** Simulates the first instruction after resuming: an enabled exec checkpoint at PC stops it. */
@@ -417,6 +447,7 @@ export class FakeVice {
         const checkpoint = this.checkpoints.get(body.readUInt32LE(0));
         if (checkpoint === undefined) return void socket.write(frame(command, id, Buffer.alloc(0), 0x01));
         checkpoint.condition = body.subarray(5, 5 + body[4]!).toString("latin1");
+        this.conditions.push([checkpoint.number, checkpoint.condition]);
         return void answer();
       }
       case Command.checkpointDelete: {

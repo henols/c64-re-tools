@@ -30,6 +30,7 @@ export type ViceSessionApi = Pick<
   | "screenCapture"
   | "breakpoint"
   | "watchpoint"
+  | "runUntil"
 >;
 
 /** Resolves the session, opening it on first use when the start-up attempt failed. */

@@ -409,3 +409,106 @@ test("a raster condition outside the session's video standard is refused", async
   assert.equal(fake.checkpoints.size, 0, "a refused condition leaves no checkpoint behind");
   await session.close();
 });
+
+/** The internal frame clock: the exec checkpoint over all of memory. */
+function clockOf(fake: FakeVice) {
+  return [...fake.checkpoints.values()].find((checkpoint) => checkpoint.start === 0 && checkpoint.end === 0xffff && checkpoint.operation === 0x04);
+}
+
+test("advance-frames counts two clock stops per frame and removes the clock", async () => {
+  const { fake, session } = await startSession();
+  let stops = 0;
+  fake.onResume = (vice) => {
+    stops++;
+    return { pc: 0x1000 + stops, hits: [clockOf(vice)!.number] };
+  };
+  assert.deepEqual(await session.handle("execution", { action: "advance-frames", count: 3, space: "c64" }), {
+    state: "stopped",
+    pc: 0x1006,
+    advancedFrames: 3,
+  });
+  assert.equal(stops, 6);
+  assert.equal(fake.checkpoints.size, 0, "the frame clock is gone");
+  // Arming half a frame from line 100 (PAL: line 256), then the window from line 100, cycle 20.
+  const expressions = fake.conditions.map(([, expression]) => expression);
+  assert.equal(expressions[0], "(RL == $100) || (RL == $101) || (RL == $102) || (RL == $103)");
+  assert.equal(expressions[1], "((RL == $64) && (CY >= $14)) || (RL == $65) || (RL == $66) || (RL == $67)");
+  assert.equal(expressions.length, 6);
+  assert.equal(fake.running, false);
+  await session.close();
+});
+
+test("run-until stops at its target and removes both checkpoints", async () => {
+  const { fake, session } = await startSession();
+  let stops = 0;
+  fake.onResume = (vice) => {
+    stops++;
+    if (stops < 4) return { pc: 0x1000, hits: [clockOf(vice)!.number] };
+    const target = [...vice.checkpoints.values()].find((checkpoint) => checkpoint.start === 0xc00b)!;
+    return { pc: 0xc00b, hits: [target.number] };
+  };
+  assert.deepEqual(await session.handle("runUntil", { target: { kind: "address", address: 0xc00b, space: "c64" }, timeoutFrames: 10 }), {
+    reached: true,
+    stopReason: "target",
+    state: "stopped",
+    pc: 0xc00b,
+  });
+  assert.equal(fake.checkpoints.size, 0);
+  await session.close();
+});
+
+test("run-until times out after its frames, and reports a user breakpoint", async () => {
+  const { fake, session } = await startSession();
+  fake.onResume = (vice) => ({ pc: 0x1000, hits: [clockOf(vice)!.number] });
+  const timeout = await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 2 });
+  assert.deepEqual(timeout, { reached: false, stopReason: "timeout", state: "stopped", pc: 0x1000 });
+
+  await session.handle("breakpoint", { action: "add", address: 0x2000, space: "c64" });
+  fake.onResume = (vice) => {
+    const user = [...vice.checkpoints.values()].find((checkpoint) => checkpoint.start === 0x2000)!;
+    return { pc: 0x2000, hits: [user.number, clockOf(vice)!.number] };
+  };
+  const byBreakpoint = await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 2 });
+  assert.equal(byBreakpoint.stopReason, "breakpoint");
+  const advanced = await session.handle("execution", { action: "advance-frames", count: 5, space: "c64" });
+  assert.deepEqual(advanced, { state: "stopped", pc: 0x2000, advancedFrames: 0 });
+  await session.close();
+});
+
+test("a stop on a JAM opcode is a jam; another unexplained stop is an error", async () => {
+  const { fake, session } = await startSession();
+  fake.ram[0x3000] = 0x02;
+  fake.onResume = () => ({ pc: 0x3000, hits: [] });
+  assert.deepEqual(await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 2 }), {
+    reached: false,
+    stopReason: "jam",
+    state: "stopped",
+    pc: 0x3000,
+  });
+  fake.ram[0x3000] = 0xea;
+  await assert.rejects(session.handle("execution", { action: "advance-frames", count: 1, space: "c64" }), failsWith("operation-failed"));
+  assert.equal(fake.checkpoints.size, 0);
+  await session.close();
+});
+
+test("a raster target the machine already stands in waits for its next pass", async () => {
+  const { fake, session } = await startSession();
+  // The machine stands at line 100, cycle 20: inside a target window that starts at line 99.
+  const target = (vice: FakeVice) => [...vice.checkpoints.values()].find((checkpoint) => checkpoint.condition?.startsWith("((RL == $63)"))!;
+  const clock = (vice: FakeVice) => [...vice.checkpoints.values()].find((checkpoint) => checkpoint !== target(vice))!;
+  let stops = 0;
+  fake.onResume = (vice) => {
+    stops++;
+    if (stops === 1) {
+      assert.equal(target(vice).enabled, false, "deferred until the clock has armed");
+      return { pc: 0x1000, hits: [clock(vice).number] };
+    }
+    assert.equal(target(vice).enabled, true);
+    return { pc: 0x1001, hits: [target(vice).number] };
+  };
+  const result = await session.handle("runUntil", { target: { kind: "raster", line: 99 }, timeoutFrames: 3 });
+  assert.equal(result.stopReason, "target");
+  assert.equal(stops, 2);
+  await assert.rejects(session.handle("runUntil", { target: { kind: "raster", line: 312 }, timeoutFrames: 3 }), failsWith("invalid-input"));
+  await session.close();
+});

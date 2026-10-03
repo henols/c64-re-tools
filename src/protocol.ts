@@ -52,7 +52,7 @@ export type RunState = (typeof RUN_STATES)[number];
 export const MAX_MEMORY_READ = 4096;
 export const MAX_MEMORY_WRITE = 4096;
 
-export const EXECUTION_ACTIONS = ["pause", "resume", "step", "next", "until-return"] as const;
+export const EXECUTION_ACTIONS = ["pause", "resume", "step", "next", "until-return", "advance-frames"] as const;
 export type ExecutionAction = (typeof EXECUTION_ACTIONS)[number];
 /** Bounds of c64_execution counts (15 §10). */
 export const MAX_EXECUTION_COUNT = 10_000;
@@ -199,7 +199,7 @@ export interface RegisterValues {
 
 export interface ExecutionParams {
   action: ExecutionAction;
-  /** step and next only; defaults to 1. */
+  /** step and next: defaults to 1; advance-frames: required. */
   count?: number;
   space: Space;
 }
@@ -208,6 +208,24 @@ export interface ExecutionResult {
   state: RunState;
   pc?: number;
   executed?: number;
+  advancedFrames?: number;
+}
+
+/** c64_run_until targets (15 §11). */
+export type RunTarget =
+  | { kind: "address"; address: number; space: Space; condition?: Condition }
+  | { kind: "memory"; address: number; operator: Comparison; value: number; space: Space; view: MemoryView }
+  | { kind: "raster"; line: number; cycle?: number };
+
+export const STOP_REASONS = ["target", "breakpoint", "watchpoint", "jam", "timeout"] as const;
+export type StopReason = (typeof STOP_REASONS)[number];
+export const MAX_TIMEOUT_FRAMES = 30_000;
+
+export interface RunUntilResult {
+  reached: boolean;
+  stopReason: StopReason;
+  state: RunState;
+  pc: number;
 }
 
 export interface ViceOperations {
@@ -217,6 +235,7 @@ export interface ViceOperations {
   memoryWrite: { params: MemoryWriteParams; result: { address: number; bytesWritten: number } };
   registersSet: { params: { space: Space; values: RegisterValues }; result: Registers };
   execution: { params: ExecutionParams; result: ExecutionResult };
+  runUntil: { params: { target: RunTarget; timeoutFrames: number }; result: RunUntilResult };
   /** Attachment: the PRG bytes, load address first. */
   programLoad: { params: { address?: number }; result: { state: RunState; loadAddress: number; size: number } };
   /** Attachment: the program or image bytes; `type` is the file's extension. */
@@ -241,6 +260,7 @@ export const VICE_OPERATIONS = [
   "memoryWrite",
   "registersSet",
   "execution",
+  "runUntil",
   "programLoad",
   "autostart",
   "diskAttach",
@@ -466,14 +486,20 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
     case "execution": {
       if (!isOneOf(EXECUTION_ACTIONS, params.action)) invalid(`action must be one of ${EXECUTION_ACTIONS.join(", ")}`);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
-      const counted = params.action === "step" || params.action === "next";
+      const counted = params.action === "step" || params.action === "next" || params.action === "advance-frames";
       if (params.count !== undefined) {
         if (!counted) invalid(`count is not used with action ${params.action}`);
         if (!isInteger(params.count, 1, MAX_EXECUTION_COUNT)) invalid(`count must be an integer from 1 to ${MAX_EXECUTION_COUNT}`);
+      } else if (params.action === "advance-frames") {
+        invalid("advance-frames needs count, the number of frames");
       }
       const result: ExecutionParams = { action: params.action, space: params.space };
       if (counted) result.count = (params.count as number | undefined) ?? 1;
       return result as ViceOperations[O]["params"];
+    }
+    case "runUntil": {
+      if (!isInteger(params.timeoutFrames, 1, MAX_TIMEOUT_FRAMES)) invalid(`timeoutFrames must be an integer from 1 to ${MAX_TIMEOUT_FRAMES}`);
+      return { target: validateRunTarget(params.target), timeoutFrames: params.timeoutFrames } as ViceOperations[O]["params"];
     }
     case "programLoad": {
       if (params.address !== undefined && !isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
@@ -577,6 +603,28 @@ export function validateCondition(value: unknown): Condition {
   return invalid("condition kind must be register, memory or raster");
 }
 
+function validateRunTarget(value: unknown): RunTarget {
+  if (!isObject(value)) invalid("target must be an object");
+  switch (value.kind) {
+    case "address": {
+      if (!isInteger(value.address, 0, 0xffff)) invalid("target address must be an integer from 0 to 65535");
+      if (!isOneOf(SPACES, value.space)) invalid("target space must be c64 or drive8");
+      const target: RunTarget = { kind: "address", address: value.address, space: value.space };
+      if (value.condition !== undefined) target.condition = validateCondition(value.condition);
+      return target;
+    }
+    case "memory": {
+      const { kind: _kind, ...condition } = validateCondition({ ...value, kind: "memory" }) as Extract<Condition, { kind: "memory" }>;
+      return { kind: "memory", ...condition };
+    }
+    case "raster": {
+      const raster = validateCondition(value) as Extract<Condition, { kind: "raster" }>;
+      return raster;
+    }
+  }
+  return invalid("target kind must be address, memory or raster");
+}
+
 function isBreakpoint(value: unknown): value is Breakpoint {
   return (
     isObject(value) &&
@@ -635,11 +683,21 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     case "registersSet": {
       return validateViceResult("registersGet", value) as unknown as ViceOperations[O]["result"];
     }
+    case "runUntil": {
+      const ok =
+        typeof value.reached === "boolean" &&
+        isOneOf(STOP_REASONS, value.stopReason) &&
+        isOneOf(RUN_STATES, value.state) &&
+        isInteger(value.pc, 0, 0xffff);
+      if (!ok) throw new ProtocolError("runUntil result is malformed");
+      break;
+    }
     case "execution": {
       const ok =
         isOneOf(RUN_STATES, value.state) &&
         (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
-        (value.executed === undefined || isInteger(value.executed, 0, MAX_EXECUTION_COUNT));
+        (value.executed === undefined || isInteger(value.executed, 0, MAX_EXECUTION_COUNT)) &&
+        (value.advancedFrames === undefined || isInteger(value.advancedFrames, 0, MAX_EXECUTION_COUNT));
       if (!ok) throw new ProtocolError("execution result is malformed");
       break;
     }

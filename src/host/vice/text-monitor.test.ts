@@ -16,8 +16,14 @@ function sentinelAnswer(hex: string, prompt = "(C:$e5cf) "): string {
   return `+${value}\n$${hex}\n${value.toString(8).padStart(7, "0")}\n%${value.toString(2).padStart(16, "0").replace(/(.{8})/, "$1 ")}\n${prompt}`;
 }
 
-/** A fake text monitor: `answer` maps a command to its output; the first command also gets VICE's extra entry prompt. */
-async function fakeTextMonitor(answer: (command: string) => string | undefined): Promise<{ monitor: TextMonitor; socket: () => Socket }> {
+/** Returned by an answer function: VICE silently drops this one line. */
+const DROP = Symbol("drop");
+
+/**
+ * A fake text monitor: `answer` maps a command to its output; the first
+ * command also gets VICE's extra entry prompt. undefined hangs the monitor.
+ */
+async function fakeTextMonitor(answer: (command: string) => string | undefined | typeof DROP): Promise<{ monitor: TextMonitor; socket: () => Socket }> {
   let current: Socket | undefined;
   const server = createServer((socket) => {
     current = socket;
@@ -37,6 +43,7 @@ async function fakeTextMonitor(answer: (command: string) => string | undefined):
           continue;
         }
         const output = answer(line);
+        if (output === DROP) continue;
         if (output === undefined) {
           hung = true; // simulate a hang: answer nothing from now on
           continue;
@@ -99,4 +106,15 @@ test("VICE closing the connection fails the command and reports why", async () =
   });
   await assert.rejects(monitor.command("quit"), TextMonitorError);
   assert.ok((await monitor.closed) instanceof TextMonitorError);
+});
+
+test("a command whose line VICE dropped is sent once more", async () => {
+  let seen = 0;
+  const { monitor } = await fakeTextMonitor((command) => {
+    seen++;
+    return seen === 1 ? DROP : `${command} done\n`;
+  });
+  assert.equal(await monitor.command("stopwatch", 8000), "stopwatch done");
+  assert.equal(seen, 2);
+  await monitor.close();
 });

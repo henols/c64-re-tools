@@ -8,6 +8,8 @@ import {
   type BreakpointParams,
   type Condition,
   type ExecutionParams,
+  type RunTarget,
+  type RunUntilResult,
   type JoystickState,
   type Watchpoint,
   type WatchpointParams,
@@ -23,7 +25,14 @@ import { join } from "node:path";
 
 import type { ProcessSupervisor } from "../processes.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
-import { conditionExpression, ViceAdapter } from "./adapter.ts";
+import {
+  conditionExpression,
+  inRasterWindow,
+  JAM_OPCODES,
+  rasterLinesExpression,
+  rasterWindowExpression,
+  ViceAdapter,
+} from "./adapter.ts";
 import { decodeProgramCounter, MonitorConnectionError, MonitorError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
 import { launchVice, type ViceProcess } from "./process.ts";
 import { TextMonitorError } from "./text-monitor.ts";
@@ -45,6 +54,18 @@ function hex(value: number): string {
   return `$${value.toString(16).padStart(4, "0")}`;
 }
 
+/** A stop and the VICE checkpoints that caused it. */
+interface Stop {
+  pc: number;
+  hits: number[];
+}
+
+/** Why a frame-clocked run ended. "frames" means the frame limit was reached. */
+type RunEnd = "target" | "breakpoint" | "watchpoint" | "jam" | "frames";
+
+/** How long half a frame may take before the session gives up waiting. */
+const HALF_FRAME_LIMIT_MS = 10_000;
+
 export interface SessionOptions {
   /** Upper bound for until-return; tests shorten it. */
   untilReturnLimitMs?: number;
@@ -58,9 +79,9 @@ export class ViceSession implements ViceSessionHandle {
   #adapter: ViceAdapter | undefined;
   #state: RunState = "running";
   /** Each returns true once satisfied and is then dropped. */
-  #stopWaiters: Array<(pc: number, checkpoint: number | undefined) => boolean> = [];
-  /** The VICE number of a checkpoint reported hit whose stopped event has not come yet. */
-  #checkpointHit: number | undefined;
+  #stopWaiters: Array<(stop: Stop) => boolean> = [];
+  /** VICE numbers of checkpoints reported hit whose stopped event has not come yet. */
+  #checkpointHits: number[] = [];
   /** Counts stops caused by checkpoints or a CPU JAM rather than by a monitor command. */
   #haltCount = 0;
   #queue: Promise<unknown> = Promise.resolve();
@@ -165,6 +186,8 @@ export class ViceSession implements ViceSessionHandle {
       }
       case "execution":
         return this.#execution(params as ExecutionParams);
+      case "runUntil":
+        return this.#runUntil(params as ViceOperations["runUntil"]["params"]);
       case "programLoad":
         return this.#programLoad(params as ViceOperations["programLoad"]["params"], attachments[0]!);
       case "autostart": {
@@ -235,15 +258,19 @@ export class ViceSession implements ViceSessionHandle {
     if (params.action === "until-return") {
       const stopped = this.#nextStop(this.#untilReturnLimitMs);
       await this.#resumingCommand(() => this.#machine.untilReturn());
-      const pc = await stopped;
-      if (pc === undefined) {
+      const stop = await stopped;
+      if (stop === undefined) {
         await this.#stop();
         throw new WireFailure(
           "limit-exceeded",
           `The routine did not return within ${this.#untilReturnLimitMs / 1000} seconds. The machine is stopped at ${hex(await this.#pc())}.`,
         );
       }
-      return { state: "stopped", pc };
+      return { state: "stopped", pc: stop.pc };
+    }
+    if (params.action === "advance-frames") {
+      const outcome = await this.#runFrames(params.count!);
+      return { state: "stopped", pc: outcome.pc, advancedFrames: outcome.frames };
     }
     const count = params.count ?? 1;
     await this.#machine.step(count, params.action === "next");
@@ -272,6 +299,118 @@ export class ViceSession implements ViceSessionHandle {
     await this.#machine.deleteCheckpoint(checkpoint);
     if (!reached) throw new WireFailure("operation-failed", "The C64 did not reach its reset vector after the reset.");
     return { state: "stopped" };
+  }
+
+  /**
+   * Runs the machine for up to `limit` frames, counted from where it stands:
+   * frame k ends at the first instruction at or after the start raster
+   * position in the k-th frame after it. One internal exec checkpoint over
+   * all of memory alternates between an arming window half a frame away and
+   * the end-of-frame window, so the count needs no wall clock. A `target`
+   * checkpoint, a user breakpoint or watchpoint, or a JAM ends the run early.
+   * The machine is stopped afterwards.
+   */
+  async #runFrames(limit: number, target?: { checkpoint: number; deferred: boolean }): Promise<{ end: RunEnd; frames: number; pc: number }> {
+    await this.#stop();
+    const lines = RASTER[this.#videoStandard].lines;
+    const start = await this.#machine.rasterPosition();
+    const arming = rasterLinesExpression((start.line + Math.floor(lines / 2)) % lines, lines);
+    const ending = rasterWindowExpression(start.line, start.cycle, lines);
+    const clock = await this.#machine.addCheckpoint({ start: 0x0000, end: 0xffff, operation: 0x04, space: "c64" });
+    try {
+      await this.#machine.setCondition(clock, arming);
+      let armingPhase = true;
+      let frames = 0;
+      for (;;) {
+        const next = this.#nextStop(HALF_FRAME_LIMIT_MS);
+        await this.#resume();
+        const stop = await next;
+        if (stop === undefined) {
+          await this.#stop();
+          throw new WireFailure("operation-failed", "The emulator did not reach the next frame in time.");
+        }
+        const end = this.#stopCause(stop, clock, target?.checkpoint);
+        if (end === "clock") {
+          if (armingPhase) {
+            await this.#machine.setCondition(clock, ending);
+            if (target?.deferred) {
+              await this.#machine.toggleCheckpoint(target.checkpoint, true);
+              target.deferred = false;
+            }
+          } else {
+            frames++;
+            if (frames >= limit) return { end: "frames", frames, pc: stop.pc };
+            await this.#machine.setCondition(clock, arming);
+          }
+          armingPhase = !armingPhase;
+          continue;
+        }
+        if (end === "unknown") {
+          if (await this.#jammedAt(stop.pc)) return { end: "jam", frames, pc: stop.pc };
+          throw new WireFailure("operation-failed", "The emulator stopped the machine for a reason outside this run.");
+        }
+        return { end, frames, pc: stop.pc };
+      }
+    } finally {
+      await this.#machine.deleteCheckpoint(clock);
+    }
+  }
+
+  /** Names what caused a stop during a frame-clocked run. */
+  #stopCause(stop: Stop, clock: number, target: number | undefined): Exclude<RunEnd, "frames" | "jam"> | "clock" | "unknown" {
+    if (target !== undefined && stop.hits.includes(target)) return "target";
+    const isPoint = (registry: Map<number, { checkpoint: number }>) =>
+      [...registry.values()].some((point) => stop.hits.includes(point.checkpoint));
+    if (isPoint(this.#breakpoints)) return "breakpoint";
+    if (isPoint(this.#watchpoints)) return "watchpoint";
+    if (stop.hits.includes(clock)) return "clock";
+    return "unknown";
+  }
+
+  async #jammedAt(pc: number): Promise<boolean> {
+    const opcode = await this.#machine.readMemory({ address: pc, size: 1, space: "c64", view: "cpu" });
+    return JAM_OPCODES.has(Number.parseInt(opcode, 16));
+  }
+
+  /** Runs until a target is reached or `timeoutFrames` frames pass (15 §11). */
+  async #runUntil(params: { target: RunTarget; timeoutFrames: number }): Promise<RunUntilResult> {
+    const target = params.target;
+    let expression: string | undefined;
+    let range: { start: number; end: number; operation: number; space: "c64" | "drive8" };
+    let deferred = false;
+    await this.#stop();
+    switch (target.kind) {
+      case "address":
+        range = { start: target.address, end: target.address, operation: 0x04, space: target.space };
+        if (target.condition !== undefined) expression = this.#expression(target.condition, target.space);
+        break;
+      case "memory": {
+        // A store checkpoint whose condition reads memory after the write (live-tested).
+        range = { start: target.address, end: target.address, operation: 0x02, space: target.space };
+        const { kind: _kind, ...condition } = target;
+        expression = this.#expression({ kind: "memory", ...condition }, target.space);
+        break;
+      }
+      case "raster": {
+        const raster = RASTER[this.#videoStandard];
+        this.#expression(target, "c64");
+        const cycle = target.cycle ?? 0;
+        range = { start: 0x0000, end: 0xffff, operation: 0x04, space: "c64" };
+        expression = rasterWindowExpression(target.line, cycle, raster.lines);
+        // Already inside the target window: the next pass through it counts, not this one.
+        deferred = inRasterWindow(await this.#machine.rasterPosition(), target.line, cycle, raster.lines);
+        break;
+      }
+    }
+    const checkpoint = await this.#machine.addCheckpoint({ ...range, enabled: !deferred });
+    try {
+      if (expression !== undefined) await this.#machine.setCondition(checkpoint, expression);
+      const outcome = await this.#runFrames(params.timeoutFrames, { checkpoint, deferred });
+      const stopReason = outcome.end === "frames" ? "timeout" : outcome.end;
+      return { reached: stopReason === "target", stopReason, state: "stopped", pc: outcome.pc };
+    } finally {
+      await this.#machine.deleteCheckpoint(checkpoint);
+    }
   }
 
   /** Checks a condition against this session's video standard and builds its VICE expression. */
@@ -427,15 +566,15 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   /**
-   * Resolves with the PC of the next stop, or undefined after `timeoutMs`.
+   * Resolves with the next stop, or undefined after `timeoutMs`.
    * With `checkpoint`, only a stop caused by that VICE checkpoint counts.
    */
-  #nextStop(timeoutMs: number, checkpoint?: number): Promise<number | undefined> {
+  #nextStop(timeoutMs: number, checkpoint?: number): Promise<Stop | undefined> {
     return new Promise((resolve) => {
-      const waiter = (pc: number, hit: number | undefined) => {
-        if (checkpoint !== undefined && hit !== checkpoint) return false;
+      const waiter = (stop: Stop) => {
+        if (checkpoint !== undefined && !stop.hits.includes(checkpoint)) return false;
         clearTimeout(timer);
-        resolve(pc);
+        resolve(stop);
         return true;
       };
       const timer = setTimeout(() => {
@@ -514,15 +653,14 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   #onEvent(event: MonitorResponse): void {
-    // VICE reports a hit checkpoint (byte 4 set) just before the stop it causes.
-    if (event.type === ResponseType.checkpointInfo && event.body[4] !== 0) this.#checkpointHit = event.body.readUInt32LE(0);
+    // VICE reports each hit checkpoint (byte 4 set) just before the stop it causes.
+    if (event.type === ResponseType.checkpointInfo && event.body[4] !== 0) this.#checkpointHits.push(event.body.readUInt32LE(0));
     if (event.type === ResponseType.stopped || event.type === ResponseType.jam) {
-      const hit = this.#checkpointHit;
-      if (hit !== undefined || event.type === ResponseType.jam) this.#haltCount++;
-      this.#checkpointHit = undefined;
+      const stop: Stop = { pc: decodeProgramCounter(event.body), hits: this.#checkpointHits };
+      if (stop.hits.length > 0 || event.type === ResponseType.jam) this.#haltCount++;
+      this.#checkpointHits = [];
       this.#state = "stopped";
-      const pc = decodeProgramCounter(event.body);
-      this.#stopWaiters = this.#stopWaiters.filter((waiter) => !waiter(pc, hit));
+      this.#stopWaiters = this.#stopWaiters.filter((waiter) => !waiter(stop));
     } else if (event.type === ResponseType.resumed) {
       this.#state = "running";
     }
