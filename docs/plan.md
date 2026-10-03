@@ -51,11 +51,25 @@ Tools: `c64_status`, `c64_memory_read`, `c64_registers` (`get`).
 
   Skipped live suites are reported as skipped, never as passed (09 §6). M1 has no pause tool, so the stopped case is proven at the session level (a raw monitor command stops real VICE); M2 re-checks it through `c64_execution`.
 
+## M2 — Live-machine foundation
+
+Acceptance (19 §4): against real VICE, load a fixture PRG → run → send input → run until a known address → advance an exact frame count → read memory/registers → capture the screen; the same scenario repeats with identical results and no wall-clock sleeps.
+
+- [ ] M2.1 **Text monitor** — `src/host/vice/text-monitor.ts`: VICE's remote text monitor beside the binary one, connected at launch. A command's output ends at a sentinel command's output, because VICE prints an extra prompt when a command enters the monitor. Commands share the session queue; binary `exit` resumes either way. Live test.
+- [ ] M2.2 **Execution control** — `c64_execution` pause/resume/step/next/until-return, `c64_reset`, `c64_warp` (text `warp`), status `warp` read from VICE. step/next/until-return in drive8 come with M3 (VICE steps the monitor's default device).
+- [ ] M2.3 **Writes** — `c64_memory_write`, `c64_registers` `set`; both require the CPU stopped (`machine-running`).
+- [ ] M2.4 **Media** — private-protocol attachments (D1 raw frames), `src/host-client/transfer.ts`, project-path checks incl. symlinks (17 §4); `c64_program_load` (text `load`), `c64_autostart` (binary autostart, `-autostartprgmode 1`), `c64_disk_attach` (text `attach`).
+- [ ] M2.5 **Input** — `c64_keyboard` text/petscii (binary keyboard feed), `c64_joystick` (binary joyport set, held until changed).
+- [ ] M2.6 **Screen capture** — `src/host/vice/screen.ts`: binary display + palette → PNG, `c64_screen` `capture` with an MCP image block (baselines, compare, list and discard come in M3).
+- [ ] M2.7 **Breakpoints and watchpoints** — typed conditions (15 §6) → VICE condition expressions, `c64_breakpoint` and `c64_watchpoint` lifecycles with session-local ids.
+- [ ] M2.8 **Frames and run-until** — `advance-frames` on a re-armed raster checkpoint, `c64_run_until` address/memory/raster targets with `timeoutFrames` and `stopReason`.
+- [ ] M2.9 **c64-emulator skill** — `skills/c64-emulator/SKILL.md` (ASD-STE100).
+- [ ] M2.10 **Acceptance** — `test/integration/vice/m2-acceptance.test.ts` with a fixture PRG built from bytes in TypeScript.
+
 ## Later milestones
 
 Expand each into steps when it starts.
 
-- [ ] **M2** Live-machine foundation: reset, pause/resume/step/next, memory write, register set, program load, autostart, disk attach, keyboard, joystick, warp, screen capture; then advance-frames, run-until, typed conditions, breakpoints, watchpoints. The c64-emulator skill.
 - [ ] **M3** The rest of the frozen MCP surface (15 §37), the text monitor when first needed, drive8, `until-return`, screen baselines, snapshots, `c64_observe`.
 - [ ] **M4** Knowledge core: `src/knowledge`, `.c64-re-tools/knowledge.db`, the c64-knowledge script.
 - [ ] **M5** Native-tool seam + ACME + c64-assembler: assemble → load → known state in VICE.

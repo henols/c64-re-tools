@@ -16,8 +16,9 @@ when the emulator misbehaves.
 
 The repo holds only the rewrite. The design is frozen in `docs/redesign/`
 (start at its `README.md`; `18-repository-structure.md` is the target layout,
-`19-implementation-plan.md` the milestones). Milestone 0 (scaffold) is done;
-build milestone 1 next. Do not pre-create empty files to match the layout.
+`19-implementation-plan.md` the milestones). `docs/plan.md` tracks the steps
+and their status; work its first unchecked step. Do not pre-create empty files
+to match the layout.
 
 The old implementation (`@henols/vice-mcp`, the broker, twelve skills) was
 deleted. Everything is built new from scratch; nothing from the old code is
