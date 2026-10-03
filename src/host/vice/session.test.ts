@@ -214,3 +214,44 @@ test("closing drops queued work and stops VICE", async () => {
   await closing;
   assert.equal(process.stopCount, 1);
 });
+
+test("writes need a stopped CPU and never pause it themselves", async () => {
+  const { fake, session } = await startSession();
+  await assert.rejects(session.handle("memoryWrite", { address: 0x2000, data: "a9", space: "c64", view: "cpu" }), failsWith("machine-running"));
+  await assert.rejects(session.handle("registersSet", { space: "c64", values: { a: 1 } }), failsWith("machine-running"));
+  assert.equal(fake.running, true);
+  assert.equal(fake.ram[0x2000], 0x00);
+  await session.close();
+});
+
+test("a memory write lands in the selected space and the CPU stays stopped", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("execution", { action: "pause", space: "c64" });
+  assert.deepEqual(await session.handle("memoryWrite", { address: 0x2000, data: "a9008d20d0", space: "c64", view: "cpu" }), {
+    address: 0x2000,
+    bytesWritten: 5,
+  });
+  assert.deepEqual([...fake.ram.subarray(0x2000, 0x2005)], [0xa9, 0x00, 0x8d, 0x20, 0xd0]);
+  await session.handle("memoryWrite", { address: 0x0300, data: "ff", space: "drive8", view: "cpu" });
+  assert.equal(fake.drive[0x0300], 0xff);
+  assert.equal(fake.running, false);
+  await session.close();
+});
+
+test("a register write sets only the named registers and merges flags", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("execution", { action: "pause", space: "c64" });
+  const after = await session.handle("registersSet", { space: "c64", values: { pc: 0x2100, x: 7, flags: { z: true, c: false } } });
+  // FL was %10100101 (n, i, c); z set and c cleared gives n, i, z.
+  assert.deepEqual(after, {
+    pc: 0x2100,
+    a: 0x42,
+    x: 7,
+    y: 0,
+    sp: 0xf9,
+    flags: { n: true, v: false, b: false, d: false, i: true, z: true, c: false },
+  });
+  assert.equal(fake.registers.FL, 0b1010_0110);
+  assert.equal(fake.running, false);
+  await session.close();
+});

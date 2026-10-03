@@ -127,3 +127,27 @@ test("operation results are validated on the client", () => {
   assert.deepEqual(validateViceResult("status", status), status);
   assert.throws(() => validateViceResult("status", { ...status, state: "unknown" }), ProtocolError);
 });
+
+test("write parameters are validated with invalid-input", () => {
+  assert.deepEqual(validateViceParams("memoryWrite", { address: 0x2000, data: "a900", space: "c64", view: "ram" }), {
+    address: 0x2000,
+    data: "a900",
+    space: "c64",
+    view: "ram",
+  });
+  for (const params of [
+    { address: 0x2000, data: "", space: "c64", view: "cpu" },
+    { address: 0x2000, data: "A9", space: "c64", view: "cpu" },
+    { address: 0xffff, data: "a900", space: "c64", view: "cpu" },
+    { address: 0, data: "00".repeat(4097), space: "c64", view: "cpu" },
+  ]) {
+    assert.throws(() => validateViceParams("memoryWrite", params), WireFailure);
+  }
+  assert.deepEqual(validateViceParams("registersSet", { space: "c64", values: { pc: 0x2100, flags: { c: true } } }), {
+    space: "c64",
+    values: { pc: 0x2100, flags: { c: true } },
+  });
+  for (const values of [{}, { q: 1 }, { a: 256 }, { pc: -1 }, { flags: { q: true } }, { flags: { c: 1 } }]) {
+    assert.throws(() => validateViceParams("registersSet", { space: "c64", values }), WireFailure, JSON.stringify(values));
+  }
+});

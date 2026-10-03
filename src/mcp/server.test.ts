@@ -5,7 +5,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { WireFailure, type ExecutionParams, type MemoryReadParams, type Registers } from "../protocol.ts";
+import {
+  WireFailure,
+  type ExecutionParams,
+  type MemoryReadParams,
+  type MemoryWriteParams,
+  type RegisterValues,
+  type Registers,
+} from "../protocol.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
 import { executionTools } from "./tools/execution.ts";
 import { machineTools } from "./tools/machine.ts";
@@ -38,6 +45,18 @@ class FakeSession implements ViceSessionApi {
     if (this.failure) throw this.failure;
     this.spaces.push(space);
     return REGISTERS;
+  }
+
+  writes: MemoryWriteParams[] = [];
+  async memoryWrite(params: MemoryWriteParams) {
+    this.writes.push(params);
+    return { address: params.address, bytesWritten: params.data.length / 2 };
+  }
+
+  registerWrites: Array<{ space: string; values: RegisterValues }> = [];
+  async registersSet(space: "c64" | "drive8", values: RegisterValues) {
+    this.registerWrites.push({ space, values });
+    return { ...REGISTERS, ...values, flags: { ...REGISTERS.flags, ...values.flags } } as Registers;
   }
 
   executions: ExecutionParams[] = [];
@@ -85,11 +104,19 @@ function errorOf(result: CallToolResult): { code: string; message: string } {
 test("the server lists exactly the implemented tools with object input and output schemas", async () => {
   const client = await connect(async () => new FakeSession());
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), ["c64_execution", "c64_memory_read", "c64_registers", "c64_reset", "c64_status", "c64_warp"]);
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+    "c64_execution",
+    "c64_memory_read",
+    "c64_memory_write",
+    "c64_registers",
+    "c64_reset",
+    "c64_status",
+    "c64_warp",
+  ]);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object");
     assert.equal(tool.outputSchema?.type, "object");
-    assert.equal(tool.annotations?.readOnlyHint, ["c64_status", "c64_memory_read", "c64_registers"].includes(tool.name));
+    assert.equal(tool.annotations?.readOnlyHint, ["c64_status", "c64_memory_read"].includes(tool.name));
     assert.doesNotMatch(`${tool.description} ${JSON.stringify(tool.inputSchema)}`, /\bVICE\b|monitor|port|session id|request/i);
   }
   const read = tools.find((tool) => tool.name === "c64_memory_read")!;
@@ -206,5 +233,33 @@ test("c64_reset defaults run to false and c64_warp echoes the mode", async () =>
   assert.equal(errorOf(await call(client, "c64_reset", {})).code, "invalid-input");
   assert.deepEqual((await call(client, "c64_warp", { enabled: true })).structuredContent, { enabled: true });
   assert.equal(session.warpState, true);
+  await client.close();
+});
+
+test("c64_memory_write takes hex in either case and reports bytes written", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  assert.deepEqual((await call(client, "c64_memory_write", { address: "$2000", data: "A9008D20D0" })).structuredContent, {
+    address: "$2000",
+    bytesWritten: 5,
+  });
+  assert.deepEqual(session.writes, [{ address: 0x2000, data: "a9008d20d0", space: "c64", view: "cpu" }]);
+  for (const data of ["", "a", "zz", "a9 00"]) {
+    assert.equal(errorOf(await call(client, "c64_memory_write", { address: "$2000", data })).code, "invalid-input", data);
+  }
+  await client.close();
+});
+
+test("c64_registers set writes only the named registers; get refuses values", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const result = await call(client, "c64_registers", { action: "set", values: { pc: "$2100", a: 1, flags: { c: false } } });
+  assert.equal((result.structuredContent as { pc: string }).pc, "$2100");
+  assert.deepEqual(session.registerWrites, [{ space: "c64", values: { pc: 0x2100, a: 1, flags: { c: false } } }]);
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "set" })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: {} })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { q: 1 } })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { a: 256 } })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "get", values: { a: 1 } })).code, "invalid-input");
   await client.close();
 });

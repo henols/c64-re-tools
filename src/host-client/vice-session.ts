@@ -8,6 +8,8 @@ import {
   type ExecutionParams,
   type ExecutionResult,
   type MachineStatus,
+  type MemoryWriteParams,
+  type RegisterValues,
   type ResetMode,
   type RunState,
   type MemoryReadParams,
@@ -86,6 +88,14 @@ export class ViceSessionClient {
 
   registersGet(space: Space): Promise<Registers> {
     return this.#request("registersGet", { space });
+  }
+
+  memoryWrite(params: MemoryWriteParams): Promise<{ address: number; bytesWritten: number }> {
+    return this.#request("memoryWrite", params);
+  }
+
+  registersSet(space: Space, values: RegisterValues): Promise<Registers> {
+    return this.#request("registersSet", { space, values });
   }
 
   execution(params: ExecutionParams): Promise<ExecutionResult> {

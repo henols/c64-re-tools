@@ -291,6 +291,26 @@ export class FakeVice {
         }
         return void answer(Buffer.concat([u16(data.length), data]));
       }
+      case Command.memorySet: {
+        const start = body.readUInt16LE(1);
+        const memspace = body[5]!;
+        const data = body.subarray(8);
+        // Writes through the cpu view land in RAM under the ROMs, as on a real C64.
+        data.copy(memspace === 1 ? this.drive : this.ram, start);
+        return void answer();
+      }
+      case Command.registersSet: {
+        const values = body[0] === 0 ? this.registers : this.driveRegisters;
+        const count = body.readUInt16LE(1);
+        let offset = 3;
+        for (let index = 0; index < count; index++) {
+          const size = body[offset]!;
+          const register = REGISTERS.find((candidate) => candidate.id === body[offset + 1]);
+          if (register !== undefined) values[register.name] = body.readUInt16LE(offset + 2);
+          offset += size + 1;
+        }
+        return void answer(this.#registerBody(body[0]!), 0x31);
+      }
       case Command.exit:
         answer();
         return this.#leaveMonitor(socket);

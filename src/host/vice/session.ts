@@ -125,6 +125,16 @@ export class ViceSession implements ViceSessionHandle {
         const { space } = params as ViceOperations["registersGet"]["params"];
         return this.#observe(() => this.#machine.readRegisters(space));
       }
+      case "memoryWrite": {
+        const write = params as ViceOperations["memoryWrite"]["params"];
+        this.#requireStopped();
+        return { address: write.address, bytesWritten: await this.#machine.writeMemory(write) };
+      }
+      case "registersSet": {
+        const { space, values } = params as ViceOperations["registersSet"]["params"];
+        this.#requireStopped();
+        return this.#machine.writeRegisters(space, values);
+      }
       case "execution":
         return this.#execution(params as ExecutionParams);
       case "reset":
@@ -201,6 +211,13 @@ export class ViceSession implements ViceSessionHandle {
     await this.#machine.deleteCheckpoint(checkpoint);
     if (!reached) throw new WireFailure("operation-failed", "The C64 did not reach its reset vector after the reset.");
     return { state: "stopped" };
+  }
+
+  /** Direct CPU-state writes need a stopped CPU (15 §4); they never pause it themselves. */
+  #requireStopped(): void {
+    if (this.#state === "running") {
+      throw new WireFailure("machine-running", "The CPU is running. Stop it with c64_execution action pause first.");
+    }
   }
 
   /** The C64 program counter; the machine must be stopped. */

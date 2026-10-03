@@ -48,8 +48,9 @@ export type MemoryView = (typeof MEMORY_VIEWS)[number];
 export const RUN_STATES = ["running", "stopped"] as const;
 export type RunState = (typeof RUN_STATES)[number];
 
-/** Bounds of c64_memory_read (15 §14). */
+/** Bounds of c64_memory_read (15 §14) and c64_memory_write (15 §15). */
 export const MAX_MEMORY_READ = 4096;
+export const MAX_MEMORY_WRITE = 4096;
 
 export const EXECUTION_ACTIONS = ["pause", "resume", "step", "next", "until-return"] as const;
 export type ExecutionAction = (typeof EXECUTION_ACTIONS)[number];
@@ -102,6 +103,24 @@ export interface Registers {
   flags: CpuFlags;
 }
 
+export interface MemoryWriteParams {
+  address: number;
+  /** Lowercase hex, 1 to MAX_MEMORY_WRITE bytes. */
+  data: string;
+  space: Space;
+  view: MemoryView;
+}
+
+/** Any subset of the registers; flags may be a subset too. */
+export interface RegisterValues {
+  pc?: number;
+  a?: number;
+  x?: number;
+  y?: number;
+  sp?: number;
+  flags?: Partial<CpuFlags>;
+}
+
 export interface ExecutionParams {
   action: ExecutionAction;
   /** step and next only; defaults to 1. */
@@ -119,6 +138,8 @@ export interface ViceOperations {
   status: { params: Record<string, never>; result: MachineStatus };
   memoryRead: { params: MemoryReadParams; result: MemoryReadResult };
   registersGet: { params: { space: Space }; result: Registers };
+  memoryWrite: { params: MemoryWriteParams; result: { address: number; bytesWritten: number } };
+  registersSet: { params: { space: Space; values: RegisterValues }; result: Registers };
   execution: { params: ExecutionParams; result: ExecutionResult };
   reset: { params: { mode: ResetMode; run: boolean }; result: { state: RunState } };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
@@ -128,6 +149,8 @@ export const VICE_OPERATIONS = [
   "status",
   "memoryRead",
   "registersGet",
+  "memoryWrite",
+  "registersSet",
   "execution",
   "reset",
   "warp",
@@ -296,6 +319,47 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       return { space: params.space } as ViceOperations[O]["params"];
     }
+    case "memoryWrite": {
+      if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
+      if (!isHexData(params.data) || params.data.length === 0) invalid("data must be lowercase hex bytes");
+      const size = params.data.length / 2;
+      if (size > MAX_MEMORY_WRITE) invalid(`data must be at most ${MAX_MEMORY_WRITE} bytes`);
+      if (params.address + size > 0x10000) invalid("the range runs past $ffff");
+      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
+      if (!isOneOf(MEMORY_VIEWS, params.view)) invalid("view must be cpu or ram");
+      const result: MemoryWriteParams = { address: params.address, data: params.data, space: params.space, view: params.view };
+      return result as ViceOperations[O]["params"];
+    }
+    case "registersSet": {
+      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
+      const values = params.values;
+      if (!isObject(values)) invalid("values must be an object");
+      const known = ["pc", "a", "x", "y", "sp", "flags"];
+      for (const key of Object.keys(values)) if (!known.includes(key)) invalid(`values has an unknown register: ${key}`);
+      if (Object.keys(values).length === 0) invalid("values must name at least one register");
+      const result: RegisterValues = {};
+      if (values.pc !== undefined) {
+        if (!isInteger(values.pc, 0, 0xffff)) invalid("pc must be an integer from 0 to 65535");
+        result.pc = values.pc;
+      }
+      for (const name of ["a", "x", "y", "sp"] as const) {
+        if (values[name] === undefined) continue;
+        if (!isInteger(values[name], 0, 0xff)) invalid(`${name} must be an integer from 0 to 255`);
+        result[name] = values[name];
+      }
+      if (values.flags !== undefined) {
+        const flags = values.flags;
+        if (!isObject(flags)) invalid("flags must be an object");
+        const set: Partial<CpuFlags> = {};
+        for (const [flag, value] of Object.entries(flags)) {
+          if (!["n", "v", "b", "d", "i", "z", "c"].includes(flag)) invalid(`flags has an unknown flag: ${flag}`);
+          if (typeof value !== "boolean") invalid(`flag ${flag} must be true or false`);
+          set[flag as keyof CpuFlags] = value;
+        }
+        result.flags = set;
+      }
+      return { space: params.space, values: result } as ViceOperations[O]["params"];
+    }
     case "execution": {
       if (!isOneOf(EXECUTION_ACTIONS, params.action)) invalid(`action must be one of ${EXECUTION_ACTIONS.join(", ")}`);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
@@ -355,6 +419,15 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         isFlags(value.flags);
       if (!ok) throw new ProtocolError("registersGet result is malformed");
       break;
+    }
+    case "memoryWrite": {
+      if (!isInteger(value.address, 0, 0xffff) || !isInteger(value.bytesWritten, 1, MAX_MEMORY_WRITE)) {
+        throw new ProtocolError("memoryWrite result is malformed");
+      }
+      break;
+    }
+    case "registersSet": {
+      return validateViceResult("registersGet", value) as unknown as ViceOperations[O]["result"];
     }
     case "execution": {
       const ok =

@@ -1,7 +1,7 @@
 // Translates C64-domain operations into binary-monitor commands. VICE quirks
 // and register/bank id lookups live here; callers never see monitor details.
 
-import { WireFailure, type MemoryView, type Registers, type Space } from "../../protocol.ts";
+import { WireFailure, type MemoryView, type RegisterValues, type Registers, type Space } from "../../protocol.ts";
 import { TextMonitorError, type TextMonitor } from "./text-monitor.ts";
 import {
   BinaryMonitor,
@@ -30,6 +30,19 @@ async function registerIds(monitor: BinaryMonitor, space: Space): Promise<Regist
     ids[key] = register.id;
   }
   return ids;
+}
+
+export function statusRegisterFromFlags(flags: Registers["flags"]): number {
+  return (
+    (flags.n ? 0x80 : 0) |
+    (flags.v ? 0x40 : 0) |
+    0x20 | // bit 5 always reads as 1 on the 6502
+    (flags.b ? 0x10 : 0) |
+    (flags.d ? 0x08 : 0) |
+    (flags.i ? 0x04 : 0) |
+    (flags.z ? 0x02 : 0) |
+    (flags.c ? 0x01 : 0)
+  );
 }
 
 export function flagsFromStatusRegister(value: number): Registers["flags"] {
@@ -103,6 +116,43 @@ export class ViceAdapter {
     const bytes = decodeMemory(response.body);
     if (bytes.length !== options.size) throw new Error(`VICE returned ${bytes.length} bytes for a ${options.size}-byte read`);
     return bytes.toString("hex");
+  }
+
+  /** Writes memory as the selected CPU (view cpu) or into plain RAM (view ram, c64 only). */
+  async writeMemory(options: { address: number; data: string; space: Space; view: MemoryView }): Promise<number> {
+    if (options.space === "drive8" && options.view === "ram") {
+      throw new WireFailure("unsupported-in-space", "view ram is available only in space c64; use view cpu for drive8.");
+    }
+    const bytes = Buffer.from(options.data, "hex");
+    const header = Buffer.alloc(8);
+    header[0] = 0; // no side effects
+    header.writeUInt16LE(options.address, 1);
+    header.writeUInt16LE(options.address + bytes.length - 1, 3);
+    header[5] = MEMSPACE[options.space];
+    header.writeUInt16LE(options.space === "c64" ? this.#banks[options.view] : 0, 6);
+    await this.#monitor.request(Command.memorySet, Buffer.concat([header, bytes]));
+    return bytes.length;
+  }
+
+  /** Sets any subset of the registers (flags merge into the current status register). Returns the full set. */
+  async writeRegisters(space: Space, values: RegisterValues): Promise<Registers> {
+    const current = await this.readRegisters(space);
+    const ids = this.#registerIds[space];
+    const items: Buffer[] = [];
+    const add = (key: RegisterKey, value: number) => {
+      const item = Buffer.alloc(4);
+      item[0] = 3; // item size after this byte
+      item[1] = ids[key];
+      item.writeUInt16LE(value, 2);
+      items.push(item);
+    };
+    if (values.pc !== undefined) add("pc", values.pc);
+    for (const key of ["a", "x", "y", "sp"] as const) if (values[key] !== undefined) add(key, values[key]);
+    if (values.flags !== undefined) add("flags", statusRegisterFromFlags({ ...current.flags, ...values.flags }));
+    const count = Buffer.alloc(2);
+    count.writeUInt16LE(items.length, 0);
+    await this.#monitor.request(Command.registersSet, Buffer.concat([Buffer.from([MEMSPACE[space]]), count, ...items]));
+    return this.readRegisters(space);
   }
 
   async readRegisters(space: Space): Promise<Registers> {

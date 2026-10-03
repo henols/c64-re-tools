@@ -1,10 +1,11 @@
-// Memory and CPU tools: c64_memory_read (15 §14) and c64_registers (15 §18).
+// Memory and CPU tools: c64_memory_read (15 §14), c64_memory_write (15 §15)
+// and c64_registers (15 §18).
 
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { MAX_MEMORY_READ } from "../../protocol.ts";
-import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, SpaceInput } from "../server.ts";
+import { MAX_MEMORY_READ, MAX_MEMORY_WRITE, WireFailure, type RegisterValues } from "../../protocol.ts";
+import { AddressInput, AddressOutput, Byte, defineTool, HexData, HexDataInput, MemoryViewInput, SpaceInput } from "../server.ts";
 
 export const c64MemoryRead = defineTool({
   name: "c64_memory_read",
@@ -29,6 +30,30 @@ export const c64MemoryRead = defineTool({
   },
 });
 
+export const c64MemoryWrite = defineTool({
+  name: "c64_memory_write",
+  title: "Write C64 memory",
+  description:
+    `Write 1 to ${MAX_MEMORY_WRITE} bytes to memory, starting at an address. The CPU must be stopped: ` +
+    "use c64_execution action pause first. The range must not go past $ffff. " +
+    "With view cpu, the write goes where the CPU writes now (a write to a ROM address goes to the RAM under it; a write to I/O goes to the chip). " +
+    "With view ram, the write goes to RAM (c64 only).",
+  inputSchema: z
+    .object({
+      address: AddressInput,
+      data: HexDataInput.describe("bytes as hex, two digits per byte, no separators, for example a9008d20d0"),
+      space: SpaceInput,
+      view: MemoryViewInput,
+    })
+    .strict(),
+  outputSchema: z.object({ address: AddressOutput, bytesWritten: z.number().int().min(1).max(MAX_MEMORY_WRITE) }),
+  readOnly: false,
+  async run(input, session) {
+    const result = await session.memoryWrite(input);
+    return { address: formatC64Address(result.address), bytesWritten: result.bytesWritten };
+  },
+});
+
 const Flags = z.object({
   n: z.boolean(),
   v: z.boolean(),
@@ -39,25 +64,55 @@ const Flags = z.object({
   c: z.boolean(),
 });
 
+const RegisterValuesInput = z
+  .object({
+    pc: AddressInput.optional(),
+    a: Byte.optional(),
+    x: Byte.optional(),
+    y: Byte.optional(),
+    sp: Byte.optional(),
+    flags: Flags.partial().strict().optional().describe("any of n, v, b, d, i, z and c; flags not named keep their value"),
+  })
+  .strict();
+
 export const c64Registers = defineTool({
   name: "c64_registers",
   title: "C64 CPU registers",
   description:
-    "Get the CPU registers: pc, a, x, y, sp and the status flags n, v, b, d, i, z and c. " +
-    "Use space drive8 to get the registers of the 1541 disk drive CPU. " +
-    "This read does not change if the machine is running or stopped.",
+    "Get or set the CPU registers: pc, a, x, y, sp and the status flags n, v, b, d, i, z and c. " +
+    "Action get reads them; it does not change if the machine is running or stopped. " +
+    "Action set writes the registers named in values and returns all registers; the CPU must be stopped. " +
+    "Use space drive8 for the CPU of the 1541 disk drive.",
   inputSchema: z
     .object({
-      action: z.enum(["get"]).describe("get reads the registers"),
+      action: z.enum(["get", "set"]),
       space: SpaceInput,
+      values: RegisterValuesInput.optional().describe("set only: the registers to write"),
     })
     .strict(),
   outputSchema: z.object({ pc: AddressOutput, a: Byte, x: Byte, y: Byte, sp: Byte, flags: Flags }),
-  readOnly: true,
+  readOnly: false,
   async run(input, session) {
-    const registers = await session.registersGet(input.space);
+    let registers;
+    if (input.action === "get") {
+      if (input.values !== undefined) throw new WireFailure("invalid-input", "values is used only with action set.");
+      registers = await session.registersGet(input.space);
+    } else {
+      if (input.values === undefined || Object.keys(input.values).length === 0) {
+        throw new WireFailure("invalid-input", "values must name at least one register for action set.");
+      }
+      const values: RegisterValues = {};
+      for (const key of ["pc", "a", "x", "y", "sp"] as const) {
+        const value = input.values[key];
+        if (value !== undefined) values[key] = value;
+      }
+      if (input.values.flags !== undefined) {
+        values.flags = Object.fromEntries(Object.entries(input.values.flags).filter(([, value]) => value !== undefined));
+      }
+      registers = await session.registersSet(input.space, values);
+    }
     return { ...registers, pc: formatC64Address(registers.pc) };
   },
 });
 
-export const memoryTools = [c64MemoryRead, c64Registers];
+export const memoryTools = [c64MemoryRead, c64MemoryWrite, c64Registers];

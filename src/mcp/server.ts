@@ -12,7 +12,10 @@ import type { ViceSessionClient } from "../host-client/vice-session.ts";
 import { MEMORY_VIEWS, SPACES, WireFailure, type WireError } from "../protocol.ts";
 
 /** The session operations tools may call. */
-export type ViceSessionApi = Pick<ViceSessionClient, "status" | "memoryRead" | "registersGet" | "execution" | "reset" | "warp">;
+export type ViceSessionApi = Pick<
+  ViceSessionClient,
+  "status" | "memoryRead" | "registersGet" | "memoryWrite" | "registersSet" | "execution" | "reset" | "warp"
+>;
 
 /** Resolves the session, opening it on first use when the start-up attempt failed. */
 export type SessionSource = () => Promise<ViceSessionApi>;
@@ -35,6 +38,12 @@ export const AddressOutput = z.string().regex(/^\$[0-9a-f]{4}$/).describe("C64 a
 export const Byte = z.number().int().min(0).max(255);
 
 export const HexData = z.string().regex(/^(?:[0-9a-f]{2})*$/).describe("bytes as lowercase hex, two digits per byte, no separators");
+
+/** Input bytes: hex in either case, two digits per byte, at least one byte. Parses to lowercase. */
+export const HexDataInput = z
+  .string()
+  .regex(/^(?:[0-9a-fA-F]{2})+$/, "must be hex bytes, two digits per byte, no separators, for example a9008d20d0")
+  .transform((value) => value.toLowerCase());
 
 export const SpaceInput = z.enum(SPACES).default("c64").describe("c64 is the computer; drive8 is the 1541 disk drive CPU");
 
