@@ -1,0 +1,202 @@
+// VICE launch, readiness and termination. The launch contract below was
+// established against stock VICE 3.10 (x64sc):
+// - `-default` must come before `-binarymonitor`, or the monitor never binds;
+// - the monitor may accept a connection during startup and then drop it, so
+//   readiness is a connect plus a successful ping, retried until a deadline;
+// - any monitor command stops the machine, so readiness ends with `exit`;
+// - `-default` selects drive type 1542, whose ROM stock installs often lack,
+//   so drive 8 is a plain 1541.
+
+import { accessSync, constants, mkdtempSync, rmSync, statSync } from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { delimiter, isAbsolute, join } from "node:path";
+
+import { WireFailure, type VideoStandard } from "../../protocol.ts";
+import type { ExitStatus, ProcessSupervisor, SupervisedProcess } from "../processes.ts";
+import { BinaryMonitor, Command } from "./binary-monitor.ts";
+
+export const DEFAULT_READY_TIMEOUT_MS = 30_000;
+const PING_TIMEOUT_MS = 5_000;
+const RETRY_MS = 50;
+const OUTPUT_TAIL_LINES = 40;
+
+const VICE_BINARY = process.platform === "win32" ? "x64sc.exe" : "x64sc";
+
+const INSTALL_REMEDY =
+  "Install VICE 3.6 or later on the host so that x64sc is on PATH, or set C64RT_VICE to the full path of x64sc, " +
+  "then restart c64-re-tools-host.";
+
+function isExecutableFile(path: string): boolean {
+  try {
+    if (!statSync(path).isFile()) return false;
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Finds x64sc (D8): C64RT_VICE, else PATH. Refuses by name with the remedy; never installs anything. */
+export function findVice(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.C64RT_VICE;
+  if (configured !== undefined && configured !== "") {
+    if (isAbsolute(configured) && isExecutableFile(configured)) return configured;
+    throw new WireFailure(
+      "installation-incomplete",
+      `C64RT_VICE on the host does not name an executable VICE x64sc file. ${INSTALL_REMEDY}`,
+    );
+  }
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
+    if (dir === "") continue;
+    const candidate = join(dir, VICE_BINARY);
+    if (isExecutableFile(candidate)) return candidate;
+  }
+  throw new WireFailure("installation-incomplete", `VICE (x64sc) is not installed on the host. ${INSTALL_REMEDY}`);
+}
+
+/** Asks the OS for a free loopback port. Another process can still take it before VICE binds. */
+export function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close(() => {
+        if (address === null || typeof address === "string") reject(new Error("no TCP address"));
+        else resolve(address.port);
+      });
+    });
+  });
+}
+
+export function viceArguments(options: { binary: string; port: number; configFile: string; videoStandard: VideoStandard }): string[] {
+  return [
+    options.binary,
+    "-default",
+    "-binarymonitor",
+    "-binarymonitoraddress",
+    `ip4://127.0.0.1:${options.port}`,
+    "-config",
+    options.configFile,
+    "-model",
+    options.videoStandard === "ntsc" ? "ntsc" : "c64",
+    "-drive8type",
+    "1541",
+  ];
+}
+
+export interface LaunchOptions {
+  videoStandard: VideoStandard;
+  supervisor: ProcessSupervisor;
+  /** Environment to find VICE in and to run it with. Defaults to process.env. */
+  env?: NodeJS.ProcessEnv;
+  readyTimeoutMs?: number;
+  log?: (line: string) => void;
+}
+
+/** A running, ready VICE with its binary monitor connected. */
+export interface ViceProcess {
+  /** Host-internal; never leaves the Host Runtime. */
+  readonly pid: number;
+  readonly monitor: BinaryMonitor;
+  /** Settles when VICE exits, for any reason. */
+  readonly exited: Promise<ExitStatus>;
+  /** The last lines VICE printed, for host logs only. */
+  outputTail(): string;
+  /** Closes the monitor, stops the process group and removes the scratch directory. Idempotent. */
+  stop(): Promise<void>;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Collects the last lines of a child's output. */
+function tailCollector(child: SupervisedProcess): () => string {
+  const lines: string[] = [];
+  let partial = "";
+  const take = (chunk: Buffer) => {
+    const parts = (partial + chunk.toString("utf8")).split("\n");
+    partial = parts.pop() ?? "";
+    lines.push(...parts);
+    if (lines.length > OUTPUT_TAIL_LINES) lines.splice(0, lines.length - OUTPUT_TAIL_LINES);
+  };
+  child.child.stdout?.on("data", take);
+  child.child.stderr?.on("data", take);
+  return () => [...lines, partial].filter((line) => line !== "").join("\n");
+}
+
+/**
+ * Launches one VICE in its own scratch directory outside the project, waits
+ * until its binary monitor answers, then lets the machine run.
+ * Throws WireFailure: installation-incomplete when VICE is missing,
+ * machine-unavailable when it does not start.
+ */
+export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
+  const env = options.env ?? process.env;
+  const log = options.log ?? (() => {});
+  const binary = findVice(env);
+  const port = await freePort();
+  const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-vice-"));
+  const child = options.supervisor.spawn(
+    viceArguments({ binary, port, configFile: join(scratch, "vicerc"), videoStandard: options.videoStandard }),
+    {
+      cwd: scratch,
+      // Keep VICE's config, cache and state away from the user's own VICE setup.
+      env: { ...env, XDG_CONFIG_HOME: scratch, XDG_CACHE_HOME: scratch, XDG_STATE_HOME: scratch },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  const outputTail = tailCollector(child);
+  let exited = false;
+  void child.exited.then(() => (exited = true));
+
+  let monitor: BinaryMonitor | undefined;
+  let stopping: Promise<void> | undefined;
+  const stop = () => {
+    stopping ??= (async () => {
+      await monitor?.close();
+      await child.stop();
+      rmSync(scratch, { recursive: true, force: true });
+    })();
+    return stopping;
+  };
+
+  try {
+    monitor = await waitForMonitor(port, () => exited, options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
+    // Readiness stopped the machine; let it run as a freshly started C64 does.
+    await monitor.request(Command.exit);
+  } catch (error) {
+    log(`VICE failed to start: ${error instanceof Error ? error.message : String(error)}\n${outputTail()}`);
+    await stop();
+    if (error instanceof WireFailure) throw error;
+    throw new WireFailure("machine-unavailable", "The emulator could not be started on the host.");
+  }
+  log(`VICE started (pid ${child.pid}, monitor port ${port})`);
+  const ready = monitor;
+  return { pid: child.pid, monitor: ready, exited: child.exited, outputTail, stop };
+}
+
+async function waitForMonitor(port: number, hasExited: () => boolean, timeoutMs: number): Promise<BinaryMonitor> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (hasExited()) throw new WireFailure("machine-unavailable", "The emulator exited while it was starting.");
+    let monitor: BinaryMonitor;
+    try {
+      monitor = await BinaryMonitor.connect(port);
+    } catch {
+      await sleep(RETRY_MS);
+      continue;
+    }
+    try {
+      await monitor.request(Command.ping, undefined, Math.min(PING_TIMEOUT_MS, Math.max(1, deadline - Date.now())));
+      return monitor;
+    } catch {
+      // VICE can drop a connection it accepted during startup; connect again.
+      await monitor.close();
+      await sleep(RETRY_MS);
+    }
+  }
+  throw new WireFailure("machine-unavailable", "The emulator did not become ready in time.");
+}
