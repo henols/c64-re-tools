@@ -16,9 +16,10 @@ export const c64Autostart = defineTool({
   name: "c64_autostart",
   title: "Autostart a program or image",
   description:
-    `Start a program or a disk, tape or cartridge image from the project, as when you autostart it on a real C64 (${list(AUTOSTART_TYPES)}). ` +
-    "The C64 resets, loads the file and, with run true (the default), runs it. A disk image stays in drive 8. " +
-    "index selects a file on a disk image (default 0, the first file). The machine is running when this returns; loading continues.",
+    `Start a program, or a disk, tape or cartridge image, from the project (${list(AUTOSTART_TYPES)}). ` +
+    "The C64 resets and loads the file. With run true (the default), it also runs the file. A disk image stays in drive 8. " +
+    "index selects a file on a disk image (default 0, the first file). " +
+    "The machine runs when this tool returns, and the load continues.",
   inputSchema: z
     .object({
       path: ProjectPath,
@@ -38,8 +39,8 @@ export const c64ProgramLoad = defineTool({
   title: "Load a PRG into memory",
   description:
     "Load a PRG file from the project into memory, with no reset and no start. The CPU stops and stays stopped. " +
-    "The bytes go where the CPU would write them. Without address, the program goes to the load address in its first two bytes; " +
-    "with address, it goes there instead.",
+    "The bytes go where the CPU writes them. Without address, the program goes to the load address in its first two bytes. " +
+    "With address, it goes there instead.",
   inputSchema: z
     .object({
       path: ProjectPath,
@@ -59,7 +60,8 @@ export const c64DiskAttach = defineTool({
   title: "Attach a disk image",
   description:
     `Put a disk image from the project into drive 8 (${list(DISK_TYPES)}). ` +
-    "Nothing loads or runs; use LOAD on the C64 or c64_autostart for that. This does not change if the machine is running or stopped.",
+    "Nothing loads or runs. To load from the disk, type LOAD on the C64 or use c64_autostart. " +
+    "This does not change if the machine is running or stopped.",
   inputSchema: z.object({ path: ProjectPath }).strict(),
   outputSchema: z.object({ attached: z.boolean() }),
   readOnly: false,

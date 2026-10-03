@@ -10,7 +10,7 @@ export const c64Screen = defineTool({
   title: "Capture the C64 screen",
   description:
     "Action capture returns the last frame the C64 drew, with its borders, as a PNG image, plus its width and height in pixels. " +
-    "The emulator draws a frame while the CPU runs; a stopped CPU keeps the frame it last drew. " +
+    "The emulator draws frames while the CPU runs. After the CPU stops, the frame stays the same. " +
     "This does not change if the machine is running or stopped.",
   inputSchema: z.object({ action: z.enum(["capture"]) }).strict(),
   outputSchema: z.object({ width: z.number().int().min(1), height: z.number().int().min(1) }),

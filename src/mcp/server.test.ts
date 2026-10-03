@@ -462,3 +462,14 @@ test("c64_run_until fills the timeout and passes typed targets", async () => {
   }
   await client.close();
 });
+
+test("tool descriptions keep to the STE length and punctuation rules", () => {
+  for (const tool of ALL_TOOLS) {
+    assert.doesNotMatch(tool.description, /;/, `${tool.name}: STE bans the semicolon`);
+    // Split at a full stop that ends a sentence (not one inside "$c000" or a file extension).
+    for (const sentence of tool.description.split(/\.\s+/)) {
+      const words = sentence.split(/\s+/).filter((word) => word !== "");
+      assert.ok(words.length <= 25, `${tool.name}: a sentence has ${words.length} words: ${sentence}`);
+    }
+  }
+});

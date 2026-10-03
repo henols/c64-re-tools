@@ -34,9 +34,9 @@ export const c64MemoryWrite = defineTool({
   name: "c64_memory_write",
   title: "Write C64 memory",
   description:
-    `Write 1 to ${MAX_MEMORY_WRITE} bytes to memory, starting at an address. The CPU must be stopped: ` +
-    "use c64_execution action pause first. The range must not go past $ffff. " +
-    "With view cpu, the write goes where the CPU writes now (a write to a ROM address goes to the RAM under it; a write to I/O goes to the chip). " +
+    `Write 1 to ${MAX_MEMORY_WRITE} bytes to memory, starting at an address. First stop the CPU with c64_execution action pause. ` +
+    "The range must not go past $ffff. With view cpu, the write goes where the CPU writes now. " +
+    "A write to a ROM address goes to the RAM under it, and a write to I/O goes to the chip. " +
     "With view ram, the write goes to RAM (c64 only).",
   inputSchema: z
     .object({
@@ -80,8 +80,8 @@ export const c64Registers = defineTool({
   title: "C64 CPU registers",
   description:
     "Get or set the CPU registers: pc, a, x, y, sp and the status flags n, v, b, d, i, z and c. " +
-    "Action get reads them; it does not change if the machine is running or stopped. " +
-    "Action set writes the registers named in values and returns all registers; the CPU must be stopped. " +
+    "Action get reads them. It does not change if the machine is running or stopped. " +
+    "Action set writes the registers that values names and returns all registers. Stop the CPU before you use set. " +
     "Use space drive8 for the CPU of the 1541 disk drive.",
   inputSchema: z
     .object({

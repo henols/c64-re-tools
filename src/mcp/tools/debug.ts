@@ -37,7 +37,7 @@ export const c64Breakpoint = defineTool({
   title: "C64 breakpoints",
   description:
     "Manage breakpoints. A breakpoint stops the CPU when it is about to execute the instruction at an address. " +
-    "Action add sets one at address (in space c64 or drive8), with an optional condition: then it stops only when the condition is true. " +
+    "Action add sets one at address in space c64 or drive8. With a condition, it stops only when the condition is true. " +
     "add returns the new id. Actions remove, enable and disable take that id. Action list gives all breakpoints. " +
     "Breakpoints stay through a reset.",
   inputSchema: z
@@ -78,8 +78,8 @@ export const c64Watchpoint = defineTool({
   title: "C64 watchpoints",
   description:
     "Manage watchpoints. A watchpoint stops the CPU when an instruction reads or writes memory in a range. " +
-    `Action add sets one at address for size bytes (1 to ${MAX_WATCH_SIZE}, default 1) with access read, write or read-write, ` +
-    "and an optional condition: then it stops only when the condition is true. For a write, a memory condition sees the memory after the write. " +
+    `Action add sets one at address for size bytes (1 to ${MAX_WATCH_SIZE}, default 1), with access read, write or read-write. ` +
+    "With a condition, it stops only when the condition is true. For a write, a memory condition sees the memory after the write. " +
     "add returns the new id. Actions remove, enable and disable take that id. Action list gives all watchpoints.",
   inputSchema: z
     .object({

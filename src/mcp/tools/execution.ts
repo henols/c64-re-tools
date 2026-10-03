@@ -22,8 +22,8 @@ export const c64Execution = defineTool({
     "step executes count instructions (default 1) and goes into subroutines. " +
     "next executes count instructions (default 1) and treats a JSR and its subroutine as one instruction. " +
     "until-return runs until the current subroutine returns (after the next RTS or RTI). " +
-    "advance-frames runs exactly count video frames (required), from the current raster position to the same position count frames later, and stops; " +
-    "a breakpoint or watchpoint can stop it earlier, and advancedFrames tells how many frames ran. " +
+    "advance-frames runs exactly count video frames (count is necessary). It stops at the same raster position, count frames later. " +
+    "A breakpoint or watchpoint can stop it before that. advancedFrames tells how many frames ran. " +
     "step, next, until-return and advance-frames first stop a running CPU. Use count only with step, next and advance-frames.",
   inputSchema: z
     .object({
@@ -89,11 +89,13 @@ export const c64RunUntil = defineTool({
   name: "c64_run_until",
   title: "Run the C64 until a target",
   description:
-    "Run the CPU until a target happens, then stop. Target kind address stops before the instruction at an address executes (optionally only when a condition is true). " +
+    "Run the CPU until a target occurs, then stop. " +
+    "Target kind address stops before the instruction at an address executes. An optional condition must also be true. " +
     "Kind memory stops after a write makes a byte in memory compare true to a value. " +
-    "Kind raster stops at the first instruction at or after a raster line and cycle; if the machine is there already, it runs to the next frame's pass. " +
+    "Kind raster stops at the first instruction at or after a raster line and cycle. If the machine is there now, it stops at the next frame's pass. " +
     `timeoutFrames (1 to ${MAX_TIMEOUT_FRAMES}, default 3000) limits the run in video frames. ` +
-    "The result tells if the target was reached and why the CPU stopped: target, breakpoint, watchpoint, jam (the CPU hit a JAM opcode) or timeout. The CPU is always stopped afterwards.",
+    "reached tells if the target occurred. stopReason tells why the CPU stopped: target, breakpoint, watchpoint, jam (a JAM opcode) or timeout. " +
+    "The CPU is always stopped after this tool.",
   inputSchema: z
     .object({
       target: RunTargetInput,

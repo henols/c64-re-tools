@@ -10,8 +10,8 @@ export const c64Status = defineTool({
   name: "c64_status",
   title: "C64 status",
   description:
-    "Get the state of the C64. The result tells if the CPU is running or stopped, the video standard (pal or ntsc), " +
-    "and if warp mode is on. When the CPU is stopped, the result also gives the program counter (pc).",
+    "Get the state of the C64. The result tells if the CPU runs or has stopped, the video standard (pal or ntsc), " +
+    "and if warp mode is on. When the CPU has stopped, the result also gives the program counter (pc).",
   inputSchema: z.object({}).strict(),
   outputSchema: z.object({
     state: z.enum(RUN_STATES),
@@ -35,7 +35,7 @@ export const c64Reset = defineTool({
   name: "c64_reset",
   title: "Reset the C64",
   description:
-    "Reset the C64. Mode soft is the reset button; mode hard is a power cycle that also resets the disk drive. " +
+    "Reset the C64. Mode soft is the reset button. Mode hard is a power cycle that also resets the disk drive. " +
     "With run false (the default), the CPU stops at the first instruction of the reset routine. " +
     "With run true, the C64 starts normally. Breakpoints and watchpoints stay.",
   inputSchema: z
