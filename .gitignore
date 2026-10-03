@@ -1,55 +1,20 @@
-# npm dependencies for the VICE MCP server (src/mcp/vice). Installed by the
-# user with `npm ci`; never committed.
+# Dependencies, installed with `pnpm install`; never committed.
 node_modules/
 
-# The single tool-written root (D-33, 2026-09-08 clean break; alias added
-# 2026-09-08, gap G-40-1): every writer in this codebase that used to
-# scatter its output across four separate locations (.vice-supervisor/,
-# .vice-snapshots/, tools/*.mjs + vice-launcher.sh + .vice-deployed.json,
-# and an incidents directory) now lands
-# under ONE directory: supervisor/ (broker state), snapshots/ (.vsf + .json
-# sidecars), bin/ (deployed host launcher artifacts), runs/oracle/
-# (oracle.run scratch), runs/ghidra/ (ghidra.analyze's run logs and exports,
-# as downloaded from the broker), incidents/ (recycle
-# incident records), cache/ (the lockfile stamp). This is a clean break: no
-# dual-read of the previous locations,
-# no migration shim -- a pre-existing old-layout tree (.vice-supervisor/,
-# .vice-snapshots/, tools/*.mjs) is simply left on
-# disk, unread, for the user to delete by hand.
-#
-# SINCE 2026-09-27 an ANALYSED project commits its .c64-re-tools/: the root
-# holds the project's artifacts (annotations.db), and everything machine-
-# specific or regenerable lives in .c64-re-tools/local/, which carries its
-# own .gitignore of "*". THIS repository is the tool, not an analysed
-# project, and its test runs write a .c64-re-tools/ of their own, so here
-# the whole directory stays ignored.
-/.c64-re-tools/
-# ...and the same directory written anywhere else. The rule above is
-# root-anchored, so a tool-root resolved from a different cwd (running the
-# suite from src/mcp/vice/ deploys one there) landed OUTSIDE it and was
-# committable -- twelve generated launcher artifacts, one `git add -A` away
-# from the tree. Generated host artifacts are never committed from any depth.
+# Toolkit-owned project state (.c64-re-tools/knowledge.db). An analysed
+# project commits it; this repository is the tool, and its test runs write
+# one of their own, so here it stays ignored at any depth.
 .c64-re-tools/
 
-# A symlink older brokers minted as a Ghidra workaround; nothing creates it
-# any more, and it is safe to delete. No trailing slash: git does not treat a
-# symlink-to-directory as a directory.
-/c64-re-tools
-
-# The npm server build (src/mcp/vice/build.ts --server, run by prepack).
-# Built at publish time, never committed.
+# Build output (tsc -> dist/) and npm pack output.
 dist/
-
-# npm pack output
 *.tgz
 
 # Local editor config, machine-specific, never shared.
 /.vscode/
 
 # .claude/settings.json is committed and holds no machine-specific content.
-# Machine-specific permissions and directories go in
-# .claude/settings.local.json, which Claude Code merges over it at runtime
-# and which must never be committed.
+# Machine-specific permissions go in .claude/settings.local.json.
 /.claude/settings.local.json
 
 # Local Claude Code tooling (commands, skills, agents, hooks). Machine-local
@@ -67,23 +32,8 @@ dist/
 !/.agents/skills/mastra/
 /.codex/
 
-# Real-release disk images for the opt-in live corpus tests (dxa-live,
-# ghidra-live, ghidra-opcode-live). Never committed.
+# Real-release disk images for opt-in live tests. Never committed.
 /corpus/
 
 # Graphify raw scratch output. Regenerable, so it is ignored.
 /graphify-out/
-
-# The built dxa binary, its intermediate object files and the temporary
-# file build.bash renames into place. vendor/dxa/build.bash's `build` verb
-# builds the binary on demand from the pinned upstream tarball it downloads
-# (no dxa source is committed). The binary is host-specific, so it is never
-# committed.
-/src/mcp/vice/vendor/dxa/dxa
-/src/mcp/vice/vendor/dxa/dxa.tmp.*
-/src/mcp/vice/vendor/dxa/*.o
-
-# Phase 36 (OPC-01): the built SLEIGH language file. `ghidra.installExtension`
-# / the sleigh-compile-gate.test.ts COMPILE half reproduce it from the
-# committed extension source on demand -- mirrors vendor/dxa/dxa above.
-/src/mcp/vice/vendor/ghidra-ext/data/languages/6502_nmos.sla

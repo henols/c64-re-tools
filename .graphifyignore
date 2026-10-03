@@ -1,11 +1,5 @@
 # Graphify scope: index this repo's SOURCE only.
 #
-# Measured on the first two builds: without this file, 1112 of 1447 indexed
-# files (77%) were planning docs (since removed), and an incremental pass then pulled in
-# 489 vendored files under .claude/ plus .vice-supervisor/ broker state —
-# 24526 nodes / 20MB of mostly non-architecture. The graph exists to answer
-# cross-file seam questions ("who imports broker-endpoint.mts").
-#
 # NOTE: `graphify update` is INCREMENTAL and merges into the existing graph.
 # Adding an ignore rule does not retroactively drop nodes — delete graphify-out/
 # and rebuild to get a clean graph.
@@ -15,19 +9,10 @@
 /.agents/
 /.codex/
 
-# Runtime state, not source
-/.vice-supervisor/
-
 # Graphify's own output
 /graphify-out/
 
-# Generated license aggregation — no architectural signal
-/THIRD-PARTY-NOTICES.md
-
-# Deployed copies of src/mcp/vice/resources/*.mjs (install-resources writes these
-# into the consuming project). Indexing them duplicates every launcher node.
-/tools/
-
 # Local, gitignored artifacts
-/.vice-snapshots/
+/.c64-re-tools/
 /.vscode/
+/dist/

@@ -169,7 +169,7 @@ The frozen v1 logical request/result contracts for ACME, DXA, Ghidra, c1541 and 
 - Spawn executables with argv arrays, never interpolated shell strings.
 - Track every child process/group owned by its VICE session or short-lived request.
 - On normal Host Runtime termination, stop all children.
-- Preserve/reimplement the current codebase's proven lessons for abnormal broker death so VICE/tool children do not remain orphaned.
+- On abnormal Host Runtime death (including SIGKILL), VICE/tool children must not remain orphaned.
 - Bound teardown; cleanup must not become an infinite hang.
 
 ## 10. Failure behavior

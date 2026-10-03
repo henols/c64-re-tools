@@ -22,7 +22,7 @@ Do not add `project.json` solely to remember one build entry point.
 
 ## 2. Initial assembler
 
-ACME is the initial supported assembler because it is already central to the current project and reverse-engineering workflow.
+ACME is the initial supported assembler because it is central to the C64 development and reverse-engineering workflow.
 
 Additional assemblers should be added only when a concrete requirement exists. The domain API should avoid unnecessary ACME-specific leakage where a generic assembly concept is sufficient.
 

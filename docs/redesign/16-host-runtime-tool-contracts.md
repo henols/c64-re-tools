@@ -890,9 +890,9 @@ Missing configuration/tooling becomes an actionable tool-unavailable/installatio
 
 Ghidra extension/language installation is an installer/host-diagnostic responsibility, not a skill-callable analysis operation.
 
-## 16. Security/confinement lessons retained from current code
+## 16. Security/confinement principles
 
-The greenfield implementation should preserve the proven principles from the current host-tool seam:
+The host-tool seam must follow these principles:
 
 - reject unknown request fields rather than silently dropping them;
 - never pass raw caller argv to native tools;

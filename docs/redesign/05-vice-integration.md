@@ -40,13 +40,13 @@ Operations that stock VICE cannot meaningfully provide are excluded from the pub
 
 ## 5. Launch contract
 
-VICE launch arguments, monitor ports and startup ordering are Host Runtime implementation details. Existing code and tests shall be consulted for proven quirks such as argument ordering, monitor availability and stock VICE behavior.
+VICE launch arguments, monitor ports and startup ordering are Host Runtime implementation details, established by testing against real stock VICE (argument ordering, monitor availability, readiness).
 
 The implementation must explicitly test the chosen supported VICE versions/configurations against real VICE, not only mocks.
 
 ## 6. Monitor protocol correctness
 
-The rewrite should reuse proven protocol knowledge from the current implementation, including lessons around:
+The VICE adapter must handle, and test against real VICE:
 
 - request/reply correlation;
 - unsolicited events;
@@ -56,7 +56,7 @@ The rewrite should reuse proven protocol knowledge from the current implementati
 - launch/readiness races;
 - crash/hang differentiation where possible.
 
-These facts inform the new VICE adapter but do not define the public API.
+These concerns shape the VICE adapter but do not define the public API.
 
 ## 7. Recovery
 

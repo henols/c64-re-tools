@@ -1,8 +1,6 @@
 # c64-re-tools — ground-up redesign
 
-Status: **design baseline**. This describes the next implementation of c64-re-tools. It is a greenfield architecture, not a migration plan for the current codebase.
-
-The current repository remains valuable as evidence: it contains working VICE behavior, protocol discoveries, tool integrations, failure cases and tests. Those facts may be reused, but the new implementation is not required to preserve current module boundaries, database schema, MCP tool names, broker protocol, CLI syntax or skill internals.
+Status: **design baseline**. This describes the implementation of c64-re-tools. It is a greenfield architecture built from scratch; nothing from the previous implementation is carried forward. Work proceeds by the step-by-step [working plan](../plan.md).
 
 ## Product in one sentence
 
@@ -23,7 +21,6 @@ A reconstructed application does **not** need byte-identical machine code. Given
 | 07 | [Skills and workflows](07-skills-and-workflows.md) | Common skill structure, execution paths and workflow rules |
 | 08 | [Installation and distribution](08-installation-and-distribution.md) | Portable Agent Plugins foundation with AP SDK at the distribution edge |
 | 09 | [Build, test and release](09-build-test-release.md) | Development, functional equivalence, CI and release principles |
-| 10 | [Current-code reuse](10-current-code-reuse.md) | How the existing implementation may inform the rewrite |
 | 11 | [Skill contracts](11-skill-contracts.md) | Exact purpose, inputs, workflow, persistence, completion and handoff contract for every first-class skill |
 | 12 | [Static analysis and knowledge import](12-static-analysis-knowledge-import.md) | Normalized analyzer findings, atomic import, authoritative coverage and stale-fact reconciliation |
 | 13 | [Testing and functional equivalence](13-testing-and-functional-equivalence.md) | Routine, semantic-state, visual/gameplay and human verification of reconstructed behavior |
@@ -57,4 +54,4 @@ A reconstructed application does **not** need byte-identical machine code. Given
 19. **The harness working directory is the project root.** There is no root discovery, upward search, marker lookup or environment override. `.c64-re-tools/knowledge.db` is created directly under that directory when durable knowledge is first written; runtime/session/tool scratch stays outside the project.
 20. **The implementation is one repository and one npm package.** `src/` is flat by ownership (`mcp`, `host`, `host-client`, `knowledge`, `cli`), skills remain first-class directories, native tools stay external, and no workspace/package graph is introduced until a concrete need exists.
 21. **Implementation proceeds by vertical slices with real acceptance gates.** The first slice proves MCP → Host Runtime → VICE → real machine state; later milestones add knowledge, native tools, analyzers, equivalence testing, specialist skills and distribution in dependency order.
-22. **The rewrite is greenfield.** Current code is inspiration and evidence, not an API/schema compatibility target.
+22. **The rewrite is greenfield.** Everything is built new; no previous code, API or schema is a compatibility target.
