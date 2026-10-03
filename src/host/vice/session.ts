@@ -3,6 +3,8 @@
 
 import {
   WireFailure,
+  type ExecutionParams,
+  type ExecutionResult,
   type MachineStatus,
   type RunState,
   type VideoStandard,
@@ -12,10 +14,15 @@ import {
 import type { ProcessSupervisor } from "../processes.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
 import { ViceAdapter } from "./adapter.ts";
-import { MonitorConnectionError, MonitorError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
+import { decodeProgramCounter, MonitorConnectionError, MonitorError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
 import { launchVice, type ViceProcess } from "./process.ts";
+import { TextMonitorError } from "./text-monitor.ts";
 
 const CRASH_SETTLE_MS = 500;
+/** How long until-return may run before the session stops it and reports the limit. */
+export const UNTIL_RETURN_LIMIT_MS = 30_000;
+/** How long a reset may take to reach the reset vector. */
+const RESET_STOP_LIMIT_MS = 5_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -24,42 +31,66 @@ function sleep(ms: number): Promise<void> {
 const STATE_LOST =
   "The emulator stopped unexpectedly and its machine state is lost. Restart the c64-re-tools MCP server to get a fresh C64.";
 
+function hex(value: number): string {
+  return `$${value.toString(16).padStart(4, "0")}`;
+}
+
+export interface SessionOptions {
+  /** Upper bound for until-return; tests shorten it. */
+  untilReturnLimitMs?: number;
+}
+
 export class ViceSession implements ViceSessionHandle {
   readonly #vice: ViceProcess;
   readonly #videoStandard: VideoStandard;
   readonly #log: (line: string) => void;
+  readonly #untilReturnLimitMs: number;
   #adapter: ViceAdapter | undefined;
   #state: RunState = "running";
-  /** VICE 3.10 has no readable live warp resource; launch starts with warp off and only this session changes it. */
-  #warp = false;
+  /** Each returns true once satisfied and is then dropped. */
+  #stopWaiters: Array<(pc: number, checkpoint: number | undefined) => boolean> = [];
+  /** The VICE number of a checkpoint reported hit whose stopped event has not come yet. */
+  #checkpointHit: number | undefined;
+  /** Counts stops caused by checkpoints or a CPU JAM rather than by a monitor command. */
+  #haltCount = 0;
   #queue: Promise<unknown> = Promise.resolve();
   #closed = false;
   #lost = false;
 
-  private constructor(vice: ViceProcess, videoStandard: VideoStandard, log: (line: string) => void) {
+  private constructor(vice: ViceProcess, videoStandard: VideoStandard, log: (line: string) => void, options: SessionOptions) {
     this.#vice = vice;
     this.#videoStandard = videoStandard;
     this.#log = log;
+    this.#untilReturnLimitMs = options.untilReturnLimitMs ?? UNTIL_RETURN_LIMIT_MS;
     vice.monitor.onEvent((event) => this.#onEvent(event));
     void vice.exited.then((status) => {
       if (this.#closed) return;
       this.#lost = true;
       this.#log(`VICE exited unexpectedly (code ${status.code}, signal ${status.signal})\n${vice.outputTail()}`);
     });
-    void vice.monitor.closed.then((reason) => {
-      if (this.#closed || reason === undefined) return;
-      this.#lost = true;
-      this.#log(`VICE monitor connection lost: ${reason.message}`);
-    });
+    for (const closed of [vice.monitor.closed, vice.text.closed]) {
+      void closed.then((reason) => {
+        if (this.#closed || reason === undefined) return;
+        this.#lost = true;
+        this.#log(`VICE monitor connection lost: ${reason.message}`);
+      });
+    }
   }
 
   /** Wraps a launched, running VICE. Stops the VICE when setup fails. */
-  static async start(vice: ViceProcess, videoStandard: VideoStandard, log: (line: string) => void = () => {}): Promise<ViceSession> {
-    const session = new ViceSession(vice, videoStandard, log);
+  static async start(
+    vice: ViceProcess,
+    videoStandard: VideoStandard,
+    log: (line: string) => void = () => {},
+    options: SessionOptions = {},
+  ): Promise<ViceSession> {
+    const session = new ViceSession(vice, videoStandard, log, options);
     try {
-      await session.#enqueue(async () => {
-        session.#adapter = await session.#observe((adapter) => Promise.resolve(adapter), true);
-      });
+      await session.#enqueue(() =>
+        session.#observe(async () => {
+          session.#adapter = await ViceAdapter.create(vice.monitor, vice.text);
+        }),
+      );
     } catch (error) {
       await session.close();
       throw error;
@@ -76,43 +107,182 @@ export class ViceSession implements ViceSessionHandle {
     await this.#vice.stop();
   }
 
+  get #machine(): ViceAdapter {
+    if (this.#adapter === undefined) throw new Error("session is not set up");
+    return this.#adapter;
+  }
+
   async #run(op: ViceOperation, params: unknown): Promise<unknown> {
     switch (op) {
       case "status":
         return this.#status();
       case "memoryRead": {
         const read = params as ViceOperations["memoryRead"]["params"];
-        const data = await this.#observe((adapter) => adapter.readMemory(read));
+        const data = await this.#observe(() => this.#machine.readMemory(read));
         return { address: read.address, data };
       }
       case "registersGet": {
         const { space } = params as ViceOperations["registersGet"]["params"];
-        return this.#observe((adapter) => adapter.readRegisters(space));
+        return this.#observe(() => this.#machine.readRegisters(space));
+      }
+      case "execution":
+        return this.#execution(params as ExecutionParams);
+      case "reset":
+        return this.#reset(params as ViceOperations["reset"]["params"]);
+      case "warp": {
+        const { enabled } = params as ViceOperations["warp"]["params"];
+        await this.#observe(() => this.#machine.setWarp(enabled));
+        return { enabled };
       }
     }
     throw new WireFailure("invalid-input", `unknown operation: ${String(op)}`);
   }
 
   async #status(): Promise<MachineStatus> {
-    const status: MachineStatus = { state: this.#state, videoStandard: this.#videoStandard, warp: this.#warp };
-    // Reading the PC while stopped changes nothing; while running there is no PC to report.
-    if (this.#state === "stopped") status.pc = (await this.#observe((adapter) => adapter.readRegisters("c64"))).pc;
-    return status;
+    // Captured first: asking VICE anything stops a running machine until #observe resumes it.
+    const state = this.#state;
+    return this.#observe(async () => {
+      const status: MachineStatus = { state, videoStandard: this.#videoStandard, warp: await this.#machine.warp() };
+      if (state === "stopped") status.pc = await this.#pc();
+      return status;
+    });
+  }
+
+  async #execution(params: ExecutionParams): Promise<ExecutionResult> {
+    if (params.action === "resume") {
+      if (this.#state === "stopped") await this.#resume();
+      return { state: "running" };
+    }
+    if (params.action === "pause") {
+      await this.#stop();
+      return { state: "stopped", pc: await this.#pc() };
+    }
+    if (params.space === "drive8") {
+      throw new WireFailure("unsupported-in-space", `${params.action} is available only in space c64 for now.`);
+    }
+    await this.#stop();
+    if (params.action === "until-return") {
+      const stopped = this.#nextStop(this.#untilReturnLimitMs);
+      await this.#resumingCommand(() => this.#machine.untilReturn());
+      const pc = await stopped;
+      if (pc === undefined) {
+        await this.#stop();
+        throw new WireFailure(
+          "limit-exceeded",
+          `The routine did not return within ${this.#untilReturnLimitMs / 1000} seconds. The machine is stopped at ${hex(await this.#pc())}.`,
+        );
+      }
+      return { state: "stopped", pc };
+    }
+    const count = params.count ?? 1;
+    await this.#machine.step(count, params.action === "next");
+    // VICE answers a step only after the machine stopped again.
+    this.#state = "stopped";
+    return { state: "stopped", pc: await this.#pc(), executed: count };
+  }
+
+  async #reset(params: { mode: "soft" | "hard"; run: boolean }): Promise<{ state: RunState }> {
+    await this.#stop();
+    if (params.run) {
+      await this.#resumingCommand(() => this.#machine.reset(params.mode));
+      return { state: "running" };
+    }
+    // A breakpoint on the reset vector stops the reset at its first instruction.
+    // VICE does not check a breakpoint at the PC it resumes from, and a reset
+    // sent from the monitor resumes at the vector; so the reset is sent while
+    // running, and only a stop caused by this breakpoint counts.
+    const vector = await this.#machine.resetVector();
+    const checkpoint = await this.#machine.addBreak(vector);
+    await this.#resume();
+    const stopped = this.#nextStop(RESET_STOP_LIMIT_MS, checkpoint);
+    await this.#resumingCommand(() => this.#machine.reset(params.mode));
+    const reached = (await stopped) !== undefined;
+    if (!reached) await this.#stop();
+    await this.#machine.deleteCheckpoint(checkpoint);
+    if (!reached) throw new WireFailure("operation-failed", "The C64 did not reach its reset vector after the reset.");
+    return { state: "stopped" };
+  }
+
+  /** The C64 program counter; the machine must be stopped. */
+  async #pc(): Promise<number> {
+    return (await this.#machine.readRegisters("c64")).pc;
+  }
+
+  async #stop(): Promise<void> {
+    if (this.#state === "running") await this.#machine.stop();
+    this.#state = "stopped";
+  }
+
+  async #resume(): Promise<void> {
+    await this.#resumingCommand(() => this.#machine.resume());
   }
 
   /**
-   * Runs read-only monitor work and restores the prior run state (15 §4): any
-   * monitor command stops the machine, so a machine that was running is resumed.
+   * Sends a command that makes VICE run the machine. The state is set first:
+   * VICE's answer and the events after it (resumed, then maybe a stop) can
+   * arrive together, and those events must have the last word.
    */
-  async #observe<T>(work: (adapter: ViceAdapter) => Promise<T>, setup = false): Promise<T> {
-    if (!setup && this.#adapter === undefined) throw new Error("session is not set up");
-    const wasRunning = this.#state === "running";
-    const adapter = setup ? await ViceAdapter.create(this.#vice.monitor) : this.#adapter!;
-    const result = await work(adapter);
-    if (wasRunning) {
-      await adapter.resume();
-      this.#state = "running";
+  async #resumingCommand(send: () => Promise<void>): Promise<void> {
+    this.#state = "running";
+    try {
+      await send();
+    } catch (error) {
+      this.#state = "stopped";
+      throw error;
     }
+  }
+
+  /**
+   * Resolves with the PC of the next stop, or undefined after `timeoutMs`.
+   * With `checkpoint`, only a stop caused by that VICE checkpoint counts.
+   */
+  #nextStop(timeoutMs: number, checkpoint?: number): Promise<number | undefined> {
+    return new Promise((resolve) => {
+      const waiter = (pc: number, hit: number | undefined) => {
+        if (checkpoint !== undefined && hit !== checkpoint) return false;
+        clearTimeout(timer);
+        resolve(pc);
+        return true;
+      };
+      const timer = setTimeout(() => {
+        this.#stopWaiters = this.#stopWaiters.filter((candidate) => candidate !== waiter);
+        resolve(undefined);
+      }, timeoutMs);
+      this.#stopWaiters.push(waiter);
+    });
+  }
+
+  /**
+   * Runs monitor work that must not change the run state (15 §4). Any monitor
+   * command stops the machine, so a machine that was running is resumed.
+   */
+  async #observe<T>(work: () => Promise<T>): Promise<T> {
+    const wasRunning = this.#state === "running";
+    const halts = this.#haltCount;
+    // A breakpoint or JAM that stopped the machine while this work ran must
+    // stay stopped: the machine was not running when VICE took the command.
+    // The tracked state is no guide here: a text command's stop is reported on
+    // the binary connection and may not have been read yet.
+    const shouldResume = () => wasRunning && this.#haltCount === halts;
+    // VICE answers binary commands in order, so a ping's answer means every
+    // earlier binary event (a checkpoint hit, a stop) has been read.
+    const settle = async () => {
+      if (wasRunning) await this.#machine.stop();
+    };
+    let result: T;
+    try {
+      result = await work();
+    } catch (error) {
+      // A refused read must not leave a running machine stopped either.
+      if (wasRunning && !this.#lost) {
+        await settle()
+          .then(() => (shouldResume() ? this.#resume() : undefined))
+          .catch(() => {});
+      }
+      throw error;
+    }
+    await settle();
+    if (shouldResume()) await this.#resume();
     return result;
   }
 
@@ -134,7 +304,7 @@ export class ViceSession implements ViceSessionHandle {
   async #translate(error: unknown): Promise<unknown> {
     if (error instanceof WireFailure) return error;
     if (this.#closed) return new WireFailure("machine-unavailable", "The emulator session is closed.");
-    if (error instanceof MonitorConnectionError) {
+    if (error instanceof MonitorConnectionError || error instanceof TextMonitorError) {
       this.#log(error.message);
       // A broken connection usually means VICE died; give its exit a moment to land.
       if (!this.#lost) await Promise.race([this.#vice.exited, sleep(CRASH_SETTLE_MS)]);
@@ -150,8 +320,18 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   #onEvent(event: MonitorResponse): void {
-    if (event.type === ResponseType.stopped || event.type === ResponseType.jam) this.#state = "stopped";
-    else if (event.type === ResponseType.resumed) this.#state = "running";
+    // VICE reports a hit checkpoint (byte 4 set) just before the stop it causes.
+    if (event.type === ResponseType.checkpointInfo && event.body[4] !== 0) this.#checkpointHit = event.body.readUInt32LE(0);
+    if (event.type === ResponseType.stopped || event.type === ResponseType.jam) {
+      const hit = this.#checkpointHit;
+      if (hit !== undefined || event.type === ResponseType.jam) this.#haltCount++;
+      this.#checkpointHit = undefined;
+      this.#state = "stopped";
+      const pc = decodeProgramCounter(event.body);
+      this.#stopWaiters = this.#stopWaiters.filter((waiter) => !waiter(pc, hit));
+    } else if (event.type === ResponseType.resumed) {
+      this.#state = "running";
+    }
   }
 }
 

@@ -1,164 +1,38 @@
 import assert from "node:assert/strict";
-import { once } from "node:events";
-import { createServer, type Server, type Socket } from "node:net";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../../protocol.ts";
-import { BinaryMonitor, Command, EVENT_REQUEST_ID } from "./binary-monitor.ts";
-import type { ViceProcess } from "./process.ts";
-import type { TextMonitor } from "./text-monitor.ts";
-import { ViceSession } from "./session.ts";
+import { Command } from "./binary-monitor.ts";
+import { FakeVice } from "./fake-vice.testkit.ts";
+import { ViceSession, type SessionOptions } from "./session.ts";
 
-// ---------------------------------------------------------------------------
-// A fake VICE binary monitor that behaves like stock VICE 3.10 as probed:
-// any command while running first sends a register event and a stopped event;
-// exit answers, then sends a resumed event.
-
-function frame(type: number, requestId: number, body: Buffer = Buffer.alloc(0), error = 0): Buffer {
-  const header = Buffer.alloc(12);
-  header[0] = 0x02;
-  header[1] = 0x02;
-  header.writeUInt32LE(body.length, 2);
-  header[6] = type;
-  header[7] = error;
-  header.writeUInt32LE(requestId, 8);
-  return Buffer.concat([header, body]);
-}
-
-const REGISTERS = [
-  { id: 3, name: "PC", bits: 16 },
-  { id: 0, name: "A", bits: 8 },
-  { id: 1, name: "X", bits: 8 },
-  { id: 2, name: "Y", bits: 8 },
-  { id: 4, name: "SP", bits: 8 },
-  { id: 5, name: "FL", bits: 8 },
-];
-
-class FakeVice {
-  running = true;
-  readonly commands: number[] = [];
-  readonly memory = Buffer.alloc(0x10000);
-  registers: Record<string, number> = { PC: 0xe5cf, A: 0x42, X: 3, Y: 0, SP: 0xf9, FL: 0b1010_0101 };
-  socket: Socket | undefined;
-  readonly server: Server;
-
-  constructor() {
-    for (let address = 0; address < 0x10000; address++) this.memory[address] = address & 0xff;
-    this.server = createServer((socket) => {
-      this.socket = socket;
-      let pending = Buffer.alloc(0);
-      socket.on("data", (chunk) => {
-        pending = Buffer.concat([pending, chunk]);
-        while (pending.length >= 11) {
-          const length = pending.readUInt32LE(2);
-          if (pending.length < 11 + length) break;
-          this.#command(socket, pending.readUInt32LE(6), pending[10]!, pending.subarray(11, 11 + length));
-          pending = pending.subarray(11 + length);
-        }
-      });
-      socket.on("error", () => {});
-    });
-  }
-
-  /** Stops the machine as a checkpoint would. */
-  stopSpontaneously(pc: number): void {
-    this.running = false;
-    this.registers.PC = pc;
-    this.socket!.write(frame(0x62, EVENT_REQUEST_ID, this.#pc()));
-  }
-
-  #pc(): Buffer {
-    const body = Buffer.alloc(2);
-    body.writeUInt16LE(this.registers.PC!, 0);
-    return body;
-  }
-
-  #command(socket: Socket, id: number, command: number, body: Buffer): void {
-    this.commands.push(command);
-    if (this.running) {
-      this.running = false;
-      socket.write(Buffer.concat([frame(0x31, EVENT_REQUEST_ID, this.#registerBody(0)), frame(0x62, EVENT_REQUEST_ID, this.#pc())]));
-    }
-    switch (command) {
-      case Command.banksAvailable: {
-        const items = ["default", "cpu", "ram"].map((name, index) =>
-          Buffer.concat([Buffer.from([3 + name.length]), u16(index === 0 ? 0 : index - 1), Buffer.from([name.length]), Buffer.from(name)]),
-        );
-        socket.write(frame(command, id, Buffer.concat([u16(items.length), ...items])));
-        break;
-      }
-      case Command.registersAvailable: {
-        const items = REGISTERS.map((r) => Buffer.concat([Buffer.from([3 + r.name.length, r.id, r.bits, r.name.length]), Buffer.from(r.name)]));
-        socket.write(frame(command, id, Buffer.concat([u16(items.length), ...items])));
-        break;
-      }
-      case Command.registersGet:
-        socket.write(frame(command, id, this.#registerBody(body[0]!)));
-        break;
-      case Command.memoryGet: {
-        const start = body.readUInt16LE(1);
-        const end = body.readUInt16LE(3);
-        const data = this.memory.subarray(start, end + 1);
-        socket.write(frame(command, id, Buffer.concat([u16(data.length), data])));
-        break;
-      }
-      case Command.exit:
-        socket.write(frame(command, id));
-        this.running = true;
-        socket.write(frame(0x63, EVENT_REQUEST_ID, this.#pc()));
-        break;
-      default:
-        socket.write(frame(command, id, Buffer.alloc(0), 0x83));
-    }
-  }
-
-  #registerBody(memspace: number): Buffer {
-    const items = REGISTERS.map((r) => {
-      const value = memspace === 0 ? this.registers[r.name]! : 0;
-      return Buffer.concat([Buffer.from([3, r.id]), u16(value)]);
-    });
-    return Buffer.concat([u16(items.length), ...items]);
-  }
-}
-
-function u16(value: number): Buffer {
-  const buffer = Buffer.alloc(2);
-  buffer.writeUInt16LE(value, 0);
-  return buffer;
-}
-
-const servers: Server[] = [];
-after(() => {
-  for (const server of servers) server.close();
+const fakes: FakeVice[] = [];
+const processes: Array<{ stop(): Promise<void> }> = [];
+// Stop every fake, so a failed assertion reports instead of leaving sockets that keep the run alive.
+after(async () => {
+  await Promise.all(processes.map((process) => process.stop()));
+  for (const fake of fakes) fake.close();
 });
 
-async function startSession(): Promise<{ fake: FakeVice; session: ViceSession; process: ViceProcess & { crash(): void; stopped: number } }> {
+async function startSession(options: SessionOptions = {}) {
   const fake = new FakeVice();
-  servers.push(fake.server);
-  fake.server.listen(0, "127.0.0.1");
-  await once(fake.server, "listening");
-  const monitor = await BinaryMonitor.connect((fake.server.address() as { port: number }).port);
-  let exit!: (status: { code: number | null; signal: NodeJS.Signals | null }) => void;
-  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => (exit = resolve));
-  const process = {
-    pid: 0,
-    monitor,
-    text: undefined as unknown as TextMonitor,
-    exited,
-    stopped: 0,
-    outputTail: () => "",
-    async stop() {
-      this.stopped++;
-      await monitor.close();
-    },
-    crash() {
-      fake.socket?.destroy();
-      exit({ code: null, signal: "SIGSEGV" });
-    },
-  };
-  const session = await ViceSession.start(process, "pal");
+  fakes.push(fake);
+  const process = await fake.start();
+  processes.push(process);
+  const session = await ViceSession.start(process, "pal", () => {}, options);
   fake.commands.length = 0;
+  fake.textCommands.length = 0;
   return { fake, session, process };
+}
+
+const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
+
+async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("condition not reached in time");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 test("setup leaves the machine running", async () => {
@@ -167,28 +41,40 @@ test("setup leaves the machine running", async () => {
   await session.close();
 });
 
-test("status while running reports no pc and does not touch the machine", async () => {
+test("status reads warp from VICE, reports no pc while running and keeps it running", async () => {
   const { fake, session } = await startSession();
-  assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: false });
-  assert.deepEqual(fake.commands, []);
+  fake.warp = true;
+  assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: true });
+  assert.deepEqual(fake.textCommands, ["warp"]);
+  assert.equal(fake.running, true);
   await session.close();
 });
 
 test("a read while running pauses, reads and resumes", async () => {
   const { fake, session } = await startSession();
-  const result = await session.handle("memoryRead", { address: 0xe000, size: 4, space: "c64", view: "cpu" });
-  assert.deepEqual(result, { address: 0xe000, data: "00010203" });
-  assert.deepEqual(fake.commands, [Command.memoryGet, Command.exit]);
+  const result = await session.handle("memoryRead", { address: 0x1000, size: 4, space: "c64", view: "cpu" });
+  assert.deepEqual(result, { address: 0x1000, data: "00010203" });
+  // The ping reads every earlier event before the session decides to resume.
+  assert.deepEqual(fake.commands, [Command.memoryGet, Command.ping, Command.exit]);
   assert.equal(fake.running, true);
-  assert.equal((await session.handle("status", {})).state, "running");
+  await session.close();
+});
+
+test("the cpu view sees ROM where the ram view sees RAM", async () => {
+  const { session } = await startSession();
+  const cpu = await session.handle("memoryRead", { address: 0xe000, size: 2, space: "c64", view: "cpu" });
+  const ram = await session.handle("memoryRead", { address: 0xe000, size: 2, space: "c64", view: "ram" });
+  assert.equal(cpu.data, "e0e0");
+  assert.equal(ram.data, "0001");
   await session.close();
 });
 
 test("a read while stopped leaves the machine stopped and status reports the pc", async () => {
   const { fake, session } = await startSession();
   fake.stopSpontaneously(0x2100);
-  await waitFor(async () => (await session.handle("status", {})).state === "stopped");
+  await waitFor(() => !fake.running);
   fake.commands.length = 0;
+  // The first read may race the breakpoint's stopped event; it must still not resume.
   const registers = await session.handle("registersGet", { space: "c64" });
   assert.deepEqual(registers, {
     pc: 0x2100,
@@ -198,19 +84,16 @@ test("a read while stopped leaves the machine stopped and status reports the pc"
     sp: 0xf9,
     flags: { n: true, v: false, b: false, d: false, i: true, z: false, c: true },
   });
-  assert.deepEqual(fake.commands, [Command.registersGet]);
+  assert.ok(!fake.commands.includes(Command.exit), "a read must not resume a machine a breakpoint stopped");
   assert.equal(fake.running, false);
   assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, pc: 0x2100 });
   await session.close();
 });
 
-test("the ram view is refused for drive8", async () => {
+test("a refused read keeps the machine running", async () => {
   const { fake, session } = await startSession();
-  await assert.rejects(
-    session.handle("memoryRead", { address: 0, size: 1, space: "drive8", view: "ram" }),
-    (error: unknown) => error instanceof WireFailure && error.code === "unsupported-in-space",
-  );
-  assert.equal(fake.running, true, "a refused read must not leave the machine stopped");
+  await assert.rejects(session.handle("memoryRead", { address: 0, size: 1, space: "drive8", view: "ram" }), failsWith("unsupported-in-space"));
+  assert.equal(fake.running, true);
   await session.close();
 });
 
@@ -221,7 +104,96 @@ test("concurrent operations run one at a time", async () => {
     session.handle("registersGet", { space: "c64" }),
     session.handle("memoryRead", { address: 1, size: 1, space: "c64", view: "ram" }),
   ]);
-  assert.deepEqual(fake.commands, [Command.memoryGet, Command.exit, Command.registersGet, Command.exit, Command.memoryGet, Command.exit]);
+  const observe = (command: number) => [command, Command.ping, Command.exit];
+  assert.deepEqual(fake.commands, [...observe(Command.memoryGet), ...observe(Command.registersGet), ...observe(Command.memoryGet)]);
+  await session.close();
+});
+
+test("pause stops with the pc and resume runs again", async () => {
+  const { fake, session } = await startSession();
+  assert.deepEqual(await session.handle("execution", { action: "pause", space: "c64" }), { state: "stopped", pc: 0xe5cf });
+  assert.equal(fake.running, false);
+  // Pausing a stopped machine changes nothing.
+  assert.deepEqual(await session.handle("execution", { action: "pause", space: "c64" }), { state: "stopped", pc: 0xe5cf });
+  assert.deepEqual(await session.handle("execution", { action: "resume", space: "c64" }), { state: "running" });
+  assert.equal(fake.running, true);
+  assert.equal((await session.handle("status", {})).state, "running");
+  await session.close();
+});
+
+test("step and next pause a running machine first and report the new pc", async () => {
+  const { fake, session } = await startSession();
+  assert.deepEqual(await session.handle("execution", { action: "step", count: 3, space: "c64" }), {
+    state: "stopped",
+    pc: 0xe5d2,
+    executed: 3,
+  });
+  assert.deepEqual(fake.commands.slice(0, 2), [Command.ping, Command.advanceInstructions]);
+  fake.stepTo = 0x2000;
+  assert.deepEqual(await session.handle("execution", { action: "next", count: 1, space: "c64" }), {
+    state: "stopped",
+    pc: 0x2000,
+    executed: 1,
+  });
+  assert.equal(fake.running, false);
+  await session.close();
+});
+
+test("until-return waits for the routine to return", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("execution", { action: "pause", space: "c64" });
+  fake.returnTo = 0x1980;
+  const result = session.handle("execution", { action: "until-return", space: "c64" });
+  await waitFor(() => fake.running);
+  fake.completeReturn();
+  assert.deepEqual(await result, { state: "stopped", pc: 0x1980 });
+  await session.close();
+});
+
+test("until-return that never returns stops the machine and reports the limit", async () => {
+  const { fake, session } = await startSession({ untilReturnLimitMs: 50 });
+  await assert.rejects(session.handle("execution", { action: "until-return", space: "c64" }), (error: unknown) => {
+    assert.ok(failsWith("limit-exceeded")(error));
+    assert.match((error as Error).message, /stopped at \$[0-9a-f]{4}/);
+    return true;
+  });
+  assert.equal(fake.running, false);
+  assert.equal((await session.handle("status", {})).state, "stopped");
+  await session.close();
+});
+
+test("stepping drive8 is refused for now", async () => {
+  const { session } = await startSession();
+  await assert.rejects(session.handle("execution", { action: "step", count: 1, space: "drive8" }), failsWith("unsupported-in-space"));
+  await session.close();
+});
+
+test("a reset without run stops at the reset vector and leaves no checkpoint", async () => {
+  const { fake, session } = await startSession();
+  assert.deepEqual(await session.handle("reset", { mode: "hard", run: false }), { state: "stopped" });
+  assert.equal(fake.running, false);
+  assert.equal(fake.registers.PC, 0xfce2);
+  assert.equal(fake.checkpoints.size, 0);
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, pc: 0xfce2 });
+  await session.close();
+});
+
+test("a reset with run leaves the machine running", async () => {
+  const { fake, session } = await startSession();
+  assert.deepEqual(await session.handle("reset", { mode: "soft", run: true }), { state: "running" });
+  assert.equal(fake.running, true);
+  await session.close();
+});
+
+test("warp is set through VICE and keeps the run state", async () => {
+  const { fake, session } = await startSession();
+  assert.deepEqual(await session.handle("warp", { enabled: true }), { enabled: true });
+  assert.equal(fake.warp, true);
+  assert.equal(fake.running, true);
+  assert.equal((await session.handle("status", {})).warp, true);
+  await session.handle("execution", { action: "pause", space: "c64" });
+  await session.handle("warp", { enabled: false });
+  assert.equal(fake.running, false, "warp must not resume a stopped machine");
   await session.close();
 });
 
@@ -229,10 +201,7 @@ test("a VICE crash fails the operation and every later one with machine-state-lo
   const { session, process } = await startSession();
   process.crash();
   for (let attempt = 0; attempt < 2; attempt++) {
-    await assert.rejects(
-      session.handle("registersGet", { space: "c64" }),
-      (error: unknown) => error instanceof WireFailure && error.code === "machine-state-lost",
-    );
+    await assert.rejects(session.handle("registersGet", { space: "c64" }), failsWith("machine-state-lost"));
   }
   await session.close();
 });
@@ -241,15 +210,7 @@ test("closing drops queued work and stops VICE", async () => {
   const { session, process } = await startSession();
   const queued = session.handle("memoryRead", { address: 0, size: 1, space: "c64", view: "cpu" });
   const closing = session.close();
-  await assert.rejects(queued, (error: unknown) => error instanceof WireFailure && error.code === "machine-unavailable");
+  await assert.rejects(queued, failsWith("machine-unavailable"));
   await closing;
-  assert.equal(process.stopped, 1);
+  assert.equal(process.stopCount, 1);
 });
-
-async function waitFor(condition: () => Promise<boolean>, timeoutMs = 2000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!(await condition())) {
-    if (Date.now() > deadline) throw new Error("condition not reached in time");
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-}

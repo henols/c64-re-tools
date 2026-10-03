@@ -12,7 +12,7 @@ import type { ViceSessionClient } from "../host-client/vice-session.ts";
 import { MEMORY_VIEWS, SPACES, WireFailure, type WireError } from "../protocol.ts";
 
 /** The session operations tools may call. */
-export type ViceSessionApi = Pick<ViceSessionClient, "status" | "memoryRead" | "registersGet">;
+export type ViceSessionApi = Pick<ViceSessionClient, "status" | "memoryRead" | "registersGet" | "execution" | "reset" | "warp">;
 
 /** Resolves the session, opening it on first use when the start-up attempt failed. */
 export type SessionSource = () => Promise<ViceSessionApi>;

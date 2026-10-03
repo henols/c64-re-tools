@@ -56,7 +56,7 @@ Tools: `c64_status`, `c64_memory_read`, `c64_registers` (`get`).
 Acceptance (19 §4): against real VICE, load a fixture PRG → run → send input → run until a known address → advance an exact frame count → read memory/registers → capture the screen; the same scenario repeats with identical results and no wall-clock sleeps.
 
 - [x] M2.1 **Text monitor** — `src/host/vice/text-monitor.ts`: VICE's remote text monitor beside the binary one, connected at launch. A command's output ends at a sentinel command's output, because VICE prints an extra prompt when a command enters the monitor. Commands share the session queue; binary `exit` resumes either way. Live test.
-- [ ] M2.2 **Execution control** — `c64_execution` pause/resume/step/next/until-return, `c64_reset`, `c64_warp` (text `warp`), status `warp` read from VICE. step/next/until-return in drive8 come with M3 (VICE steps the monitor's default device).
+- [x] M2.2 **Execution control** — `c64_execution` pause/resume/step/next/until-return, `c64_reset`, `c64_warp` (text `warp`), status `warp` read from VICE. step/next/until-return in drive8 come with M3 (VICE steps the monitor's default device).
 - [ ] M2.3 **Writes** — `c64_memory_write`, `c64_registers` `set`; both require the CPU stopped (`machine-running`).
 - [ ] M2.4 **Media** — private-protocol attachments (D1 raw frames), `src/host-client/transfer.ts`, project-path checks incl. symlinks (17 §4); `c64_program_load` (text `load`), `c64_autostart` (binary autostart, `-autostartprgmode 1`), `c64_disk_attach` (text `attach`).
 - [ ] M2.5 **Input** — `c64_keyboard` text/petscii (binary keyboard feed), `c64_joystick` (binary joyport set, held until changed).

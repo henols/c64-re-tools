@@ -51,6 +51,14 @@ export type RunState = (typeof RUN_STATES)[number];
 /** Bounds of c64_memory_read (15 §14). */
 export const MAX_MEMORY_READ = 4096;
 
+export const EXECUTION_ACTIONS = ["pause", "resume", "step", "next", "until-return"] as const;
+export type ExecutionAction = (typeof EXECUTION_ACTIONS)[number];
+/** Bounds of c64_execution counts (15 §10). */
+export const MAX_EXECUTION_COUNT = 10_000;
+
+export const RESET_MODES = ["soft", "hard"] as const;
+export type ResetMode = (typeof RESET_MODES)[number];
+
 // ---------------------------------------------------------------------------
 // VICE-session operations. Addresses are integers 0..0xffff; bytes travel as
 // lowercase hex. The MCP formats them into the public shapes.
@@ -94,13 +102,36 @@ export interface Registers {
   flags: CpuFlags;
 }
 
+export interface ExecutionParams {
+  action: ExecutionAction;
+  /** step and next only; defaults to 1. */
+  count?: number;
+  space: Space;
+}
+
+export interface ExecutionResult {
+  state: RunState;
+  pc?: number;
+  executed?: number;
+}
+
 export interface ViceOperations {
   status: { params: Record<string, never>; result: MachineStatus };
   memoryRead: { params: MemoryReadParams; result: MemoryReadResult };
   registersGet: { params: { space: Space }; result: Registers };
+  execution: { params: ExecutionParams; result: ExecutionResult };
+  reset: { params: { mode: ResetMode; run: boolean }; result: { state: RunState } };
+  warp: { params: { enabled: boolean }; result: { enabled: boolean } };
 }
 export type ViceOperation = keyof ViceOperations;
-export const VICE_OPERATIONS = ["status", "memoryRead", "registersGet"] as const satisfies readonly ViceOperation[];
+export const VICE_OPERATIONS = [
+  "status",
+  "memoryRead",
+  "registersGet",
+  "execution",
+  "reset",
+  "warp",
+] as const satisfies readonly ViceOperation[];
 
 // ---------------------------------------------------------------------------
 // Messages (D2, D3)
@@ -265,6 +296,27 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       return { space: params.space } as ViceOperations[O]["params"];
     }
+    case "execution": {
+      if (!isOneOf(EXECUTION_ACTIONS, params.action)) invalid(`action must be one of ${EXECUTION_ACTIONS.join(", ")}`);
+      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
+      const counted = params.action === "step" || params.action === "next";
+      if (params.count !== undefined) {
+        if (!counted) invalid(`count is not used with action ${params.action}`);
+        if (!isInteger(params.count, 1, MAX_EXECUTION_COUNT)) invalid(`count must be an integer from 1 to ${MAX_EXECUTION_COUNT}`);
+      }
+      const result: ExecutionParams = { action: params.action, space: params.space };
+      if (counted) result.count = (params.count as number | undefined) ?? 1;
+      return result as ViceOperations[O]["params"];
+    }
+    case "reset": {
+      if (!isOneOf(RESET_MODES, params.mode)) invalid("mode must be soft or hard");
+      if (typeof params.run !== "boolean") invalid("run must be true or false");
+      return { mode: params.mode, run: params.run } as ViceOperations[O]["params"];
+    }
+    case "warp": {
+      if (typeof params.enabled !== "boolean") invalid("enabled must be true or false");
+      return { enabled: params.enabled } as ViceOperations[O]["params"];
+    }
   }
   return invalid(`unknown operation: ${String(op)}`);
 }
@@ -302,6 +354,22 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         (["a", "x", "y", "sp"] as const).every((name) => isInteger(value[name], 0, 0xff)) &&
         isFlags(value.flags);
       if (!ok) throw new ProtocolError("registersGet result is malformed");
+      break;
+    }
+    case "execution": {
+      const ok =
+        isOneOf(RUN_STATES, value.state) &&
+        (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
+        (value.executed === undefined || isInteger(value.executed, 0, MAX_EXECUTION_COUNT));
+      if (!ok) throw new ProtocolError("execution result is malformed");
+      break;
+    }
+    case "reset": {
+      if (!isOneOf(RUN_STATES, value.state)) throw new ProtocolError("reset result is malformed");
+      break;
+    }
+    case "warp": {
+      if (typeof value.enabled !== "boolean") throw new ProtocolError("warp result is malformed");
       break;
     }
     default:

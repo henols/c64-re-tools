@@ -2,6 +2,7 @@
 // and register/bank id lookups live here; callers never see monitor details.
 
 import { WireFailure, type MemoryView, type Registers, type Space } from "../../protocol.ts";
+import { TextMonitorError, type TextMonitor } from "./text-monitor.ts";
 import {
   BinaryMonitor,
   Command,
@@ -48,19 +49,29 @@ export function flagsFromStatusRegister(value: number): Registers["flags"] {
  * monitor commands, and any monitor command stops the machine; restoring the
  * run state is the session's job.
  */
+/** Generous bound for commands that run the machine (step/next): they answer only once it stops again. */
+const RUNNING_COMMAND_TIMEOUT_MS = 30_000;
+
 export class ViceAdapter {
   readonly #monitor: BinaryMonitor;
+  readonly #text: TextMonitor;
   readonly #registerIds: Record<Space, RegisterIds>;
-  readonly #banks: Record<MemoryView, number>;
+  readonly #banks: Record<MemoryView | "rom", number>;
 
-  private constructor(monitor: BinaryMonitor, registerIdsBySpace: Record<Space, RegisterIds>, banks: Record<MemoryView, number>) {
+  private constructor(
+    monitor: BinaryMonitor,
+    text: TextMonitor,
+    registerIdsBySpace: Record<Space, RegisterIds>,
+    banks: Record<MemoryView | "rom", number>,
+  ) {
     this.#monitor = monitor;
+    this.#text = text;
     this.#registerIds = registerIdsBySpace;
     this.#banks = banks;
   }
 
   /** Looks up the register and bank ids this VICE uses. Stops the machine. */
-  static async create(monitor: BinaryMonitor): Promise<ViceAdapter> {
+  static async create(monitor: BinaryMonitor, text: TextMonitor): Promise<ViceAdapter> {
     const banks = decodeBanks((await monitor.request(Command.banksAvailable)).body);
     const bankId = (name: string) => {
       const bank = banks.find((candidate) => candidate.name === name);
@@ -69,8 +80,9 @@ export class ViceAdapter {
     };
     return new ViceAdapter(
       monitor,
+      text,
       { c64: await registerIds(monitor, "c64"), drive8: await registerIds(monitor, "drive8") },
-      { cpu: bankId("cpu"), ram: bankId("ram") },
+      { cpu: bankId("cpu"), ram: bankId("ram"), rom: bankId("rom") },
     );
   }
 
@@ -114,5 +126,71 @@ export class ViceAdapter {
   /** Leaves the monitor so the machine runs again. */
   async resume(): Promise<void> {
     await this.#monitor.request(Command.exit);
+  }
+
+  /** Stops the machine (any monitor command does). */
+  async stop(): Promise<void> {
+    await this.#monitor.request(Command.ping);
+  }
+
+  /** Executes `count` C64 instructions, with subroutine calls as one when `over`. Answers once stopped again. */
+  async step(count: number, over: boolean): Promise<void> {
+    const body = Buffer.alloc(3);
+    body[0] = over ? 1 : 0;
+    body.writeUInt16LE(count, 1);
+    await this.#monitor.request(Command.advanceInstructions, body, RUNNING_COMMAND_TIMEOUT_MS);
+  }
+
+  /** Runs until just after the next RTS/RTI. Answers at once; the machine stops later. */
+  async untilReturn(): Promise<void> {
+    await this.#monitor.request(Command.executeUntilReturn);
+  }
+
+  /** Resets the C64 (soft) or power-cycles it (hard). The machine runs afterwards. */
+  async reset(mode: "soft" | "hard"): Promise<void> {
+    await this.#monitor.request(Command.reset, Buffer.from([mode === "hard" ? 1 : 0]));
+  }
+
+  /** Where the CPU starts after a reset: the vector at $fffc in ROM. */
+  async resetVector(): Promise<number> {
+    const bytes = decodeMemory(
+      (await this.#monitor.request(Command.memoryGet, memoryGetBody({ start: 0xfffc, end: 0xfffd, memspace: Memspace.main, bank: this.#banks.rom }))).body,
+    );
+    return bytes.readUInt16LE(0);
+  }
+
+  /**
+   * Adds a C64 exec checkpoint that stops the machine. Returns its VICE number.
+   * Never a VICE "temporary" checkpoint: on stock VICE 3.10 setting one resumes
+   * the machine (like the text monitor's until), whatever the manual says.
+   */
+  async addBreak(address: number): Promise<number> {
+    const body = Buffer.alloc(9);
+    body.writeUInt16LE(address, 0);
+    body.writeUInt16LE(address, 2);
+    body[4] = 1; // stop when hit
+    body[5] = 1; // enabled
+    body[6] = 0x04; // exec
+    body[7] = 0; // not temporary
+    body[8] = Memspace.main;
+    const info = await this.#monitor.request(Command.checkpointSet, body);
+    return info.body.readUInt32LE(0);
+  }
+
+  async deleteCheckpoint(number: number): Promise<void> {
+    const body = Buffer.alloc(4);
+    body.writeUInt32LE(number, 0);
+    await this.#monitor.request(Command.checkpointDelete, body);
+  }
+
+  async warp(): Promise<boolean> {
+    const answer = await this.#text.command("warp");
+    const match = /Warp mode is (on|off)/.exec(answer);
+    if (match === null) throw new TextMonitorError(`unexpected warp answer: ${answer}`);
+    return match[1] === "on";
+  }
+
+  async setWarp(enabled: boolean): Promise<void> {
+    await this.#text.command(enabled ? "warp on" : "warp off");
   }
 }

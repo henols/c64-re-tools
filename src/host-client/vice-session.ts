@@ -5,7 +5,11 @@ import {
   ProtocolError,
   validateViceResult,
   WireFailure,
+  type ExecutionParams,
+  type ExecutionResult,
   type MachineStatus,
+  type ResetMode,
+  type RunState,
   type MemoryReadParams,
   type MemoryReadResult,
   type Registers,
@@ -82,6 +86,18 @@ export class ViceSessionClient {
 
   registersGet(space: Space): Promise<Registers> {
     return this.#request("registersGet", { space });
+  }
+
+  execution(params: ExecutionParams): Promise<ExecutionResult> {
+    return this.#request("execution", params);
+  }
+
+  reset(params: { mode: ResetMode; run: boolean }): Promise<{ state: RunState }> {
+    return this.#request("reset", params);
+  }
+
+  warp(enabled: boolean): Promise<{ enabled: boolean }> {
+    return this.#request("warp", { enabled });
   }
 
   /** Ends the session; the host stops its emulator. */

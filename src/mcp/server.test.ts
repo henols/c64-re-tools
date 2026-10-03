@@ -5,10 +5,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { WireFailure, type MemoryReadParams, type Registers } from "../protocol.ts";
+import { WireFailure, type ExecutionParams, type MemoryReadParams, type Registers } from "../protocol.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
+import { executionTools } from "./tools/execution.ts";
 import { machineTools } from "./tools/machine.ts";
 import { memoryTools } from "./tools/memory.ts";
+
+const ALL_TOOLS = [...machineTools, ...executionTools, ...memoryTools];
 
 const REGISTERS: Registers = { pc: 0xe5cf, a: 0x42, x: 3, y: 0, sp: 0xf9, flags: { n: false, v: false, b: true, d: false, i: true, z: false, c: true } };
 
@@ -36,10 +39,31 @@ class FakeSession implements ViceSessionApi {
     this.spaces.push(space);
     return REGISTERS;
   }
+
+  executions: ExecutionParams[] = [];
+  async execution(params: ExecutionParams) {
+    if (this.failure) throw this.failure;
+    this.executions.push(params);
+    if (params.action === "resume") return { state: "running" as const };
+    if (params.action === "step" || params.action === "next") return { state: "stopped" as const, pc: 0x2102, executed: params.count ?? 1 };
+    return { state: "stopped" as const, pc: 0x2100 };
+  }
+
+  resets: Array<{ mode: string; run: boolean }> = [];
+  async reset(params: { mode: "soft" | "hard"; run: boolean }) {
+    this.resets.push(params);
+    return { state: params.run ? ("running" as const) : ("stopped" as const) };
+  }
+
+  warpState = false;
+  async warp(enabled: boolean) {
+    this.warpState = enabled;
+    return { enabled };
+  }
 }
 
 async function connect(source: SessionSource): Promise<Client> {
-  const server = createMcpServer({ tools: [...machineTools, ...memoryTools], session: source });
+  const server = createMcpServer({ tools: ALL_TOOLS, session: source });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: "test", version: "0" });
@@ -58,14 +82,14 @@ function errorOf(result: CallToolResult): { code: string; message: string } {
   return JSON.parse((first as { text: string }).text) as { code: string; message: string };
 }
 
-test("the server lists exactly the M1 tools with object input and output schemas", async () => {
+test("the server lists exactly the implemented tools with object input and output schemas", async () => {
   const client = await connect(async () => new FakeSession());
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), ["c64_memory_read", "c64_registers", "c64_status"]);
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), ["c64_execution", "c64_memory_read", "c64_registers", "c64_reset", "c64_status", "c64_warp"]);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object");
     assert.equal(tool.outputSchema?.type, "object");
-    assert.equal(tool.annotations?.readOnlyHint, true);
+    assert.equal(tool.annotations?.readOnlyHint, ["c64_status", "c64_memory_read", "c64_registers"].includes(tool.name));
     assert.doesNotMatch(`${tool.description} ${JSON.stringify(tool.inputSchema)}`, /\bVICE\b|monitor|port|session id|request/i);
   }
   const read = tools.find((tool) => tool.name === "c64_memory_read")!;
@@ -147,5 +171,40 @@ test("an unexpected exception becomes operation-failed without internals", async
   const error = errorOf(await call(client, "c64_status"));
   assert.equal(error.code, "operation-failed");
   assert.doesNotMatch(error.message, /ECONNRESET|tmp|51234/);
+  await client.close();
+});
+
+test("c64_execution passes the action through and formats the pc", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  assert.deepEqual((await call(client, "c64_execution", { action: "pause" })).structuredContent, { state: "stopped", pc: "$2100" });
+  assert.deepEqual((await call(client, "c64_execution", { action: "step", count: 2 })).structuredContent, {
+    state: "stopped",
+    pc: "$2102",
+    executed: 2,
+  });
+  assert.deepEqual((await call(client, "c64_execution", { action: "resume" })).structuredContent, { state: "running" });
+  assert.deepEqual(session.executions, [
+    { action: "pause", space: "c64" },
+    { action: "step", space: "c64", count: 2 },
+    { action: "resume", space: "c64" },
+  ]);
+  assert.equal(errorOf(await call(client, "c64_execution", { action: "step", count: 0 })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_execution", { action: "jump" })).code, "invalid-input");
+  await client.close();
+});
+
+test("c64_reset defaults run to false and c64_warp echoes the mode", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  assert.deepEqual((await call(client, "c64_reset", { mode: "hard" })).structuredContent, { state: "stopped" });
+  assert.deepEqual((await call(client, "c64_reset", { mode: "soft", run: true })).structuredContent, { state: "running" });
+  assert.deepEqual(session.resets, [
+    { mode: "hard", run: false },
+    { mode: "soft", run: true },
+  ]);
+  assert.equal(errorOf(await call(client, "c64_reset", {})).code, "invalid-input");
+  assert.deepEqual((await call(client, "c64_warp", { enabled: true })).structuredContent, { enabled: true });
+  assert.equal(session.warpState, true);
   await client.close();
 });
