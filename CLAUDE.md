@@ -34,10 +34,14 @@ Node ≥ 24 and pnpm (installed by hand; `packageManager` pins the version) are 
 
 ```
 pnpm install --frozen-lockfile
-pnpm typecheck   # tsc --noEmit
-pnpm build       # tsc -> dist/
-pnpm test        # build, then node --test test/scaffold/scaffold.test.mjs
+pnpm typecheck   # tsc over src/ and test/, tests included
+pnpm build       # tsc -p tsconfig.build.json -> dist/, tests excluded
+pnpm test        # build, then node --test "src/**/*.test.ts" "test/**/*.test.ts"
 ```
+
+- Unit tests sit beside source (`src/**/*.test.ts`); `test/` is for integration/e2e.
+  Node runs `.ts` by type stripping, so relative imports end in `.ts` and only
+  erasable syntax is allowed (no enums, namespaces or parameter properties).
 
 - `node --test` exits 0 for a missing or typo'd file; `ls` it first.
 - Don't pipe `pnpm test` into `tail`/`head`: that reports the pipe's exit code.
@@ -47,7 +51,7 @@ pnpm test        # build, then node --test test/scaffold/scaffold.test.mjs
 
 ## Conventions that bite
 
-- **TypeScript only.** Never hand-write `.js`/`.mjs`; JS exists only as build output in `dist/`. (`test/scaffold/scaffold.test.mjs` is the one exception.)
+- **TypeScript only.** Never hand-write `.js`/`.mjs`; JS exists only as build output in `dist/`.
 - Native tools run on the host through the Host Runtime; never `spawnSync` an external binary from a skill script. Never auto-install external tools: detect, refuse by name, print the remedy.
 - Tools take client paths and stream bytes; never a fixed file list or a path over the socket.
 - Stopping the Host Runtime must stop every emulator, tool and descendant it started.

@@ -60,9 +60,13 @@ Node ≥ 24 and pnpm are required; install pnpm yourself (for example
 ```
 pnpm install --frozen-lockfile
 pnpm typecheck
-pnpm build         # tsc -> dist/
-pnpm test          # build, then the scaffold tests
+pnpm build         # tsc -p tsconfig.build.json -> dist/
+pnpm test          # build, then node --test on src/**/*.test.ts and test/**/*.test.ts
 ```
+
+Unit tests sit beside their source as `src/**/*.test.ts`; `test/` holds
+integration and end-to-end tests. Node runs the TypeScript directly (type
+stripping), so relative imports name the `.ts` file.
 
 The package exposes three executables: `c64-re-tools`, `c64-re-tools-mcp` and
 `c64-re-tools-host`. The target source layout is
@@ -71,7 +75,7 @@ The package exposes three executables: `c64-re-tools`, `c64-re-tools-mcp` and
 ## Layout
 
 ```
-src/                 # the rewrite (flat by ownership: mcp, host, host-client, knowledge, cli)
+src/                 # the rewrite (flat by ownership: mcp, host, host-client, knowledge, cli), unit tests beside source
 test/                # fixtures, integration and end-to-end tests
 docs/redesign/       # the frozen design
 .claude-plugin/      # plugin and marketplace manifests

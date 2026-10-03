@@ -3,23 +3,16 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "rootDir": "src",
-    "outDir": "dist",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,
-    "declaration": true,
-    "sourceMap": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "noEmit": true,
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": [
-    "src/c64.ts",
-    "src/project.ts",
-    "src/protocol.ts",
-    "src/cli/main.ts",
-    "src/mcp/main.ts",
-    "src/host/main.ts"
-  ]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }
