@@ -333,6 +333,33 @@ export class FakeVice {
         answer();
         return this.#leaveMonitor(socket);
       }
+      case Command.displayGet: {
+        // A 504x312 PAL buffer as VICE 3.10 sends it: window at (136,51), border box from (104,15).
+        const width = 504;
+        const height = 312;
+        const header = Buffer.alloc(4 + 13 + 4);
+        header.writeUInt32LE(13, 0);
+        header.writeUInt16LE(width, 4);
+        header.writeUInt16LE(height, 6);
+        header.writeUInt16LE(136, 8);
+        header.writeUInt16LE(51, 10);
+        header.writeUInt16LE(320, 12);
+        header.writeUInt16LE(200, 14);
+        header[16] = 8;
+        header.writeUInt32LE(width * height, 17);
+        const pixels = Buffer.alloc(width * height);
+        for (let y = 15; y < 287; y++) {
+          for (let x = 104; x < 488; x++) {
+            const inner = x >= 136 && x < 456 && y >= 51 && y < 251;
+            pixels[y * width + x] = inner ? this.ram[0xd021]! & 0x0f : this.ram[0xd020]! & 0x0f;
+          }
+        }
+        return void answer(Buffer.concat([header, pixels]));
+      }
+      case Command.paletteGet: {
+        const items = Array.from({ length: 16 }, (_, index) => Buffer.from([3, index * 16, index * 16, index * 16]));
+        return void answer(Buffer.concat([u16(16), ...items]));
+      }
       case Command.keyboardFeed:
         this.keyboard.push(...body.subarray(1, 1 + body[0]!));
         return void answer();

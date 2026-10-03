@@ -4,6 +4,7 @@ import { after, test } from "node:test";
 import { WireFailure } from "../../protocol.ts";
 import { Command } from "./binary-monitor.ts";
 import { FakeVice } from "./fake-vice.testkit.ts";
+import { readPng } from "./png.testkit.ts";
 import { ViceSession, type SessionOptions } from "./session.ts";
 
 const fakes: FakeVice[] = [];
@@ -328,6 +329,20 @@ test("keyboard bytes are fed in chunks VICE accepts and keep the run state", asy
   assert.deepEqual(await session.handle("keyboard", { data: text.toString("hex") }), { queuedBytes: 600 });
   assert.equal(fake.keyboard.length, 600);
   assert.equal(fake.commands.filter((command) => command === Command.keyboardFeed).length, 3);
+  assert.equal(fake.running, true);
+  await session.close();
+});
+
+test("a screen capture is the visible frame as PNG and keeps the run state", async () => {
+  const { fake, session } = await startSession();
+  fake.ram[0xd020] = 2;
+  fake.ram[0xd021] = 6;
+  const shot = await session.handle("screenCapture", {});
+  assert.equal(shot.width, 384);
+  assert.equal(shot.height, 272);
+  const png = readPng(Buffer.from(shot.png, "base64"));
+  assert.equal(png.pixels[0], 2, "top-left is border");
+  assert.equal(png.pixels[36 * 384 + 32], 6, "the display window starts 32 pixels in and 36 down");
   assert.equal(fake.running, true);
   await session.close();
 });

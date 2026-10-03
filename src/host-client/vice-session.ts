@@ -135,6 +135,11 @@ export class ViceSessionClient {
     return this.#request("joystick", state);
   }
 
+  /** The last frame the VIC-II drew, as a base64 PNG with its size. */
+  screenCapture(): Promise<{ width: number; height: number; png: string }> {
+    return this.#request("screenCapture", {});
+  }
+
   warp(enabled: boolean): Promise<{ enabled: boolean }> {
     return this.#request("warp", { enabled });
   }

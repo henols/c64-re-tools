@@ -27,6 +27,7 @@ export type ViceSessionApi = Pick<
   | "diskAttach"
   | "keyboard"
   | "joystick"
+  | "screenCapture"
 >;
 
 /** Resolves the session, opening it on first use when the start-up attempt failed. */
@@ -64,6 +65,17 @@ export const MemoryViewInput = z
   .default("cpu")
   .describe("cpu reads what the CPU sees now (ROM and I/O where banked in); ram reads the RAM underneath (c64 only)");
 
+/** A tool result that carries content blocks (for example an image) beside its structured result. */
+export class ToolOutput<T> {
+  readonly structured: T;
+  readonly content: CallToolResult["content"];
+
+  constructor(structured: T, content: CallToolResult["content"]) {
+    this.structured = structured;
+    this.content = content;
+  }
+}
+
 export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z.ZodObject = z.ZodObject> {
   name: string;
   title: string;
@@ -72,7 +84,7 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   outputSchema: O;
   /** True for operations that only observe the machine. */
   readOnly: boolean;
-  run(input: z.output<I>, session: ViceSessionApi): Promise<z.input<O>>;
+  run(input: z.output<I>, session: ViceSessionApi): Promise<z.input<O> | ToolOutput<z.input<O>>>;
 }
 
 /** Keeps a tool's handler typed against its own schemas. */
@@ -123,8 +135,10 @@ export async function callTool(
   const parsed = tool.inputSchema.safeParse(args ?? {});
   if (!parsed.success) return errorResult({ code: "invalid-input", message: describeIssues(parsed.error) });
   try {
-    const result = (await tool.run(parsed.data, await session())) as JsonObject;
-    return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result };
+    const output = await tool.run(parsed.data, await session());
+    const result = (output instanceof ToolOutput ? output.structured : output) as JsonObject;
+    const extra = output instanceof ToolOutput ? output.content : [];
+    return { content: [{ type: "text", text: JSON.stringify(result) }, ...extra], structuredContent: result };
   } catch (error) {
     if (error instanceof WireFailure) return errorResult(error.toWire());
     log(`${name} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);

@@ -8,7 +8,9 @@ import {
   type RegisterValues,
   type Registers,
   type Space,
+  type VideoStandard,
 } from "../../protocol.ts";
+import { decodeDisplay, decodePalette, encodePng, visibleFrame } from "./screen.ts";
 import { TextMonitorError, type TextMonitor } from "./text-monitor.ts";
 import {
   BinaryMonitor,
@@ -311,6 +313,14 @@ export class ViceAdapter {
     body.writeUInt16LE(state.port - 1, 0);
     body.writeUInt16LE(joystickLines(state), 2);
     await this.#monitor.request(Command.joyportSet, body);
+  }
+
+  /** The last frame the VIC-II drew, visible area with borders, as PNG bytes. */
+  async captureScreen(standard: VideoStandard): Promise<{ width: number; height: number; png: Buffer }> {
+    const display = decodeDisplay((await this.#monitor.request(Command.displayGet, Buffer.from([1, 0]))).body);
+    const palette = decodePalette((await this.#monitor.request(Command.paletteGet, Buffer.from([1]))).body);
+    const frame = visibleFrame(display, standard);
+    return { width: frame.width, height: frame.height, png: encodePng(frame, palette) };
   }
 
   async warp(): Promise<boolean> {

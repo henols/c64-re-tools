@@ -10,6 +10,7 @@ import { inputTools } from "./tools/input.ts";
 import { machineTools } from "./tools/machine.ts";
 import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
+import { videoTools } from "./tools/video.ts";
 
 const HELP = `c64-re-tools-mcp
 
@@ -73,7 +74,7 @@ async function main(): Promise<void> {
     return;
   }
   const session = sessionSource();
-  const server = createMcpServer({ tools: [...machineTools, ...executionTools, ...memoryTools, ...inputTools, ...mediaTools], session: session.get, log });
+  const server = createMcpServer({ tools: [...machineTools, ...executionTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools], session: session.get, log });
 
   let stopping = false;
   const stop = async () => {

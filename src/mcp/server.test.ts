@@ -19,8 +19,9 @@ import { inputTools } from "./tools/input.ts";
 import { machineTools } from "./tools/machine.ts";
 import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
+import { videoTools } from "./tools/video.ts";
 
-const ALL_TOOLS = [...machineTools, ...executionTools, ...memoryTools, ...inputTools, ...mediaTools];
+const ALL_TOOLS = [...machineTools, ...executionTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools];
 
 const REGISTERS: Registers = { pc: 0xe5cf, a: 0x42, x: 3, y: 0, sp: 0xf9, flags: { n: false, v: false, b: true, d: false, i: true, z: false, c: true } };
 
@@ -68,6 +69,10 @@ class FakeSession implements ViceSessionApi {
   }
   async joystick(state: { port: 1 | 2; direction: (typeof import("../protocol.ts").JOYSTICK_DIRECTIONS)[number]; fire: boolean }) {
     return state;
+  }
+
+  async screenCapture() {
+    return { width: 384, height: 272, png: Buffer.from("png-bytes").toString("base64") };
   }
 
   media: Array<[string, unknown]> = [];
@@ -140,13 +145,14 @@ test("the server lists exactly the implemented tools with object input and outpu
     "c64_program_load",
     "c64_registers",
     "c64_reset",
+    "c64_screen",
     "c64_status",
     "c64_warp",
   ]);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object");
     assert.equal(tool.outputSchema?.type, "object");
-    assert.equal(tool.annotations?.readOnlyHint, ["c64_status", "c64_memory_read"].includes(tool.name));
+    assert.equal(tool.annotations?.readOnlyHint, ["c64_status", "c64_memory_read", "c64_screen"].includes(tool.name));
     assert.doesNotMatch(`${tool.description} ${JSON.stringify(tool.inputSchema)}`, /\bVICE\b|monitor|tcp|socket|session id|request/i);
   }
   const read = tools.find((tool) => tool.name === "c64_memory_read")!;
@@ -340,5 +346,13 @@ test("c64_joystick echoes the held state and defaults fire to false", async () =
   assert.deepEqual((await call(client, "c64_joystick", { port: 2, direction: "left" })).structuredContent, { port: 2, direction: "left", fire: false });
   assert.equal(errorOf(await call(client, "c64_joystick", { port: 3, direction: "left" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_joystick", { port: 1, direction: "north" })).code, "invalid-input");
+  await client.close();
+});
+
+test("c64_screen capture returns the size and an image block", async () => {
+  const client = await connect(async () => new FakeSession());
+  const result = await call(client, "c64_screen", { action: "capture" });
+  assert.deepEqual(result.structuredContent, { width: 384, height: 272 });
+  assert.deepEqual(result.content[1], { type: "image", data: Buffer.from("png-bytes").toString("base64"), mimeType: "image/png" });
   await client.close();
 });

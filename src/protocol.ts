@@ -177,6 +177,8 @@ export interface ViceOperations {
   /** `data`: PETSCII bytes as lowercase hex. */
   keyboard: { params: { data: string }; result: { queuedBytes: number } };
   joystick: { params: JoystickState; result: JoystickState };
+  /** The last frame the VIC-II drew, visible area with borders, as a base64 PNG. */
+  screenCapture: { params: Record<string, never>; result: { width: number; height: number; png: string } };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
 }
 export type ViceOperation = keyof ViceOperations;
@@ -193,6 +195,7 @@ export const VICE_OPERATIONS = [
   "reset",
   "keyboard",
   "joystick",
+  "screenCapture",
   "warp",
 ] as const satisfies readonly ViceOperation[];
 
@@ -350,6 +353,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
   if (!isObject(params)) invalid("parameters must be an object");
   switch (op) {
     case "status":
+    case "screenCapture":
       return {} as ViceOperations[O]["params"];
     case "memoryRead": {
       if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
@@ -525,6 +529,15 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     }
     case "keyboard": {
       if (!isInteger(value.queuedBytes, 1, MAX_KEYBOARD_BYTES)) throw new ProtocolError("keyboard result is malformed");
+      break;
+    }
+    case "screenCapture": {
+      const ok =
+        isInteger(value.width, 1, 1024) &&
+        isInteger(value.height, 1, 1024) &&
+        typeof value.png === "string" &&
+        /^[A-Za-z0-9+/]+={0,2}$/.test(value.png);
+      if (!ok) throw new ProtocolError("screenCapture result is malformed");
       break;
     }
     case "joystick": {

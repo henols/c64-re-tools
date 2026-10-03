@@ -175,6 +175,10 @@ export class ViceSession implements ViceSessionHandle {
         await this.#observe(() => this.#machine.feedKeyboard(bytes));
         return { queuedBytes: bytes.length };
       }
+      case "screenCapture": {
+        const shot = await this.#observe(() => this.#machine.captureScreen(this.#videoStandard));
+        return { width: shot.width, height: shot.height, png: shot.png.toString("base64") };
+      }
       case "joystick": {
         const joystick = params as JoystickState;
         await this.#observe(() => this.#machine.setJoystick(joystick));
