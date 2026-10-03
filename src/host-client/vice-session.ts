@@ -1,0 +1,107 @@
+// The long-lived Host Runtime connection an MCP process owns: one connection,
+// one VICE. Exposes C64-domain operations only.
+
+import {
+  ProtocolError,
+  validateViceResult,
+  WireFailure,
+  type MachineStatus,
+  type MemoryReadParams,
+  type MemoryReadResult,
+  type Registers,
+  type Space,
+  type VideoStandard,
+  type ViceOperation,
+  type ViceOperations,
+} from "../protocol.ts";
+import { HostConnection } from "./connect.ts";
+
+const HOST_LOST =
+  "The connection to the c64-re-tools host runtime was lost, and the emulator and its machine state went with it. " +
+  "Check that c64-re-tools-host is running, then restart the c64-re-tools MCP server.";
+
+interface Pending {
+  op: ViceOperation;
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+}
+
+export class ViceSessionClient {
+  /** Settles when the session is gone, whether we closed it or the host went away. */
+  readonly closed: Promise<void>;
+  readonly #connection: HostConnection;
+  readonly #pending = new Map<number, Pending>();
+  #nextId = 1;
+  #lost: WireFailure | undefined;
+
+  private constructor(connection: HostConnection) {
+    this.#connection = connection;
+    connection.onMessage((message) => {
+      // Anything but a reply after the handshake breaks the contract.
+      if (message.type !== "reply") return this.#fail();
+      const pending = this.#pending.get(message.id);
+      if (pending === undefined) return; // not ours; ignore
+      this.#pending.delete(message.id);
+      if ("error" in message) {
+        pending.reject(new WireFailure(message.error.code, message.error.message));
+        return;
+      }
+      try {
+        pending.resolve(validateViceResult(pending.op, message.result));
+      } catch (error) {
+        if (!(error instanceof ProtocolError)) throw error;
+        pending.reject(new WireFailure("operation-failed", "The c64-re-tools host runtime sent an invalid reply."));
+        this.#fail();
+      }
+    });
+    this.closed = connection.closed.then(() => {
+      this.#lost = new WireFailure("machine-state-lost", HOST_LOST);
+      for (const pending of this.#pending.values()) pending.reject(this.#lost);
+      this.#pending.clear();
+    });
+  }
+
+  /** Connects and waits until the host has started this session's emulator. */
+  static async open(options: { videoStandard: VideoStandard; env?: NodeJS.ProcessEnv; readyTimeoutMs?: number }): Promise<ViceSessionClient> {
+    const connection = await HostConnection.open({
+      role: "vice-session",
+      videoStandard: options.videoStandard,
+      ...(options.env === undefined ? {} : { env: options.env }),
+      ...(options.readyTimeoutMs === undefined ? {} : { readyTimeoutMs: options.readyTimeoutMs }),
+    });
+    return new ViceSessionClient(connection);
+  }
+
+  status(): Promise<MachineStatus> {
+    return this.#request("status", {});
+  }
+
+  memoryRead(params: MemoryReadParams): Promise<MemoryReadResult> {
+    return this.#request("memoryRead", params);
+  }
+
+  registersGet(space: Space): Promise<Registers> {
+    return this.#request("registersGet", { space });
+  }
+
+  /** Ends the session; the host stops its emulator. */
+  async close(): Promise<void> {
+    await this.#connection.close();
+    await this.closed;
+  }
+
+  #request<O extends ViceOperation>(op: O, params: ViceOperations[O]["params"]): Promise<ViceOperations[O]["result"]> {
+    if (this.#lost !== undefined) return Promise.reject(this.#lost);
+    const id = this.#nextId;
+    this.#nextId = this.#nextId >= 0xffff_ffff ? 1 : this.#nextId + 1;
+    return new Promise((resolve, reject) => {
+      this.#pending.set(id, { op, resolve: resolve as (value: unknown) => void, reject });
+      this.#connection.send({ type: "request", id, op, params });
+    });
+  }
+
+  /** Drops a connection whose host broke the protocol; pending work fails as lost. */
+  #fail(): void {
+    void this.#connection.close();
+  }
+}
