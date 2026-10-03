@@ -30,16 +30,17 @@ native tools and keep project knowledge local in `.c64-re-tools/knowledge.db`.
 
 ## Commands
 
-Node ≥ 24 is required.
+Node ≥ 24 and pnpm (installed by hand; `packageManager` pins the version) are required.
 
 ```
-npm run typecheck   # tsc --noEmit
-npm run build       # tsc -> dist/
-npm test            # build, then node --test test/scaffold/scaffold.test.mjs
+pnpm install --frozen-lockfile
+pnpm typecheck   # tsc --noEmit
+pnpm build       # tsc -> dist/
+pnpm test        # build, then node --test test/scaffold/scaffold.test.mjs
 ```
 
 - `node --test` exits 0 for a missing or typo'd file; `ls` it first.
-- Don't pipe `npm test` into `tail`/`head`: that reports the pipe's exit code.
+- Don't pipe `pnpm test` into `tail`/`head`: that reports the pipe's exit code.
 - Real VICE is `/usr/bin/x64sc`, by absolute path. `-default` must precede
   `-binarymonitor`, and autostart needs `-autostartprgmode 1`.
 - `/tmp` is a RAM tmpfs here; tests that leak scratch dirs fill it.

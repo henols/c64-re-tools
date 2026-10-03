@@ -27,7 +27,7 @@ Done when no tracked file mentions `src/mcp/vice` or the legacy code.
 
 Acceptance (19 §2): from a clean clone, `pnpm install --frozen-lockfile && pnpm build && pnpm test` passes and `--help` works on `c64-re-tools`, `c64-re-tools-mcp` and `c64-re-tools-host`.
 
-- [ ] M0.1 **pnpm and lockfile.** Add `packageManager`, commit `pnpm-lock.yaml`, CI installs with `--frozen-lockfile`. (pnpm must be installed on the host by hand.)
+- [x] M0.1 **pnpm and lockfile.** Add `packageManager`, commit `pnpm-lock.yaml`, CI installs with `--frozen-lockfile`. (pnpm must be installed on the host by hand.)
 - [ ] M0.2 **Test layout (18 §14).** Unit tests beside source as `src/**/*.test.ts` on `node:test`, run through Node type stripping. `tsconfig.json` globs `src/` for typecheck; `tsconfig.build.json` excludes tests. Move the scaffold tests into `src/`, put the bin `--help` smoke in `test/e2e/bins.test.ts`, delete `test/scaffold/`.
 - [ ] M0.3 **Boundary test (18 §15).** `src/boundaries.test.ts` scans imports and fails on a forbidden direction (host ↛ mcp/knowledge, mcp ↛ host/knowledge, knowledge ↛ host/mcp/host-client, skill ↛ skill).
 

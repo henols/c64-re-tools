@@ -54,11 +54,14 @@ second agent session or `-remotemonitor` user before you suspect a wedge.
 
 ## Developing
 
+Node ≥ 24 and pnpm are required; install pnpm yourself (for example
+`corepack enable pnpm`). `packageManager` in `package.json` pins its version.
+
 ```
-npm install
-npm run typecheck
-npm run build      # tsc -> dist/
-npm test           # build, then the scaffold tests
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm build         # tsc -> dist/
+pnpm test          # build, then the scaffold tests
 ```
 
 The package exposes three executables: `c64-re-tools`, `c64-re-tools-mcp` and

@@ -12,17 +12,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Reads the pnpm version from packageManager in package.json.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+          cache: pnpm
 
-      # No pnpm-lock.yaml is committed yet; switch to --frozen-lockfile once it is.
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck
         run: pnpm typecheck
