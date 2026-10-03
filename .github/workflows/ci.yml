@@ -3,148 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to publish to npm (e.g. 0.1.5) -- no leading v. Publishes @henols/vice-mcp via OIDC."
-        required: true
-        type: string
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: src/mcp/vice/package-lock.json
-
-      - name: Install MCP server dependencies
-        working-directory: src/mcp/vice
-        run: npm ci --no-audit --no-fund
-
-      - name: Typecheck
-        working-directory: src/mcp/vice
-        run: npm run typecheck
-
-      - name: Install ACME cross-assembler
-        # The tests that need ACME must run as real gates, not skip. This step
-        # installs the distribution package `acme` and then checks that the
-        # installed binary is ACME by grepping its own banner, so a wrong
-        # package name or a broken install fails this job loudly.
-        #
-        # timeout-minutes and the retry_apt helper bound an unresponsive apt
-        # mirror, which would otherwise stall the job with no log output.
-        timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          retry_apt() {
-            local attempt
-            for attempt in 1 2 3; do
-              if sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 "$@"; then
-                return 0
-              fi
-              echo "retry_apt: attempt ${attempt}/3 failed for: apt-get $*" >&2
-              sleep 5
-            done
-            echo "retry_apt: all 3 attempts failed for: apt-get $*" >&2
-            return 1
-          }
-          retry_apt update
-          retry_apt install -y acme
-          command -v acme
-          { acme --version || acme --help; } 2>&1 | head -5 | tee /tmp/acme-banner.txt
-          grep -qi acme /tmp/acme-banner.txt
-
-      - name: Assemble the c64-assembler scaffold (library-free)
-        # The scaffold must assemble without hardware-register library files,
-        # produce output, and load at $0801. The test file starts its own
-        # harness broker (broker-harness.ts) and runs acme.ts against it over
-        # the fixed endpoint, so this step needs no machine broker. It also
-        # runs in the full suite below; it runs here early so that a failure
-        # is fast and separate.
-        working-directory: src/mcp/vice
-        env:
-          VICE_REQUIRE_ACME: "1"
-        run: node --test ../../../test/vice/skill-assembler-cli.test.ts
-
-      - name: Regenerate committed artifacts and fail on drift
-        # The committed build output (resources/*.mjs, vice-cli.mjs), the
-        # register table, the README install tables and the assembled fixtures
-        # must be exactly what their generators produce from the committed
-        # sources. Deleting the
-        # generated .mjs files first makes a stale, missing or orphan output
-        # show in `git status`, because build() does not prune. Each
-        # generator below leaves a clean tree clean and needs no network and
-        # no emulator. exported-edit-run.json is left out of the check: it
-        # records a timestamp and the digests of its inputs, not an output.
-        # test/vice/fixtures/vsf/make-fixtures.ts is not run, because its sidecars
-        # also carry a timestamp. Runs before Test, because the suite
-        # itself rebuilds resources/.
-        working-directory: src/mcp/vice
-        run: |
-          set -euo pipefail
-          find resources -name '*.mjs' -delete
-          rm -f vice-cli.mjs
-          node build.ts
-          node anno-regbits-gen.mts
-          node prereq-readme-gen.ts --write
-          fixtures=../../../test/vice/fixtures
-          node "$fixtures/hazard-subject/make-hazard-subject-fixtures.ts"
-          node "$fixtures/hazard-subject/make-hazard-subject-annostore.ts"
-          node "$fixtures/hazard-subject/make-exported-edit.ts" > /dev/null
-          node "$fixtures/export-asm/make-export-asm-fixtures.ts"
-          node "$fixtures/coverage/make-coverage-fixtures.ts"
-          git checkout -- "$fixtures/hazard-subject/exported-edit-run.json"
-          git diff --exit-code -- . "$fixtures" ../../../README.md
-          drift="$(git status --porcelain --untracked-files=all -- . "$fixtures")"
-          if [ -n "$drift" ]; then
-            echo "untracked generated files -- run the generators and commit:" >&2
-            echo "$drift" >&2
-            exit 1
-          fi
-
-      - name: Test
-        working-directory: src/mcp/vice
-        env:
-          # This runner is non-root, so install-resources.test.ts's read-only
-          # deployment cases are enforced here; a root process ignores a
-          # read-only file mode. VICE_REQUIRE_ACME turns "ACME absent" from a
-          # skip into a failure. `npm test` runs every `*.test.*` file, a
-          # wider set than `npm run test:automated`; the live suites skip
-          # themselves unless their opt-in variables are set, which CI never
-          # does.
-          VICE_REQUIRE_ACME: "1"
-        run: npm test
-
-      - name: Smoke-test the MCP server (boots under type-stripping + MCP handshake)
-        working-directory: src/mcp/vice
-        run: npm run smoke
-
-      # Proves the npm package runs from node_modules, where Node refuses to
-      # strip types: builds dist/, packs the tarball, installs it (production
-      # dependencies only) into a scratch prefix and runs the installed bin
-      # through its node_modules/.bin symlink (MCP handshake, `anno --help`,
-      # `broker --help`, which refuses without starting a broker).
-      - name: Smoke-test the packed npm package (runs from node_modules)
-        working-directory: src/mcp/vice
-        run: node smoke-packed.ts
-
-      # The skill scripts' tests live in test/skills/<skill>/, outside the skill
-      # folders so `npx skills add` never ships them. The vice-mcp `npm test`
-      # above runs test/vice/ only, so it cannot reach them. The glob is quoted so
-      # Node receives the pattern rather than a shell expansion.
-      - name: Test the skills
-        run: node --test 'test/skills/**/*.test.ts'
-
-
-  greenfield-scaffold:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -157,78 +20,15 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Install greenfield package dependencies
+      # No pnpm-lock.yaml is committed yet; switch to --frozen-lockfile once it is.
+      - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Typecheck greenfield scaffold
+      - name: Typecheck
         run: pnpm typecheck
 
-      - name: Build greenfield scaffold
+      - name: Build
         run: pnpm build
 
-      - name: Test greenfield scaffold
+      - name: Test
         run: pnpm test
-
-  publish-npm:
-    # On a v* tag, or a manual run on main, publish @henols/vice-mcp to the
-    # public registry via npm Trusted Publishing (OIDC) -- no NPM_TOKEN secret.
-    #
-    # The published version comes from the tag (v1.2.3 -> 1.2.3) or from the
-    # workflow_dispatch input, and is checked as semver before use. The
-    # committed versions are placeholders that `npm version` overwrites here.
-    #
-    # Prerequisite (one-time, on npmjs.com): the package must have a Trusted
-    # Publisher configured for this repo + workflow (henols/c64-re-tools, ci.yml).
-    # OIDC needs npm >= 11.5.1, so npm 11 is installed below.
-    needs: build
-    if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # required for OIDC trusted publishing
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org"
-
-      - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5.1)
-        run: npm install -g npm@11
-
-      - name: Derive version
-        id: ver
-        # The input and the tag reach the script through env, never through
-        # ${{ }} interpolation into the shell text, and the result must be
-        # semver.
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_VERSION: ${{ inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            version="$INPUT_VERSION"
-          else
-            version="${REF_NAME#v}"
-          fi
-          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-            echo "not a semver version: $version" >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      # The package's `prepack` script compiles dist/ with the pinned tsc, a
-      # devDependency, so the dependencies must be installed before publishing.
-      - name: Install MCP server dependencies
-        working-directory: src/mcp/vice
-        run: npm ci --no-audit --no-fund
-
-      # No NODE_AUTH_TOKEN: npm authenticates to the registry via GitHub OIDC.
-      - name: Publish @henols/vice-mcp
-        working-directory: src/mcp/vice
-        env:
-          PUBLISH_VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          npm version "$PUBLISH_VERSION" --no-git-tag-version --allow-same-version
-          npm publish

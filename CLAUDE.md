@@ -1,29 +1,54 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 ## Project
 
-**c64-re-tools**
+**c64-re-tools** — an agent-friendly Commodore 64 engineering toolkit for
+reverse engineering unknown applications and for developing, debugging,
+building and testing new C64 applications.
 
-A Claude Code plugin bundling the tooling used to reverse-engineer and rebuild
-Commodore 64 games, reusable across C64 projects. It ships an MCP server, a
-broker and reverse-engineering skills. The skills install with the `skills`
-CLI (`npx skills add henols/c64-re-tools`) straight from this repo; the MCP server
-and broker ship as the npm package `@henols/vice-mcp` and in the Claude Code plugin.
+**Core value:** a Claude session can reliably drive a real C64 emulator —
+read and write memory, set checkpoints, inspect chip state — and keep working
+when the emulator misbehaves.
 
-**Core Value:** A Claude session can reliably drive a real C64 emulator to reverse-engineer a
-program — read and write memory, set checkpoints, capture RAM, inspect chip
-state — and keep working when the emulator misbehaves.
+## Status: greenfield rewrite
 
-## Technology Stack
+The repo holds only the rewrite. The design is frozen in `docs/redesign/`
+(start at its `README.md`; `18-repository-structure.md` is the target layout,
+`19-implementation-plan.md` the milestones). Milestone 0 (scaffold) is done;
+build milestone 1 next. Do not pre-create empty files to match the layout.
 
-### Languages
-- TypeScript (the only language for new code; see `agent-os/product/tech-stack.md`)
-- Bash - host launcher script (`src/mcp/vice/resources/vice-launcher.sh`) and the dxa build script
-- 6502/6510 assembly (ACME dialect) - skill scaffolds/templates, e.g. `skills/c64-assembler/template.a`
-- Markdown - all skill documentation (`SKILL.md` files)
+The old implementation (`@henols/vice-mcp`, the broker, twelve skills) was
+deleted. Everything is built new from scratch; nothing from the old code is
+mined, ported or kept for reference.
 
-### Runtime
-- Node.js ≥ 24 for the MCP server (`@henols/vice-mcp`) and for the skill scripts.
+Architecture in one line: one MCP process owns one VICE instance and is
+VICE-only; a Host Runtime on the graphical host owns VICE and all native tools
+(ACME, DXA, Ghidra, c1541, petcat); skill scripts call the Host Runtime for
+native tools and keep project knowledge local in `.c64-re-tools/knowledge.db`.
 
-### Key runtime dependencies
-- `@mastra/mcp` - MCP server/tooling framework
-- `@mastra/core` - underlying Mastra runtime
-- `@modelcontextprotocol/sdk` - MCP protocol types and client, imported directly by `vice-proxy.ts`
+## Commands
+
+Node ≥ 24 is required.
+
+```
+npm run typecheck   # tsc --noEmit
+npm run build       # tsc -> dist/
+npm test            # build, then node --test test/scaffold/scaffold.test.mjs
+```
+
+- `node --test` exits 0 for a missing or typo'd file; `ls` it first.
+- Don't pipe `npm test` into `tail`/`head`: that reports the pipe's exit code.
+- Real VICE is `/usr/bin/x64sc`, by absolute path. `-default` must precede
+  `-binarymonitor`, and autostart needs `-autostartprgmode 1`.
+- `/tmp` is a RAM tmpfs here; tests that leak scratch dirs fill it.
+
+## Conventions that bite
+
+- **TypeScript only.** Never hand-write `.js`/`.mjs`; JS exists only as build output in `dist/`. (`test/scaffold/scaffold.test.mjs` is the one exception.)
+- Native tools run on the host through the Host Runtime; never `spawnSync` an external binary from a skill script. Never auto-install external tools: detect, refuse by name, print the remedy.
+- Tools take client paths and stream bytes; never a fixed file list or a path over the socket.
+- Stopping the Host Runtime must stop every emulator, tool and descendant it started.
+- Skill docs (`SKILL.md`, references, descriptions) are written in ASD-STE100 (use the `asd-ste100` skill).
+- Don't put `\u0000`, backticks or `\b` in Write/Edit params or `node -e` edit scripts — they land as raw bytes or shell commands; use a scratch `.ts` file.

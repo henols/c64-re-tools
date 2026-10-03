@@ -660,8 +660,7 @@ Only after the end-to-end architecture works.
 - package provenance;
 - release automation;
 - full CI matrix;
-- documentation examples;
-- current-code behavior cases worth porting as regression tests.
+- documentation examples.
 
 ### Release gate
 
@@ -690,34 +689,7 @@ artifact
 → equivalence test
 ~~~
 
-## 15. What to reuse from the current implementation
-
-Reuse evidence and proven behavior selectively while implementing each milestone.
-
-Good reuse candidates:
-
-- VICE protocol framing/details;
-- observed monitor quirks/workarounds;
-- process cleanup lessons;
-- ACME diagnostic/symbol parsing behavior;
-- DXA/Ghidra parser rules;
-- c1541/petcat fixture expectations;
-- useful integration fixtures;
-- failure cases already found in production.
-
-Do not port entire old modules merely because they exist.
-
-For every old-code reuse:
-
-~~~text
-identify required behavior
- ↓
-write/port the regression test
- ↓
-implement it inside the new ownership boundary
-~~~
-
-## 16. Work-in-progress rule
+## 15. Work-in-progress rule
 
 Do not start several future milestones just because their directories already exist.
 
@@ -735,7 +707,7 @@ next slice
 
 A milestone may contain several small PRs, but the branch should remain runnable.
 
-## 17. Recommended first implementation sequence
+## 16. Recommended first implementation sequence
 
 The first concrete coding sequence is:
 
@@ -759,7 +731,7 @@ The first concrete coding sequence is:
 
 Do not implement ACME, knowledge, Ghidra, skills packaging or advanced debugger features before this first slice is working.
 
-## 18. Definition of architectural success
+## 17. Definition of architectural success
 
 The rewrite is on the right track when new functionality usually means adding code inside one obvious owner rather than creating another architectural layer.
 

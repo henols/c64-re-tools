@@ -42,7 +42,7 @@ leave current knowledge unchanged
 return actionable failure
 ~~~
 
-This carries forward an important lesson from the current implementation: one analyzer import is atomic.
+One analyzer import is atomic.
 
 ## 4. Normalized findings
 

@@ -1,4 +1,4 @@
-const ADDRESS_PATTERN = /^\\$([0-9a-fA-F]{4})$/;
+const ADDRESS_PATTERN = /^\$([0-9a-fA-F]{4})$/;
 
 export type C64Address = number & { readonly __c64Address: unique symbol };
 
