@@ -44,12 +44,12 @@ Tools: `c64_status`, `c64_memory_read`, `c64_registers` (`get`).
 - [x] M1.6 **VICE session** — `src/host/vice/session.ts`, `adapter.ts`: serialized queue, run state from events, pause-then-restore for reads (15 §4), status fields, crash → `machine-state-lost` (D11), connection close kills VICE.
 - [x] M1.7 **Host client** — `src/host-client/connect.ts`, `vice-session.ts`: endpoint list (D5), handshake, typed `status` / `memoryRead` / `registersGet`, 15 §5 error codes. Contract tests against a real host with a stub VICE adapter.
 - [x] M1.8 **MCP server** — `src/mcp/main.ts`, `server.ts`, `tools/machine.ts`, `tools/memory.ts` (D9): session opened at MCP start, schemas exactly as 15 §7, §14, §18, errors as `isError` with `{code, message}`, no IDs/ports/paths/versions/VICE vocabulary in results.
-- [ ] M1.9 **Acceptance** — `test/integration/vice/`, real VICE, opt-in with `C64RT_LIVE_VICE=/usr/bin/x64sc`:
+- [x] M1.9 **Acceptance** — `test/integration/vice/`, real VICE, opt-in with `C64RT_LIVE_VICE=/usr/bin/x64sc`:
   1. host → MCP → one VICE; read KERNAL bytes at `$e000` and the registers; status reports stopped/running correctly;
   2. terminating MCP makes its VICE exit;
   3. two MCP processes get two sessions and two VICE processes.
 
-  Skipped live suites are reported as skipped, never as passed (09 §6).
+  Skipped live suites are reported as skipped, never as passed (09 §6). M1 has no pause tool, so the stopped case is proven at the session level (a raw monitor command stops real VICE); M2 re-checks it through `c64_execution`.
 
 ## Later milestones
 

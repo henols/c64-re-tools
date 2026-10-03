@@ -9,8 +9,9 @@ C64 applications.
 The project is being rebuilt from scratch. The design is frozen in
 [`docs/redesign/`](docs/redesign/README.md); start at its README.
 [`19-implementation-plan.md`](docs/redesign/19-implementation-plan.md) lists the
-milestones. Milestone 0, the package scaffold, is in place. Nothing in this tree
-drives an emulator yet.
+milestones, and [`docs/plan.md`](docs/plan.md) tracks the steps. Milestone 1 is
+in place: the MCP reads C64 memory, registers and run state from a real VICE
+started by the Host Runtime.
 
 The previous implementation (the `vice` MCP server published as
 `@henols/vice-mcp`, its broker, and twelve `c64-*` skills) has been removed from
@@ -48,9 +49,30 @@ Checked against each ecosystem on 2026-08-18:
 Flatpak and Snap builds are unverified: their sandboxing may block the binary
 monitor on `127.0.0.1`.
 
+The Host Runtime runs drive 8 as a 1541, so VICE needs the 1541 DOS ROM
+(`dos1541-325302-01+901229-05.bin`) besides the C64 KERNAL, BASIC and
+character ROMs.
+
 Only one process can hold a stock VICE binary monitor. A second connection gets
 no reply and no EOF, which looks like a hang. Close any stray `nc` session,
 second agent session or `-remotemonitor` user before you suspect a wedge.
+
+## Running
+
+Start the Host Runtime on the graphical host and leave it in the foreground:
+
+```
+c64-re-tools-host          # listens on 127.0.0.1:6464; Ctrl+C stops it and every emulator
+```
+
+Then register `c64-re-tools-mcp` as a stdio MCP server in the agent harness.
+Each MCP process gets its own emulator, which stops when the MCP process ends.
+
+| Variable | Read by | Meaning |
+| --- | --- | --- |
+| `C64RT_VICE` | host | Full path of `x64sc` when it is not on `PATH`. |
+| `C64RT_HOST` | MCP | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
+| `C64RT_VIDEO` | MCP | `pal` (default) or `ntsc`, fixed for the life of the MCP process. |
 
 ## Developing
 
@@ -67,6 +89,13 @@ pnpm test          # build, then node --test on src/**/*.test.ts and test/**/*.t
 Unit tests sit beside their source as `src/**/*.test.ts`; `test/` holds
 integration and end-to-end tests. Node runs the TypeScript directly (type
 stripping), so relative imports name the `.ts` file.
+
+Tests against a real emulator are opt-in. Without the variable they are
+reported as skipped, never as passed:
+
+```
+C64RT_LIVE_VICE=/usr/bin/x64sc pnpm test
+```
 
 The package exposes three executables: `c64-re-tools`, `c64-re-tools-mcp` and
 `c64-re-tools-host`. The target source layout is
