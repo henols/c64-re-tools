@@ -4,6 +4,7 @@
 import {
   WireFailure,
   type ExecutionParams,
+  type JoystickState,
   type ExecutionResult,
   type MachineStatus,
   type RunState,
@@ -61,6 +62,11 @@ export class ViceSession implements ViceSessionHandle {
   #lost = false;
   /** Counts staged media files, for unique names. */
   #staged = 0;
+  /** The held joystick state per control port. */
+  readonly #joysticks = new Map<1 | 2, JoystickState>([
+    [1, { port: 1, direction: "center", fire: false }],
+    [2, { port: 2, direction: "center", fire: false }],
+  ]);
 
   private constructor(vice: ViceProcess, videoStandard: VideoStandard, log: (line: string) => void, options: SessionOptions) {
     this.#vice = vice;
@@ -94,6 +100,8 @@ export class ViceSession implements ViceSessionHandle {
       await session.#enqueue(() =>
         session.#observe(async () => {
           session.#adapter = await ViceAdapter.create(vice.monitor, vice.text);
+          // The control-port lines start all pressed; release them before the C64 reads them.
+          for (const joystick of session.#joysticks.values()) await session.#adapter.setJoystick(joystick);
         }),
       );
     } catch (error) {
@@ -162,6 +170,17 @@ export class ViceSession implements ViceSessionHandle {
       }
       case "reset":
         return this.#reset(params as ViceOperations["reset"]["params"]);
+      case "keyboard": {
+        const bytes = Buffer.from((params as ViceOperations["keyboard"]["params"]).data, "hex");
+        await this.#observe(() => this.#machine.feedKeyboard(bytes));
+        return { queuedBytes: bytes.length };
+      }
+      case "joystick": {
+        const joystick = params as JoystickState;
+        await this.#observe(() => this.#machine.setJoystick(joystick));
+        this.#joysticks.set(joystick.port, joystick);
+        return joystick;
+      }
       case "warp": {
         const { enabled } = params as ViceOperations["warp"]["params"];
         await this.#observe(() => this.#machine.setWarp(enabled));

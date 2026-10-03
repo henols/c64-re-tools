@@ -6,6 +6,7 @@ import { ViceSessionClient } from "../host-client/vice-session.ts";
 import { VIDEO_STANDARDS, WireFailure, type VideoStandard } from "../protocol.ts";
 import { createMcpServer, type SessionSource } from "./server.ts";
 import { executionTools } from "./tools/execution.ts";
+import { inputTools } from "./tools/input.ts";
 import { machineTools } from "./tools/machine.ts";
 import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
@@ -72,7 +73,7 @@ async function main(): Promise<void> {
     return;
   }
   const session = sessionSource();
-  const server = createMcpServer({ tools: [...machineTools, ...executionTools, ...memoryTools, ...mediaTools], session: session.get, log });
+  const server = createMcpServer({ tools: [...machineTools, ...executionTools, ...memoryTools, ...inputTools, ...mediaTools], session: session.get, log });
 
   let stopping = false;
   const stop = async () => {

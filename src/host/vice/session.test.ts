@@ -305,3 +305,29 @@ test("a disk attach keeps the run state; an image VICE refuses is a media error"
   assert.equal(fake.running, true, "a refused attach must not leave the machine stopped");
   await session.close();
 });
+
+test("the session releases both joysticks at start", async () => {
+  const { fake, session } = await startSession();
+  assert.deepEqual(fake.joyport, [0x1f, 0x1f]);
+  await session.close();
+});
+
+test("joystick states set active-low lines on the right port and are held", async () => {
+  const { fake, session } = await startSession();
+  assert.deepEqual(await session.handle("joystick", { port: 2, direction: "up-left", fire: true }), { port: 2, direction: "up-left", fire: true });
+  assert.deepEqual(fake.joyport, [0x1f, 0x1f & ~(0x01 | 0x04 | 0x10)]);
+  await session.handle("joystick", { port: 1, direction: "down-right", fire: false });
+  assert.deepEqual(fake.joyport, [0x1f & ~(0x02 | 0x08), 0x0a]);
+  assert.equal(fake.running, true);
+  await session.close();
+});
+
+test("keyboard bytes are fed in chunks VICE accepts and keep the run state", async () => {
+  const { fake, session } = await startSession();
+  const text = Buffer.alloc(600, 0x41);
+  assert.deepEqual(await session.handle("keyboard", { data: text.toString("hex") }), { queuedBytes: 600 });
+  assert.equal(fake.keyboard.length, 600);
+  assert.equal(fake.commands.filter((command) => command === Command.keyboardFeed).length, 3);
+  assert.equal(fake.running, true);
+  await session.close();
+});

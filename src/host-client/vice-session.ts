@@ -7,6 +7,7 @@ import {
   WireFailure,
   type ExecutionParams,
   type ExecutionResult,
+  type JoystickState,
   type MachineStatus,
   type MemoryWriteParams,
   type RegisterValues,
@@ -123,6 +124,15 @@ export class ViceSessionClient {
 
   reset(params: { mode: ResetMode; run: boolean }): Promise<{ state: RunState }> {
     return this.#request("reset", params);
+  }
+
+  /** Queues PETSCII bytes for the C64 keyboard. */
+  keyboard(petscii: Uint8Array): Promise<{ queuedBytes: number }> {
+    return this.#request("keyboard", { data: Buffer.from(petscii).toString("hex") });
+  }
+
+  joystick(state: JoystickState): Promise<JoystickState> {
+    return this.#request("joystick", state);
   }
 
   warp(enabled: boolean): Promise<{ enabled: boolean }> {

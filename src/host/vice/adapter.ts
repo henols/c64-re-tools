@@ -1,7 +1,14 @@
 // Translates C64-domain operations into binary-monitor commands. VICE quirks
 // and register/bank id lookups live here; callers never see monitor details.
 
-import { WireFailure, type MemoryView, type RegisterValues, type Registers, type Space } from "../../protocol.ts";
+import {
+  WireFailure,
+  type JoystickState,
+  type MemoryView,
+  type RegisterValues,
+  type Registers,
+  type Space,
+} from "../../protocol.ts";
 import { TextMonitorError, type TextMonitor } from "./text-monitor.ts";
 import {
   BinaryMonitor,
@@ -30,6 +37,23 @@ async function registerIds(monitor: BinaryMonitor, space: Space): Promise<Regist
     ids[key] = register.id;
   }
   return ids;
+}
+
+const DIRECTION_BITS: Record<JoystickState["direction"], number> = {
+  center: 0,
+  up: 0x01,
+  down: 0x02,
+  left: 0x04,
+  right: 0x08,
+  "up-left": 0x05,
+  "up-right": 0x09,
+  "down-left": 0x06,
+  "down-right": 0x0a,
+};
+
+/** Control-port line levels as the CIA reads them: a pressed line is 0. */
+export function joystickLines(state: JoystickState): number {
+  return 0x1f & ~(DIRECTION_BITS[state.direction] | (state.fire ? 0x10 : 0));
 }
 
 /** Quotes a host file path for a text-monitor command. Session scratch paths never contain quotes. */
@@ -267,6 +291,26 @@ export class ViceAdapter {
   async attachDisk(file: string): Promise<void> {
     const answer = await this.#text.command(`attach ${quoted(file)} 8`);
     if (answer !== "") throw new WireFailure("media-error", "The emulator could not attach the disk image.");
+  }
+
+  /** Queues PETSCII bytes in VICE's keyboard buffer feed, at most 255 per command. */
+  async feedKeyboard(bytes: Buffer): Promise<void> {
+    for (let offset = 0; offset < bytes.length; offset += 255) {
+      const chunk = bytes.subarray(offset, offset + 255);
+      await this.#monitor.request(Command.keyboardFeed, Buffer.concat([Buffer.from([chunk.length]), chunk]));
+    }
+  }
+
+  /**
+   * Sets a control port's lines. The binary monitor drives VICE's "Joyport
+   * I/O simulation" device, which the launch puts in both control ports; it
+   * takes raw active-low line levels and 0-based port indexes.
+   */
+  async setJoystick(state: JoystickState): Promise<void> {
+    const body = Buffer.alloc(4);
+    body.writeUInt16LE(state.port - 1, 0);
+    body.writeUInt16LE(joystickLines(state), 2);
+    await this.#monitor.request(Command.joyportSet, body);
   }
 
   async warp(): Promise<boolean> {

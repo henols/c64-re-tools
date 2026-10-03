@@ -61,6 +61,28 @@ export const MAX_EXECUTION_COUNT = 10_000;
 export const AUTOSTART_TYPES = ["prg", "p00", "t64", "tap", "d64", "d71", "d81", "g64", "x64", "crt"] as const;
 export const DISK_TYPES = ["d64", "d71", "d81", "g64", "x64"] as const;
 
+/** Most bytes c64_keyboard queues in one call (15 §31). */
+export const MAX_KEYBOARD_BYTES = 1024;
+
+export const JOYSTICK_DIRECTIONS = [
+  "center",
+  "up",
+  "down",
+  "left",
+  "right",
+  "up-left",
+  "up-right",
+  "down-left",
+  "down-right",
+] as const;
+export type JoystickDirection = (typeof JOYSTICK_DIRECTIONS)[number];
+
+export interface JoystickState {
+  port: 1 | 2;
+  direction: JoystickDirection;
+  fire: boolean;
+}
+
 export const RESET_MODES = ["soft", "hard"] as const;
 export type ResetMode = (typeof RESET_MODES)[number];
 
@@ -152,6 +174,9 @@ export interface ViceOperations {
   /** Attachment: the disk image bytes; `type` is the file's extension. */
   diskAttach: { params: { type: string }; result: { attached: boolean } };
   reset: { params: { mode: ResetMode; run: boolean }; result: { state: RunState } };
+  /** `data`: PETSCII bytes as lowercase hex. */
+  keyboard: { params: { data: string }; result: { queuedBytes: number } };
+  joystick: { params: JoystickState; result: JoystickState };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
 }
 export type ViceOperation = keyof ViceOperations;
@@ -166,6 +191,8 @@ export const VICE_OPERATIONS = [
   "autostart",
   "diskAttach",
   "reset",
+  "keyboard",
+  "joystick",
   "warp",
 ] as const satisfies readonly ViceOperation[];
 
@@ -404,6 +431,19 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       if (!isOneOf(DISK_TYPES, params.type)) invalid(`the disk image must be one of: ${DISK_TYPES.map((type) => `.${type}`).join(", ")}`);
       return { type: params.type } as ViceOperations[O]["params"];
     }
+    case "keyboard": {
+      if (!isHexData(params.data) || params.data.length === 0) invalid("data must be PETSCII bytes as lowercase hex");
+      if (params.data.length / 2 > MAX_KEYBOARD_BYTES) invalid(`at most ${MAX_KEYBOARD_BYTES} bytes can be queued at once`);
+      // VICE feeds a C string, so a zero byte would end the text early.
+      if (/^(?:..)*?00/.test(params.data)) invalid("PETSCII byte 0 cannot be typed");
+      return { data: params.data } as ViceOperations[O]["params"];
+    }
+    case "joystick": {
+      if (params.port !== 1 && params.port !== 2) invalid("port must be 1 or 2");
+      if (!isOneOf(JOYSTICK_DIRECTIONS, params.direction)) invalid(`direction must be one of ${JOYSTICK_DIRECTIONS.join(", ")}`);
+      if (typeof params.fire !== "boolean") invalid("fire must be true or false");
+      return { port: params.port, direction: params.direction, fire: params.fire } as ViceOperations[O]["params"];
+    }
     case "reset": {
       if (!isOneOf(RESET_MODES, params.mode)) invalid("mode must be soft or hard");
       if (typeof params.run !== "boolean") invalid("run must be true or false");
@@ -481,6 +521,15 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     }
     case "diskAttach": {
       if (typeof value.attached !== "boolean") throw new ProtocolError("diskAttach result is malformed");
+      break;
+    }
+    case "keyboard": {
+      if (!isInteger(value.queuedBytes, 1, MAX_KEYBOARD_BYTES)) throw new ProtocolError("keyboard result is malformed");
+      break;
+    }
+    case "joystick": {
+      const ok = (value.port === 1 || value.port === 2) && isOneOf(JOYSTICK_DIRECTIONS, value.direction) && typeof value.fire === "boolean";
+      if (!ok) throw new ProtocolError("joystick result is malformed");
       break;
     }
     case "warp": {

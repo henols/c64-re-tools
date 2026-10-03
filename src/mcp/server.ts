@@ -25,6 +25,8 @@ export type ViceSessionApi = Pick<
   | "programLoad"
   | "autostart"
   | "diskAttach"
+  | "keyboard"
+  | "joystick"
 >;
 
 /** Resolves the session, opening it on first use when the start-up attempt failed. */

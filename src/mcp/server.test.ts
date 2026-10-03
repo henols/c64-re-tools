@@ -15,11 +15,12 @@ import {
 } from "../protocol.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
 import { executionTools } from "./tools/execution.ts";
+import { inputTools } from "./tools/input.ts";
 import { machineTools } from "./tools/machine.ts";
 import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 
-const ALL_TOOLS = [...machineTools, ...executionTools, ...memoryTools, ...mediaTools];
+const ALL_TOOLS = [...machineTools, ...executionTools, ...memoryTools, ...inputTools, ...mediaTools];
 
 const REGISTERS: Registers = { pc: 0xe5cf, a: 0x42, x: 3, y: 0, sp: 0xf9, flags: { n: false, v: false, b: true, d: false, i: true, z: false, c: true } };
 
@@ -58,6 +59,15 @@ class FakeSession implements ViceSessionApi {
   async registersSet(space: "c64" | "drive8", values: RegisterValues) {
     this.registerWrites.push({ space, values });
     return { ...REGISTERS, ...values, flags: { ...REGISTERS.flags, ...values.flags } } as Registers;
+  }
+
+  typed: number[][] = [];
+  async keyboard(petscii: Uint8Array) {
+    this.typed.push([...petscii]);
+    return { queuedBytes: petscii.length };
+  }
+  async joystick(state: { port: 1 | 2; direction: (typeof import("../protocol.ts").JOYSTICK_DIRECTIONS)[number]; fire: boolean }) {
+    return state;
   }
 
   media: Array<[string, unknown]> = [];
@@ -123,6 +133,8 @@ test("the server lists exactly the implemented tools with object input and outpu
     "c64_autostart",
     "c64_disk_attach",
     "c64_execution",
+    "c64_joystick",
+    "c64_keyboard",
     "c64_memory_read",
     "c64_memory_write",
     "c64_program_load",
@@ -135,7 +147,7 @@ test("the server lists exactly the implemented tools with object input and outpu
     assert.equal(tool.inputSchema.type, "object");
     assert.equal(tool.outputSchema?.type, "object");
     assert.equal(tool.annotations?.readOnlyHint, ["c64_status", "c64_memory_read"].includes(tool.name));
-    assert.doesNotMatch(`${tool.description} ${JSON.stringify(tool.inputSchema)}`, /\bVICE\b|monitor|port|session id|request/i);
+    assert.doesNotMatch(`${tool.description} ${JSON.stringify(tool.inputSchema)}`, /\bVICE\b|monitor|tcp|socket|session id|request/i);
   }
   const read = tools.find((tool) => tool.name === "c64_memory_read")!;
   assert.deepEqual((read.inputSchema.required as string[]).sort(), ["address", "size"]);
@@ -298,5 +310,35 @@ test("media tools pass the project path and fill defaults", async () => {
     ["diskAttach", { path: "original/game.d64" }],
   ]);
   assert.equal(errorOf(await call(client, "c64_disk_attach", { path: "" })).code, "invalid-input");
+  await client.close();
+});
+
+test("c64_keyboard converts text, passes PETSCII through and refuses mixed or untypable input", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  assert.deepEqual((await call(client, "c64_keyboard", { mode: "text", text: "run\n" })).structuredContent, { queuedBytes: 4 });
+  assert.deepEqual((await call(client, "c64_keyboard", { mode: "petscii", bytes: [147, 13] })).structuredContent, { queuedBytes: 2 });
+  assert.deepEqual(session.typed, [
+    [0x52, 0x55, 0x4e, 0x0d],
+    [147, 13],
+  ]);
+  for (const args of [
+    { mode: "text" },
+    { mode: "text", text: "a", bytes: [1] },
+    { mode: "petscii", bytes: [0] },
+    { mode: "petscii", text: "a" },
+    { mode: "text", text: "tab\t" },
+    { mode: "text", text: "x".repeat(1025) },
+  ]) {
+    assert.equal(errorOf(await call(client, "c64_keyboard", args)).code, "invalid-input", JSON.stringify(args));
+  }
+  await client.close();
+});
+
+test("c64_joystick echoes the held state and defaults fire to false", async () => {
+  const client = await connect(async () => new FakeSession());
+  assert.deepEqual((await call(client, "c64_joystick", { port: 2, direction: "left" })).structuredContent, { port: 2, direction: "left", fire: false });
+  assert.equal(errorOf(await call(client, "c64_joystick", { port: 3, direction: "left" })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_joystick", { port: 1, direction: "north" })).code, "invalid-input");
   await client.close();
 });

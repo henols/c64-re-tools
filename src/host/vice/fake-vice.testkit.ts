@@ -101,6 +101,10 @@ export class FakeVice {
   readonly autostarts: Array<{ file: string; run: boolean; index: number; bytes: Buffer }> = [];
   /** Disk images attached to drive 8. */
   readonly attached: Buffer[] = [];
+  /** PETSCII fed to the keyboard buffer, in order. */
+  readonly keyboard: number[] = [];
+  /** Control-port line levels by 0-based joyport index; real VICE starts them at 0 (all pressed). */
+  readonly joyport = [0x00, 0x00];
   readonly binaryServer: Server;
   readonly textServer: Server;
   #binary: Socket | undefined;
@@ -328,6 +332,15 @@ export class FakeVice {
         this.autostarts.push({ file, run, index, bytes: readFileSync(file) });
         answer();
         return this.#leaveMonitor(socket);
+      }
+      case Command.keyboardFeed:
+        this.keyboard.push(...body.subarray(1, 1 + body[0]!));
+        return void answer();
+      case Command.joyportSet: {
+        const port = body.readUInt16LE(0);
+        if (port > 1) return void socket.write(frame(command, id, Buffer.alloc(0), 0x01));
+        this.joyport[port] = body.readUInt16LE(2);
+        return void answer();
       }
       case Command.exit:
         answer();
