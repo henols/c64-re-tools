@@ -5,7 +5,9 @@
 //   readiness is a connect plus a successful ping, retried until a deadline;
 // - any monitor command stops the machine, so readiness ends with `exit`;
 // - `-default` selects drive type 1542, whose ROM stock installs often lack,
-//   so drive 8 is a plain 1541.
+//   so drive 8 is a plain 1541;
+// - the remote text monitor runs beside the binary one for the few
+//   operations only it offers; both act on the same machine.
 
 import { accessSync, constants, mkdtempSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:net";
@@ -15,6 +17,7 @@ import { delimiter, isAbsolute, join } from "node:path";
 import { WireFailure, type VideoStandard } from "../../protocol.ts";
 import type { ExitStatus, ProcessSupervisor, SupervisedProcess } from "../processes.ts";
 import { BinaryMonitor, Command } from "./binary-monitor.ts";
+import { TextMonitor } from "./text-monitor.ts";
 
 export const DEFAULT_READY_TIMEOUT_MS = 30_000;
 const PING_TIMEOUT_MS = 5_000;
@@ -70,13 +73,22 @@ export function freePort(): Promise<number> {
   });
 }
 
-export function viceArguments(options: { binary: string; port: number; configFile: string; videoStandard: VideoStandard }): string[] {
+export function viceArguments(options: {
+  binary: string;
+  port: number;
+  textPort: number;
+  configFile: string;
+  videoStandard: VideoStandard;
+}): string[] {
   return [
     options.binary,
     "-default",
     "-binarymonitor",
     "-binarymonitoraddress",
     `ip4://127.0.0.1:${options.port}`,
+    "-remotemonitor",
+    "-remotemonitoraddress",
+    `ip4://127.0.0.1:${options.textPort}`,
     "-config",
     options.configFile,
     "-model",
@@ -100,6 +112,7 @@ export interface ViceProcess {
   /** Host-internal; never leaves the Host Runtime. */
   readonly pid: number;
   readonly monitor: BinaryMonitor;
+  readonly text: TextMonitor;
   /** Settles when VICE exits, for any reason. */
   readonly exited: Promise<ExitStatus>;
   /** The last lines VICE printed, for host logs only. */
@@ -138,9 +151,10 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
   const log = options.log ?? (() => {});
   const binary = findVice(env);
   const port = await freePort();
+  const textPort = await freePort();
   const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-vice-"));
   const child = options.supervisor.spawn(
-    viceArguments({ binary, port, configFile: join(scratch, "vicerc"), videoStandard: options.videoStandard }),
+    viceArguments({ binary, port, textPort, configFile: join(scratch, "vicerc"), videoStandard: options.videoStandard }),
     {
       cwd: scratch,
       // Keep VICE's config, cache and state away from the user's own VICE setup.
@@ -153,10 +167,12 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
   void child.exited.then(() => (exited = true));
 
   let monitor: BinaryMonitor | undefined;
+  let text: TextMonitor | undefined;
   let stopping: Promise<void> | undefined;
   const stop = () => {
     stopping ??= (async () => {
       await monitor?.close();
+      await text?.close();
       await child.stop();
       rmSync(scratch, { recursive: true, force: true });
     })();
@@ -165,6 +181,8 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
 
   try {
     monitor = await waitForMonitor(port, () => exited, options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
+    // Both monitors bind during startup, so once the binary one answers the text one listens.
+    text = await TextMonitor.connect(textPort);
     // Readiness stopped the machine; let it run as a freshly started C64 does.
     await monitor.request(Command.exit);
   } catch (error) {
@@ -173,9 +191,8 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
     if (error instanceof WireFailure) throw error;
     throw new WireFailure("machine-unavailable", "The emulator could not be started on the host.");
   }
-  log(`VICE started (pid ${child.pid}, monitor port ${port})`);
-  const ready = monitor;
-  return { pid: child.pid, monitor: ready, exited: child.exited, outputTail, stop };
+  log(`VICE started (pid ${child.pid}, monitor ports ${port} and ${textPort})`);
+  return { pid: child.pid, monitor, text, exited: child.exited, outputTail, stop };
 }
 
 async function waitForMonitor(port: number, hasExited: () => boolean, timeoutMs: number): Promise<BinaryMonitor> {

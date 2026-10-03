@@ -6,6 +6,7 @@ import { after, test } from "node:test";
 import { WireFailure } from "../../protocol.ts";
 import { BinaryMonitor, Command, EVENT_REQUEST_ID } from "./binary-monitor.ts";
 import type { ViceProcess } from "./process.ts";
+import type { TextMonitor } from "./text-monitor.ts";
 import { ViceSession } from "./session.ts";
 
 // ---------------------------------------------------------------------------
@@ -142,6 +143,7 @@ async function startSession(): Promise<{ fake: FakeVice; session: ViceSession; p
   const process = {
     pid: 0,
     monitor,
+    text: undefined as unknown as TextMonitor,
     exited,
     stopped: 0,
     outputTail: () => "",

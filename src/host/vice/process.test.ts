@@ -56,13 +56,15 @@ test("a missing VICE is refused by name with the remedy, never installed", () =>
 });
 
 test("VICE arguments put -default before -binarymonitor and fix the profile", () => {
-  const pal = viceArguments({ binary: "/usr/bin/x64sc", port: 6510, configFile: "/s/vicerc", videoStandard: "pal" });
+  const pal = viceArguments({ binary: "/usr/bin/x64sc", port: 6510, textPort: 6511, configFile: "/s/vicerc", videoStandard: "pal" });
   assert.equal(pal[0], "/usr/bin/x64sc");
   assert.ok(pal.indexOf("-default") < pal.indexOf("-binarymonitor"));
   assert.equal(pal[pal.indexOf("-binarymonitoraddress") + 1], "ip4://127.0.0.1:6510");
+  assert.ok(pal.indexOf("-default") < pal.indexOf("-remotemonitor"));
+  assert.equal(pal[pal.indexOf("-remotemonitoraddress") + 1], "ip4://127.0.0.1:6511");
   assert.equal(pal[pal.indexOf("-model") + 1], "c64");
   assert.equal(pal[pal.indexOf("-drive8type") + 1], "1541");
-  const ntsc = viceArguments({ binary: "x", port: 1, configFile: "c", videoStandard: "ntsc" });
+  const ntsc = viceArguments({ binary: "x", port: 1, textPort: 2, configFile: "c", videoStandard: "ntsc" });
   assert.equal(ntsc[ntsc.indexOf("-model") + 1], "ntsc");
 });
 

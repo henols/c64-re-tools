@@ -46,12 +46,12 @@ test("VICE launches ready, serves the binary monitor and stops completely", { sk
   try {
     const events: MonitorResponse[] = [];
     vice.monitor.onEvent((event) => events.push(event));
-
     // A command while running stops the machine: register event, then a stopped event.
     const pong = await vice.monitor.request(Command.ping);
     assert.equal(pong.type, Command.ping);
+    // The resumed event from launch may land after launchVice returns; it comes first if at all.
     assert.deepEqual(
-      events.map((event) => event.type),
+      events.map((event) => event.type).filter((type) => type !== 0x63),
       [0x31, 0x62],
     );
 
@@ -121,3 +121,30 @@ async function waitFor(condition: () => boolean, timeoutMs = 5000): Promise<void
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
+
+test("the text monitor answers beside the binary one and both act on one machine", { skip: liveSkip, timeout: 60_000 }, async () => {
+  const supervisor = new ProcessSupervisor();
+  supervisor.installExitGuard();
+  const vice = await launchVice({ videoStandard: "pal", supervisor, env: liveEnv() });
+  try {
+    const events: MonitorResponse[] = [];
+    vice.monitor.onEvent((event) => events.push(event));
+
+    // A text command while running stops the machine, as the binary events show.
+    assert.equal(await vice.text.command("warp"), "Warp mode is off.");
+    await waitFor(() => events.some((event) => event.type === 0x62));
+    assert.equal(await vice.text.command("warp on"), "");
+    assert.equal(await vice.text.command("warp"), "Warp mode is on.");
+    assert.equal(await vice.text.command("warp off"), "");
+
+    // Text commands work while the binary side holds the machine, and binary exit resumes it.
+    await vice.monitor.request(Command.ping);
+    assert.match(await vice.text.command("dev 8:"), /Disk8/);
+    assert.match(await vice.text.command("dev c:"), /Computer/);
+    events.length = 0;
+    await vice.monitor.request(Command.exit);
+    await waitFor(() => events.some((event) => event.type === 0x63));
+  } finally {
+    await vice.stop();
+  }
+});
