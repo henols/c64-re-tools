@@ -19,7 +19,7 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] 0.1 Delete the old tree: `src/mcp/vice`, `test/vice`, `test/skills`, `skills/`, `evidence/`, old docs, and `redesign/10-current-code-reuse.md`.
 - [x] 0.2 Commit the deletion together with the rewritten `.gitignore`, `.graphifyignore`, `README.md`, `CLAUDE.md`.
 - [x] 0.3 Remove design text that tells the rewrite to reuse old code: the README row and greenfield wording, 19 §15 (later sections renumbered) and the porting bullet in 19 §14, 04 §9, 05 §5–6, 09 §2, 12 §3, 16 §16.
-- [ ] 0.4 Delete the local `legacy-final` tag; open the cleanup PR.
+- [x] 0.4 The local `legacy-final` tag is gone; open the cleanup PR.
 
 Done when no tracked file mentions `src/mcp/vice` or the legacy code.
 
