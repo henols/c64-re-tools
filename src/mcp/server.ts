@@ -9,7 +9,7 @@ import { z } from "zod";
 
 import { parseC64Address } from "../c64.ts";
 import type { ViceSessionClient } from "../host-client/vice-session.ts";
-import { MEMORY_VIEWS, SPACES, WireFailure, type WireError } from "../protocol.ts";
+import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, WireFailure, type Condition, type WireError } from "../protocol.ts";
 
 /** The session operations tools may call. */
 export type ViceSessionApi = Pick<
@@ -28,6 +28,8 @@ export type ViceSessionApi = Pick<
   | "keyboard"
   | "joystick"
   | "screenCapture"
+  | "breakpoint"
+  | "watchpoint"
 >;
 
 /** Resolves the session, opening it on first use when the start-up attempt failed. */
@@ -85,6 +87,47 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   /** True for operations that only observe the machine. */
   readOnly: boolean;
   run(input: z.output<I>, session: ViceSessionApi): Promise<z.input<O> | ToolOutput<z.input<O>>>;
+}
+
+/** A typed condition (15 §6): register, memory or raster. No expression language. */
+export const ConditionInput = z
+  .discriminatedUnion("kind", [
+    z
+      .object({
+        kind: z.literal("register"),
+        register: z.enum(CONDITION_REGISTERS),
+        operator: z.enum(COMPARISONS),
+        value: Byte,
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("memory"),
+        address: AddressInput,
+        operator: z.enum(COMPARISONS),
+        value: Byte,
+        space: SpaceInput,
+        view: MemoryViewInput,
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("raster"),
+        line: z.number().int().min(0).describe("raster line: PAL 0-311, NTSC 0-262"),
+        cycle: z.number().int().min(0).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64; true from this cycle on"),
+      })
+      .strict(),
+  ])
+  .describe("register: a CPU register compared to a byte; memory: a byte in memory compared to a byte; raster: the raster position");
+
+/** Removes keys whose value is undefined, so optional fields stay absent. */
+export function defined<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+}
+
+/** A parsed condition input as the protocol type. */
+export function toCondition(input: z.output<typeof ConditionInput>): Condition {
+  return defined(input) as Condition;
 }
 
 /** Keeps a tool's handler typed against its own schemas. */

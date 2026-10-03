@@ -83,6 +83,56 @@ export interface JoystickState {
   fire: boolean;
 }
 
+// Typed conditions (15 §6)
+
+export const COMPARISONS = ["eq", "ne", "lt", "lte", "gt", "gte"] as const;
+export type Comparison = (typeof COMPARISONS)[number];
+export const CONDITION_REGISTERS = ["a", "x", "y", "sp"] as const;
+
+export type Condition =
+  | { kind: "register"; register: (typeof CONDITION_REGISTERS)[number]; operator: Comparison; value: number }
+  | { kind: "memory"; address: number; operator: Comparison; value: number; space: Space; view: MemoryView }
+  | { kind: "raster"; line: number; cycle?: number };
+
+/** Raster lines and cycles per line of each video standard. */
+export const RASTER: Record<VideoStandard, { lines: number; cycles: number }> = {
+  pal: { lines: 312, cycles: 63 },
+  ntsc: { lines: 263, cycles: 65 },
+};
+
+// Breakpoints and watchpoints (15 §12, §13)
+
+export const CHECKPOINT_ACTIONS = ["add", "remove", "enable", "disable", "list"] as const;
+export const WATCH_ACCESS = ["read", "write", "read-write"] as const;
+export type WatchAccess = (typeof WATCH_ACCESS)[number];
+export const MAX_WATCH_SIZE = 256;
+
+export interface Breakpoint {
+  id: number;
+  address: number;
+  space: Space;
+  enabled: boolean;
+}
+
+export interface Watchpoint {
+  id: number;
+  address: number;
+  size: number;
+  access: WatchAccess;
+  space: Space;
+  enabled: boolean;
+}
+
+export type BreakpointParams =
+  | { action: "add"; address: number; space: Space; condition?: Condition }
+  | { action: "remove" | "enable" | "disable"; id: number }
+  | { action: "list" };
+
+export type WatchpointParams =
+  | { action: "add"; address: number; size: number; access: WatchAccess; space: Space; condition?: Condition }
+  | { action: "remove" | "enable" | "disable"; id: number }
+  | { action: "list" };
+
 export const RESET_MODES = ["soft", "hard"] as const;
 export type ResetMode = (typeof RESET_MODES)[number];
 
@@ -177,6 +227,8 @@ export interface ViceOperations {
   /** `data`: PETSCII bytes as lowercase hex. */
   keyboard: { params: { data: string }; result: { queuedBytes: number } };
   joystick: { params: JoystickState; result: JoystickState };
+  breakpoint: { params: BreakpointParams; result: Breakpoint | { breakpoints: Breakpoint[] } };
+  watchpoint: { params: WatchpointParams; result: Watchpoint | { watchpoints: Watchpoint[] } };
   /** The last frame the VIC-II drew, visible area with borders, as a base64 PNG. */
   screenCapture: { params: Record<string, never>; result: { width: number; height: number; png: string } };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
@@ -195,6 +247,8 @@ export const VICE_OPERATIONS = [
   "reset",
   "keyboard",
   "joystick",
+  "breakpoint",
+  "watchpoint",
   "screenCapture",
   "warp",
 ] as const satisfies readonly ViceOperation[];
@@ -448,6 +502,27 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       if (typeof params.fire !== "boolean") invalid("fire must be true or false");
       return { port: params.port, direction: params.direction, fire: params.fire } as ViceOperations[O]["params"];
     }
+    case "breakpoint":
+    case "watchpoint": {
+      if (!isOneOf(CHECKPOINT_ACTIONS, params.action)) invalid(`action must be one of ${CHECKPOINT_ACTIONS.join(", ")}`);
+      if (params.action === "list") return { action: "list" } as ViceOperations[O]["params"];
+      if (params.action !== "add") {
+        if (!isInteger(params.id, 1, 0xffff_ffff)) invalid("id must be a positive integer");
+        return { action: params.action, id: params.id } as ViceOperations[O]["params"];
+      }
+      if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
+      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
+      const added: Record<string, unknown> = { action: "add", address: params.address, space: params.space };
+      if (op === "watchpoint") {
+        if (!isInteger(params.size, 1, MAX_WATCH_SIZE)) invalid(`size must be an integer from 1 to ${MAX_WATCH_SIZE}`);
+        if (params.address + params.size > 0x10000) invalid("the range runs past $ffff");
+        if (!isOneOf(WATCH_ACCESS, params.access)) invalid("access must be read, write or read-write");
+        added.size = params.size;
+        added.access = params.access;
+      }
+      if (params.condition !== undefined) added.condition = validateCondition(params.condition);
+      return added as ViceOperations[O]["params"];
+    }
     case "reset": {
       if (!isOneOf(RESET_MODES, params.mode)) invalid("mode must be soft or hard");
       if (typeof params.run !== "boolean") invalid("run must be true or false");
@@ -459,6 +534,61 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
     }
   }
   return invalid(`unknown operation: ${String(op)}`);
+}
+
+/**
+ * Validates a typed condition. Raster bounds here cover both video
+ * standards; the session checks them against its own standard.
+ */
+export function validateCondition(value: unknown): Condition {
+  if (!isObject(value)) invalid("condition must be an object");
+  const byte = (field: unknown, name: string) => {
+    if (!isInteger(field, 0, 0xff)) invalid(`condition ${name} must be an integer from 0 to 255`);
+    return field;
+  };
+  switch (value.kind) {
+    case "register": {
+      if (!isOneOf(CONDITION_REGISTERS, value.register)) invalid("condition register must be a, x, y or sp");
+      if (!isOneOf(COMPARISONS, value.operator)) invalid(`condition operator must be one of ${COMPARISONS.join(", ")}`);
+      return { kind: "register", register: value.register, operator: value.operator, value: byte(value.value, "value") };
+    }
+    case "memory": {
+      if (!isInteger(value.address, 0, 0xffff)) invalid("condition address must be an integer from 0 to 65535");
+      if (!isOneOf(COMPARISONS, value.operator)) invalid(`condition operator must be one of ${COMPARISONS.join(", ")}`);
+      if (!isOneOf(SPACES, value.space)) invalid("condition space must be c64 or drive8");
+      if (!isOneOf(MEMORY_VIEWS, value.view)) invalid("condition view must be cpu or ram");
+      return {
+        kind: "memory",
+        address: value.address,
+        operator: value.operator,
+        value: byte(value.value, "value"),
+        space: value.space,
+        view: value.view,
+      };
+    }
+    case "raster": {
+      if (!isInteger(value.line, 0, RASTER.pal.lines - 1)) invalid("condition line must be a raster line number");
+      if (value.cycle !== undefined && !isInteger(value.cycle, 0, RASTER.ntsc.cycles - 1)) {
+        invalid("condition cycle must be a cycle number in the raster line");
+      }
+      return value.cycle === undefined ? { kind: "raster", line: value.line } : { kind: "raster", line: value.line, cycle: value.cycle };
+    }
+  }
+  return invalid("condition kind must be register, memory or raster");
+}
+
+function isBreakpoint(value: unknown): value is Breakpoint {
+  return (
+    isObject(value) &&
+    isInteger(value.id, 1, 0xffff_ffff) &&
+    isInteger(value.address, 0, 0xffff) &&
+    isOneOf(SPACES, value.space) &&
+    typeof value.enabled === "boolean"
+  );
+}
+
+function isWatchpoint(value: unknown): value is Watchpoint {
+  return isBreakpoint(value) && isObject(value) && isInteger(value.size, 1, MAX_WATCH_SIZE) && isOneOf(WATCH_ACCESS, value.access);
 }
 
 function isHexData(value: unknown): value is string {
@@ -529,6 +659,16 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     }
     case "keyboard": {
       if (!isInteger(value.queuedBytes, 1, MAX_KEYBOARD_BYTES)) throw new ProtocolError("keyboard result is malformed");
+      break;
+    }
+    case "breakpoint": {
+      const ok = Array.isArray(value.breakpoints) ? value.breakpoints.every(isBreakpoint) : isBreakpoint(value);
+      if (!ok) throw new ProtocolError("breakpoint result is malformed");
+      break;
+    }
+    case "watchpoint": {
+      const ok = Array.isArray(value.watchpoints) ? value.watchpoints.every(isWatchpoint) : isWatchpoint(value);
+      if (!ok) throw new ProtocolError("watchpoint result is malformed");
       break;
     }
     case "screenCapture": {

@@ -61,7 +61,7 @@ Acceptance (19 §4): against real VICE, load a fixture PRG → run → send inpu
 - [x] M2.4 **Media** — private-protocol attachments (D1 raw frames), `src/host-client/transfer.ts`, project-path checks incl. symlinks (17 §4); `c64_program_load` (text `load`), `c64_autostart` (binary autostart, `-autostartprgmode 1`), `c64_disk_attach` (text `attach`).
 - [x] M2.5 **Input** — `c64_keyboard` text/petscii (binary keyboard feed), `c64_joystick` (binary joyport set, held until changed).
 - [x] M2.6 **Screen capture** — `src/host/vice/screen.ts`: binary display + palette → PNG, `c64_screen` `capture` with an MCP image block (baselines, compare, list and discard come in M3).
-- [ ] M2.7 **Breakpoints and watchpoints** — typed conditions (15 §6) → VICE condition expressions, `c64_breakpoint` and `c64_watchpoint` lifecycles with session-local ids.
+- [x] M2.7 **Breakpoints and watchpoints** — typed conditions (15 §6) → VICE condition expressions, `c64_breakpoint` and `c64_watchpoint` lifecycles with session-local ids.
 - [ ] M2.8 **Frames and run-until** — `advance-frames` on a re-armed raster checkpoint, `c64_run_until` address/memory/raster targets with `timeoutFrames` and `stopReason`.
 - [ ] M2.9 **c64-emulator skill** — `skills/c64-emulator/SKILL.md` (ASD-STE100).
 - [ ] M2.10 **Acceptance** — `test/integration/vice/m2-acceptance.test.ts` with a fixture PRG built from bytes in TypeScript.

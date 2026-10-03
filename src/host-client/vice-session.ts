@@ -5,6 +5,10 @@ import {
   ProtocolError,
   validateViceResult,
   WireFailure,
+  type Breakpoint,
+  type BreakpointParams,
+  type Watchpoint,
+  type WatchpointParams,
   type ExecutionParams,
   type ExecutionResult,
   type JoystickState,
@@ -133,6 +137,14 @@ export class ViceSessionClient {
 
   joystick(state: JoystickState): Promise<JoystickState> {
     return this.#request("joystick", state);
+  }
+
+  breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }> {
+    return this.#request("breakpoint", params);
+  }
+
+  watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }> {
+    return this.#request("watchpoint", params);
   }
 
   /** The last frame the VIC-II drew, as a base64 PNG with its size. */

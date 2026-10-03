@@ -346,3 +346,66 @@ test("a screen capture is the visible frame as PNG and keeps the run state", asy
   assert.equal(fake.running, true);
   await session.close();
 });
+
+test("breakpoints get session ids, a condition, and a full lifecycle", async () => {
+  const { fake, session } = await startSession();
+  const added = await session.handle("breakpoint", {
+    action: "add",
+    address: 0x2100,
+    space: "c64",
+    condition: { kind: "register", register: "a", operator: "eq", value: 66 },
+  });
+  assert.deepEqual(added, { id: 1, address: 0x2100, space: "c64", enabled: true });
+  const [checkpoint] = [...fake.checkpoints.values()];
+  assert.equal(checkpoint!.operation, 0x04);
+  assert.equal(checkpoint!.condition, "(A == $42)");
+  assert.deepEqual(await session.handle("breakpoint", { action: "disable", id: 1 }), { ...added, enabled: false });
+  assert.equal(checkpoint!.enabled, false);
+  assert.deepEqual(await session.handle("breakpoint", { action: "list" }), { breakpoints: [{ ...added, enabled: false }] });
+  await session.handle("breakpoint", { action: "remove", id: 1 });
+  assert.equal(fake.checkpoints.size, 0);
+  assert.deepEqual(await session.handle("breakpoint", { action: "list" }), { breakpoints: [] });
+  await assert.rejects(session.handle("breakpoint", { action: "enable", id: 1 }), failsWith("not-found"));
+  assert.equal(fake.running, true);
+  await session.close();
+});
+
+test("watchpoints cover their range with the right access and share the id counter", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("breakpoint", { action: "add", address: 0x1000, space: "c64" });
+  const watch = await session.handle("watchpoint", { action: "add", address: 0xc020, size: 2, access: "write", space: "c64" });
+  assert.deepEqual(watch, { id: 2, address: 0xc020, size: 2, access: "write", space: "c64", enabled: true });
+  const checkpoint = [...fake.checkpoints.values()].find((candidate) => candidate.operation === 0x02)!;
+  assert.deepEqual([checkpoint.start, checkpoint.end], [0xc020, 0xc021]);
+  await session.handle("watchpoint", { action: "add", address: 0xd012, size: 1, access: "read-write", space: "c64" });
+  assert.ok([...fake.checkpoints.values()].some((candidate) => candidate.operation === 0x03));
+  // A watchpoint id is not a breakpoint id.
+  await assert.rejects(session.handle("breakpoint", { action: "remove", id: 2 }), failsWith("not-found"));
+  assert.equal((await session.handle("watchpoint", { action: "list" }) as { watchpoints: unknown[] }).watchpoints.length, 2);
+  await session.close();
+});
+
+test("a raster condition outside the session's video standard is refused", async () => {
+  const { fake, session } = await startSession();
+  await assert.rejects(
+    session.handle("breakpoint", { action: "add", address: 0x1000, space: "c64", condition: { kind: "raster", line: 312 } }),
+    failsWith("invalid-input"),
+  );
+  await assert.rejects(
+    session.handle("breakpoint", { action: "add", address: 0x1000, space: "c64", condition: { kind: "raster", line: 0, cycle: 63 } }),
+    failsWith("invalid-input"),
+  );
+  await assert.rejects(
+    session.handle("watchpoint", {
+      action: "add",
+      address: 0x1000,
+      size: 1,
+      access: "write",
+      space: "drive8",
+      condition: { kind: "memory", address: 0x10, operator: "eq", value: 1, space: "drive8", view: "cpu" },
+    }),
+    failsWith("unsupported-in-space"),
+  );
+  assert.equal(fake.checkpoints.size, 0, "a refused condition leaves no checkpoint behind");
+  await session.close();
+});

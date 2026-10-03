@@ -3,6 +3,8 @@
 
 import {
   WireFailure,
+  type Comparison,
+  type Condition,
   type JoystickState,
   type MemoryView,
   type RegisterValues,
@@ -39,6 +41,38 @@ async function registerIds(monitor: BinaryMonitor, space: Space): Promise<Regist
     ids[key] = register.id;
   }
   return ids;
+}
+
+const OPERATORS: Record<Comparison, string> = { eq: "==", ne: "!=", lt: "<", lte: "<=", gt: ">", gte: ">=" };
+
+function hexByte(value: number): string {
+  return `$${value.toString(16).padStart(2, "0")}`;
+}
+
+/**
+ * Builds the VICE condition expression for a typed condition, for a
+ * checkpoint in `space`. VICE evaluates strictly left to right, so every
+ * comparison is parenthesized. Memory conditions work in the C64 space only.
+ */
+export function conditionExpression(condition: Condition, space: Space): string {
+  const operator = (comparison: Comparison) => OPERATORS[comparison];
+  switch (condition.kind) {
+    case "register": {
+      const prefix = space === "drive8" ? "8:" : "";
+      return `(${prefix}${condition.register.toUpperCase()} ${operator(condition.operator)} ${hexByte(condition.value)})`;
+    }
+    case "memory": {
+      if (condition.space !== "c64") {
+        throw new WireFailure("unsupported-in-space", "A memory condition can test only space c64 memory.");
+      }
+      const address = `$${condition.address.toString(16).padStart(4, "0")}`;
+      return `(@${condition.view}:${address} ${operator(condition.operator)} ${hexByte(condition.value)})`;
+    }
+    case "raster": {
+      const line = `(RL == $${condition.line.toString(16)})`;
+      return condition.cycle === undefined ? line : `(${line} && (CY >= $${condition.cycle.toString(16)}))`;
+    }
+  }
 }
 
 const DIRECTION_BITS: Record<JoystickState["direction"], number> = {
@@ -257,6 +291,40 @@ export class ViceAdapter {
     body[8] = Memspace.main;
     const info = await this.#monitor.request(Command.checkpointSet, body);
     return info.body.readUInt32LE(0);
+  }
+
+  /**
+   * Adds a stopping checkpoint over [start, end]: exec for a breakpoint;
+   * load/store for a watchpoint. Returns its VICE number. Never temporary
+   * (see addBreak).
+   */
+  async addCheckpoint(options: { start: number; end: number; operation: number; space: Space; enabled?: boolean }): Promise<number> {
+    const body = Buffer.alloc(9);
+    body.writeUInt16LE(options.start, 0);
+    body.writeUInt16LE(options.end, 2);
+    body[4] = 1; // stop when hit
+    body[5] = options.enabled === false ? 0 : 1;
+    body[6] = options.operation;
+    body[7] = 0; // not temporary
+    body[8] = MEMSPACE[options.space];
+    const info = await this.#monitor.request(Command.checkpointSet, body);
+    return info.body.readUInt32LE(0);
+  }
+
+  async setCondition(number: number, expression: string): Promise<void> {
+    const text = Buffer.from(expression, "latin1");
+    if (text.length > 255) throw new Error("condition expression is too long");
+    const head = Buffer.alloc(5);
+    head.writeUInt32LE(number, 0);
+    head[4] = text.length;
+    await this.#monitor.request(Command.conditionSet, Buffer.concat([head, text]));
+  }
+
+  async toggleCheckpoint(number: number, enabled: boolean): Promise<void> {
+    const body = Buffer.alloc(5);
+    body.writeUInt32LE(number, 0);
+    body[4] = enabled ? 1 : 0;
+    await this.#monitor.request(Command.checkpointToggle, body);
   }
 
   async deleteCheckpoint(number: number): Promise<void> {

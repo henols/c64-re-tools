@@ -14,6 +14,7 @@ import {
   type Registers,
 } from "../protocol.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
+import { debugTools } from "./tools/debug.ts";
 import { executionTools } from "./tools/execution.ts";
 import { inputTools } from "./tools/input.ts";
 import { machineTools } from "./tools/machine.ts";
@@ -21,7 +22,7 @@ import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 import { videoTools } from "./tools/video.ts";
 
-const ALL_TOOLS = [...machineTools, ...executionTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools];
+const ALL_TOOLS = [...machineTools, ...executionTools, ...debugTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools];
 
 const REGISTERS: Registers = { pc: 0xe5cf, a: 0x42, x: 3, y: 0, sp: 0xf9, flags: { n: false, v: false, b: true, d: false, i: true, z: false, c: true } };
 
@@ -69,6 +70,21 @@ class FakeSession implements ViceSessionApi {
   }
   async joystick(state: { port: 1 | 2; direction: (typeof import("../protocol.ts").JOYSTICK_DIRECTIONS)[number]; fire: boolean }) {
     return state;
+  }
+
+  points: unknown[] = [];
+  async breakpoint(params: import("../protocol.ts").BreakpointParams) {
+    this.points.push(params);
+    if (params.action === "list") return { breakpoints: [{ id: 1, address: 0x2100, space: "c64" as const, enabled: true }] };
+    if (params.action === "add") return { id: 1, address: params.address, space: params.space, enabled: true };
+    return { id: params.id, address: 0x2100, space: "c64" as const, enabled: params.action !== "disable" };
+  }
+  async watchpoint(params: import("../protocol.ts").WatchpointParams) {
+    this.points.push(params);
+    if (params.action === "add") {
+      return { id: 2, address: params.address, size: params.size, access: params.access, space: params.space, enabled: true };
+    }
+    return { watchpoints: [] };
   }
 
   async screenCapture() {
@@ -136,6 +152,7 @@ test("the server lists exactly the implemented tools with object input and outpu
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
     "c64_autostart",
+    "c64_breakpoint",
     "c64_disk_attach",
     "c64_execution",
     "c64_joystick",
@@ -148,6 +165,7 @@ test("the server lists exactly the implemented tools with object input and outpu
     "c64_screen",
     "c64_status",
     "c64_warp",
+    "c64_watchpoint",
   ]);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object");
@@ -354,5 +372,64 @@ test("c64_screen capture returns the size and an image block", async () => {
   const result = await call(client, "c64_screen", { action: "capture" });
   assert.deepEqual(result.structuredContent, { width: 384, height: 272 });
   assert.deepEqual(result.content[1], { type: "image", data: Buffer.from("png-bytes").toString("base64"), mimeType: "image/png" });
+  await client.close();
+});
+
+test("c64_breakpoint passes typed conditions through and checks fields per action", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const added = await call(client, "c64_breakpoint", {
+    action: "add",
+    address: "$2100",
+    condition: { kind: "register", register: "a", operator: "eq", value: 66 },
+  });
+  assert.deepEqual(added.structuredContent, { id: 1, address: "$2100", space: "c64", enabled: true });
+  assert.deepEqual(session.points[0], {
+    action: "add",
+    address: 0x2100,
+    space: "c64",
+    condition: { kind: "register", register: "a", operator: "eq", value: 66 },
+  });
+  assert.deepEqual((await call(client, "c64_breakpoint", { action: "list" })).structuredContent, {
+    breakpoints: [{ id: 1, address: "$2100", space: "c64", enabled: true }],
+  });
+  assert.deepEqual((await call(client, "c64_breakpoint", { action: "disable", id: 1 })).structuredContent, {
+    id: 1,
+    address: "$2100",
+    space: "c64",
+    enabled: false,
+  });
+  for (const args of [
+    { action: "add" },
+    { action: "remove" },
+    { action: "list", id: 1 },
+    { action: "remove", id: 1, address: "$1000" },
+    { action: "add", address: "$1000", condition: { kind: "register", register: "a", operator: "eq", value: 1, extra: 1 } },
+    { action: "add", address: "$1000", condition: "A == 1" },
+  ]) {
+    assert.equal(errorOf(await call(client, "c64_breakpoint", args)).code, "invalid-input", JSON.stringify(args));
+  }
+  await client.close();
+});
+
+test("c64_watchpoint fills size and space and needs access", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const added = await call(client, "c64_watchpoint", {
+    action: "add",
+    address: "$c020",
+    access: "write",
+    condition: { kind: "memory", address: "$c020", operator: "eq", value: 3 },
+  });
+  assert.deepEqual(added.structuredContent, { id: 2, address: "$c020", size: 1, access: "write", space: "c64", enabled: true });
+  assert.deepEqual(session.points[0], {
+    action: "add",
+    address: 0xc020,
+    size: 1,
+    access: "write",
+    space: "c64",
+    condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
+  });
+  assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", address: "$c020" })).code, "invalid-input");
   await client.close();
 });

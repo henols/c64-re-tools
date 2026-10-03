@@ -407,6 +407,18 @@ export class FakeVice {
         if (checkpoint.temporary) this.#leaveMonitor(socket);
         return;
       }
+      case Command.checkpointToggle: {
+        const checkpoint = this.checkpoints.get(body.readUInt32LE(0));
+        if (checkpoint === undefined) return void socket.write(frame(command, id, Buffer.alloc(0), 0x01));
+        checkpoint.enabled = body[4] !== 0;
+        return void answer();
+      }
+      case Command.conditionSet: {
+        const checkpoint = this.checkpoints.get(body.readUInt32LE(0));
+        if (checkpoint === undefined) return void socket.write(frame(command, id, Buffer.alloc(0), 0x01));
+        checkpoint.condition = body.subarray(5, 5 + body[4]!).toString("latin1");
+        return void answer();
+      }
       case Command.checkpointDelete: {
         const deleted = this.checkpoints.delete(body.readUInt32LE(0));
         return void socket.write(frame(command, id, Buffer.alloc(0), deleted ? 0 : 0x01));

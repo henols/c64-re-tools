@@ -207,3 +207,44 @@ test("media parameters are validated with invalid-input", () => {
   assert.equal(attachmentCount("diskAttach"), 1);
   assert.equal(attachmentCount("status"), 0);
 });
+
+test("checkpoint parameters and typed conditions are validated", () => {
+  assert.deepEqual(validateViceParams("breakpoint", { action: "list" }), { action: "list" });
+  assert.deepEqual(validateViceParams("breakpoint", { action: "disable", id: 4 }), { action: "disable", id: 4 });
+  assert.deepEqual(
+    validateViceParams("watchpoint", {
+      action: "add",
+      address: 0xc020,
+      size: 2,
+      access: "write",
+      space: "c64",
+      condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
+    }),
+    {
+      action: "add",
+      address: 0xc020,
+      size: 2,
+      access: "write",
+      space: "c64",
+      condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
+    },
+  );
+  for (const params of [
+    { action: "add", address: 0x2100, space: "c64", condition: { kind: "register", register: "pc", operator: "eq", value: 1 } },
+    { action: "add", address: 0x2100, space: "c64", condition: { kind: "register", register: "a", operator: "==", value: 1 } },
+    { action: "add", address: 0x2100, space: "c64", condition: { kind: "register", register: "a", operator: "eq", value: 256 } },
+    { action: "add", address: 0x2100, space: "c64", condition: { kind: "raster", line: 400 } },
+    { action: "add", address: 0x2100, space: "c64", condition: { kind: "expression", text: "A == 1" } },
+    { action: "remove", id: 0 },
+    { action: "toggle", id: 1 },
+  ]) {
+    assert.throws(() => validateViceParams("breakpoint", params), WireFailure, JSON.stringify(params));
+  }
+  for (const params of [
+    { action: "add", address: 0xfff0, size: 17, access: "write", space: "c64" },
+    { action: "add", address: 0x1000, size: 257, access: "write", space: "c64" },
+    { action: "add", address: 0x1000, size: 1, access: "exec", space: "c64" },
+  ]) {
+    assert.throws(() => validateViceParams("watchpoint", params), WireFailure, JSON.stringify(params));
+  }
+});

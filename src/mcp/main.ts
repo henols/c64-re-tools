@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { ViceSessionClient } from "../host-client/vice-session.ts";
 import { VIDEO_STANDARDS, WireFailure, type VideoStandard } from "../protocol.ts";
 import { createMcpServer, type SessionSource } from "./server.ts";
+import { debugTools } from "./tools/debug.ts";
 import { executionTools } from "./tools/execution.ts";
 import { inputTools } from "./tools/input.ts";
 import { machineTools } from "./tools/machine.ts";
@@ -74,7 +75,7 @@ async function main(): Promise<void> {
     return;
   }
   const session = sessionSource();
-  const server = createMcpServer({ tools: [...machineTools, ...executionTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools], session: session.get, log });
+  const server = createMcpServer({ tools: [...machineTools, ...executionTools, ...debugTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools], session: session.get, log });
 
   let stopping = false;
   const stop = async () => {

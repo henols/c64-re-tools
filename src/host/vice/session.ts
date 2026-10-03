@@ -2,9 +2,15 @@
 // machine's run state, and what happens when VICE dies.
 
 import {
+  RASTER,
   WireFailure,
+  type Breakpoint,
+  type BreakpointParams,
+  type Condition,
   type ExecutionParams,
   type JoystickState,
+  type Watchpoint,
+  type WatchpointParams,
   type ExecutionResult,
   type MachineStatus,
   type RunState,
@@ -17,7 +23,7 @@ import { join } from "node:path";
 
 import type { ProcessSupervisor } from "../processes.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
-import { ViceAdapter } from "./adapter.ts";
+import { conditionExpression, ViceAdapter } from "./adapter.ts";
 import { decodeProgramCounter, MonitorConnectionError, MonitorError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
 import { launchVice, type ViceProcess } from "./process.ts";
 import { TextMonitorError } from "./text-monitor.ts";
@@ -62,6 +68,11 @@ export class ViceSession implements ViceSessionHandle {
   #lost = false;
   /** Counts staged media files, for unique names. */
   #staged = 0;
+  /** Session-local ids: one counter for breakpoints and watchpoints, from 1. */
+  #nextPointId = 1;
+  /** User breakpoints and watchpoints by session id, with their VICE checkpoint numbers. */
+  readonly #breakpoints = new Map<number, Breakpoint & { checkpoint: number }>();
+  readonly #watchpoints = new Map<number, Watchpoint & { checkpoint: number }>();
   /** The held joystick state per control port. */
   readonly #joysticks = new Map<1 | 2, JoystickState>([
     [1, { port: 1, direction: "center", fire: false }],
@@ -175,6 +186,10 @@ export class ViceSession implements ViceSessionHandle {
         await this.#observe(() => this.#machine.feedKeyboard(bytes));
         return { queuedBytes: bytes.length };
       }
+      case "breakpoint":
+        return this.#breakpoint(params as BreakpointParams);
+      case "watchpoint":
+        return this.#watchpoint(params as WatchpointParams);
       case "screenCapture": {
         const shot = await this.#observe(() => this.#machine.captureScreen(this.#videoStandard));
         return { width: shot.width, height: shot.height, png: shot.png.toString("base64") };
@@ -257,6 +272,97 @@ export class ViceSession implements ViceSessionHandle {
     await this.#machine.deleteCheckpoint(checkpoint);
     if (!reached) throw new WireFailure("operation-failed", "The C64 did not reach its reset vector after the reset.");
     return { state: "stopped" };
+  }
+
+  /** Checks a condition against this session's video standard and builds its VICE expression. */
+  #expression(condition: Condition, space: "c64" | "drive8"): string {
+    if (condition.kind === "raster") {
+      const raster = RASTER[this.#videoStandard];
+      if (condition.line >= raster.lines) {
+        throw new WireFailure("invalid-input", `A ${this.#videoStandard.toUpperCase()} frame has raster lines 0 to ${raster.lines - 1}.`);
+      }
+      if (condition.cycle !== undefined && condition.cycle >= raster.cycles) {
+        throw new WireFailure("invalid-input", `A ${this.#videoStandard.toUpperCase()} raster line has cycles 0 to ${raster.cycles - 1}.`);
+      }
+    }
+    return conditionExpression(condition, space);
+  }
+
+  /** Adds a checkpoint with an optional condition; removes it again if the condition is refused. */
+  async #addPoint(options: { start: number; end: number; operation: number; space: "c64" | "drive8"; condition?: Condition }): Promise<number> {
+    const expression = options.condition === undefined ? undefined : this.#expression(options.condition, options.space);
+    return this.#observe(async () => {
+      const checkpoint = await this.#machine.addCheckpoint(options);
+      if (expression !== undefined) {
+        try {
+          await this.#machine.setCondition(checkpoint, expression);
+        } catch (error) {
+          await this.#machine.deleteCheckpoint(checkpoint).catch(() => {});
+          throw error;
+        }
+      }
+      return checkpoint;
+    });
+  }
+
+  /** remove/enable/disable on a registry of points; `kind` names it in messages. */
+  async #changePoint<T extends { checkpoint: number; enabled: boolean }>(
+    registry: Map<number, T>,
+    kind: string,
+    params: { action: "remove" | "enable" | "disable"; id: number },
+  ): Promise<T> {
+    const point = registry.get(params.id);
+    if (point === undefined) throw new WireFailure("not-found", `There is no ${kind} with id ${params.id}.`);
+    if (params.action === "remove") {
+      await this.#observe(() => this.#machine.deleteCheckpoint(point.checkpoint));
+      registry.delete(params.id);
+    } else {
+      const enabled = params.action === "enable";
+      await this.#observe(() => this.#machine.toggleCheckpoint(point.checkpoint, enabled));
+      point.enabled = enabled;
+    }
+    return point;
+  }
+
+  async #breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }> {
+    const publicView = ({ checkpoint: _checkpoint, ...point }: Breakpoint & { checkpoint: number }): Breakpoint => point;
+    if (params.action === "list") return { breakpoints: [...this.#breakpoints.values()].map(publicView) };
+    if (params.action !== "add") return publicView(await this.#changePoint(this.#breakpoints, "breakpoint", params));
+    const checkpoint = await this.#addPoint({
+      start: params.address,
+      end: params.address,
+      operation: 0x04, // exec
+      space: params.space,
+      ...(params.condition === undefined ? {} : { condition: params.condition }),
+    });
+    const point = { id: this.#nextPointId++, address: params.address, space: params.space, enabled: true, checkpoint };
+    this.#breakpoints.set(point.id, point);
+    return publicView(point);
+  }
+
+  async #watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }> {
+    const publicView = ({ checkpoint: _checkpoint, ...point }: Watchpoint & { checkpoint: number }): Watchpoint => point;
+    if (params.action === "list") return { watchpoints: [...this.#watchpoints.values()].map(publicView) };
+    if (params.action !== "add") return publicView(await this.#changePoint(this.#watchpoints, "watchpoint", params));
+    const operation = params.access === "read" ? 0x01 : params.access === "write" ? 0x02 : 0x03;
+    const checkpoint = await this.#addPoint({
+      start: params.address,
+      end: params.address + params.size - 1,
+      operation,
+      space: params.space,
+      ...(params.condition === undefined ? {} : { condition: params.condition }),
+    });
+    const point = {
+      id: this.#nextPointId++,
+      address: params.address,
+      size: params.size,
+      access: params.access,
+      space: params.space,
+      enabled: true,
+      checkpoint,
+    };
+    this.#watchpoints.set(point.id, point);
+    return publicView(point);
   }
 
   /**
