@@ -6,6 +6,7 @@ import { DEFAULT_HOST_PORT } from "../protocol.ts";
 import { ProcessSupervisor } from "./processes.ts";
 import { isLoopback, startHostServer } from "./server.ts";
 import { createToolDispatcher } from "./tools/index.ts";
+import { findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
 
 const HELP = `c64-re-tools-host
@@ -14,7 +15,8 @@ Usage:
   c64-re-tools-host [--port <port>] [--listen <address> ...]
   c64-re-tools-host --help
 
-Runs the c64-re-tools Host Runtime in the foreground. It listens on
+Runs the c64-re-tools Host Runtime in the foreground; it does not start
+without VICE (x64sc on PATH, or C64RT_VICE). It listens on
 127.0.0.1:${DEFAULT_HOST_PORT}, starts one VICE emulator for each connected
 c64-re-tools-mcp process, and runs native tools (ACME) for skill scripts.
 Stop it with Ctrl+C; that stops every emulator and tool it started.
@@ -55,6 +57,14 @@ async function main(): Promise<number> {
   if (extraHosts.some((address) => !isLoopback(address)) && (token === undefined || token.length < 16)) {
     process.stderr.write("--listen with an address that is not loopback needs C64RT_HOST_TOKEN with at least 16 characters, so that only your clients can connect.\n");
     return 2;
+  }
+
+  // Without an emulator the runtime is useless: refuse to start, by name and with the remedy.
+  try {
+    findVice(process.env);
+  } catch (error) {
+    process.stderr.write(`${(error as Error).message}\n`);
+    return 1;
   }
 
   // Every emulator and tool is started through this one supervisor; however

@@ -17,6 +17,7 @@ import {
   type PetcatResult,
   type ToolOperation,
   type ToolOperations,
+  type ToolStatus,
 } from "../protocol.ts";
 import { HostConnection } from "./connect.ts";
 import { readProjectFile, readProjectTree } from "./transfer.ts";
@@ -124,6 +125,11 @@ export async function analyzeWithDxa(request: { image: string } & DxaParams, opt
   const { image: _image, ...params } = request;
   const { result, attachments } = await callTool("dxa.analyze", params, [file.bytes], options);
   return { result, listing: attachments[0]!.toString("utf8") };
+}
+
+/** host.status: each native tool on the host, found and run once. */
+export async function hostTools(options: ToolCallOptions = {}): Promise<ToolStatus[]> {
+  return (await callTool("host.status", {}, [], options)).result.tools;
 }
 
 /** Skill scripts see failures through the host-client, never the private protocol module. */

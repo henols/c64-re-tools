@@ -644,15 +644,29 @@ export interface DxaResult {
   completeness: { regions: boolean; labels: boolean };
 }
 
+/** One native tool on the host, as host.status found and ran it. */
+export interface ToolStatus {
+  name: string;
+  found: boolean;
+  /** Where it is, when found. */
+  path?: string;
+  /** Its version text, when it ran. */
+  version?: string;
+  runs: boolean;
+  /** What is wrong and what to do, when it is missing or does not run. */
+  problem?: string;
+}
+
 export interface ToolOperations {
   "acme.assemble": { params: AcmeParams; result: AcmeResult };
+  "host.status": { params: Record<string, never>; result: { tools: ToolStatus[] } };
   "c1541.inspect": { params: C1541Params; result: C1541Result };
   "petcat.decode": { params: PetcatParams; result: PetcatResult };
   "ghidra.analyze": { params: GhidraParams; result: GhidraResult };
   "dxa.analyze": { params: DxaParams; result: DxaResult };
 }
 export type ToolOperation = keyof ToolOperations;
-export const TOOL_OPERATIONS = ["acme.assemble", "c1541.inspect", "petcat.decode", "ghidra.analyze", "dxa.analyze"] as const satisfies readonly ToolOperation[];
+export const TOOL_OPERATIONS = ["acme.assemble", "host.status", "c1541.inspect", "petcat.decode", "ghidra.analyze", "dxa.analyze"] as const satisfies readonly ToolOperation[];
 
 // ---------------------------------------------------------------------------
 // Messages (D2, D3)
@@ -1239,6 +1253,10 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
     }
     case "ghidra.analyze":
       return validateGhidraParams(params, attachments) as ToolOperations[O]["params"];
+    case "host.status":
+      for (const key of Object.keys(params)) invalid(`unknown field: ${key}`);
+      if (attachments.length !== 0) invalid("host.status takes no attachment");
+      return {} as ToolOperations[O]["params"];
     case "dxa.analyze": {
       if ("decompile" in params) invalid("unknown field: decompile");
       const { decompile: _decompile, ...dxa } = validateGhidraParams({ ...params, decompile: [] }, attachments);
@@ -1292,6 +1310,17 @@ export function validateToolResult<O extends ToolOperation>(op: O, value: unknow
     }
     case "petcat.decode": {
       if (!isPetcatResult(value) || attachments.length !== 0) throw new ProtocolError("petcat.decode result is malformed");
+      return value as unknown as ToolOperations[O]["result"];
+    }
+    case "host.status": {
+      const tools = value.tools;
+      const isStatus = (tool: unknown) =>
+        isObject(tool) &&
+        typeof tool.name === "string" &&
+        typeof tool.found === "boolean" &&
+        typeof tool.runs === "boolean" &&
+        [tool.path, tool.version, tool.problem].every((field) => field === undefined || typeof field === "string");
+      if (!Array.isArray(tools) || !tools.every(isStatus) || attachments.length !== 0) throw new ProtocolError("host.status result is malformed");
       return value as unknown as ToolOperations[O]["result"];
     }
     case "dxa.analyze": {

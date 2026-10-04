@@ -9,11 +9,14 @@ import { inspect } from "./c1541.ts";
 import { analyze as analyzeWithDxa } from "./dxa.ts";
 import { analyze } from "./ghidra/analyze.ts";
 import { decode } from "./petcat.ts";
+import { hostStatus } from "./status.ts";
 
 export function createToolDispatcher(options: { supervisor: ProcessSupervisor; env?: NodeJS.ProcessEnv; log?: (line: string) => void }): ToolDispatcher {
   return (async (op, params, attachments, signal) => {
     const context = { supervisor: options.supervisor, signal, ...(options.env === undefined ? {} : { env: options.env }), ...(options.log === undefined ? {} : { log: options.log }) };
     switch (op) {
+      case "host.status":
+        return hostStatus(context);
       case "acme.assemble":
         return assemble(params as AcmeParams, attachments, context);
       case "c1541.inspect":

@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { HostConnection } from "../host-client/connect.ts";
+import { hostTools } from "../host-client/tools.ts";
 
 const HELP = `c64-re-tools: Commodore 64 reverse engineering and development
 
@@ -17,7 +18,7 @@ Usage:
   c64-re-tools install   [--target <harnesses>] [--global]   install the skills and the VICE MCP
   c64-re-tools update    [--target <harnesses>] [--global]   install this version over an earlier one
   c64-re-tools uninstall [--target <harnesses>] [--global]   remove them
-  c64-re-tools status                                        version, programs and the Host Runtime
+  c64-re-tools status                                        version, programs, Host Runtime and its tools
   c64-re-tools --help
 
 Harnesses: claude, codex, pi, opencode, gemini, copilot, cursor, windsurf
@@ -73,6 +74,14 @@ async function status(): Promise<number> {
     console.log("Host Runtime: reachable");
   } catch (error) {
     console.log(`Host Runtime: not reachable. ${(error as Error).message}`);
+    return 0;
+  }
+  // The native tools live on the host; it finds and runs each one.
+  console.log("Tools on the host:");
+  for (const tool of await hostTools()) {
+    if (tool.runs) console.log(`  ${tool.name}: ${tool.version} (${tool.path})`);
+    else if (tool.found) console.log(`  ${tool.name}: found at ${tool.path} but it does not run. ${tool.problem}`);
+    else console.log(`  ${tool.name}: missing. ${tool.problem}`);
   }
   return 0;
 }
