@@ -70,7 +70,7 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
   const contents: Buffer[] = [];
   let total = 0;
   const walk = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       const full = join(directory, entry.name);
       let target = full;
       if (lstatSync(full).isSymbolicLink()) {

@@ -1,0 +1,20 @@
+; Fixture for the c64-assembler skill and the M5 acceptance: a BASIC start line,
+; then a loop that counts to MAX in $c100 and stops in an endless loop.
+!source "consts.a"
+
+* = $0801
+        !word basic_end, 10     ; next line, line number 10
+        !byte $9e               ; SYS
+        !text "2061", 0
+basic_end:
+        !word 0
+
+start:  sei
+        ldx #0
+count:  inx
+        stx RESULT
+        cpx #MAX
+        bne count
+        lda #DONE_COLOR
+        sta $d020
+done:   jmp done

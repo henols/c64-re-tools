@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { DEFAULT_HOST_PORT } from "../protocol.ts";
 import { ProcessSupervisor } from "./processes.ts";
 import { startHostServer } from "./server.ts";
+import { createToolDispatcher } from "./tools/index.ts";
 import { viceSessionFactory } from "./vice/session.ts";
 
 const HELP = `c64-re-tools-host
@@ -14,9 +15,9 @@ Usage:
   c64-re-tools-host --help
 
 Runs the c64-re-tools Host Runtime in the foreground. It listens on
-127.0.0.1:${DEFAULT_HOST_PORT} and starts one VICE emulator for each connected
-c64-re-tools-mcp process. Stop it with Ctrl+C; that stops every emulator it
-started.
+127.0.0.1:${DEFAULT_HOST_PORT}, starts one VICE emulator for each connected
+c64-re-tools-mcp process, and runs native tools (ACME) for skill scripts.
+Stop it with Ctrl+C; that stops every emulator and tool it started.
 
 Options:
   --port <port>  Listen on this port instead (0 picks a free port).
@@ -56,6 +57,7 @@ async function main(): Promise<number> {
       port,
       log,
       createViceSession: viceSessionFactory({ supervisor, log }),
+      tools: createToolDispatcher({ supervisor, log }),
     });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
