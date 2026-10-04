@@ -55,9 +55,12 @@ test("the request settings directory holds the language as an extension", () => 
   const env = prepareSettings(workspace, ghidra, { PATH: "/usr/bin" });
   assert.equal(env.PATH, "/usr/bin");
   assert.ok(env.XDG_CONFIG_HOME!.startsWith(workspace.root));
-  const extension = join(env.XDG_CONFIG_HOME!, `${userInfo().username}-ghidra`, "ghidra_12.1.3_PUBLIC", "Extensions", "C64RT");
-  assert.match(readFileSync(join(extension, "extension.properties"), "utf8"), /^version=12\.1\.3$/m);
-  for (const file of ["c64rt_6510.ldefs", "c64rt_6510.pspec", "c64rt_6510.cspec", "c64rt_6510.slaspec"]) {
-    assert.ok(existsSync(join(extension, "data", "languages", file)), file);
+  // Ghidra adds the user name only for a settings directory outside the home (Windows keeps temp inside it).
+  for (const application of [`${userInfo().username}-ghidra`, "ghidra"]) {
+    const extension = join(env.XDG_CONFIG_HOME!, application, "ghidra_12.1.3_PUBLIC", "Extensions", "C64RT");
+    assert.match(readFileSync(join(extension, "extension.properties"), "utf8"), /^version=12\.1\.3$/m);
+    for (const file of ["c64rt_6510.ldefs", "c64rt_6510.pspec", "c64rt_6510.cspec", "c64rt_6510.slaspec"]) {
+      assert.ok(existsSync(join(extension, "data", "languages", file)), `${application}: ${file}`);
+    }
   }
 });

@@ -72,12 +72,16 @@ export function findGhidra(env: NodeJS.ProcessEnv = process.env): GhidraInstalla
 export function prepareSettings(workspace: Workspace, ghidra: GhidraInstallation, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const config = workspace.directory("ghidra-config");
   const cache = workspace.directory("ghidra-cache");
-  // With XDG_CONFIG_HOME set, Ghidra keeps its settings in <user>-ghidra/<settings name> below it.
-  const extension = join(config, `${userInfo().username}-ghidra`, ghidra.settingsName, "Extensions", "C64RT");
-  mkdirSync(join(extension, "data"), { recursive: true });
-  cpSync(LANGUAGE_DIRECTORY, join(extension, "data", "languages"), { recursive: true });
-  writeFileSync(join(extension, "extension.properties"), `name=C64RT\ndescription=c64-re-tools NMOS 6510 language\nauthor=c64-re-tools\ncreatedOn=\nversion=${ghidra.version}\n`);
-  writeFileSync(join(extension, "Module.manifest"), "");
+  // With XDG_CONFIG_HOME set, Ghidra keeps its settings in [<user>-]ghidra/<settings name> below it: with
+  // the user name only when that directory lies outside the user's home. The temporary directory is
+  // outside it on Linux and macOS but inside it on Windows (AppData, found in CI), so both names get it.
+  for (const application of [`${userInfo().username}-ghidra`, "ghidra"]) {
+    const extension = join(config, application, ghidra.settingsName, "Extensions", "C64RT");
+    mkdirSync(join(extension, "data"), { recursive: true });
+    cpSync(LANGUAGE_DIRECTORY, join(extension, "data", "languages"), { recursive: true });
+    writeFileSync(join(extension, "extension.properties"), `name=C64RT\ndescription=c64-re-tools NMOS 6510 language\nauthor=c64-re-tools\ncreatedOn=\nversion=${ghidra.version}\n`);
+    writeFileSync(join(extension, "Module.manifest"), "");
+  }
   return { ...env, XDG_CONFIG_HOME: config, XDG_CACHE_HOME: cache };
 }
 
