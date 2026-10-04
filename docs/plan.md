@@ -142,11 +142,20 @@ Acceptance (19 §11): one scenario PASSes an equivalent reconstruction, FAILs a 
 - [x] M9.5 **c64-testing skill** — `SKILL.md` and `references/scenario-format.md` (ASD-STE100).
 - [x] M9.6 **Acceptance** — `test/integration/vice/m9-acceptance.test.ts`: a counter program, a relocated equivalent rebuild and one that stops early; PASS, FAIL (only the counter differs) and INCONCLUSIVE, repeatable in real VICE.
 
+## M10 — Remaining specialist skills
+
+Acceptance (19 §12): an end-to-end fixture from an unknown C64 artifact through media/BASIC/packing inspection, analysis, knowledge, source reconstruction, an ACME build and functional verification.
+
+- [ ] M10.1 **c64-memory-map** — `skills/c64-memory-map/scripts/memmap.ts`: a local lookup of platform addresses (zero page and system variables, vectors, KERNAL jump table and well-known ROM routines, VIC-II/SID/CIA registers with their mirrors, color RAM, ROM areas) that tells platform addresses from application RAM, and decoders for $01, $D011, $D016, $D018 (with the $DD00 bank), $DD00, the sprite bit registers and the interrupt registers.
+- [ ] M10.2 **c64-unpacker** — no native unpacker is chosen (19 §12: add one only when chosen). `skills/c64-unpacker/scripts/unpack.ts`: `inspect` gives packing evidence (BASIC stub, per-block entropy) without naming a packer; `capture` runs the program in its own VICE session to a given address and writes the memory (64 KiB or a range as PRG) into the project (see D13).
+- [ ] M10.3 **c64-provenance** — `skills/c64-provenance/scripts/provenance.ts`: compares two or more releases by address (load address or a given shift), reports shared and differing ranges, and suggests a shift when the alignment is poor. No provenance database.
+- [ ] M10.4 **c64-reverse-engineering** — `SKILL.md` only: the orchestration workflow and handoffs; no script.
+- [ ] M10.5 **Acceptance** — the end-to-end chain on a fixture disk: disk → BASIC → packing → Ghidra analysis → knowledge → reconstructed source → ACME → c64-testing PASS. The DXA step waits for M7.2.
+
 ## Later milestones
 
 Expand each into steps when it starts.
 
-- [ ] **M10** c64-memory-map, c64-unpacker, c64-provenance, c64-reverse-engineering.
 - [ ] **M11** Installation and distribution, tested from installed artifacts.
 - [ ] **M12** Hardening and release, including the orphan guard (D7), container binding (D5/D6), platform coverage and release CI.
 
