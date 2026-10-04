@@ -66,11 +66,24 @@ Acceptance (19 §4): against real VICE, load a fixture PRG → run → send inpu
 - [x] M2.9 **c64-emulator skill** — `skills/c64-emulator/SKILL.md` (ASD-STE100).
 - [x] M2.10 **Acceptance** — `test/integration/vice/m2-acceptance.test.ts` with a fixture PRG built from bytes in TypeScript.
 
+## M3 — The rest of the frozen VICE MCP surface
+
+Acceptance (19 §5): every public tool in 15 §37 has schema tests, host-client/Host Runtime contract tests, a real-VICE test for each mechanism, and no VICE vocabulary in its results.
+
+- [ ] M3.1 **Memory search, compare, disassemble** — `c64_memory_search` (text `hunt`, `xx` wildcards), `c64_memory_compare` (two reads, any spaces/views), `c64_disassemble` (text `d`).
+- [ ] M3.2 **Chip state** — `c64_vicii`, `c64_sprite`, `c64_cia`, `c64_sid`, decoded from raw I/O registers read without side effects.
+- [ ] M3.3 **Execution history and timing** — `c64_cpu_history` (text `chis`, raster position from the cycle clock), `c64_backtrace` (text `bt`), `c64_timing` (session stopwatch over VICE's cycle counter).
+- [ ] M3.4 **Profile and memmap** — `c64_profile` (VICE profiler, on from session start), `c64_memmap` read/clear (text `mmsh`/`mmzap`).
+- [ ] M3.5 **Screen baselines** — `c64_screen` capture with a baseline name, compare (mask, ratio, bounds, diff image), list, discard; session-local, lost with the machine state.
+- [ ] M3.6 **Snapshots** — `c64_snapshot` save/restore/list/discard (binary dump/undump in the session scratch directory); restore finishes stopped.
+- [ ] M3.7 **c64_observe** — one coherent stop for registers, memory ranges, VIC-II, sprites, CIAs, SID, screen and raster timing.
+- [ ] M3.8 **drive8 execution** — step, next and until-return in space drive8.
+- [ ] M3.9 **Acceptance** — the full 15 §37 tool list exactly; the c64-emulator skill updated for the new tools.
+
 ## Later milestones
 
 Expand each into steps when it starts.
 
-- [ ] **M3** The rest of the frozen MCP surface (15 §37), the text monitor when first needed, drive8, `until-return`, screen baselines, snapshots, `c64_observe`.
 - [ ] **M4** Knowledge core: `src/knowledge`, `.c64-re-tools/knowledge.db`, the c64-knowledge script.
 - [ ] **M5** Native-tool seam + ACME + c64-assembler: assemble → load → known state in VICE.
 - [ ] **M6** c1541 + petcat: the c64-disk and c64-basic skills.
