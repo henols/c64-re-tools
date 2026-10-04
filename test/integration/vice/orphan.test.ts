@@ -5,14 +5,13 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { liveEnv, liveSkip, viceChildren } from "./live.ts";
+import { liveEnv, liveSkip, viceChildren, viceScratchOf } from "./live.ts";
 
 const root = resolve(import.meta.dirname, "../../..");
 
@@ -23,11 +22,6 @@ function alive(pid: number): boolean {
   } catch {
     return false;
   }
-}
-
-/** VICE scratch directories in the temporary directory (portable: no /proc). */
-function viceScratchDirectories(): Set<string> {
-  return new Set(readdirSync(tmpdir()).filter((name) => name.startsWith("c64-re-tools-vice-")).map((name) => join(tmpdir(), name)));
 }
 
 async function until(condition: () => boolean, timeoutMs: number): Promise<boolean> {
@@ -45,13 +39,11 @@ test("a Host Runtime killed with SIGKILL leaves no VICE and no scratch directory
   try {
     const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
     const env = { ...process.env, C64RT_HOST: `127.0.0.1:${/:(\d+)$/.exec(line)![1]}` };
-    const before = viceScratchDirectories();
     const session = await ViceSessionClient.open({ videoStandard: "pal", env });
     const [vice] = viceChildren(host.pid!);
     assert.ok(vice !== undefined, "the runtime started VICE");
-    const created = [...viceScratchDirectories()].filter((path) => !before.has(path));
-    assert.equal(created.length, 1, "the session's VICE has one scratch directory");
-    const scratch = created[0]!;
+    const scratch = viceScratchOf(vice);
+    assert.ok(scratch !== undefined && /c64-re-tools-vice-/.test(scratch) && existsSync(scratch), `the VICE scratch directory, not ${scratch}`);
 
     host.kill("SIGKILL");
     await exited;

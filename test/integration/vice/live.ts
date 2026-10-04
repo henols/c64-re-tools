@@ -22,6 +22,16 @@ export function viceChildren(parentPid: number): number[] {
   return procViceChildren(parentPid);
 }
 
+/** The scratch directory of a running VICE, from its -config argument (portable: ps or CIM, no /proc). */
+export function viceScratchOf(pid: number): string | undefined {
+  const commandLine =
+    process.platform === "win32"
+      ? spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}").CommandLine`], { encoding: "utf8" }).stdout
+      : spawnSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" }).stdout;
+  const match = /-config\s+"?(.+?)[\\/]vicerc/.exec(commandLine);
+  return match?.[1];
+}
+
 function psViceChildren(parentPid: number): number[] {
   const run = spawnSync("ps", ["-A", "-o", "pid=,ppid=,stat=,comm="], { encoding: "utf8" });
   const pids: number[] = [];
