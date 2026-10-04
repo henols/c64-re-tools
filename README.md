@@ -19,7 +19,7 @@ The design is in [`docs/redesign/`](docs/redesign/README.md), and
 ## Install
 
 Requirements: Node.js 24 or newer, and on the graphical host stock VICE
-(`x64sc`, `c1541`, `petcat`). ACME and Ghidra are needed for the skills that
+(`x64sc`, `c1541`, `petcat`). ACME, DXA and Ghidra are needed for the skills that
 use them. The toolkit never installs a native tool for you: when one is
 missing, the operation that needs it says which one and how to install it.
 
@@ -64,7 +64,7 @@ Clients on loopback need no token; every other client must send it.
 | Variable | Read by | Meaning |
 | --- | --- | --- |
 | `C64RT_VICE` | host | Full path of `x64sc` when it is not on `PATH`. |
-| `C64RT_ACME`, `C64RT_C1541`, `C64RT_PETCAT` | host | Full path of the tool when it is not on `PATH`. |
+| `C64RT_ACME`, `C64RT_DXA`, `C64RT_C1541`, `C64RT_PETCAT` | host | Full path of the tool when it is not on `PATH`. |
 | `C64RT_GHIDRA` | host | The Ghidra installation directory, when `analyzeHeadless` is not on `PATH`. |
 | `C64RT_HOST` | MCP, skills | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
 | `C64RT_HOST_TOKEN` | host, MCP, skills | The shared secret for a Host Runtime that listens beyond loopback. |
