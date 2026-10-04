@@ -241,9 +241,16 @@ export class ProcessSupervisor {
 
   async #stopGroup(pid: number, child: ChildProcess, exited: Promise<ExitStatus>): Promise<void> {
     if (process.platform === "win32") {
-      // Windows has no SIGTERM for a console process, and child.kill ends the leader only.
+      // Windows has no SIGTERM for a console process. child.kill ends the leader through its own
+      // handle; taskkill then ends any descendants. The exit wait has a limit: a stop must end
+      // (found in CI: after taskkill alone the leader's exit never came).
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // The leader has ended already.
+      }
       killTree(pid);
-      await exited;
+      await Promise.race([exited, sleep(this.#graceMs)]);
       return;
     }
     // The group outlives its leader when descendants remain, so wait on the group, not the leader.

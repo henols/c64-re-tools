@@ -99,6 +99,21 @@ test("profile rows parse; rows without a routine address are skipped", () => {
   ]);
 });
 
+test("profile counts grouped by the host locale parse as plain digits (macOS)", () => {
+  const answer = [
+    "Total      %          Self      %",
+    "------------- ------ ------------- ------",
+    "    1,123,200  56.6%     1,123,200  56.6% c010",
+    "    1.985.259 100,0%       862.059  43,4% fd50",
+    "    1,985,259 100.0%             0   0.0% ROOT",
+  ].join("\n");
+  assert.deepEqual(parseProfile(answer), [
+    { address: 0xc010, totalCycles: "1123200", selfCycles: "1123200", percent: 56.6 },
+    { address: 0xfd50, totalCycles: "1985259", selfCycles: "862059", percent: 43.4 },
+  ]);
+  assert.throws(() => parseProfile("Total %\nsomething else entirely"), /does not read/);
+});
+
 test("memmap rows merge into ranges of equal access", () => {
   const answer = [
     "addr: IO  ROM RAM",

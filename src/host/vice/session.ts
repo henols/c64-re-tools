@@ -1167,6 +1167,9 @@ export class ViceSession implements ViceSessionHandle {
       if (this.#lost) return new WireFailure("machine-state-lost", STATE_LOST);
       if (this.#windowClosing) return new WireFailure("machine-unavailable", WINDOW_CLOSING);
       if (isTimeout(error)) {
+        // VICE's own log can tell why it did not answer.
+        const tail = this.#vice.outputTail().split("\n").slice(-10).join("\n  ");
+        if (tail.trim() !== "") this.#log(`VICE log after the monitor timeout:\n  ${tail}`);
         this.#recover(runningBefore, halts);
         return new WireFailure("machine-unavailable", VICE_HELD);
       }

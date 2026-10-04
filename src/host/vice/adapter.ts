@@ -215,19 +215,24 @@ export function parseProfile(answer: string): ProfileEntry[] {
   const entries: ProfileEntry[] = [];
   const unknown: string[] = [];
   for (const line of answer.split("\n")) {
-    const row = /^\s*(\d+)\s+[\d.]+%\s+(\d+)\s+([\d.]+)%\s+(\S+)\s*$/.exec(line);
+    // Counts can carry the host locale's digit grouping ("1,123,200" on macOS, found in CI) and the percent a decimal comma.
+    const row = new RegExp(`^\\s*(${COUNT})\\s+[\\d.,]+%\\s+(${COUNT})\\s+([\\d.,]+)%\\s+(\\S+)\\s*$`).exec(line);
     if (row === null) {
       if (line.trim() !== "" && !/^Total\s+%\s+Self\s+%$/.test(line.trim()) && !/^[-\s]+$/.test(line)) unknown.push(line.trim());
       continue;
     }
     // A row named ROOT or by a label has no routine address.
     if (!/^[0-9a-f]{4}$/i.test(row[4]!)) continue;
-    entries.push({ address: Number.parseInt(row[4]!, 16), totalCycles: row[1]!, selfCycles: row[2]!, percent: Number(row[3]!) });
+    entries.push({ address: Number.parseInt(row[4]!, 16), totalCycles: digits(row[1]!), selfCycles: digits(row[2]!), percent: Number(row[3]!.replace(",", ".")) });
   }
   // An answer in another form must not read as "nothing ran" (found on macOS).
   if (entries.length === 0 && unknown.length > 0) throw unknownForm("profile", unknown);
   return entries;
 }
+
+/** A count, perhaps grouped by thousands with a comma, a dot, an apostrophe or a (narrow) space. */
+const COUNT = "\\d{1,3}(?:[,.'\\u00a0\\u202f ]\\d{3})+|\\d+";
+const digits = (count: string) => count.replace(/\D/g, "");
 
 function unknownForm(what: string, lines: string[]): WireFailure {
   return new WireFailure("operation-failed", `VICE printed the ${what} in a form that c64-re-tools does not read: ${JSON.stringify(lines.slice(0, 3))}`);
