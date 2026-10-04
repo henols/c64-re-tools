@@ -21,6 +21,7 @@ import {
 } from "../../protocol.ts";
 import { Workspace } from "../../native/staging.ts";
 import { C1541, findTool } from "../../native/discover.ts";
+import { requireMinimumVersion } from "./version.ts";
 import { runToolOrFail, type ToolContext } from "../../native/run.ts";
 
 const TIMEOUT_MS = 30_000;
@@ -211,6 +212,7 @@ class C1541Session {
 
 export async function inspect(params: C1541Params, image: Buffer, context: ToolContext): Promise<{ result: C1541Result; attachments?: Buffer[] }> {
   const executable = findTool(C1541, context.env);
+  await requireMinimumVersion(C1541, executable, context);
   const workspace = Workspace.create(context.supervisor);
   try {
     const file = `image.${params.imageType}`;

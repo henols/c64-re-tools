@@ -9,6 +9,7 @@ import { findHandoffs, parseTokenized } from "../../c64.ts";
 import { WireFailure, type PetcatResult } from "../../protocol.ts";
 import { Workspace } from "../../native/staging.ts";
 import { findTool, PETCAT } from "../../native/discover.ts";
+import { requireMinimumVersion } from "./version.ts";
 import { runToolOrFail, type ToolContext } from "../../native/run.ts";
 
 const TIMEOUT_MS = 30_000;
@@ -32,6 +33,7 @@ export async function decode(
   const tokenized = parseTokenized(program);
   if ("reason" in tokenized) return { result: { decoded: false, reason: tokenized.reason } };
   const executable = findTool(PETCAT, context.env);
+  await requireMinimumVersion(PETCAT, executable, context);
   const workspace = Workspace.create(context.supervisor);
   try {
     workspace.materialize("input", [{ path: "program.prg", size: program.length }], [program]);

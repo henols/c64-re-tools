@@ -2,17 +2,50 @@ name: Live
 
 # The live suites with a real VICE on Linux, macOS and Windows. CI installs
 # VICE itself; the product never does (it refuses by name with the remedy).
+# c64-re-tools needs VICE 3.9 or later (D23): Linux runs in Debian 13, whose
+# package is VICE 3.9 (Ubuntu 24.04 has 3.7.1).
 
 on:
   workflow_dispatch:
 
 jobs:
-  live:
+  linux:
+    name: live VICE (debian-13)
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    timeout-minutes: 45
+    steps:
+      # Debian ships VICE without the Commodore ROMs; take them from VICE's own source tree.
+      - name: Install VICE 3.9, Xvfb and the ROMs
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git xz-utils procps vice xvfb xauth
+          base=https://raw.githubusercontent.com/VICE-Team/svn-mirror/main/vice/data
+          for root in /usr/share/vice "$HOME/.local/share/vice"; do
+            mkdir -p "$root/C64" "$root/DRIVES"
+            for rom in C64/kernal-901227-03.bin C64/basic-901226-01.bin C64/chargen-901225-01.bin DRIVES/dos1541-325302-01+901229-05.bin; do
+              curl -fsSL -o "$root/$rom" "$base/$rom"
+            done
+          done
+          echo "C64RT_LIVE_VICE=$(command -v x64sc)" >> "$GITHUB_ENV"
+          x64sc -version || true
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The c64_window tests need a display.
+      - name: Live suites
+        run: xvfb-run -a pnpm test
+
+  other:
     name: live VICE (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -24,27 +57,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      # Debian and Ubuntu ship VICE without the Commodore ROMs; take them from VICE's own source tree.
-      - name: Install VICE (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y vice xvfb
-          base=https://raw.githubusercontent.com/VICE-Team/svn-mirror/main/vice/data
-          for dir in C64 DRIVES; do sudo mkdir -p "/usr/share/vice/$dir"; done
-          for rom in C64/kernal-901227-03.bin C64/basic-901226-01.bin C64/chargen-901225-01.bin DRIVES/dos1541-325302-01+901229-05.bin; do
-            sudo curl -fsSL -o "/usr/share/vice/$rom" "$base/$rom"
-          done
-          echo "C64RT_LIVE_VICE=$(command -v x64sc)" >> "$GITHUB_ENV"
-          x64sc --version || true
-
       - name: Install VICE (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install vice
           echo "C64RT_LIVE_VICE=$(brew --prefix)/bin/x64sc" >> "$GITHUB_ENV"
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
-          "$(brew --prefix)/bin/x64sc" --version || true
+          "$(brew --prefix)/bin/x64sc" -version || true
 
       - name: Install VICE (Windows)
         if: runner.os == 'Windows'
@@ -56,13 +75,7 @@ jobs:
           $bin = (Get-ChildItem -Path "$env:RUNNER_TEMP\vice" -Recurse -Filter x64sc.exe | Select-Object -First 1).DirectoryName
           "C64RT_LIVE_VICE=$bin\x64sc.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           $bin | Out-File -FilePath $env:GITHUB_PATH -Append
-          Get-ChildItem $bin | Select-Object -First 20
 
-      # The c64_window tests need a display: Xvfb on Linux; macOS and Windows runners have one.
-      - name: Live suites (Linux)
-        if: runner.os == 'Linux'
-        run: xvfb-run -a pnpm test
-
-      - name: Live suites (macOS, Windows)
-        if: runner.os != 'Linux'
+      # macOS and Windows runners have a display for the c64_window tests.
+      - name: Live suites
         run: pnpm test

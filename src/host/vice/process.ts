@@ -28,7 +28,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { WireFailure, type VideoStandard } from "../../protocol.ts";
-import { findTool, VICE } from "../../native/discover.ts";
+import { findTool, isOlderThanMinimum, MIN_VICE, VICE } from "../../native/discover.ts";
 import type { ExitStatus, ProcessSupervisor, SupervisedProcess } from "../../native/processes.ts";
 import { BinaryMonitor, Command, decodeMemory, memoryGetBody } from "./binary-monitor.ts";
 import { TextMonitor } from "./text-monitor.ts";
@@ -206,7 +206,16 @@ export async function checkViceStarts(options: Omit<LaunchOptions, "videoStandar
         "then restart the Host Runtime.",
     );
   }
+  // VICE_INFO: the length of the main version (4), then major, minor, build and revision.
+  const info = (await vice.monitor.request(Command.viceInfo)).body;
   await vice.stop();
+  const version = { major: info[1] ?? 0, minor: info[2] ?? 0 };
+  if (isOlderThanMinimum(version)) {
+    throw new WireFailure(
+      "installation-incomplete",
+      `VICE (${binary}) is version ${version.major}.${version.minor}, and c64-re-tools needs VICE ${MIN_VICE.major}.${MIN_VICE.minor} or later. ${VICE.remedy}`,
+    );
+  }
 }
 
 async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {

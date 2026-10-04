@@ -33,7 +33,7 @@ export const C1541: ToolSpec = {
   envVar: "C64RT_C1541",
   binaries: ["c1541"],
   where: "on the host",
-  remedy: "Install VICE on the host (c1541 comes with it) so that c1541 is on PATH, or set C64RT_C1541 to its full path, then restart the Host Runtime.",
+  remedy: "Install VICE 3.9 or later on the host (c1541 comes with it) so that c1541 is on PATH, or set C64RT_C1541 to its full path, then restart the Host Runtime.",
 };
 
 export const PETCAT: ToolSpec = {
@@ -41,7 +41,7 @@ export const PETCAT: ToolSpec = {
   envVar: "C64RT_PETCAT",
   binaries: ["petcat"],
   where: "on the host",
-  remedy: "Install VICE on the host (petcat comes with it) so that petcat is on PATH, or set C64RT_PETCAT to its full path, then restart the Host Runtime.",
+  remedy: "Install VICE 3.9 or later on the host (petcat comes with it) so that petcat is on PATH, or set C64RT_PETCAT to its full path, then restart the Host Runtime.",
 };
 
 export const DXA: ToolSpec = {
@@ -57,8 +57,25 @@ export const VICE: ToolSpec = {
   envVar: "C64RT_VICE",
   binaries: ["x64sc"],
   where: "on the host",
-  remedy: "Install VICE 3.6 or later on the host so that x64sc is on PATH, or set C64RT_VICE to the full path of x64sc, then restart the Host Runtime.",
+  remedy: "Install VICE 3.9 or later on the host so that x64sc is on PATH, or set C64RT_VICE to the full path of x64sc, then restart the Host Runtime.",
 };
+
+/**
+ * The oldest VICE that works (D23): 3.7 has no monitor profiler, and its CPU
+ * history, until-return and c1541 chain output differ (found in CI with the
+ * VICE 3.7.1 of Ubuntu 24.04). 3.9 and 3.10 are tested live.
+ */
+export const MIN_VICE = { major: 3, minor: 9 } as const;
+
+/** "x64sc (VICE 3.10)", "c1541 (VICE 3.9)" or "VICE 3.9.0": the major and minor version. */
+export function viceVersionOf(text: string): { major: number; minor: number } | undefined {
+  const match = /VICE (\d+)\.(\d+)/.exec(text);
+  return match === null ? undefined : { major: Number(match[1]), minor: Number(match[2]) };
+}
+
+export function isOlderThanMinimum(version: { major: number; minor: number }): boolean {
+  return version.major < MIN_VICE.major || (version.major === MIN_VICE.major && version.minor < MIN_VICE.minor);
+}
 
 export function isExecutableFile(path: string): boolean {
   try {

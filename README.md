@@ -20,7 +20,9 @@ The design is in [`docs/redesign/`](docs/redesign/README.md), and
 ## Install
 
 Requirements: Node.js 24 or newer with npx, and on the graphical host stock VICE
-(`x64sc`, `c1541`, `petcat`) with its ROM files. ACME, DXA and Ghidra are
+3.9 or later (`x64sc`, `c1541`, `petcat`) with its ROM files. The Host Runtime
+refuses an older VICE by name: 3.7 has no monitor profiler, and its CPU
+history, until-return and c1541 output differ. ACME, DXA and Ghidra are
 needed for the skills that use them, on the machine where the agent runs its
 skill scripts (inside the container, for an agent in one). The toolkit never
 installs a native tool for you: when one is missing, the operation that needs

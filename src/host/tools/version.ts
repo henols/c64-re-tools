@@ -1,0 +1,33 @@
+// The VICE tools on the host must come from a VICE that c64-re-tools works
+// with (D23). Each executable is asked once for its version; a version that
+// cannot be read is let through, because the tool's own run then tells.
+
+import { tmpdir } from "node:os";
+
+import { WireFailure } from "../../protocol.ts";
+import { isOlderThanMinimum, MIN_VICE, viceVersionOf, type ToolSpec } from "../../native/discover.ts";
+import { runToolOrFail, type ToolContext } from "../../native/run.ts";
+
+const VERSION_TIMEOUT_MS = 30_000;
+const checked = new Map<string, Promise<void>>();
+
+/** Refuses a tool from a VICE older than MIN_VICE, by name and with the remedy. */
+export function requireMinimumVersion(tool: ToolSpec, executable: string, context: ToolContext): Promise<void> {
+  let check = checked.get(executable);
+  if (check === undefined) {
+    check = (async () => {
+      const run = await runToolOrFail(tool.name, `The ${tool.name} version check`, { argv: [executable, "-version"], cwd: tmpdir(), timeoutMs: VERSION_TIMEOUT_MS }, context);
+      const version = viceVersionOf(`${run.stdout}\n${run.stderr}`);
+      if (version !== undefined && isOlderThanMinimum(version)) {
+        throw new WireFailure(
+          "installation-incomplete",
+          `${tool.name} (${executable}) comes from VICE ${version.major}.${version.minor}, and c64-re-tools needs VICE ${MIN_VICE.major}.${MIN_VICE.minor} or later. ${tool.remedy}`,
+        );
+      }
+    })();
+    // A refusal or a failed check is asked again next time: the user can install a newer VICE meanwhile.
+    check.catch(() => checked.delete(executable));
+    checked.set(executable, check);
+  }
+  return check;
+}
