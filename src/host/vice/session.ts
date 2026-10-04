@@ -35,6 +35,7 @@ import {
   ViceAdapter,
 } from "./adapter.ts";
 import { decodeProgramCounter, MonitorConnectionError, MonitorError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
+import { decodeCia, decodeSid, decodeSprite, decodeVicii } from "./chips.ts";
 import { launchVice, type ViceProcess } from "./process.ts";
 import { TextMonitorError } from "./text-monitor.ts";
 
@@ -229,6 +230,31 @@ export class ViceSession implements ViceSessionHandle {
         const shot = await this.#observe(() => this.#machine.captureScreen(this.#videoStandard));
         return { width: shot.width, height: shot.height, png: shot.png.toString("base64") };
       }
+      case "vicii":
+        return this.#observe(async () => decodeVicii(await this.#machine.readIo(0xd000, 0x2f), await this.#machine.readIo(0xdd00, 0x10)));
+      case "sprites": {
+        const { indexes } = params as ViceOperations["sprites"]["params"];
+        return this.#observe(async () => {
+          const vic = await this.#machine.readIo(0xd000, 0x2f);
+          const cia2 = await this.#machine.readIo(0xdd00, 0x10);
+          // Sprite pointers sit in the RAM the VIC-II reads, at the end of screen memory.
+          const screen = decodeVicii(vic, cia2).screenAddress;
+          const pointers = Buffer.from(await this.#machine.readMemory({ address: screen + 0x3f8, size: 8, space: "c64", view: "ram" }), "hex");
+          const wanted = indexes.length === 0 ? [0, 1, 2, 3, 4, 5, 6, 7] : indexes;
+          return { sprites: wanted.map((index) => decodeSprite(index, vic, cia2, pointers)) };
+        });
+      }
+      case "cia": {
+        const { which } = params as ViceOperations["cia"]["params"];
+        const ids: Array<1 | 2> = which === "both" ? [1, 2] : [Number(which) as 1 | 2];
+        return this.#observe(async () => {
+          const chips = [];
+          for (const id of ids) chips.push(decodeCia(id, await this.#machine.readIo(id === 1 ? 0xdc00 : 0xdd00, 0x10)));
+          return { chips };
+        });
+      }
+      case "sid":
+        return this.#observe(async () => decodeSid(await this.#machine.readIo(0xd400, 0x19)));
       case "joystick": {
         const joystick = params as JoystickState;
         await this.#observe(() => this.#machine.setJoystick(joystick));

@@ -106,6 +106,45 @@ class FakeSession implements ViceSessionApi {
     return { reached: true, stopReason: "target" as const, state: "stopped" as const, pc: 0xc00b };
   }
 
+  async vicii() {
+    return {
+      rasterLine: 100,
+      mode: "text" as const,
+      screenAddress: 0x0400,
+      graphicsAddress: 0x1000,
+      scrollX: 0,
+      scrollY: 3,
+      borderColor: 14,
+      backgroundColors: [6, 0, 0, 0],
+    };
+  }
+  spriteRequests: number[][] = [];
+  async sprites(indexes: number[]) {
+    this.spriteRequests.push(indexes);
+    const sprite = { x: 145, y: 96, enabled: true, color: 1, multicolor: false, expandX: false, expandY: false, behindBackground: false, dataAddress: 0x3000 };
+    return { sprites: (indexes.length === 0 ? [0, 1, 2, 3, 4, 5, 6, 7] : indexes).map((index) => ({ index, ...sprite })) };
+  }
+  async cia(which: "1" | "2" | "both") {
+    const chip = (id: 1 | 2) => ({
+      id,
+      portA: 0,
+      portB: 0,
+      ddrA: 0,
+      ddrB: 0,
+      timerA: 0,
+      timerB: 0,
+      controlA: 0,
+      controlB: 0,
+      interruptStatus: 0,
+      tod: { hours: 1, minutes: 0, seconds: 0, tenths: 0 },
+    });
+    return { chips: which === "both" ? [chip(1), chip(2)] : [chip(Number(which) as 1 | 2)] };
+  }
+  async sid() {
+    const voice = (index: number) => ({ index, frequency: 0, pulseWidth: 0, control: 0, attackDecay: 0, sustainRelease: 0 });
+    return { voices: [voice(1), voice(2), voice(3)], filter: { cutoff: 0, resonance: 0, routing: 0, mode: 0 }, volume: 15 };
+  }
+
   async screenCapture() {
     return { width: 384, height: 272, png: Buffer.from("png-bytes").toString("base64") };
   }
@@ -172,6 +211,7 @@ test("the server lists exactly the implemented tools with object input and outpu
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
     "c64_autostart",
     "c64_breakpoint",
+    "c64_cia",
     "c64_disassemble",
     "c64_disk_attach",
     "c64_execution",
@@ -186,14 +226,28 @@ test("the server lists exactly the implemented tools with object input and outpu
     "c64_reset",
     "c64_run_until",
     "c64_screen",
+    "c64_sid",
+    "c64_sprite",
     "c64_status",
+    "c64_vicii",
     "c64_warp",
     "c64_watchpoint",
   ]);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object");
     assert.equal(tool.outputSchema?.type, "object");
-    const readOnly = ["c64_status", "c64_memory_read", "c64_screen", "c64_memory_search", "c64_memory_compare", "c64_disassemble"];
+    const readOnly = [
+      "c64_status",
+      "c64_memory_read",
+      "c64_screen",
+      "c64_memory_search",
+      "c64_memory_compare",
+      "c64_disassemble",
+      "c64_vicii",
+      "c64_sprite",
+      "c64_cia",
+      "c64_sid",
+    ];
     assert.equal(tool.annotations?.readOnlyHint, readOnly.includes(tool.name), tool.name);
     assert.doesNotMatch(`${tool.description} ${JSON.stringify(tool.inputSchema)}`, /\bVICE\b|monitor|tcp|socket|session id|request/i);
   }
@@ -515,5 +569,23 @@ test("memory compare and disassemble shape their results", async () => {
   });
   const listing = await call(client, "c64_disassemble", { address: "$2100", count: 1 });
   assert.deepEqual(listing.structuredContent, { instructions: [{ address: "$2100", bytes: "a900", text: "LDA #$00" }] });
+  await client.close();
+});
+
+test("chip tools format addresses and fill defaults", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const vicii = (await call(client, "c64_vicii")).structuredContent as Record<string, unknown>;
+  assert.equal(vicii.screenAddress, "$0400");
+  assert.equal(vicii.graphicsAddress, "$1000");
+  const all = (await call(client, "c64_sprite")).structuredContent as { sprites: Array<{ dataAddress: string }> };
+  assert.equal(all.sprites.length, 8);
+  assert.equal(all.sprites[0]!.dataAddress, "$3000");
+  await call(client, "c64_sprite", { sprites: [0, 1] });
+  assert.deepEqual(session.spriteRequests, [[], [0, 1]]);
+  assert.equal(errorOf(await call(client, "c64_sprite", { sprites: [8] })).code, "invalid-input");
+  assert.equal(((await call(client, "c64_cia")).structuredContent as { chips: unknown[] }).chips.length, 2);
+  assert.equal(((await call(client, "c64_cia", { cia: "2" })).structuredContent as { chips: Array<{ id: number }> }).chips[0]!.id, 2);
+  assert.equal(((await call(client, "c64_sid")).structuredContent as { volume: number }).volume, 15);
   await client.close();
 });

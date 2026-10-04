@@ -165,6 +165,23 @@ export class ViceSessionClient {
     return this.#request("watchpoint", params);
   }
 
+  vicii(): Promise<ViceOperations["vicii"]["result"]> {
+    return this.#request("vicii", {});
+  }
+
+  /** Empty `indexes` means all eight sprites. */
+  sprites(indexes: number[]): Promise<ViceOperations["sprites"]["result"]> {
+    return this.#request("sprites", { indexes });
+  }
+
+  cia(which: ViceOperations["cia"]["params"]["which"]): Promise<ViceOperations["cia"]["result"]> {
+    return this.#request("cia", { which });
+  }
+
+  sid(): Promise<ViceOperations["sid"]["result"]> {
+    return this.#request("sid", {});
+  }
+
   /** The last frame the VIC-II drew, as a base64 PNG with its size. */
   screenCapture(): Promise<{ width: number; height: number; png: string }> {
     return this.#request("screenCapture", {});

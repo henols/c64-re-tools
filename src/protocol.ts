@@ -154,6 +154,58 @@ export type WatchpointParams =
   | { action: "remove" | "enable" | "disable"; id: number }
   | { action: "list" };
 
+// Chip state (15 §25-§28)
+
+export const VICII_MODES = ["text", "multicolor-text", "extended-color-text", "bitmap", "multicolor-bitmap", "invalid"] as const;
+export type ViciiMode = (typeof VICII_MODES)[number];
+
+export interface ViciiState {
+  rasterLine: number;
+  mode: ViciiMode;
+  screenAddress: number;
+  graphicsAddress: number;
+  scrollX: number;
+  scrollY: number;
+  borderColor: number;
+  backgroundColors: number[];
+}
+
+export interface SpriteState {
+  index: number;
+  x: number;
+  y: number;
+  enabled: boolean;
+  color: number;
+  multicolor: boolean;
+  expandX: boolean;
+  expandY: boolean;
+  behindBackground: boolean;
+  dataAddress: number;
+}
+
+export interface CiaState {
+  id: 1 | 2;
+  portA: number;
+  portB: number;
+  ddrA: number;
+  ddrB: number;
+  timerA: number;
+  timerB: number;
+  controlA: number;
+  controlB: number;
+  interruptStatus: number;
+  tod: { hours: number; minutes: number; seconds: number; tenths: number };
+}
+
+export interface SidState {
+  voices: Array<{ index: number; frequency: number; pulseWidth: number; control: number; attackDecay: number; sustainRelease: number }>;
+  filter: { cutoff: number; resonance: number; routing: number; mode: number };
+  volume: number;
+}
+
+export const CIA_SELECTIONS = ["1", "2", "both"] as const;
+export type CiaSelection = (typeof CIA_SELECTIONS)[number];
+
 export const RESET_MODES = ["soft", "hard"] as const;
 export type ResetMode = (typeof RESET_MODES)[number];
 
@@ -279,6 +331,11 @@ export interface ViceOperations {
   joystick: { params: JoystickState; result: JoystickState };
   breakpoint: { params: BreakpointParams; result: Breakpoint | { breakpoints: Breakpoint[] } };
   watchpoint: { params: WatchpointParams; result: Watchpoint | { watchpoints: Watchpoint[] } };
+  vicii: { params: Record<string, never>; result: ViciiState };
+  /** `indexes`: unique sprite numbers 0-7, in the order to report them. */
+  sprites: { params: { indexes: number[] }; result: { sprites: SpriteState[] } };
+  cia: { params: { which: CiaSelection }; result: { chips: CiaState[] } };
+  sid: { params: Record<string, never>; result: SidState };
   /** The last frame the VIC-II drew, visible area with borders, as a base64 PNG. */
   screenCapture: { params: Record<string, never>; result: { width: number; height: number; png: string } };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
@@ -304,6 +361,10 @@ export const VICE_OPERATIONS = [
   "breakpoint",
   "watchpoint",
   "screenCapture",
+  "vicii",
+  "sprites",
+  "cia",
+  "sid",
   "warp",
 ] as const satisfies readonly ViceOperation[];
 
@@ -462,7 +523,19 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
   switch (op) {
     case "status":
     case "screenCapture":
+    case "vicii":
+    case "sid":
       return {} as ViceOperations[O]["params"];
+    case "sprites": {
+      const indexes = params.indexes;
+      if (!Array.isArray(indexes) || !indexes.every((index) => isInteger(index, 0, 7))) invalid("sprites holds sprite numbers 0 to 7");
+      if (new Set(indexes).size !== indexes.length) invalid("sprites holds each sprite number once");
+      return { indexes: indexes as number[] } as ViceOperations[O]["params"];
+    }
+    case "cia": {
+      if (!isOneOf(CIA_SELECTIONS, params.which)) invalid("cia must be 1, 2 or both");
+      return { which: params.which } as ViceOperations[O]["params"];
+    }
     case "memoryRead": {
       if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
       if (!isInteger(params.size, 1, MAX_MEMORY_READ)) invalid(`size must be an integer from 1 to ${MAX_MEMORY_READ}`);
@@ -836,6 +909,70 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     case "watchpoint": {
       const ok = Array.isArray(value.watchpoints) ? value.watchpoints.every(isWatchpoint) : isWatchpoint(value);
       if (!ok) throw new ProtocolError("watchpoint result is malformed");
+      break;
+    }
+    case "vicii": {
+      const ok =
+        isInteger(value.rasterLine, 0, 511) &&
+        isOneOf(VICII_MODES, value.mode) &&
+        isInteger(value.screenAddress, 0, 0xffff) &&
+        isInteger(value.graphicsAddress, 0, 0xffff) &&
+        isInteger(value.scrollX, 0, 7) &&
+        isInteger(value.scrollY, 0, 7) &&
+        isInteger(value.borderColor, 0, 15) &&
+        Array.isArray(value.backgroundColors) &&
+        value.backgroundColors.length === 4 &&
+        value.backgroundColors.every((color) => isInteger(color, 0, 15));
+      if (!ok) throw new ProtocolError("vicii result is malformed");
+      break;
+    }
+    case "sprites": {
+      const isSprite = (sprite: unknown) =>
+        isObject(sprite) &&
+        isInteger(sprite.index, 0, 7) &&
+        isInteger(sprite.x, 0, 511) &&
+        isInteger(sprite.y, 0, 255) &&
+        isInteger(sprite.color, 0, 15) &&
+        isInteger(sprite.dataAddress, 0, 0xffff) &&
+        (["enabled", "multicolor", "expandX", "expandY", "behindBackground"] as const).every((flag) => typeof sprite[flag] === "boolean");
+      if (!Array.isArray(value.sprites) || !value.sprites.every(isSprite)) throw new ProtocolError("sprites result is malformed");
+      break;
+    }
+    case "cia": {
+      const isCia = (chip: unknown) =>
+        isObject(chip) &&
+        (chip.id === 1 || chip.id === 2) &&
+        (["portA", "portB", "ddrA", "ddrB", "controlA", "controlB", "interruptStatus"] as const).every((name) => isInteger(chip[name], 0, 0xff)) &&
+        isInteger(chip.timerA, 0, 0xffff) &&
+        isInteger(chip.timerB, 0, 0xffff) &&
+        isObject(chip.tod) &&
+        isInteger(chip.tod.hours, 0, 23) &&
+        isInteger(chip.tod.minutes, 0, 99) &&
+        isInteger(chip.tod.seconds, 0, 99) &&
+        isInteger(chip.tod.tenths, 0, 15);
+      if (!Array.isArray(value.chips) || !value.chips.every(isCia)) throw new ProtocolError("cia result is malformed");
+      break;
+    }
+    case "sid": {
+      const voices = value.voices;
+      const ok =
+        Array.isArray(voices) &&
+        voices.length === 3 &&
+        voices.every(
+          (voice) =>
+            isObject(voice) &&
+            isInteger(voice.index, 1, 3) &&
+            isInteger(voice.frequency, 0, 0xffff) &&
+            isInteger(voice.pulseWidth, 0, 0x0fff) &&
+            (["control", "attackDecay", "sustainRelease"] as const).every((name) => isInteger(voice[name], 0, 0xff)),
+        ) &&
+        isObject(value.filter) &&
+        isInteger(value.filter.cutoff, 0, 0x7ff) &&
+        isInteger(value.filter.resonance, 0, 15) &&
+        isInteger(value.filter.routing, 0, 15) &&
+        isInteger(value.filter.mode, 0, 15) &&
+        isInteger(value.volume, 0, 15);
+      if (!ok) throw new ProtocolError("sid result is malformed");
       break;
     }
     case "screenCapture": {

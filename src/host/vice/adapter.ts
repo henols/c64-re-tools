@@ -195,7 +195,7 @@ export class ViceAdapter {
   readonly #monitor: BinaryMonitor;
   readonly #text: TextMonitor;
   readonly #registerIds: Record<Space, RegisterIds>;
-  readonly #banks: Record<MemoryView | "rom", number>;
+  readonly #banks: Record<MemoryView | "rom" | "io", number>;
   /** The C64's raster line and cycle registers. */
   readonly #rasterIds: { line: number; cycle: number };
 
@@ -203,7 +203,7 @@ export class ViceAdapter {
     monitor: BinaryMonitor,
     text: TextMonitor,
     registerIdsBySpace: Record<Space, RegisterIds>,
-    banks: Record<MemoryView | "rom", number>,
+    banks: Record<MemoryView | "rom" | "io", number>,
     rasterIds: { line: number; cycle: number },
   ) {
     this.#monitor = monitor;
@@ -231,7 +231,7 @@ export class ViceAdapter {
       monitor,
       text,
       { c64: await registerIds(monitor, "c64"), drive8: await registerIds(monitor, "drive8") },
-      { cpu: bankId("cpu"), ram: bankId("ram"), rom: bankId("rom") },
+      { cpu: bankId("cpu"), ram: bankId("ram"), rom: bankId("rom"), io: bankId("io") },
       { line: rasterId("LIN"), cycle: rasterId("CYC") },
     );
   }
@@ -253,6 +253,15 @@ export class ViceAdapter {
     const bytes = decodeMemory(response.body);
     if (bytes.length !== options.size) throw new Error(`VICE returned ${bytes.length} bytes for a ${options.size}-byte read`);
     return bytes.toString("hex");
+  }
+
+  /** Reads C64 I/O registers through the I/O bank, whatever the CPU has banked in, without side effects. */
+  async readIo(start: number, size: number): Promise<Uint8Array> {
+    const response = await this.#monitor.request(
+      Command.memoryGet,
+      memoryGetBody({ start, end: start + size - 1, memspace: Memspace.main, bank: this.#banks.io }),
+    );
+    return decodeMemory(response.body);
   }
 
   /** Writes memory as the selected CPU (view cpu) or into plain RAM (view ram, c64 only). */

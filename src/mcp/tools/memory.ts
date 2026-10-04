@@ -192,7 +192,7 @@ export const c64Disassemble = defineTool({
   title: "Disassemble live C64 memory",
   description:
     `Disassemble count instructions (1 to ${MAX_DISASSEMBLE}) from an address, as the bytes are in the live machine now. ` +
-    "This shows code that a program changed or unpacked at run time. It includes the undocumented opcodes. " +
+    "Use it to read code that a program changed or unpacked at run time. It includes the undocumented opcodes. " +
     "This does not change if the machine is running or stopped.",
   inputSchema: z
     .object({
