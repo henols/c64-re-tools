@@ -7,8 +7,13 @@ on:
     branches: [main]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,8 +31,39 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Build
-        run: pnpm build
-
+      # Builds, then runs every test. The live suites (real VICE, Ghidra and
+      # the native tools) are opt-in and show as skipped, with their reason.
       - name: Test
         run: pnpm test
+
+  installed:
+    name: installed package (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # The packed artifact, installed into a fresh directory, never this checkout.
+      - name: Pack and install
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir "$RUNNER_TEMP/installed" "$RUNNER_TEMP/project"
+          cd "$RUNNER_TEMP/installed"
+          npm install --no-save --no-audit --no-fund "$RUNNER_TEMP"/*.tgz
+
+      - name: Run the installed programs and install the skills
+        run: |
+          bin="$RUNNER_TEMP/installed/node_modules/.bin"
+          for program in c64-re-tools c64-re-tools-mcp c64-re-tools-host; do "$bin/$program" --help > /dev/null; done
+          cd "$RUNNER_TEMP/project"
+          "$bin/c64-re-tools" install --target claude
+          test -f .claude/skills/c64-emulator/SKILL.md
+          test -f .claude/skills/c64-memory-map/scripts/memmap.js
+          node .claude/skills/c64-memory-map/scripts/memmap.js at '$d020' | grep -q EXTCOL
+          "$bin/c64-re-tools" status
