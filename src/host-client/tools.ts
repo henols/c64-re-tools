@@ -10,6 +10,8 @@ import {
   type C1541Result,
   type DiskAction,
   type DiskImageType,
+  type GhidraParams,
+  type GhidraResult,
   type PetcatResult,
   type ToolOperation,
   type ToolOperations,
@@ -107,5 +109,13 @@ export async function decodeBasic(request: { program: string }, options: ToolCal
   return (await callTool("petcat.decode", {}, [file.bytes], options)).result;
 }
 
+/** ghidra.analyze (16 §10): structural analysis of a project PRG or 64 KiB image with knowledge seeds. */
+export async function analyzeWithGhidra(request: { image: string } & GhidraParams, options: ToolCallOptions = {}): Promise<GhidraResult> {
+  const file = readProjectFile(request.image);
+  const { image: _image, ...params } = request;
+  return (await callTool("ghidra.analyze", params, [file.bytes], options)).result;
+}
+
 /** Skill scripts see failures through the host-client, never the private protocol module. */
 export { WireFailure } from "../protocol.ts";
+export type { GhidraParams, GhidraResult } from "../protocol.ts";

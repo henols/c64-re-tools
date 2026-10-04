@@ -128,7 +128,7 @@ Acceptance (19 §10): the NMOS language compiles, decodes all 105 undocumented o
 - [x] M8.2 **Headless runner** — `src/host/tools/ghidra/index.ts`: find Ghidra (`C64RT_GHIDRA` install directory, or `analyzeHeadless` on PATH), run it with a per-request settings directory (`XDG_CONFIG_HOME`/`XDG_CACHE_HOME`) that holds the language as an extension, a disposable project, our script directory and a bound; the user's Ghidra install and settings stay untouched.
 - [x] M8.3 **Language acceptance** — real-Ghidra tests (skipped without Ghidra): compile, the 105-opcode sweep, p-code emulation of SLO/RLA/SRE/RRA, SAX/LAX, DCP/ISC and the immediate family, JAM flow, opaque unstable instructions, decimal arithmetic.
 - [x] M8.4 **ghidra.analyze** — wire types and bounds (16 §10), a Java export script (functions with name source, code/data regions, references, bounded decompilation), seeds (entry points, data ranges, labels), complete validation before the result leaves the host.
-- [ ] M8.5 **c64-static-analysis skill** — `skills/c64-static-analysis/scripts/analyze.ts`: seeds from current knowledge, `ghidra.analyze`, Ghidra → normalized findings (seed names stay semantic), `importFindings`, a compact result; `SKILL.md` (ASD-STE100).
+- [x] M8.5 **c64-static-analysis skill** — `skills/c64-static-analysis/scripts/analyze.ts`: seeds from current knowledge, `ghidra.analyze`, Ghidra → normalized findings (seed names stay semantic), `importFindings`, a compact result; `SKILL.md` (ASD-STE100).
 - [ ] M8.6 **Acceptance** — the iterative loop on a fixture PRG: Ghidra import → semantic rename → seeded re-run → same importer, history and conflicts kept, echoed seed not owned by Ghidra.
 
 ## Later milestones

@@ -1,0 +1,42 @@
+// Knowledge seeds for an analyzer, and the mapping of a Ghidra result to the
+// common normalized findings (12 §4, §18).
+
+import type { DatabaseSync } from "node:sqlite";
+
+import type { NormalizedFindings } from "../../../src/knowledge/import.ts";
+import { listRegions, listSymbols } from "../../../src/knowledge/read.ts";
+import type { GhidraParams, GhidraResult } from "../../../src/host-client/tools.ts";
+
+export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
+
+/**
+ * Seeds from current knowledge only (12 §18): routine symbols are entry
+ * points, non-code regions are data, and names from the user or the LLM are
+ * labels. Analyzer-made names are not seeds, so they never come back as seeds.
+ */
+export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoints: number[] = []): Seeds {
+  const symbols = listSymbols(db);
+  const entryPoints = [...new Set([...extraEntryPoints, ...symbols.filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address)])].sort((a, b) => a - b);
+  return {
+    entryPoints,
+    dataRanges: listRegions(db)
+      .filter((region) => region.type !== "code")
+      .map((region) => ({ start: region.start, end: region.end })),
+    labels: symbols.filter((symbol) => symbol.origin === "user" || symbol.origin === "llm").map((symbol) => ({ address: symbol.address, name: symbol.name })),
+  };
+}
+
+/**
+ * Ghidra's result as normalized findings. A function whose name is an echoed
+ * seed adds no symbol: the semantic name keeps its owner (12 §18, 16 §10).
+ */
+export function ghidraFindings(result: GhidraResult): NormalizedFindings {
+  return {
+    analyzer: "ghidra",
+    coverage: result.coverage,
+    authoritative: { symbols: result.completeness.functions, regions: result.completeness.regions, references: result.completeness.references },
+    symbols: result.functions.filter((fn) => fn.nameSource !== "seed").map((fn) => ({ address: fn.entry, name: fn.name, kind: "routine" as const })),
+    regions: result.regions.map((region) => ({ start: region.start, end: region.end, type: region.classification === "code" ? ("code" as const) : ("bytes" as const) })),
+    references: result.references.map((reference) => ({ from: reference.from, to: reference.to, kind: reference.type })),
+  };
+}
