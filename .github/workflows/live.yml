@@ -133,17 +133,20 @@ jobs:
         shell: bash
         run: |
           set -x
+          # Unix-style paths: Git Bash tar reads "D:\\..." as a remote host.
+          T="$(cygpath -u "$RUNNER_TEMP")"
+          MAKE="$(command -v make || command -v mingw32-make)"
           echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
-          curl -fsSL -o "$RUNNER_TEMP/ghidra.zip" https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
-          unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$RUNNER_TEMP"
-          echo "C64RT_GHIDRA=$(cygpath -w "$RUNNER_TEMP/ghidra_12.1.3_PUBLIC")" >> "$GITHUB_ENV"
-          mkdir -p "$RUNNER_TEMP/bin"
-          curl -fsSL -o "$RUNNER_TEMP/dxa.tgz" https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz
-          tar -xzf "$RUNNER_TEMP/dxa.tgz" -C "$RUNNER_TEMP"
-          make -C "$RUNNER_TEMP/dxa-0.1.5" CC=gcc && cp "$RUNNER_TEMP/dxa-0.1.5/dxa.exe" "$RUNNER_TEMP/bin/" || echo "dxa did not build"
-          git clone --depth 1 https://github.com/meonwax/acme.git "$RUNNER_TEMP/acme" && make -C "$RUNNER_TEMP/acme/src" CC=gcc && cp "$RUNNER_TEMP/acme/src/acme"* "$RUNNER_TEMP/bin/" || echo "ACME did not build"
-          ls -la "$RUNNER_TEMP/bin"
-          cygpath -w "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          curl -fsSL -o "$T/ghidra.zip" https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
+          unzip -q "$T/ghidra.zip" -d "$T"
+          echo "C64RT_GHIDRA=$(cygpath -w "$T/ghidra_12.1.3_PUBLIC")" >> "$GITHUB_ENV"
+          mkdir -p "$T/bin"
+          cygpath -w "$T/bin" >> "$GITHUB_PATH"
+          curl -fsSL -o "$T/dxa.tgz" https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz
+          tar -xzf "$T/dxa.tgz" -C "$T"
+          "$MAKE" -C "$T/dxa-0.1.5" CC=gcc && cp "$T/dxa-0.1.5/dxa.exe" "$T/bin/" || echo "dxa did not build"
+          git clone --depth 1 https://github.com/meonwax/acme.git "$T/acme" && "$MAKE" -C "$T/acme/src" CC=gcc && cp "$T"/acme/src/acme*.exe "$T/bin/" || echo "ACME did not build"
+          ls -la "$T/bin"
 
       # macOS and Windows runners have a display for the c64_window tests. A step limit keeps the log of a hang.
       - name: Live suites
