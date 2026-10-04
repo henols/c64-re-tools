@@ -1,0 +1,98 @@
+// The one place that opens .c64-re-tools/knowledge.db (06, 17 §9).
+
+import { existsSync, mkdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { join } from "node:path";
+
+import { projectRoot } from "../project.ts";
+import { migrate } from "./schema.ts";
+
+export const KNOWLEDGE_DIRECTORY = ".c64-re-tools";
+export const KNOWLEDGE_FILE = "knowledge.db";
+
+export const KNOWLEDGE_ERROR_CODES = [
+  "invalid-input",
+  "not-found",
+  "conflict",
+  "stale-revision",
+  "invalid-database",
+  "unsupported-migration",
+] as const;
+export type KnowledgeErrorCode = (typeof KNOWLEDGE_ERROR_CODES)[number];
+
+/** A refused knowledge operation, with a stable code and an actionable message. */
+export class KnowledgeError extends Error {
+  override name = "KnowledgeError";
+  readonly code: KnowledgeErrorCode;
+
+  constructor(code: KnowledgeErrorCode, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+export function knowledgePath(root: string = projectRoot()): string {
+  return join(root, KNOWLEDGE_DIRECTORY, KNOWLEDGE_FILE);
+}
+
+function configure(db: DatabaseSync): void {
+  // A committed write must be complete in knowledge.db itself: rollback journal, never WAL (17 §6).
+  db.exec("PRAGMA journal_mode = DELETE; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+}
+
+function open(path: string): DatabaseSync {
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(path);
+    configure(db);
+    db.prepare("SELECT count(*) FROM sqlite_master").get();
+  } catch (error) {
+    throw new KnowledgeError("invalid-database", `${KNOWLEDGE_DIRECTORY}/${KNOWLEDGE_FILE} is not a readable SQLite database: ${(error as Error).message}`);
+  }
+  return db;
+}
+
+/**
+ * Opens the project's knowledge database, migrating it to this build's schema.
+ * Returns undefined when it does not exist: a missing database reads as empty
+ * knowledge and is not created by a read (17 §3).
+ */
+export function openForRead(root: string = projectRoot()): DatabaseSync | undefined {
+  const path = knowledgePath(root);
+  if (!existsSync(path)) return undefined;
+  const db = open(path);
+  try {
+    migrate(db);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  return db;
+}
+
+/** Opens the project's knowledge database for a write, creating .c64-re-tools/knowledge.db when needed. */
+export function openForWrite(root: string = projectRoot()): DatabaseSync {
+  const path = knowledgePath(root);
+  mkdirSync(join(root, KNOWLEDGE_DIRECTORY), { recursive: true });
+  const db = open(path);
+  try {
+    migrate(db);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  return db;
+}
+
+/** Runs `work` in one immediate transaction: all of it commits, or none of it does. */
+export function transaction<T>(db: DatabaseSync, work: () => T): T {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = work();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
