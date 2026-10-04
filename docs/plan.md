@@ -90,11 +90,20 @@ Acceptance (19 §6): from a clean C64 project directory, a knowledge read needs 
 - [x] M4.4 **c64-knowledge skill** — `skills/c64-knowledge/scripts/knowledge.ts` (compact JSON in and out) and `SKILL.md` (ASD-STE100).
 - [x] M4.5 **Acceptance** — the 19 §6 scenario through the script in a clean temporary project.
 
+## M5 — Native-tool request seam + ACME
+
+Acceptance (19 §7): a fixture source program assembles through the c64-assembler script, the Host Runtime and real ACME, then loads into VICE through the MCP and reaches a known state. ACME never enters the MCP.
+
+- [ ] M5.1 **Tool requests on the wire** — typed tool operations on `tool` connections, attachments in replies, per-request abort when the client goes away, `src/host-client/tools.ts`, source-tree transfer with the 16 §4 symlink rules.
+- [ ] M5.2 **Staging, discovery, bounded runs** — `src/host/staging.ts` (request workspaces, safe tree materialization, cleanup), `src/host/tools/discover.ts` (`C64RT_<TOOL>` or `PATH`, refusal by name with the remedy), a bounded child run (timeout, output cap, process group).
+- [ ] M5.3 **ACME adapter** — `src/host/tools/acme.ts`: argv from the typed request (16 §8), diagnostics and symbol parsing, PRG validation; unit tests and a real-ACME test.
+- [ ] M5.4 **c64-assembler skill** — `skills/c64-assembler/scripts/assemble.ts` writes the program to a project path and reports diagnostics and symbols; `SKILL.md` (ASD-STE100).
+- [ ] M5.5 **Acceptance** — source → c64-assembler → Host Runtime → ACME → PRG → `c64_program_load` → VICE reaches a known state.
+
 ## Later milestones
 
 Expand each into steps when it starts.
 
-- [ ] **M5** Native-tool seam + ACME + c64-assembler: assemble → load → known state in VICE.
 - [ ] **M6** c1541 + petcat: the c64-disk and c64-basic skills.
 - [ ] **M7** DXA + normalized-findings importer: the c64-static-analysis skill.
 - [ ] **M8** Ghidra + NMOS SLEIGH language (all 105 undocumented opcodes) on the same importer.
