@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The c64-re-tools NMOS 6510 language: all 256 opcodes of the C64 CPU. -->
+<language_definitions>
+  <language processor="C64RT_6510"
+            endian="little"
+            size="16"
+            variant="nmos"
+            version="1.0"
+            slafile="c64rt_6510.sla"
+            processorspec="c64rt_6510.pspec"
+            id="C64RT_6510:LE:16:nmos">
+    <description>NMOS 6510 (C64) with all undocumented opcodes</description>
+    <compiler name="default" spec="c64rt_6510.cspec" id="default"/>
+  </language>
+</language_definitions>

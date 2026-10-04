@@ -1,0 +1,595 @@
+# NMOS 6502/6510 for the C64: all 256 opcodes.
+#
+# The 151 documented opcodes, plus the 105 undocumented ones:
+# - deterministic ones (SLO RLA SRE RRA SAX LAX DCP ISC ANC ALR ARR SBX USBC
+#   LAS and the NOPs with operands) have full p-code;
+# - unstable ones (ANE LXA SHA SHX SHY TAS) keep their inputs and addresses
+#   but compute their value with an opaque pcodeop;
+# - JAM halts the CPU: it loops on itself, so flow never falls through.
+# ADC, SBC and the undocumented instructions that use them (RRA ISC USBC ARR)
+# follow NMOS decimal mode when D is set. The processor spec tracks D=0 at
+# function entry, so code that never sets D decompiles without the decimal path.
+#
+# Registers and stack follow Ghidra's 6502 language. JSR pushes the return
+# address minus one and RTS adds one, as the CPU does, so return-address tricks
+# resolve correctly.
+
+define endian=little;
+define alignment=1;
+
+define space RAM      type=ram_space      size=2 default;
+define space register type=register_space size=1;
+
+define register offset=0x00 size=1 [ A X Y P ];
+define register offset=0x20 size=2 [ PC SP ];
+define register offset=0x20 size=1 [ PCL PCH S SH ];
+define register offset=0x30 size=1 [ N V B D I Z C ];
+
+define token opbyte (8)
+	op  = (0,7)
+	aaa = (5,7)
+	bbb = (2,4)
+	cc  = (0,1)
+;
+
+define token data8 (8)
+	imm8 = (0,7)
+	rel  = (0,7) signed
+	zpff = (0,7)
+;
+
+define token data16 (16)
+	imm16 = (0,15)
+	abslo = (0,7)
+	abshi = (8,15)
+;
+
+# Unstable undocumented instructions: the result depends on the chip and the bus.
+define pcodeop ane;
+define pcodeop lxa;
+define pcodeop sha;
+define pcodeop shx;
+define pcodeop shy;
+define pcodeop tas;
+# The CPU stops until a reset.
+define pcodeop jam;
+
+macro resultFlags(value) {
+	Z = (value == 0);
+	N = (value s< 0);
+}
+
+macro pushP(brk) {
+	local p:1 = (N << 7) | (V << 6) | 0x20 | (brk << 4) | (D << 3) | (I << 2) | (Z << 1) | C;
+	*:1 SP = p;
+	SP = SP - 1;
+}
+
+macro pullP() {
+	SP = SP + 1;
+	local p:1 = *:1 SP;
+	N = p[7,1];
+	V = p[6,1];
+	B = p[4,1];
+	D = p[3,1];
+	I = p[2,1];
+	Z = p[1,1];
+	C = p[0,1];
+}
+
+macro adcBinary(value) {
+	local sum:2 = zext(A) + zext(value) + zext(C);
+	local r:1 = sum:1;
+	V = ((A ^ r) & (value ^ r) & 0x80) != 0;
+	C = sum > 0xff;
+	A = r;
+	resultFlags(A);
+}
+
+# NMOS decimal ADC: N and V come from the intermediate result, Z from the binary sum.
+macro adcDecimal(value) {
+	local a2:2 = zext(A);
+	local b2:2 = zext(value);
+	local c2:2 = zext(C);
+	Z = ((a2 + b2 + c2) & 0xff) == 0;
+	local al:2 = (a2 & 0x0f) + (b2 & 0x0f) + c2;
+	local low:2 = zext(al >= 0x0a);
+	al = ((((al + 0x06) & 0x0f) + 0x10) * low) + (al * (1 - low));
+	local sum:2 = (a2 & 0xf0) + (b2 & 0xf0) + al;
+	N = (sum & 0x80) != 0;
+	local signed:2 = sext(A & 0xf0) + sext(value & 0xf0) + al;
+	V = (signed s< -128) || (signed s> 127);
+	local high:2 = zext(sum >= 0xa0);
+	sum = sum + (0x60 * high);
+	C = sum > 0xff;
+	A = sum:1;
+}
+
+macro sbcBinary(value) {
+	adcBinary(~value);
+}
+
+# NMOS decimal SBC: the flags are the binary ones.
+macro sbcDecimal(value) {
+	local a2:2 = zext(A);
+	local b2:2 = zext(value);
+	local c2:2 = zext(C);
+	local binary:2 = a2 + zext(~value) + c2;
+	local r:1 = binary:1;
+	V = ((A ^ r) & ((~value) ^ r) & 0x80) != 0;
+	resultFlags(r);
+	local al:2 = (a2 & 0x0f) - (b2 & 0x0f) + c2 - 1;
+	local low:2 = zext(al s< 0);
+	al = (((((al - 0x06) & 0x0f) - 0x10)) * low) + (al * (1 - low));
+	local diff:2 = (a2 & 0xf0) - (b2 & 0xf0) + al;
+	local high:2 = zext(diff s< 0);
+	diff = diff - (0x60 * high);
+	C = binary > 0xff;
+	A = diff:1;
+}
+
+macro compare(register, value) {
+	local r:1 = register - value;
+	resultFlags(r);
+	C = register >= value;
+}
+
+################################################################
+# Operand tables selected by the opcode's bbb bits (the rest of the opcode
+# selects the instruction). A table has no row for a bbb that the
+# instruction does not have, so that opcode decodes as another instruction.
+
+# ORA AND EOR ADC LDA CMP SBC
+OP1: "#"imm8     is bbb=2; imm8          { local v:1 = imm8; export v; }
+OP1: imm8        is bbb=1; imm8          { export *:1 imm8; }
+OP1: imm8,X      is bbb=5 & X; imm8      { local a:2 = zext(imm8 + X); export *:1 a; }
+OP1: imm16       is bbb=3; imm16         { export *:1 imm16; }
+OP1: imm16,X     is bbb=7 & X; imm16     { local a:2 = imm16 + zext(X); export *:1 a; }
+OP1: imm16,Y     is bbb=6 & Y; imm16     { local a:2 = imm16 + zext(Y); export *:1 a; }
+OP1: (imm8,X)    is bbb=0 & X; imm8      { local z:2 = zext(imm8 + X); local a:2 = *:2 z; export *:1 a; }
+OP1: (imm8),Y    is bbb=4 & Y; imm8      { local z:2 = imm8; local a:2 = (*:2 z) + zext(Y); export *:1 a; }
+# (zp),Y with zp $ff: the pointer's high byte comes from $00.
+OP1: (imm8),Y    is bbb=4 & Y; imm8 & zpff=0xff { local a:2 = (zext(*:1 0x00:2) << 8 | zext(*:1 0xff:2)) + zext(Y); export *:1 a; }
+
+# STA and the undocumented SLO RLA SRE RRA DCP ISC: as OP1 without immediate.
+MEM: imm8        is bbb=1; imm8          { export *:1 imm8; }
+MEM: imm8,X      is bbb=5 & X; imm8      { local a:2 = zext(imm8 + X); export *:1 a; }
+MEM: imm16       is bbb=3; imm16         { export *:1 imm16; }
+MEM: imm16,X     is bbb=7 & X; imm16     { local a:2 = imm16 + zext(X); export *:1 a; }
+MEM: imm16,Y     is bbb=6 & Y; imm16     { local a:2 = imm16 + zext(Y); export *:1 a; }
+MEM: (imm8,X)    is bbb=0 & X; imm8      { local z:2 = zext(imm8 + X); local a:2 = *:2 z; export *:1 a; }
+MEM: (imm8),Y    is bbb=4 & Y; imm8      { local z:2 = imm8; local a:2 = (*:2 z) + zext(Y); export *:1 a; }
+MEM: (imm8),Y    is bbb=4 & Y; imm8 & zpff=0xff { local a:2 = (zext(*:1 0x00:2) << 8 | zext(*:1 0xff:2)) + zext(Y); export *:1 a; }
+
+# ASL ROL LSR ROR
+SHIFT: A         is bbb=2 & A            { export A; }
+SHIFT: imm8      is bbb=1; imm8          { export *:1 imm8; }
+SHIFT: imm8,X    is bbb=5 & X; imm8      { local a:2 = zext(imm8 + X); export *:1 a; }
+SHIFT: imm16     is bbb=3; imm16         { export *:1 imm16; }
+SHIFT: imm16,X   is bbb=7 & X; imm16     { local a:2 = imm16 + zext(X); export *:1 a; }
+
+# INC DEC
+INCDEC: imm8     is bbb=1; imm8          { export *:1 imm8; }
+INCDEC: imm8,X   is bbb=5 & X; imm8      { local a:2 = zext(imm8 + X); export *:1 a; }
+INCDEC: imm16    is bbb=3; imm16         { export *:1 imm16; }
+INCDEC: imm16,X  is bbb=7 & X; imm16     { local a:2 = imm16 + zext(X); export *:1 a; }
+
+# LDX
+LDXM: "#"imm8    is bbb=0; imm8          { local v:1 = imm8; export v; }
+LDXM: imm8       is bbb=1; imm8          { export *:1 imm8; }
+LDXM: imm8,Y     is bbb=5 & Y; imm8      { local a:2 = zext(imm8 + Y); export *:1 a; }
+LDXM: imm16      is bbb=3; imm16         { export *:1 imm16; }
+LDXM: imm16,Y    is bbb=7 & Y; imm16     { local a:2 = imm16 + zext(Y); export *:1 a; }
+
+# STX
+STXM: imm8       is bbb=1; imm8          { export *:1 imm8; }
+STXM: imm8,Y     is bbb=5 & Y; imm8      { local a:2 = zext(imm8 + Y); export *:1 a; }
+STXM: imm16      is bbb=3; imm16         { export *:1 imm16; }
+
+# LDY
+LDYM: "#"imm8    is bbb=0; imm8          { local v:1 = imm8; export v; }
+LDYM: imm8       is bbb=1; imm8          { export *:1 imm8; }
+LDYM: imm8,X     is bbb=5 & X; imm8      { local a:2 = zext(imm8 + X); export *:1 a; }
+LDYM: imm16      is bbb=3; imm16         { export *:1 imm16; }
+LDYM: imm16,X    is bbb=7 & X; imm16     { local a:2 = imm16 + zext(X); export *:1 a; }
+
+# STY
+STYM: imm8       is bbb=1; imm8          { export *:1 imm8; }
+STYM: imm8,X     is bbb=5 & X; imm8      { local a:2 = zext(imm8 + X); export *:1 a; }
+STYM: imm16      is bbb=3; imm16         { export *:1 imm16; }
+
+# CPX CPY
+CPM: "#"imm8     is bbb=0; imm8          { local v:1 = imm8; export v; }
+CPM: imm8        is bbb=1; imm8          { export *:1 imm8; }
+CPM: imm16       is bbb=3; imm16         { export *:1 imm16; }
+
+# Operand tables for instructions decoded by their full opcode.
+IMMB: "#"imm8    is imm8                 { local v:1 = imm8; export v; }
+ZPB: imm8        is imm8                 { export *:1 imm8; }
+ZPXB: imm8,X     is X & imm8             { local a:2 = zext(imm8 + X); export *:1 a; }
+ZPYB: imm8,Y     is Y & imm8             { local a:2 = zext(imm8 + Y); export *:1 a; }
+ABSB: imm16      is imm16                { export *:1 imm16; }
+ABSXB: imm16,X   is X & imm16            { local a:2 = imm16 + zext(X); export *:1 a; }
+ABSYB: imm16,Y   is Y & imm16            { local a:2 = imm16 + zext(Y); export *:1 a; }
+INDXB: (imm8,X)  is X & imm8             { local z:2 = zext(imm8 + X); local a:2 = *:2 z; export *:1 a; }
+INDYB: (imm8),Y  is Y & imm8             { local z:2 = imm8; local a:2 = (*:2 z) + zext(Y); export *:1 a; }
+
+REL: target      is rel [ target = inst_next + rel; ] { export *:2 target; }
+
+################################################################
+# Documented instructions
+
+:ADC OP1 is (cc=1 & aaa=3) ... & OP1 {
+	local value:1 = OP1;
+	if (D) goto <decimal>;
+	adcBinary(value);
+	goto <done>;
+<decimal>
+	adcDecimal(value);
+<done>
+}
+
+:AND OP1 is (cc=1 & aaa=1) ... & OP1 { A = A & OP1; resultFlags(A); }
+
+:ASL SHIFT is (cc=2 & aaa=0) ... & SHIFT {
+	local value:1 = SHIFT;
+	C = value >> 7;
+	value = value << 1;
+	SHIFT = value;
+	resultFlags(value);
+}
+
+:BCC REL is op=0x90; REL { if (C == 0) goto REL; }
+:BCS REL is op=0xB0; REL { if (C) goto REL; }
+:BEQ REL is op=0xF0; REL { if (Z) goto REL; }
+:BMI REL is op=0x30; REL { if (N) goto REL; }
+:BNE REL is op=0xD0; REL { if (Z == 0) goto REL; }
+:BPL REL is op=0x10; REL { if (N == 0) goto REL; }
+:BVC REL is op=0x50; REL { if (V == 0) goto REL; }
+:BVS REL is op=0x70; REL { if (V) goto REL; }
+
+:BIT ZPB is op=0x24; ZPB {
+	local value:1 = ZPB;
+	N = value[7,1];
+	V = value[6,1];
+	Z = (A & value) == 0;
+}
+:BIT ABSB is op=0x2C; ABSB {
+	local value:1 = ABSB;
+	N = value[7,1];
+	V = value[6,1];
+	Z = (A & value) == 0;
+}
+
+# BRK skips its padding byte: the return address is two bytes on.
+:BRK is op=0x00 {
+	*:2 (SP - 1) = inst_next + 1;
+	SP = SP - 2;
+	pushP(1);
+	I = 1;
+	local vector:2 = 0xfffe;
+	goto [*:2 vector];
+}
+
+:CLC is op=0x18 { C = 0; }
+:CLD is op=0xD8 { D = 0; }
+:CLI is op=0x58 { I = 0; }
+:CLV is op=0xB8 { V = 0; }
+
+:CMP OP1 is (cc=1 & aaa=6) ... & OP1 { local value:1 = OP1; compare(A, value); }
+:CPX CPM is (cc=0 & aaa=7) ... & CPM { local value:1 = CPM; compare(X, value); }
+:CPY CPM is (cc=0 & aaa=6) ... & CPM { local value:1 = CPM; compare(Y, value); }
+
+:DEC INCDEC is (cc=2 & aaa=6) ... & INCDEC { local value:1 = INCDEC - 1; INCDEC = value; resultFlags(value); }
+:DEX is op=0xCA { X = X - 1; resultFlags(X); }
+:DEY is op=0x88 { Y = Y - 1; resultFlags(Y); }
+
+:EOR OP1 is (cc=1 & aaa=2) ... & OP1 { A = A ^ OP1; resultFlags(A); }
+
+:INC INCDEC is (cc=2 & aaa=7) ... & INCDEC { local value:1 = INCDEC + 1; INCDEC = value; resultFlags(value); }
+:INX is op=0xE8 { X = X + 1; resultFlags(X); }
+:INY is op=0xC8 { Y = Y + 1; resultFlags(Y); }
+
+:JMP ABSB is op=0x4C; ABSB { goto ABSB; }
+# The NMOS indirect JMP does not carry into the high byte of the pointer address.
+:JMP (imm16) is op=0x6C; imm16 { local pointer:2 = imm16; goto [*:2 pointer]; }
+:JMP (imm16) is op=0x6C; imm16 & abslo=0xff {
+	local low:2 = imm16;
+	local high:2 = imm16 & 0xff00;
+	local target:2 = zext(*:1 low) | (zext(*:1 high) << 8);
+	goto [target];
+}
+
+:JSR ABSB is op=0x20; ABSB {
+	*:2 (SP - 1) = inst_next - 1;
+	SP = SP - 2;
+	call ABSB;
+}
+
+:LDA OP1 is (cc=1 & aaa=5) ... & OP1 { A = OP1; resultFlags(A); }
+:LDX LDXM is (cc=2 & aaa=5) ... & LDXM { X = LDXM; resultFlags(X); }
+:LDY LDYM is (cc=0 & aaa=5) ... & LDYM { Y = LDYM; resultFlags(Y); }
+
+:LSR SHIFT is (cc=2 & aaa=2) ... & SHIFT {
+	local value:1 = SHIFT;
+	C = value & 1;
+	value = value >> 1;
+	SHIFT = value;
+	resultFlags(value);
+}
+
+:NOP is op=0xEA { }
+
+:ORA OP1 is (cc=1 & aaa=0) ... & OP1 { A = A | OP1; resultFlags(A); }
+
+:PHA is op=0x48 { *:1 SP = A; SP = SP - 1; }
+:PHP is op=0x08 { pushP(1); }
+:PLA is op=0x68 { SP = SP + 1; A = *:1 SP; resultFlags(A); }
+:PLP is op=0x28 { pullP(); }
+
+:ROL SHIFT is (cc=2 & aaa=1) ... & SHIFT {
+	local value:1 = SHIFT;
+	local carry:1 = C;
+	C = value >> 7;
+	value = (value << 1) | carry;
+	SHIFT = value;
+	resultFlags(value);
+}
+
+:ROR SHIFT is (cc=2 & aaa=3) ... & SHIFT {
+	local value:1 = SHIFT;
+	local carry:1 = C << 7;
+	C = value & 1;
+	value = (value >> 1) | carry;
+	SHIFT = value;
+	resultFlags(value);
+}
+
+:RTI is op=0x40 {
+	pullP();
+	SP = SP + 1;
+	local target:2 = *:2 SP;
+	SP = SP + 1;
+	return [target];
+}
+
+:RTS is op=0x60 {
+	SP = SP + 1;
+	local target:2 = *:2 SP;
+	SP = SP + 1;
+	target = target + 1;
+	return [target];
+}
+
+:SBC OP1 is (cc=1 & aaa=7) ... & OP1 {
+	local value:1 = OP1;
+	if (D) goto <decimal>;
+	sbcBinary(value);
+	goto <done>;
+<decimal>
+	sbcDecimal(value);
+<done>
+}
+
+:SEC is op=0x38 { C = 1; }
+:SED is op=0xF8 { D = 1; }
+:SEI is op=0x78 { I = 1; }
+
+:STA MEM is (cc=1 & aaa=4) ... & MEM { MEM = A; }
+:STX STXM is (cc=2 & aaa=4) ... & STXM { STXM = X; }
+:STY STYM is (cc=0 & aaa=4) ... & STYM { STYM = Y; }
+
+:TAX is op=0xAA { X = A; resultFlags(X); }
+:TAY is op=0xA8 { Y = A; resultFlags(Y); }
+:TSX is op=0xBA { X = S; resultFlags(X); }
+:TXA is op=0x8A { A = X; resultFlags(A); }
+:TXS is op=0x9A { S = X; }
+:TYA is op=0x98 { A = Y; resultFlags(A); }
+
+################################################################
+# Undocumented instructions: deterministic
+
+# SLO: ASL memory, then ORA.
+:SLO MEM is (cc=3 & aaa=0) ... & MEM {
+	local value:1 = MEM;
+	C = value >> 7;
+	value = value << 1;
+	MEM = value;
+	A = A | value;
+	resultFlags(A);
+}
+
+# RLA: ROL memory, then AND.
+:RLA MEM is (cc=3 & aaa=1) ... & MEM {
+	local value:1 = MEM;
+	local carry:1 = C;
+	C = value >> 7;
+	value = (value << 1) | carry;
+	MEM = value;
+	A = A & value;
+	resultFlags(A);
+}
+
+# SRE: LSR memory, then EOR.
+:SRE MEM is (cc=3 & aaa=2) ... & MEM {
+	local value:1 = MEM;
+	C = value & 1;
+	value = value >> 1;
+	MEM = value;
+	A = A ^ value;
+	resultFlags(A);
+}
+
+# RRA: ROR memory, then ADC (decimal mode applies).
+:RRA MEM is (cc=3 & aaa=3) ... & MEM {
+	local value:1 = MEM;
+	local carry:1 = C << 7;
+	C = value & 1;
+	value = (value >> 1) | carry;
+	MEM = value;
+	if (D) goto <decimal>;
+	adcBinary(value);
+	goto <done>;
+<decimal>
+	adcDecimal(value);
+<done>
+}
+
+# SAX: store A AND X; no flags.
+:SAX INDXB is op=0x83; INDXB { INDXB = A & X; }
+:SAX ZPB   is op=0x87; ZPB   { ZPB = A & X; }
+:SAX ABSB  is op=0x8F; ABSB  { ABSB = A & X; }
+:SAX ZPYB  is op=0x97; ZPYB  { ZPYB = A & X; }
+
+# LAX: load A and X.
+:LAX INDXB is op=0xA3; INDXB { A = INDXB; X = A; resultFlags(A); }
+:LAX ZPB   is op=0xA7; ZPB   { A = ZPB; X = A; resultFlags(A); }
+:LAX ABSB  is op=0xAF; ABSB  { A = ABSB; X = A; resultFlags(A); }
+:LAX INDYB is op=0xB3; INDYB { A = INDYB; X = A; resultFlags(A); }
+:LAX ZPYB  is op=0xB7; ZPYB  { A = ZPYB; X = A; resultFlags(A); }
+:LAX ABSYB is op=0xBF; ABSYB { A = ABSYB; X = A; resultFlags(A); }
+
+# DCP: DEC memory, then CMP.
+:DCP MEM is (cc=3 & aaa=6) ... & MEM {
+	local value:1 = MEM - 1;
+	MEM = value;
+	compare(A, value);
+}
+
+# ISC: INC memory, then SBC (decimal mode applies).
+:ISC MEM is (cc=3 & aaa=7) ... & MEM {
+	local value:1 = MEM + 1;
+	MEM = value;
+	if (D) goto <decimal>;
+	sbcBinary(value);
+	goto <done>;
+<decimal>
+	sbcDecimal(value);
+<done>
+}
+
+# ANC: AND, then C = N.
+:ANC IMMB is (op=0x0B | op=0x2B); IMMB { A = A & IMMB; resultFlags(A); C = N; }
+
+# ALR: AND, then LSR A.
+:ALR IMMB is op=0x4B; IMMB {
+	local value:1 = A & IMMB;
+	C = value & 1;
+	A = value >> 1;
+	resultFlags(A);
+}
+
+# ARR: AND, then ROR A, with its own flags; NMOS decimal mode adjusts the result.
+:ARR IMMB is op=0x6B; IMMB {
+	local t:1 = A & IMMB;
+	local r:1 = (t >> 1) | (C << 7);
+	if (D) goto <decimal>;
+	A = r;
+	resultFlags(A);
+	C = r[6,1];
+	V = r[6,1] ^ r[5,1];
+	goto <done>;
+<decimal>
+	N = C;
+	Z = (r == 0);
+	V = ((t ^ r) & 0x40) != 0;
+	local t2:2 = zext(t);
+	local low:1 = ((t2 & 0x0f) + (t2 & 0x01)) > 5;
+	r = (((r & 0xf0) | ((r + 6) & 0x0f)) * low) + (r * (1 - low));
+	local high:1 = ((t2 & 0xf0) + (t2 & 0x10)) > 0x50;
+	r = (((r & 0x0f) | ((r + 0x60) & 0xf0)) * high) + (r * (1 - high));
+	C = high;
+	A = r;
+<done>
+}
+
+# SBX: X = (A AND X) - operand, compare-style carry; no decimal mode.
+:SBX IMMB is op=0xCB; IMMB {
+	local value:1 = IMMB;
+	local t:1 = A & X;
+	C = t >= value;
+	X = t - value;
+	resultFlags(X);
+}
+
+# USBC: the same as SBC #imm.
+:USBC IMMB is op=0xEB; IMMB {
+	local value:1 = IMMB;
+	if (D) goto <decimal>;
+	sbcBinary(value);
+	goto <done>;
+<decimal>
+	sbcDecimal(value);
+<done>
+}
+
+# LAS: memory AND S into A, X and S.
+:LAS ABSYB is op=0xBB; ABSYB {
+	local value:1 = ABSYB & S;
+	A = value;
+	X = value;
+	S = value;
+	resultFlags(value);
+}
+
+# NOPs with operands read their operand and change nothing.
+:NOP IMMB  is (op=0x80 | op=0x82 | op=0x89 | op=0xC2 | op=0xE2); IMMB { }
+:NOP ZPB   is (op=0x04 | op=0x44 | op=0x64); ZPB { }
+:NOP ZPXB  is (op=0x14 | op=0x34 | op=0x54 | op=0x74 | op=0xD4 | op=0xF4); ZPXB { }
+:NOP ABSB  is op=0x0C; ABSB { }
+:NOP ABSXB is (op=0x1C | op=0x3C | op=0x5C | op=0x7C | op=0xDC | op=0xFC); ABSXB { }
+:NOP       is (op=0x1A | op=0x3A | op=0x5A | op=0x7A | op=0xDA | op=0xFA) { }
+
+# JAM: the CPU stops. It is modelled as a loop on itself, so no flow falls through.
+:JAM is (op=0x02 | op=0x12 | op=0x22 | op=0x32 | op=0x42 | op=0x52 | op=0x62 | op=0x72 | op=0x92 | op=0xB2 | op=0xD2 | op=0xF2) {
+	jam();
+	goto inst_start;
+}
+
+################################################################
+# Undocumented instructions: unstable
+#
+# The data-flow inputs and the effective address stay visible; the value is
+# opaque. H+1 is the high byte of the base address plus one.
+
+# ANE (XAA): A = (A OR magic) AND X AND operand.
+:ANE IMMB is op=0x8B; IMMB { A = ane(A, X, IMMB); resultFlags(A); }
+
+# LXA: A = X = (A OR magic) AND operand.
+:LXA IMMB is op=0xAB; IMMB { local value:1 = lxa(A, IMMB); A = value; X = value; resultFlags(value); }
+
+# SHA (AHX): store A AND X AND H+1.
+:SHA (imm8),Y is op=0x93 & Y; imm8 {
+	local z:2 = imm8;
+	local base:2 = *:2 z;
+	local address:2 = base + zext(Y);
+	local high:1 = base(1) + 1;
+	*:1 address = sha(A, X, high);
+}
+:SHA imm16,Y is op=0x9F & Y; imm16 & abshi {
+	local address:2 = imm16 + zext(Y);
+	local high:1 = abshi + 1;
+	*:1 address = sha(A, X, high);
+}
+
+# SHX: store X AND H+1.
+:SHX imm16,Y is op=0x9E & Y; imm16 & abshi {
+	local address:2 = imm16 + zext(Y);
+	local high:1 = abshi + 1;
+	*:1 address = shx(X, high);
+}
+
+# SHY: store Y AND H+1.
+:SHY imm16,X is op=0x9C & X; imm16 & abshi {
+	local address:2 = imm16 + zext(X);
+	local high:1 = abshi + 1;
+	*:1 address = shy(Y, high);
+}
+
+# TAS: S = A AND X, then store S AND H+1.
+:TAS imm16,Y is op=0x9B & Y; imm16 & abshi {
+	S = A & X;
+	local address:2 = imm16 + zext(Y);
+	local high:1 = abshi + 1;
+	*:1 address = tas(S, high);
+}

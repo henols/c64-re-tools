@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  No default memory blocks or vector symbols: the importer makes the blocks
+  for the loaded program and the rest of the 64 KiB address space.
+  D is tracked as 0 at function entry, so the decimal path of ADC and SBC
+  disappears from decompiled code that never sets decimal mode.
+-->
+<processor_spec>
+  <programcounter register="PC"/>
+  <context_data>
+    <tracked_set space="RAM">
+      <set name="D" val="0"/>
+    </tracked_set>
+  </context_data>
+</processor_spec>
