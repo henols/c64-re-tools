@@ -6,6 +6,8 @@ name: Live
 # package is VICE 3.9 (Ubuntu 24.04 has 3.7.1).
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       files:
