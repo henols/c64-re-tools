@@ -17,7 +17,7 @@ import {
   type MonitorResponse,
 } from "../../../src/host/vice/binary-monitor.ts";
 import { launchVice } from "../../../src/host/vice/process.ts";
-import { liveEnv, liveSkip } from "./live.ts";
+import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 function isAlive(pid: number): boolean {
   try {
@@ -42,7 +42,7 @@ function scratchDirOf(pid: number): string | undefined {
 test("VICE launches ready, serves the binary monitor and stops completely", { skip: liveSkip, timeout: 60_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const vice = await launchVice({ videoStandard: "pal", supervisor, env: liveEnv() });
+  const vice = await launchVice({ videoStandard: "pal", supervisor, env: liveEnv(), log: liveLog });
   try {
     const events: MonitorResponse[] = [];
     vice.monitor.onEvent((event) => events.push(event));
@@ -94,7 +94,7 @@ test("VICE launches ready, serves the binary monitor and stops completely", { sk
 test("an NTSC session launches", { skip: liveSkip, timeout: 60_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const vice = await launchVice({ videoStandard: "ntsc", supervisor, env: liveEnv() });
+  const vice = await launchVice({ videoStandard: "ntsc", supervisor, env: liveEnv(), log: liveLog });
   try {
     assert.equal((await vice.monitor.request(Command.ping)).type, Command.ping);
   } finally {
@@ -105,7 +105,7 @@ test("an NTSC session launches", { skip: liveSkip, timeout: 60_000 }, async () =
 test("a VICE killed from outside is seen as exited", { skip: liveSkip, timeout: 60_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const vice = await launchVice({ videoStandard: "pal", supervisor, env: liveEnv() });
+  const vice = await launchVice({ videoStandard: "pal", supervisor, env: liveEnv(), log: liveLog });
   const pid = vice.pid;
   process.kill(pid, "SIGKILL");
   await vice.exited;
@@ -125,7 +125,7 @@ async function waitFor(condition: () => boolean, timeoutMs = 5000): Promise<void
 test("the text monitor answers beside the binary one and both act on one machine", { skip: liveSkip, timeout: 60_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const vice = await launchVice({ videoStandard: "pal", supervisor, env: liveEnv() });
+  const vice = await launchVice({ videoStandard: "pal", supervisor, env: liveEnv(), log: liveLog });
   try {
     const events: MonitorResponse[] = [];
     vice.monitor.onEvent((event) => events.push(event));

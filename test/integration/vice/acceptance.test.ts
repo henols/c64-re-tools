@@ -18,7 +18,7 @@ import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { Command } from "../../../src/host/vice/binary-monitor.ts";
 import { launchVice } from "../../../src/host/vice/process.ts";
 import { ViceSession } from "../../../src/host/vice/session.ts";
-import { liveEnv, liveSkip, viceChildren } from "./live.ts";
+import { liveEnv, liveLog, liveSkip, viceChildren } from "./live.ts";
 
 const root = resolve(import.meta.dirname, "../../..");
 const hosts: ChildProcess[] = [];
@@ -108,7 +108,7 @@ test("a stopped machine reports stopped with its pc, and reads keep it stopped",
   // a raw monitor command stops real VICE exactly as a breakpoint would.
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const vice = await launchVice({ videoStandard: "pal", supervisor, env: liveEnv() });
+  const vice = await launchVice({ videoStandard: "pal", supervisor, env: liveEnv(), log: liveLog });
   const session = await ViceSession.start(vice, "pal");
   try {
     await vice.monitor.request(Command.ping);

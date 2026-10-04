@@ -22,7 +22,7 @@ after(async () => {
 async function open(videoStandard: VideoStandard): Promise<{ session: ViceSession; vice: ViceProcess }> {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const vice = await launchVice({ videoStandard, supervisor, env: liveEnv() });
+  const vice = await launchVice({ videoStandard, supervisor, env: liveEnv(), log: liveLog });
   const session = await ViceSession.start(vice, videoStandard, liveLog);
   opened.push(session);
   return { session, vice };
