@@ -22,6 +22,40 @@ import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 import { videoTools } from "./tools/video.ts";
 
+/** The frozen v1 public tool list, 15 §37, in its order. */
+const PUBLIC_TOOLS = [
+  "c64_status",
+  "c64_reset",
+  "c64_warp",
+  "c64_execution",
+  "c64_run_until",
+  "c64_breakpoint",
+  "c64_watchpoint",
+  "c64_cpu_history",
+  "c64_backtrace",
+  "c64_profile",
+  "c64_memmap",
+  "c64_timing",
+  "c64_memory_read",
+  "c64_memory_write",
+  "c64_memory_search",
+  "c64_memory_compare",
+  "c64_registers",
+  "c64_disassemble",
+  "c64_vicii",
+  "c64_sprite",
+  "c64_cia",
+  "c64_sid",
+  "c64_screen",
+  "c64_observe",
+  "c64_keyboard",
+  "c64_joystick",
+  "c64_autostart",
+  "c64_program_load",
+  "c64_disk_attach",
+  "c64_snapshot",
+] as const;
+
 const ALL_TOOLS = [...machineTools, ...executionTools, ...debugTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools];
 
 const REGISTERS: Registers = { pc: 0xe5cf, a: 0x42, x: 3, y: 0, sp: 0xf9, flags: { n: false, v: false, b: true, d: false, i: true, z: false, c: true } };
@@ -260,41 +294,10 @@ function errorOf(result: CallToolResult): { code: string; message: string } {
   return JSON.parse((first as { text: string }).text) as { code: string; message: string };
 }
 
-test("the server lists exactly the implemented tools with object input and output schemas", async () => {
+test("the server lists exactly the frozen v1 tools of 15 §37 with object input and output schemas", async () => {
   const client = await connect(async () => new FakeSession());
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map((tool) => tool.name).sort(), [
-    "c64_autostart",
-    "c64_backtrace",
-    "c64_breakpoint",
-    "c64_cia",
-    "c64_cpu_history",
-    "c64_disassemble",
-    "c64_disk_attach",
-    "c64_execution",
-    "c64_joystick",
-    "c64_keyboard",
-    "c64_memmap",
-    "c64_memory_compare",
-    "c64_memory_read",
-    "c64_memory_search",
-    "c64_memory_write",
-    "c64_observe",
-    "c64_profile",
-    "c64_program_load",
-    "c64_registers",
-    "c64_reset",
-    "c64_run_until",
-    "c64_screen",
-    "c64_sid",
-    "c64_snapshot",
-    "c64_sprite",
-    "c64_status",
-    "c64_timing",
-    "c64_vicii",
-    "c64_warp",
-    "c64_watchpoint",
-  ]);
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), [...PUBLIC_TOOLS].sort());
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object");
     assert.equal(tool.outputSchema?.type, "object");

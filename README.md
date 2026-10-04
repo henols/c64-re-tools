@@ -9,12 +9,11 @@ C64 applications.
 The project is being rebuilt from scratch. The design is frozen in
 [`docs/redesign/`](docs/redesign/README.md); start at its README.
 [`19-implementation-plan.md`](docs/redesign/19-implementation-plan.md) lists the
-milestones, and [`docs/plan.md`](docs/plan.md) tracks the steps. Milestone 2 is
-in place: through the MCP an agent can load, autostart and attach media, run,
-stop, step and reset the C64, set breakpoints, watchpoints and typed run-until
-targets, advance exact frame counts, read and write memory and registers, type
-and move joysticks, and capture the screen, all on a real VICE started by the
-Host Runtime.
+milestones, and [`docs/plan.md`](docs/plan.md) tracks the steps. Milestone 3 is
+in place: the MCP serves the whole frozen v1 tool list (30 tools) on a real
+VICE started by the Host Runtime, from execution control, breakpoints and
+exact frame advance to memory, chip state, CPU history, profiling, screen
+baselines, snapshots and one-moment observations.
 
 Architecture in one line: one MCP process owns one VICE instance and is
 VICE-only; a Host Runtime on the graphical host owns VICE and the native tools

@@ -72,6 +72,7 @@ test("the MCP opens one session at start and closes it when the harness disconne
   const server = await startHostServer({ port: 0, createViceSession: stub(state) });
   servers.push(server);
   const client = await mcp(server.port, { C64RT_VIDEO: "ntsc" });
+  assert.equal((await client.listTools()).tools.length, 30, "the built server registers every 15 §37 tool");
   assert.deepEqual((await status(client)).structuredContent, { state: "running", videoStandard: "ntsc", warp: false });
   await status(client);
   assert.deepEqual(state.opened, ["ntsc"], "one MCP process must own exactly one session");

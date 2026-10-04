@@ -78,7 +78,7 @@ Acceptance (19 §5): every public tool in 15 §37 has schema tests, host-client/
 - [x] M3.6 **Snapshots** — `c64_snapshot` save/restore/list/discard (binary dump/undump in the session scratch directory); restore finishes stopped.
 - [x] M3.7 **c64_observe** — one coherent stop for registers, memory ranges, VIC-II, sprites, CIAs, SID, screen and raster timing.
 - [x] M3.8 **drive8 execution** — step, next and until-return in space drive8. Not achievable on stock VICE 3.10: it runs the 1541 CPU in batches that catch up with the computer's clock, and neither monitor stops it after one instruction (live-tested with binary step, text `z`/`n`/`ret` under `dev 8:` and drive checkpoints). They stay `unsupported-in-space` with that reason; drive breakpoints remain. Open question for Henrik.
-- [ ] M3.9 **Acceptance** — the full 15 §37 tool list exactly; the c64-emulator skill updated for the new tools.
+- [x] M3.9 **Acceptance** — the full 15 §37 tool list exactly; the c64-emulator skill updated for the new tools.
 
 ## Later milestones
 
