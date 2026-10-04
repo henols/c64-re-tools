@@ -169,10 +169,10 @@ Release gate (19 §14): the development workflow (source → ACME → VICE → d
 - [x] M12.1 **Orphan guard (D7)** — a watchdog process per Host Runtime that stops every registered child process group when the runtime dies, also by SIGKILL. Live test: kill -9 the runtime, its VICE goes away.
 - [x] M12.2 **Crash cleanup** — the VICE scratch directory goes away on a signal and through the watchdog.
 - [x] M12.3 **Container binding (D5/D6)** — `--listen <address>` adds a bind for a container bridge; any address that is not loopback needs `C64RT_HOST_TOKEN` on both sides, checked in the handshake.
-- [ ] M12.4 **CI matrix** — unit and integration tests on Linux, macOS and Windows (Node 24), an installed-package smoke test, live suites named separately.
-- [ ] M12.5 **Release automation** — a tag workflow that builds, tests and publishes to npm with provenance.
-- [ ] M12.6 **Documentation** — README install and usage examples for both workflows.
-- [ ] M12.7 **Release gate** — both representative workflows pass live.
+- [x] M12.4 **CI matrix** — unit and integration tests on Linux, macOS and Windows (Node 24), an installed-package smoke test, live suites named separately. The Host Runtime targets Linux and macOS; on Windows its POSIX-only tests are skipped with that reason.
+- [x] M12.5 **Release automation** — a tag workflow that builds, tests and publishes to npm with provenance. Not run yet: the package stays `private: true` until the first release is decided, and the workflow needs the `NPM_TOKEN` secret.
+- [x] M12.6 **Documentation** — README install and usage examples for both workflows.
+- [x] M12.7 **Release gate** — both representative workflows pass live: the full suite with real VICE, Ghidra, ACME, c1541 and petcat, 439 of 439 twice. The reverse-engineering workflow runs without its DXA step (M7.2).
 
 
 ## Decisions
