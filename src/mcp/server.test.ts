@@ -165,8 +165,23 @@ class FakeSession implements ViceSessionApi {
     return { voices: [voice(1), voice(2), voice(3)], filter: { cutoff: 0, resonance: 0, routing: 0, mode: 0 }, volume: 15 };
   }
 
-  async screenCapture() {
-    return { width: 384, height: 272, png: Buffer.from("png-bytes").toString("base64") };
+  baselines = new Set<string>();
+  async screenCapture(baseline?: string) {
+    if (baseline !== undefined) this.baselines.add(baseline);
+    return { width: 384, height: 272, png: Buffer.from("png-bytes").toString("base64"), ...(baseline === undefined ? {} : { baseline }) };
+  }
+  compares: unknown[] = [];
+  async screenCompare(params: import("../protocol.ts").ViceOperations["screenCompare"]["params"]) {
+    this.compares.push(params);
+    const result = { match: false, mismatchingPixels: 42, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 } };
+    return params.includeDiff ? { ...result, diffPng: Buffer.from("diff").toString("base64") } : result;
+  }
+  async screenBaselines() {
+    return { baselines: [...this.baselines] };
+  }
+  async screenDiscard(baseline: string) {
+    this.baselines.delete(baseline);
+    return { discarded: true };
   }
 
   media: Array<[string, unknown]> = [];
@@ -642,5 +657,30 @@ test("profile and memmap format addresses and fill read defaults", async () => {
   assert.deepEqual((await call(client, "c64_memmap", { action: "clear" })).structuredContent, { cleared: true });
   assert.deepEqual(session.memmaps, [{ action: "read", start: 0, end: 0xffff, maxRanges: 256 }, { action: "clear" }]);
   assert.equal(errorOf(await call(client, "c64_memmap", { action: "clear", start: "$1000" })).code, "invalid-input");
+  await client.close();
+});
+
+test("c64_screen baselines: capture, compare with a diff image, list and discard", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const captured = await call(client, "c64_screen", { action: "capture", baseline: "title-original" });
+  assert.deepEqual(captured.structuredContent, { width: 384, height: 272, baseline: "title-original" });
+  assert.deepEqual((await call(client, "c64_screen", { action: "list" })).structuredContent, { baselines: ["title-original"] });
+  const compared = await call(client, "c64_screen", { action: "compare", baseline: "title-original", includeDiff: true, mask: [{ x: 250, y: 20, width: 80, height: 16 }] });
+  assert.deepEqual(compared.structuredContent, { match: false, mismatchingPixels: 42, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 } });
+  assert.deepEqual(compared.content[1], { type: "image", data: Buffer.from("diff").toString("base64"), mimeType: "image/png" });
+  assert.deepEqual(session.compares[0], { baseline: "title-original", maxMismatchRatio: 0, mask: [{ x: 250, y: 20, width: 80, height: 16 }], includeDiff: true });
+  const plain = await call(client, "c64_screen", { action: "compare", baseline: "title-original" });
+  assert.equal(plain.content.length, 1, "no image without includeDiff");
+  assert.deepEqual((await call(client, "c64_screen", { action: "discard", baseline: "title-original" })).structuredContent, { discarded: true });
+  for (const args of [
+    { action: "compare" },
+    { action: "discard" },
+    { action: "list", baseline: "x" },
+    { action: "capture", baseline: "has space" },
+    { action: "capture", mask: [] },
+  ]) {
+    assert.equal(errorOf(await call(client, "c64_screen", args)).code, "invalid-input", JSON.stringify(args));
+  }
   await client.close();
 });

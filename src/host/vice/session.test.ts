@@ -613,3 +613,34 @@ test("the profiler runs from session start; profile and memmap read through it",
   assert.equal(fake.running, true);
   await session.close();
 });
+
+test("screen baselines: capture under a name, compare with mask and ratio, list, discard", async () => {
+  const { fake, session } = await startSession();
+  fake.ram[0xd020] = 2;
+  fake.ram[0xd021] = 6;
+  assert.equal((await session.handle("screenCapture", { baseline: "title" })).baseline, "title");
+  assert.deepEqual(await session.handle("screenBaselines", {}), { baselines: ["title"] });
+
+  const same = await session.handle("screenCompare", { baseline: "title", maxMismatchRatio: 0, mask: [], includeDiff: false });
+  assert.deepEqual(same, { match: true, mismatchingPixels: 0, mismatchRatio: 0 });
+
+  // A new border colour changes every border pixel: 384x272 minus the 320x200 window.
+  fake.ram[0xd020] = 5;
+  const border = 384 * 272 - 320 * 200;
+  const changed = await session.handle("screenCompare", { baseline: "title", maxMismatchRatio: 0, mask: [], includeDiff: true });
+  assert.equal(changed.match, false);
+  assert.equal(changed.mismatchingPixels, border);
+  assert.deepEqual(changed.bounds, { x: 0, y: 0, width: 384, height: 272 });
+  assert.ok(changed.diffPng !== undefined && readPng(Buffer.from(changed.diffPng, "base64")).width === 384);
+  const tolerated = await session.handle("screenCompare", { baseline: "title", maxMismatchRatio: 0.5, mask: [], includeDiff: false });
+  assert.equal(tolerated.match, true, "the border is under half the frame");
+  // Masking the whole frame leaves nothing to compare.
+  const masked = await session.handle("screenCompare", { baseline: "title", maxMismatchRatio: 0, mask: [{ x: 0, y: 0, width: 384, height: 272 }], includeDiff: false });
+  assert.deepEqual(masked, { match: true, mismatchingPixels: 0, mismatchRatio: 0 });
+
+  assert.deepEqual(await session.handle("screenDiscard", { baseline: "title" }), { discarded: true });
+  await assert.rejects(session.handle("screenDiscard", { baseline: "title" }), failsWith("not-found"));
+  await assert.rejects(session.handle("screenCompare", { baseline: "title", maxMismatchRatio: 0, mask: [], includeDiff: false }), failsWith("not-found"));
+  assert.equal(fake.running, true);
+  await session.close();
+});

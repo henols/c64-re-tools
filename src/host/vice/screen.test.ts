@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readPng } from "./png.testkit.ts";
-import { decodeDisplay, decodePalette, encodePng, visibleFrame } from "./screen.ts";
+import { compareFrames, decodeDisplay, decodePalette, differenceImage, encodePng, visibleFrame } from "./screen.ts";
 
 test("a PNG round-trips size, palette and every pixel", () => {
   const frame = { width: 3, height: 2, pixels: Uint8Array.from([0, 1, 2, 2, 1, 0]) };
@@ -65,4 +65,35 @@ test("a display buffer a few bytes short at its end still yields the frame", () 
   const body = displayBody(504, 312, 136, 51, () => 14);
   const frame = visibleFrame(decodeDisplay(body.subarray(0, body.length - 4)), "pal");
   assert.equal(frame.pixels.length, 384 * 272);
+});
+
+test("frames compare pixel by pixel outside the mask, with the bounds of the mismatches", () => {
+  const baseline = { width: 4, height: 3, pixels: Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) };
+  const current = { width: 4, height: 3, pixels: Uint8Array.from([0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 5]) };
+  const all = compareFrames(baseline, current, []);
+  assert.equal(all.mismatchingPixels, 3);
+  assert.equal(all.comparedPixels, 12);
+  assert.deepEqual(all.bounds, { x: 1, y: 0, width: 3, height: 3 });
+  // Masking the bottom-right pixel leaves two mismatches in a smaller box.
+  const masked = compareFrames(baseline, current, [{ x: 3, y: 2, width: 5, height: 5 }]);
+  assert.equal(masked.mismatchingPixels, 2);
+  assert.equal(masked.comparedPixels, 11);
+  assert.deepEqual(masked.bounds, { x: 1, y: 0, width: 2, height: 2 });
+  assert.equal(compareFrames(baseline, baseline, []).bounds, undefined);
+  assert.throws(() => compareFrames(baseline, { width: 3, height: 4, pixels: new Uint8Array(12) }, []), /sizes differ/);
+});
+
+test("the difference image dims equal pixels and marks mismatches", () => {
+  const current = { width: 2, height: 1, pixels: Uint8Array.from([1, 1]) };
+  const difference = compareFrames({ width: 2, height: 1, pixels: Uint8Array.from([1, 0]) }, current, []);
+  const image = differenceImage(current, difference, [
+    [0, 0, 0],
+    [200, 100, 40],
+  ]);
+  assert.deepEqual([...image.frame.pixels], [1, 2]);
+  assert.deepEqual(image.palette, [
+    [0, 0, 0],
+    [50, 25, 10],
+    [255, 0, 255],
+  ]);
 });

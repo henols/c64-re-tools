@@ -114,3 +114,70 @@ export function encodePng(frame: IndexedFrame, palette: ReadonlyArray<readonly [
     chunk("IEND", new Uint8Array(0)),
   ]);
 }
+
+export interface FrameDifference {
+  mismatchingPixels: number;
+  /** Pixels compared: the frame minus the masked ones. */
+  comparedPixels: number;
+  /** The smallest rectangle holding every mismatch; absent when nothing differs. */
+  bounds?: { x: number; y: number; width: number; height: number };
+  /** One flag per pixel: 1 mismatch, 2 masked, 0 equal. */
+  map: Uint8Array;
+}
+
+/** Compares two frames of the same size pixel by pixel, outside the mask rectangles. */
+export function compareFrames(
+  baseline: IndexedFrame,
+  current: IndexedFrame,
+  mask: ReadonlyArray<{ x: number; y: number; width: number; height: number }>,
+): FrameDifference {
+  if (baseline.width !== current.width || baseline.height !== current.height) {
+    throw new Error(`frame sizes differ: ${baseline.width}x${baseline.height} and ${current.width}x${current.height}`);
+  }
+  const { width, height } = current;
+  const map = new Uint8Array(width * height);
+  for (const rectangle of mask) {
+    for (let y = rectangle.y; y < Math.min(height, rectangle.y + rectangle.height); y++) {
+      map.fill(2, y * width + rectangle.x, y * width + Math.min(width, rectangle.x + rectangle.width));
+    }
+  }
+  let mismatchingPixels = 0;
+  let comparedPixels = 0;
+  let left = width;
+  let top = height;
+  let right = -1;
+  let bottom = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const at = y * width + x;
+      if (map[at] === 2) continue;
+      comparedPixels++;
+      if (baseline.pixels[at] === current.pixels[at]) continue;
+      map[at] = 1;
+      mismatchingPixels++;
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  const difference: FrameDifference = { mismatchingPixels, comparedPixels, map };
+  if (mismatchingPixels > 0) difference.bounds = { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
+  return difference;
+}
+
+/**
+ * The difference image: the current frame with equal and masked pixels at a
+ * quarter of their brightness and every mismatch in bright magenta.
+ */
+export function differenceImage(
+  current: IndexedFrame,
+  difference: FrameDifference,
+  palette: ReadonlyArray<readonly [number, number, number]>,
+): { frame: IndexedFrame; palette: Array<[number, number, number]> } {
+  const dimmed = palette.map(([r, g, b]) => [r >> 2, g >> 2, b >> 2] as [number, number, number]);
+  const highlight = dimmed.length;
+  const pixels = new Uint8Array(current.pixels.length);
+  for (let at = 0; at < pixels.length; at++) pixels[at] = difference.map[at] === 1 ? highlight : current.pixels[at]!;
+  return { frame: { width: current.width, height: current.height, pixels }, palette: [...dimmed, [255, 0, 255]] };
+}

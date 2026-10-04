@@ -254,6 +254,30 @@ export interface MemmapRange {
   write: boolean;
 }
 
+// Screen baselines and snapshots (15 §3 named transient objects, §29, §36)
+
+/** 1-64 letters, digits, dots, underscores or hyphens. */
+export const TRANSIENT_NAME = /^[A-Za-z0-9._-]{1,64}$/;
+export const MAX_BASELINES = 64;
+export const MAX_SNAPSHOTS = 64;
+
+export interface Rectangle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ScreenComparison {
+  match: boolean;
+  mismatchingPixels: number;
+  mismatchRatio: number;
+  /** Absent when no pixel differs. */
+  bounds?: Rectangle;
+  /** Base64 PNG of the differences, when asked for. */
+  diffPng?: string;
+}
+
 export const RESET_MODES = ["soft", "hard"] as const;
 export type ResetMode = (typeof RESET_MODES)[number];
 
@@ -394,7 +418,13 @@ export interface ViceOperations {
   cia: { params: { which: CiaSelection }; result: { chips: CiaState[] } };
   sid: { params: Record<string, never>; result: SidState };
   /** The last frame the VIC-II drew, visible area with borders, as a base64 PNG. */
-  screenCapture: { params: Record<string, never>; result: { width: number; height: number; png: string } };
+  screenCapture: { params: { baseline?: string }; result: { width: number; height: number; png: string; baseline?: string } };
+  screenCompare: {
+    params: { baseline: string; maxMismatchRatio: number; mask: Rectangle[]; includeDiff: boolean };
+    result: ScreenComparison;
+  };
+  screenBaselines: { params: Record<string, never>; result: { baselines: string[] } };
+  screenDiscard: { params: { baseline: string }; result: { discarded: boolean } };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
 }
 export type ViceOperation = keyof ViceOperations;
@@ -418,6 +448,9 @@ export const VICE_OPERATIONS = [
   "breakpoint",
   "watchpoint",
   "screenCapture",
+  "screenCompare",
+  "screenBaselines",
+  "screenDiscard",
   "cpuHistory",
   "backtrace",
   "timing",
@@ -584,10 +617,29 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
   if (!isObject(params)) invalid("parameters must be an object");
   switch (op) {
     case "status":
-    case "screenCapture":
     case "vicii":
     case "sid":
+    case "screenBaselines":
       return {} as ViceOperations[O]["params"];
+    case "screenCapture": {
+      if (params.baseline === undefined) return {} as ViceOperations[O]["params"];
+      return { baseline: validName(params.baseline, "baseline") } as ViceOperations[O]["params"];
+    }
+    case "screenDiscard":
+      return { baseline: validName(params.baseline, "baseline") } as ViceOperations[O]["params"];
+    case "screenCompare": {
+      const ratio = params.maxMismatchRatio;
+      if (typeof ratio !== "number" || !(ratio >= 0 && ratio <= 1)) invalid("maxMismatchRatio must be a number from 0 to 1");
+      if (!Array.isArray(params.mask) || params.mask.length > 64) invalid("mask must be a list of at most 64 rectangles");
+      const mask = params.mask.map((rectangle): Rectangle => {
+        if (!isObject(rectangle)) invalid("each mask entry must be a rectangle");
+        const ok = isInteger(rectangle.x, 0, 4095) && isInteger(rectangle.y, 0, 4095) && isInteger(rectangle.width, 1, 4096) && isInteger(rectangle.height, 1, 4096);
+        if (!ok) invalid("a mask rectangle needs integer x, y, width and height, with width and height at least 1");
+        return { x: rectangle.x as number, y: rectangle.y as number, width: rectangle.width as number, height: rectangle.height as number };
+      });
+      if (typeof params.includeDiff !== "boolean") invalid("includeDiff must be true or false");
+      return { baseline: validName(params.baseline, "baseline"), maxMismatchRatio: ratio, mask, includeDiff: params.includeDiff } as ViceOperations[O]["params"];
+    }
     case "cpuHistory": {
       if (!isInteger(params.limit, 1, MAX_HISTORY)) invalid(`limit must be an integer from 1 to ${MAX_HISTORY}`);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
@@ -874,6 +926,13 @@ function isWatchpoint(value: unknown): value is Watchpoint {
   return isBreakpoint(value) && isObject(value) && isInteger(value.size, 1, MAX_WATCH_SIZE) && isOneOf(WATCH_ACCESS, value.access);
 }
 
+function validName(value: unknown, what: string): string {
+  if (typeof value !== "string" || !TRANSIENT_NAME.test(value)) {
+    invalid(`${what} must be 1 to 64 letters, digits, dots, underscores or hyphens`);
+  }
+  return value;
+}
+
 function isHexData(value: unknown): value is string {
   return typeof value === "string" && /^(?:[0-9a-f]{2})*$/.test(value);
 }
@@ -997,6 +1056,30 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     case "watchpoint": {
       const ok = Array.isArray(value.watchpoints) ? value.watchpoints.every(isWatchpoint) : isWatchpoint(value);
       if (!ok) throw new ProtocolError("watchpoint result is malformed");
+      break;
+    }
+    case "screenCompare": {
+      const bounds = value.bounds;
+      const ok =
+        typeof value.match === "boolean" &&
+        isInteger(value.mismatchingPixels, 0, 1 << 20) &&
+        typeof value.mismatchRatio === "number" &&
+        value.mismatchRatio >= 0 &&
+        value.mismatchRatio <= 1 &&
+        (bounds === undefined ||
+          (isObject(bounds) && (["x", "y", "width", "height"] as const).every((field) => isInteger(bounds[field], 0, 4096)))) &&
+        (value.diffPng === undefined || (typeof value.diffPng === "string" && /^[A-Za-z0-9+/]+={0,2}$/.test(value.diffPng)));
+      if (!ok) throw new ProtocolError("screenCompare result is malformed");
+      break;
+    }
+    case "screenBaselines": {
+      if (!Array.isArray(value.baselines) || !value.baselines.every((name) => typeof name === "string")) {
+        throw new ProtocolError("screenBaselines result is malformed");
+      }
+      break;
+    }
+    case "screenDiscard": {
+      if (value.discarded !== true) throw new ProtocolError("screenDiscard result is malformed");
       break;
     }
     case "cpuHistory": {
@@ -1125,7 +1208,8 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         isInteger(value.width, 1, 1024) &&
         isInteger(value.height, 1, 1024) &&
         typeof value.png === "string" &&
-        /^[A-Za-z0-9+/]+={0,2}$/.test(value.png);
+        /^[A-Za-z0-9+/]+={0,2}$/.test(value.png) &&
+        (value.baseline === undefined || (typeof value.baseline === "string" && TRANSIENT_NAME.test(value.baseline)));
       if (!ok) throw new ProtocolError("screenCapture result is malformed");
       break;
     }

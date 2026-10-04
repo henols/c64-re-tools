@@ -4,7 +4,7 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { CIA_SELECTIONS, VICII_MODES } from "../../protocol.ts";
+import { CIA_SELECTIONS, VICII_MODES, WireFailure } from "../../protocol.ts";
 import { AddressOutput, Byte, defineTool, ToolOutput } from "../server.ts";
 
 const Color = z.number().int().min(0).max(15);
@@ -119,19 +119,80 @@ export const c64Sid = defineTool({
   },
 });
 
+const BaselineName = z
+  .string()
+  .regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 letters, digits, dots, underscores or hyphens")
+  .describe("a name you choose: 1 to 64 letters, digits, dots, underscores or hyphens");
+
+const Rectangle = z
+  .object({ x: z.number().int().min(0), y: z.number().int().min(0), width: z.number().int().min(1), height: z.number().int().min(1) })
+  .strict();
+
 export const c64Screen = defineTool({
   name: "c64_screen",
-  title: "Capture the C64 screen",
+  title: "Capture and compare the C64 screen",
   description:
     "Action capture returns the last frame the C64 drew, with its borders, as a PNG image, plus its width and height in pixels. " +
+    "With baseline, the session also keeps that frame under the name. " +
+    "Action compare compares the current frame with a baseline, pixel by pixel. mask lists rectangles to ignore. " +
+    "match is true when the part of compared pixels that differ is at most maxMismatchRatio (default 0). bounds holds every different pixel. " +
+    "With includeDiff, compare also returns an image with the different pixels in magenta. " +
+    "Action list gives the baseline names. Action discard removes a baseline. Baselines stay until the session ends. " +
     "The emulator draws frames while the CPU runs. After the CPU stops, the frame stays the same. " +
-    "This does not change if the machine is running or stopped.",
-  inputSchema: z.object({ action: z.enum(["capture"]) }).strict(),
-  outputSchema: z.object({ width: z.number().int().min(1), height: z.number().int().min(1) }),
+    "This tool does not change if the machine is running or stopped.",
+  inputSchema: z
+    .object({
+      action: z.enum(["capture", "compare", "list", "discard"]),
+      baseline: BaselineName.optional().describe("capture: keep the frame under this name; compare and discard: the baseline to use"),
+      maxMismatchRatio: z.number().min(0).max(1).optional().describe("compare only: 0 to 1, default 0"),
+      mask: z.array(Rectangle).max(64).optional().describe("compare only: rectangles to ignore, in frame pixels"),
+      includeDiff: z.boolean().optional().describe("compare only: also return a difference image"),
+    })
+    .strict(),
+  outputSchema: z.object({
+    width: z.number().int().min(1).optional(),
+    height: z.number().int().min(1).optional(),
+    baseline: z.string().optional(),
+    match: z.boolean().optional(),
+    mismatchingPixels: z.number().int().min(0).optional(),
+    mismatchRatio: z.number().min(0).max(1).optional(),
+    bounds: Rectangle.optional(),
+    baselines: z.array(z.string()).optional(),
+    discarded: z.boolean().optional(),
+  }),
   readOnly: true,
-  async run(_input, session) {
-    const shot = await session.screenCapture();
-    return new ToolOutput({ width: shot.width, height: shot.height }, [{ type: "image", data: shot.png, mimeType: "image/png" }]);
+  async run(input, session) {
+    const { action, ...fields } = input;
+    const only = (allowed: string[], required: string[]) => {
+      for (const [field, value] of Object.entries(fields)) {
+        if (value !== undefined && !allowed.includes(field)) throw new WireFailure("invalid-input", `${field} is not used with action ${action}.`);
+      }
+      for (const field of required) {
+        if ((fields as Record<string, unknown>)[field] === undefined) throw new WireFailure("invalid-input", `Action ${action} needs ${field}.`);
+      }
+    };
+    if (action === "capture") {
+      only(["baseline"], []);
+      const shot = await session.screenCapture(fields.baseline);
+      const result = { width: shot.width, height: shot.height, ...(shot.baseline === undefined ? {} : { baseline: shot.baseline }) };
+      return new ToolOutput(result, [{ type: "image", data: shot.png, mimeType: "image/png" }]);
+    }
+    if (action === "compare") {
+      only(["baseline", "maxMismatchRatio", "mask", "includeDiff"], ["baseline"]);
+      const { diffPng, ...result } = await session.screenCompare({
+        baseline: fields.baseline!,
+        maxMismatchRatio: fields.maxMismatchRatio ?? 0,
+        mask: fields.mask ?? [],
+        includeDiff: fields.includeDiff ?? false,
+      });
+      return diffPng === undefined ? result : new ToolOutput(result, [{ type: "image", data: diffPng, mimeType: "image/png" }]);
+    }
+    if (action === "list") {
+      only([], []);
+      return session.screenBaselines();
+    }
+    only(["baseline"], ["baseline"]);
+    return session.screenDiscard(fields.baseline!);
   },
 });
 

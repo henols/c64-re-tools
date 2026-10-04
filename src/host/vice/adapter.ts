@@ -17,7 +17,7 @@ import {
   type Space,
   type VideoStandard,
 } from "../../protocol.ts";
-import { decodeDisplay, decodePalette, encodePng, visibleFrame } from "./screen.ts";
+import { decodeDisplay, decodePalette, visibleFrame, type IndexedFrame } from "./screen.ts";
 import { TextMonitorError, type TextMonitor } from "./text-monitor.ts";
 import {
   BinaryMonitor,
@@ -567,12 +567,11 @@ export class ViceAdapter {
     await this.#monitor.request(Command.joyportSet, body);
   }
 
-  /** The last frame the VIC-II drew, visible area with borders, as PNG bytes. */
-  async captureScreen(standard: VideoStandard): Promise<{ width: number; height: number; png: Buffer }> {
+  /** The last frame the VIC-II drew, visible area with borders, with VICE's palette. */
+  async captureFrame(standard: VideoStandard): Promise<{ frame: IndexedFrame; palette: Array<[number, number, number]> }> {
     const display = decodeDisplay((await this.#monitor.request(Command.displayGet, Buffer.from([1, 0]))).body);
     const palette = decodePalette((await this.#monitor.request(Command.paletteGet, Buffer.from([1]))).body);
-    const frame = visibleFrame(display, standard);
-    return { width: frame.width, height: frame.height, png: encodePng(frame, palette) };
+    return { frame: visibleFrame(display, standard), palette };
   }
 
   /**

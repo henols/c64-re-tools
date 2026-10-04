@@ -203,8 +203,20 @@ export class ViceSessionClient {
   }
 
   /** The last frame the VIC-II drew, as a base64 PNG with its size. */
-  screenCapture(): Promise<{ width: number; height: number; png: string }> {
-    return this.#request("screenCapture", {});
+  screenCapture(baseline?: string): Promise<ViceOperations["screenCapture"]["result"]> {
+    return this.#request("screenCapture", baseline === undefined ? {} : { baseline });
+  }
+
+  screenCompare(params: ViceOperations["screenCompare"]["params"]): Promise<ViceOperations["screenCompare"]["result"]> {
+    return this.#request("screenCompare", params);
+  }
+
+  screenBaselines(): Promise<{ baselines: string[] }> {
+    return this.#request("screenBaselines", {});
+  }
+
+  screenDiscard(baseline: string): Promise<{ discarded: boolean }> {
+    return this.#request("screenDiscard", { baseline });
   }
 
   warp(enabled: boolean): Promise<{ enabled: boolean }> {

@@ -59,3 +59,31 @@ test("an NTSC capture is 384x247", { skip: liveSkip, timeout: 90_000 }, async ()
   assert.equal(shot.width, 384);
   assert.equal(shot.height, 247);
 });
+
+test("a baseline matches the same screen and finds a border change", { skip: liveSkip, timeout: 90_000 }, async () => {
+  const session = await open("pal");
+  await session.handle("runUntil", { target: { kind: "address", address: 0xe5cd, space: "c64" }, timeoutFrames: 500 });
+  await session.handle("execution", { action: "advance-frames", count: 2, space: "c64" });
+  const baseline = readPng(Buffer.from((await session.handle("screenCapture", { baseline: "ready" })).png, "base64"));
+  await session.handle("execution", { action: "advance-frames", count: 1, space: "c64" });
+  const same = await session.handle("screenCompare", { baseline: "ready", maxMismatchRatio: 0, mask: [{ x: 32, y: 36, width: 320, height: 200 }], includeDiff: false });
+  assert.deepEqual(same, { match: true, mismatchingPixels: 0, mismatchRatio: 0 }, "the border alone is stable (the cursor blinks inside)");
+
+  await session.handle("memoryWrite", { address: 0xd020, data: "02", space: "c64", view: "cpu" });
+  await session.handle("execution", { action: "advance-frames", count: 2, space: "c64" });
+  const changed = await session.handle("screenCompare", { baseline: "ready", maxMismatchRatio: 0, mask: [{ x: 32, y: 36, width: 320, height: 200 }], includeDiff: true });
+  assert.equal(changed.match, false);
+  // Every pixel outside the mask that showed the old border colour now differs.
+  let border = 0;
+  for (let y = 0; y < 272; y++) {
+    for (let x = 0; x < 384; x++) {
+      const masked = x >= 32 && x < 352 && y >= 36 && y < 236;
+      if (!masked && baseline.pixels[y * 384 + x] === baseline.pixels[0]) border++;
+    }
+  }
+  assert.equal(changed.mismatchingPixels, border);
+  assert.deepEqual(changed.bounds, { x: 0, y: 0, width: 384, height: 272 });
+  const diff = readPng(Buffer.from(changed.diffPng!, "base64"));
+  assert.deepEqual(diff.palette[diff.pixels[0]!], [255, 0, 255], "a border pixel is marked");
+  assert.deepEqual(await session.handle("screenBaselines", {}), { baselines: ["ready"] });
+});

@@ -2,6 +2,7 @@
 // machine's run state, and what happens when VICE dies.
 
 import {
+  MAX_BASELINES,
   MAX_COMPARE_DIFFERENCES,
   RASTER,
   WireFailure,
@@ -12,6 +13,7 @@ import {
   type HistoryEntry,
   type RunTarget,
   type RunUntilResult,
+  type ScreenComparison,
   type JoystickState,
   type Watchpoint,
   type WatchpointParams,
@@ -38,6 +40,7 @@ import {
 } from "./adapter.ts";
 import { decodeProgramCounter, MonitorConnectionError, MonitorError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
 import { decodeCia, decodeSid, decodeSprite, decodeVicii } from "./chips.ts";
+import { compareFrames, differenceImage, encodePng, type IndexedFrame } from "./screen.ts";
 import { launchVice, type ViceProcess } from "./process.ts";
 import { TextMonitorError } from "./text-monitor.ts";
 
@@ -91,6 +94,8 @@ export class ViceSession implements ViceSessionHandle {
   #queue: Promise<unknown> = Promise.resolve();
   #closed = false;
   #lost = false;
+  /** Session-local screen baselines (15 §29), lost with the session. */
+  readonly #baselines = new Map<string, { frame: IndexedFrame; palette: Array<[number, number, number]> }>();
   /** The CPU clock when the session stopwatch last started (c64_timing). */
   #timingStart = 0n;
   /** Counts staged media files, for unique names. */
@@ -234,8 +239,28 @@ export class ViceSession implements ViceSessionHandle {
       case "watchpoint":
         return this.#watchpoint(params as WatchpointParams);
       case "screenCapture": {
-        const shot = await this.#observe(() => this.#machine.captureScreen(this.#videoStandard));
-        return { width: shot.width, height: shot.height, png: shot.png.toString("base64") };
+        const { baseline } = params as ViceOperations["screenCapture"]["params"];
+        if (baseline !== undefined && !this.#baselines.has(baseline) && this.#baselines.size >= MAX_BASELINES) {
+          throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_BASELINES} baselines. Discard one first.`);
+        }
+        const shot = await this.#observe(() => this.#machine.captureFrame(this.#videoStandard));
+        if (baseline !== undefined) this.#baselines.set(baseline, shot);
+        const result: ViceOperations["screenCapture"]["result"] = {
+          width: shot.frame.width,
+          height: shot.frame.height,
+          png: encodePng(shot.frame, shot.palette).toString("base64"),
+        };
+        if (baseline !== undefined) result.baseline = baseline;
+        return result;
+      }
+      case "screenCompare":
+        return this.#screenCompare(params as ViceOperations["screenCompare"]["params"]);
+      case "screenBaselines":
+        return { baselines: [...this.#baselines.keys()] };
+      case "screenDiscard": {
+        const { baseline } = params as ViceOperations["screenDiscard"]["params"];
+        if (!this.#baselines.delete(baseline)) throw new WireFailure("not-found", `There is no baseline named ${baseline}.`);
+        return { discarded: true };
       }
       case "cpuHistory":
         return this.#cpuHistory(params as ViceOperations["cpuHistory"]["params"]);
@@ -624,6 +649,26 @@ export class ViceSession implements ViceSessionHandle {
       });
       return { entries };
     });
+  }
+
+  /** Compares the current frame with a baseline (15 §29). */
+  async #screenCompare(params: ViceOperations["screenCompare"]["params"]): Promise<ScreenComparison> {
+    const baseline = this.#baselines.get(params.baseline);
+    if (baseline === undefined) throw new WireFailure("not-found", `There is no baseline named ${params.baseline}.`);
+    const current = await this.#observe(() => this.#machine.captureFrame(this.#videoStandard));
+    const difference = compareFrames(baseline.frame, current.frame, params.mask);
+    const mismatchRatio = difference.comparedPixels === 0 ? 0 : difference.mismatchingPixels / difference.comparedPixels;
+    const result: ScreenComparison = {
+      match: mismatchRatio <= params.maxMismatchRatio,
+      mismatchingPixels: difference.mismatchingPixels,
+      mismatchRatio,
+    };
+    if (difference.bounds !== undefined) result.bounds = difference.bounds;
+    if (params.includeDiff) {
+      const image = differenceImage(current.frame, difference, current.palette);
+      result.diffPng = encodePng(image.frame, image.palette).toString("base64");
+    }
+    return result;
   }
 
   /** Compares two memory ranges from one coherent stop, in any spaces and views. */
