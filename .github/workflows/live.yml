@@ -1,0 +1,68 @@
+name: Live
+
+# The live suites with a real VICE on Linux, macOS and Windows. CI installs
+# VICE itself; the product never does (it refuses by name with the remedy).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  live:
+    name: live VICE (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Debian and Ubuntu ship VICE without the Commodore ROMs; take them from VICE's own source tree.
+      - name: Install VICE (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y vice xvfb
+          base=https://raw.githubusercontent.com/VICE-Team/svn-mirror/main/vice/data
+          for dir in C64 DRIVES; do sudo mkdir -p "/usr/share/vice/$dir"; done
+          for rom in C64/kernal-901227-03.bin C64/basic-901226-01.bin C64/chargen-901225-01.bin DRIVES/dos1541-325302-01+901229-05.bin; do
+            sudo curl -fsSL -o "/usr/share/vice/$rom" "$base/$rom"
+          done
+          echo "C64RT_LIVE_VICE=$(command -v x64sc)" >> "$GITHUB_ENV"
+          x64sc --version || true
+
+      - name: Install VICE (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install vice
+          echo "C64RT_LIVE_VICE=$(brew --prefix)/bin/x64sc" >> "$GITHUB_ENV"
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          "$(brew --prefix)/bin/x64sc" --version || true
+
+      - name: Install VICE (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\vice.zip"
+          Invoke-WebRequest -UserAgent "Wget" -Uri "https://sourceforge.net/projects/vice-emu/files/releases/binaries/windows/GTK3VICE-3.9-win64.zip/download" -OutFile $zip
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\vice"
+          $bin = (Get-ChildItem -Path "$env:RUNNER_TEMP\vice" -Recurse -Filter x64sc.exe | Select-Object -First 1).DirectoryName
+          "C64RT_LIVE_VICE=$bin\x64sc.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append
+          Get-ChildItem $bin | Select-Object -First 20
+
+      # The c64_window tests need a display: Xvfb on Linux; macOS and Windows runners have one.
+      - name: Live suites (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm test
+
+      - name: Live suites (macOS, Windows)
+        if: runner.os != 'Linux'
+        run: pnpm test
