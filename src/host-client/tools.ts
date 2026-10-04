@@ -75,3 +75,6 @@ export async function assemble(request: AssembleRequest, options: ToolCallOption
   const { result, attachments } = await callTool("acme.assemble", params, tree.contents, options);
   return result.assembled ? { ...result, program: attachments[0]! } : result;
 }
+
+/** Skill scripts see failures through the host-client, never the private protocol module. */
+export { WireFailure } from "../protocol.ts";
