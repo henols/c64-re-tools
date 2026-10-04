@@ -99,7 +99,10 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   const fake = join(project, "fake-dxa.ts");
   writeFileSync(fake, `#!/usr/bin/env node\nprocess.stdout.write("0801 0b 08 0a \\t.byt $0b,$08,$0a\\n0804 00 9e 32 \\t.byt $00,$9e,$32\\n");\n`);
   chmodSync(fake, 0o755);
-  const broken = await skill({ ...process.env, C64RT_DXA: fake }, "c64-static-analysis", "analyze.ts", "game.prg", "--analyzer", "dxa");
+  // Windows starts no script by its shebang: a .cmd file runs it through Node (the supervisor starts .cmd through cmd.exe).
+  const program = process.platform === "win32" ? join(project, "fake-dxa.cmd") : fake;
+  if (program !== fake) writeFileSync(program, `@"${process.execPath}" "${fake}" %*\r\n`);
+  const broken = await skill({ ...process.env, C64RT_DXA: program }, "c64-static-analysis", "analyze.ts", "game.prg", "--analyzer", "dxa");
   assert.equal(broken.status, 1);
   assert.match((broken.json.error as { message: string }).message, /incomplete or inconsistent listing\. Nothing was imported/);
   const after = openForRead(project);
