@@ -8,6 +8,8 @@
 // - exit answers, then sends a resumed event;
 // - advance-instructions sends resumed, register and stopped events, then answers;
 // - execute-until-return answers at once and stops later (see completeReturn);
+// - autostart answers and resumes, but stays in the monitor when
+//   autostartStaysInMonitor is set (seen rarely on real VICE);
 // - reset answers and resumes at the reset vector; a breakpoint there stops
 //   it only when the reset arrived while the machine was running;
 // - setting a temporary checkpoint resumes the machine (unlike the manual says);
@@ -107,6 +109,8 @@ export class FakeVice {
   stepTo: number | undefined;
   /** When set, binary commands get no answer (a hung VICE). */
   hung = false;
+  /** Autostart answers but leaves the machine stopped, as real VICE rarely does. */
+  autostartStaysInMonitor = false;
   /** Files given to autostart, with their run flag and index. */
   readonly autostarts: Array<{ file: string; run: boolean; index: number; bytes: Buffer }> = [];
   /** Disk images attached to drive 8. */
@@ -373,6 +377,7 @@ export class FakeVice {
         const file = body.subarray(4, 4 + body[3]!).toString("utf8");
         this.autostarts.push({ file, run, index, bytes: readFileSync(file) });
         answer();
+        if (this.autostartStaysInMonitor) return;
         return this.#leaveMonitor(socket);
       }
       case Command.displayGet: {

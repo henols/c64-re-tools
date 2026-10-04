@@ -23,7 +23,7 @@ import { delimiter, isAbsolute, join } from "node:path";
 
 import { WireFailure, type VideoStandard } from "../../protocol.ts";
 import type { ExitStatus, ProcessSupervisor, SupervisedProcess } from "../processes.ts";
-import { BinaryMonitor, Command } from "./binary-monitor.ts";
+import { BinaryMonitor, Command, decodeMemory, memoryGetBody } from "./binary-monitor.ts";
 import { TextMonitor } from "./text-monitor.ts";
 
 export const DEFAULT_READY_TIMEOUT_MS = 30_000;
@@ -167,6 +167,25 @@ function tailCollector(child: SupervisedProcess): () => string {
  * machine-unavailable when it does not start.
  */
 export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
+  // A launch can fail in a way a fresh start fixes (a port taken between the
+  // free-port check and VICE binding it); try a few times before giving up.
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= LAUNCH_ATTEMPTS; attempt++) {
+    try {
+      return await launchOnce(options);
+    } catch (error) {
+      lastError = error;
+      if (error instanceof WireFailure && error.code === "installation-incomplete") throw error;
+      options.log?.(`VICE launch attempt ${attempt} failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (lastError instanceof WireFailure) throw lastError;
+  throw new WireFailure("machine-unavailable", "The emulator could not be started on the host.");
+}
+
+const LAUNCH_ATTEMPTS = 3;
+
+async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
   const env = options.env ?? process.env;
   const log = options.log ?? (() => {});
   const binary = findVice(env);
@@ -201,9 +220,10 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
   };
 
   try {
-    monitor = await waitForMonitor(port, () => exited, options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
-    // Both monitors bind during startup, so once the binary one answers the text one listens.
-    text = await TextMonitor.connect(textPort);
+    const deadline = Date.now() + (options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
+    monitor = await waitForMonitor(port, () => exited, deadline - Date.now());
+    text = await waitForText(textPort, () => exited, deadline);
+    await checkSameMachine(monitor, text);
     // Readiness stopped the machine; let it run as a freshly started C64 does.
     await monitor.request(Command.exit);
   } catch (error) {
@@ -214,6 +234,59 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
   }
   log(`VICE started (pid ${child.pid}, monitor ports ${port} and ${textPort})`);
   return { pid: child.pid, scratchDir: scratch, monitor, text, exited: child.exited, outputTail, stop };
+}
+
+/**
+ * Connects the text monitor and proves it answers. Like the binary one, VICE
+ * can accept a connection during startup that it then never serves, so a
+ * connection that does not answer a probe is dropped and made again.
+ */
+async function waitForText(port: number, hasExited: () => boolean, deadline: number): Promise<TextMonitor> {
+  while (Date.now() < deadline) {
+    if (hasExited()) throw new WireFailure("machine-unavailable", "The emulator exited while it was starting.");
+    let text: TextMonitor;
+    try {
+      text = await TextMonitor.connect(port);
+    } catch {
+      await sleep(RETRY_MS);
+      continue;
+    }
+    try {
+      await text.command("dev c:", Math.min(TEXT_PROBE_MS, Math.max(1, deadline - Date.now())));
+      return text;
+    } catch {
+      await text.close();
+      await sleep(RETRY_MS);
+    }
+  }
+  throw new WireFailure("machine-unavailable", "The emulator's monitor did not become ready in time.");
+}
+
+const TEXT_PROBE_MS = 2_000;
+
+/**
+ * Proves both monitor connections reach the same, freshly started VICE: a
+ * byte written through the binary monitor must read back through the text
+ * monitor. Zero-page $02 is unused by the KERNAL; its value is restored.
+ */
+async function checkSameMachine(monitor: BinaryMonitor, text: TextMonitor): Promise<void> {
+  const read = memoryGetBody({ start: 0x0002, end: 0x0002, memspace: 0, bank: 0 });
+  const original = decodeMemory((await monitor.request(Command.memoryGet, read)).body)[0]!;
+  const marker = (original ^ 0xa5) & 0xff;
+  const write = (value: number) => {
+    const body = memoryGetBody({ start: 0x0002, end: 0x0002, memspace: 0, bank: 0 });
+    return monitor.request(Command.memorySet, Buffer.concat([body, Buffer.from([value])]));
+  };
+  await write(marker);
+  try {
+    const answer = await text.command("m 0002 0002", TEXT_PROBE_MS);
+    const seen = /^>C:0002\s+([0-9a-f]{2})/im.exec(answer);
+    if (seen === null || Number.parseInt(seen[1]!, 16) !== marker) {
+      throw new WireFailure("machine-unavailable", "The emulator's two monitor connections reached different machines.");
+    }
+  } finally {
+    await write(original);
+  }
 }
 
 async function waitForMonitor(port: number, hasExited: () => boolean, timeoutMs: number): Promise<BinaryMonitor> {

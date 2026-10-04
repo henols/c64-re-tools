@@ -22,20 +22,34 @@ const DROP = Symbol("drop");
 /**
  * A fake text monitor: `answer` maps a command to its output; the first
  * command also gets VICE's extra entry prompt. undefined hangs the monitor.
+ * A line for which `hold` is true runs only when the next input arrives, as
+ * stock VICE sometimes does.
  */
-async function fakeTextMonitor(answer: (command: string) => string | undefined | typeof DROP): Promise<{ monitor: TextMonitor; socket: () => Socket }> {
+async function fakeTextMonitor(
+  answer: (command: string) => string | undefined | typeof DROP,
+  hold: (line: string) => boolean = () => false,
+): Promise<{ monitor: TextMonitor; socket: () => Socket }> {
   let current: Socket | undefined;
   const server = createServer((socket) => {
     current = socket;
     let entered = false;
     let hung = false;
     let pending = "";
+    let held: string[] = [];
     socket.on("data", (chunk) => {
       pending += chunk.toString("latin1");
+      const lines = held;
+      held = [];
       let newline: number;
       while ((newline = pending.indexOf("\n")) >= 0) {
-        const line = pending.slice(0, newline);
+        lines.push(pending.slice(0, newline));
         pending = pending.slice(newline + 1);
+      }
+      for (const [index, line] of lines.entries()) {
+        if (index === lines.length - 1 && hold(line)) {
+          held.push(line);
+          continue;
+        }
         if (hung) continue;
         const sentinel = /^~ \$([0-9a-f]{4})$/.exec(line);
         if (sentinel !== null) {
@@ -117,4 +131,21 @@ test("a command whose line VICE dropped is sent once more", async () => {
   assert.equal(await monitor.command("stopwatch", 8000), "stopwatch done");
   assert.equal(seen, 2);
   await monitor.close();
+});
+
+test("a sentinel that VICE holds is sent again, and its late answer is not output", async () => {
+  let held = 0;
+  const { monitor } = await fakeTextMonitor(
+    (command) => `${command} done\n`,
+    (line) => line.startsWith("~") && held++ === 0,
+  );
+  assert.equal(await monitor.command("load", 5000), "load done");
+  assert.equal(held, 2, "the first sentinel was held, the resend released it");
+  assert.equal(await monitor.command("attach"), "attach done");
+  await monitor.close();
+});
+
+test("a stray sentinel answer in the output is removed", () => {
+  assert.equal(cleanOutput(`(C:$fd83) +5875\n$16f3\n0013363\n%00010110 11110011\n(C:$fd83) (C:$fd83) `), "");
+  assert.equal(cleanOutput("+43981\n"), "+43981");
 });

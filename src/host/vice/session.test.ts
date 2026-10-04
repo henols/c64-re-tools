@@ -297,6 +297,16 @@ test("autostart stages the bytes with their type and leaves the machine running"
   await session.close();
 });
 
+test("an autostart after which VICE stays in the monitor is resumed", async () => {
+  const { fake, session } = await startSession();
+  fake.autostartStaysInMonitor = true;
+  assert.deepEqual(await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]), { state: "running" });
+  assert.equal(fake.running, true);
+  assert.equal(fake.commands.at(-1), Command.exit);
+  assert.equal((await session.handle("status", {})).state, "running");
+  await session.close();
+});
+
 test("a disk attach keeps the run state; an image VICE refuses is a media error", async () => {
   const { fake, session } = await startSession();
   assert.deepEqual(await session.handle("diskAttach", { type: "d64" }, [Buffer.alloc(174848)]), { attached: true });

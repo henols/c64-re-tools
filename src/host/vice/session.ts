@@ -229,7 +229,7 @@ export class ViceSession implements ViceSessionHandle {
       case "autostart": {
         const { type, index, run } = params as ViceOperations["autostart"]["params"];
         const file = this.#stage(attachments[0]!, type);
-        await this.#resumingCommand(() => this.#machine.autostart(file, index, run));
+        await this.#runningCommand(() => this.#machine.autostart(file, index, run));
         return { state: "running" };
       }
       case "diskAttach": {
@@ -390,7 +390,7 @@ export class ViceSession implements ViceSessionHandle {
   async #reset(params: { mode: "soft" | "hard"; run: boolean }): Promise<{ state: RunState }> {
     await this.#stop();
     if (params.run) {
-      await this.#resumingCommand(() => this.#machine.reset(params.mode));
+      await this.#runningCommand(() => this.#machine.reset(params.mode));
       return { state: "running" };
     }
     // A breakpoint on the reset vector stops the reset at its first instruction.
@@ -811,6 +811,19 @@ export class ViceSession implements ViceSessionHandle {
       this.#state = "stopped";
       throw error;
     }
+  }
+
+  /**
+   * Sends a command after which VICE leaves the monitor by itself (autostart,
+   * reset). Stock VICE sometimes stays in the monitor instead (seen live after
+   * an autostart): the command's stop event comes, its resumed event does not.
+   * A stop without a checkpoint hit or a JAM is that case, so the machine is
+   * resumed. An extra resume of a running machine is harmless.
+   */
+  async #runningCommand(send: () => Promise<void>): Promise<void> {
+    const halts = this.#haltCount;
+    await this.#resumingCommand(send);
+    if (this.#state === "stopped" && this.#haltCount === halts) await this.#resume();
   }
 
   /**

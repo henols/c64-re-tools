@@ -10,6 +10,11 @@
 // prompt shows the command was taken: VICE drops the rest of an input chunk
 // when the command in it makes VICE enter the monitor. Only idempotent
 // commands go through here (see RESEND_AFTER_MS).
+//
+// Stock VICE sometimes reads a line but runs it only when more input comes
+// (seen live: a sentinel answered 10 s late, just before the next command).
+// So a late sentinel is sent again, and stray sentinel answers are removed
+// from output.
 
 import { connect, type Socket } from "node:net";
 
@@ -21,19 +26,22 @@ const PROMPT = /\((?:C|\d+):\$[0-9a-f]{4}\) /g;
 export const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 /**
  * How long to wait for the prompt before sending the command once more. Stock
- * VICE very rarely drops a command line (seen once, never reproduced); every
- * command this client sends is idempotent, so a repeat is harmless.
+ * VICE sometimes holds a command line until more input comes; every command
+ * this client sends is idempotent, so a repeat is harmless.
  */
 const RESEND_AFTER_MS = 3_000;
+/** How long to wait for a sentinel's answer before sending the sentinel again. */
+const SENTINEL_RESEND_MS = 1_000;
+const ANY_SENTINEL_ANSWER = /\+\d+\n\$[0-9a-f]{4}\n[0-7]+\n%[01 ]+\n/g;
 
 function sentinelPattern(nonce: number): RegExp {
   const hex = nonce.toString(16).padStart(4, "0");
   return new RegExp(`\\+${nonce}\\n\\$${hex}\\n[0-7]+\\n%[01 ]+\\n\\((?:C|\\d+):\\$[0-9a-f]{4}\\) `);
 }
 
-/** Strips prompts and surrounding blank space from a command's raw output. */
+/** Strips prompts, stray sentinel answers and surrounding blank space from a command's raw output. */
 export function cleanOutput(raw: string): string {
-  return raw.replace(PROMPT, "").replace(/\r/g, "").trim();
+  return raw.replace(/\r/g, "").replace(ANY_SENTINEL_ANSWER, "").replace(PROMPT, "").trim();
 }
 
 export class TextMonitor {
@@ -116,9 +124,17 @@ export class TextMonitor {
       this.#socket.write(`${line}\n`);
       await this.#waitFor(prompted, deadline, timeoutMs);
     }
-    this.#socket.write(`~ $${this.#nonce.toString(16)}\n`);
+    const sentinelLine = `~ $${this.#nonce.toString(16)}\n`;
     let match: RegExpExecArray | null = null;
-    await this.#waitFor(() => (match = sentinel.exec(this.#buffer)) !== null, deadline, timeoutMs);
+    for (;;) {
+      this.#socket.write(sentinelLine);
+      try {
+        await this.#waitFor(() => (match = sentinel.exec(this.#buffer)) !== null, Math.min(deadline, Date.now() + SENTINEL_RESEND_MS), timeoutMs);
+        break;
+      } catch (error) {
+        if (this.#socket.destroyed || Date.now() >= deadline) throw error;
+      }
+    }
     const found = match as unknown as RegExpExecArray;
     const output = this.#buffer.slice(0, found.index);
     this.#buffer = this.#buffer.slice(found.index + found[0].length);
