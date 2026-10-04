@@ -15,6 +15,11 @@ on:
         required: false
         default: ""
 
+# A newer push makes an older live run of the same branch pointless.
+concurrency:
+  group: live-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 jobs:
   linux:
     name: live VICE (debian-13)
