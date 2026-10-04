@@ -6,7 +6,7 @@ import { runTool } from "./run.ts";
 
 const node = (code: string) => [process.execPath, "-e", code];
 
-test("a run returns exit status and output", async () => {
+test("a run returns exit status and output", { timeout: 30_000 }, async () => {
   const run = await runTool({
     argv: node('process.stdout.write("out"); process.stderr.write("err"); process.exit(3)'),
     cwd: process.cwd(),
@@ -19,7 +19,7 @@ test("a run returns exit status and output", async () => {
   );
 });
 
-test("a run past its timeout is stopped and reported", async () => {
+test("a run past its timeout is stopped and reported", { timeout: 30_000 }, async () => {
   const supervisor = new ProcessSupervisor({ graceMs: 100 });
   const started = Date.now();
   const run = await runTool({ argv: node("setInterval(() => {}, 1000)"), cwd: process.cwd(), supervisor, signal: new AbortController().signal, timeoutMs: 100 });
@@ -28,7 +28,7 @@ test("a run past its timeout is stopped and reported", async () => {
   assert.equal(supervisor.size, 0);
 });
 
-test("output beyond the limit is dropped and flagged", async () => {
+test("output beyond the limit is dropped and flagged", { timeout: 30_000 }, async () => {
   const run = await runTool({
     argv: node('process.stdout.write("x".repeat(5000))'),
     cwd: process.cwd(),
@@ -40,7 +40,7 @@ test("output beyond the limit is dropped and flagged", async () => {
   assert.equal(run.truncated, true);
 });
 
-test("an abort stops the run and its descendants", async () => {
+test("an abort stops the run and its descendants", { timeout: 30_000 }, async () => {
   const supervisor = new ProcessSupervisor({ graceMs: 100 });
   const abort = new AbortController();
   setTimeout(() => abort.abort(), 100);
