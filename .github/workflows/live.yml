@@ -32,14 +32,15 @@ jobs:
           echo "C64RT_LIVE_VICE=$(command -v x64sc)" >> "$GITHUB_ENV"
           x64sc -version || true
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      # In a container, Node.js must come first: the pnpm installer runs on it.
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          cache: pnpm
+      - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
       # The c64_window tests need a display.
       - name: Live suites
+        timeout-minutes: 20
         run: xvfb-run -a pnpm test
 
   other:
@@ -78,6 +79,13 @@ jobs:
           "C64RT_LIVE_VICE=$bin\x64sc.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           $bin | Out-File -FilePath $env:GITHUB_PATH -Append
 
-      # macOS and Windows runners have a display for the c64_window tests.
+      # macOS and Windows runners have a display for the c64_window tests. A step limit keeps the log of a hang.
       - name: Live suites
+        timeout-minutes: 20
         run: pnpm test
+
+      - name: Processes left behind
+        if: always()
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { \$_.Name -match 'x64sc|node' } | Select-Object ProcessId,ParentProcessId,Name,CommandLine | Format-List"; else ps -A -o pid,ppid,etime,command | grep -E "x64sc|node" | grep -v grep || true; fi

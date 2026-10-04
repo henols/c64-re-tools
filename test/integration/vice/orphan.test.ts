@@ -5,8 +5,9 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, readlinkSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { test } from "node:test";
 
@@ -24,6 +25,11 @@ function alive(pid: number): boolean {
   }
 }
 
+/** VICE scratch directories in the temporary directory (portable: no /proc). */
+function viceScratchDirectories(): Set<string> {
+  return new Set(readdirSync(tmpdir()).filter((name) => name.startsWith("c64-re-tools-vice-")).map((name) => join(tmpdir(), name)));
+}
+
 async function until(condition: () => boolean, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
@@ -35,18 +41,25 @@ async function until(condition: () => boolean, timeoutMs: number): Promise<boole
 
 test("a Host Runtime killed with SIGKILL leaves no VICE and no scratch directory", { skip: liveSkip, timeout: 60_000 }, async () => {
   const host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
-  const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
-  const env = { ...process.env, C64RT_HOST: `127.0.0.1:${/:(\d+)$/.exec(line)![1]}` };
-  const session = await ViceSessionClient.open({ videoStandard: "pal", env });
-  const [vice] = viceChildren(host.pid!);
-  assert.ok(vice !== undefined, "the runtime started VICE");
-  const scratch = readlinkSync(`/proc/${vice}/cwd`);
-  assert.match(scratch, /c64-re-tools-vice-/);
-
   const exited = once(host, "exit");
-  host.kill("SIGKILL");
-  await exited;
-  assert.ok(await until(() => !alive(vice), 10_000), "the watchdog stopped VICE");
-  assert.ok(await until(() => !existsSync(scratch), 5_000), "the watchdog removed the scratch directory");
-  await session.close().catch(() => {});
+  try {
+    const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
+    const env = { ...process.env, C64RT_HOST: `127.0.0.1:${/:(\d+)$/.exec(line)![1]}` };
+    const before = viceScratchDirectories();
+    const session = await ViceSessionClient.open({ videoStandard: "pal", env });
+    const [vice] = viceChildren(host.pid!);
+    assert.ok(vice !== undefined, "the runtime started VICE");
+    const created = [...viceScratchDirectories()].filter((path) => !before.has(path));
+    assert.equal(created.length, 1, "the session's VICE has one scratch directory");
+    const scratch = created[0]!;
+
+    host.kill("SIGKILL");
+    await exited;
+    assert.ok(await until(() => !alive(vice), 10_000), "the watchdog stopped VICE");
+    assert.ok(await until(() => !existsSync(scratch), 5_000), "the watchdog removed the scratch directory");
+    await session.close().catch(() => {});
+  } finally {
+    // A failed assertion must not leave the runtime running: it would keep this test file alive.
+    if (host.exitCode === null && host.signalCode === null) host.kill("SIGKILL");
+  }
 });
