@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../protocol.ts";
-import { readProjectFile } from "./transfer.ts";
+import { readProjectFile, readProjectTree } from "./transfer.ts";
 
 const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-transfer-"));
 const project = join(sandbox, "project");
@@ -30,4 +30,30 @@ test("paths outside the project, missing files, directories and large files are 
   assert.throws(() => readProjectFile("escape.prg", { root: project }), failsWith("invalid-input"));
   assert.throws(() => readProjectFile("original", { root: project }), failsWith("invalid-input"));
   assert.throws(() => readProjectFile("original/Game.D64", { root: project, maxBytes: 2 }), failsWith("limit-exceeded"));
+});
+
+test("a source tree is read with relative paths, inner links followed and VCS directories skipped", () => {
+  const tree = join(project, "src");
+  mkdirSync(join(tree, "lib"), { recursive: true });
+  mkdirSync(join(tree, ".git"), { recursive: true });
+  writeFileSync(join(tree, "main.a"), "main");
+  writeFileSync(join(tree, "lib", "consts.a"), "consts");
+  writeFileSync(join(tree, ".git", "HEAD"), "ref");
+  symlinkSync(join(tree, "lib", "consts.a"), join(tree, "alias.a"));
+  const read = readProjectTree("src", { root: project });
+  assert.deepEqual(read.files, [
+    { path: "alias.a", size: 6 },
+    { path: "lib/consts.a", size: 6 },
+    { path: "main.a", size: 4 },
+  ]);
+  assert.deepEqual(read.contents.map(String), ["consts", "consts", "main"]);
+});
+
+test("a link out of the source root is refused, as is a missing or plain-file root", () => {
+  const tree = join(project, "escape");
+  mkdirSync(tree);
+  symlinkSync(join(project, "noext"), join(tree, "outside.a"));
+  assert.throws(() => readProjectTree("escape", { root: project }), failsWith("invalid-input"));
+  assert.throws(() => readProjectTree("nope", { root: project }), failsWith("not-found"));
+  assert.throws(() => readProjectTree("noext", { root: project }), failsWith("invalid-input"));
 });

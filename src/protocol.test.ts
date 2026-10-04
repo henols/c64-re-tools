@@ -6,6 +6,10 @@ import {
   checkHello,
   encodeFrame,
   FrameDecoder,
+  isRelativePath,
+  validateSourceTree,
+  validateToolParams,
+  validateToolResult,
   HOST_PROTOCOL_ID,
   HOST_PROTOCOL_VERSION,
   MAX_ATTACHMENT_BYTES,
@@ -310,4 +314,35 @@ test("observe needs at least one observation and bounds its memory", () => {
   assert.throws(() => validateViceParams("observe", { memory: Array(17).fill({ ...range, size: 1 }) }), /16/);
   assert.throws(() => validateViceParams("observe", { sprites: [1, 1] }), WireFailure);
   assert.deepEqual(validateViceParams("observe", { timing: true, cia: "both" }), { timing: true, cia: "both" });
+});
+
+test("relative paths and source trees are validated", () => {
+  for (const good of ["main.a", "lib/consts.a", "a b/c.d"]) assert.ok(isRelativePath(good), good);
+  for (const bad of ["", "/etc/passwd", "../x", "a/../b", "./a", "a//b", "a/", "a\\b", "a/./b", ".."]) assert.ok(!isRelativePath(bad), bad);
+  const files = [{ path: "main.a", size: 2 }, { path: "lib/x.a", size: 0 }];
+  assert.deepEqual(validateSourceTree(files, [Buffer.from("ab"), Buffer.alloc(0)]), files);
+  assert.throws(() => validateSourceTree(files, [Buffer.from("ab")]), /attachment/);
+  assert.throws(() => validateSourceTree([{ path: "main.a", size: 3 }], [Buffer.from("ab")]), /size/);
+  assert.throws(() => validateSourceTree([...files, files[0]], [Buffer.from("ab"), Buffer.alloc(0), Buffer.from("ab")]), /twice/);
+});
+
+test("acme.assemble parameters and results are validated", () => {
+  const files = [{ path: "main.a", size: 1 }];
+  const ok = validateToolParams("acme.assemble", { files, entrySource: "main.a", includeDirs: ["lib"], defines: { DEBUG: 1, FAST: true }, setPc: 0x0801 }, [Buffer.from("x")]);
+  assert.deepEqual(ok.defines, { DEBUG: 1, FAST: true });
+  for (const params of [
+    { files, entrySource: "other.a", includeDirs: [], defines: {} },
+    { files, entrySource: "main.a", includeDirs: ["../x"], defines: {} },
+    { files, entrySource: "main.a", includeDirs: [], defines: { "bad-name": 1 } },
+    { files, entrySource: "main.a", includeDirs: [], defines: { X: "1" } },
+    { files, entrySource: "main.a", includeDirs: [], defines: {}, cpu: "65816" },
+  ]) {
+    assert.throws(() => validateToolParams("acme.assemble", params, [Buffer.from("x")]), WireFailure, JSON.stringify(params));
+  }
+  const assembled = { assembled: true, loadRange: { start: 0x801, end: 0x80d, bytes: 13 }, symbols: [{ name: "start", kind: "address", value: 0x801, used: true }], diagnostics: [] };
+  assert.deepEqual(validateToolResult("acme.assemble", assembled, [Buffer.alloc(15)]), assembled);
+  assert.throws(() => validateToolResult("acme.assemble", assembled, []), ProtocolError, "an assembled program needs its bytes");
+  const failed = { assembled: false, diagnostics: [{ severity: "error", file: "main.a", line: 3, message: "Number does not fit in 8 bits." }] };
+  assert.deepEqual(validateToolResult("acme.assemble", failed, []), failed);
+  assert.throws(() => validateToolResult("acme.assemble", failed, [Buffer.alloc(1)]), ProtocolError);
 });

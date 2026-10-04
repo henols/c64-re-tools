@@ -80,7 +80,7 @@ export class HostConnection {
   readonly closed: Promise<Error | undefined>;
   readonly #socket: Socket;
   readonly #reader = new MessageReader();
-  #listener: ((message: HostMessage) => void) | undefined;
+  #listener: ((message: HostMessage, attachments: Buffer[]) => void) | undefined;
   #failure: Error | undefined;
   #closedByUs = false;
 
@@ -93,7 +93,7 @@ export class HostConnection {
     socket.on("error", (error) => (this.#failure ??= error));
     socket.on("data", (chunk) => {
       try {
-        for (const { message } of this.#reader.push(chunk)) this.#listener?.(parseHostMessage(message));
+        for (const { message, attachments } of this.#reader.push(chunk)) this.#listener?.(parseHostMessage(message), attachments);
       } catch (error) {
         if (!(error instanceof ProtocolError)) throw error;
         this.#failure = error;
@@ -152,8 +152,8 @@ export class HostConnection {
     throw new WireFailure("installation-incomplete", "The c64-re-tools host runtime answered out of turn. Install the same c64-re-tools release on both sides.");
   }
 
-  /** Receives every message after the handshake. */
-  onMessage(listener: (message: HostMessage) => void): void {
+  /** Receives every message after the handshake, with any attachments. */
+  onMessage(listener: (message: HostMessage, attachments: Buffer[]) => void): void {
     this.#listener = listener;
   }
 

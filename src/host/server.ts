@@ -3,6 +3,11 @@ import { createServer, type Server, type Socket } from "node:net";
 import {
   attachmentCount,
   checkHello,
+  TOOL_OPERATIONS,
+  validateToolParams,
+  VICE_OPERATIONS,
+  type ToolOperation,
+  type ToolOperations,
   encodeFrame,
   MessageReader,
   parseClientMessage,
@@ -32,8 +37,21 @@ export interface ViceSessionHandle {
 /** Starts a VICE session. Throws WireFailure with an actionable code when it cannot. */
 export type ViceSessionFactory = (options: { videoStandard: VideoStandard }) => Promise<ViceSessionHandle>;
 
+/**
+ * Runs one native-tool request. `signal` aborts when the client goes away; the
+ * tool must then stop its children and remove its workspace. Throws WireFailure.
+ */
+export type ToolDispatcher = <O extends ToolOperation>(
+  op: O,
+  params: ToolOperations[O]["params"],
+  attachments: Buffer[],
+  signal: AbortSignal,
+) => Promise<{ result: ToolOperations[O]["result"]; attachments?: Buffer[] }>;
+
 export interface HostServerOptions {
   createViceSession: ViceSessionFactory;
+  /** Native-tool requests on "tool" connections; without it they are refused. */
+  tools?: ToolDispatcher;
   /** Defaults to 127.0.0.1 (D5). */
   host?: string;
   /** 0 picks a free port. */
@@ -63,6 +81,7 @@ class Connection {
   #session: ViceSessionHandle | undefined;
   #starting: Promise<ViceSessionHandle | undefined> | undefined;
   #shuttingDown = false;
+  readonly #toolAbort = new AbortController();
   #isTool = false;
   readonly #reader = new MessageReader();
   readonly #socket: Socket;
@@ -92,8 +111,8 @@ class Connection {
     return this.closed;
   }
 
-  #send(message: HostMessage): void {
-    if (this.#state !== "closed" && !this.#socket.destroyed) this.#socket.write(encodeFrame(message));
+  #send(message: HostMessage, attachments: readonly Uint8Array[] = []): void {
+    if (this.#state !== "closed" && !this.#socket.destroyed) this.#socket.write(encodeFrame(message, attachments));
   }
 
   #abort(reason: string): void {
@@ -161,15 +180,29 @@ class Connection {
 
   async #answer(request: Request, attachments: Buffer[]): Promise<void> {
     try {
-      if (this.#isTool || this.#session === undefined) {
-        throw new WireFailure("invalid-input", `unknown operation: ${String(request.op)}`);
+      let result: unknown;
+      let replyAttachments: Buffer[] = [];
+      if (this.#isTool) {
+        if (!(TOOL_OPERATIONS as readonly string[]).includes(request.op) || this.#options.tools === undefined) {
+          throw new WireFailure("invalid-input", `unknown operation: ${String(request.op)}`);
+        }
+        const op = request.op as ToolOperation;
+        const params = validateToolParams(op, request.params, attachments);
+        const answer = await this.#options.tools(op, params, attachments, this.#toolAbort.signal);
+        result = answer.result;
+        replyAttachments = answer.attachments ?? [];
+      } else {
+        if (this.#session === undefined || !(VICE_OPERATIONS as readonly string[]).includes(request.op)) {
+          throw new WireFailure("invalid-input", `unknown operation: ${String(request.op)}`);
+        }
+        const op = request.op as ViceOperation;
+        const params = validateViceParams(op, request.params);
+        if (attachments.length !== attachmentCount(op)) {
+          throw new WireFailure("invalid-input", `${op} takes ${attachmentCount(op)} file attachment(s)`);
+        }
+        result = await this.#session.handle(op, params, attachments);
       }
-      const params = validateViceParams(request.op, request.params);
-      if (attachments.length !== attachmentCount(request.op)) {
-        throw new WireFailure("invalid-input", `${request.op} takes ${attachmentCount(request.op)} file attachment(s)`);
-      }
-      const result = await this.#session.handle(request.op, params, attachments);
-      this.#send({ type: "reply", id: request.id, result });
+      this.#send({ type: "reply", id: request.id, result }, replyAttachments);
     } catch (error) {
       if (!(error instanceof WireFailure)) {
         this.#log(`operation ${String(request.op)} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
@@ -187,6 +220,8 @@ class Connection {
     this.#shuttingDown = true;
     this.#state = "closed";
     clearTimeout(this.#handshakeTimer);
+    // Tool work for a client that is gone stops: its children and workspaces go too.
+    this.#toolAbort.abort();
     const session = this.#session ?? (await this.#starting);
     this.#session = undefined;
     try {

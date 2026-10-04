@@ -505,6 +505,53 @@ export function attachmentCount(op: ViceOperation): number {
 }
 
 // ---------------------------------------------------------------------------
+// Native-tool operations (16). Short-lived requests on "tool" connections; they
+// never touch an emulator or knowledge.db.
+
+/** A transferred source tree: relative POSIX paths, one attachment per file in this order. */
+export type SourceTree = Array<{ path: string; size: number }>;
+export const MAX_TREE_FILES = 4096;
+
+export interface Diagnostic {
+  severity: "error" | "warning" | "note";
+  /** Relative to the source root; absent when the message has no source location. */
+  file?: string;
+  line?: number;
+  message: string;
+}
+
+export interface AcmeParams {
+  files: SourceTree;
+  /** Relative to the source root. */
+  entrySource: string;
+  /** Directories relative to the source root. */
+  includeDirs: string[];
+  defines: Record<string, number | boolean>;
+  setPc?: number;
+}
+
+export interface AssembledSymbol {
+  name: string;
+  kind: "address" | "constant";
+  value: number;
+  used: boolean;
+}
+
+export interface AcmeResult {
+  assembled: boolean;
+  /** Present when assembled: where the program loads. The program bytes are the reply's attachment. */
+  loadRange?: { start: number; end: number; bytes: number };
+  symbols?: AssembledSymbol[];
+  diagnostics: Diagnostic[];
+}
+
+export interface ToolOperations {
+  "acme.assemble": { params: AcmeParams; result: AcmeResult };
+}
+export type ToolOperation = keyof ToolOperations;
+export const TOOL_OPERATIONS = ["acme.assemble"] as const satisfies readonly ToolOperation[];
+
+// ---------------------------------------------------------------------------
 // Messages (D2, D3)
 
 export interface Hello {
@@ -526,11 +573,11 @@ export interface HandshakeError {
   error: WireError;
 }
 
-export interface Request<O extends ViceOperation = ViceOperation> {
+export interface Request<O extends ViceOperation | ToolOperation = ViceOperation | ToolOperation> {
   type: "request";
   id: number;
   op: O;
-  params: ViceOperations[O]["params"];
+  params: O extends ViceOperation ? ViceOperations[O]["params"] : O extends ToolOperation ? ToolOperations[O]["params"] : never;
 }
 
 export type Reply =
@@ -1000,6 +1047,101 @@ function validName(value: unknown, what: string): string {
     invalid(`${what} must be 1 to 64 letters, digits, dots, underscores or hyphens`);
   }
   return value;
+}
+
+const RELATIVE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[^\0\\]+$/;
+
+/** A relative POSIX path with no empty, "." or ".." segment and no backslash. */
+export function isRelativePath(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 1024 && RELATIVE_PATH.test(value) && !value.includes("//") && !value.endsWith("/");
+}
+
+/** Validates a transferred source tree against its attachments. Throws WireFailure(invalid-input). */
+export function validateSourceTree(value: unknown, attachments: readonly Uint8Array[]): SourceTree {
+  if (!Array.isArray(value) || value.length > MAX_TREE_FILES) invalid(`files must list at most ${MAX_TREE_FILES} files`);
+  if (value.length !== attachments.length) invalid("each listed file needs exactly one attachment");
+  const seen = new Set<string>();
+  return value.map((entry, index) => {
+    if (!isObject(entry) || !isRelativePath(entry.path)) invalid("each file needs a relative path inside the source root");
+    if (seen.has(entry.path)) invalid(`the file ${entry.path} is listed twice`);
+    seen.add(entry.path);
+    if (entry.size !== attachments[index]!.length) invalid(`the size of ${entry.path} does not match its bytes`);
+    return { path: entry.path, size: entry.size as number };
+  });
+}
+
+const SYMBOL_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
+/** Validates tool request parameters on the host. Throws WireFailure(invalid-input). */
+export function validateToolParams<O extends ToolOperation>(op: O, params: unknown, attachments: readonly Uint8Array[]): ToolOperations[O]["params"] {
+  if (!isObject(params)) invalid("parameters must be an object");
+  switch (op) {
+    case "acme.assemble": {
+      const known = ["files", "entrySource", "includeDirs", "defines", "setPc"];
+      for (const key of Object.keys(params)) if (!known.includes(key)) invalid(`unknown field: ${key}`);
+      const files = validateSourceTree(params.files, attachments);
+      if (!isRelativePath(params.entrySource)) invalid("entrySource must be a relative path inside the source root");
+      if (!files.some((file) => file.path === params.entrySource)) invalid(`entrySource ${params.entrySource} is not in the source root`);
+      const includeDirs = params.includeDirs;
+      if (!Array.isArray(includeDirs) || !includeDirs.every(isRelativePath)) invalid("includeDirs must be relative paths inside the source root");
+      if (!isObject(params.defines)) invalid("defines must be an object");
+      const defines: Record<string, number | boolean> = {};
+      for (const [name, value] of Object.entries(params.defines)) {
+        if (!SYMBOL_NAME.test(name)) invalid(`define name ${name} is not an assembler symbol`);
+        if (typeof value !== "boolean" && !(typeof value === "number" && Number.isSafeInteger(value))) invalid(`define ${name} must be an integer or true/false`);
+        defines[name] = value;
+      }
+      const result: AcmeParams = { files, entrySource: params.entrySource, includeDirs: includeDirs as string[], defines };
+      if (params.setPc !== undefined) {
+        if (!isInteger(params.setPc, 0, 0xffff)) invalid("setPc must be an address from 0 to 65535");
+        result.setPc = params.setPc;
+      }
+      return result as ToolOperations[O]["params"];
+    }
+  }
+  return invalid(`unknown tool operation: ${String(op)}`);
+}
+
+/** Validates a tool result on the client. Throws ProtocolError. */
+export function validateToolResult<O extends ToolOperation>(op: O, value: unknown, attachments: readonly Uint8Array[]): ToolOperations[O]["result"] {
+  if (!isObject(value)) throw new ProtocolError(`${op} result is not an object`);
+  switch (op) {
+    case "acme.assemble": {
+      const isDiagnostic = (item: unknown) =>
+        isObject(item) &&
+        (item.severity === "error" || item.severity === "warning" || item.severity === "note") &&
+        typeof item.message === "string" &&
+        (item.file === undefined || typeof item.file === "string") &&
+        (item.line === undefined || isInteger(item.line, 1, 1 << 24));
+      if (typeof value.assembled !== "boolean" || !Array.isArray(value.diagnostics) || !value.diagnostics.every(isDiagnostic)) {
+        throw new ProtocolError("acme.assemble result is malformed");
+      }
+      if (value.assembled) {
+        const range = value.loadRange;
+        const symbols = value.symbols;
+        const ok =
+          attachments.length === 1 &&
+          isObject(range) &&
+          isInteger(range.start, 0, 0xffff) &&
+          isInteger(range.end, 0, 0xffff) &&
+          isInteger(range.bytes, 1, 0x10000) &&
+          Array.isArray(symbols) &&
+          symbols.every(
+            (symbol) =>
+              isObject(symbol) &&
+              typeof symbol.name === "string" &&
+              (symbol.kind === "address" || symbol.kind === "constant") &&
+              typeof symbol.value === "number" &&
+              typeof symbol.used === "boolean",
+          );
+        if (!ok) throw new ProtocolError("acme.assemble result is malformed");
+      } else if (attachments.length !== 0) {
+        throw new ProtocolError("a failed assembly carries no program");
+      }
+      return value as unknown as ToolOperations[O]["result"];
+    }
+  }
+  throw new ProtocolError(`unknown tool operation: ${String(op)}`);
 }
 
 function isHexData(value: unknown): value is string {
