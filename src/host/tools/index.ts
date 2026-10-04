@@ -3,9 +3,10 @@
 
 import type { ProcessSupervisor } from "../processes.ts";
 import type { ToolDispatcher } from "../server.ts";
-import type { AcmeParams, C1541Params } from "../../protocol.ts";
+import type { AcmeParams, C1541Params, GhidraParams } from "../../protocol.ts";
 import { assemble } from "./acme.ts";
 import { inspect } from "./c1541.ts";
+import { analyze } from "./ghidra/analyze.ts";
 import { decode } from "./petcat.ts";
 
 export function createToolDispatcher(options: { supervisor: ProcessSupervisor; env?: NodeJS.ProcessEnv; log?: (line: string) => void }): ToolDispatcher {
@@ -18,6 +19,8 @@ export function createToolDispatcher(options: { supervisor: ProcessSupervisor; e
         return inspect(params as C1541Params, attachments[0]!, context);
       case "petcat.decode":
         return decode(attachments[0]!, context);
+      case "ghidra.analyze":
+        return analyze(params as GhidraParams, attachments[0]!, context);
     }
     throw new Error(`no adapter for ${String(op)}`);
   }) as ToolDispatcher;
