@@ -1,7 +1,8 @@
 // Builds the distributable skills into dist/skills (08 §6): each script that
 // a SKILL.md runs becomes one self-contained JavaScript file, so a skill copied
 // out of this repository needs no src/. The SKILL.md and its references are
-// copied with the script paths rewritten from .ts to .js.
+// copied with the script paths rewritten from .ts to .js. The AP SDK plugin
+// module goes next to them as dist/plugin.js, for c64-re-tools install.
 //
 // Run: node distribution/bundle.ts
 
@@ -47,7 +48,23 @@ export async function bundleSkills(output = join(root, "dist", "skills")): Promi
   return skills;
 }
 
+/** The plugin module of the installed package; AP SDK stays a package dependency. */
+export async function bundlePlugin(outfile = join(root, "dist", "plugin.js")): Promise<void> {
+  await build({
+    entryPoints: [join(root, "distribution", "plugin.ts")],
+    outfile,
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node24",
+    external: ["@jalco/ap-sdk"],
+    legalComments: "none",
+    logLevel: "warning",
+  });
+}
+
 if (import.meta.main) {
   const skills = await bundleSkills();
-  console.log(`bundled ${skills.length} skills into dist/skills`);
+  await bundlePlugin();
+  console.log(`bundled ${skills.length} skills into dist/skills and the plugin into dist/plugin.js`);
 }

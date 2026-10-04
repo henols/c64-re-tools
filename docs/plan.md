@@ -157,7 +157,7 @@ Acceptance (19 §12): an end-to-end fixture from an unknown C64 artifact through
 Acceptance (19 §13): from the packed npm artifact in a fresh directory, the skills install, the MCP launches, the Host Runtime is reachable, a real VICE operation works, and a host-tool skill script runs from its installed location.
 
 - [x] M11.1 **Skill-script bundles** — `distribution/bundle.ts`: esbuild (dev dependency) bundles each skill script that a SKILL.md runs into one self-contained JavaScript file under `dist/skills/`, with the SKILL.md (script paths rewritten to `.js`) and its references. Skills copied out of the repository then need no `src/`.
-- [ ] M11.2 **Plugin definition** — `distribution/plugin.ts` for `@jalco/ap-sdk` (08 §3): the bundled skills with their scripts and references, and the stdio MCP declaration `c64-re-tools-mcp` (the global npm binary, never `npx`). `ap-sdk check` and `ap-sdk build` pass.
+- [x] M11.2 **Plugin definition** — `distribution/plugin.ts` for `@jalco/ap-sdk` (08 §3): the bundled skills with their scripts and references, and the stdio MCP declaration `c64-re-tools-mcp` (the global npm binary, never `npx`). `ap-sdk check` and `ap-sdk build` pass.
 - [ ] M11.3 **Package** — `package.json` `files` and bins; the build makes `dist/skills` and the plugin module; AP SDK becomes a runtime dependency of the CLI only.
 - [ ] M11.4 **CLI** — `c64-re-tools install|update|uninstall|status`, thin over the AP SDK CLI (08 §5); `diagnose` and per-user host autostart wait (D14).
 - [ ] M11.5 **Acceptance from installed artifacts** — `npm pack`, a fresh directory, `npm install` of the tarball, the installed host and MCP binaries with real VICE, an installed skill bundle with a native tool, and `install` into a temporary harness directory.
