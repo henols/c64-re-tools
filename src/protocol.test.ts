@@ -132,6 +132,12 @@ test("operation results are validated on the client", () => {
   assert.deepEqual(validateViceResult("memoryRead", { address: 1, data: "a900" }), { address: 1, data: "a900" });
   assert.throws(() => validateViceResult("memoryRead", { address: 1, data: "A9" }), ProtocolError);
   assert.throws(() => validateViceResult("memoryRead", { address: 1, data: "a9f" }), ProtocolError);
+  // D21: a point carries its condition; a reset that stops gives its pc.
+  const point = { id: 1, address: 0x2100, space: "c64", enabled: true, condition: { kind: "register", register: "a", operator: "eq", value: 66 } };
+  assert.deepEqual(validateViceResult("breakpoint", point), point);
+  assert.throws(() => validateViceResult("breakpoint", { ...point, condition: { kind: "register", register: "q" } }), ProtocolError);
+  assert.deepEqual(validateViceResult("reset", { state: "stopped", pc: 0xfce2 }), { state: "stopped", pc: 0xfce2 });
+  assert.throws(() => validateViceResult("reset", { state: "stopped", pc: 0x10000 }), ProtocolError);
   const status = { state: "running", videoStandard: "pal", warp: false, window: false };
   assert.deepEqual(validateViceResult("status", status), status);
   assert.throws(() => validateViceResult("status", { ...status, state: "unknown" }), ProtocolError);

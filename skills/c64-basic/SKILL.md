@@ -50,6 +50,8 @@ The entry point of the machine code can be durable knowledge. The c64-reverse-en
 
 The listing and the handoff addresses. Or `decoded: false` with a reason when the file is not a BASIC program.
 
+The exit status is 0 for a listing. The exit status is 1 for `decoded: false` and for an error. The exit status is 2 for a wrong argument.
+
 ## Failure and conflicts
 
 - `decoded: false`: the file is not a BASIC program. This is a normal result. Usually the file is machine code. Give it to the c64-static-analysis skill.

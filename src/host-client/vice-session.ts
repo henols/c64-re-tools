@@ -144,7 +144,7 @@ export class ViceSessionClient {
     return this.#request("diskAttach", { type: file.type }, [file.bytes]);
   }
 
-  reset(params: { mode: ResetMode; run: boolean }): Promise<{ state: RunState }> {
+  reset(params: { mode: ResetMode; run: boolean }): Promise<{ state: RunState; pc?: number }> {
     return this.#request("reset", params);
   }
 

@@ -503,7 +503,7 @@ export class ViceSession implements ViceSessionHandle {
     return { state: "stopped", pc: await this.#pc(), executed: count };
   }
 
-  async #reset(params: { mode: "soft" | "hard"; run: boolean }): Promise<{ state: RunState }> {
+  async #reset(params: { mode: "soft" | "hard"; run: boolean }): Promise<{ state: RunState; pc?: number }> {
     await this.#stop();
     if (params.run) {
       await this.#runningCommand(() => this.#machine.reset(params.mode));
@@ -522,7 +522,7 @@ export class ViceSession implements ViceSessionHandle {
     if (!reached) await this.#stop();
     await this.#machine.deleteCheckpoint(checkpoint);
     if (!reached) throw new WireFailure("operation-failed", "The C64 did not reach its reset vector after the reset.");
-    return { state: "stopped" };
+    return { state: "stopped", pc: vector };
   }
 
   /**
@@ -695,7 +695,14 @@ export class ViceSession implements ViceSessionHandle {
       space: params.space,
       ...(params.condition === undefined ? {} : { condition: params.condition }),
     });
-    const point = { id: this.#nextPointId++, address: params.address, space: params.space, enabled: true, ...added };
+    const point = {
+      id: this.#nextPointId++,
+      address: params.address,
+      space: params.space,
+      enabled: true,
+      ...(params.condition === undefined ? {} : { condition: params.condition }),
+      ...added,
+    };
     this.#breakpoints.set(point.id, point);
     return publicView(point);
   }
@@ -717,6 +724,7 @@ export class ViceSession implements ViceSessionHandle {
       access: params.access,
       space: params.space,
       enabled: true,
+      ...(params.condition === undefined ? {} : { condition: params.condition }),
       ...added,
     };
     this.#watchpoints.set(point.id, point);

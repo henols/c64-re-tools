@@ -61,7 +61,7 @@ export const c64Reset = defineTool({
   title: "Reset the C64",
   description:
     "Reset the C64. Mode soft is the reset button. Mode hard is a power cycle that also resets the disk drive. " +
-    "With run false (the default), the CPU stops at the first instruction of the reset routine. " +
+    "With run false (the default), the CPU stops at the first instruction of the reset routine, and the result gives that program counter (pc). " +
     "With run true, the C64 starts normally. Breakpoints and watchpoints stay.",
   inputSchema: z
     .object({
@@ -69,10 +69,14 @@ export const c64Reset = defineTool({
       run: z.boolean().default(false).describe("false stops at the reset routine; true lets the C64 start"),
     })
     .strict(),
-  outputSchema: z.object({ state: z.enum(RUN_STATES) }),
+  outputSchema: z.object({
+    state: z.enum(RUN_STATES),
+    pc: AddressOutput.optional().describe("program counter; present only when run is false"),
+  }),
   readOnly: false,
   async run(input, session) {
-    return session.reset(input);
+    const result = await session.reset(input);
+    return result.pc === undefined ? { state: result.state } : { state: result.state, pc: formatC64Address(result.pc) };
   },
 });
 

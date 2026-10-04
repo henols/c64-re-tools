@@ -19,14 +19,20 @@ import {
   type Breakpoint,
   type Watchpoint,
 } from "../../protocol.ts";
-import { AddressInput, AddressOutput, Byte, ConditionInput, defineTool, HexData, SpaceInput, toCondition } from "../server.ts";
+import { AddressInput, AddressOutput, Byte, ConditionInput, ConditionOutput, defineTool, HexData, showCondition, SpaceInput, toCondition } from "../server.ts";
 
 /** No default here: a filled-in default would count as a field the other actions refuse. */
 const OptionalSpace = z.enum(SPACES).optional().describe("add only: c64 (default) or drive8, the 1541 disk drive CPU");
 
 const Id = z.number().int().min(1).describe("the id that action add returned");
 
-const BreakpointOutput = z.object({ id: z.number().int().min(1), address: AddressOutput, space: z.enum(SPACES), enabled: z.boolean() });
+const BreakpointOutput = z.object({
+  id: z.number().int().min(1),
+  address: AddressOutput,
+  space: z.enum(SPACES),
+  enabled: z.boolean(),
+  condition: ConditionOutput.optional(),
+});
 const WatchpointOutput = BreakpointOutput.extend({ size: z.number().int().min(1).max(MAX_WATCH_SIZE), access: z.enum(WATCH_ACCESS) });
 
 /** Checks which fields an action takes, so a wrong mix is an invalid-input error. */
@@ -40,11 +46,13 @@ function requireFields(action: string, given: Record<string, unknown>, allowed: 
 }
 
 function showBreakpoint(point: Breakpoint) {
-  return { ...point, address: formatC64Address(point.address) };
+  const { condition, ...rest } = point;
+  return { ...rest, address: formatC64Address(point.address), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
 }
 
 function showWatchpoint(point: Watchpoint) {
-  return { ...point, address: formatC64Address(point.address) };
+  const { condition, ...rest } = point;
+  return { ...rest, address: formatC64Address(point.address), ...(condition === undefined ? {} : { condition: showCondition(condition) }) };
 }
 
 export const c64Breakpoint = defineTool({
@@ -53,7 +61,7 @@ export const c64Breakpoint = defineTool({
   description:
     "Manage breakpoints. A breakpoint stops the CPU when it is about to execute the instruction at an address. " +
     "Action add sets one at address in space c64 or drive8. With a condition, it stops only when the condition is true. " +
-    "add returns the new id. Actions remove, enable and disable take that id. Action list gives all breakpoints. " +
+    "add returns the new id. Actions remove, enable and disable take that id. Action list gives all breakpoints. Each breakpoint shows its condition, when it has one. " +
     "Breakpoints stay through a reset.",
   inputSchema: z
     .object({
@@ -95,7 +103,7 @@ export const c64Watchpoint = defineTool({
     "Manage watchpoints. A watchpoint stops the CPU when an instruction reads or writes memory in a range. " +
     `Action add sets one at address for size bytes (1 to ${MAX_WATCH_SIZE}, default 1), with access read, write or read-write. ` +
     "With a condition, it stops only when the condition is true. For a write, a memory condition sees the memory after the write. " +
-    "add returns the new id. Actions remove, enable and disable take that id. Action list gives all watchpoints.",
+    "add returns the new id. Actions remove, enable and disable take that id. Action list gives all watchpoints. Each watchpoint shows its condition, when it has one.",
   inputSchema: z
     .object({
       action: z.enum(CHECKPOINT_ACTIONS),

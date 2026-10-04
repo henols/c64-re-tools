@@ -123,8 +123,11 @@ class FakeSession implements ViceSessionApi {
   points: unknown[] = [];
   async breakpoint(params: import("../protocol.ts").BreakpointParams) {
     this.points.push(params);
-    if (params.action === "list") return { breakpoints: [{ id: 1, address: 0x2100, space: "c64" as const, enabled: true }] };
-    if (params.action === "add") return { id: 1, address: params.address, space: params.space, enabled: true };
+    if (params.action === "list") {
+      const condition = { kind: "memory" as const, address: 0xc100, operator: "eq" as const, value: 7, space: "c64" as const, view: "cpu" as const };
+      return { breakpoints: [{ id: 1, address: 0x2100, space: "c64" as const, enabled: true, condition }] };
+    }
+    if (params.action === "add") return { id: 1, address: params.address, space: params.space, enabled: true, ...(params.condition === undefined ? {} : { condition: params.condition }) };
     return { id: params.id, address: 0x2100, space: "c64" as const, enabled: params.action !== "disable" };
   }
   async watchpoint(params: import("../protocol.ts").WatchpointParams) {
@@ -265,7 +268,7 @@ class FakeSession implements ViceSessionApi {
   resets: Array<{ mode: string; run: boolean }> = [];
   async reset(params: { mode: "soft" | "hard"; run: boolean }) {
     this.resets.push(params);
-    return { state: params.run ? ("running" as const) : ("stopped" as const) };
+    return params.run ? { state: "running" as const } : { state: "stopped" as const, pc: 0xfce2 };
   }
 
   warpState = false;
@@ -433,7 +436,7 @@ test("c64_execution passes the action through and formats the pc", async () => {
 test("c64_reset defaults run to false and c64_warp echoes the mode", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
-  assert.deepEqual((await call(client, "c64_reset", { mode: "hard" })).structuredContent, { state: "stopped" });
+  assert.deepEqual((await call(client, "c64_reset", { mode: "hard" })).structuredContent, { state: "stopped", pc: "$fce2" }, "a stopped reset gives the reset vector (D21)");
   assert.deepEqual((await call(client, "c64_reset", { mode: "soft", run: true })).structuredContent, { state: "running" });
   assert.deepEqual(session.resets, [
     { mode: "hard", run: false },
@@ -549,7 +552,13 @@ test("c64_breakpoint passes typed conditions through and checks fields per actio
     address: "$2100",
     condition: { kind: "register", register: "a", operator: "eq", value: 66 },
   });
-  assert.deepEqual(added.structuredContent, { id: 1, address: "$2100", space: "c64", enabled: true });
+  assert.deepEqual(added.structuredContent, {
+    id: 1,
+    address: "$2100",
+    space: "c64",
+    enabled: true,
+    condition: { kind: "register", register: "a", operator: "eq", value: 66 },
+  });
   assert.deepEqual(session.points[0], {
     action: "add",
     address: 0x2100,
@@ -557,7 +566,7 @@ test("c64_breakpoint passes typed conditions through and checks fields per actio
     condition: { kind: "register", register: "a", operator: "eq", value: 66 },
   });
   assert.deepEqual((await call(client, "c64_breakpoint", { action: "list" })).structuredContent, {
-    breakpoints: [{ id: 1, address: "$2100", space: "c64", enabled: true }],
+    breakpoints: [{ id: 1, address: "$2100", space: "c64", enabled: true, condition: { kind: "memory", address: "$c100", operator: "eq", value: 7, space: "c64", view: "cpu" } }],
   });
   assert.deepEqual((await call(client, "c64_breakpoint", { action: "disable", id: 1 })).structuredContent, {
     id: 1,

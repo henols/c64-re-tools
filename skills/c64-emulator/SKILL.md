@@ -53,12 +53,14 @@ Each memory and register tool has a `space`. Use `c64` for the computer. Use `dr
 1. Read the project knowledge for the addresses in the question. Use the c64-knowledge skill.
 2. Get the machine state with `c64_status`.
 3. Load the subject if it is not loaded. Use `c64_autostart` to start it as a user does. Use `c64_program_load` to put a PRG in memory with no start.
-4. Set the stop condition. Use a breakpoint, a watchpoint or a `c64_run_until` target. Add a typed condition when the stop must occur only in one state.
+4. Set the stop condition. Use a breakpoint, a watchpoint or a `c64_run_until` target. Add a typed condition when the stop must occur only in one state. The `list` result shows the condition of each breakpoint and each watchpoint.
 5. Run, step or give input. Prefer `c64_run_until` and `advance-frames` to waits. They stop at the same emulated time on every run.
 6. Read only the state that answers the question. To read several things from one moment, use `c64_observe`.
 7. Interpret the evidence. Keep the observed facts apart from your conclusions.
 
 Write operations need a stopped CPU. Stop the CPU with `c64_execution` action `pause` first.
+
+`c64_reset` with `run` false stops the CPU at the first instruction of the reset routine. The result gives that address in `pc`.
 
 Step, next and until-return work only in space `c64`. The emulator cannot stop the disk drive CPU after one instruction. To find when the drive executes an address, use `c64_run_until` with an address target in space `drive8`, or a breakpoint in space `drive8`. The drive can execute a few more instructions before it stops. The `pc` in the result is the drive address where it stopped.
 

@@ -85,6 +85,9 @@ test("bytes that are no BASIC program give a reason, not lines", () => {
   assert.match((parseTokenized(Uint8Array.from([1, 8, 9, 8, 0xff, 0xff, 0x9e, 0])) as { reason: string }).reason, /above 63999/);
   const empty = parseTokenized(Uint8Array.from([1, 8, 0, 0]));
   assert.ok(!("reason" in empty) && empty.lines.length === 0, "an empty program is a program");
+  // Machine code loaded at $c000 that starts LDA #$00 reads as an end marker before any line.
+  const code = parseTokenized(Uint8Array.from([0x00, 0xc0, 0xa9, 0x00, 0x8d, 0x00, 0xc1]));
+  assert.match((code as { reason: string }).reason, /no BASIC line/);
   const unterminated = parseTokenized(program([[10, bytes(SYS, "2061")]]).subarray(0, -2));
   assert.ok(!("reason" in unterminated) && unterminated.lines.length === 1, "a file may end right after its last line");
 });

@@ -171,7 +171,7 @@ test("stepping drive8 is refused for now", async () => {
 
 test("a reset without run stops at the reset vector and leaves no checkpoint", async () => {
   const { fake, session } = await startSession();
-  assert.deepEqual(await session.handle("reset", { mode: "hard", run: false }), { state: "stopped" });
+  assert.deepEqual(await session.handle("reset", { mode: "hard", run: false }), { state: "stopped", pc: 0xfce2 });
   assert.equal(fake.running, false);
   assert.equal(fake.registers.PC, 0xfce2);
   assert.equal(fake.checkpoints.size, 0);
@@ -447,7 +447,7 @@ test("breakpoints get session ids, a condition, and a full lifecycle", async () 
     space: "c64",
     condition: { kind: "register", register: "a", operator: "eq", value: 66 },
   });
-  assert.deepEqual(added, { id: 1, address: 0x2100, space: "c64", enabled: true });
+  assert.deepEqual(added, { id: 1, address: 0x2100, space: "c64", enabled: true, condition: { kind: "register", register: "a", operator: "eq", value: 66 } });
   const [checkpoint] = [...fake.checkpoints.values()];
   assert.equal(checkpoint!.operation, 0x04);
   assert.equal(checkpoint!.condition, "(A == $42)");

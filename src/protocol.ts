@@ -139,6 +139,8 @@ export interface Breakpoint {
   address: number;
   space: Space;
   enabled: boolean;
+  /** The condition given at add, when there was one (D21). */
+  condition?: Condition;
 }
 
 export interface Watchpoint {
@@ -148,6 +150,8 @@ export interface Watchpoint {
   access: WatchAccess;
   space: Space;
   enabled: boolean;
+  /** The condition given at add, when there was one (D21). */
+  condition?: Condition;
 }
 
 export type BreakpointParams =
@@ -444,7 +448,8 @@ export interface ViceOperations {
   autostart: { params: { type: string; index: number; run: boolean }; result: { state: RunState } };
   /** Attachment: the disk image bytes; `type` is the file's extension. */
   diskAttach: { params: { type: string }; result: { attached: boolean } };
-  reset: { params: { mode: ResetMode; run: boolean }; result: { state: RunState } };
+  /** pc is the reset vector when run is false: the CPU stops there (D21). */
+  reset: { params: { mode: ResetMode; run: boolean }; result: { state: RunState; pc?: number } };
   /** `data`: PETSCII bytes as lowercase hex. */
   keyboard: { params: { data: string }; result: { queuedBytes: number } };
   joystick: { params: JoystickState; result: JoystickState };
@@ -1122,8 +1127,18 @@ function isBreakpoint(value: unknown): value is Breakpoint {
     isInteger(value.id, 1, 0xffff_ffff) &&
     isInteger(value.address, 0, 0xffff) &&
     isOneOf(SPACES, value.space) &&
-    typeof value.enabled === "boolean"
+    typeof value.enabled === "boolean" &&
+    (value.condition === undefined || isCondition(value.condition))
   );
+}
+
+function isCondition(value: unknown): value is Condition {
+  try {
+    validateCondition(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isWatchpoint(value: unknown): value is Watchpoint {
@@ -1390,6 +1405,7 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     case "reset":
     case "autostart": {
       if (!isOneOf(RUN_STATES, value.state)) throw new ProtocolError(`${op} result is malformed`);
+      if (op === "reset" && value.pc !== undefined && !isInteger(value.pc, 0, 0xffff)) throw new ProtocolError("reset result is malformed");
       break;
     }
     case "programLoad": {

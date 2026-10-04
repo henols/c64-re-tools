@@ -59,6 +59,8 @@ A downstream skill records the meaning of the extracted content.
 
 The directory, the BAM, an entry or a sector chain as JSON. Or the extracted file in the project at the output path.
 
+The exit status is 0 for a result with the file. The exit status is 1 for `found: false` and for an error. The exit status is 2 for a wrong argument.
+
 ## Failure and conflicts
 
 - `found: false`: the image has no file with that name. This is a normal result. Read the directory again and compare the names.

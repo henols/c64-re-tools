@@ -7,7 +7,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool as McpTool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
-import { parseC64Address } from "../c64.ts";
+import { formatC64Address, parseC64Address } from "../c64.ts";
 import type { ViceSessionClient } from "../host-client/vice-session.ts";
 import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, WireFailure, type Condition, type WireError } from "../protocol.ts";
 
@@ -138,6 +138,20 @@ export const ConditionInput = z
       .strict(),
   ])
   .describe("register: a CPU register compared to a byte; memory: a byte in memory compared to a byte; raster: the raster position");
+
+/** A condition as a result shows it: the input form, with the memory address as "$xxxx" (D21). */
+export const ConditionOutput = z
+  .discriminatedUnion("kind", [
+    z.object({ kind: z.literal("register"), register: z.enum(CONDITION_REGISTERS), operator: z.enum(COMPARISONS), value: Byte }),
+    z.object({ kind: z.literal("memory"), address: AddressOutput, operator: z.enum(COMPARISONS), value: Byte, space: z.enum(SPACES), view: z.enum(MEMORY_VIEWS) }),
+    z.object({ kind: z.literal("raster"), line: z.number().int().min(0), cycle: z.number().int().min(0).optional() }),
+  ])
+  .describe("the condition given at add");
+
+/** A protocol condition in its result form. */
+export function showCondition(condition: Condition): z.input<typeof ConditionOutput> {
+  return condition.kind === "memory" ? { ...condition, address: formatC64Address(condition.address) } : condition;
+}
 
 /** Removes keys whose value is undefined, so optional fields stay absent. */
 export function defined<T extends Record<string, unknown>>(value: T): T {

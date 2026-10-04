@@ -159,7 +159,11 @@ export function parseTokenized(program: Uint8Array): TokenizedProgram {
     // A file that ends right after a line leaves the end marker to the zeros after it in memory.
     if (at === program.length && lines.length > 0) return { loadAddress, basicEnd: loadAddress + at - 2, lines };
     if (at + 1 >= program.length) return { reason: "The BASIC program has no end marker." };
-    if (program[at + 1] === 0) return { loadAddress, basicEnd: loadAddress + at, lines };
+    if (program[at + 1] === 0) {
+      // An end marker before any line, with more bytes after it, is how machine code at a non-BASIC address often starts.
+      if (lines.length === 0 && at + 2 < program.length) return { reason: "The file holds no BASIC line before other bytes, so it is no BASIC program." };
+      return { loadAddress, basicEnd: loadAddress + at, lines };
+    }
     if (at + 4 > program.length) return { reason: "The last BASIC line is cut off." };
     const number = program[at + 2]! | (program[at + 3]! << 8);
     if (number > MAX_LINE_NUMBER) return { reason: `Line number ${number} is above ${MAX_LINE_NUMBER}, so the bytes are no BASIC program.` };

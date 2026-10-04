@@ -33,7 +33,7 @@ test("pause stops with a pc, status agrees, and resume runs again", { skip: live
 });
 
 test("a hard reset without run stops at the KERNAL reset entry", { skip: liveSkip, timeout: 60_000 }, async () => {
-  assert.deepEqual(await session.handle("reset", { mode: "hard", run: false }), { state: "stopped" });
+  assert.deepEqual(await session.handle("reset", { mode: "hard", run: false }), { state: "stopped", pc: 0xfce2 });
   const status = await session.handle("status", {});
   assert.equal(status.state, "stopped");
   assert.equal(status.pc, 0xfce2, "the stock KERNAL reset vector points at $fce2");

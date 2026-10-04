@@ -294,9 +294,12 @@ Output:
 
 ~~~json
 {
-  "state": "stopped"
+  "state": "stopped",
+  "pc": "$fce2"
 }
 ~~~
+
+pc is the reset vector and is present only when run is false (D21 in docs/plan.md).
 
 Reset invalidates transient machine-derived state that cannot survive reset. Visual baselines remain usable only if explicitly defined as screen images rather than machine-state handles.
 
@@ -596,6 +599,8 @@ List output:
 
 IDs are positive session-local integers.
 
+A breakpoint added with a condition carries that condition in every output, in the input form with addresses as `$xxxx` (D21 in docs/plan.md).
+
 ## 13. c64_watchpoint
 
 action:
@@ -658,7 +663,7 @@ Output:
 }
 ~~~
 
-Lifecycle actions mirror c64_breakpoint.
+Lifecycle actions mirror c64_breakpoint. A watchpoint added with a condition carries it in every output, as a breakpoint does (D21).
 
 ## 14. c64_memory_read
 

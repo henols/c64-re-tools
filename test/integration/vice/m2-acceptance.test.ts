@@ -59,7 +59,8 @@ const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
 
 /** The scenario. Every step is driven by emulated time, so two runs must agree exactly. */
 async function scenario(client: Client) {
-  await tool(client, "c64_reset", { mode: "hard" });
+  // D21: the reset stops at the reset vector and says where.
+  assert.deepEqual((await tool(client, "c64_reset", { mode: "hard" })).result, { state: "stopped", pc: "$fce2" });
   const loaded = (await tool(client, "c64_program_load", { path: "build/counter.prg" })).result;
   assert.deepEqual(loaded, { state: "stopped", loadAddress: "$c000", size: joystickCounterPrg.length - 2 });
   await tool(client, "c64_registers", { action: "set", values: { pc: "$c000" } });

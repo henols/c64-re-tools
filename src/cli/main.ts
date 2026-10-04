@@ -14,6 +14,7 @@ import { hostTools } from "../host-client/tools.ts";
 import { localToolContext } from "../native/local.ts";
 import { localToolStatus } from "../native/status.ts";
 import type { ToolStatus } from "../protocol.ts";
+import { installedItems, parseTargets, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, type Scope } from "./cleanup.ts";
 
 const HELP = `c64-re-tools: Commodore 64 reverse engineering and development
 
@@ -97,12 +98,24 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
   const flags = [...(values.target === undefined ? [] : ["--target", values.target]), ...(values.global ? ["--global"] : [])];
+  const scope: Scope = values.global ? "global" : "project";
+  const targets = parseTargets(values.target);
   switch (command) {
     case "install":
-    case "update":
-      return apSdk(["install", ...flags]);
-    case "uninstall":
-      return apSdk(["uninstall", ...flags]);
+    case "update": {
+      const before = windsurfBefore();
+      const code = apSdk(["install", ...flags]);
+      // A project install leaves the home directory as it was (D21).
+      const note = scope === "project" && (targets === undefined || targets.includes("windsurf")) ? undoWindsurfProjectMcp(before) : undefined;
+      if (note !== undefined) console.log(`  ${note}\n`);
+      return code;
+    }
+    case "uninstall": {
+      const items = installedItems(scope, targets);
+      const code = apSdk(["uninstall", ...flags]);
+      if (code === 0) tidyAfterUninstall(items, scope);
+      return code;
+    }
     case "status":
       return status();
     default:
