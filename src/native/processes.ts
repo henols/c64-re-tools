@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess, type StdioOptions } from "node:child_process";
 import { mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { extname, join } from "node:path";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** How long a process group gets between SIGTERM and SIGKILL. */
 export const STOP_GRACE_MS = 5_000;
@@ -62,8 +63,8 @@ export interface Registry {
   paths: string[];
 }
 
-/** The watchdog's program, next to this module (.ts from source, .js when built). */
-const WATCHDOG = join(import.meta.dirname, `watchdog${extname(import.meta.filename)}`);
+/** The watchdog's program, next to this module. A new URL literal, so an installed skill gets it too (08 §6). */
+const WATCHDOG = fileURLToPath(new URL("./watchdog.ts", import.meta.url));
 
 /**
  * The one child-process supervisor of a process: the Host Runtime, or a
@@ -151,7 +152,7 @@ export class ProcessSupervisor {
     const directory = mkdtempSync(join(tmpdir(), "c64-re-tools-host-"));
     this.#registry = join(directory, "registry.json");
     this.#writeRegistry();
-    const watchdog = spawn(process.execPath, [WATCHDOG, String(process.pid), this.#registry], { detached: true, stdio: "ignore", windowsHide: true });
+    const watchdog = spawn(process.execPath, [...process.execArgv, WATCHDOG, String(process.pid), this.#registry], { detached: true, stdio: "ignore", windowsHide: true });
     watchdog.unref();
     this.installExitGuard();
   }

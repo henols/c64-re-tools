@@ -5,12 +5,12 @@
 
 import { readFileSync } from "node:fs";
 
-import { formatC64Address, parseC64Address, textToPetscii } from "../../../src/c64.ts";
-import { WireFailure } from "../../../src/host-client/tools.ts";
-import type { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { openForRead } from "../../../src/knowledge/database.ts";
-import { listSymbols } from "../../../src/knowledge/read.ts";
-import { resolveProjectPath } from "../../../src/project.ts";
+import { formatC64Address, parseC64Address, textToPetscii } from "#src/c64.ts";
+import { WireFailure } from "#src/host-client/tools.ts";
+import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { openForRead } from "#src/knowledge/database.ts";
+import { listSymbols } from "#src/knowledge/read.ts";
+import { resolveProjectPath } from "#src/project.ts";
 
 export class ScenarioError extends Error {}
 

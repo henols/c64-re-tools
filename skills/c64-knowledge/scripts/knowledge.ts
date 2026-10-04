@@ -3,9 +3,9 @@
 
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "../../../src/c64.ts";
-import { KnowledgeError, openForRead, openForWrite } from "../../../src/knowledge/database.ts";
-import { historyAt, historyNamed, revision, revisions, type HistoryEntry, type Revision } from "../../../src/knowledge/history.ts";
+import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { KnowledgeError, openForRead, openForWrite } from "#src/knowledge/database.ts";
+import { historyAt, historyNamed, revision, revisions, type HistoryEntry, type Revision } from "#src/knowledge/history.ts";
 import {
   at,
   listComments,
@@ -17,7 +17,7 @@ import {
   type ReferenceRow,
   type RegionRow,
   type SymbolRow,
-} from "../../../src/knowledge/read.ts";
+} from "#src/knowledge/read.ts";
 import {
   COMMENT_PLACEMENTS,
   REFERENCE_KINDS,
@@ -27,7 +27,7 @@ import {
   type ReferenceKind,
   type RegionType,
   type SymbolKind,
-} from "../../../src/knowledge/schema.ts";
+} from "#src/knowledge/schema.ts";
 import {
   addReference,
   classifyRegion,
@@ -39,7 +39,7 @@ import {
   setComment,
   unclassifyRegion,
   type WriteContext,
-} from "../../../src/knowledge/write.ts";
+} from "#src/knowledge/write.ts";
 
 const USAGE = `knowledge.ts <command> [arguments] [options]
 

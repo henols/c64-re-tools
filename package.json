@@ -11,13 +11,20 @@
   },
   "type": "module",
   "packageManager": "pnpm@12.9.1+sha512.06b055fff5cd20dc12781de173ced3310ce0951bf2ec620211a16045d5444d5c93a663210764ef29a653a610459ba0368f0e74f84d80c54723cf95aae7bc0d6d",
+  "imports": {
+    "#src/*": "./src/*"
+  },
   "bin": {
-    "c64-re-tools": "./dist/cli/main.js",
-    "c64-re-tools-mcp": "./dist/mcp/main.js",
-    "c64-re-tools-host": "./dist/host/main.js"
+    "c64-re-tools": "./src/cli/main.ts",
+    "c64-re-tools-mcp": "./src/mcp/main.ts",
+    "c64-re-tools-host": "./src/host/main.ts"
   },
   "files": [
-    "dist/",
+    "src/",
+    "!src/**/*.test.ts",
+    "!src/**/*.testkit.ts",
+    "skills/",
+    "distribution/plugin.ts",
     "LICENSE",
     "README.md"
   ],
@@ -25,18 +32,18 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"for(const d of ['language','scripts'])fs.cpSync('src/native/ghidra/'+d,'dist/native/ghidra/'+d,{recursive:true})\" && node distribution/bundle.ts",
+    "host": "node src/host/main.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "pnpm build && node --test \"src/**/*.test.ts\" \"test/**/*.test.ts\""
+    "test": "node --test \"src/**/*.test.ts\" \"test/**/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "24.13.3",
-    "esbuild": "0.28.2",
     "typescript": "7.0.2"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.0",
     "zod": "4.6.5",
-    "@jalco/ap-sdk": "0.4.1"
+    "@jalco/ap-sdk": "0.4.1",
+    "tsx": "4.23.15"
   }
 }

@@ -6,8 +6,7 @@ node_modules/
 # one of their own, so here it stays ignored at any depth.
 .c64-re-tools/
 
-# Build output (tsc -> dist/) and npm pack output.
-dist/
+# npm pack output.
 *.tgz
 
 # Local editor config, machine-specific, never shared.

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env tsx
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
@@ -16,12 +16,13 @@ import { videoTools } from "./tools/video.ts";
 const HELP = `c64-re-tools-mcp
 
 Usage:
-  c64-re-tools-mcp
+  npx -y --package=@henols/c64-re-tools@latest c64-re-tools-mcp
   c64-re-tools-mcp --help
 
 Runs the stateful C64 MCP server on stdio. Each c64-re-tools-mcp process owns
-one C64 emulator, started by the c64-re-tools-host Host Runtime when this
-server starts and stopped when it exits.
+one C64 emulator, started by the Host Runtime (c64-re-tools-host) when this
+server starts and stopped when it exits. c64-re-tools install declares it for
+the agent, through npx with the latest version.
 
 Environment:
   C64RT_VIDEO  pal (default) or ntsc; fixed for the life of the process.

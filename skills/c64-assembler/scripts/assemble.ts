@@ -5,13 +5,13 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "../../../src/c64.ts";
-import { WireFailure } from "../../../src/host-client/tools.ts";
-import { readProjectTree } from "../../../src/host-client/transfer.ts";
-import { assemble } from "../../../src/native/acme.ts";
-import { localToolContext } from "../../../src/native/local.ts";
-import type { AcmeParams } from "../../../src/native/types.ts";
-import { resolveProjectPath } from "../../../src/project.ts";
+import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { WireFailure } from "#src/host-client/tools.ts";
+import { readProjectTree } from "#src/host-client/transfer.ts";
+import { assemble } from "#src/native/acme.ts";
+import { localToolContext } from "#src/native/local.ts";
+import type { AcmeParams } from "#src/native/types.ts";
+import { resolveProjectPath } from "#src/project.ts";
 
 const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [options]
 

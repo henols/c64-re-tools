@@ -50,7 +50,7 @@ export async function callTool<O extends ToolOperation>(
         }
       });
       void connection.closed.then(() =>
-        reject(new WireFailure("operation-failed", "The connection to the c64-re-tools host runtime was lost during the request. Check that c64-re-tools-host is running.")),
+        reject(new WireFailure("operation-failed", "The connection to the c64-re-tools host runtime was lost during the request. Check that the Host Runtime (c64-re-tools-host) is running.")),
       );
       connection.send({ type: "request", id: 1, op, params } as never, attachments);
     });

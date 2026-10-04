@@ -67,7 +67,7 @@ test("a hello token must be a short string", () => {
 });
 
 test("the host refuses --listen beyond loopback without a long enough token", () => {
-  const main = resolve(import.meta.dirname, "../../../dist/host/main.js");
+  const main = resolve(import.meta.dirname, "../../../src/host/main.ts");
   const env = { ...process.env };
   delete env.C64RT_HOST_TOKEN;
   const run = spawnSync(process.execPath, [main, "--port", "0", "--listen", "10.255.255.1"], { encoding: "utf8", env });

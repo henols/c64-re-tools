@@ -53,7 +53,7 @@ async function mcp(port: number, extraEnv: Record<string, string> = {}, cwd?: st
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [resolve(root, "dist/mcp/main.js")],
+    args: [resolve(root, "src/mcp/main.ts")],
     env: { ...env, C64RT_HOST: `127.0.0.1:${port}`, ...extraEnv },
     stderr: "ignore",
     ...(cwd === undefined ? {} : { cwd }),

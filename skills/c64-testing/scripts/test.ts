@@ -4,8 +4,8 @@
 
 import { parseArgs } from "node:util";
 
-import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { WireFailure } from "../../../src/host-client/tools.ts";
+import { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { WireFailure } from "#src/host-client/tools.ts";
 import { readScenario, runScenario, ScenarioError, type ScenarioResult } from "./scenario.ts";
 
 const USAGE = `test.ts <scenario.json>

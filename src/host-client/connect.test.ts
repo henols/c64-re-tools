@@ -74,7 +74,7 @@ test("a host error during the handshake is passed through unchanged", async () =
 test("a host that is not running is machine-unavailable for a VICE session and names the remedy", async () => {
   await assert.rejects(HostConnection.open({ role: "vice-session", env: await closedPort() }), (error: unknown) => {
     assert.ok(failsWith("machine-unavailable")(error));
-    assert.match((error as Error).message, /c64-re-tools-host/);
+    assert.match((error as Error).message, /npx -y --package=@henols\/c64-re-tools@latest c64-re-tools-host/);
     assert.doesNotMatch((error as Error).message, /127\.0\.0\.1|\d{4,}/);
     return true;
   });

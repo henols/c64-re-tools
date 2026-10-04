@@ -72,16 +72,16 @@ Support normal ecosystem distribution:
 
 ```text
 GitHub repository
-npm packages
+npm packages (run through npx with @latest; D17 in docs/plan.md)
 ```
 
 The preferred end-user entry point should be a single convenience command, conceptually:
 
 ```text
-npx @henols/c64-re-tools install
+npx -y @henols/c64-re-tools@latest install
 ```
 
-The exact published package name is settled during implementation.
+run in the project. Nothing is linked or installed globally.
 
 The installer delegates to the packaging/runtime mechanisms; it is not a new package manager.
 
@@ -125,17 +125,17 @@ The lightweight client/skill environment uses maintained TypeScript source in th
 
 Skills should not copy this infrastructure.
 
-Where practical, release builds bundle the small shared runtime pieces needed by skill scripts into self-contained JavaScript artifacts. This avoids depending on harness-specific Node module resolution while preserving one maintained source implementation.
+Nothing is built (D17 in docs/plan.md): an installed skill holds its TypeScript scripts, a copy of the src/ modules they reach and a package.json that maps the "#src/*" subpath import to that copy. Node runs the files by type stripping. This avoids depending on harness-specific Node module resolution while preserving one maintained source implementation.
 
 In particular, released skill scripts must not locate MCP internals through filesystem ladders or sibling-package path probing. The harness working directory is the project root; project-relative path validation, knowledge access and the Host Runtime client come from maintained shared source and are bundled/packaged deterministically. See [17 — Project root and local state](17-project-root-and-local-state.md).
 
-There are no separate internal runtime/knowledge/MCP npm packages in v1. The one published c64-re-tools package exposes the CLI, MCP and Host Runtime executables; skill scripts bundle the maintained source they need. See [18 — Repository structure](18-repository-structure.md).
+There are no separate internal runtime/knowledge/MCP npm packages in v1. The one published c64-re-tools package exposes the CLI, MCP and Host Runtime executables; skill scripts carry the maintained source they need. See [18 — Repository structure](18-repository-structure.md).
 
 ## 7. MCP distribution
 
 The packaged MCP declaration configures only the stateful VICE MCP.
 
-The MCP executable should be distributed through npm or an equivalent normal executable package mechanism and be runnable without manual source checkout.
+The MCP executable is the TypeScript entry point of the installed checkout (D17): Node does not strip types under node_modules, so the bins run with tsx. The MCP declaration starts it with npx -y --package=@henols/c64-re-tools@latest c64-re-tools-mcp, so it updates itself; nothing is linked or installed globally.
 
 Packaging must not broaden the MCP into a gateway for DXA, Ghidra, ACME, c1541, petcat or knowledge operations.
 
@@ -148,7 +148,7 @@ It is intentionally separate from harness/plugin installation because the harnes
 Provide an explicit host-side installation entry point, conceptually:
 
 ```text
-npx @henols/c64-re-tools host install
+npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host   (D14, D17 in docs/plan.md)
 ```
 
 The Host Runtime should remain runnable as a normal foreground executable for development/troubleshooting.

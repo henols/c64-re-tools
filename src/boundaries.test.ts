@@ -50,6 +50,7 @@ function checkImport(from: string, specifier: string): string | undefined {
   const source = areaOf(from);
   if (source === undefined) return undefined;
 
+  if (specifier.startsWith("#src/")) return checkTarget(from, source, `src/${specifier.slice("#src/".length)}`);
   if (!specifier.startsWith(".")) {
     if (specifier === AP_SDK || specifier.startsWith(`${AP_SDK}/`)) {
       return source === "cli" || source === "distribution"
@@ -60,6 +61,12 @@ function checkImport(from: string, specifier: string): string | undefined {
   }
 
   const target = relative(ROOT, resolve(ROOT, dirname(from), specifier)).split(sep).join("/");
+  // An installed skill holds its own scripts and a copy of src/ reached through #src/* (08 §6).
+  if (source.startsWith("skill:") && areaOf(target) !== source) return `${from}: a skill reaches src/ through #src/, never through ${specifier}`;
+  return checkTarget(from, source, target);
+}
+
+function checkTarget(from: string, source: string, target: string): string | undefined {
   const targetArea = areaOf(target);
   if (targetArea === undefined) return `${from}: imports ${target}, which is outside every source area`;
   if (targetArea === source) return undefined;
@@ -108,9 +115,9 @@ test("checkImport refuses every forbidden direction", () => {
     ["src/protocol.ts", "./host/server.ts"],
     ["src/host/server.ts", "../../skills/c64-disk/scripts/disk.ts"],
     ["skills/c64-disk/scripts/disk.ts", "../../c64-basic/scripts/basic.ts"],
-    ["skills/c64-disk/scripts/disk.ts", "../../../src/host/tools/c1541.ts"],
-    ["skills/c64-disk/scripts/disk.ts", "../../../src/mcp/server.ts"],
-    ["src/host/server.ts", "../../dist/host/server.js"],
+    ["skills/c64-disk/scripts/disk.ts", "#src/host/tools/c1541.ts"],
+    ["skills/c64-disk/scripts/disk.ts", "#src/mcp/server.ts"],
+    ["skills/c64-disk/scripts/disk.ts", "../../../src/host-client/tools.ts"],
     ["src/mcp/server.ts", AP_SDK],
     ["skills/c64-disk/scripts/disk.ts", AP_SDK],
   ];
@@ -129,8 +136,8 @@ test("checkImport accepts every allowed direction", () => {
     ["src/host/vice/session.ts", "./process.ts"],
     ["src/knowledge/read.ts", "../project.ts"],
     ["src/protocol.ts", "./c64.ts"],
-    ["skills/c64-disk/scripts/disk.ts", "../../../src/host-client/tools.ts"],
-    ["skills/c64-disk/scripts/disk.ts", "../../../src/knowledge/write.ts"],
+    ["skills/c64-disk/scripts/disk.ts", "#src/host-client/tools.ts"],
+    ["skills/c64-disk/scripts/disk.ts", "#src/knowledge/write.ts"],
     ["skills/c64-disk/scripts/disk.ts", "./helpers.ts"],
     ["distribution/plugin.ts", AP_SDK],
     ["src/cli/main.ts", "../host/server.ts"],

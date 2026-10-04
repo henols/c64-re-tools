@@ -7,10 +7,10 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "../../../src/c64.ts";
-import { WireFailure } from "../../../src/host-client/tools.ts";
-import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { resolveProjectPath } from "../../../src/project.ts";
+import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { WireFailure } from "#src/host-client/tools.ts";
+import { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { resolveProjectPath } from "#src/project.ts";
 import { inspect, PackingError } from "./evidence.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>

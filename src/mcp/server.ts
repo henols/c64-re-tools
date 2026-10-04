@@ -209,7 +209,6 @@ export async function callTool(
 
 function packageVersion(): string {
   try {
-    // Same relative path from src/mcp and dist/mcp.
     return (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
   } catch {
     return "0.0.0";

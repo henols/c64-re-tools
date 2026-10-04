@@ -50,7 +50,7 @@ function unreachable(role: Role): WireFailure {
   const code: ErrorCode = role === "vice-session" ? "machine-unavailable" : "operation-failed";
   return new WireFailure(
     code,
-    "The c64-re-tools host runtime is not running or cannot be reached. Start it on the host with c64-re-tools-host and try again.",
+    "The c64-re-tools host runtime is not running or cannot be reached. Start it on the host (npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host) and try again.",
   );
 }
 

@@ -49,7 +49,7 @@ function makeDisk(): void {
 let host: Promise<{ process: ChildProcess; address: string }> | undefined;
 function startHost(): Promise<{ process: ChildProcess; address: string }> {
   host ??= (async () => {
-    const child = spawn(process.execPath, [resolve(root, "dist/host/main.js"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
+    const child = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
     // SIGTERM lets the host stop every emulator it started.
     const exited = once(child, "exit");
     cleanups.unshift(() => (child.kill("SIGTERM"), exited));
@@ -93,7 +93,7 @@ test("VICE runs the extracted loader from BASIC to the decoded handoff", { skip:
   const { address } = await startHost();
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
-  const transport = new StdioClientTransport({ command: process.execPath, args: [resolve(root, "dist/mcp/main.js")], env: { ...env, C64RT_HOST: address }, cwd: project, stderr: "inherit" });
+  const transport = new StdioClientTransport({ command: process.execPath, args: [resolve(root, "src/mcp/main.ts")], env: { ...env, C64RT_HOST: address }, cwd: project, stderr: "inherit" });
   const client = new Client({ name: "m6-acceptance", version: "0" });
   await client.connect(transport);
   try {

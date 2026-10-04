@@ -32,7 +32,7 @@ import { readProjectFile } from "./transfer.ts";
 
 const HOST_LOST =
   "The connection to the c64-re-tools host runtime was lost, and the emulator and its machine state went with it. " +
-  "Check that c64-re-tools-host is running, then restart the c64-re-tools MCP server.";
+  "Check that the Host Runtime (c64-re-tools-host) is running, then restart the c64-re-tools MCP server.";
 
 interface Pending {
   op: ViceOperation;

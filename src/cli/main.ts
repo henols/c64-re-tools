@@ -1,11 +1,11 @@
-#!/usr/bin/env node
+#!/usr/bin/env tsx
 // The human CLI (08 §5, 18 §10): installs the skills and the VICE MCP
 // declaration into agent harnesses through AP SDK, and reports status. It is
 // thin: AP SDK does the harness-specific work.
 
 import { spawnSync } from "node:child_process";
-import { accessSync, constants, existsSync, readFileSync } from "node:fs";
-import { delimiter, dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -28,8 +28,10 @@ Harnesses: claude, codex, pi, opencode, gemini, copilot, cursor, windsurf
 (comma-separated; default: all). Without --global the files go into the
 current project; with --global into your home directory.
 
-The VICE MCP runs the c64-re-tools-mcp program of this package. The Host
-Runtime runs on the machine with VICE: start it there with c64-re-tools-host.
+Run it in the project: npx -y @henols/c64-re-tools@latest install. The VICE
+MCP declaration starts the latest c64-re-tools-mcp through npx. The Host
+Runtime runs on the machine with VICE: start it there with
+npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host.
 It runs VICE and the tools that come with it (c1541, petcat). The skill
 scripts run ACME, DXA and Ghidra themselves, on the machine of the agent.`;
 
@@ -40,29 +42,13 @@ function packageVersion(): string {
   return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as { version: string }).version : "unknown";
 }
 
-function onPath(program: string): string | undefined {
-  for (const dir of (process.env.PATH ?? "").split(delimiter)) {
-    if (dir === "") continue;
-    try {
-      accessSync(join(dir, program), constants.X_OK);
-      return join(dir, program);
-    } catch {
-      // not in this directory
-    }
-  }
-  return undefined;
-}
-
 /** Runs the AP SDK CLI of this package's own dependency. */
 function apSdk(args: string[]): number {
-  const plugin = join(here, "..", "plugin.js");
-  if (!existsSync(plugin)) {
-    console.error("This copy of c64-re-tools has no built plugin (dist/plugin.js). Install the package from npm, or run pnpm build.");
-    return 1;
-  }
+  const plugin = join(here, "..", "..", "distribution", "plugin.ts");
   const cli = join(dirname(fileURLToPath(import.meta.resolve("@jalco/ap-sdk"))), "cli.js");
   const command = args[0]!;
-  const run = spawnSync(process.execPath, [cli, command, ...(command === "uninstall" ? ["c64-re-tools"] : [plugin]), ...args.slice(1)], { stdio: "inherit" });
+  // execArgv keeps the TypeScript loader (tsx) for the plugin module under node_modules.
+  const run = spawnSync(process.execPath, [...process.execArgv, cli, command, ...(command === "uninstall" ? ["c64-re-tools"] : [plugin]), ...args.slice(1)], { stdio: "inherit" });
   return run.status ?? 1;
 }
 
@@ -77,10 +63,8 @@ function printTools(heading: string, tools: ToolStatus[]): void {
 
 async function status(): Promise<number> {
   console.log(`c64-re-tools ${packageVersion()}`);
-  for (const program of ["c64-re-tools-mcp", "c64-re-tools-host"]) {
-    const path = onPath(program);
-    console.log(`${program}: ${path ?? "not on PATH (install the package with npm install -g @henols/c64-re-tools)"}`);
-  }
+  console.log(`Package: ${join(here, "..", "..")}`);
+  console.log(`Node: ${process.version} (${process.execPath})`);
   // The skill scripts run these tools here, on this machine.
   printTools("Tools here:", await localToolStatus(localToolContext()));
   try {

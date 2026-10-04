@@ -586,9 +586,9 @@ Rules:
 - detailed domain material goes in references/;
 - assets/ exists only when a real skill output needs bundled assets.
 
-Skill scripts may import src/ source during development/build.
+Skill scripts import src/ through the "#src/*" subpath import, never through a relative path out of the skill.
 
-Installed skill scripts are bundled/self-contained and never resolve repository-relative src/ imports at runtime.
+An installed skill holds its scripts, a copy of the src/ modules they reach and a package.json that maps "#src/*" to that copy (D17 in docs/plan.md). It never resolves repository-relative src/ imports at runtime.
 
 ## 12. One npm package
 
@@ -598,12 +598,12 @@ Publish one product package, conceptually:
 @henols/c64-re-tools
 ~~~
 
-Expose three executables:
+Expose three executables, TypeScript entry points run by tsx (D17):
 
 ~~~text
-c64-re-tools       → dist/cli/main.js
-c64-re-tools-mcp   → dist/mcp/main.js
-c64-re-tools-host  → dist/host/main.js
+c64-re-tools       → src/cli/main.ts
+c64-re-tools-mcp   → src/mcp/main.ts
+c64-re-tools-host  → src/host/main.ts
 ~~~
 
 One package provides:
@@ -626,21 +626,9 @@ src/host/main.ts
 
 and the skill script entry points that actually exist.
 
-Conceptually:
+There is no build step and no dist/ (D17): Node runs these files by type stripping, and tsc only typechecks. Users run the programs through npx with @latest; under node_modules Node does not strip types, so the bins start with a tsx shebang.
 
-~~~text
-pnpm build
-   ↓
-dist/
-├── cli/
-├── mcp/
-├── host/
-└── skills/
-~~~
-
-Use normal TypeScript bundling/build tooling. Do not invent a runtime module loader for skills.
-
-Repository/distribution metadata and non-JavaScript skill files are copied/package-generated as release artifacts.
+Do not invent a runtime module loader for skills: the "#src/*" subpath import and Node's own resolution are enough.
 
 ## 14. Tests
 

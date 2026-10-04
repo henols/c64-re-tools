@@ -5,8 +5,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { inspectDisk, WireFailure } from "../../../src/host-client/tools.ts";
-import { resolveProjectPath } from "../../../src/project.ts";
+import { inspectDisk, WireFailure } from "#src/host-client/tools.ts";
+import { resolveProjectPath } from "#src/project.ts";
 
 const USAGE = `disk.ts <action> <image> [name] [--out <file>]
 

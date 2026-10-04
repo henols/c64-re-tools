@@ -36,9 +36,9 @@ Node ≥ 24 and pnpm (installed by hand; `packageManager` pins the version) are 
 
 ```
 pnpm install --frozen-lockfile
-pnpm typecheck   # tsc over src/ and test/, tests included
-pnpm build       # tsc -p tsconfig.build.json -> dist/, tests excluded
-pnpm test        # build, then node --test "src/**/*.test.ts" "test/**/*.test.ts"
+pnpm typecheck   # tsc over src/, skills/, distribution/ and test/; nothing is emitted
+pnpm test        # node --test "src/**/*.test.ts" "test/**/*.test.ts"
+pnpm host        # the Host Runtime from this checkout, in the foreground
 ```
 
 - Unit tests sit beside source (`src/**/*.test.ts`); `test/` is for integration/e2e.
@@ -53,7 +53,7 @@ pnpm test        # build, then node --test "src/**/*.test.ts" "test/**/*.test.ts
 
 ## Conventions that bite
 
-- **TypeScript only.** Never hand-write `.js`/`.mjs`; JS exists only as build output in `dist/`.
+- **TypeScript only (D17).** No `.js`/`.mjs` anywhere, also not installed: nothing is built, there is no `dist/`. Users run everything through `npx -y @henols/c64-re-tools@latest` (the MCP declaration too), so it updates itself; never link (`npm link`, `npm install -g <dir>`). Node never strips types under `node_modules`, so the bins are `.ts` with a `#!/usr/bin/env tsx` shebang, and every spawn of node on our own `.ts` passes `process.execArgv`. Skill scripts import `src/` as `#src/...`. npx exits on SIGTERM without passing it on: signal the process group.
 - The Host Runtime runs only VICE, c1541 and petcat. Skill scripts run ACME, DXA and Ghidra through `src/native/` (supervisor, staging, bounded `runTool`); never a bare `spawnSync`. Never auto-install external tools: detect, refuse by name, print the remedy.
 - The host refuses to start unless VICE starts (ROMs present); the host is started by hand only.
 - Tools take client paths and stream bytes; never a fixed file list or a path over the socket.

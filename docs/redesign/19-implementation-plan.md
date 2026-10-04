@@ -73,17 +73,16 @@ Create only the minimum implementation skeleton.
 ### Establish
 
 - one npm package;
-- one pnpm build;
+- no build step (D17);
 - one test runner;
 - formatting/linting only if they materially help the project;
-- dist/ build output;
 - executable bin wiring.
 
 ### Acceptance
 
 ~~~text
 pnpm install
-pnpm build
+pnpm typecheck
 pnpm test
 ~~~
 
@@ -602,7 +601,7 @@ functional verification
 
 ## 13. Milestone 11 — Installation and distribution
 
-Do not postpone all packaging checks until the final release: smoke-test the built npm package throughout development.
+Do not postpone all packaging checks until the final release: smoke-test the installed package throughout development.
 
 Once product behavior is complete, finish the user-facing installation flow.
 
@@ -619,7 +618,7 @@ Once product behavior is complete, finish the user-facing installation flow.
 - AP SDK distribution adapter;
 - MCP declaration;
 - packaged skills;
-- installed skill-script bundles.
+- installed skill scripts with the src/ modules they reach.
 
 ### Test from installed artifacts
 
@@ -628,7 +627,7 @@ Never accept only repository-local execution.
 Test at least:
 
 ~~~text
-npm package artifact
+npm pack, then npx --package=<tarball> c64-re-tools install
  ↓
 fresh environment
  ↓

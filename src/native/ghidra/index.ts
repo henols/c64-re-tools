@@ -4,9 +4,10 @@
 // never change. Ghidra compiles the language from its source on first load.
 // Projects are disposable and live in the request workspace.
 
-import { accessSync, constants, cpSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, constants, cpSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { WireFailure } from "../../protocol.ts";
 import type { ProcessSupervisor } from "../processes.ts";
@@ -14,13 +15,9 @@ import type { Workspace } from "../staging.ts";
 import { runTool, type ToolRun } from "../run.ts";
 
 export const GHIDRA_LANGUAGE = "C64RT_6510:LE:16:nmos";
-/** Next to this module in src/ and dist/; in a ghidra/ folder next to a bundled skill script. */
-function asset(name: string): string {
-  const beside = join(import.meta.dirname, name);
-  return existsSync(beside) ? beside : join(import.meta.dirname, "ghidra", name);
-}
-export const LANGUAGE_DIRECTORY = asset("language");
-export const SCRIPT_DIRECTORY = asset("scripts");
+// Next to this module. New URL literals, so an installed skill gets the directories too (08 §6).
+export const LANGUAGE_DIRECTORY = fileURLToPath(new URL("./language/", import.meta.url));
+export const SCRIPT_DIRECTORY = fileURLToPath(new URL("./scripts/", import.meta.url));
 
 const REMEDY =
   "Install Ghidra on the machine that runs the skill scripts and set C64RT_GHIDRA to its installation directory " +

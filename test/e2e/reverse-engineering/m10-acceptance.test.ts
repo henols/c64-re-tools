@@ -46,7 +46,7 @@ after(async () => {
 });
 
 async function hostAddress(): Promise<string> {
-  host = spawn(process.execPath, [resolve(root, "dist/host/main.js"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
+  host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
   const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
   return `127.0.0.1:${/:(\d+)$/.exec(line)![1]}`;
 }

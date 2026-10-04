@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env tsx
 
 import { parseArgs } from "node:util";
 
@@ -12,7 +12,7 @@ import { viceSessionFactory } from "./vice/session.ts";
 const HELP = `c64-re-tools-host
 
 Usage:
-  c64-re-tools-host [--port <port>] [--listen <address> ...]
+  npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host [--port <port>] [--listen <address> ...]
   c64-re-tools-host --help
 
 Runs the c64-re-tools Host Runtime in the foreground. It first starts VICE

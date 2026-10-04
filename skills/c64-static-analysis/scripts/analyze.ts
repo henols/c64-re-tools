@@ -7,16 +7,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "../../../src/c64.ts";
-import { WireFailure } from "../../../src/host-client/tools.ts";
-import { readProjectFile } from "../../../src/host-client/transfer.ts";
-import { analyze as analyzeWithDxa } from "../../../src/native/dxa.ts";
-import { analyze as analyzeWithGhidra } from "../../../src/native/ghidra/analyze.ts";
-import { localToolContext } from "../../../src/native/local.ts";
-import { KnowledgeError, openForRead, openForWrite } from "../../../src/knowledge/database.ts";
-import { importFindings, type ImportConflict } from "../../../src/knowledge/import.ts";
-import { currentRevision } from "../../../src/knowledge/read.ts";
-import { resolveProjectPath } from "../../../src/project.ts";
+import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { WireFailure } from "#src/host-client/tools.ts";
+import { readProjectFile } from "#src/host-client/transfer.ts";
+import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
+import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
+import { localToolContext } from "#src/native/local.ts";
+import { KnowledgeError, openForRead, openForWrite } from "#src/knowledge/database.ts";
+import { importFindings, type ImportConflict } from "#src/knowledge/import.ts";
+import { currentRevision } from "#src/knowledge/read.ts";
+import { resolveProjectPath } from "#src/project.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
 
 const USAGE = `analyze.ts <image> [options]

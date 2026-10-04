@@ -28,7 +28,7 @@ after(() => {
 });
 
 async function startHost(): Promise<{ process: ChildProcess; port: number }> {
-  const host = spawn(process.execPath, [resolve(root, "dist/host/main.js"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
+  const host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
   cleanups.push(() => host.kill("SIGKILL"));
   const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
   return { process: host, port: Number(/:(\d+)$/.exec(line)![1]) };
@@ -39,7 +39,7 @@ async function startMcp(port: number, project: string): Promise<Client> {
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [resolve(root, "dist/mcp/main.js")],
+    args: [resolve(root, "src/mcp/main.ts")],
     env: { ...env, C64RT_HOST: `127.0.0.1:${port}` },
     cwd: project,
     stderr: "inherit",

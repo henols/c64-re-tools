@@ -172,6 +172,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.32.0
         version: 1.32.0(zod@4.6.5)
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -179,9 +182,6 @@ importers:
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3
-      esbuild:
-        specifier: 0.28.2
-        version: 0.28.2
       typescript:
         specifier: 7.0.2
         version: 7.0.2

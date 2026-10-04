@@ -4,8 +4,8 @@
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "../../../src/c64.ts";
-import { resolveProjectPath } from "../../../src/project.ts";
+import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { resolveProjectPath } from "#src/project.ts";
 import { compareReleases, suggestShift, type Release } from "./compare.ts";
 
 const USAGE = `provenance.ts <release.prg> <release.prg> [<release.prg> ...] [options]

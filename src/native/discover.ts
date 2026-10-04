@@ -33,7 +33,7 @@ export const C1541: ToolSpec = {
   envVar: "C64RT_C1541",
   binaries: ["c1541"],
   where: "on the host",
-  remedy: "Install VICE on the host (c1541 comes with it) so that c1541 is on PATH, or set C64RT_C1541 to its full path, then restart c64-re-tools-host.",
+  remedy: "Install VICE on the host (c1541 comes with it) so that c1541 is on PATH, or set C64RT_C1541 to its full path, then restart the Host Runtime.",
 };
 
 export const PETCAT: ToolSpec = {
@@ -41,7 +41,7 @@ export const PETCAT: ToolSpec = {
   envVar: "C64RT_PETCAT",
   binaries: ["petcat"],
   where: "on the host",
-  remedy: "Install VICE on the host (petcat comes with it) so that petcat is on PATH, or set C64RT_PETCAT to its full path, then restart c64-re-tools-host.",
+  remedy: "Install VICE on the host (petcat comes with it) so that petcat is on PATH, or set C64RT_PETCAT to its full path, then restart the Host Runtime.",
 };
 
 export const DXA: ToolSpec = {

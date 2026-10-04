@@ -28,7 +28,7 @@ after(() => {
 
 /** Starts the built Host Runtime on a free port with VICE from C64RT_LIVE_VICE. */
 async function startHost(): Promise<{ process: ChildProcess; port: number }> {
-  const host = spawn(process.execPath, [resolve(root, "dist/host/main.js"), "--port", "0"], {
+  const host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], {
     env: liveEnv(),
     stdio: ["ignore", "pipe", "inherit"],
   });
@@ -44,7 +44,7 @@ async function startMcp(port: number): Promise<{ client: Client; transport: Stdi
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [resolve(root, "dist/mcp/main.js")],
+    args: [resolve(root, "src/mcp/main.ts")],
     env: { ...env, C64RT_HOST: `127.0.0.1:${port}` },
     stderr: "inherit",
   });

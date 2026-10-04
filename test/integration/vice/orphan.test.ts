@@ -34,7 +34,7 @@ async function until(condition: () => boolean, timeoutMs: number): Promise<boole
 }
 
 test("a Host Runtime killed with SIGKILL leaves no VICE and no scratch directory", { skip: liveSkip, timeout: 60_000 }, async () => {
-  const host = spawn(process.execPath, [resolve(root, "dist/host/main.js"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
+  const host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
   const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
   const env = { ...process.env, C64RT_HOST: `127.0.0.1:${/:(\d+)$/.exec(line)![1]}` };
   const session = await ViceSessionClient.open({ videoStandard: "pal", env });

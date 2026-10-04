@@ -4,9 +4,9 @@
 import { statSync } from "node:fs";
 import { parseArgs } from "node:util";
 
-import { formatC64Address } from "../../../src/c64.ts";
-import { decodeBasic, WireFailure } from "../../../src/host-client/tools.ts";
-import { resolveProjectPath } from "../../../src/project.ts";
+import { formatC64Address } from "#src/c64.ts";
+import { decodeBasic, WireFailure } from "#src/host-client/tools.ts";
+import { resolveProjectPath } from "#src/project.ts";
 
 const USAGE = `basic.ts <program>
 

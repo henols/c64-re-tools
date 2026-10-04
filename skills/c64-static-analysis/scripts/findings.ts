@@ -3,9 +3,9 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import type { NormalizedFindings } from "../../../src/knowledge/import.ts";
-import { listRegions, listSymbols } from "../../../src/knowledge/read.ts";
-import type { DxaResult, GhidraParams, GhidraResult } from "../../../src/native/types.ts";
+import type { NormalizedFindings } from "#src/knowledge/import.ts";
+import { listRegions, listSymbols } from "#src/knowledge/read.ts";
+import type { DxaResult, GhidraParams, GhidraResult } from "#src/native/types.ts";
 
 export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
 

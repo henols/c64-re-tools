@@ -1,7 +1,7 @@
 // Local evidence of packing for the c64-unpacker script: where BASIC hands
 // over and how compressed the bytes look. It never names a packer.
 
-import { formatC64Address } from "../../../src/c64.ts";
+import { formatC64Address } from "#src/c64.ts";
 
 export class PackingError extends Error {}
 

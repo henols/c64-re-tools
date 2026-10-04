@@ -55,7 +55,7 @@ The listing and the handoff addresses. Or `decoded: false` with a reason when th
 - `decoded: false`: the file is not a BASIC program. This is a normal result. Usually the file is machine code. Give it to the c64-static-analysis skill.
 - An empty `handoffs` list: the BASIC does not start machine code with SYS or USR. Do not make up a handoff. Look for a POKE into a vector or a LOAD of another file in the listing.
 - `installation-incomplete`: petcat is not on the host. Tell the user the message.
-- `operation-failed` with a message about the host runtime: the host runtime does not run. Tell the user to start `c64-re-tools-host`.
+- `operation-failed` with a message about the host runtime: the host runtime does not run. Tell the user to start the host runtime with `npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host`.
 - `not-found` or `invalid-input`: the path or an argument is wrong. Read the message and correct the call.
 
 ## Handoffs

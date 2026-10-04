@@ -64,7 +64,7 @@ The directory, the BAM, an entry or a sector chain as JSON. Or the extracted fil
 - `found: false`: the image has no file with that name. This is a normal result. Read the directory again and compare the names.
 - `media-error`: the image has a defect or is not a disk image. The message tells the problem, for example a sector chain that loops. Tell the user. Do not change the image.
 - `installation-incomplete`: c1541 is not on the host. Tell the user the message.
-- `operation-failed` with a message about the host runtime: the host runtime does not run. Tell the user to start `c64-re-tools-host`.
+- `operation-failed` with a message about the host runtime: the host runtime does not run. Tell the user to start the host runtime with `npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host`.
 - `invalid-input`: an argument or a path is wrong. Read the message and correct the call.
 
 A file that is not `closed` was not written fully. Its data can be incomplete.

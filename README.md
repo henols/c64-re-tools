@@ -19,31 +19,43 @@ The design is in [`docs/redesign/`](docs/redesign/README.md), and
 
 ## Install
 
-Requirements: Node.js 24 or newer, and on the graphical host stock VICE
+Requirements: Node.js 24 or newer with npx, and on the graphical host stock VICE
 (`x64sc`, `c1541`, `petcat`) with its ROM files. ACME, DXA and Ghidra are
 needed for the skills that use them, on the machine where the agent runs its
 skill scripts (inside the container, for an agent in one). The toolkit never
 installs a native tool for you: when one is missing, the operation that needs
-it says which one and how to install it. `c64-re-tools status` runs each tool
+it says which one and how to install it. The `status` command runs each tool
 once and shows which ones work.
 
+Everything runs through npx with the latest published version, so it
+updates itself; nothing is installed globally or linked:
+
 ```
-npm install -g @henols/c64-re-tools     # the c64-re-tools, -mcp and -host programs
 cd my-c64-project
-c64-re-tools install --target claude    # the skills and the VICE MCP for this project
-c64-re-tools status
+npx -y @henols/c64-re-tools@latest install --target claude   # the skills and the VICE MCP for this project
+npx -y @henols/c64-re-tools@latest status
 ```
 
-`c64-re-tools install` uses [AP SDK](https://ap-sdk.dev) for the harness
+The skills are copied into the project. The MCP declaration starts the MCP
+server the same way: `npx -y --package=@henols/c64-re-tools@latest
+c64-re-tools-mcp`.
+
+Everything is TypeScript, also when installed, and nothing is built. The
+programs run with [tsx](https://tsx.is), because Node does not run
+TypeScript inside `node_modules`; the installed skill scripts are `.ts` files
+in the project, and Node runs them itself.
+
+`install` uses [AP SDK](https://ap-sdk.dev) for the harness
 layouts: `claude`, `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor` and
 `windsurf` (comma-separated; all of them without `--target`). Add `--global`
-to install into your home directory instead of the project. `update` installs
-the current version again, `uninstall` removes it.
+to install into your home directory instead of the project. `uninstall`
+removes it. The MCP server and the Host Runtime get the latest version each
+time they start; run `update` in a project to copy the latest skills.
 
 Start the Host Runtime on the graphical host and leave it in the foreground:
 
 ```
-c64-re-tools-host          # listens on 127.0.0.1:6464; Ctrl+C stops it and every emulator
+npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host   # listens on 127.0.0.1:6464; Ctrl+C stops it and every emulator
 ```
 
 It starts VICE once before it listens, and does not start when VICE cannot
@@ -61,7 +73,7 @@ the container bridge as well, with a shared secret on both sides:
 
 ```
 export C64RT_HOST_TOKEN=$(openssl rand -hex 16)   # the same value inside the container
-c64-re-tools-host --listen 172.17.0.1
+npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host --listen 172.17.0.1
 ```
 
 Clients on loopback need no token; every other client must send it.
@@ -105,15 +117,15 @@ that the skills run for the agent; `<skills>` is the installed skills
 directory):
 
 ```
-node <skills>/c64-disk/scripts/disk.js directory original/game.d64
-node <skills>/c64-disk/scripts/disk.js read original/game.d64 GAME --out extracted/game.prg
-node <skills>/c64-basic/scripts/basic.js extracted/game.prg                  # the SYS address, e.g. $080d
-node <skills>/c64-unpacker/scripts/unpack.js inspect extracted/game.prg
-node <skills>/c64-static-analysis/scripts/analyze.js extracted/game.prg --entry '$080d'
-node <skills>/c64-knowledge/scripts/knowledge.js rename '$080d' main --kind routine --reason 'entry from BASIC'
-node <skills>/c64-static-analysis/scripts/analyze.js extracted/game.prg --entry '$080d' --decompile '$080d'
-node <skills>/c64-assembler/scripts/assemble.js --source-root src --entry game.a --out build/game.prg > build/game.json
-node <skills>/c64-testing/scripts/test.js tests/counts.json                   # PASS, FAIL or INCONCLUSIVE
+node <skills>/c64-disk/scripts/disk.ts directory original/game.d64
+node <skills>/c64-disk/scripts/disk.ts read original/game.d64 GAME --out extracted/game.prg
+node <skills>/c64-basic/scripts/basic.ts extracted/game.prg                  # the SYS address, e.g. $080d
+node <skills>/c64-unpacker/scripts/unpack.ts inspect extracted/game.prg
+node <skills>/c64-static-analysis/scripts/analyze.ts extracted/game.prg --entry '$080d'
+node <skills>/c64-knowledge/scripts/knowledge.ts rename '$080d' main --kind routine --reason 'entry from BASIC'
+node <skills>/c64-static-analysis/scripts/analyze.ts extracted/game.prg --entry '$080d' --decompile '$080d'
+node <skills>/c64-assembler/scripts/assemble.ts --source-root src --entry game.a --out build/game.prg > build/game.json
+node <skills>/c64-testing/scripts/test.ts tests/counts.json                   # PASS, FAIL or INCONCLUSIVE
 ```
 
 Development: build with the c64-assembler skill, then load and debug with the
@@ -122,19 +134,20 @@ MCP tools (`c64_program_load`, `c64_breakpoint`, `c64_run_until`,
 
 ## Developing
 
-Node 24 or newer and pnpm are required; install pnpm yourself (for example
+To work on the toolkit itself, Node 24 or newer and pnpm are required; install pnpm yourself (for example
 `corepack enable pnpm`). `packageManager` in `package.json` pins its version.
 
 ```
 pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm build         # tsc -> dist/, Ghidra assets, skill bundles in dist/skills, dist/plugin.js
-pnpm test          # build, then node --test on src/**/*.test.ts and test/**/*.test.ts
+pnpm typecheck     # tsc checks everything; it emits nothing
+pnpm test          # node --test on src/**/*.test.ts and test/**/*.test.ts
 ```
 
 Unit tests sit beside their source as `src/**/*.test.ts`; `test/` holds
 integration and end-to-end tests. Node runs the TypeScript directly (type
-stripping), so relative imports name the `.ts` file.
+stripping), so relative imports name the `.ts` file. Skill scripts import
+`src/` as `#src/...` (the `imports` map in `package.json`); an installed skill
+gets the `src/` modules it reaches and its own `package.json` with that map.
 
 Tests that need real tools are opt-in. Without them they are reported as
 skipped, never as passed:
@@ -150,7 +163,7 @@ ACME, c1541 and petcat tests run when the tools are on `PATH`.
 ```
 src/             # mcp, host, host-client, knowledge, cli; unit tests beside the source
 skills/          # the skills: SKILL.md, scripts (TypeScript) and references
-distribution/    # the skill bundler and the AP SDK plugin definition
+distribution/    # the AP SDK plugin definition: skills with the src/ modules they reach
 test/            # fixtures, integration and end-to-end tests
 docs/redesign/   # the design
 ```

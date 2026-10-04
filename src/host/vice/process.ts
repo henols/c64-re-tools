@@ -37,7 +37,7 @@ const VICE_BINARY = process.platform === "win32" ? "x64sc.exe" : "x64sc";
 
 const INSTALL_REMEDY =
   "Install VICE 3.6 or later on the host so that x64sc is on PATH, or set C64RT_VICE to the full path of x64sc, " +
-  "then restart c64-re-tools-host.";
+  "then restart the Host Runtime.";
 
 function isExecutableFile(path: string): boolean {
   try {
@@ -214,7 +214,7 @@ export async function checkViceStarts(options: Omit<LaunchOptions, "videoStandar
       "installation-incomplete",
       `VICE (${binary}) is installed but does not start${reasons.length === 0 ? "." : `:\n  ${reasons.join("\n  ")}`}\n` +
         "Make sure that VICE has its ROM files (the C64 KERNAL, BASIC and character ROMs) and that x64sc starts when you run it by hand, " +
-        "then restart c64-re-tools-host.",
+        "then restart the Host Runtime.",
     );
   }
   await vice.stop();
