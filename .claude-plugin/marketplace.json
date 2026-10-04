@@ -4,13 +4,13 @@
     "name": "Henrik Olsson",
     "url": "https://github.com/henols"
   },
-  "description": "Agent-friendly Commodore 64 engineering toolkit (under rewrite).",
+  "description": "Agent-friendly Commodore 64 engineering toolkit.",
   "version": "0.0.0-dev",
   "plugins": [
     {
       "name": "c64-re-tools",
       "source": "./",
-      "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing. Under rewrite; the VICE MCP server returns with the new Host Runtime.",
+      "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing.",
       "version": "0.0.0-dev",
       "author": {
         "name": "Henrik Olsson"

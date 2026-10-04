@@ -3,7 +3,7 @@
   "name": "c64-re-tools",
   "displayName": "C64 Reverse-Engineering Tools",
   "version": "0.0.0-dev",
-  "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing. Under rewrite; the VICE MCP server returns with the new Host Runtime.",
+  "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing.",
   "author": {
     "name": "Henrik Olsson",
     "url": "https://github.com/henols"
