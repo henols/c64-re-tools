@@ -2,6 +2,7 @@
 // Ghidra), and the checks of their complete results (16 §11). Nothing here
 // crosses the Host Runtime wire.
 
+import { REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
 import { WireFailure, type SourceTree } from "../protocol.ts";
 
 type Fields = Record<string, unknown>;
@@ -53,8 +54,7 @@ export interface AcmeResult {
 
 export const IMAGE_KINDS = ["prg", "flat64k"] as const;
 export type ImageKind = (typeof IMAGE_KINDS)[number];
-export const REFERENCE_TYPES = ["call", "jump", "read", "write", "reference"] as const;
-export type ReferenceType = (typeof REFERENCE_TYPES)[number];
+
 export const GHIDRA_LIMITS = { entryPoints: 1024, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
 
 /** ghidra.analyze (16 §10). The image is the request's one attachment: a PRG, or 64 KiB from $0000. */
@@ -72,7 +72,7 @@ export interface GhidraResult {
   coverage: Array<{ start: number; end: number }>;
   functions: Array<{ entry: number; name: string; nameSource: "seed" | "generated" | "native" }>;
   regions: Array<{ start: number; end: number; classification: "code" | "data" }>;
-  references: Array<{ from: number; to: number; type: ReferenceType }>;
+  references: Array<{ from: number; to: number; type: ReferenceKind }>;
   decompilations: Array<{ entry: number; text: string; truncated: boolean }>;
   /** Which categories are complete inside the coverage (12 §4); private to the importer. */
   completeness: { functions: boolean; regions: boolean; references: boolean };
@@ -91,7 +91,6 @@ export interface DxaResult {
   completeness: { regions: boolean; labels: boolean };
 }
 
-const ANALYSIS_LABEL = /^\.?[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 /**
  * Checks a complete Ghidra result: every field typed and in range, every
@@ -110,7 +109,7 @@ export function checkGhidraResult(value: unknown): GhidraResult {
   const covered = (address: number) => (coverage as Array<{ start: number; end: number }>).some((range) => range.start <= address && address <= range.end);
   if (!Array.isArray(result.functions)) fail("no functions");
   for (const fn of result.functions as unknown[]) {
-    if (!isObject(fn) || !isInteger(fn.entry, 0, 0xffff) || typeof fn.name !== "string" || !ANALYSIS_LABEL.test(fn.name) || !isOneOf(["seed", "generated", "native"] as const, fn.nameSource)) fail("bad function");
+    if (!isObject(fn) || !isInteger(fn.entry, 0, 0xffff) || typeof fn.name !== "string" || !SYMBOL_NAME.test(fn.name) || !isOneOf(["seed", "generated", "native"] as const, fn.nameSource)) fail("bad function");
     if (!covered((fn as Fields).entry as number)) fail("a function lies outside the coverage");
   }
   if (!Array.isArray(result.regions)) fail("no regions");
@@ -124,7 +123,7 @@ export function checkGhidraResult(value: unknown): GhidraResult {
   }
   if (!Array.isArray(result.references)) fail("no references");
   for (const reference of result.references as unknown[]) {
-    if (!isObject(reference) || !isInteger(reference.from, 0, 0xffff) || !isInteger(reference.to, 0, 0xffff) || !isOneOf(REFERENCE_TYPES, reference.type)) fail("bad reference");
+    if (!isObject(reference) || !isInteger(reference.from, 0, 0xffff) || !isInteger(reference.to, 0, 0xffff) || !isOneOf(REFERENCE_KINDS, reference.type)) fail("bad reference");
     if (!covered((reference as Fields).from as number)) fail("a reference source lies outside the coverage");
   }
   if (!Array.isArray(result.decompilations) || result.decompilations.length > GHIDRA_LIMITS.decompile) fail("bad decompilations");
@@ -167,7 +166,7 @@ export function checkDxaResult(value: unknown, attachments: readonly Uint8Array[
   if (next !== end + 1) fail("the regions do not reach the end of the coverage");
   if (!Array.isArray(result.labels)) fail("no labels");
   for (const label of result.labels as unknown[]) {
-    if (!isObject(label) || !isInteger(label.address, start, end) || typeof label.name !== "string" || !ANALYSIS_LABEL.test(label.name)) fail("bad label");
+    if (!isObject(label) || !isInteger(label.address, start, end) || typeof label.name !== "string" || !SYMBOL_NAME.test(label.name)) fail("bad label");
   }
   if (attachments.length !== 1 || result.listingBytes !== attachments[0]!.length) fail("the listing is missing");
   const completeness = result.completeness;

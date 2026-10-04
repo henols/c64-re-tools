@@ -4,15 +4,16 @@
 // never change. Ghidra compiles the language from its source on first load.
 // Projects are disposable and live in the request workspace.
 
-import { accessSync, constants, cpSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { WireFailure } from "../../protocol.ts";
+import { findOnPath, isExecutableFile } from "../discover.ts";
 import type { ProcessSupervisor } from "../processes.ts";
 import type { Workspace } from "../staging.ts";
-import { runTool, type ToolRun } from "../run.ts";
+import { runToolOrFail, type ToolRun } from "../run.ts";
 
 export const GHIDRA_LANGUAGE = "C64RT_6510:LE:16:nmos";
 // Next to this module. New URL literals, so an installed skill gets the directories too (08 §6).
@@ -32,18 +33,11 @@ export interface GhidraInstallation {
   version: string;
 }
 
-function isExecutableFile(path: string): boolean {
-  try {
-    if (!statSync(path).isFile()) return false;
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
+/** Ghidra's launcher is a shell script, and a batch file on Windows. */
+const LAUNCHER_SUFFIX = process.platform === "win32" ? ".bat" : "";
 
 function installationAt(root: string, source: string): GhidraInstallation {
-  const analyzeHeadless = join(root, "support", "analyzeHeadless");
+  const analyzeHeadless = join(root, "support", `analyzeHeadless${LAUNCHER_SUFFIX}`);
   let properties: string;
   try {
     if (!isExecutableFile(analyzeHeadless)) throw new Error("no analyzeHeadless");
@@ -65,11 +59,8 @@ export function findGhidra(env: NodeJS.ProcessEnv = process.env): GhidraInstalla
     if (!isAbsolute(configured)) throw new WireFailure("installation-incomplete", `C64RT_GHIDRA on this machine is not an absolute path. ${REMEDY}`);
     return installationAt(configured, "C64RT_GHIDRA");
   }
-  for (const dir of (env.PATH ?? "").split(delimiter)) {
-    if (dir === "") continue;
-    const candidate = join(dir, "analyzeHeadless");
-    if (isExecutableFile(candidate)) return installationAt(resolve(dirname(realpathSync(candidate)), ".."), "analyzeHeadless on PATH");
-  }
+  const found = findOnPath(["analyzeHeadless"], env, [LAUNCHER_SUFFIX]);
+  if (found !== undefined) return installationAt(resolve(dirname(realpathSync(found)), ".."), "analyzeHeadless on PATH");
   throw new WireFailure("installation-incomplete", `Ghidra is not installed on this machine. ${REMEDY}`);
 }
 
@@ -131,9 +122,7 @@ export async function runHeadless(options: HeadlessOptions): Promise<ToolRun> {
   else argv.push("-analysisTimeoutPerFile", String(Math.ceil(options.timeoutMs / 1000)));
   for (const script of options.preScripts ?? []) argv.push("-preScript", script.name, ...script.args);
   for (const script of options.postScripts ?? []) argv.push("-postScript", script.name, ...script.args);
-  const run = await runTool({ argv, cwd: options.workspace.root, supervisor: options.supervisor, signal: options.signal, timeoutMs: options.timeoutMs, env });
-  if (run.aborted) throw new WireFailure("operation-failed", "The Ghidra analysis was cancelled.");
-  if (run.timedOut) throw new WireFailure("operation-failed", `Ghidra did not finish within ${options.timeoutMs / 1000} seconds.`);
+  const run = await runToolOrFail("Ghidra", "The Ghidra analysis", { argv, cwd: options.workspace.root, timeoutMs: options.timeoutMs }, { supervisor: options.supervisor, signal: options.signal, env });
   if (run.code !== 0 || /^ERROR REPORT SCRIPT ERROR|Exception in thread "main"/m.test(run.stdout + run.stderr)) {
     throw new WireFailure("operation-failed", "Ghidra stopped with an error.");
   }

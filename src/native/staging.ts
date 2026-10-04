@@ -3,7 +3,7 @@
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { isRelativePath, WireFailure, type SourceTree } from "../protocol.ts";
 import type { ProcessSupervisor } from "./processes.ts";
@@ -18,11 +18,11 @@ export class Workspace {
   }
 
   /**
-   * A fresh, empty workspace in the host's temporary directory. With a
-   * supervisor, the workspace is also removed if the Host Runtime dies.
+   * A fresh, empty workspace in the temporary directory. With a supervisor,
+   * the workspace is also removed if its process dies.
    */
-  static create(owner?: ProcessSupervisor): Workspace {
-    const root = mkdtempSync(join(tmpdir(), "c64-re-tools-request-"));
+  static create(owner?: Pick<ProcessSupervisor, "ownPath">, prefix = "c64-re-tools-request-"): Workspace {
+    const root = mkdtempSync(join(tmpdir(), prefix));
     return new Workspace(root, owner?.ownPath(root) ?? (() => {}));
   }
 
@@ -31,7 +31,7 @@ export class Workspace {
     if (!isRelativePath(path)) throw new WireFailure("invalid-input", `${path} is not a relative path inside the workspace.`);
     const full = resolve(this.root, path);
     const fromRoot = relative(this.root, full);
-    if (fromRoot.startsWith(`..${sep}`) || fromRoot === ".." || fromRoot.startsWith(sep)) {
+    if (fromRoot.startsWith(`..${sep}`) || fromRoot === ".." || isAbsolute(fromRoot)) {
       throw new WireFailure("invalid-input", `${path} leaves the workspace.`);
     }
     return full;

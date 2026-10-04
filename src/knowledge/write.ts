@@ -3,6 +3,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
+import { SYMBOL_NAME } from "../c64.ts";
 import { KnowledgeError, transaction } from "./database.ts";
 import {
   COMMENT_COLUMNS,
@@ -51,7 +52,7 @@ export interface WriteResult<T> {
   current: T;
 }
 
-export const SYMBOL_NAME = /^\.?[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+export { SYMBOL_NAME };
 const MAX_COMMENT = 4000;
 
 export function checkAddress(value: number, what = "address"): void {

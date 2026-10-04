@@ -6,7 +6,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { WireFailure } from "../../protocol.ts";
 import { checkGhidraResult, GHIDRA_LIMITS, imageRange, type GhidraParams, type GhidraResult } from "../types.ts";
-import type { ProcessSupervisor } from "../processes.ts";
+import type { ToolContext } from "../run.ts";
 import { Workspace } from "../staging.ts";
 import { findGhidra, runHeadless, SCRIPT_DIRECTORY } from "./index.ts";
 
@@ -15,7 +15,7 @@ const TIMEOUT_MS = 600_000;
 export async function analyze(
   params: GhidraParams,
   image: Buffer,
-  context: { supervisor: ProcessSupervisor; signal: AbortSignal; env?: NodeJS.ProcessEnv; log?: (line: string) => void },
+  context: ToolContext,
 ): Promise<{ result: GhidraResult }> {
   const ghidra = findGhidra(context.env);
   const { start, end, body } = imageRange(params.imageKind, image);

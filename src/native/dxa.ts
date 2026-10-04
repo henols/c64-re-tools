@@ -9,10 +9,9 @@ import { writeFileSync } from "node:fs";
 
 import { WireFailure } from "../protocol.ts";
 import { imageRange, type DxaParams, type DxaResult } from "./types.ts";
-import type { ProcessSupervisor } from "./processes.ts";
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
-import { runTool } from "./run.ts";
+import { runToolOrFail, type ToolContext } from "./run.ts";
 
 const TIMEOUT_MS = 120_000;
 /** The listing goes back as an attachment; larger output is refused. */
@@ -88,7 +87,7 @@ export function parseListing(listing: string, start: number, end: number): Pick<
 export async function analyze(
   params: DxaParams,
   image: Buffer,
-  context: { supervisor: ProcessSupervisor; signal: AbortSignal; env?: NodeJS.ProcessEnv; log?: (line: string) => void },
+  context: ToolContext,
 ): Promise<{ result: DxaResult; attachments: Buffer[] }> {
   const executable = findTool(DXA, context.env);
   const { start, end } = imageRange(params.imageKind, image);
@@ -112,18 +111,18 @@ export async function analyze(
     seed("blocks", dataRanges.map((range) => `${hex(range.start)}-${hex(range.end)}\n`));
     // The xa label file format: name, address, flags.
     seed("labels", params.labels.filter((label) => LABEL_NAME.test(label.name)).map((label) => `${label.name}, 0x${hex(label.address)}, 0x0000\n`));
-    const run = await runTool({
-      argv: dxaArguments(executable, params, files),
-      cwd: workspace.root,
-      supervisor: context.supervisor,
-      signal: context.signal,
-      timeoutMs: TIMEOUT_MS,
-      outputLimit: MAX_LISTING,
-      ...(context.env === undefined ? {} : { env: context.env }),
-    });
-    if (run.aborted) throw new WireFailure("operation-failed", "The DXA analysis was cancelled.");
-    if (run.timedOut) throw new WireFailure("operation-failed", `dxa did not finish within ${TIMEOUT_MS / 1000} seconds.`);
-    if (run.truncated) throw new WireFailure("operation-failed", "dxa printed a listing larger than the host accepts. Nothing was imported.");
+    const run = await runToolOrFail(
+      "dxa",
+      "The DXA analysis",
+      {
+        argv: dxaArguments(executable, params, files),
+        cwd: workspace.root,
+        timeoutMs: TIMEOUT_MS,
+        outputLimit: MAX_LISTING,
+        truncated: "dxa printed a listing larger than the host accepts. Nothing was imported.",
+      },
+      context,
+    );
     if (run.code !== 0) {
       context.log?.(`dxa exited ${run.code}: ${run.stderr}`);
       throw new WireFailure("operation-failed", "dxa could not analyze the program.");

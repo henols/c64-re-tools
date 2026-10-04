@@ -19,10 +19,9 @@ import {
   type DiskFile,
   type DiskSector,
 } from "../../protocol.ts";
-import type { ProcessSupervisor } from "../../native/processes.ts";
 import { Workspace } from "../../native/staging.ts";
 import { C1541, findTool } from "../../native/discover.ts";
-import { runTool } from "../../native/run.ts";
+import { runToolOrFail, type ToolContext } from "../../native/run.ts";
 
 const TIMEOUT_MS = 30_000;
 const BLOCK_BYTES = 256;
@@ -158,22 +157,15 @@ const toFile = (entry: DiskEntry): DiskFile => ({ name: entry.name, type: entry.
 
 const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((byte, index) => byte === b[index]);
 
-interface Context {
-  supervisor: ProcessSupervisor;
-  signal: AbortSignal;
-  env?: NodeJS.ProcessEnv;
-  log?: (line: string) => void;
-}
-
 /** Runs c1541 commands on the staged image and returns all its output. */
 class C1541Session {
   readonly #executable: string;
   readonly #workspace: Workspace;
   readonly #image: string;
-  readonly #context: Context;
+  readonly #context: ToolContext;
   #reads = 0;
 
-  constructor(executable: string, workspace: Workspace, image: string, context: Context) {
+  constructor(executable: string, workspace: Workspace, image: string, context: ToolContext) {
     this.#executable = executable;
     this.#workspace = workspace;
     this.#image = image;
@@ -181,17 +173,17 @@ class C1541Session {
   }
 
   async run(commands: string[]): Promise<string> {
-    const run = await runTool({
-      argv: [this.#executable, "-attach", this.#image, ...commands],
-      cwd: this.#workspace.root,
-      supervisor: this.#context.supervisor,
-      signal: this.#context.signal,
-      timeoutMs: TIMEOUT_MS,
-      ...(this.#context.env === undefined ? {} : { env: this.#context.env }),
-    });
-    if (run.aborted) throw new WireFailure("operation-failed", "The disk inspection was cancelled.");
-    if (run.timedOut) throw new WireFailure("operation-failed", `c1541 did not finish within ${TIMEOUT_MS / 1000} seconds.`);
-    if (run.truncated) throw new WireFailure("operation-failed", "c1541 printed more output than the host accepts.");
+    const run = await runToolOrFail(
+      "c1541",
+      "The disk inspection",
+      {
+        argv: [this.#executable, "-attach", this.#image, ...commands],
+        cwd: this.#workspace.root,
+        timeoutMs: TIMEOUT_MS,
+        truncated: "c1541 printed more output than the host accepts.",
+      },
+      this.#context,
+    );
     return `${run.stdout}\n${run.stderr}`;
   }
 
@@ -217,7 +209,7 @@ class C1541Session {
   }
 }
 
-export async function inspect(params: C1541Params, image: Buffer, context: Context): Promise<{ result: C1541Result; attachments?: Buffer[] }> {
+export async function inspect(params: C1541Params, image: Buffer, context: ToolContext): Promise<{ result: C1541Result; attachments?: Buffer[] }> {
   const executable = findTool(C1541, context.env);
   const workspace = Workspace.create(context.supervisor);
   try {

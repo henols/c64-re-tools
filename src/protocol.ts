@@ -1,7 +1,7 @@
 // The private Host Runtime wire contract, shared by src/host and src/host-client.
 // Nothing here is LLM-facing: MCP and skill results never show these shapes.
 
-import { textToPetsciiName } from "./c64.ts";
+import { textToPetsciiName, type BasicHandoff } from "./c64.ts";
 
 /** Private Host Runtime protocol identifier. */
 export const HOST_PROTOCOL_ID = "c64-re-tools-host" as const;
@@ -575,7 +575,7 @@ export type C1541Result =
 export type PetcatParams = Record<string, never>;
 
 /** A machine-code handoff: SYS with a constant address, or SYS/USR whose target is computed at run time. */
-export type BasicHandoff = { kind: "sys"; line: number; address: number } | { kind: "sys" | "usr"; line: number; computed: true };
+export type { BasicHandoff };
 
 export type PetcatResult =
   | { decoded: false; reason: string }
@@ -682,17 +682,23 @@ export class WireFailure extends Error implements WireError {
   }
 }
 
-type Fields = Record<string, unknown>;
+/** The message of a caught value, which may not be an Error. */
+export function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
-function isObject(value: unknown): value is Fields {
+export type Fields = Record<string, unknown>;
+
+export function isObject(value: unknown): value is Fields {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
+/** True when `value` is one of `values`; narrows a string to the union. */
+export function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
   return typeof value === "string" && (values as readonly string[]).includes(value);
 }
 
-function isInteger(value: unknown, min: number, max: number): value is number {
+export function isInteger(value: unknown, min: number, max: number): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
 }
 

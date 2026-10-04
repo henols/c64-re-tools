@@ -52,7 +52,15 @@ export const DXA: ToolSpec = {
   remedy: "Install dxa (from the xa package, https://www.floodgap.com/retrotech/xa/) on the machine that runs the skill scripts so that dxa is on PATH, or set C64RT_DXA to its full path.",
 };
 
-function isExecutableFile(path: string): boolean {
+export const VICE: ToolSpec = {
+  name: "VICE (x64sc)",
+  envVar: "C64RT_VICE",
+  binaries: ["x64sc"],
+  where: "on the host",
+  remedy: "Install VICE 3.6 or later on the host so that x64sc is on PATH, or set C64RT_VICE to the full path of x64sc, then restart the Host Runtime.",
+};
+
+export function isExecutableFile(path: string): boolean {
   try {
     if (!statSync(path).isFile()) return false;
     accessSync(path, constants.X_OK);
@@ -62,6 +70,20 @@ function isExecutableFile(path: string): boolean {
   }
 }
 
+/** The first executable named `binary + suffix` in a PATH directory, in PATH order; undefined when there is none. */
+export function findOnPath(binaries: readonly string[], env: NodeJS.ProcessEnv, suffixes: readonly string[] = process.platform === "win32" ? [".exe", ""] : [""]): string | undefined {
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
+    if (dir === "") continue;
+    for (const binary of binaries) {
+      for (const suffix of suffixes) {
+        const candidate = join(dir, binary + suffix);
+        if (isExecutableFile(candidate)) return candidate;
+      }
+    }
+  }
+  return undefined;
+}
+
 /** Finds a tool's executable. Throws WireFailure(installation-incomplete) naming the tool and the remedy. */
 export function findTool(tool: ToolSpec, env: NodeJS.ProcessEnv = process.env): string {
   const configured = env[tool.envVar];
@@ -69,15 +91,7 @@ export function findTool(tool: ToolSpec, env: NodeJS.ProcessEnv = process.env): 
     if (isAbsolute(configured) && isExecutableFile(configured)) return configured;
     throw new WireFailure("installation-incomplete", `${tool.envVar} ${tool.where} does not name an executable ${tool.name} file. ${tool.remedy}`);
   }
-  const suffixes = process.platform === "win32" ? [".exe", ""] : [""];
-  for (const dir of (env.PATH ?? "").split(delimiter)) {
-    if (dir === "") continue;
-    for (const binary of tool.binaries) {
-      for (const suffix of suffixes) {
-        const candidate = join(dir, binary + suffix);
-        if (isExecutableFile(candidate)) return candidate;
-      }
-    }
-  }
+  const found = findOnPath(tool.binaries, env);
+  if (found !== undefined) return found;
   throw new WireFailure("installation-incomplete", `${tool.name} is not installed ${tool.where}. ${tool.remedy}`);
 }

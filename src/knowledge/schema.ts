@@ -2,6 +2,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
+import { REFERENCE_KINDS, type ReferenceKind } from "../c64.ts";
 import { KnowledgeError } from "./database.ts";
 
 export const ORIGINS = ["user", "llm", "dxa", "ghidra"] as const;
@@ -12,8 +13,7 @@ export const REGION_TYPES = ["code", "bytes", "words", "addresses", "addresses-s
 export type RegionType = (typeof REGION_TYPES)[number];
 export const COMMENT_PLACEMENTS = ["line", "side"] as const;
 export type CommentPlacement = (typeof COMMENT_PLACEMENTS)[number];
-export const REFERENCE_KINDS = ["call", "jump", "read", "write", "reference"] as const;
-export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
+export { REFERENCE_KINDS, type ReferenceKind };
 
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 

@@ -3,13 +3,8 @@
 // bank without side effects; the SID's write-only registers read back as
 // last written.
 
+import { d018Offsets, vicBankBase } from "../../c64.ts";
 import type { CiaState, SidState, SpriteState, ViciiMode, ViciiState } from "../../protocol.ts";
-
-/** The VIC-II's 16 KiB bank base, from CIA 2 port A bits 0-1 (inverted); undriven lines read high. */
-export function vicBankBase(cia2PortA: number, cia2DdrA: number): number {
-  const lines = (cia2PortA | ~cia2DdrA) & 0x03;
-  return (3 - lines) * 0x4000;
-}
 
 export function viciiMode(d011: number, d016: number): ViciiMode {
   const ecm = (d011 & 0x40) !== 0;
@@ -25,15 +20,15 @@ export function viciiMode(d011: number, d016: number): ViciiMode {
 export function decodeVicii(vic: Uint8Array, cia2: Uint8Array): ViciiState {
   const d011 = vic[0x11]!;
   const d016 = vic[0x16]!;
-  const d018 = vic[0x18]!;
+  const offsets = d018Offsets(vic[0x18]!);
   const mode = viciiMode(d011, d016);
   const base = vicBankBase(cia2[0x00]!, cia2[0x02]!);
   const bitmap = mode === "bitmap" || mode === "multicolor-bitmap";
   return {
     rasterLine: ((d011 & 0x80) << 1) | vic[0x12]!,
     mode,
-    screenAddress: base + ((d018 >> 4) & 0x0f) * 0x400,
-    graphicsAddress: bitmap ? base + ((d018 >> 3) & 0x01) * 0x2000 : base + ((d018 >> 1) & 0x07) * 0x800,
+    screenAddress: base + offsets.screen,
+    graphicsAddress: base + (bitmap ? offsets.bitmap : offsets.characters),
     scrollX: d016 & 0x07,
     scrollY: d011 & 0x07,
     borderColor: vic[0x20]! & 0x0f,

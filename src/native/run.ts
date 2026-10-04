@@ -1,10 +1,19 @@
 // Bounded native-tool execution (16 §3): argv only, no shell, a fixed
 // timeout, capped output, and the whole process group stopped on timeout or abort.
 
+import { WireFailure } from "../protocol.ts";
 import type { ProcessSupervisor } from "./processes.ts";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
 export const DEFAULT_OUTPUT_LIMIT = 1024 * 1024;
+
+/** What running a native tool needs from its caller: the supervisor that owns it, the request's abort signal, and optionally its environment and a log. */
+export interface ToolContext {
+  supervisor: ProcessSupervisor;
+  signal: AbortSignal;
+  env?: NodeJS.ProcessEnv | undefined;
+  log?: ((line: string) => void) | undefined;
+}
 
 export interface ToolRun {
   code: number | null;
@@ -24,14 +33,10 @@ export async function runTool(options: {
   signal: AbortSignal;
   timeoutMs?: number;
   outputLimit?: number;
-  env?: NodeJS.ProcessEnv;
+  env?: NodeJS.ProcessEnv | undefined;
 }): Promise<ToolRun> {
   const limit = options.outputLimit ?? DEFAULT_OUTPUT_LIMIT;
-  const child = options.supervisor.spawn(options.argv, {
-    cwd: options.cwd,
-    ...(options.env === undefined ? {} : { env: options.env }),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const child = options.supervisor.spawn(options.argv, { cwd: options.cwd, env: options.env, stdio: ["ignore", "pipe", "pipe"] });
   // "exit" can come before the output streams finish; "close" comes after both.
   const closed = new Promise<void>((resolve) => {
     if (child.pid < 0) resolve();
@@ -71,4 +76,22 @@ export async function runTool(options: {
   // A tool that exited on its own may have left descendants in its group.
   await child.stop();
   return { ...status, ...output, timedOut, aborted };
+}
+
+/**
+ * Runs one task of a named tool and turns a cancelled or timed-out run into
+ * WireFailure(operation-failed). With `truncated`, output beyond the limit
+ * is refused with that message too. Any exit code is returned to the caller.
+ */
+export async function runToolOrFail(
+  tool: string,
+  task: string,
+  options: { argv: string[]; cwd: string; timeoutMs: number; outputLimit?: number; truncated?: string },
+  context: ToolContext,
+): Promise<ToolRun> {
+  const run = await runTool({ ...options, supervisor: context.supervisor, signal: context.signal, env: context.env });
+  if (run.aborted) throw new WireFailure("operation-failed", `${task} was cancelled.`);
+  if (run.timedOut) throw new WireFailure("operation-failed", `${tool} did not finish within ${options.timeoutMs / 1000} seconds.`);
+  if (run.truncated && options.truncated !== undefined) throw new WireFailure("operation-failed", options.truncated);
+  return run;
 }

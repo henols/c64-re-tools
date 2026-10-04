@@ -7,11 +7,10 @@
 // path. When the runtime exits normally, the exit guard removes the registry
 // and the watchdog ends.
 
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 
-import type { Registry } from "./processes.ts";
+import { isAlive, killTree, signalGroup, type Registry } from "./processes.ts";
 
 const POLL_MS = 500;
 const GRACE_MS = 2_000;
@@ -20,22 +19,10 @@ const [hostPidText, registryFile] = process.argv.slice(2);
 const hostPid = Number(hostPidText);
 if (!Number.isInteger(hostPid) || hostPid <= 0 || registryFile === undefined) process.exit(2);
 
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
 function signal(group: number, name: NodeJS.Signals): void {
   try {
-    if (process.platform === "win32") {
-      if (name === "SIGKILL") spawnSync("taskkill", ["/pid", String(group), "/T", "/F"], { stdio: "ignore", windowsHide: true });
-    } else {
-      process.kill(-group, name);
-    }
+    if (process.platform !== "win32") signalGroup(group, name);
+    else if (name === "SIGKILL") killTree(group);
   } catch {
     // The group is gone already.
   }
@@ -60,7 +47,7 @@ function cleanUp(): void {
 const timer = setInterval(() => {
   // A normal exit removed the registry: nothing is left to do.
   if (!existsSync(registryFile)) process.exit(0);
-  if (alive(hostPid)) return;
+  if (isAlive(hostPid)) return;
   clearInterval(timer);
   cleanUp();
 }, POLL_MS);

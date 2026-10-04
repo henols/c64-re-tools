@@ -90,5 +90,5 @@ export async function hostTools(options: ToolCallOptions = {}): Promise<ToolStat
   return (await callTool("host.status", {}, [], options)).result.tools;
 }
 
-/** Skill scripts see failures through the host-client, never the private protocol module. */
-export { WireFailure } from "../protocol.ts";
+/** Skill scripts see failures and wire limits through the host-client, never the private protocol module. */
+export { DISK_ACTIONS, MAX_MEMORY_READ, MAX_TIMEOUT_FRAMES, WireFailure } from "../protocol.ts";

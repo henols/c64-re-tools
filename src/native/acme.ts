@@ -6,10 +6,9 @@ import { isAbsolute, join, relative, sep } from "node:path";
 
 import { WireFailure } from "../protocol.ts";
 import type { AcmeParams, AcmeResult, AssembledSymbol, Diagnostic } from "./types.ts";
-import type { ProcessSupervisor } from "./processes.ts";
 import { Workspace } from "./staging.ts";
 import { ACME, findTool } from "./discover.ts";
-import { runTool } from "./run.ts";
+import { runToolOrFail, type ToolContext } from "./run.ts";
 
 const PROGRAM = "program.prg";
 const SYMBOLS = "symbols.txt";
@@ -70,7 +69,7 @@ export function parseSymbols(list: string, program: { start: number; end: number
 export async function assemble(
   params: AcmeParams,
   files: Buffer[],
-  context: { supervisor: ProcessSupervisor; signal: AbortSignal; env?: NodeJS.ProcessEnv; log?: (line: string) => void },
+  context: ToolContext,
 ): Promise<{ result: AcmeResult; attachments?: Buffer[] }> {
   const executable = findTool(ACME, context.env);
   const workspace = Workspace.create(context.supervisor);
@@ -78,16 +77,7 @@ export async function assemble(
     const source = workspace.materialize("source", params.files, files);
     // A fresh output directory, so no stale file can pass for this run's output.
     const output = workspace.directory("out");
-    const run = await runTool({
-      argv: acmeArguments(executable, params, output),
-      cwd: source,
-      supervisor: context.supervisor,
-      signal: context.signal,
-      timeoutMs: TIMEOUT_MS,
-      ...(context.env === undefined ? {} : { env: context.env }),
-    });
-    if (run.aborted) throw new WireFailure("operation-failed", "The assembly was cancelled.");
-    if (run.timedOut) throw new WireFailure("operation-failed", `ACME did not finish within ${TIMEOUT_MS / 1000} seconds.`);
+    const run = await runToolOrFail("ACME", "The assembly", { argv: acmeArguments(executable, params, output), cwd: source, timeoutMs: TIMEOUT_MS }, context);
     const diagnostics = parseDiagnostics(`${run.stdout}\n${run.stderr}`, source);
     const programPath = join(output, PROGRAM);
     if (run.code !== 0) {

@@ -3,10 +3,11 @@
 
 import type { ToolStatus } from "../../protocol.ts";
 import { C1541, findTool, PETCAT } from "../../native/discover.ts";
-import { probeTools, type ProbeContext } from "../../native/status.ts";
+import type { ToolContext } from "../../native/run.ts";
+import { probeTools } from "../../native/status.ts";
 import { findVice } from "../vice/process.ts";
 
-export async function hostStatus(context: ProbeContext): Promise<{ result: { tools: ToolStatus[] } }> {
+export async function hostStatus(context: ToolContext): Promise<{ result: { tools: ToolStatus[] } }> {
   const tools = await probeTools(
     [
       { name: "VICE (x64sc)", find: findVice, args: ["-version"], pattern: /^x64sc \(VICE \d/ },

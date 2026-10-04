@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { decodeCia, decodeSid, decodeSprite, decodeVicii, vicBankBase, viciiMode } from "./chips.ts";
+import { vicBankBase } from "../../c64.ts";
+import { decodeCia, decodeSid, decodeSprite, decodeVicii, viciiMode } from "./chips.ts";
 
 test("the VIC-II bank comes from CIA 2 port A, inverted, with undriven lines high", () => {
   assert.equal(vicBankBase(0x97, 0x3f), 0x0000); // KERNAL default: lines %11 -> bank 0

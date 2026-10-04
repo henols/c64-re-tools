@@ -3,15 +3,14 @@
 // The Host Runtime reports VICE and its tools (host.status); the CLI reports
 // the tools that skill scripts run themselves (ACME, DXA, Ghidra).
 
-import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 
 import { WireFailure, type ToolStatus } from "../protocol.ts";
 import { ACME, DXA, findTool } from "./discover.ts";
 import { findGhidra } from "./ghidra/index.ts";
-import type { ProcessSupervisor } from "./processes.ts";
-import { runTool } from "./run.ts";
+import { runTool, type ToolContext } from "./run.ts";
+import { Workspace } from "./staging.ts";
 
 const PROBE_TIMEOUT_MS = 20_000;
 
@@ -24,30 +23,17 @@ export interface Probe {
   pattern: RegExp;
 }
 
-export interface ProbeContext {
-  supervisor: ProcessSupervisor;
-  signal: AbortSignal;
-  env?: NodeJS.ProcessEnv;
-}
 
 /** The first output line that matches, without terminal color codes (c1541 colors an OpenCBM notice). */
 export function versionLine(output: string, pattern: RegExp): string | undefined {
-  return output
-    .replace(/\x1b\[[0-9;]*m/g, "")
+  return stripVTControlCharacters(output)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .find((line) => pattern.test(line));
 }
 
-async function run(name: string, argv: string[], version: (output: string) => string | undefined, context: ProbeContext): Promise<ToolStatus> {
-  const result = await runTool({
-    argv,
-    cwd: tmpdir(),
-    supervisor: context.supervisor,
-    signal: context.signal,
-    timeoutMs: PROBE_TIMEOUT_MS,
-    ...(context.env === undefined ? {} : { env: context.env }),
-  });
+async function run(name: string, argv: string[], version: (output: string) => string | undefined, context: ToolContext): Promise<ToolStatus> {
+  const result = await runTool({ argv, cwd: tmpdir(), supervisor: context.supervisor, signal: context.signal, timeoutMs: PROBE_TIMEOUT_MS, env: context.env });
   const found = version(`${result.stdout}\n${result.stderr}`);
   if (found !== undefined) return { name, found: true, path: argv[0]!, version: found, runs: true };
   return { name, found: true, path: argv[0]!, runs: false, problem: result.timedOut ? "It did not answer in time." : `It did not run correctly (exit ${result.code ?? result.signal}).` };
@@ -59,7 +45,7 @@ function missing(name: string, error: unknown): ToolStatus {
 }
 
 /** Finds and runs each probed tool once. */
-export function probeTools(probes: Probe[], context: ProbeContext): Promise<ToolStatus[]> {
+export function probeTools(probes: Probe[], context: ToolContext): Promise<ToolStatus[]> {
   const env = context.env ?? process.env;
   return Promise.all(
     probes.map(async (probe) => {
@@ -75,12 +61,13 @@ export function probeTools(probes: Probe[], context: ProbeContext): Promise<Tool
 }
 
 /** Ghidra: without arguments analyzeHeadless starts Java and prints its usage, which proves that it runs. */
-export async function probeGhidra(context: ProbeContext): Promise<ToolStatus> {
+export async function probeGhidra(context: ToolContext): Promise<ToolStatus> {
   const env = context.env ?? process.env;
   try {
     const ghidra = findGhidra(env);
     // Its own settings directory keeps the user's Ghidra settings and logs untouched.
-    const settings = mkdtempSync(join(tmpdir(), "c64-re-tools-ghidra-status-"));
+    const workspace = Workspace.create(context.supervisor, "c64-re-tools-ghidra-status-");
+    const settings = workspace.root;
     try {
       const status = await run(
         "Ghidra",
@@ -90,7 +77,7 @@ export async function probeGhidra(context: ProbeContext): Promise<ToolStatus> {
       );
       return { ...status, path: ghidra.root };
     } finally {
-      rmSync(settings, { recursive: true, force: true });
+      workspace.remove();
     }
   } catch (error) {
     return missing("Ghidra", error);
@@ -98,7 +85,7 @@ export async function probeGhidra(context: ProbeContext): Promise<ToolStatus> {
 }
 
 /** The tools that skill scripts run themselves, on this machine. */
-export async function localToolStatus(context: ProbeContext): Promise<ToolStatus[]> {
+export async function localToolStatus(context: ToolContext): Promise<ToolStatus[]> {
   const probes: Probe[] = [
     { name: "ACME", find: (env) => findTool(ACME, env), args: ["--version"], pattern: /^This is ACME, release / },
     // dxa -V prints its version and exits with status 1.

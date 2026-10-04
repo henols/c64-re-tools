@@ -22,12 +22,13 @@
 //   start option only, so headless and windowed are two VICE processes.
 //   A headless VICE plays no sound: `-sounddev dummy` keeps the SID emulated.
 
-import { accessSync, constants, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { delimiter, isAbsolute, join } from "node:path";
+import { join } from "node:path";
 
 import { WireFailure, type VideoStandard } from "../../protocol.ts";
+import { findTool, VICE } from "../../native/discover.ts";
 import type { ExitStatus, ProcessSupervisor, SupervisedProcess } from "../../native/processes.ts";
 import { BinaryMonitor, Command, decodeMemory, memoryGetBody } from "./binary-monitor.ts";
 import { TextMonitor } from "./text-monitor.ts";
@@ -37,38 +38,9 @@ const PING_TIMEOUT_MS = 5_000;
 const RETRY_MS = 50;
 const OUTPUT_TAIL_LINES = 40;
 
-const VICE_BINARY = process.platform === "win32" ? "x64sc.exe" : "x64sc";
-
-const INSTALL_REMEDY =
-  "Install VICE 3.6 or later on the host so that x64sc is on PATH, or set C64RT_VICE to the full path of x64sc, " +
-  "then restart the Host Runtime.";
-
-function isExecutableFile(path: string): boolean {
-  try {
-    if (!statSync(path).isFile()) return false;
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** Finds x64sc (D8): C64RT_VICE, else PATH. Refuses by name with the remedy; never installs anything. */
 export function findVice(env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env.C64RT_VICE;
-  if (configured !== undefined && configured !== "") {
-    if (isAbsolute(configured) && isExecutableFile(configured)) return configured;
-    throw new WireFailure(
-      "installation-incomplete",
-      `C64RT_VICE on the host does not name an executable VICE x64sc file. ${INSTALL_REMEDY}`,
-    );
-  }
-  for (const dir of (env.PATH ?? "").split(delimiter)) {
-    if (dir === "") continue;
-    const candidate = join(dir, VICE_BINARY);
-    if (isExecutableFile(candidate)) return candidate;
-  }
-  throw new WireFailure("installation-incomplete", `VICE (x64sc) is not installed on the host. ${INSTALL_REMEDY}`);
+  return findTool(VICE, env);
 }
 
 /** Asks the OS for a free loopback port. Another process can still take it before VICE binds. */

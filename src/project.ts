@@ -14,15 +14,12 @@ export function resolveProjectPath(path: string, root = projectRoot()): string {
   }
 
   const candidate = resolve(root, path);
-  const fromRoot = relative(root, candidate);
-  if (fromRoot === "" || (fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`))) {
-    return candidate;
-  }
-
+  if (isInside(root, candidate)) return candidate;
   throw new TypeError("Project path escapes the project root");
 }
 
-function isInside(root: string, candidate: string): boolean {
+/** True when `candidate` is `root` or below it. Both are absolute paths. */
+export function isInside(root: string, candidate: string): boolean {
   const fromRoot = relative(root, candidate);
   return fromRoot === "" || (fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot));
 }

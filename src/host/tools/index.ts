@@ -4,6 +4,7 @@
 // generic executable route.
 
 import type { ProcessSupervisor } from "../../native/processes.ts";
+import type { ToolContext } from "../../native/run.ts";
 import type { C1541Params } from "../../protocol.ts";
 import type { ToolDispatcher } from "../server.ts";
 import { inspect } from "./c1541.ts";
@@ -12,7 +13,7 @@ import { hostStatus } from "./status.ts";
 
 export function createToolDispatcher(options: { supervisor: ProcessSupervisor; env?: NodeJS.ProcessEnv; log?: (line: string) => void }): ToolDispatcher {
   return (async (op, params, attachments, signal) => {
-    const context = { supervisor: options.supervisor, signal, ...(options.env === undefined ? {} : { env: options.env }), ...(options.log === undefined ? {} : { log: options.log }) };
+    const context: ToolContext = { supervisor: options.supervisor, signal, env: options.env, log: options.log };
     switch (op) {
       case "host.status":
         return hostStatus(context);

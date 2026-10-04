@@ -1,7 +1,8 @@
-import { spawn, type ChildProcess, type StdioOptions } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess, type StdioOptions } from "node:child_process";
 import { mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 /** How long a process group gets between SIGTERM and SIGKILL. */
@@ -12,7 +13,7 @@ const POLL_MS = 25;
 
 export interface SpawnOptions {
   cwd?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: NodeJS.ProcessEnv | undefined;
   stdio?: StdioOptions;
 }
 
@@ -31,12 +32,23 @@ export interface SupervisedProcess {
   stop(): Promise<void>;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** True while a process exists, also one this process may not signal (EPERM). */
+export function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }
 
-/** Sends a signal to a process group. Returns false when the group no longer exists. */
-function signalGroup(pgid: number, signal: NodeJS.Signals | 0): boolean {
+/** Ends a process and every descendant on Windows, which has no process groups. */
+export function killTree(pid: number): void {
+  spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+}
+
+/** Sends a signal to a process group (POSIX). Returns false when the group no longer exists. */
+export function signalGroup(pgid: number, signal: NodeJS.Signals | 0): boolean {
   try {
     process.kill(-pgid, signal);
     return true;
@@ -176,7 +188,7 @@ export class ProcessSupervisor {
    */
   killAllSync(): void {
     for (const supervised of this.#children) {
-      if (process.platform === "win32") supervised.child.kill("SIGKILL");
+      if (process.platform === "win32") killTree(supervised.pid);
       else signalGroup(supervised.pid, "SIGKILL");
     }
     this.#children.clear();
@@ -194,11 +206,9 @@ export class ProcessSupervisor {
 
   async #stopGroup(pid: number, child: ChildProcess, exited: Promise<ExitStatus>): Promise<void> {
     if (process.platform === "win32") {
-      child.kill("SIGTERM");
-      if ((await Promise.race([exited.then(() => true), sleep(this.#graceMs).then(() => false)])) === false) {
-        child.kill("SIGKILL");
-        await exited;
-      }
+      // Windows has no SIGTERM for a console process, and child.kill ends the leader only.
+      killTree(pid);
+      await exited;
       return;
     }
     // The group outlives its leader when descendants remain, so wait on the group, not the leader.

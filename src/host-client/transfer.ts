@@ -4,7 +4,7 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { extname, join, relative, sep } from "node:path";
 
-import { projectRoot, resolveProjectFile } from "../project.ts";
+import { isInside, projectRoot, resolveProjectFile } from "../project.ts";
 import { MAX_ATTACHMENT_BYTES, MAX_TREE_FILES, WireFailure, type SourceTree } from "../protocol.ts";
 
 export interface ProjectFile {
@@ -44,11 +44,6 @@ export function readProjectFile(path: string, options: { root?: string; maxBytes
 /** Directories never staged: version control and the toolkit's own project state. */
 const SKIPPED_DIRECTORIES = new Set([".git", ".hg", ".svn", ".c64-re-tools"]);
 
-function inside(root: string, path: string): boolean {
-  const fromRoot = relative(root, path);
-  return fromRoot === "" || (!fromRoot.startsWith(`..${sep}`) && fromRoot !== ".." && !fromRoot.startsWith(sep));
-}
-
 /**
  * Reads a project directory as a source tree for staging (16 §4): ordinary
  * files with relative POSIX paths. A symbolic link is followed only when its
@@ -75,7 +70,7 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
       let target = full;
       if (lstatSync(full).isSymbolicLink()) {
         target = realpathSync(full);
-        if (!inside(sourceRoot, target)) {
+        if (!isInside(sourceRoot, target)) {
           throw new WireFailure("invalid-input", `${relative(projectRootPath, full)} links outside ${path}; staging refuses it.`);
         }
       }
