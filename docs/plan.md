@@ -162,11 +162,18 @@ Acceptance (19 §13): from the packed npm artifact in a fresh directory, the ski
 - [x] M11.4 **CLI** — `c64-re-tools install|update|uninstall|status`, thin over the AP SDK CLI (08 §5); `diagnose` and per-user host autostart wait (D14).
 - [x] M11.5 **Acceptance from installed artifacts** — `npm pack`, a fresh directory, `npm install` of the tarball, the installed host and MCP binaries with real VICE, an installed skill bundle with a native tool, and `install` into a temporary harness directory.
 
-## Later milestones
+## M12 — Hardening and release
 
-Expand each into steps when it starts.
+Release gate (19 §14): the development workflow (source → ACME → VICE → debug → test) and the reverse-engineering workflow (artifact → inspect → VICE → analysis → knowledge → reconstruct → assemble → equivalence test) pass live.
 
-- [ ] **M12** Hardening and release, including the orphan guard (D7), container binding (D5/D6), platform coverage and release CI.
+- [ ] M12.1 **Orphan guard (D7)** — a watchdog process per Host Runtime that stops every registered child process group when the runtime dies, also by SIGKILL. Live test: kill -9 the runtime, its VICE goes away.
+- [ ] M12.2 **Crash cleanup** — the VICE scratch directory goes away on a signal and through the watchdog.
+- [ ] M12.3 **Container binding (D5/D6)** — `--listen <address>` adds a bind for a container bridge; any address that is not loopback needs `C64RT_HOST_TOKEN` on both sides, checked in the handshake.
+- [ ] M12.4 **CI matrix** — unit and integration tests on Linux, macOS and Windows (Node 24), an installed-package smoke test, live suites named separately.
+- [ ] M12.5 **Release automation** — a tag workflow that builds, tests and publishes to npm with provenance.
+- [ ] M12.6 **Documentation** — README install and usage examples for both workflows.
+- [ ] M12.7 **Release gate** — both representative workflows pass live.
+
 
 ## Decisions
 
