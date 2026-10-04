@@ -113,6 +113,15 @@ class FakeSession implements ViceSessionApi {
   async backtrace() {
     return { frames: [{ address: 0x2100, returnAddress: 0x1980 }, { address: 0xfce2 }] };
   }
+  async profile() {
+    return { entries: [{ address: 0x2100, totalCycles: "125000", selfCycles: "82000", percent: 17.4 }] };
+  }
+  memmaps: unknown[] = [];
+  async memmap(params: import("../protocol.ts").ViceOperations["memmap"]["params"]) {
+    this.memmaps.push(params);
+    if (params.action === "clear") return { cleared: true };
+    return { ranges: [{ start: 0x2100, end: 0x213f, execute: true, read: true, write: false }] };
+  }
   async timing(action: "start" | "read") {
     return action === "start" ? { started: true } : { cycles: "1234" };
   }
@@ -230,10 +239,12 @@ test("the server lists exactly the implemented tools with object input and outpu
     "c64_execution",
     "c64_joystick",
     "c64_keyboard",
+    "c64_memmap",
     "c64_memory_compare",
     "c64_memory_read",
     "c64_memory_search",
     "c64_memory_write",
+    "c64_profile",
     "c64_program_load",
     "c64_registers",
     "c64_reset",
@@ -263,6 +274,7 @@ test("the server lists exactly the implemented tools with object input and outpu
       "c64_sid",
       "c64_cpu_history",
       "c64_backtrace",
+      "c64_profile",
     ];
     assert.equal(tool.annotations?.readOnlyHint, readOnly.includes(tool.name), tool.name);
     assert.doesNotMatch(`${tool.description} ${JSON.stringify(tool.inputSchema)}`, /\bVICE\b|monitor|tcp|socket|session id|request/i);
@@ -615,5 +627,20 @@ test("history, backtrace and timing format addresses and keep optional fields ab
   assert.deepEqual((await call(client, "c64_backtrace")).structuredContent, { frames: [{ address: "$2100", returnAddress: "$1980" }, { address: "$fce2" }] });
   assert.deepEqual((await call(client, "c64_timing", { action: "read" })).structuredContent, { cycles: "1234" });
   assert.equal(errorOf(await call(client, "c64_cpu_history", { limit: 201 })).code, "invalid-input");
+  await client.close();
+});
+
+test("profile and memmap format addresses and fill read defaults", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  assert.deepEqual((await call(client, "c64_profile")).structuredContent, {
+    entries: [{ address: "$2100", totalCycles: "125000", selfCycles: "82000", percent: 17.4 }],
+  });
+  assert.deepEqual((await call(client, "c64_memmap", { action: "read" })).structuredContent, {
+    ranges: [{ start: "$2100", end: "$213f", execute: true, read: true, write: false }],
+  });
+  assert.deepEqual((await call(client, "c64_memmap", { action: "clear" })).structuredContent, { cleared: true });
+  assert.deepEqual(session.memmaps, [{ action: "read", start: 0, end: 0xffff, maxRanges: 256 }, { action: "clear" }]);
+  assert.equal(errorOf(await call(client, "c64_memmap", { action: "clear", start: "$1000" })).code, "invalid-input");
   await client.close();
 });

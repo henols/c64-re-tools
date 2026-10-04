@@ -596,3 +596,20 @@ test("the stopwatch counts cycles from session start, then from each start", asy
   assert.deepEqual(await session.handle("timing", { action: "read" }), { cycles: "19656" });
   await session.close();
 });
+
+test("the profiler runs from session start; profile and memmap read through it", async () => {
+  const { fake, session } = await startSession();
+  assert.equal(fake.profilerOn, true);
+  fake.profileRows = ["      1000  50.0%        800  40.0% c000", "       500  25.0%        500  25.0% c100"];
+  assert.deepEqual(await session.handle("profile", { limit: 1 }), {
+    entries: [{ address: 0xc000, totalCycles: "1000", selfCycles: "800", percent: 40 }],
+  });
+  fake.memmapRows = ["c000: --- --- r-x", "c001: --- --- r-x"];
+  assert.deepEqual(await session.handle("memmap", { action: "read", start: 0xc000, end: 0xc0ff, maxRanges: 10 }), {
+    ranges: [{ start: 0xc000, end: 0xc001, execute: true, read: true, write: false }],
+  });
+  assert.deepEqual(await session.handle("memmap", { action: "clear" }), { cleared: true });
+  assert.equal(fake.memmapCleared, true);
+  assert.equal(fake.running, true);
+  await session.close();
+});

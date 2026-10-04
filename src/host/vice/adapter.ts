@@ -8,6 +8,8 @@ import {
   type BacktraceFrame,
   type HistoryEntry,
   type Instruction,
+  type MemmapRange,
+  type ProfileEntry,
   type JoystickState,
   type MemoryView,
   type RegisterValues,
@@ -202,6 +204,45 @@ export function backtraceFromStack(sp: number, memory: Uint8Array, depth: number
     }
   }
   return frames;
+}
+
+/**
+ * Parses "profile flat" rows such as "36399   1.9%   19318   1.0% e9ff": total
+ * cycles, total share, self cycles, self share, routine. Rows that do not name
+ * a routine address (ROOT) are skipped.
+ */
+export function parseProfile(answer: string): ProfileEntry[] {
+  const entries: ProfileEntry[] = [];
+  for (const line of answer.split("\n")) {
+    const match = /^\s*(\d+)\s+[\d.]+%\s+(\d+)\s+([\d.]+)%\s+([0-9a-f]{4})\s*$/i.exec(line);
+    if (match === null) continue;
+    entries.push({ address: Number.parseInt(match[4]!, 16), totalCycles: match[1]!, selfCycles: match[2]!, percent: Number(match[3]!) });
+  }
+  return entries;
+}
+
+/**
+ * Parses memmap rows such as "00c2: --- --- rw- (uninitialized read)": the I/O,
+ * ROM and RAM access flags of one address. Adjacent addresses with the same
+ * combined flags merge into one range; at most `maxRanges` come back.
+ */
+export function parseMemmap(answer: string, maxRanges: number): MemmapRange[] {
+  const ranges: MemmapRange[] = [];
+  for (const line of answer.split("\n")) {
+    const match = /^([0-9a-f]{4}): (\S{3}) (\S{3}) (\S{3})/i.exec(line);
+    if (match === null) continue;
+    const address = Number.parseInt(match[1]!, 16);
+    const flags = match[2]! + match[3]! + match[4]!;
+    const access = { execute: flags.includes("x"), read: flags.includes("r"), write: flags.includes("w") };
+    const last = ranges.at(-1);
+    if (last !== undefined && last.end === address - 1 && last.execute === access.execute && last.read === access.read && last.write === access.write) {
+      last.end = address;
+      continue;
+    }
+    if (ranges.length >= maxRanges) break;
+    ranges.push({ start: address, end: address, ...access });
+  }
+  return ranges;
 }
 
 /** Quotes a host file path for a text-monitor command. Session scratch paths never contain quotes. */
@@ -599,6 +640,25 @@ export class ViceAdapter {
     const memory = decodeMemory(response.body);
     if (memory.length !== 0x10000) throw new Error(`VICE returned ${memory.length} bytes for a 64 KiB read`);
     return memory;
+  }
+
+  async startProfiler(): Promise<void> {
+    await this.#text.command("profile on");
+  }
+
+  /** The routines with the most self time, from VICE's profiler. */
+  async profile(limit: number): Promise<ProfileEntry[]> {
+    return parseProfile(await this.#text.command(`profile flat ${limit}`)).slice(0, limit);
+  }
+
+  /** How the C64 CPU accessed [start, end] since the memmap was last cleared, as merged ranges. */
+  async memmap(start: number, end: number, maxRanges: number): Promise<MemmapRange[]> {
+    // The first argument is the access mask ("ioRWXrwx"); ff shows every kind of access.
+    return parseMemmap(await this.#text.command(`mmsh ff ${hex4(start)} ${hex4(end)}`, 60_000), maxRanges);
+  }
+
+  async clearMemmap(): Promise<void> {
+    await this.#text.command("mmzap");
   }
 
   async warp(): Promise<boolean> {

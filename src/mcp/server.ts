@@ -34,6 +34,8 @@ export type ViceSessionApi = Pick<
   | "cpuHistory"
   | "backtrace"
   | "timing"
+  | "profile"
+  | "memmap"
   | "vicii"
   | "sprites"
   | "cia"

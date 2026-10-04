@@ -139,6 +139,8 @@ export class ViceSession implements ViceSessionHandle {
         session.#observe(async () => {
           session.#adapter = await ViceAdapter.create(vice.monitor, vice.text);
           session.#timingStart = await session.#adapter.clock();
+          // c64_profile reports what ran since the session started.
+          await session.#adapter.startProfiler();
           // The control-port lines start all pressed; release them before the C64 reads them.
           for (const joystick of session.#joysticks.values()) await session.#adapter.setJoystick(joystick);
         }),
@@ -252,6 +254,18 @@ export class ViceSession implements ViceSessionHandle {
           return { started: true };
         }
         return { cycles: (now - this.#timingStart).toString() };
+      }
+      case "profile": {
+        const { limit } = params as ViceOperations["profile"]["params"];
+        return { entries: await this.#observe(() => this.#machine.profile(limit)) };
+      }
+      case "memmap": {
+        const request = params as ViceOperations["memmap"]["params"];
+        if (request.action === "clear") {
+          await this.#observe(() => this.#machine.clearMemmap());
+          return { cleared: true };
+        }
+        return { ranges: await this.#observe(() => this.#machine.memmap(request.start, request.end, request.maxRanges)) };
       }
       case "vicii":
         return this.#observe(async () => decodeVicii(await this.#machine.readIo(0xd000, 0x2f), await this.#machine.readIo(0xdd00, 0x10)));

@@ -9,6 +9,8 @@ import {
   backtraceFromStack,
   parseDisassembly,
   parseHistory,
+  parseMemmap,
+  parseProfile,
   statusRegisterFromFlags,
 } from "./adapter.ts";
 
@@ -81,4 +83,38 @@ test("the backtrace comes from JSR return addresses on the stack", () => {
   ]);
   assert.equal(backtraceFromStack(0xf9, memory, 1).length, 1);
   assert.deepEqual(backtraceFromStack(0xff, memory, 16), []);
+});
+
+test("profile rows parse; rows without a routine address are skipped", () => {
+  const answer = [
+    "Total      %          Self      %",
+    "------------- ------ ------------- ------",
+    "      1924672  98.0%       1924658  98.0% fd50",
+    "        36399   1.9%         19318   1.0% e9ff",
+    "            0   0.0%             0   0.0% ROOT",
+  ].join("\n");
+  assert.deepEqual(parseProfile(answer), [
+    { address: 0xfd50, totalCycles: "1924672", selfCycles: "1924658", percent: 98 },
+    { address: 0xe9ff, totalCycles: "36399", selfCycles: "19318", percent: 1 },
+  ]);
+});
+
+test("memmap rows merge into ranges of equal access", () => {
+  const answer = [
+    "addr: IO  ROM RAM",
+    "0099: --- --- -w-",
+    "009a: --- --- -w-",
+    "00c1: --- --- r-- (uninitialized read)",
+    "00c2: --- --- rw- (uninitialized read)",
+    "00c3: --- --- rw-",
+    "e000: --- r-x ---",
+    "e001: --- r-x ---",
+  ].join("\n");
+  assert.deepEqual(parseMemmap(answer, 100), [
+    { start: 0x0099, end: 0x009a, execute: false, read: false, write: true },
+    { start: 0x00c1, end: 0x00c1, execute: false, read: true, write: false },
+    { start: 0x00c2, end: 0x00c3, execute: false, read: true, write: true },
+    { start: 0xe000, end: 0xe001, execute: true, read: true, write: false },
+  ]);
+  assert.equal(parseMemmap(answer, 2).length, 2);
 });

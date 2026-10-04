@@ -124,6 +124,11 @@ export class FakeVice {
   clock = 1_000_000n;
   /** Lines `chis` answers with (VICE format), oldest first. */
   history: string[] = [];
+  /** Rows "profile flat" answers with, and rows "mmsh" answers with (VICE formats). */
+  profileRows: string[] = [];
+  memmapRows: string[] = [];
+  profilerOn = false;
+  memmapCleared = false;
   /** The text monitor's default device and bank. */
   textDevice: "c" | "8" = "c";
   textBank = "cpu";
@@ -528,6 +533,13 @@ export class FakeVice {
     const load = /^load "([^"]+)" 0(?: \$([0-9a-f]{4}))?$/.exec(line);
     const attach = /^attach "([^"]+)" 8$/.exec(line);
     if (line === "stopwatch") output += `Stopwatch: ${this.clock.toString().padStart(10)}\n`;
+    else if (line === "profile on") {
+      this.profilerOn = true;
+      output += "Profiling restarted.\n";
+    } else if (/^profile flat \d+$/.test(line)) {
+      output += "Total      %          Self      %\n------------- ------ ------------- ------\n" + this.profileRows.map((row) => `${row}\n`).join("");
+    } else if (/^mmsh ff [0-9a-f]{4} [0-9a-f]{4}$/.test(line)) output += "addr: IO  ROM RAM\n" + this.memmapRows.map((row) => `${row}\n`).join("");
+    else if (line === "mmzap") this.memmapCleared = true;
     else if (/^chis \d+ (?:c|8):$/.test(line)) output += this.history.slice(-Number(line.split(" ")[1])).map((entry) => `${entry}\n`).join("");
     else if (line === "dev 8:") {
       this.textDevice = "8";

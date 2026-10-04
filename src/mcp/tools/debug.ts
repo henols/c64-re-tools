@@ -1,5 +1,6 @@
 // Debug tools: c64_breakpoint (15 §12), c64_watchpoint (15 §13),
-// c64_cpu_history (15 §20), c64_backtrace (15 §21) and c64_timing (15 §24).
+// c64_cpu_history (15 §20), c64_backtrace (15 §21), c64_profile (15 §22),
+// c64_memmap (15 §23) and c64_timing (15 §24).
 
 import { z } from "zod";
 
@@ -8,6 +9,8 @@ import {
   CHECKPOINT_ACTIONS,
   MAX_BACKTRACE,
   MAX_HISTORY,
+  MAX_MEMMAP_RANGES,
+  MAX_PROFILE,
   MAX_WATCH_SIZE,
   SPACES,
   TIMING_ACTIONS,
@@ -166,7 +169,7 @@ export const c64Backtrace = defineTool({
   description:
     `Get the chain of subroutine calls that leads to the current instruction, most recent first, at most depth calls (1 to ${MAX_BACKTRACE}, default 16). ` +
     "Each frame gives the entry address of the routine and the address it returns to. " +
-    "The chain comes from the JSR return addresses on the stack, so it is a best estimate. It does not show interrupts.",
+    "The chain comes from the JSR return addresses on the stack, so it is a best estimate. Interrupts are not in the chain.",
   inputSchema: z.object({ depth: z.number().int().min(1).max(MAX_BACKTRACE).default(16), space: SpaceInput }).strict(),
   outputSchema: z.object({ frames: z.array(z.object({ address: AddressOutput, returnAddress: AddressOutput.optional() })) }),
   readOnly: true,
@@ -195,4 +198,56 @@ export const c64Timing = defineTool({
   },
 });
 
-export const debugTools = [c64Breakpoint, c64Watchpoint, c64CpuHistory, c64Backtrace, c64Timing];
+export const c64Profile = defineTool({
+  name: "c64_profile",
+  title: "Cycle profile",
+  description:
+    `Get the routines where the C64 CPU spent the most cycles since the session started, at most limit of them (1 to ${MAX_PROFILE}, default 20). ` +
+    "Each entry gives the routine address, its total cycles with the routines it calls, and its own cycles. " +
+    "percent is the part of all cycles that the routine used itself. " +
+    "Cycle counts are decimal strings.",
+  inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_PROFILE).default(20) }).strict(),
+  outputSchema: z.object({
+    entries: z.array(z.object({ address: AddressOutput, totalCycles: z.string(), selfCycles: z.string(), percent: z.number() })),
+  }),
+  readOnly: true,
+  async run(input, session) {
+    const { entries } = await session.profile(input.limit);
+    return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+  },
+});
+
+export const c64Memmap = defineTool({
+  name: "c64_memmap",
+  title: "Memory access map",
+  description:
+    "Get how the C64 CPU used memory since the session started or since the last clear. " +
+    "Action read gives ranges of addresses with the same access (execute, read, write) from start to end. " +
+    `It gives at most maxRanges ranges (1 to ${MAX_MEMMAP_RANGES}, default 256). Addresses the CPU did not touch are not in the result. ` +
+    "Action clear sets all access records to zero.",
+  inputSchema: z
+    .object({
+      action: z.enum(["read", "clear"]),
+      start: AddressInput.optional().describe("read only; default $0000"),
+      end: AddressInput.optional().describe("read only; default $ffff"),
+      maxRanges: z.number().int().min(1).max(MAX_MEMMAP_RANGES).optional().describe("read only; default 256"),
+    })
+    .strict(),
+  outputSchema: z.object({
+    ranges: z.array(z.object({ start: AddressOutput, end: AddressOutput, execute: z.boolean(), read: z.boolean(), write: z.boolean() })).optional(),
+    cleared: z.boolean().optional(),
+  }),
+  readOnly: false,
+  async run(input, session) {
+    if (input.action === "clear") {
+      requireFields("clear", { start: input.start, end: input.end, maxRanges: input.maxRanges }, [], []);
+      return session.memmap({ action: "clear" }) as Promise<{ cleared: boolean }>;
+    }
+    const result = (await session.memmap({ action: "read", start: input.start ?? 0x0000, end: input.end ?? 0xffff, maxRanges: input.maxRanges ?? 256 })) as {
+      ranges: Array<{ start: number; end: number; execute: boolean; read: boolean; write: boolean }>;
+    };
+    return { ranges: result.ranges.map((range) => ({ ...range, start: formatC64Address(range.start), end: formatC64Address(range.end) })) };
+  },
+});
+
+export const debugTools = [c64Breakpoint, c64Watchpoint, c64CpuHistory, c64Backtrace, c64Profile, c64Memmap, c64Timing];

@@ -177,6 +177,14 @@ export class ViceSessionClient {
     return this.#request("timing", { action });
   }
 
+  profile(limit: number): Promise<ViceOperations["profile"]["result"]> {
+    return this.#request("profile", { limit });
+  }
+
+  memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]> {
+    return this.#request("memmap", params);
+  }
+
   vicii(): Promise<ViceOperations["vicii"]["result"]> {
     return this.#request("vicii", {});
   }

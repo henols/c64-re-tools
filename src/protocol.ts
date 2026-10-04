@@ -232,6 +232,28 @@ export interface BacktraceFrame {
   returnAddress?: number;
 }
 
+// Profile and memmap (15 §22, §23)
+
+export const MAX_PROFILE = 100;
+export const MAX_MEMMAP_RANGES = 1000;
+
+export interface ProfileEntry {
+  address: number;
+  /** Decimal strings: cycle counts can outgrow a JSON number. */
+  totalCycles: string;
+  selfCycles: string;
+  /** Share of all profiled cycles spent in the routine itself. */
+  percent: number;
+}
+
+export interface MemmapRange {
+  start: number;
+  end: number;
+  execute: boolean;
+  read: boolean;
+  write: boolean;
+}
+
 export const RESET_MODES = ["soft", "hard"] as const;
 export type ResetMode = (typeof RESET_MODES)[number];
 
@@ -361,6 +383,11 @@ export interface ViceOperations {
   backtrace: { params: { depth: number; space: Space }; result: { frames: BacktraceFrame[] } };
   /** `cycles` is a decimal string. */
   timing: { params: { action: (typeof TIMING_ACTIONS)[number] }; result: { started: boolean } | { cycles: string } };
+  profile: { params: { limit: number }; result: { entries: ProfileEntry[] } };
+  memmap: {
+    params: { action: "read"; start: number; end: number; maxRanges: number } | { action: "clear" };
+    result: { ranges: MemmapRange[] } | { cleared: boolean };
+  };
   vicii: { params: Record<string, never>; result: ViciiState };
   /** `indexes`: unique sprite numbers 0-7, in the order to report them. */
   sprites: { params: { indexes: number[] }; result: { sprites: SpriteState[] } };
@@ -394,6 +421,8 @@ export const VICE_OPERATIONS = [
   "cpuHistory",
   "backtrace",
   "timing",
+  "profile",
+  "memmap",
   "vicii",
   "sprites",
   "cia",
@@ -572,6 +601,18 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
     case "timing": {
       if (!isOneOf(TIMING_ACTIONS, params.action)) invalid("action must be start or read");
       return { action: params.action } as ViceOperations[O]["params"];
+    }
+    case "profile": {
+      if (!isInteger(params.limit, 1, MAX_PROFILE)) invalid(`limit must be an integer from 1 to ${MAX_PROFILE}`);
+      return { limit: params.limit } as ViceOperations[O]["params"];
+    }
+    case "memmap": {
+      if (params.action === "clear") return { action: "clear" } as ViceOperations[O]["params"];
+      if (params.action !== "read") invalid("action must be read or clear");
+      if (!isInteger(params.start, 0, 0xffff) || !isInteger(params.end, 0, 0xffff)) invalid("start and end must be integers from 0 to 65535");
+      if (params.end < params.start) invalid("end must not be before start");
+      if (!isInteger(params.maxRanges, 1, MAX_MEMMAP_RANGES)) invalid(`maxRanges must be an integer from 1 to ${MAX_MEMMAP_RANGES}`);
+      return { action: "read", start: params.start, end: params.end, maxRanges: params.maxRanges } as ViceOperations[O]["params"];
     }
     case "sprites": {
       const indexes = params.indexes;
@@ -987,6 +1028,32 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     case "timing": {
       const ok = "cycles" in value ? typeof value.cycles === "string" && /^\d+$/.test(value.cycles) : value.started === true;
       if (!ok) throw new ProtocolError("timing result is malformed");
+      break;
+    }
+    case "profile": {
+      const ok =
+        Array.isArray(value.entries) &&
+        value.entries.every(
+          (entry) =>
+            isObject(entry) &&
+            isInteger(entry.address, 0, 0xffff) &&
+            typeof entry.totalCycles === "string" &&
+            /^\d+$/.test(entry.totalCycles) &&
+            typeof entry.selfCycles === "string" &&
+            /^\d+$/.test(entry.selfCycles) &&
+            typeof entry.percent === "number",
+        );
+      if (!ok) throw new ProtocolError("profile result is malformed");
+      break;
+    }
+    case "memmap": {
+      const isRange = (range: unknown) =>
+        isObject(range) &&
+        isInteger(range.start, 0, 0xffff) &&
+        isInteger(range.end, 0, 0xffff) &&
+        (["execute", "read", "write"] as const).every((flag) => typeof range[flag] === "boolean");
+      const ok = Array.isArray(value.ranges) ? value.ranges.every(isRange) : value.cleared === true;
+      if (!ok) throw new ProtocolError("memmap result is malformed");
       break;
     }
     case "vicii": {

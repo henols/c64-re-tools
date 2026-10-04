@@ -73,7 +73,7 @@ Acceptance (19 §5): every public tool in 15 §37 has schema tests, host-client/
 - [x] M3.1 **Memory search, compare, disassemble** — `c64_memory_search` (text `hunt`, `xx` wildcards), `c64_memory_compare` (two reads, any spaces/views), `c64_disassemble` (text `d`).
 - [x] M3.2 **Chip state** — `c64_vicii`, `c64_sprite`, `c64_cia`, `c64_sid`, decoded from raw I/O registers read without side effects.
 - [x] M3.3 **Execution history and timing** — `c64_cpu_history` (text `chis`, raster position from the cycle clock), `c64_backtrace` (JSR return addresses on the real stack; VICE's `bt` keeps stale entries), `c64_timing` (session stopwatch over VICE's cycle counter).
-- [ ] M3.4 **Profile and memmap** — `c64_profile` (VICE profiler, on from session start), `c64_memmap` read/clear (text `mmsh`/`mmzap`).
+- [x] M3.4 **Profile and memmap** — `c64_profile` (VICE profiler, on from session start), `c64_memmap` read/clear (text `mmsh`/`mmzap`).
 - [ ] M3.5 **Screen baselines** — `c64_screen` capture with a baseline name, compare (mask, ratio, bounds, diff image), list, discard; session-local, lost with the machine state.
 - [ ] M3.6 **Snapshots** — `c64_snapshot` save/restore/list/discard (binary dump/undump in the session scratch directory); restore finishes stopped.
 - [ ] M3.7 **c64_observe** — one coherent stop for registers, memory ranges, VIC-II, sprites, CIAs, SID, screen and raster timing.

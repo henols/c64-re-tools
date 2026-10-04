@@ -12,7 +12,9 @@
 // - the joyport command reaches the C64 only through the "Joyport I/O
 //   simulation" device (37), whose lines start all pressed until set;
 // - with the default JAM action a jammed CPU hangs silently; -jamaction 2
-//   enters the monitor instead.
+//   enters the monitor instead;
+// - the monitor's profiler prints numbers in the host locale, so VICE runs
+//   with LC_NUMERIC=C.
 
 import { accessSync, constants, mkdtempSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:net";
@@ -175,8 +177,9 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
     viceArguments({ binary, port, textPort, configFile: join(scratch, "vicerc"), videoStandard: options.videoStandard }),
     {
       cwd: scratch,
-      // Keep VICE's config, cache and state away from the user's own VICE setup.
-      env: { ...env, XDG_CONFIG_HOME: scratch, XDG_CACHE_HOME: scratch, XDG_STATE_HOME: scratch },
+      // Keep VICE's config, cache and state away from the user's own VICE setup, and
+      // make its monitor print numbers the same way on every host.
+      env: { ...env, XDG_CONFIG_HOME: scratch, XDG_CACHE_HOME: scratch, XDG_STATE_HOME: scratch, LC_NUMERIC: "C" },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
