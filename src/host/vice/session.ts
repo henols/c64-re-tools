@@ -816,14 +816,16 @@ export class ViceSession implements ViceSessionHandle {
   /**
    * Sends a command after which VICE leaves the monitor by itself (autostart,
    * reset). Stock VICE sometimes stays in the monitor instead (seen live after
-   * an autostart): the command's stop event comes, its resumed event does not.
-   * A stop without a checkpoint hit or a JAM is that case, so the machine is
-   * resumed. An extra resume of a running machine is harmless.
+   * an autostart, under load also after a reset), and when it was in the
+   * monitor already no event shows that. So the machine is made to run: a
+   * ping stops it or finds it stopped, and an exit resumes it, unless a
+   * checkpoint or a JAM stopped it in between.
    */
   async #runningCommand(send: () => Promise<void>): Promise<void> {
     const halts = this.#haltCount;
     await this.#resumingCommand(send);
-    if (this.#state === "stopped" && this.#haltCount === halts) await this.#resume();
+    await this.#machine.stop();
+    if (this.#haltCount === halts) await this.#resume();
   }
 
   /**

@@ -111,6 +111,8 @@ export class FakeVice {
   hung = false;
   /** Autostart answers but leaves the machine stopped, as real VICE rarely does. */
   autostartStaysInMonitor = false;
+  /** A reset answers but the machine stays in the monitor, with no event. */
+  resetStaysInMonitor = false;
   /** Files given to autostart, with their run flag and index. */
   readonly autostarts: Array<{ file: string; run: boolean; index: number; bytes: Buffer }> = [];
   /** Disk images attached to drive 8. */
@@ -443,6 +445,7 @@ export class FakeVice {
         const enteredForThis = this.#enteredForCommand;
         answer();
         this.registers.PC = this.rom.readUInt16LE(0xfffc);
+        if (this.resetStaysInMonitor) return;
         if (enteredForThis) return this.#leaveMonitor(socket);
         this.running = true;
         socket.write(frame(0x63, EVENT_REQUEST_ID, this.#pc()));
