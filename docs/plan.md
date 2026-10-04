@@ -80,11 +80,20 @@ Acceptance (19 §5): every public tool in 15 §37 has schema tests, host-client/
 - [x] M3.8 **drive8 execution** — step, next and until-return in space drive8. Not achievable on stock VICE 3.10: it runs the 1541 CPU in batches that catch up with the computer's clock, and neither monitor stops it after one instruction (live-tested with binary step, text `z`/`n`/`ret` under `dev 8:` and drive checkpoints). They stay `unsupported-in-space` with that reason; drive breakpoints remain. Open question for Henrik.
 - [x] M3.9 **Acceptance** — the full 15 §37 tool list exactly; the c64-emulator skill updated for the new tools.
 
+## M4 — Knowledge core
+
+Acceptance (19 §6): from a clean C64 project directory, a knowledge read needs no database; the first write creates `.c64-re-tools/knowledge.db`; several semantic changes give a correct current view and keep the full history. No Host Runtime is involved.
+
+- [ ] M4.1 **Database and schema** — `src/knowledge/database.ts`, `schema.ts`: built-in `node:sqlite` (no dependency), rollback journal, v1 temporal schema (06 §4), forward migrations, a missing database reads as empty without being created, a newer schema is refused.
+- [ ] M4.2 **Semantic writes** — `write.ts`: one revision per accepted change; rename/remove symbol, classify/unclassify regions with splits, set/remove comments, add/remove references, revert; stale-revision refusal; rollback on failure.
+- [ ] M4.3 **Reads and history** — `read.ts`, `history.ts`: `at(address)`, search and lists of current knowledge; history by address, revisions, one revision's changes.
+- [ ] M4.4 **c64-knowledge skill** — `skills/c64-knowledge/scripts/knowledge.ts` (compact JSON in and out) and `SKILL.md` (ASD-STE100).
+- [ ] M4.5 **Acceptance** — the 19 §6 scenario through the script in a clean temporary project.
+
 ## Later milestones
 
 Expand each into steps when it starts.
 
-- [ ] **M4** Knowledge core: `src/knowledge`, `.c64-re-tools/knowledge.db`, the c64-knowledge script.
 - [ ] **M5** Native-tool seam + ACME + c64-assembler: assemble → load → known state in VICE.
 - [ ] **M6** c1541 + petcat: the c64-disk and c64-basic skills.
 - [ ] **M7** DXA + normalized-findings importer: the c64-static-analysis skill.
