@@ -650,7 +650,12 @@ export interface Hello {
   role: Role;
   /** vice-session only; fixed for the session (D10). */
   videoStandard?: VideoStandard;
+  /** The shared secret (C64RT_HOST_TOKEN) for a host that listens beyond loopback (D6). */
+  token?: string;
 }
+
+/** Longest accepted shared token. */
+export const MAX_TOKEN_LENGTH = 256;
 
 export interface Ready {
   type: "ready";
@@ -734,8 +739,12 @@ export function parseClientMessage(value: unknown): ClientMessage {
     if (value.videoStandard !== undefined && !isOneOf(VIDEO_STANDARDS, value.videoStandard)) {
       throw new ProtocolError("hello has an unknown video standard");
     }
+    if (value.token !== undefined && (typeof value.token !== "string" || value.token.length > MAX_TOKEN_LENGTH)) {
+      throw new ProtocolError("hello has a malformed token");
+    }
     const hello: Hello = { type: "hello", protocol: value.protocol, version: value.version, role: value.role };
     if (value.videoStandard !== undefined) hello.videoStandard = value.videoStandard;
+    if (value.token !== undefined) hello.token = value.token;
     return hello;
   }
   if (value.type === "request") {

@@ -4,14 +4,14 @@ import { parseArgs } from "node:util";
 
 import { DEFAULT_HOST_PORT } from "../protocol.ts";
 import { ProcessSupervisor } from "./processes.ts";
-import { startHostServer } from "./server.ts";
+import { isLoopback, startHostServer } from "./server.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { viceSessionFactory } from "./vice/session.ts";
 
 const HELP = `c64-re-tools-host
 
 Usage:
-  c64-re-tools-host [--port <port>]
+  c64-re-tools-host [--port <port>] [--listen <address> ...]
   c64-re-tools-host --help
 
 Runs the c64-re-tools Host Runtime in the foreground. It listens on
@@ -20,17 +20,21 @@ c64-re-tools-mcp process, and runs native tools (ACME) for skill scripts.
 Stop it with Ctrl+C; that stops every emulator and tool it started.
 
 Options:
-  --port <port>  Listen on this port instead (0 picks a free port).
-  --help         Show this help.`;
+  --port <port>       Listen on this port instead (0 picks a free port).
+  --listen <address>  Also listen on this address, on the same port, for
+                      example the container bridge (172.17.0.1). An address
+                      that is not loopback needs C64RT_HOST_TOKEN: set it to
+                      the same secret for this program and for the clients.
+  --help              Show this help.`;
 
 function log(line: string): void {
   process.stderr.write(`${new Date().toISOString()} ${line}\n`);
 }
 
 async function main(): Promise<number> {
-  let values: { help?: boolean; port?: string };
+  let values: { help?: boolean; port?: string; listen?: string[] };
   try {
-    ({ values } = parseArgs({ options: { help: { type: "boolean" }, port: { type: "string" } }, strict: true }));
+    ({ values } = parseArgs({ options: { help: { type: "boolean" }, port: { type: "string" }, listen: { type: "string", multiple: true } }, strict: true }));
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n\n${HELP}\n`);
     return 2;
@@ -46,6 +50,13 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  const extraHosts = values.listen ?? [];
+  const token = process.env.C64RT_HOST_TOKEN;
+  if (extraHosts.some((address) => !isLoopback(address)) && (token === undefined || token.length < 16)) {
+    process.stderr.write("--listen with an address that is not loopback needs C64RT_HOST_TOKEN with at least 16 characters, so that only your clients can connect.\n");
+    return 2;
+  }
+
   // Every emulator and tool is started through this one supervisor; however
   // this process ends, the exit guard takes their process groups down with it,
   // and the watchdog does the same if this process is killed (D7).
@@ -56,6 +67,8 @@ async function main(): Promise<number> {
   try {
     server = await startHostServer({
       port,
+      extraHosts,
+      ...(token === undefined || token === "" ? {} : { token }),
       log,
       createViceSession: viceSessionFactory({ supervisor, log }),
       tools: createToolDispatcher({ supervisor, log }),
@@ -65,9 +78,13 @@ async function main(): Promise<number> {
       process.stderr.write(`Port ${port} on 127.0.0.1 is in use. Is another c64-re-tools-host running?\n`);
       return 1;
     }
+    if ((error as NodeJS.ErrnoException).code === "EADDRNOTAVAIL") {
+      process.stderr.write(`An address in --listen does not belong to this machine: ${extraHosts.join(", ")}\n`);
+      return 1;
+    }
     throw error;
   }
-  process.stdout.write(`c64-re-tools-host listening on ${server.host}:${server.port}\n`);
+  process.stdout.write(`c64-re-tools-host listening on ${[server.host, ...extraHosts].map((address) => `${address}:${server.port}`).join(", ")}\n`);
 
   await new Promise<void>((resolve) => {
     const stop = (signal: NodeJS.Signals) => {

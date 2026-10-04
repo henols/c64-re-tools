@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
 
 import {
@@ -52,8 +53,16 @@ export interface HostServerOptions {
   createViceSession: ViceSessionFactory;
   /** Native-tool requests on "tool" connections; without it they are refused. */
   tools?: ToolDispatcher;
-  /** Defaults to 127.0.0.1 (D5). */
+  /** Defaults to 127.0.0.1 (D5). More addresses listen on the same port, for example a container bridge. */
   host?: string;
+  /** Extra addresses to listen on, on the same port as `host`. */
+  extraHosts?: string[];
+  /**
+   * The shared secret (D6). A connection that arrives on an address that is
+   * not loopback must send it in its hello; without a token such a
+   * connection is refused.
+   */
+  token?: string;
   /** 0 picks a free port. */
   port: number;
   /** How long a new connection may stay silent before it must send hello. */
@@ -84,6 +93,19 @@ class Connection {
   readonly #toolAbort = new AbortController();
   #isTool = false;
   readonly #reader = new MessageReader();
+
+  /** A connection on a loopback address needs no token; any other needs the host's token (D6). */
+  #checkToken(token: string | undefined): WireError | undefined {
+    if (isLoopback(this.#socket.localAddress ?? "")) return undefined;
+    const expected = this.#options.token;
+    const matches =
+      expected !== undefined && token !== undefined && token.length === expected.length && timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+    if (matches) return undefined;
+    return {
+      code: "installation-incomplete",
+      message: "The c64-re-tools host runtime refused this client: a connection from outside the host needs C64RT_HOST_TOKEN with the same value on both sides.",
+    };
+  }
   readonly #socket: Socket;
   readonly #options: HostServerOptions;
   readonly #log: (line: string) => void;
@@ -137,9 +159,9 @@ class Connection {
     if (this.#state === "handshake") {
       if (message.type !== "hello") throw new ProtocolError("first message is not hello");
       clearTimeout(this.#handshakeTimer);
-      const mismatch = checkHello(message);
+      const mismatch = checkHello(message) ?? this.#checkToken(message.token);
       if (mismatch !== undefined) {
-        this.#log("refusing a client from another installation");
+        this.#log(`refusing a client: ${mismatch.message}`);
         this.#send({ type: "error", error: mismatch });
         this.#socket.end();
         this.#state = "closed";
@@ -234,33 +256,52 @@ class Connection {
 }
 
 /** Starts the Host Runtime listener. Each connection owns at most one VICE session. */
+/** True for 127.0.0.0/8 and ::1, also in their IPv4-mapped IPv6 form. */
+export function isLoopback(address: string): boolean {
+  const plain = address.startsWith("::ffff:") ? address.slice(7) : address;
+  return plain === "::1" || /^127\.\d+\.\d+\.\d+$/.test(plain);
+}
+
 export async function startHostServer(options: HostServerOptions): Promise<HostServer> {
   const log = options.log ?? (() => {});
   const host = options.host ?? "127.0.0.1";
   const connections = new Set<Connection>();
-  const server: Server = createServer((socket) => {
-    const connection = new Connection(socket, options, log);
-    connections.add(connection);
-    void connection.closed.then(() => connections.delete(connection));
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen({ host, port: options.port, exclusive: true }, () => {
-      server.off("error", reject);
-      resolve();
+  const servers: Server[] = [];
+  const listen = (address: string, port: number) => {
+    const server: Server = createServer((socket) => {
+      const connection = new Connection(socket, options, log);
+      connections.add(connection);
+      void connection.closed.then(() => connections.delete(connection));
     });
-  });
-  const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("listener has no TCP address");
+    servers.push(server);
+    return new Promise<number>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen({ host: address, port, exclusive: true }, () => {
+        server.off("error", reject);
+        const bound = server.address();
+        if (bound === null || typeof bound === "string") reject(new Error("listener has no TCP address"));
+        else resolve(bound.port);
+      });
+    });
+  };
+
+  let port: number;
+  try {
+    port = await listen(host, options.port);
+    // The extra addresses share the port, so one endpoint setting reaches every address.
+    for (const extra of options.extraHosts ?? []) await listen(extra, port);
+  } catch (error) {
+    await Promise.all(servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+    throw error;
+  }
 
   let closing: Promise<void> | undefined;
   return {
     host,
-    port: address.port,
+    port,
     close() {
       closing ??= (async () => {
-        const stopped = new Promise<void>((resolve) => server.close(() => resolve()));
+        const stopped = Promise.all(servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
         await Promise.all([...connections].map((connection) => connection.close()));
         await stopped;
       })();

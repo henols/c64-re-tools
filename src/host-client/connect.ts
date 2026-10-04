@@ -122,6 +122,9 @@ export class HostConnection {
     const connection = new HostConnection(socket);
     const hello: Hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: options.role };
     if (options.videoStandard !== undefined) hello.videoStandard = options.videoStandard;
+    // A host that listens beyond loopback checks this shared secret (D6).
+    const token = (options.env ?? process.env).C64RT_HOST_TOKEN;
+    if (token !== undefined && token !== "") hello.token = token;
 
     const answer = await new Promise<HostMessage | Error>((resolve) => {
       const timer = setTimeout(() => resolve(new Error("no answer to hello in time")), options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
