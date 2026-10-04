@@ -105,16 +105,25 @@ Acceptance (19 §7): a fixture source program assembles through the c64-assemble
 Acceptance (19 §8): with real fixture media, inspect a D64 directory, extract a PRG, decode its BASIC loader, find its machine-code handoff, and load the extracted program in VICE.
 
 - [x] M6.1 **c1541 adapter** — `c1541.inspect` on the wire (image bytes as the attachment, `d64`/`d71`/`d81`/`g64`), `src/host/tools/c1541.ts`: c1541 does the image work (`info`, `dir` free count, `bam`, `chain t s`, `bread` raw blocks); the adapter parses the raw header and directory blocks, so file names keep their exact PETSCII bytes (c1541's own `dir` and name arguments lose case). c1541 exits 0 on errors, so failures come from its output and from missing output files. A damaged structure (chain loop, block out of range) is `media-error`; a missing name is `found: false`.
-- [x] M6.2 **petcat adapter** — `petcat.decode`, `src/host/tools/petcat.ts`: `petcat -2 -c` for the listing; the adapter parses the tokenized lines itself (end marker at a zero link high byte, as BASIC relinks), checks that petcat's line numbers match, and finds SYS/USR handoffs in the tokens outside strings, REM and DATA. A constant SYS expression gives an address; anything else is `computed`. Bytes that are no BASIC program give `decoded: false`.
+- [x] M6.2 **petcat adapter** — `petcat.decode`, `src/host/tools/petcat.ts`: `petcat -2` for the listing; the adapter parses the tokenized lines itself (end marker at a zero link high byte, as BASIC relinks), checks that petcat's line numbers match, and finds SYS/USR handoffs in the tokens outside strings, REM and DATA. A constant SYS expression gives an address; anything else is `computed`. Bytes that are no BASIC program give `decoded: false`.
 - [x] M6.3 **Host client** — `inspectDisk` and `decodeBasic` in `src/host-client/tools.ts`, reading project files through `transfer.ts`.
 - [x] M6.4 **c64-disk skill** — `skills/c64-disk/scripts/disk.ts` (directory, bam, entry, chain, read with `--out`) and `SKILL.md` (ASD-STE100).
 - [x] M6.5 **c64-basic skill** — `skills/c64-basic/scripts/basic.ts` and `SKILL.md` (ASD-STE100).
-- [x] M6.6 **Acceptance** — a D64 made by real c1541 with a BASIC loader and its machine code: directory → read → decode → handoff → `c64_program_load` and run to the handoff in VICE (live part opt-in).
+- [x] M6.6 **Acceptance** — a D64 made by real c1541 with a BASIC loader and its machine code: directory → read → decode → handoff → `c64_autostart` of the extracted program, run until BASIC reaches the handoff in VICE (live part opt-in).
+
+## M7 — DXA + normalized-findings importer
+
+Acceptance (19 §9): a fixture PRG goes through DXA, normalized findings and the importer into knowledge.db; a second DXA run with changed results retires obsolete DXA facts, keeps history, protects semantic knowledge, and a malformed result imports nothing.
+
+- [x] M7.1 **Importer** — `src/knowledge/import.ts`: normalized findings (analyzer, coverage, authoritative categories, symbols, regions, references), complete validation before any write, one revision per import, same-analyzer retirement in authoritative coverage, coverage-aware region splits, semantic and other-analyzer rows kept. Only code against data is a conflict (12 §12, §19); unchanged facts keep their rows, so a repeated run makes no revision.
+- [ ] M7.2 **DXA adapter** — `dxa.analyze`, `src/host/tools/dxa.ts`. Blocked: DXA is not installed on the development host (see D12).
+- [ ] M7.3 **c64-static-analysis DXA path** — the DXA → normalized findings mapping in `skills/c64-static-analysis/scripts/analyze.ts`. Blocked with M7.2.
+- [ ] M7.4 **Acceptance** — blocked with M7.2.
 
 ## Later milestones
 
 Expand each into steps when it starts.
-- [ ] **M7** DXA + normalized-findings importer: the c64-static-analysis skill.
+
 - [ ] **M8** Ghidra + NMOS SLEIGH language (all 105 undocumented opcodes) on the same importer.
 - [ ] **M9** c64-testing: functional equivalence, PASS/FAIL/INCONCLUSIVE.
 - [ ] **M10** c64-memory-map, c64-unpacker, c64-provenance, c64-reverse-engineering.
@@ -138,3 +147,4 @@ Points the design leaves open, decided for M1. Revisit a row before changing the
 | D9 | MCP SDK | `@modelcontextprotocol/sdk`, stdio transport, plus its schema library. No other runtime dependency in M1. |
 | D10 | Video standard | PAL by default; `C64RT_VIDEO=ntsc` at MCP start. Fixed for the session. |
 | D11 | VICE crash | Fail the operation with `machine-state-lost`. No automatic restart in M1. |
+| D12 | DXA missing | DXA is not installed here, and tools are never installed for the user. Its parser is not written against guessed output. M8 (Ghidra, installed) goes first and gives c64-static-analysis its first analyzer path through the same importer; M7.2–M7.4 follow when DXA is installed. |

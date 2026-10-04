@@ -51,10 +51,10 @@ export interface WriteResult<T> {
   current: T;
 }
 
-const SYMBOL_NAME = /^\.?[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+export const SYMBOL_NAME = /^\.?[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const MAX_COMMENT = 4000;
 
-function checkAddress(value: number, what = "address"): void {
+export function checkAddress(value: number, what = "address"): void {
   if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new KnowledgeError("invalid-input", `${what} must be from $0000 to $ffff.`);
 }
 
@@ -62,27 +62,33 @@ function checkOneOf<T extends string>(values: readonly T[], value: string, what:
   if (!(values as readonly string[]).includes(value)) throw new KnowledgeError("invalid-input", `${what} must be one of: ${values.join(", ")}.`);
 }
 
-function hex(value: number): string {
+export function hex(value: number): string {
   return `$${value.toString(16).padStart(4, "0")}`;
+}
+
+/** What a revision records about its writer. Analyzer imports may add tool details. */
+export interface ChangeContext {
+  origin: Origin;
+  description?: string;
+  expectedRevision?: number;
+  inputHash?: string;
+  toolVersion?: string;
 }
 
 /**
  * One write: refuses a stale expected revision, then creates the revision row
  * only when the first actual change happens, so a no-op leaves no revision.
  */
-class Change {
+export class Change {
   revision: number | null = null;
   readonly #db: DatabaseSync;
-  readonly #context: WriteContext;
+  readonly #context: ChangeContext;
   readonly #operation: string;
 
-  constructor(db: DatabaseSync, context: WriteContext, operation: string) {
+  constructor(db: DatabaseSync, context: ChangeContext, operation: string) {
     this.#db = db;
     this.#context = context;
     this.#operation = operation;
-    if (context.origin !== "user" && context.origin !== "llm") {
-      throw new KnowledgeError("invalid-input", "A semantic write comes from the user or the LLM.");
-    }
     const current = currentRevision(db);
     if (context.expectedRevision !== undefined && context.expectedRevision !== current) {
       throw new KnowledgeError(
@@ -96,8 +102,15 @@ class Change {
   id(): number {
     if (this.revision !== null) return this.revision;
     const created = this.#db
-      .prepare("INSERT INTO revisions (created_at, origin, operation, description) VALUES (?, ?, ?, ?) RETURNING id")
-      .get(new Date().toISOString(), this.#context.origin, this.#operation, this.#context.description ?? null) as { id: number };
+      .prepare("INSERT INTO revisions (created_at, origin, operation, input_hash, tool_version, description) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
+      .get(
+        new Date().toISOString(),
+        this.#context.origin,
+        this.#operation,
+        this.#context.inputHash ?? null,
+        this.#context.toolVersion ?? null,
+        this.#context.description ?? null,
+      ) as { id: number };
     this.revision = created.id;
     this.#db.prepare("UPDATE meta SET value = ? WHERE key = 'current_revision'").run(String(created.id));
     return created.id;
@@ -129,8 +142,11 @@ class Change {
   }
 }
 
-/** Runs one write in a transaction. */
+/** Runs one semantic write in a transaction. */
 function write<T>(db: DatabaseSync, context: WriteContext, operation: string, work: (change: Change) => T): WriteResult<T> {
+  if (context.origin !== "user" && context.origin !== "llm") {
+    throw new KnowledgeError("invalid-input", "A semantic write comes from the user or the LLM.");
+  }
   return transaction(db, () => {
     const change = new Change(db, context, operation);
     const current = work(change);
@@ -173,7 +189,7 @@ export function removeSymbol(db: DatabaseSync, context: WriteContext, request: {
 }
 
 /** Closes the current regions over [start, end] and keeps their parts outside it. */
-function clearRange(db: DatabaseSync, change: Change, start: number, end: number): void {
+export function clearRange(db: DatabaseSync, change: Change, start: number, end: number): void {
   const overlapping = regionsOverlapping(db, start, end);
   if (overlapping.length === 0) return;
   change.close("regions", "start_address <= ? AND end_address >= ?", end, start);
