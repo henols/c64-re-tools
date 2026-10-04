@@ -641,6 +641,20 @@ export class ViceAdapter {
     return memory;
   }
 
+  /** Saves the whole machine, attached disks included, to a host file. */
+  async saveSnapshot(file: string): Promise<void> {
+    const name = Buffer.from(file, "utf8");
+    if (name.length > 255) throw new Error("snapshot file path is too long");
+    // Byte 0: no ROMs (VICE has them). Byte 1: save disks, so a restore gets the disk state too.
+    await this.#monitor.request(Command.dump, Buffer.concat([Buffer.from([0, 1, name.length]), name]), 30_000);
+  }
+
+  /** Restores the machine from a snapshot file. The machine stays stopped. */
+  async restoreSnapshot(file: string): Promise<void> {
+    const name = Buffer.from(file, "utf8");
+    await this.#monitor.request(Command.undump, Buffer.concat([Buffer.from([name.length]), name]), 30_000);
+  }
+
   async startProfiler(): Promise<void> {
     await this.#text.command("profile on");
   }

@@ -211,6 +211,10 @@ export class ViceSessionClient {
     return this.#request("screenCompare", params);
   }
 
+  snapshot(params: ViceOperations["snapshot"]["params"]): Promise<ViceOperations["snapshot"]["result"]> {
+    return this.#request("snapshot", params);
+  }
+
   screenBaselines(): Promise<{ baselines: string[] }> {
     return this.#request("screenBaselines", {});
   }

@@ -165,6 +165,15 @@ class FakeSession implements ViceSessionApi {
     return { voices: [voice(1), voice(2), voice(3)], filter: { cutoff: 0, resonance: 0, routing: 0, mode: 0 }, volume: 15 };
   }
 
+  snapshots: unknown[] = [];
+  async snapshot(params: import("../protocol.ts").ViceOperations["snapshot"]["params"]) {
+    this.snapshots.push(params);
+    if (params.action === "list") return { snapshots: ["before-boss"] };
+    if (params.action === "save") return { saved: true, name: params.name };
+    if (params.action === "restore") return { restored: true, state: "stopped" as const };
+    return { discarded: true };
+  }
+
   baselines = new Set<string>();
   async screenCapture(baseline?: string) {
     if (baseline !== undefined) this.baselines.add(baseline);
@@ -266,6 +275,7 @@ test("the server lists exactly the implemented tools with object input and outpu
     "c64_run_until",
     "c64_screen",
     "c64_sid",
+    "c64_snapshot",
     "c64_sprite",
     "c64_status",
     "c64_timing",
@@ -682,5 +692,17 @@ test("c64_screen baselines: capture, compare with a diff image, list and discard
   ]) {
     assert.equal(errorOf(await call(client, "c64_screen", args)).code, "invalid-input", JSON.stringify(args));
   }
+  await client.close();
+});
+
+test("c64_snapshot needs a name except for list", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  assert.deepEqual((await call(client, "c64_snapshot", { action: "save", name: "before-boss" })).structuredContent, { saved: true, name: "before-boss" });
+  assert.deepEqual((await call(client, "c64_snapshot", { action: "restore", name: "before-boss" })).structuredContent, { restored: true, state: "stopped" });
+  assert.deepEqual((await call(client, "c64_snapshot", { action: "list" })).structuredContent, { snapshots: ["before-boss"] });
+  assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save" })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_snapshot", { action: "list", name: "x" })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save", name: "../x" })).code, "invalid-input");
   await client.close();
 });

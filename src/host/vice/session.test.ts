@@ -644,3 +644,20 @@ test("screen baselines: capture under a name, compare with mask and ratio, list,
   assert.equal(fake.running, true);
   await session.close();
 });
+
+test("snapshots save, restore to stopped, list and discard", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("execution", { action: "pause", space: "c64" });
+  fake.ram[0xc000] = 0x11;
+  assert.deepEqual(await session.handle("snapshot", { action: "save", name: "before-boss" }), { saved: true, name: "before-boss" });
+  fake.ram[0xc000] = 0x99;
+  await session.handle("execution", { action: "resume", space: "c64" });
+  assert.deepEqual(await session.handle("snapshot", { action: "restore", name: "before-boss" }), { restored: true, state: "stopped" });
+  assert.equal(fake.ram[0xc000], 0x11);
+  assert.equal(fake.running, false);
+  assert.equal((await session.handle("status", {})).state, "stopped");
+  assert.deepEqual(await session.handle("snapshot", { action: "list" }), { snapshots: ["before-boss"] });
+  assert.deepEqual(await session.handle("snapshot", { action: "discard", name: "before-boss" }), { discarded: true });
+  await assert.rejects(session.handle("snapshot", { action: "restore", name: "before-boss" }), failsWith("not-found"));
+  await session.close();
+});

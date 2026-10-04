@@ -15,7 +15,7 @@
 //   prompt; VICE's extra entry prompt is reproduced.
 
 import { once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -401,6 +401,18 @@ export class FakeVice {
       case Command.paletteGet: {
         const items = Array.from({ length: 16 }, (_, index) => Buffer.from([3, index * 16, index * 16, index * 16]));
         return void answer(Buffer.concat([u16(16), ...items]));
+      }
+      case Command.dump: {
+        const file = body.subarray(3, 3 + body[2]!).toString("utf8");
+        writeFileSync(file, Buffer.concat([Buffer.from("FAKESNAP"), this.ram, u16(this.registers.PC!)]));
+        return void answer();
+      }
+      case Command.undump: {
+        const file = body.subarray(1, 1 + body[0]!).toString("utf8");
+        const saved = readFileSync(file);
+        saved.copy(this.ram, 0, 8, 8 + 0x10000);
+        this.registers.PC = saved.readUInt16LE(8 + 0x10000);
+        return void answer(this.#pc());
       }
       case Command.keyboardFeed:
         this.keyboard.push(...body.subarray(1, 1 + body[0]!));

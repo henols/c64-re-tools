@@ -1,11 +1,11 @@
-// Media tools: c64_autostart (15 §33), c64_program_load (15 §34) and
-// c64_disk_attach (15 §35). Paths are project-relative; the host-client reads
+// Media tools: c64_autostart (15 §33), c64_program_load (15 §34),
+// c64_disk_attach (15 §35) and c64_snapshot (15 §36). Paths are project-relative; the host-client reads
 // the file and the Host Runtime receives only its bytes.
 
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { AUTOSTART_TYPES, DISK_TYPES, RUN_STATES } from "../../protocol.ts";
+import { AUTOSTART_TYPES, DISK_TYPES, MAX_SNAPSHOTS, RUN_STATES, WireFailure } from "../../protocol.ts";
 import { AddressInput, AddressOutput, defineTool } from "../server.ts";
 
 const ProjectPath = z.string().min(1).describe("path relative to the project directory, for example build/game.prg");
@@ -70,4 +70,40 @@ export const c64DiskAttach = defineTool({
   },
 });
 
-export const mediaTools = [c64Autostart, c64ProgramLoad, c64DiskAttach];
+export const c64Snapshot = defineTool({
+  name: "c64_snapshot",
+  title: "Machine snapshots",
+  description:
+    "Save and restore the whole machine state, attached disks included. Action save keeps a snapshot under a name you choose. " +
+    "Action restore puts the machine back in that state and stops the CPU. It also starts the c64_timing stopwatch again. " +
+    `Action list gives the names, and action discard removes one. A session keeps at most ${MAX_SNAPSHOTS} snapshots until it ends.`,
+  inputSchema: z
+    .object({
+      action: z.enum(["save", "restore", "list", "discard"]),
+      name: z
+        .string()
+        .regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 letters, digits, dots, underscores or hyphens")
+        .optional()
+        .describe("save, restore and discard: 1 to 64 letters, digits, dots, underscores or hyphens"),
+    })
+    .strict(),
+  outputSchema: z.object({
+    saved: z.boolean().optional(),
+    name: z.string().optional(),
+    restored: z.boolean().optional(),
+    state: z.enum(RUN_STATES).optional(),
+    snapshots: z.array(z.string()).optional(),
+    discarded: z.boolean().optional(),
+  }),
+  readOnly: false,
+  async run(input, session) {
+    if (input.action === "list") {
+      if (input.name !== undefined) throw new WireFailure("invalid-input", "name is not used with action list.");
+      return session.snapshot({ action: "list" });
+    }
+    if (input.name === undefined) throw new WireFailure("invalid-input", `Action ${input.action} needs name.`);
+    return session.snapshot({ action: input.action, name: input.name });
+  },
+});
+
+export const mediaTools = [c64Autostart, c64ProgramLoad, c64DiskAttach, c64Snapshot];

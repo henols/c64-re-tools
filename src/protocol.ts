@@ -424,6 +424,10 @@ export interface ViceOperations {
     result: ScreenComparison;
   };
   screenBaselines: { params: Record<string, never>; result: { baselines: string[] } };
+  snapshot: {
+    params: { action: "save" | "restore" | "discard"; name: string } | { action: "list" };
+    result: { saved: boolean; name: string } | { restored: boolean; state: RunState } | { snapshots: string[] } | { discarded: boolean };
+  };
   screenDiscard: { params: { baseline: string }; result: { discarded: boolean } };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
 }
@@ -451,6 +455,7 @@ export const VICE_OPERATIONS = [
   "screenCompare",
   "screenBaselines",
   "screenDiscard",
+  "snapshot",
   "cpuHistory",
   "backtrace",
   "timing",
@@ -627,6 +632,13 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
     }
     case "screenDiscard":
       return { baseline: validName(params.baseline, "baseline") } as ViceOperations[O]["params"];
+    case "snapshot": {
+      if (params.action === "list") return { action: "list" } as ViceOperations[O]["params"];
+      if (params.action !== "save" && params.action !== "restore" && params.action !== "discard") {
+        invalid("action must be save, restore, list or discard");
+      }
+      return { action: params.action, name: validName(params.name, "name") } as ViceOperations[O]["params"];
+    }
     case "screenCompare": {
       const ratio = params.maxMismatchRatio;
       if (typeof ratio !== "number" || !(ratio >= 0 && ratio <= 1)) invalid("maxMismatchRatio must be a number from 0 to 1");
@@ -1080,6 +1092,15 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     }
     case "screenDiscard": {
       if (value.discarded !== true) throw new ProtocolError("screenDiscard result is malformed");
+      break;
+    }
+    case "snapshot": {
+      const ok =
+        (value.saved === true && typeof value.name === "string") ||
+        (value.restored === true && isOneOf(RUN_STATES, value.state)) ||
+        (Array.isArray(value.snapshots) && value.snapshots.every((name) => typeof name === "string")) ||
+        value.discarded === true;
+      if (!ok) throw new ProtocolError("snapshot result is malformed");
       break;
     }
     case "cpuHistory": {

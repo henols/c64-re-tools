@@ -69,3 +69,18 @@ test("until-return runs a called routine to its RTS", { skip: liveSkip, timeout:
   await session.handle("registersSet", { space: "c64", values: { pc: 0xc100 } });
   assert.deepEqual(await session.handle("execution", { action: "next", count: 1, space: "c64" }), { state: "stopped", pc: 0xc103, executed: 1 });
 });
+
+test("a snapshot restores memory, registers and a stopped CPU", { skip: liveSkip, timeout: 60_000 }, async () => {
+  await session.handle("execution", { action: "pause", space: "c64" });
+  await session.handle("memoryWrite", { address: 0xc200, data: "c0ffee", space: "c64", view: "cpu" });
+  const registers = await session.handle("registersGet", { space: "c64" });
+  await session.handle("snapshot", { action: "save", name: "point" });
+  await session.handle("memoryWrite", { address: 0xc200, data: "000000", space: "c64", view: "cpu" });
+  await session.handle("execution", { action: "advance-frames", count: 10, space: "c64" });
+  await session.handle("execution", { action: "resume", space: "c64" });
+  assert.deepEqual(await session.handle("snapshot", { action: "restore", name: "point" }), { restored: true, state: "stopped" });
+  assert.equal((await session.handle("memoryRead", { address: 0xc200, size: 3, space: "c64", view: "cpu" })).data, "c0ffee");
+  assert.deepEqual(await session.handle("registersGet", { space: "c64" }), registers);
+  assert.equal((await session.handle("status", {})).state, "stopped");
+  assert.deepEqual(await session.handle("snapshot", { action: "list" }), { snapshots: ["point"] });
+});

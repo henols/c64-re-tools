@@ -3,6 +3,7 @@
 
 import {
   MAX_BASELINES,
+  MAX_SNAPSHOTS,
   MAX_COMPARE_DIFFERENCES,
   RASTER,
   WireFailure,
@@ -24,7 +25,7 @@ import {
   type ViceOperation,
   type ViceOperations,
 } from "../../protocol.ts";
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { ProcessSupervisor } from "../processes.ts";
@@ -94,6 +95,9 @@ export class ViceSession implements ViceSessionHandle {
   #queue: Promise<unknown> = Promise.resolve();
   #closed = false;
   #lost = false;
+  /** Session-local snapshots by name, as files in the scratch directory (15 §36). */
+  readonly #snapshots = new Map<string, string>();
+  #snapshotFiles = 0;
   /** Session-local screen baselines (15 §29), lost with the session. */
   readonly #baselines = new Map<string, { frame: IndexedFrame; palette: Array<[number, number, number]> }>();
   /** The CPU clock when the session stopwatch last started (c64_timing). */
@@ -262,6 +266,8 @@ export class ViceSession implements ViceSessionHandle {
         if (!this.#baselines.delete(baseline)) throw new WireFailure("not-found", `There is no baseline named ${baseline}.`);
         return { discarded: true };
       }
+      case "snapshot":
+        return this.#snapshot(params as ViceOperations["snapshot"]["params"]);
       case "cpuHistory":
         return this.#cpuHistory(params as ViceOperations["cpuHistory"]["params"]);
       case "backtrace": {
@@ -649,6 +655,33 @@ export class ViceSession implements ViceSessionHandle {
       });
       return { entries };
     });
+  }
+
+  /** Saves, restores, lists and discards machine snapshots (15 §36). */
+  async #snapshot(params: ViceOperations["snapshot"]["params"]): Promise<ViceOperations["snapshot"]["result"]> {
+    if (params.action === "list") return { snapshots: [...this.#snapshots.keys()] };
+    const existing = this.#snapshots.get(params.name);
+    if (params.action === "save") {
+      if (existing === undefined && this.#snapshots.size >= MAX_SNAPSHOTS) {
+        throw new WireFailure("limit-exceeded", `A session keeps at most ${MAX_SNAPSHOTS} snapshots. Discard one first.`);
+      }
+      const file = existing ?? join(this.#vice.scratchDir, `snapshot-${++this.#snapshotFiles}.vsf`);
+      await this.#observe(() => this.#machine.saveSnapshot(file));
+      this.#snapshots.set(params.name, file);
+      return { saved: true, name: params.name };
+    }
+    if (existing === undefined) throw new WireFailure("not-found", `There is no snapshot named ${params.name}.`);
+    if (params.action === "discard") {
+      rmSync(existing, { force: true });
+      this.#snapshots.delete(params.name);
+      return { discarded: true };
+    }
+    await this.#stop();
+    await this.#machine.restoreSnapshot(existing);
+    this.#state = "stopped";
+    // The cycle clock jumped with the restore; the stopwatch starts again here.
+    this.#timingStart = await this.#machine.clock();
+    return { restored: true, state: "stopped" };
   }
 
   /** Compares the current frame with a baseline (15 §29). */

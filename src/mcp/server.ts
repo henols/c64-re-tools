@@ -34,6 +34,7 @@ export type ViceSessionApi = Pick<
   | "screenCompare"
   | "screenBaselines"
   | "screenDiscard"
+  | "snapshot"
   | "cpuHistory"
   | "backtrace"
   | "timing"
