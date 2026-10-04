@@ -9,6 +9,7 @@ import {
   type BreakpointParams,
   type Condition,
   type ExecutionParams,
+  type HistoryEntry,
   type RunTarget,
   type RunUntilResult,
   type JoystickState,
@@ -27,6 +28,7 @@ import { join } from "node:path";
 import type { ProcessSupervisor } from "../processes.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
 import {
+  backtraceFromStack,
   conditionExpression,
   inRasterWindow,
   JAM_OPCODES,
@@ -89,6 +91,8 @@ export class ViceSession implements ViceSessionHandle {
   #queue: Promise<unknown> = Promise.resolve();
   #closed = false;
   #lost = false;
+  /** The CPU clock when the session stopwatch last started (c64_timing). */
+  #timingStart = 0n;
   /** Counts staged media files, for unique names. */
   #staged = 0;
   /** Session-local ids: one counter for breakpoints and watchpoints, from 1. */
@@ -134,6 +138,7 @@ export class ViceSession implements ViceSessionHandle {
       await session.#enqueue(() =>
         session.#observe(async () => {
           session.#adapter = await ViceAdapter.create(vice.monitor, vice.text);
+          session.#timingStart = await session.#adapter.clock();
           // The control-port lines start all pressed; release them before the C64 reads them.
           for (const joystick of session.#joysticks.values()) await session.#adapter.setJoystick(joystick);
         }),
@@ -229,6 +234,24 @@ export class ViceSession implements ViceSessionHandle {
       case "screenCapture": {
         const shot = await this.#observe(() => this.#machine.captureScreen(this.#videoStandard));
         return { width: shot.width, height: shot.height, png: shot.png.toString("base64") };
+      }
+      case "cpuHistory":
+        return this.#cpuHistory(params as ViceOperations["cpuHistory"]["params"]);
+      case "backtrace": {
+        const { depth, space } = params as ViceOperations["backtrace"]["params"];
+        return this.#observe(async () => {
+          const { sp } = await this.#machine.readRegisters(space);
+          return { frames: backtraceFromStack(sp, await this.#machine.readAll(space), depth) };
+        });
+      }
+      case "timing": {
+        const { action } = params as ViceOperations["timing"]["params"];
+        const now = await this.#observe(() => this.#machine.clock());
+        if (action === "start") {
+          this.#timingStart = now;
+          return { started: true };
+        }
+        return { cycles: (now - this.#timingStart).toString() };
       }
       case "vicii":
         return this.#observe(async () => decodeVicii(await this.#machine.readIo(0xd000, 0x2f), await this.#machine.readIo(0xdd00, 0x10)));
@@ -565,6 +588,28 @@ export class ViceSession implements ViceSessionHandle {
     await this.#stop();
     const loaded = await this.#machine.loadProgram(file, params.address);
     return { state: "stopped", ...loaded };
+  }
+
+  /**
+   * The last instructions a CPU executed, oldest first. For the C64 each entry
+   * gets the raster position it started at: the cycle distance from the current
+   * stop, whose position is known, mapped back through the frame.
+   */
+  async #cpuHistory(params: { limit: number; space: "c64" | "drive8" }): Promise<{ entries: HistoryEntry[] }> {
+    return this.#observe(async () => {
+      const raw = await this.#machine.history(params.limit, params.space);
+      if (params.space === "drive8") return { entries: raw.map(({ clock: _clock, ...entry }) => entry) };
+      const now = await this.#machine.clock();
+      const position = await this.#machine.rasterPosition();
+      const { lines, cycles } = RASTER[this.#videoStandard];
+      const frame = BigInt(lines * cycles);
+      const current = BigInt(position.line * cycles + position.cycle);
+      const entries = raw.map(({ clock, ...entry }) => {
+        const at = Number((((current - (now - clock)) % frame) + frame) % frame);
+        return { ...entry, rasterLine: Math.floor(at / cycles), rasterCycle: at % cycles };
+      });
+      return { entries };
+    });
   }
 
   /** Compares two memory ranges from one coherent stop, in any spaces and views. */

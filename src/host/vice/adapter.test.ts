@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { WireFailure } from "../../protocol.ts";
-import { conditionExpression, flagsFromStatusRegister, joystickLines, parseDisassembly, statusRegisterFromFlags } from "./adapter.ts";
+import {
+  conditionExpression,
+  flagsFromStatusRegister,
+  joystickLines,
+  backtraceFromStack,
+  parseDisassembly,
+  parseHistory,
+  statusRegisterFromFlags,
+} from "./adapter.ts";
 
 test("typed conditions become parenthesized VICE expressions", () => {
   assert.equal(conditionExpression({ kind: "register", register: "a", operator: "eq", value: 66 }, "c64"), "(A == $42)");
@@ -47,4 +55,30 @@ test("monitor disassembly parses into instructions with lowercase hex", () => {
   assert.deepEqual(parseDisassembly(".8:c000  97 AA       SAX $AA,Y", 0xc000), [{ address: 0xc000, bytes: "97aa", text: "SAX $aa,Y" }]);
   // A listing that wraps past $ffff ends at the wrap.
   assert.equal(parseDisassembly(".C:fffe  48          PHA\n.C:ffff  FF 2F 37    ISB $372F,X\n.C:0002  00  BRK", 0xfffe).length, 2);
+});
+
+test("monitor CPU history parses with registers and the start clock", () => {
+  const answer = [
+    ".C:e5cd  A5 C6       LDA $C6        A:00 X:00 Y:0a SP:f3 ..-...Z.      2535609",
+    ".C:e5d4  F0 F7       BEQ $E5CD      A:12 X:34 Y:56 SP:f0 N.-....C      2535619",
+  ].join("\n");
+  assert.deepEqual(parseHistory(answer), [
+    { address: 0xe5cd, bytes: "a5c6", text: "LDA $c6", a: 0, x: 0, y: 0x0a, sp: 0xf3, clock: 2535609n },
+    { address: 0xe5d4, bytes: "f0f7", text: "BEQ $e5cd", a: 0x12, x: 0x34, y: 0x56, sp: 0xf0, clock: 2535619n },
+  ]);
+});
+
+test("the backtrace comes from JSR return addresses on the stack", () => {
+  const memory = new Uint8Array(0x10000);
+  // $c100: JSR $c110 ... $c110: JSR $c200
+  memory.set([0x20, 0x10, 0xc1], 0xc100);
+  memory.set([0x20, 0x00, 0xc2], 0xc110);
+  // SP = $f9. $01fa: a stray byte, $01fb-$01fc: return $c112, $01fd-$01fe: return $c102.
+  memory.set([0x55, 0x12, 0xc1, 0x02, 0xc1], 0x01fa);
+  assert.deepEqual(backtraceFromStack(0xf9, memory, 16), [
+    { address: 0xc200, returnAddress: 0xc113 },
+    { address: 0xc110, returnAddress: 0xc103 },
+  ]);
+  assert.equal(backtraceFromStack(0xf9, memory, 1).length, 1);
+  assert.deepEqual(backtraceFromStack(0xff, memory, 16), []);
 });

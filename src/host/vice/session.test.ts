@@ -556,3 +556,43 @@ test("disassembly returns count instructions and stops at the end of memory", as
   assert.deepEqual([fake.textDevice, fake.textBank], ["c", "cpu"]);
   await session.close();
 });
+
+test("CPU history maps each instruction's clock to its raster position", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("execution", { action: "pause", space: "c64" });
+  // The machine stands at line 100, cycle 20, clock 1000000. PAL lines have 63 cycles.
+  fake.history = [
+    ".C:e5cd  A5 C6       LDA $C6        A:00 X:00 Y:0a SP:f3 ..-...Z.      999997",
+    ".C:e5cf  85 CC       STA $CC        A:00 X:00 Y:0a SP:f3 ..-...Z.      999917",
+  ];
+  const { entries } = await session.handle("cpuHistory", { limit: 2, space: "c64" });
+  // 3 cycles back is line 100 cycle 17; 83 cycles back is 100 * 63 + 20 - 83 = 99 * 63: line 99 cycle 0.
+  assert.deepEqual(
+    entries.map((entry) => [entry.address, entry.rasterLine, entry.rasterCycle]),
+    [
+      [0xe5cd, 100, 17],
+      [0xe5cf, 99, 0],
+    ],
+  );
+  const drive = await session.handle("cpuHistory", { limit: 1, space: "drive8" });
+  assert.equal(drive.entries[0]!.rasterLine, undefined, "drive history has no raster position");
+  await session.close();
+});
+
+test("the backtrace reads the stack of the selected CPU", async () => {
+  const { fake, session } = await startSession();
+  fake.ram.set([0x20, 0x10, 0xc1], 0xc100);
+  fake.ram.set([0x02, 0xc1], 0x01fa); // SP $f9: return $c102
+  assert.deepEqual(await session.handle("backtrace", { depth: 4, space: "c64" }), { frames: [{ address: 0xc110, returnAddress: 0xc103 }] });
+  await session.close();
+});
+
+test("the stopwatch counts cycles from session start, then from each start", async () => {
+  const { fake, session } = await startSession();
+  fake.clock += 500n;
+  assert.deepEqual(await session.handle("timing", { action: "read" }), { cycles: "500" });
+  assert.deepEqual(await session.handle("timing", { action: "start" }), { started: true });
+  fake.clock += 19656n;
+  assert.deepEqual(await session.handle("timing", { action: "read" }), { cycles: "19656" });
+  await session.close();
+});

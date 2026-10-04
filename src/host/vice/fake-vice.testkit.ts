@@ -120,6 +120,10 @@ export class FakeVice {
   #binary: Socket | undefined;
   #text: Socket | undefined;
   #nextCheckpoint = 1;
+  /** The CPU cycle counter the stopwatch reports. */
+  clock = 1_000_000n;
+  /** Lines `chis` answers with (VICE format), oldest first. */
+  history: string[] = [];
   /** The text monitor's default device and bank. */
   textDevice: "c" | "8" = "c";
   textBank = "cpu";
@@ -523,9 +527,12 @@ export class FakeVice {
     const disassemble = /^d ([0-9a-f]{4}) ([0-9a-f]{4})$/.exec(line);
     const load = /^load "([^"]+)" 0(?: \$([0-9a-f]{4}))?$/.exec(line);
     const attach = /^attach "([^"]+)" 8$/.exec(line);
-    if (line === "dev 8:") output += "Setting default device to `Disk8'\n";
-    if (line === "dev 8:") this.textDevice = "8";
-    else if (line === "dev c:") {
+    if (line === "stopwatch") output += `Stopwatch: ${this.clock.toString().padStart(10)}\n`;
+    else if (/^chis \d+ (?:c|8):$/.test(line)) output += this.history.slice(-Number(line.split(" ")[1])).map((entry) => `${entry}\n`).join("");
+    else if (line === "dev 8:") {
+      this.textDevice = "8";
+      output += "Setting default device to `Disk8'\n";
+    } else if (line === "dev c:") {
       this.textDevice = "c";
       output += "Setting default device to `Computer'\n";
     } else if (line.startsWith("bank ")) this.textBank = line.slice(5);

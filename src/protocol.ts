@@ -206,6 +206,32 @@ export interface SidState {
 export const CIA_SELECTIONS = ["1", "2", "both"] as const;
 export type CiaSelection = (typeof CIA_SELECTIONS)[number];
 
+// History, backtrace and timing (15 §20, §21, §24)
+
+export const MAX_HISTORY = 200;
+export const MAX_BACKTRACE = 64;
+export const TIMING_ACTIONS = ["start", "read"] as const;
+
+export interface HistoryEntry {
+  address: number;
+  bytes: string;
+  text: string;
+  a: number;
+  x: number;
+  y: number;
+  sp: number;
+  /** C64 space only: the raster position when the instruction started. */
+  rasterLine?: number;
+  rasterCycle?: number;
+}
+
+export interface BacktraceFrame {
+  /** The routine's entry address. */
+  address: number;
+  /** Where the routine returns to; absent when it cannot be known (a reset or interrupt entry). */
+  returnAddress?: number;
+}
+
 export const RESET_MODES = ["soft", "hard"] as const;
 export type ResetMode = (typeof RESET_MODES)[number];
 
@@ -331,6 +357,10 @@ export interface ViceOperations {
   joystick: { params: JoystickState; result: JoystickState };
   breakpoint: { params: BreakpointParams; result: Breakpoint | { breakpoints: Breakpoint[] } };
   watchpoint: { params: WatchpointParams; result: Watchpoint | { watchpoints: Watchpoint[] } };
+  cpuHistory: { params: { limit: number; space: Space }; result: { entries: HistoryEntry[] } };
+  backtrace: { params: { depth: number; space: Space }; result: { frames: BacktraceFrame[] } };
+  /** `cycles` is a decimal string. */
+  timing: { params: { action: (typeof TIMING_ACTIONS)[number] }; result: { started: boolean } | { cycles: string } };
   vicii: { params: Record<string, never>; result: ViciiState };
   /** `indexes`: unique sprite numbers 0-7, in the order to report them. */
   sprites: { params: { indexes: number[] }; result: { sprites: SpriteState[] } };
@@ -361,6 +391,9 @@ export const VICE_OPERATIONS = [
   "breakpoint",
   "watchpoint",
   "screenCapture",
+  "cpuHistory",
+  "backtrace",
+  "timing",
   "vicii",
   "sprites",
   "cia",
@@ -526,6 +559,20 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
     case "vicii":
     case "sid":
       return {} as ViceOperations[O]["params"];
+    case "cpuHistory": {
+      if (!isInteger(params.limit, 1, MAX_HISTORY)) invalid(`limit must be an integer from 1 to ${MAX_HISTORY}`);
+      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
+      return { limit: params.limit, space: params.space } as ViceOperations[O]["params"];
+    }
+    case "backtrace": {
+      if (!isInteger(params.depth, 1, MAX_BACKTRACE)) invalid(`depth must be an integer from 1 to ${MAX_BACKTRACE}`);
+      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
+      return { depth: params.depth, space: params.space } as ViceOperations[O]["params"];
+    }
+    case "timing": {
+      if (!isOneOf(TIMING_ACTIONS, params.action)) invalid("action must be start or read");
+      return { action: params.action } as ViceOperations[O]["params"];
+    }
     case "sprites": {
       const indexes = params.indexes;
       if (!Array.isArray(indexes) || !indexes.every((index) => isInteger(index, 0, 7))) invalid("sprites holds sprite numbers 0 to 7");
@@ -909,6 +956,37 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     case "watchpoint": {
       const ok = Array.isArray(value.watchpoints) ? value.watchpoints.every(isWatchpoint) : isWatchpoint(value);
       if (!ok) throw new ProtocolError("watchpoint result is malformed");
+      break;
+    }
+    case "cpuHistory": {
+      const ok =
+        Array.isArray(value.entries) &&
+        value.entries.every(
+          (entry) =>
+            isObject(entry) &&
+            isInteger(entry.address, 0, 0xffff) &&
+            isHexData(entry.bytes) &&
+            typeof entry.text === "string" &&
+            (["a", "x", "y", "sp"] as const).every((name) => isInteger(entry[name], 0, 0xff)) &&
+            (entry.rasterLine === undefined || isInteger(entry.rasterLine, 0, 511)) &&
+            (entry.rasterCycle === undefined || isInteger(entry.rasterCycle, 0, 127)),
+        );
+      if (!ok) throw new ProtocolError("cpuHistory result is malformed");
+      break;
+    }
+    case "backtrace": {
+      const ok =
+        Array.isArray(value.frames) &&
+        value.frames.every(
+          (frame) =>
+            isObject(frame) && isInteger(frame.address, 0, 0xffff) && (frame.returnAddress === undefined || isInteger(frame.returnAddress, 0, 0xffff)),
+        );
+      if (!ok) throw new ProtocolError("backtrace result is malformed");
+      break;
+    }
+    case "timing": {
+      const ok = "cycles" in value ? typeof value.cycles === "string" && /^\d+$/.test(value.cycles) : value.started === true;
+      if (!ok) throw new ProtocolError("timing result is malformed");
       break;
     }
     case "vicii": {

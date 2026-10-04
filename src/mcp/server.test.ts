@@ -106,6 +106,17 @@ class FakeSession implements ViceSessionApi {
     return { reached: true, stopReason: "target" as const, state: "stopped" as const, pc: 0xc00b };
   }
 
+  async cpuHistory(params: { limit: number; space: string }) {
+    const entry = { address: 0x2100, bytes: "a900", text: "LDA #$00", a: 0, x: 3, y: 0, sp: 249 };
+    return { entries: [params.space === "c64" ? { ...entry, rasterLine: 100, rasterCycle: 20 } : entry] };
+  }
+  async backtrace() {
+    return { frames: [{ address: 0x2100, returnAddress: 0x1980 }, { address: 0xfce2 }] };
+  }
+  async timing(action: "start" | "read") {
+    return action === "start" ? { started: true } : { cycles: "1234" };
+  }
+
   async vicii() {
     return {
       rasterLine: 100,
@@ -210,8 +221,10 @@ test("the server lists exactly the implemented tools with object input and outpu
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
     "c64_autostart",
+    "c64_backtrace",
     "c64_breakpoint",
     "c64_cia",
+    "c64_cpu_history",
     "c64_disassemble",
     "c64_disk_attach",
     "c64_execution",
@@ -229,6 +242,7 @@ test("the server lists exactly the implemented tools with object input and outpu
     "c64_sid",
     "c64_sprite",
     "c64_status",
+    "c64_timing",
     "c64_vicii",
     "c64_warp",
     "c64_watchpoint",
@@ -247,6 +261,8 @@ test("the server lists exactly the implemented tools with object input and outpu
       "c64_sprite",
       "c64_cia",
       "c64_sid",
+      "c64_cpu_history",
+      "c64_backtrace",
     ];
     assert.equal(tool.annotations?.readOnlyHint, readOnly.includes(tool.name), tool.name);
     assert.doesNotMatch(`${tool.description} ${JSON.stringify(tool.inputSchema)}`, /\bVICE\b|monitor|tcp|socket|session id|request/i);
@@ -587,5 +603,17 @@ test("chip tools format addresses and fill defaults", async () => {
   assert.equal(((await call(client, "c64_cia")).structuredContent as { chips: unknown[] }).chips.length, 2);
   assert.equal(((await call(client, "c64_cia", { cia: "2" })).structuredContent as { chips: Array<{ id: number }> }).chips[0]!.id, 2);
   assert.equal(((await call(client, "c64_sid")).structuredContent as { volume: number }).volume, 15);
+  await client.close();
+});
+
+test("history, backtrace and timing format addresses and keep optional fields absent", async () => {
+  const client = await connect(async () => new FakeSession());
+  const history = (await call(client, "c64_cpu_history")).structuredContent as { entries: Array<Record<string, unknown>> };
+  assert.deepEqual(history.entries[0], { address: "$2100", bytes: "a900", text: "LDA #$00", a: 0, x: 3, y: 0, sp: 249, rasterLine: 100, rasterCycle: 20 });
+  const drive = (await call(client, "c64_cpu_history", { space: "drive8" })).structuredContent as { entries: Array<Record<string, unknown>> };
+  assert.equal("rasterLine" in drive.entries[0]!, false);
+  assert.deepEqual((await call(client, "c64_backtrace")).structuredContent, { frames: [{ address: "$2100", returnAddress: "$1980" }, { address: "$fce2" }] });
+  assert.deepEqual((await call(client, "c64_timing", { action: "read" })).structuredContent, { cycles: "1234" });
+  assert.equal(errorOf(await call(client, "c64_cpu_history", { limit: 201 })).code, "invalid-input");
   await client.close();
 });

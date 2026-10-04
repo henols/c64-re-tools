@@ -5,6 +5,8 @@ import {
   WireFailure,
   type Comparison,
   type Condition,
+  type BacktraceFrame,
+  type HistoryEntry,
   type Instruction,
   type JoystickState,
   type MemoryView,
@@ -150,6 +152,56 @@ export function parseDisassembly(answer: string, start: number): Instruction[] {
     });
   }
   return instructions;
+}
+
+/**
+ * Parses monitor CPU history lines such as
+ * ".C:e5cd  A5 C6       LDA $C6        A:00 X:00 Y:0a SP:f3 ..-...Z.      2535609".
+ */
+export function parseHistory(answer: string): Array<Omit<HistoryEntry, "rasterLine" | "rasterCycle"> & { clock: bigint }> {
+  const entries = [];
+  for (const line of answer.split("\n")) {
+    const match =
+      /^\.(?:C|\d+):([0-9a-f]{4})\s+((?:[0-9a-f]{2} )*[0-9a-f]{2})\s+(.*?)\s+A:([0-9a-f]{2}) X:([0-9a-f]{2}) Y:([0-9a-f]{2}) SP:([0-9a-f]{2})\s+\S+\s+(\d+)\s*$/i.exec(
+        line,
+      );
+    if (match === null) continue;
+    entries.push({
+      address: Number.parseInt(match[1]!, 16),
+      bytes: match[2]!.replace(/ /g, "").toLowerCase(),
+      text: match[3]!.replace(/\$([0-9A-Fa-f]+)/g, (_all, digits: string) => `$${digits.toLowerCase()}`),
+      a: Number.parseInt(match[4]!, 16),
+      x: Number.parseInt(match[5]!, 16),
+      y: Number.parseInt(match[6]!, 16),
+      sp: Number.parseInt(match[7]!, 16),
+      clock: BigInt(match[8]!),
+    });
+  }
+  return entries;
+}
+
+/**
+ * Reconstructs the JSR call chain from the stack, most recent first. VICE's own
+ * backtrace keeps stale entries across resets and interrupts and can miss the
+ * current call, so the stack itself is the evidence: from SP+1 upward, a pushed
+ * return address R is accepted when the byte at R-2 is a JSR opcode; that JSR's
+ * target is the routine, and it returns to R+1. Interrupt frames are skipped.
+ * A best estimate: data on the stack can look like a return address.
+ */
+export function backtraceFromStack(sp: number, memory: Uint8Array, depth: number): BacktraceFrame[] {
+  const frames: BacktraceFrame[] = [];
+  let at = sp + 1;
+  while (at <= 0xfe && frames.length < depth) {
+    const pushed = memory[0x0100 + at]! | (memory[0x0100 + at + 1]! << 8);
+    const jsr = (pushed - 2) & 0xffff;
+    if (memory[jsr] === 0x20) {
+      frames.push({ address: memory[(jsr + 1) & 0xffff]! | (memory[(jsr + 2) & 0xffff]! << 8), returnAddress: (pushed + 1) & 0xffff });
+      at += 2;
+    } else {
+      at += 1;
+    }
+  }
+  return frames;
 }
 
 /** Quotes a host file path for a text-monitor command. Session scratch paths never contain quotes. */
@@ -522,6 +574,31 @@ export class ViceAdapter {
       this.#text.command(`d ${hex4(options.address)} ${hex4(end)}`),
     );
     return parseDisassembly(answer, options.address).slice(0, options.count);
+  }
+
+  /** The last `limit` instructions the CPU of a space executed, oldest first, with the clock each started at. */
+  async history(limit: number, space: Space): Promise<Array<Omit<HistoryEntry, "rasterLine" | "rasterCycle"> & { clock: bigint }>> {
+    const answer = await this.#text.command(`chis ${limit} ${space === "drive8" ? "8:" : "c:"}`);
+    return parseHistory(answer);
+  }
+
+  /** The current CPU cycle count of the computer. */
+  async clock(): Promise<bigint> {
+    const answer = await this.#text.command("stopwatch");
+    const match = /Stopwatch:\s+(\d+)/.exec(answer);
+    if (match === null) throw new TextMonitorError(`unexpected stopwatch answer: ${answer}`);
+    return BigInt(match[1]!);
+  }
+
+  /** The CPU's view of all 64 KiB of a space at once, for whole-memory analyses. */
+  async readAll(space: Space): Promise<Uint8Array> {
+    const response = await this.#monitor.request(
+      Command.memoryGet,
+      memoryGetBody({ start: 0x0000, end: 0xffff, memspace: MEMSPACE[space], bank: space === "c64" ? this.#banks.cpu : 0 }),
+    );
+    const memory = decodeMemory(response.body);
+    if (memory.length !== 0x10000) throw new Error(`VICE returned ${memory.length} bytes for a 64 KiB read`);
+    return memory;
   }
 
   async warp(): Promise<boolean> {

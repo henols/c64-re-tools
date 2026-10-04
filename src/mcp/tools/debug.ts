@@ -1,10 +1,22 @@
-// Debug tools: c64_breakpoint (15 §12) and c64_watchpoint (15 §13).
+// Debug tools: c64_breakpoint (15 §12), c64_watchpoint (15 §13),
+// c64_cpu_history (15 §20), c64_backtrace (15 §21) and c64_timing (15 §24).
 
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { CHECKPOINT_ACTIONS, MAX_WATCH_SIZE, SPACES, WATCH_ACCESS, WireFailure, type Breakpoint, type Watchpoint } from "../../protocol.ts";
-import { AddressInput, AddressOutput, ConditionInput, defineTool, toCondition } from "../server.ts";
+import {
+  CHECKPOINT_ACTIONS,
+  MAX_BACKTRACE,
+  MAX_HISTORY,
+  MAX_WATCH_SIZE,
+  SPACES,
+  TIMING_ACTIONS,
+  WATCH_ACCESS,
+  WireFailure,
+  type Breakpoint,
+  type Watchpoint,
+} from "../../protocol.ts";
+import { AddressInput, AddressOutput, Byte, ConditionInput, defineTool, HexData, SpaceInput, toCondition } from "../server.ts";
 
 /** No default here: a filled-in default would count as a field the other actions refuse. */
 const OptionalSpace = z.enum(SPACES).optional().describe("add only: c64 (default) or drive8, the 1541 disk drive CPU");
@@ -118,4 +130,69 @@ export const c64Watchpoint = defineTool({
   },
 });
 
-export const debugTools = [c64Breakpoint, c64Watchpoint];
+export const c64CpuHistory = defineTool({
+  name: "c64_cpu_history",
+  title: "CPU history",
+  description:
+    `Get the last instructions the CPU executed, oldest first: limit of them (1 to ${MAX_HISTORY}, default 50). ` +
+    "Each entry gives the address, the bytes, the instruction and the registers a, x, y and sp. " +
+    "In space c64, it also gives the raster line and cycle when the instruction started. This does not change if the machine is running or stopped.",
+  inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput }).strict(),
+  outputSchema: z.object({
+    entries: z.array(
+      z.object({
+        address: AddressOutput,
+        bytes: HexData,
+        text: z.string(),
+        a: Byte,
+        x: Byte,
+        y: Byte,
+        sp: Byte,
+        rasterLine: z.number().int().min(0).optional(),
+        rasterCycle: z.number().int().min(0).optional(),
+      }),
+    ),
+  }),
+  readOnly: true,
+  async run(input, session) {
+    const { entries } = await session.cpuHistory(input);
+    return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+  },
+});
+
+export const c64Backtrace = defineTool({
+  name: "c64_backtrace",
+  title: "Call backtrace",
+  description:
+    `Get the chain of subroutine calls that leads to the current instruction, most recent first, at most depth calls (1 to ${MAX_BACKTRACE}, default 16). ` +
+    "Each frame gives the entry address of the routine and the address it returns to. " +
+    "The chain comes from the JSR return addresses on the stack, so it is a best estimate. It does not show interrupts.",
+  inputSchema: z.object({ depth: z.number().int().min(1).max(MAX_BACKTRACE).default(16), space: SpaceInput }).strict(),
+  outputSchema: z.object({ frames: z.array(z.object({ address: AddressOutput, returnAddress: AddressOutput.optional() })) }),
+  readOnly: true,
+  async run(input, session) {
+    const { frames } = await session.backtrace(input);
+    return {
+      frames: frames.map((frame) => ({
+        address: formatC64Address(frame.address),
+        ...(frame.returnAddress === undefined ? {} : { returnAddress: formatC64Address(frame.returnAddress) }),
+      })),
+    };
+  },
+});
+
+export const c64Timing = defineTool({
+  name: "c64_timing",
+  title: "Cycle stopwatch",
+  description:
+    "A stopwatch that counts C64 CPU cycles. Action start sets it to zero. Action read gives the cycles since the last start, " +
+    "or since the session started, as a decimal string. A PAL frame has 19656 cycles and an NTSC frame 17095.",
+  inputSchema: z.object({ action: z.enum(TIMING_ACTIONS) }).strict(),
+  outputSchema: z.object({ started: z.boolean().optional(), cycles: z.string().regex(/^\d+$/).optional() }),
+  readOnly: false,
+  async run(input, session) {
+    return session.timing(input.action);
+  },
+});
+
+export const debugTools = [c64Breakpoint, c64Watchpoint, c64CpuHistory, c64Backtrace, c64Timing];

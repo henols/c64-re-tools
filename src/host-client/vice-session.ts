@@ -165,6 +165,18 @@ export class ViceSessionClient {
     return this.#request("watchpoint", params);
   }
 
+  cpuHistory(params: ViceOperations["cpuHistory"]["params"]): Promise<ViceOperations["cpuHistory"]["result"]> {
+    return this.#request("cpuHistory", params);
+  }
+
+  backtrace(params: ViceOperations["backtrace"]["params"]): Promise<ViceOperations["backtrace"]["result"]> {
+    return this.#request("backtrace", params);
+  }
+
+  timing(action: ViceOperations["timing"]["params"]["action"]): Promise<ViceOperations["timing"]["result"]> {
+    return this.#request("timing", { action });
+  }
+
   vicii(): Promise<ViceOperations["vicii"]["result"]> {
     return this.#request("vicii", {});
   }
