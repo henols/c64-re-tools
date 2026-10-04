@@ -4,8 +4,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import plugin, { MCP_COMMAND } from "../../distribution/plugin.ts";
 
@@ -34,7 +35,9 @@ test("the MCP server is the installed binary, never npx", () => {
 });
 
 test("AP SDK accepts the built plugin module", () => {
-  const check = spawnSync(resolve(root, "node_modules/.bin/ap-sdk"), ["check", "dist/plugin.js"], { cwd: root, encoding: "utf8" });
+  // The CLI module itself, through node: the .bin shim is a shell script that Windows cannot run.
+  const cli = resolve(dirname(fileURLToPath(import.meta.resolve("@jalco/ap-sdk"))), "cli.js");
+  const check = spawnSync(process.execPath, [cli, "check", "dist/plugin.js"], { cwd: root, encoding: "utf8" });
   assert.equal(check.status, 0, check.stdout + check.stderr);
   assert.match(check.stdout, /is valid \(\d+ skill\(s\)/);
 });
