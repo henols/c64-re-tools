@@ -100,12 +100,14 @@ jobs:
       # answer never waits behind three other emulators.
       - name: Live suites (one file at a time)
         if: runner.os == 'Windows'
-        timeout-minutes: 40
+        timeout-minutes: 30
         shell: bash
         env:
           FILES: ${{ inputs.files }}
         run: |
-          if [ -n "$FILES" ]; then node --test --test-concurrency=1 $FILES; else node --test --test-concurrency=1 "src/**/*.test.ts" "test/**/*.test.ts"; fi
+          # --test-force-exit ends a file once its tests are done, so a teardown that hangs cannot lose the log;
+          # the slow-stop lines and the next step still show it.
+          if [ -n "$FILES" ]; then node --test --test-concurrency=1 --test-force-exit $FILES; else node --test --test-concurrency=1 --test-force-exit "src/**/*.test.ts" "test/**/*.test.ts"; fi
 
       - name: Processes left behind
         if: always()
