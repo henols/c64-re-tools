@@ -41,5 +41,9 @@ test("a bundled script runs without the repository", async () => {
   const run = spawnSync(process.execPath, [join(outside, "c64-memory-map", "scripts", "memmap.js"), "at", "$d020"], { cwd: join(outside, "project"), encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
   assert.equal((JSON.parse(run.stdout) as { addresses: Array<{ name: string }> }).addresses[0]?.name, "EXTCOL");
+  const usage = spawnSync(process.execPath, [join(outside, "c64-memory-map", "scripts", "memmap.js"), "nonsense"], { cwd: join(outside, "project"), encoding: "utf8" });
+  const message = (JSON.parse(usage.stdout) as { error: { message: string } }).error.message;
+  assert.match(message, /memmap\.js at/);
+  assert.doesNotMatch(message, /memmap\.ts/, "the usage names the installed .js script");
   assert.doesNotMatch(readFileSync(join(outside, "c64-memory-map", "scripts", "memmap.js"), "utf8"), /from "\.\.\/\.\.\/\.\.\/src/, "no import into the repository");
 });
