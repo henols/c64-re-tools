@@ -51,6 +51,19 @@ class FakeSession implements ViceSessionApi {
     return REGISTERS;
   }
 
+  searches: unknown[] = [];
+  async memorySearch(params: import("../protocol.ts").ViceOperations["memorySearch"]["params"]) {
+    this.searches.push(params);
+    return { matches: [0x2100, 0x37a0] };
+  }
+  async memoryCompare(params: import("../protocol.ts").ViceOperations["memoryCompare"]["params"]) {
+    this.searches.push(params);
+    return { equal: false, differentBytes: 3, firstDifferences: [{ offset: 12, left: 4, right: 5 }] };
+  }
+  async disassemble(params: import("../protocol.ts").ViceOperations["disassemble"]["params"]) {
+    return { instructions: [{ address: params.address, bytes: "a900", text: "LDA #$00" }] };
+  }
+
   writes: MemoryWriteParams[] = [];
   async memoryWrite(params: MemoryWriteParams) {
     this.writes.push(params);
@@ -159,11 +172,14 @@ test("the server lists exactly the implemented tools with object input and outpu
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
     "c64_autostart",
     "c64_breakpoint",
+    "c64_disassemble",
     "c64_disk_attach",
     "c64_execution",
     "c64_joystick",
     "c64_keyboard",
+    "c64_memory_compare",
     "c64_memory_read",
+    "c64_memory_search",
     "c64_memory_write",
     "c64_program_load",
     "c64_registers",
@@ -177,7 +193,8 @@ test("the server lists exactly the implemented tools with object input and outpu
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object");
     assert.equal(tool.outputSchema?.type, "object");
-    assert.equal(tool.annotations?.readOnlyHint, ["c64_status", "c64_memory_read", "c64_screen"].includes(tool.name));
+    const readOnly = ["c64_status", "c64_memory_read", "c64_screen", "c64_memory_search", "c64_memory_compare", "c64_disassemble"];
+    assert.equal(tool.annotations?.readOnlyHint, readOnly.includes(tool.name), tool.name);
     assert.doesNotMatch(`${tool.description} ${JSON.stringify(tool.inputSchema)}`, /\bVICE\b|monitor|tcp|socket|session id|request/i);
   }
   const read = tools.find((tool) => tool.name === "c64_memory_read")!;
@@ -472,4 +489,31 @@ test("tool descriptions keep to the STE length and punctuation rules", () => {
       assert.ok(words.length <= 25, `${tool.name}: a sentence has ${words.length} words: ${sentence}`);
     }
   }
+});
+
+test("memory search parses the pattern and fills end and maxResults", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const result = await call(client, "c64_memory_search", { start: "$0800", pattern: "A9 ?? 8d 20 d0" });
+  assert.deepEqual(result.structuredContent, { matches: ["$2100", "$37a0"] });
+  assert.deepEqual(session.searches[0], { start: 0x0800, end: 0xffff, pattern: [0xa9, null, 0x8d, 0x20, 0xd0], space: "c64", view: "cpu", maxResults: 100 });
+  for (const pattern of ["", "a9 ?", "a9,8d", "?? ??", "a9  8d x"]) {
+    assert.equal(errorOf(await call(client, "c64_memory_search", { start: "$0800", pattern })).code, "invalid-input", pattern);
+  }
+  await client.close();
+});
+
+test("memory compare and disassemble shape their results", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const compared = await call(client, "c64_memory_compare", { left: { address: "$2000" }, right: { address: "$3000", view: "ram" }, size: 256 });
+  assert.deepEqual(compared.structuredContent, { equal: false, differentBytes: 3, firstDifferences: [{ offset: 12, left: 4, right: 5 }] });
+  assert.deepEqual(session.searches[0], {
+    left: { address: 0x2000, space: "c64", view: "cpu" },
+    right: { address: 0x3000, space: "c64", view: "ram" },
+    size: 256,
+  });
+  const listing = await call(client, "c64_disassemble", { address: "$2100", count: 1 });
+  assert.deepEqual(listing.structuredContent, { instructions: [{ address: "$2100", bytes: "a900", text: "LDA #$00" }] });
+  await client.close();
 });

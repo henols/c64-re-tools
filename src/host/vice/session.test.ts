@@ -512,3 +512,47 @@ test("a raster target the machine already stands in waits for its next pass", as
   await assert.rejects(session.handle("runUntil", { target: { kind: "raster", line: 312 }, timeoutFrames: 3 }), failsWith("invalid-input"));
   await session.close();
 });
+
+test("memory search uses the selected view and space and restores the monitor defaults", async () => {
+  const { fake, session } = await startSession();
+  // The fake's RAM holds address & $ff at each address; its ROM holds the high byte.
+  const ram = await session.handle("memorySearch", { start: 0x1000, end: 0x1fff, pattern: [0x10, null, 0x12], space: "c64", view: "ram", maxResults: 100 });
+  assert.deepEqual(ram.matches, [0x1010, 0x1110, 0x1210, 0x1310, 0x1410, 0x1510, 0x1610, 0x1710, 0x1810, 0x1910, 0x1a10, 0x1b10, 0x1c10, 0x1d10, 0x1e10, 0x1f10]);
+  const limited = await session.handle("memorySearch", { start: 0x1000, end: 0x1fff, pattern: [0x10], space: "c64", view: "ram", maxResults: 3 });
+  assert.equal(limited.matches.length, 3);
+  fake.drive[0x0300] = 0xaa;
+  assert.deepEqual((await session.handle("memorySearch", { start: 0, end: 0xffff, pattern: [0xaa], space: "drive8", view: "cpu", maxResults: 10 })).matches, [0x0300]);
+  assert.deepEqual([fake.textDevice, fake.textBank], ["c", "cpu"]);
+  assert.equal(fake.running, true);
+  await session.close();
+});
+
+test("memory compare reports equality, the count and the first differences", async () => {
+  const { fake, session } = await startSession();
+  fake.drive.set(fake.ram.subarray(0x2000, 0x2010), 0x0100);
+  fake.drive[0x0105] = 0xff;
+  const result = await session.handle("memoryCompare", {
+    left: { address: 0x2000, space: "c64", view: "cpu" },
+    right: { address: 0x0100, space: "drive8", view: "cpu" },
+    size: 16,
+  });
+  assert.deepEqual(result, { equal: false, differentBytes: 1, firstDifferences: [{ offset: 5, left: 0x05, right: 0xff }] });
+  const same = await session.handle("memoryCompare", {
+    left: { address: 0x2000, space: "c64", view: "cpu" },
+    right: { address: 0x2000, space: "c64", view: "ram" },
+    size: 64,
+  });
+  assert.deepEqual(same, { equal: true, differentBytes: 0, firstDifferences: [] });
+  await session.close();
+});
+
+test("disassembly returns count instructions and stops at the end of memory", async () => {
+  const { fake, session } = await startSession();
+  const listing = await session.handle("disassemble", { address: 0x2000, count: 3, space: "c64", view: "cpu" });
+  assert.deepEqual(listing.instructions.map((instruction) => instruction.address), [0x2000, 0x2001, 0x2002]);
+  assert.deepEqual(listing.instructions[0], { address: 0x2000, bytes: "00", text: "LDA #$00" });
+  const end = await session.handle("disassemble", { address: 0xfffe, count: 10, space: "c64", view: "cpu" });
+  assert.equal(end.instructions.length, 2);
+  assert.deepEqual([fake.textDevice, fake.textBank], ["c", "cpu"]);
+  await session.close();
+});

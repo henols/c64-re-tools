@@ -120,6 +120,9 @@ export class FakeVice {
   #binary: Socket | undefined;
   #text: Socket | undefined;
   #nextCheckpoint = 1;
+  /** The text monitor's default device and bank. */
+  textDevice: "c" | "8" = "c";
+  textBank = "cpu";
   /** Whether the command being handled found the machine running. */
   #enteredForCommand = false;
 
@@ -459,6 +462,22 @@ export class FakeVice {
     }
   }
 
+  /** A byte as the text monitor sees it with its current device and bank. */
+  #textByte(address: number): number {
+    if (this.textDevice === "8") return this.drive[address]!;
+    const rom = this.textBank === "rom" || (this.textBank === "cpu" && address >= 0xe000);
+    return (rom ? this.rom : this.ram)[address]!;
+  }
+
+  #hunt(start: number, end: number, tokens: string[]): string {
+    let output = "";
+    for (let address = start; address <= end; address++) {
+      const matches = tokens.every((token, offset) => token === "xx" || this.#textByte((address + offset) & 0xffff) === Number.parseInt(token, 16));
+      if (matches) output += `${address.toString(16).padStart(4, "0")}\n`;
+    }
+    return output;
+  }
+
   #load(file: string, address: string | undefined): string {
     if (!existsSync(file)) return `Cannot open '${file}'.\n`;
     const bytes = readFileSync(file);
@@ -500,9 +519,24 @@ export class FakeVice {
       this.#enterMonitor(this.#binary!);
       output += prompt();
     }
+    const hunt = /^hunt ([0-9a-f]{4}) ([0-9a-f]{4}) ((?:(?:[0-9a-f]{2}|xx) ?)+)$/.exec(line);
+    const disassemble = /^d ([0-9a-f]{4}) ([0-9a-f]{4})$/.exec(line);
     const load = /^load "([^"]+)" 0(?: \$([0-9a-f]{4}))?$/.exec(line);
     const attach = /^attach "([^"]+)" 8$/.exec(line);
-    if (line === "warp") output += `Warp mode is ${this.warp ? "on" : "off"}.\n`;
+    if (line === "dev 8:") output += "Setting default device to `Disk8'\n";
+    if (line === "dev 8:") this.textDevice = "8";
+    else if (line === "dev c:") {
+      this.textDevice = "c";
+      output += "Setting default device to `Computer'\n";
+    } else if (line.startsWith("bank ")) this.textBank = line.slice(5);
+    else if (hunt !== null) output += this.#hunt(Number.parseInt(hunt[1]!, 16), Number.parseInt(hunt[2]!, 16), hunt[3]!.trim().split(" "));
+    else if (disassemble !== null) {
+      // Every byte disassembles as a one-byte instruction here; enough to test the parsing path.
+      for (let address = Number.parseInt(disassemble[1]!, 16); address <= Number.parseInt(disassemble[2]!, 16); address++) {
+        const value = this.#textByte(address).toString(16).toUpperCase().padStart(2, "0");
+        output += `.${this.textDevice === "8" ? "8" : "C"}:${address.toString(16).padStart(4, "0")}  ${value}          LDA #$${value}\n`;
+      }
+    } else if (line === "warp") output += `Warp mode is ${this.warp ? "on" : "off"}.\n`;
     else if (line === "warp on") this.warp = true;
     else if (line === "warp off") this.warp = false;
     else if (load !== null) output += this.#load(load[1]!, load[2]);

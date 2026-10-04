@@ -276,3 +276,28 @@ test("advance-frames needs a count and run-until targets are validated", () => {
     assert.throws(() => validateViceParams("runUntil", params), WireFailure, JSON.stringify(params));
   }
 });
+
+test("search, compare and disassemble parameters are validated", () => {
+  const search = { start: 0x0800, end: 0xffff, pattern: [0xa9, null, 0x8d], space: "c64", view: "cpu", maxResults: 100 };
+  assert.deepEqual(validateViceParams("memorySearch", search), search);
+  for (const bad of [
+    { ...search, pattern: [] },
+    { ...search, pattern: [null, null] },
+    { ...search, pattern: Array(257).fill(1) },
+    { ...search, pattern: [256] },
+    { ...search, end: 0x0700 },
+    { ...search, maxResults: 1001 },
+  ]) {
+    assert.throws(() => validateViceParams("memorySearch", bad), WireFailure, JSON.stringify(bad).slice(0, 80));
+  }
+  assert.throws(
+    () =>
+      validateViceParams("memoryCompare", {
+        left: { address: 0xfff0, space: "c64", view: "cpu" },
+        right: { address: 0, space: "c64", view: "cpu" },
+        size: 32,
+      }),
+    /left range/,
+  );
+  assert.throws(() => validateViceParams("disassemble", { address: 0, count: 257, space: "c64", view: "cpu" }), WireFailure);
+});

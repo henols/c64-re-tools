@@ -5,6 +5,7 @@ import {
   WireFailure,
   type Comparison,
   type Condition,
+  type Instruction,
   type JoystickState,
   type MemoryView,
   type RegisterValues,
@@ -125,6 +126,30 @@ const DIRECTION_BITS: Record<JoystickState["direction"], number> = {
 /** Control-port line levels as the CIA reads them: a pressed line is 0. */
 export function joystickLines(state: JoystickState): number {
   return 0x1f & ~(DIRECTION_BITS[state.direction] | (state.fire ? 0x10 : 0));
+}
+
+function hex4(value: number): string {
+  return value.toString(16).padStart(4, "0");
+}
+
+/**
+ * Parses monitor disassembly lines such as ".C:e5cf  85 CC       STA $CC".
+ * Hex numbers in the text become lowercase. A line that wraps past $ffff ends the list.
+ */
+export function parseDisassembly(answer: string, start: number): Instruction[] {
+  const instructions: Instruction[] = [];
+  for (const line of answer.split("\n")) {
+    const match = /^\.(?:C|\d+):([0-9a-f]{4})\s+((?:[0-9a-f]{2} )*[0-9a-f]{2})\s+(.*?)\s*$/i.exec(line);
+    if (match === null) continue;
+    const address = Number.parseInt(match[1]!, 16);
+    if (address < start || (instructions.length > 0 && address <= instructions.at(-1)!.address)) break;
+    instructions.push({
+      address,
+      bytes: match[2]!.replace(/ /g, "").toLowerCase(),
+      text: match[3]!.replace(/\$([0-9A-Fa-f]+)/g, (_all, digits: string) => `$${digits.toLowerCase()}`),
+    });
+  }
+  return instructions;
 }
 
 /** Quotes a host file path for a text-monitor command. Session scratch paths never contain quotes. */
@@ -446,6 +471,48 @@ export class ViceAdapter {
     const palette = decodePalette((await this.#monitor.request(Command.paletteGet, Buffer.from([1]))).body);
     const frame = visibleFrame(display, standard);
     return { width: frame.width, height: frame.height, png: encodePng(frame, palette) };
+  }
+
+  /**
+   * Runs text-monitor work with the monitor's default device and bank set to
+   * a space and view, then restores the defaults (device c:, bank cpu).
+   */
+  async #inTextContext<T>(space: Space, view: MemoryView, work: () => Promise<T>): Promise<T> {
+    if (space === "drive8" && view === "ram") {
+      throw new WireFailure("unsupported-in-space", "view ram is available only in space c64; use view cpu for drive8.");
+    }
+    if (space === "drive8") await this.#text.command("dev 8:");
+    else await this.#text.command(`bank ${view}`);
+    try {
+      return await work();
+    } finally {
+      if (space === "drive8") await this.#text.command("dev c:");
+      else await this.#text.command("bank cpu");
+    }
+  }
+
+  /** Finds a byte pattern (null = any byte) with the monitor's hunt. Returns match addresses, at most `limit`. */
+  async search(options: { start: number; end: number; pattern: Array<number | null>; space: Space; view: MemoryView; limit: number }): Promise<number[]> {
+    const tokens = options.pattern.map((token) => (token === null ? "xx" : token.toString(16).padStart(2, "0"))).join(" ");
+    const answer = await this.#inTextContext(options.space, options.view, () =>
+      this.#text.command(`hunt ${hex4(options.start)} ${hex4(options.end)} ${tokens}`, 30_000),
+    );
+    const matches: number[] = [];
+    for (const line of answer.split("\n")) {
+      const match = /^([0-9a-f]{4})$/i.exec(line.trim());
+      if (match !== null) matches.push(Number.parseInt(match[1]!, 16));
+      if (matches.length >= options.limit) break;
+    }
+    return matches;
+  }
+
+  /** Disassembles `count` instructions from `address` with the monitor; stops at the end of memory. */
+  async disassemble(options: { address: number; count: number; space: Space; view: MemoryView }): Promise<Instruction[]> {
+    const end = Math.min(0xffff, options.address + options.count * 3 - 1);
+    const answer = await this.#inTextContext(options.space, options.view, () =>
+      this.#text.command(`d ${hex4(options.address)} ${hex4(end)}`),
+    );
+    return parseDisassembly(answer, options.address).slice(0, options.count);
   }
 
   async warp(): Promise<boolean> {

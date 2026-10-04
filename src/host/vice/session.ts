@@ -2,6 +2,7 @@
 // machine's run state, and what happens when VICE dies.
 
 import {
+  MAX_COMPARE_DIFFERENCES,
   RASTER,
   WireFailure,
   type Breakpoint,
@@ -178,6 +179,17 @@ export class ViceSession implements ViceSessionHandle {
         const write = params as ViceOperations["memoryWrite"]["params"];
         this.#requireStopped();
         return { address: write.address, bytesWritten: await this.#machine.writeMemory(write) };
+      }
+      case "memorySearch": {
+        const search = params as ViceOperations["memorySearch"]["params"];
+        const matches = await this.#observe(() => this.#machine.search({ ...search, limit: search.maxResults }));
+        return { matches };
+      }
+      case "memoryCompare":
+        return this.#memoryCompare(params as ViceOperations["memoryCompare"]["params"]);
+      case "disassemble": {
+        const request = params as ViceOperations["disassemble"]["params"];
+        return { instructions: await this.#observe(() => this.#machine.disassemble(request)) };
       }
       case "registersSet": {
         const { space, values } = params as ViceOperations["registersSet"]["params"];
@@ -527,6 +539,22 @@ export class ViceSession implements ViceSessionHandle {
     await this.#stop();
     const loaded = await this.#machine.loadProgram(file, params.address);
     return { state: "stopped", ...loaded };
+  }
+
+  /** Compares two memory ranges from one coherent stop, in any spaces and views. */
+  async #memoryCompare(params: ViceOperations["memoryCompare"]["params"]): Promise<ViceOperations["memoryCompare"]["result"]> {
+    const [left, right] = await this.#observe(async () => [
+      Buffer.from(await this.#machine.readMemory({ ...params.left, size: params.size }), "hex"),
+      Buffer.from(await this.#machine.readMemory({ ...params.right, size: params.size }), "hex"),
+    ]);
+    const firstDifferences: Array<{ offset: number; left: number; right: number }> = [];
+    let differentBytes = 0;
+    for (let offset = 0; offset < params.size; offset++) {
+      if (left![offset] === right![offset]) continue;
+      differentBytes++;
+      if (firstDifferences.length < MAX_COMPARE_DIFFERENCES) firstDifferences.push({ offset, left: left![offset]!, right: right![offset]! });
+    }
+    return { equal: differentBytes === 0, differentBytes, firstDifferences };
   }
 
   /** Direct CPU-state writes need a stopped CPU (15 §4); they never pause it themselves. */

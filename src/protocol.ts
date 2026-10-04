@@ -48,6 +48,27 @@ export type MemoryView = (typeof MEMORY_VIEWS)[number];
 export const RUN_STATES = ["running", "stopped"] as const;
 export type RunState = (typeof RUN_STATES)[number];
 
+/** Bounds of c64_memory_search (15 §16), c64_memory_compare (15 §17) and c64_disassemble (15 §19). */
+export const MAX_SEARCH_PATTERN = 256;
+export const MAX_SEARCH_RESULTS = 1000;
+export const MAX_COMPARE_SIZE = 4096;
+export const MAX_COMPARE_DIFFERENCES = 32;
+export const MAX_DISASSEMBLE = 256;
+
+export interface MemoryLocation {
+  address: number;
+  space: Space;
+  view: MemoryView;
+}
+
+export interface Instruction {
+  address: number;
+  /** The instruction's bytes, lowercase hex. */
+  bytes: string;
+  /** Mnemonic and operand, for example "LDA #$00". */
+  text: string;
+}
+
 /** Bounds of c64_memory_read (15 §14) and c64_memory_write (15 §15). */
 export const MAX_MEMORY_READ = 4096;
 export const MAX_MEMORY_WRITE = 4096;
@@ -233,6 +254,16 @@ export interface ViceOperations {
   memoryRead: { params: MemoryReadParams; result: MemoryReadResult };
   registersGet: { params: { space: Space }; result: Registers };
   memoryWrite: { params: MemoryWriteParams; result: { address: number; bytesWritten: number } };
+  /** `pattern`: bytes, with null as a wildcard. */
+  memorySearch: {
+    params: { start: number; end: number; pattern: Array<number | null>; space: Space; view: MemoryView; maxResults: number };
+    result: { matches: number[] };
+  };
+  memoryCompare: {
+    params: { left: MemoryLocation; right: MemoryLocation; size: number };
+    result: { equal: boolean; differentBytes: number; firstDifferences: Array<{ offset: number; left: number; right: number }> };
+  };
+  disassemble: { params: { address: number; count: number; space: Space; view: MemoryView }; result: { instructions: Instruction[] } };
   registersSet: { params: { space: Space; values: RegisterValues }; result: Registers };
   execution: { params: ExecutionParams; result: ExecutionResult };
   runUntil: { params: { target: RunTarget; timeoutFrames: number }; result: RunUntilResult };
@@ -258,6 +289,9 @@ export const VICE_OPERATIONS = [
   "memoryRead",
   "registersGet",
   "memoryWrite",
+  "memorySearch",
+  "memoryCompare",
+  "disassemble",
   "registersSet",
   "execution",
   "runUntil",
@@ -452,6 +486,46 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       if (!isOneOf(MEMORY_VIEWS, params.view)) invalid("view must be cpu or ram");
       const result: MemoryWriteParams = { address: params.address, data: params.data, space: params.space, view: params.view };
       return result as ViceOperations[O]["params"];
+    }
+    case "memorySearch": {
+      if (!isInteger(params.start, 0, 0xffff) || !isInteger(params.end, 0, 0xffff)) invalid("start and end must be integers from 0 to 65535");
+      if (params.end < params.start) invalid("end must not be before start");
+      const pattern = params.pattern;
+      if (!Array.isArray(pattern) || pattern.length === 0 || pattern.length > MAX_SEARCH_PATTERN) {
+        invalid(`pattern must have 1 to ${MAX_SEARCH_PATTERN} bytes`);
+      }
+      if (!pattern.every((token) => token === null || isInteger(token, 0, 0xff))) invalid("pattern holds bytes 0 to 255 or null wildcards");
+      if (pattern.every((token) => token === null)) invalid("pattern needs at least one byte that is not a wildcard");
+      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
+      if (!isOneOf(MEMORY_VIEWS, params.view)) invalid("view must be cpu or ram");
+      if (!isInteger(params.maxResults, 1, MAX_SEARCH_RESULTS)) invalid(`maxResults must be an integer from 1 to ${MAX_SEARCH_RESULTS}`);
+      return {
+        start: params.start,
+        end: params.end,
+        pattern: pattern as Array<number | null>,
+        space: params.space,
+        view: params.view,
+        maxResults: params.maxResults,
+      } as ViceOperations[O]["params"];
+    }
+    case "memoryCompare": {
+      if (!isInteger(params.size, 1, MAX_COMPARE_SIZE)) invalid(`size must be an integer from 1 to ${MAX_COMPARE_SIZE}`);
+      const location = (value: unknown, name: string): MemoryLocation => {
+        if (!isObject(value)) invalid(`${name} must be an object`);
+        if (!isInteger(value.address, 0, 0xffff)) invalid(`${name} address must be an integer from 0 to 65535`);
+        if ((value.address as number) + (params.size as number) > 0x10000) invalid(`the ${name} range runs past $ffff`);
+        if (!isOneOf(SPACES, value.space)) invalid(`${name} space must be c64 or drive8`);
+        if (!isOneOf(MEMORY_VIEWS, value.view)) invalid(`${name} view must be cpu or ram`);
+        return { address: value.address as number, space: value.space, view: value.view };
+      };
+      return { left: location(params.left, "left"), right: location(params.right, "right"), size: params.size } as ViceOperations[O]["params"];
+    }
+    case "disassemble": {
+      if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
+      if (!isInteger(params.count, 1, MAX_DISASSEMBLE)) invalid(`count must be an integer from 1 to ${MAX_DISASSEMBLE}`);
+      if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
+      if (!isOneOf(MEMORY_VIEWS, params.view)) invalid("view must be cpu or ram");
+      return { address: params.address, count: params.count, space: params.space, view: params.view } as ViceOperations[O]["params"];
     }
     case "registersSet": {
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
@@ -682,6 +756,41 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     }
     case "registersSet": {
       return validateViceResult("registersGet", value) as unknown as ViceOperations[O]["result"];
+    }
+    case "memorySearch": {
+      if (!Array.isArray(value.matches) || !value.matches.every((match) => isInteger(match, 0, 0xffff))) {
+        throw new ProtocolError("memorySearch result is malformed");
+      }
+      break;
+    }
+    case "memoryCompare": {
+      const ok =
+        typeof value.equal === "boolean" &&
+        isInteger(value.differentBytes, 0, MAX_COMPARE_SIZE) &&
+        Array.isArray(value.firstDifferences) &&
+        value.firstDifferences.length <= MAX_COMPARE_DIFFERENCES &&
+        value.firstDifferences.every(
+          (difference) =>
+            isObject(difference) &&
+            isInteger(difference.offset, 0, MAX_COMPARE_SIZE - 1) &&
+            isInteger(difference.left, 0, 0xff) &&
+            isInteger(difference.right, 0, 0xff),
+        );
+      if (!ok) throw new ProtocolError("memoryCompare result is malformed");
+      break;
+    }
+    case "disassemble": {
+      const ok =
+        Array.isArray(value.instructions) &&
+        value.instructions.every(
+          (instruction) =>
+            isObject(instruction) &&
+            isInteger(instruction.address, 0, 0xffff) &&
+            isHexData(instruction.bytes) &&
+            typeof instruction.text === "string",
+        );
+      if (!ok) throw new ProtocolError("disassemble result is malformed");
+      break;
     }
     case "runUntil": {
       const ok =

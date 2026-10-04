@@ -102,6 +102,18 @@ export class ViceSessionClient {
     return this.#request("memoryWrite", params);
   }
 
+  memorySearch(params: ViceOperations["memorySearch"]["params"]): Promise<{ matches: number[] }> {
+    return this.#request("memorySearch", params);
+  }
+
+  memoryCompare(params: ViceOperations["memoryCompare"]["params"]): Promise<ViceOperations["memoryCompare"]["result"]> {
+    return this.#request("memoryCompare", params);
+  }
+
+  disassemble(params: ViceOperations["disassemble"]["params"]): Promise<ViceOperations["disassemble"]["result"]> {
+    return this.#request("disassemble", params);
+  }
+
   registersSet(space: Space, values: RegisterValues): Promise<Registers> {
     return this.#request("registersSet", { space, values });
   }
