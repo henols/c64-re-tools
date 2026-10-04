@@ -219,7 +219,7 @@ class C1541Session {
 
 export async function inspect(params: C1541Params, image: Buffer, context: Context): Promise<{ result: C1541Result; attachments?: Buffer[] }> {
   const executable = findTool(C1541, context.env);
-  const workspace = Workspace.create();
+  const workspace = Workspace.create(context.supervisor);
   try {
     const file = `image.${params.imageType}`;
     workspace.materialize("input", [{ path: file, size: image.length }], [image]);

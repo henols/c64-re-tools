@@ -6,17 +6,24 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { isRelativePath, WireFailure, type SourceTree } from "../protocol.ts";
+import type { ProcessSupervisor } from "./processes.ts";
 
 export class Workspace {
   readonly root: string;
+  readonly #release: () => void;
 
-  private constructor(root: string) {
+  private constructor(root: string, release: () => void) {
     this.root = root;
+    this.#release = release;
   }
 
-  /** A fresh, empty workspace in the host's temporary directory. */
-  static create(): Workspace {
-    return new Workspace(mkdtempSync(join(tmpdir(), "c64-re-tools-request-")));
+  /**
+   * A fresh, empty workspace in the host's temporary directory. With a
+   * supervisor, the workspace is also removed if the Host Runtime dies.
+   */
+  static create(owner?: ProcessSupervisor): Workspace {
+    const root = mkdtempSync(join(tmpdir(), "c64-re-tools-request-"));
+    return new Workspace(root, owner?.ownPath(root) ?? (() => {}));
   }
 
   /** The absolute path of a relative path inside the workspace; refuses any escape. */
@@ -53,5 +60,6 @@ export class Workspace {
 
   remove(): void {
     rmSync(this.root, { recursive: true, force: true });
+    this.#release();
   }
 }

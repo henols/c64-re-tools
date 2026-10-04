@@ -72,7 +72,7 @@ export async function assemble(
   context: { supervisor: ProcessSupervisor; signal: AbortSignal; env?: NodeJS.ProcessEnv; log?: (line: string) => void },
 ): Promise<{ result: AcmeResult; attachments?: Buffer[] }> {
   const executable = findTool(ACME, context.env);
-  const workspace = Workspace.create();
+  const workspace = Workspace.create(context.supervisor);
   try {
     const source = workspace.materialize("source", params.files, files);
     // A fresh output directory, so no stale file can pass for this run's output.

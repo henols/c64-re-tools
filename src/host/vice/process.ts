@@ -192,6 +192,8 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
   const port = await freePort();
   const textPort = await freePort();
   const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-vice-"));
+  // Owned by the supervisor: its exit guard and the watchdog remove it if this process dies.
+  const releaseScratch = options.supervisor.ownPath(scratch);
   const child = options.supervisor.spawn(
     viceArguments({ binary, port, textPort, configFile: join(scratch, "vicerc"), videoStandard: options.videoStandard }),
     {
@@ -215,6 +217,7 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
       await text?.close();
       await child.stop();
       rmSync(scratch, { recursive: true, force: true });
+      releaseScratch();
     })();
     return stopping;
   };

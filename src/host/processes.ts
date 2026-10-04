@@ -1,4 +1,7 @@
 import { spawn, type ChildProcess, type StdioOptions } from "node:child_process";
+import { mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { extname, join } from "node:path";
 
 /** How long a process group gets between SIGTERM and SIGKILL. */
 export const STOP_GRACE_MS = 5_000;
@@ -51,15 +54,28 @@ async function waitForGroupGone(pgid: number, timeoutMs: number): Promise<boolea
   return true;
 }
 
+/** What the watchdog must clean up if the Host Runtime dies: process groups and paths. */
+export interface Registry {
+  groups: number[];
+  paths: string[];
+}
+
+/** The watchdog's program, next to this module (.ts from source, .js when built). */
+const WATCHDOG = join(import.meta.dirname, `watchdog${extname(import.meta.filename)}`);
+
 /**
  * The one child-process supervisor of the Host Runtime. Every emulator and
  * native tool is started here, with an argv array and never a shell string,
- * as the leader of its own process group.
+ * as the leader of its own process group. It also owns scratch paths, so
+ * that they go away with the processes that used them.
  */
 export class ProcessSupervisor {
   readonly #children = new Set<SupervisedProcess>();
+  readonly #paths = new Set<string>();
   readonly #graceMs: number;
   #exitGuardInstalled = false;
+  /** The registry file that the watchdog reads, once a watchdog runs. */
+  #registry: string | undefined;
 
   constructor(options: { graceMs?: number } = {}) {
     this.#graceMs = options.graceMs ?? STOP_GRACE_MS;
@@ -99,12 +115,50 @@ export class ProcessSupervisor {
       child,
       exited,
       stop: () => {
-        stopping ??= this.#stopGroup(pid, child, exited).finally(() => this.#children.delete(supervised));
+        stopping ??= this.#stopGroup(pid, child, exited).finally(() => {
+          this.#children.delete(supervised);
+          this.#writeRegistry();
+        });
         return stopping;
       },
     };
     this.#children.add(supervised);
+    this.#writeRegistry();
     return supervised;
+  }
+
+  /** Makes a scratch path part of what this supervisor cleans up. Returns the release for a normal removal. */
+  ownPath(path: string): () => void {
+    this.#paths.add(path);
+    this.#writeRegistry();
+    return () => {
+      this.#paths.delete(path);
+      this.#writeRegistry();
+    };
+  }
+
+  /**
+   * Starts a watchdog process that cleans up if this process dies without
+   * running its exit guard, for example by SIGKILL (D7): it stops every
+   * registered process group and removes every owned path. It ends by itself
+   * when this process exits normally.
+   */
+  startWatchdog(): void {
+    if (this.#registry !== undefined) return;
+    const directory = mkdtempSync(join(tmpdir(), "c64-re-tools-host-"));
+    this.#registry = join(directory, "registry.json");
+    this.#writeRegistry();
+    const watchdog = spawn(process.execPath, [WATCHDOG, String(process.pid), this.#registry], { detached: true, stdio: "ignore", windowsHide: true });
+    watchdog.unref();
+    this.installExitGuard();
+  }
+
+  #writeRegistry(): void {
+    if (this.#registry === undefined) return;
+    const registry: Registry = { groups: [...this.#children].map((child) => child.pid), paths: [...this.#paths] };
+    // Write and rename, so the watchdog never reads half a file.
+    writeFileSync(`${this.#registry}.next`, JSON.stringify(registry));
+    renameSync(`${this.#registry}.next`, this.#registry);
   }
 
   /** Stops every process group this supervisor started. */
@@ -112,13 +166,19 @@ export class ProcessSupervisor {
     await Promise.all([...this.#children].map((child) => child.stop()));
   }
 
-  /** SIGKILLs every remaining group synchronously. For process "exit", where nothing async runs. */
+  /**
+   * SIGKILLs every remaining group and removes every owned path, synchronously.
+   * For process "exit", where nothing async runs. The watchdog then ends.
+   */
   killAllSync(): void {
     for (const supervised of this.#children) {
       if (process.platform === "win32") supervised.child.kill("SIGKILL");
       else signalGroup(supervised.pid, "SIGKILL");
     }
     this.#children.clear();
+    for (const path of this.#paths) rmSync(path, { recursive: true, force: true });
+    this.#paths.clear();
+    if (this.#registry !== undefined) rmSync(join(this.#registry, ".."), { recursive: true, force: true });
   }
 
   /** Makes any exit of this process, however it happens, SIGKILL the remaining groups. Idempotent. */

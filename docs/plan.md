@@ -166,8 +166,8 @@ Acceptance (19 §13): from the packed npm artifact in a fresh directory, the ski
 
 Release gate (19 §14): the development workflow (source → ACME → VICE → debug → test) and the reverse-engineering workflow (artifact → inspect → VICE → analysis → knowledge → reconstruct → assemble → equivalence test) pass live.
 
-- [ ] M12.1 **Orphan guard (D7)** — a watchdog process per Host Runtime that stops every registered child process group when the runtime dies, also by SIGKILL. Live test: kill -9 the runtime, its VICE goes away.
-- [ ] M12.2 **Crash cleanup** — the VICE scratch directory goes away on a signal and through the watchdog.
+- [x] M12.1 **Orphan guard (D7)** — a watchdog process per Host Runtime that stops every registered child process group when the runtime dies, also by SIGKILL. Live test: kill -9 the runtime, its VICE goes away.
+- [x] M12.2 **Crash cleanup** — the VICE scratch directory goes away on a signal and through the watchdog.
 - [ ] M12.3 **Container binding (D5/D6)** — `--listen <address>` adds a bind for a container bridge; any address that is not loopback needs `C64RT_HOST_TOKEN` on both sides, checked in the handshake.
 - [ ] M12.4 **CI matrix** — unit and integration tests on Linux, macOS and Windows (Node 24), an installed-package smoke test, live suites named separately.
 - [ ] M12.5 **Release automation** — a tag workflow that builds, tests and publishes to npm with provenance.
@@ -187,7 +187,7 @@ Points the design leaves open, decided for M1. Revisit a row before changing the
 | D4 | Wire errors | `{code, message}` using the 15 §5 codes, chosen by the host. host-client passes them through; MCP returns them as `isError` results. |
 | D5 | Endpoint | TCP port 6464, bound to `127.0.0.1`. Client tries `127.0.0.1`, `host.docker.internal`, `host.containers.internal`; `C64RT_HOST=host:port` overrides. Container-bridge binding comes in M12. |
 | D6 | Auth | None while bound to loopback. Decide together with bridge binding in M12. |
-| D7 | Orphans | Process groups cover normal exit and signals. A watchdog for a killed (SIGKILL) host comes in M12. |
+| D7 | Orphans | Process groups cover normal exit and signals; the exit guard also removes owned scratch paths. A watchdog process per Host Runtime (M12.1) stops every registered group and removes every owned path when the runtime dies by SIGKILL or a crash. |
 | D8 | Finding VICE | `C64RT_VICE`, else `x64sc` on `PATH`. If missing, refuse by name with the install remedy. Never auto-install. |
 | D9 | MCP SDK | `@modelcontextprotocol/sdk`, stdio transport, plus its schema library. No other runtime dependency in M1. |
 | D10 | Video standard | PAL by default; `C64RT_VIDEO=ntsc` at MCP start. Fixed for the session. |

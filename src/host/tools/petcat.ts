@@ -156,7 +156,7 @@ export async function decode(
   const tokenized = parseTokenized(program);
   if ("reason" in tokenized) return { result: { decoded: false, reason: tokenized.reason } };
   const executable = findTool(PETCAT, context.env);
-  const workspace = Workspace.create();
+  const workspace = Workspace.create(context.supervisor);
   try {
     workspace.materialize("input", [{ path: "program.prg", size: program.length }], [program]);
     const output = workspace.directory("out");

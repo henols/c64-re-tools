@@ -33,7 +33,7 @@ export async function analyze(
     .map((range) => ({ start: Math.max(range.start, start), end: Math.min(range.end, end) }))
     .filter((range) => !entryPoints.some((entry) => entry >= range.start && entry <= range.end));
 
-  const workspace = Workspace.create();
+  const workspace = Workspace.create(context.supervisor);
   try {
     workspace.materialize("input", [{ path: "image.bin", size: body.length }], [body]);
     writeFileSync(workspace.path("seeds.json"), JSON.stringify({ start, end, entryPoints, dataRanges, labels: params.labels }));
