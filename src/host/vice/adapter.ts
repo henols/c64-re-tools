@@ -291,6 +291,8 @@ export class ViceAdapter {
   readonly #banks: Record<MemoryView | "rom" | "io", number>;
   /** The C64's raster line and cycle registers. */
   readonly #rasterIds: { line: number; cycle: number };
+  /** VICE numbers of the checkpoints set in drive 8's memory space. */
+  readonly #driveCheckpoints = new Set<number>();
 
   private constructor(
     monitor: BinaryMonitor,
@@ -441,6 +443,17 @@ export class ViceAdapter {
     await this.#monitor.request(Command.ping, new Uint8Array(0), Infinity);
   }
 
+  /**
+   * Runs a text command that acts on the monitor's default device, with the
+   * computer as that device. VICE makes drive 8 the default device when a
+   * drive checkpoint stops the machine (found live), and commands such as
+   * load, d, hunt, mmsh and stopwatch then act on the drive instead.
+   */
+  async #computerText(command: string, timeoutMs?: number): Promise<string> {
+    await this.#text.command("dev c:");
+    return timeoutMs === undefined ? this.#text.command(command) : this.#text.command(command, timeoutMs);
+  }
+
   /** Runs a harmless text command, so every text command sent before it has run. */
   async drainText(): Promise<void> {
     await this.#text.command("~ $0000");
@@ -505,7 +518,14 @@ export class ViceAdapter {
     body[7] = 0; // not temporary
     body[8] = MEMSPACE[options.space];
     const info = await this.#monitor.request(Command.checkpointSet, body);
-    return info.body.readUInt32LE(0);
+    const number = info.body.readUInt32LE(0);
+    if (options.space === "drive8") this.#driveCheckpoints.add(number);
+    return number;
+  }
+
+  /** True for a checkpoint in drive 8's memory space: its stop leaves the computer's CPU between two cycles of an instruction. */
+  isDriveCheckpoint(number: number): boolean {
+    return this.#driveCheckpoints.has(number);
   }
 
   async setCondition(number: number, expression: string): Promise<void> {
@@ -528,6 +548,7 @@ export class ViceAdapter {
     const body = Buffer.alloc(4);
     body.writeUInt32LE(number, 0);
     await this.#monitor.request(Command.checkpointDelete, body);
+    this.#driveCheckpoints.delete(number);
   }
 
   /**
@@ -537,7 +558,7 @@ export class ViceAdapter {
    */
   async loadProgram(file: string, address?: number): Promise<{ loadAddress: number; size: number }> {
     const target = address === undefined ? "" : ` $${address.toString(16).padStart(4, "0")}`;
-    const answer = await this.#text.command(`load ${quoted(file)} 0${target}`);
+    const answer = await this.#computerText(`load ${quoted(file)} 0${target}`);
     const match = /from ([0-9A-Fa-f]{4}) to ([0-9A-Fa-f]{4}) \(([0-9A-Fa-f]+) bytes\)/.exec(answer);
     if (match === null) throw new WireFailure("media-error", "The emulator could not load the program.");
     return { loadAddress: Number.parseInt(match[1]!, 16), size: Number.parseInt(match[3]!, 16) };
@@ -596,7 +617,7 @@ export class ViceAdapter {
       throw new WireFailure("unsupported-in-space", "view ram is available only in space c64; use view cpu for drive8.");
     }
     if (space === "drive8") await this.#text.command("dev 8:");
-    else await this.#text.command(`bank ${view}`);
+    else await this.#computerText(`bank ${view}`);
     try {
       return await work();
     } finally {
@@ -637,7 +658,7 @@ export class ViceAdapter {
 
   /** The current CPU cycle count of the computer. */
   async clock(): Promise<bigint> {
-    const answer = await this.#text.command("stopwatch");
+    const answer = await this.#computerText("stopwatch");
     const match = /Stopwatch:\s+(\d+)/.exec(answer);
     if (match === null) throw new TextMonitorError(`unexpected stopwatch answer: ${answer}`);
     return BigInt(match[1]!);
@@ -669,22 +690,22 @@ export class ViceAdapter {
   }
 
   async startProfiler(): Promise<void> {
-    await this.#text.command("profile on");
+    await this.#computerText("profile on");
   }
 
   /** The routines with the most self time, from VICE's profiler. */
   async profile(limit: number): Promise<ProfileEntry[]> {
-    return parseProfile(await this.#text.command(`profile flat ${limit}`)).slice(0, limit);
+    return parseProfile(await this.#computerText(`profile flat ${limit}`)).slice(0, limit);
   }
 
   /** How the C64 CPU accessed [start, end] since the memmap was last cleared, as merged ranges. */
   async memmap(start: number, end: number, maxRanges: number): Promise<MemmapRange[]> {
     // The first argument is the access mask ("ioRWXrwx"); ff shows every kind of access.
-    return parseMemmap(await this.#text.command(`mmsh ff ${hex4(start)} ${hex4(end)}`, 60_000), maxRanges);
+    return parseMemmap(await this.#computerText(`mmsh ff ${hex4(start)} ${hex4(end)}`, 60_000), maxRanges);
   }
 
   async clearMemmap(): Promise<void> {
-    await this.#text.command("mmzap");
+    await this.#computerText("mmzap");
   }
 
   async warp(): Promise<boolean> {

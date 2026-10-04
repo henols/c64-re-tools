@@ -119,6 +119,8 @@ type RunEnd = "target" | "breakpoint" | "watchpoint" | "jam" | "frames";
 
 /** How long half a frame may take before the session gives up waiting. */
 const HALF_FRAME_LIMIT_MS = 10_000;
+/** A drive stop is completed within a few computer instructions. */
+const DRIVE_STOP_TRIES = 4;
 
 export interface SessionOptions {
   /** Upper bound for until-return; tests shorten it. */
@@ -153,6 +155,14 @@ export class ViceSession implements ViceSessionHandle {
   #stopWaiters: Array<(stop: Stop) => boolean> = [];
   /** VICE numbers of checkpoints reported hit whose stopped event has not come yet. */
   #checkpointHits: number[] = [];
+  /**
+   * Set by a stop that a drive 8 checkpoint caused. VICE then enters the
+   * monitor from inside the drive CPU, while the computer's CPU is between two
+   * cycles of an instruction: a register write to it is lost or comes late,
+   * and the next frame count ends one frame short (found live). The session
+   * completes such a stop before its next command (#completeDriveStop).
+   */
+  #driveStop = false;
   /** Counts stops caused by checkpoints or a CPU JAM rather than by a monitor command. */
   #haltCount = 0;
   #queue: Promise<unknown> = Promise.resolve();
@@ -573,10 +583,41 @@ export class ViceSession implements ViceSessionHandle {
           if (await this.#jammedAt(stop.pc)) return { end: "jam", frames, pc: stop.pc };
           throw new WireFailure("operation-failed", "The emulator stopped the machine for a reason outside this run.");
         }
-        return { end, frames, pc: stop.pc };
+        // A drive stop is completed before the result names the computer's pc.
+        return { end, frames, pc: (await this.#completeDriveStop()) ?? stop.pc };
       }
     } finally {
       await this.#machine.deleteCheckpoint(clock);
+    }
+  }
+
+  /**
+   * Completes a stop that a drive 8 checkpoint caused: the computer runs to
+   * its next instruction boundary, where a computer checkpoint stops it, so
+   * VICE enters the monitor from the computer's CPU. The drive runs those few
+   * cycles too. Returns the computer's pc, or undefined when there was no
+   * drive stop.
+   */
+  async #completeDriveStop(): Promise<number | undefined> {
+    if (!this.#driveStop) return undefined;
+    this.#driveStop = false;
+    const boundary = await this.#machine.addCheckpoint({ start: 0x0000, end: 0xffff, operation: 0x04, space: "c64" });
+    try {
+      for (let attempt = 0; attempt < DRIVE_STOP_TRIES; attempt++) {
+        const next = this.#nextStop(HALF_FRAME_LIMIT_MS);
+        await this.#resume();
+        const stop = await next;
+        if (stop === undefined) break;
+        // The drive can hit its checkpoint again before the computer gets to the next instruction.
+        if (stop.hits.includes(boundary)) {
+          this.#driveStop = false;
+          return stop.pc;
+        }
+      }
+      await this.#stop();
+      throw new WireFailure("operation-failed", "The computer did not get to its next instruction after a stop in the disk drive.");
+    } finally {
+      await this.#machine.deleteCheckpoint(boundary);
     }
   }
 
@@ -1106,6 +1147,7 @@ export class ViceSession implements ViceSessionHandle {
       const runningBefore = this.#state === "running";
       const halts = this.#haltCount;
       try {
+        if (this.#held === undefined) await this.#completeDriveStop();
         return await work();
       } catch (error) {
         throw await this.#translate(error, runningBefore, halts);
@@ -1171,6 +1213,7 @@ export class ViceSession implements ViceSessionHandle {
     if (event.type === ResponseType.stopped || event.type === ResponseType.jam) {
       const stop: Stop = { pc: decodeProgramCounter(event.body), hits: this.#checkpointHits };
       if (stop.hits.length > 0 || event.type === ResponseType.jam) this.#haltCount++;
+      if (stop.hits.some((hit) => this.#adapter?.isDriveCheckpoint(hit))) this.#driveStop = true;
       this.#checkpointHits = [];
       this.#state = "stopped";
       this.#stopWaiters = this.#stopWaiters.filter((waiter) => !waiter(stop));

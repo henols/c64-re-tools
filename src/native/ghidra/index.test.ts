@@ -15,13 +15,16 @@ after(() => {
   workspace.remove();
 });
 
+/** Ghidra's launcher: a shell script, and a batch file on Windows. */
+const LAUNCHER = process.platform === "win32" ? "analyzeHeadless.bat" : "analyzeHeadless";
+
 /** A directory that looks like a Ghidra installation. */
 function fakeInstallation(name: string): string {
   const root = join(scratch, name);
   mkdirSync(join(root, "support"), { recursive: true });
   mkdirSync(join(root, "Ghidra"));
-  writeFileSync(join(root, "support", "analyzeHeadless"), "#!/bin/sh\n");
-  chmodSync(join(root, "support", "analyzeHeadless"), 0o755);
+  writeFileSync(join(root, "support", LAUNCHER), "#!/bin/sh\n");
+  chmodSync(join(root, "support", LAUNCHER), 0o755);
   writeFileSync(join(root, "Ghidra", "application.properties"), "application.name=Ghidra\napplication.version=12.1.3\napplication.release.name=PUBLIC\n");
   return root;
 }
@@ -33,7 +36,7 @@ test("C64RT_GHIDRA names the installation; its version names the settings direct
   const found = findGhidra({ C64RT_GHIDRA: root, PATH: "" });
   assert.equal(found.root, root);
   assert.equal(found.settingsName, "ghidra_12.1.3_PUBLIC");
-  assert.equal(found.analyzeHeadless, join(root, "support", "analyzeHeadless"));
+  assert.equal(found.analyzeHeadless, join(root, "support", LAUNCHER));
 });
 
 test("analyzeHeadless on PATH finds its installation", () => {

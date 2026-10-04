@@ -87,3 +87,35 @@ test("run-until with a drive8 address tells when the drive executes it, and wher
   // instructions after the target (found live: target $ec2b, stop $ec17). pc is where it stopped.
   assert.equal(reached.pc, (await session.handle("registersGet", { space: "drive8" })).pc);
 });
+
+test("after a drive8 stop the computer's registers, frames and stopwatch behave as after any stop (D21)", { skip: liveSkip, timeout: 120_000 }, async () => {
+  const driveStop = async () => {
+    const { pc } = await session.handle("registersGet", { space: "drive8" });
+    const reached = await session.handle("runUntil", { target: { kind: "address", address: pc, space: "drive8" }, timeoutFrames: 100 });
+    assert.equal(reached.reached, true, JSON.stringify(reached));
+  };
+  await session.handle("reset", { mode: "hard", run: true });
+  await session.handle("execution", { action: "advance-frames", count: 100, space: "c64" });
+
+  // A drive checkpoint stops VICE inside the drive CPU, with the computer's CPU in the middle of an
+  // instruction. Without completing that stop, a register write was lost (found live).
+  await driveStop();
+  await session.handle("memoryWrite", { address: 0xc000, data: "a9004c02c0", space: "c64", view: "cpu" }); // LDA #$00 / JMP $c002
+  await session.handle("registersSet", { space: "c64", values: { pc: 0xc000, a: 0x33 } });
+  const stepped = await session.handle("execution", { action: "step", space: "c64", count: 1 });
+  assert.equal(stepped.pc, 0xc002, "the pc written after a drive stop is where the computer goes on");
+  assert.equal((await session.handle("registersGet", { space: "c64" })).a, 0);
+
+  // Without completing the stop, the first frame count ended one frame early, and the stopwatch
+  // read the drive's clock (the text monitor's default device became drive 8).
+  await driveStop();
+  await session.handle("timing", { action: "start" });
+  await session.handle("execution", { action: "advance-frames", count: 10, space: "c64" });
+  const { cycles } = (await session.handle("timing", { action: "read" })) as { cycles: string };
+  assert.ok(Math.abs(Number(cycles) - 10 * 19656) < 10, `10 PAL frames after a drive stop took ${cycles} cycles`);
+
+  // Text-monitor work for the computer still acts on the computer after a drive stop.
+  await driveStop();
+  const [instruction] = (await session.handle("disassemble", { address: 0xc000, count: 1, space: "c64", view: "cpu" })).instructions;
+  assert.equal(instruction!.text, "LDA #$00");
+});
