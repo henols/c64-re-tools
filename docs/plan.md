@@ -108,7 +108,7 @@ Acceptance (19 §8): with real fixture media, inspect a D64 directory, extract a
 - [x] M6.2 **petcat adapter** — `petcat.decode`, `src/host/tools/petcat.ts`: `petcat -2 -c` for the listing; the adapter parses the tokenized lines itself (end marker at a zero link high byte, as BASIC relinks), checks that petcat's line numbers match, and finds SYS/USR handoffs in the tokens outside strings, REM and DATA. A constant SYS expression gives an address; anything else is `computed`. Bytes that are no BASIC program give `decoded: false`.
 - [x] M6.3 **Host client** — `inspectDisk` and `decodeBasic` in `src/host-client/tools.ts`, reading project files through `transfer.ts`.
 - [x] M6.4 **c64-disk skill** — `skills/c64-disk/scripts/disk.ts` (directory, bam, entry, chain, read with `--out`) and `SKILL.md` (ASD-STE100).
-- [ ] M6.5 **c64-basic skill** — `skills/c64-basic/scripts/basic.ts` and `SKILL.md` (ASD-STE100).
+- [x] M6.5 **c64-basic skill** — `skills/c64-basic/scripts/basic.ts` and `SKILL.md` (ASD-STE100).
 - [ ] M6.6 **Acceptance** — a D64 made by real c1541 with a BASIC loader and its machine code: directory → read → decode → handoff → `c64_program_load` and run to the handoff in VICE (live part opt-in).
 
 ## Later milestones
