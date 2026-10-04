@@ -1,0 +1,147 @@
+// The DXA adapter (16 §9, §11). DXA prints an assembler listing only; with
+// "-a dump" each line starts with its address and bytes, so the adapter can
+// tell code from data line by line. The whole listing is checked before a
+// result leaves the host: lines in address order from the load address to
+// the end, each line as long as its bytes or data items, so a truncated or
+// changed listing is refused instead of half imported.
+
+import { writeFileSync } from "node:fs";
+
+import { WireFailure, type DxaParams, type DxaResult } from "../../protocol.ts";
+import type { ProcessSupervisor } from "../processes.ts";
+import { Workspace } from "../staging.ts";
+import { DXA, findTool } from "./discover.ts";
+import { runTool } from "./run.ts";
+
+const TIMEOUT_MS = 120_000;
+/** The listing goes back as an attachment; larger output is refused. */
+const MAX_LISTING = 8 * 1024 * 1024;
+const LABEL_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
+const hex = (value: number) => value.toString(16).padStart(4, "0");
+
+/**
+ * The options for one run; every value comes from the validated request. A
+ * seed file is passed only when it has lines: dxa refuses an empty one.
+ */
+export function dxaArguments(executable: string, params: DxaParams, files: { image: string; routines?: string; blocks?: string; labels?: string }): string[] {
+  const argv = [executable, "-a", "dump", "-p", "all-nmos6502", "-d", "skip-scanning"];
+  if (files.routines !== undefined) argv.push("-R", files.routines);
+  if (files.blocks !== undefined) argv.push("-B", files.blocks);
+  if (files.labels !== undefined) argv.push("-l", files.labels);
+  // A PRG gives its load address and may start with BASIC (-U finds its SYS);
+  // 64 KiB of memory starts at $0000 and has no load address.
+  if (params.imageKind === "prg") argv.push("-U");
+  else argv.push("-g", "0000", "-q");
+  argv.push(files.image);
+  return argv;
+}
+
+/** Number of data bytes in a .byt or .word line, or undefined for an instruction. */
+function dataSize(operation: string): number | undefined {
+  const match = /^\.(byt|word)\s+(.+)$/.exec(operation.trim());
+  if (match === null) return undefined;
+  const items = match[2]!.split(",").length;
+  return match[1] === "word" ? items * 2 : items;
+}
+
+/**
+ * Parses a "-a dump" listing into regions and labels for [start, end].
+ * Throws an Error when the listing is not a complete, consistent listing of
+ * exactly that range.
+ */
+export function parseListing(listing: string, start: number, end: number): Pick<DxaResult, "regions" | "labels"> {
+  const statements: Array<{ address: number; dumped: number; data: number | undefined }> = [];
+  const labels: DxaResult["labels"] = [];
+  for (const line of listing.split(/\r?\n/)) {
+    const label = /^([0-9a-f]{4})\s+([A-Za-z_]\w*):\s*$/.exec(line);
+    if (label !== null) {
+      const address = Number.parseInt(label[1]!, 16);
+      if (address < start || address > end || !LABEL_NAME.test(label[2]!)) throw new Error(`label ${label[2]} at $${label[1]} is not usable`);
+      labels.push({ address, name: label[2]! });
+      continue;
+    }
+    const statement = /^([0-9a-f]{4}) ((?:[0-9a-f]{2} ?){1,3})\s*\t(.+)$/.exec(line);
+    if (statement === null) continue;
+    statements.push({ address: Number.parseInt(statement[1]!, 16), dumped: statement[2]!.trim().split(/\s+/).length, data: dataSize(statement[3]!) });
+  }
+  if (statements.length === 0) throw new Error("the listing has no statements");
+  if (statements[0]!.address !== start) throw new Error(`the listing starts at $${hex(statements[0]!.address)}, not at $${hex(start)}`);
+  const regions: DxaResult["regions"] = [];
+  statements.forEach((statement, index) => {
+    const next = statements[index + 1]?.address ?? end + 1;
+    const size = next - statement.address;
+    if (size <= 0) throw new Error(`the listing goes back at $${hex(next)}`);
+    // Data lines count their items; an instruction line dumps exactly its bytes.
+    const expected = statement.data ?? statement.dumped;
+    if (expected !== size) throw new Error(`the line at $${hex(statement.address)} holds ${expected} bytes, but the next line is ${size} bytes later`);
+    const classification = statement.data === undefined ? "code" : "data";
+    const last = regions.at(-1);
+    if (last?.classification === classification) last.end = next - 1;
+    else regions.push({ start: statement.address, end: next - 1, classification });
+  });
+  if (statements.at(-1)!.address > end) throw new Error("the listing runs past the end of the program");
+  return { regions, labels };
+}
+
+export async function analyze(
+  params: DxaParams,
+  image: Buffer,
+  context: { supervisor: ProcessSupervisor; signal: AbortSignal; env?: NodeJS.ProcessEnv; log?: (line: string) => void },
+): Promise<{ result: DxaResult; attachments: Buffer[] }> {
+  const executable = findTool(DXA, context.env);
+  const start = params.imageKind === "prg" ? image.readUInt16LE(0) : 0;
+  const end = start + (params.imageKind === "prg" ? image.length - 2 : image.length) - 1;
+  const inside = (address: number) => address >= start && address <= end;
+  const entryPoints = params.entryPoints.filter(inside);
+  const dataRanges = params.dataRanges
+    .filter((range) => range.end >= start && range.start <= end)
+    .map((range) => ({ start: Math.max(range.start, start), end: Math.min(range.end, end) }))
+    .filter((range) => !entryPoints.some((entry) => entry >= range.start && entry <= range.end));
+
+  const workspace = Workspace.create(context.supervisor);
+  try {
+    workspace.materialize("input", [{ path: "image.bin", size: image.length }], [image]);
+    const files: Parameters<typeof dxaArguments>[2] = { image: "input/image.bin" };
+    const seed = (name: "routines" | "blocks" | "labels", lines: string[]) => {
+      if (lines.length === 0) return;
+      writeFileSync(workspace.path(`${name}.txt`), lines.join(""));
+      files[name] = `${name}.txt`;
+    };
+    seed("routines", entryPoints.map((address) => `${hex(address)}\n`));
+    seed("blocks", dataRanges.map((range) => `${hex(range.start)}-${hex(range.end)}\n`));
+    // The xa label file format: name, address, flags.
+    seed("labels", params.labels.filter((label) => LABEL_NAME.test(label.name)).map((label) => `${label.name}, 0x${hex(label.address)}, 0x0000\n`));
+    const run = await runTool({
+      argv: dxaArguments(executable, params, files),
+      cwd: workspace.root,
+      supervisor: context.supervisor,
+      signal: context.signal,
+      timeoutMs: TIMEOUT_MS,
+      outputLimit: MAX_LISTING,
+      ...(context.env === undefined ? {} : { env: context.env }),
+    });
+    if (run.aborted) throw new WireFailure("operation-failed", "The DXA analysis was cancelled.");
+    if (run.timedOut) throw new WireFailure("operation-failed", `dxa did not finish within ${TIMEOUT_MS / 1000} seconds.`);
+    if (run.truncated) throw new WireFailure("operation-failed", "dxa printed a listing larger than the host accepts. Nothing was imported.");
+    if (run.code !== 0) {
+      context.log?.(`dxa exited ${run.code}: ${run.stderr}`);
+      throw new WireFailure("operation-failed", "dxa could not analyze the program.");
+    }
+    let parsed: Pick<DxaResult, "regions" | "labels">;
+    try {
+      parsed = parseListing(run.stdout, start, end);
+    } catch (error) {
+      context.log?.(`dxa listing rejected: ${(error as Error).message}`);
+      throw new WireFailure("operation-failed", "dxa returned an incomplete or inconsistent listing. Nothing was imported.");
+    }
+    const listing = Buffer.from(run.stdout, "utf8");
+    return {
+      // DXA classifies every byte, so its regions are complete; it names only referenced addresses (16 §9).
+      result: { coverage: [{ start, end }], ...parsed, listingBytes: listing.length, completeness: { regions: true, labels: false } },
+      attachments: [listing],
+    };
+  } finally {
+    workspace.remove();
+  }
+}

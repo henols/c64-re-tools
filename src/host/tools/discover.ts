@@ -39,6 +39,13 @@ export const PETCAT: ToolSpec = {
   remedy: "Install VICE on the host (petcat comes with it) so that petcat is on PATH, or set C64RT_PETCAT to its full path, then restart c64-re-tools-host.",
 };
 
+export const DXA: ToolSpec = {
+  name: "dxa",
+  envVar: "C64RT_DXA",
+  binaries: ["dxa"],
+  remedy: "Install dxa (from the xa package, https://www.floodgap.com/retrotech/xa/) on the host so that dxa is on PATH, or set C64RT_DXA to its full path, then restart c64-re-tools-host.",
+};
+
 function isExecutableFile(path: string): boolean {
   try {
     if (!statSync(path).isFile()) return false;

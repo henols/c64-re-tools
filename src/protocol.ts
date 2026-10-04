@@ -631,14 +631,28 @@ export interface GhidraResult {
   completeness: { functions: boolean; regions: boolean; references: boolean };
 }
 
+/** dxa.analyze (16 §9): the same image and seeds as Ghidra, without decompilation. */
+export type DxaParams = Omit<GhidraParams, "decompile">;
+
+export interface DxaResult {
+  coverage: Array<{ start: number; end: number }>;
+  regions: Array<{ start: number; end: number; classification: "code" | "data" }>;
+  labels: Array<{ address: number; name: string }>;
+  /** The size of the listing, which is the reply's one attachment (UTF-8 text). */
+  listingBytes: number;
+  /** Which categories are complete inside the coverage (12 §4); private to the importer. */
+  completeness: { regions: boolean; labels: boolean };
+}
+
 export interface ToolOperations {
   "acme.assemble": { params: AcmeParams; result: AcmeResult };
   "c1541.inspect": { params: C1541Params; result: C1541Result };
   "petcat.decode": { params: PetcatParams; result: PetcatResult };
   "ghidra.analyze": { params: GhidraParams; result: GhidraResult };
+  "dxa.analyze": { params: DxaParams; result: DxaResult };
 }
 export type ToolOperation = keyof ToolOperations;
-export const TOOL_OPERATIONS = ["acme.assemble", "c1541.inspect", "petcat.decode", "ghidra.analyze"] as const satisfies readonly ToolOperation[];
+export const TOOL_OPERATIONS = ["acme.assemble", "c1541.inspect", "petcat.decode", "ghidra.analyze", "dxa.analyze"] as const satisfies readonly ToolOperation[];
 
 // ---------------------------------------------------------------------------
 // Messages (D2, D3)
@@ -1225,6 +1239,11 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
     }
     case "ghidra.analyze":
       return validateGhidraParams(params, attachments) as ToolOperations[O]["params"];
+    case "dxa.analyze": {
+      if ("decompile" in params) invalid("unknown field: decompile");
+      const { decompile: _decompile, ...dxa } = validateGhidraParams({ ...params, decompile: [] }, attachments);
+      return dxa as ToolOperations[O]["params"];
+    }
   }
   return invalid(`unknown tool operation: ${String(op)}`);
 }
@@ -1274,6 +1293,13 @@ export function validateToolResult<O extends ToolOperation>(op: O, value: unknow
     case "petcat.decode": {
       if (!isPetcatResult(value) || attachments.length !== 0) throw new ProtocolError("petcat.decode result is malformed");
       return value as unknown as ToolOperations[O]["result"];
+    }
+    case "dxa.analyze": {
+      try {
+        return checkDxaResult(value, attachments) as unknown as ToolOperations[O]["result"];
+      } catch (error) {
+        throw new ProtocolError(`dxa.analyze result is malformed: ${(error as Error).message}`);
+      }
     }
     case "ghidra.analyze": {
       if (attachments.length !== 0) throw new ProtocolError("ghidra.analyze result is malformed");
@@ -1415,6 +1441,40 @@ export function checkGhidraResult(value: unknown): GhidraResult {
   const completeness = result.completeness;
   if (!isObject(completeness) || typeof completeness.functions !== "boolean" || typeof completeness.regions !== "boolean" || typeof completeness.references !== "boolean") fail("no completeness");
   return result as unknown as GhidraResult;
+}
+
+/**
+ * Checks a complete DXA result: typed fields, regions in order, without
+ * overlap and covering the coverage exactly, labels inside the coverage, and
+ * the listing as the one attachment. Throws an Error naming the first problem.
+ */
+export function checkDxaResult(value: unknown, attachments: readonly Uint8Array[]): DxaResult {
+  const fail = (message: string): never => {
+    throw new Error(message);
+  };
+  if (!isObject(value)) fail("not an object");
+  const result = value as Fields;
+  const coverage = result.coverage;
+  if (!Array.isArray(coverage) || coverage.length !== 1) fail("the coverage is not one range");
+  const range = (coverage as unknown[])[0];
+  if (!isObject(range) || !isInteger(range.start, 0, 0xffff) || !isInteger(range.end, range.start as number, 0xffff)) fail("bad coverage range");
+  const { start, end } = range as { start: number; end: number };
+  if (!Array.isArray(result.regions)) fail("no regions");
+  let next = start;
+  for (const region of result.regions as unknown[]) {
+    if (!isObject(region) || !isInteger(region.start, 0, 0xffff) || !isInteger(region.end, region.start as number, 0xffff) || (region.classification !== "code" && region.classification !== "data")) fail("bad region");
+    if ((region as Fields).start !== next) fail("the regions leave a gap or overlap");
+    next = ((region as Fields).end as number) + 1;
+  }
+  if (next !== end + 1) fail("the regions do not reach the end of the coverage");
+  if (!Array.isArray(result.labels)) fail("no labels");
+  for (const label of result.labels as unknown[]) {
+    if (!isObject(label) || !isInteger(label.address, start, end) || typeof label.name !== "string" || !ANALYSIS_LABEL.test(label.name)) fail("bad label");
+  }
+  if (attachments.length !== 1 || result.listingBytes !== attachments[0]!.length) fail("the listing is missing");
+  const completeness = result.completeness;
+  if (!isObject(completeness) || typeof completeness.regions !== "boolean" || typeof completeness.labels !== "boolean") fail("no completeness");
+  return result as unknown as DxaResult;
 }
 
 function isPetcatResult(value: Fields): boolean {

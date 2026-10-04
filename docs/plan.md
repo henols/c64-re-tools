@@ -116,7 +116,7 @@ Acceptance (19 §8): with real fixture media, inspect a D64 directory, extract a
 Acceptance (19 §9): a fixture PRG goes through DXA, normalized findings and the importer into knowledge.db; a second DXA run with changed results retires obsolete DXA facts, keeps history, protects semantic knowledge, and a malformed result imports nothing.
 
 - [x] M7.1 **Importer** — `src/knowledge/import.ts`: normalized findings (analyzer, coverage, authoritative categories, symbols, regions, references), complete validation before any write, one revision per import, same-analyzer retirement in authoritative coverage, coverage-aware region splits, semantic and other-analyzer rows kept. Only code against data is a conflict (12 §12, §19); unchanged facts keep their rows, so a repeated run makes no revision.
-- [ ] M7.2 **DXA adapter** — `dxa.analyze`, `src/host/tools/dxa.ts`. Blocked: DXA is not installed on the development host (see D12).
+- [x] M7.2 **DXA adapter** — `dxa.analyze`, `src/host/tools/dxa.ts`: dxa 0.1.5 with `-a dump -p all-nmos6502 -d skip-scanning` (`-U` for a PRG, `-g 0000` for 64 KiB), seeds as routine, data-block and xa label files (only when they have lines: dxa refuses an empty file). The listing is checked line by line (address order, from the load address to the end, each line as long as its bytes or data items) before regions, labels and the listing attachment leave the host. Regions are authoritative, labels are not (16 §9).
 - [ ] M7.3 **c64-static-analysis DXA path** — the DXA → normalized findings mapping in `skills/c64-static-analysis/scripts/analyze.ts`. Blocked with M7.2.
 - [ ] M7.4 **Acceptance** — blocked with M7.2.
 
@@ -192,6 +192,6 @@ Points the design leaves open, decided for M1. Revisit a row before changing the
 | D9 | MCP SDK | `@modelcontextprotocol/sdk`, stdio transport, plus its schema library. No other runtime dependency in M1. |
 | D10 | Video standard | PAL by default; `C64RT_VIDEO=ntsc` at MCP start. Fixed for the session. |
 | D11 | VICE crash | Fail the operation with `machine-state-lost`. No automatic restart in M1. |
-| D12 | DXA missing | DXA is not installed here, and tools are never installed for the user. Its parser is not written against guessed output. M8 (Ghidra, installed) goes first and gives c64-static-analysis its first analyzer path through the same importer; M7.2–M7.4 follow when DXA is installed. |
+| D12 | DXA order | DXA was not installed during the first pass, so M8 (Ghidra) went first through the same importer; M7.2–M7.4 were built once Henrik installed dxa 0.1.5. |
 | D13 | Test execution | c64-testing scenarios run in a skill script that opens its own VICE session through the host client, with the same operations the MCP uses. 19 §11 asks for scenarios and A/B runs in code and an automated acceptance, which the MCP's one session cannot give a script. This departs from 02 §7, where skill scripts use the Host Runtime only for native tools. |
 | D14 | Diagnose and autostart | Not built yet. The design lists `diagnose` and a per-user Host Runtime autostart (08 §8, 19 §13), but Henrik earlier rejected doctor/pre-flight commands (refusals at the point of use instead) and asked never to start the runtime as a daemon or ship service definitions. Question for Henrik. |

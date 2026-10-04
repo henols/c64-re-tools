@@ -417,6 +417,33 @@ test("ghidra.analyze parameters are bounded and its result must be consistent", 
   }
 });
 
+test("dxa.analyze takes Ghidra's seeds without decompilation and checks its result", () => {
+  const prg = [Buffer.from([0x01, 0x08, 0x60])];
+  assert.deepEqual(validateToolParams("dxa.analyze", { imageKind: "prg", entryPoints: [], dataRanges: [], labels: [] }, prg), { imageKind: "prg", entryPoints: [], dataRanges: [], labels: [] });
+  assert.throws(() => validateToolParams("dxa.analyze", { imageKind: "prg", entryPoints: [], dataRanges: [], labels: [], decompile: [] }, prg), WireFailure);
+  const listing = [Buffer.from("listing")];
+  const result = {
+    coverage: [{ start: 0x0801, end: 0x0827 }],
+    regions: [
+      { start: 0x0801, end: 0x080c, classification: "data" },
+      { start: 0x080d, end: 0x0827, classification: "code" },
+    ],
+    labels: [{ address: 0x080d, name: "l80d" }],
+    listingBytes: 7,
+    completeness: { regions: true, labels: false },
+  };
+  assert.deepEqual(validateToolResult("dxa.analyze", result, listing), result);
+  for (const bad of [
+    { ...result, regions: [result.regions[1]] },
+    { ...result, regions: [result.regions[0]] },
+    { ...result, labels: [{ address: 0x9000, name: "far" }] },
+    { ...result, listingBytes: 8 },
+  ]) {
+    assert.throws(() => validateToolResult("dxa.analyze", bad, listing), ProtocolError, JSON.stringify(bad).slice(0, 80));
+  }
+  assert.throws(() => validateToolResult("dxa.analyze", result, []), ProtocolError, "the listing is the attachment");
+});
+
 test("petcat.decode takes only the program and validates its result", () => {
   assert.deepEqual(validateToolParams("petcat.decode", {}, [Buffer.alloc(4)]), {});
   assert.throws(() => validateToolParams("petcat.decode", { dialect: "70" }, [Buffer.alloc(4)]), WireFailure);
