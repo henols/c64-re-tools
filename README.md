@@ -10,18 +10,22 @@ knowledge database, the ACME assembler, unpacking, release comparison and
 functional-equivalence tests.
 
 Architecture in one line: one MCP process owns one VICE instance and is
-VICE-only; a Host Runtime on the graphical host owns VICE and the native tools
-(ACME, DXA, Ghidra, c1541, petcat); skill scripts call the Host Runtime for
-native tools and keep project knowledge local in `.c64-re-tools/knowledge.db`.
+VICE-only; a Host Runtime on the graphical host owns VICE and the tools that
+come with it (c1541, petcat); skill scripts call the Host Runtime for those,
+run ACME, DXA and Ghidra themselves, and keep project knowledge local in
+`.c64-re-tools/knowledge.db`.
 The design is in [`docs/redesign/`](docs/redesign/README.md), and
 [`docs/plan.md`](docs/plan.md) tracks the implementation.
 
 ## Install
 
 Requirements: Node.js 24 or newer, and on the graphical host stock VICE
-(`x64sc`, `c1541`, `petcat`). ACME, DXA and Ghidra are needed for the skills that
-use them. The toolkit never installs a native tool for you: when one is
-missing, the operation that needs it says which one and how to install it.
+(`x64sc`, `c1541`, `petcat`) with its ROM files. ACME, DXA and Ghidra are
+needed for the skills that use them, on the machine where the agent runs its
+skill scripts (inside the container, for an agent in one). The toolkit never
+installs a native tool for you: when one is missing, the operation that needs
+it says which one and how to install it. `c64-re-tools status` runs each tool
+once and shows which ones work.
 
 ```
 npm install -g @henols/c64-re-tools     # the c64-re-tools, -mcp and -host programs
@@ -41,6 +45,9 @@ Start the Host Runtime on the graphical host and leave it in the foreground:
 ```
 c64-re-tools-host          # listens on 127.0.0.1:6464; Ctrl+C stops it and every emulator
 ```
+
+It starts VICE once before it listens, and does not start when VICE cannot
+run, for example without its ROM files.
 
 Each MCP process gets its own emulator, which stops when the MCP process
 ends. If the Host Runtime itself is killed, its watchdog stops what it
@@ -64,8 +71,9 @@ Clients on loopback need no token; every other client must send it.
 | Variable | Read by | Meaning |
 | --- | --- | --- |
 | `C64RT_VICE` | host | Full path of `x64sc` when it is not on `PATH`. |
-| `C64RT_ACME`, `C64RT_DXA`, `C64RT_C1541`, `C64RT_PETCAT` | host | Full path of the tool when it is not on `PATH`. |
-| `C64RT_GHIDRA` | host | The Ghidra installation directory, when `analyzeHeadless` is not on `PATH`. |
+| `C64RT_C1541`, `C64RT_PETCAT` | host | Full path of the tool when it is not on `PATH`. |
+| `C64RT_ACME`, `C64RT_DXA` | skills, CLI | Full path of the tool when it is not on `PATH`. |
+| `C64RT_GHIDRA` | skills, CLI | The Ghidra installation directory, when `analyzeHeadless` is not on `PATH`. |
 | `C64RT_HOST` | MCP, skills | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
 | `C64RT_HOST_TOKEN` | host, MCP, skills | The shared secret for a Host Runtime that listens beyond loopback. |
 | `C64RT_VIDEO` | MCP | `pal` (default) or `ntsc`, fixed for the life of the MCP process. |

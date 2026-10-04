@@ -8,8 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/host/processes.ts";
-import { findTool, PETCAT } from "../../../src/host/tools/discover.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
+import { findTool, PETCAT } from "../../../src/native/discover.ts";
 import { decode } from "../../../src/host/tools/petcat.ts";
 import { borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
 

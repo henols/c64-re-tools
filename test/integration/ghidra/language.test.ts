@@ -8,9 +8,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { after, before, test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/host/processes.ts";
-import { Workspace } from "../../../src/host/staging.ts";
-import { findGhidra, runHeadless, type GhidraInstallation } from "../../../src/host/tools/ghidra/index.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
+import { Workspace } from "../../../src/native/staging.ts";
+import { findGhidra, runHeadless, type GhidraInstallation } from "../../../src/native/ghidra/index.ts";
 
 let ghidra: GhidraInstallation | undefined;
 let skip: string | false = false;

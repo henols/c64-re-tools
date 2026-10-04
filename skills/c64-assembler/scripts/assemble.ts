@@ -1,12 +1,16 @@
-// The c64-assembler script: assembles project source with ACME through the
-// Host Runtime and writes the program into the project.
+// The c64-assembler script: assembles project source with ACME, which it runs
+// itself (D16), and writes the program into the project.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "../../../src/c64.ts";
-import { assemble, WireFailure } from "../../../src/host-client/tools.ts";
+import { WireFailure } from "../../../src/host-client/tools.ts";
+import { readProjectTree } from "../../../src/host-client/transfer.ts";
+import { assemble } from "../../../src/native/acme.ts";
+import { localToolContext } from "../../../src/native/local.ts";
+import type { AcmeParams } from "../../../src/native/types.ts";
 import { resolveProjectPath } from "../../../src/project.ts";
 
 const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [options]
@@ -57,24 +61,23 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   } catch {
     throw new UsageError(`--out must be a path relative to the project directory that stays inside it, not ${out}`);
   }
-  const request: Parameters<typeof assemble>[0] = {
-    sourceRoot,
-    entrySource: entry,
-    includeDirs: values.include ?? [],
-    defines: Object.fromEntries((values.define ?? []).map(parseDefine)),
-  };
+  const defines = Object.fromEntries((values.define ?? []).map(parseDefine));
+  let setPc: number | undefined;
   if (values["set-pc"] !== undefined) {
     try {
-      request.setPc = parseC64Address(values["set-pc"]);
+      setPc = parseC64Address(values["set-pc"]);
     } catch {
       throw new UsageError(`--set-pc must be $ followed by four hex digits, not ${values["set-pc"]}`);
     }
   }
+  const tree = readProjectTree(sourceRoot);
+  if (!tree.files.some((file) => file.path === entry)) throw new UsageError(`--entry ${entry} is not a file in ${sourceRoot}`);
+  const params: AcmeParams = { files: tree.files, entrySource: entry, includeDirs: values.include ?? [], defines, ...(setPc === undefined ? {} : { setPc }) };
 
-  const result = await assemble(request);
+  const { result, attachments } = await assemble(params, tree.contents, localToolContext());
   if (!result.assembled) return { output: { assembled: false, diagnostics: result.diagnostics }, failed: true };
   mkdirSync(dirname(outPath), { recursive: true });
-  writeFileSync(outPath, result.program!);
+  writeFileSync(outPath, attachments![0]!);
   const range = result.loadRange!;
   return {
     output: {

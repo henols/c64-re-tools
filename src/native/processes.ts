@@ -66,8 +66,9 @@ export interface Registry {
 const WATCHDOG = join(import.meta.dirname, `watchdog${extname(import.meta.filename)}`);
 
 /**
- * The one child-process supervisor of the Host Runtime. Every emulator and
- * native tool is started here, with an argv array and never a shell string,
+ * The one child-process supervisor of a process: the Host Runtime, or a
+ * skill script that runs its own tools (D16). Every emulator and native tool
+ * is started here, with an argv array and never a shell string,
  * as the leader of its own process group. It also owns scratch paths, so
  * that they go away with the processes that used them.
  */

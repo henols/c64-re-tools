@@ -17,7 +17,7 @@ Find the static structure of a C64 program. Record the structure in the project 
 
 ## Tools / execution path
 
-The script reads the current knowledge, sends the program to the host runtime, and the host runs DXA or Ghidra. The script records the result in `.c64-re-tools/knowledge.db`.
+The script reads the current knowledge and runs DXA or Ghidra on this machine. The host runtime is not necessary. The script records the result in `.c64-re-tools/knowledge.db`.
 
 ```
 node <skill>/scripts/analyze.ts extracted/game.prg --analyzer dxa --listing analysis/game.lst
@@ -83,8 +83,7 @@ The changes to the knowledge and the conflicts. For DXA, also the regions, the l
 - `invalid-input` with a message about an entry point: no entry point is inside the program for Ghidra. Give one with `--entry`.
 - `stale-revision`: the knowledge changed during the analysis. Run the script again.
 - `operation-failed` with a message about an incomplete result or listing: the analyzer did not give a complete result. The script recorded nothing. Tell the user.
-- `installation-incomplete`: DXA or Ghidra is not on the host. Tell the user the message.
-- `operation-failed` with a message about the host runtime: the host runtime does not run. Tell the user to start `c64-re-tools-host`.
+- `installation-incomplete`: DXA or Ghidra is not installed on this machine. Tell the user the message.
 
 ## Handoffs
 

@@ -3,10 +3,10 @@
 import { parseArgs } from "node:util";
 
 import { DEFAULT_HOST_PORT } from "../protocol.ts";
-import { ProcessSupervisor } from "./processes.ts";
+import { ProcessSupervisor } from "../native/processes.ts";
 import { isLoopback, startHostServer } from "./server.ts";
 import { createToolDispatcher } from "./tools/index.ts";
-import { findVice } from "./vice/process.ts";
+import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
 
 const HELP = `c64-re-tools-host
@@ -15,11 +15,12 @@ Usage:
   c64-re-tools-host [--port <port>] [--listen <address> ...]
   c64-re-tools-host --help
 
-Runs the c64-re-tools Host Runtime in the foreground; it does not start
-without VICE (x64sc on PATH, or C64RT_VICE). It listens on
-127.0.0.1:${DEFAULT_HOST_PORT}, starts one VICE emulator for each connected
-c64-re-tools-mcp process, and runs native tools (ACME) for skill scripts.
-Stop it with Ctrl+C; that stops every emulator and tool it started.
+Runs the c64-re-tools Host Runtime in the foreground. It first starts VICE
+once (x64sc on PATH, or C64RT_VICE) and does not start if VICE cannot run.
+It listens on 127.0.0.1:${DEFAULT_HOST_PORT}, starts one VICE emulator for each
+connected c64-re-tools-mcp process, and runs the tools that come with VICE
+(c1541, petcat) for skill scripts. Stop it with Ctrl+C; that stops every
+emulator and tool it started.
 
 Options:
   --port <port>       Listen on this port instead (0 picks a free port).
@@ -72,6 +73,16 @@ async function main(): Promise<number> {
   // and the watchdog does the same if this process is killed (D7).
   const supervisor = new ProcessSupervisor();
   supervisor.startWatchdog();
+
+  // Finding x64sc is not enough: VICE without its ROM files exits at once.
+  try {
+    await checkViceStarts({ supervisor });
+  } catch (error) {
+    process.stderr.write(`${(error as Error).message}\n`);
+    await supervisor.stopAll();
+    return 1;
+  }
+  log("VICE starts");
 
   let server;
   try {

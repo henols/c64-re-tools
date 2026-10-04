@@ -1,15 +1,16 @@
 // The DXA adapter (16 §9, §11). DXA prints an assembler listing only; with
 // "-a dump" each line starts with its address and bytes, so the adapter can
-// tell code from data line by line. The whole listing is checked before a
-// result leaves the host: lines in address order from the load address to
+// tell code from data line by line. The whole listing is checked before the
+// script imports anything: lines in address order from the load address to
 // the end, each line as long as its bytes or data items, so a truncated or
 // changed listing is refused instead of half imported.
 
 import { writeFileSync } from "node:fs";
 
-import { WireFailure, type DxaParams, type DxaResult } from "../../protocol.ts";
-import type { ProcessSupervisor } from "../processes.ts";
-import { Workspace } from "../staging.ts";
+import { WireFailure } from "../protocol.ts";
+import { imageRange, type DxaParams, type DxaResult } from "./types.ts";
+import type { ProcessSupervisor } from "./processes.ts";
+import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
 import { runTool } from "./run.ts";
 
@@ -90,8 +91,7 @@ export async function analyze(
   context: { supervisor: ProcessSupervisor; signal: AbortSignal; env?: NodeJS.ProcessEnv; log?: (line: string) => void },
 ): Promise<{ result: DxaResult; attachments: Buffer[] }> {
   const executable = findTool(DXA, context.env);
-  const start = params.imageKind === "prg" ? image.readUInt16LE(0) : 0;
-  const end = start + (params.imageKind === "prg" ? image.length - 2 : image.length) - 1;
+  const { start, end } = imageRange(params.imageKind, image);
   const inside = (address: number) => address >= start && address <= end;
   const entryPoints = params.entryPoints.filter(inside);
   const dataRanges = params.dataRanges

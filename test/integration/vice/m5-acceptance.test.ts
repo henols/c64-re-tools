@@ -16,7 +16,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { ACME, findTool } from "../../../src/host/tools/discover.ts";
+import { ACME, findTool } from "../../../src/native/discover.ts";
 import { liveEnv, liveSkip } from "./live.ts";
 
 let skip: string | false = liveSkip;

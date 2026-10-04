@@ -14,7 +14,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { ProcessSupervisor } from "../../../src/host/processes.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { Command } from "../../../src/host/vice/binary-monitor.ts";
 import { launchVice } from "../../../src/host/vice/process.ts";
 import { ViceSession } from "../../../src/host/vice/session.ts";

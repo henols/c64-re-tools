@@ -514,39 +514,6 @@ export function attachmentCount(op: ViceOperation): number {
 export type SourceTree = Array<{ path: string; size: number }>;
 export const MAX_TREE_FILES = 4096;
 
-export interface Diagnostic {
-  severity: "error" | "warning" | "note";
-  /** Relative to the source root; absent when the message has no source location. */
-  file?: string;
-  line?: number;
-  message: string;
-}
-
-export interface AcmeParams {
-  files: SourceTree;
-  /** Relative to the source root. */
-  entrySource: string;
-  /** Directories relative to the source root. */
-  includeDirs: string[];
-  defines: Record<string, number | boolean>;
-  setPc?: number;
-}
-
-export interface AssembledSymbol {
-  name: string;
-  kind: "address" | "constant";
-  value: number;
-  used: boolean;
-}
-
-export interface AcmeResult {
-  assembled: boolean;
-  /** Present when assembled: where the program loads. The program bytes are the reply's attachment. */
-  loadRange?: { start: number; end: number; bytes: number };
-  symbols?: AssembledSymbol[];
-  diagnostics: Diagnostic[];
-}
-
 export const DISK_IMAGE_TYPES = ["d64", "d71", "d81", "g64"] as const;
 export type DiskImageType = (typeof DISK_IMAGE_TYPES)[number];
 export const DISK_ACTIONS = ["directory", "bam", "entry", "chain", "read"] as const;
@@ -604,46 +571,6 @@ export type PetcatResult =
       handoffs: BasicHandoff[];
     };
 
-export const IMAGE_KINDS = ["prg", "flat64k"] as const;
-export type ImageKind = (typeof IMAGE_KINDS)[number];
-export const REFERENCE_TYPES = ["call", "jump", "read", "write", "reference"] as const;
-export type ReferenceType = (typeof REFERENCE_TYPES)[number];
-export const GHIDRA_LIMITS = { entryPoints: 1024, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
-
-/** ghidra.analyze (16 §10). The image is the request's one attachment: a PRG, or 64 KiB from $0000. */
-export interface GhidraParams {
-  imageKind: ImageKind;
-  /** Seeds from current knowledge. */
-  entryPoints: number[];
-  dataRanges: Array<{ start: number; end: number }>;
-  labels: Array<{ address: number; name: string }>;
-  /** Routine entries to decompile for immediate reasoning; the text is never stored. */
-  decompile: number[];
-}
-
-export interface GhidraResult {
-  coverage: Array<{ start: number; end: number }>;
-  functions: Array<{ entry: number; name: string; nameSource: "seed" | "generated" | "native" }>;
-  regions: Array<{ start: number; end: number; classification: "code" | "data" }>;
-  references: Array<{ from: number; to: number; type: ReferenceType }>;
-  decompilations: Array<{ entry: number; text: string; truncated: boolean }>;
-  /** Which categories are complete inside the coverage (12 §4); private to the importer. */
-  completeness: { functions: boolean; regions: boolean; references: boolean };
-}
-
-/** dxa.analyze (16 §9): the same image and seeds as Ghidra, without decompilation. */
-export type DxaParams = Omit<GhidraParams, "decompile">;
-
-export interface DxaResult {
-  coverage: Array<{ start: number; end: number }>;
-  regions: Array<{ start: number; end: number; classification: "code" | "data" }>;
-  labels: Array<{ address: number; name: string }>;
-  /** The size of the listing, which is the reply's one attachment (UTF-8 text). */
-  listingBytes: number;
-  /** Which categories are complete inside the coverage (12 §4); private to the importer. */
-  completeness: { regions: boolean; labels: boolean };
-}
-
 /** One native tool on the host, as host.status found and ran it. */
 export interface ToolStatus {
   name: string;
@@ -658,15 +585,12 @@ export interface ToolStatus {
 }
 
 export interface ToolOperations {
-  "acme.assemble": { params: AcmeParams; result: AcmeResult };
   "host.status": { params: Record<string, never>; result: { tools: ToolStatus[] } };
   "c1541.inspect": { params: C1541Params; result: C1541Result };
   "petcat.decode": { params: PetcatParams; result: PetcatResult };
-  "ghidra.analyze": { params: GhidraParams; result: GhidraResult };
-  "dxa.analyze": { params: DxaParams; result: DxaResult };
 }
 export type ToolOperation = keyof ToolOperations;
-export const TOOL_OPERATIONS = ["acme.assemble", "host.status", "c1541.inspect", "petcat.decode", "ghidra.analyze", "dxa.analyze"] as const satisfies readonly ToolOperation[];
+export const TOOL_OPERATIONS = ["host.status", "c1541.inspect", "petcat.decode"] as const satisfies readonly ToolOperation[];
 
 // ---------------------------------------------------------------------------
 // Messages (D2, D3)
@@ -1196,34 +1120,10 @@ export function validateSourceTree(value: unknown, attachments: readonly Uint8Ar
   });
 }
 
-const SYMBOL_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
-
 /** Validates tool request parameters on the host. Throws WireFailure(invalid-input). */
 export function validateToolParams<O extends ToolOperation>(op: O, params: unknown, attachments: readonly Uint8Array[]): ToolOperations[O]["params"] {
   if (!isObject(params)) invalid("parameters must be an object");
   switch (op) {
-    case "acme.assemble": {
-      const known = ["files", "entrySource", "includeDirs", "defines", "setPc"];
-      for (const key of Object.keys(params)) if (!known.includes(key)) invalid(`unknown field: ${key}`);
-      const files = validateSourceTree(params.files, attachments);
-      if (!isRelativePath(params.entrySource)) invalid("entrySource must be a relative path inside the source root");
-      if (!files.some((file) => file.path === params.entrySource)) invalid(`entrySource ${params.entrySource} is not in the source root`);
-      const includeDirs = params.includeDirs;
-      if (!Array.isArray(includeDirs) || !includeDirs.every(isRelativePath)) invalid("includeDirs must be relative paths inside the source root");
-      if (!isObject(params.defines)) invalid("defines must be an object");
-      const defines: Record<string, number | boolean> = {};
-      for (const [name, value] of Object.entries(params.defines)) {
-        if (!SYMBOL_NAME.test(name)) invalid(`define name ${name} is not an assembler symbol`);
-        if (typeof value !== "boolean" && !(typeof value === "number" && Number.isSafeInteger(value))) invalid(`define ${name} must be an integer or true/false`);
-        defines[name] = value;
-      }
-      const result: AcmeParams = { files, entrySource: params.entrySource, includeDirs: includeDirs as string[], defines };
-      if (params.setPc !== undefined) {
-        if (!isInteger(params.setPc, 0, 0xffff)) invalid("setPc must be an address from 0 to 65535");
-        result.setPc = params.setPc;
-      }
-      return result as ToolOperations[O]["params"];
-    }
     case "c1541.inspect": {
       for (const key of Object.keys(params)) if (!["action", "imageType", "name"].includes(key)) invalid(`unknown field: ${key}`);
       if (!isOneOf(DISK_ACTIONS, params.action)) invalid(`action must be one of ${DISK_ACTIONS.join(", ")}`);
@@ -1251,17 +1151,10 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
       if (attachments.length !== 1) invalid("the program must be the one attachment");
       return {} as ToolOperations[O]["params"];
     }
-    case "ghidra.analyze":
-      return validateGhidraParams(params, attachments) as ToolOperations[O]["params"];
     case "host.status":
       for (const key of Object.keys(params)) invalid(`unknown field: ${key}`);
       if (attachments.length !== 0) invalid("host.status takes no attachment");
       return {} as ToolOperations[O]["params"];
-    case "dxa.analyze": {
-      if ("decompile" in params) invalid("unknown field: decompile");
-      const { decompile: _decompile, ...dxa } = validateGhidraParams({ ...params, decompile: [] }, attachments);
-      return dxa as ToolOperations[O]["params"];
-    }
   }
   return invalid(`unknown tool operation: ${String(op)}`);
 }
@@ -1270,40 +1163,6 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
 export function validateToolResult<O extends ToolOperation>(op: O, value: unknown, attachments: readonly Uint8Array[]): ToolOperations[O]["result"] {
   if (!isObject(value)) throw new ProtocolError(`${op} result is not an object`);
   switch (op) {
-    case "acme.assemble": {
-      const isDiagnostic = (item: unknown) =>
-        isObject(item) &&
-        (item.severity === "error" || item.severity === "warning" || item.severity === "note") &&
-        typeof item.message === "string" &&
-        (item.file === undefined || typeof item.file === "string") &&
-        (item.line === undefined || isInteger(item.line, 1, 1 << 24));
-      if (typeof value.assembled !== "boolean" || !Array.isArray(value.diagnostics) || !value.diagnostics.every(isDiagnostic)) {
-        throw new ProtocolError("acme.assemble result is malformed");
-      }
-      if (value.assembled) {
-        const range = value.loadRange;
-        const symbols = value.symbols;
-        const ok =
-          attachments.length === 1 &&
-          isObject(range) &&
-          isInteger(range.start, 0, 0xffff) &&
-          isInteger(range.end, 0, 0xffff) &&
-          isInteger(range.bytes, 1, 0x10000) &&
-          Array.isArray(symbols) &&
-          symbols.every(
-            (symbol) =>
-              isObject(symbol) &&
-              typeof symbol.name === "string" &&
-              (symbol.kind === "address" || symbol.kind === "constant") &&
-              typeof symbol.value === "number" &&
-              typeof symbol.used === "boolean",
-          );
-        if (!ok) throw new ProtocolError("acme.assemble result is malformed");
-      } else if (attachments.length !== 0) {
-        throw new ProtocolError("a failed assembly carries no program");
-      }
-      return value as unknown as ToolOperations[O]["result"];
-    }
     case "c1541.inspect": {
       if (!isC1541Result(value, attachments)) throw new ProtocolError("c1541.inspect result is malformed");
       return value as unknown as ToolOperations[O]["result"];
@@ -1322,21 +1181,6 @@ export function validateToolResult<O extends ToolOperation>(op: O, value: unknow
         [tool.path, tool.version, tool.problem].every((field) => field === undefined || typeof field === "string");
       if (!Array.isArray(tools) || !tools.every(isStatus) || attachments.length !== 0) throw new ProtocolError("host.status result is malformed");
       return value as unknown as ToolOperations[O]["result"];
-    }
-    case "dxa.analyze": {
-      try {
-        return checkDxaResult(value, attachments) as unknown as ToolOperations[O]["result"];
-      } catch (error) {
-        throw new ProtocolError(`dxa.analyze result is malformed: ${(error as Error).message}`);
-      }
-    }
-    case "ghidra.analyze": {
-      if (attachments.length !== 0) throw new ProtocolError("ghidra.analyze result is malformed");
-      try {
-        return checkGhidraResult(value) as unknown as ToolOperations[O]["result"];
-      } catch (error) {
-        throw new ProtocolError(`ghidra.analyze result is malformed: ${(error as Error).message}`);
-      }
     }
   }
   throw new ProtocolError(`unknown tool operation: ${String(op)}`);
@@ -1385,125 +1229,6 @@ function isC1541Result(value: Fields, attachments: readonly Uint8Array[]): boole
       return value.found === false || (value.found === true && typeof value.name === "string" && value.bytes === attachments[0]!.length);
   }
   return false;
-}
-
-const ANALYSIS_LABEL = /^\.?[A-Za-z_][A-Za-z0-9_]{0,63}$/;
-
-function validateGhidraParams(params: Fields, attachments: readonly Uint8Array[]): GhidraParams {
-  for (const key of Object.keys(params)) if (!["imageKind", "entryPoints", "dataRanges", "labels", "decompile"].includes(key)) invalid(`unknown field: ${key}`);
-  if (!isOneOf(IMAGE_KINDS, params.imageKind)) invalid(`imageKind must be one of ${IMAGE_KINDS.join(", ")}`);
-  if (attachments.length !== 1) invalid("the image must be the one attachment");
-  const image = attachments[0]!;
-  if (params.imageKind === "flat64k" && image.length !== 0x10000) invalid("a flat64k image has exactly 65536 bytes");
-  if (params.imageKind === "prg") {
-    if (image.length < 3) invalid("a PRG has a 2-byte load address and at least one byte");
-    if ((image[0]! | (image[1]! << 8)) + image.length - 2 > 0x10000) invalid("the PRG runs past $ffff");
-  }
-  const addresses = (value: unknown, limit: number, what: string): number[] => {
-    if (!Array.isArray(value) || value.length > limit || !value.every((item) => isInteger(item, 0, 0xffff))) invalid(`${what} must be at most ${limit} addresses`);
-    return value as number[];
-  };
-  const entryPoints = addresses(params.entryPoints, GHIDRA_LIMITS.entryPoints, "entryPoints");
-  const decompile = addresses(params.decompile, GHIDRA_LIMITS.decompile, "decompile");
-  const ranges = params.dataRanges;
-  if (!Array.isArray(ranges) || ranges.length > GHIDRA_LIMITS.dataRanges) invalid(`dataRanges must be at most ${GHIDRA_LIMITS.dataRanges} ranges`);
-  for (const range of ranges) {
-    if (!isObject(range) || !isInteger(range.start, 0, 0xffff) || !isInteger(range.end, range.start as number, 0xffff)) invalid("each data range needs a start and an end from $0000 to $ffff, start first");
-  }
-  const labels = params.labels;
-  if (!Array.isArray(labels) || labels.length > GHIDRA_LIMITS.labels) invalid(`labels must be at most ${GHIDRA_LIMITS.labels} labels`);
-  for (const label of labels) {
-    if (!isObject(label) || !isInteger(label.address, 0, 0xffff) || typeof label.name !== "string" || !ANALYSIS_LABEL.test(label.name)) invalid("each label needs an address and a symbol name");
-  }
-  return {
-    imageKind: params.imageKind,
-    entryPoints,
-    dataRanges: (ranges as Fields[]).map((range) => ({ start: range.start as number, end: range.end as number })),
-    labels: (labels as Fields[]).map((label) => ({ address: label.address as number, name: label.name as string })),
-    decompile,
-  };
-}
-
-/**
- * Checks a complete Ghidra result: every field typed and in range, every
- * function, region and reference source inside the coverage, regions sorted
- * and without overlap. Throws an Error naming the first problem.
- */
-export function checkGhidraResult(value: unknown): GhidraResult {
-  const fail = (message: string): never => {
-    throw new Error(message);
-  };
-  if (!isObject(value)) fail("not an object");
-  const result = value as Fields;
-  const coverage = result.coverage;
-  if (!Array.isArray(coverage) || coverage.length === 0) fail("no coverage");
-  for (const range of coverage as unknown[]) if (!isObject(range) || !isInteger(range.start, 0, 0xffff) || !isInteger(range.end, range.start as number, 0xffff)) fail("bad coverage range");
-  const covered = (address: number) => (coverage as Array<{ start: number; end: number }>).some((range) => range.start <= address && address <= range.end);
-  if (!Array.isArray(result.functions)) fail("no functions");
-  for (const fn of result.functions as unknown[]) {
-    if (!isObject(fn) || !isInteger(fn.entry, 0, 0xffff) || typeof fn.name !== "string" || !ANALYSIS_LABEL.test(fn.name) || !isOneOf(["seed", "generated", "native"] as const, fn.nameSource)) fail("bad function");
-    if (!covered((fn as Fields).entry as number)) fail("a function lies outside the coverage");
-  }
-  if (!Array.isArray(result.regions)) fail("no regions");
-  let previousEnd = -1;
-  for (const region of result.regions as unknown[]) {
-    if (!isObject(region) || !isInteger(region.start, 0, 0xffff) || !isInteger(region.end, region.start as number, 0xffff) || (region.classification !== "code" && region.classification !== "data")) fail("bad region");
-    const { start, end } = region as { start: number; end: number };
-    if (start <= previousEnd) fail("regions overlap or are out of order");
-    if (!(coverage as Array<{ start: number; end: number }>).some((range) => range.start <= start && end <= range.end)) fail("a region lies outside the coverage");
-    previousEnd = end;
-  }
-  if (!Array.isArray(result.references)) fail("no references");
-  for (const reference of result.references as unknown[]) {
-    if (!isObject(reference) || !isInteger(reference.from, 0, 0xffff) || !isInteger(reference.to, 0, 0xffff) || !isOneOf(REFERENCE_TYPES, reference.type)) fail("bad reference");
-    if (!covered((reference as Fields).from as number)) fail("a reference source lies outside the coverage");
-  }
-  if (!Array.isArray(result.decompilations) || result.decompilations.length > GHIDRA_LIMITS.decompile) fail("bad decompilations");
-  let total = 0;
-  for (const item of result.decompilations as unknown[]) {
-    if (!isObject(item) || !isInteger(item.entry, 0, 0xffff) || typeof item.text !== "string" || typeof item.truncated !== "boolean") fail("bad decompilation");
-    const text = (item as Fields).text as string;
-    if (text.length > GHIDRA_LIMITS.decompiledChars) fail("a decompilation is too long");
-    total += text.length;
-  }
-  if (total > GHIDRA_LIMITS.decompiledTotalChars) fail("the decompilations are too long together");
-  const completeness = result.completeness;
-  if (!isObject(completeness) || typeof completeness.functions !== "boolean" || typeof completeness.regions !== "boolean" || typeof completeness.references !== "boolean") fail("no completeness");
-  return result as unknown as GhidraResult;
-}
-
-/**
- * Checks a complete DXA result: typed fields, regions in order, without
- * overlap and covering the coverage exactly, labels inside the coverage, and
- * the listing as the one attachment. Throws an Error naming the first problem.
- */
-export function checkDxaResult(value: unknown, attachments: readonly Uint8Array[]): DxaResult {
-  const fail = (message: string): never => {
-    throw new Error(message);
-  };
-  if (!isObject(value)) fail("not an object");
-  const result = value as Fields;
-  const coverage = result.coverage;
-  if (!Array.isArray(coverage) || coverage.length !== 1) fail("the coverage is not one range");
-  const range = (coverage as unknown[])[0];
-  if (!isObject(range) || !isInteger(range.start, 0, 0xffff) || !isInteger(range.end, range.start as number, 0xffff)) fail("bad coverage range");
-  const { start, end } = range as { start: number; end: number };
-  if (!Array.isArray(result.regions)) fail("no regions");
-  let next = start;
-  for (const region of result.regions as unknown[]) {
-    if (!isObject(region) || !isInteger(region.start, 0, 0xffff) || !isInteger(region.end, region.start as number, 0xffff) || (region.classification !== "code" && region.classification !== "data")) fail("bad region");
-    if ((region as Fields).start !== next) fail("the regions leave a gap or overlap");
-    next = ((region as Fields).end as number) + 1;
-  }
-  if (next !== end + 1) fail("the regions do not reach the end of the coverage");
-  if (!Array.isArray(result.labels)) fail("no labels");
-  for (const label of result.labels as unknown[]) {
-    if (!isObject(label) || !isInteger(label.address, start, end) || typeof label.name !== "string" || !ANALYSIS_LABEL.test(label.name)) fail("bad label");
-  }
-  if (attachments.length !== 1 || result.listingBytes !== attachments[0]!.length) fail("the listing is missing");
-  const completeness = result.completeness;
-  if (!isObject(completeness) || typeof completeness.regions !== "boolean" || typeof completeness.labels !== "boolean") fail("no completeness");
-  return result as unknown as DxaResult;
 }
 
 function isPetcatResult(value: Fields): boolean {

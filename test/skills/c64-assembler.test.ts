@@ -1,4 +1,4 @@
-// The c64-assembler script against a real Host Runtime server with real ACME.
+// The c64-assembler script with real ACME, which it runs itself (D16).
 // Skipped (never passed) when ACME is not installed.
 
 import assert from "node:assert/strict";
@@ -9,11 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { ProcessSupervisor } from "../../src/host/processes.ts";
-import { startHostServer, type HostServer } from "../../src/host/server.ts";
-import { ACME, findTool } from "../../src/host/tools/discover.ts";
-import { createToolDispatcher } from "../../src/host/tools/index.ts";
-import { WireFailure } from "../../src/protocol.ts";
+import { ACME, findTool } from "../../src/native/discover.ts";
 
 let acmeSkip: string | false = false;
 try {
@@ -25,29 +21,10 @@ try {
 const script = resolve(import.meta.dirname, "../../skills/c64-assembler/scripts/assemble.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-assembler-"));
 cpSync(resolve(import.meta.dirname, "../fixtures/asm/counter"), join(project, "src"), { recursive: true });
-let server: HostServer | undefined;
-after(async () => {
-  await server?.close();
-  rmSync(project, { recursive: true, force: true });
-});
-
-async function hostEnv(): Promise<string> {
-  if (server === undefined) {
-    const supervisor = new ProcessSupervisor();
-    supervisor.installExitGuard();
-    server = await startHostServer({
-      port: 0,
-      createViceSession: async () => {
-        throw new WireFailure("machine-unavailable", "no emulators here");
-      },
-      tools: createToolDispatcher({ supervisor }),
-    });
-  }
-  return `${server.host}:${server.port}`;
-}
+after(() => rmSync(project, { recursive: true, force: true }));
 
 async function assembleScript(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: await hostEnv() }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));

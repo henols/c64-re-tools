@@ -8,9 +8,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/host/processes.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { inspect } from "../../../src/host/tools/c1541.ts";
-import { C1541, findTool } from "../../../src/host/tools/discover.ts";
+import { C1541, findTool } from "../../../src/native/discover.ts";
 import { WireFailure, type C1541Params, type C1541Result } from "../../../src/protocol.ts";
 
 let c1541 = "";

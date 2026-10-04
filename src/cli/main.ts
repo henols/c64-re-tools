@@ -11,6 +11,9 @@ import { parseArgs } from "node:util";
 
 import { HostConnection } from "../host-client/connect.ts";
 import { hostTools } from "../host-client/tools.ts";
+import { localToolContext } from "../native/local.ts";
+import { localToolStatus } from "../native/status.ts";
+import type { ToolStatus } from "../protocol.ts";
 
 const HELP = `c64-re-tools: Commodore 64 reverse engineering and development
 
@@ -18,7 +21,7 @@ Usage:
   c64-re-tools install   [--target <harnesses>] [--global]   install the skills and the VICE MCP
   c64-re-tools update    [--target <harnesses>] [--global]   install this version over an earlier one
   c64-re-tools uninstall [--target <harnesses>] [--global]   remove them
-  c64-re-tools status                                        version, programs, Host Runtime and its tools
+  c64-re-tools status                                        version, programs, tools and the Host Runtime
   c64-re-tools --help
 
 Harnesses: claude, codex, pi, opencode, gemini, copilot, cursor, windsurf
@@ -26,8 +29,9 @@ Harnesses: claude, codex, pi, opencode, gemini, copilot, cursor, windsurf
 current project; with --global into your home directory.
 
 The VICE MCP runs the c64-re-tools-mcp program of this package. The Host
-Runtime runs on the machine with VICE and the native tools: start it there
-with c64-re-tools-host.`;
+Runtime runs on the machine with VICE: start it there with c64-re-tools-host.
+It runs VICE and the tools that come with it (c1541, petcat). The skill
+scripts run ACME, DXA and Ghidra themselves, on the machine of the agent.`;
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -62,12 +66,23 @@ function apSdk(args: string[]): number {
   return run.status ?? 1;
 }
 
+function printTools(heading: string, tools: ToolStatus[]): void {
+  console.log(heading);
+  for (const tool of tools) {
+    if (tool.runs) console.log(`  ${tool.name}: ${tool.version} (${tool.path})`);
+    else if (tool.found) console.log(`  ${tool.name}: found at ${tool.path} but it does not run. ${tool.problem}`);
+    else console.log(`  ${tool.name}: missing. ${tool.problem}`);
+  }
+}
+
 async function status(): Promise<number> {
   console.log(`c64-re-tools ${packageVersion()}`);
   for (const program of ["c64-re-tools-mcp", "c64-re-tools-host"]) {
     const path = onPath(program);
     console.log(`${program}: ${path ?? "not on PATH (install the package with npm install -g @henols/c64-re-tools)"}`);
   }
+  // The skill scripts run these tools here, on this machine.
+  printTools("Tools here:", await localToolStatus(localToolContext()));
   try {
     const connection = await HostConnection.open({ role: "tool" });
     await connection.close();
@@ -76,13 +91,8 @@ async function status(): Promise<number> {
     console.log(`Host Runtime: not reachable. ${(error as Error).message}`);
     return 0;
   }
-  // The native tools live on the host; it finds and runs each one.
-  console.log("Tools on the host:");
-  for (const tool of await hostTools()) {
-    if (tool.runs) console.log(`  ${tool.name}: ${tool.version} (${tool.path})`);
-    else if (tool.found) console.log(`  ${tool.name}: found at ${tool.path} but it does not run. ${tool.problem}`);
-    else console.log(`  ${tool.name}: missing. ${tool.problem}`);
-  }
+  // VICE and its tools live on the host; it finds and runs each one.
+  printTools("Tools on the host:", await hostTools());
   return 0;
 }
 

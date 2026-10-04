@@ -25,9 +25,10 @@ deleted. Everything is built new from scratch; nothing from the old code is
 mined, ported or kept for reference.
 
 Architecture in one line: one MCP process owns one VICE instance and is
-VICE-only; a Host Runtime on the graphical host owns VICE and all native tools
-(ACME, DXA, Ghidra, c1541, petcat); skill scripts call the Host Runtime for
-native tools and keep project knowledge local in `.c64-re-tools/knowledge.db`.
+VICE-only; a Host Runtime on the graphical host owns VICE and the tools that
+come with it (c1541, petcat); skill scripts call the Host Runtime for those,
+run ACME, DXA and Ghidra themselves (D16), and keep project knowledge local in
+`.c64-re-tools/knowledge.db`.
 
 ## Commands
 
@@ -53,8 +54,9 @@ pnpm test        # build, then node --test "src/**/*.test.ts" "test/**/*.test.ts
 ## Conventions that bite
 
 - **TypeScript only.** Never hand-write `.js`/`.mjs`; JS exists only as build output in `dist/`.
-- Native tools run on the host through the Host Runtime; never `spawnSync` an external binary from a skill script. Never auto-install external tools: detect, refuse by name, print the remedy.
+- The Host Runtime runs only VICE, c1541 and petcat. Skill scripts run ACME, DXA and Ghidra through `src/native/` (supervisor, staging, bounded `runTool`); never a bare `spawnSync`. Never auto-install external tools: detect, refuse by name, print the remedy.
+- The host refuses to start unless VICE starts (ROMs present); the host is started by hand only.
 - Tools take client paths and stream bytes; never a fixed file list or a path over the socket.
-- Stopping the Host Runtime must stop every emulator, tool and descendant it started.
+- Stopping the Host Runtime or a skill script must stop every emulator, tool and descendant it started.
 - Skill docs (`SKILL.md`, references, descriptions) are written in ASD-STE100 (use the `asd-ste100` skill).
 - Don't put `\u0000`, backticks or `\b` in Write/Edit params or `node -e` edit scripts — they land as raw bytes or shell commands; use a scratch `.ts` file.

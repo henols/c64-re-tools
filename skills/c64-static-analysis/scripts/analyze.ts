@@ -1,13 +1,18 @@
 // The c64-static-analysis script: analyzes a project program with DXA (fast
-// first pass) or Ghidra (deeper) through the Host Runtime, seeded from current
-// knowledge, and imports the structural findings into .c64-re-tools/knowledge.db.
+// first pass) or Ghidra (deeper), which it runs itself (D16), seeded from
+// current knowledge, and imports the structural findings into
+// .c64-re-tools/knowledge.db.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "../../../src/c64.ts";
-import { analyzeWithDxa, analyzeWithGhidra, WireFailure } from "../../../src/host-client/tools.ts";
+import { WireFailure } from "../../../src/host-client/tools.ts";
+import { readProjectFile } from "../../../src/host-client/transfer.ts";
+import { analyze as analyzeWithDxa } from "../../../src/native/dxa.ts";
+import { analyze as analyzeWithGhidra } from "../../../src/native/ghidra/analyze.ts";
+import { localToolContext } from "../../../src/native/local.ts";
 import { KnowledgeError, openForRead, openForWrite } from "../../../src/knowledge/database.ts";
 import { importFindings, type ImportConflict } from "../../../src/knowledge/import.ts";
 import { currentRevision } from "../../../src/knowledge/read.ts";
@@ -113,7 +118,8 @@ async function run(argv: string[]): Promise<unknown> {
 
   const imageKind = values.flat64k ? "flat64k" : "prg";
   if (analyzer === "dxa") {
-    const { result, listing } = await analyzeWithDxa({ image, imageKind, ...seeds });
+    const { result, attachments } = await analyzeWithDxa({ imageKind, ...seeds }, readProjectFile(image).bytes, localToolContext());
+    const listing = attachments[0]!.toString("utf8");
     if (listingPath !== undefined) {
       mkdirSync(dirname(listingPath), { recursive: true });
       writeFileSync(listingPath, listing);
@@ -130,7 +136,7 @@ async function run(argv: string[]): Promise<unknown> {
     };
   }
 
-  const result = await analyzeWithGhidra({ image, imageKind, ...seeds, decompile });
+  const { result } = await analyzeWithGhidra({ imageKind, ...seeds, decompile }, readProjectFile(image).bytes, localToolContext());
   const imported = record(ghidraFindings(result), revision, `Ghidra analysis of ${image}`);
   return {
     analyzer: "ghidra",

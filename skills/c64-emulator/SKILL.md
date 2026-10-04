@@ -59,7 +59,7 @@ Each memory and register tool has a `space`. Use `c64` for the computer. Use `dr
 
 Write operations need a stopped CPU. Stop the CPU with `c64_execution` action `pause` first.
 
-Step, next and until-return work only in space `c64`. The emulator cannot stop the disk drive CPU after one instruction. To stop the drive at an address, use a breakpoint in space `drive8`.
+Step, next and until-return work only in space `c64`. The emulator cannot stop the disk drive CPU after one instruction. To find when the drive executes an address, use `c64_run_until` with an address target in space `drive8`, or a breakpoint in space `drive8`. The drive can execute a few more instructions before it stops. The `pc` in the result is the drive address where it stopped.
 
 Before a risky experiment, save the state with `c64_snapshot`. Restore it to try again from the same point.
 

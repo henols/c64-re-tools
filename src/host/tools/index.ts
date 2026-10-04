@@ -1,13 +1,12 @@
-// The typed native-tool dispatcher (18 §8): one entry per supported
-// operation, never a generic executable route.
+// The typed tool dispatcher of the Host Runtime (18 §8). The host runs only
+// VICE and the tools that come with it (c1541, petcat); skill scripts run
+// ACME, DXA and Ghidra themselves (D16). One entry per operation, never a
+// generic executable route.
 
-import type { ProcessSupervisor } from "../processes.ts";
+import type { ProcessSupervisor } from "../../native/processes.ts";
+import type { C1541Params } from "../../protocol.ts";
 import type { ToolDispatcher } from "../server.ts";
-import type { AcmeParams, C1541Params, DxaParams, GhidraParams } from "../../protocol.ts";
-import { assemble } from "./acme.ts";
 import { inspect } from "./c1541.ts";
-import { analyze as analyzeWithDxa } from "./dxa.ts";
-import { analyze } from "./ghidra/analyze.ts";
 import { decode } from "./petcat.ts";
 import { hostStatus } from "./status.ts";
 
@@ -17,16 +16,10 @@ export function createToolDispatcher(options: { supervisor: ProcessSupervisor; e
     switch (op) {
       case "host.status":
         return hostStatus(context);
-      case "acme.assemble":
-        return assemble(params as AcmeParams, attachments, context);
       case "c1541.inspect":
         return inspect(params as C1541Params, attachments[0]!, context);
       case "petcat.decode":
         return decode(attachments[0]!, context);
-      case "dxa.analyze":
-        return analyzeWithDxa(params as DxaParams, attachments[0]!, context);
-      case "ghidra.analyze":
-        return analyze(params as GhidraParams, attachments[0]!, context);
     }
     throw new Error(`no adapter for ${String(op)}`);
   }) as ToolDispatcher;

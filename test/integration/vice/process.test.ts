@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/host/processes.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import {
   Command,
   decodeBanks,

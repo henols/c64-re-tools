@@ -326,27 +326,6 @@ test("relative paths and source trees are validated", () => {
   assert.throws(() => validateSourceTree([...files, files[0]], [Buffer.from("ab"), Buffer.alloc(0), Buffer.from("ab")]), /twice/);
 });
 
-test("acme.assemble parameters and results are validated", () => {
-  const files = [{ path: "main.a", size: 1 }];
-  const ok = validateToolParams("acme.assemble", { files, entrySource: "main.a", includeDirs: ["lib"], defines: { DEBUG: 1, FAST: true }, setPc: 0x0801 }, [Buffer.from("x")]);
-  assert.deepEqual(ok.defines, { DEBUG: 1, FAST: true });
-  for (const params of [
-    { files, entrySource: "other.a", includeDirs: [], defines: {} },
-    { files, entrySource: "main.a", includeDirs: ["../x"], defines: {} },
-    { files, entrySource: "main.a", includeDirs: [], defines: { "bad-name": 1 } },
-    { files, entrySource: "main.a", includeDirs: [], defines: { X: "1" } },
-    { files, entrySource: "main.a", includeDirs: [], defines: {}, cpu: "65816" },
-  ]) {
-    assert.throws(() => validateToolParams("acme.assemble", params, [Buffer.from("x")]), WireFailure, JSON.stringify(params));
-  }
-  const assembled = { assembled: true, loadRange: { start: 0x801, end: 0x80d, bytes: 13 }, symbols: [{ name: "start", kind: "address", value: 0x801, used: true }], diagnostics: [] };
-  assert.deepEqual(validateToolResult("acme.assemble", assembled, [Buffer.alloc(15)]), assembled);
-  assert.throws(() => validateToolResult("acme.assemble", assembled, []), ProtocolError, "an assembled program needs its bytes");
-  const failed = { assembled: false, diagnostics: [{ severity: "error", file: "main.a", line: 3, message: "Number does not fit in 8 bits." }] };
-  assert.deepEqual(validateToolResult("acme.assemble", failed, []), failed);
-  assert.throws(() => validateToolResult("acme.assemble", failed, [Buffer.alloc(1)]), ProtocolError);
-});
-
 test("c1541.inspect parameters and results are validated", () => {
   const image = [Buffer.alloc(174848)];
   assert.deepEqual(validateToolParams("c1541.inspect", { action: "directory", imageType: "d64" }, image), { action: "directory", imageType: "d64" });
@@ -373,75 +352,6 @@ test("c1541.inspect parameters and results are validated", () => {
   const entry = { action: "entry", found: true, entry: { name: "A", type: "prg", blocks: 1, closed: true, locked: false, startTrack: 17, startSector: 0 } };
   assert.deepEqual(validateToolResult("c1541.inspect", entry, []), entry);
   assert.deepEqual(validateToolResult("c1541.inspect", { action: "chain", found: true, sectors: [{ track: 17, sector: 0 }] }, []).action, "chain");
-});
-
-test("ghidra.analyze parameters are bounded and its result must be consistent", () => {
-  const prg = [Buffer.from([0x01, 0x08, 0x60])];
-  const params = { imageKind: "prg", entryPoints: [0x0801], dataRanges: [{ start: 0x0900, end: 0x09ff }], labels: [{ address: 0xd020, name: "VIC_BORDER" }], decompile: [] };
-  assert.deepEqual(validateToolParams("ghidra.analyze", params, prg), params);
-  for (const bad of [
-    { ...params, imageKind: "elf" },
-    { ...params, entryPoints: Array.from({ length: 1025 }, () => 0x0801) },
-    { ...params, dataRanges: [{ start: 0x0a00, end: 0x0900 }] },
-    { ...params, labels: [{ address: 0xd020, name: "VIC BORDER" }] },
-    { ...params, decompile: Array.from({ length: 33 }, () => 0x0801) },
-    { ...params, processor: "6502:LE:16:default" },
-  ]) {
-    assert.throws(() => validateToolParams("ghidra.analyze", bad, prg), WireFailure, JSON.stringify(bad).slice(0, 80));
-  }
-  assert.throws(() => validateToolParams("ghidra.analyze", { ...params, imageKind: "flat64k" }, prg), WireFailure, "flat64k needs 64 KiB");
-  assert.throws(() => validateToolParams("ghidra.analyze", params, [Buffer.from([0xff, 0xff, 1, 2])]), WireFailure, "past $ffff");
-
-  const result = {
-    coverage: [{ start: 0x0801, end: 0x0827 }],
-    functions: [{ entry: 0x080d, name: "FUN_080d", nameSource: "generated" }],
-    regions: [
-      { start: 0x080d, end: 0x0815, classification: "code" },
-      { start: 0x0824, end: 0x0827, classification: "data" },
-    ],
-    references: [{ from: 0x080d, to: 0x0818, type: "call" }],
-    decompilations: [{ entry: 0x080d, text: "void FUN_080d(void) {}", truncated: false }],
-    completeness: { functions: true, regions: true, references: true },
-  };
-  assert.deepEqual(validateToolResult("ghidra.analyze", result, []), result);
-  for (const bad of [
-    { ...result, functions: [{ entry: 0x0900, name: "FUN_0900", nameSource: "generated" }] },
-    { ...result, regions: [result.regions[1], result.regions[0]] },
-    { ...result, regions: [{ start: 0x0800, end: 0x0810, classification: "code" }] },
-    { ...result, references: [{ from: 0x0700, to: 0x0818, type: "call" }] },
-    { ...result, references: [{ from: 0x080d, to: 0x0818, type: "flow" }] },
-    { ...result, decompilations: [{ entry: 0x080d, text: "x".repeat(16_001), truncated: true }] },
-    { ...result, completeness: undefined },
-  ]) {
-    assert.throws(() => validateToolResult("ghidra.analyze", bad, []), ProtocolError, JSON.stringify(bad).slice(0, 80));
-  }
-});
-
-test("dxa.analyze takes Ghidra's seeds without decompilation and checks its result", () => {
-  const prg = [Buffer.from([0x01, 0x08, 0x60])];
-  assert.deepEqual(validateToolParams("dxa.analyze", { imageKind: "prg", entryPoints: [], dataRanges: [], labels: [] }, prg), { imageKind: "prg", entryPoints: [], dataRanges: [], labels: [] });
-  assert.throws(() => validateToolParams("dxa.analyze", { imageKind: "prg", entryPoints: [], dataRanges: [], labels: [], decompile: [] }, prg), WireFailure);
-  const listing = [Buffer.from("listing")];
-  const result = {
-    coverage: [{ start: 0x0801, end: 0x0827 }],
-    regions: [
-      { start: 0x0801, end: 0x080c, classification: "data" },
-      { start: 0x080d, end: 0x0827, classification: "code" },
-    ],
-    labels: [{ address: 0x080d, name: "l80d" }],
-    listingBytes: 7,
-    completeness: { regions: true, labels: false },
-  };
-  assert.deepEqual(validateToolResult("dxa.analyze", result, listing), result);
-  for (const bad of [
-    { ...result, regions: [result.regions[1]] },
-    { ...result, regions: [result.regions[0]] },
-    { ...result, labels: [{ address: 0x9000, name: "far" }] },
-    { ...result, listingBytes: 8 },
-  ]) {
-    assert.throws(() => validateToolResult("dxa.analyze", bad, listing), ProtocolError, JSON.stringify(bad).slice(0, 80));
-  }
-  assert.throws(() => validateToolResult("dxa.analyze", result, []), ProtocolError, "the listing is the attachment");
 });
 
 test("petcat.decode takes only the program and validates its result", () => {

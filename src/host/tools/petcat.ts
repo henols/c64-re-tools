@@ -6,10 +6,10 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import { WireFailure, type BasicHandoff, type PetcatResult } from "../../protocol.ts";
-import type { ProcessSupervisor } from "../processes.ts";
-import { Workspace } from "../staging.ts";
-import { findTool, PETCAT } from "./discover.ts";
-import { runTool } from "./run.ts";
+import type { ProcessSupervisor } from "../../native/processes.ts";
+import { Workspace } from "../../native/staging.ts";
+import { findTool, PETCAT } from "../../native/discover.ts";
+import { runTool } from "../../native/run.ts";
 
 const TIMEOUT_MS = 30_000;
 const LISTING = "listing.txt";

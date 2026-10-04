@@ -1,15 +1,14 @@
-// Real-Ghidra checks of ghidra.analyze through the real Host Runtime server
-// and tools client. Skipped (never passed) when Ghidra is not found.
+// Real-Ghidra checks of the Ghidra adapter, run where the skill script runs
+// it. Skipped (never passed) when Ghidra is not found.
 
 import assert from "node:assert/strict";
-import { test, after } from "node:test";
+import { test } from "node:test";
 
-import { callTool } from "../../../src/host-client/tools.ts";
-import { ProcessSupervisor } from "../../../src/host/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { findGhidra } from "../../../src/host/tools/ghidra/index.ts";
-import { createToolDispatcher } from "../../../src/host/tools/index.ts";
-import { WireFailure, type GhidraParams } from "../../../src/protocol.ts";
+import { analyze } from "../../../src/native/ghidra/analyze.ts";
+import { findGhidra } from "../../../src/native/ghidra/index.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
+import type { GhidraParams } from "../../../src/native/types.ts";
+import { WireFailure } from "../../../src/protocol.ts";
 import { analysisSubjectPrg, MAIN, MAIN_LOOP, RESULT, ROUTINE, TABLE_END, TABLE_START } from "../../fixtures/prg/analysis-subject.ts";
 
 let skip: string | false = false;
@@ -19,25 +18,9 @@ try {
   skip = "Ghidra is not installed: set C64RT_GHIDRA to the Ghidra installation directory to run these tests";
 }
 
-let server: HostServer | undefined;
-after(async () => {
-  await server?.close();
-});
-
-async function hostEnv(): Promise<NodeJS.ProcessEnv> {
-  if (server === undefined) {
-    const supervisor = new ProcessSupervisor();
-    supervisor.installExitGuard();
-    server = await startHostServer({
-      port: 0,
-      createViceSession: async () => {
-        throw new WireFailure("machine-unavailable", "no emulators here");
-      },
-      tools: createToolDispatcher({ supervisor }),
-    });
-  }
-  return { C64RT_HOST: `${server.host}:${server.port}` };
-}
+const supervisor = new ProcessSupervisor();
+supervisor.installExitGuard();
+const run = (params: GhidraParams) => analyze(params, Buffer.from(analysisSubjectPrg), { supervisor, signal: new AbortController().signal });
 
 const seeds = (overrides: Partial<GhidraParams> = {}): GhidraParams => ({
   imageKind: "prg",
@@ -52,7 +35,7 @@ const seeds = (overrides: Partial<GhidraParams> = {}): GhidraParams => ({
 });
 
 test("Ghidra finds the functions, regions and references of a known program", { skip, timeout: 600_000 }, async () => {
-  const { result } = await callTool("ghidra.analyze", seeds(), [analysisSubjectPrg], { env: await hostEnv() });
+  const { result } = await run(seeds());
   assert.deepEqual(result.coverage, [{ start: 0x0801, end: 0x0827 }]);
   assert.deepEqual(result.functions, [
     { entry: MAIN, name: "FUN_080d", nameSource: "generated" },
@@ -75,7 +58,7 @@ test("Ghidra finds the functions, regions and references of a known program", { 
 });
 
 test("decompiled code uses the seed name and drops the decimal path of ADC", { skip, timeout: 600_000 }, async () => {
-  const { result } = await callTool("ghidra.analyze", seeds(), [analysisSubjectPrg], { env: await hostEnv() });
+  const { result } = await run(seeds());
   const [decompiled] = result.decompilations;
   assert.equal(decompiled?.entry, ROUTINE);
   assert.equal(decompiled.truncated, false);
@@ -86,7 +69,7 @@ test("decompiled code uses the seed name and drops the decimal path of ADC", { s
 
 test("a run without an entry point in the program is refused before Ghidra starts", { skip }, async () => {
   await assert.rejects(
-    callTool("ghidra.analyze", seeds({ entryPoints: [0xe000] }), [analysisSubjectPrg], { env: await hostEnv() }),
+    run(seeds({ entryPoints: [0xe000] })),
     (error: unknown) => error instanceof WireFailure && error.code === "invalid-input",
   );
 });

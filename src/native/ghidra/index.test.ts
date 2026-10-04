@@ -4,8 +4,8 @@ import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { WireFailure } from "../../../protocol.ts";
-import { Workspace } from "../../staging.ts";
+import { WireFailure } from "../../protocol.ts";
+import { Workspace } from "../staging.ts";
 import { findGhidra, prepareSettings } from "./index.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-ghidra-"));

@@ -35,7 +35,7 @@ import {
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { ProcessSupervisor } from "../processes.ts";
+import type { ProcessSupervisor } from "../../native/processes.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
 import {
   backtraceFromStack,
@@ -359,7 +359,8 @@ export class ViceSession implements ViceSessionHandle {
       throw new WireFailure(
         "unsupported-in-space",
         `${params.action} works only in space c64: the emulator cannot stop the disk drive CPU after a single instruction. ` +
-          "Use a breakpoint in space drive8 to stop at a drive address.",
+          "Use a breakpoint or run-until with an address in space drive8: it stops when the drive executes that address, " +
+          "and the drive can run a few instructions more before it stops.",
       );
     }
     await this.#stop();

@@ -16,7 +16,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { C1541, findTool, PETCAT } from "../../../src/host/tools/discover.ts";
+import { C1541, findTool, PETCAT } from "../../../src/native/discover.ts";
 import { BORDER_LOOP_START, borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
 import { liveEnv, liveSkip } from "./live.ts";
 

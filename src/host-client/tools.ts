@@ -1,26 +1,23 @@
-// Short-lived typed native-tool requests for skill scripts (04 §4, 16). Each
-// request opens its own "tool" connection, sends bytes, and closes.
+// Short-lived typed requests to the Host Runtime for skill scripts (04 §4, 16):
+// VICE's own tools (c1541, petcat) and the host tool status. Each request
+// opens its own "tool" connection, sends bytes, and closes. Skill scripts run
+// ACME, DXA and Ghidra themselves through src/native (D16).
 
 import {
   DISK_IMAGE_TYPES,
   ProtocolError,
   validateToolResult,
   WireFailure,
-  type AcmeResult,
   type C1541Result,
   type DiskAction,
   type DiskImageType,
-  type DxaParams,
-  type DxaResult,
-  type GhidraParams,
-  type GhidraResult,
   type PetcatResult,
   type ToolOperation,
   type ToolOperations,
   type ToolStatus,
 } from "../protocol.ts";
 import { HostConnection } from "./connect.ts";
-import { readProjectFile, readProjectTree } from "./transfer.ts";
+import { readProjectFile } from "./transfer.ts";
 
 export interface ToolCallOptions {
   env?: NodeJS.ProcessEnv;
@@ -62,30 +59,6 @@ export async function callTool<O extends ToolOperation>(
   }
 }
 
-export interface AssembleRequest {
-  /** Project-relative directory staged as a whole. */
-  sourceRoot: string;
-  /** Relative to sourceRoot. */
-  entrySource: string;
-  includeDirs?: string[];
-  defines?: Record<string, number | boolean>;
-  setPc?: number;
-}
-
-/** acme.assemble (16 §8): the program bytes come back when assembled is true. */
-export async function assemble(request: AssembleRequest, options: ToolCallOptions = {}): Promise<AcmeResult & { program?: Buffer }> {
-  const tree = readProjectTree(request.sourceRoot);
-  const params: ToolOperations["acme.assemble"]["params"] = {
-    files: tree.files,
-    entrySource: request.entrySource,
-    includeDirs: request.includeDirs ?? [],
-    defines: request.defines ?? {},
-  };
-  if (request.setPc !== undefined) params.setPc = request.setPc;
-  const { result, attachments } = await callTool("acme.assemble", params, tree.contents, options);
-  return result.assembled ? { ...result, program: attachments[0]! } : result;
-}
-
 export interface InspectDiskRequest {
   /** Project-relative disk image; its extension gives the image type. */
   image: string;
@@ -112,21 +85,6 @@ export async function decodeBasic(request: { program: string }, options: ToolCal
   return (await callTool("petcat.decode", {}, [file.bytes], options)).result;
 }
 
-/** ghidra.analyze (16 §10): structural analysis of a project PRG or 64 KiB image with knowledge seeds. */
-export async function analyzeWithGhidra(request: { image: string } & GhidraParams, options: ToolCallOptions = {}): Promise<GhidraResult> {
-  const file = readProjectFile(request.image);
-  const { image: _image, ...params } = request;
-  return (await callTool("ghidra.analyze", params, [file.bytes], options)).result;
-}
-
-/** dxa.analyze (16 §9): fast structural analysis; the listing comes back as text. */
-export async function analyzeWithDxa(request: { image: string } & DxaParams, options: ToolCallOptions = {}): Promise<{ result: DxaResult; listing: string }> {
-  const file = readProjectFile(request.image);
-  const { image: _image, ...params } = request;
-  const { result, attachments } = await callTool("dxa.analyze", params, [file.bytes], options);
-  return { result, listing: attachments[0]!.toString("utf8") };
-}
-
 /** host.status: each native tool on the host, found and run once. */
 export async function hostTools(options: ToolCallOptions = {}): Promise<ToolStatus[]> {
   return (await callTool("host.status", {}, [], options)).result.tools;
@@ -134,4 +92,3 @@ export async function hostTools(options: ToolCallOptions = {}): Promise<ToolStat
 
 /** Skill scripts see failures through the host-client, never the private protocol module. */
 export { WireFailure } from "../protocol.ts";
-export type { DxaResult, GhidraParams, GhidraResult } from "../protocol.ts";

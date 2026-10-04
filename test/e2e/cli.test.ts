@@ -28,10 +28,12 @@ test("install puts the skills and the MCP declaration into the project; uninstal
   assert.equal(existsSync(join(project, ".claude", "skills", "c64-emulator")), false);
 });
 
-test("status reports the version and a Host Runtime that does not answer", () => {
+test("status reports the version, the tools here and a Host Runtime that does not answer", () => {
   const status = run("status");
   assert.equal(status.status, 0);
   assert.match(status.stdout, /^c64-re-tools \S+/);
+  // Found or missing, each tool that skill scripts run here has a line.
+  assert.match(status.stdout, /Tools here:\n {2}ACME: .+\n {2}dxa: .+\n {2}Ghidra: .+\n/);
   assert.match(status.stdout, /Host Runtime: not reachable/);
 });
 

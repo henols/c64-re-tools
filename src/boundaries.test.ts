@@ -19,7 +19,7 @@ function areaOf(path: string): string | undefined {
       return ["c64", "project", "protocol"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
-    return ["mcp", "host-client", "host", "knowledge", "cli"].includes(dir) ? dir : undefined;
+    return ["mcp", "host-client", "host", "knowledge", "cli", "native"].includes(dir) ? dir : undefined;
   }
   if (parts[0] === "skills" && parts.length > 2) return `skill:${parts[1]}`;
   if (parts[0] === "distribution") return "distribution";
@@ -33,12 +33,14 @@ const ALLOWED: Record<string, readonly string[]> = {
   protocol: ["c64"],
   "host-client": ["protocol", "c64", "project"],
   mcp: ["host-client", "protocol", "c64"],
-  host: ["protocol", "c64"],
+  host: ["native", "protocol", "c64"],
   knowledge: ["c64", "project"],
-  cli: ["mcp", "host-client", "host", "knowledge", "protocol", "c64", "project", "distribution"],
+  // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
+  native: ["protocol", "c64"],
+  cli: ["mcp", "host-client", "host", "native", "knowledge", "protocol", "c64", "project", "distribution"],
   distribution: ["c64", "project"],
 };
-const SKILL_ALLOWED = ["host-client", "knowledge", "project", "c64"];
+const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

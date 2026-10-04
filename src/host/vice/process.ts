@@ -14,15 +14,17 @@
 // - with the default JAM action a jammed CPU hangs silently; -jamaction 2
 //   enters the monitor instead;
 // - the monitor's profiler prints numbers in the host locale, so VICE runs
-//   with LC_NUMERIC=C.
+//   with LC_NUMERIC=C;
+// - piped output is block-buffered and lost when VICE exits early (for
+//   example without its ROM files), so VICE also writes a log file.
 
-import { accessSync, constants, mkdtempSync, rmSync, statSync } from "node:fs";
+import { accessSync, constants, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
 
 import { WireFailure, type VideoStandard } from "../../protocol.ts";
-import type { ExitStatus, ProcessSupervisor, SupervisedProcess } from "../processes.ts";
+import type { ExitStatus, ProcessSupervisor, SupervisedProcess } from "../../native/processes.ts";
 import { BinaryMonitor, Command, decodeMemory, memoryGetBody } from "./binary-monitor.ts";
 import { TextMonitor } from "./text-monitor.ts";
 
@@ -85,11 +87,14 @@ export function viceArguments(options: {
   port: number;
   textPort: number;
   configFile: string;
+  logFile: string;
   videoStandard: VideoStandard;
 }): string[] {
   return [
     options.binary,
     "-default",
+    "-logfile",
+    options.logFile,
     "-binarymonitor",
     "-binarymonitoraddress",
     `ip4://127.0.0.1:${options.port}`,
@@ -145,8 +150,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Collects the last lines of a child's output. */
-function tailCollector(child: SupervisedProcess): () => string {
+/** The last lines of VICE's log file, or of its output while there is no log file. */
+function tailCollector(child: SupervisedProcess, logFile: string): () => string {
   const lines: string[] = [];
   let partial = "";
   const take = (chunk: Buffer) => {
@@ -157,7 +162,13 @@ function tailCollector(child: SupervisedProcess): () => string {
   };
   child.child.stdout?.on("data", take);
   child.child.stderr?.on("data", take);
-  return () => [...lines, partial].filter((line) => line !== "").join("\n");
+  return () => {
+    try {
+      return readFileSync(logFile, "utf8").split("\n").filter((line) => line !== "").slice(-OUTPUT_TAIL_LINES).join("\n");
+    } catch {
+      return [...lines, partial].filter((line) => line !== "").join("\n");
+    }
+  };
 }
 
 /**
@@ -185,6 +196,30 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
 
 const LAUNCH_ATTEMPTS = 3;
 
+/**
+ * Starts VICE once, as a session does, and stops it again (D14). Finding
+ * x64sc is not enough: without its ROM files VICE exits at once. Throws
+ * WireFailure installation-incomplete with VICE's own error lines.
+ */
+export async function checkViceStarts(options: Omit<LaunchOptions, "videoStandard" | "log">): Promise<void> {
+  const binary = findVice(options.env ?? process.env);
+  const output: string[] = [];
+  let vice: ViceProcess;
+  try {
+    vice = await launchVice({ ...options, videoStandard: "pal", log: (line) => output.push(line) });
+  } catch (error) {
+    if (error instanceof WireFailure && error.code === "installation-incomplete") throw error;
+    const reasons = [...new Set(output.flatMap((entry) => entry.split("\n")).filter((line) => /\berror\b/i.test(line) && !line.startsWith("VICE ")))];
+    throw new WireFailure(
+      "installation-incomplete",
+      `VICE (${binary}) is installed but does not start${reasons.length === 0 ? "." : `:\n  ${reasons.join("\n  ")}`}\n` +
+        "Make sure that VICE has its ROM files (the C64 KERNAL, BASIC and character ROMs) and that x64sc starts when you run it by hand, " +
+        "then restart c64-re-tools-host.",
+    );
+  }
+  await vice.stop();
+}
+
 async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
   const env = options.env ?? process.env;
   const log = options.log ?? (() => {});
@@ -195,7 +230,7 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
   // Owned by the supervisor: its exit guard and the watchdog remove it if this process dies.
   const releaseScratch = options.supervisor.ownPath(scratch);
   const child = options.supervisor.spawn(
-    viceArguments({ binary, port, textPort, configFile: join(scratch, "vicerc"), videoStandard: options.videoStandard }),
+    viceArguments({ binary, port, textPort, configFile: join(scratch, "vicerc"), logFile: join(scratch, "vice.log"), videoStandard: options.videoStandard }),
     {
       cwd: scratch,
       // Keep VICE's config, cache and state away from the user's own VICE setup, and
@@ -204,7 +239,7 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
-  const outputTail = tailCollector(child);
+  const outputTail = tailCollector(child, join(scratch, "vice.log"));
   let exited = false;
   void child.exited.then(() => (exited = true));
 

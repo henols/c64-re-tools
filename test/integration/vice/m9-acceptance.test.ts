@@ -13,7 +13,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { formatC64Address } from "../../../src/c64.ts";
-import { ProcessSupervisor } from "../../../src/host/processes.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { openForWrite } from "../../../src/knowledge/database.ts";

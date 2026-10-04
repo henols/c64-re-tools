@@ -1,25 +1,30 @@
-// Headless Ghidra for the Host Runtime (16 §10). Ghidra runs with a settings
+// Headless Ghidra, run by the c64-static-analysis script (16 §10, D16). Ghidra runs with a settings
 // directory of its own per request: the c64-re-tools NMOS 6510 language goes
 // in there as an extension, so the user's Ghidra installation and settings
 // never change. Ghidra compiles the language from its source on first load.
 // Projects are disposable and live in the request workspace.
 
-import { accessSync, constants, cpSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, constants, cpSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 
-import { WireFailure } from "../../../protocol.ts";
-import type { ProcessSupervisor } from "../../processes.ts";
-import type { Workspace } from "../../staging.ts";
+import { WireFailure } from "../../protocol.ts";
+import type { ProcessSupervisor } from "../processes.ts";
+import type { Workspace } from "../staging.ts";
 import { runTool, type ToolRun } from "../run.ts";
 
 export const GHIDRA_LANGUAGE = "C64RT_6510:LE:16:nmos";
-export const LANGUAGE_DIRECTORY = join(import.meta.dirname, "language");
-export const SCRIPT_DIRECTORY = join(import.meta.dirname, "scripts");
+/** Next to this module in src/ and dist/; in a ghidra/ folder next to a bundled skill script. */
+function asset(name: string): string {
+  const beside = join(import.meta.dirname, name);
+  return existsSync(beside) ? beside : join(import.meta.dirname, "ghidra", name);
+}
+export const LANGUAGE_DIRECTORY = asset("language");
+export const SCRIPT_DIRECTORY = asset("scripts");
 
 const REMEDY =
-  "Install Ghidra on the host and set C64RT_GHIDRA to its installation directory (the directory that holds support/analyzeHeadless), " +
-  "or put analyzeHeadless on PATH, then restart c64-re-tools-host.";
+  "Install Ghidra on the machine that runs the skill scripts and set C64RT_GHIDRA to its installation directory " +
+  "(the directory that holds support/analyzeHeadless), or put analyzeHeadless on PATH.";
 
 export interface GhidraInstallation {
   /** The installation directory. */
@@ -60,7 +65,7 @@ function installationAt(root: string, source: string): GhidraInstallation {
 export function findGhidra(env: NodeJS.ProcessEnv = process.env): GhidraInstallation {
   const configured = env.C64RT_GHIDRA;
   if (configured !== undefined && configured !== "") {
-    if (!isAbsolute(configured)) throw new WireFailure("installation-incomplete", `C64RT_GHIDRA on the host is not an absolute path. ${REMEDY}`);
+    if (!isAbsolute(configured)) throw new WireFailure("installation-incomplete", `C64RT_GHIDRA on this machine is not an absolute path. ${REMEDY}`);
     return installationAt(configured, "C64RT_GHIDRA");
   }
   for (const dir of (env.PATH ?? "").split(delimiter)) {
@@ -68,7 +73,7 @@ export function findGhidra(env: NodeJS.ProcessEnv = process.env): GhidraInstalla
     const candidate = join(dir, "analyzeHeadless");
     if (isExecutableFile(candidate)) return installationAt(resolve(dirname(realpathSync(candidate)), ".."), "analyzeHeadless on PATH");
   }
-  throw new WireFailure("installation-incomplete", `Ghidra is not installed on the host. ${REMEDY}`);
+  throw new WireFailure("installation-incomplete", `Ghidra is not installed on this machine. ${REMEDY}`);
 }
 
 /**

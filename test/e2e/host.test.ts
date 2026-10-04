@@ -9,19 +9,18 @@ import { createInterface } from "node:readline";
 import { after, test } from "node:test";
 
 import { encodeFrame, FrameDecoder, HOST_PROTOCOL_ID } from "../../src/protocol.ts";
+import { liveEnv, liveSkip } from "../integration/vice/live.ts";
 
 // Runs the built executable, so `pnpm build` must come first.
 const root = resolve(import.meta.dirname, "../..");
 
-// The runtime refuses to start without VICE; this test starts no emulator, so a stand-in is enough.
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-host-e2e-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
-const fakeVice = join(scratch, "x64sc");
-writeFileSync(fakeVice, "#!/bin/sh\nexit 0\n");
-chmodSync(fakeVice, 0o755);
+const posixOnly = process.platform === "win32" ? "the Host Runtime runs on Linux and macOS (POSIX signals and process groups)" : false;
 
-test("c64-re-tools-host runs in the foreground, serves the protocol and stops on SIGTERM", { skip: process.platform === "win32" ? "the Host Runtime runs on Linux and macOS (POSIX signals and process groups)" : false }, async () => {
-  const host = spawn(process.execPath, ["dist/host/main.js", "--port", "0"], { cwd: root, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, C64RT_VICE: fakeVice } });
+test("c64-re-tools-host runs in the foreground, serves the protocol and stops on SIGTERM", { skip: posixOnly || liveSkip }, async () => {
+  // The runtime starts VICE once before it listens, so this needs the real one.
+  const host = spawn(process.execPath, ["dist/host/main.js", "--port", "0"], { cwd: root, stdio: ["ignore", "pipe", "pipe"], env: liveEnv() });
   try {
     const [line] = (await once(createInterface({ input: host.stdout }), "line")) as [string];
     const match = /listening on (127\.0\.0\.1):(\d+)$/.exec(line);
@@ -56,4 +55,19 @@ test("c64-re-tools-host does not start without VICE and says how to install it",
   const run = spawnSync(process.execPath, ["dist/host/main.js", "--port", "0"], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_VICE: join(scratch, "no-such-x64sc") } });
   assert.equal(run.status, 1);
   assert.match(run.stderr, /C64RT_VICE.*Install VICE/);
+});
+
+test("c64-re-tools-host does not start when VICE cannot load its ROMs", { skip: posixOnly }, () => {
+  const brokenVice = join(scratch, "x64sc");
+  writeFileSync(brokenVice, [
+    "#!/bin/sh",
+    'while [ $# -gt 0 ]; do [ "$1" = -logfile ] && log="$2"; shift; done',
+    "echo \"C64MEM: Error - Couldn't load kernal ROM 'kernal-901227-03.bin'.\" > \"$log\"",
+    "exit 255",
+  ].join("\n"));
+  chmodSync(brokenVice, 0o755);
+  const run = spawnSync(process.execPath, ["dist/host/main.js", "--port", "0"], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_VICE: brokenVice } });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /does not start:\n  C64MEM: Error - Couldn't load kernal ROM/);
+  assert.equal(run.stdout, "", "it never listens");
 });

@@ -1,12 +1,13 @@
-// ghidra.analyze (16 §10, §11): one disposable headless run with the NMOS
+// The Ghidra analysis (16 §10, §11): one disposable headless run with the NMOS
 // 6510 language, knowledge seeds before analysis, and the structural export
-// after it. The result is checked completely before it leaves the host.
+// after it. The result is checked completely before the script imports it.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
-import { checkGhidraResult, GHIDRA_LIMITS, WireFailure, type GhidraParams, type GhidraResult } from "../../../protocol.ts";
-import type { ProcessSupervisor } from "../../processes.ts";
-import { Workspace } from "../../staging.ts";
+import { WireFailure } from "../../protocol.ts";
+import { checkGhidraResult, GHIDRA_LIMITS, imageRange, type GhidraParams, type GhidraResult } from "../types.ts";
+import type { ProcessSupervisor } from "../processes.ts";
+import { Workspace } from "../staging.ts";
 import { findGhidra, runHeadless, SCRIPT_DIRECTORY } from "./index.ts";
 
 const TIMEOUT_MS = 600_000;
@@ -17,10 +18,8 @@ export async function analyze(
   context: { supervisor: ProcessSupervisor; signal: AbortSignal; env?: NodeJS.ProcessEnv; log?: (line: string) => void },
 ): Promise<{ result: GhidraResult }> {
   const ghidra = findGhidra(context.env);
-  const base = params.imageKind === "prg" ? image.readUInt16LE(0) : 0;
-  const body = params.imageKind === "prg" ? image.subarray(2) : image;
-  const start = base;
-  const end = base + body.length - 1;
+  const { start, end, body } = imageRange(params.imageKind, image);
+  const base = start;
   const inside = (address: number) => address >= start && address <= end;
 
   // Ghidra disassembles and defines data only in the loaded bytes; labels may name any address.

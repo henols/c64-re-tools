@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import { WireFailure } from "../../../src/protocol.ts";
-import { ProcessSupervisor } from "../../../src/host/processes.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
@@ -73,4 +73,17 @@ test("stepping the drive CPU is refused with the reason", { skip: liveSkip, time
       (error: unknown) => error instanceof WireFailure && error.code === "unsupported-in-space" && /single instruction/.test(error.message),
     );
   }
+});
+
+test("run-until with a drive8 address tells when the drive executes it, and where the drive stopped", { skip: liveSkip, timeout: 60_000 }, async () => {
+  await session.handle("reset", { mode: "hard", run: true });
+  await session.handle("execution", { action: "advance-frames", count: 100, space: "c64" });
+  // The idle drive runs its ROM main loop; stop when it comes to this address again.
+  const { pc } = await session.handle("registersGet", { space: "drive8" });
+  const reached = await session.handle("runUntil", { target: { kind: "address", address: pc, space: "drive8" }, timeoutFrames: 100 });
+  assert.equal(reached.reached, true, JSON.stringify(reached));
+  assert.equal(reached.stopReason, "target");
+  // The drive catches up with the computer's clock before the machine stops, so it can stop a few
+  // instructions after the target (found live: target $ec2b, stop $ec17). pc is where it stopped.
+  assert.equal(reached.pc, (await session.handle("registersGet", { space: "drive8" })).pc);
 });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ProcessSupervisor } from "../processes.ts";
+import { ProcessSupervisor } from "./processes.ts";
 import { runTool } from "./run.ts";
 
 const posix = process.platform !== "win32";

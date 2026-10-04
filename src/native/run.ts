@@ -1,7 +1,7 @@
-// Bounded native-tool execution (16 §3): argv only, no shell, a host-owned
+// Bounded native-tool execution (16 §3): argv only, no shell, a fixed
 // timeout, capped output, and the whole process group stopped on timeout or abort.
 
-import type { ProcessSupervisor } from "../processes.ts";
+import type { ProcessSupervisor } from "./processes.ts";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
 export const DEFAULT_OUTPUT_LIMIT = 1024 * 1024;

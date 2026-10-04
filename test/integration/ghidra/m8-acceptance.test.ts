@@ -1,5 +1,5 @@
 // Milestone 8 acceptance (19 §10), the iterative loop through the real skill
-// scripts and a real Host Runtime with real Ghidra:
+// scripts with real Ghidra, which the script runs itself (D16):
 //   Ghidra import → semantic rename → Ghidra seeded from knowledge →
 //   the same importer, history and conflicts kept, echoed seeds not owned.
 // The language checks are in language.test.ts. Skipped without Ghidra.
@@ -12,11 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/host/processes.ts";
-import { startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { findGhidra } from "../../../src/host/tools/ghidra/index.ts";
-import { createToolDispatcher } from "../../../src/host/tools/index.ts";
-import { WireFailure } from "../../../src/protocol.ts";
+import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { analysisSubjectPrg } from "../../fixtures/prg/analysis-subject.ts";
 
 let skip: string | false = false;
@@ -29,30 +25,11 @@ try {
 const skills = resolve(import.meta.dirname, "../../../skills");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m8-"));
 writeFileSync(join(project, "game.prg"), analysisSubjectPrg);
-let server: HostServer | undefined;
-after(async () => {
-  await server?.close();
-  rmSync(project, { recursive: true, force: true });
-});
+after(() => rmSync(project, { recursive: true, force: true }));
 
-async function hostAddress(): Promise<string> {
-  if (server === undefined) {
-    const supervisor = new ProcessSupervisor();
-    supervisor.installExitGuard();
-    server = await startHostServer({
-      port: 0,
-      createViceSession: async () => {
-        throw new WireFailure("machine-unavailable", "no emulators here");
-      },
-      tools: createToolDispatcher({ supervisor }),
-    });
-  }
-  return `${server.host}:${server.port}`;
-}
-
-/** Runs a skill script in the project. The host runs in this process, so the script must not block it. */
+/** Runs a skill script in the project. No Host Runtime runs: the scripts run their tools themselves. */
 async function skill(name: string, file: string, ...args: string[]): Promise<Record<string, unknown>> {
-  const child = spawn(process.execPath, [join(skills, name, "scripts", file), ...args], { cwd: project, env: { ...process.env, C64RT_HOST: await hostAddress() }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [join(skills, name, "scripts", file), ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));

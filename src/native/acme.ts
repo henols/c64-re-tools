@@ -4,9 +4,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 
-import { WireFailure, type AcmeParams, type AcmeResult, type AssembledSymbol, type Diagnostic } from "../../protocol.ts";
-import type { ProcessSupervisor } from "../processes.ts";
-import { Workspace } from "../staging.ts";
+import { WireFailure } from "../protocol.ts";
+import type { AcmeParams, AcmeResult, AssembledSymbol, Diagnostic } from "./types.ts";
+import type { ProcessSupervisor } from "./processes.ts";
+import { Workspace } from "./staging.ts";
 import { ACME, findTool } from "./discover.ts";
 import { runTool } from "./run.ts";
 

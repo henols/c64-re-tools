@@ -9,9 +9,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { ProcessSupervisor } from "../../src/host/processes.ts";
+import { ProcessSupervisor } from "../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../src/host/server.ts";
-import { findTool, PETCAT } from "../../src/host/tools/discover.ts";
+import { findTool, PETCAT } from "../../src/native/discover.ts";
 import { createToolDispatcher } from "../../src/host/tools/index.ts";
 import { WireFailure } from "../../src/protocol.ts";
 import { borderLoopPrg } from "../fixtures/prg/border-loop.ts";

@@ -14,8 +14,8 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { after, test } from "node:test";
 
-import { ACME, C1541, DXA, findTool, PETCAT } from "../../../src/host/tools/discover.ts";
-import { findGhidra } from "../../../src/host/tools/ghidra/index.ts";
+import { ACME, C1541, DXA, findTool, PETCAT } from "../../../src/native/discover.ts";
+import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { basicCounterPrg } from "../../fixtures/prg/basic-counter.ts";
 import { liveEnv, liveSkip } from "../../integration/vice/live.ts";
 

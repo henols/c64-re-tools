@@ -19,10 +19,10 @@ import {
   type DiskFile,
   type DiskSector,
 } from "../../protocol.ts";
-import type { ProcessSupervisor } from "../processes.ts";
-import { Workspace } from "../staging.ts";
-import { C1541, findTool } from "./discover.ts";
-import { runTool } from "./run.ts";
+import type { ProcessSupervisor } from "../../native/processes.ts";
+import { Workspace } from "../../native/staging.ts";
+import { C1541, findTool } from "../../native/discover.ts";
+import { runTool } from "../../native/run.ts";
 
 const TIMEOUT_MS = 30_000;
 const BLOCK_BYTES = 256;

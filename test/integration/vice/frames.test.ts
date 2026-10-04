@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/host/processes.ts";
+import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { launchVice, type ViceProcess } from "../../../src/host/vice/process.ts";
 import { ViceSession } from "../../../src/host/vice/session.ts";
 import type { VideoStandard } from "../../../src/protocol.ts";

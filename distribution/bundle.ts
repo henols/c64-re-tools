@@ -1,7 +1,8 @@
 // Builds the distributable skills into dist/skills (08 §6): each script that
 // a SKILL.md runs becomes one self-contained JavaScript file, so a skill copied
 // out of this repository needs no src/. The SKILL.md and its references are
-// copied with the script paths rewritten from .ts to .js. The AP SDK plugin
+// copied with the script paths rewritten from .ts to .js. A skill that runs
+// Ghidra gets its language and Ghidra scripts in scripts/ghidra/. The AP SDK plugin
 // module goes next to them as dist/plugin.js, for c64-re-tools install.
 //
 // Run: node distribution/bundle.ts
@@ -41,6 +42,9 @@ export async function bundleSkills(output = join(root, "dist", "skills")): Promi
         legalComments: "none",
         logLevel: "warning",
       });
+    }
+    if (scripts.some((script) => readFileSync(join(target, "scripts", `${script}.js`), "utf8").includes("C64RT_6510"))) {
+      for (const asset of ["language", "scripts"]) cpSync(join(root, "src", "native", "ghidra", asset), join(target, "scripts", "ghidra", asset), { recursive: true });
     }
     writeFileSync(join(target, "SKILL.md"), markdown.replace(SCRIPT_REFERENCE, "scripts/$1.js"));
     if (existsSync(join(source, "references"))) cpSync(join(source, "references"), join(target, "references"), { recursive: true });
