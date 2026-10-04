@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { assemble, callTool } from "../../../src/host-client/tools.ts";
+import { assemble, callTool, decodeBasic, inspectDisk } from "../../../src/host-client/tools.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { startHostServer, type HostServer, type ToolDispatcher } from "../../../src/host/server.ts";
 import { WireFailure } from "../../../src/protocol.ts";
@@ -16,6 +16,9 @@ const project = mkdtempSync(join(tmpdir(), "c64-re-tools-tools-"));
 mkdirSync(join(project, "src", "lib"), { recursive: true });
 writeFileSync(join(project, "src", "main.a"), "* = $0801\n");
 writeFileSync(join(project, "src", "lib", "consts.a"), "COLOR = 2\n");
+mkdirSync(join(project, "media"));
+writeFileSync(join(project, "media", "game.D64"), Buffer.from([0xd6, 0x40]));
+writeFileSync(join(project, "media", "loader.prg"), Buffer.from([0x01, 0x08, 0x00, 0x00]));
 process.chdir(project);
 
 const servers: HostServer[] = [];
@@ -87,4 +90,29 @@ test("a client that disconnects aborts its tool request", async () => {
   await running;
   await connection.close();
   await aborted;
+});
+
+test("a disk request sends the image with its type and gets a read file back as data", async () => {
+  const seen: unknown[] = [];
+  const env = await host(async (op, params, attachments) => {
+    seen.push({ op, params, image: [...attachments[0]!] });
+    return { result: { action: "read", found: true, name: "GAME", bytes: 3 }, attachments: [Buffer.from([1, 8, 0x60])] } as never;
+  });
+  const read = await inspectDisk({ image: "media/game.D64", action: "read", name: "game" }, { env });
+  assert.deepEqual(read, { action: "read", found: true, name: "GAME", bytes: 3, data: Buffer.from([1, 8, 0x60]) });
+  assert.deepEqual(seen, [{ op: "c1541.inspect", params: { action: "read", imageType: "d64", name: "game" }, image: [0xd6, 0x40] }]);
+  await assert.rejects(inspectDisk({ image: "media/loader.prg", action: "directory" }, { env }), failsWith("invalid-input"));
+  await assert.rejects(inspectDisk({ image: "media/game.D64", action: "directory", name: "X" }, { env }), failsWith("invalid-input"));
+});
+
+test("a BASIC request sends the program and gets the decoded listing", async () => {
+  const decoded = { decoded: true, loadAddress: 0x0801, basicEnd: 0x0803, listing: "", lines: [], handoffs: [] };
+  const env = await host(async (op, params, attachments) => {
+    assert.equal(op, "petcat.decode");
+    assert.deepEqual(params, {});
+    assert.deepEqual([...attachments[0]!], [0x01, 0x08, 0x00, 0x00]);
+    return { result: decoded } as never;
+  });
+  assert.deepEqual(await decodeBasic({ program: "media/loader.prg" }, { env }), decoded);
+  await assert.rejects(decodeBasic({ program: "media/missing.prg" }, { env }), failsWith("not-found"));
 });

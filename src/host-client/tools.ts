@@ -2,15 +2,20 @@
 // request opens its own "tool" connection, sends bytes, and closes.
 
 import {
+  DISK_IMAGE_TYPES,
   ProtocolError,
   validateToolResult,
   WireFailure,
   type AcmeResult,
+  type C1541Result,
+  type DiskAction,
+  type DiskImageType,
+  type PetcatResult,
   type ToolOperation,
   type ToolOperations,
 } from "../protocol.ts";
 import { HostConnection } from "./connect.ts";
-import { readProjectTree } from "./transfer.ts";
+import { readProjectFile, readProjectTree } from "./transfer.ts";
 
 export interface ToolCallOptions {
   env?: NodeJS.ProcessEnv;
@@ -74,6 +79,32 @@ export async function assemble(request: AssembleRequest, options: ToolCallOption
   if (request.setPc !== undefined) params.setPc = request.setPc;
   const { result, attachments } = await callTool("acme.assemble", params, tree.contents, options);
   return result.assembled ? { ...result, program: attachments[0]! } : result;
+}
+
+export interface InspectDiskRequest {
+  /** Project-relative disk image; its extension gives the image type. */
+  image: string;
+  action: DiskAction;
+  /** entry, chain and read: the file name as the directory shows it. */
+  name?: string;
+}
+
+/** c1541.inspect (16 §12): a found read also returns the file's bytes. */
+export async function inspectDisk(request: InspectDiskRequest, options: ToolCallOptions = {}): Promise<C1541Result & { data?: Buffer }> {
+  const file = readProjectFile(request.image);
+  if (!(DISK_IMAGE_TYPES as readonly string[]).includes(file.type)) {
+    throw new WireFailure("invalid-input", `${request.image} is no disk image this tool reads; use a .d64, .d71, .d81 or .g64 file.`);
+  }
+  const params: ToolOperations["c1541.inspect"]["params"] = { action: request.action, imageType: file.type as DiskImageType };
+  if (request.name !== undefined) params.name = request.name;
+  const { result, attachments } = await callTool("c1541.inspect", params, [file.bytes], options);
+  return result.action === "read" && result.found ? { ...result, data: attachments[0]! } : result;
+}
+
+/** petcat.decode (16 §13): the C64 BASIC V2 listing of a project program and its machine-code handoffs. */
+export async function decodeBasic(request: { program: string }, options: ToolCallOptions = {}): Promise<PetcatResult> {
+  const file = readProjectFile(request.program);
+  return (await callTool("petcat.decode", {}, [file.bytes], options)).result;
 }
 
 /** Skill scripts see failures through the host-client, never the private protocol module. */
