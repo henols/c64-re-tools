@@ -22,7 +22,14 @@ export const PACKAGE = (JSON.parse(readFileSync(join(resolve(import.meta.dirname
  * The entry point is TypeScript, run by tsx: Node does not strip types under
  * node_modules (D17).
  */
-export const MCP_SERVER = { command: "npx", args: ["-y", `--package=${PACKAGE}@latest`, "c64-re-tools-mcp"] };
+export function mcpServerFor(platform: NodeJS.Platform): { command: string; args: string[] } {
+  const npx = ["-y", `--package=${PACKAGE}@latest`, "c64-re-tools-mcp"];
+  // On native Windows npx is a .cmd shim, which a harness starts only through cmd /c (Claude Code documents this).
+  return platform === "win32" ? { command: "cmd", args: ["/c", "npx", ...npx] } : { command: "npx", args: npx };
+}
+
+/** The declaration for the machine where install runs: the plugin is evaluated there. */
+export const MCP_SERVER = mcpServerFor(process.platform);
 
 const root = resolve(import.meta.dirname, "..");
 const SOURCE = join(root, "src");

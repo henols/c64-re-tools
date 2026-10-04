@@ -40,7 +40,8 @@ npx -y @henols/c64-re-tools@latest status
 
 The skills are copied into the project. The MCP declaration starts the MCP
 server the same way: `npx -y --package=@henols/c64-re-tools@latest
-c64-re-tools-mcp`.
+c64-re-tools-mcp`. On native Windows, where `npx` is a `.cmd` file, an install
+made there declares it as `cmd /c npx ...`.
 
 Everything is TypeScript, also when installed, and nothing is built. The
 programs run with [tsx](https://tsx.is), because Node does not run

@@ -16,9 +16,9 @@ const root = resolve(import.meta.dirname, "../..");
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-host-e2e-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
-const posixOnly = process.platform === "win32" ? "the Host Runtime runs on Linux and macOS (POSIX signals and process groups)" : false;
+const shellStandIn = process.platform === "win32" ? "the stand-in VICE is a shell script" : false;
 
-test("c64-re-tools-host runs in the foreground, serves the protocol and stops on SIGTERM", { skip: posixOnly || liveSkip }, async () => {
+test("c64-re-tools-host runs in the foreground, serves the protocol and stops on SIGTERM", { skip: liveSkip }, async () => {
   // The runtime starts VICE once before it listens, so this needs the real one.
   const host = spawn(process.execPath, ["src/host/main.ts", "--port", "0"], { cwd: root, stdio: ["ignore", "pipe", "pipe"], env: liveEnv() });
   try {
@@ -39,7 +39,8 @@ test("c64-re-tools-host runs in the foreground, serves the protocol and stops on
 
     host.kill("SIGTERM");
     const [code] = (await once(host, "exit")) as [number | null];
-    assert.equal(code, 0);
+    // Windows has no SIGTERM: kill ends the runtime at once, and its watchdog cleans up (D7).
+    if (process.platform !== "win32") assert.equal(code, 0);
   } finally {
     host.kill("SIGKILL");
   }
@@ -57,7 +58,7 @@ test("c64-re-tools-host does not start without VICE and says how to install it",
   assert.match(run.stderr, /C64RT_VICE.*Install VICE/);
 });
 
-test("c64-re-tools-host does not start when VICE cannot load its ROMs", { skip: posixOnly }, () => {
+test("c64-re-tools-host does not start when VICE cannot load its ROMs", { skip: shellStandIn }, () => {
   const brokenVice = join(scratch, "x64sc");
   writeFileSync(brokenVice, [
     "#!/bin/sh",

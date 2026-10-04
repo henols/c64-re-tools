@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
+import { mcpServerFor } from "../../distribution/plugin.ts";
+
 const cli = resolve(import.meta.dirname, "../../src/cli/main.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-cli-"));
 after(() => rmSync(project, { recursive: true, force: true }));
@@ -24,7 +26,7 @@ test("install puts the skills and the MCP declaration into the project; uninstal
   const memmap = spawnSync(process.execPath, [join(project, ".claude", "skills", "c64-memory-map", "scripts", "memmap.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
   assert.equal(memmap.status, 0, memmap.stderr);
   assert.match(memmap.stdout, /EXTCOL/);
-  assert.deepEqual(JSON.parse(readFileSync(join(project, ".mcp.json"), "utf8")), { mcpServers: { "c64-re-tools": { command: "npx", args: ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"] } } });
+  assert.deepEqual(JSON.parse(readFileSync(join(project, ".mcp.json"), "utf8")), { mcpServers: { "c64-re-tools": mcpServerFor(process.platform) } });
 
   assert.equal(run("update", "--target", "claude").status, 0, "an update installs again over the old files");
 

@@ -23,7 +23,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+import { mcpServerFor } from "../../distribution/plugin.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
+import { killTree } from "../../src/native/processes.ts";
 import { liveEnv, liveSkip } from "../integration/vice/live.ts";
 
 let acme: string | false = false;
@@ -34,8 +36,8 @@ try {
 }
 
 const root = resolve(import.meta.dirname, "../..");
-// npx bins are .cmd shims on Windows, which spawn cannot run without a shell.
-const posixOnly = process.platform === "win32" ? "npx is a .cmd shim on Windows" : false;
+// npm and npx are .cmd shims on Windows, which spawn runs only through a shell.
+const windows = process.platform === "win32";
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-installed-"));
 let host: ChildProcess | undefined;
 after(async () => {
@@ -43,7 +45,9 @@ after(async () => {
     // npx exits on SIGTERM without passing it on, so signal its whole process
     // group, as Ctrl+C in a terminal does. The host holds stdout until it stops.
     const stopped = once(host.stdout, "close");
-    process.kill(-host.pid!, "SIGTERM");
+    // Windows has no process groups or SIGTERM: end the tree; the runtime's watchdog stops its VICE.
+    if (windows) killTree(host.pid!);
+    else process.kill(-host.pid!, "SIGTERM");
     await stopped;
   }
   rmSync(scratch, { recursive: true, force: true });
@@ -52,12 +56,12 @@ after(async () => {
 // npx and npm with a cache of their own, in the scratch directory.
 const npmEnv = () => ({ ...process.env, npm_config_cache: join(scratch, "npm-cache"), npm_config_audit: "false", npm_config_fund: "false", npm_config_update_notifier: "false" });
 const sh = (command: string, args: string[], cwd: string) => {
-  const run = spawnSync(command, args, { cwd, encoding: "utf8", env: npmEnv() });
+  const run = spawnSync(command, args, { cwd, encoding: "utf8", env: npmEnv(), shell: windows && (command === "npm" || command === "npx") });
   assert.equal(run.status, 0, `${command} ${args.join(" ")}\n${run.stdout}\n${run.stderr}`);
   return run.stdout;
 };
 
-test("the packed package works through npx", { skip: liveSkip || posixOnly, timeout: 600_000 }, async () => {
+test("the packed package works through npx", { skip: liveSkip, timeout: 600_000 }, async () => {
   // 1. Pack; the CLI through npx installs the skills and the MCP declaration into a fresh project: plain files, no links.
   sh("npm", ["pack", "--pack-destination", scratch], root);
   const tarball = join(scratch, readdirSync(scratch).find((name) => name.endsWith(".tgz"))!);
@@ -69,16 +73,18 @@ test("the packed package works through npx", { skip: liveSkip || posixOnly, time
   assert.deepEqual(readdirSync(skills).sort(), readdirSync(join(root, "skills")).sort());
   for (const path of readdirSync(project, { recursive: true, encoding: "utf8" })) assert.equal(lstatSync(join(project, path)).isSymbolicLink(), false, `${path} is no link`);
   const declared = (JSON.parse(readFileSync(join(project, ".mcp.json"), "utf8")) as { mcpServers: Record<string, { command: string; args: string[] }> }).mcpServers["c64-re-tools"]!;
-  assert.deepEqual(declared, { command: "npx", args: ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"] });
+  assert.deepEqual(declared, mcpServerFor(process.platform));
 
   // 2. The Host Runtime and the MCP through npx drive a real VICE.
-  host = spawn("npx", [...npx("c64-re-tools-host"), "--port", "0"], { cwd: scratch, env: { ...npmEnv(), ...liveEnv() }, stdio: ["ignore", "pipe", "inherit"], detached: true });
+  host = spawn("npx", [...npx("c64-re-tools-host"), "--port", "0"], { cwd: scratch, env: { ...npmEnv(), ...liveEnv() }, stdio: ["ignore", "pipe", "inherit"], detached: !windows, shell: windows });
   const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
   const address = `127.0.0.1:${/:(\d+)$/.exec(line)![1]}`;
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
   const client = new Client({ name: "installed-acceptance", version: "0" });
-  await client.connect(new StdioClientTransport({ command: declared.command, args: npx("c64-re-tools-mcp"), env: { ...env, ...npmEnv(), C64RT_HOST: address } as Record<string, string>, cwd: project, stderr: "inherit" }));
+  // As declared, with the packed tarball in place of @latest.
+  const declaredArgs = declared.args.map((arg) => (arg.startsWith("--package=") ? `--package=${tarball}` : arg));
+  await client.connect(new StdioClientTransport({ command: declared.command, args: declaredArgs, env: { ...env, ...npmEnv(), C64RT_HOST: address } as Record<string, string>, cwd: project, stderr: "inherit" }));
   try {
     const status = (await client.callTool({ name: "c64_status", arguments: {} })) as CallToolResult;
     assert.notEqual(status.isError, true, JSON.stringify(status.content));

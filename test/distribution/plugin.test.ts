@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import plugin, { closureOf, MCP_SERVER, scriptsOf, SKILL_PACKAGE } from "../../distribution/plugin.ts";
+import plugin, { closureOf, MCP_SERVER, mcpServerFor, scriptsOf, SKILL_PACKAGE } from "../../distribution/plugin.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-plugin-"));
@@ -82,7 +82,10 @@ test("every installed script runs without the repository", () => {
 
 test("the agent starts the latest published MCP server through npx", () => {
   assert.deepEqual(plugin.mcpServers, { "c64-re-tools": MCP_SERVER });
-  assert.deepEqual(MCP_SERVER, { command: "npx", args: ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"] });
+  assert.deepEqual(mcpServerFor("linux"), { command: "npx", args: ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"] });
+  assert.deepEqual(mcpServerFor("darwin"), mcpServerFor("linux"));
+  assert.deepEqual(mcpServerFor("win32"), { command: "cmd", args: ["/c", "npx", "-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"] }, "npx is a .cmd shim on Windows");
+  assert.deepEqual(MCP_SERVER, mcpServerFor(process.platform));
 });
 
 test("AP SDK accepts the plugin module", () => {
