@@ -19,7 +19,7 @@ function isInstallationIncomplete(error: unknown): boolean {
   return error instanceof WireFailure && error.code === "installation-incomplete" && /x64sc/.test(error.message);
 }
 
-test("findVice prefers C64RT_VICE when it names an executable", { skip: process.platform === "win32" }, () => {
+test("findVice prefers C64RT_VICE when it names an executable", { skip: process.platform === "win32" ? "Windows has no executable bit to test" : false }, () => {
   const bin = dir("explicit-");
   const path = join(bin, "x64sc");
   writeFileSync(path, "");
@@ -27,7 +27,7 @@ test("findVice prefers C64RT_VICE when it names an executable", { skip: process.
   assert.equal(findVice({ C64RT_VICE: path, PATH: "" }), path);
 });
 
-test("findVice refuses a C64RT_VICE that is relative, missing or not executable", { skip: process.platform === "win32" }, () => {
+test("findVice refuses a C64RT_VICE that is relative, missing or not executable", { skip: process.platform === "win32" ? "Windows has no executable bit to test" : false }, () => {
   const bin = dir("bad-");
   const notExecutable = join(bin, "x64sc");
   writeFileSync(notExecutable, "");
@@ -37,7 +37,7 @@ test("findVice refuses a C64RT_VICE that is relative, missing or not executable"
   }
 });
 
-test("findVice searches PATH in order and skips non-executables", { skip: process.platform === "win32" }, () => {
+test("findVice searches PATH in order and skips non-executables", { skip: process.platform === "win32" ? "Windows has no executable bit to test" : false }, () => {
   const first = dir("first-");
   const second = dir("second-");
   writeFileSync(join(first, "x64sc"), "");
@@ -93,7 +93,7 @@ test("freePort returns a loopback port that can be bound", async () => {
   assert.ok(port > 0 && port < 65536);
 });
 
-test("a VICE that cannot load its ROMs is refused with its own error lines", { skip: process.platform === "win32" }, async () => {
+test("a VICE that cannot load its ROMs is refused with its own error lines", { skip: process.platform === "win32" ? "the stand-in VICE is a shell script" : false }, async () => {
   const bin = dir("bin-");
   const path = join(bin, "x64sc");
   // Like real VICE: the reason goes to the log file, and the piped output is lost.

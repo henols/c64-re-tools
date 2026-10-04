@@ -20,7 +20,7 @@ function executable(name: string): string {
 const refused = (error: unknown) =>
   error instanceof WireFailure && error.code === "installation-incomplete" && /ACME/.test(error.message) && /C64RT_ACME/.test(error.message);
 
-test("a tool is found through its variable, else on PATH", { skip: process.platform === "win32" }, () => {
+test("a tool is found through its variable, else on PATH", { skip: process.platform === "win32" ? "Windows has no executable bit to test" : false }, () => {
   const acme = executable("acme");
   assert.equal(findTool(ACME, { C64RT_ACME: acme, PATH: "" }), acme);
   assert.equal(findTool(ACME, { PATH: scratch }), acme);

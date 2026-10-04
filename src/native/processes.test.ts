@@ -8,7 +8,8 @@ import { pathToFileURL } from "node:url";
 import { WireFailure } from "../protocol.ts";
 import { batchInvocation, isAlive, ProcessSupervisor, windowsQuote, type SupervisedProcess } from "./processes.ts";
 
-const posix = process.platform !== "win32";
+// Windows has no process groups: an ended leader no longer leads to its orphaned descendants.
+const orphansFindable = process.platform === "win32" ? "Windows cannot find the descendants of a process that has ended" : false;
 
 // A stub that forks a long-lived grandchild, prints its pid, then keeps running.
 const FORKING_STUB = `
@@ -32,7 +33,7 @@ async function firstLine(child: SupervisedProcess): Promise<string> {
   return line;
 }
 
-test("stop terminates the child and every descendant in its group", { skip: !posix }, async () => {
+test("stop terminates the child and every descendant in its group", async () => {
   const supervisor = new ProcessSupervisor();
   const child = supervisor.spawn([process.execPath, "-e", FORKING_STUB], { stdio: ["ignore", "pipe", "ignore"] });
   const grandchild = Number(await firstLine(child));
@@ -44,7 +45,7 @@ test("stop terminates the child and every descendant in its group", { skip: !pos
   assert.equal(supervisor.size, 0);
 });
 
-test("stop reaches descendants after the leader has already exited", { skip: !posix }, async () => {
+test("stop reaches descendants after the leader has already exited", { skip: orphansFindable }, async () => {
   const supervisor = new ProcessSupervisor();
   const stub = `
     const { spawn } = require("node:child_process");
@@ -61,7 +62,7 @@ test("stop reaches descendants after the leader has already exited", { skip: !po
   assert.ok(await eventuallyDead(grandchild), "grandchild survived");
 });
 
-test("a child that ignores SIGTERM is killed after the grace period", { skip: !posix }, async () => {
+test("a child that ignores SIGTERM is killed after the grace period", async () => {
   const supervisor = new ProcessSupervisor({ graceMs: 200 });
   const stub = `process.on("SIGTERM", () => {}); console.log("ready"); setInterval(() => {}, 1000);`;
   const child = supervisor.spawn([process.execPath, "-e", stub], { stdio: ["ignore", "pipe", "ignore"] });
@@ -73,7 +74,7 @@ test("a child that ignores SIGTERM is killed after the grace period", { skip: !p
   assert.equal((await child.exited).signal, "SIGKILL");
 });
 
-test("stop is idempotent and stopAll stops every group", { skip: !posix }, async () => {
+test("stop is idempotent and stopAll stops every group", async () => {
   const supervisor = new ProcessSupervisor();
   const children = [1, 2, 3].map(() =>
     supervisor.spawn([process.execPath, "-e", FORKING_STUB], { stdio: ["ignore", "pipe", "ignore"] }),
@@ -96,7 +97,7 @@ test("a command that does not exist reports an exit without throwing", async () 
   assert.equal(supervisor.size, 0);
 });
 
-test("the exit guard kills every group when the owning process exits", { skip: !posix }, async () => {
+test("the exit guard kills every group when the owning process exits", async () => {
   // The owner runs the real supervisor, starts a forking stub, prints both pids and exits at once.
   const moduleUrl = pathToFileURL(new URL("./processes.ts", import.meta.url).pathname).href;
   const owner = `
