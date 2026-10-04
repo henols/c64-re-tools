@@ -3,7 +3,7 @@
 // an NTSC frame 263 x 65 = 17095.
 
 import assert from "node:assert/strict";
-import { after, test } from "node:test";
+import { test, type TestContext } from "node:test";
 
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { launchVice, type ViceProcess } from "../../../src/host/vice/process.ts";
@@ -14,17 +14,16 @@ import { liveEnv, liveLog, liveSkip } from "./live.ts";
 // $c000: SEI ; LDX #$00 ; $c003: INX ; STX $c100 ; CPX #$0a ; BNE $c003 ; $c00b: JMP $c00b
 const COUNTER = "78a200e88e00c1e00ad0f84c0bc0";
 
-const opened: ViceSession[] = [];
-after(async () => {
-  await Promise.all(opened.map((session) => session.close()));
-});
-
-async function open(videoStandard: VideoStandard): Promise<{ session: ViceSession; vice: ViceProcess }> {
+/**
+ * A session for one test, closed when that test ends: one emulator at a time,
+ * so a 4-core runner (Windows CI) does not starve the next one's start.
+ */
+async function open(t: TestContext, videoStandard: VideoStandard): Promise<{ session: ViceSession; vice: ViceProcess }> {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
   const vice = await launchVice({ videoStandard, supervisor, env: liveEnv(), log: liveLog });
   const session = await ViceSession.start(vice, videoStandard, liveLog);
-  opened.push(session);
+  t.after(() => session.close());
   return { session, vice };
 }
 
@@ -40,8 +39,8 @@ async function load(session: ViceSession, program: string): Promise<void> {
   await session.handle("registersSet", { space: "c64", values: { pc: 0xc000 } });
 }
 
-test("advance-frames runs exactly that many PAL frames and finishes stopped", { skip: liveSkip, timeout: 120_000 }, async () => {
-  const { session, vice } = await open("pal");
+test("advance-frames runs exactly that many PAL frames and finishes stopped", { skip: liveSkip, timeout: 120_000 }, async (t) => {
+  const { session, vice } = await open(t, "pal");
   await session.handle("execution", { action: "pause", space: "c64" });
   for (const frames of [1, 7, 50]) {
     const before = await cycles(vice);
@@ -55,8 +54,8 @@ test("advance-frames runs exactly that many PAL frames and finishes stopped", { 
   }
 });
 
-test("advance-frames from a running machine pauses first; NTSC frames are 17095 cycles", { skip: liveSkip, timeout: 120_000 }, async () => {
-  const { session, vice } = await open("ntsc");
+test("advance-frames from a running machine pauses first; NTSC frames are 17095 cycles", { skip: liveSkip, timeout: 120_000 }, async (t) => {
+  const { session, vice } = await open(t, "ntsc");
   const result = await session.handle("execution", { action: "advance-frames", count: 3, space: "c64" });
   assert.equal(result.advancedFrames, 3);
   const before = await cycles(vice);
@@ -65,8 +64,8 @@ test("advance-frames from a running machine pauses first; NTSC frames are 17095 
   assert.ok(elapsed >= 10 * 17095 && elapsed < 10 * 17095 + 8, `10 NTSC frames took ${elapsed} cycles`);
 });
 
-test("the same start state gives the same result every time", { skip: liveSkip, timeout: 120_000 }, async () => {
-  const { session } = await open("pal");
+test("the same start state gives the same result every time", { skip: liveSkip, timeout: 120_000 }, async (t) => {
+  const { session } = await open(t, "pal");
   const results = [];
   for (let run = 0; run < 2; run++) {
     await session.handle("reset", { mode: "hard", run: false });
@@ -78,8 +77,8 @@ test("the same start state gives the same result every time", { skip: liveSkip, 
   assert.deepEqual(results[0], results[1]);
 });
 
-test("run-until reaches address, memory and raster targets", { skip: liveSkip, timeout: 120_000 }, async () => {
-  const { session } = await open("pal");
+test("run-until reaches address, memory and raster targets", { skip: liveSkip, timeout: 120_000 }, async (t) => {
+  const { session } = await open(t, "pal");
   await load(session, COUNTER);
   assert.deepEqual(await session.handle("runUntil", { target: { kind: "address", address: 0xc00b, space: "c64" }, timeoutFrames: 100 }), {
     reached: true,
@@ -114,8 +113,8 @@ test("run-until reaches address, memory and raster targets", { skip: liveSkip, t
   assert.equal(again.stopReason, "target");
 });
 
-test("run-until reports timeout, breakpoint and jam as the stop reason", { skip: liveSkip, timeout: 120_000 }, async () => {
-  const { session, vice } = await open("pal");
+test("run-until reports timeout, breakpoint and jam as the stop reason", { skip: liveSkip, timeout: 120_000 }, async (t) => {
+  const { session, vice } = await open(t, "pal");
   await load(session, COUNTER);
   const before = await cycles(vice);
   const timeout = await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 5 });

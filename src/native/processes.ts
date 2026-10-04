@@ -72,9 +72,12 @@ function groupRuns(pgid: number): boolean {
   return false;
 }
 
+/** How long taskkill may block: it runs synchronously, so without a limit it could stop this whole process. */
+const TASKKILL_LIMIT_MS = 5_000;
+
 /** Ends a process and every descendant on Windows, which has no process groups. */
 export function killTree(pid: number): void {
-  spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+  spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true, timeout: TASKKILL_LIMIT_MS });
 }
 
 /** Sends a signal to a process group (POSIX). Returns false when the group no longer exists. */
