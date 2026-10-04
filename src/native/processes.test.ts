@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { test } from "node:test";
-import { pathToFileURL } from "node:url";
 
 import { WireFailure } from "../protocol.ts";
 import { batchInvocation, isAlive, ProcessSupervisor, windowsQuote, type SupervisedProcess } from "./processes.ts";
@@ -62,7 +61,7 @@ test("stop reaches descendants after the leader has already exited", { skip: orp
   assert.ok(await eventuallyDead(grandchild), "grandchild survived");
 });
 
-test("a child that ignores SIGTERM is killed after the grace period", { timeout: 30_000 }, async () => {
+test("a child that ignores SIGTERM is killed after the grace period", { skip: process.platform === "win32" ? "Windows has no SIGTERM: a stop ends the process at once" : false, timeout: 30_000 }, async () => {
   const supervisor = new ProcessSupervisor({ graceMs: 200 });
   const stub = `process.on("SIGTERM", () => {}); console.log("ready"); setInterval(() => {}, 1000);`;
   const child = supervisor.spawn([process.execPath, "-e", stub], { stdio: ["ignore", "pipe", "ignore"] });
@@ -99,7 +98,8 @@ test("a command that does not exist reports an exit without throwing", { timeout
 
 test("the exit guard kills every group when the owning process exits", { timeout: 30_000 }, async () => {
   // The owner runs the real supervisor, starts a forking stub, prints both pids and exits at once.
-  const moduleUrl = pathToFileURL(new URL("./processes.ts", import.meta.url).pathname).href;
+  // The URL itself: its pathname is /D:/... on Windows, which no longer names the file.
+  const moduleUrl = new URL("./processes.ts", import.meta.url).href;
   const owner = `
     import { once } from "node:events";
     import { createInterface } from "node:readline";
