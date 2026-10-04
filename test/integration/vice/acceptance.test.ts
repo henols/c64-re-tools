@@ -98,7 +98,9 @@ test("host → MCP → one VICE: KERNAL bytes, registers and running state", { s
   }
   await waitFor(() => viceChildren(host.process.pid!).length === 0, "VICE exit after MCP close");
   host.process.kill("SIGTERM");
-  assert.equal(((await once(host.process, "exit")) as [number])[0], 0);
+  const [code] = (await once(host.process, "exit")) as [number | null];
+  // Windows has no SIGTERM: kill ends the runtime at once, and its watchdog cleans up (D7).
+  if (process.platform !== "win32") assert.equal(code, 0);
 });
 
 test("a stopped machine reports stopped with its pc, and reads keep it stopped", { skip: liveSkip, timeout: 60_000 }, async () => {

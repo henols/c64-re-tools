@@ -675,7 +675,8 @@ export class ViceAdapter {
   /** The last `limit` instructions the CPU of a space executed, oldest first, with the clock each started at. */
   async history(limit: number, space: Space): Promise<Array<Omit<HistoryEntry, "rasterLine" | "rasterCycle"> & { clock: bigint }>> {
     const answer = await this.#text.command(`chis ${limit} ${space === "drive8" ? "8:" : "c:"}`);
-    return parseHistory(answer);
+    // Some VICE builds print one more, older entry than asked for (found in CI on Windows and on 3.7.1); the newest count.
+    return parseHistory(answer).slice(-limit);
   }
 
   /** The current CPU cycle count of the computer. */
