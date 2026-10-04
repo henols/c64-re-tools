@@ -38,7 +38,7 @@ The capture reads RAM, also the RAM under the ROMs and the I/O area. The script 
 
 1. Run `inspect`. Read `basicStart` and `packing`:
    - `likely`: most of the bytes look compressed. Packed data has this property.
-   - `unlikely`: the bytes look like code and data.
+   - `unlikely`: the bytes look like code and data. A simple cruncher can also give this result. If a BASIC SYS line starts the program and the static analysis finds little code, continue with step 2.
    - `unclear`: the file is short, or the evidence is mixed.
 2. Find the address where the unpacked program starts. Usually the unpacker ends with a JMP to it.
    - Use the c64-emulator skill: set a breakpoint after the unpack loop, or look at the last JMP of the unpacker.

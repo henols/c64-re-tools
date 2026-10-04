@@ -102,6 +102,13 @@ test("a constant SYS expression is evaluated; anything else is not", () => {
   assert.equal(constantExpression(bytes("A")), undefined);
   assert.equal(constantExpression(bytes("")), undefined);
   assert.equal(constantExpression(bytes("(2061")), undefined);
+  // BASIC stops at the first byte that is no operator (real releases: "SYS2073 TCS-CRUNCH!", "SYS 2161  SSG").
+  assert.equal(constantExpression(bytes("2073 TCS", 0xab, "CRUNCH!")), 2073);
+  assert.equal(constantExpression(bytes(" 2161  SSG")), 2161);
+  // An operator that the evaluator does not handle makes the value depend on run time.
+  assert.equal(constantExpression(bytes("2061", 0xaf, "255")), undefined, "AND");
+  assert.equal(constantExpression(bytes("2061", 0xb2, "X")), undefined, "a comparison");
+  assert.equal(constantExpression(bytes("2061", PLUS, "X")), undefined);
 });
 
 test("handoffs come from SYS and USR in program text only", () => {

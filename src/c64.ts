@@ -222,8 +222,16 @@ export function constantExpression(bytes: Uint8Array): number | undefined {
     return value;
   };
   const value = sum();
-  return value !== undefined && at === tokens.length && Number.isFinite(value) ? value : undefined;
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  // BASIC's evaluator ends the expression at the first byte that is no operator,
+  // so "SYS2073 TCS-CRUNCH!" jumps to 2073 (found on a real release). An operator
+  // this evaluator does not handle (^, AND, OR, a comparison) needs run-time values.
+  if (at < tokens.length && BASIC_OPERATORS.has(tokens[at]!)) return undefined;
+  return value;
 }
+
+/** BASIC V2 operator tokens: + - * / ^ AND OR > = <. */
+const BASIC_OPERATORS = new Set([0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf, 0xb0, 0xb1, 0xb2, 0xb3]);
 
 /** SYS and USR in program text: not in strings, REM or DATA. */
 export function findHandoffs(lines: TokenizedLine[]): BasicHandoff[] {

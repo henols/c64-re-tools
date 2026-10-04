@@ -50,6 +50,26 @@ test("a dump listing gives the code and data regions and the labels", () => {
   ]);
 });
 
+test("a .word line that dxa pads with spaces instead of a tab still counts (real listing)", () => {
+  // Lines from dxa 0.1.5 on a 64 KiB image of a real game: the .word lines have no tab.
+  const listing = [
+    "0018          l18:",
+    "0019          l19 = * + 1",
+    "0018 00 00 00 	.byt $00,$00,$00",
+    "001b          l1b:",
+    "001b 02       	.byt $02",
+    "001c          l1c:",
+    "001d          l1d = * + 1",
+    "001c 07 00      .word l7",
+    "001e f3 00      .word lf3",
+    "0020 a9 00    	lda #$00",
+  ].join("\n");
+  assert.deepEqual(parseListing(listing, 0x0018, 0x0021).regions, [
+    { start: 0x0018, end: 0x001f, classification: "data" },
+    { start: 0x0020, end: 0x0021, classification: "code" },
+  ]);
+});
+
 test("a truncated, reordered or misplaced listing is refused", () => {
   const lines = LISTING.trimEnd().split("\n");
   assert.throws(() => parseListing(lines.slice(0, -1).join("\n"), 0x0801, 0x0827), /holds 3 bytes, but the next line is 4 bytes later/);

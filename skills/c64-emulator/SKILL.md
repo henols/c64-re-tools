@@ -64,6 +64,8 @@ Write operations need a stopped CPU. Stop the CPU with `c64_execution` action `p
 
 Step, next and until-return work only in space `c64`. The emulator cannot stop the disk drive CPU after one instruction. To find when the drive executes an address, use `c64_run_until` with an address target in space `drive8`, or a breakpoint in space `drive8`. The drive can execute a few more instructions before it stops. The computer completes its current instruction. The `pc` in the result is the drive address where it stopped.
 
+`c64_keyboard` puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard hardware directly does not see them. Many games do this. For such a program, use `c64_joystick`, or open the window and ask the user to press the key.
+
 Before a risky experiment, save the state with `c64_snapshot`. Restore it to try again from the same point.
 
 The emulator has no window. When the user must type, play or look at the C64, do these steps:

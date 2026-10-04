@@ -61,7 +61,8 @@ export function parseListing(listing: string, start: number, end: number): Pick<
       labels.push({ address, name: label[2]! });
       continue;
     }
-    const statement = /^([0-9a-f]{4}) ((?:[0-9a-f]{2} ?){1,3})\s*\t(.+)$/.exec(line);
+    // dxa pads the bytes column with a tab, but a two-byte .word line with spaces only (found on a real game).
+    const statement = /^([0-9a-f]{4}) ((?:[0-9a-f]{2} ?){1,3})\s+(\S.*)$/.exec(line);
     if (statement === null) continue;
     statements.push({ address: Number.parseInt(statement[1]!, 16), dumped: statement[2]!.trim().split(/\s+/).length, data: dataSize(statement[3]!) });
   }

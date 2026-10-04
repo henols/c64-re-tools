@@ -63,7 +63,7 @@ export function inspect(program: Uint8Array): Record<string, unknown> {
       packing === "likely"
         ? `${high} of ${blocks.length} blocks of 256 bytes look compressed (above ${HIGH_ENTROPY} bits per byte); code and data are usually below.`
         : packing === "unlikely"
-          ? `Only ${high} of ${blocks.length} blocks look compressed; the bytes look like code and data.`
+          ? `Only ${high} of ${blocks.length} blocks look compressed; the bytes look like code and data. A simple cruncher can look the same: when a BASIC SYS line starts the program and static analysis finds little code, run it and capture the memory.`
           : "The entropy does not show clearly if the program is packed. Run it and look at what it writes to memory.",
   };
 }

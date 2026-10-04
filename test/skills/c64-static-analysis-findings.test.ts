@@ -85,6 +85,25 @@ test("functions become routine symbols, code is code and data is bytes", () => {
   });
 });
 
+test("a generated name that Ghidra gives to two functions gets each function's address", () => {
+  const findings = ghidraFindings({
+    coverage: [{ start: 0x0000, end: 0xffff }],
+    functions: [
+      { entry: 0x0812, name: "thunk_FUN_e434", nameSource: "generated" },
+      { entry: 0x2a00, name: "thunk_FUN_e434", nameSource: "generated" },
+      { entry: 0xe434, name: "FUN_e434", nameSource: "generated" },
+    ],
+    regions: [],
+    references: [],
+    decompilations: [],
+    completeness: { functions: true, regions: true, references: true },
+  });
+  assert.deepEqual(
+    findings.symbols.map((symbol) => symbol.name),
+    ["thunk_FUN_e434_0812", "thunk_FUN_e434_2a00", "FUN_e434"],
+  );
+});
+
 test("an echoed seed stays with its semantic owner, and a code/data disagreement is reported", () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-echo-"));
   const own = openForWrite(project);
