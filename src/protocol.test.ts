@@ -27,7 +27,7 @@ const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCO
 
 test("private protocol has a stable internal identity", () => {
   assert.equal(HOST_PROTOCOL_ID, "c64-re-tools-host");
-  assert.equal(HOST_PROTOCOL_VERSION, 1);
+  assert.equal(HOST_PROTOCOL_VERSION, 2, "2 since the heartbeat (D18)");
 });
 
 test("a frame is a 4-byte big-endian length followed by UTF-8 JSON", () => {
@@ -76,11 +76,13 @@ test("client messages are validated", () => {
   assert.throws(() => parseClientMessage({ type: "request", id: -1, op: "status", params: {} }), ProtocolError);
   assert.throws(() => parseClientMessage({ type: "request", id: 1, op: "status" }), ProtocolError);
   assert.throws(() => parseClientMessage({ type: "shutdown" }), ProtocolError);
+  assert.deepEqual(parseClientMessage({ type: "ping" }), { type: "ping" });
   assert.throws(() => parseClientMessage([]), ProtocolError);
 });
 
 test("host messages are validated", () => {
   assert.deepEqual(parseHostMessage({ type: "ready" }), { type: "ready" });
+  assert.deepEqual(parseHostMessage({ type: "pong" }), { type: "pong" });
   const error = { code: "machine-unavailable", message: "VICE did not start" };
   assert.deepEqual(parseHostMessage({ type: "error", error }), { type: "error", error });
   assert.deepEqual(parseHostMessage({ type: "reply", id: 3, error }), { type: "reply", id: 3, error });
@@ -91,7 +93,7 @@ test("host messages are validated", () => {
 
 test("a hello from another protocol version is installation-incomplete without naming versions", () => {
   assert.equal(checkHello(hello), undefined);
-  for (const other of [{ ...hello, version: 2 }, { ...hello, protocol: "something-else" }]) {
+  for (const other of [{ ...hello, version: HOST_PROTOCOL_VERSION - 1 }, { ...hello, version: HOST_PROTOCOL_VERSION + 1 }, { ...hello, protocol: "something-else" }]) {
     const failure = checkHello(other);
     assert.equal(failure?.code, "installation-incomplete");
     assert.doesNotMatch(failure.message, /\b\d+\b|protocol/);

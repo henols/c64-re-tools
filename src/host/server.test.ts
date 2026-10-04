@@ -90,11 +90,12 @@ after(async () => {
   await Promise.all(servers.map((server) => server.close()));
 });
 
-async function serve(factory: ViceSessionFactory, handshakeTimeoutMs?: number): Promise<HostServer> {
+async function serve(factory: ViceSessionFactory, handshakeTimeoutMs?: number, heartbeatTimeoutMs?: number): Promise<HostServer> {
   const server = await startHostServer({
     port: 0,
     createViceSession: factory,
     ...(handshakeTimeoutMs === undefined ? {} : { handshakeTimeoutMs }),
+    ...(heartbeatTimeoutMs === undefined ? {} : { heartbeatTimeoutMs }),
   });
   servers.push(server);
   return server;
@@ -239,6 +240,49 @@ test("closing the connection closes its session", async () => {
   const client = await RawClient.open(await serve(stubFactory(log)));
   client.send(hello);
   await client.next();
+  client.end();
+  await waitFor(() => log.closed === 1);
+});
+
+test("a ping is answered with pong and never reaches the session", async () => {
+  const log: StubLog = { started: [], closed: 0 };
+  let handled = 0;
+  const client = await RawClient.open(await serve(stubFactory(log, { handle: async () => (handled++, {}) as never })));
+  client.send(hello);
+  assert.deepEqual(await client.next(), { type: "ready" });
+  client.send({ type: "ping" });
+  assert.deepEqual(await client.next(), { type: "pong" });
+  assert.equal(handled, 0);
+  client.end();
+});
+
+test("a ping before ready closes the connection", async () => {
+  const client = await RawClient.open(await serve(stubFactory({ started: [], closed: 0 })));
+  client.send({ type: "ping" });
+  await client.closed;
+});
+
+test("a ready client that sends nothing for the heartbeat timeout is closed with its session (D18)", async () => {
+  const log: StubLog = { started: [], closed: 0 };
+  const client = await RawClient.open(await serve(stubFactory(log), undefined, 100));
+  client.send(hello);
+  assert.deepEqual(await client.next(), { type: "ready" });
+  // Silent, like a client behind a connection that vanished without a close.
+  await client.closed;
+  await waitFor(() => log.closed === 1);
+});
+
+test("a client that keeps pinging stays open past the heartbeat timeout", async () => {
+  const log: StubLog = { started: [], closed: 0 };
+  const client = await RawClient.open(await serve(stubFactory(log), undefined, 150));
+  client.send(hello);
+  await client.next();
+  for (let i = 0; i < 6; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    client.send({ type: "ping" });
+    assert.deepEqual(await client.next(), { type: "pong" });
+  }
+  assert.equal(log.closed, 0);
   client.end();
   await waitFor(() => log.closed === 1);
 });

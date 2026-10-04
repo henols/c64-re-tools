@@ -10,6 +10,7 @@ import {
   type ToolOperation,
   type ToolOperations,
   encodeFrame,
+  HEARTBEAT_TIMEOUT_MS,
   MessageReader,
   parseClientMessage,
   ProtocolError,
@@ -67,6 +68,8 @@ export interface HostServerOptions {
   port: number;
   /** How long a new connection may stay silent before it must send hello. */
   handshakeTimeoutMs?: number;
+  /** How long a ready connection may send nothing (no request, no ping) before it is closed with its session (D18). */
+  heartbeatTimeoutMs?: number;
   log?: (line: string) => void;
 }
 
@@ -110,6 +113,8 @@ class Connection {
   readonly #options: HostServerOptions;
   readonly #log: (line: string) => void;
   readonly #handshakeTimer: NodeJS.Timeout;
+  /** Runs from ready on; every received frame restarts it (D18). */
+  #heartbeatTimer: NodeJS.Timeout | undefined;
   #resolveClosed!: () => void;
 
   constructor(socket: Socket, options: HostServerOptions, log: (line: string) => void) {
@@ -122,6 +127,8 @@ class Connection {
       options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS,
     );
     socket.setNoDelay(true);
+    // The kernel also probes an idle connection, for a peer that vanished without a close.
+    socket.setKeepAlive(true, 10_000);
     socket.on("data", (chunk) => this.#receive(chunk));
     socket.on("error", (error) => this.#log(`connection error: ${error.message}`));
     socket.on("close", () => void this.#shutdown());
@@ -131,6 +138,18 @@ class Connection {
   close(): Promise<void> {
     this.#socket.destroy();
     return this.closed;
+  }
+
+  /**
+   * A client that sends nothing for the heartbeat timeout is gone or hung (a
+   * half-open connection never closes by itself): close it, and with it its
+   * session and emulator (D18).
+   */
+  #restartHeartbeat(): void {
+    if (this.#state !== "open") return;
+    clearTimeout(this.#heartbeatTimer);
+    const timeout = this.#options.heartbeatTimeoutMs ?? HEARTBEAT_TIMEOUT_MS;
+    this.#heartbeatTimer = setTimeout(() => this.#abort(`no message or ping for ${timeout} ms; the client is gone`), timeout);
   }
 
   #send(message: HostMessage, attachments: readonly Uint8Array[] = []): void {
@@ -143,6 +162,7 @@ class Connection {
   }
 
   #receive(chunk: Buffer): void {
+    this.#restartHeartbeat();
     try {
       for (const { message, attachments } of this.#reader.push(chunk)) {
         if (this.#state === "closed") return;
@@ -171,14 +191,19 @@ class Connection {
         this.#isTool = true;
         this.#state = "open";
         this.#send({ type: "ready" });
+        this.#restartHeartbeat();
         return;
       }
       this.#state = "starting";
       void this.#startSession(message.videoStandard ?? "pal");
       return;
     }
-    if (message.type !== "request") throw new ProtocolError("hello sent twice");
-    if (this.#state !== "open") throw new ProtocolError("request sent before ready");
+    if (message.type === "hello") throw new ProtocolError("hello sent twice");
+    if (this.#state !== "open") throw new ProtocolError(`${message.type} sent before ready`);
+    if (message.type === "ping") {
+      this.#send({ type: "pong" });
+      return;
+    }
     void this.#answer(message, attachments);
   }
 
@@ -198,6 +223,7 @@ class Connection {
     this.#session = session;
     this.#state = "open";
     this.#send({ type: "ready" });
+    this.#restartHeartbeat();
   }
 
   async #answer(request: Request, attachments: Buffer[]): Promise<void> {
@@ -242,6 +268,7 @@ class Connection {
     this.#shuttingDown = true;
     this.#state = "closed";
     clearTimeout(this.#handshakeTimer);
+    clearTimeout(this.#heartbeatTimer);
     // Tool work for a client that is gone stops: its children and workspaces go too.
     this.#toolAbort.abort();
     const session = this.#session ?? (await this.#starting);

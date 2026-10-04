@@ -5,8 +5,12 @@ import { textToPetsciiName } from "./c64.ts";
 
 /** Private Host Runtime protocol identifier. */
 export const HOST_PROTOCOL_ID = "c64-re-tools-host" as const;
-/** Bumped on any incompatible change; a mismatch fails the handshake. */
-export const HOST_PROTOCOL_VERSION = 1;
+/** Bumped on any incompatible change; a mismatch fails the handshake. 2: heartbeat (D18). */
+export const HOST_PROTOCOL_VERSION = 2;
+/** After ready, the client pings this often, on every connection (D18). */
+export const HEARTBEAT_INTERVAL_MS = 10_000;
+/** Either side closes a connection that has sent nothing for this long (D18). */
+export const HEARTBEAT_TIMEOUT_MS = 30_000;
 /** The Host Runtime listens on 127.0.0.1 at this port by default (D5). */
 export const DEFAULT_HOST_PORT = 6464;
 /** Largest frame body either side accepts (D1). */
@@ -630,8 +634,16 @@ export type Reply =
   | { type: "reply"; id: number; result: unknown }
   | { type: "reply"; id: number; error: WireError };
 
-export type ClientMessage = Hello | Request;
-export type HostMessage = Ready | HandshakeError | Reply;
+/** Heartbeat (D18): the client pings after ready, the host answers pong. Neither touches the session. */
+export interface Ping {
+  type: "ping";
+}
+export interface Pong {
+  type: "pong";
+}
+
+export type ClientMessage = Hello | Request | Ping;
+export type HostMessage = Ready | HandshakeError | Reply | Pong;
 
 // ---------------------------------------------------------------------------
 // Validation. A ProtocolError means the peer broke the contract; the receiver
@@ -705,6 +717,7 @@ export function parseClientMessage(value: unknown): ClientMessage {
     if (!isObject(value.params)) throw new ProtocolError("request params is not an object");
     return { type: "request", id: value.id, op: value.op as ViceOperation, params: value.params as never };
   }
+  if (value.type === "ping") return { type: "ping" };
   throw new ProtocolError("unknown message type");
 }
 
@@ -712,6 +725,7 @@ export function parseClientMessage(value: unknown): ClientMessage {
 export function parseHostMessage(value: unknown): HostMessage {
   if (!isObject(value)) throw new ProtocolError("message is not an object");
   if (value.type === "ready") return { type: "ready" };
+  if (value.type === "pong") return { type: "pong" };
   if (value.type === "error") {
     if (!isWireError(value.error)) throw new ProtocolError("handshake error is malformed");
     return { type: "error", error: { code: value.error.code, message: value.error.message } };

@@ -9,7 +9,7 @@ import { after, test } from "node:test";
 
 import { HostConnection } from "../../../src/host-client/connect.ts";
 import { isLoopback, startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { parseClientMessage, ProtocolError, WireFailure } from "../../../src/protocol.ts";
+import { HOST_PROTOCOL_VERSION, parseClientMessage, ProtocolError, WireFailure } from "../../../src/protocol.ts";
 
 const TOKEN = "a-shared-secret-of-some-length";
 const outside = Object.values(networkInterfaces())
@@ -60,7 +60,7 @@ test("loopback addresses are recognised, also IPv4-mapped", () => {
 });
 
 test("a hello token must be a short string", () => {
-  const hello = { type: "hello", protocol: "c64-re-tools-host", version: 1, role: "tool" };
+  const hello = { type: "hello", protocol: "c64-re-tools-host", version: HOST_PROTOCOL_VERSION, role: "tool" };
   assert.equal(parseClientMessage({ ...hello, token: "x" }).type, "hello");
   assert.throws(() => parseClientMessage({ ...hello, token: 42 }), ProtocolError);
   assert.throws(() => parseClientMessage({ ...hello, token: "x".repeat(257) }), ProtocolError);

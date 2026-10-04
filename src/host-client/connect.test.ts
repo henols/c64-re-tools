@@ -88,6 +88,49 @@ test("a host speaking another protocol is installation-incomplete", async () => 
   await assert.rejects(HostConnection.open({ role: "vice-session", env }), failsWith("installation-incomplete"));
 });
 
+/** A host that answers hello with ready, then counts pings and answers them only while `answer` holds. */
+async function heartbeatHost(answer: () => boolean): Promise<{ env: NodeJS.ProcessEnv; pings: () => number }> {
+  let pings = 0;
+  const server = createServer((socket: Socket) => {
+    const decoder = new FrameDecoder();
+    socket.on("data", (chunk) => {
+      for (const message of decoder.push(chunk) as Array<{ type: string }>) {
+        if (message.type === "hello") socket.write(encodeFrame({ type: "ready" }));
+        if (message.type === "ping") {
+          pings++;
+          if (answer()) socket.write(encodeFrame({ type: "pong" }));
+        }
+      }
+    });
+    socket.on("error", () => {});
+  });
+  servers.push(server);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  return { env: { C64RT_HOST: `127.0.0.1:${(server.address() as { port: number }).port}` }, pings: () => pings };
+}
+
+test("after ready the client pings, and a host that answers keeps the connection (D18)", async () => {
+  const host = await heartbeatHost(() => true);
+  const connection = await HostConnection.open({ role: "vice-session", env: host.env, heartbeat: { intervalMs: 20, timeoutMs: 100 } });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.ok(host.pings() >= 5, `pinged ${host.pings()} times`);
+  let gone = false;
+  void connection.closed.then(() => (gone = true));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(gone, false);
+  await connection.close();
+});
+
+test("a host that stops answering closes the connection with a reason (D18)", async () => {
+  let answering = true;
+  const host = await heartbeatHost(() => answering);
+  const connection = await HostConnection.open({ role: "vice-session", env: host.env, heartbeat: { intervalMs: 20, timeoutMs: 100 } });
+  answering = false;
+  const reason = await connection.closed;
+  assert.match(String(reason), /sent nothing for 100 ms/);
+});
+
 test("a host that hangs up or stays silent fails the handshake without hanging", async () => {
   await assert.rejects(HostConnection.open({ role: "vice-session", env: await fakeHost("hangup") }), failsWith("machine-unavailable"));
   await assert.rejects(

@@ -5,6 +5,8 @@ import { connect as connectTcp, type Socket } from "node:net";
 import {
   DEFAULT_HOST_PORT,
   encodeFrame,
+  HEARTBEAT_INTERVAL_MS,
+  HEARTBEAT_TIMEOUT_MS,
   HOST_PROTOCOL_ID,
   HOST_PROTOCOL_VERSION,
   parseHostMessage,
@@ -14,6 +16,7 @@ import {
   type ErrorCode,
   type Hello,
   type HostMessage,
+  type Ping,
   type Request,
   type Role,
   type VideoStandard,
@@ -74,6 +77,11 @@ function tcpConnect(endpoint: Endpoint): Promise<Socket | undefined> {
   });
 }
 
+export interface Heartbeat {
+  intervalMs: number;
+  timeoutMs: number;
+}
+
 /** A handshaken, framed connection to the Host Runtime. */
 export class HostConnection {
   /** Settles when the connection is gone; carries the reason unless we closed it. */
@@ -83,17 +91,29 @@ export class HostConnection {
   #listener: ((message: HostMessage, attachments: Buffer[]) => void) | undefined;
   #failure: Error | undefined;
   #closedByUs = false;
+  #pingTimer: NodeJS.Timeout | undefined;
+  #silenceTimer: NodeJS.Timeout | undefined;
+  #heartbeat: Heartbeat | undefined;
 
   private constructor(socket: Socket) {
     this.#socket = socket;
     socket.setNoDelay(true);
+    socket.setKeepAlive(true, 10_000);
     this.closed = new Promise((resolve) => {
       socket.on("close", () => resolve(this.#closedByUs ? undefined : (this.#failure ?? new Error("the host runtime closed the connection"))));
     });
     socket.on("error", (error) => (this.#failure ??= error));
+    socket.on("close", () => {
+      clearInterval(this.#pingTimer);
+      clearTimeout(this.#silenceTimer);
+    });
     socket.on("data", (chunk) => {
+      this.#restartSilence();
       try {
-        for (const { message, attachments } of this.#reader.push(chunk)) this.#listener?.(parseHostMessage(message), attachments);
+        for (const { message, attachments } of this.#reader.push(chunk)) {
+          const parsed = parseHostMessage(message);
+          if (parsed.type !== "pong") this.#listener?.(parsed, attachments);
+        }
       } catch (error) {
         if (!(error instanceof ProtocolError)) throw error;
         this.#failure = error;
@@ -111,6 +131,8 @@ export class HostConnection {
     videoStandard?: VideoStandard;
     env?: NodeJS.ProcessEnv;
     readyTimeoutMs?: number;
+    /** Defaults to a ping every 10 s and a 30 s silence limit (D18). */
+    heartbeat?: Heartbeat;
   }): Promise<HostConnection> {
     let socket: Socket | undefined;
     for (const endpoint of hostEndpoints(options.env)) {
@@ -140,7 +162,10 @@ export class HostConnection {
     });
     connection.#listener = undefined;
 
-    if (!(answer instanceof Error) && answer.type === "ready") return connection;
+    if (!(answer instanceof Error) && answer.type === "ready") {
+      connection.#startHeartbeat(options.heartbeat ?? { intervalMs: HEARTBEAT_INTERVAL_MS, timeoutMs: HEARTBEAT_TIMEOUT_MS });
+      return connection;
+    }
     await connection.close();
     if (answer instanceof Error) {
       if (answer instanceof ProtocolError) {
@@ -170,7 +195,30 @@ export class HostConnection {
     return this.closed.then(() => {});
   }
 
-  #send(message: Hello | Request): void {
+  /**
+   * Pings the host so it knows this client is alive, and closes the connection
+   * when the host has sent nothing for the timeout: a host that vanished
+   * without a close then fails like a closed one (D18). The timers never keep
+   * the process alive.
+   */
+  #startHeartbeat(heartbeat: Heartbeat): void {
+    this.#heartbeat = heartbeat;
+    const ping: Ping = { type: "ping" };
+    this.#pingTimer = setInterval(() => this.#send(ping), heartbeat.intervalMs).unref();
+    this.#restartSilence();
+  }
+
+  #restartSilence(): void {
+    if (this.#heartbeat === undefined || this.#socket.destroyed) return;
+    clearTimeout(this.#silenceTimer);
+    const timeout = this.#heartbeat.timeoutMs;
+    this.#silenceTimer = setTimeout(() => {
+      this.#failure ??= new Error(`the host runtime sent nothing for ${timeout} ms`);
+      this.#socket.destroy();
+    }, timeout).unref();
+  }
+
+  #send(message: Hello | Request | Ping): void {
     if (!this.#socket.destroyed) this.#socket.write(encodeFrame(message));
   }
 }
