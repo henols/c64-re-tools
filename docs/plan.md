@@ -152,11 +152,20 @@ Acceptance (19 §12): an end-to-end fixture from an unknown C64 artifact through
 - [x] M10.4 **c64-reverse-engineering** — `SKILL.md` only: the orchestration workflow and handoffs; no script.
 - [x] M10.5 **Acceptance** — the end-to-end chain on a fixture disk: disk → BASIC → packing → Ghidra analysis → knowledge → reconstructed source → ACME → c64-testing PASS. The DXA step waits for M7.2.
 
+## M11 — Installation and distribution
+
+Acceptance (19 §13): from the packed npm artifact in a fresh directory, the skills install, the MCP launches, the Host Runtime is reachable, a real VICE operation works, and a host-tool skill script runs from its installed location.
+
+- [x] M11.1 **Skill-script bundles** — `distribution/bundle.ts`: esbuild (dev dependency) bundles each skill script that a SKILL.md runs into one self-contained JavaScript file under `dist/skills/`, with the SKILL.md (script paths rewritten to `.js`) and its references. Skills copied out of the repository then need no `src/`.
+- [ ] M11.2 **Plugin definition** — `distribution/plugin.ts` for `@jalco/ap-sdk` (08 §3): the bundled skills with their scripts and references, and the stdio MCP declaration `c64-re-tools-mcp` (the global npm binary, never `npx`). `ap-sdk check` and `ap-sdk build` pass.
+- [ ] M11.3 **Package** — `package.json` `files` and bins; the build makes `dist/skills` and the plugin module; AP SDK becomes a runtime dependency of the CLI only.
+- [ ] M11.4 **CLI** — `c64-re-tools install|update|uninstall|status`, thin over the AP SDK CLI (08 §5); `diagnose` and per-user host autostart wait (D14).
+- [ ] M11.5 **Acceptance from installed artifacts** — `npm pack`, a fresh directory, `npm install` of the tarball, the installed host and MCP binaries with real VICE, an installed skill bundle with a native tool, and `install` into a temporary harness directory.
+
 ## Later milestones
 
 Expand each into steps when it starts.
 
-- [ ] **M11** Installation and distribution, tested from installed artifacts.
 - [ ] **M12** Hardening and release, including the orphan guard (D7), container binding (D5/D6), platform coverage and release CI.
 
 ## Decisions
@@ -178,3 +187,4 @@ Points the design leaves open, decided for M1. Revisit a row before changing the
 | D11 | VICE crash | Fail the operation with `machine-state-lost`. No automatic restart in M1. |
 | D12 | DXA missing | DXA is not installed here, and tools are never installed for the user. Its parser is not written against guessed output. M8 (Ghidra, installed) goes first and gives c64-static-analysis its first analyzer path through the same importer; M7.2–M7.4 follow when DXA is installed. |
 | D13 | Test execution | c64-testing scenarios run in a skill script that opens its own VICE session through the host client, with the same operations the MCP uses. 19 §11 asks for scenarios and A/B runs in code and an automated acceptance, which the MCP's one session cannot give a script. This departs from 02 §7, where skill scripts use the Host Runtime only for native tools. |
+| D14 | Diagnose and autostart | Not built yet. The design lists `diagnose` and a per-user Host Runtime autostart (08 §8, 19 §13), but Henrik earlier rejected doctor/pre-flight commands (refusals at the point of use instead) and asked never to start the runtime as a daemon or ship service definitions. Question for Henrik. |

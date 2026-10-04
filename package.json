@@ -14,12 +14,14 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"for(const d of ['language','scripts'])fs.cpSync('src/host/tools/ghidra/'+d,'dist/host/tools/ghidra/'+d,{recursive:true})\"",
+    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"for(const d of ['language','scripts'])fs.cpSync('src/host/tools/ghidra/'+d,'dist/host/tools/ghidra/'+d,{recursive:true})\" && node distribution/bundle.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "pnpm build && node --test \"src/**/*.test.ts\" \"test/**/*.test.ts\""
   },
   "devDependencies": {
+    "@jalco/ap-sdk": "0.4.1",
     "@types/node": "24.13.3",
+    "esbuild": "0.28.2",
     "typescript": "7.0.2"
   },
   "dependencies": {

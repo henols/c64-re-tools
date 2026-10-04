@@ -1,0 +1,3 @@
+# esbuild works through its JavaScript API without its install script.
+allowBuilds:
+  esbuild: false
