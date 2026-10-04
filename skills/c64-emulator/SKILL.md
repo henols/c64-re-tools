@@ -91,7 +91,8 @@ If you cannot get the machine into the necessary state, say which state you coul
 ## Failure and conflicts
 
 - `machine-state-lost`: the emulator stopped and its state is gone. Do not continue with results from before. Tell the user to restart the MCP server.
-- `machine-unavailable`: the host runtime does not run, or it does not answer. Tell the user to start the host runtime with `npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host`.
+- `machine-unavailable` and the message names a pause or a dialog in the emulator window: do not send more operations. Tell the user to resume the emulator (Pause, Alt+P) or to close the dialog in the VICE window. Then do the operation again. The machine state does not change.
+- `machine-unavailable` with a different message: the host runtime does not run, or it does not answer. Tell the user to start the host runtime with `npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host`.
 - `machine-running`: stop the CPU first, then try again.
 - `installation-incomplete`: tell the user the message. Do not try to repair the installation.
 - `c64_run_until` with `stopReason` `timeout`: the target did not occur in the frame limit. This is evidence too. Report it.

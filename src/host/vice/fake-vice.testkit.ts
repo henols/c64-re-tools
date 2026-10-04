@@ -109,6 +109,13 @@ export class FakeVice {
   stepTo: number | undefined;
   /** When set, binary commands get no answer (a hung VICE). */
   hung = false;
+  /**
+   * VICE's own pause (Alt+P) or a dialog: commands on both connections wait
+   * unanswered, and run in order once resumeUi() is called, as on real VICE.
+   */
+  uiPaused = false;
+  readonly #heldBinary: Array<[number, number, Buffer]> = [];
+  readonly #heldText: string[] = [];
   /** Autostart answers but leaves the machine stopped, as real VICE rarely does. */
   autostartStaysInMonitor = false;
   /** A reset answers but the machine stays in the monitor, with no event. */
@@ -213,6 +220,17 @@ export class FakeVice {
     this.#enterMonitor(this.#binary!);
   }
 
+  pauseUi(): void {
+    this.uiPaused = true;
+  }
+
+  /** Ends the UI pause: the held binary commands run, then the held text commands. */
+  resumeUi(): void {
+    this.uiPaused = false;
+    for (const [id, command, body] of this.#heldBinary.splice(0)) this.#binaryCommand(this.#binary!, id, command, body);
+    for (const line of this.#heldText.splice(0)) this.#textCommand(this.#text!, line);
+  }
+
   /** Lets a pending execute-until-return reach its RTS and stop. */
   completeReturn(): void {
     if (this.returnTo === undefined || !this.running) throw new Error("no until-return is pending");
@@ -303,6 +321,10 @@ export class FakeVice {
         pending = pending.subarray(11 + length);
         this.commands.push(command);
         if (this.hung) continue;
+        if (this.uiPaused) {
+          this.#heldBinary.push([id, command, Buffer.from(body)]);
+          continue;
+        }
         this.#binaryCommand(socket, id, command, body);
       }
     });
@@ -526,7 +548,8 @@ export class FakeVice {
       while ((newline = pending.indexOf("\n")) >= 0) {
         const line = pending.slice(0, newline);
         pending = pending.slice(newline + 1);
-        this.#textCommand(socket, line);
+        if (this.uiPaused) this.#heldText.push(line);
+        else this.#textCommand(socket, line);
       }
     });
     socket.on("error", () => {});

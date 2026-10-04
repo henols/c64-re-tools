@@ -22,6 +22,11 @@ export class TextMonitorError extends Error {
   override name = "TextMonitorError";
 }
 
+/** A command got no answer in time, but the connection is open; it may still run later. */
+export class TextMonitorTimeoutError extends TextMonitorError {
+  override name = "TextMonitorTimeoutError";
+}
+
 const PROMPT = /\((?:C|\d+):\$[0-9a-f]{4}\) /g;
 export const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 /**
@@ -30,6 +35,8 @@ export const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
  * this client sends is idempotent, so a repeat is harmless.
  */
 const RESEND_AFTER_MS = 3_000;
+/** While an earlier command timed out, later ones are waited for only this long (see BinaryMonitor). */
+const OVERDUE_COMMAND_TIMEOUT_MS = 1_000;
 /** How long to wait for a sentinel's answer before sending the sentinel again. */
 const SENTINEL_RESEND_MS = 1_000;
 const ANY_SENTINEL_ANSWER = /\+\d+\n\$[0-9a-f]{4}\n[0-7]+\n%[01 ]+\n/g;
@@ -53,6 +60,10 @@ export class TextMonitor {
   #nonce = 0x1000 + Math.floor(Math.random() * 0x1000);
   #closedByUs = false;
   #failure: Error | undefined;
+  /** The time limit of a command that names none. */
+  defaultTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS;
+  /** Set when a command timed out; cleared by the next command that is answered. */
+  #overdue = false;
 
   private constructor(socket: Socket) {
     this.#socket = socket;
@@ -94,9 +105,18 @@ export class TextMonitor {
    * Commands run one at a time. A command makes VICE stop the machine if it
    * was running.
    */
-  command(line: string, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS): Promise<string> {
+  command(line: string, timeoutMs = this.defaultTimeoutMs): Promise<string> {
     if (/[\r\n]/.test(line)) return Promise.reject(new TypeError("a monitor command must be one line"));
-    const run = this.#queue.then(() => this.#exchange(line, timeoutMs));
+    const run = this.#queue.then(async () => {
+      try {
+        const output = await this.#exchange(line, this.#overdue ? Math.min(timeoutMs, OVERDUE_COMMAND_TIMEOUT_MS) : timeoutMs);
+        this.#overdue = false;
+        return output;
+      } catch (error) {
+        if (error instanceof TextMonitorTimeoutError) this.#overdue = true;
+        throw error;
+      }
+    });
     this.#queue = run.catch(() => {});
     return run;
   }
@@ -147,7 +167,7 @@ export class TextMonitor {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
         // The raw tail goes to the host log only; it is never shown to the LLM.
-        throw new TextMonitorError(`text monitor command got no answer in ${timeoutMs} ms (received: ${JSON.stringify(this.#buffer.slice(-200))})`);
+        throw new TextMonitorTimeoutError(`text monitor command got no answer in ${timeoutMs} ms (received: ${JSON.stringify(this.#buffer.slice(-200))})`);
       }
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, remaining);

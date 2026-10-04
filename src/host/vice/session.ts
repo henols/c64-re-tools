@@ -46,11 +46,11 @@ import {
   rasterWindowExpression,
   ViceAdapter,
 } from "./adapter.ts";
-import { decodeProgramCounter, MonitorConnectionError, MonitorError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
+import { decodeProgramCounter, MonitorConnectionError, MonitorError, MonitorTimeoutError, ResponseType, type MonitorResponse } from "./binary-monitor.ts";
 import { decodeCia, decodeSid, decodeSprite, decodeVicii } from "./chips.ts";
 import { compareFrames, differenceImage, encodePng, type IndexedFrame } from "./screen.ts";
 import { launchVice, type ViceProcess } from "./process.ts";
-import { TextMonitorError } from "./text-monitor.ts";
+import { TextMonitorError, TextMonitorTimeoutError } from "./text-monitor.ts";
 
 const CRASH_SETTLE_MS = 500;
 /** How long until-return may run before the session stops it and reports the limit. */
@@ -64,6 +64,15 @@ function sleep(ms: number): Promise<void> {
 
 const STATE_LOST =
   "The emulator stopped unexpectedly and its machine state is lost. Restart the c64-re-tools MCP server to get a fresh C64.";
+
+const VICE_HELD =
+  "The emulator does not take commands now: it is paused in its window (Pause, Alt+P) or a dialog in its window waits for an answer. " +
+  "Resume it or close the dialog in the VICE window, then try again. The machine is kept as it was.";
+
+/** A command that got no answer in time on a connection that is still open. */
+function isTimeout(error: unknown): boolean {
+  return error instanceof MonitorTimeoutError || error instanceof TextMonitorTimeoutError;
+}
 
 function hex(value: number): string {
   return `$${value.toString(16).padStart(4, "0")}`;
@@ -102,6 +111,8 @@ export class ViceSession implements ViceSessionHandle {
   #queue: Promise<unknown> = Promise.resolve();
   #closed = false;
   #lost = false;
+  /** Set while VICE takes no commands (its own pause, a dialog); settles when it is restored (#recover). */
+  #held: Promise<void> | undefined;
   /** Session-local snapshots by name, as files in the scratch directory (15 §36). */
   readonly #snapshots = new Map<string, string>();
   #snapshotFiles = 0;
@@ -870,8 +881,9 @@ export class ViceSession implements ViceSessionHandle {
     try {
       result = await work();
     } catch (error) {
-      // A refused read must not leave a running machine stopped either.
-      if (wasRunning && !this.#lost) {
+      // A refused read must not leave a running machine stopped either. After
+      // a timeout nothing more is sent: VICE is held, and #recover restores it.
+      if (wasRunning && !this.#lost && !isTimeout(error)) {
         await settle()
           .then(() => (shouldResume() ? this.#resume() : undefined))
           .catch(() => {});
@@ -888,17 +900,21 @@ export class ViceSession implements ViceSessionHandle {
     const run = this.#queue.then(async () => {
       if (this.#closed) throw new WireFailure("machine-unavailable", "The emulator session is closed.");
       if (this.#lost) throw new WireFailure("machine-state-lost", STATE_LOST);
+      // Nothing is sent to a held VICE: each command would wait there and run later.
+      if (this.#held !== undefined) throw new WireFailure("machine-unavailable", VICE_HELD);
+      const runningBefore = this.#state === "running";
+      const halts = this.#haltCount;
       try {
         return await work();
       } catch (error) {
-        throw await this.#translate(error);
+        throw await this.#translate(error, runningBefore, halts);
       }
     });
     this.#queue = run.catch(() => {});
     return run;
   }
 
-  async #translate(error: unknown): Promise<unknown> {
+  async #translate(error: unknown, runningBefore: boolean, halts: number): Promise<unknown> {
     if (error instanceof WireFailure) return error;
     if (this.#closed) return new WireFailure("machine-unavailable", "The emulator session is closed.");
     if (error instanceof MonitorConnectionError || error instanceof TextMonitorError) {
@@ -906,6 +922,10 @@ export class ViceSession implements ViceSessionHandle {
       // A broken connection usually means VICE died; give its exit a moment to land.
       if (!this.#lost) await Promise.race([this.#vice.exited, sleep(CRASH_SETTLE_MS)]);
       if (this.#lost) return new WireFailure("machine-state-lost", STATE_LOST);
+      if (isTimeout(error)) {
+        this.#recover(runningBefore, halts);
+        return new WireFailure("machine-unavailable", VICE_HELD);
+      }
       return new WireFailure("machine-unavailable", "The emulator did not answer in time.");
     }
     if (error instanceof MonitorError) {
@@ -914,6 +934,33 @@ export class ViceSession implements ViceSessionHandle {
       return new WireFailure("operation-failed", "The emulator refused the operation.");
     }
     return error;
+  }
+
+  /**
+   * VICE runs but took no command in time: its own pause or a dialog holds
+   * it. The commands already sent wait in VICE and run once it goes on, and
+   * the last of them leaves the machine stopped. So: wait, with no time limit,
+   * until VICE answers a ping (behind every binary command) and a text command
+   * (behind every text command); then put the machine back as it was before
+   * the operation that timed out. A breakpoint that hit meanwhile keeps it
+   * stopped. Operations fail at once until then and send nothing.
+   */
+  #recover(runningBefore: boolean, halts: number): void {
+    if (this.#held !== undefined) return;
+    this.#log("VICE takes no commands (paused in its window, or a dialog is open); waiting until it goes on");
+    this.#held = (async () => {
+      try {
+        await this.#machine.answered();
+        await this.#machine.drainText();
+        this.#state = "stopped";
+        if (runningBefore && this.#haltCount === halts) await this.#resume();
+        this.#log(`VICE takes commands again; the machine is ${this.#state} as before`);
+      } catch (error) {
+        if (!this.#closed) this.#log(`VICE did not come back: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        this.#held = undefined;
+      }
+    })();
   }
 
   #onEvent(event: MonitorResponse): void {

@@ -17,6 +17,7 @@ import {
   memoryGetBody,
   MonitorConnectionError,
   MonitorError,
+  MonitorTimeoutError,
   ResponseDecoder,
   type MonitorResponse,
 } from "./binary-monitor.ts";
@@ -196,6 +197,31 @@ test("a request without an answer times out and a late answer is ignored", async
   // The connection stays usable.
   const next = monitor.request(Command.ping, undefined, 30);
   await assert.rejects(next, /no response/);
+  await monitor.close();
+});
+
+test("while a request is overdue, later ones wait briefly; its late answer ends that; Infinity never times out", async () => {
+  // A held VICE: nothing is answered until release() runs every command in order.
+  const held: Array<() => void> = [];
+  let holding = true;
+  const monitor = await fakeMonitor((socket, id, command) => {
+    const answer = () => socket.write(response(command, id));
+    if (holding) held.push(answer);
+    else answer();
+  });
+  await assert.rejects(monitor.request(Command.ping, undefined, 50), MonitorTimeoutError);
+  // Overdue: a long limit is cut to the short one, but the command is still sent.
+  const started = Date.now();
+  await assert.rejects(monitor.request(Command.ping, undefined, 60_000), MonitorTimeoutError);
+  assert.ok(Date.now() - started < 5_000);
+  assert.equal(held.length, 2);
+  const waiting = monitor.request(Command.ping, undefined, Infinity);
+  await new Promise((resolve) => setTimeout(resolve, 1_200));
+  holding = false;
+  for (const answer of held.splice(0)) answer();
+  await waiting;
+  // The late answers came: the full limit applies again.
+  await monitor.request(Command.ping, undefined, 60_000);
   await monitor.close();
 });
 

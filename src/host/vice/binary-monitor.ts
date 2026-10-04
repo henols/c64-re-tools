@@ -93,6 +93,14 @@ export class MonitorConnectionError extends Error {
   override name = "MonitorConnectionError";
 }
 
+/**
+ * A command got no answer in time, but the connection is open. The command
+ * still waits in VICE and runs once VICE goes on (its own pause, a dialog).
+ */
+export class MonitorTimeoutError extends MonitorConnectionError {
+  override name = "MonitorTimeoutError";
+}
+
 export function encodeCommand(requestId: number, command: number, body: Uint8Array = new Uint8Array(0)): Buffer {
   const frame = Buffer.alloc(COMMAND_HEADER_BYTES + body.length);
   frame[0] = STX;
@@ -240,10 +248,15 @@ interface Pending {
   extras: MonitorResponse[];
   resolve: (response: MonitorResponse & { extras: MonitorResponse[] }) => void;
   reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
+  timer: NodeJS.Timeout | undefined;
 }
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+/**
+ * While an earlier command is overdue, later ones are still sent (VICE runs
+ * them in order once it goes on, so cleanup lands) but waited for only this long.
+ */
+export const OVERDUE_REQUEST_TIMEOUT_MS = 1_000;
 
 /** One binary-monitor connection with request correlation and an event stream. */
 export class BinaryMonitor {
@@ -256,6 +269,10 @@ export class BinaryMonitor {
   #nextId = 1;
   #failure: Error | undefined;
   #closedByUs = false;
+  /** The time limit of a request that names none. */
+  defaultTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
+  /** Requests that timed out and whose late answer has not come yet. */
+  readonly #overdue = new Set<number>();
 
   private constructor(socket: Socket) {
     this.#socket = socket;
@@ -302,21 +319,27 @@ export class BinaryMonitor {
   /**
    * Sends one command and resolves with its terminal response. Responses
    * carrying the same request id before the terminal one (checkpoint list)
-   * are returned in `extras`. Rejects with MonitorError on a VICE error code.
+   * are returned in `extras`. Rejects with MonitorError on a VICE error code,
+   * and with MonitorTimeoutError after `timeoutMs` (Infinity: no limit).
    */
   request(
     command: number,
     body: Uint8Array = new Uint8Array(0),
-    timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    timeoutMs = this.defaultTimeoutMs,
   ): Promise<MonitorResponse & { extras: MonitorResponse[] }> {
     if (this.#socket.destroyed) return Promise.reject(new MonitorConnectionError("monitor connection is closed"));
     const requestId = this.#nextId;
     this.#nextId = this.#nextId >= EVENT_REQUEST_ID - 1 ? 1 : this.#nextId + 1;
+    const limit = this.#overdue.size > 0 && timeoutMs !== Infinity ? Math.min(timeoutMs, OVERDUE_REQUEST_TIMEOUT_MS) : timeoutMs;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.#pending.delete(requestId);
-        reject(new MonitorConnectionError(`monitor command 0x${command.toString(16)} got no response in ${timeoutMs} ms`));
-      }, timeoutMs);
+      const timer =
+        limit === Infinity
+          ? undefined
+          : setTimeout(() => {
+              this.#pending.delete(requestId);
+              this.#overdue.add(requestId);
+              reject(new MonitorTimeoutError(`monitor command 0x${command.toString(16)} got no response in ${limit} ms`));
+            }, limit);
       this.#pending.set(requestId, {
         command,
         terminalType: TERMINAL_RESPONSE[command] ?? command,
@@ -351,7 +374,11 @@ export class BinaryMonitor {
         continue;
       }
       const pending = this.#pending.get(response.requestId);
-      if (pending === undefined) continue; // a late answer to a timed-out request
+      if (pending === undefined) {
+        // A late answer to a timed-out request: VICE went on.
+        this.#overdue.delete(response.requestId);
+        continue;
+      }
       if (response.error !== 0) {
         this.#settle(response.requestId, pending);
         pending.reject(new MonitorError(pending.command, response.error));

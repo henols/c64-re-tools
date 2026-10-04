@@ -207,6 +207,78 @@ test("a VICE crash fails the operation and every later one with machine-state-lo
   await session.close();
 });
 
+/** Short monitor time limits, so a held VICE is noticed quickly. */
+function shortLimits(process: { monitor: { defaultTimeoutMs: number }; text: { defaultTimeoutMs: number } }): void {
+  process.monitor.defaultTimeoutMs = 100;
+  process.text.defaultTimeoutMs = 100;
+}
+
+const held = (error: unknown) => failsWith("machine-unavailable")(error) && /paused in its window/.test((error as Error).message);
+
+/** Retries a read until the session takes commands again. */
+async function untilTakesCommands(session: ViceSession): Promise<void> {
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    try {
+      await session.handle("registersGet", { space: "c64" });
+      return;
+    } catch (error) {
+      if (!held(error) || Date.now() > deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+}
+
+test("a VICE paused in its window: the operation says so, later ones fail at once and send nothing, and the machine runs again as before", async () => {
+  const { fake, session, process } = await startSession();
+  shortLimits(process);
+  fake.pauseUi();
+  await assert.rejects(session.handle("memoryRead", { address: 0x1000, size: 1, space: "c64", view: "cpu" }), held);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const sent = fake.commands.length;
+  const started = Date.now();
+  await assert.rejects(session.handle("registersGet", { space: "c64" }), held);
+  assert.ok(Date.now() - started < 50, "no wait for a held VICE");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(fake.commands.length, sent, "nothing is sent to a held VICE");
+  assert.equal(fake.running, true, "nothing has run yet");
+
+  fake.resumeUi();
+  await untilTakesCommands(session);
+  // The queued read stopped the machine once VICE went on; the session resumed it.
+  assert.equal(fake.running, true);
+  assert.equal((await session.handle("status", {})).state, "running");
+  await session.close();
+});
+
+test("a held text command does not leave the machine stopped once VICE goes on", async () => {
+  const { fake, session, process } = await startSession();
+  shortLimits(process);
+  fake.pauseUi();
+  await assert.rejects(session.handle("disassemble", { address: 0xe5cf, count: 2, space: "c64", view: "cpu" }), held);
+  fake.resumeUi();
+  await untilTakesCommands(session);
+  assert.equal(fake.running, true);
+  await session.close();
+});
+
+test("a machine that was stopped stays stopped once a held VICE goes on", async () => {
+  const { fake, session, process } = await startSession();
+  shortLimits(process);
+  fake.stopSpontaneously(0x2100);
+  await waitFor(() => !fake.running);
+  await session.handle("status", {});
+  fake.commands.length = 0;
+  fake.pauseUi();
+  await assert.rejects(session.handle("memoryRead", { address: 0, size: 1, space: "c64", view: "cpu" }), held);
+  fake.resumeUi();
+  await untilTakesCommands(session);
+  assert.equal(fake.running, false);
+  assert.ok(!fake.commands.includes(Command.exit), "a stopped machine is never resumed");
+  assert.equal((await session.handle("status", {})).state, "stopped");
+  await session.close();
+});
+
 test("closing drops queued work and stops VICE", async () => {
   const { session, process } = await startSession();
   const queued = session.handle("memoryRead", { address: 0, size: 1, space: "c64", view: "cpu" });

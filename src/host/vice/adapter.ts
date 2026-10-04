@@ -433,6 +433,19 @@ export class ViceAdapter {
     await this.#monitor.request(Command.ping);
   }
 
+  /**
+   * Waits, with no time limit, until VICE answers a ping: VICE answers in
+   * order, so every binary command sent before it has run. Stops the machine.
+   */
+  async answered(): Promise<void> {
+    await this.#monitor.request(Command.ping, new Uint8Array(0), Infinity);
+  }
+
+  /** Runs a harmless text command, so every text command sent before it has run. */
+  async drainText(): Promise<void> {
+    await this.#text.command("~ $0000");
+  }
+
   /** Executes `count` C64 instructions, with subroutine calls as one when `over`. Answers once stopped again. */
   async step(count: number, over: boolean): Promise<void> {
     const body = Buffer.alloc(3);
