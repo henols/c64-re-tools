@@ -147,11 +147,12 @@ jobs:
           # A build is installed only when it runs.
           "$MAKE" -C "$T/dxa-0.1.5" CC=gcc LDFLAGS=-static || true
           ls -la "$T/dxa-0.1.5" | grep -i dxa || true
-          out="$("$T/dxa-0.1.5/dxa.exe" -h 2>&1)"; echo "dxa -h exit $?: $out"
-          if echo "$out" | grep -q "dxa v0.1"; then cp "$T/dxa-0.1.5/dxa.exe" "$T/bin/"; else echo "dxa does not run"; fi
+          # dxa -h exits non-zero and names itself by its full path on Windows.
+          out="$("$T/dxa-0.1.5/dxa.exe" -h 2>&1 || true)"; echo "dxa -h: $out"
+          if echo "$out" | grep -q "v0.1.5 -- symbolic"; then cp "$T/dxa-0.1.5/dxa.exe" "$T/bin/"; else echo "dxa does not run"; fi
           git clone --depth 1 https://github.com/meonwax/acme.git "$T/acme" && "$MAKE" -C "$T/acme/src" CC=gcc LDFLAGS=-static || true
           ls -la "$T/acme/src" | grep -i "acme\b\|\.exe" || true
-          out="$("$T/acme/src/acme.exe" --version 2>&1)"; echo "acme --version exit $?: $out"
+          out="$("$T/acme/src/acme.exe" --version 2>&1 || true)"; echo "acme --version: $out"
           if echo "$out" | grep -q "This is ACME"; then cp "$T/acme/src/acme.exe" "$T/bin/"; else echo "ACME does not run"; fi
           ls -la "$T/bin"
 

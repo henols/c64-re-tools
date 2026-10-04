@@ -25,6 +25,9 @@ export interface Probe {
 
 
 /** The first output line that matches, without terminal color codes (c1541 colors an OpenCBM notice). */
+/** dxa's version line, also as "D:\\tools\\dxa.exe v0.1.5 -- symbolic 65xx disassembler" on Windows. */
+export const DXA_VERSION = /^(?:.*[\\/])?dxa(?:\.exe)? v\d/i;
+
 export function versionLine(output: string, pattern: RegExp): string | undefined {
   return stripVTControlCharacters(output)
     .split(/\r?\n/)
@@ -88,8 +91,9 @@ export async function probeGhidra(context: ToolContext): Promise<ToolStatus> {
 export async function localToolStatus(context: ToolContext): Promise<ToolStatus[]> {
   const probes: Probe[] = [
     { name: "ACME", find: (env) => findTool(ACME, env), args: ["--version"], pattern: /^This is ACME, release / },
-    // dxa -V prints its version and exits with status 1.
-    { name: "dxa", find: (env) => findTool(DXA, env), args: ["-V"], pattern: /^dxa v\d/ },
+    // dxa -V prints its version and exits with status 1. It names itself by argv[0], without the
+    // directory only where that uses "/": on Windows the line starts with the full path (found in CI).
+    { name: "dxa", find: (env) => findTool(DXA, env), args: ["-V"], pattern: DXA_VERSION },
   ];
   return [...(await probeTools(probes, context)), await probeGhidra(context)];
 }

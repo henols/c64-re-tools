@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 
 import { ProcessSupervisor } from "./processes.ts";
 import { standIn } from "./standin.testkit.ts";
-import { localToolStatus, versionLine } from "./status.ts";
+import { DXA_VERSION, localToolStatus, versionLine } from "./status.ts";
 
 const skip = process.platform === "win32" ? "the stand-in tools are shell scripts" : false;
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-status-"));
@@ -16,6 +16,13 @@ test("a version line is found among notices and colour codes", () => {
   const output = "\u001b[97;40mOPENCBM\u001b[0m: opening dynamic library libopencbm.so failed!\nc1541 (VICE 3.10)\n";
   assert.equal(versionLine(output, /^c1541 \(VICE \d/), "c1541 (VICE 3.10)");
   assert.equal(versionLine("nothing useful", /^c1541 \(VICE \d/), undefined);
+});
+
+test("dxa's version line is found also where it names itself by its full Windows path", () => {
+  assert.equal(versionLine("dxa v0.1.5 -- symbolic 65xx disassembler\n", DXA_VERSION), "dxa v0.1.5 -- symbolic 65xx disassembler");
+  const windows = "D:\\a\\_temp\\dxa-0.1.5\\dxa.exe: option requires an argument -- h\r\nD:\\a\\_temp\\dxa-0.1.5\\dxa.exe v0.1.5 -- symbolic 65xx disassembler\r\n";
+  assert.match(versionLine(windows, DXA_VERSION) ?? "", /dxa\.exe v0\.1\.5/);
+  assert.equal(versionLine("dxarchive v2", DXA_VERSION), undefined);
 });
 
 test("the local tools are reported as running, missing, or found but not running", { skip, timeout: 30_000 }, async () => {
