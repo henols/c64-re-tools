@@ -131,11 +131,21 @@ Acceptance (19 §10): the NMOS language compiles, decodes all 105 undocumented o
 - [x] M8.5 **c64-static-analysis skill** — `skills/c64-static-analysis/scripts/analyze.ts`: seeds from current knowledge, `ghidra.analyze`, Ghidra → normalized findings (seed names stay semantic), `importFindings`, a compact result; `SKILL.md` (ASD-STE100).
 - [x] M8.6 **Acceptance** — the iterative loop on a fixture PRG: Ghidra import → semantic rename → seeded re-run → same importer, history and conflicts kept, echoed seed not owned by Ghidra.
 
+## M9 — Functional-equivalence testing
+
+Acceptance (19 §11): one scenario PASSes an equivalent reconstruction, FAILs a behaviorally different one, and is INCONCLUSIVE when its checkpoint cannot be reached.
+
+- [x] M9.1 **Scenarios** — `skills/c64-testing/scripts/scenario.ts`: a small JSON scenario (subjects, ordered steps, named checkpoints with memory, register, VIC-II, sprite and screen observations), checked before it runs; names resolve per side (original from knowledge.db, rebuild from the c64-assembler output or a name map). See D13.
+- [x] M9.2 **A/B runner** — original then rebuild in one VICE session through the host client; a reset stops at the reset vector so frame counts are exact; screen observations of the original become session baselines that the rebuild is compared against; any setup or emulator failure and an unreached checkpoint are INCONCLUSIVE, never FAIL.
+- [x] M9.3 **Comparison and result** — exact by default, explicit per-byte tolerances, screen mismatch ratio and masks from the scenario only; FAIL lists the smallest differences per checkpoint. `test.ts` exits 0/1/3 for PASS/FAIL/INCONCLUSIVE.
+- [x] M9.4 **Checklist** — `checklist.ts` makes a Markdown playtest list from the scenarios' checkpoints plus what only a person can judge (13 §15).
+- [x] M9.5 **c64-testing skill** — `SKILL.md` and `references/scenario-format.md` (ASD-STE100).
+- [x] M9.6 **Acceptance** — `test/integration/vice/m9-acceptance.test.ts`: a counter program, a relocated equivalent rebuild and one that stops early; PASS, FAIL (only the counter differs) and INCONCLUSIVE, repeatable in real VICE.
+
 ## Later milestones
 
 Expand each into steps when it starts.
 
-- [ ] **M9** c64-testing: functional equivalence, PASS/FAIL/INCONCLUSIVE.
 - [ ] **M10** c64-memory-map, c64-unpacker, c64-provenance, c64-reverse-engineering.
 - [ ] **M11** Installation and distribution, tested from installed artifacts.
 - [ ] **M12** Hardening and release, including the orphan guard (D7), container binding (D5/D6), platform coverage and release CI.
@@ -158,3 +168,4 @@ Points the design leaves open, decided for M1. Revisit a row before changing the
 | D10 | Video standard | PAL by default; `C64RT_VIDEO=ntsc` at MCP start. Fixed for the session. |
 | D11 | VICE crash | Fail the operation with `machine-state-lost`. No automatic restart in M1. |
 | D12 | DXA missing | DXA is not installed here, and tools are never installed for the user. Its parser is not written against guessed output. M8 (Ghidra, installed) goes first and gives c64-static-analysis its first analyzer path through the same importer; M7.2–M7.4 follow when DXA is installed. |
+| D13 | Test execution | c64-testing scenarios run in a skill script that opens its own VICE session through the host client, with the same operations the MCP uses. 19 §11 asks for scenarios and A/B runs in code and an automated acceptance, which the MCP's one session cannot give a script. This departs from 02 §7, where skill scripts use the Host Runtime only for native tools. |
