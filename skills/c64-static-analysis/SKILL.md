@@ -34,11 +34,13 @@ node <skill>/scripts/analyze.ts extracted/game.prg --entry '$080d' --decompile '
 
 The script prints one JSON object. Addresses are `$` and four hex digits.
 
-Both analyzers use the knowledge as seeds:
+Both analyzers use the knowledge from the user and the LLM as seeds:
 
-- Each routine symbol is an entry point.
+- Each routine is an entry point.
 - Each region that is not code stays data.
-- Each name from the user or the LLM is a label. The listing, Ghidra and the decompiler show that name.
+- Each name is a label. The listing, Ghidra and the decompiler show that name.
+
+Facts that an analyzer found are not seeds. A new analysis can then correct or remove them.
 
 ## Workflow
 

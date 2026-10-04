@@ -9,20 +9,24 @@ import type { DxaResult, GhidraParams, GhidraResult } from "../../../src/host-cl
 
 export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
 
+const semantic = (row: { origin: string }) => row.origin === "user" || row.origin === "llm";
+
 /**
- * Seeds from current knowledge only (12 §18): routine symbols are entry
- * points, non-code regions are data, and names from the user or the LLM are
- * labels. Analyzer-made names are not seeds, so they never come back as seeds.
+ * Seeds from current semantic knowledge (12 §18): routines from the user or
+ * the LLM are entry points, their non-code regions are data, and their names
+ * are labels. Analyzer facts are never seeds: fed back, an analyzer's own
+ * earlier guess would force the same answer again, and a re-analysis could
+ * not retire it (12 §7).
  */
 export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoints: number[] = []): Seeds {
-  const symbols = listSymbols(db);
+  const symbols = listSymbols(db).filter(semantic);
   const entryPoints = [...new Set([...extraEntryPoints, ...symbols.filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address)])].sort((a, b) => a - b);
   return {
     entryPoints,
     dataRanges: listRegions(db)
-      .filter((region) => region.type !== "code")
+      .filter((region) => semantic(region) && region.type !== "code")
       .map((region) => ({ start: region.start, end: region.end })),
-    labels: symbols.filter((symbol) => symbol.origin === "user" || symbol.origin === "llm").map((symbol) => ({ address: symbol.address, name: symbol.name })),
+    labels: symbols.map((symbol) => ({ address: symbol.address, name: symbol.name })),
   };
 }
 

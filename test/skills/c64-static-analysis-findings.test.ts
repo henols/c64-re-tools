@@ -19,7 +19,7 @@ after(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("seeds come from current knowledge: routines, non-code regions and semantic names", () => {
+test("seeds come from current semantic knowledge only: routines, non-code regions and names", () => {
   assert.deepEqual(seedsFromKnowledge(undefined, [0x080d]), { entryPoints: [0x080d], dataRanges: [], labels: [] }, "no database means no seeds beyond the given ones");
   renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "update_player", kind: "routine" });
   renameSymbol(db, { origin: "user" }, { address: 0x3000, name: "player_x", kind: "variable" });
@@ -33,8 +33,17 @@ test("seeds come from current knowledge: routines, non-code regions and semantic
     regions: [],
     references: [],
   });
+  importFindings(db, {
+    analyzer: "dxa",
+    coverage: [{ start: 0x5000, end: 0x50ff }],
+    authoritative: { symbols: false, regions: true, references: false },
+    symbols: [],
+    regions: [{ start: 0x5000, end: 0x50ff, type: "bytes" }],
+    references: [],
+  });
+  // Ghidra's FUN_2200 and DXA's data region are no seeds: a re-analysis must be free to drop them.
   assert.deepEqual(seedsFromKnowledge(db, [0x080d, 0x2100]), {
-    entryPoints: [0x080d, 0x2100, 0x2200],
+    entryPoints: [0x080d, 0x2100],
     dataRanges: [{ start: 0x4000, end: 0x403f }],
     labels: [
       { address: 0x2100, name: "update_player" },
