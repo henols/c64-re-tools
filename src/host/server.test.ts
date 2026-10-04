@@ -73,7 +73,7 @@ function stubFactory(log: StubLog, overrides: Partial<ViceSessionHandle> = {}): 
     log.started.push({ videoStandard });
     return {
       async handle(op, params) {
-        if (op === "status") return { state: "running", videoStandard, warp: false } as never;
+        if (op === "status") return { state: "running", videoStandard, warp: false, window: false } as never;
         if (op === "memoryRead") return { address: (params as { address: number }).address, data: "00" } as never;
         throw new WireFailure("unsupported-in-space", "stub");
       },
@@ -175,7 +175,7 @@ test("requests are dispatched to the session and replies carry their id", async 
   client.send(hello);
   await client.next();
   client.send({ type: "request", id: 41, op: "status", params: {} });
-  assert.deepEqual(await client.next(), { type: "reply", id: 41, result: { state: "running", videoStandard: "pal", warp: false } });
+  assert.deepEqual(await client.next(), { type: "reply", id: 41, result: { state: "running", videoStandard: "pal", warp: false, window: false } });
   client.send({ type: "request", id: 42, op: "registersGet", params: { space: "drive8" } });
   assert.deepEqual(await client.next(), {
     type: "reply",

@@ -29,7 +29,7 @@ function stub(state: StubState): ViceSessionFactory {
     state.opened.push(videoStandard);
     return {
       async handle(op, _params, attachments) {
-        if (op === "status") return { state: "running", videoStandard, warp: false } as never;
+        if (op === "status") return { state: "running", videoStandard, warp: false, window: false } as never;
         if (op === "programLoad") {
           state.received = attachments ?? [];
           return { state: "stopped", loadAddress: 0x0801, size: (attachments?.[0]?.length ?? 2) - 2 } as never;
@@ -72,8 +72,8 @@ test("the MCP opens one session at start and closes it when the harness disconne
   const server = await startHostServer({ port: 0, createViceSession: stub(state) });
   servers.push(server);
   const client = await mcp(server.port, { C64RT_VIDEO: "ntsc" });
-  assert.equal((await client.listTools()).tools.length, 30, "the built server registers every 15 §37 tool");
-  assert.deepEqual((await status(client)).structuredContent, { state: "running", videoStandard: "ntsc", warp: false });
+  assert.equal((await client.listTools()).tools.length, 31, "the built server registers every 15 §37 tool and c64_window (D20)");
+  assert.deepEqual((await status(client)).structuredContent, { state: "running", videoStandard: "ntsc", warp: false, window: false });
   await status(client);
   assert.deepEqual(state.opened, ["ntsc"], "one MCP process must own exactly one session");
   await client.close();

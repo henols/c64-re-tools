@@ -82,7 +82,10 @@ The exact v1 schemas are frozen in [15 — VICE MCP schemas](15-vice-mcp-schemas
 c64_status
 c64_reset
 c64_warp
+c64_window
 ~~~
+
+c64_window (D20 in docs/plan.md) shows the machine in a VICE window when the user must take part, and hides it again. VICE runs headless otherwise.
 
 ### Execution
 

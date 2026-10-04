@@ -75,7 +75,7 @@ Project knowledge is read and written locally in the project environment and doe
 
 VICE and native C64 tools belong on the host machine because:
 
-- VICE requires a graphical host environment;
+- VICE requires a graphical host environment (since D20 in docs/plan.md, VICE runs headless and needs the host's display only while the c64_window window is open);
 - agent execution may be in a devcontainer or other headless environment;
 - host tools should not need to be duplicated into every devcontainer;
 - the host already owns tool installations such as VICE, ACME and Ghidra.

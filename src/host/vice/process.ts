@@ -16,7 +16,11 @@
 // - the monitor's profiler prints numbers in the host locale, so VICE runs
 //   with LC_NUMERIC=C;
 // - piped output is block-buffered and lost when VICE exits early (for
-//   example without its ROM files), so VICE also writes a log file.
+//   example without its ROM files), so VICE also writes a log file;
+// - `-console` runs VICE with no window and needs no display (D20); the
+//   monitors, the CPU and the frame buffer work as with a window. It is a
+//   start option only, so headless and windowed are two VICE processes.
+//   A headless VICE plays no sound: `-sounddev dummy` keeps the SID emulated.
 
 import { accessSync, constants, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:net";
@@ -82,6 +86,9 @@ export function freePort(): Promise<number> {
   });
 }
 
+/** A VICE with no window (the default, D20) or one with a window the user can use. */
+export type ViceMode = "headless" | "window";
+
 export function viceArguments(options: {
   binary: string;
   port: number;
@@ -89,7 +96,9 @@ export function viceArguments(options: {
   configFile: string;
   logFile: string;
   videoStandard: VideoStandard;
+  mode: ViceMode;
 }): string[] {
+  const headless = options.mode === "headless" ? ["-console", "-sounddev", "dummy"] : [];
   return [
     options.binary,
     "-default",
@@ -118,11 +127,14 @@ export function viceArguments(options: {
     "37",
     "-controlport2device",
     "37",
+    ...headless,
   ];
 }
 
 export interface LaunchOptions {
   videoStandard: VideoStandard;
+  /** Defaults to headless. */
+  mode?: ViceMode;
   supervisor: ProcessSupervisor;
   /** Environment to find VICE in and to run it with. Defaults to process.env. */
   env?: NodeJS.ProcessEnv;
@@ -196,6 +208,11 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
 
 const LAUNCH_ATTEMPTS = 3;
 
+/** VICE's own error lines from the log lines of failed launches, without repeats. */
+export function startErrorLines(output: string[]): string[] {
+  return [...new Set(output.flatMap((entry) => entry.split("\n")).filter((line) => /\berror\b/i.test(line) && !line.startsWith("VICE ")))];
+}
+
 /**
  * Starts VICE once, as a session does, and stops it again (D14). Finding
  * x64sc is not enough: without its ROM files VICE exits at once. Throws
@@ -209,7 +226,7 @@ export async function checkViceStarts(options: Omit<LaunchOptions, "videoStandar
     vice = await launchVice({ ...options, videoStandard: "pal", log: (line) => output.push(line) });
   } catch (error) {
     if (error instanceof WireFailure && error.code === "installation-incomplete") throw error;
-    const reasons = [...new Set(output.flatMap((entry) => entry.split("\n")).filter((line) => /\berror\b/i.test(line) && !line.startsWith("VICE ")))];
+    const reasons = startErrorLines(output);
     throw new WireFailure(
       "installation-incomplete",
       `VICE (${binary}) is installed but does not start${reasons.length === 0 ? "." : `:\n  ${reasons.join("\n  ")}`}\n` +
@@ -230,7 +247,15 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
   // Owned by the supervisor: its exit guard and the watchdog remove it if this process dies.
   const releaseScratch = options.supervisor.ownPath(scratch);
   const child = options.supervisor.spawn(
-    viceArguments({ binary, port, textPort, configFile: join(scratch, "vicerc"), logFile: join(scratch, "vice.log"), videoStandard: options.videoStandard }),
+    viceArguments({
+      binary,
+      port,
+      textPort,
+      configFile: join(scratch, "vicerc"),
+      logFile: join(scratch, "vice.log"),
+      videoStandard: options.videoStandard,
+      mode: options.mode ?? "headless",
+    }),
     {
       cwd: scratch,
       // Keep VICE's config, cache and state away from the user's own VICE setup, and

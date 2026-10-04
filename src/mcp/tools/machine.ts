@@ -1,9 +1,10 @@
-// Machine tools: c64_status (15 §7), c64_reset (15 §8) and c64_warp (15 §9).
+// Machine tools: c64_status (15 §7), c64_reset (15 §8), c64_warp (15 §9)
+// and c64_window (D20).
 
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { RESET_MODES, RUN_STATES, VIDEO_STANDARDS } from "../../protocol.ts";
+import { RESET_MODES, RUN_STATES, VIDEO_STANDARDS, WINDOW_ACTIONS } from "../../protocol.ts";
 import { AddressOutput, defineTool } from "../server.ts";
 
 export const c64Status = defineTool({
@@ -11,12 +12,14 @@ export const c64Status = defineTool({
   title: "C64 status",
   description:
     "Get the state of the C64. The result tells if the CPU runs or has stopped, the video standard (pal or ntsc), " +
-    "and if warp mode is on. When the CPU has stopped, the result also gives the program counter (pc).",
+    "and if warp mode is on. It also tells if the emulator window is open (window). " +
+    "When the CPU has stopped, the result also gives the program counter (pc).",
   inputSchema: z.object({}).strict(),
   outputSchema: z.object({
     state: z.enum(RUN_STATES),
     videoStandard: z.enum(VIDEO_STANDARDS),
     warp: z.boolean(),
+    window: z.boolean().describe("true when the emulator window is open (c64_window)"),
     pc: AddressOutput.optional().describe("program counter; present only when the CPU is stopped"),
   }),
   readOnly: true,
@@ -26,8 +29,30 @@ export const c64Status = defineTool({
       state: status.state,
       videoStandard: status.videoStandard,
       warp: status.warp,
+      window: status.window,
       ...(status.pc === undefined ? {} : { pc: formatC64Address(status.pc) }),
     };
+  },
+});
+
+export const c64Window = defineTool({
+  name: "c64_window",
+  title: "Emulator window",
+  description:
+    "Show the C64 in a window on the host, or hide it again. The emulator has no window until you open one. " +
+    "Open the window when the user must type, play or look at the C64. Then tell the user. Wait until the user tells you that they finished. " +
+    "Then close the window. The machine, the disk in drive 8, breakpoints, watchpoints, joysticks, warp mode and c64_timing go along, " +
+    "and the CPU stays running or stopped. The result names the data that does not go along (notCarried). " +
+    "If the user closes the window, the machine goes back to the state of when the window opened.",
+  inputSchema: z.object({ action: z.enum(WINDOW_ACTIONS).describe("open shows the window; close hides it") }).strict(),
+  outputSchema: z.object({
+    window: z.boolean().describe("true when the window is open"),
+    state: z.enum(RUN_STATES),
+    notCarried: z.array(z.string()).describe("emulator data that the move cleared; empty when nothing moved"),
+  }),
+  readOnly: false,
+  async run(input, session) {
+    return session.window(input.action);
   },
 });
 
@@ -65,4 +90,4 @@ export const c64Warp = defineTool({
   },
 });
 
-export const machineTools = [c64Status, c64Reset, c64Warp];
+export const machineTools = [c64Status, c64Reset, c64Warp, c64Window];

@@ -218,6 +218,16 @@ export const MAX_HISTORY = 200;
 export const MAX_BACKTRACE = 64;
 export const TIMING_ACTIONS = ["start", "read"] as const;
 
+/** c64_window (D20): open moves the machine into a VICE with a window, close back into a headless one. */
+export const WINDOW_ACTIONS = ["open", "close"] as const;
+
+export interface WindowResult {
+  window: boolean;
+  state: RunState;
+  /** Emulator state a move cannot carry; empty when nothing moved. */
+  notCarried: string[];
+}
+
 export interface HistoryEntry {
   address: number;
   bytes: string;
@@ -324,6 +334,8 @@ export interface MachineStatus {
   state: RunState;
   videoStandard: VideoStandard;
   warp: boolean;
+  /** True while the machine runs in a VICE with a window (D20). */
+  window: boolean;
   /** Present only while the C64 CPU is stopped. */
   pc?: number;
 }
@@ -466,6 +478,7 @@ export interface ViceOperations {
   };
   screenDiscard: { params: { baseline: string }; result: { discarded: boolean } };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
+  window: { params: { action: (typeof WINDOW_ACTIONS)[number] }; result: WindowResult };
 }
 export type ViceOperation = keyof ViceOperations;
 export const VICE_OPERATIONS = [
@@ -503,6 +516,7 @@ export const VICE_OPERATIONS = [
   "sid",
   "observe",
   "warp",
+  "window",
 ] as const satisfies readonly ViceOperation[];
 
 /** How many attachments each operation takes. */
@@ -1025,6 +1039,10 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       if (typeof params.enabled !== "boolean") invalid("enabled must be true or false");
       return { enabled: params.enabled } as ViceOperations[O]["params"];
     }
+    case "window": {
+      if (!isOneOf(WINDOW_ACTIONS, params.action)) invalid("action must be open or close");
+      return { action: params.action } as ViceOperations[O]["params"];
+    }
   }
   return invalid(`unknown operation: ${String(op)}`);
 }
@@ -1282,6 +1300,7 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         isOneOf(RUN_STATES, value.state) &&
         isOneOf(VIDEO_STANDARDS, value.videoStandard) &&
         typeof value.warp === "boolean" &&
+        typeof value.window === "boolean" &&
         (value.pc === undefined || isInteger(value.pc, 0, 0xffff));
       if (!ok) throw new ProtocolError("status result is malformed");
       break;
@@ -1581,6 +1600,15 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     }
     case "warp": {
       if (typeof value.enabled !== "boolean") throw new ProtocolError("warp result is malformed");
+      break;
+    }
+    case "window": {
+      const ok =
+        typeof value.window === "boolean" &&
+        isOneOf(RUN_STATES, value.state) &&
+        Array.isArray(value.notCarried) &&
+        value.notCarried.every((entry) => typeof entry === "string");
+      if (!ok) throw new ProtocolError("window result is malformed");
       break;
     }
     default:

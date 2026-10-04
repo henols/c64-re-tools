@@ -57,7 +57,15 @@ test("a missing VICE is refused by name with the remedy, never installed", () =>
 });
 
 test("VICE arguments put -default before -binarymonitor and fix the profile", () => {
-  const pal = viceArguments({ binary: "/usr/bin/x64sc", port: 6510, textPort: 6511, configFile: "/s/vicerc", logFile: "/s/vice.log", videoStandard: "pal" });
+  const pal = viceArguments({
+    binary: "/usr/bin/x64sc",
+    port: 6510,
+    textPort: 6511,
+    configFile: "/s/vicerc",
+    logFile: "/s/vice.log",
+    videoStandard: "pal",
+    mode: "headless",
+  });
   assert.equal(pal[pal.indexOf("-logfile") + 1], "/s/vice.log");
   assert.equal(pal[0], "/usr/bin/x64sc");
   assert.ok(pal.indexOf("-default") < pal.indexOf("-binarymonitor"));
@@ -66,8 +74,18 @@ test("VICE arguments put -default before -binarymonitor and fix the profile", ()
   assert.equal(pal[pal.indexOf("-remotemonitoraddress") + 1], "ip4://127.0.0.1:6511");
   assert.equal(pal[pal.indexOf("-model") + 1], "c64");
   assert.equal(pal[pal.indexOf("-drive8type") + 1], "1541");
-  const ntsc = viceArguments({ binary: "x", port: 1, textPort: 2, configFile: "c", logFile: "l", videoStandard: "ntsc" });
+  const ntsc = viceArguments({ binary: "x", port: 1, textPort: 2, configFile: "c", logFile: "l", videoStandard: "ntsc", mode: "headless" });
   assert.equal(ntsc[ntsc.indexOf("-model") + 1], "ntsc");
+});
+
+test("a headless VICE has no window and no sound output; a windowed one has both (D20)", () => {
+  const common = { binary: "x", port: 1, textPort: 2, configFile: "c", logFile: "l", videoStandard: "pal" } as const;
+  const headless = viceArguments({ ...common, mode: "headless" });
+  assert.ok(headless.includes("-console"));
+  assert.equal(headless[headless.indexOf("-sounddev") + 1], "dummy");
+  const window = viceArguments({ ...common, mode: "window" });
+  assert.ok(!window.includes("-console"));
+  assert.ok(!window.includes("-sounddev"));
 });
 
 test("freePort returns a loopback port that can be bound", async () => {

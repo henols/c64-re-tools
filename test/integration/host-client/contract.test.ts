@@ -25,7 +25,7 @@ function stub(state: StubState): ViceSessionFactory {
         state.calls.push([op, params]);
         switch (op) {
           case "status":
-            return { state: "stopped", videoStandard, warp: false, pc: 0x2100 } as never;
+            return { state: "stopped", videoStandard, warp: false, window: false, pc: 0x2100 } as never;
           case "memoryRead": {
             const { address, size, space } = params as { address: number; size: number; space: string };
             if (space === "drive8") throw new WireFailure("unsupported-in-space", "no drive in the stub");
@@ -60,7 +60,7 @@ test("status, memoryRead and registersGet cross the boundary with typed results"
   const state: StubState = { opened: [], closed: 0, calls: [] };
   const client = await ViceSessionClient.open({ videoStandard: "ntsc", env: await host(stub(state)) });
   assert.deepEqual(state.opened, [{ videoStandard: "ntsc" }]);
-  assert.deepEqual(await client.status(), { state: "stopped", videoStandard: "ntsc", warp: false, pc: 0x2100 });
+  assert.deepEqual(await client.status(), { state: "stopped", videoStandard: "ntsc", warp: false, window: false, pc: 0x2100 });
   assert.deepEqual(await client.memoryRead({ address: 0xe000, size: 3, space: "c64", view: "ram" }), { address: 0xe000, data: "ababab" });
   assert.deepEqual(await client.registersGet("c64"), REGISTERS);
   assert.deepEqual(state.calls, [

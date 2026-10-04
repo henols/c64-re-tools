@@ -25,9 +25,10 @@ Use only the MCP tools. Each MCP session has its own C64. Nothing else can chang
 
 | Need | Tool |
 |---|---|
-| Run state, video standard, warp mode | `c64_status` |
+| Run state, video standard, warp mode, window | `c64_status` |
 | Reset, power cycle | `c64_reset` |
 | Fast emulation | `c64_warp` |
+| Show the C64 to the user in a window, hide it again | `c64_window` |
 | Stop, start, step, step over, step out, exact frames | `c64_execution` |
 | Run until an address, a memory value or a raster position | `c64_run_until` |
 | Stop on an instruction address | `c64_breakpoint` |
@@ -63,6 +64,15 @@ Step, next and until-return work only in space `c64`. The emulator cannot stop t
 
 Before a risky experiment, save the state with `c64_snapshot`. Restore it to try again from the same point.
 
+The emulator has no window. When the user must type, play or look at the C64, do these steps:
+
+1. Open the window with `c64_window` action `open`.
+2. Tell the user that the window is open and what to do in it.
+3. Wait until the user tells you that they finished.
+4. Close the window with `c64_window` action `close`.
+
+The machine, the disk in drive 8, the breakpoints, the watchpoints, the joysticks, warp mode and `c64_timing` stay the same. The CPU stays running or stopped. The result field `notCarried` names the data that the move clears. A second `open` or `close` changes nothing.
+
 A read does not change the run state. A running machine continues to run after a read.
 
 ## Knowledge
@@ -90,8 +100,10 @@ If you cannot get the machine into the necessary state, say which state you coul
 
 ## Failure and conflicts
 
-- `machine-state-lost`: the emulator stopped and its state is gone. Do not continue with results from before. Tell the user to restart the MCP server.
-- `machine-unavailable` and the message names a pause or a dialog in the emulator window: do not send more operations. Tell the user to resume the emulator (Pause, Alt+P) or to close the dialog in the VICE window. Then do the operation again. The machine state does not change.
+- `machine-state-lost` and the message says that the VICE window closed: the window closed before `c64_window` action `close`. The emulator has no window again. The machine is in the state that it had when the window opened. The breakpoints and the watchpoints stay. Do not use results from the window time. Read the machine state again, then continue.
+- `machine-unavailable` and the message says that the VICE window closed: the session starts the emulator again. Wait a few seconds. Then do the operation again.
+- `machine-state-lost` with a different message: the emulator stopped and its state is gone. Do not continue with results from before. Tell the user to restart the MCP server.
+- `machine-unavailable` and the message names a pause or a dialog in the emulator window: this occurs only while the window is open. Do not send more operations. Tell the user to resume the emulator (Pause, Alt+P) or to close the dialog in the VICE window. Then do the operation again. The machine state does not change.
 - `machine-unavailable` with a different message: the host runtime does not run, or it does not answer. Tell the user to start the host runtime with `npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host`.
 - `machine-running`: stop the CPU first, then try again.
 - `installation-incomplete`: tell the user the message. Do not try to repair the installation.

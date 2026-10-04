@@ -45,7 +45,7 @@ test("setup leaves the machine running", async () => {
 test("status reads warp from VICE, reports no pc while running and keeps it running", async () => {
   const { fake, session } = await startSession();
   fake.warp = true;
-  assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: true });
+  assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: true, window: false });
   assert.deepEqual(fake.textCommands, ["warp"]);
   assert.equal(fake.running, true);
   await session.close();
@@ -87,7 +87,7 @@ test("a read while stopped leaves the machine stopped and status reports the pc"
   });
   assert.ok(!fake.commands.includes(Command.exit), "a read must not resume a machine a breakpoint stopped");
   assert.equal(fake.running, false);
-  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, pc: 0x2100 });
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: 0x2100 });
   await session.close();
 });
 
@@ -175,7 +175,7 @@ test("a reset without run stops at the reset vector and leaves no checkpoint", a
   assert.equal(fake.running, false);
   assert.equal(fake.registers.PC, 0xfce2);
   assert.equal(fake.checkpoints.size, 0);
-  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, pc: 0xfce2 });
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: 0xfce2 });
   await session.close();
 });
 

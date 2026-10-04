@@ -59,7 +59,7 @@ test("replies are matched to their requests by id", async () => {
     if (held.length < 2) return;
     // Answer in reverse order.
     for (const r of held.reverse()) {
-      const result = r.op === "status" ? { state: "running", videoStandard: "pal", warp: false } : { address: 0x10, data: "ff" };
+      const result = r.op === "status" ? { state: "running", videoStandard: "pal", warp: false, window: false } : { address: 0x10, data: "ff" };
       socketRef.write(encodeFrame({ type: "reply", id: r.id, result }));
     }
   });

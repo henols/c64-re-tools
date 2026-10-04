@@ -122,8 +122,14 @@ export class FakeVice {
   resetStaysInMonitor = false;
   /** Files given to autostart, with their run flag and index. */
   readonly autostarts: Array<{ file: string; run: boolean; index: number; bytes: Buffer }> = [];
-  /** Disk images attached to drive 8. */
+  /** Disk images attached to drive 8; the last one is in the drive. */
   readonly attached: Buffer[] = [];
+  /** Snapshot files restored, in order. */
+  readonly undumps: string[] = [];
+  /** The mode a session launcher started this VICE in (D20). */
+  mode: "headless" | "window" = "headless";
+  /** Undump answers with an error, as VICE does for a snapshot it cannot read. */
+  refuseUndump = false;
   /** PETSCII fed to the keyboard buffer, in order. */
   readonly keyboard: number[] = [];
   /** Control-port line levels by 0-based joyport index; real VICE starts them at 0 (all pressed). */
@@ -432,15 +438,24 @@ export class FakeVice {
         return void answer(Buffer.concat([u16(16), ...items]));
       }
       case Command.dump: {
+        // Like real VICE, the snapshot holds the cycle clock and the disk in drive 8, not the checkpoints.
         const file = body.subarray(3, 3 + body[2]!).toString("utf8");
-        writeFileSync(file, Buffer.concat([Buffer.from("FAKESNAP"), this.ram, u16(this.registers.PC!)]));
+        const clock = Buffer.alloc(8);
+        clock.writeBigUInt64LE(this.clock);
+        writeFileSync(file, Buffer.concat([Buffer.from("FAKESNAP"), this.ram, u16(this.registers.PC!), clock, ...this.attached.slice(-1)]));
         return void answer();
       }
       case Command.undump: {
         const file = body.subarray(1, 1 + body[0]!).toString("utf8");
+        if (this.refuseUndump || !existsSync(file)) return void socket.write(frame(command, id, Buffer.alloc(0), 0x8f));
         const saved = readFileSync(file);
         saved.copy(this.ram, 0, 8, 8 + 0x10000);
         this.registers.PC = saved.readUInt16LE(8 + 0x10000);
+        this.clock = saved.readBigUInt64LE(8 + 0x10002);
+        const disk = saved.subarray(8 + 0x10002 + 8);
+        this.attached.length = 0;
+        if (disk.length > 0) this.attached.push(Buffer.from(disk));
+        this.undumps.push(file);
         return void answer(this.#pc());
       }
       case Command.keyboardFeed:

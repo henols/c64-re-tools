@@ -25,6 +25,7 @@ export type ViceSessionApi = Pick<
   | "execution"
   | "reset"
   | "warp"
+  | "window"
   | "programLoad"
   | "autostart"
   | "diskAttach"

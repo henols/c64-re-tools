@@ -190,6 +190,7 @@ machine.ts
   c64_status
   c64_reset
   c64_warp
+  c64_window
 
 execution.ts
   c64_execution
@@ -326,7 +327,8 @@ It owns:
 - serialized operation queue;
 - breakpoints/watchpoints/session-local IDs;
 - snapshots/visual baselines/session-local state;
-- restart-after-crash behavior.
+- restart-after-crash behavior;
+- the move between a headless VICE and one with a window (D20 in docs/plan.md).
 
 Nothing outside host/vice needs to know which monitor implements an operation.
 

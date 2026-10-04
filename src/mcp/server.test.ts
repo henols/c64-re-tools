@@ -22,11 +22,12 @@ import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 import { videoTools } from "./tools/video.ts";
 
-/** The frozen v1 public tool list, 15 §37, in its order. */
+/** The public tool list, 15 §37, in its order; c64_window was added by D20. */
 const PUBLIC_TOOLS = [
   "c64_status",
   "c64_reset",
   "c64_warp",
+  "c64_window",
   "c64_execution",
   "c64_run_until",
   "c64_breakpoint",
@@ -69,8 +70,8 @@ class FakeSession implements ViceSessionApi {
   async status() {
     if (this.failure) throw this.failure;
     return this.stopped
-      ? { state: "stopped" as const, videoStandard: "pal" as const, warp: false, pc: 0x2a }
-      : { state: "running" as const, videoStandard: "pal" as const, warp: false };
+      ? { state: "stopped" as const, videoStandard: "pal" as const, warp: false, window: false, pc: 0x2a }
+      : { state: "running" as const, videoStandard: "pal" as const, warp: false, window: false };
   }
 
   async memoryRead(params: MemoryReadParams) {
@@ -272,6 +273,13 @@ class FakeSession implements ViceSessionApi {
     this.warpState = enabled;
     return { enabled };
   }
+
+  windowOpen = false;
+  async window(action: "open" | "close") {
+    const moved = this.windowOpen !== (action === "open");
+    this.windowOpen = action === "open";
+    return { window: this.windowOpen, state: "running" as const, notCarried: moved ? ["cpu history"] : [] };
+  }
 }
 
 async function connect(source: SessionSource): Promise<Client> {
@@ -329,10 +337,10 @@ test("c64_status returns the domain result directly, with pc only when stopped",
   const session = new FakeSession();
   const client = await connect(async () => session);
   const running = await call(client, "c64_status");
-  assert.deepEqual(running.structuredContent, { state: "running", videoStandard: "pal", warp: false });
+  assert.deepEqual(running.structuredContent, { state: "running", videoStandard: "pal", warp: false, window: false });
   assert.deepEqual(JSON.parse((running.content[0] as { text: string }).text), running.structuredContent);
   session.stopped = true;
-  assert.deepEqual((await call(client, "c64_status")).structuredContent, { state: "stopped", videoStandard: "pal", warp: false, pc: "$002a" });
+  assert.deepEqual((await call(client, "c64_status")).structuredContent, { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: "$002a" });
   await client.close();
 });
 
@@ -434,6 +442,17 @@ test("c64_reset defaults run to false and c64_warp echoes the mode", async () =>
   assert.equal(errorOf(await call(client, "c64_reset", {})).code, "invalid-input");
   assert.deepEqual((await call(client, "c64_warp", { enabled: true })).structuredContent, { enabled: true });
   assert.equal(session.warpState, true);
+  await client.close();
+});
+
+test("c64_window opens and closes the window and passes on what did not move", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  assert.deepEqual((await call(client, "c64_window", { action: "open" })).structuredContent, { window: true, state: "running", notCarried: ["cpu history"] });
+  assert.deepEqual((await call(client, "c64_window", { action: "open" })).structuredContent, { window: true, state: "running", notCarried: [] });
+  assert.deepEqual((await call(client, "c64_window", { action: "close" })).structuredContent, { window: false, state: "running", notCarried: ["cpu history"] });
+  assert.equal(errorOf(await call(client, "c64_window", { action: "toggle" })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_window", {})).code, "invalid-input");
   await client.close();
 });
 

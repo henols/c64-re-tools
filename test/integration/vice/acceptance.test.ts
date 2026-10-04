@@ -83,12 +83,12 @@ test("host → MCP → one VICE: KERNAL bytes, registers and running state", { s
     assert.equal(Object.keys(registers.flags as object).sort().join(""), "bcdinvz");
 
     // Reads keep the machine running, and a running machine reports no pc.
-    assert.deepEqual(await tool(client, "c64_status"), { state: "running", videoStandard: "pal", warp: false });
+    assert.deepEqual(await tool(client, "c64_status"), { state: "running", videoStandard: "pal", warp: false, window: false });
 
     // A paused machine reports stopped with its pc, and reads keep it stopped.
     const paused = await tool(client, "c64_execution", { action: "pause" });
     assert.equal(paused.state, "stopped");
-    assert.deepEqual(await tool(client, "c64_status"), { state: "stopped", videoStandard: "pal", warp: false, pc: paused.pc });
+    assert.deepEqual(await tool(client, "c64_status"), { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: paused.pc });
     await tool(client, "c64_memory_read", { address: "$e000", size: 1 });
     assert.equal((await tool(client, "c64_status")).state, "stopped");
     assert.deepEqual(await tool(client, "c64_execution", { action: "resume" }), { state: "running" });

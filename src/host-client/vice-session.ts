@@ -231,6 +231,11 @@ export class ViceSessionClient {
     return this.#request("warp", { enabled });
   }
 
+  /** Moves the machine into a VICE with a window (open) or back into a headless one (close). */
+  window(action: ViceOperations["window"]["params"]["action"]): Promise<ViceOperations["window"]["result"]> {
+    return this.#request("window", { action });
+  }
+
   /** Ends the session; the host stops its emulator. */
   async close(): Promise<void> {
     await this.#connection.close();

@@ -25,11 +25,11 @@ test("pause stops with a pc, status agrees, and resume runs again", { skip: live
   assert.equal(paused.state, "stopped");
   assert.ok(paused.pc !== undefined);
   const status = await session.handle("status", {});
-  assert.deepEqual(status, { state: "stopped", videoStandard: "pal", warp: false, pc: paused.pc });
+  assert.deepEqual(status, { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: paused.pc });
   // A stopped CPU does not move between reads.
   assert.equal((await session.handle("registersGet", { space: "c64" })).pc, paused.pc);
   assert.deepEqual(await session.handle("execution", { action: "resume", space: "c64" }), { state: "running" });
-  assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: false });
+  assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: false, window: false });
 });
 
 test("a hard reset without run stops at the KERNAL reset entry", { skip: liveSkip, timeout: 60_000 }, async () => {
@@ -58,7 +58,7 @@ test("step and next execute from the reset entry deterministically", { skip: liv
 test("warp turns on and off and keeps the run state", { skip: liveSkip, timeout: 60_000 }, async () => {
   await session.handle("execution", { action: "resume", space: "c64" });
   assert.deepEqual(await session.handle("warp", { enabled: true }), { enabled: true });
-  assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: true });
+  assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: true, window: false });
   await session.handle("execution", { action: "pause", space: "c64" });
   await session.handle("warp", { enabled: false });
   const status = await session.handle("status", {});

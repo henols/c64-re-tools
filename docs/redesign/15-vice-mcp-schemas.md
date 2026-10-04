@@ -263,11 +263,12 @@ Output:
   "state": "stopped",
   "videoStandard": "pal",
   "warp": false,
+  "window": false,
   "pc": "$2100"
 }
 ~~~
 
-pc is present only when the C64 CPU is stopped.
+pc is present only when the C64 CPU is stopped. window is true while the c64_window window is open (D20 in docs/plan.md).
 
 ## 8. c64_reset
 
@@ -318,6 +319,37 @@ Output:
 ~~~
 
 The operation preserves the prior run state.
+
+### 9a. c64_window
+
+Added by D20 in docs/plan.md. VICE runs headless; open moves the machine into a VICE with a window, close moves it back.
+
+Input:
+
+~~~json
+{
+  "action": "open"
+}
+~~~
+
+action:
+
+~~~text
+open
+close
+~~~
+
+Output:
+
+~~~json
+{
+  "window": true,
+  "state": "running",
+  "notCarried": ["cpu history", "memory map", "profile", "keyboard input not yet typed"]
+}
+~~~
+
+The move keeps the machine (disk in drive 8 included), breakpoint and watchpoint ids, joysticks, warp, the c64_timing stopwatch and the run state. notCarried names what the move cleared. A request for the current mode changes nothing and returns an empty notCarried. If the window closes without close, the next operation fails once with machine-state-lost and the machine is headless in the state of when the window opened.
 
 ## 10. c64_execution
 
@@ -1660,12 +1692,13 @@ Snapshots are session-local; filesystem snapshot paths are never exposed.
 
 ## 37. Public MCP tool list
 
-The frozen v1 public list is:
+The frozen v1 public list, with c64_window added by D20 in docs/plan.md, is:
 
 ~~~text
 c64_status
 c64_reset
 c64_warp
+c64_window
 
 c64_execution
 c64_run_until

@@ -15,7 +15,7 @@ test("a live session reads memory and registers without stopping a running machi
   supervisor.installExitGuard();
   const session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
   try {
-    assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: false });
+    assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: false, window: false });
 
     const kernal = await session.handle("memoryRead", { address: 0xe000, size: 4, space: "c64", view: "cpu" });
     assert.deepEqual(kernal, { address: 0xe000, data: "8556200f" });

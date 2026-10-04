@@ -132,7 +132,7 @@ test("operation results are validated on the client", () => {
   assert.deepEqual(validateViceResult("memoryRead", { address: 1, data: "a900" }), { address: 1, data: "a900" });
   assert.throws(() => validateViceResult("memoryRead", { address: 1, data: "A9" }), ProtocolError);
   assert.throws(() => validateViceResult("memoryRead", { address: 1, data: "a9f" }), ProtocolError);
-  const status = { state: "running", videoStandard: "pal", warp: false };
+  const status = { state: "running", videoStandard: "pal", warp: false, window: false };
   assert.deepEqual(validateViceResult("status", status), status);
   assert.throws(() => validateViceResult("status", { ...status, state: "unknown" }), ProtocolError);
 });
