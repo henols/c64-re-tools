@@ -44,6 +44,7 @@ test("a project install for every harness leaves the home directory alone; unins
     const installed = inHome("install");
     assert.equal(installed.status, 0, installed.stdout + installed.stderr);
     assert.match(installed.stdout, /install --global --target windsurf/);
+    assert.doesNotMatch(installed.stdout, /windsurf\s+mcp/, "the report does not claim a Windsurf MCP declaration that the CLI took back");
     assert.equal(existsSync(join(home, ".codeium")), false, "a project install writes nothing into the home directory");
     const manifest = JSON.parse(readFileSync(join(fresh, ".ap-sdk", "install-manifest.json"), "utf8"));
     assert.equal(

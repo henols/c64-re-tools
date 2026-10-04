@@ -20,10 +20,11 @@ This skill does not change project knowledge.
 
 ```
 node <skill>/scripts/unpack.ts inspect original/game.prg
+node <skill>/scripts/unpack.ts trace original/game.prg
 node <skill>/scripts/unpack.ts capture original/game.prg --until '$c000' --out unpacked/game.prg --range '$c000' '$cfff'
 ```
 
-`inspect` examines the file locally. `capture` starts its own emulator through the host runtime, starts the program, and stops it when the CPU gets to the `--until` address.
+`inspect` examines the file locally. `trace` and `capture` start their own emulator through the host runtime and start the program. `trace` runs the program and finds the memory that the program wrote and then executed. `capture` stops the program when the CPU gets to the `--until` address.
 
 | Option | Meaning |
 |---|---|
@@ -31,6 +32,8 @@ node <skill>/scripts/unpack.ts capture original/game.prg --until '$c000' --out u
 | `--out unpacked/game.prg` | Where to write the result, relative to the project directory. |
 | `--range '$c000' '$cfff'` | Write this range as a PRG. Without it, the script writes all 64 KiB of RAM as a flat file. |
 | `--timeout-frames 3000` | How many frames the program can run before the capture stops (default 3000). |
+| `--frames 3000` | `trace` only: how many frames the program runs (default 3000). |
+| `--entry '$c000'` | `trace` only: start the program at this address. Without it, `trace` types RUN. A program without a BASIC start line needs it. |
 
 The capture reads RAM, also the RAM under the ROMs and the I/O area. The script prints one JSON object.
 
@@ -38,14 +41,18 @@ The capture reads RAM, also the RAM under the ROMs and the I/O area. The script 
 
 1. Run `inspect`. Read `basicStart` and `packing`:
    - `likely`: most of the bytes look compressed. Packed data has this property.
-   - `unlikely`: the bytes look like code and data. A simple cruncher can also give this result. If a BASIC SYS line starts the program and the static analysis finds little code, continue with step 2.
+   - `unlikely`: the bytes look like code and data. A simple cruncher can also give this result.
    - `unclear`: the file is short, or the evidence is mixed.
-2. Find the address where the unpacked program starts. Usually the unpacker ends with a JMP to it.
-   - Use the c64-emulator skill: set a breakpoint after the unpack loop, or look at the last JMP of the unpacker.
-   - Use the c64-static-analysis skill on the unpacker code.
-3. Run `capture` with that address. Use `--range` for the area that holds the unpacked program, if you know it.
-4. Make sure that the result is the application: the code at the start address must not be the unpacker again.
-5. Give the result to the c64-static-analysis skill. For a flat 64 KiB file, use its `--flat64k` option.
+2. Run `trace`. It gives the evidence from the run. Read `packing`:
+   - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code. `runningRange` is the code that runs now. Its `start` is usually the entry point of the unpacked program.
+   - `unclear`: the program executed a small quantity of code that it wrote. This can be code that changes itself.
+   - `unlikely`: the program executed no code that it wrote. If the program waits for a key or a joystick, it can move code after that input. Then use the c64-emulator skill.
+3. Find the address where the unpacked program starts:
+   - Use `runningRange.start` from `trace`, or `suggestedUntil`. The CPU gets to `suggestedUntil` after the unpacking.
+   - Or use the c64-emulator skill: set a breakpoint after the unpack loop, or look at the last JMP of the unpacker.
+4. Run `capture` with that address. Use `--range` for the area that holds the unpacked program, if you know it.
+5. Make sure that the result is the application: the code at the start address must not be the unpacker again.
+6. Give the result to the c64-static-analysis skill. For a flat 64 KiB file, use its `--flat64k` option.
 
 ## Knowledge
 

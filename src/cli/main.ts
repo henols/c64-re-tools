@@ -14,7 +14,7 @@ import { hostTools } from "../host-client/tools.ts";
 import { localToolContext } from "../native/local.ts";
 import { localToolStatus } from "../native/status.ts";
 import type { ToolStatus } from "../protocol.ts";
-import { installedItems, parseTargets, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, type Scope } from "./cleanup.ts";
+import { installedItems, parseTargets, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp, type Scope } from "./cleanup.ts";
 
 const HELP = `c64-re-tools: Commodore 64 reverse engineering and development
 
@@ -43,14 +43,19 @@ function packageVersion(): string {
   return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as { version: string }).version : "unknown";
 }
 
-/** Runs the AP SDK CLI of this package's own dependency. */
-function apSdk(args: string[]): number {
+/** Runs the AP SDK CLI of this package's own dependency. Returns its exit status and what it printed. */
+function apSdk(args: string[]): { code: number; output: string } {
   const plugin = join(here, "..", "..", "distribution", "plugin.ts");
   const cli = join(dirname(fileURLToPath(import.meta.resolve("@jalco/ap-sdk"))), "cli.js");
   const command = args[0]!;
   // execArgv keeps the TypeScript loader (tsx) for the plugin module under node_modules.
-  const run = spawnSync(process.execPath, [...process.execArgv, cli, command, ...(command === "uninstall" ? ["c64-re-tools"] : [plugin]), ...args.slice(1)], { stdio: "inherit" });
-  return run.status ?? 1;
+  // Its report is printed after the CLI's own tidying, so the colours stay when this is a terminal.
+  const run = spawnSync(process.execPath, [...process.execArgv, cli, command, ...(command === "uninstall" ? ["c64-re-tools"] : [plugin]), ...args.slice(1)], {
+    stdio: ["inherit", "pipe", "inherit"],
+    encoding: "utf8",
+    env: process.stdout.isTTY ? { ...process.env, FORCE_COLOR: "1" } : process.env,
+  });
+  return { code: run.status ?? 1, output: run.stdout ?? "" };
 }
 
 function printTools(heading: string, tools: ToolStatus[]): void {
@@ -104,15 +109,17 @@ async function main(argv: string[]): Promise<number> {
     case "install":
     case "update": {
       const before = windsurfBefore();
-      const code = apSdk(["install", ...flags]);
+      const { code, output } = apSdk(["install", ...flags]);
       // A project install leaves the home directory as it was (D21).
       const note = scope === "project" && (targets === undefined || targets.includes("windsurf")) ? undoWindsurfProjectMcp(before) : undefined;
+      process.stdout.write(note === undefined ? output : withoutWindsurfMcp(output));
       if (note !== undefined) console.log(`  ${note}\n`);
       return code;
     }
     case "uninstall": {
       const items = installedItems(scope, targets);
-      const code = apSdk(["uninstall", ...flags]);
+      const { code, output } = apSdk(["uninstall", ...flags]);
+      process.stdout.write(output);
       if (code === 0) tidyAfterUninstall(items, scope);
       return code;
     }

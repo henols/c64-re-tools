@@ -161,3 +161,19 @@ export function tidyAfterUninstall(items: readonly InstallItem[], scope: Scope, 
     removeEmptyDirectories(directory, stop);
   }
 }
+
+const ANSI = new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g");
+
+/** AP SDK's report without its Windsurf MCP line and that line's detail, for when the CLI undid that item. */
+export function withoutWindsurfMcp(output: string): string {
+  const lines = output.split("\n");
+  const kept: string[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    if (/^\s*\S+\s+windsurf\s+mcp\s/.test(lines[index]!.replace(ANSI, ""))) {
+      if (lines[index + 1]?.replace(ANSI, "").trim().startsWith("\u21b3")) index++;
+      continue;
+    }
+    kept.push(lines[index]!);
+  }
+  return kept.join("\n");
+}

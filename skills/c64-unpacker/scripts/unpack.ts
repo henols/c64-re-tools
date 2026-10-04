@@ -1,7 +1,9 @@
 // The c64-unpacker script. "inspect" gives local evidence of packing; it never
-// names a packer. "capture" runs the program in an emulator until it reaches
-// a given address (the unpacked entry point) and writes the memory into the
-// project. No native unpack tool is used (19 §12).
+// names a packer. "trace" runs the program and reports the memory that it
+// wrote and then executed: the run-time evidence that also finds a simple
+// cruncher whose bytes look like code. "capture" runs the program in an
+// emulator until it reaches a given address (the unpacked entry point) and
+// writes the memory into the project. No native unpack tool is used (19 §12).
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -14,9 +16,12 @@ import { resolveProjectPath } from "#src/project.ts";
 import { inspect, PackingError } from "./evidence.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
+unpack.ts trace <program.prg> [--frames <n>] [--entry <address>]
 unpack.ts capture <program.prg> --until <address> --out <file> [--range <start> <end>] [--timeout-frames <n>]
 
 inspect   packing evidence: the BASIC start and the entropy of the bytes
+trace     run the program for <n> frames (default 3000) and report the memory
+          that it wrote and then executed; --entry starts it there instead of RUN
 capture   run the program until the CPU gets to <address>, then write memory:
           with --range, a PRG of that range; without it, all 64 KiB of RAM
 
@@ -31,6 +36,93 @@ function address(text: string, option: string): number {
     return parseC64Address(text);
   } catch {
     throw new UsageError(`${option} must be $ followed by four hex digits, not ${text}`);
+  }
+}
+
+/** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
+const UNPACKED_BYTES = 256;
+const LOAD_POLL_FRAMES = 25;
+const LOAD_LIMIT_FRAMES = 1500;
+const MAX_ADVANCE = 10_000;
+/** The most ranges one memory map read gives. */
+const MAX_RANGES = 1000;
+type MemmapRange = Extract<Awaited<ReturnType<ViceSessionClient["memmap"]>>, { ranges: unknown }>["ranges"][number];
+
+/** ROM areas: an address here can be written (RAM below) and executed (ROM) without one being the other. */
+const underRom = (address: number) => (address >= 0xa000 && address <= 0xbfff) || address >= 0xe000;
+
+async function trace(program: string, options: { frames: number; entry?: number }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(resolveProjectPath(program));
+  } catch {
+    throw new WireFailure("not-found", `There is no file at ${program} in the project directory.`);
+  }
+  if (bytes.length < 3) throw new UsageError("the file is too short for a PRG");
+  const load = bytes[0]! | (bytes[1]! << 8);
+  const basic = (inspect(bytes) as { basicStart: { sys: string } | null }).basicStart;
+  if (options.entry === undefined && basic === null) throw new UsageError("the program has no BASIC start line; give --entry <address>");
+  const client = await ViceSessionClient.open({ videoStandard: "pal" });
+  try {
+    // Loaded but not started, so the memory map can start empty: the KERNAL start-up writes all of RAM.
+    await client.autostart({ path: program, index: 0, run: false });
+    const head = bytes.subarray(2, Math.min(bytes.length, 2 + 64)).toString("hex");
+    let loaded = false;
+    for (let frames = 0; frames < LOAD_LIMIT_FRAMES && !loaded; frames += LOAD_POLL_FRAMES) {
+      await client.execution({ action: "advance-frames", count: LOAD_POLL_FRAMES, space: "c64" });
+      loaded = (await client.memoryRead({ address: load, size: head.length / 2, space: "c64", view: "ram" })).data === head;
+    }
+    if (!loaded) return { output: { traced: false, reason: `The program was not in memory at ${formatC64Address(load)} after ${LOAD_LIMIT_FRAMES} frames.` }, failed: true };
+    await client.memmap({ action: "clear" });
+    if (options.entry !== undefined) await client.registersSet("c64", { pc: options.entry });
+    else await client.keyboard(Uint8Array.from([0x52, 0x55, 0x4e, 0x0d])); // RUN and RETURN
+    let ran = 0;
+    while (ran < options.frames) {
+      const step = await client.execution({ action: "advance-frames", count: Math.min(MAX_ADVANCE, options.frames - ran), space: "c64" });
+      const advanced = (step as { advancedFrames?: number }).advancedFrames ?? 0;
+      ran += advanced;
+      if (advanced === 0) break;
+    }
+    const { pc } = await client.registersGet("c64");
+    const map = (await client.memmap({ action: "read", start: 0x0000, end: 0xffff, maxRanges: MAX_RANGES })) as { ranges: MemmapRange[] };
+    // VICE marks only opcode bytes as executed; a gap of at most two operand bytes stays inside one piece of code.
+    const written: Array<{ start: number; end: number }> = [];
+    for (const range of map.ranges.filter((candidate) => candidate.write && candidate.execute)) {
+      const last = written.at(-1);
+      if (last !== undefined && range.start - last.end <= 3 && underRom(range.start) === underRom(last.start)) last.end = range.end;
+      else written.push({ start: range.start, end: range.end });
+    }
+    const counted = written.filter((range) => !underRom(range.start));
+    const count = counted.reduce((sum, range) => sum + range.end - range.start + 1, 0);
+    const running = written.find((range) => pc >= range.start && pc <= range.end);
+    const packing = count >= UNPACKED_BYTES || running !== undefined ? "likely" : count > 0 ? "unclear" : "unlikely";
+    return {
+      output: {
+        traced: true,
+        frames: ran,
+        pc: formatC64Address(pc),
+        writtenThenExecuted: written.map((range) => ({
+          start: formatC64Address(range.start),
+          end: formatC64Address(range.end),
+          ...(underRom(range.start) ? { underRom: true } : {}),
+        })),
+        bytes: count,
+        packing,
+        evidence:
+          packing === "likely"
+            ? running !== undefined
+              ? `The CPU now runs code at ${formatC64Address(pc)} that the program wrote: it unpacked, decrypted or relocated it.`
+              : `The program wrote ${count} bytes and then executed them: it unpacked, decrypted or relocated code.`
+            : packing === "unclear"
+              ? `The program executed ${count} bytes that it wrote. This can be code that changes itself or a small loader.`
+              : "The program executed no code that it wrote while it ran.",
+        // A point after the unpacking where the unpacked code runs; the entry point can be at the start of its range.
+        ...(running === undefined ? {} : { suggestedUntil: formatC64Address(pc), runningRange: { start: formatC64Address(running.start), end: formatC64Address(running.end) } }),
+      },
+      failed: false,
+    };
+  } finally {
+    await client.close();
   }
 }
 
@@ -78,7 +170,15 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     args: argv,
     strict: true,
     allowPositionals: true,
-    options: { until: { type: "string" }, out: { type: "string" }, range: { type: "string" }, "timeout-frames": { type: "string" }, help: { type: "boolean" } },
+    options: {
+      until: { type: "string" },
+      out: { type: "string" },
+      range: { type: "string" },
+      "timeout-frames": { type: "string" },
+      frames: { type: "string" },
+      entry: { type: "string" },
+      help: { type: "boolean" },
+    },
   });
   if (values.help) throw new UsageError("");
   const [command, program, ...rest] = positionals;
@@ -97,6 +197,12 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
       if (error instanceof PackingError) throw new UsageError(error.message);
       throw error;
     }
+  }
+  if (command === "trace") {
+    if (rest.length > 0) throw new UsageError("trace takes one program");
+    const frames = values.frames === undefined ? 3000 : Number(values.frames);
+    if (!Number.isInteger(frames) || frames < 1 || frames > 30_000) throw new UsageError("--frames must be from 1 to 30000");
+    return trace(program, { frames, ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }) });
   }
   if (command !== "capture") throw new UsageError(`unknown command ${command}`);
   if (values.until === undefined || values.out === undefined) throw new UsageError("capture needs --until and --out");
