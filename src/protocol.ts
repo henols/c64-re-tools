@@ -278,6 +278,35 @@ export interface ScreenComparison {
   diffPng?: string;
 }
 
+// c64_observe (15 §30)
+
+export const MAX_OBSERVE_RANGES = 16;
+export const MAX_OBSERVE_BYTES = 4096;
+
+export interface ObserveParams {
+  registers?: Space;
+  memory?: Array<{ address: number; size: number; space: Space; view: MemoryView }>;
+  vicii?: boolean;
+  /** Empty means all eight sprites. */
+  sprites?: number[];
+  cia?: CiaSelection;
+  sid?: boolean;
+  screen?: boolean;
+  timing?: boolean;
+}
+
+export interface ObserveResult {
+  registers?: Registers;
+  memory?: Array<{ address: number; data: string }>;
+  vicii?: ViciiState;
+  sprites?: SpriteState[];
+  cia?: CiaState[];
+  sid?: SidState;
+  timing?: { rasterLine: number; rasterCycle: number };
+  /** Base64 PNG of the last drawn frame. */
+  screen?: { width: number; height: number; png: string };
+}
+
 export const RESET_MODES = ["soft", "hard"] as const;
 export type ResetMode = (typeof RESET_MODES)[number];
 
@@ -417,6 +446,7 @@ export interface ViceOperations {
   sprites: { params: { indexes: number[] }; result: { sprites: SpriteState[] } };
   cia: { params: { which: CiaSelection }; result: { chips: CiaState[] } };
   sid: { params: Record<string, never>; result: SidState };
+  observe: { params: ObserveParams; result: ObserveResult };
   /** The last frame the VIC-II drew, visible area with borders, as a base64 PNG. */
   screenCapture: { params: { baseline?: string }; result: { width: number; height: number; png: string; baseline?: string } };
   screenCompare: {
@@ -465,6 +495,7 @@ export const VICE_OPERATIONS = [
   "sprites",
   "cia",
   "sid",
+  "observe",
   "warp",
 ] as const satisfies readonly ViceOperation[];
 
@@ -665,6 +696,32 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
     case "timing": {
       if (!isOneOf(TIMING_ACTIONS, params.action)) invalid("action must be start or read");
       return { action: params.action } as ViceOperations[O]["params"];
+    }
+    case "observe": {
+      const result: ObserveParams = {};
+      if (params.registers !== undefined) {
+        if (!isOneOf(SPACES, params.registers)) invalid("registers must be c64 or drive8");
+        result.registers = params.registers;
+      }
+      if (params.memory !== undefined) {
+        const ranges = params.memory;
+        if (!Array.isArray(ranges) || ranges.length === 0 || ranges.length > MAX_OBSERVE_RANGES) {
+          invalid(`memory must hold 1 to ${MAX_OBSERVE_RANGES} ranges`);
+        }
+        result.memory = ranges.map((range) => validateViceParams("memoryRead", range));
+        if (result.memory.reduce((sum, range) => sum + range.size, 0) > MAX_OBSERVE_BYTES) {
+          invalid(`the memory ranges must hold at most ${MAX_OBSERVE_BYTES} bytes together`);
+        }
+      }
+      for (const flag of ["vicii", "sid", "screen", "timing"] as const) {
+        if (params[flag] === undefined) continue;
+        if (typeof params[flag] !== "boolean") invalid(`${flag} must be true or false`);
+        if (params[flag]) result[flag] = true;
+      }
+      if (params.sprites !== undefined) result.sprites = validateViceParams("sprites", { indexes: params.sprites }).indexes;
+      if (params.cia !== undefined) result.cia = validateViceParams("cia", { which: params.cia }).which;
+      if (Object.keys(result).length === 0) invalid("ask for at least one observation");
+      return result as ViceOperations[O]["params"];
     }
     case "profile": {
       if (!isInteger(params.limit, 1, MAX_PROFILE)) invalid(`limit must be an integer from 1 to ${MAX_PROFILE}`);
@@ -1158,6 +1215,26 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         (["execute", "read", "write"] as const).every((flag) => typeof range[flag] === "boolean");
       const ok = Array.isArray(value.ranges) ? value.ranges.every(isRange) : value.cleared === true;
       if (!ok) throw new ProtocolError("memmap result is malformed");
+      break;
+    }
+    case "observe": {
+      // Each present section must have the shape of the single-purpose result.
+      if (value.registers !== undefined) validateViceResult("registersGet", value.registers);
+      if (value.memory !== undefined) {
+        const ok = Array.isArray(value.memory) && value.memory.every((range) => isObject(range) && isInteger(range.address, 0, 0xffff) && isHexData(range.data));
+        if (!ok) throw new ProtocolError("observe memory is malformed");
+      }
+      if (value.vicii !== undefined) validateViceResult("vicii", value.vicii);
+      if (value.sprites !== undefined) validateViceResult("sprites", { sprites: value.sprites });
+      if (value.cia !== undefined) validateViceResult("cia", { chips: value.cia });
+      if (value.sid !== undefined) validateViceResult("sid", value.sid);
+      if (value.timing !== undefined) {
+        const timing = value.timing;
+        if (!isObject(timing) || !isInteger(timing.rasterLine, 0, 511) || !isInteger(timing.rasterCycle, 0, 127)) {
+          throw new ProtocolError("observe timing is malformed");
+        }
+      }
+      if (value.screen !== undefined) validateViceResult("screenCapture", value.screen);
       break;
     }
     case "vicii": {

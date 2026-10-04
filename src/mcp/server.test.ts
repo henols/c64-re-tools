@@ -165,6 +165,17 @@ class FakeSession implements ViceSessionApi {
     return { voices: [voice(1), voice(2), voice(3)], filter: { cutoff: 0, resonance: 0, routing: 0, mode: 0 }, volume: 15 };
   }
 
+  observations: unknown[] = [];
+  async observe(params: import("../protocol.ts").ObserveParams) {
+    this.observations.push(params);
+    const result: import("../protocol.ts").ObserveResult = {};
+    if (params.registers !== undefined) result.registers = REGISTERS;
+    if (params.memory !== undefined) result.memory = params.memory.map((range) => ({ address: range.address, data: "00".repeat(range.size) }));
+    if (params.timing) result.timing = { rasterLine: 100, rasterCycle: 20 };
+    if (params.screen) result.screen = { width: 384, height: 272, png: Buffer.from("png").toString("base64") };
+    return result;
+  }
+
   snapshots: unknown[] = [];
   async snapshot(params: import("../protocol.ts").ViceOperations["snapshot"]["params"]) {
     this.snapshots.push(params);
@@ -268,6 +279,7 @@ test("the server lists exactly the implemented tools with object input and outpu
     "c64_memory_read",
     "c64_memory_search",
     "c64_memory_write",
+    "c64_observe",
     "c64_profile",
     "c64_program_load",
     "c64_registers",
@@ -300,6 +312,7 @@ test("the server lists exactly the implemented tools with object input and outpu
       "c64_cpu_history",
       "c64_backtrace",
       "c64_profile",
+      "c64_observe",
     ];
     assert.equal(tool.annotations?.readOnlyHint, readOnly.includes(tool.name), tool.name);
     assert.doesNotMatch(`${tool.description} ${JSON.stringify(tool.inputSchema)}`, /\bVICE\b|monitor|tcp|socket|session id|request/i);
@@ -704,5 +717,27 @@ test("c64_snapshot needs a name except for list", async () => {
   assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_snapshot", { action: "list", name: "x" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save", name: "../x" })).code, "invalid-input");
+  await client.close();
+});
+
+test("c64_observe returns only the asked parts and an image for the screen", async () => {
+  const session = new FakeSession();
+  const client = await connect(async () => session);
+  const result = await call(client, "c64_observe", { registers: "c64", memory: [{ address: "$c020", size: 2 }], timing: true, screen: true });
+  assert.deepEqual(result.structuredContent, {
+    registers: { ...REGISTERS, pc: "$e5cf" },
+    memory: [{ address: "$c020", data: "0000" }],
+    timing: { rasterLine: 100, rasterCycle: 20 },
+    screen: { width: 384, height: 272 },
+  });
+  assert.equal(result.content[1]?.type, "image");
+  assert.deepEqual(session.observations[0], {
+    registers: "c64",
+    memory: [{ address: 0xc020, size: 2, space: "c64", view: "cpu" }],
+    screen: true,
+    timing: true,
+  });
+  assert.equal(errorOf(await call(client, "c64_observe", {})).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_observe", { vicii: false })).code, "invalid-input");
   await client.close();
 });

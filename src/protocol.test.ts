@@ -301,3 +301,13 @@ test("search, compare and disassemble parameters are validated", () => {
   );
   assert.throws(() => validateViceParams("disassemble", { address: 0, count: 257, space: "c64", view: "cpu" }), WireFailure);
 });
+
+test("observe needs at least one observation and bounds its memory", () => {
+  assert.throws(() => validateViceParams("observe", {}), /at least one/);
+  assert.throws(() => validateViceParams("observe", { vicii: false }), /at least one/);
+  const range = { address: 0x1000, size: 300, space: "c64", view: "cpu" };
+  assert.throws(() => validateViceParams("observe", { memory: Array(14).fill(range) }), /4096/);
+  assert.throws(() => validateViceParams("observe", { memory: Array(17).fill({ ...range, size: 1 }) }), /16/);
+  assert.throws(() => validateViceParams("observe", { sprites: [1, 1] }), WireFailure);
+  assert.deepEqual(validateViceParams("observe", { timing: true, cia: "both" }), { timing: true, cia: "both" });
+});

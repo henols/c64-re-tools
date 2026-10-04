@@ -15,6 +15,13 @@ import {
   type RunTarget,
   type RunUntilResult,
   type ScreenComparison,
+  type CiaSelection,
+  type CiaState,
+  type ObserveParams,
+  type ObserveResult,
+  type SidState,
+  type SpriteState,
+  type ViciiState,
   type JoystickState,
   type Watchpoint,
   type WatchpointParams,
@@ -299,30 +306,19 @@ export class ViceSession implements ViceSessionHandle {
         return { ranges: await this.#observe(() => this.#machine.memmap(request.start, request.end, request.maxRanges)) };
       }
       case "vicii":
-        return this.#observe(async () => decodeVicii(await this.#machine.readIo(0xd000, 0x2f), await this.#machine.readIo(0xdd00, 0x10)));
+        return this.#observe(() => this.#vicii());
       case "sprites": {
         const { indexes } = params as ViceOperations["sprites"]["params"];
-        return this.#observe(async () => {
-          const vic = await this.#machine.readIo(0xd000, 0x2f);
-          const cia2 = await this.#machine.readIo(0xdd00, 0x10);
-          // Sprite pointers sit in the RAM the VIC-II reads, at the end of screen memory.
-          const screen = decodeVicii(vic, cia2).screenAddress;
-          const pointers = Buffer.from(await this.#machine.readMemory({ address: screen + 0x3f8, size: 8, space: "c64", view: "ram" }), "hex");
-          const wanted = indexes.length === 0 ? [0, 1, 2, 3, 4, 5, 6, 7] : indexes;
-          return { sprites: wanted.map((index) => decodeSprite(index, vic, cia2, pointers)) };
-        });
+        return this.#observe(async () => ({ sprites: await this.#sprites(indexes) }));
       }
       case "cia": {
         const { which } = params as ViceOperations["cia"]["params"];
-        const ids: Array<1 | 2> = which === "both" ? [1, 2] : [Number(which) as 1 | 2];
-        return this.#observe(async () => {
-          const chips = [];
-          for (const id of ids) chips.push(decodeCia(id, await this.#machine.readIo(id === 1 ? 0xdc00 : 0xdd00, 0x10)));
-          return { chips };
-        });
+        return this.#observe(async () => ({ chips: await this.#cias(which) }));
       }
       case "sid":
-        return this.#observe(async () => decodeSid(await this.#machine.readIo(0xd400, 0x19)));
+        return this.#observe(() => this.#sid());
+      case "observe":
+        return this.#observeAll(params as ObserveParams);
       case "joystick": {
         const joystick = params as JoystickState;
         await this.#observe(() => this.#machine.setJoystick(joystick));
@@ -654,6 +650,59 @@ export class ViceSession implements ViceSessionHandle {
         return { ...entry, rasterLine: Math.floor(at / cycles), rasterCycle: at % cycles };
       });
       return { entries };
+    });
+  }
+
+  // Chip reads. Each runs inside an #observe, so several can share one stop.
+
+  async #vicii(): Promise<ViciiState> {
+    return decodeVicii(await this.#machine.readIo(0xd000, 0x2f), await this.#machine.readIo(0xdd00, 0x10));
+  }
+
+  /** Empty `indexes` means all eight sprites. */
+  async #sprites(indexes: number[]): Promise<SpriteState[]> {
+    const vic = await this.#machine.readIo(0xd000, 0x2f);
+    const cia2 = await this.#machine.readIo(0xdd00, 0x10);
+    // Sprite pointers sit in the RAM the VIC-II reads, at the end of screen memory.
+    const screen = decodeVicii(vic, cia2).screenAddress;
+    const pointers = Buffer.from(await this.#machine.readMemory({ address: screen + 0x3f8, size: 8, space: "c64", view: "ram" }), "hex");
+    const wanted = indexes.length === 0 ? [0, 1, 2, 3, 4, 5, 6, 7] : indexes;
+    return wanted.map((index) => decodeSprite(index, vic, cia2, pointers));
+  }
+
+  async #cias(which: CiaSelection): Promise<CiaState[]> {
+    const ids: Array<1 | 2> = which === "both" ? [1, 2] : [Number(which) as 1 | 2];
+    const chips = [];
+    for (const id of ids) chips.push(decodeCia(id, await this.#machine.readIo(id === 1 ? 0xdc00 : 0xdd00, 0x10)));
+    return chips;
+  }
+
+  async #sid(): Promise<SidState> {
+    return decodeSid(await this.#machine.readIo(0xd400, 0x19));
+  }
+
+  /** Several observations from one halted moment (15 §30); the run state is restored afterwards. */
+  async #observeAll(params: ObserveParams): Promise<ObserveResult> {
+    return this.#observe(async () => {
+      const result: ObserveResult = {};
+      if (params.registers !== undefined) result.registers = await this.#machine.readRegisters(params.registers);
+      if (params.memory !== undefined) {
+        result.memory = [];
+        for (const range of params.memory) result.memory.push({ address: range.address, data: await this.#machine.readMemory(range) });
+      }
+      if (params.vicii) result.vicii = await this.#vicii();
+      if (params.sprites !== undefined) result.sprites = await this.#sprites(params.sprites);
+      if (params.cia !== undefined) result.cia = await this.#cias(params.cia);
+      if (params.sid) result.sid = await this.#sid();
+      if (params.timing) {
+        const position = await this.#machine.rasterPosition();
+        result.timing = { rasterLine: position.line, rasterCycle: position.cycle };
+      }
+      if (params.screen) {
+        const shot = await this.#machine.captureFrame(this.#videoStandard);
+        result.screen = { width: shot.frame.width, height: shot.frame.height, png: encodePng(shot.frame, shot.palette).toString("base64") };
+      }
+      return result;
     });
   }
 

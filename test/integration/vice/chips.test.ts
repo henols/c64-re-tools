@@ -80,3 +80,29 @@ test("the SID state is the registers as last written", { skip: liveSkip, timeout
   assert.deepEqual(sid.filter, { cutoff: 0x1cc, resonance: 5, routing: 14, mode: 8 });
   assert.equal(sid.volume, 3);
 });
+
+test("observe reads registers, memory, chips, timing and the screen from one moment", { skip: liveSkip, timeout: 60_000 }, async () => {
+  await session.handle("execution", { action: "pause", space: "c64" });
+  // $c000: SEI ; loop: INX ; STX $c100 ; JMP loop
+  await session.handle("memoryWrite", { address: 0xc000, data: "78e88e00c14c01c0", space: "c64", view: "cpu" });
+  await session.handle("registersSet", { space: "c64", values: { pc: 0xc000 } });
+  await session.handle("execution", { action: "resume", space: "c64" });
+  for (let round = 0; round < 5; round++) {
+    const observed = await session.handle("observe", {
+      registers: "c64",
+      memory: [{ address: 0xc100, size: 1, space: "c64", view: "cpu" }],
+      vicii: true,
+      cia: "both",
+      timing: true,
+      screen: true,
+    });
+    // Within one stop, the stored byte is X or the X before the last INX.
+    const stored = Number.parseInt(observed.memory![0]!.data, 16);
+    const x = observed.registers!.x;
+    assert.ok(stored === x || stored === ((x - 1) & 0xff), `stored ${stored}, x ${x}`);
+    assert.ok(observed.timing!.rasterLine < 312);
+    assert.equal(observed.cia!.length, 2);
+    assert.equal(observed.screen!.width, 384);
+  }
+  assert.equal((await session.handle("status", {})).state, "running");
+});

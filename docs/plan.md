@@ -76,7 +76,7 @@ Acceptance (19 §5): every public tool in 15 §37 has schema tests, host-client/
 - [x] M3.4 **Profile and memmap** — `c64_profile` (VICE profiler, on from session start), `c64_memmap` read/clear (text `mmsh`/`mmzap`).
 - [x] M3.5 **Screen baselines** — `c64_screen` capture with a baseline name, compare (mask, ratio, bounds, diff image), list, discard; session-local, lost with the machine state.
 - [x] M3.6 **Snapshots** — `c64_snapshot` save/restore/list/discard (binary dump/undump in the session scratch directory); restore finishes stopped.
-- [ ] M3.7 **c64_observe** — one coherent stop for registers, memory ranges, VIC-II, sprites, CIAs, SID, screen and raster timing.
+- [x] M3.7 **c64_observe** — one coherent stop for registers, memory ranges, VIC-II, sprites, CIAs, SID, screen and raster timing.
 - [ ] M3.8 **drive8 execution** — step, next and until-return in space drive8.
 - [ ] M3.9 **Acceptance** — the full 15 §37 tool list exactly; the c64-emulator skill updated for the new tools.
 

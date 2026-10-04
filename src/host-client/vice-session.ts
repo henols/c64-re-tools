@@ -202,6 +202,10 @@ export class ViceSessionClient {
     return this.#request("sid", {});
   }
 
+  observe(params: ViceOperations["observe"]["params"]): Promise<ViceOperations["observe"]["result"]> {
+    return this.#request("observe", params);
+  }
+
   /** The last frame the VIC-II drew, as a base64 PNG with its size. */
   screenCapture(baseline?: string): Promise<ViceOperations["screenCapture"]["result"]> {
     return this.#request("screenCapture", baseline === undefined ? {} : { baseline });

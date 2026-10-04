@@ -661,3 +661,33 @@ test("snapshots save, restore to stopped, list and discard", async () => {
   await assert.rejects(session.handle("snapshot", { action: "restore", name: "before-boss" }), failsWith("not-found"));
   await session.close();
 });
+
+test("observe reads every asked part from one stop and keeps the run state", async () => {
+  const { fake, session } = await startSession();
+  fake.ram[0xd020] = 2;
+  fake.commands.length = 0;
+  const observed = await session.handle("observe", {
+    registers: "c64",
+    memory: [{ address: 0x1000, size: 2, space: "c64", view: "ram" }],
+    vicii: true,
+    sprites: [0],
+    cia: "1",
+    sid: true,
+    screen: true,
+    timing: true,
+  });
+  assert.equal(observed.registers?.pc, 0xe5cf);
+  assert.deepEqual(observed.memory, [{ address: 0x1000, data: "0001" }]);
+  assert.equal(observed.vicii?.borderColor, 2);
+  assert.equal(observed.sprites?.length, 1);
+  assert.equal(observed.cia?.[0]?.id, 1);
+  assert.equal(observed.sid?.voices.length, 3);
+  assert.deepEqual(observed.timing, { rasterLine: 100, rasterCycle: 20 });
+  assert.equal(observed.screen?.width, 384);
+  // One stop for everything: exactly one resume at the end.
+  assert.equal(fake.commands.filter((command) => command === Command.exit).length, 1);
+  assert.equal(fake.running, true);
+  const only = await session.handle("observe", { timing: true });
+  assert.deepEqual(Object.keys(only), ["timing"]);
+  await session.close();
+});

@@ -1,11 +1,11 @@
 // Video and chip tools: c64_vicii (15 §25), c64_sprite (15 §26), c64_cia
-// (15 §27), c64_sid (15 §28) and c64_screen (15 §29).
+// (15 §27), c64_sid (15 §28), c64_screen (15 §29) and c64_observe (15 §30).
 
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { CIA_SELECTIONS, VICII_MODES, WireFailure } from "../../protocol.ts";
-import { AddressOutput, Byte, defineTool, ToolOutput } from "../server.ts";
+import { CIA_SELECTIONS, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, WireFailure, type ObserveParams } from "../../protocol.ts";
+import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, SpaceInput, ToolOutput } from "../server.ts";
 
 const Color = z.number().int().min(0).max(15);
 const NO_CHANGE = "This does not change if the machine is running or stopped.";
@@ -196,4 +196,77 @@ export const c64Screen = defineTool({
   },
 });
 
-export const videoTools = [c64Vicii, c64Sprite, c64Cia, c64Sid, c64Screen];
+const FlagsOutput = z.object({ n: z.boolean(), v: z.boolean(), b: z.boolean(), d: z.boolean(), i: z.boolean(), z: z.boolean(), c: z.boolean() });
+
+export const c64Observe = defineTool({
+  name: "c64_observe",
+  title: "Observe several things at one moment",
+  description:
+    "Get several observations from one moment: the CPU stops once, all of them are read, and then the CPU continues if it was running. " +
+    "Ask for any of registers (a space), memory ranges, vicii, sprites, cia, sid, screen and timing (the raster position). " +
+    `Ask for at least one. Use at most ${MAX_OBSERVE_RANGES} memory ranges with at most ${MAX_OBSERVE_BYTES} bytes together. ` +
+    "The result has only the parts you asked for. With screen, an image comes with the result.",
+  inputSchema: z
+    .object({
+      registers: z.enum(SPACES).optional().describe("the space whose CPU registers to read"),
+      memory: z
+        .array(
+          z
+            .object({ address: AddressInput, size: z.number().int().min(1).max(MAX_MEMORY_READ), space: SpaceInput, view: MemoryViewInput })
+            .strict(),
+        )
+        .min(1)
+        .max(MAX_OBSERVE_RANGES)
+        .optional(),
+      vicii: z.boolean().optional(),
+      sprites: z.array(z.number().int().min(0).max(7)).min(1).max(8).optional().describe("sprite numbers 0 to 7, each once"),
+      cia: z.enum(CIA_SELECTIONS).optional(),
+      sid: z.boolean().optional(),
+      screen: z.boolean().optional(),
+      timing: z.boolean().optional(),
+    })
+    .strict(),
+  outputSchema: z.object({
+    registers: z.object({ pc: AddressOutput, a: Byte, x: Byte, y: Byte, sp: Byte, flags: FlagsOutput }).optional(),
+    memory: z.array(z.object({ address: AddressOutput, data: HexData })).optional(),
+    vicii: c64Vicii.outputSchema.optional(),
+    sprites: z.array(SpriteOutput).optional(),
+    cia: z.array(CiaOutput).optional(),
+    sid: c64Sid.outputSchema.optional(),
+    screen: z.object({ width: z.number().int(), height: z.number().int() }).optional(),
+    timing: z.object({ rasterLine: z.number().int(), rasterCycle: z.number().int() }).optional(),
+  }),
+  readOnly: true,
+  async run(input, session) {
+    const params: ObserveParams = {};
+    if (input.registers !== undefined) params.registers = input.registers;
+    if (input.memory !== undefined) params.memory = input.memory;
+    if (input.vicii === true) params.vicii = true;
+    if (input.sprites !== undefined) params.sprites = input.sprites;
+    if (input.cia !== undefined) params.cia = input.cia;
+    if (input.sid === true) params.sid = true;
+    if (input.screen === true) params.screen = true;
+    if (input.timing === true) params.timing = true;
+    if (Object.keys(params).length === 0) throw new WireFailure("invalid-input", "Ask for at least one observation.");
+    const observed = await session.observe(params);
+    const result: Record<string, unknown> = {};
+    if (observed.registers !== undefined) result.registers = { ...observed.registers, pc: formatC64Address(observed.registers.pc) };
+    if (observed.memory !== undefined) result.memory = observed.memory.map((range) => ({ ...range, address: formatC64Address(range.address) }));
+    if (observed.vicii !== undefined) {
+      result.vicii = {
+        ...observed.vicii,
+        screenAddress: formatC64Address(observed.vicii.screenAddress),
+        graphicsAddress: formatC64Address(observed.vicii.graphicsAddress),
+      };
+    }
+    if (observed.sprites !== undefined) result.sprites = observed.sprites.map((sprite) => ({ ...sprite, dataAddress: formatC64Address(sprite.dataAddress) }));
+    if (observed.cia !== undefined) result.cia = observed.cia;
+    if (observed.sid !== undefined) result.sid = observed.sid;
+    if (observed.timing !== undefined) result.timing = observed.timing;
+    if (observed.screen === undefined) return result;
+    result.screen = { width: observed.screen.width, height: observed.screen.height };
+    return new ToolOutput(result, [{ type: "image", data: observed.screen.png, mimeType: "image/png" }]);
+  },
+});
+
+export const videoTools = [c64Vicii, c64Sprite, c64Cia, c64Sid, c64Screen, c64Observe];

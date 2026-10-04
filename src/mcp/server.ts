@@ -44,6 +44,7 @@ export type ViceSessionApi = Pick<
   | "sprites"
   | "cia"
   | "sid"
+  | "observe"
   | "breakpoint"
   | "watchpoint"
   | "runUntil"
