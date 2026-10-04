@@ -52,14 +52,18 @@ test("each side resolves names from its own symbols", () => {
   const db = openForWrite(project);
   renameSymbol(db, { origin: "llm" }, { address: 0xc100, name: "player_x", kind: "variable" });
   db.close();
-  writeFileSync(join(project, "assembled.json"), JSON.stringify({ assembled: true, symbols: [{ name: "player_x", kind: "address", address: "$c200" }, { name: "MAX", kind: "constant", value: 10 }] }));
+  writeFileSync(
+    join(project, "assembled.json"),
+    JSON.stringify({ assembled: true, symbols: [{ name: "draw", kind: "address", address: "$0900" }, { name: "player_x", kind: "constant", value: 0xc200 }, { name: "BIG", kind: "constant", value: 70000 }] }),
+  );
   writeFileSync(join(project, "map.json"), JSON.stringify({ player_x: "$c300" }));
   const original = loadSymbols({ program: "x", symbols: "knowledge" });
   const fromAssembler = loadSymbols({ program: "x", symbols: "assembled.json" });
   const fromMap = loadSymbols({ program: "x", symbols: "map.json" });
   assert.equal(resolve("player_x", original, "original"), 0xc100);
   assert.equal(resolve("player_x", fromAssembler, "rebuild"), 0xc200);
-  assert.equal(fromAssembler.has("MAX"), false, "constants are no addresses");
+  assert.equal(resolve("draw", fromAssembler, "rebuild"), 0x0900);
+  assert.equal(fromAssembler.has("BIG"), false, "a value outside $0000-$ffff is no address");
   assert.equal(resolve("player_x", fromMap, "rebuild"), 0xc300);
   assert.equal(resolve("$d020", fromMap, "rebuild"), 0xd020, "a $ address is the same on both sides");
   assert.throws(() => resolve("lives", fromMap, "rebuild"), /rebuild side has no symbol lives/);

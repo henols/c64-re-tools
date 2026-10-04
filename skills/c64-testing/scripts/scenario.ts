@@ -132,10 +132,16 @@ export function loadSymbols(subject: Subject): Map<string, number> {
   } catch (error) {
     throw new ScenarioError(`cannot read the symbols ${subject.symbols}: ${(error as Error).message}`);
   }
-  // c64-assembler output, or a plain name → "$xxxx" map.
-  const assembled = (value as { symbols?: Array<{ name: string; address?: string }> }).symbols;
+  // c64-assembler output, or a plain name → "$xxxx" map. A constant in the
+  // assembler output counts too: RAM variables such as "counter = $c100" lie
+  // outside the program, so the assembler reports them as constants.
+  const assembled = (value as { symbols?: Array<{ name: string; address?: string; value?: number }> }).symbols;
   const entries: Array<[string, unknown]> = Array.isArray(assembled)
-    ? assembled.filter((symbol) => symbol.address !== undefined).map((symbol) => [symbol.name, symbol.address])
+    ? assembled.flatMap((symbol): Array<[string, unknown]> => {
+        if (symbol.address !== undefined) return [[symbol.name, symbol.address]];
+        if (Number.isInteger(symbol.value) && symbol.value! >= 0 && symbol.value! <= 0xffff) return [[symbol.name, formatC64Address(symbol.value!)]];
+        return [];
+      })
     : Object.entries(value as Record<string, unknown>);
   for (const [name, address] of entries) {
     try {

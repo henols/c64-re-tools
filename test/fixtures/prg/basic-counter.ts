@@ -1,0 +1,21 @@
+// The "unknown" program of the end-to-end test: a BASIC line 10 SYS2061 and,
+// at $080d, a routine that counts $C100 to ten, sets the border to green and
+// loops at "done". test/fixtures/asm/reconstructed/game.a rebuilds it.
+
+export const MAIN = 0x080d;
+export const DONE = 0x0821;
+export const COUNTER = 0xc100;
+
+export const basicCounterPrg = Uint8Array.from([
+  0x01, 0x08, // load address $0801
+  0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00, // 10 SYS2061
+  0xa9, 0x00, // $080d: LDA #$00
+  0x8d, 0x00, 0xc1, // STA $C100
+  0xee, 0x00, 0xc1, // $0812: INC $C100
+  0xad, 0x00, 0xc1, // LDA $C100
+  0xc9, 0x0a, // CMP #10
+  0xd0, 0xf6, // BNE $0812
+  0xa9, 0x05, // LDA #$05
+  0x8d, 0x20, 0xd0, // STA $D020
+  0x4c, 0x21, 0x08, // $0821: JMP $0821
+]);
