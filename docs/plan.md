@@ -120,11 +120,21 @@ Acceptance (19 §9): a fixture PRG goes through DXA, normalized findings and the
 - [ ] M7.3 **c64-static-analysis DXA path** — the DXA → normalized findings mapping in `skills/c64-static-analysis/scripts/analyze.ts`. Blocked with M7.2.
 - [ ] M7.4 **Acceptance** — blocked with M7.2.
 
+## M8 — Ghidra deeper analysis
+
+Acceptance (19 §10): the NMOS language compiles, decodes all 105 undocumented opcodes with the right lengths, has tested p-code for the deterministic families, stops flow at JAM, keeps unstable instructions opaque and models NMOS decimal mode; then Ghidra findings go through the same importer, a semantic rename seeds the next run, and an echoed seed does not become Ghidra's.
+
+- [ ] M8.1 **NMOS language** — `src/host/tools/ghidra/language/`: a complete 256-opcode NMOS 6502/6510 SLEIGH language with its own id (Ghidra's 6502 decodes only the 151 documented opcodes, has no decimal mode, and its STA pattern takes $89, so a layer over it would clash). Deterministic undocumented instructions get real p-code; XAA/LXA/AHX/TAS/SHX/SHY use opaque pcodeops that keep their inputs; JAM does not fall through; ADC/SBC and the decimal-sensitive undocumented instructions follow NMOS decimal mode. Build copies the Ghidra assets into `dist/`.
+- [ ] M8.2 **Headless runner** — `src/host/tools/ghidra/index.ts`: find Ghidra (`C64RT_GHIDRA` install directory, or `analyzeHeadless` on PATH), run it with a per-request settings directory (`XDG_CONFIG_HOME`/`XDG_CACHE_HOME`) that holds the language as an extension, a disposable project, our script directory and a bound; the user's Ghidra install and settings stay untouched.
+- [ ] M8.3 **Language acceptance** — real-Ghidra tests (skipped without Ghidra): compile, the 105-opcode sweep, p-code emulation of SLO/RLA/SRE/RRA, SAX/LAX, DCP/ISC and the immediate family, JAM flow, opaque unstable instructions, decimal arithmetic.
+- [ ] M8.4 **ghidra.analyze** — wire types and bounds (16 §10), a Java export script (functions with name source, code/data regions, references, bounded decompilation), seeds (entry points, data ranges, labels), complete validation before the result leaves the host.
+- [ ] M8.5 **c64-static-analysis skill** — `skills/c64-static-analysis/scripts/analyze.ts`: seeds from current knowledge, `ghidra.analyze`, Ghidra → normalized findings (seed names stay semantic), `importFindings`, a compact result; `SKILL.md` (ASD-STE100).
+- [ ] M8.6 **Acceptance** — the iterative loop on a fixture PRG: Ghidra import → semantic rename → seeded re-run → same importer, history and conflicts kept, echoed seed not owned by Ghidra.
+
 ## Later milestones
 
 Expand each into steps when it starts.
 
-- [ ] **M8** Ghidra + NMOS SLEIGH language (all 105 undocumented opcodes) on the same importer.
 - [ ] **M9** c64-testing: functional equivalence, PASS/FAIL/INCONCLUSIVE.
 - [ ] **M10** c64-memory-map, c64-unpacker, c64-provenance, c64-reverse-engineering.
 - [ ] **M11** Installation and distribution, tested from installed artifacts.
