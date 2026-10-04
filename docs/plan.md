@@ -160,7 +160,7 @@ Acceptance (19 §13): from the packed npm artifact in a fresh directory, the ski
 - [x] M11.2 **Plugin definition** — `distribution/plugin.ts` for `@jalco/ap-sdk` (08 §3): the bundled skills with their scripts and references, and the stdio MCP declaration `c64-re-tools-mcp` (the global npm binary, never `npx`). `ap-sdk check` and `ap-sdk build` pass.
 - [x] M11.3 **Package** — `package.json` `files` and bins; the build makes `dist/skills` and the plugin module; AP SDK becomes a runtime dependency of the CLI only.
 - [x] M11.4 **CLI** — `c64-re-tools install|update|uninstall|status`, thin over the AP SDK CLI (08 §5); `diagnose` and per-user host autostart wait (D14).
-- [ ] M11.5 **Acceptance from installed artifacts** — `npm pack`, a fresh directory, `npm install` of the tarball, the installed host and MCP binaries with real VICE, an installed skill bundle with a native tool, and `install` into a temporary harness directory.
+- [x] M11.5 **Acceptance from installed artifacts** — `npm pack`, a fresh directory, `npm install` of the tarball, the installed host and MCP binaries with real VICE, an installed skill bundle with a native tool, and `install` into a temporary harness directory.
 
 ## Later milestones
 
