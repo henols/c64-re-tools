@@ -145,8 +145,14 @@ jobs:
           curl -fsSL -o "$T/dxa.tgz" https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz
           tar -xzf "$T/dxa.tgz" -C "$T"
           # A build is installed only when it runs.
-          "$MAKE" -C "$T/dxa-0.1.5" CC=gcc LDFLAGS=-static && "$T/dxa-0.1.5/dxa.exe" -h 2>&1 | grep -q "dxa v0.1" && cp "$T/dxa-0.1.5/dxa.exe" "$T/bin/" || echo "dxa did not build or does not run"
-          git clone --depth 1 https://github.com/meonwax/acme.git "$T/acme" && "$MAKE" -C "$T/acme/src" CC=gcc LDFLAGS=-static && "$T"/acme/src/acme*.exe --version && cp "$T"/acme/src/acme*.exe "$T/bin/" || echo "ACME did not build or does not run"
+          "$MAKE" -C "$T/dxa-0.1.5" CC=gcc LDFLAGS=-static || true
+          ls -la "$T/dxa-0.1.5" | grep -i dxa || true
+          out="$("$T/dxa-0.1.5/dxa.exe" -h 2>&1)"; echo "dxa -h exit $?: $out"
+          if echo "$out" | grep -q "dxa v0.1"; then cp "$T/dxa-0.1.5/dxa.exe" "$T/bin/"; else echo "dxa does not run"; fi
+          git clone --depth 1 https://github.com/meonwax/acme.git "$T/acme" && "$MAKE" -C "$T/acme/src" CC=gcc LDFLAGS=-static || true
+          ls -la "$T/acme/src" | grep -i "acme\b\|\.exe" || true
+          out="$("$T/acme/src/acme.exe" --version 2>&1)"; echo "acme --version exit $?: $out"
+          if echo "$out" | grep -q "This is ACME"; then cp "$T/acme/src/acme.exe" "$T/bin/"; else echo "ACME does not run"; fi
           ls -la "$T/bin"
 
       # macOS and Windows runners have a display for the c64_window tests. A step limit keeps the log of a hang.
