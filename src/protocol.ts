@@ -586,12 +586,31 @@ export type C1541Result =
   /** The file's bytes are the reply's attachment. */
   | { action: "read"; found: true; name: string; bytes: number };
 
+/** petcat.decode (16 §13) takes no fields: the program bytes are the request's one attachment. */
+export type PetcatParams = Record<string, never>;
+
+/** A machine-code handoff: SYS with a constant address, or SYS/USR whose target is computed at run time. */
+export type BasicHandoff = { kind: "sys"; line: number; address: number } | { kind: "sys" | "usr"; line: number; computed: true };
+
+export type PetcatResult =
+  | { decoded: false; reason: string }
+  | {
+      decoded: true;
+      loadAddress: number;
+      /** The address after the BASIC end marker; any bytes from here on are no BASIC. */
+      basicEnd: number;
+      listing: string;
+      lines: Array<{ number: number; text: string }>;
+      handoffs: BasicHandoff[];
+    };
+
 export interface ToolOperations {
   "acme.assemble": { params: AcmeParams; result: AcmeResult };
   "c1541.inspect": { params: C1541Params; result: C1541Result };
+  "petcat.decode": { params: PetcatParams; result: PetcatResult };
 }
 export type ToolOperation = keyof ToolOperations;
-export const TOOL_OPERATIONS = ["acme.assemble", "c1541.inspect"] as const satisfies readonly ToolOperation[];
+export const TOOL_OPERATIONS = ["acme.assemble", "c1541.inspect", "petcat.decode"] as const satisfies readonly ToolOperation[];
 
 // ---------------------------------------------------------------------------
 // Messages (D2, D3)
@@ -1162,6 +1181,11 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
       }
       return result as ToolOperations[O]["params"];
     }
+    case "petcat.decode": {
+      for (const key of Object.keys(params)) invalid(`unknown field: ${key}`);
+      if (attachments.length !== 1) invalid("the program must be the one attachment");
+      return {} as ToolOperations[O]["params"];
+    }
   }
   return invalid(`unknown tool operation: ${String(op)}`);
 }
@@ -1206,6 +1230,10 @@ export function validateToolResult<O extends ToolOperation>(op: O, value: unknow
     }
     case "c1541.inspect": {
       if (!isC1541Result(value, attachments)) throw new ProtocolError("c1541.inspect result is malformed");
+      return value as unknown as ToolOperations[O]["result"];
+    }
+    case "petcat.decode": {
+      if (!isPetcatResult(value) || attachments.length !== 0) throw new ProtocolError("petcat.decode result is malformed");
       return value as unknown as ToolOperations[O]["result"];
     }
   }
@@ -1255,6 +1283,26 @@ function isC1541Result(value: Fields, attachments: readonly Uint8Array[]): boole
       return value.found === false || (value.found === true && typeof value.name === "string" && value.bytes === attachments[0]!.length);
   }
   return false;
+}
+
+function isPetcatResult(value: Fields): boolean {
+  if (value.decoded === false) return typeof value.reason === "string";
+  const isLine = (line: unknown) => isObject(line) && isInteger(line.number, 0, 0xffff) && typeof line.text === "string";
+  const isHandoff = (handoff: unknown) =>
+    isObject(handoff) &&
+    isInteger(handoff.line, 0, 0xffff) &&
+    ((handoff.kind === "sys" && isInteger(handoff.address, 0, 0xffff) && handoff.computed === undefined) ||
+      ((handoff.kind === "sys" || handoff.kind === "usr") && handoff.computed === true && handoff.address === undefined));
+  return (
+    value.decoded === true &&
+    isInteger(value.loadAddress, 0, 0xffff) &&
+    isInteger(value.basicEnd, 0, 0x10000) &&
+    typeof value.listing === "string" &&
+    Array.isArray(value.lines) &&
+    value.lines.every(isLine) &&
+    Array.isArray(value.handoffs) &&
+    value.handoffs.every(isHandoff)
+  );
 }
 
 function isHexData(value: unknown): value is string {

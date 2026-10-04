@@ -6,6 +6,7 @@ import type { ToolDispatcher } from "../server.ts";
 import type { AcmeParams, C1541Params } from "../../protocol.ts";
 import { assemble } from "./acme.ts";
 import { inspect } from "./c1541.ts";
+import { decode } from "./petcat.ts";
 
 export function createToolDispatcher(options: { supervisor: ProcessSupervisor; env?: NodeJS.ProcessEnv; log?: (line: string) => void }): ToolDispatcher {
   return (async (op, params, attachments, signal) => {
@@ -15,6 +16,8 @@ export function createToolDispatcher(options: { supervisor: ProcessSupervisor; e
         return assemble(params as AcmeParams, attachments, context);
       case "c1541.inspect":
         return inspect(params as C1541Params, attachments[0]!, context);
+      case "petcat.decode":
+        return decode(attachments[0]!, context);
     }
     throw new Error(`no adapter for ${String(op)}`);
   }) as ToolDispatcher;

@@ -374,3 +374,24 @@ test("c1541.inspect parameters and results are validated", () => {
   assert.deepEqual(validateToolResult("c1541.inspect", entry, []), entry);
   assert.deepEqual(validateToolResult("c1541.inspect", { action: "chain", found: true, sectors: [{ track: 17, sector: 0 }] }, []).action, "chain");
 });
+
+test("petcat.decode takes only the program and validates its result", () => {
+  assert.deepEqual(validateToolParams("petcat.decode", {}, [Buffer.alloc(4)]), {});
+  assert.throws(() => validateToolParams("petcat.decode", { dialect: "70" }, [Buffer.alloc(4)]), WireFailure);
+  assert.throws(() => validateToolParams("petcat.decode", {}, []), WireFailure);
+  const decoded = {
+    decoded: true,
+    loadAddress: 0x0801,
+    basicEnd: 0x080d,
+    listing: "10 sys2061",
+    lines: [{ number: 10, text: "sys2061" }],
+    handoffs: [
+      { kind: "sys", line: 10, address: 0x080d },
+      { kind: "usr", line: 20, computed: true },
+    ],
+  };
+  assert.deepEqual(validateToolResult("petcat.decode", decoded, []), decoded);
+  assert.deepEqual(validateToolResult("petcat.decode", { decoded: false, reason: "no end" }, []), { decoded: false, reason: "no end" });
+  assert.throws(() => validateToolResult("petcat.decode", { ...decoded, handoffs: [{ kind: "usr", line: 10, address: 1 }] }, []), ProtocolError);
+  assert.throws(() => validateToolResult("petcat.decode", { ...decoded, handoffs: [{ kind: "sys", line: 10, address: 1, computed: true }] }, []), ProtocolError);
+});
