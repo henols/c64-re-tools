@@ -129,7 +129,10 @@ export class TextMonitor {
     while (!done()) {
       if (this.#socket.destroyed) throw new TextMonitorError("text monitor connection closed during a command");
       const remaining = deadline - Date.now();
-      if (remaining <= 0) throw new TextMonitorError(`text monitor command got no answer in ${timeoutMs} ms`);
+      if (remaining <= 0) {
+        // The raw tail goes to the host log only; it is never shown to the LLM.
+        throw new TextMonitorError(`text monitor command got no answer in ${timeoutMs} ms (received: ${JSON.stringify(this.#buffer.slice(-200))})`);
+      }
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, remaining);
         this.#wake = () => {

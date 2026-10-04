@@ -8,14 +8,14 @@ import { ProcessSupervisor } from "../../../src/host/processes.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { WireFailure } from "../../../src/protocol.ts";
-import { liveEnv, liveSkip } from "./live.ts";
+import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 let session: ViceSessionHandle;
 before(async () => {
   if (liveSkip !== false) return;
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  session = await viceSessionFactory({ supervisor, env: liveEnv() })({ videoStandard: "pal" });
+  session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
 });
 after(async () => {
   await session?.close();

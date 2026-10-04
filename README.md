@@ -9,13 +9,12 @@ C64 applications.
 The project is being rebuilt from scratch. The design is frozen in
 [`docs/redesign/`](docs/redesign/README.md); start at its README.
 [`19-implementation-plan.md`](docs/redesign/19-implementation-plan.md) lists the
-milestones, and [`docs/plan.md`](docs/plan.md) tracks the steps. Milestone 1 is
-in place: the MCP reads C64 memory, registers and run state from a real VICE
-started by the Host Runtime.
-
-The previous implementation (the `vice` MCP server published as
-`@henols/vice-mcp`, its broker, and twelve `c64-*` skills) has been removed from
-`main`. Nothing from it carries forward.
+milestones, and [`docs/plan.md`](docs/plan.md) tracks the steps. Milestone 2 is
+in place: through the MCP an agent can load, autostart and attach media, run,
+stop, step and reset the C64, set breakpoints, watchpoints and typed run-until
+targets, advance exact frame counts, read and write memory and registers, type
+and move joysticks, and capture the screen, all on a real VICE started by the
+Host Runtime.
 
 Architecture in one line: one MCP process owns one VICE instance and is
 VICE-only; a Host Runtime on the graphical host owns VICE and the native tools

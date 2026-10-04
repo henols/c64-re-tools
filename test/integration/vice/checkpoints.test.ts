@@ -6,7 +6,7 @@ import { after, before, test } from "node:test";
 import { ProcessSupervisor } from "../../../src/host/processes.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { liveEnv, liveSkip } from "./live.ts";
+import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 // $c000: SEI ; LDX #$00 ; $c003: INX ; $c004: STX $c100 ; $c007: CPX #$0a ; BNE $c003 ; $c00b: JMP $c00b
 const PROGRAM = "78a200e88e00c1e00ad0f84c0bc0";
@@ -16,7 +16,7 @@ before(async () => {
   if (liveSkip !== false) return;
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  session = await viceSessionFactory({ supervisor, env: liveEnv() })({ videoStandard: "pal" });
+  session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
 });
 after(async () => {
   await session?.close();

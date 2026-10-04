@@ -9,7 +9,7 @@ import { ProcessSupervisor } from "../../../src/host/processes.ts";
 import { launchVice, type ViceProcess } from "../../../src/host/vice/process.ts";
 import { ViceSession } from "../../../src/host/vice/session.ts";
 import type { VideoStandard } from "../../../src/protocol.ts";
-import { liveEnv, liveSkip } from "./live.ts";
+import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 // $c000: SEI ; LDX #$00 ; $c003: INX ; STX $c100 ; CPX #$0a ; BNE $c003 ; $c00b: JMP $c00b
 const COUNTER = "78a200e88e00c1e00ad0f84c0bc0";
@@ -23,7 +23,7 @@ async function open(videoStandard: VideoStandard): Promise<{ session: ViceSessio
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
   const vice = await launchVice({ videoStandard, supervisor, env: liveEnv() });
-  const session = await ViceSession.start(vice, videoStandard);
+  const session = await ViceSession.start(vice, videoStandard, liveLog);
   opened.push(session);
   return { session, vice };
 }

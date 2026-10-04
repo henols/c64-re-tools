@@ -9,7 +9,7 @@ import type { ViceSessionHandle } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import type { VideoStandard } from "../../../src/protocol.ts";
 import { readPng } from "../../../src/host/vice/png.testkit.ts";
-import { liveEnv, liveSkip } from "./live.ts";
+import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 const sessions: ViceSessionHandle[] = [];
 after(async () => {
@@ -19,7 +19,7 @@ after(async () => {
 async function open(videoStandard: VideoStandard): Promise<ViceSessionHandle> {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const session = await viceSessionFactory({ supervisor, env: liveEnv() })({ videoStandard });
+  const session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard });
   sessions.push(session);
   return session;
 }

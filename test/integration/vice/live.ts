@@ -31,3 +31,8 @@ export function viceChildren(parentPid: number): number[] {
   }
   return pids;
 }
+
+/** Host-side session log for live tests: diagnostics such as monitor timeouts reach stderr. */
+export function liveLog(line: string): void {
+  process.stderr.write(`[vice-session] ${line}\n`);
+}

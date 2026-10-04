@@ -8,12 +8,12 @@ import { test } from "node:test";
 import { WireFailure } from "../../../src/protocol.ts";
 import { ProcessSupervisor } from "../../../src/host/processes.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { liveEnv, liveSkip, viceChildren } from "./live.ts";
+import { liveEnv, liveLog, liveSkip, viceChildren } from "./live.ts";
 
 test("a live session reads memory and registers without stopping a running machine", { skip: liveSkip, timeout: 90_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const session = await viceSessionFactory({ supervisor, env: liveEnv() })({ videoStandard: "pal" });
+  const session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
   try {
     assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: false });
 
@@ -47,7 +47,7 @@ test("a live session reads memory and registers without stopping a running machi
 test("a VICE killed under a live session reports machine-state-lost", { skip: liveSkip, timeout: 90_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
-  const session = await viceSessionFactory({ supervisor, env: liveEnv() })({ videoStandard: "pal" });
+  const session = await viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog })({ videoStandard: "pal" });
   try {
     const [pid] = viceChildren(process.pid);
     assert.ok(pid !== undefined, "no VICE child found");
