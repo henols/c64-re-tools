@@ -98,7 +98,7 @@ jobs:
       - name: Install ACME, dxa and Ghidra (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install acme openjdk@21
+          brew install acme openjdk@21 gradle
           jdk="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
           echo "JAVA_HOME=$jdk" >> "$GITHUB_ENV"
           echo "$jdk/bin" >> "$GITHUB_PATH"
@@ -110,6 +110,8 @@ jobs:
           echo "$HOME/bin" >> "$GITHUB_PATH"
           curl -fsSL -o "$RUNNER_TEMP/ghidra.zip" https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
           unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$HOME"
+          # Ghidra ships no native decompiler for macOS; its own script builds it.
+          JAVA_HOME="$jdk" PATH="$jdk/bin:$PATH" "$HOME/ghidra_12.1.3_PUBLIC/support/buildNatives"
           echo "C64RT_GHIDRA=$HOME/ghidra_12.1.3_PUBLIC" >> "$GITHUB_ENV"
 
       - name: Install VICE (Windows)

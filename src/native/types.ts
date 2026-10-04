@@ -74,6 +74,8 @@ export interface GhidraResult {
   regions: Array<{ start: number; end: number; classification: "code" | "data" }>;
   references: Array<{ from: number; to: number; type: ReferenceKind }>;
   decompilations: Array<{ entry: number; text: string; truncated: boolean }>;
+  /** Requested routines without decompiled code, with the decompiler's reason. */
+  notDecompiled?: Array<{ entry: number; reason: string }>;
   /** Which categories are complete inside the coverage (12 §4); private to the importer. */
   completeness: { functions: boolean; regions: boolean; references: boolean };
 }
@@ -135,6 +137,12 @@ export function checkGhidraResult(value: unknown): GhidraResult {
     total += text.length;
   }
   if (total > GHIDRA_LIMITS.decompiledTotalChars) fail("the decompilations are too long together");
+  if (result.notDecompiled !== undefined) {
+    if (!Array.isArray(result.notDecompiled) || result.notDecompiled.length > GHIDRA_LIMITS.decompile) fail("bad list of routines that were not decompiled");
+    for (const item of result.notDecompiled as unknown[]) {
+      if (!isObject(item) || !isInteger(item.entry, 0, 0xffff) || typeof item.reason !== "string" || item.reason.length > 1000) fail("bad routine that was not decompiled");
+    }
+  }
   const completeness = result.completeness;
   if (!isObject(completeness) || typeof completeness.functions !== "boolean" || typeof completeness.regions !== "boolean" || typeof completeness.references !== "boolean") fail("no completeness");
   return result as unknown as GhidraResult;

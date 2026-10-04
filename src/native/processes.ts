@@ -72,6 +72,18 @@ function groupRuns(pgid: number): boolean {
   return false;
 }
 
+/**
+ * On Windows a .bat or .cmd file (Ghidra's analyzeHeadless.bat, for example)
+ * starts only through cmd.exe: Node refuses it without a shell (EINVAL, found
+ * in CI). /s keeps the quoted command line as it is; each argument is quoted,
+ * an inner quote doubled. Undefined for any other program.
+ */
+export function batchInvocation(argv: readonly string[], comSpec = "cmd.exe"): { command: string; args: string[] } | undefined {
+  if (!/\.(bat|cmd)$/i.test(argv[0] ?? "")) return undefined;
+  const quote = (arg: string) => `"${arg.replace(/"/g, '""')}"`;
+  return { command: comSpec, args: ["/d", "/s", "/c", `"${argv.map(quote).join(" ")}"`] };
+}
+
 /** How long taskkill may block: it runs synchronously, so without a limit it could stop this whole process. */
 const TASKKILL_LIMIT_MS = 5_000;
 
@@ -142,14 +154,16 @@ export class ProcessSupervisor {
 
   /** Starts argv[0] with argv[1..] as the leader of a new process group. */
   spawn(argv: readonly string[], options: SpawnOptions = {}): SupervisedProcess {
-    const [command, ...args] = argv;
-    if (command === undefined) throw new TypeError("argv must name a command");
-    const child = spawn(command, args, {
+    if (argv[0] === undefined) throw new TypeError("argv must name a command");
+    const batch = process.platform === "win32" ? batchInvocation(argv, process.env.ComSpec) : undefined;
+    const [command, ...args] = batch === undefined ? argv : [batch.command, ...batch.args];
+    const child = spawn(command!, args, {
       cwd: options.cwd,
       env: options.env,
       stdio: options.stdio ?? "ignore",
       detached: process.platform !== "win32",
       windowsHide: true,
+      ...(batch === undefined ? {} : { windowsVerbatimArguments: true }),
     });
     const exited = new Promise<ExitStatus>((resolve) => {
       child.once("exit", (code, signal) => resolve({ code, signal }));

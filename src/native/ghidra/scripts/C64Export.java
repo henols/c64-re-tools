@@ -49,7 +49,9 @@ public class C64Export extends GhidraScript {
 		out.add("functions", functions(coverage));
 		out.add("regions", regions(coverage));
 		out.add("references", references(coverage));
-		out.add("decompilations", decompile(request));
+		JsonArray notDecompiled = new JsonArray();
+		out.add("decompilations", decompile(request, notDecompiled));
+		out.add("notDecompiled", notDecompiled);
 		JsonObject completeness = new JsonObject();
 		completeness.addProperty("functions", true);
 		completeness.addProperty("regions", true);
@@ -158,7 +160,15 @@ public class C64Export extends GhidraScript {
 		references.add(reference);
 	}
 
-	private JsonArray decompile(JsonObject request) {
+	/** A requested routine without decompiled code, and the decompiler's reason. */
+	private static void notDecompiled(JsonArray list, long entry, String reason) {
+		JsonObject item = new JsonObject();
+		item.addProperty("entry", entry);
+		item.addProperty("reason", reason == null || reason.isBlank() ? "the decompiler gave no reason" : reason.strip());
+		list.add(item);
+	}
+
+	private JsonArray decompile(JsonObject request, JsonArray failures) {
 		JsonArray decompilations = new JsonArray();
 		JsonArray entries = request.getAsJsonArray("decompile");
 		if (entries.size() == 0) {
@@ -168,14 +178,27 @@ public class C64Export extends GhidraScript {
 		int remaining = request.get("maxTotalChars").getAsInt();
 		DecompInterface decompiler = new DecompInterface();
 		try {
-			decompiler.openProgram(currentProgram);
+			// Ghidra ships no native decompiler for some platforms (macOS): it then does not start.
+			if (!decompiler.openProgram(currentProgram)) {
+				String reason = "the Ghidra decompiler did not start: " + decompiler.getLastMessage();
+				for (JsonElement element : entries) {
+					notDecompiled(failures, element.getAsLong(), reason);
+				}
+				return decompilations;
+			}
 			for (JsonElement element : entries) {
 				Function function = getFunctionAt(toAddr(element.getAsLong()));
-				if (function == null || remaining <= 0) {
+				if (function == null) {
+					notDecompiled(failures, element.getAsLong(), "no function starts at this address");
+					continue;
+				}
+				if (remaining <= 0) {
+					notDecompiled(failures, element.getAsLong(), "the decompiled text of the other routines used the whole limit");
 					continue;
 				}
 				DecompileResults results = decompiler.decompileFunction(function, 60, monitor);
 				if (!results.decompileCompleted() || results.getDecompiledFunction() == null) {
+					notDecompiled(failures, element.getAsLong(), results.getErrorMessage());
 					continue;
 				}
 				String text = results.getDecompiledFunction().getC();

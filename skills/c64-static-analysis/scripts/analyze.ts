@@ -34,6 +34,13 @@ JSON object. Addresses are $ and four hex digits.`;
 
 const MAX_LISTED_FUNCTIONS = 200;
 
+/** A decompiler that did not start gets the remedy: Ghidra ships no native decompiler for macOS. */
+function withRemedy(reason: string): string {
+  return reason.startsWith("the Ghidra decompiler did not start")
+    ? `${reason} On macOS, build the native decompiler once with support/buildNatives in the Ghidra installation.`
+    : reason;
+}
+
 class UsageError extends Error {}
 
 function addresses(values: string[] | undefined, option: string): number[] {
@@ -145,6 +152,9 @@ async function run(argv: string[]): Promise<unknown> {
     functions: result.functions.slice(0, MAX_LISTED_FUNCTIONS).map((fn) => ({ entry: formatC64Address(fn.entry), name: fn.name })),
     ...(result.functions.length > MAX_LISTED_FUNCTIONS ? { moreFunctions: result.functions.length - MAX_LISTED_FUNCTIONS } : {}),
     decompilations: result.decompilations.map((item) => ({ entry: formatC64Address(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
+    ...((result.notDecompiled ?? []).length === 0
+      ? {}
+      : { notDecompiled: result.notDecompiled!.map((item) => ({ entry: formatC64Address(item.entry), reason: withRemedy(item.reason) })) }),
   };
 }
 

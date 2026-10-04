@@ -73,3 +73,9 @@ test("a run without an entry point in the program is refused before Ghidra start
     (error: unknown) => error instanceof WireFailure && error.code === "invalid-input",
   );
 });
+
+test("a routine that cannot be decompiled is reported with the reason, not left out silently", { skip, timeout: 600_000 }, async () => {
+  const { result } = await run(seeds({ decompile: [ROUTINE, TABLE_START] }));
+  assert.deepEqual(result.decompilations.map((item) => item.entry), [ROUTINE]);
+  assert.deepEqual(result.notDecompiled, [{ entry: TABLE_START, reason: "no function starts at this address" }]);
+});
