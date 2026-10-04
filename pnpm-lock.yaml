@@ -166,6 +166,9 @@ importers:
 
   .:
     dependencies:
+      '@jalco/ap-sdk':
+        specifier: 0.4.1
+        version: 0.4.1
       '@modelcontextprotocol/sdk':
         specifier: 1.32.0
         version: 1.32.0(zod@4.6.5)
@@ -173,9 +176,6 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
     devDependencies:
-      '@jalco/ap-sdk':
-        specifier: 0.4.1
-        version: 0.4.1
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3

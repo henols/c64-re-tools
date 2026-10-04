@@ -1,8 +1,14 @@
 {
   "name": "@henols/c64-re-tools",
   "version": "0.0.0-dev",
-  "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing.",
   "private": true,
+  "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing.",
+  "license": "MIT",
+  "author": "Henrik Olsson",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/henols/c64-re-tools.git"
+  },
   "type": "module",
   "packageManager": "pnpm@12.9.1+sha512.06b055fff5cd20dc12781de173ced3310ce0951bf2ec620211a16045d5444d5c93a663210764ef29a653a610459ba0368f0e74f84d80c54723cf95aae7bc0d6d",
   "bin": {
@@ -10,6 +16,11 @@
     "c64-re-tools-mcp": "./dist/mcp/main.js",
     "c64-re-tools-host": "./dist/host/main.js"
   },
+  "files": [
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
   "engines": {
     "node": ">=24.0.0"
   },
@@ -19,13 +30,13 @@
     "test": "pnpm build && node --test \"src/**/*.test.ts\" \"test/**/*.test.ts\""
   },
   "devDependencies": {
-    "@jalco/ap-sdk": "0.4.1",
     "@types/node": "24.13.3",
     "esbuild": "0.28.2",
     "typescript": "7.0.2"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.0",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "@jalco/ap-sdk": "0.4.1"
   }
 }
