@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
 import { WireFailure } from "../protocol.ts";
-import { batchInvocation, isAlive, ProcessSupervisor, type SupervisedProcess } from "./processes.ts";
+import { batchInvocation, isAlive, ProcessSupervisor, windowsQuote, type SupervisedProcess } from "./processes.ts";
 
 const posix = process.platform !== "win32";
 
@@ -119,13 +119,21 @@ test("the exit guard kills every group when the owning process exits", { skip: !
 });
 
 test("a .bat or .cmd file starts through cmd.exe with each argument quoted; other programs start directly", () => {
-  assert.deepEqual(batchInvocation(["D:\\ghidra\\support\\analyzeHeadless.bat", "D:\\work dir", "proj", "-postScript", "Export.java", 'say "hi"']), {
+  assert.deepEqual(batchInvocation(["D:\\ghidra\\support\\analyzeHeadless.bat", "D:\\work dir", "-scriptPath", "D:\\repo\\scripts\\", "-deleteProject"]), {
     command: "cmd.exe",
-    args: ["/d", "/s", "/c", '""D:\\ghidra\\support\\analyzeHeadless.bat" "D:\\work dir" "proj" "-postScript" "Export.java" "say ""hi""""'],
+    args: ["/d", "/s", "/c", '""D:\\ghidra\\support\\analyzeHeadless.bat" "D:\\work dir" "-scriptPath" "D:\\repo\\scripts\\\\" "-deleteProject""'],
   });
   assert.equal(batchInvocation(["C:\\Tools\\npx.CMD", "-y"], "C:\\Windows\\system32\\cmd.exe")?.command, "C:\\Windows\\system32\\cmd.exe");
   assert.equal(batchInvocation(["x64sc.exe", "-default"]), undefined);
   assert.equal(batchInvocation(["/usr/bin/acme"]), undefined);
+});
+
+test("Windows quoting doubles backslashes before a quote and at the end, and escapes inner quotes", () => {
+  assert.equal(windowsQuote("plain"), '"plain"');
+  assert.equal(windowsQuote("D:\\dir\\"), '"D:\\dir\\\\"', "a trailing backslash must not escape the closing quote");
+  assert.equal(windowsQuote('say "hi"'), '"say \\"hi\\""');
+  assert.equal(windowsQuote('a\\"b'), '"a\\\\\\"b"');
+  assert.equal(windowsQuote("a\\b"), '"a\\b"', "a backslash elsewhere stays single");
 });
 
 test("a program that cannot even be started is refused by name instead of crashing the caller", () => {

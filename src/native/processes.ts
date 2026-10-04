@@ -77,12 +77,19 @@ function groupRuns(pgid: number): boolean {
 /**
  * On Windows a .bat or .cmd file (Ghidra's analyzeHeadless.bat, for example)
  * starts only through cmd.exe: Node refuses it without a shell (EINVAL, found
- * in CI). /s keeps the quoted command line as it is; each argument is quoted,
- * an inner quote doubled. Undefined for any other program.
+ * in CI). /s keeps the quoted command line as it is. Each argument is quoted
+ * as the Microsoft C runtime and Java read it: backslashes before a quote and
+ * at the end are doubled, and an inner quote is escaped (a path that ends in a
+ * backslash otherwise swallowed the arguments after it, found in CI).
+ * Undefined for any other program.
  */
+export function windowsQuote(arg: string): string {
+  return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1")}"`;
+}
+
 export function batchInvocation(argv: readonly string[], comSpec = "cmd.exe"): { command: string; args: string[] } | undefined {
   if (!/\.(bat|cmd)$/i.test(argv[0] ?? "")) return undefined;
-  const quote = (arg: string) => `"${arg.replace(/"/g, '""')}"`;
+  const quote = windowsQuote;
   return { command: comSpec, args: ["/d", "/s", "/c", `"${argv.map(quote).join(" ")}"`] };
 }
 
