@@ -60,7 +60,9 @@ export async function analyze(
     const outPath = workspace.path("out.json");
     if (!existsSync(outPath)) {
       context.log?.(`Ghidra wrote no result:\n${run.stdout.slice(-4000)}\n${run.stderr.slice(-4000)}`);
-      throw new WireFailure("operation-failed", "Ghidra finished without a result.");
+      // Ghidra's own warnings and errors say why its export script wrote nothing.
+      const lines = (run.stdout + "\n" + run.stderr).split(/\r?\n/).filter((line) => /ERROR|WARN|Exception|Error:|SCRIPT/.test(line)).slice(-8);
+      throw new WireFailure("operation-failed", `Ghidra finished without a result${lines.length === 0 ? "." : `:\n  ${lines.map((line) => line.trim()).join("\n  ")}`}`);
     }
     let result: GhidraResult;
     try {
