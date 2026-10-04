@@ -118,7 +118,7 @@ Acceptance (19 §9): a fixture PRG goes through DXA, normalized findings and the
 - [x] M7.1 **Importer** — `src/knowledge/import.ts`: normalized findings (analyzer, coverage, authoritative categories, symbols, regions, references), complete validation before any write, one revision per import, same-analyzer retirement in authoritative coverage, coverage-aware region splits, semantic and other-analyzer rows kept. Only code against data is a conflict (12 §12, §19); unchanged facts keep their rows, so a repeated run makes no revision.
 - [x] M7.2 **DXA adapter** — `dxa.analyze`, `src/host/tools/dxa.ts`: dxa 0.1.5 with `-a dump -p all-nmos6502 -d skip-scanning` (`-U` for a PRG, `-g 0000` for 64 KiB), seeds as routine, data-block and xa label files (only when they have lines: dxa refuses an empty file). The listing is checked line by line (address order, from the load address to the end, each line as long as its bytes or data items) before regions, labels and the listing attachment leave the host. Regions are authoritative, labels are not (16 §9).
 - [x] M7.3 **c64-static-analysis DXA path** — `analyze.ts --analyzer dxa [--listing <file>]`: the same knowledge seeds, DXA → normalized findings (labels as non-authoritative label symbols, regions authoritative), the same importer; the SKILL.md makes DXA the first pass and Ghidra the deeper one.
-- [ ] M7.4 **Acceptance** — blocked with M7.2.
+- [x] M7.4 **Acceptance** — `test/integration/dxa/m7-acceptance.test.ts` with the real scripts, host and dxa: a first pass into knowledge, a semantic rename and classification, a changed program whose second pass retires three DXA regions in one revision (history kept, semantic rows kept, echoed seed not owned), and a truncated listing that imports nothing. It found that analyzer facts must not be seeds (D15).
 
 ## M8 — Ghidra deeper analysis
 
@@ -150,7 +150,7 @@ Acceptance (19 §12): an end-to-end fixture from an unknown C64 artifact through
 - [x] M10.2 **c64-unpacker** — no native unpacker is chosen (19 §12: add one only when chosen). `skills/c64-unpacker/scripts/unpack.ts`: `inspect` gives packing evidence (BASIC stub, per-block entropy) without naming a packer; `capture` runs the program in its own VICE session to a given address and writes the memory (64 KiB or a range as PRG) into the project (see D13).
 - [x] M10.3 **c64-provenance** — `skills/c64-provenance/scripts/provenance.ts`: compares two or more releases by address (load address or a given shift), reports shared and differing ranges, and suggests a shift when the alignment is poor. No provenance database.
 - [x] M10.4 **c64-reverse-engineering** — `SKILL.md` only: the orchestration workflow and handoffs; no script.
-- [x] M10.5 **Acceptance** — the end-to-end chain on a fixture disk: disk → BASIC → packing → Ghidra analysis → knowledge → reconstructed source → ACME → c64-testing PASS. The DXA step waits for M7.2.
+- [x] M10.5 **Acceptance** — the end-to-end chain on a fixture disk: disk → BASIC → packing → DXA first pass → knowledge → seeded Ghidra → reconstructed source → ACME → c64-testing PASS.
 
 ## M11 — Installation and distribution
 
@@ -172,7 +172,7 @@ Release gate (19 §14): the development workflow (source → ACME → VICE → d
 - [x] M12.4 **CI matrix** — unit and integration tests on Linux, macOS and Windows (Node 24), an installed-package smoke test, live suites named separately. The Host Runtime targets Linux and macOS; on Windows its POSIX-only tests are skipped with that reason.
 - [x] M12.5 **Release automation** — a tag workflow that builds, tests and publishes to npm with provenance. Not run yet: the package stays `private: true` until the first release is decided, and the workflow needs the `NPM_TOKEN` secret.
 - [x] M12.6 **Documentation** — README install and usage examples for both workflows.
-- [x] M12.7 **Release gate** — both representative workflows pass live: the full suite with real VICE, Ghidra, ACME, c1541 and petcat, 439 of 439 twice. The reverse-engineering workflow runs without its DXA step (M7.2).
+- [x] M12.7 **Release gate** — both representative workflows pass live: the full suite with real VICE, Ghidra, ACME, c1541 and petcat, 439 of 439 twice. The reverse-engineering workflow includes its DXA step since M7.4 (450 of 450).
 
 
 ## Decisions
@@ -195,3 +195,4 @@ Points the design leaves open, decided for M1. Revisit a row before changing the
 | D12 | DXA order | DXA was not installed during the first pass, so M8 (Ghidra) went first through the same importer; M7.2–M7.4 were built once Henrik installed dxa 0.1.5. |
 | D13 | Test execution | c64-testing scenarios run in a skill script that opens its own VICE session through the host client, with the same operations the MCP uses. 19 §11 asks for scenarios and A/B runs in code and an automated acceptance, which the MCP's one session cannot give a script. This departs from 02 §7, where skill scripts use the Host Runtime only for native tools. |
 | D14 | Diagnose and autostart | Not built yet. The design lists `diagnose` and a per-user Host Runtime autostart (08 §8, 19 §13), but Henrik earlier rejected doctor/pre-flight commands (refusals at the point of use instead) and asked never to start the runtime as a daemon or ship service definitions. Question for Henrik. |
+| D15 | Analyzer seeds | Seeds come only from semantic knowledge (user and LLM): their routines as entry points, their non-code regions as data, their names as labels. 12 §18 says "current" symbols and regions, but an analyzer's own facts fed back as seeds force the same answer again, so a re-analysis could never retire them (12 §7); found live with DXA in M7.4. |

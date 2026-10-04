@@ -1,9 +1,9 @@
 // Milestone 10 acceptance (19 §12): an unknown C64 artifact goes through the
 // whole chain with the real skill scripts and the built Host Runtime:
-//   disk → BASIC → packing → Ghidra → knowledge → seeded Ghidra →
+//   disk → BASIC → packing → DXA → knowledge → seeded Ghidra →
 //   reconstructed source → ACME → c64-testing PASS.
-// The DXA first pass waits for M7.2 (DXA is not installed). Needs real VICE
-// (C64RT_LIVE_VICE), Ghidra (C64RT_GHIDRA), ACME, c1541 and petcat.
+// Needs real VICE (C64RT_LIVE_VICE), Ghidra (C64RT_GHIDRA), DXA, ACME, c1541
+// and petcat.
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -14,7 +14,7 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { after, test } from "node:test";
 
-import { ACME, C1541, findTool, PETCAT } from "../../../src/host/tools/discover.ts";
+import { ACME, C1541, DXA, findTool, PETCAT } from "../../../src/host/tools/discover.ts";
 import { findGhidra } from "../../../src/host/tools/ghidra/index.ts";
 import { basicCounterPrg } from "../../fixtures/prg/basic-counter.ts";
 import { liveEnv, liveSkip } from "../../integration/vice/live.ts";
@@ -26,6 +26,7 @@ if (skip === false) {
     c1541 = findTool(C1541);
     findTool(PETCAT);
     findTool(ACME);
+    findTool(DXA);
     findGhidra();
   } catch (error) {
     skip = `a native tool is missing: ${(error as Error).message}`;
@@ -81,10 +82,13 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   const packing = await run("c64-unpacker", "unpack.ts", "inspect", "extracted/game.prg");
   assert.deepEqual(packing.json.basicStart, { line: 10, sys: "$080d" });
 
-  // 4. Static analysis from the handoff into knowledge.
-  const first = await run("c64-static-analysis", "analyze.ts", "extracted/game.prg", "--entry", "$080d");
+  // 4. A fast DXA first pass into knowledge: it finds the BASIC start by itself.
+  const first = await run("c64-static-analysis", "analyze.ts", "extracted/game.prg", "--analyzer", "dxa", "--listing", "analysis/game.lst");
   assert.equal(first.status, 0, first.stdout);
-  assert.deepEqual(first.json.functions, [{ entry: "$080d", name: "FUN_080d" }]);
+  assert.deepEqual(first.json.regions, [
+    { start: "$0801", end: "$080c", classification: "data" },
+    { start: "$080d", end: "$0823", classification: "code" },
+  ]);
 
   // 5. Semantic investigation: name what the routine and its variable are.
   for (const args of [
