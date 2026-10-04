@@ -84,7 +84,7 @@ The changes to the knowledge and the conflicts. For DXA, also the regions, the l
 - `stale-revision`: the knowledge changed during the analysis. Run the script again.
 - `operation-failed` with a message about an incomplete result or listing: the analyzer did not give a complete result. The script recorded nothing. Tell the user.
 - `installation-incomplete`: DXA or Ghidra is not installed on this machine. Tell the user the message.
-- `notDecompiled`: Ghidra did not decompile these routines. Each entry has the reason. If the reason says that the decompiler did not start, tell the user the remedy in the reason. On macOS, Ghidra has no native decompiler until the user builds it with `support/buildNatives`.
+- `notDecompiled`: Ghidra did not decompile these routines. Each entry has the reason. If the reason says that the decompiler did not start, tell the user the remedy in the reason. On macOS, Ghidra has no native decompiler until the user builds it: `./gradlew buildNatives` in the `support/gradle` directory of Ghidra.
 
 ## Handoffs
 

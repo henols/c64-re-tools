@@ -110,8 +110,8 @@ jobs:
           echo "$HOME/bin" >> "$GITHUB_PATH"
           curl -fsSL -o "$RUNNER_TEMP/ghidra.zip" https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
           unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$HOME"
-          # Ghidra ships no native decompiler for macOS; its own script builds it.
-          JAVA_HOME="$jdk" PATH="$jdk/bin:$PATH" "$HOME/ghidra_12.1.3_PUBLIC/support/buildNatives"
+          # Ghidra ships no native decompiler for macOS; its Gradle wrapper builds it (GettingStarted.md).
+          (cd "$HOME/ghidra_12.1.3_PUBLIC/support/gradle" && JAVA_HOME="$jdk" PATH="$jdk/bin:$PATH" ./gradlew buildNatives)
           echo "C64RT_GHIDRA=$HOME/ghidra_12.1.3_PUBLIC" >> "$GITHUB_ENV"
 
       - name: Install VICE (Windows)
@@ -144,8 +144,9 @@ jobs:
           cygpath -w "$T/bin" >> "$GITHUB_PATH"
           curl -fsSL -o "$T/dxa.tgz" https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz
           tar -xzf "$T/dxa.tgz" -C "$T"
-          "$MAKE" -C "$T/dxa-0.1.5" CC=gcc && cp "$T/dxa-0.1.5/dxa.exe" "$T/bin/" || echo "dxa did not build"
-          git clone --depth 1 https://github.com/meonwax/acme.git "$T/acme" && "$MAKE" -C "$T/acme/src" CC=gcc && cp "$T"/acme/src/acme*.exe "$T/bin/" || echo "ACME did not build"
+          # A build is installed only when it runs.
+          "$MAKE" -C "$T/dxa-0.1.5" CC=gcc LDFLAGS=-static && "$T/dxa-0.1.5/dxa.exe" -h 2>&1 | grep -q "dxa v0.1" && cp "$T/dxa-0.1.5/dxa.exe" "$T/bin/" || echo "dxa did not build or does not run"
+          git clone --depth 1 https://github.com/meonwax/acme.git "$T/acme" && "$MAKE" -C "$T/acme/src" CC=gcc LDFLAGS=-static && "$T"/acme/src/acme*.exe --version && cp "$T"/acme/src/acme*.exe "$T/bin/" || echo "ACME did not build or does not run"
           ls -la "$T/bin"
 
       # macOS and Windows runners have a display for the c64_window tests. A step limit keeps the log of a hang.

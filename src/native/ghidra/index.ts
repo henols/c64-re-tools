@@ -124,7 +124,9 @@ export async function runHeadless(options: HeadlessOptions): Promise<ToolRun> {
   for (const script of options.postScripts ?? []) argv.push("-postScript", script.name, ...script.args);
   const run = await runToolOrFail("Ghidra", "The Ghidra analysis", { argv, cwd: options.workspace.root, timeoutMs: options.timeoutMs }, { supervisor: options.supervisor, signal: options.signal, env });
   if (run.code !== 0 || /^ERROR REPORT SCRIPT ERROR|Exception in thread "main"/m.test(run.stdout + run.stderr)) {
-    throw new WireFailure("operation-failed", "Ghidra stopped with an error.");
+    // Ghidra's own error lines tell the user what to fix (found in CI on Windows, where the message said nothing).
+    const lines = (run.stdout + "\n" + run.stderr).split(/\r?\n/).filter((line) => /ERROR|Exception|Error:/.test(line)).slice(0, 5);
+    throw new WireFailure("operation-failed", `Ghidra stopped with an error${lines.length === 0 ? ` (exit ${run.code})` : `:\n  ${lines.map((line) => line.trim()).join("\n  ")}`}`);
   }
   return run;
 }

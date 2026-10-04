@@ -37,7 +37,7 @@ const MAX_LISTED_FUNCTIONS = 200;
 /** A decompiler that did not start gets the remedy: Ghidra ships no native decompiler for macOS. */
 function withRemedy(reason: string): string {
   return reason.startsWith("the Ghidra decompiler did not start")
-    ? `${reason} On macOS, build the native decompiler once with support/buildNatives in the Ghidra installation.`
+    ? `${reason} On macOS, build the native decompiler once: in <Ghidra>/support/gradle run ./gradlew buildNatives.`
     : reason;
 }
 

@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
+import { WireFailure } from "../protocol.ts";
+
 /** How long a process group gets between SIGTERM and SIGKILL. */
 export const STOP_GRACE_MS = 5_000;
 /** How long to wait for the group to vanish after SIGKILL before giving up. */
@@ -157,14 +159,22 @@ export class ProcessSupervisor {
     if (argv[0] === undefined) throw new TypeError("argv must name a command");
     const batch = process.platform === "win32" ? batchInvocation(argv, process.env.ComSpec) : undefined;
     const [command, ...args] = batch === undefined ? argv : [batch.command, ...batch.args];
-    const child = spawn(command!, args, {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: options.stdio ?? "ignore",
-      detached: process.platform !== "win32",
-      windowsHide: true,
-      ...(batch === undefined ? {} : { windowsVerbatimArguments: true }),
-    });
+    let child: ChildProcess;
+    try {
+      child = spawn(command!, args, {
+        cwd: options.cwd,
+        env: options.env,
+        stdio: options.stdio ?? "ignore",
+        detached: process.platform !== "win32",
+        windowsHide: true,
+        ...(batch === undefined ? {} : { windowsVerbatimArguments: true }),
+      });
+    } catch (error) {
+      // Some failures throw at once instead of an "error" event: a file Windows cannot start
+      // (EFTYPE, found in CI with a broken build) or a .bat without a shell (EINVAL).
+      const code = (error as NodeJS.ErrnoException).code ?? "an unknown error";
+      throw new WireFailure("installation-incomplete", `${argv[0]} is not a program that this system can start (${code}). Install it again.`);
+    }
     const exited = new Promise<ExitStatus>((resolve) => {
       child.once("exit", (code, signal) => resolve({ code, signal }));
       // A failed spawn emits "error" and never "exit".

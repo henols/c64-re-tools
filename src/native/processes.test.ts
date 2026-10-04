@@ -5,6 +5,7 @@ import { createInterface } from "node:readline";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { WireFailure } from "../protocol.ts";
 import { batchInvocation, isAlive, ProcessSupervisor, type SupervisedProcess } from "./processes.ts";
 
 const posix = process.platform !== "win32";
@@ -125,4 +126,15 @@ test("a .bat or .cmd file starts through cmd.exe with each argument quoted; othe
   assert.equal(batchInvocation(["C:\\Tools\\npx.CMD", "-y"], "C:\\Windows\\system32\\cmd.exe")?.command, "C:\\Windows\\system32\\cmd.exe");
   assert.equal(batchInvocation(["x64sc.exe", "-default"]), undefined);
   assert.equal(batchInvocation(["/usr/bin/acme"]), undefined);
+});
+
+test("a program that cannot even be started is refused by name instead of crashing the caller", () => {
+  const supervisor = new ProcessSupervisor();
+  // A NUL byte in the name makes spawn throw at once, as EFTYPE and EINVAL do on Windows.
+  const name = `broken${String.fromCharCode(0)}tool`;
+  assert.throws(
+    () => supervisor.spawn([name]),
+    (error: unknown) => error instanceof WireFailure && error.code === "installation-incomplete" && /is not a program that this system can start/.test(error.message),
+  );
+  assert.equal(supervisor.size, 0);
 });
