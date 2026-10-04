@@ -88,7 +88,7 @@ Acceptance (19 §6): from a clean C64 project directory, a knowledge read needs 
 - [x] M4.2 **Semantic writes** — `write.ts`: one revision per accepted change; rename/remove symbol, classify/unclassify regions with splits, set/remove comments, add/remove references, revert; stale-revision refusal; rollback on failure.
 - [x] M4.3 **Reads and history** — `read.ts`, `history.ts`: `at(address)`, search and lists of current knowledge; history by address, revisions, one revision's changes.
 - [x] M4.4 **c64-knowledge skill** — `skills/c64-knowledge/scripts/knowledge.ts` (compact JSON in and out) and `SKILL.md` (ASD-STE100).
-- [ ] M4.5 **Acceptance** — the 19 §6 scenario through the script in a clean temporary project.
+- [x] M4.5 **Acceptance** — the 19 §6 scenario through the script in a clean temporary project.
 
 ## Later milestones
 
