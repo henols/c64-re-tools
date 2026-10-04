@@ -24,7 +24,8 @@ export const c64Execution = defineTool({
     "until-return runs until the current subroutine returns (after the next RTS or RTI). " +
     "advance-frames runs exactly count video frames (count is necessary). It stops at the same raster position, count frames later. " +
     "A breakpoint or watchpoint can stop it before that. advancedFrames tells how many frames ran. " +
-    "step, next, until-return and advance-frames first stop a running CPU. Use count only with step, next and advance-frames.",
+    "step, next, until-return and advance-frames first stop a running CPU. Use count only with step, next and advance-frames. " +
+    "step, next and until-return work only in space c64.",
   inputSchema: z
     .object({
       action: z.enum(EXECUTION_ACTIONS),

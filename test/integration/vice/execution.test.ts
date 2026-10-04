@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import { WireFailure } from "../../../src/protocol.ts";
 import { ProcessSupervisor } from "../../../src/host/processes.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
@@ -63,4 +64,13 @@ test("warp turns on and off and keeps the run state", { skip: liveSkip, timeout:
   const status = await session.handle("status", {});
   assert.equal(status.warp, false);
   assert.equal(status.state, "stopped");
+});
+
+test("stepping the drive CPU is refused with the reason", { skip: liveSkip, timeout: 60_000 }, async () => {
+  for (const action of ["step", "next", "until-return"] as const) {
+    await assert.rejects(
+      session.handle("execution", { action, space: "drive8", ...(action === "until-return" ? {} : { count: 1 }) }),
+      (error: unknown) => error instanceof WireFailure && error.code === "unsupported-in-space" && /single instruction/.test(error.message),
+    );
+  }
 });

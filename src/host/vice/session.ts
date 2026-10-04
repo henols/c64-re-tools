@@ -354,7 +354,13 @@ export class ViceSession implements ViceSessionHandle {
       return { state: "stopped", pc: await this.#pc() };
     }
     if (params.space === "drive8") {
-      throw new WireFailure("unsupported-in-space", `${params.action} is available only in space c64 for now.`);
+      // Stock VICE runs the 1541 CPU in batches that catch up with the computer's clock;
+      // neither monitor can stop it after exactly one of its instructions (tested live).
+      throw new WireFailure(
+        "unsupported-in-space",
+        `${params.action} works only in space c64: the emulator cannot stop the disk drive CPU after a single instruction. ` +
+          "Use a breakpoint in space drive8 to stop at a drive address.",
+      );
     }
     await this.#stop();
     if (params.action === "until-return") {
@@ -509,7 +515,9 @@ export class ViceSession implements ViceSessionHandle {
       if (expression !== undefined) await this.#machine.setCondition(checkpoint, expression);
       const outcome = await this.#runFrames(params.timeoutFrames, { checkpoint, deferred });
       const stopReason = outcome.end === "frames" ? "timeout" : outcome.end;
-      return { reached: stopReason === "target", stopReason, state: "stopped", pc: outcome.pc };
+      // A stop event carries the computer's PC; a drive target reports the drive's.
+      const pc = target.kind !== "raster" && target.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc;
+      return { reached: stopReason === "target", stopReason, state: "stopped", pc };
     } finally {
       await this.#machine.deleteCheckpoint(checkpoint);
     }
