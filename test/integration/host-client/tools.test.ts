@@ -24,6 +24,8 @@ process.chdir(project);
 const servers: HostServer[] = [];
 after(async () => {
   await Promise.all(servers.map((server) => server.close()));
+  // Windows cannot remove the current directory.
+  process.chdir(tmpdir());
   rmSync(project, { recursive: true, force: true });
 });
 

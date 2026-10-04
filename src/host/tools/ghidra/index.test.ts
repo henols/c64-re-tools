@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -38,7 +38,7 @@ test("C64RT_GHIDRA names the installation; its version names the settings direct
 
 test("analyzeHeadless on PATH finds its installation", () => {
   const root = fakeInstallation("on-path");
-  assert.equal(findGhidra({ PATH: join(root, "support") }).root, root);
+  assert.equal(findGhidra({ PATH: join(root, "support") }).root, realpathSync(root));
 });
 
 test("a missing or wrong Ghidra is refused by name with the remedy", () => {

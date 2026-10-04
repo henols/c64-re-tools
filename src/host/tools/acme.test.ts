@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { acmeArguments, parseDiagnostics, parseSymbols } from "./acme.ts";
@@ -14,9 +15,9 @@ test("argv carries only what the typed request allows", () => {
     "--maxerrors",
     "100",
     "-o",
-    "/w/out/program.prg",
+    join("/w/out", "program.prg"),
     "--symbollist",
-    "/w/out/symbols.txt",
+    join("/w/out", "symbols.txt"),
     "-I",
     "lib",
     "-DDEBUG=1",

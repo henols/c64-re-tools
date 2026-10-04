@@ -30,6 +30,8 @@ let server: HostServer;
 let env: NodeJS.ProcessEnv;
 after(async () => {
   await server?.close();
+  // Windows cannot remove the current directory.
+  process.chdir(tmpdir());
   rmSync(project, { recursive: true, force: true });
 });
 

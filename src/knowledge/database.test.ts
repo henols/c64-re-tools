@@ -10,7 +10,14 @@ import { SCHEMA_VERSION, schemaVersion } from "./schema.ts";
 
 const projects: string[] = [];
 after(() => {
-  for (const project of projects) rmSync(project, { recursive: true, force: true });
+  for (const project of projects) {
+    try {
+      rmSync(project, { recursive: true, force: true });
+    } catch (error) {
+      // Windows keeps a file that a test left open locked until the process ends.
+      if (process.platform !== "win32") throw error;
+    }
+  }
 });
 
 function project(): string {

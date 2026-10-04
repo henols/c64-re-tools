@@ -127,6 +127,8 @@ const seen = new Map<string, { params: unknown; attachments: number }>();
 after(async () => {
   await client?.close();
   await server?.close();
+  // Windows cannot remove the current directory.
+  process.chdir(tmpdir());
   rmSync(project, { recursive: true, force: true });
 });
 

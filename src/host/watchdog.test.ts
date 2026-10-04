@@ -46,5 +46,5 @@ test("a runtime that exits normally cleans up by itself", { skip, timeout: 20_00
   const runtime = await startRuntime();
   process.kill(runtime.pid, "SIGTERM");
   assert.ok(await until(() => !groupAlive(runtime.group), 3_000), "the exit guard stopped the child group");
-  assert.equal(existsSync(runtime.path), false, "the exit guard removed the owned path");
+  assert.ok(await until(() => !existsSync(runtime.path), 3_000), "the exit guard removed the owned path");
 });

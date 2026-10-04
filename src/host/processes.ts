@@ -40,7 +40,9 @@ function signalGroup(pgid: number, signal: NodeJS.Signals | 0): boolean {
     process.kill(-pgid, signal);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    // macOS answers EPERM for a group whose members are all zombies, which is a stopped group too.
+    if (code === "ESRCH" || (code === "EPERM" && process.platform === "darwin")) return false;
     throw error;
   }
 }

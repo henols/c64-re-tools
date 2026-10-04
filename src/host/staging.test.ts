@@ -16,7 +16,7 @@ test("a tree materializes as ordinary files inside the workspace and the workspa
   assert.equal(existsSync(workspace.root), false);
 });
 
-test("a path that leaves the workspace or reuses a file is refused", () => {
+test("a path that leaves the workspace or reuses a file is refused", { skip: process.platform === "win32" ? "planting a symbolic link needs extra rights on Windows" : false }, () => {
   const workspace = Workspace.create();
   try {
     assert.throws(() => workspace.path("../x"), WireFailure);

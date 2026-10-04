@@ -11,7 +11,7 @@ import { encodeFrame, FrameDecoder, HOST_PROTOCOL_ID } from "../../src/protocol.
 // Runs the built executable, so `pnpm build` must come first.
 const root = resolve(import.meta.dirname, "../..");
 
-test("c64-re-tools-host runs in the foreground, serves the protocol and stops on SIGTERM", async () => {
+test("c64-re-tools-host runs in the foreground, serves the protocol and stops on SIGTERM", { skip: process.platform === "win32" ? "the Host Runtime runs on Linux and macOS (POSIX signals and process groups)" : false }, async () => {
   const host = spawn(process.execPath, ["dist/host/main.js", "--port", "0"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
   try {
     const [line] = (await once(createInterface({ input: host.stdout }), "line")) as [string];
