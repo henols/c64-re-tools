@@ -10,6 +10,8 @@ import {
   type C1541Result,
   type DiskAction,
   type DiskImageType,
+  type DxaParams,
+  type DxaResult,
   type GhidraParams,
   type GhidraResult,
   type PetcatResult,
@@ -116,6 +118,14 @@ export async function analyzeWithGhidra(request: { image: string } & GhidraParam
   return (await callTool("ghidra.analyze", params, [file.bytes], options)).result;
 }
 
+/** dxa.analyze (16 §9): fast structural analysis; the listing comes back as text. */
+export async function analyzeWithDxa(request: { image: string } & DxaParams, options: ToolCallOptions = {}): Promise<{ result: DxaResult; listing: string }> {
+  const file = readProjectFile(request.image);
+  const { image: _image, ...params } = request;
+  const { result, attachments } = await callTool("dxa.analyze", params, [file.bytes], options);
+  return { result, listing: attachments[0]!.toString("utf8") };
+}
+
 /** Skill scripts see failures through the host-client, never the private protocol module. */
 export { WireFailure } from "../protocol.ts";
-export type { GhidraParams, GhidraResult } from "../protocol.ts";
+export type { DxaResult, GhidraParams, GhidraResult } from "../protocol.ts";

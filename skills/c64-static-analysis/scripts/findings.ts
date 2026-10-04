@@ -5,7 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { NormalizedFindings } from "../../../src/knowledge/import.ts";
 import { listRegions, listSymbols } from "../../../src/knowledge/read.ts";
-import type { GhidraParams, GhidraResult } from "../../../src/host-client/tools.ts";
+import type { DxaResult, GhidraParams, GhidraResult } from "../../../src/host-client/tools.ts";
 
 export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
 
@@ -40,5 +40,21 @@ export function ghidraFindings(result: GhidraResult): NormalizedFindings {
     symbols: result.functions.map((fn) => ({ address: fn.entry, name: fn.name, kind: "routine" as const })),
     regions: result.regions.map((region) => ({ start: region.start, end: region.end, type: region.classification === "code" ? ("code" as const) : ("bytes" as const) })),
     references: result.references.map((reference) => ({ from: reference.from, to: reference.to, kind: reference.type })),
+  };
+}
+
+/**
+ * DXA's result as normalized findings (12 §17). Its labels become symbols of
+ * kind label; DXA names only referenced addresses, so labels are not
+ * authoritative, while its regions cover every byte and are.
+ */
+export function dxaFindings(result: DxaResult): NormalizedFindings {
+  return {
+    analyzer: "dxa",
+    coverage: result.coverage,
+    authoritative: { symbols: result.completeness.labels, regions: result.completeness.regions, references: false },
+    symbols: result.labels.map((label) => ({ address: label.address, name: label.name, kind: "label" as const })),
+    regions: result.regions.map((region) => ({ start: region.start, end: region.end, type: region.classification === "code" ? ("code" as const) : ("bytes" as const) })),
+    references: [],
   };
 }

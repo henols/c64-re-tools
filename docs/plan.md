@@ -117,7 +117,7 @@ Acceptance (19 §9): a fixture PRG goes through DXA, normalized findings and the
 
 - [x] M7.1 **Importer** — `src/knowledge/import.ts`: normalized findings (analyzer, coverage, authoritative categories, symbols, regions, references), complete validation before any write, one revision per import, same-analyzer retirement in authoritative coverage, coverage-aware region splits, semantic and other-analyzer rows kept. Only code against data is a conflict (12 §12, §19); unchanged facts keep their rows, so a repeated run makes no revision.
 - [x] M7.2 **DXA adapter** — `dxa.analyze`, `src/host/tools/dxa.ts`: dxa 0.1.5 with `-a dump -p all-nmos6502 -d skip-scanning` (`-U` for a PRG, `-g 0000` for 64 KiB), seeds as routine, data-block and xa label files (only when they have lines: dxa refuses an empty file). The listing is checked line by line (address order, from the load address to the end, each line as long as its bytes or data items) before regions, labels and the listing attachment leave the host. Regions are authoritative, labels are not (16 §9).
-- [ ] M7.3 **c64-static-analysis DXA path** — the DXA → normalized findings mapping in `skills/c64-static-analysis/scripts/analyze.ts`. Blocked with M7.2.
+- [x] M7.3 **c64-static-analysis DXA path** — `analyze.ts --analyzer dxa [--listing <file>]`: the same knowledge seeds, DXA → normalized findings (labels as non-authoritative label symbols, regions authoritative), the same importer; the SKILL.md makes DXA the first pass and Ghidra the deeper one.
 - [ ] M7.4 **Acceptance** — blocked with M7.2.
 
 ## M8 — Ghidra deeper analysis

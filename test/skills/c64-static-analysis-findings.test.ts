@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { classifyRegion, renameSymbol } from "../../src/knowledge/write.ts";
-import { ghidraFindings, seedsFromKnowledge } from "../../skills/c64-static-analysis/scripts/findings.ts";
+import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "../../skills/c64-static-analysis/scripts/findings.ts";
 
 const root = mkdtempSync(join(tmpdir(), "c64-re-tools-findings-"));
 const db = openForWrite(root);
@@ -102,4 +102,28 @@ test("an echoed seed stays with its semantic owner, and a code/data disagreement
     own.close();
     rmSync(project, { recursive: true, force: true });
   }
+});
+
+test("DXA labels are non-authoritative label symbols; its regions are authoritative", () => {
+  const findings = dxaFindings({
+    coverage: [{ start: 0x0801, end: 0x0827 }],
+    regions: [
+      { start: 0x0801, end: 0x080c, classification: "data" },
+      { start: 0x080d, end: 0x0827, classification: "code" },
+    ],
+    labels: [{ address: 0x080d, name: "l80d" }],
+    listingBytes: 100,
+    completeness: { regions: true, labels: false },
+  });
+  assert.deepEqual(findings, {
+    analyzer: "dxa",
+    coverage: [{ start: 0x0801, end: 0x0827 }],
+    authoritative: { symbols: false, regions: true, references: false },
+    symbols: [{ address: 0x080d, name: "l80d", kind: "label" }],
+    regions: [
+      { start: 0x0801, end: 0x080c, type: "bytes" },
+      { start: 0x080d, end: 0x0827, type: "code" },
+    ],
+    references: [],
+  });
 });

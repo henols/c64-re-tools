@@ -1,25 +1,31 @@
-// The c64-static-analysis script: analyzes a project program with Ghidra
-// through the Host Runtime, seeded from current knowledge, and imports the
-// structural findings into .c64-re-tools/knowledge.db.
+// The c64-static-analysis script: analyzes a project program with DXA (fast
+// first pass) or Ghidra (deeper) through the Host Runtime, seeded from current
+// knowledge, and imports the structural findings into .c64-re-tools/knowledge.db.
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "../../../src/c64.ts";
-import { analyzeWithGhidra, WireFailure } from "../../../src/host-client/tools.ts";
+import { analyzeWithDxa, analyzeWithGhidra, WireFailure } from "../../../src/host-client/tools.ts";
 import { KnowledgeError, openForRead, openForWrite } from "../../../src/knowledge/database.ts";
 import { importFindings, type ImportConflict } from "../../../src/knowledge/import.ts";
 import { currentRevision } from "../../../src/knowledge/read.ts";
-import { ghidraFindings, seedsFromKnowledge } from "./findings.ts";
+import { resolveProjectPath } from "../../../src/project.ts";
+import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
 
 const USAGE = `analyze.ts <image> [options]
 
   <image>                 a PRG file, relative to the project directory
+  --analyzer <name>       dxa (fast first pass) or ghidra (deeper, the default)
   --flat64k               the image is 64 KiB of memory from $0000, not a PRG
   --entry <address>       an entry point, for example '$080d' (repeatable)
-  --decompile <address>   a routine to decompile, at most 32 (repeatable)
+  --decompile <address>   ghidra: a routine to decompile, at most 32 (repeatable)
+  --listing <file>        dxa: write the disassembly listing to this project file
 
-Routine symbols in knowledge are entry points too. The result is one JSON
-object. Addresses are $ and four hex digits.`;
+Routine symbols in knowledge are entry points too. Ghidra needs at least one
+entry point; dxa finds the SYS of a BASIC start by itself. The result is one
+JSON object. Addresses are $ and four hex digits.`;
 
 const MAX_LISTED_FUNCTIONS = 200;
 
@@ -52,12 +58,34 @@ function showConflict(conflict: ImportConflict): Record<string, unknown> {
   };
 }
 
+/** Imports one analyzer's findings as one revision, refused when knowledge changed since the seeds were read. */
+function record(findings: Parameters<typeof importFindings>[1], revision: number, description: string) {
+  const db = openForWrite();
+  try {
+    const imported = importFindings(db, findings, { expectedRevision: revision, description });
+    return {
+      revision: imported.revision,
+      changes: { symbols: imported.symbols, regions: imported.regions, references: imported.references },
+      conflicts: imported.conflicts.map(showConflict),
+    };
+  } finally {
+    db.close();
+  }
+}
+
 async function run(argv: string[]): Promise<unknown> {
   const { values, positionals } = parseArgs({
     args: argv,
     strict: true,
     allowPositionals: true,
-    options: { flat64k: { type: "boolean" }, entry: { type: "string", multiple: true }, decompile: { type: "string", multiple: true }, help: { type: "boolean" } },
+    options: {
+      analyzer: { type: "string" },
+      flat64k: { type: "boolean" },
+      entry: { type: "string", multiple: true },
+      decompile: { type: "string", multiple: true },
+      listing: { type: "string" },
+      help: { type: "boolean" },
+    },
   });
   if (values.help) throw new UsageError("");
   if (positionals.length !== 1) throw new UsageError("give one image");
@@ -65,28 +93,49 @@ async function run(argv: string[]): Promise<unknown> {
   const entries = addresses(values.entry, "--entry");
   const decompile = addresses(values.decompile, "--decompile");
   if (decompile.length > 32) throw new UsageError("--decompile takes at most 32 routines");
+  const analyzer = values.analyzer ?? "ghidra";
+  if (analyzer !== "dxa" && analyzer !== "ghidra") throw new UsageError(`--analyzer must be dxa or ghidra, not ${analyzer}`);
+  if (analyzer === "dxa" && decompile.length > 0) throw new UsageError("--decompile works only with --analyzer ghidra");
+  if (analyzer === "ghidra" && values.listing !== undefined) throw new UsageError("--listing works only with --analyzer dxa");
+  let listingPath: string | undefined;
+  if (values.listing !== undefined) {
+    try {
+      listingPath = resolveProjectPath(values.listing);
+    } catch {
+      throw new UsageError(`--listing must be a path relative to the project directory that stays inside it, not ${values.listing}`);
+    }
+  }
 
   const reader = openForRead();
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries);
   reader?.close();
 
-  const result = await analyzeWithGhidra({ image, imageKind: values.flat64k ? "flat64k" : "prg", ...seeds, decompile });
-
-  const db = openForWrite();
-  let imported;
-  try {
-    imported = importFindings(db, ghidraFindings(result), { expectedRevision: revision, description: `Ghidra analysis of ${image}` });
-  } finally {
-    db.close();
+  const imageKind = values.flat64k ? "flat64k" : "prg";
+  if (analyzer === "dxa") {
+    const { result, listing } = await analyzeWithDxa({ image, imageKind, ...seeds });
+    if (listingPath !== undefined) {
+      mkdirSync(dirname(listingPath), { recursive: true });
+      writeFileSync(listingPath, listing);
+    }
+    const imported = record(dxaFindings(result), revision, `DXA analysis of ${image}`);
+    return {
+      analyzer: "dxa",
+      coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
+      ...imported,
+      regions: result.regions.map((region) => ({ start: formatC64Address(region.start), end: formatC64Address(region.end), classification: region.classification })),
+      labels: result.labels.slice(0, MAX_LISTED_FUNCTIONS).map((label) => ({ address: formatC64Address(label.address), name: label.name })),
+      ...(result.labels.length > MAX_LISTED_FUNCTIONS ? { moreLabels: result.labels.length - MAX_LISTED_FUNCTIONS } : {}),
+      ...(listingPath === undefined ? {} : { listing: values.listing }),
+    };
   }
+
+  const result = await analyzeWithGhidra({ image, imageKind, ...seeds, decompile });
+  const imported = record(ghidraFindings(result), revision, `Ghidra analysis of ${image}`);
   return {
+    analyzer: "ghidra",
     coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
-    revision: imported.revision,
-    symbols: imported.symbols,
-    regions: imported.regions,
-    references: imported.references,
-    conflicts: imported.conflicts.map(showConflict),
+    ...imported,
     functions: result.functions.slice(0, MAX_LISTED_FUNCTIONS).map((fn) => ({ entry: formatC64Address(fn.entry), name: fn.name })),
     ...(result.functions.length > MAX_LISTED_FUNCTIONS ? { moreFunctions: result.functions.length - MAX_LISTED_FUNCTIONS } : {}),
     decompilations: result.decompilations.map((item) => ({ entry: formatC64Address(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
