@@ -18,6 +18,8 @@ jobs:
       # Debian ships VICE without the Commodore ROMs; take them from VICE's own source tree.
       - name: Install VICE 3.9, Xvfb and the ROMs
         run: |
+          # VICE is in contrib (its ROMs are not free software).
+          sed -i "s/^Components: main$/Components: main contrib/" /etc/apt/sources.list.d/debian.sources
           apt-get update
           apt-get install -y --no-install-recommends ca-certificates curl git xz-utils procps vice xvfb xauth
           base=https://raw.githubusercontent.com/VICE-Team/svn-mirror/main/vice/data

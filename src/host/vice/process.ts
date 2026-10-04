@@ -37,6 +37,7 @@ export const DEFAULT_READY_TIMEOUT_MS = 30_000;
 const PING_TIMEOUT_MS = 5_000;
 const RETRY_MS = 50;
 const OUTPUT_TAIL_LINES = 40;
+const STOP_REPORT_MS = 10_000;
 
 /** Finds x64sc (D8): C64RT_VICE, else PATH. Refuses by name with the remedy; never installs anything. */
 export function findVice(env: NodeJS.ProcessEnv = process.env): string {
@@ -91,6 +92,20 @@ export function viceArguments(options: {
     // Autostart injects a PRG into RAM; the default mode copies it to a disk image first.
     "-autostartprgmode",
     "1",
+    // The same RAM after every power-up: a hard reset is a power cycle, and VICE's default can flip
+    // random bits, so two runs from one start state could differ (found in CI on Windows).
+    "-raminitstartvalue",
+    "0",
+    "-raminitvalueinvert",
+    "64",
+    "-raminitpatterninvert",
+    "0",
+    "-raminitstartrandom",
+    "0",
+    "-raminitrepeatrandom",
+    "0",
+    "-raminitrandomchance",
+    "0",
     // A CPU JAM enters the monitor, so it stops the machine visibly instead of hanging it.
     "-jamaction",
     "2",
@@ -254,11 +269,23 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
   let stopping: Promise<void> | undefined;
   const stop = () => {
     stopping ??= (async () => {
-      await monitor?.close();
-      await text?.close();
-      await child.stop();
-      rmSync(scratch, { recursive: true, force: true });
-      releaseScratch();
+      // A stop that takes long says what it waits for, in the host log.
+      let step = "closing the binary monitor";
+      const started = Date.now();
+      const slow = setInterval(() => log(`VICE (pid ${child.pid}) is not stopped after ${Math.round((Date.now() - started) / 1000)} s: ${step}`), STOP_REPORT_MS);
+      slow.unref();
+      try {
+        await monitor?.close();
+        step = "closing the text monitor";
+        await text?.close();
+        step = "ending the process";
+        await child.stop();
+        step = "removing its scratch directory";
+        rmSync(scratch, { recursive: true, force: true });
+        releaseScratch();
+      } finally {
+        clearInterval(slow);
+      }
     })();
     return stopping;
   };
