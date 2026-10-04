@@ -11,18 +11,13 @@ import { createInterface } from "node:readline";
 import { test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
+import { isAlive } from "../../../src/native/processes.ts";
 import { liveEnv, liveSkip, viceChildren, viceScratchOf } from "./live.ts";
 
 const root = resolve(import.meta.dirname, "../../..");
 
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+/** A zombie has ended: a container whose PID 1 never reaps keeps the killed VICE as one. */
+const alive = isAlive;
 
 async function until(condition: () => boolean, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;

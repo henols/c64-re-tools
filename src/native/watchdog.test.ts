@@ -6,13 +6,15 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { test } from "node:test";
 
+import { isGroupRunning } from "./processes.ts";
+
 const skip = process.platform === "win32" ? "process groups are POSIX" : false;
 const program = join(import.meta.dirname, "watchdog.testkit.ts");
 
+/** A group of zombies has ended: a container whose PID 1 never reaps keeps them. */
 function groupAlive(group: number): boolean {
   try {
-    process.kill(-group, 0);
-    return true;
+    return isGroupRunning(group);
   } catch {
     return false;
   }

@@ -5,7 +5,7 @@ import { createInterface } from "node:readline";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
-import { ProcessSupervisor, type SupervisedProcess } from "./processes.ts";
+import { isAlive, ProcessSupervisor, type SupervisedProcess } from "./processes.ts";
 
 const posix = process.platform !== "win32";
 
@@ -16,16 +16,6 @@ const grandchild = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"]
 console.log(grandchild.pid);
 setInterval(() => {}, 1000);
 `;
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
-    throw error;
-  }
-}
 
 async function eventuallyDead(pid: number, timeoutMs = 3000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;

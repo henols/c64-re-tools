@@ -213,12 +213,24 @@ export function backtraceFromStack(sp: number, memory: Uint8Array, depth: number
  */
 export function parseProfile(answer: string): ProfileEntry[] {
   const entries: ProfileEntry[] = [];
+  const unknown: string[] = [];
   for (const line of answer.split("\n")) {
-    const match = /^\s*(\d+)\s+[\d.]+%\s+(\d+)\s+([\d.]+)%\s+([0-9a-f]{4})\s*$/i.exec(line);
-    if (match === null) continue;
-    entries.push({ address: Number.parseInt(match[4]!, 16), totalCycles: match[1]!, selfCycles: match[2]!, percent: Number(match[3]!) });
+    const row = /^\s*(\d+)\s+[\d.]+%\s+(\d+)\s+([\d.]+)%\s+(\S+)\s*$/.exec(line);
+    if (row === null) {
+      if (line.trim() !== "" && !/^Total\s+%\s+Self\s+%$/.test(line.trim()) && !/^[-\s]+$/.test(line)) unknown.push(line.trim());
+      continue;
+    }
+    // A row named ROOT or by a label has no routine address.
+    if (!/^[0-9a-f]{4}$/i.test(row[4]!)) continue;
+    entries.push({ address: Number.parseInt(row[4]!, 16), totalCycles: row[1]!, selfCycles: row[2]!, percent: Number(row[3]!) });
   }
+  // An answer in another form must not read as "nothing ran" (found on macOS).
+  if (entries.length === 0 && unknown.length > 0) throw unknownForm("profile", unknown);
   return entries;
+}
+
+function unknownForm(what: string, lines: string[]): WireFailure {
+  return new WireFailure("operation-failed", `VICE printed the ${what} in a form that c64-re-tools does not read: ${JSON.stringify(lines.slice(0, 3))}`);
 }
 
 /**
@@ -228,9 +240,13 @@ export function parseProfile(answer: string): ProfileEntry[] {
  */
 export function parseMemmap(answer: string, maxRanges: number): MemmapRange[] {
   const ranges: MemmapRange[] = [];
+  const unknown: string[] = [];
   for (const line of answer.split("\n")) {
     const match = /^([0-9a-f]{4}): (\S{3}) (\S{3}) (\S{3})/i.exec(line);
-    if (match === null) continue;
+    if (match === null) {
+      if (line.trim() !== "" && !/^addr:\s+IO\s+ROM\s+RAM$/.test(line.trim())) unknown.push(line.trim());
+      continue;
+    }
     const address = Number.parseInt(match[1]!, 16);
     const flags = match[2]! + match[3]! + match[4]!;
     const access = { execute: flags.includes("x"), read: flags.includes("r"), write: flags.includes("w") };
@@ -242,6 +258,7 @@ export function parseMemmap(answer: string, maxRanges: number): MemmapRange[] {
     if (ranges.length >= maxRanges) break;
     ranges.push({ start: address, end: address, ...access });
   }
+  if (ranges.length === 0 && unknown.length > 0) throw unknownForm("memory map", unknown);
   return ranges;
 }
 

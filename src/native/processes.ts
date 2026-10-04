@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess, type StdioOptions } from "node:child_process";
-import { mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -32,14 +32,44 @@ export interface SupervisedProcess {
   stop(): Promise<void>;
 }
 
-/** True while a process exists, also one this process may not signal (EPERM). */
+/**
+ * A process's state letter and process group on Linux, from /proc; undefined
+ * when it is gone. A zombie (Z) or a dead process (X) has exited: only the
+ * wait of its parent is missing. In a container whose PID 1 never reaps (for
+ * example `tail -f /dev/null`), an orphan stays a zombie for ever (found in CI).
+ */
+function linuxProcess(pid: number | string): { state: string; group: number } | undefined {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const [state, , group] = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    return { state: state!, group: Number(group) };
+  } catch {
+    return undefined;
+  }
+}
+
+const exitedState = (state: string) => state === "Z" || state === "X";
+
+/** True while a process runs, also one this process may not signal (EPERM). A zombie does not run. */
 export function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    if ((error as NodeJS.ErrnoException).code !== "EPERM") return false;
   }
+  if (process.platform !== "linux") return true;
+  const found = linuxProcess(pid);
+  return found !== undefined && !exitedState(found.state);
+}
+
+/** Linux: true while a member of the process group runs; zombies do not count. */
+function groupRuns(pgid: number): boolean {
+  for (const entry of readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    const found = linuxProcess(entry);
+    if (found !== undefined && found.group === pgid && !exitedState(found.state)) return true;
+  }
+  return false;
 }
 
 /** Ends a process and every descendant on Windows, which has no process groups. */
@@ -60,9 +90,14 @@ export function signalGroup(pgid: number, signal: NodeJS.Signals | 0): boolean {
   }
 }
 
+/** True while a process group has a running member (POSIX); a group of zombies has ended. */
+export function isGroupRunning(pgid: number): boolean {
+  return signalGroup(pgid, 0) && (process.platform !== "linux" || groupRuns(pgid));
+}
+
 async function waitForGroupGone(pgid: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
-  while (signalGroup(pgid, 0)) {
+  while (isGroupRunning(pgid)) {
     if (Date.now() >= deadline) return false;
     await sleep(POLL_MS);
   }
@@ -212,11 +247,14 @@ export class ProcessSupervisor {
       return;
     }
     // The group outlives its leader when descendants remain, so wait on the group, not the leader.
-    if (!signalGroup(pid, "SIGTERM")) return;
-    if (await waitForGroupGone(pid, this.#graceMs)) return;
-    signalGroup(pid, "SIGKILL");
-    if (!(await waitForGroupGone(pid, KILL_WAIT_MS))) {
-      throw new Error(`process group ${pid} survived SIGKILL`);
+    if (signalGroup(pid, "SIGTERM") && !(await waitForGroupGone(pid, this.#graceMs))) {
+      signalGroup(pid, "SIGKILL");
+      if (!(await waitForGroupGone(pid, KILL_WAIT_MS))) {
+        throw new Error(`process group ${pid} survived SIGKILL`);
+      }
     }
+    // A group of zombies counts as gone before Node reaps the leader and reports its exit
+    // (macOS, and Linux since zombies stopped counting); stopped means that exit was seen.
+    await Promise.race([exited, sleep(KILL_WAIT_MS)]);
   }
 }
