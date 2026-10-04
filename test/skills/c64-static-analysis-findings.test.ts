@@ -43,7 +43,7 @@ test("seeds come from current knowledge: routines, non-code regions and semantic
   });
 });
 
-test("an echoed seed name is no Ghidra symbol; code is code and data is bytes", () => {
+test("functions become routine symbols, code is code and data is bytes", () => {
   const findings = ghidraFindings({
     coverage: [{ start: 0x0801, end: 0x0827 }],
     functions: [
@@ -65,6 +65,7 @@ test("an echoed seed name is no Ghidra symbol; code is code and data is bytes", 
     authoritative: { symbols: true, regions: true, references: false },
     symbols: [
       { address: 0x080d, name: "FUN_080d", kind: "routine" },
+      { address: 0x0818, name: "init_result", kind: "routine" },
       { address: 0x0820, name: "entry", kind: "routine" },
     ],
     regions: [
@@ -73,4 +74,32 @@ test("an echoed seed name is no Ghidra symbol; code is code and data is bytes", 
     ],
     references: [{ from: 0x080d, to: 0x0818, kind: "call" }],
   });
+});
+
+test("an echoed seed stays with its semantic owner, and a code/data disagreement is reported", () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-echo-"));
+  const own = openForWrite(project);
+  try {
+    renameSymbol(own, { origin: "llm" }, { address: 0x0818, name: "init_result", kind: "routine" });
+    renameSymbol(own, { origin: "user" }, { address: 0x080d, name: "main", kind: "variable" });
+    const result = importFindings(
+      own,
+      ghidraFindings({
+        coverage: [{ start: 0x0801, end: 0x0827 }],
+        functions: [
+          { entry: 0x080d, name: "main", nameSource: "seed" },
+          { entry: 0x0818, name: "init_result", nameSource: "seed" },
+        ],
+        regions: [],
+        references: [],
+        decompilations: [],
+        completeness: { functions: true, regions: true, references: true },
+      }),
+    );
+    assert.equal(result.revision, null, "nothing changes owner");
+    assert.deepEqual(result.conflicts.map((conflict) => conflict.category === "symbol" && [conflict.address, conflict.reason]), [[0x080d, "kind"]]);
+  } finally {
+    own.close();
+    rmSync(project, { recursive: true, force: true });
+  }
 });

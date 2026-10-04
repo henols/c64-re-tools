@@ -27,15 +27,17 @@ export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoint
 }
 
 /**
- * Ghidra's result as normalized findings. A function whose name is an echoed
- * seed adds no symbol: the semantic name keeps its owner (12 §18, 16 §10).
+ * Ghidra's result as normalized findings. A function named by an echoed seed
+ * stays in the snapshot: its address holds the seed's semantic symbol, which
+ * the importer never replaces, so the name keeps its owner (12 §18, 16 §10),
+ * and a code/data disagreement with that symbol is still reported.
  */
 export function ghidraFindings(result: GhidraResult): NormalizedFindings {
   return {
     analyzer: "ghidra",
     coverage: result.coverage,
     authoritative: { symbols: result.completeness.functions, regions: result.completeness.regions, references: result.completeness.references },
-    symbols: result.functions.filter((fn) => fn.nameSource !== "seed").map((fn) => ({ address: fn.entry, name: fn.name, kind: "routine" as const })),
+    symbols: result.functions.map((fn) => ({ address: fn.entry, name: fn.name, kind: "routine" as const })),
     regions: result.regions.map((region) => ({ start: region.start, end: region.end, type: region.classification === "code" ? ("code" as const) : ("bytes" as const) })),
     references: result.references.map((reference) => ({ from: reference.from, to: reference.to, kind: reference.type })),
   };
