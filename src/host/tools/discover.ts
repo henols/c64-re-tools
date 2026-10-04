@@ -25,6 +25,20 @@ export const ACME: ToolSpec = {
   remedy: "Install the ACME cross-assembler on the host so that acme is on PATH, or set C64RT_ACME to its full path, then restart c64-re-tools-host.",
 };
 
+export const C1541: ToolSpec = {
+  name: "c1541",
+  envVar: "C64RT_C1541",
+  binaries: ["c1541"],
+  remedy: "Install VICE on the host (c1541 comes with it) so that c1541 is on PATH, or set C64RT_C1541 to its full path, then restart c64-re-tools-host.",
+};
+
+export const PETCAT: ToolSpec = {
+  name: "petcat",
+  envVar: "C64RT_PETCAT",
+  binaries: ["petcat"],
+  remedy: "Install VICE on the host (petcat comes with it) so that petcat is on PATH, or set C64RT_PETCAT to its full path, then restart c64-re-tools-host.",
+};
+
 function isExecutableFile(path: string): boolean {
   try {
     if (!statSync(path).isFile()) return false;

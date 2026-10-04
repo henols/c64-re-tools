@@ -1,6 +1,8 @@
 // The private Host Runtime wire contract, shared by src/host and src/host-client.
 // Nothing here is LLM-facing: MCP and skill results never show these shapes.
 
+import { textToPetsciiName } from "./c64.ts";
+
 /** Private Host Runtime protocol identifier. */
 export const HOST_PROTOCOL_ID = "c64-re-tools-host" as const;
 /** Bumped on any incompatible change; a mismatch fails the handshake. */
@@ -545,11 +547,51 @@ export interface AcmeResult {
   diagnostics: Diagnostic[];
 }
 
+export const DISK_IMAGE_TYPES = ["d64", "d71", "d81", "g64"] as const;
+export type DiskImageType = (typeof DISK_IMAGE_TYPES)[number];
+export const DISK_ACTIONS = ["directory", "bam", "entry", "chain", "read"] as const;
+export type DiskAction = (typeof DISK_ACTIONS)[number];
+export const CBM_FILE_TYPES = ["del", "seq", "prg", "usr", "rel", "unknown"] as const;
+export type CbmFileType = (typeof CBM_FILE_TYPES)[number];
+
+/** c1541.inspect (16 §12). The image bytes are the request's one attachment. */
+export interface C1541Params {
+  action: DiskAction;
+  imageType: DiskImageType;
+  /** entry, chain and read only: the file name as petsciiNameToText shows it. */
+  name?: string;
+}
+
+export interface DiskFile {
+  name: string;
+  type: CbmFileType;
+  blocks: number;
+  closed: boolean;
+  locked: boolean;
+}
+
+export interface DiskSector {
+  track: number;
+  sector: number;
+}
+
+export type C1541Result =
+  | { action: "directory"; diskName: string; diskId: string; dosType: string; freeBlocks: number; entries: DiskFile[] }
+  | { action: "bam"; tracks: Array<{ track: number; freeSectors: number[]; usedSectors: number[] }> }
+  | { action: "entry"; found: false }
+  | { action: "entry"; found: true; entry: DiskFile & { startTrack: number; startSector: number } }
+  | { action: "chain"; found: false }
+  | { action: "chain"; found: true; sectors: DiskSector[] }
+  | { action: "read"; found: false }
+  /** The file's bytes are the reply's attachment. */
+  | { action: "read"; found: true; name: string; bytes: number };
+
 export interface ToolOperations {
   "acme.assemble": { params: AcmeParams; result: AcmeResult };
+  "c1541.inspect": { params: C1541Params; result: C1541Result };
 }
 export type ToolOperation = keyof ToolOperations;
-export const TOOL_OPERATIONS = ["acme.assemble"] as const satisfies readonly ToolOperation[];
+export const TOOL_OPERATIONS = ["acme.assemble", "c1541.inspect"] as const satisfies readonly ToolOperation[];
 
 // ---------------------------------------------------------------------------
 // Messages (D2, D3)
@@ -1098,6 +1140,28 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
       }
       return result as ToolOperations[O]["params"];
     }
+    case "c1541.inspect": {
+      for (const key of Object.keys(params)) if (!["action", "imageType", "name"].includes(key)) invalid(`unknown field: ${key}`);
+      if (!isOneOf(DISK_ACTIONS, params.action)) invalid(`action must be one of ${DISK_ACTIONS.join(", ")}`);
+      if (!isOneOf(DISK_IMAGE_TYPES, params.imageType)) invalid(`imageType must be one of ${DISK_IMAGE_TYPES.join(", ")}`);
+      if (attachments.length !== 1 || attachments[0]!.length === 0) invalid("the disk image must be the one attachment");
+      const result: C1541Params = { action: params.action, imageType: params.imageType };
+      const named = params.action === "entry" || params.action === "chain" || params.action === "read";
+      if (!named) {
+        if (params.name !== undefined) invalid(`action ${params.action} takes no name`);
+      } else {
+        if (typeof params.name !== "string" || params.name.length === 0) invalid(`action ${params.action} needs a file name`);
+        let bytes: Uint8Array;
+        try {
+          bytes = textToPetsciiName(params.name);
+        } catch (error) {
+          return invalid(`name: ${(error as Error).message}`);
+        }
+        if (bytes.length > 16) invalid("a CBM file name has at most 16 characters");
+        result.name = params.name;
+      }
+      return result as ToolOperations[O]["params"];
+    }
   }
   return invalid(`unknown tool operation: ${String(op)}`);
 }
@@ -1140,8 +1204,57 @@ export function validateToolResult<O extends ToolOperation>(op: O, value: unknow
       }
       return value as unknown as ToolOperations[O]["result"];
     }
+    case "c1541.inspect": {
+      if (!isC1541Result(value, attachments)) throw new ProtocolError("c1541.inspect result is malformed");
+      return value as unknown as ToolOperations[O]["result"];
+    }
   }
   throw new ProtocolError(`unknown tool operation: ${String(op)}`);
+}
+
+const isTrackSector = (value: unknown): boolean => isObject(value) && isInteger(value.track, 0, 255) && isInteger(value.sector, 0, 255);
+const isSectorList = (value: unknown): boolean => Array.isArray(value) && value.every((item) => isInteger(item, 0, 255));
+
+function isDiskFile(value: unknown): value is DiskFile {
+  return (
+    isObject(value) &&
+    typeof value.name === "string" &&
+    isOneOf(CBM_FILE_TYPES, value.type) &&
+    isInteger(value.blocks, 0, 0xffff) &&
+    typeof value.closed === "boolean" &&
+    typeof value.locked === "boolean"
+  );
+}
+
+function isC1541Result(value: Fields, attachments: readonly Uint8Array[]): boolean {
+  const carries = value.action === "read" && value.found === true ? 1 : 0;
+  if (attachments.length !== carries) return false;
+  switch (value.action) {
+    case "directory":
+      return (
+        typeof value.diskName === "string" &&
+        typeof value.diskId === "string" &&
+        typeof value.dosType === "string" &&
+        isInteger(value.freeBlocks, 0, 0xffff) &&
+        Array.isArray(value.entries) &&
+        value.entries.every(isDiskFile)
+      );
+    case "bam":
+      return (
+        Array.isArray(value.tracks) &&
+        value.tracks.every((track) => isObject(track) && isInteger(track.track, 1, 255) && isSectorList(track.freeSectors) && isSectorList(track.usedSectors))
+      );
+    case "entry":
+      return (
+        value.found === false ||
+        (value.found === true && isObject(value.entry) && isDiskFile(value.entry) && isTrackSector({ track: value.entry.startTrack, sector: value.entry.startSector }))
+      );
+    case "chain":
+      return value.found === false || (value.found === true && Array.isArray(value.sectors) && value.sectors.every(isTrackSector));
+    case "read":
+      return value.found === false || (value.found === true && typeof value.name === "string" && value.bytes === attachments[0]!.length);
+  }
+  return false;
 }
 
 function isHexData(value: unknown): value is string {

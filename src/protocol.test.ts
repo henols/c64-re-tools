@@ -346,3 +346,31 @@ test("acme.assemble parameters and results are validated", () => {
   assert.deepEqual(validateToolResult("acme.assemble", failed, []), failed);
   assert.throws(() => validateToolResult("acme.assemble", failed, [Buffer.alloc(1)]), ProtocolError);
 });
+
+test("c1541.inspect parameters and results are validated", () => {
+  const image = [Buffer.alloc(174848)];
+  assert.deepEqual(validateToolParams("c1541.inspect", { action: "directory", imageType: "d64" }, image), { action: "directory", imageType: "d64" });
+  assert.deepEqual(validateToolParams("c1541.inspect", { action: "read", imageType: "d81", name: "game{$c1}" }, image).name, "game{$c1}");
+  for (const params of [
+    { action: "format", imageType: "d64" },
+    { action: "directory", imageType: "t64" },
+    { action: "directory", imageType: "d64", name: "X" },
+    { action: "read", imageType: "d64" },
+    { action: "read", imageType: "d64", name: "café" },
+    { action: "read", imageType: "d64", name: "SEVENTEEN LETTERS" },
+    { action: "bam", imageType: "d64", command: "-format" },
+  ]) {
+    assert.throws(() => validateToolParams("c1541.inspect", params, image), WireFailure, JSON.stringify(params));
+  }
+  assert.throws(() => validateToolParams("c1541.inspect", { action: "bam", imageType: "d64" }, []), WireFailure, "the image is necessary");
+  const read = { action: "read", found: true, name: "GAME", bytes: 3 };
+  assert.deepEqual(validateToolResult("c1541.inspect", read, [Buffer.alloc(3)]), read);
+  assert.throws(() => validateToolResult("c1541.inspect", read, [Buffer.alloc(4)]), ProtocolError, "the byte count must match");
+  assert.throws(() => validateToolResult("c1541.inspect", { action: "read", found: false }, [Buffer.alloc(1)]), ProtocolError);
+  const directory = { action: "directory", diskName: "D", diskId: "01", dosType: "2A", freeBlocks: 664, entries: [{ name: "A", type: "prg", blocks: 1, closed: true, locked: false }] };
+  assert.deepEqual(validateToolResult("c1541.inspect", directory, []), directory);
+  assert.throws(() => validateToolResult("c1541.inspect", { ...directory, entries: [{ name: "A", type: "exe", blocks: 1, closed: true, locked: false }] }, []), ProtocolError);
+  const entry = { action: "entry", found: true, entry: { name: "A", type: "prg", blocks: 1, closed: true, locked: false, startTrack: 17, startSector: 0 } };
+  assert.deepEqual(validateToolResult("c1541.inspect", entry, []), entry);
+  assert.deepEqual(validateToolResult("c1541.inspect", { action: "chain", found: true, sectors: [{ track: 17, sector: 0 }] }, []).action, "chain");
+});
