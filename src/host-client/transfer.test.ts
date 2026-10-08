@@ -58,6 +58,13 @@ test("a link out of the source root is refused, as is a missing or plain-file ro
   assert.throws(() => readProjectTree("noext", { root: project }), failsWith("invalid-input"));
 });
 
+test("a linked project file takes its type from the given path, not from the link target", () => {
+  mkdirSync(join(project, "images"));
+  writeFileSync(join(project, "images", "abc"), Buffer.from([4]));
+  symlinkSync(join(project, "images", "abc"), join(project, "linked.d64"));
+  assert.deepEqual(readProjectFile("linked.d64", { root: project }), { bytes: Buffer.from([4]), type: "d64" });
+});
+
 test("a directory link to the source root or to an ancestor in it is refused as a loop", () => {
   const tree = join(project, "loop");
   mkdirSync(join(tree, "inner"), { recursive: true });

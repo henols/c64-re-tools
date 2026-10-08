@@ -38,7 +38,7 @@ export function readProjectFile(path: string, options: { root?: string; maxBytes
   if (stat.size > maxBytes) {
     throw new WireFailure("limit-exceeded", `${path} has ${stat.size} bytes; the limit is ${maxBytes} bytes.`);
   }
-  return { bytes: readFileSync(real), type: extname(real).slice(1).toLowerCase() };
+  return { bytes: readFileSync(real), type: extname(path).slice(1).toLowerCase() };
 }
 
 /** Directories never staged: version control and the toolkit's own project state. */
