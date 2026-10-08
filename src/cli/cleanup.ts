@@ -72,14 +72,21 @@ function readJson(path: string): Record<string, unknown> | undefined {
 
 /** What the Windsurf configuration held before an install, to put it back after a project install. */
 export interface WindsurfBefore {
-  fileExisted: boolean;
+  /** The file's bytes, or undefined when the file did not exist. */
+  bytes: Buffer | undefined;
   hadServer: boolean;
 }
 
 export function windsurfBefore(): WindsurfBefore {
   const path = WINDSURF_MCP();
   const servers = readJson(path)?.[WINDSURF_KEY] as Record<string, unknown> | undefined;
-  return { fileExisted: existsSync(path), hadServer: servers !== undefined && PLUGIN_ID in servers };
+  let bytes: Buffer | undefined;
+  try {
+    bytes = readFileSync(path);
+  } catch {
+    bytes = undefined;
+  }
+  return { bytes, hadServer: servers !== undefined && PLUGIN_ID in servers };
 }
 
 /**
@@ -94,13 +101,17 @@ export function undoWindsurfProjectMcp(before: WindsurfBefore, cwd = process.cwd
   const item = entry?.items.find((candidate) => candidate.harness === "windsurf" && candidate.kind === "mcp" && candidate.files.length > 0);
   if (manifest === undefined || entry === undefined || item === undefined) return undefined;
 
-  if (!before.hadServer) {
-    const path = WINDSURF_MCP();
+  const path = WINDSURF_MCP();
+  if (before.bytes !== undefined) {
+    // The file existed: its bytes go back unchanged.
+    if (!existsSync(path) || !readFileSync(path).equals(before.bytes)) writeFileSync(path, before.bytes);
+  } else {
+    // The install made the file: it goes when it holds only this declaration.
     const root = readJson(path);
     const servers = root?.[WINDSURF_KEY] as Record<string, unknown> | undefined;
     if (root !== undefined && servers !== undefined) {
       delete servers[PLUGIN_ID];
-      if (!before.fileExisted && isEmptyConfig(root, WINDSURF_KEY)) {
+      if (isEmptyConfig(root, WINDSURF_KEY)) {
         unlinkSync(path);
         removeEmptyDirectories(dirname(path), homedir());
       } else {
