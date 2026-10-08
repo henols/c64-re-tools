@@ -9,7 +9,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { HostConnection } from "../host-client/connect.ts";
 import { hostTools } from "../host-client/tools.ts";
 import { localToolContext } from "../native/local.ts";
 import { localToolStatus } from "../native/status.ts";
@@ -73,16 +72,17 @@ async function status(): Promise<number> {
   console.log(`Node: ${process.version} (${process.execPath})`);
   // The skill scripts run these tools here, on this machine.
   printTools("Tools here:", await localToolStatus(localToolContext()));
+  // VICE and its tools live on the host; it finds and runs each one. One
+  // request shows both that the host answers and what it has.
+  let hostToolStatus: ToolStatus[];
   try {
-    const connection = await HostConnection.open({ role: "tool" });
-    await connection.close();
-    console.log("Host Runtime: reachable");
+    hostToolStatus = await hostTools();
   } catch (error) {
     console.log(`Host Runtime: not reachable. ${(error as Error).message}`);
     return 0;
   }
-  // VICE and its tools live on the host; it finds and runs each one.
-  printTools("Tools on the host:", await hostTools());
+  console.log("Host Runtime: reachable");
+  printTools("Tools on the host:", hostToolStatus);
   return 0;
 }
 
