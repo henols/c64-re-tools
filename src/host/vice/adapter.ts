@@ -758,6 +758,7 @@ export class ViceAdapter {
   /** Restores the machine from a snapshot file. The machine stays stopped. */
   async restoreSnapshot(file: string): Promise<void> {
     const name = Buffer.from(file, "utf8");
+    if (name.length > 255) throw new Error("snapshot file path is too long");
     await this.#monitor.request(Command.undump, Buffer.concat([Buffer.from([name.length]), name]), 30_000);
   }
 

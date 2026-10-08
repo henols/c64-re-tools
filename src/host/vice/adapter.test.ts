@@ -13,7 +13,10 @@ import {
   parseMemmap,
   parseProfile,
   statusRegisterFromFlags,
+  ViceAdapter,
 } from "./adapter.ts";
+import { Command } from "./binary-monitor.ts";
+import { FakeVice } from "./fake-vice.testkit.ts";
 
 test("typed conditions become parenthesized VICE expressions", () => {
   assert.equal(conditionExpression({ kind: "register", register: "a", operator: "eq", value: 66 }, "c64"), "(A == $42)");
@@ -149,4 +152,18 @@ test("search answers parse into addresses up to the limit; an empty answer is no
   assert.deepEqual(parseHunt("1010\n1110\n 1210 \n", 10), [0x1010, 0x1110, 0x1210]);
   assert.deepEqual(parseHunt("1010\n1110\n1210", 2), [0x1010, 0x1110]);
   assert.deepEqual(parseHunt("", 10), []);
+});
+
+test("a snapshot path longer than VICE takes is refused before VICE sees it", async () => {
+  const fake = new FakeVice();
+  const process = await fake.start();
+  try {
+    const adapter = await ViceAdapter.create(process.monitor, process.text);
+    fake.commands.length = 0;
+    await assert.rejects(adapter.restoreSnapshot(`/${"x".repeat(300)}.vsf`), /too long/);
+    await assert.rejects(adapter.saveSnapshot(`/${"x".repeat(300)}.vsf`), /too long/);
+    assert.ok(!fake.commands.includes(Command.undump) && !fake.commands.includes(Command.dump));
+  } finally {
+    await process.stop();
+  }
 });
