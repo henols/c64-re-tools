@@ -81,6 +81,8 @@ export interface HostServer {
 }
 
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
+/** How long a refused client may keep its side of the connection open after the host has ended its side. */
+const REFUSED_CLOSE_MS = 1_000;
 
 function digest(text: string): Buffer {
   return createHash("sha256").update(text, "utf8").digest();
@@ -124,6 +126,7 @@ class Connection {
   readonly #handshakeTimer: NodeJS.Timeout;
   /** Runs from ready on; every received frame restarts it (D18). */
   #heartbeatTimer: NodeJS.Timeout | undefined;
+  #refusedTimer: NodeJS.Timeout | undefined;
   #resolveClosed!: () => void;
 
   constructor(socket: Socket, options: HostServerOptions, log: (line: string) => void) {
@@ -165,6 +168,12 @@ class Connection {
     if (this.#state !== "closed" && !this.#socket.destroyed) this.#socket.write(encodeFrame(message, attachments));
   }
 
+  /** Ends the host's side after a refusal; a client that does not close its side in time is cut off. */
+  #endRefused(): void {
+    this.#socket.end();
+    this.#refusedTimer = setTimeout(() => this.#abort("the refused client did not close the connection"), REFUSED_CLOSE_MS);
+  }
+
   #abort(reason: string): void {
     this.#log(`closing connection: ${reason}`);
     this.#socket.destroy();
@@ -198,7 +207,7 @@ class Connection {
       if (mismatch !== undefined) {
         this.#log(`refusing a client: ${mismatch.message}`);
         this.#send({ type: "error", error: mismatch });
-        this.#socket.end();
+        this.#endRefused();
         this.#state = "closed";
         return;
       }
@@ -243,7 +252,7 @@ class Connection {
         type: "error",
         error: toWireError(error, { code: "machine-unavailable", message: "The emulator could not be started." }),
       });
-      this.#socket.end();
+      this.#endRefused();
       return undefined;
     }
   }
@@ -291,6 +300,7 @@ class Connection {
     this.#state = "closed";
     clearTimeout(this.#handshakeTimer);
     clearTimeout(this.#heartbeatTimer);
+    clearTimeout(this.#refusedTimer);
     // Tool work for a client that is gone stops: its children and workspaces go too.
     this.#toolAbort.abort();
     const session = this.#session ?? (await this.#starting);

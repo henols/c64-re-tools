@@ -26,6 +26,8 @@ class RawClient {
   private constructor(socket: Socket) {
     this.#socket = socket;
     this.closed = new Promise((resolve) => socket.on("close", () => resolve()));
+    // A reset from the host ends in "close" too.
+    socket.on("error", () => {});
     socket.on("data", (chunk) => {
       this.messages.push(...this.#decoder.push(chunk));
       for (const wake of this.#waiters.splice(0)) wake();
@@ -35,9 +37,10 @@ class RawClient {
     });
   }
 
-  static open(server: HostServer, host = server.host): Promise<RawClient> {
+  /** With `halfOpen`, the client never closes its side by itself, also after the host has ended its side. */
+  static open(server: HostServer, host = server.host, halfOpen = false): Promise<RawClient> {
     return new Promise((resolve, reject) => {
-      const socket = connect({ host, port: server.port }, () => resolve(new RawClient(socket)));
+      const socket = connect({ host, port: server.port, allowHalfOpen: halfOpen }, () => resolve(new RawClient(socket)));
       socket.once("error", reject);
     });
   }
@@ -418,3 +421,30 @@ test("a session factory that throws at once is reported, and the host keeps serv
   assert.deepEqual(await next.next(), { type: "ready" });
   next.end();
 });
+
+test("a refused client that never closes its side is cut off", { timeout: 10_000 }, async () => {
+  const refused = await RawClient.open(await serve(stubFactory({ started: [], closed: 0 })), undefined, true);
+  refused.send({ ...hello, version: HOST_PROTOCOL_VERSION + 1 });
+  assert.equal(((await refused.next()) as { type: string }).type, "error");
+  await untilCutOff(refused);
+  const failed = await RawClient.open(
+    await serve(async () => {
+      throw new WireFailure("machine-unavailable", "The emulator could not be started.");
+    }),
+    undefined,
+    true,
+  );
+  failed.send(hello);
+  assert.equal(((await failed.next()) as { type: string }).type, "error");
+  await untilCutOff(failed);
+});
+
+/** Writes until a write fails: the host has then closed the connection on its side too. */
+async function untilCutOff(client: RawClient): Promise<void> {
+  let cut = false;
+  void client.closed.then(() => (cut = true));
+  while (!cut) {
+    client.send({ type: "ping" });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
