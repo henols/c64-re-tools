@@ -100,29 +100,41 @@ export function schemaVersion(db: DatabaseSync): number {
     if (tables.n > 0) throw new KnowledgeError("invalid-database", "The knowledge database has tables but no meta table; it is not a c64-re-tools database.");
     return 0;
   }
-  const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
+  const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: unknown } | undefined;
   if (row === undefined) throw new KnowledgeError("invalid-database", "The knowledge database has no schema version.");
-  return Number(row.value);
+  const value = String(row.value);
+  if (!/^(0|[1-9][0-9]{0,8})$/.test(value)) throw new KnowledgeError("invalid-database", `The schema version of the knowledge database is not a whole number: ${JSON.stringify(value)}.`);
+  return Number(value);
 }
 
-/**
- * Brings the schema to SCHEMA_VERSION, each step in its own transaction.
- * Refuses a database written by a newer c64-re-tools.
- */
-export function migrate(db: DatabaseSync): void {
-  let version = schemaVersion(db);
+function checkSupported(version: number): void {
   if (version > SCHEMA_VERSION) {
     throw new KnowledgeError(
       "unsupported-migration",
       `The knowledge database has schema version ${version}; this c64-re-tools understands up to ${SCHEMA_VERSION}. Install a newer c64-re-tools.`,
     );
   }
-  while (version < SCHEMA_VERSION) {
+}
+
+/**
+ * Brings the schema to SCHEMA_VERSION, each step in its own transaction.
+ * Refuses a database written by a newer c64-re-tools. Each step reads the
+ * version again under the write lock, so two processes that open a new
+ * database at the same time do not both run the same step.
+ */
+export function migrate(db: DatabaseSync): void {
+  for (;;) {
+    const version = schemaVersion(db);
+    checkSupported(version);
+    if (version === SCHEMA_VERSION) return;
     db.exec("BEGIN IMMEDIATE");
     try {
-      MIGRATIONS[version]!(db);
-      version++;
-      db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(String(version));
+      const locked = schemaVersion(db);
+      checkSupported(locked);
+      if (locked < SCHEMA_VERSION) {
+        MIGRATIONS[locked]!(db);
+        db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(String(locked + 1));
+      }
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");

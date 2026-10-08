@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { KnowledgeError, knowledgePath, openForRead, openForWrite, transaction } from "./database.ts";
-import { SCHEMA_VERSION, schemaVersion } from "./schema.ts";
+import { migrate, SCHEMA_VERSION, schemaVersion } from "./schema.ts";
 
 const projects: string[] = [];
 after(() => {
@@ -101,4 +101,44 @@ test("a database from a newer c64-re-tools is refused, and garbage is invalid", 
   other.exec("CREATE TABLE something (x)");
   other.close();
   assert.throws(() => openForWrite(foreign), failsWith("invalid-database"));
+});
+
+test("a schema version that is not a whole number is invalid", () => {
+  const root = project();
+  openForWrite(root).close();
+  const raw = new DatabaseSync(knowledgePath(root));
+  raw.prepare("UPDATE meta SET value = 'one' WHERE key = 'schema_version'").run();
+  raw.close();
+  assert.throws(() => openForRead(root), failsWith("invalid-database"));
+  assert.throws(() => openForWrite(root), failsWith("invalid-database"));
+});
+
+test("two writers that create the database at the same time both get the current schema", () => {
+  const root = project();
+  mkdirSync(join(root, ".c64-re-tools"));
+  const first = new DatabaseSync(knowledgePath(root));
+  const second = new DatabaseSync(knowledgePath(root));
+  let raced = false;
+  // The second writer migrates after the first one read the version and before it takes the write lock.
+  const racing = new Proxy(first, {
+    get(target, property) {
+      if (property === "exec") {
+        return (sql: string) => {
+          if (!raced && sql === "BEGIN IMMEDIATE") {
+            raced = true;
+            migrate(second);
+          }
+          target.exec(sql);
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  migrate(racing);
+  assert.equal(raced, true);
+  assert.equal(schemaVersion(first), SCHEMA_VERSION);
+  assert.equal((first.prepare("SELECT count(*) AS n FROM meta WHERE key = 'current_revision'").get() as { n: number }).n, 1);
+  first.close();
+  second.close();
 });
