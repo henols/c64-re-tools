@@ -57,3 +57,29 @@ test("a link out of the source root is refused, as is a missing or plain-file ro
   assert.throws(() => readProjectTree("nope", { root: project }), failsWith("not-found"));
   assert.throws(() => readProjectTree("noext", { root: project }), failsWith("invalid-input"));
 });
+
+test("a directory link to the source root or to an ancestor in it is refused as a loop", () => {
+  const tree = join(project, "loop");
+  mkdirSync(join(tree, "inner"), { recursive: true });
+  writeFileSync(join(tree, "main.a"), "main");
+  symlinkSync(tree, join(tree, "inner", "back"), "junction");
+  assert.throws(
+    () => readProjectTree("loop", { root: project }),
+    (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && /back points at a directory that contains it/.test(error.message),
+  );
+  const self = join(project, "self");
+  mkdirSync(self);
+  symlinkSync(self, join(self, "again"), "junction");
+  assert.throws(() => readProjectTree("self", { root: project }), failsWith("invalid-input"));
+});
+
+test("a directory link to a sibling directory in the source root is followed", () => {
+  const tree = join(project, "shared");
+  mkdirSync(join(tree, "common"), { recursive: true });
+  writeFileSync(join(tree, "common", "macros.a"), "macros");
+  symlinkSync(join(tree, "common"), join(tree, "alias"), "junction");
+  assert.deepEqual(readProjectTree("shared", { root: project }).files, [
+    { path: "alias/macros.a", size: 6 },
+    { path: "common/macros.a", size: 6 },
+  ]);
+});
