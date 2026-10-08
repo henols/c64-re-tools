@@ -1,11 +1,11 @@
 // The c64-provenance script: compares two or more releases byte by byte at
 // their addresses and reports where they differ and which releases agree.
 
-import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
-import { resolveProjectPath } from "#src/project.ts";
+import { WireFailure } from "#src/host-client/tools.ts";
+import { readProjectFile } from "#src/host-client/transfer.ts";
 import { compareReleases, suggestShift, type Release } from "./compare.ts";
 
 const USAGE = `provenance.ts <release.prg> <release.prg> [<release.prg> ...] [options]
@@ -45,12 +45,7 @@ function run(argv: string[]): unknown {
     shifts.set(Number(match[1]), Number(match[2]));
   }
   const releases: Release[] = positionals.map((path, index) => {
-    let bytes: Buffer;
-    try {
-      bytes = readFileSync(resolveProjectPath(path));
-    } catch {
-      throw new UsageError(`cannot read ${path} in the project directory`);
-    }
+    const { bytes } = readProjectFile(path);
     if (bytes.length < 3) throw new UsageError(`${path} is too short for a PRG`);
     const start = bytes.readUInt16LE(0) + (shifts.get(index + 1) ?? 0);
     if (start < 0 || start + bytes.length - 3 > 0xffff) throw new UsageError(`the shift moves ${path} outside $0000-$ffff`);
@@ -90,7 +85,10 @@ function run(argv: string[]): unknown {
 try {
   process.stdout.write(`${JSON.stringify(run(process.argv.slice(2)))}\n`);
 } catch (error) {
-  if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
+  if (error instanceof WireFailure) {
+    process.stdout.write(`${JSON.stringify({ error: { code: error.code, message: error.message } })}\n`);
+    process.exitCode = 1;
+  } else if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
     const message = (error as Error).message;
     process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
     process.exitCode = 2;
