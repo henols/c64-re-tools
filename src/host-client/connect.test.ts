@@ -141,6 +141,28 @@ test("a message handler that throws closes the connection with a named reason in
   assert.match(String(reason), /could not handle a message from the host runtime: handler broke/);
 });
 
+test("a stop signal ends a handshake that waits for the host at once and closes the socket", { timeout: 10_000 }, async () => {
+  let helloReceived!: () => void;
+  const hello = new Promise<void>((resolve) => (helloReceived = resolve));
+  let hostSocketClosed!: Promise<unknown>;
+  const server = createServer((socket: Socket) => {
+    hostSocketClosed = once(socket, "close");
+    socket.on("data", () => helloReceived());
+    socket.on("error", () => {});
+  });
+  servers.push(server);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const env = { C64RT_HOST: `127.0.0.1:${(server.address() as { port: number }).port}` };
+  const stop = new AbortController();
+  const opening = HostConnection.open({ role: "vice-session", env, signal: stop.signal });
+  await hello;
+  stop.abort();
+  await assert.rejects(opening, (error: unknown) => failsWith("machine-unavailable")(error) && /stopped before the host runtime was ready/.test((error as Error).message));
+  await hostSocketClosed;
+  await assert.rejects(HostConnection.open({ role: "tool", env, signal: stop.signal }), failsWith("operation-failed"));
+});
+
 test("a host that hangs up or stays silent fails the handshake without hanging", async () => {
   await assert.rejects(HostConnection.open({ role: "vice-session", env: await fakeHost("hangup") }), failsWith("machine-unavailable"));
   await assert.rejects(
