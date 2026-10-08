@@ -151,6 +151,7 @@ export class ProcessSupervisor {
   #exitGuardInstalled = false;
   /** The registry file that the watchdog reads, once a watchdog runs. */
   #registry: string | undefined;
+  #watchdogPid: number | undefined;
 
   constructor(options: { graceMs?: number } = {}) {
     this.#graceMs = options.graceMs ?? STOP_GRACE_MS;
@@ -159,6 +160,11 @@ export class ProcessSupervisor {
   /** Number of process groups that have not been stopped yet. */
   get size(): number {
     return this.#children.size;
+  }
+
+  /** The process id of the watchdog, once a watchdog runs. */
+  get watchdogPid(): number | undefined {
+    return this.#watchdogPid;
   }
 
   /** Starts argv[0] with argv[1..] as the leader of a new process group. */
@@ -235,6 +241,7 @@ export class ProcessSupervisor {
     this.#writeRegistry();
     const watchdog = spawn(process.execPath, [...process.execArgv, WATCHDOG, String(process.pid), this.#registry], { detached: true, stdio: "ignore", windowsHide: true });
     watchdog.unref();
+    this.#watchdogPid = watchdog.pid;
     this.installExitGuard();
   }
 
