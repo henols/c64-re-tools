@@ -33,6 +33,7 @@ import { readProjectFile } from "./transfer.ts";
 const HOST_LOST =
   "The connection to the c64-re-tools host runtime was lost, and the emulator and its machine state went with it. " +
   "Check that the Host Runtime (c64-re-tools-host) is running, then restart the c64-re-tools MCP server.";
+const SESSION_CLOSED = "The C64 session is closed because the c64-re-tools MCP server stops.";
 
 interface Pending {
   op: ViceOperation;
@@ -73,7 +74,7 @@ export class ViceSessionClient {
       }
     });
     this.closed = connection.closed.then(() => {
-      this.#lost = new WireFailure("machine-state-lost", HOST_LOST);
+      this.#lost ??= new WireFailure("machine-state-lost", HOST_LOST);
       for (const pending of this.#pending.values()) pending.reject(this.#lost);
       this.#pending.clear();
     });
@@ -240,8 +241,9 @@ export class ViceSessionClient {
     return this.#request("window", { action });
   }
 
-  /** Ends the session; the host stops its emulator. */
+  /** Ends the session; the host stops its emulator. Open and later requests fail as closed. */
   async close(): Promise<void> {
+    this.#lost ??= new WireFailure("machine-unavailable", SESSION_CLOSED);
     await this.#connection.close();
     await this.closed;
   }

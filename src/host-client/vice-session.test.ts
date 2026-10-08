@@ -50,6 +50,19 @@ test("losing the host fails pending and later operations as lost machine state",
   await assert.rejects(client.memoryRead({ address: 0, size: 1, space: "c64", view: "cpu" }), failsWith("machine-state-lost"));
 });
 
+test("closing the session fails an open request and later ones as closed, not as lost machine state", async () => {
+  let received!: () => void;
+  const requestReceived = new Promise<void>((resolve) => (received = resolve));
+  const env = await fakeHost(() => received());
+  const client = await ViceSessionClient.open({ videoStandard: "pal", env });
+  const isClosed = (error: unknown) => failsWith("machine-unavailable")(error) && /session is closed/.test((error as Error).message);
+  const open = assert.rejects(client.status(), isClosed);
+  await requestReceived;
+  await client.close();
+  await open;
+  await assert.rejects(client.status(), isClosed);
+});
+
 test("replies are matched to their requests by id", async () => {
   const held: Request[] = [];
   let socketRef: Socket | undefined;
