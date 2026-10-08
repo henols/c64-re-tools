@@ -183,10 +183,25 @@ export function constantExpression(bytes: Uint8Array): number | undefined {
   const tokens = [...bytes].filter((byte) => byte !== 0x20);
   let at = 0;
   const peek = () => tokens[at];
+  const isDigit = () => peek() !== undefined && peek()! >= 0x30 && peek()! <= 0x39;
+  // A number as BASIC reads it: digits and a point, then an optional E with an
+  // optional sign (token or character) and exponent digits, so 2E3 is 2000.
   const number = (): number | undefined => {
     let text = "";
-    while (peek() !== undefined && ((peek()! >= 0x30 && peek()! <= 0x39) || peek() === 0x2e)) text += String.fromCharCode(tokens[at++]!);
-    return text === "" || text === "." ? undefined : Number(text);
+    while (isDigit() || peek() === 0x2e) text += String.fromCharCode(tokens[at++]!);
+    if (text === "" || text === ".") return undefined;
+    if (peek() === 0x45) {
+      at++;
+      let exponent = "";
+      if (peek() === TOKEN.minus || peek() === 0x2d) {
+        exponent = "-";
+        at++;
+      } else if (peek() === TOKEN.plus || peek() === 0x2b) at++;
+      let digits = "";
+      while (isDigit()) digits += String.fromCharCode(tokens[at++]!);
+      text += `e${exponent}${digits === "" ? "0" : digits}`;
+    }
+    return Number(text);
   };
   const primary = (): number | undefined => {
     if (peek() === TOKEN.minus || peek() === TOKEN.plus) {

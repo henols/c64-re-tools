@@ -113,6 +113,14 @@ test("a constant SYS expression is evaluated; anything else is not", () => {
   // BASIC stops at the first byte that is no operator (real releases: "SYS2073 TCS-CRUNCH!", "SYS 2161  SSG").
   assert.equal(constantExpression(bytes("2073 TCS", 0xab, "CRUNCH!")), 2073);
   assert.equal(constantExpression(bytes(" 2161  SSG")), 2161);
+  // A number with an exponent is read as BASIC reads it.
+  assert.equal(constantExpression(bytes("2E3")), 2000);
+  assert.equal(constantExpression(bytes("2 E 3")), 2000);
+  assert.equal(constantExpression(bytes("49E", PLUS, "3")), 49000);
+  assert.equal(constantExpression(bytes("2E", 0xab, "1", PLUS, "1")), 1.2);
+  assert.equal(constantExpression(bytes("2E-1")), 0.2);
+  assert.equal(constantExpression(bytes("2061E")), 2061);
+  assert.equal(constantExpression(bytes("2E3", TIMES, "2")), 4000);
   // An operator that the evaluator does not handle makes the value depend on run time.
   assert.equal(constantExpression(bytes("2061", 0xaf, "255")), undefined, "AND");
   assert.equal(constantExpression(bytes("2061", 0xb2, "X")), undefined, "a comparison");
@@ -129,6 +137,7 @@ test("handoffs come from SYS and USR in program text only", () => {
       [50, bytes(DATA, " ", SYS, ",1:", SYS, "49152")],
       [60, bytes(SYS, PEEK, "(43)", PLUS, "256", TIMES, PEEK, "(44)")],
       [70, bytes(SYS, "70000")],
+      [80, bytes(SYS, "4.9152E4")],
     ),
   );
   assert.deepEqual(found, [
@@ -137,5 +146,6 @@ test("handoffs come from SYS and USR in program text only", () => {
     { kind: "usr", line: 30, computed: true },
     { kind: "sys", line: 50, address: 49152 },
     { kind: "sys", line: 60, computed: true },
+    { kind: "sys", line: 80, address: 49152 },
   ]);
 });
