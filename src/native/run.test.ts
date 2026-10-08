@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ProcessSupervisor, type SpawnOptions } from "./processes.ts";
+import { isAlive, ProcessSupervisor, type SpawnOptions } from "./processes.ts";
 import { runTool } from "./run.ts";
 
 const node = (code: string) => [process.execPath, "-e", code];
@@ -80,4 +80,20 @@ test("a stop that fails during a timeout rejects the run instead of an unhandled
     process.off("unhandledRejection", record);
     await real.stopAll();
   }
+});
+
+test("a tool that exits while a descendant holds its output finishes without a timeout", { skip: process.platform === "win32" ? "Windows cannot find the descendants of a process that has ended" : false, timeout: 30_000 }, async () => {
+  const supervisor = new ProcessSupervisor({ graceMs: 100 });
+  const started = Date.now();
+  const run = await runTool({
+    argv: node('const d = require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "inherit" }); console.log(d.pid); process.exit(0)'),
+    cwd: process.cwd(),
+    supervisor,
+    signal: new AbortController().signal,
+    timeoutMs: 5_000,
+  });
+  assert.deepEqual({ code: run.code, timedOut: run.timedOut }, { code: 0, timedOut: false });
+  assert.ok(Date.now() - started < 4_000, "the run waited for the timeout");
+  assert.equal(isAlive(Number(run.stdout.trim())), false, "the descendant survived");
+  assert.equal(supervisor.size, 0);
 });

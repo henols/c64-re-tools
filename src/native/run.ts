@@ -59,25 +59,34 @@ export async function runTool(options: {
   let timedOut = false;
   let aborted = false;
   // A failed stop here is not lost: the stop after the exit below tries again and rejects the run.
-  const stopQuietly = () => child.stop().catch(() => {});
+  const stopQuietly = () => {
+    void child.stop().catch(() => {});
+    // A process outside the group can hold the output pipes open: the run does not wait for it.
+    child.child.stdout?.destroy();
+    child.child.stderr?.destroy();
+  };
   const timer = setTimeout(() => {
     timedOut = true;
-    void stopQuietly();
+    stopQuietly();
   }, options.timeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
   const onAbort = () => {
     aborted = true;
-    void stopQuietly();
+    stopQuietly();
   };
   if (options.signal.aborted) onAbort();
   else options.signal.addEventListener("abort", onAbort, { once: true });
 
-  const status = await child.exited;
-  await closed;
-  clearTimeout(timer);
-  options.signal.removeEventListener("abort", onAbort);
-  // A tool that exited on its own may have left descendants in its group.
-  await child.stop();
-  return { ...status, ...output, timedOut, aborted };
+  try {
+    const status = await child.exited;
+    // A tool that exited may have left descendants in its group, and they can hold its output
+    // pipes open: stop them before the wait for the end of the output.
+    await child.stop();
+    await closed;
+    return { ...status, ...output, timedOut, aborted };
+  } finally {
+    clearTimeout(timer);
+    options.signal.removeEventListener("abort", onAbort);
+  }
 }
 
 /**
