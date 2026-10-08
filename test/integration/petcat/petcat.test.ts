@@ -23,6 +23,7 @@ try {
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-petcat-"));
 const supervisor = new ProcessSupervisor();
+supervisor.installExitGuard();
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 const context = () => ({ supervisor, signal: new AbortController().signal });
