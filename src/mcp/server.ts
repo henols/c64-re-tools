@@ -198,6 +198,8 @@ function describeIssues(error: z.ZodError): string {
     .join("; ");
 }
 
+const INTERNAL_FAILURE: WireError = { code: "operation-failed", message: "The operation failed inside the c64-re-tools MCP server." };
+
 /** Runs one tool call and translates every outcome into an MCP result. */
 export async function callTool(
   tools: ReadonlyMap<string, ToolDefinition>,
@@ -212,13 +214,21 @@ export async function callTool(
   if (!parsed.success) return errorResult({ code: "invalid-input", message: describeIssues(parsed.error) });
   try {
     const output = await tool.run(parsed.data, await session());
-    const result = (output instanceof ToolOutput ? output.structured : output) as JsonObject;
+    // The result goes out in the shape that the tool listing advertises: keys
+    // that the output schema does not name are removed, and a result that does
+    // not fit the schema is an internal failure.
+    const checked = tool.outputSchema.safeParse(output instanceof ToolOutput ? output.structured : output);
+    if (!checked.success) {
+      log(`${name} gave a result outside its output schema: ${describeIssues(checked.error)}`);
+      return errorResult(INTERNAL_FAILURE);
+    }
+    const result = checked.data as JsonObject;
     const extra = output instanceof ToolOutput ? output.content : [];
     return { content: [{ type: "text", text: JSON.stringify(result) }, ...extra], structuredContent: result };
   } catch (error) {
     if (error instanceof WireFailure) return errorResult(error.toWire());
     log(`${name} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
-    return errorResult({ code: "operation-failed", message: "The operation failed inside the c64-re-tools MCP server." });
+    return errorResult(INTERNAL_FAILURE);
   }
 }
 

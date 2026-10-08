@@ -413,6 +413,26 @@ test("an unexpected exception becomes operation-failed without internals", async
   await client.close();
 });
 
+test("a result goes out in its output schema: an extra key is removed, and a result that does not fit fails", async () => {
+  const lines: string[] = [];
+  const session = new FakeSession();
+  session.window = async () => ({ window: true, state: "running" as const, notCarried: [], hostPid: 4242 });
+  const server = createMcpServer({ tools: ALL_TOOLS, session: async () => session, log: (line) => lines.push(line) });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  const client = new Client({ name: "test", version: "0" });
+  await client.connect(clientTransport);
+  const opened = await call(client, "c64_window", { action: "open" });
+  assert.deepEqual(opened.structuredContent, { window: true, state: "running", notCarried: [] });
+  assert.doesNotMatch((opened.content[0] as { text: string }).text, /hostPid|4242/);
+  session.status = async () => ({ state: "dancing", videoStandard: "pal", warp: false, window: false }) as never;
+  const error = errorOf(await call(client, "c64_status"));
+  assert.equal(error.code, "operation-failed");
+  assert.doesNotMatch(error.message, /dancing|state/);
+  assert.match(lines.join("\n"), /c64_status gave a result outside its output schema: state:/);
+  await client.close();
+});
+
 test("c64_execution passes the action through and formats the pc", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
