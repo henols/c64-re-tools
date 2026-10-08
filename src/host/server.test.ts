@@ -399,3 +399,22 @@ test("a token with multibyte characters is refused, and the host keeps serving",
   assert.deepEqual(await next.next(), { type: "ready" });
   next.end();
 });
+
+test("a session factory that throws at once is reported, and the host keeps serving", async () => {
+  let calls = 0;
+  const inner = stubFactory({ started: [], closed: 0 });
+  const factory = ((options) => {
+    calls++;
+    if (calls === 1) throw new WireFailure("installation-incomplete", "VICE (x64sc) is not installed.");
+    return inner(options);
+  }) as ViceSessionFactory;
+  const server = await serve(factory);
+  const client = await RawClient.open(server);
+  client.send(hello);
+  assert.deepEqual(await client.next(), { type: "error", error: { code: "installation-incomplete", message: "VICE (x64sc) is not installed." } });
+  await client.closed;
+  const next = await RawClient.open(server);
+  next.send(hello);
+  assert.deepEqual(await next.next(), { type: "ready" });
+  next.end();
+});

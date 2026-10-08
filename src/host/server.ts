@@ -86,6 +86,11 @@ function digest(text: string): Buffer {
   return createHash("sha256").update(text, "utf8").digest();
 }
 
+/** A caught value for the log, with its stack when it has one. */
+function describe(error: unknown): string {
+  return error instanceof Error ? (error.stack ?? error.message) : String(error);
+}
+
 function toWireError(error: unknown, fallback: WireError): WireError {
   return error instanceof WireFailure ? error.toWire() : fallback;
 }
@@ -173,9 +178,15 @@ class Connection {
         this.#dispatch(message, attachments);
       }
     } catch (error) {
-      if (!(error instanceof ProtocolError)) throw error;
-      this.#abort(`protocol error: ${error.message}`);
+      // Any failure closes only this connection; the listener and the other connections go on.
+      if (error instanceof ProtocolError) this.#abort(`protocol error: ${error.message}`);
+      else this.#abort(`internal error: ${describe(error)}`);
     }
+  }
+
+  /** Closes this connection when work that runs after its message fails in an unexpected way. */
+  #contain(work: Promise<void>): void {
+    work.catch((error: unknown) => this.#abort(`internal error: ${describe(error)}`));
   }
 
   #dispatch(raw: unknown, attachments: Buffer[]): void {
@@ -199,7 +210,7 @@ class Connection {
         return;
       }
       this.#state = "starting";
-      void this.#startSession(message.videoStandard ?? "pal");
+      this.#contain(this.#startSession(message.videoStandard ?? "pal"));
       return;
     }
     if (message.type === "hello") throw new ProtocolError("hello sent twice");
@@ -208,19 +219,11 @@ class Connection {
       this.#send({ type: "pong" });
       return;
     }
-    void this.#answer(message, attachments);
+    this.#contain(this.#answer(message, attachments));
   }
 
   async #startSession(videoStandard: VideoStandard): Promise<void> {
-    this.#starting = this.#options.createViceSession({ videoStandard }).catch((error: unknown) => {
-      this.#log(`VICE session failed to start: ${error instanceof Error ? error.message : String(error)}`);
-      this.#send({
-        type: "error",
-        error: toWireError(error, { code: "machine-unavailable", message: "The emulator could not be started." }),
-      });
-      this.#socket.end();
-      return undefined;
-    });
+    this.#starting = this.#createSession(videoStandard);
     const session = await this.#starting;
     // A connection closed while starting is shut down by #shutdown, which awaits #starting.
     if (session === undefined || this.#state === "closed") return;
@@ -228,6 +231,21 @@ class Connection {
     this.#state = "open";
     this.#send({ type: "ready" });
     this.#restartHeartbeat();
+  }
+
+  /** The new session, or undefined after the failure is sent to the client. Never rejects, also when the factory throws at once. */
+  async #createSession(videoStandard: VideoStandard): Promise<ViceSessionHandle | undefined> {
+    try {
+      return await this.#options.createViceSession({ videoStandard });
+    } catch (error) {
+      this.#log(`VICE session failed to start: ${error instanceof Error ? error.message : String(error)}`);
+      this.#send({
+        type: "error",
+        error: toWireError(error, { code: "machine-unavailable", message: "The emulator could not be started." }),
+      });
+      this.#socket.end();
+      return undefined;
+    }
   }
 
   async #answer(request: Request, attachments: Buffer[]): Promise<void> {
