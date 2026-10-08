@@ -156,8 +156,9 @@ export function parseTokenized(program: Uint8Array): TokenizedProgram {
   let at = 2;
   // File offset k (from 2 on) loads at loadAddress + k - 2.
   for (;;) {
-    // A file that ends right after a line leaves the end marker to the zeros after it in memory.
-    if (at === program.length && lines.length > 0) return { loadAddress, basicEnd: loadAddress + at - 2, lines };
+    // A file that ends right after a line leaves the end marker to the zeros after it in memory;
+    // basicEnd is the address after that marker, as when the file holds it.
+    if (at === program.length && lines.length > 0) return { loadAddress, basicEnd: loadAddress + at, lines };
     if (at + 1 >= program.length) return { reason: "The BASIC program has no end marker." };
     if (program[at + 1] === 0) {
       // An end marker before any line, with more bytes after it, is how machine code at a non-BASIC address often starts.

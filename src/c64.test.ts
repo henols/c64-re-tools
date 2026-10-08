@@ -92,6 +92,14 @@ test("bytes that are no BASIC program give a reason, not lines", () => {
   assert.ok(!("reason" in unterminated) && unterminated.lines.length === 1, "a file may end right after its last line");
 });
 
+test("a file that ends right after its last line has the same basicEnd as one with the end marker", () => {
+  const marked = parseTokenized(program([[10, bytes(SYS, "2061")]]));
+  const unmarked = parseTokenized(program([[10, bytes(SYS, "2061")]]).subarray(0, -2));
+  assert.ok(!("reason" in marked) && !("reason" in unmarked));
+  assert.equal(marked.basicEnd, 0x080d);
+  assert.equal(unmarked.basicEnd, 0x080d);
+});
+
 test("a constant SYS expression is evaluated; anything else is not", () => {
   assert.equal(constantExpression(bytes(" 2061")), 2061);
   assert.equal(constantExpression(bytes("4096", TIMES, "2", PLUS, "13")), 8205);
