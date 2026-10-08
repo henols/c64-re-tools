@@ -11,7 +11,7 @@ import {
   type ClientMessage,
   WireFailure,
 } from "../protocol.ts";
-import { startHostServer, type HostServer, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
+import { ListenError, parsePort, startHostServer, type HostServer, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
 
 const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: "vice-session" } as const;
 
@@ -448,3 +448,23 @@ async function untilCutOff(client: RawClient): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }
+
+test("a port is decimal digits from 0 to 65535 and nothing else", () => {
+  for (const [text, port] of [["0", 0], ["6464", 6464], ["65535", 65535], ["007", 7]] as const) assert.equal(parsePort(text), port, text);
+  for (const text of ["", " 7 ", "1e3", "0x10", "-1", "65536", "7.0", "+7", "99999999"]) assert.equal(parsePort(text), undefined, JSON.stringify(text));
+});
+
+test("a port in use names the address and the port that failed", async () => {
+  const busy = await serve(stubFactory({ started: [], closed: 0 }));
+  await assert.rejects(
+    startHostServer({ port: busy.port, createViceSession: stubFactory({ started: [], closed: 0 }) }),
+    (error: unknown) => error instanceof ListenError && error.code === "EADDRINUSE" && error.address === "127.0.0.1" && error.port === busy.port,
+  );
+  // An extra address that fails reports the port the first address got, not the 0 that was asked for.
+  let tried = 0;
+  await assert.rejects(startHostServer({ port: 0, extraHosts: ["127.0.0.1"], createViceSession: stubFactory({ started: [], closed: 0 }) }), (error: unknown) => {
+    tried = error instanceof ListenError && error.code === "EADDRINUSE" && error.address === "127.0.0.1" ? error.port : -1;
+    return true;
+  });
+  assert.ok(tried > 0, `the error names port ${tried}`);
+});

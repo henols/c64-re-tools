@@ -321,6 +321,28 @@ export function isLoopback(address: string): boolean {
   return plain === "::1" || /^127\.\d+\.\d+\.\d+$/.test(plain);
 }
 
+/** A port as the user gives it: decimal digits only, 0 to 65535. Anything else gives undefined. */
+export function parsePort(text: string): number | undefined {
+  if (!/^\d{1,5}$/.test(text)) return undefined;
+  const port = Number(text);
+  return port <= 0xffff ? port : undefined;
+}
+
+/** A listener that could not start, with the address and the port it tried and the system error code. */
+export class ListenError extends Error {
+  readonly code: string | undefined;
+  readonly address: string;
+  readonly port: number;
+
+  constructor(cause: unknown, address: string, port: number) {
+    super(`cannot listen on ${address} port ${port}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    this.name = "ListenError";
+    this.code = (cause as NodeJS.ErrnoException | undefined)?.code;
+    this.address = address;
+    this.port = port;
+  }
+}
+
 export async function startHostServer(options: HostServerOptions): Promise<HostServer> {
   const log = options.log ?? (() => {});
   const host = options.host ?? "127.0.0.1";
@@ -334,9 +356,10 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     });
     servers.push(server);
     return new Promise<number>((resolve, reject) => {
-      server.once("error", reject);
+      const failed = (error: Error) => reject(new ListenError(error, address, port));
+      server.once("error", failed);
       server.listen({ host: address, port, exclusive: true }, () => {
-        server.off("error", reject);
+        server.off("error", failed);
         const bound = server.address();
         if (bound === null || typeof bound === "string") reject(new Error("listener has no TCP address"));
         else resolve(bound.port);

@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 
 import { DEFAULT_HOST_PORT } from "../protocol.ts";
 import { ProcessSupervisor } from "../native/processes.ts";
-import { isLoopback, startHostServer } from "./server.ts";
+import { isLoopback, ListenError, parsePort, startHostServer } from "./server.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
@@ -47,9 +47,9 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  const port = values.port === undefined ? DEFAULT_HOST_PORT : Number(values.port);
-  if (!Number.isInteger(port) || port < 0 || port > 0xffff) {
-    process.stderr.write(`--port must be an integer from 0 to 65535, got ${values.port}\n`);
+  const port = values.port === undefined ? DEFAULT_HOST_PORT : parsePort(values.port);
+  if (port === undefined) {
+    process.stderr.write(`--port must be a number from 0 to 65535, written with digits only. You gave "${values.port}".\n`);
     return 2;
   }
 
@@ -95,12 +95,12 @@ async function main(): Promise<number> {
       tools: createToolDispatcher({ supervisor, log }),
     });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
-      process.stderr.write(`Port ${port} on 127.0.0.1 is in use. Is another c64-re-tools-host running?\n`);
+    if (error instanceof ListenError && error.code === "EADDRINUSE") {
+      process.stderr.write(`Port ${error.port} on ${error.address} is in use. Is another c64-re-tools-host running?\n`);
       return 1;
     }
-    if ((error as NodeJS.ErrnoException).code === "EADDRNOTAVAIL") {
-      process.stderr.write(`An address in --listen does not belong to this machine: ${extraHosts.join(", ")}\n`);
+    if (error instanceof ListenError && error.code === "EADDRNOTAVAIL") {
+      process.stderr.write(`The address ${error.address} in --listen does not belong to this machine.\n`);
       return 1;
     }
     throw error;
