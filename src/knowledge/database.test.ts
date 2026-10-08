@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { KnowledgeError, knowledgePath, openForRead, openForWrite, transaction } from "./database.ts";
+import { KnowledgeError, knowledgePath, openForRead, openForWrite, transaction, withWrite } from "./database.ts";
+import { currentRevision } from "./read.ts";
 import { migrate, SCHEMA_VERSION, schemaVersion } from "./schema.ts";
+import { removeSymbol, renameSymbol } from "./write.ts";
 
 const projects: string[] = [];
 after(() => {
@@ -141,4 +143,18 @@ test("two writers that create the database at the same time both get the current
   assert.equal((first.prepare("SELECT count(*) AS n FROM meta WHERE key = 'current_revision'").get() as { n: number }).n, 1);
   first.close();
   second.close();
+});
+
+test("a refused write in a project without knowledge creates nothing, and an accepted one creates the database", () => {
+  const root = project();
+  const context = { origin: "llm" as const };
+  assert.throws(() => withWrite((db) => removeSymbol(db, context, { address: 0x2100 }), root), failsWith("not-found"));
+  assert.throws(() => withWrite((db) => renameSymbol(db, { ...context, expectedRevision: 3 }, { address: 0x2100, name: "main" }), root), failsWith("stale-revision"));
+  assert.equal(existsSync(join(root, ".c64-re-tools")), false);
+  const renamed = withWrite((db) => renameSymbol(db, context, { address: 0x2100, name: "main" }), root);
+  assert.equal(renamed.revision, 1);
+  const db = openForRead(root)!;
+  assert.equal(currentRevision(db), 1);
+  db.close();
+  assert.throws(() => withWrite((db) => removeSymbol(db, context, { address: 0x2200 }), root), failsWith("not-found"));
 });

@@ -84,6 +84,31 @@ export function openForWrite(root: string = projectRoot()): DatabaseSync {
   return db;
 }
 
+/**
+ * Runs one write on the project's knowledge database and closes it. When the
+ * project has no knowledge.db yet, `work` first runs on an empty database in
+ * memory: a write that is refused there creates no .c64-re-tools/. `work`
+ * must change nothing outside the database it gets.
+ */
+export function withWrite<T>(work: (db: DatabaseSync) => T, root: string = projectRoot()): T {
+  if (!existsSync(knowledgePath(root))) {
+    const trial = new DatabaseSync(":memory:");
+    try {
+      configure(trial);
+      migrate(trial);
+      work(trial);
+    } finally {
+      trial.close();
+    }
+  }
+  const db = openForWrite(root);
+  try {
+    return work(db);
+  } finally {
+    db.close();
+  }
+}
+
 /** Runs `work` in one immediate transaction: all of it commits, or none of it does. */
 export function transaction<T>(db: DatabaseSync, work: () => T): T {
   db.exec("BEGIN IMMEDIATE");
