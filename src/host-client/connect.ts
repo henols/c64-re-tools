@@ -118,8 +118,12 @@ export class HostConnection {
           if (parsed.type !== "pong") this.#listener?.(parsed, attachments);
         }
       } catch (error) {
-        if (!(error instanceof ProtocolError)) throw error;
-        this.#failure = error;
+        // A broken frame, or a listener that throws, ends the connection with a
+        // reason; nothing escapes the socket handler.
+        this.#failure =
+          error instanceof ProtocolError
+            ? error
+            : new Error(`could not handle a message from the host runtime: ${error instanceof Error ? error.message : String(error)}`);
         socket.destroy();
       }
     });

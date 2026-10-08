@@ -63,8 +63,12 @@ export class ViceSessionClient {
       try {
         pending.resolve(validateViceResult(pending.op, message.result));
       } catch (error) {
-        if (!(error instanceof ProtocolError)) throw error;
-        pending.reject(new WireFailure("operation-failed", "The c64-re-tools host runtime sent an invalid reply."));
+        pending.reject(
+          new WireFailure(
+            "operation-failed",
+            error instanceof ProtocolError ? "The c64-re-tools host runtime sent an invalid reply." : "The c64-re-tools MCP server could not read the reply of the host runtime.",
+          ),
+        );
         this.#fail();
       }
     });
