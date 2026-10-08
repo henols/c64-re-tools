@@ -119,3 +119,17 @@ test("a project install removes the Windsurf home file and directories that it m
     assert.deepEqual(readdirSync(home), []);
   });
 });
+
+test("a directory in the root whose name starts with two dots is inside the root", () => {
+  const root = mkdtempSync(join(tmpdir(), "c64-re-tools-tidy-"));
+  try {
+    mkdirSync(join(root, "..skills", "c64-disk"), { recursive: true });
+    tidyAfterUninstall([{ harness: "claude", kind: "skill", name: "c64-disk", files: ["..skills/c64-disk/SKILL.md"] }], "project", root);
+    assert.deepEqual(readdirSync(root), [], "the empty directories go");
+    mkdirSync(join(root, "..x", "deep"), { recursive: true });
+    removeEmptyDirectories(join(root, "..x", "deep"), root);
+    assert.deepEqual(readdirSync(root), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
