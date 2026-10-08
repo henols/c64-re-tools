@@ -139,12 +139,17 @@ function hex4(value: number): string {
 /**
  * Parses monitor disassembly lines such as ".C:e5cf  85 CC       STA $CC".
  * Hex numbers in the text become lowercase. A line that wraps past $ffff ends the list.
+ * An answer with no instruction but other text is refused.
  */
 export function parseDisassembly(answer: string, start: number): Instruction[] {
   const instructions: Instruction[] = [];
+  const unknown: string[] = [];
   for (const line of answer.split("\n")) {
     const match = /^\.(?:C|\d+):([0-9a-f]{4})\s+((?:[0-9a-f]{2} )*[0-9a-f]{2})\s+(.*?)\s*$/i.exec(line);
-    if (match === null) continue;
+    if (match === null) {
+      if (line.trim() !== "") unknown.push(line.trim());
+      continue;
+    }
     const address = Number.parseInt(match[1]!, 16);
     if (address < start || (instructions.length > 0 && address <= instructions.at(-1)!.address)) break;
     instructions.push({
@@ -153,21 +158,27 @@ export function parseDisassembly(answer: string, start: number): Instruction[] {
       text: match[3]!.replace(/\$([0-9A-Fa-f]+)/g, (_all, digits: string) => `$${digits.toLowerCase()}`),
     });
   }
+  if (instructions.length === 0 && unknown.length > 0) throw unknownForm("disassembly", unknown);
   return instructions;
 }
 
 /**
  * Parses monitor CPU history lines such as
  * ".C:e5cd  A5 C6       LDA $C6        A:00 X:00 Y:0a SP:f3 ..-...Z.      2535609".
+ * An answer with no entry but other text is refused.
  */
 export function parseHistory(answer: string): Array<Omit<HistoryEntry, "rasterLine" | "rasterCycle"> & { clock: bigint }> {
   const entries = [];
+  const unknown: string[] = [];
   for (const line of answer.split("\n")) {
     const match =
       /^\.(?:C|\d+):([0-9a-f]{4})\s+((?:[0-9a-f]{2} )*[0-9a-f]{2})\s+(.*?)\s+A:([0-9a-f]{2}) X:([0-9a-f]{2}) Y:([0-9a-f]{2}) SP:([0-9a-f]{2})\s+\S+\s+(\d+)\s*$/i.exec(
         line,
       );
-    if (match === null) continue;
+    if (match === null) {
+      if (line.trim() !== "") unknown.push(line.trim());
+      continue;
+    }
     entries.push({
       address: Number.parseInt(match[1]!, 16),
       bytes: match[2]!.replace(/ /g, "").toLowerCase(),
@@ -179,7 +190,28 @@ export function parseHistory(answer: string): Array<Omit<HistoryEntry, "rasterLi
       clock: BigInt(match[8]!),
     });
   }
+  if (entries.length === 0 && unknown.length > 0) throw unknownForm("CPU history", unknown);
   return entries;
+}
+
+/**
+ * Parses the addresses that the monitor's hunt prints, one per line; at most
+ * `limit` come back. An empty answer means no match. An answer with no
+ * address but other text is refused.
+ */
+export function parseHunt(answer: string, limit: number): number[] {
+  const matches: number[] = [];
+  const unknown: string[] = [];
+  for (const line of answer.split("\n")) {
+    const match = /^([0-9a-f]{4})$/i.exec(line.trim());
+    if (match === null) {
+      if (line.trim() !== "") unknown.push(line.trim());
+      continue;
+    }
+    if (matches.length < limit) matches.push(Number.parseInt(match[1]!, 16));
+  }
+  if (matches.length === 0 && unknown.length > 0) throw unknownForm("search result", unknown);
+  return matches;
 }
 
 /**
@@ -654,13 +686,7 @@ export class ViceAdapter {
     const answer = await this.#inTextContext(options.space, options.view, () =>
       this.#text.command(`hunt ${hex4(options.start)} ${hex4(options.end)} ${tokens}`, 30_000),
     );
-    const matches: number[] = [];
-    for (const line of answer.split("\n")) {
-      const match = /^([0-9a-f]{4})$/i.exec(line.trim());
-      if (match !== null) matches.push(Number.parseInt(match[1]!, 16));
-      if (matches.length >= options.limit) break;
-    }
-    return matches;
+    return parseHunt(answer, options.limit);
   }
 
   /** Disassembles `count` instructions from `address` with the monitor; stops at the end of memory. */

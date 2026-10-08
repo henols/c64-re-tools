@@ -9,6 +9,7 @@ import {
   backtraceFromStack,
   parseDisassembly,
   parseHistory,
+  parseHunt,
   parseMemmap,
   parseProfile,
   statusRegisterFromFlags,
@@ -132,4 +133,20 @@ test("memmap rows merge into ranges of equal access", () => {
     { start: 0xe000, end: 0xe001, execute: true, read: true, write: false },
   ]);
   assert.equal(parseMemmap(answer, 2).length, 2);
+});
+
+const unknownForm = (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && /does not read/.test(error.message);
+
+test("disassembly, CPU history and search answers in an unknown form are refused, not read as empty", () => {
+  assert.throws(() => parseDisassembly("ERROR -- Wrong syntax:", 0xc000), unknownForm);
+  assert.throws(() => parseHistory("Unknown command 'chis'"), unknownForm);
+  assert.throws(() => parseHunt("ERROR -- Wrong syntax:", 10), unknownForm);
+  assert.deepEqual(parseDisassembly("", 0xc000), []);
+  assert.deepEqual(parseHistory(""), []);
+});
+
+test("search answers parse into addresses up to the limit; an empty answer is no match", () => {
+  assert.deepEqual(parseHunt("1010\n1110\n 1210 \n", 10), [0x1010, 0x1110, 0x1210]);
+  assert.deepEqual(parseHunt("1010\n1110\n1210", 2), [0x1010, 0x1110]);
+  assert.deepEqual(parseHunt("", 10), []);
 });
