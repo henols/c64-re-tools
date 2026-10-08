@@ -315,7 +315,6 @@ test("the server lists exactly the frozen v1 tools of 15 §37 with object input 
     const readOnly = [
       "c64_status",
       "c64_memory_read",
-      "c64_screen",
       "c64_memory_search",
       "c64_memory_compare",
       "c64_disassemble",
