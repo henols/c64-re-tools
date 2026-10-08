@@ -29,8 +29,11 @@ export interface Endpoint {
 
 /** How long one endpoint may take to accept a TCP connection. */
 const CONNECT_TIMEOUT_MS = 1_500;
-/** How long the host may take to answer hello; a VICE session starts its emulator first. */
-export const DEFAULT_READY_TIMEOUT_MS = 60_000;
+/**
+ * How long the host may take to answer hello. A VICE session starts its
+ * emulator first, and the host tries the start up to three times.
+ */
+export const DEFAULT_READY_TIMEOUT_MS = 120_000;
 
 /**
  * The endpoints to try, in order (D5): C64RT_HOST=host:port alone when set,
