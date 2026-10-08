@@ -67,3 +67,58 @@ export function inspect(program: Uint8Array): Record<string, unknown> {
           : "The entropy does not show clearly if the program is packed. Run it and look at what it writes to memory.",
   };
 }
+
+/** One range of the emulator's memory map: what the program did with these addresses. */
+export interface AccessRange {
+  start: number;
+  end: number;
+  read: boolean;
+  write: boolean;
+  execute: boolean;
+}
+
+/** The addresses that one memory map read covers before it is split. */
+const MEMMAP_WINDOW = 0x1000;
+
+/**
+ * Reads the memory map of $0000-$ffff in windows, in address order. `read`
+ * gives at most `maxRanges` ranges for one window; a window that gives that
+ * many can have more, so it is read again as two halves.
+ */
+export async function readMemoryMap(read: (start: number, end: number) => Promise<AccessRange[]>, maxRanges: number): Promise<AccessRange[]> {
+  const ranges: AccessRange[] = [];
+  const window = async (start: number, end: number): Promise<void> => {
+    const found = await read(start, end);
+    if (found.length < maxRanges || start === end) {
+      ranges.push(...found);
+      return;
+    }
+    const middle = Math.floor((start + end) / 2);
+    await window(start, middle);
+    await window(middle + 1, end);
+  };
+  for (let start = 0; start <= 0xffff; start += MEMMAP_WINDOW) await window(start, start + MEMMAP_WINDOW - 1);
+  return ranges;
+}
+
+/** ROM areas: an address here can be written (RAM below) and executed (ROM) without one being the other. */
+export const underRom = (address: number) => (address >= 0xa000 && address <= 0xbfff) || address >= 0xe000;
+
+/**
+ * The memory that the program wrote and then executed, in pieces of code.
+ * `bytes` and `running` count only RAM outside the ROM areas: a write under
+ * a ROM and code that runs in that ROM are not one piece of code.
+ */
+export function writtenThenExecuted(ranges: AccessRange[], pc: number): { written: Array<{ start: number; end: number }>; bytes: number; running?: { start: number; end: number } } {
+  // VICE marks only opcode bytes as executed; a gap of at most two operand bytes stays inside one piece of code.
+  const written: Array<{ start: number; end: number }> = [];
+  for (const range of ranges.filter((candidate) => candidate.write && candidate.execute)) {
+    const last = written.at(-1);
+    if (last !== undefined && range.start - last.end <= 3 && underRom(range.start) === underRom(last.start)) last.end = range.end;
+    else written.push({ start: range.start, end: range.end });
+  }
+  const counted = written.filter((range) => !underRom(range.start));
+  const bytes = counted.reduce((sum, range) => sum + range.end - range.start + 1, 0);
+  const running = counted.find((range) => pc >= range.start && pc <= range.end);
+  return { written, bytes, ...(running === undefined ? {} : { running }) };
+}

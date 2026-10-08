@@ -5,15 +5,16 @@
 // emulator until it reaches a given address (the unpacked entry point) and
 // writes the memory into the project. No native unpack tool is used (19 §12).
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
+import { readProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
-import { inspect, PackingError } from "./evidence.ts";
+import { inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./evidence.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
 unpack.ts trace <program.prg> [--frames <n>] [--entry <address>]
@@ -46,18 +47,9 @@ const LOAD_LIMIT_FRAMES = 1500;
 const MAX_ADVANCE = 10_000;
 /** The most ranges one memory map read gives. */
 const MAX_RANGES = 1000;
-type MemmapRange = Extract<Awaited<ReturnType<ViceSessionClient["memmap"]>>, { ranges: unknown }>["ranges"][number];
-
-/** ROM areas: an address here can be written (RAM below) and executed (ROM) without one being the other. */
-const underRom = (address: number) => (address >= 0xa000 && address <= 0xbfff) || address >= 0xe000;
 
 async function trace(program: string, options: { frames: number; entry?: number }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
-  let bytes: Buffer;
-  try {
-    bytes = readFileSync(resolveProjectPath(program));
-  } catch {
-    throw new WireFailure("not-found", `There is no file at ${program} in the project directory.`);
-  }
+  const { bytes } = readProjectFile(program);
   if (bytes.length < 3) throw new UsageError("the file is too short for a PRG");
   const load = bytes[0]! | (bytes[1]! << 8);
   const basic = (inspect(bytes) as { basicStart: { sys: string } | null }).basicStart;
@@ -84,17 +76,12 @@ async function trace(program: string, options: { frames: number; entry?: number 
       if (advanced === 0) break;
     }
     const { pc } = await client.registersGet("c64");
-    const map = (await client.memmap({ action: "read", start: 0x0000, end: 0xffff, maxRanges: MAX_RANGES })) as { ranges: MemmapRange[] };
-    // VICE marks only opcode bytes as executed; a gap of at most two operand bytes stays inside one piece of code.
-    const written: Array<{ start: number; end: number }> = [];
-    for (const range of map.ranges.filter((candidate) => candidate.write && candidate.execute)) {
-      const last = written.at(-1);
-      if (last !== undefined && range.start - last.end <= 3 && underRom(range.start) === underRom(last.start)) last.end = range.end;
-      else written.push({ start: range.start, end: range.end });
-    }
-    const counted = written.filter((range) => !underRom(range.start));
-    const count = counted.reduce((sum, range) => sum + range.end - range.start + 1, 0);
-    const running = written.find((range) => pc >= range.start && pc <= range.end);
+    const ranges = await readMemoryMap(async (start, end) => {
+      const map = await client.memmap({ action: "read", start, end, maxRanges: MAX_RANGES });
+      if (!("ranges" in map)) throw new WireFailure("operation-failed", "The emulator did not give the memory map.");
+      return map.ranges;
+    }, MAX_RANGES);
+    const { written, bytes: count, running } = writtenThenExecuted(ranges, pc);
     const packing = count >= UNPACKED_BYTES || running !== undefined ? "likely" : count > 0 ? "unclear" : "unlikely";
     return {
       output: {
@@ -185,12 +172,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   if (program === undefined) throw new UsageError("give a command and a program");
   if (command === "inspect") {
     if (rest.length > 0) throw new UsageError("inspect takes one program");
-    let bytes: Buffer;
-    try {
-      bytes = readFileSync(resolveProjectPath(program));
-    } catch {
-      throw new WireFailure("not-found", `There is no file at ${program} in the project directory.`);
-    }
+    const { bytes } = readProjectFile(program);
     try {
       return { output: inspect(bytes), failed: false };
     } catch (error) {
