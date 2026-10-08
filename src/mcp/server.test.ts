@@ -500,6 +500,8 @@ test("c64_registers set writes only the named registers; get refuses values", as
   assert.deepEqual(session.registerWrites, [{ space: "c64", values: { pc: 0x2100, a: 1, flags: { c: false } } }]);
   assert.equal(errorOf(await call(client, "c64_registers", { action: "set" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: {} })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { flags: {} } })).code, "invalid-input");
+  assert.equal(session.registerWrites.length, 1, "a set with no register value writes nothing");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { q: 1 } })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { a: 256 } })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "get", values: { a: 1 } })).code, "invalid-input");

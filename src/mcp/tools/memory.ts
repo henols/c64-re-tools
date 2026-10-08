@@ -109,16 +109,15 @@ export const c64Registers = defineTool({
       if (input.values !== undefined) throw new WireFailure("invalid-input", "values is used only with action set.");
       registers = await session.registersGet(input.space);
     } else {
-      if (input.values === undefined || Object.keys(input.values).length === 0) {
-        throw new WireFailure("invalid-input", "values must name at least one register for action set.");
-      }
       const values: RegisterValues = {};
       for (const key of ["pc", "a", "x", "y", "sp"] as const) {
-        const value = input.values[key];
+        const value = input.values?.[key];
         if (value !== undefined) values[key] = value;
       }
-      if (input.values.flags !== undefined) {
-        values.flags = Object.fromEntries(Object.entries(input.values.flags).filter(([, value]) => value !== undefined));
+      const flags = Object.fromEntries(Object.entries(input.values?.flags ?? {}).filter(([, value]) => value !== undefined));
+      if (Object.keys(flags).length > 0) values.flags = flags;
+      if (Object.keys(values).length === 0) {
+        throw new WireFailure("invalid-input", "values must name at least one register for action set.");
       }
       registers = await session.registersSet(input.space, values);
     }
