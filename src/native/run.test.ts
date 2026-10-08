@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ProcessSupervisor } from "./processes.ts";
+import { ProcessSupervisor, type SpawnOptions } from "./processes.ts";
 import { runTool } from "./run.ts";
 
 const node = (code: string) => [process.execPath, "-e", code];
@@ -52,4 +52,32 @@ test("an abort stops the run and its descendants", { timeout: 30_000 }, async ()
   });
   assert.equal(run.aborted, true);
   assert.equal(supervisor.size, 0);
+});
+
+test("a stop that fails during a timeout rejects the run instead of an unhandled rejection", { timeout: 30_000 }, async () => {
+  const real = new ProcessSupervisor({ graceMs: 100 });
+  // A supervisor whose stop ends the process but then reports that the group survived.
+  const supervisor = {
+    spawn: (argv: readonly string[], options: SpawnOptions) => {
+      const child = real.spawn(argv, options);
+      return { ...child, stop: async () => {
+        await child.stop();
+        throw new Error("process group survived SIGKILL");
+      } };
+    },
+  } as unknown as ProcessSupervisor;
+  const unhandled: unknown[] = [];
+  const record = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", record);
+  try {
+    await assert.rejects(
+      runTool({ argv: node("setInterval(() => {}, 1000)"), cwd: process.cwd(), supervisor, signal: new AbortController().signal, timeoutMs: 100 }),
+      /survived SIGKILL/,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", record);
+    await real.stopAll();
+  }
 });

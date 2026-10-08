@@ -58,13 +58,15 @@ export async function runTool(options: {
 
   let timedOut = false;
   let aborted = false;
+  // A failed stop here is not lost: the stop after the exit below tries again and rejects the run.
+  const stopQuietly = () => child.stop().catch(() => {});
   const timer = setTimeout(() => {
     timedOut = true;
-    void child.stop();
+    void stopQuietly();
   }, options.timeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS);
   const onAbort = () => {
     aborted = true;
-    void child.stop();
+    void stopQuietly();
   };
   if (options.signal.aborted) onAbort();
   else options.signal.addEventListener("abort", onAbort, { once: true });

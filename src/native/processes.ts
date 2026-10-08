@@ -206,10 +206,17 @@ export class ProcessSupervisor {
       child,
       exited,
       stop: () => {
-        stopping ??= this.#stopGroup(pid, child, exited).finally(() => {
-          this.#children.delete(supervised);
-          this.#writeRegistry();
-        });
+        stopping ??= this.#stopGroup(pid, child, exited).then(
+          () => {
+            this.#children.delete(supervised);
+            this.#writeRegistry();
+          },
+          (error: unknown) => {
+            // The group may still run: it stays registered for the exit guard and the watchdog, and a later stop tries again.
+            stopping = undefined;
+            throw error;
+          },
+        );
         return stopping;
       },
     };
