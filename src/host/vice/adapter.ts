@@ -18,7 +18,7 @@ import {
   type VideoStandard,
 } from "../../protocol.ts";
 import { decodeDisplay, decodePalette, visibleFrame, type IndexedFrame } from "./screen.ts";
-import { TextMonitorError, type TextMonitor } from "./text-monitor.ts";
+import type { TextMonitor } from "./text-monitor.ts";
 import {
   BinaryMonitor,
   Command,
@@ -297,6 +297,26 @@ export function parseMemmap(answer: string, maxRanges: number): MemmapRange[] {
   }
   if (ranges.length === 0 && unknown.length > 0) throw unknownForm("memory map", unknown);
   return ranges;
+}
+
+/**
+ * Lines VICE prints when a checkpoint stops the machine during a text command:
+ * "#1 (Stop on  exec c000)  101/$065,  20/$14", then the instruction there.
+ */
+const STOP_LINE = /^(?:#\d+ \((?:Stop on|Trace)\s|\.(?:C|\d+):[0-9a-f]{4}\s)/i;
+
+/** The lines of a text command's answer that are not blank, not a stop line and not `known`. */
+function otherLines(answer: string, known?: RegExp): string[] {
+  return answer
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !STOP_LINE.test(line) && known?.test(line) !== true);
+}
+
+/** Refuses the answer of a text command that prints nothing, or only `known` lines, when it works. */
+function expectQuiet(what: string, answer: string, known?: RegExp): void {
+  const other = otherLines(answer, known);
+  if (other.length > 0) throw unknownForm(what, other);
 }
 
 /** Quotes a host file path for a text-monitor command. Session scratch paths never contain quotes. */
@@ -632,7 +652,10 @@ export class ViceAdapter {
   /** Attaches a disk image file from the host file system to drive 8. */
   async attachDisk(file: string): Promise<void> {
     const answer = await this.#text.command(`attach ${quoted(file)} 8`);
-    if (answer !== "") throw new WireFailure("media-error", "The emulator could not attach the disk image.");
+    // VICE prints nothing when the image attaches, and "Failed." when it does not.
+    const other = otherLines(answer);
+    if (other.includes("Failed.")) throw new WireFailure("media-error", "The emulator could not attach the disk image.");
+    if (other.length > 0) throw unknownForm("disk attach answer", other);
   }
 
   /** Queues PETSCII bytes in VICE's keyboard buffer feed, at most 255 per command. */
@@ -709,7 +732,7 @@ export class ViceAdapter {
   async clock(): Promise<bigint> {
     const answer = await this.#computerText("stopwatch");
     const match = /Stopwatch:\s+(\d+)/.exec(answer);
-    if (match === null) throw new TextMonitorError(`unexpected stopwatch answer: ${answer}`);
+    if (match === null) throw unknownForm("stopwatch", answer.split("\n"));
     return BigInt(match[1]!);
   }
 
@@ -739,7 +762,7 @@ export class ViceAdapter {
   }
 
   async startProfiler(): Promise<void> {
-    await this.#computerText("profile on");
+    expectQuiet("profiler answer", await this.#computerText("profile on"), /^Profiling (?:re)?started\.$/);
   }
 
   /** The routines with the most self time, from VICE's profiler. */
@@ -754,17 +777,17 @@ export class ViceAdapter {
   }
 
   async clearMemmap(): Promise<void> {
-    await this.#computerText("mmzap");
+    expectQuiet("memory map answer", await this.#computerText("mmzap"));
   }
 
   async warp(): Promise<boolean> {
     const answer = await this.#text.command("warp");
     const match = /Warp mode is (on|off)/.exec(answer);
-    if (match === null) throw new TextMonitorError(`unexpected warp answer: ${answer}`);
+    if (match === null) throw unknownForm("warp state", answer.split("\n"));
     return match[1] === "on";
   }
 
   async setWarp(enabled: boolean): Promise<void> {
-    await this.#text.command(enabled ? "warp on" : "warp off");
+    expectQuiet("warp answer", await this.#text.command(enabled ? "warp on" : "warp off"));
   }
 }

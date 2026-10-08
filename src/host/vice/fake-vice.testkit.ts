@@ -151,6 +151,10 @@ export class FakeVice {
   /** The text monitor's default device and bank. */
   textDevice: "c" | "8" = "c";
   textBank = "cpu";
+  /** Replaces the answer of a text command when it returns a string, as another VICE build would answer. */
+  textAnswer: ((line: string) => string | undefined) | undefined;
+  /** Printed before the next text command's answer, as VICE prints a checkpoint's stop lines; then cleared. */
+  textPreamble = "";
   /** Whether the command being handled found the machine running. */
   #enteredForCommand = false;
 
@@ -590,7 +594,11 @@ export class FakeVice {
     const disassemble = /^d ([0-9a-f]{4}) ([0-9a-f]{4})$/.exec(line);
     const load = /^load "([^"]+)" 0(?: \$([0-9a-f]{4}))?$/.exec(line);
     const attach = /^attach "([^"]+)" 8$/.exec(line);
-    if (line === "stopwatch") output += `Stopwatch: ${this.clock.toString().padStart(10)}\n`;
+    output += this.textPreamble;
+    this.textPreamble = "";
+    const replaced = this.textAnswer?.(line);
+    if (replaced !== undefined) output += replaced;
+    else if (line === "stopwatch") output += `Stopwatch: ${this.clock.toString().padStart(10)}\n`;
     else if (line === "profile on") {
       this.profilerOn = true;
       output += "Profiling restarted.\n";

@@ -399,6 +399,50 @@ test("a disk attach keeps the run state; an image VICE refuses is a media error"
   await session.close();
 });
 
+test("a disk attach takes the stop lines of a checkpoint that hit meanwhile; other text is refused", async () => {
+  const { fake, session } = await startSession();
+  fake.textPreamble = "#1 (Stop on  exec c000)  101/$065,  20/$14\n.C:c000  A9 01       LDA #$01       - A:00 X:00 Y:00 SP:f3 ..-.....   1000000\n";
+  assert.deepEqual(await session.handle("diskAttach", { type: "d64" }, [Buffer.alloc(174848)]), { attached: true });
+  assert.equal(fake.attached.length, 1);
+  fake.textAnswer = (line) => (line.startsWith("attach ") ? "Unit 8: something new\n" : undefined);
+  await assert.rejects(session.handle("diskAttach", { type: "d64" }, [Buffer.alloc(174848)]), failsWith("operation-failed"));
+  await session.close();
+});
+
+test("a stopwatch, warp, memory map or profiler answer in an unknown form fails the operation and keeps the run state", async () => {
+  const { fake, session } = await startSession();
+  const unknownForm = (error: unknown) => failsWith("operation-failed")(error) && /does not read/.test((error as Error).message);
+  fake.textAnswer = (line) => (line === "stopwatch" ? "Stopwatch: n/a\n" : undefined);
+  await assert.rejects(session.handle("timing", { action: "read" }), unknownForm);
+  fake.textAnswer = (line) => (line === "warp" ? "Warp: maybe\n" : undefined);
+  await assert.rejects(session.handle("status", {}), unknownForm);
+  fake.textAnswer = (line) => (line === "warp on" ? "Unknown command.\n" : undefined);
+  await assert.rejects(session.handle("warp", { enabled: true }), unknownForm);
+  fake.textAnswer = (line) => (line === "mmzap" ? "Disabled. configure with --enable-cpuhistory and recompile.\n" : undefined);
+  await assert.rejects(session.handle("memmap", { action: "clear" }), unknownForm);
+  assert.equal(fake.running, true);
+  fake.textAnswer = undefined;
+  assert.equal((await session.handle("status", {})).state, "running");
+  await session.close();
+});
+
+test("a profiler that VICE starts fresh is taken", async () => {
+  const fake = new FakeVice();
+  fakes.push(fake);
+  fake.textAnswer = (line) => (line === "profile on" ? "Profiling started.\n" : undefined);
+  const process = await fake.start();
+  processes.push(process);
+  const session = await ViceSession.start(process, "pal");
+  assert.equal(fake.running, true);
+  await session.close();
+  const refusing = new FakeVice();
+  fakes.push(refusing);
+  refusing.textAnswer = (line) => (line === "profile on" ? "Profiling is not available.\n" : undefined);
+  const refused = await refusing.start();
+  processes.push(refused);
+  await assert.rejects(ViceSession.start(refused, "pal"), /does not read/);
+});
+
 test("the session releases both joysticks at start", async () => {
   const { fake, session } = await startSession();
   assert.deepEqual(fake.joyport, [0x1f, 0x1f]);
