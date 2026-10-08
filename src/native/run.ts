@@ -1,6 +1,8 @@
 // Bounded native-tool execution (16 §3): argv only, no shell, a fixed
 // timeout, capped output, and the whole process group stopped on timeout or abort.
 
+import { StringDecoder } from "node:string_decoder";
+
 import { WireFailure } from "../protocol.ts";
 import type { ProcessSupervisor } from "./processes.ts";
 
@@ -43,15 +45,16 @@ export async function runTool(options: {
     else child.child.once("close", () => resolve());
   });
   const output = { stdout: "", stderr: "", truncated: false };
+  // The limit counts bytes. A decoder per stream keeps a character whose bytes arrive in two chunks whole.
+  let bytes = 0;
+  const decoders = { stdout: new StringDecoder("utf8"), stderr: new StringDecoder("utf8") };
   const collect = (stream: "stdout" | "stderr") => (chunk: Buffer) => {
-    const room = limit - output.stdout.length - output.stderr.length;
-    if (room <= 0) {
-      output.truncated = true;
-      return;
-    }
-    const text = chunk.toString("utf8");
-    if (text.length > room) output.truncated = true;
-    output[stream] += text.slice(0, room);
+    const room = limit - bytes;
+    if (chunk.length > room) output.truncated = true;
+    if (room <= 0) return;
+    const kept = chunk.subarray(0, room);
+    bytes += kept.length;
+    output[stream] += decoders[stream].write(kept);
   };
   child.child.stdout?.on("data", collect("stdout"));
   child.child.stderr?.on("data", collect("stderr"));
@@ -82,6 +85,8 @@ export async function runTool(options: {
     // pipes open: stop them before the wait for the end of the output.
     await child.stop();
     await closed;
+    output.stdout += decoders.stdout.end();
+    output.stderr += decoders.stderr.end();
     return { ...status, ...output, timedOut, aborted };
   } finally {
     clearTimeout(timer);

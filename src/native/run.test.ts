@@ -97,3 +97,27 @@ test("a tool that exits while a descendant holds its output finishes without a t
   assert.equal(isAlive(Number(run.stdout.trim())), false, "the descendant survived");
   assert.equal(supervisor.size, 0);
 });
+
+test("a character split between two output chunks stays whole", { timeout: 30_000 }, async () => {
+  // The two bytes of "é" arrive as two writes with a pause between them.
+  const run = await runTool({
+    argv: node("process.stdout.write(Buffer.from([0xc3])); setTimeout(() => process.stdout.write(Buffer.from([0xa9])), 100)"),
+    cwd: process.cwd(),
+    supervisor: new ProcessSupervisor(),
+    signal: new AbortController().signal,
+  });
+  assert.equal(run.stdout, "é");
+});
+
+test("the output limit counts bytes, not characters", { timeout: 30_000 }, async () => {
+  // "€" is three bytes in UTF-8: nine bytes hold three of them.
+  const run = await runTool({
+    argv: node('process.stdout.write("€".repeat(10))'),
+    cwd: process.cwd(),
+    supervisor: new ProcessSupervisor(),
+    signal: new AbortController().signal,
+    outputLimit: 9,
+  });
+  assert.equal(run.stdout, "€".repeat(3));
+  assert.equal(run.truncated, true);
+});
