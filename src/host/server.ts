@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
 
 import {
@@ -82,6 +82,10 @@ export interface HostServer {
 
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
 
+function digest(text: string): Buffer {
+  return createHash("sha256").update(text, "utf8").digest();
+}
+
 function toWireError(error: unknown, fallback: WireError): WireError {
   return error instanceof WireFailure ? error.toWire() : fallback;
 }
@@ -101,8 +105,8 @@ class Connection {
   #checkToken(token: string | undefined): WireError | undefined {
     if (isLoopback(this.#socket.localAddress ?? "")) return undefined;
     const expected = this.#options.token;
-    const matches =
-      expected !== undefined && token !== undefined && token.length === expected.length && timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+    // Equal-length digests: the comparison takes the same time for any token, also one with multibyte characters.
+    const matches = expected !== undefined && token !== undefined && timingSafeEqual(digest(token), digest(expected));
     if (matches) return undefined;
     return {
       code: "installation-incomplete",

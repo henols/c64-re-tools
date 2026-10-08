@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { connect, type Socket } from "node:net";
+import { networkInterfaces } from "node:os";
 import { after, test } from "node:test";
 
 import {
@@ -34,9 +35,9 @@ class RawClient {
     });
   }
 
-  static open(server: HostServer): Promise<RawClient> {
+  static open(server: HostServer, host = server.host): Promise<RawClient> {
     return new Promise((resolve, reject) => {
-      const socket = connect({ host: server.host, port: server.port }, () => resolve(new RawClient(socket)));
+      const socket = connect({ host, port: server.port }, () => resolve(new RawClient(socket)));
       socket.once("error", reject);
     });
   }
@@ -376,4 +377,25 @@ test("operations get exactly the attachments they take", async () => {
   assert.equal(((await client.next()) as { error: { code: string } }).error.code, "invalid-input");
   assert.equal(seen.length, 1);
   client.end();
+});
+
+const outside = Object.values(networkInterfaces())
+  .flat()
+  .find((address) => address?.family === "IPv4" && !address.internal)?.address;
+
+test("a token with multibyte characters is refused, and the host keeps serving", { skip: outside === undefined ? "this machine has no non-loopback IPv4 address" : false }, async () => {
+  const token = "a-shared-secret-of-some-length";
+  const server = await startHostServer({ port: 0, extraHosts: [outside!], token, createViceSession: stubFactory({ started: [], closed: 0 }) });
+  servers.push(server);
+  // The same number of characters as the token, but twice the bytes in UTF-8.
+  const client = await RawClient.open(server, outside!);
+  client.send({ ...hello, role: "tool", token: "\u00e9".repeat(token.length) });
+  const reply = (await client.next()) as { type: string; error: { code: string } };
+  assert.equal(reply.type, "error");
+  assert.equal(reply.error.code, "installation-incomplete");
+  await client.closed;
+  const next = await RawClient.open(server, outside!);
+  next.send({ ...hello, role: "tool", token });
+  assert.deepEqual(await next.next(), { type: "ready" });
+  next.end();
 });
