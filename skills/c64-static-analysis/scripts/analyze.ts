@@ -14,7 +14,7 @@ import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
-import { importFindings, type Analyzer, type ImportConflict, type NormalizedFindings } from "#src/knowledge/import.ts";
+import { importFindings, type Analyzer, type ImportConflict, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision } from "#src/knowledge/read.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
@@ -76,7 +76,15 @@ function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<stri
  * changed since the seeds were read. A refused import creates no knowledge.db.
  */
 function record(findings: NormalizedFindings, revision: number, description: string) {
-  const imported = withWrite((db) => importFindings(db, findings, { expectedRevision: revision, description }));
+  let imported: ImportResult;
+  try {
+    imported = withWrite((db) => importFindings(db, findings, { expectedRevision: revision, description }));
+  } catch (error) {
+    if (error instanceof KnowledgeError && error.code === "stale-revision") {
+      throw new KnowledgeError("stale-revision", "The knowledge changed during the analysis. Nothing was imported. Run the analysis again.");
+    }
+    throw error;
+  }
   return {
     revision: imported.revision,
     changes: { symbols: imported.symbols, regions: imported.regions, references: imported.references },
