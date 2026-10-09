@@ -1,4 +1,4 @@
-// The c1541 adapter (16 §12). c1541 does all image access: it recognises the
+// The c1541 adapter. c1541 does all image access: it recognises the
 // image, reports free blocks and the BAM, follows sector chains and writes raw
 // blocks. File names never go to c1541: its name arguments and its directory
 // listing change letter case, so the adapter reads the raw header and

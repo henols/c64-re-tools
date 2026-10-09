@@ -18,7 +18,7 @@ after(async () => {
 });
 const posixOnly = process.platform === "win32" ? "the stand-in tools are shell scripts" : false;
 
-test("VICE versions are read from the tools' version lines and compared with 3.9 (D23)", () => {
+test("VICE versions are read from the tools' version lines and compared with 3.9", () => {
   assert.deepEqual(viceVersionOf("c1541 (VICE 3.10)"), { major: 3, minor: 10 });
   assert.deepEqual(viceVersionOf("x64sc (VICE 3.7.1)"), { major: 3, minor: 7 });
   assert.equal(viceVersionOf("no version here"), undefined);

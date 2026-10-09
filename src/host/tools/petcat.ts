@@ -1,4 +1,4 @@
-// The petcat adapter (16 §13). petcat makes the C64 BASIC V2 listing; the
+// The petcat adapter. petcat makes the C64 BASIC V2 listing; the
 // adapter parses the tokenized program itself to check that listing and to
 // find the machine-code handoffs, because petcat's exit status proves nothing
 // (it prints any bytes as text).

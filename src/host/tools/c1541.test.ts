@@ -11,7 +11,7 @@ import { C1541Session, fileData, parseBam, parseChain, parseDirectory, parseFree
 
 const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
 
-// Output captured from c1541 (VICE 3.10).
+// c1541 output for a disk with one file.
 const OVERVIEW = `D64 disk image recognised: probe.d64, 35 tracks.
 Unit 8 drive 0: D64 disk image attached: probe.d64.
 disk format  : 1541

@@ -55,12 +55,12 @@ export interface HostServerOptions {
   createViceSession: ViceSessionFactory;
   /** Native-tool requests on "tool" connections; without it they are refused. */
   tools?: ToolDispatcher;
-  /** Defaults to 127.0.0.1 (D5). More addresses listen on the same port, for example a container bridge. */
+  /** Defaults to 127.0.0.1. More addresses listen on the same port, for example a container bridge. */
   host?: string;
   /** Extra addresses to listen on, on the same port as `host`. */
   extraHosts?: string[];
   /**
-   * The shared secret (D6). A connection that arrives on an address that is
+   * The shared secret. A connection that arrives on an address that is
    * not loopback must send it in its hello; without a token such a
    * connection is refused.
    */
@@ -69,7 +69,7 @@ export interface HostServerOptions {
   port: number;
   /** How long a new connection may stay silent before it must send hello. */
   handshakeTimeoutMs?: number;
-  /** How long a ready connection may send nothing (no request, no ping) before it is closed with its session (D18). */
+  /** How long a ready connection may send nothing (no request, no ping) before it is closed with its session. */
   heartbeatTimeoutMs?: number;
   log?: (line: string) => void;
 }
@@ -109,7 +109,7 @@ class Connection {
   #isTool = false;
   readonly #reader = new MessageReader();
 
-  /** A connection on a loopback address needs no token; any other needs the host's token (D6). */
+  /** A connection on a loopback address needs no token; any other needs the host's token. */
   #checkToken(token: string | undefined): WireError | undefined {
     if (isLoopback(this.#socket.localAddress ?? "")) return undefined;
     const expected = this.#options.token;
@@ -125,7 +125,7 @@ class Connection {
   readonly #options: HostServerOptions;
   readonly #log: (line: string) => void;
   readonly #handshakeTimer: NodeJS.Timeout;
-  /** Runs from ready on; every received frame restarts it (D18). */
+  /** Runs from ready on; every received frame restarts it. */
   #heartbeatTimer: NodeJS.Timeout | undefined;
   #refusedTimer: NodeJS.Timeout | undefined;
   #resolveClosed!: () => void;
@@ -156,7 +156,7 @@ class Connection {
   /**
    * A client that sends nothing for the heartbeat timeout is gone or hung (a
    * half-open connection never closes by itself): close it, and with it its
-   * session and emulator (D18).
+   * session and emulator.
    */
   #restartHeartbeat(): void {
     if (this.#state !== "open") return;
@@ -313,7 +313,6 @@ class Connection {
   }
 }
 
-/** Starts the Host Runtime listener. Each connection owns at most one VICE session. */
 /** True for 127.0.0.0/8 and ::1, also in their IPv4-mapped IPv6 form. */
 export function isLoopback(address: string): boolean {
   const plain = address.startsWith("::ffff:") ? address.slice(7) : address;
@@ -364,6 +363,7 @@ export class ListenError extends Error {
   }
 }
 
+/** Starts the Host Runtime listener. Each connection owns at most one VICE session. */
 export async function startHostServer(options: HostServerOptions): Promise<HostServer> {
   const log = options.log ?? (() => {});
   const host = options.host ?? "127.0.0.1";

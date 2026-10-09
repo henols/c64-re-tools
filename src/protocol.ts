@@ -5,19 +5,19 @@ import { textToPetsciiName, type BasicHandoff } from "./c64.ts";
 
 /** Private Host Runtime protocol identifier. */
 export const HOST_PROTOCOL_ID = "c64-re-tools-host" as const;
-/** Bumped on any incompatible change; a mismatch fails the handshake. 2: heartbeat (D18). */
+/** Bumped on any incompatible change; a mismatch fails the handshake. */
 export const HOST_PROTOCOL_VERSION = 2;
-/** After ready, the client pings this often, on every connection (D18). */
+/** After ready, the client pings this often, on every connection. */
 export const HEARTBEAT_INTERVAL_MS = 10_000;
-/** Either side closes a connection that has sent nothing for this long (D18). */
+/** Either side closes a connection that has sent nothing for this long. */
 export const HEARTBEAT_TIMEOUT_MS = 30_000;
-/** The Host Runtime listens on 127.0.0.1 at this port by default (D5). */
+/** The Host Runtime listens on 127.0.0.1 at this port by default. */
 export const DEFAULT_HOST_PORT = 6464;
-/** Largest frame body either side accepts (D1). */
+/** Largest frame body either side accepts. */
 export const MAX_FRAME_BYTES = 1024 * 1024;
 
 // ---------------------------------------------------------------------------
-// Shared vocabulary (15 §3, §5)
+// Shared vocabulary
 
 export const ERROR_CODES = [
   "invalid-input",
@@ -33,7 +33,7 @@ export const ERROR_CODES = [
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
-/** An actionable failure carried on the wire and shown to the LLM unchanged (D4). */
+/** An actionable failure carried on the wire and shown to the LLM unchanged. */
 export interface WireError {
   code: ErrorCode;
   message: string;
@@ -54,7 +54,7 @@ export type MemoryView = (typeof MEMORY_VIEWS)[number];
 export const RUN_STATES = ["running", "stopped"] as const;
 export type RunState = (typeof RUN_STATES)[number];
 
-/** Bounds of c64_memory_search (15 §16), c64_memory_compare (15 §17) and c64_disassemble (15 §19). */
+/** Bounds of c64_memory_search, c64_memory_compare and c64_disassemble. */
 export const MAX_SEARCH_PATTERN = 256;
 export const MAX_SEARCH_RESULTS = 1000;
 export const MAX_COMPARE_SIZE = 4096;
@@ -75,20 +75,20 @@ export interface Instruction {
   text: string;
 }
 
-/** Bounds of c64_memory_read (15 §14) and c64_memory_write (15 §15). */
+/** Bounds of c64_memory_read and c64_memory_write. */
 export const MAX_MEMORY_READ = 4096;
 export const MAX_MEMORY_WRITE = 4096;
 
 export const EXECUTION_ACTIONS = ["pause", "resume", "step", "next", "until-return", "advance-frames"] as const;
 export type ExecutionAction = (typeof EXECUTION_ACTIONS)[number];
-/** Bounds of c64_execution counts (15 §10). */
+/** Bounds of c64_execution counts. */
 export const MAX_EXECUTION_COUNT = 10_000;
 
 /** File types each media operation accepts, by lowercase extension. */
 export const AUTOSTART_TYPES = ["prg", "p00", "t64", "tap", "d64", "d71", "d81", "g64", "x64", "crt"] as const;
 export const DISK_TYPES = ["d64", "d71", "d81", "g64", "x64"] as const;
 
-/** Most bytes c64_keyboard queues in one call (15 §31). */
+/** Most bytes c64_keyboard queues in one call. */
 export const MAX_KEYBOARD_BYTES = 1024;
 
 export const JOYSTICK_DIRECTIONS = [
@@ -110,7 +110,7 @@ export interface JoystickState {
   fire: boolean;
 }
 
-// Typed conditions (15 §6)
+// Typed conditions
 
 export const COMPARISONS = ["eq", "ne", "lt", "lte", "gt", "gte"] as const;
 export type Comparison = (typeof COMPARISONS)[number];
@@ -127,7 +127,7 @@ export const RASTER: Record<VideoStandard, { lines: number; cycles: number }> = 
   ntsc: { lines: 263, cycles: 65 },
 };
 
-// Breakpoints and watchpoints (15 §12, §13)
+// Breakpoints and watchpoints
 
 export const CHECKPOINT_ACTIONS = ["add", "remove", "enable", "disable", "list"] as const;
 export const WATCH_ACCESS = ["read", "write", "read-write"] as const;
@@ -139,7 +139,7 @@ export interface Breakpoint {
   address: number;
   space: Space;
   enabled: boolean;
-  /** The condition given at add, when there was one (D21). */
+  /** The condition given at add, when there was one. */
   condition?: Condition;
 }
 
@@ -150,7 +150,7 @@ export interface Watchpoint {
   access: WatchAccess;
   space: Space;
   enabled: boolean;
-  /** The condition given at add, when there was one (D21). */
+  /** The condition given at add, when there was one. */
   condition?: Condition;
 }
 
@@ -164,7 +164,7 @@ export type WatchpointParams =
   | { action: "remove" | "enable" | "disable"; id: number }
   | { action: "list" };
 
-// Chip state (15 §25-§28)
+// Chip state
 
 export const VICII_MODES = ["text", "multicolor-text", "extended-color-text", "bitmap", "multicolor-bitmap", "invalid"] as const;
 export type ViciiMode = (typeof VICII_MODES)[number];
@@ -216,13 +216,13 @@ export interface SidState {
 export const CIA_SELECTIONS = ["1", "2", "both"] as const;
 export type CiaSelection = (typeof CIA_SELECTIONS)[number];
 
-// History, backtrace and timing (15 §20, §21, §24)
+// History, backtrace and timing
 
 export const MAX_HISTORY = 200;
 export const MAX_BACKTRACE = 64;
 export const TIMING_ACTIONS = ["start", "read"] as const;
 
-/** c64_window (D20): open moves the machine into a VICE with a window, close back into a headless one. */
+/** c64_window: open moves the machine into a VICE with a window, close back into a headless one. */
 export const WINDOW_ACTIONS = ["open", "close"] as const;
 
 export interface WindowResult {
@@ -252,7 +252,7 @@ export interface BacktraceFrame {
   returnAddress?: number;
 }
 
-// Profile and memmap (15 §22, §23)
+// Profile and memmap
 
 export const MAX_PROFILE = 100;
 export const MAX_MEMMAP_RANGES = 1000;
@@ -274,7 +274,7 @@ export interface MemmapRange {
   write: boolean;
 }
 
-// Screen baselines and snapshots (15 §3 named transient objects, §29, §36)
+// Screen baselines and snapshots
 
 /** 1-64 letters, digits, dots, underscores or hyphens. */
 export const TRANSIENT_NAME = /^[A-Za-z0-9._-]{1,64}$/;
@@ -298,7 +298,7 @@ export interface ScreenComparison {
   diffPng?: string;
 }
 
-// c64_observe (15 §30)
+// c64_observe
 
 export const MAX_OBSERVE_RANGES = 16;
 export const MAX_OBSERVE_BYTES = 4096;
@@ -338,7 +338,7 @@ export interface MachineStatus {
   state: RunState;
   videoStandard: VideoStandard;
   warp: boolean;
-  /** True while the machine runs in a VICE with a window (D20). */
+  /** True while the machine runs in a VICE with a window. */
   window: boolean;
   /** Present only while the C64 CPU is stopped. */
   pc?: number;
@@ -407,7 +407,7 @@ export interface ExecutionResult {
   advancedFrames?: number;
 }
 
-/** c64_run_until targets (15 §11). */
+/** c64_run_until targets. */
 export type RunTarget =
   | { kind: "address"; address: number; space: Space; condition?: Condition }
   | { kind: "memory"; address: number; operator: Comparison; value: number; space: Space; view: MemoryView }
@@ -448,7 +448,7 @@ export interface ViceOperations {
   autostart: { params: { type: string; index: number; run: boolean }; result: { state: RunState } };
   /** Attachment: the disk image bytes; `type` is the file's extension. */
   diskAttach: { params: { type: string }; result: { attached: boolean } };
-  /** pc is the reset vector when run is false: the CPU stops there (D21). */
+  /** pc is the reset vector when run is false: the CPU stops there. */
   reset: { params: { mode: ResetMode; run: boolean }; result: { state: RunState; pc?: number } };
   /** `data`: PETSCII bytes as lowercase hex. */
   keyboard: { params: { data: string }; result: { queuedBytes: number } };
@@ -530,7 +530,7 @@ export function attachmentCount(op: ViceOperation): number {
 }
 
 // ---------------------------------------------------------------------------
-// Native-tool operations (16). Short-lived requests on "tool" connections; they
+// Native-tool operations. Short-lived requests on "tool" connections; they
 // never touch an emulator or knowledge.db.
 
 /** A transferred source tree: relative POSIX paths, one attachment per file in this order. */
@@ -544,7 +544,7 @@ export type DiskAction = (typeof DISK_ACTIONS)[number];
 export const CBM_FILE_TYPES = ["del", "seq", "prg", "usr", "rel", "unknown"] as const;
 export type CbmFileType = (typeof CBM_FILE_TYPES)[number];
 
-/** c1541.inspect (16 §12). The image bytes are the request's one attachment. */
+/** c1541.inspect. The image bytes are the request's one attachment. */
 export interface C1541Params {
   action: DiskAction;
   imageType: DiskImageType;
@@ -576,7 +576,7 @@ export type C1541Result =
   /** The file's bytes are the reply's attachment. */
   | { action: "read"; found: true; name: string; bytes: number };
 
-/** petcat.decode (16 §13) takes no fields: the program bytes are the request's one attachment. */
+/** petcat.decode takes no fields: the program bytes are the request's one attachment. */
 export type PetcatParams = Record<string, never>;
 
 /** A machine-code handoff: SYS with a constant address, or SYS/USR whose target is computed at run time. */
@@ -616,16 +616,16 @@ export type ToolOperation = keyof ToolOperations;
 export const TOOL_OPERATIONS = ["host.status", "c1541.inspect", "petcat.decode"] as const satisfies readonly ToolOperation[];
 
 // ---------------------------------------------------------------------------
-// Messages (D2, D3)
+// Messages
 
 export interface Hello {
   type: "hello";
   protocol: string;
   version: number;
   role: Role;
-  /** vice-session only; fixed for the session (D10). */
+  /** vice-session only; fixed for the session. */
   videoStandard?: VideoStandard;
-  /** The shared secret (C64RT_HOST_TOKEN) for a host that listens beyond loopback (D6). */
+  /** The shared secret (C64RT_HOST_TOKEN) for a host that listens beyond loopback. */
   token?: string;
 }
 
@@ -653,7 +653,7 @@ export type Reply =
   | { type: "reply"; id: number; result: unknown }
   | { type: "reply"; id: number; error: WireError };
 
-/** Heartbeat (D18): the client pings after ready, the host answers pong. Neither touches the session. */
+/** Heartbeat: the client pings after ready, the host answers pong. Neither touches the session. */
 export interface Ping {
   type: "ping";
 }
@@ -1699,7 +1699,7 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
 }
 
 // ---------------------------------------------------------------------------
-// Framing (D1): 4-byte big-endian body length, then the body. A message body
+// Framing: 4-byte big-endian body length, then the body. A message body
 // is UTF-8 JSON. A message may announce binary attachments with an
 // `attachments` array of byte sizes; each attachment then follows as raw
 // frames of at most MAX_FRAME_BYTES each, in order.

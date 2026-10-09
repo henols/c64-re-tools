@@ -1,5 +1,5 @@
 // The VICE tools on the host must come from a VICE that c64-re-tools works
-// with (D23). Each executable is asked once for its version; a version that
+// with. Each executable is asked once for its version; a version that
 // cannot be read is refused, as is one that is too old.
 
 import { tmpdir } from "node:os";

@@ -1,6 +1,6 @@
-// The typed tool dispatcher of the Host Runtime (18 §8). The host runs only
+// The typed tool dispatcher of the Host Runtime. The host runs only
 // VICE and the tools that come with it (c1541, petcat); skill scripts run
-// ACME, DXA and Ghidra themselves (D16). One entry per operation, never a
+// ACME, DXA and Ghidra themselves. One entry per operation, never a
 // generic executable route.
 
 import type { ProcessSupervisor } from "../../native/processes.ts";

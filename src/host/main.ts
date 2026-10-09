@@ -70,7 +70,7 @@ async function main(): Promise<number> {
 
   // Every emulator and tool is started through this one supervisor; however
   // this process ends, the exit guard takes their process groups down with it,
-  // and the watchdog does the same if this process is killed (D7).
+  // and the watchdog does the same if this process is killed.
   const supervisor = new ProcessSupervisor();
   supervisor.startWatchdog();
 

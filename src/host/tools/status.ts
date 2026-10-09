@@ -1,5 +1,5 @@
 // host.status: VICE and the tools that come with it, each found the way its
-// operations find it and run once with a version option (D14). A tool from a
+// operations find it and run once with a version option. A tool from a
 // VICE older than MIN_VICE is reported as not working, as its operations refuse it.
 
 import type { ToolStatus } from "../../protocol.ts";
