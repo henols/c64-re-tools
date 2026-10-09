@@ -1,29 +1,22 @@
-// A stopped machine must stay stopped (15 §4, D18, D19), against real VICE
+// A stopped machine must stay stopped, against real VICE
 // through the real Host Runtime: stopped at a breakpoint, it takes every
 // read-only operation, then idles past several heartbeat intervals. The CPU
 // stopwatch is the proof: it reads 0 cycles only if no instruction ran.
 
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
-import { once } from "node:events";
-import { resolve } from "node:path";
-import { createInterface } from "node:readline";
 import { after, test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { HEARTBEAT_INTERVAL_MS } from "../../../src/protocol.ts";
-import { liveEnv, liveSkip } from "./live.ts";
+import { liveSkip, startHost, stopHosts } from "./live.ts";
 
-const root = resolve(import.meta.dirname, "../../..");
-let host: ChildProcess | undefined;
-after(() => host?.kill("SIGKILL"));
+after(stopHosts);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 test("a machine stopped at a breakpoint never runs through reads and idle time", { skip: liveSkip, timeout: 120_000 }, async () => {
-  host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
-  const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
-  const session = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `127.0.0.1:${/:(\d+)$/.exec(line)![1]}` } });
+  const host = await startHost();
+  const session = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: host.address } });
   try {
     // The KERNAL waits for a key in a loop through $e5cd.
     await session.breakpoint({ action: "add", address: 0xe5cd, space: "c64" });

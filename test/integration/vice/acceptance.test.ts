@@ -1,57 +1,22 @@
-// Milestone 1 acceptance (19 §3), against real VICE:
-//   host → MCP → one VICE; read KERNAL bytes and registers; status is right;
-//   terminating an MCP makes its VICE exit; two MCPs own two VICEs.
+// Against real VICE: host → MCP → one VICE; read KERNAL bytes and
+// registers; status is right; terminating an MCP makes its VICE exit; two
+// MCPs own two VICEs.
 // Opt-in with C64RT_LIVE_VICE=/absolute/path/to/x64sc.
 
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
-import { once } from "node:events";
-import { resolve } from "node:path";
-import { createInterface } from "node:readline";
 import { after, test } from "node:test";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
+import { isAlive, ProcessSupervisor } from "../../../src/native/processes.ts";
 import { Command } from "../../../src/host/vice/binary-monitor.ts";
 import { launchVice } from "../../../src/host/vice/process.ts";
 import { ViceSession } from "../../../src/host/vice/session.ts";
-import { liveEnv, liveLog, liveSkip, viceChildren } from "./live.ts";
+import { startMcp, waitFor } from "../../kit.ts";
+import { liveEnv, liveLog, liveSkip, startHost, stopHosts, viceChildren } from "./live.ts";
 
-const root = resolve(import.meta.dirname, "../../..");
-const hosts: ChildProcess[] = [];
-after(() => {
-  for (const host of hosts) host.kill("SIGKILL");
-});
-
-/** Starts the built Host Runtime on a free port with VICE from C64RT_LIVE_VICE. */
-async function startHost(): Promise<{ process: ChildProcess; port: number }> {
-  const host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], {
-    env: liveEnv(),
-    stdio: ["ignore", "pipe", "inherit"],
-  });
-  hosts.push(host);
-  const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
-  const port = Number(/:(\d+)$/.exec(line)?.[1]);
-  assert.ok(port > 0, line);
-  return { process: host, port };
-}
-
-async function startMcp(port: number): Promise<{ client: Client; transport: StdioClientTransport }> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [resolve(root, "src/mcp/main.ts")],
-    env: { ...env, C64RT_HOST: `127.0.0.1:${port}` },
-    stderr: "inherit",
-  });
-  const client = new Client({ name: "acceptance", version: "0" });
-  await client.connect(transport);
-  return { client, transport };
-}
+after(stopHosts);
 
 async function tool(client: Client, name: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
   const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
@@ -59,17 +24,9 @@ async function tool(client: Client, name: string, args: Record<string, unknown> 
   return result.structuredContent as Record<string, unknown>;
 }
 
-async function waitFor(condition: () => boolean, what: string, timeoutMs = 20_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error(`${what}: not reached in ${timeoutMs} ms`);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
 test("host → MCP → one VICE: KERNAL bytes, registers and running state", { skip: liveSkip, timeout: 120_000 }, async () => {
   const host = await startHost();
-  const { client } = await startMcp(host.port);
+  const { client } = await startMcp(host.address);
   try {
     // The KERNAL ROM starts at $e000 with the same bytes on every stock C64.
     const kernal = await tool(client, "c64_memory_read", { address: "$E000", size: 8 });
@@ -96,16 +53,14 @@ test("host → MCP → one VICE: KERNAL bytes, registers and running state", { s
   } finally {
     await client.close();
   }
-  await waitFor(() => viceChildren(host.process.pid!).length === 0, "VICE exit after MCP close");
-  host.process.kill("SIGTERM");
-  const [code] = (await once(host.process, "exit")) as [number | null];
-  // Windows has no SIGTERM: kill ends the runtime at once, and its watchdog cleans up (D7).
+  await waitFor(() => viceChildren(host.process.pid!).length === 0, "VICE exit after MCP close", 20_000);
+  const code = await host.stop();
+  // Windows has no SIGTERM: the kill ends the runtime at once, and its watchdog stops VICE.
   if (process.platform !== "win32") assert.equal(code, 0);
 });
 
 test("a stopped machine reports stopped with its pc, and reads keep it stopped", { skip: liveSkip, timeout: 60_000 }, async () => {
-  // Until c64_execution exists (M2) only the session can stop the machine;
-  // a raw monitor command stops real VICE exactly as a breakpoint would.
+  // A raw monitor command stops real VICE exactly as a breakpoint would.
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
   const vice = await launchVice({ videoStandard: "pal", supervisor, env: liveEnv(), log: liveLog });
@@ -126,54 +81,42 @@ test("a stopped machine reports stopped with its pc, and reads keep it stopped",
 
 test("terminating the MCP process, even with SIGKILL, makes its VICE exit", { skip: liveSkip, timeout: 120_000 }, async () => {
   const host = await startHost();
-  const { client, transport } = await startMcp(host.port);
+  const { client, transport } = await startMcp(host.address);
   await tool(client, "c64_status");
-  await waitFor(() => viceChildren(host.process.pid!).length === 1, "VICE start");
+  await waitFor(() => viceChildren(host.process.pid!).length === 1, "VICE start", 20_000);
   process.kill(transport.pid!, "SIGKILL");
-  await waitFor(() => viceChildren(host.process.pid!).length === 0, "VICE exit after MCP SIGKILL");
+  await waitFor(() => viceChildren(host.process.pid!).length === 0, "VICE exit after MCP SIGKILL", 20_000);
   await client.close().catch(() => {});
-  host.process.kill("SIGTERM");
-  await once(host.process, "exit");
+  await host.stop();
 });
 
 test("two MCP processes own two independent VICE processes", { skip: liveSkip, timeout: 120_000 }, async () => {
   const host = await startHost();
-  const first = await startMcp(host.port);
-  const second = await startMcp(host.port);
+  const first = await startMcp(host.address);
+  const second = await startMcp(host.address);
   try {
     await tool(first.client, "c64_status");
     await tool(second.client, "c64_status");
-    await waitFor(() => viceChildren(host.process.pid!).length === 2, "two VICE processes");
+    await waitFor(() => viceChildren(host.process.pid!).length === 2, "two VICE processes", 20_000);
 
     await first.client.close();
-    await waitFor(() => viceChildren(host.process.pid!).length === 1, "first VICE exit");
+    await waitFor(() => viceChildren(host.process.pid!).length === 1, "first VICE exit", 20_000);
     const kernal = await tool(second.client, "c64_memory_read", { address: "$e000", size: 2 });
     assert.equal(kernal.data, "8556", "the second session must survive the first one's end");
   } finally {
     await second.client.close();
   }
-  await waitFor(() => viceChildren(host.process.pid!).length === 0, "second VICE exit");
-  host.process.kill("SIGTERM");
-  await once(host.process, "exit");
+  await waitFor(() => viceChildren(host.process.pid!).length === 0, "second VICE exit", 20_000);
+  await host.stop();
 });
 
 test("stopping the Host Runtime stops every VICE it started", { skip: liveSkip, timeout: 120_000 }, async () => {
   const host = await startHost();
-  const mcps = [await startMcp(host.port), await startMcp(host.port)];
+  const mcps = [await startMcp(host.address), await startMcp(host.address)];
   for (const { client } of mcps) await tool(client, "c64_status");
   const vicePids = viceChildren(host.process.pid!);
   assert.equal(vicePids.length, 2);
-  host.process.kill("SIGTERM");
-  await once(host.process, "exit");
-  await waitFor(() => vicePids.every((pid) => !isAlive(pid)), "every VICE gone after host stop");
+  await host.stop();
+  await waitFor(() => vicePids.every((pid) => !isAlive(pid)), "every VICE gone after host stop", 20_000);
   for (const { client } of mcps) await client.close();
 });
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}

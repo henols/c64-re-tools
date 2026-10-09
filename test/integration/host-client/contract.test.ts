@@ -8,6 +8,7 @@ import { after, test } from "node:test";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { startHostServer, type HostServer, type ViceSessionFactory } from "../../../src/host/server.ts";
 import { WireFailure, type Registers } from "../../../src/protocol.ts";
+import { waitFor } from "../../kit.ts";
 
 const REGISTERS: Registers = { pc: 0x2100, a: 0x42, x: 3, y: 0, sp: 0xf9, flags: { n: false, v: false, b: false, d: false, i: true, z: false, c: true } };
 
@@ -69,7 +70,7 @@ test("status, memoryRead and registersGet cross the boundary with typed results"
     ["registersGet", { space: "c64" }],
   ]);
   await client.close();
-  await waitFor(() => state.closed === 1);
+  await waitFor(() => state.closed === 1, "the session closed");
 });
 
 test("session errors keep their code and message", async () => {
@@ -103,10 +104,10 @@ test("two clients get two independent sessions", async () => {
   const [first, second] = await Promise.all([ViceSessionClient.open({ videoStandard: "pal", env }), ViceSessionClient.open({ videoStandard: "pal", env })]);
   assert.equal(state.opened.length, 2);
   await first.close();
-  await waitFor(() => state.closed === 1);
+  await waitFor(() => state.closed === 1, "the session closed");
   assert.equal((await second.status()).state, "stopped");
   await second.close();
-  await waitFor(() => state.closed === 2);
+  await waitFor(() => state.closed === 2, "both sessions closed");
 });
 
 test("a host that shuts down fails the session as lost machine state", async () => {
@@ -119,10 +120,3 @@ test("a host that shuts down fails the session as lost machine state", async () 
   assert.equal(state.closed, 1);
 });
 
-async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error("condition not reached in time");
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-}

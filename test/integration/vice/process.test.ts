@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { test } from "node:test";
 
-import { ProcessSupervisor } from "../../../src/native/processes.ts";
+import { isAlive, ProcessSupervisor } from "../../../src/native/processes.ts";
 import {
   Command,
   decodeBanks,
@@ -15,18 +15,11 @@ import {
   memoryGetBody,
   Memspace,
   type MonitorResponse,
+  ResponseType,
 } from "../../../src/host/vice/binary-monitor.ts";
 import { launchVice } from "../../../src/host/vice/process.ts";
+import { waitFor } from "../../kit.ts";
 import { liveEnv, liveLog, liveSkip, viceScratchOf } from "./live.ts";
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 test("VICE launches ready, serves the binary monitor and stops completely", { skip: liveSkip, timeout: 60_000 }, async () => {
   const supervisor = new ProcessSupervisor();
@@ -40,8 +33,8 @@ test("VICE launches ready, serves the binary monitor and stops completely", { sk
     assert.equal(pong.type, Command.ping);
     // The resumed event from launch may land after launchVice returns; it comes first if at all.
     assert.deepEqual(
-      events.map((event) => event.type).filter((type) => type !== 0x63),
-      [0x31, 0x62],
+      events.map((event) => event.type).filter((type) => type !== ResponseType.resumed),
+      [ResponseType.registerInfo, ResponseType.stopped],
     );
 
     const available = decodeRegistersAvailable((await vice.monitor.request(Command.registersAvailable, Buffer.from([Memspace.main]))).body);
@@ -69,7 +62,7 @@ test("VICE launches ready, serves the binary monitor and stops completely", { sk
     // exit resumes and reports it.
     events.length = 0;
     await vice.monitor.request(Command.exit);
-    await waitFor(() => events.some((event) => event.type === 0x63));
+    await waitFor(() => events.some((event) => event.type === ResponseType.resumed), "a resumed event");
   } finally {
     const scratch = viceScratchOf(vice.pid);
     await vice.stop();
@@ -104,14 +97,6 @@ test("a VICE killed from outside is seen as exited", { skip: liveSkip, timeout: 
   await vice.stop();
 });
 
-async function waitFor(condition: () => boolean, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error("condition not reached in time");
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-}
-
 test("the text monitor answers beside the binary one and both act on one machine", { skip: liveSkip, timeout: 60_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
@@ -122,7 +107,7 @@ test("the text monitor answers beside the binary one and both act on one machine
 
     // A text command while running stops the machine, as the binary events show.
     assert.equal(await vice.text.command("warp"), "Warp mode is off.");
-    await waitFor(() => events.some((event) => event.type === 0x62));
+    await waitFor(() => events.some((event) => event.type === ResponseType.stopped), "a stopped event");
     assert.equal(await vice.text.command("warp on"), "");
     assert.equal(await vice.text.command("warp"), "Warp mode is on.");
     assert.equal(await vice.text.command("warp off"), "");
@@ -133,7 +118,7 @@ test("the text monitor answers beside the binary one and both act on one machine
     assert.match(await vice.text.command("dev c:"), /Computer/);
     events.length = 0;
     await vice.monitor.request(Command.exit);
-    await waitFor(() => events.some((event) => event.type === 0x63));
+    await waitFor(() => events.some((event) => event.type === ResponseType.resumed), "a resumed event");
   } finally {
     await vice.stop();
   }

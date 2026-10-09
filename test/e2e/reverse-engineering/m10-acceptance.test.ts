@@ -1,23 +1,22 @@
-// Milestone 10 acceptance (19 §12): an unknown C64 artifact goes through the
-// whole chain with the real skill scripts and the built Host Runtime:
+// An unknown C64 artifact goes through the whole chain with the real skill
+// scripts and the Host Runtime from this checkout:
 //   disk → BASIC → packing → DXA → knowledge → seeded Ghidra →
 //   reconstructed source → ACME → c64-testing PASS.
 // Needs real VICE (C64RT_LIVE_VICE), Ghidra (C64RT_GHIDRA), DXA, ACME, c1541
 // and petcat.
 
 import assert from "node:assert/strict";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline";
 import { after, test } from "node:test";
 
 import { ACME, C1541, DXA, findTool, PETCAT } from "../../../src/native/discover.ts";
 import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { basicCounterPrg } from "../../fixtures/prg/basic-counter.ts";
-import { liveEnv, liveSkip } from "../../integration/vice/live.ts";
+import { liveSkip, startHost, stopHosts } from "../../integration/vice/live.ts";
 
 let skip: string | false = liveSkip;
 let c1541 = "";
@@ -34,22 +33,14 @@ if (skip === false) {
 }
 
 const root = resolve(import.meta.dirname, "../../..");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m10-"));
-let host: ChildProcess | undefined;
+const project = mkdtempSync(join(tmpdir(), "c64-re-tools-reverse-"));
 after(async () => {
-  if (host !== undefined && host.exitCode === null) {
-    const exited = once(host, "exit");
-    host.kill("SIGTERM");
-    await exited;
+  try {
+    await stopHosts();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
   }
-  rmSync(project, { recursive: true, force: true });
 });
-
-async function hostAddress(): Promise<string> {
-  host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
-  const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
-  return `127.0.0.1:${/:(\d+)$/.exec(line)![1]}`;
-}
 
 async function skill(address: string, name: string, file: string, ...args: string[]): Promise<{ status: number | null; stdout: string; json: Record<string, unknown> }> {
   const child = spawn(process.execPath, [join(root, "skills", name, "scripts", file), ...args], { cwd: project, env: { ...process.env, C64RT_HOST: address }, stdio: ["ignore", "pipe", "inherit"] });
@@ -66,7 +57,7 @@ test("an unknown disk becomes understood, rebuilt and verified", { skip, timeout
   const made = spawnSync(c1541, ["-format", "mystery,m1", "d64", "original/mystery.d64", "-write", "original/game.prg", "game"], { cwd: project, encoding: "utf8" });
   assert.equal(made.status, 0, made.stdout + made.stderr);
   rmSync(join(project, "original", "game.prg"));
-  const address = await hostAddress();
+  const { address } = await startHost();
   const run = (name: string, file: string, ...args: string[]) => skill(address, name, file, ...args);
 
   // 1. Media: list the disk and extract the start file.

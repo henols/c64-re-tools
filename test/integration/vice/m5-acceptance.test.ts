@@ -1,23 +1,20 @@
-// Milestone 5 acceptance (19 §7): source → c64-assembler → Host Runtime → ACME
-// → PRG → c64_program_load → VICE reaches a known state. Both execution
-// surfaces share one Host Runtime; ACME never enters the MCP.
-// Opt-in with C64RT_LIVE_VICE; also needs ACME on the host.
+// Source → c64-assembler → ACME → PRG → c64_program_load → VICE reaches a
+// known state. The skill script runs ACME itself; ACME never enters the MCP.
+// Opt-in with C64RT_LIVE_VICE; also needs ACME.
 
 import assert from "node:assert/strict";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { once } from "node:events";
+import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline";
 import { after, test } from "node:test";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { ACME, findTool } from "../../../src/native/discover.ts";
-import { liveEnv, liveSkip } from "./live.ts";
+import { startMcp } from "../../kit.ts";
+import { liveSkip, startHost, stopHosts } from "./live.ts";
 
 let skip: string | false = liveSkip;
 if (skip === false) {
@@ -29,19 +26,15 @@ if (skip === false) {
 }
 
 const root = resolve(import.meta.dirname, "../../..");
-const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m5-"));
+const project = mkdtempSync(join(tmpdir(), "c64-re-tools-assembled-"));
 cpSync(resolve(import.meta.dirname, "../../fixtures/asm/counter"), join(project, "src"), { recursive: true });
-const cleanups: Array<() => void> = [() => rmSync(project, { recursive: true, force: true })];
-after(() => {
-  for (const cleanup of cleanups) cleanup();
+after(async () => {
+  try {
+    await stopHosts();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
 });
-
-async function startHost(): Promise<{ process: ChildProcess; port: number }> {
-  const host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
-  cleanups.unshift(() => host.kill("SIGKILL"));
-  const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
-  return { process: host, port: Number(/:(\d+)$/.exec(line)![1]) };
-}
 
 async function tool(client: Client, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   const result = (await client.callTool({ name, arguments: args })) as CallToolResult;
@@ -51,9 +44,9 @@ async function tool(client: Client, name: string, args: Record<string, unknown>)
 
 test("assembled source loads into VICE and reaches its known end state", { skip, timeout: 180_000 }, async () => {
   const host = await startHost();
-  const hostAddress = `127.0.0.1:${host.port}`;
+  const hostAddress = host.address;
 
-  // 1. The skill script assembles through the Host Runtime and writes the PRG into the project.
+  // 1. The skill script assembles with ACME and writes the PRG into the project.
   const assembled = spawnSync(
     process.execPath,
     [resolve(root, "skills/c64-assembler/scripts/assemble.ts"), "--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/counter.prg"],
@@ -64,17 +57,7 @@ test("assembled source loads into VICE and reaches its known end state", { skip,
   const symbol = (name: string) => build.symbols.find((entry) => entry.name === name)!;
 
   // 2. The MCP loads it from the same project and runs it to the known state.
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [resolve(root, "src/mcp/main.ts")],
-    env: { ...env, C64RT_HOST: hostAddress },
-    cwd: project,
-    stderr: "inherit",
-  });
-  const client = new Client({ name: "m5-acceptance", version: "0" });
-  await client.connect(transport);
+  const { client } = await startMcp(hostAddress, { cwd: project });
   try {
     const loaded = await tool(client, "c64_program_load", { path: "build/counter.prg" });
     assert.equal(loaded.loadAddress, "$0801");
@@ -87,7 +70,6 @@ test("assembled source loads into VICE and reaches its known end state", { skip,
     assert.equal(Number.parseInt(border.data as string, 16) & 0x0f, symbol("DONE_COLOR").value);
   } finally {
     await client.close();
-    host.process.kill("SIGTERM");
-    await once(host.process, "exit");
+    await host.stop();
   }
 });

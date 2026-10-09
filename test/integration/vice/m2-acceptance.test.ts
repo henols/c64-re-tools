@@ -1,53 +1,30 @@
-// Milestone 2 acceptance (19 §4), against real VICE through the built host
-// and MCP: load a fixture PRG, run, send input, run until a known address,
+// Against real VICE through the Host Runtime and the MCP: load a fixture PRG, run, send input, run until a known address,
 // advance an exact frame count, read memory and registers, capture the
 // screen. The scenario runs twice and gives identical results, with no
 // wall-clock waits anywhere in it.
 
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
-import { once } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { createInterface } from "node:readline";
+import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { readPng } from "../../../src/host/vice/png.testkit.ts";
 import { FRAMES_SEEN, joystickCounterPrg, LEFT_SEEN } from "../../fixtures/prg/joystick-counter.ts";
-import { liveEnv, liveSkip } from "./live.ts";
+import { startMcp } from "../../kit.ts";
+import { liveSkip, startHost, stopHosts } from "./live.ts";
 
-const root = resolve(import.meta.dirname, "../../..");
-const cleanups: Array<() => void> = [];
-after(() => {
-  for (const cleanup of cleanups) cleanup();
+const project = mkdtempSync(join(tmpdir(), "c64-re-tools-scenario-"));
+after(async () => {
+  try {
+    await stopHosts();
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
 });
-
-async function startHost(): Promise<{ process: ChildProcess; port: number }> {
-  const host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
-  cleanups.push(() => host.kill("SIGKILL"));
-  const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
-  return { process: host, port: Number(/:(\d+)$/.exec(line)![1]) };
-}
-
-async function startMcp(port: number, project: string): Promise<Client> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [resolve(root, "src/mcp/main.ts")],
-    env: { ...env, C64RT_HOST: `127.0.0.1:${port}` },
-    cwd: project,
-    stderr: "inherit",
-  });
-  const client = new Client({ name: "m2-acceptance", version: "0" });
-  await client.connect(transport);
-  return client;
-}
 
 async function tool(client: Client, name: string, args: Record<string, unknown> = {}): Promise<{ result: Record<string, unknown>; raw: CallToolResult }> {
   const raw = (await client.callTool({ name, arguments: args })) as CallToolResult;
@@ -90,21 +67,18 @@ async function scenario(client: Client) {
   return { loaded, reached, advanced, counters, registers, png: png.toString("base64"), after };
 }
 
-test("the M2 scenario is deterministic against real VICE", { skip: liveSkip, timeout: 180_000 }, async () => {
-  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-m2-"));
-  cleanups.push(() => rmSync(project, { recursive: true, force: true }));
+test("a scenario of load, input, run-until, frame advance, reads and a capture gives the same results twice", { skip: liveSkip, timeout: 180_000 }, async () => {
   mkdirSync(join(project, "build"));
   writeFileSync(join(project, "build", "counter.prg"), joystickCounterPrg);
 
   const host = await startHost();
-  const client = await startMcp(host.port, project);
+  const { client } = await startMcp(host.address, { cwd: project });
   try {
     const first = await scenario(client);
     const second = await scenario(client);
     assert.deepEqual(second, first);
   } finally {
     await client.close();
-    host.process.kill("SIGTERM");
-    await once(host.process, "exit");
+    await host.stop();
   }
 });
