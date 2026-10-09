@@ -663,6 +663,23 @@ test("a raster target the machine already stands in waits for its next pass", as
   await session.close();
 });
 
+test("a refused run-until target leaves a running machine running and sends VICE nothing", async () => {
+  const { fake, session } = await startSession();
+  await assert.rejects(session.handle("runUntil", { target: { kind: "raster", line: 312 }, timeoutFrames: 3 }), failsWith("invalid-input"));
+  await assert.rejects(
+    session.handle("runUntil", { target: { kind: "memory", address: 0x10, operator: "eq", value: 1, space: "drive8", view: "cpu" }, timeoutFrames: 3 }),
+    failsWith("unsupported-in-space"),
+  );
+  await assert.rejects(
+    session.handle("runUntil", { target: { kind: "address", address: 0xc000, space: "c64", condition: { kind: "raster", line: 0, cycle: 63 } }, timeoutFrames: 3 }),
+    failsWith("invalid-input"),
+  );
+  assert.deepEqual(fake.commands, []);
+  assert.equal(fake.running, true);
+  assert.equal((await session.handle("status", {})).state, "running");
+  await session.close();
+});
+
 test("memory search uses the selected view and space and restores the monitor defaults", async () => {
   const { fake, session } = await startSession();
   // The fake's RAM holds address & $ff at each address; its ROM holds the high byte.

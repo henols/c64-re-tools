@@ -643,7 +643,7 @@ export class ViceSession implements ViceSessionHandle {
     let expression: string | undefined;
     let range: { start: number; end: number; operation: number; space: "c64" | "drive8" };
     let deferred = false;
-    await this.#stop();
+    // The target is checked before the machine stops: a refused target leaves the run state as it was.
     switch (target.kind) {
       case "address":
         range = { start: target.address, end: target.address, operation: 0x04, space: target.space };
@@ -662,10 +662,13 @@ export class ViceSession implements ViceSessionHandle {
         const cycle = target.cycle ?? 0;
         range = { start: 0x0000, end: 0xffff, operation: 0x04, space: "c64" };
         expression = rasterWindowExpression(target.line, cycle, raster.lines);
-        // Already inside the target window: the next pass through it counts, not this one.
-        deferred = inRasterWindow(await this.#machine.rasterPosition(), target.line, cycle, raster.lines);
         break;
       }
+    }
+    await this.#stop();
+    if (target.kind === "raster") {
+      // Already inside the target window: the next pass through it counts, not this one.
+      deferred = inRasterWindow(await this.#machine.rasterPosition(), target.line, target.cycle ?? 0, RASTER[this.#videoStandard].lines);
     }
     const checkpoint = await this.#machine.addCheckpoint({ ...range, enabled: !deferred });
     try {
