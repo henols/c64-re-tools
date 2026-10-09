@@ -204,7 +204,7 @@ function writeOperation(command: string, args: string[], kind: string | undefine
       if (kind !== undefined) request.kind = oneOf(SYMBOL_KINDS, kind, "--kind");
       return (db) => {
         const result = renameSymbol(db, context, request);
-        return { revision: result.revision, symbol: symbol(result.current) };
+        return { revision: result.revision, symbol: symbol(result.current), ...(result.previous === undefined ? {} : { previous: symbol(result.previous) }) };
       };
     }
     case "remove-symbol": {
@@ -215,7 +215,7 @@ function writeOperation(command: string, args: string[], kind: string | undefine
       const request = { start: address(args[0], "start"), end: address(args[1], "end"), type: oneOf(REGION_TYPES, args[2], "type") as RegionType };
       return (db) => {
         const result = classifyRegion(db, context, request);
-        return { revision: result.revision, regions: result.current.map(region) };
+        return { revision: result.revision, regions: result.current.map(region), ...(result.previous === undefined ? {} : { previous: result.previous.map(region) }) };
       };
     }
     case "unclassify": {

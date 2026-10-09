@@ -83,7 +83,7 @@ The script records the origin `llm`. Use `--origin user` only when the user deci
 
 For a read: the current or historical knowledge in compact JSON.
 
-For a write: the new revision and the current value after the write.
+For a write: the new revision and the current value after the write. If the write replaces a symbol or a region of a different origin, `previous` gives that row as it was before the write. For example, an `llm` write over a `user` name gives `previous`. Read `previous` and tell the user about the change.
 
 The exit status is 0 for a result. The exit status is 1 for an error from the knowledge, for example `conflict`. The exit status is 2 for a wrong argument.
 

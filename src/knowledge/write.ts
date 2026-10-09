@@ -47,9 +47,11 @@ export interface WriteContext {
 }
 
 /** The revision a write created, or null when nothing needed to change. */
-export interface WriteResult<T> {
+export interface WriteResult<T, P = never> {
   revision: number | null;
   current: T;
+  /** The current rows of another origin that this write replaced, as they were before it. */
+  previous?: P;
 }
 
 export { SYMBOL_NAME };
@@ -160,13 +162,14 @@ export function renameSymbol(
   db: DatabaseSync,
   context: WriteContext,
   request: { address: number; name: string; kind?: SymbolKind },
-): WriteResult<SymbolRow> {
+): WriteResult<SymbolRow, SymbolRow> {
   checkAddress(request.address);
   if (!SYMBOL_NAME.test(request.name)) {
     throw new KnowledgeError("invalid-input", "A symbol name is a letter or underscore, then letters, digits or underscores (at most 64), with an optional leading dot.");
   }
   if (request.kind !== undefined) checkOneOf(SYMBOL_KINDS, request.kind, "kind");
-  return write(db, context, "rename-symbol", (change) => {
+  let previous: SymbolRow | undefined;
+  const result = write(db, context, "rename-symbol", (change) => {
     const existing = symbolAt(db, request.address);
     const kind = request.kind ?? existing?.kind ?? "label";
     if (existing !== undefined && existing.name === request.name && existing.kind === kind) return existing;
@@ -174,10 +177,14 @@ export function renameSymbol(
     if (owner !== undefined && owner.address !== request.address) {
       throw new KnowledgeError("conflict", `The name ${request.name} already belongs to ${hex(owner.address)}. Rename or remove that symbol first.`);
     }
-    if (existing !== undefined) change.close("symbols", "address = ?", request.address);
+    if (existing !== undefined) {
+      change.close("symbols", "address = ?", request.address);
+      if (existing.origin !== context.origin) previous = existing;
+    }
     change.insertSymbol({ address: request.address, name: request.name, kind, origin: context.origin });
     return symbolAt(db, request.address)!;
   });
+  return previous === undefined ? result : { ...result, previous };
 }
 
 export function removeSymbol(db: DatabaseSync, context: WriteContext, request: { address: number }): WriteResult<null> {
@@ -205,20 +212,23 @@ export function classifyRegion(
   db: DatabaseSync,
   context: WriteContext,
   request: { start: number; end: number; type: RegionType },
-): WriteResult<RegionRow[]> {
+): WriteResult<RegionRow[], RegionRow[]> {
   checkAddress(request.start, "start");
   checkAddress(request.end, "end");
   if (request.end < request.start) throw new KnowledgeError("invalid-input", "end must not be before start.");
   checkOneOf(REGION_TYPES, request.type, "type");
-  return write(db, context, "classify-region", (change) => {
+  let previous: RegionRow[] = [];
+  const result = write(db, context, "classify-region", (change) => {
     const overlapping = regionsOverlapping(db, request.start, request.end);
     const same = overlapping.length === 1 && overlapping[0]!.start === request.start && overlapping[0]!.end === request.end && overlapping[0]!.type === request.type;
     if (!same) {
       clearRange(db, change, request.start, request.end);
       change.insertRegion({ start: request.start, end: request.end, type: request.type, origin: context.origin });
+      previous = overlapping.filter((row) => row.origin !== context.origin);
     }
     return regionsOverlapping(db, request.start, request.end);
   });
+  return previous.length === 0 ? result : { ...result, previous };
 }
 
 /** Makes [start, end] unclassified again; parts of regions outside it stay. */
