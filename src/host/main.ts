@@ -31,7 +31,7 @@ Options:
   --help              Show this help.`;
 
 function log(line: string): void {
-  process.stderr.write(`${new Date().toISOString()} ${line}\n`);
+  process.stderr.write(`c64-re-tools-host: ${line}\n`);
 }
 
 async function main(): Promise<number> {
