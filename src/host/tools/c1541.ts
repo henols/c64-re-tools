@@ -26,6 +26,8 @@ import { runToolOrFail, type ToolContext } from "../../native/run.ts";
 
 const TIMEOUT_MS = 30_000;
 const BLOCK_BYTES = 256;
+/** Block reads in one c1541 call, so that its command line stays far below the Windows limit of 32767 characters. */
+export const READS_PER_CALL = 256;
 
 /** Where a drive format keeps its header block and the header's fields. */
 interface Layout {
@@ -159,7 +161,7 @@ const toFile = (entry: DiskEntry): DiskFile => ({ name: entry.name, type: entry.
 const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((byte, index) => byte === b[index]);
 
 /** Runs c1541 commands on the staged image and returns all its output. */
-class C1541Session {
+export class C1541Session {
   readonly #executable: string;
   readonly #workspace: Workspace;
   readonly #image: string;
@@ -192,9 +194,16 @@ class C1541Session {
     return parseChain(await this.run(["-chain", String(start.track), String(start.sector)]), start);
   }
 
-  /** Raw blocks, in the given order, through c1541's block read. */
+  /** Raw blocks, in the given order, through c1541's block read: at most READS_PER_CALL blocks in each c1541 call. */
   async blocks(sectors: DiskSector[]): Promise<Buffer[]> {
-    if (sectors.length === 0) return [];
+    const blocks: Buffer[] = [];
+    for (let first = 0; first < sectors.length; first += READS_PER_CALL) {
+      blocks.push(...(await this.#readBlocks(sectors.slice(first, first + READS_PER_CALL))));
+    }
+    return blocks;
+  }
+
+  async #readBlocks(sectors: DiskSector[]): Promise<Buffer[]> {
     const directory = `blocks-${this.#reads++}`;
     this.#workspace.directory(directory);
     const files = sectors.map((_, index) => `${directory}/${index}.bin`);

@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
+import { ProcessSupervisor } from "../../native/processes.ts";
+import { Workspace } from "../../native/staging.ts";
 import { WireFailure } from "../../protocol.ts";
-import { fileData, parseBam, parseChain, parseDirectory, parseFreeBlocks, parseInfo } from "./c1541.ts";
+import { C1541Session, fileData, parseBam, parseChain, parseDirectory, parseFreeBlocks, parseInfo, READS_PER_CALL } from "./c1541.ts";
 
 const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;
 
@@ -114,4 +119,32 @@ test("file data is 254 bytes per block and the last block up to its end index", 
   assert.equal(data[253], 0x11);
   assert.equal(data[254], 0x22);
   assert.throws(() => fileData([last, first], chain), failsWith("operation-failed"));
+});
+
+test("many blocks are read in several c1541 calls with a bounded number of reads each, and come back in order", { skip: process.platform === "win32" ? "the stand-in c1541 is a shell script" : false, timeout: 30_000 }, async () => {
+  const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-c1541-batch-"));
+  const supervisor = new ProcessSupervisor();
+  const workspace = Workspace.create(supervisor);
+  try {
+    // Writes each block as its track and sector, padded to 256 bytes, and logs the number of reads of each call.
+    const calls = join(scratch, "calls.log");
+    const c1541 = join(scratch, "c1541");
+    writeFileSync(
+      c1541,
+      `#!/bin/sh\nreads=0\nwhile [ $# -gt 0 ]; do\n  if [ "$1" = "-bread" ]; then printf '%-256s' "$3 $4" > "$2"; reads=$((reads + 1)); shift 4; else shift; fi\ndone\necho $reads >> '${calls}'\n`,
+    );
+    chmodSync(c1541, 0o755);
+    const sectors = Array.from({ length: 2 * READS_PER_CALL + 88 }, (_, index) => ({ track: 1 + Math.floor(index / 21), sector: index % 21 }));
+    const session = new C1541Session(c1541, workspace, "input/image.d64", { supervisor, signal: new AbortController().signal });
+    const blocks = await session.blocks(sectors);
+    assert.deepEqual(
+      blocks.map((block) => block.toString("latin1").trimEnd()),
+      sectors.map((at) => `${at.track} ${at.sector}`),
+    );
+    assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n").map(Number), [READS_PER_CALL, READS_PER_CALL, 88]);
+  } finally {
+    workspace.remove();
+    await supervisor.stopAll();
+    rmSync(scratch, { recursive: true, force: true });
+  }
 });
