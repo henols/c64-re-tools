@@ -23,6 +23,7 @@ try {
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-c1541-"));
 const supervisor = new ProcessSupervisor();
+supervisor.installExitGuard();
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 /** Runs the real c1541 in the scratch directory, to make fixture images. */

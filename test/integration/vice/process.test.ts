@@ -2,7 +2,7 @@
 // binary-monitor client (src/host/vice/binary-monitor.ts).
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { test } from "node:test";
 
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
@@ -17,7 +17,7 @@ import {
   type MonitorResponse,
 } from "../../../src/host/vice/binary-monitor.ts";
 import { launchVice } from "../../../src/host/vice/process.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { liveEnv, liveLog, liveSkip, viceScratchOf } from "./live.ts";
 
 function isAlive(pid: number): boolean {
   try {
@@ -25,17 +25,6 @@ function isAlive(pid: number): boolean {
     return true;
   } catch {
     return false;
-  }
-}
-
-/** The scratch directory VICE was started in, read from its argv (Linux only). */
-function scratchDirOf(pid: number): string | undefined {
-  try {
-    const argv = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0");
-    const config = argv[argv.indexOf("-config") + 1];
-    return config?.replace(/\/vicerc$/, "");
-  } catch {
-    return undefined;
   }
 }
 
@@ -82,9 +71,10 @@ test("VICE launches ready, serves the binary monitor and stops completely", { sk
     await vice.monitor.request(Command.exit);
     await waitFor(() => events.some((event) => event.type === 0x63));
   } finally {
-    const scratch = scratchDirOf(vice.pid);
+    const scratch = viceScratchOf(vice.pid);
     await vice.stop();
-    if (scratch !== undefined) assert.ok(!existsSync(scratch), "scratch directory was left behind");
+    assert.ok(scratch !== undefined, "the command line of VICE names its scratch directory");
+    assert.ok(!existsSync(scratch), "scratch directory was left behind");
   }
   const status = await vice.exited;
   assert.ok(status.signal !== null || status.code !== null);

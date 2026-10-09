@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { after, test } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -25,7 +26,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { mcpServerFor } from "../../distribution/plugin.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
-import { killTree } from "../../src/native/processes.ts";
+import { killTree, signalGroup } from "../../src/native/processes.ts";
 import { liveEnv, liveSkip } from "../integration/vice/live.ts";
 
 let acme: string | false = false;
@@ -40,17 +41,28 @@ const root = resolve(import.meta.dirname, "../..");
 const windows = process.platform === "win32";
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-installed-"));
 let host: ChildProcess | undefined;
+/** How long the Host Runtime gets to stop after the stop signal. */
+const HOST_STOP_MS = 30_000;
 after(async () => {
-  if (host !== undefined && host.stdout !== null && !host.stdout.closed) {
-    // npx exits on SIGTERM without passing it on, so signal its whole process
-    // group, as Ctrl+C in a terminal does. The host holds stdout until it stops.
-    const stopped = once(host.stdout, "close");
-    // Windows has no process groups or SIGTERM: end the tree; the runtime's watchdog stops its VICE.
-    if (windows) killTree(host.pid!);
-    else process.kill(-host.pid!, "SIGTERM");
-    await stopped;
+  try {
+    if (host !== undefined && host.stdout !== null && !host.stdout.closed) {
+      // npx exits on SIGTERM without passing it on, so signal its whole process
+      // group, as Ctrl+C in a terminal does. The host holds stdout until it stops.
+      const stopped = once(host.stdout, "close").then(() => true);
+      // Windows has no process groups or SIGTERM: end the tree; the runtime's watchdog stops its VICE.
+      if (windows) killTree(host.pid!);
+      else signalGroup(host.pid!, "SIGTERM");
+      if (!(await Promise.race([stopped, sleep(HOST_STOP_MS, false, { ref: false })]))) {
+        // The host did not stop: end its whole group now, and fail by name.
+        if (windows) killTree(host.pid!);
+        else signalGroup(host.pid!, "SIGKILL");
+        await Promise.race([stopped, sleep(5_000, false, { ref: false })]);
+        assert.fail(`The Host Runtime did not stop within ${HOST_STOP_MS / 1000} seconds of its stop signal.`);
+      }
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
-  rmSync(scratch, { recursive: true, force: true });
 });
 
 // npx and npm with a cache of their own, in the scratch directory.

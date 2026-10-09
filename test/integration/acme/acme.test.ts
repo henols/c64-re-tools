@@ -24,6 +24,7 @@ const project = mkdtempSync(join(tmpdir(), "c64-re-tools-acme-"));
 cpSync(resolve(import.meta.dirname, "../../fixtures/asm/counter"), join(project, "src"), { recursive: true });
 writeFileSync(join(project, "src", "bad.a"), "* = $c000\n        lda #$123\n        jmp nowhere\n");
 const supervisor = new ProcessSupervisor();
+supervisor.installExitGuard();
 after(() => rmSync(project, { recursive: true, force: true }));
 
 async function run(params: Omit<AcmeParams, "files" | "includeDirs" | "defines"> & Partial<AcmeParams>) {

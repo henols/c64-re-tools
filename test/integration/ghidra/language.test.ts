@@ -103,6 +103,7 @@ const CASES: Case[] = [
 let opcodes: Opcode[] = [];
 let results: Array<Record<string, number> & { name: string; memory: Record<string, number> }> = [];
 const supervisor = new ProcessSupervisor();
+supervisor.installExitGuard();
 const workspace = Workspace.create();
 after(() => workspace.remove());
 

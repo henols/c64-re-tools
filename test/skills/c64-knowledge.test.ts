@@ -67,3 +67,13 @@ test("errors are JSON with a stable code and a non-zero exit", () => {
   }
   assert.equal((knowledge(root, "remove-symbol", "$9999").json.error as { code: string }).code, "not-found");
 });
+
+test("a refused write in a project without knowledge creates no knowledge database", () => {
+  const root = project();
+  for (const args of [["rename", "2100", "loop"], ["classify", "$1000", "$2000", "music"], ["comment", "$2100", "middle", "text"], ["reference", "$2000", "$2100", "jump-to"]]) {
+    const result = knowledge(root, ...args);
+    assert.equal(result.status, 2, args.join(" "));
+    assert.equal((result.json.error as { code: string }).code, "invalid-input");
+    assert.equal(existsSync(join(root, ".c64-re-tools")), false, args.join(" "));
+  }
+});

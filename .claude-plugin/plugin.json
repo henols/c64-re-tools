@@ -19,6 +19,11 @@
     "reverse-engineering",
     "mcp"
   ],
-  "mcpServers": "./.mcp.json",
+  "mcpServers": {
+    "c64-re-tools": {
+      "command": "npx",
+      "args": ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"]
+    }
+  },
   "defaultEnabled": false
 }

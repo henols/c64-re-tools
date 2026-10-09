@@ -130,9 +130,24 @@ jobs:
           "C64RT_LIVE_VICE=$bin\x64sc.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
           $bin | Out-File -FilePath $env:GITHUB_PATH -Append
 
-      # The native tools on Windows: Ghidra 12.1.3 on the runner's JDK 21; dxa and ACME built with MinGW
-      # from their sources. A tool that does not build stays missing, and its tests skip by name.
-      - name: Install Ghidra, dxa and ACME (Windows)
+      # Ghidra 12.1.3 on the runner's JDK 21. A failed download or unzip fails the job.
+      - name: Install Ghidra (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          T="$(cygpath -u "$RUNNER_TEMP")"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          curl -fsSL -o "$T/ghidra.zip" https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
+          unzip -q "$T/ghidra.zip" -d "$T"
+          rm "$T/ghidra.zip"
+          test -f "$T/ghidra_12.1.3_PUBLIC/support/analyzeHeadless.bat"
+          echo "C64RT_GHIDRA=$(cygpath -w "$T/ghidra_12.1.3_PUBLIC")" >> "$GITHUB_ENV"
+          mkdir -p "$T/bin"
+          cygpath -w "$T/bin" >> "$GITHUB_PATH"
+
+      # dxa and ACME built with MinGW from their sources. A tool that does not build stays missing,
+      # and its tests skip by name; the next step names it.
+      - name: Build dxa and ACME (Windows)
         if: runner.os == 'Windows'
         continue-on-error: true
         shell: bash
@@ -141,12 +156,6 @@ jobs:
           # Unix-style paths: Git Bash tar reads "D:\\..." as a remote host.
           T="$(cygpath -u "$RUNNER_TEMP")"
           MAKE="$(command -v make || command -v mingw32-make)"
-          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
-          curl -fsSL -o "$T/ghidra.zip" https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
-          unzip -q "$T/ghidra.zip" -d "$T"
-          echo "C64RT_GHIDRA=$(cygpath -w "$T/ghidra_12.1.3_PUBLIC")" >> "$GITHUB_ENV"
-          mkdir -p "$T/bin"
-          cygpath -w "$T/bin" >> "$GITHUB_PATH"
           curl -fsSL -o "$T/dxa.tgz" https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz
           tar -xzf "$T/dxa.tgz" -C "$T"
           # A build is installed only when it runs.
@@ -159,7 +168,20 @@ jobs:
           ls -la "$T/acme/src" | grep -i "acme\b\|\.exe" || true
           out="$("$T/acme/src/acme.exe" --version 2>&1 || true)"; echo "acme --version: $out"
           if echo "$out" | grep -q "This is ACME"; then cp "$T/acme/src/acme.exe" "$T/bin/"; else echo "ACME does not run"; fi
-          ls -la "$T/bin"
+
+      # The tool set of the Windows run: VICE and Ghidra must be there; a missing dxa or ACME is a warning.
+      - name: Native tool set (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          T="$(cygpath -u "$RUNNER_TEMP")"
+          test -f "$(cygpath -u "$C64RT_LIVE_VICE")"
+          echo "VICE: $C64RT_LIVE_VICE"
+          test -f "$(cygpath -u "$C64RT_GHIDRA")/support/analyzeHeadless.bat"
+          echo "Ghidra: $C64RT_GHIDRA"
+          for tool in dxa acme; do
+            if [ -f "$T/bin/$tool.exe" ]; then echo "$tool: $T/bin/$tool.exe"; else echo "::warning::$tool did not build on Windows; its tests skip"; fi
+          done
 
       # macOS and Windows runners have a display for the c64_window tests. A step limit keeps the log of a hang.
       - name: Live suites

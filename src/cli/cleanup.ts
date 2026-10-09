@@ -9,7 +9,7 @@
 
 import { existsSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export const PLUGIN_ID = "c64-re-tools";
 export const ALL_HARNESSES = ["claude", "codex", "pi", "opencode", "gemini", "copilot", "cursor", "windsurf"] as const;
@@ -72,14 +72,21 @@ function readJson(path: string): Record<string, unknown> | undefined {
 
 /** What the Windsurf configuration held before an install, to put it back after a project install. */
 export interface WindsurfBefore {
-  fileExisted: boolean;
+  /** The file's bytes, or undefined when the file did not exist. */
+  bytes: Buffer | undefined;
   hadServer: boolean;
 }
 
 export function windsurfBefore(): WindsurfBefore {
   const path = WINDSURF_MCP();
   const servers = readJson(path)?.[WINDSURF_KEY] as Record<string, unknown> | undefined;
-  return { fileExisted: existsSync(path), hadServer: servers !== undefined && PLUGIN_ID in servers };
+  let bytes: Buffer | undefined;
+  try {
+    bytes = readFileSync(path);
+  } catch {
+    bytes = undefined;
+  }
+  return { bytes, hadServer: servers !== undefined && PLUGIN_ID in servers };
 }
 
 /**
@@ -94,13 +101,17 @@ export function undoWindsurfProjectMcp(before: WindsurfBefore, cwd = process.cwd
   const item = entry?.items.find((candidate) => candidate.harness === "windsurf" && candidate.kind === "mcp" && candidate.files.length > 0);
   if (manifest === undefined || entry === undefined || item === undefined) return undefined;
 
-  if (!before.hadServer) {
-    const path = WINDSURF_MCP();
+  const path = WINDSURF_MCP();
+  if (before.bytes !== undefined) {
+    // The file existed: its bytes go back unchanged.
+    if (!existsSync(path) || !readFileSync(path).equals(before.bytes)) writeFileSync(path, before.bytes);
+  } else {
+    // The install made the file: it goes when it holds only this declaration.
     const root = readJson(path);
     const servers = root?.[WINDSURF_KEY] as Record<string, unknown> | undefined;
     if (root !== undefined && servers !== undefined) {
       delete servers[PLUGIN_ID];
-      if (!before.fileExisted && isEmptyConfig(root, WINDSURF_KEY)) {
+      if (isEmptyConfig(root, WINDSURF_KEY)) {
         unlinkSync(path);
         removeEmptyDirectories(dirname(path), homedir());
       } else {
@@ -122,13 +133,18 @@ function isEmptyConfig(root: Record<string, unknown>, mergeKey: string): boolean
   return Object.keys(root).every((key) => key === mergeKey || key === "$schema");
 }
 
+/** True when `path` is `root` itself or inside it. */
+function isWithin(root: string, path: string): boolean {
+  const rel = relative(root, path);
+  return !isAbsolute(rel) && rel.split(sep)[0] !== "..";
+}
+
 /** Removes `directory` and its parents while they are empty, up to `stop` (never `stop` itself or anything outside it). */
 export function removeEmptyDirectories(directory: string, stop: string): void {
   let current = resolve(directory);
   const limit = resolve(stop);
   while (current !== limit) {
-    const rel = relative(limit, current);
-    if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return;
+    if (relative(limit, current) === "" || !isWithin(limit, current)) return;
     try {
       rmdirSync(current);
     } catch {
@@ -157,7 +173,7 @@ export function tidyAfterUninstall(items: readonly InstallItem[], scope: Scope, 
   // Deepest first, so a parent is tried after its children.
   for (const directory of [...directories].sort((a, b) => b.length - a.length)) {
     // Each file's own home: the scope root, or the home directory for a file outside it.
-    const stop = relative(root, directory).startsWith("..") ? homedir() : root;
+    const stop = isWithin(root, directory) ? root : homedir();
     removeEmptyDirectories(directory, stop);
   }
 }

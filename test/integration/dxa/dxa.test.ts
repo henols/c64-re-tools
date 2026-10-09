@@ -18,6 +18,7 @@ try {
 }
 
 const supervisor = new ProcessSupervisor();
+supervisor.installExitGuard();
 const run = (params: DxaParams, image: Uint8Array) => analyze(params, Buffer.from(image), { supervisor, signal: new AbortController().signal });
 
 const params = (overrides: Partial<DxaParams> = {}): DxaParams => ({ imageKind: "prg", entryPoints: [], dataRanges: [], labels: [], ...overrides });
