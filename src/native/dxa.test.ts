@@ -126,6 +126,11 @@ test("a rejected listing says what the check found and quotes the messages of dx
   );
 });
 
+test("a listing larger than the limit is refused with the limit", { skip: posixOnly }, async () => {
+  const env = standInDxa("dxa-too-much", "head -c 9000000 /dev/zero | tr '\\0' a");
+  await assert.rejects(analyze(SEEDS, PRG, context(env)), refusedWith("dxa printed a listing that is larger than 8 MiB. Nothing was imported."));
+});
+
 test("a request beyond the seed bounds is refused by name before dxa runs", async () => {
   const many = (count: number) => Array.from({ length: count }, (_, index) => index);
   const env = { PATH: "" };

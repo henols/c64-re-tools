@@ -1,6 +1,7 @@
 // Types of the native tools that skill scripts run directly (ACME, DXA,
-// Ghidra), and the checks of their complete results. Nothing here
-// crosses the Host Runtime wire.
+// Ghidra), and the checks of their complete results. The skill script runs
+// these tools itself: nothing here crosses the Host Runtime wire. Bytes
+// (a program, an image, a listing) go next to these values as attachments.
 
 import { REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
 import { WireFailure, type SourceTree } from "../protocol.ts";
@@ -46,7 +47,7 @@ export interface AssembledSymbol {
 
 export interface AcmeResult {
   assembled: boolean;
-  /** Present when assembled: where the program loads. The program bytes are the reply's attachment. */
+  /** Present when assembled: where the program loads. The program bytes are the one attachment that assemble returns. */
   loadRange?: { start: number; end: number; bytes: number };
   symbols?: AssembledSymbol[];
   diagnostics: Diagnostic[];
@@ -57,7 +58,7 @@ export type ImageKind = (typeof IMAGE_KINDS)[number];
 
 export const GHIDRA_LIMITS = { entryPoints: 1024, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
 
-/** ghidra.analyze. The image is the request's one attachment: a PRG, or 64 KiB from $0000. */
+/** The Ghidra analysis. Its image is given next to these fields: a PRG, or 64 KiB from $0000. */
 export interface GhidraParams {
   imageKind: ImageKind;
   /** Seeds from current knowledge. */
@@ -93,14 +94,14 @@ export function checkRequestBounds(params: DxaParams & { decompile?: number[] })
   }
 }
 
-/** dxa.analyze: the same image and seeds as Ghidra, without decompilation. */
+/** The DXA analysis: the same image and seeds as Ghidra, without decompilation. */
 export type DxaParams = Omit<GhidraParams, "decompile">;
 
 export interface DxaResult {
   coverage: Array<{ start: number; end: number }>;
   regions: Array<{ start: number; end: number; classification: "code" | "data" }>;
   labels: Array<{ address: number; name: string }>;
-  /** The size of the listing, which is the reply's one attachment (UTF-8 text). */
+  /** The size of the listing, which is the one attachment that analyze returns (UTF-8 text). */
   listingBytes: number;
   /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { regions: boolean; labels: boolean };

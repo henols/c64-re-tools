@@ -14,7 +14,7 @@ import { DXA, findTool } from "./discover.ts";
 import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
 
 const TIMEOUT_MS = 120_000;
-/** The listing goes back as an attachment; larger output is refused. */
+/** The listing is returned as an attachment; larger output is refused. */
 const MAX_LISTING = 8 * 1024 * 1024;
 const LABEL_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
@@ -121,7 +121,7 @@ export async function analyze(
         cwd: workspace.root,
         timeoutMs: TIMEOUT_MS,
         outputLimit: MAX_LISTING,
-        truncated: "dxa printed a listing larger than the host accepts. Nothing was imported.",
+        truncated: `dxa printed a listing that is larger than ${MAX_LISTING / 1024 / 1024} MiB. Nothing was imported.`,
       },
       context,
     );
