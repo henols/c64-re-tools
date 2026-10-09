@@ -737,6 +737,58 @@ test("a refused run-until target leaves a running machine running and sends VICE
   await session.close();
 });
 
+/** The newest exec checkpoint over all of C64 memory: the one that completes a drive stop. */
+function boundaryOf(fake: FakeVice) {
+  return [...fake.checkpoints.values()].filter((checkpoint) => checkpoint.start === 0 && checkpoint.end === 0xffff && checkpoint.memspace === 0).at(-1);
+}
+
+test("a stop in the drive is completed at the computer's next instruction before a run reports it", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("breakpoint", { action: "add", address: 0x0300, space: "drive8" });
+  const drive = [...fake.checkpoints.values()].find((checkpoint) => checkpoint.memspace === 1)!;
+  let stops = 0;
+  fake.onResume = (vice) => {
+    stops++;
+    // The drive hits twice before the computer gets to its next instruction.
+    if (stops <= 2) return { pc: 0x1234, hits: [drive.number] };
+    return { pc: 0x1236, hits: [boundaryOf(vice)!.number] };
+  };
+  assert.deepEqual(await session.handle("execution", { action: "advance-frames", count: 5, space: "c64" }), {
+    state: "stopped",
+    pc: 0x1236,
+    advancedFrames: 0,
+  });
+  assert.equal(stops, 3);
+  assert.deepEqual([...fake.checkpoints.values()].map((checkpoint) => checkpoint.number), [drive.number], "only the user breakpoint is left");
+  await session.close();
+});
+
+test("a stop in the drive while running is completed before the next command", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("breakpoint", { action: "add", address: 0x0300, space: "drive8" });
+  const drive = [...fake.checkpoints.values()].find((checkpoint) => checkpoint.memspace === 1)!;
+  await session.handle("execution", { action: "pause", space: "c64" });
+  fake.onResume = (vice) => (boundaryOf(vice) === undefined ? { pc: 0x1234, hits: [drive.number] } : { pc: 0x1236, hits: [boundaryOf(vice)!.number] });
+  await session.handle("execution", { action: "resume", space: "c64" });
+  await waitFor(() => !fake.running);
+  // Let the session read the stop events before the next command.
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal((await session.handle("registersGet", { space: "c64" })).pc, 0x1236);
+  assert.equal(fake.checkpoints.size, 1);
+  await session.close();
+});
+
+test("a drive stop that the computer does not complete is refused and leaves no checkpoint behind", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("breakpoint", { action: "add", address: 0x0300, space: "drive8" });
+  const drive = [...fake.checkpoints.values()].find((checkpoint) => checkpoint.memspace === 1)!;
+  fake.onResume = () => ({ pc: 0x1234, hits: [drive.number] });
+  await assert.rejects(session.handle("execution", { action: "advance-frames", count: 5, space: "c64" }), failsWith("operation-failed"));
+  assert.equal(fake.checkpoints.size, 1);
+  assert.equal(fake.running, false);
+  await session.close();
+});
+
 test("memory search uses the selected view and space and restores the monitor defaults", async () => {
   const { fake, session } = await startSession();
   // The fake's RAM holds address & $ff at each address; its ROM holds the high byte.
