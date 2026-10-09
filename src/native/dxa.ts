@@ -9,7 +9,7 @@ import { writeFileSync } from "node:fs";
 
 import { SYMBOL_NAME } from "../c64.ts";
 import { WireFailure } from "../protocol.ts";
-import { checkRequestBounds, imageRange, type DxaParams, type DxaResult } from "./types.ts";
+import { checkDxaResult, checkRequestBounds, imageRange, type DxaParams, type DxaResult } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
 import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
@@ -131,21 +131,19 @@ export async function analyze(
       const tail = outputTail("dxa", run, workspace.root);
       throw new WireFailure("operation-failed", `dxa could not analyze the program${tail === "" ? ` (exit ${run.code}).` : `.${tail}`}`);
     }
-    let parsed: Pick<DxaResult, "regions" | "labels">;
+    const listing = Buffer.from(run.stdout, "utf8");
+    let result: DxaResult;
     try {
-      parsed = parseListing(run.stdout, start, end);
+      const parsed = parseListing(run.stdout, start, end);
+      // DXA classifies every byte, so its regions are complete; it names only referenced addresses.
+      result = checkDxaResult({ coverage: [{ start, end }], ...parsed, listingBytes: listing.length, completeness: { regions: true, labels: false } }, [listing]);
     } catch (error) {
       context.log?.(`dxa listing rejected: ${(error as Error).message}`);
       // The listing is on stdout: only dxa's messages on stderr are quoted.
       const tail = outputTail("dxa", { stdout: "", stderr: run.stderr }, workspace.root);
       throw new WireFailure("operation-failed", `dxa returned an incomplete or inconsistent listing. Nothing was imported. The check found: ${(error as Error).message}.${tail}`);
     }
-    const listing = Buffer.from(run.stdout, "utf8");
-    return {
-      // DXA classifies every byte, so its regions are complete; it names only referenced addresses.
-      result: { coverage: [{ start, end }], ...parsed, listingBytes: listing.length, completeness: { regions: true, labels: false } },
-      attachments: [listing],
-    };
+    return { result, attachments: [listing] };
   } finally {
     workspace.remove();
   }
