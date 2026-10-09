@@ -8,7 +8,8 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { after, test } from "node:test";
 
-import { encodeFrame, FrameDecoder, HOST_PROTOCOL_ID } from "../../src/protocol.ts";
+import { encodeFrame, HOST_PROTOCOL_ID } from "../../src/protocol.ts";
+import { FrameDecoder } from "../../src/protocol.testkit.ts";
 import { liveEnv, liveSkip } from "../integration/vice/live.ts";
 
 // Runs the executable from src/, as Node runs it after an install.

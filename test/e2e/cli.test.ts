@@ -11,7 +11,8 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { mcpServerFor } from "../../distribution/package.ts";
-import { encodeFrame, FrameDecoder } from "../../src/protocol.ts";
+import { encodeFrame } from "../../src/protocol.ts";
+import { FrameDecoder } from "../../src/protocol.testkit.ts";
 
 const cli = resolve(import.meta.dirname, "../../src/cli/main.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-cli-"));
