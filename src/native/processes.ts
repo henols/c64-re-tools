@@ -264,7 +264,7 @@ export class ProcessSupervisor {
    * registered process group and removes every owned path. It ends by itself
    * when this process exits normally. Its registry directory names the owner.
    */
-  startWatchdog(owner: "host" | "skill-script" = "host"): void {
+  startWatchdog(owner: "host" | "skill-script"): void {
     if (this.#registry !== undefined) return;
     const directory = mkdtempSync(join(tmpdir(), `c64-re-tools-${owner}-watchdog-`));
     this.#registry = join(directory, "registry.json");

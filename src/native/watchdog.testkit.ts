@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { ProcessSupervisor } from "./processes.ts";
 
 const supervisor = new ProcessSupervisor({ graceMs: 500 });
-supervisor.startWatchdog();
+supervisor.startWatchdog("host");
 const child = supervisor.spawn(["sleep", "600"]);
 const path = mkdtempSync(join(tmpdir(), "c64-re-tools-watchdog-test-"));
 supervisor.ownPath(path);

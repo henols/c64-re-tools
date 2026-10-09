@@ -72,7 +72,7 @@ async function main(): Promise<number> {
   // this process ends, the exit guard takes their process groups down with it,
   // and the watchdog does the same if this process is killed.
   const supervisor = new ProcessSupervisor();
-  supervisor.startWatchdog();
+  supervisor.startWatchdog("host");
 
   // Finding x64sc is not enough: VICE without its ROM files exits at once.
   try {
