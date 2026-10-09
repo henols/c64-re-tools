@@ -117,7 +117,6 @@ class FakeSession implements ViceSessionApi {
   points: unknown[] = [];
   breakpoint(params: Extract<BreakpointParams, { action: "list" }>): Promise<{ breakpoints: Breakpoint[] }>;
   breakpoint(params: Exclude<BreakpointParams, { action: "list" }>): Promise<Breakpoint>;
-  breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }>;
   async breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }> {
     this.points.push(params);
     if (params.action === "list") {
@@ -129,7 +128,6 @@ class FakeSession implements ViceSessionApi {
   }
   watchpoint(params: Extract<WatchpointParams, { action: "list" }>): Promise<{ watchpoints: Watchpoint[] }>;
   watchpoint(params: Exclude<WatchpointParams, { action: "list" }>): Promise<Watchpoint>;
-  watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }>;
   async watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }> {
     this.points.push(params);
     if (params.action === "add") {
@@ -157,7 +155,6 @@ class FakeSession implements ViceSessionApi {
   memmaps: unknown[] = [];
   memmap(params: Extract<ViceOperations["memmap"]["params"], { action: "read" }>): Promise<{ ranges: MemmapRange[] }>;
   memmap(params: { action: "clear" }): Promise<{ cleared: boolean }>;
-  memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]>;
   async memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]> {
     this.memmaps.push(params);
     if (params.action === "clear") return { cleared: true };

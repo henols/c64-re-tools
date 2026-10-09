@@ -141,7 +141,6 @@ export class ViceSessionClient {
   /** Action list gives all breakpoints; every other action gives the one breakpoint it added or changed. */
   breakpoint(params: Extract<BreakpointParams, { action: "list" }>): Promise<{ breakpoints: Breakpoint[] }>;
   breakpoint(params: Exclude<BreakpointParams, { action: "list" }>): Promise<Breakpoint>;
-  breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }>;
   breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }> {
     return this.#request("breakpoint", params);
   }
@@ -149,7 +148,6 @@ export class ViceSessionClient {
   /** Action list gives all watchpoints; every other action gives the one watchpoint it added or changed. */
   watchpoint(params: Extract<WatchpointParams, { action: "list" }>): Promise<{ watchpoints: Watchpoint[] }>;
   watchpoint(params: Exclude<WatchpointParams, { action: "list" }>): Promise<Watchpoint>;
-  watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }>;
   watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }> {
     return this.#request("watchpoint", params);
   }
@@ -173,7 +171,6 @@ export class ViceSessionClient {
   /** Action read gives the ranges; action clear gives cleared. */
   memmap(params: Extract<ViceOperations["memmap"]["params"], { action: "read" }>): Promise<{ ranges: MemmapRange[] }>;
   memmap(params: { action: "clear" }): Promise<{ cleared: boolean }>;
-  memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]>;
   memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]> {
     return this.#request("memmap", params);
   }
