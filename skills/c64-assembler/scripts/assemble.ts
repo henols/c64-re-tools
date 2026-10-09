@@ -86,7 +86,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
       loadRange: { start: formatC64Address(range.start), end: formatC64Address(range.end), bytes: range.bytes },
       symbols: result.symbols!.map((symbol) =>
         symbol.kind === "address"
-          ? { name: symbol.name, kind: "address", address: formatC64Address(symbol.value), used: symbol.used }
+          ? { name: symbol.name, kind: "address", address: formatC64Address(symbol.address), used: symbol.used }
           : { name: symbol.name, kind: "constant", value: symbol.value, used: symbol.used },
       ),
       diagnostics: result.diagnostics,
