@@ -56,6 +56,6 @@ test("an AP SDK run that a signal ends is refused by name", { timeout: 30_000, s
   await withStandIns(async (context, directory) => {
     const killed = join(directory, "killed.ts");
     writeFileSync(killed, `process.kill(process.pid, "SIGKILL");\n`);
-    await assert.rejects(runApSdk("install", [], context, { cli: killed }), /^WireFailure: AP SDK stopped on signal SIGKILL\.$/);
+    await assert.rejects(runApSdk("install", [], context, { cli: killed }), /^WireFailure: AP SDK stopped on the signal SIGKILL\./);
   });
 });

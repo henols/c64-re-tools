@@ -38,6 +38,7 @@ export async function runApSdk(
     ...context,
     env: options.env ?? context.env,
   });
-  if (run.code === null) throw new WireFailure("operation-failed", run.signal === null ? "AP SDK did not start." : `AP SDK stopped on signal ${run.signal}.`);
+  // runToolOrFail refuses a run that did not start or that a signal stopped, so an exit status is here.
+  if (run.code === null) throw new WireFailure("operation-failed", "AP SDK ended without an exit status.");
   return { code: run.code, stdout: run.stdout, stderr: run.stderr };
 }
