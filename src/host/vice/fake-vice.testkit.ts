@@ -153,8 +153,12 @@ export class FakeVice {
   textBank = "cpu";
   /** Replaces the answer of a text command when it returns a string, as another VICE build would answer. */
   textAnswer: ((line: string) => string | undefined) | undefined;
-  /** A checkpoint at this pc hits as the next text command arrives while running: VICE stops for it, not for the command. */
-  textStopsAt: number | undefined;
+  /**
+   * A checkpoint hits at `pc` as the next command on either connection arrives
+   * while running: VICE stops for it, not for the command. `checkpoint` names
+   * the checkpoint that hits; without it, a computer breakpoint at `pc` hits.
+   */
+  stopsAtNextCommand: { pc: number; checkpoint?: number } | undefined;
   /** Printed before the next text command's answer, as VICE prints a checkpoint's stop lines; then cleared. */
   textPreamble = "";
   /** Whether the command being handled found the machine running. */
@@ -218,10 +222,10 @@ export class FakeVice {
     this.textServer.close();
   }
 
-  /** Stops the machine as a breakpoint does: a checkpoint-hit event, then the stop. */
-  stopSpontaneously(pc: number): void {
+  /** Stops the machine as a breakpoint does: a checkpoint-hit event, then the stop. `number` names a set checkpoint that hits. */
+  stopSpontaneously(pc: number, number?: number): void {
     this.registers.PC = pc;
-    const checkpoint: FakeCheckpoint = {
+    const checkpoint: FakeCheckpoint = (number === undefined ? undefined : this.checkpoints.get(number)) ?? {
       number: 999,
       start: pc,
       end: pc,
@@ -263,6 +267,15 @@ export class FakeVice {
     this.registers.PC = this.returnTo;
     this.returnTo = undefined;
     this.#enterMonitor(this.#binary!);
+  }
+
+  /** Applies stopsAtNextCommand to a running machine; true when it stopped the machine. */
+  #stopForNextCommand(): boolean {
+    const stop = this.stopsAtNextCommand;
+    if (!this.running || stop === undefined) return false;
+    this.stopsAtNextCommand = undefined;
+    this.stopSpontaneously(stop.pc, stop.checkpoint);
+    return true;
   }
 
   #pc(): Buffer {
@@ -370,6 +383,7 @@ export class FakeVice {
       answer();
       return;
     }
+    this.#stopForNextCommand();
     this.#enteredForCommand = this.running;
     this.#enterMonitor(socket);
     switch (command) {
@@ -601,10 +615,7 @@ export class FakeVice {
     }
     this.textCommands.push(line);
     let output = "";
-    if (this.running && this.textStopsAt !== undefined) {
-      const pc = this.textStopsAt;
-      this.textStopsAt = undefined;
-      this.stopSpontaneously(pc);
+    if (this.#stopForNextCommand()) {
       output += prompt();
     } else if (this.running) {
       // VICE enters the monitor: binary events, then an extra prompt on the text side.

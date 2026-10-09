@@ -54,7 +54,7 @@ test("status reads warp from VICE, reports no pc while running and keeps it runn
 
 test("a breakpoint that stops the machine while status reads warp is reported as stopped with its pc", async () => {
   const { fake, session } = await startSession();
-  fake.textStopsAt = 0x2100;
+  fake.stopsAtNextCommand = { pc: 0x2100 };
   assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: 0x2100 });
   assert.equal(fake.running, false);
   await session.close();
@@ -786,6 +786,31 @@ test("a stop in the drive while running is completed before the next command", a
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal((await session.handle("registersGet", { space: "c64" })).pc, 0x1236);
   assert.equal(fake.checkpoints.size, 1);
+  await session.close();
+});
+
+/** A session with a drive 8 breakpoint whose stop completes at $1236, one instruction after the drive stop at $1234. */
+async function sessionWithDriveBreakpoint() {
+  const { fake, session } = await startSession();
+  await session.handle("breakpoint", { action: "add", address: 0x0300, space: "drive8" });
+  const drive = [...fake.checkpoints.values()].find((checkpoint) => checkpoint.memspace === 1)!;
+  fake.onResume = (vice) => (boundaryOf(vice) === undefined ? undefined : { pc: 0x1236, hits: [boundaryOf(vice)!.number] });
+  fake.stopsAtNextCommand = { pc: 0x1234, checkpoint: drive.number };
+  return { fake, session };
+}
+
+test("a stop in the drive that status sees first is completed before status reports the pc", async () => {
+  const { fake, session } = await sessionWithDriveBreakpoint();
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: 0x1236 });
+  assert.equal(fake.running, false);
+  assert.equal(fake.checkpoints.size, 1, "only the user breakpoint is left");
+  await session.close();
+});
+
+test("a stop in the drive that a pause meets is completed before the pause reports the pc", async () => {
+  const { fake, session } = await sessionWithDriveBreakpoint();
+  assert.deepEqual(await session.handle("execution", { action: "pause", space: "c64" }), { state: "stopped", pc: 0x1236 });
+  assert.equal(fake.checkpoints.size, 1, "only the user breakpoint is left");
   await session.close();
 });
 
