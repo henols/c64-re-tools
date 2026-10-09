@@ -37,8 +37,9 @@ const ALLOWED: Record<string, readonly string[]> = {
   knowledge: ["c64", "project"],
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
   native: ["protocol", "c64"],
-  cli: ["mcp", "host-client", "host", "native", "knowledge", "protocol", "c64", "project", "distribution"],
-  distribution: ["c64", "project"],
+  // The installation and status edge: host tool status through the host-client, local tool status through native.
+  cli: ["host-client", "native", "protocol", "distribution"],
+  distribution: [],
 };
 const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64"];
 
@@ -120,6 +121,12 @@ test("checkImport refuses every forbidden direction", () => {
     ["skills/c64-disk/scripts/disk.ts", "../../../src/host-client/tools.ts"],
     ["src/mcp/server.ts", AP_SDK],
     ["skills/c64-disk/scripts/disk.ts", AP_SDK],
+    ["src/cli/main.ts", "../mcp/server.ts"],
+    ["src/cli/main.ts", "../host/server.ts"],
+    ["src/cli/main.ts", "../knowledge/read.ts"],
+    ["src/cli/main.ts", "../project.ts"],
+    ["distribution/plugin.ts", "../src/c64.ts"],
+    ["distribution/plugin.ts", "../src/project.ts"],
   ];
   for (const [from, specifier] of refused) {
     assert.notEqual(checkImport(from, specifier), undefined, `${from} -> ${specifier} must be refused`);
@@ -140,7 +147,9 @@ test("checkImport accepts every allowed direction", () => {
     ["skills/c64-disk/scripts/disk.ts", "#src/knowledge/write.ts"],
     ["skills/c64-disk/scripts/disk.ts", "./helpers.ts"],
     ["distribution/plugin.ts", AP_SDK],
-    ["src/cli/main.ts", "../host/server.ts"],
+    ["src/cli/main.ts", "../host-client/tools.ts"],
+    ["src/cli/main.ts", "../native/status.ts"],
+    ["src/cli/main.ts", "../../distribution/plugin.ts"],
     ["src/host/server.ts", "node:net"],
   ];
   for (const [from, specifier] of accepted) {
