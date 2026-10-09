@@ -1,6 +1,5 @@
-// Memory and CPU tools: c64_memory_read (15 §14), c64_memory_write (15 §15),
-// c64_memory_search (15 §16), c64_memory_compare (15 §17), c64_registers
-// (15 §18) and c64_disassemble (15 §19).
+// Memory and CPU tools: c64_memory_read, c64_memory_write, c64_memory_search,
+// c64_memory_compare, c64_registers and c64_disassemble.
 
 import { z } from "zod";
 

@@ -27,7 +27,7 @@ export function isInside(root: string, candidate: string): boolean {
 /**
  * Resolves a project-relative path to an existing file system entry whose real
  * location is inside the project too, so a symbolic link cannot reach outside
- * it (17 §4). Throws TypeError for a refused path; lets ENOENT through.
+ * it. Throws TypeError for a refused path; lets ENOENT through.
  */
 export function resolveProjectFile(path: string, root = projectRoot()): string {
   const candidate = resolveProjectPath(path, root);

@@ -63,7 +63,7 @@ function checkImport(from: string, specifier: string): string | undefined {
   }
 
   const target = relative(ROOT, resolve(ROOT, dirname(from), specifier)).split(sep).join("/");
-  // An installed skill holds its own scripts and a copy of src/ reached through #src/* (08 §6).
+  // An installed skill holds its own scripts and a copy of src/ reached through #src/*.
   if (source.startsWith("skill:") && areaOf(target) !== source) return `${from}: a skill reaches src/ through #src/, never through ${specifier}`;
   return checkTarget(from, source, target);
 }

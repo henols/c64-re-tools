@@ -1,7 +1,7 @@
-// Short-lived typed requests to the Host Runtime for skill scripts (04 §4, 16):
+// Short-lived typed requests to the Host Runtime for skill scripts:
 // VICE's own tools (c1541, petcat) and the host tool status. Each request
 // opens its own "tool" connection, sends bytes, and closes. Skill scripts run
-// ACME, DXA and Ghidra themselves through src/native (D16).
+// ACME, DXA and Ghidra themselves through src/native.
 
 import {
   DISK_IMAGE_TYPES,
@@ -71,7 +71,7 @@ export interface InspectDiskRequest {
   name?: string;
 }
 
-/** c1541.inspect (16 §12): a found read also returns the file's bytes. */
+/** c1541.inspect: a found read also returns the file's bytes. */
 export async function inspectDisk(request: InspectDiskRequest, options: ToolCallOptions = {}): Promise<C1541Result & { data?: Buffer }> {
   const file = readProjectFile(request.image);
   if (!(DISK_IMAGE_TYPES as readonly string[]).includes(file.type)) {
@@ -83,7 +83,7 @@ export async function inspectDisk(request: InspectDiskRequest, options: ToolCall
   return result.action === "read" && result.found ? { ...result, data: attachments[0]! } : result;
 }
 
-/** petcat.decode (16 §13): the C64 BASIC V2 listing of a project program and its machine-code handoffs. */
+/** petcat.decode: the C64 BASIC V2 listing of a project program and its machine-code handoffs. */
 export async function decodeBasic(request: { program: string }, options: ToolCallOptions = {}): Promise<PetcatResult> {
   const file = readProjectFile(request.program);
   return (await callTool("petcat.decode", {}, [file.bytes], options)).result;

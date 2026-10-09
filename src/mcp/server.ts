@@ -57,7 +57,7 @@ export type SessionSource = () => Promise<ViceSessionApi>;
 type JsonObject = Record<string, unknown>;
 
 // ---------------------------------------------------------------------------
-// Public schema primitives shared by the tool groups (15 §3)
+// Public schema primitives shared by the tool groups
 
 /** Input address: "$" and four hex digits, either case. Parses to a number. */
 export const AddressInput = z
@@ -127,7 +127,7 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   run(input: z.output<I>, session: ViceSessionApi): Promise<z.input<O> | ToolOutput<z.input<O>>>;
 }
 
-/** A typed condition (15 §6): register, memory or raster. No expression language. */
+/** A typed condition: register, memory or raster. No expression language. */
 export const ConditionInput = z
   .discriminatedUnion("kind", [
     z
@@ -158,7 +158,7 @@ export const ConditionInput = z
   ])
   .describe("register: a CPU register compared to a byte; memory: a byte in memory compared to a byte; raster: the raster position");
 
-/** A condition as a result shows it: the input form, with the memory address as "$xxxx" (D21). */
+/** A condition as a result shows it: the input form, with the memory address as "$xxxx". */
 export const ConditionOutput = z
   .discriminatedUnion("kind", [
     z.object({ kind: z.literal("register"), register: z.enum(CONDITION_REGISTERS), operator: z.enum(COMPARISONS), value: Byte }),

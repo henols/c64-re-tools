@@ -1,4 +1,4 @@
-// Input tools: c64_keyboard (15 §31) and c64_joystick (15 §32).
+// Input tools: c64_keyboard and c64_joystick.
 
 import { z } from "zod";
 

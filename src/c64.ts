@@ -240,7 +240,7 @@ export function constantExpression(bytes: Uint8Array): number | undefined {
   const value = sum();
   if (value === undefined || !Number.isFinite(value)) return undefined;
   // BASIC's evaluator ends the expression at the first byte that is no operator,
-  // so "SYS2073 TCS-CRUNCH!" jumps to 2073 (found on a real release). An operator
+  // so "SYS2073 TCS-CRUNCH!" jumps to 2073. An operator
   // this evaluator does not handle (^, AND, OR, a comparison) needs run-time values.
   if (at < tokens.length && BASIC_OPERATORS.has(tokens[at]!)) return undefined;
   return value;

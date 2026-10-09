@@ -44,7 +44,7 @@ export function readProjectFile(path: string, options: { root?: string } = {}): 
 const SKIPPED_DIRECTORIES = new Set([".git", ".hg", ".svn", ".c64-re-tools"]);
 
 /**
- * Reads a project directory as a source tree for staging (16 §4): ordinary
+ * Reads a project directory as a source tree for staging: ordinary
  * files with relative POSIX paths. A symbolic link is followed only when its
  * target stays inside the source root; otherwise the tree is refused.
  */

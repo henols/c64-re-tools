@@ -32,7 +32,7 @@ import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 import { videoTools } from "./tools/video.ts";
 
-/** The public tool list, 15 §37, in its order; c64_window was added by D20. */
+/** The public tool list, in its order. */
 const PUBLIC_TOOLS = [
   "c64_status",
   "c64_reset",
@@ -324,7 +324,7 @@ function errorOf(result: CallToolResult): { code: string; message: string } {
   return JSON.parse((first as { text: string }).text) as { code: string; message: string };
 }
 
-test("the server lists exactly the frozen v1 tools of 15 §37 with object input and output schemas", async () => {
+test("the server lists exactly the public tools with object input and output schemas", async () => {
   const client = await connect(async () => new FakeSession());
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [...PUBLIC_TOOLS].sort());
@@ -474,7 +474,7 @@ test("c64_execution passes the action through and formats the pc", async () => {
 test("c64_reset defaults run to false and c64_warp echoes the mode", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
-  assert.deepEqual((await call(client, "c64_reset", { mode: "hard" })).structuredContent, { state: "stopped", pc: "$fce2" }, "a stopped reset gives the reset vector (D21)");
+  assert.deepEqual((await call(client, "c64_reset", { mode: "hard" })).structuredContent, { state: "stopped", pc: "$fce2" }, "a stopped reset gives the reset vector");
   assert.deepEqual((await call(client, "c64_reset", { mode: "soft", run: true })).structuredContent, { state: "running" });
   assert.deepEqual(session.resets, [
     { mode: "hard", run: false },

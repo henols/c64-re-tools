@@ -36,7 +36,7 @@ const CONNECT_TIMEOUT_MS = 1_500;
 export const DEFAULT_READY_TIMEOUT_MS = 120_000;
 
 /**
- * The endpoints to try, in order (D5): C64RT_HOST=host:port alone when set,
+ * The endpoints to try, in order: C64RT_HOST=host:port alone when set,
  * else loopback, then the Docker and Podman host bridges.
  */
 export function hostEndpoints(env: NodeJS.ProcessEnv = process.env): Endpoint[] {
@@ -159,7 +159,7 @@ export class HostConnection {
     const connection = new HostConnection(socket);
     const hello: Hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: options.role };
     if (options.videoStandard !== undefined) hello.videoStandard = options.videoStandard;
-    // A host that listens beyond loopback checks this shared secret (D6).
+    // A host that listens beyond loopback checks this shared secret.
     const token = (options.env ?? process.env).C64RT_HOST_TOKEN;
     if (token !== undefined && token !== "") hello.token = token;
 
@@ -220,7 +220,7 @@ export class HostConnection {
   /**
    * Pings the host so it knows this client is alive, and closes the connection
    * when the host has sent nothing for the timeout: a host that vanished
-   * without a close then fails like a closed one (D18). The timers never keep
+   * without a close then fails like a closed one. The timers never keep
    * the process alive.
    */
   #startHeartbeat(): void {

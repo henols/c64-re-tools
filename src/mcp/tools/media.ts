@@ -1,6 +1,6 @@
-// Media tools: c64_autostart (15 §33), c64_program_load (15 §34),
-// c64_disk_attach (15 §35) and c64_snapshot (15 §36). Paths are project-relative; the host-client reads
-// the file and the Host Runtime receives only its bytes.
+// Media tools: c64_autostart, c64_program_load, c64_disk_attach and
+// c64_snapshot. Paths are project-relative; the host-client reads the file and
+// the Host Runtime receives only its bytes.
 
 import { z } from "zod";
 

@@ -1,5 +1,4 @@
-// Machine tools: c64_status (15 §7), c64_reset (15 §8), c64_warp (15 §9)
-// and c64_window (D20).
+// Machine tools: c64_status, c64_reset, c64_warp and c64_window.
 
 import { z } from "zod";
 

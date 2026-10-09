@@ -1,5 +1,5 @@
-// Video and chip tools: c64_vicii (15 §25), c64_sprite (15 §26), c64_cia
-// (15 §27), c64_sid (15 §28), c64_screen (15 §29) and c64_observe (15 §30).
+// Video and chip tools: c64_vicii, c64_sprite, c64_cia, c64_sid, c64_screen
+// and c64_observe.
 
 import { z } from "zod";
 

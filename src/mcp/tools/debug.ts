@@ -1,6 +1,5 @@
-// Debug tools: c64_breakpoint (15 §12), c64_watchpoint (15 §13),
-// c64_cpu_history (15 §20), c64_backtrace (15 §21), c64_profile (15 §22),
-// c64_memmap (15 §23) and c64_timing (15 §24).
+// Debug tools: c64_breakpoint, c64_watchpoint, c64_cpu_history, c64_backtrace,
+// c64_profile, c64_memmap and c64_timing.
 
 import { z } from "zod";
 

@@ -1,4 +1,4 @@
-// Execution tools: c64_execution (15 §10) and c64_run_until (15 §11).
+// Execution tools: c64_execution and c64_run_until.
 
 import { z } from "zod";
 
