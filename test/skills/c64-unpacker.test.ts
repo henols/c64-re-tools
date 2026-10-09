@@ -1,7 +1,6 @@
 // The c64-unpacker packing evidence. No emulator needed.
 
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,14 +9,15 @@ import { after, test } from "node:test";
 
 import { inspect, readMemoryMap, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/evidence.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
+import { seededBytes } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpacker-"));
 after(() => rmSync(project, { recursive: true, force: true }));
 
 const stub = [0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00];
 
-test("random bytes after a BASIC start look packed", () => {
-  const result = inspect(Uint8Array.from([...stub, ...randomBytes(4096)]));
+test("random-looking bytes after a BASIC start look packed", () => {
+  const result = inspect(Uint8Array.from([...stub, ...seededBytes(0x6502, 4096)]));
   assert.equal(result.packing, "likely");
   assert.deepEqual(result.basicStart, { line: 10, sys: "$080d" });
   assert.equal((result.entropy as { blocks: number }).blocks, 16);
@@ -35,13 +35,13 @@ test("code-like bytes do not look packed", () => {
 test("a short program is unclear, and the script reports it", () => {
   writeFileSync(join(project, "packed.prg"), xorPackedPrg);
   const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpack.ts");
-  const run = spawnSync(process.execPath, [script, "inspect", "packed.prg"], { cwd: project, encoding: "utf8" });
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "packed.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   const result = JSON.parse(run.stdout) as Record<string, unknown>;
   assert.equal(result.packing, "unclear");
   assert.deepEqual(result.basicStart, { line: 10, sys: "$080d" });
   for (const args of [["inspect"], ["capture", "packed.prg"], ["capture", "packed.prg", "--until", "49152", "--out", "x.prg"], ["unpack", "packed.prg"]]) {
-    const bad = spawnSync(process.execPath, [script, ...args], { cwd: project, encoding: "utf8" });
+    const bad = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8" });
     assert.equal(bad.status, 2, args.join(" "));
   }
 });
@@ -85,10 +85,10 @@ test("inspect refuses a link to a file outside the project", { skip: process.pla
     writeFileSync(join(outside, "game.prg"), xorPackedPrg);
     symlinkSync(join(outside, "game.prg"), join(project, "linked.prg"));
     const script = resolve(import.meta.dirname, "../../skills/c64-unpacker/scripts/unpack.ts");
-    const linked = spawnSync(process.execPath, [script, "inspect", "linked.prg"], { cwd: project, encoding: "utf8" });
+    const linked = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "linked.prg"], { cwd: project, encoding: "utf8" });
     assert.equal(linked.status, 1, linked.stdout + linked.stderr);
     assert.equal((JSON.parse(linked.stdout) as { error: { code: string } }).error.code, "invalid-input");
-    const missing = spawnSync(process.execPath, [script, "inspect", "missing.prg"], { cwd: project, encoding: "utf8" });
+    const missing = spawnSync(process.execPath, [...process.execArgv, script, "inspect", "missing.prg"], { cwd: project, encoding: "utf8" });
     assert.equal(missing.status, 1, missing.stdout + missing.stderr);
     assert.equal((JSON.parse(missing.stdout) as { error: { code: string } }).error.code, "not-found");
   } finally {

@@ -1,7 +1,6 @@
 // The c64-provenance comparison: differences, agreeing groups and alignment.
 
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,11 +8,12 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { compareReleases, suggestShift } from "../../skills/c64-provenance/scripts/compare.ts";
+import { seededBytes } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-"));
 after(() => rmSync(project, { recursive: true, force: true }));
 
-const base = randomBytes(2048);
+const base = seededBytes(0x6510, 2048);
 const crackA = Buffer.from(base);
 // A patched check: three bytes that always differ from the base.
 const patch = [0, 1, 2].map((index) => base[0x0900 - 0x0801 + index]! ^ 0x55);
@@ -48,22 +48,22 @@ test("the script compares PRG files and applies a shift", () => {
   writeFileSync(join(project, "release.prg"), prg(0x0801, base));
   writeFileSync(join(project, "moved.prg"), prg(0x0901, base));
   const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
-  const loose = spawnSync(process.execPath, [script, "release.prg", "moved.prg"], { cwd: project, encoding: "utf8" });
+  const loose = spawnSync(process.execPath, [...process.execArgv, script, "release.prg", "moved.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(loose.status, 0, loose.stdout + loose.stderr);
   const unaligned = JSON.parse(loose.stdout) as { identicalShare: number; suggestedShifts: Array<{ release: number; shift: number }> };
   assert.ok(unaligned.identicalShare < 0.5);
   assert.deepEqual(unaligned.suggestedShifts.map((item) => [item.release, item.shift]), [[2, -256]]);
-  const aligned = JSON.parse(spawnSync(process.execPath, [script, "release.prg", "moved.prg", "--shift", "2:-256"], { cwd: project, encoding: "utf8" }).stdout) as Record<string, unknown>;
+  const aligned = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "release.prg", "moved.prg", "--shift", "2:-256"], { cwd: project, encoding: "utf8" }).stdout) as Record<string, unknown>;
   assert.equal(aligned.differingBytes, 0);
   assert.equal(aligned.identicalShare, 1);
-  const bad = spawnSync(process.execPath, [script, "release.prg"], { cwd: project, encoding: "utf8" });
+  const bad = spawnSync(process.execPath, [...process.execArgv, script, "release.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(bad.status, 2);
 });
 
 test("a missing release is not-found", () => {
   const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
   writeFileSync(join(project, "one.prg"), Buffer.from([0x01, 0x08, 0xea]));
-  const missing = spawnSync(process.execPath, [script, "one.prg", "missing.prg"], { cwd: project, encoding: "utf8" });
+  const missing = spawnSync(process.execPath, [...process.execArgv, script, "one.prg", "missing.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(missing.status, 1, missing.stdout + missing.stderr);
   assert.equal((JSON.parse(missing.stdout) as { error: { code: string } }).error.code, "not-found");
 });

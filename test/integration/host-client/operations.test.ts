@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after, afterEach, beforeEach, test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
@@ -24,11 +24,14 @@ const SID = {
 };
 const PNG = Buffer.from("png").toString("base64");
 
-// Media operations read project files relative to the working directory; each test file runs in its own process.
+// Media operations read project files relative to the working directory: each test runs in the project.
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-contract-"));
 writeFileSync(join(project, "game.prg"), Buffer.from([0x00, 0xc0, 0xea]));
 writeFileSync(join(project, "game.d64"), Buffer.alloc(16));
-process.chdir(project);
+const home = process.cwd();
+beforeEach(() => process.chdir(project));
+// Windows cannot remove the current directory.
+afterEach(() => process.chdir(home));
 
 /** One example per operation: how the client calls it, what the session must see, what it answers. */
 const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Promise<unknown>; params: unknown; result: unknown; attachments?: number }> = {
@@ -128,8 +131,6 @@ const seen = new Map<string, { params: unknown; attachments: number }>();
 after(async () => {
   await client?.close();
   await server?.close();
-  // Windows cannot remove the current directory.
-  process.chdir(tmpdir());
   rmSync(project, { recursive: true, force: true });
 });
 

@@ -84,11 +84,11 @@ test("run-until with a drive8 address tells when the drive executes it, and wher
   assert.equal(reached.reached, true, JSON.stringify(reached));
   assert.equal(reached.stopReason, "target");
   // The drive catches up with the computer's clock before the machine stops, so it can stop a few
-  // instructions after the target (found live: target $ec2b, stop $ec17). pc is where it stopped.
+  // instructions after the target. pc is where it stopped.
   assert.equal(reached.pc, (await session.handle("registersGet", { space: "drive8" })).pc);
 });
 
-test("after a drive8 stop the computer's registers, frames and stopwatch behave as after any stop (D21)", { skip: liveSkip, timeout: 120_000 }, async () => {
+test("after a drive8 stop the computer's registers, frames and stopwatch behave as after any stop", { skip: liveSkip, timeout: 120_000 }, async () => {
   const driveStop = async () => {
     const { pc } = await session.handle("registersGet", { space: "drive8" });
     const reached = await session.handle("runUntil", { target: { kind: "address", address: pc, space: "drive8" }, timeoutFrames: 100 });
@@ -98,7 +98,7 @@ test("after a drive8 stop the computer's registers, frames and stopwatch behave 
   await session.handle("execution", { action: "advance-frames", count: 100, space: "c64" });
 
   // A drive checkpoint stops VICE inside the drive CPU, with the computer's CPU in the middle of an
-  // instruction. Without completing that stop, a register write was lost (found live).
+  // instruction. The stop is completed first, so a register write is not lost.
   await driveStop();
   await session.handle("memoryWrite", { address: 0xc000, data: "a9004c02c0", space: "c64", view: "cpu" }); // LDA #$00 / JMP $c002
   await session.handle("registersSet", { space: "c64", values: { pc: 0xc000, a: 0x33 } });

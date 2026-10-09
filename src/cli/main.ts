@@ -1,19 +1,19 @@
 #!/usr/bin/env tsx
-// The human CLI (08 §5, 18 §10): installs the skills and the VICE MCP
+// The human CLI: installs the skills and the VICE MCP
 // declaration into agent harnesses through AP SDK, and reports status. It is
 // thin: AP SDK does the harness-specific work.
 
-import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { hostTools } from "../host-client/tools.ts";
+import { PACKAGE } from "../../distribution/package.ts";
 import { localToolContext } from "../native/local.ts";
 import { localToolStatus } from "../native/status.ts";
-import { WireFailure, type ToolStatus } from "../protocol.ts";
+import { WireFailure } from "../protocol.ts";
 import { runApSdk } from "./ap-sdk.ts";
 import { installedItems, parseTargets, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp, type Scope } from "./cleanup.ts";
+import { hostStatusLines, toolLines } from "./status.ts";
 
 const HELP = `c64-re-tools: Commodore 64 reverse engineering and development
 
@@ -21,26 +21,21 @@ Usage:
   c64-re-tools install   [--target <harnesses>] [--global]   install the skills and the VICE MCP
   c64-re-tools update    [--target <harnesses>] [--global]   install this version over an earlier one
   c64-re-tools uninstall [--target <harnesses>] [--global]   remove them
-  c64-re-tools status                                        version, programs, tools and the Host Runtime
+  c64-re-tools status                                        version, package, tools and the Host Runtime
   c64-re-tools --help
 
 Harnesses: claude, codex, pi, opencode, gemini, copilot, cursor, windsurf
 (comma-separated; default: all). Without --global the files go into the
 current project; with --global into your home directory.
 
-Run it in the project: npx -y @henols/c64-re-tools@latest install. The VICE
+Run it in the project: npx -y ${PACKAGE.name}@latest install. The VICE
 MCP declaration starts the latest c64-re-tools-mcp through npx. The Host
 Runtime runs on the machine with VICE: start it there with
-npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host.
+npx -y --package=${PACKAGE.name}@latest c64-re-tools-host.
 It runs VICE and the tools that come with it (c1541, petcat). The skill
 scripts run ACME, DXA and Ghidra themselves, on the machine of the agent.`;
 
 const here = dirname(fileURLToPath(import.meta.url));
-
-function packageVersion(): string {
-  const path = join(here, "..", "..", "package.json");
-  return existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as { version: string }).version : "unknown";
-}
 
 /** Runs the AP SDK CLI. Writes its error output to stderr and returns its exit status and its report. */
 async function apSdk(command: "install" | "uninstall", flags: readonly string[]): Promise<{ code: number; output: string }> {
@@ -50,32 +45,13 @@ async function apSdk(command: "install" | "uninstall", flags: readonly string[])
   return { code: run.code, output: run.stdout };
 }
 
-function printTools(heading: string, tools: ToolStatus[]): void {
-  console.log(heading);
-  for (const tool of tools) {
-    if (tool.runs) console.log(`  ${tool.name}: ${tool.version} (${tool.path})`);
-    else if (tool.found) console.log(`  ${tool.name}: found at ${tool.path} but it does not run. ${tool.problem}`);
-    else console.log(`  ${tool.name}: missing. ${tool.problem}`);
-  }
-}
-
 async function status(): Promise<number> {
-  console.log(`c64-re-tools ${packageVersion()}`);
+  console.log(`c64-re-tools ${PACKAGE.version}`);
   console.log(`Package: ${join(here, "..", "..")}`);
   console.log(`Node: ${process.version} (${process.execPath})`);
   // The skill scripts run these tools here, on this machine.
-  printTools("Tools here:", await localToolStatus(localToolContext()));
-  // VICE and its tools live on the host; it finds and runs each one. One
-  // request shows both that the host answers and what it has.
-  let hostToolStatus: ToolStatus[];
-  try {
-    hostToolStatus = await hostTools();
-  } catch (error) {
-    console.log(`Host Runtime: not reachable. ${(error as Error).message}`);
-    return 0;
-  }
-  console.log("Host Runtime: reachable");
-  printTools("Tools on the host:", hostToolStatus);
+  for (const line of toolLines("Tools here:", await localToolStatus(localToolContext()))) console.log(line);
+  for (const line of await hostStatusLines()) console.log(line);
   return 0;
 }
 
@@ -103,7 +79,7 @@ async function main(argv: string[]): Promise<number> {
     case "update": {
       const before = windsurfBefore();
       const { code, output } = await apSdk("install", flags);
-      // A project install leaves the home directory as it was (D21).
+      // A project install leaves the home directory as it was.
       const note = scope === "project" && (targets === undefined || targets.includes("windsurf")) ? undoWindsurfProjectMcp(before) : undefined;
       process.stdout.write(note === undefined ? output : withoutWindsurfMcp(output));
       if (note !== undefined) console.log(`  ${note}\n`);
@@ -117,6 +93,10 @@ async function main(argv: string[]): Promise<number> {
       return code;
     }
     case "status":
+      if (flags.length > 0) {
+        console.error(`status takes no --target or --global.\n\n${HELP}`);
+        return 2;
+      }
       return status();
     default:
       console.error(`Unknown command ${command}.\n\n${HELP}`);

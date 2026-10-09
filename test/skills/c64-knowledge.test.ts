@@ -21,7 +21,7 @@ function project(): string {
 }
 
 function knowledge(root: string, ...args: string[]): { status: number | null; json: Record<string, unknown> } {
-  const run = spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: "utf8" });
+  const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: root, encoding: "utf8" });
   assert.equal(run.stderr, "", run.stderr);
   return { status: run.status, json: JSON.parse(run.stdout) as Record<string, unknown> };
 }

@@ -1,5 +1,5 @@
 // The c64-static-analysis script with real Ghidra and DXA, which it runs
-// itself (D16). Skipped (never passed) when Ghidra is not found.
+// itself. Skipped (never passed) when Ghidra is not found.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -35,7 +35,7 @@ writeFileSync(join(project, "game.prg"), analysisSubjectPrg);
 after(() => rmSync(project, { recursive: true, force: true }));
 
 async function analyze(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));

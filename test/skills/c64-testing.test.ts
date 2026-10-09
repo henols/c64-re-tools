@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
-import { after, test } from "node:test";
+import { after, afterEach, beforeEach, test } from "node:test";
 
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
@@ -15,11 +15,10 @@ import { compare, loadSymbols, readScenario, resolve, runScenario, ScenarioError
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-testing-"));
 const home = process.cwd();
-process.chdir(project);
-after(() => {
-  process.chdir(home);
-  rmSync(project, { recursive: true, force: true });
-});
+// Scenario paths are relative to the working directory: each test runs in the project.
+beforeEach(() => process.chdir(project));
+afterEach(() => process.chdir(home));
+after(() => rmSync(project, { recursive: true, force: true }));
 
 const valid = {
   name: "moves left",
@@ -87,7 +86,7 @@ test("only differences outside the explicit tolerance count", () => {
 
 test("the checklist lists each checkpoint and what only a person can judge", () => {
   const checklist = resolvePath(home, "skills/c64-testing/scripts/checklist.ts");
-  const run = spawnSync(process.execPath, [checklist, "ok.json", "--item", "FIRE starts the game."], { cwd: project, encoding: "utf8" });
+  const run = spawnSync(process.execPath, [...process.execArgv, checklist, "ok.json", "--item", "FIRE starts the game."], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   assert.match(run.stdout, /^# Playtest checklist/);
   assert.match(run.stdout, /- \[ \] At "moved", the rebuild looks and behaves as the original\./);

@@ -1,52 +1,32 @@
-// The orphan guard (D7) with real VICE: when the built Host Runtime is
+// The orphan guard with real VICE: when the Host Runtime is
 // killed with SIGKILL, its watchdog stops the VICE it started and removes
 // that VICE's scratch directory. Opt-in with C64RT_LIVE_VICE.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { createInterface } from "node:readline";
-import { test } from "node:test";
+import { after, test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { isAlive } from "../../../src/native/processes.ts";
-import { liveEnv, liveSkip, viceChildren, viceScratchOf } from "./live.ts";
+import { waitFor } from "../../kit.ts";
+import { liveSkip, startHost, stopHosts, viceChildren, viceScratchOf } from "./live.ts";
 
-const root = resolve(import.meta.dirname, "../../..");
-
-/** A zombie has ended: a container whose PID 1 never reaps keeps the killed VICE as one. */
-const alive = isAlive;
-
-async function until(condition: () => boolean, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (!condition()) {
-    if (Date.now() > deadline) return false;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return true;
-}
+// A failed assertion must not leave the runtime running: it would keep this test file alive.
+after(stopHosts);
 
 test("a Host Runtime killed with SIGKILL leaves no VICE and no scratch directory", { skip: liveSkip, timeout: 60_000 }, async () => {
-  const host = spawn(process.execPath, [resolve(root, "src/host/main.ts"), "--port", "0"], { env: liveEnv(), stdio: ["ignore", "pipe", "inherit"] });
-  const exited = once(host, "exit");
-  try {
-    const [line] = (await once(createInterface({ input: host.stdout! }), "line")) as [string];
-    const env = { ...process.env, C64RT_HOST: `127.0.0.1:${/:(\d+)$/.exec(line)![1]}` };
-    const session = await ViceSessionClient.open({ videoStandard: "pal", env });
-    const [vice] = viceChildren(host.pid!);
-    assert.ok(vice !== undefined, "the runtime started VICE");
-    const scratch = viceScratchOf(vice);
-    assert.ok(scratch !== undefined && /c64-re-tools-vice-/.test(scratch) && existsSync(scratch), `the VICE scratch directory, not ${scratch}`);
+  const host = await startHost();
+  const exited = new Promise((resolve) => host.process.once("exit", resolve));
+  const session = await ViceSessionClient.open({ videoStandard: "pal", env: { ...process.env, C64RT_HOST: host.address } });
+  const [vice] = viceChildren(host.process.pid!);
+  assert.ok(vice !== undefined, "the runtime started VICE");
+  const scratch = viceScratchOf(vice);
+  assert.ok(scratch !== undefined && /c64-re-tools-vice-/.test(scratch) && existsSync(scratch), `the VICE scratch directory, not ${scratch}`);
 
-    host.kill("SIGKILL");
-    await exited;
-    assert.ok(await until(() => !alive(vice), 10_000), "the watchdog stopped VICE");
-    assert.ok(await until(() => !existsSync(scratch), 5_000), "the watchdog removed the scratch directory");
-    await session.close().catch(() => {});
-  } finally {
-    // A failed assertion must not leave the runtime running: it would keep this test file alive.
-    if (host.exitCode === null && host.signalCode === null) host.kill("SIGKILL");
-  }
+  host.process.kill("SIGKILL");
+  await exited;
+  // isAlive counts a zombie as ended: a container whose PID 1 never reaps keeps the killed VICE as one.
+  await waitFor(() => !isAlive(vice), "the watchdog stopped VICE", 10_000);
+  await waitFor(() => !existsSync(scratch), "the watchdog removed the scratch directory", 5_000);
+  await session.close().catch(() => {});
 });

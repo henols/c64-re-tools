@@ -49,7 +49,7 @@ async function hostEnv(): Promise<string> {
 }
 
 async function basic(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: await hostEnv() }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: await hostEnv() }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
@@ -75,7 +75,7 @@ test("machine code is not decoded and exits 1; bad calls exit 2", { skip }, asyn
   const code = await basic("code.prg");
   assert.equal(code.status, 1);
   assert.equal(code.json.decoded, false);
-  assert.equal(typeof code.json.reason, "string");
+  assert.equal(code.json.reason, "Line number 65535 is above 63999, so the bytes are no BASIC program.");
   const missing = await basic("missing.prg");
   assert.equal((missing.json.error as { code: string }).code, "not-found");
   for (const args of [[], ["loop.prg", "code.prg"], ["--dialect", "70", "loop.prg"]]) {

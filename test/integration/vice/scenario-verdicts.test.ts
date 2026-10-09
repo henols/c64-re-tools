@@ -1,6 +1,5 @@
-// Milestone 9 acceptance (19 §11): one scenario PASSes an equivalent
-// reconstruction, FAILs a behaviorally different one, and is INCONCLUSIVE
-// when its checkpoint cannot be reached. Original and rebuild run one after
+// One scenario PASSes an equivalent reconstruction, FAILs a behaviorally
+// different one, and is INCONCLUSIVE when its checkpoint cannot be reached. Original and rebuild run one after
 // the other in one real VICE; the original's names come from knowledge.db,
 // the rebuild's from its symbol files. Opt-in with C64RT_LIVE_VICE.
 
@@ -69,7 +68,7 @@ async function hostAddress(): Promise<string> {
 }
 
 async function runTest(scenario: string): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [script, scenario], { cwd: project, env: { ...process.env, C64RT_HOST: await hostAddress() }, stdio: ["ignore", "pipe", "inherit"] });
+  const child = spawn(process.execPath, [...process.execArgv, script, scenario], { cwd: project, env: { ...process.env, C64RT_HOST: await hostAddress() }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];

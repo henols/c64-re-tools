@@ -24,6 +24,7 @@
     "!src/**/*.test.ts",
     "!src/**/*.testkit.ts",
     "skills/",
+    "distribution/package.ts",
     "distribution/plugin.ts",
     "LICENSE",
     "README.md"

@@ -48,7 +48,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      # The install route (D17): the packed package through npx, as users run
+      # The install route: the packed package through npx, as users run
       # the published one. No build, no links.
       - name: Run the packed programs through npx and install the skills
         run: |

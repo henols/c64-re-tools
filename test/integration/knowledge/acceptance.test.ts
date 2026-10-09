@@ -1,6 +1,6 @@
-// Milestone 4 acceptance (19 §6): from a clean C64 project directory, a read
-// needs no database, the first write creates .c64-re-tools/knowledge.db, and
-// several semantic changes give a correct current view with the full history.
+// From a clean C64 project directory, a read needs no database, the first
+// write creates .c64-re-tools/knowledge.db, and several semantic changes give
+// a correct current view with the full history.
 // Only the c64-knowledge script runs: no Host Runtime is involved.
 
 import assert from "node:assert/strict";
@@ -16,12 +16,12 @@ after(() => rmSync(root, { recursive: true, force: true }));
 
 function knowledge(...args: string[]): Record<string, unknown> {
   // An unreachable host: the knowledge path must never try to use it.
-  const run = spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   return JSON.parse(run.stdout) as Record<string, unknown>;
 }
 
-test("the M4 scenario: read, first write, several changes, current view and full history", () => {
+test("from a clean project: a read, the first write, several changes, the current view and the full history", () => {
   // A C64 project with its original program and no toolkit state.
   writeFileSync(join(root, "game.prg"), Buffer.from([0x01, 0x08, 0x00]));
 

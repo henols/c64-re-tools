@@ -43,18 +43,31 @@ test("empty directories go up to the stop directory; a directory with a file sta
     tidyAfterUninstall(
       [
         { harness: "claude", kind: "skill", name: "c64-disk", files: [".claude/skills/c64-disk/src/host-client/tools.ts"] },
-        { harness: "claude", kind: "mcp", name: ["c64-re-tools"], files: [".mcp.json"], detail: { mergeKey: "mcpServers", names: ["c64-re-tools"] } },
-        { harness: "opencode", kind: "mcp", name: ["c64-re-tools"], files: ["opencode.json"], detail: { mergeKey: "mcp", names: ["c64-re-tools"] } },
+        { harness: "claude", kind: "mcp", name: "c64-re-tools", files: [".mcp.json"], detail: { mergeKey: "mcpServers", names: ["c64-re-tools"] } },
+        { harness: "opencode", kind: "mcp", name: "c64-re-tools", files: ["opencode.json"], detail: { mergeKey: "mcp", names: ["c64-re-tools"] } },
       ],
       "project",
       root,
     );
     assert.deepEqual(readdirSync(root).sort(), [".claude", "opencode.json"], "the configuration with other settings stays");
     assert.deepEqual(readdirSync(join(root, ".claude")), ["agents"]);
-    removeEmptyDirectories(join(root, "..", "elsewhere"), root);
-    assert.ok(readdirSync(root).length > 0, "nothing outside the stop directory is touched");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an empty directory outside the stop directory stays", () => {
+  const base = mkdtempSync(join(tmpdir(), "c64-re-tools-tidy-"));
+  try {
+    const root = join(base, "root");
+    const sibling = join(base, "elsewhere", "empty");
+    mkdirSync(root);
+    mkdirSync(sibling, { recursive: true });
+    removeEmptyDirectories(sibling, root);
+    assert.deepEqual(readdirSync(base).sort(), ["elsewhere", "root"]);
+    assert.deepEqual(readdirSync(join(base, "elsewhere")), ["empty"]);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
   }
 });
 
@@ -90,7 +103,7 @@ function installLikeApSdk(home: string, project: string): string {
   const servers = { ...((existing.mcpServers as Record<string, unknown> | undefined) ?? {}), "c64-re-tools": { command: "npx", args: ["-y", "new"] } };
   writeFileSync(file, JSON.stringify({ ...existing, mcpServers: servers }, null, 2));
   mkdirSync(join(project, ".ap-sdk"), { recursive: true });
-  const item = { harness: "windsurf", kind: "mcp", name: ["c64-re-tools"], files: [file], detail: { mergeKey: "mcpServers", names: ["c64-re-tools"] } };
+  const item = { harness: "windsurf", kind: "mcp", name: "c64-re-tools", files: [file], detail: { mergeKey: "mcpServers", names: ["c64-re-tools"] } };
   writeFileSync(join(project, ".ap-sdk", "install-manifest.json"), JSON.stringify({ version: 1, plugins: { "c64-re-tools": { items: [item] } } }));
   return file;
 }

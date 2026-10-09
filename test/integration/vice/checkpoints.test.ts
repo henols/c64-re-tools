@@ -57,7 +57,7 @@ test("a conditional breakpoint stops only when its condition holds", { skip: liv
     space: "c64",
     condition: { kind: "register", register: "x", operator: "eq", value: 5 },
   });
-  // D21: the list shows the condition as it was given.
+  // The list shows the condition as it was given.
   const listed = (await session.handle("breakpoint", { action: "list" })) as { breakpoints: Array<{ id: number; condition?: unknown }> };
   assert.deepEqual(listed.breakpoints.find((entry) => entry.id === (point as { id: number }).id)?.condition, { kind: "register", register: "x", operator: "eq", value: 5 });
   await startProgram();

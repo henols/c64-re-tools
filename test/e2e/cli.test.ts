@@ -10,14 +10,15 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { mcpServerFor } from "../../distribution/plugin.ts";
-import { encodeFrame, FrameDecoder } from "../../src/protocol.ts";
+import { mcpServerFor } from "../../distribution/package.ts";
+import { encodeFrame } from "../../src/protocol.ts";
+import { FrameDecoder } from "../../src/protocol.testkit.ts";
 
 const cli = resolve(import.meta.dirname, "../../src/cli/main.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-cli-"));
 after(() => rmSync(project, { recursive: true, force: true }));
 
-const run = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+const run = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, cli, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
 
 test("install puts the skills and the MCP declaration into the project; uninstall removes them", () => {
   const installed = run("install", "--target", "claude");
@@ -26,7 +27,7 @@ test("install puts the skills and the MCP declaration into the project; uninstal
   const disk = join(project, ".claude", "skills", "c64-disk");
   for (const file of ["scripts/disk.ts", "src/host-client/tools.ts", "package.json"]) assert.ok(existsSync(join(disk, file)), file);
   // The installed TypeScript script runs from the project, outside this repository.
-  const memmap = spawnSync(process.execPath, [join(project, ".claude", "skills", "c64-memory-map", "scripts", "memmap.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
+  const memmap = spawnSync(process.execPath, [...process.execArgv, join(project, ".claude", "skills", "c64-memory-map", "scripts", "memmap.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
   assert.equal(memmap.status, 0, memmap.stderr);
   assert.match(memmap.stdout, /EXTCOL/);
   assert.deepEqual(JSON.parse(readFileSync(join(project, ".mcp.json"), "utf8")), { mcpServers: { "c64-re-tools": mcpServerFor(process.platform) } });
@@ -38,12 +39,12 @@ test("install puts the skills and the MCP declaration into the project; uninstal
   assert.equal(existsSync(join(project, ".claude", "skills", "c64-emulator")), false);
 });
 
-test("a project install for every harness leaves the home directory alone; uninstall leaves nothing behind (D21)", () => {
+test("a project install for every harness leaves the home directory alone; uninstall leaves nothing behind", () => {
   const home = mkdtempSync(join(tmpdir(), "c64-re-tools-home-"));
   const fresh = mkdtempSync(join(tmpdir(), "c64-re-tools-cli-all-"));
   try {
     const inHome = (...args: string[]) =>
-      spawnSync(process.execPath, [cli, ...args], { cwd: fresh, encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home, C64RT_HOST: "127.0.0.1:1" } });
+      spawnSync(process.execPath, [...process.execArgv, cli, ...args], { cwd: fresh, encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home, C64RT_HOST: "127.0.0.1:1" } });
     const windsurf = join(home, ".codeium", "windsurf", "mcp_config.json");
 
     const installed = inHome("install");
@@ -103,7 +104,7 @@ test("status reports a Host Runtime that accepts the connection but drops the re
   await once(server, "listening");
   try {
     const port = (server.address() as { port: number }).port;
-    const child = spawn(process.execPath, [cli, "status"], { cwd: project, env: { ...process.env, C64RT_HOST: `127.0.0.1:${port}` } });
+    const child = spawn(process.execPath, [...process.execArgv, cli, "status"], { cwd: project, env: { ...process.env, C64RT_HOST: `127.0.0.1:${port}` } });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
@@ -118,7 +119,12 @@ test("status reports a Host Runtime that accepts the connection but drops the re
   }
 });
 
-test("an unknown command or option exits 2 with the help", () => {
+test("an unknown command or option, or an option that status does not take, exits 2 with the help", () => {
   assert.equal(run("doctor").status, 2);
   assert.equal(run("install", "--force").status, 2);
+  for (const option of [["--global"], ["--target", "claude"]]) {
+    const refused = run("status", ...option);
+    assert.equal(refused.status, 2);
+    assert.match(refused.stderr, /^status takes no --target or --global\.\n\nc64-re-tools:/);
+  }
 });
