@@ -21,7 +21,17 @@ async function run(argv: string[]): Promise<ScenarioResult> {
   const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { help: { type: "boolean" } } });
   if (values.help) throw new UsageError("");
   if (positionals.length !== 1) throw new UsageError("give one scenario file");
-  const scenario = readScenario(positionals[0]!);
+  try {
+    return await runScenarioFile(positionals[0]!);
+  } catch (error) {
+    // A scenario or symbol file that is not usable is a bad call.
+    if (error instanceof ScenarioError) throw new UsageError(error.message);
+    throw error;
+  }
+}
+
+async function runScenarioFile(path: string): Promise<ScenarioResult> {
+  const scenario = readScenario(path);
   let client: ViceSessionClient;
   try {
     client = await ViceSessionClient.open({ videoStandard: scenario.videoStandard ?? "pal" });
@@ -41,7 +51,7 @@ try {
   process.stdout.write(`${JSON.stringify(result)}\n`);
   process.exitCode = EXIT[result.result];
 } catch (error) {
-  if (error instanceof UsageError || error instanceof ScenarioError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
+  if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
     const message = (error as Error).message;
     process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
     process.exitCode = 2;

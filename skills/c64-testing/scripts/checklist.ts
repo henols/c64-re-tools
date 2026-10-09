@@ -1,16 +1,18 @@
 // The c64-testing playtest checklist: a Markdown list for a human tester,
 // made from the scenarios' checkpoints and the behavior that automated
-// scenarios cannot check (13 §15). Nothing is stored.
+// scenarios cannot check. Nothing is stored.
 
 import { parseArgs } from "node:util";
 
-import { readScenario, ScenarioError } from "./scenario.ts";
+import { readScenario, ScenarioError, type Scenario } from "./scenario.ts";
 
 const USAGE = `checklist.ts <scenario.json> [<scenario.json> ...] [--item <text> ...]
 
 Prints a Markdown checklist. --item adds an application-specific line.`;
 
-/** Behavior that only a person can judge (13 §15). */
+class UsageError extends Error {}
+
+/** Behavior that only a person can judge. */
 const ALWAYS = [
   "The controls respond as fast as in the original.",
   "The animation is smooth and has no glitches.",
@@ -21,10 +23,17 @@ const ALWAYS = [
 
 function run(argv: string[]): string {
   const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { item: { type: "string", multiple: true }, help: { type: "boolean" } } });
-  if (values.help || positionals.length === 0) throw new ScenarioError(USAGE);
+  if (values.help) throw new UsageError("");
+  if (positionals.length === 0) throw new UsageError("give at least one scenario file");
   const lines = ["# Playtest checklist", ""];
   for (const path of positionals) {
-    const scenario = readScenario(path);
+    let scenario: Scenario;
+    try {
+      scenario = readScenario(path);
+    } catch (error) {
+      if (error instanceof ScenarioError) throw new UsageError(error.message);
+      throw error;
+    }
     lines.push(`## ${scenario.name}`, "");
     for (const step of scenario.steps) if ("observe" in step) lines.push(`- [ ] At "${step.observe}", the rebuild looks and behaves as the original.`);
     lines.push("");
@@ -38,8 +47,9 @@ function run(argv: string[]): string {
 try {
   process.stdout.write(run(process.argv.slice(2)));
 } catch (error) {
-  if (error instanceof ScenarioError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
-    process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: (error as Error).message } })}\n`);
+  if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
+    const message = (error as Error).message;
+    process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
     process.exitCode = 2;
   } else {
     throw error;
