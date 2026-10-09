@@ -1,5 +1,5 @@
-// The context for running native tools inside a skill script or the CLI
-// (D16): one supervisor whose exit guard stops every tool process group when
+// The context for running native tools inside a skill script or the CLI:
+// one supervisor whose exit guard stops every tool process group when
 // the script ends, also on Ctrl+C or SIGTERM, and whose watchdog does the same
 // when the script dies without its exit guard, for example by SIGKILL.
 

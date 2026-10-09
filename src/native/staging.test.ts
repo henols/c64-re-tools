@@ -39,7 +39,7 @@ test("an owned workspace that cannot be removed stays owned and the removal does
   chmodSync(locked, 0o500);
   try {
     workspace.remove();
-    assert.ok(owned.has(workspace.root), "the workspace is no longer owned");
+    assert.ok(owned.has(workspace.root), "the workspace stays owned");
   } finally {
     chmodSync(locked, 0o700);
     workspace.remove();

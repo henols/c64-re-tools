@@ -1,5 +1,5 @@
 // Types of the native tools that skill scripts run directly (ACME, DXA,
-// Ghidra), and the checks of their complete results (16 §11). Nothing here
+// Ghidra), and the checks of their complete results. Nothing here
 // crosses the Host Runtime wire.
 
 import { REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
@@ -57,7 +57,7 @@ export type ImageKind = (typeof IMAGE_KINDS)[number];
 
 export const GHIDRA_LIMITS = { entryPoints: 1024, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
 
-/** ghidra.analyze (16 §10). The image is the request's one attachment: a PRG, or 64 KiB from $0000. */
+/** ghidra.analyze. The image is the request's one attachment: a PRG, or 64 KiB from $0000. */
 export interface GhidraParams {
   imageKind: ImageKind;
   /** Seeds from current knowledge. */
@@ -76,7 +76,7 @@ export interface GhidraResult {
   decompilations: Array<{ entry: number; text: string; truncated: boolean }>;
   /** Requested routines without decompiled code, with the decompiler's reason. */
   notDecompiled?: Array<{ entry: number; reason: string }>;
-  /** Which categories are complete inside the coverage (12 §4); private to the importer. */
+  /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { functions: boolean; regions: boolean; references: boolean };
 }
 
@@ -93,7 +93,7 @@ export function checkRequestBounds(params: DxaParams & { decompile?: number[] })
   }
 }
 
-/** dxa.analyze (16 §9): the same image and seeds as Ghidra, without decompilation. */
+/** dxa.analyze: the same image and seeds as Ghidra, without decompilation. */
 export type DxaParams = Omit<GhidraParams, "decompile">;
 
 export interface DxaResult {
@@ -102,7 +102,7 @@ export interface DxaResult {
   labels: Array<{ address: number; name: string }>;
   /** The size of the listing, which is the reply's one attachment (UTF-8 text). */
   listingBytes: number;
-  /** Which categories are complete inside the coverage (12 §4); private to the importer. */
+  /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { regions: boolean; labels: boolean };
 }
 

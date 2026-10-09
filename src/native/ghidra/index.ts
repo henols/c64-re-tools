@@ -1,4 +1,4 @@
-// Headless Ghidra, run by the c64-static-analysis script (16 §10, D16). Ghidra runs with a settings
+// Headless Ghidra, run by the c64-static-analysis script. Ghidra runs with a settings
 // directory of its own per request: the c64-re-tools NMOS 6510 language goes
 // in there as an extension, so the user's Ghidra installation and settings
 // never change. Ghidra compiles the language from its source on first load.
@@ -16,7 +16,7 @@ import type { Workspace } from "../staging.ts";
 import { outputTail, runToolOrFail, type ToolRun } from "../run.ts";
 
 export const GHIDRA_LANGUAGE = "C64RT_6510:LE:16:nmos";
-// Next to this module. New URL literals, so an installed skill gets the directories too (08 §6).
+// Next to this module. New URL literals, so an installed skill gets the directories too.
 export const LANGUAGE_DIRECTORY = fileURLToPath(new URL("./language/", import.meta.url));
 export const SCRIPT_DIRECTORY = fileURLToPath(new URL("./scripts/", import.meta.url));
 
@@ -90,7 +90,7 @@ export function prepareSettings(workspace: Workspace, ghidra: GhidraInstallation
   const cache = workspace.directory("ghidra-cache");
   // With XDG_CONFIG_HOME set, Ghidra keeps its settings in [<user>-]ghidra/<settings name> below it: with
   // the user name only when that directory lies outside the user's home. The temporary directory is
-  // outside it on Linux and macOS but inside it on Windows (AppData, found in CI), so both names get it.
+  // outside it on Linux and macOS but inside it on Windows (in AppData), so both names get it.
   for (const application of [`${ghidraUserName()}-ghidra`, "ghidra"]) {
     const extension = join(config, application, ghidra.settingsName, "Extensions", "C64RT");
     mkdirSync(join(extension, "data"), { recursive: true });
@@ -144,7 +144,7 @@ export async function runHeadless(options: HeadlessOptions): Promise<ToolRun> {
   for (const script of options.postScripts ?? []) argv.push("-postScript", script.name, ...script.args);
   const run = await runToolOrFail("Ghidra", "The Ghidra analysis", { argv, cwd: options.workspace.root, timeoutMs: options.timeoutMs }, { supervisor: options.supervisor, signal: options.signal, env });
   if (run.code !== 0 || /^ERROR REPORT SCRIPT ERROR|Exception in thread "main"/m.test(run.stdout + run.stderr)) {
-    // Ghidra's own error lines tell the user what to fix (found in CI on Windows, where the message said nothing).
+    // Ghidra's own error lines tell the user what to fix.
     const tail = outputTail("Ghidra", run, options.workspace.root, /ERROR|Exception|Error:/);
     throw new WireFailure("operation-failed", `Ghidra stopped with an error${tail === "" ? ` (exit ${run.code}).` : `.${tail}`}`);
   }

@@ -1,4 +1,4 @@
-// The DXA adapter (16 §9, §11). DXA prints an assembler listing only; with
+// The DXA adapter. DXA prints an assembler listing only; with
 // "-a dump" each line starts with its address and bytes, so the adapter can
 // tell code from data line by line. The whole listing is checked before the
 // script imports anything: lines in address order from the load address to
@@ -61,7 +61,7 @@ export function parseListing(listing: string, start: number, end: number): Pick<
       labels.push({ address, name: label[2]! });
       continue;
     }
-    // dxa pads the bytes column with a tab, but a two-byte .word line with spaces only (found on a real game).
+    // dxa pads the bytes column with a tab, but a two-byte .word line with spaces only.
     const statement = /^([0-9a-f]{4}) ((?:[0-9a-f]{2} ?){1,3})\s+(\S.*)$/.exec(line);
     if (statement === null) continue;
     statements.push({ address: Number.parseInt(statement[1]!, 16), dumped: statement[2]!.trim().split(/\s+/).length, data: dataSize(statement[3]!) });
@@ -141,7 +141,7 @@ export async function analyze(
     }
     const listing = Buffer.from(run.stdout, "utf8");
     return {
-      // DXA classifies every byte, so its regions are complete; it names only referenced addresses (16 §9).
+      // DXA classifies every byte, so its regions are complete; it names only referenced addresses.
       result: { coverage: [{ start, end }], ...parsed, listingBytes: listing.length, completeness: { regions: true, labels: false } },
       attachments: [listing],
     };

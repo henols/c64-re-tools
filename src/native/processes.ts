@@ -40,7 +40,7 @@ export interface SupervisedProcess {
  * A process's state letter and process group on Linux, from /proc; undefined
  * when it is gone. A zombie (Z) or a dead process (X) has exited: only the
  * wait of its parent is missing. In a container whose PID 1 never reaps (for
- * example `tail -f /dev/null`), an orphan stays a zombie for ever (found in CI).
+ * example `tail -f /dev/null`), an orphan stays a zombie for ever.
  */
 function linuxProcess(pid: number | string): { state: string; group: number } | undefined {
   try {
@@ -77,18 +77,20 @@ function groupRuns(pgid: number): boolean {
 }
 
 /**
- * On Windows a .bat or .cmd file (Ghidra's analyzeHeadless.bat, for example)
- * starts only through cmd.exe: Node refuses it without a shell (EINVAL, found
- * in CI). /s keeps the quoted command line as it is. Each argument is quoted
- * as the Microsoft C runtime and Java read it: backslashes before a quote and
- * at the end are doubled, and an inner quote is escaped (a path that ends in a
- * backslash otherwise swallowed the arguments after it, found in CI).
- * Undefined for any other program.
+ * Quotes one argument as the Microsoft C runtime and Java read it:
+ * backslashes before a quote and at the end are doubled, and an inner quote
+ * is escaped. A path that ends in a backslash then cannot swallow the
+ * arguments after it.
  */
 export function windowsQuote(arg: string): string {
   return `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1")}"`;
 }
 
+/**
+ * On Windows a .bat or .cmd file (Ghidra's analyzeHeadless.bat, for example)
+ * starts only through cmd.exe: Node refuses it without a shell (EINVAL). /s
+ * keeps the quoted command line as it is. Undefined for any other program.
+ */
 export function batchInvocation(argv: readonly string[], comSpec = "cmd.exe"): { command: string; args: string[] } | undefined {
   if (!/\.(bat|cmd)$/i.test(argv[0] ?? "")) return undefined;
   const quote = windowsQuote;
@@ -115,7 +117,7 @@ export function killTree(pid: number): string | undefined {
 /** True when Node has seen the child's exit. */
 const hasExited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
 
-/** Sends a signal to a process group (POSIX). Returns false when the group no longer exists. */
+/** Sends a signal to a process group (POSIX). Returns false when the group does not exist. */
 export function signalGroup(pgid: number, signal: NodeJS.Signals | 0): boolean {
   try {
     process.kill(-pgid, signal);
@@ -148,12 +150,12 @@ export interface Registry {
   paths: string[];
 }
 
-/** The watchdog's program, next to this module. A new URL literal, so an installed skill gets it too (08 §6). */
+/** The watchdog's program, next to this module. A new URL literal, so an installed skill gets it too. */
 const WATCHDOG = fileURLToPath(new URL("./watchdog.ts", import.meta.url));
 
 /**
  * The one child-process supervisor of a process: the Host Runtime, or a
- * skill script that runs its own tools (D16). Every emulator and native tool
+ * skill script that runs its own tools. Every emulator and native tool
  * is started here, with an argv array and never a shell string,
  * as the leader of its own process group. It also owns scratch paths, so
  * that they go away with the processes that used them.
@@ -198,7 +200,7 @@ export class ProcessSupervisor {
       });
     } catch (error) {
       // Some failures throw at once instead of an "error" event: a file Windows cannot start
-      // (EFTYPE, found in CI with a broken build) or a .bat without a shell (EINVAL).
+      // (EFTYPE, for example a broken build) or a .bat without a shell (EINVAL).
       const code = (error as NodeJS.ErrnoException).code ?? "an unknown error";
       throw new WireFailure("installation-incomplete", `${argv[0]} is not a program that this system can start (${code}). Install it again.`);
     }
@@ -254,7 +256,7 @@ export class ProcessSupervisor {
 
   /**
    * Starts a watchdog process that cleans up if this process dies without
-   * running its exit guard, for example by SIGKILL (D7): it stops every
+   * running its exit guard, for example by SIGKILL: it stops every
    * registered process group and removes every owned path. It ends by itself
    * when this process exits normally.
    */
@@ -312,8 +314,8 @@ export class ProcessSupervisor {
     if (process.platform === "win32") {
       // Windows has no SIGTERM for a console process. taskkill finds the descendants through the
       // leader, so it runs first, and only while the leader runs: the pid of an ended leader can
-      // belong to another process. child.kill then ends the leader through its own handle (after
-      // taskkill alone the leader's exit never came, found in CI). The exit wait has a limit.
+      // belong to another process. child.kill then ends the leader through its own handle: after
+      // taskkill alone, Node does not always report the leader's exit. The exit wait has a limit.
       const failure = hasExited(child) ? undefined : killTree(pid);
       try {
         child.kill("SIGKILL");
@@ -331,8 +333,8 @@ export class ProcessSupervisor {
         throw new Error(`process group ${pid} survived SIGKILL`);
       }
     }
-    // A group of zombies counts as gone before Node reaps the leader and reports its exit
-    // (macOS, and Linux since zombies stopped counting); stopped means that exit was seen.
+    // A group of zombies counts as gone before Node reaps the leader and reports its exit;
+    // stopped means that Node has seen that exit.
     await Promise.race([exited, sleep(KILL_WAIT_MS)]);
   }
 }

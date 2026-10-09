@@ -98,7 +98,7 @@ test("a command that does not exist reports an exit with the spawn error, withou
 
 test("the exit guard kills every group when the owning process exits", { timeout: 30_000 }, async () => {
   // The owner runs the real supervisor, starts a forking stub, prints both pids and exits at once.
-  // The URL itself: its pathname is /D:/... on Windows, which no longer names the file.
+  // The URL itself: its pathname is /D:/... on Windows, which does not name the file.
   const moduleUrl = new URL("./processes.ts", import.meta.url).href;
   const owner = `
     import { once } from "node:events";

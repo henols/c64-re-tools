@@ -1,4 +1,4 @@
-// Request-owned temporary workspaces (04 §7, 16 §3). Everything staged lives
+// Request-owned temporary workspaces. Everything staged lives
 // outside the user's project and is removed when the request ends.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

@@ -1,4 +1,4 @@
-// The Ghidra analysis (16 §10, §11): one disposable headless run with the NMOS
+// The Ghidra analysis: one disposable headless run with the NMOS
 // 6510 language, knowledge seeds before analysis, and the structural export
 // after it. The result is checked completely before the script imports it.
 

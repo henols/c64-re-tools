@@ -1,4 +1,4 @@
-// Bounded native-tool execution (16 §3): argv only, no shell, a fixed
+// Bounded native-tool execution: argv only, no shell, a fixed
 // timeout, capped output, and the whole process group stopped on timeout or abort.
 
 import { realpathSync } from "node:fs";

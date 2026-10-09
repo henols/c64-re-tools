@@ -1,4 +1,4 @@
-// One discovery rule for every native tool (16 §15): C64RT_<TOOL> names
+// One discovery rule for every native tool: C64RT_<TOOL> names
 // the executable, else the tool's usual name on PATH. A missing tool is
 // refused by name with the remedy; nothing is ever installed.
 
@@ -14,7 +14,7 @@ export interface ToolSpec {
   envVar: string;
   /** Executable names to look for on PATH, in order. */
   binaries: string[];
-  /** Where the tool runs: the Host Runtime's machine, or the skill script's (D16). */
+  /** Where the tool runs: the Host Runtime's machine, or the skill script's. */
   where: "on the host" | "on this machine";
   /** What the user does when the tool is missing. */
   remedy: string;
@@ -61,9 +61,8 @@ export const VICE: ToolSpec = {
 };
 
 /**
- * The oldest VICE that works (D23): 3.7 has no monitor profiler, and its CPU
- * history, until-return and c1541 chain output differ (found in CI with the
- * VICE 3.7.1 of Ubuntu 24.04). 3.9 and 3.10 are tested live.
+ * The oldest VICE that works: 3.7 has no monitor profiler, and its CPU
+ * history, until-return and c1541 chain output differ.
  */
 export const MIN_VICE = { major: 3, minor: 9 } as const;
 

@@ -1,10 +1,11 @@
-// The Host Runtime watchdog (D7), started by ProcessSupervisor.startWatchdog.
-// Arguments: <host pid> <registry file>.
+// The watchdog of a supervisor's process (the Host Runtime or a skill
+// script), started by ProcessSupervisor.startWatchdog.
+// Arguments: <owner pid> <registry file>.
 //
-// It runs in its own process group, so a signal to the runtime's group does
-// not reach it. When the runtime dies without its exit guard (SIGKILL, a
+// It runs in its own process group, so a signal to the owner's group does
+// not reach it. When the owner dies without its exit guard (SIGKILL, a
 // crash), it stops every process group in the registry and removes every
-// path. When the runtime exits normally, the exit guard removes the registry
+// path. When the owner exits normally, the exit guard removes the registry
 // and the watchdog ends.
 
 import { existsSync, readFileSync, rmSync } from "node:fs";
