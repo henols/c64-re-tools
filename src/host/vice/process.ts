@@ -171,8 +171,10 @@ function tailCollector(child: SupervisedProcess, logFile: string): () => string 
  * machine-unavailable when it does not start.
  */
 export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
-  // A launch can fail in a way a fresh start fixes (a port taken between the
-  // free-port check and VICE binding it); try a few times before giving up.
+  // A launch that ends before its deadline can be fixed by a fresh start: VICE
+  // exits, or another process took a monitor port between the free-port check
+  // and VICE binding it. Such a launch is tried a few times. A VICE whose
+  // monitor does not become ready in time fails at once: a new wait fails the same way.
   let lastError: unknown;
   for (let attempt = 1; attempt <= LAUNCH_ATTEMPTS; attempt++) {
     try {
@@ -181,6 +183,7 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
       lastError = error;
       if (error instanceof WireFailure && error.code === "installation-incomplete") throw error;
       options.log?.(`VICE launch attempt ${attempt} failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof NotReadyInTime) throw error;
     }
   }
   if (lastError instanceof WireFailure) throw lastError;
@@ -188,6 +191,9 @@ export async function launchVice(options: LaunchOptions): Promise<ViceProcess> {
 }
 
 const LAUNCH_ATTEMPTS = 3;
+
+/** A VICE that runs but whose monitors do not answer before the ready deadline. */
+class NotReadyInTime extends WireFailure {}
 
 /** VICE's own error lines from the log lines of failed launches, without repeats. */
 export function startErrorLines(output: string[]): string[] {
@@ -345,7 +351,7 @@ async function waitForText(port: number, hasExited: () => boolean, deadline: num
       await sleep(RETRY_MS);
     }
   }
-  throw new WireFailure("machine-unavailable", "The emulator's monitor did not become ready in time.");
+  throw new NotReadyInTime("machine-unavailable", "The emulator's monitor did not become ready in time.");
 }
 
 const TEXT_PROBE_MS = 2_000;
@@ -395,5 +401,5 @@ async function waitForMonitor(port: number, hasExited: () => boolean, deadline: 
       await sleep(RETRY_MS);
     }
   }
-  throw new WireFailure("machine-unavailable", "The emulator did not become ready in time.");
+  throw new NotReadyInTime("machine-unavailable", "The emulator did not become ready in time.");
 }

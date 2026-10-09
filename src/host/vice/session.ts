@@ -180,7 +180,8 @@ export class ViceSession implements ViceSessionHandle {
    * monitor from inside the drive CPU, while the computer's CPU is between two
    * cycles of an instruction: a register write to it is lost or comes late,
    * and the next frame count ends one frame short. The session
-   * completes such a stop before its next command (#completeDriveStop).
+   * completes such a stop (#completeDriveStop) before its next command, and
+   * before a pause or an observation that first sees it reports the computer's pc.
    */
   #driveStop = false;
   /** Counts stops caused by checkpoints or a CPU JAM rather than by a monitor command. */
@@ -498,7 +499,8 @@ export class ViceSession implements ViceSessionHandle {
     }
     if (params.action === "pause") {
       await this.#stop();
-      return { state: "stopped", pc: await this.#pc() };
+      // A drive checkpoint can stop the machine just before the pause does.
+      return { state: "stopped", pc: (await this.#completeDriveStop()) ?? (await this.#pc()) };
     }
     if (params.space === "drive8") {
       // Stock VICE runs the 1541 CPU in batches that catch up with the computer's clock;
@@ -509,6 +511,11 @@ export class ViceSession implements ViceSessionHandle {
           "Use a breakpoint or run-until with an address in space drive8: it stops when the drive executes that address, " +
           "and the drive can run a few instructions more before it stops.",
       );
+    }
+    if (params.action === "advance-frames") {
+      if (params.count === undefined) throw new WireFailure("invalid-input", "advance-frames needs count, the number of frames");
+      const outcome = await this.#runFrames(params.count);
+      return { state: "stopped", pc: outcome.pc, advancedFrames: outcome.frames };
     }
     await this.#stop();
     if (params.action === "until-return") {
@@ -523,10 +530,6 @@ export class ViceSession implements ViceSessionHandle {
         );
       }
       return { state: "stopped", pc: stop.pc };
-    }
-    if (params.action === "advance-frames") {
-      const outcome = await this.#runFrames(params.count!);
-      return { state: "stopped", pc: outcome.pc, advancedFrames: outcome.frames };
     }
     const count = params.count ?? 1;
     try {
@@ -1175,6 +1178,9 @@ export class ViceSession implements ViceSessionHandle {
       throw error;
     }
     await settle();
+    // A drive checkpoint that stopped the machine meanwhile keeps it stopped:
+    // complete that stop, so the computer's registers read afterwards are at an instruction boundary.
+    if (wasRunning) await this.#completeDriveStop();
     if (shouldResume()) await this.#resume();
     return result;
   }
