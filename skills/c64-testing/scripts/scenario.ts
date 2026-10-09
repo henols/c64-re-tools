@@ -4,7 +4,16 @@
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
 import { formatC64Address, parseC64Address, textToPetscii } from "#src/c64.ts";
-import { MAX_MEMORY_READ, MAX_TIMEOUT_FRAMES, WireFailure } from "#src/host-client/tools.ts";
+import {
+  JOYSTICK_DIRECTIONS,
+  MAX_BASELINES,
+  MAX_EXECUTION_COUNT,
+  MAX_KEYBOARD_BYTES,
+  MAX_MEMORY_READ,
+  MAX_MEMORY_WRITE,
+  MAX_TIMEOUT_FRAMES,
+  WireFailure,
+} from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
@@ -91,26 +100,9 @@ type ObservedRegister = (typeof OBSERVED_REGISTERS)[number];
 /** The registers a registers step can set. */
 const SET_REGISTERS = ["pc", "a", "x", "y", "sp"];
 
-type JoystickDirection = Parameters<ViceSessionClient["joystick"]>[0]["direction"];
-// Every direction of the protocol, and no other: a missing or unknown one is a type error.
-const DIRECTIONS: Record<JoystickDirection, true> = {
-  center: true,
-  up: true,
-  down: true,
-  left: true,
-  right: true,
-  "up-left": true,
-  "up-right": true,
-  "down-left": true,
-  "down-right": true,
-};
-const JOYSTICK_DIRECTIONS = Object.keys(DIRECTIONS);
+type JoystickDirection = (typeof JOYSTICK_DIRECTIONS)[number];
 
-// The host limits for one request.
-const MAX_WRITE_BYTES = 4096;
-const MAX_TYPED_BYTES = 1024;
-const MAX_FRAMES = 10_000;
-const MAX_SCREEN_BASELINES = 64;
+/** The most mask rectangles the host accepts for one screen comparison. */
 const MAX_MASK_RECTANGLES = 64;
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -155,7 +147,7 @@ export function readScenario(path: string): Scenario {
     }
   });
   if (labels.size === 0) fail("observes nothing; add an observe step");
-  if (screens > MAX_SCREEN_BASELINES) fail(`observes the screen at ${screens} checkpoints; the limit is ${MAX_SCREEN_BASELINES}`);
+  if (screens > MAX_BASELINES) fail(`observes the screen at ${screens} checkpoints; the limit is ${MAX_BASELINES}`);
   return scenario;
 }
 
@@ -185,8 +177,8 @@ function checkStep(kind: string, step: Record<string, unknown>, at: string, fail
       const write = step.write;
       if (!isObject(write) || Object.keys(write).some((key) => key !== "at" && key !== "bytes")) return fail(`${at}: write needs at and bytes, and nothing else`);
       checkLocation(write.at, `${at}: write.at`, fail);
-      if (!Array.isArray(write.bytes) || write.bytes.length === 0 || write.bytes.length > MAX_WRITE_BYTES || !write.bytes.every((byte) => isInteger(byte, 0, 0xff))) {
-        fail(`${at}: write.bytes must be a list of 1 to ${MAX_WRITE_BYTES} numbers from 0 to 255`);
+      if (!Array.isArray(write.bytes) || write.bytes.length === 0 || write.bytes.length > MAX_MEMORY_WRITE || !write.bytes.every((byte) => isInteger(byte, 0, 0xff))) {
+        fail(`${at}: write.bytes must be a list of 1 to ${MAX_MEMORY_WRITE} numbers from 0 to 255`);
       }
       return;
     }
@@ -216,11 +208,11 @@ function checkStep(kind: string, step: Record<string, unknown>, at: string, fail
       } catch (error) {
         return fail(`${at}: ${(error as Error).message}`);
       }
-      if (bytes.length > MAX_TYPED_BYTES) fail(`${at}: type can have at most ${MAX_TYPED_BYTES} keys`);
+      if (bytes.length > MAX_KEYBOARD_BYTES) fail(`${at}: type can have at most ${MAX_KEYBOARD_BYTES} keys`);
       return;
     }
     case "frames":
-      if (!isInteger(step.frames, 1, MAX_FRAMES)) fail(`${at} needs a frame count from 1 to ${MAX_FRAMES}`);
+      if (!isInteger(step.frames, 1, MAX_EXECUTION_COUNT)) fail(`${at} needs a frame count from 1 to ${MAX_EXECUTION_COUNT}`);
       return;
     case "runUntil": {
       const target = step.runUntil;
