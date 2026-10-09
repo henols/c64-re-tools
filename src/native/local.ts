@@ -17,7 +17,7 @@ export function localToolContext(): LocalToolContext {
   if (shared !== undefined) return shared;
   const supervisor = new ProcessSupervisor();
   // The watchdog also installs the exit guard.
-  supervisor.startWatchdog();
+  supervisor.startWatchdog("skill-script");
   const controller = new AbortController();
   // A signal ends the script through process.exit, so the exit guard runs.
   for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {

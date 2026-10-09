@@ -16,9 +16,9 @@ import { isAlive, killTree, signalGroup, type Registry } from "./processes.ts";
 const POLL_MS = 500;
 const GRACE_MS = 2_000;
 
-const [hostPidText, registryFile] = process.argv.slice(2);
-const hostPid = Number(hostPidText);
-if (!Number.isInteger(hostPid) || hostPid <= 0 || registryFile === undefined) process.exit(2);
+const [ownerPidText, registryFile] = process.argv.slice(2);
+const ownerPid = Number(ownerPidText);
+if (!Number.isInteger(ownerPid) || ownerPid <= 0 || registryFile === undefined) process.exit(2);
 
 function signal(group: number, name: NodeJS.Signals): void {
   try {
@@ -48,7 +48,7 @@ function cleanUp(): void {
 const timer = setInterval(() => {
   // A normal exit removed the registry: nothing is left to do.
   if (!existsSync(registryFile)) process.exit(0);
-  if (isAlive(hostPid)) return;
+  if (isAlive(ownerPid)) return;
   clearInterval(timer);
   cleanUp();
 }, POLL_MS);

@@ -258,11 +258,11 @@ export class ProcessSupervisor {
    * Starts a watchdog process that cleans up if this process dies without
    * running its exit guard, for example by SIGKILL: it stops every
    * registered process group and removes every owned path. It ends by itself
-   * when this process exits normally.
+   * when this process exits normally. Its registry directory names the owner.
    */
-  startWatchdog(): void {
+  startWatchdog(owner: "host" | "skill-script" = "host"): void {
     if (this.#registry !== undefined) return;
-    const directory = mkdtempSync(join(tmpdir(), "c64-re-tools-host-"));
+    const directory = mkdtempSync(join(tmpdir(), `c64-re-tools-${owner}-watchdog-`));
     this.#registry = join(directory, "registry.json");
     this.#writeRegistry();
     // The watchdog can outlive this process by one poll. It runs in the temporary directory, never in

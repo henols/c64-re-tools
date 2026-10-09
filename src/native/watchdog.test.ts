@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdtempSync, readlinkSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { test } from "node:test";
 
@@ -114,5 +114,21 @@ test("the watchdog does not run in the directory of the process that starts it",
   } finally {
     if (!passed) cleanUp(owner);
     rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test("the registry directory of a watchdog names its owner", { skip: process.platform === "linux" ? false : "the arguments of another process are read from /proc", timeout: 20_000 }, async () => {
+  for (const [{ program }, prefix] of [[OWNERS[0]!, "c64-re-tools-host-watchdog-"], [OWNERS[1]!, "c64-re-tools-skill-script-watchdog-"]] as const) {
+    const owner = await start(program);
+    let passed = false;
+    try {
+      const registry = readFileSync(`/proc/${owner.watchdog}/cmdline`, "utf8").split(String.fromCharCode(0)).filter((part) => part !== "").at(-1) ?? "";
+      process.kill(owner.pid, "SIGTERM");
+      assert.ok(await until(() => !isAlive(owner.watchdog), 3_000), "the watchdog ended");
+      assert.ok(basename(dirname(registry)).startsWith(prefix), registry);
+      passed = true;
+    } finally {
+      if (!passed) cleanUp(owner);
+    }
   }
 });
