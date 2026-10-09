@@ -15,7 +15,9 @@
 // late sentinel is sent again, and stray sentinel answers are removed from
 // output.
 
-import { connect, type Socket } from "node:net";
+import type { Socket } from "node:net";
+
+import { connectWithTimeout } from "./connect.ts";
 
 export class TextMonitorError extends Error {
   override name = "TextMonitorError";
@@ -87,21 +89,12 @@ export class TextMonitor {
   }
 
   static connect(port: number, host = "127.0.0.1", timeoutMs = 2_000): Promise<TextMonitor> {
-    return new Promise((resolve, reject) => {
-      const socket = connect({ host, port });
-      const timer = setTimeout(() => {
-        socket.destroy();
-        reject(new TextMonitorError(`text monitor connect to port ${port} timed out`));
-      }, timeoutMs);
-      socket.once("connect", () => {
-        clearTimeout(timer);
-        socket.removeAllListeners("error");
-        resolve(new TextMonitor(socket));
-      });
-      socket.once("error", (error) => {
-        clearTimeout(timer);
-        reject(new TextMonitorError(`text monitor connect to port ${port} failed: ${error.message}`));
-      });
+    return connectWithTimeout({
+      port,
+      host,
+      timeoutMs,
+      wrap: (socket) => new TextMonitor(socket),
+      failure: (message) => new TextMonitorError(`text monitor ${message}`),
     });
   }
 

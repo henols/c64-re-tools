@@ -2,7 +2,9 @@
 // API version 2). Owns framing, request/response correlation and body
 // decoding. Nothing outside src/host/vice sees these bytes.
 
-import { connect, type Socket } from "node:net";
+import type { Socket } from "node:net";
+
+import { connectWithTimeout } from "./connect.ts";
 
 export const STX = 0x02;
 export const API_VERSION = 0x02;
@@ -274,21 +276,12 @@ export class BinaryMonitor {
 
   /** Opens a connection. Rejects with MonitorConnectionError when nothing listens. */
   static connect(port: number, host = "127.0.0.1", timeoutMs = 2_000): Promise<BinaryMonitor> {
-    return new Promise((resolve, reject) => {
-      const socket = connect({ host, port });
-      const timer = setTimeout(() => {
-        socket.destroy();
-        reject(new MonitorConnectionError(`monitor connect to port ${port} timed out`));
-      }, timeoutMs);
-      socket.once("connect", () => {
-        clearTimeout(timer);
-        socket.removeAllListeners("error");
-        resolve(new BinaryMonitor(socket));
-      });
-      socket.once("error", (error) => {
-        clearTimeout(timer);
-        reject(new MonitorConnectionError(`monitor connect to port ${port} failed: ${error.message}`));
-      });
+    return connectWithTimeout({
+      port,
+      host,
+      timeoutMs,
+      wrap: (socket) => new BinaryMonitor(socket),
+      failure: (message) => new MonitorConnectionError(`monitor ${message}`),
     });
   }
 
