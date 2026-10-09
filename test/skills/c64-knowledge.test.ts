@@ -98,3 +98,13 @@ test("refused writes of every kind create nothing, and the first accepted write 
   assert.equal(knowledge(root, "rename", "$2100", "main").json.revision, 1);
   assert.equal(existsSync(join(root, ".c64-re-tools", "knowledge.db")), true);
 });
+
+test("a missing name or comment text is a usage error and creates no knowledge database", () => {
+  const root = project();
+  for (const args of [["rename", "$2100"], ["comment", "$2100", "line"]]) {
+    const result = knowledge(root, ...args);
+    assert.equal(result.status, 2, args.join(" "));
+    assert.equal((result.json.error as { code: string }).code, "invalid-input");
+  }
+  assert.equal(existsSync(join(root, ".c64-re-tools")), false);
+});

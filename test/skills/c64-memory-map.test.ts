@@ -83,3 +83,11 @@ test("the script answers in JSON and refuses bad input", () => {
   assert.equal(bad.status, 2);
   assert.equal((JSON.parse(bad.stdout) as { error: { code: string } }).error.code, "invalid-input");
 });
+
+test("every address in $d000-$dfff says that it is visible only while $01 maps I/O in", () => {
+  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memmap.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "at", "$d020", "$d800", "$dbff", "$de00", "$cfff", "$e000"], { encoding: "utf8" });
+  assert.equal(run.status, 0);
+  const visible = (JSON.parse(run.stdout) as { addresses: Array<{ visible?: string }> }).addresses.map((address) => address.visible !== undefined);
+  assert.deepEqual(visible, [true, true, true, true, false, false]);
+});

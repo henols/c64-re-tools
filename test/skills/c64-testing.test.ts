@@ -187,3 +187,15 @@ test("each side starts from a hard reset, each checkpoint has its own baseline, 
   const captured = calls.filter(([name]) => name === "screenCapture").map(([, name]) => name);
   assert.equal(new Set(captured).size, 2, "two checkpoints, two baselines");
 });
+
+test("the checklist refuses a bad scenario or no scenario as invalid input, with the usage text", () => {
+  const checklist = resolvePath(home, "skills/c64-testing/scripts/checklist.ts");
+  writeFileSync(join(project, "bad.json"), JSON.stringify({ name: "" }));
+  for (const args of [["bad.json"], []]) {
+    const run = spawnSync(process.execPath, [...process.execArgv, checklist, ...args], { cwd: project, encoding: "utf8" });
+    assert.equal(run.status, 2, args.join(" "));
+    const error = (JSON.parse(run.stdout) as { error: { code: string; message: string } }).error;
+    assert.equal(error.code, "invalid-input");
+    assert.match(error.message, /\n\nchecklist\.ts <scenario\.json>/, args.join(" "));
+  }
+});

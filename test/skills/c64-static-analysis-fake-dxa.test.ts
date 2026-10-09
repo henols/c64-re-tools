@@ -8,6 +8,7 @@ import { once } from "node:events";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { after, test } from "node:test";
 
 import { openForWrite } from "../../src/knowledge/database.ts";
@@ -84,4 +85,35 @@ test("an accepted DXA import records the findings and writes the listing", { tim
   assert.equal(json.revision, 1);
   assert.equal(json.listing, "analysis/game.lst");
   assert.equal(existsSync(join(root, "analysis", "game.lst")), true);
+});
+
+test("an import refused because knowledge changed during the analysis tells to run the analysis again", { timeout: 60_000 }, async () => {
+  const root = project("stale");
+  // A dxa that writes knowledge while it runs, then prints its listing.
+  const fake = join(scratch, "dxa-writes.ts");
+  const module = (path: string) => JSON.stringify(pathToFileURL(resolve(import.meta.dirname, path)).href);
+  writeFileSync(
+    fake,
+    [
+      "#!/usr/bin/env node",
+      `import { openForWrite } from ${module("../../src/knowledge/database.ts")};`,
+      `import { renameSymbol } from ${module("../../src/knowledge/write.ts")};`,
+      `const db = openForWrite(${JSON.stringify(root)});`,
+      'renameSymbol(db, { origin: "user" }, { address: 0x1000, name: "main" });',
+      "db.close();",
+      `process.stdout.write(${JSON.stringify(LISTING.join("\n"))});`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(fake, 0o755);
+  let program = fake;
+  if (process.platform === "win32") {
+    program = join(scratch, "dxa-writes.cmd");
+    writeFileSync(program, `@"${process.execPath}" "${fake}" %*\r\n`);
+  }
+  const { status, json } = await analyze(root, program);
+  assert.equal(status, 1, JSON.stringify(json));
+  const error = json.error as { code: string; message: string };
+  assert.equal(error.code, "stale-revision");
+  assert.match(error.message, /Run the analysis again\.$/);
 });
