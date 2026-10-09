@@ -56,6 +56,8 @@ Record a confirmed conclusion as a normal comment, region or symbol with the c64
 
 The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes.
 
+The exit status is 0 for a result. The exit status is 1 for an error. The exit status is 2 for a wrong argument.
+
 ## Failure and conflicts
 
 - Do not call releases independent when you do not know their relation. Two cracks can come from the same source.

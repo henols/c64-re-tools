@@ -59,6 +59,8 @@ A symbol from the rebuilt source can give the address of a routine in the rebuil
 
 The PRG in the project at the output path, with its load range and symbols. Or the source diagnostics when the assembly failed.
 
+The exit status is 0 for a PRG. The exit status is 1 for `assembled: false` and for an error. The exit status is 2 for a wrong argument.
+
 ## Failure and conflicts
 
 - `assembled: false`: the source has errors. This is a normal result. Correct the source.

@@ -76,12 +76,14 @@ Do not store:
 
 The changes to the knowledge and the conflicts. For DXA, also the regions, the labels and the path of the listing. For Ghidra, also the routines and the decompiled code.
 
+The exit status is 0 for a result, also with conflicts. The exit status is 1 for an error. The exit status is 2 for a wrong argument.
+
 ## Failure and conflicts
 
 - A conflict: the analyzer finds code where the knowledge has data, or data where the knowledge has code. The knowledge stays unchanged. Find the correct answer with the c64-emulator skill, then correct the knowledge with the c64-knowledge skill.
 - A conflict with the problem "another address has this name": the knowledge has the generated name at a different address. The knowledge stays unchanged.
 - `invalid-input` with a message about an entry point: no entry point is inside the program for Ghidra. Give one with `--entry`.
-- `stale-revision`: the knowledge changed during the analysis. Run the script again.
+- `stale-revision`: the knowledge changed during the analysis. The script recorded nothing. Run the analysis again.
 - `operation-failed` with a message about an incomplete result or listing: the analyzer did not give a complete result. The script recorded nothing. Tell the user.
 - `installation-incomplete`: DXA or Ghidra is not installed on this machine. Tell the user the message.
 - `notDecompiled`: Ghidra did not decompile these routines. Each entry has the reason. If the reason says that the decompiler did not start, tell the user the remedy in the reason. On macOS, Ghidra has no native decompiler until the user builds it: `./gradlew buildNatives` in the `support/gradle` directory of Ghidra.
