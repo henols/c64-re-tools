@@ -1,7 +1,7 @@
 // Reads project files on the client side for transfer to the Host Runtime.
 // The host never sees a client path: only bytes and the file's type.
 
-import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { extname, join, relative, sep } from "node:path";
 
 import { isInside, projectRoot, resolveProjectFile } from "../project.ts";
@@ -70,7 +70,7 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
     for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       const full = join(directory, entry.name);
       let target = join(realDirectory, entry.name);
-      if (lstatSync(full).isSymbolicLink()) {
+      if (entry.isSymbolicLink()) {
         target = realpathSync(full);
         if (!isInside(sourceRoot, target)) {
           throw new WireFailure("invalid-input", `${relative(projectRootPath, full)} links outside ${path}; staging refuses it.`);
