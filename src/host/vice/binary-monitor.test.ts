@@ -11,7 +11,6 @@ import {
   decodeProgramCounter,
   decodeRegisters,
   decodeRegistersAvailable,
-  decodeResource,
   encodeCommand,
   EVENT_REQUEST_ID,
   memoryGetBody,
@@ -98,8 +97,6 @@ test("body codecs follow the manual", () => {
     { id: 0, name: "cpu" },
     { id: 1, name: "ram" },
   ]);
-  assert.equal(decodeResource(hex("01 04 01000000")), 1);
-  assert.equal(decodeResource(hex("00 03 616263")), "abc");
 });
 
 // ---------------------------------------------------------------------------

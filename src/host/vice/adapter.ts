@@ -81,7 +81,7 @@ export function conditionExpression(condition: Condition, space: Space): string 
 }
 
 /** Lines a raster window spans, so a DMA stall cannot skip every instruction start in it. */
-export const RASTER_WINDOW_LINES = 4;
+const RASTER_WINDOW_LINES = 4;
 
 function rasterLine(line: number): string {
   return `(RL == $${line.toString(16)})`;

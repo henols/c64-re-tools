@@ -59,7 +59,7 @@ import { TextMonitorError, TextMonitorTimeoutError } from "./text-monitor.ts";
 
 const CRASH_SETTLE_MS = 500;
 /** How long until-return may run before the session stops it and reports the limit. */
-export const UNTIL_RETURN_LIMIT_MS = 30_000;
+const UNTIL_RETURN_LIMIT_MS = 30_000;
 /** How long a reset may take to reach the reset vector. */
 const RESET_STOP_LIMIT_MS = 5_000;
 

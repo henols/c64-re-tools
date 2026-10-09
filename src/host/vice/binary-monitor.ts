@@ -216,24 +216,6 @@ export function decodeBanks(body: Buffer): BankInfo[] {
   return banks;
 }
 
-export function resourceGetBody(name: string): Buffer {
-  const encoded = Buffer.from(name, "latin1");
-  return Buffer.concat([Buffer.from([encoded.length]), encoded]);
-}
-
-export function decodeResource(body: Buffer): string | number {
-  const type = body[0];
-  const length = body[1]!;
-  const value = body.subarray(2, 2 + length);
-  if (type === 0x00) return value.toString("latin1");
-  if (type === 0x01) {
-    let result = 0;
-    for (let index = length - 1; index >= 0; index--) result = result * 256 + value[index]!;
-    return result;
-  }
-  throw new MonitorConnectionError(`resource response has unknown type ${type}`);
-}
-
 /** The program counter carried by stopped, resumed and JAM events. */
 export function decodeProgramCounter(body: Buffer): number {
   return body.readUInt16LE(0);

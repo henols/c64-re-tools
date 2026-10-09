@@ -132,8 +132,6 @@ export interface LaunchOptions {
 export interface ViceProcess {
   /** Host-internal; never leaves the Host Runtime. */
   readonly pid: number;
-  /** This VICE's private scratch directory, outside the project; removed by stop(). */
-  readonly scratchDir: string;
   readonly monitor: BinaryMonitor;
   readonly text: TextMonitor;
   /** Settles when VICE exits, for any reason. */
@@ -324,7 +322,7 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
     throw new WireFailure("machine-unavailable", "The emulator could not be started on the host.");
   }
   log(`VICE started (pid ${child.pid}, monitor ports ${port} and ${textPort})`);
-  return { pid: child.pid, scratchDir: scratch, monitor, text, exited: child.exited, outputTail, stop };
+  return { pid: child.pid, monitor, text, exited: child.exited, outputTail, stop };
 }
 
 /**

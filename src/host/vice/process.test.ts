@@ -182,7 +182,9 @@ test("a VICE stop that fails still removes the scratch directory", { skip: proce
   try {
     const vice = await launchVice({ supervisor, videoStandard: "pal", env: { ...process.env, C64RT_VICE: fakeViceBinary() } });
     await assert.rejects(vice.stop(), /survived SIGKILL/);
-    assert.equal(existsSync(vice.scratchDir), false);
+    const scratch = [...released.keys()];
+    assert.equal(scratch.length, 1);
+    assert.equal(existsSync(scratch[0]!), false);
     assert.deepEqual([...released.values()], [true]);
     await assert.rejects(vice.stop(), /survived SIGKILL/, "a later stop reports the same failure");
   } finally {
