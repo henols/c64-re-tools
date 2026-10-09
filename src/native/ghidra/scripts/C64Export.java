@@ -30,6 +30,10 @@ import ghidra.program.model.symbol.SourceType;
 
 public class C64Export extends GhidraScript {
 	private static final java.util.regex.Pattern NAME = java.util.regex.Pattern.compile("^\\.?[A-Za-z_][A-Za-z0-9_]{0,63}$");
+	/** The longest reason that the result check accepts. */
+	private static final int MAX_REASON = 1000;
+	/** The longest time for one decompilation, in seconds. */
+	private static final int MAX_DECOMPILE_SECONDS = 60;
 
 	@Override
 	public void run() throws Exception {
@@ -73,15 +77,18 @@ public class C64Export extends GhidraScript {
 		JsonArray functions = new JsonArray();
 		for (Function function : currentProgram.getFunctionManager().getFunctions(coverage, true)) {
 			String name = function.getName();
-			if (!NAME.matcher(name).matches()) {
-				name = String.format("FUN_%04x", function.getEntryPoint().getOffset());
-			}
 			SourceType source = function.getSymbol().getSource();
+			// Only the seeds carry user-defined names in this disposable project.
+			String nameSource = source == SourceType.USER_DEFINED ? "seed" : source == SourceType.DEFAULT ? "generated" : "native";
+			if (!NAME.matcher(name).matches()) {
+				// A name that this script makes is generated, whatever name it replaces.
+				name = String.format("FUN_%04x", function.getEntryPoint().getOffset());
+				nameSource = "generated";
+			}
 			JsonObject item = new JsonObject();
 			item.addProperty("entry", function.getEntryPoint().getOffset());
 			item.addProperty("name", name);
-			// Only the seeds carry user-defined names in this disposable project.
-			item.addProperty("nameSource", source == SourceType.USER_DEFINED ? "seed" : source == SourceType.DEFAULT ? "generated" : "native");
+			item.addProperty("nameSource", nameSource);
 			functions.add(item);
 		}
 		return functions;
@@ -164,7 +171,8 @@ public class C64Export extends GhidraScript {
 	private static void notDecompiled(JsonArray list, long entry, String reason) {
 		JsonObject item = new JsonObject();
 		item.addProperty("entry", entry);
-		item.addProperty("reason", reason == null || reason.isBlank() ? "the decompiler gave no reason" : reason.strip());
+		String text = reason == null || reason.isBlank() ? "the decompiler gave no reason" : reason.strip();
+		item.addProperty("reason", text.length() > MAX_REASON ? text.substring(0, MAX_REASON) : text);
 		list.add(item);
 	}
 
@@ -176,6 +184,9 @@ public class C64Export extends GhidraScript {
 		}
 		int perFunction = request.get("maxChars").getAsInt();
 		int remaining = request.get("maxTotalChars").getAsInt();
+		// The time that is left for the decompilations, as a clock time in milliseconds.
+		long deadline = request.get("decompileDeadline").getAsLong();
+		int routinesLeft = entries.size();
 		DecompInterface decompiler = new DecompInterface();
 		try {
 			// Ghidra ships no native decompiler for some platforms (macOS): it then does not start.
@@ -187,6 +198,10 @@ public class C64Export extends GhidraScript {
 				return decompilations;
 			}
 			for (JsonElement element : entries) {
+				// Each routine gets an equal part of the time that is left, so every routine gets a turn.
+				long secondsLeft = (deadline - System.currentTimeMillis()) / 1000;
+				int seconds = (int) Math.min(MAX_DECOMPILE_SECONDS, secondsLeft / routinesLeft);
+				routinesLeft--;
 				Function function = getFunctionAt(toAddr(element.getAsLong()));
 				if (function == null) {
 					notDecompiled(failures, element.getAsLong(), "no function starts at this address");
@@ -196,7 +211,11 @@ public class C64Export extends GhidraScript {
 					notDecompiled(failures, element.getAsLong(), "the decompiled text of the other routines used the whole limit");
 					continue;
 				}
-				DecompileResults results = decompiler.decompileFunction(function, 60, monitor);
+				if (seconds < 1) {
+					notDecompiled(failures, element.getAsLong(), "the time for the Ghidra run ended before this routine");
+					continue;
+				}
+				DecompileResults results = decompiler.decompileFunction(function, seconds, monitor);
 				if (!results.decompileCompleted() || results.getDecompiledFunction() == null) {
 					notDecompiled(failures, element.getAsLong(), results.getErrorMessage());
 					continue;

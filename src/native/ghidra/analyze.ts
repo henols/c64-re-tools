@@ -11,6 +11,8 @@ import { Workspace } from "../staging.ts";
 import { findGhidra, runHeadless, SCRIPT_DIRECTORY } from "./index.ts";
 
 const TIMEOUT_MS = 600_000;
+/** The part of the run that the decompilations leave for the export, the project removal and the end of Ghidra. */
+const AFTER_DECOMPILE_MS = 30_000;
 
 export async function analyze(
   params: GhidraParams,
@@ -39,7 +41,14 @@ export async function analyze(
     writeFileSync(workspace.path("seeds.json"), JSON.stringify({ start, end, entryPoints, dataRanges, labels: params.labels }));
     writeFileSync(
       workspace.path("request.json"),
-      JSON.stringify({ start, end, decompile: params.decompile, maxChars: GHIDRA_LIMITS.decompiledChars, maxTotalChars: GHIDRA_LIMITS.decompiledTotalChars }),
+      JSON.stringify({
+        start,
+        end,
+        decompile: params.decompile,
+        maxChars: GHIDRA_LIMITS.decompiledChars,
+        maxTotalChars: GHIDRA_LIMITS.decompiledTotalChars,
+        decompileDeadline: Date.now() + TIMEOUT_MS - AFTER_DECOMPILE_MS,
+      }),
     );
     const run = await runHeadless({
       ghidra,
