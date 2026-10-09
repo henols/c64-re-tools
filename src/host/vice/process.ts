@@ -1,5 +1,4 @@
-// VICE launch, readiness and termination. The launch contract below was
-// established against stock VICE 3.10 (x64sc):
+// VICE launch, readiness and termination. The launch contract of x64sc:
 // - `-default` must come before `-binarymonitor`, or the monitor never binds;
 // - the monitor may accept a connection during startup and then drop it, so
 //   readiness is a connect plus a successful ping, retried until a deadline;
@@ -17,7 +16,7 @@
 //   with LC_NUMERIC=C;
 // - piped output is block-buffered and lost when VICE exits early (for
 //   example without its ROM files), so VICE also writes a log file;
-// - `-console` runs VICE with no window and needs no display (D20); the
+// - `-console` runs VICE with no window and needs no display; the
 //   monitors, the CPU and the frame buffer work as with a window. It is a
 //   start option only, so headless and windowed are two VICE processes.
 //   A headless VICE plays no sound: `-sounddev dummy` keeps the SID emulated.
@@ -39,7 +38,7 @@ const RETRY_MS = 50;
 const OUTPUT_TAIL_LINES = 40;
 const STOP_REPORT_MS = 10_000;
 
-/** Finds x64sc (D8): C64RT_VICE, else PATH. Refuses by name with the remedy; never installs anything. */
+/** Finds x64sc: C64RT_VICE, else PATH. Refuses by name with the remedy; never installs anything. */
 export function findVice(env: NodeJS.ProcessEnv = process.env): string {
   return findTool(VICE, env);
 }
@@ -59,7 +58,7 @@ export function freePort(): Promise<number> {
   });
 }
 
-/** A VICE with no window (the default, D20) or one with a window the user can use. */
+/** A VICE with no window (the default) or one with a window the user can use. */
 export type ViceMode = "headless" | "window";
 
 export function viceArguments(options: {
@@ -93,7 +92,7 @@ export function viceArguments(options: {
     "-autostartprgmode",
     "1",
     // The same RAM after every power-up: a hard reset is a power cycle, and VICE's default can flip
-    // random bits, so two runs from one start state could differ (found in CI on Windows).
+    // random bits, so two runs from one start state could differ.
     "-raminitstartvalue",
     "0",
     "-raminitvalueinvert",
@@ -201,7 +200,7 @@ export function startErrorLines(output: string[]): string[] {
 }
 
 /**
- * Starts VICE once, as a session does, and stops it again (D14). Finding
+ * Starts VICE once, as a session does, and stops it again. Finding
  * x64sc is not enough: without its ROM files VICE exits at once. Throws
  * WireFailure installation-incomplete with VICE's own error lines.
  */

@@ -1,4 +1,4 @@
-// The window move (D20): the session moves the machine between a headless VICE
+// The window move: the session moves the machine between a headless VICE
 // and one with a window, and back, through a snapshot and a new VICE.
 
 import assert from "node:assert/strict";

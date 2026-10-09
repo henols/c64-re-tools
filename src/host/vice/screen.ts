@@ -1,5 +1,5 @@
 // Canonical emulator-frame capture: VICE's own rendered VIC-II frame, never a
-// desktop screenshot. Baseline storage and comparison come with milestone 3.
+// desktop screenshot; the frame comparison and difference image for baselines.
 
 import { crc32, deflateSync } from "node:zlib";
 
@@ -41,7 +41,7 @@ export function decodeDisplay(body: Buffer): RawDisplay {
 
 /**
  * The visible frame with normal borders, relative to VICE's display-window
- * offsets, as measured on stock VICE 3.10: PAL 384×272, NTSC 384×247.
+ * offsets: PAL 384×272, NTSC 384×247.
  */
 const VISIBLE: Record<VideoStandard, { dx: number; dy: number; width: number; height: number }> = {
   pal: { dx: -32, dy: -36, width: 384, height: 272 },
@@ -56,7 +56,7 @@ export function visibleFrame(display: RawDisplay, standard: VideoStandard): Inde
   if (left < 0 || top < 0 || left + area.width > display.bufferWidth || top + area.height > display.bufferHeight) {
     throw new Error(`the ${display.bufferWidth}x${display.bufferHeight} display buffer does not hold the visible ${standard} frame`);
   }
-  // Stock VICE 3.10 sends 4 bytes fewer than its length field says; they are
+  // VICE sends 4 bytes fewer than its length field says; they are
   // the last ones, in the blanking area, so only the cropped area must be present.
   if (display.pixels.length < (top + area.height - 1) * display.bufferWidth + left + area.width) {
     throw new Error("the display buffer is short");

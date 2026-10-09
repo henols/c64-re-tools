@@ -2,7 +2,7 @@
 // cannot do (warp, file load/attach, checkpoint ignore counts, device switch).
 // Raw monitor syntax never leaves src/host/vice.
 //
-// Framing, as observed on stock VICE 3.10: every command ends with a prompt
+// Framing: every command ends with a prompt
 // such as "(C:$e5cf) ", but a command that makes VICE enter the monitor gets
 // an extra prompt first. So prompts cannot delimit answers. Each command is
 // followed by a sentinel `~ $nnnn` whose distinctive four-line answer marks
@@ -11,10 +11,9 @@
 // when the command in it makes VICE enter the monitor. Only idempotent
 // commands go through here (see resendAfterMs).
 //
-// Stock VICE sometimes reads a line but runs it only when more input comes
-// (seen live: a sentinel answered 10 s late, just before the next command).
-// So a late sentinel is sent again, and stray sentinel answers are removed
-// from output.
+// VICE sometimes reads a line but runs it only when more input comes. So a
+// late sentinel is sent again, and stray sentinel answers are removed from
+// output.
 
 import { connect, type Socket } from "node:net";
 
@@ -62,7 +61,7 @@ export class TextMonitor {
   defaultTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS;
   /**
    * How long to wait for any answer before sending the command once more.
-   * Stock VICE sometimes holds a command line until more input comes; every
+   * VICE sometimes holds a command line until more input comes; every
    * command this client sends is idempotent, so a repeat is harmless. A
    * command that has printed output but no prompt yet still runs, and is not
    * sent again.

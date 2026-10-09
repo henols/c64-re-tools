@@ -172,7 +172,7 @@ test("until-return that never returns stops the machine and reports the limit", 
   await session.close();
 });
 
-test("stepping drive8 is refused for now", async () => {
+test("stepping drive8 is refused", async () => {
   const { session } = await startSession();
   await assert.rejects(session.handle("execution", { action: "step", count: 1, space: "drive8" }), failsWith("unsupported-in-space"));
   await session.close();

@@ -247,7 +247,7 @@ export function parseProfile(answer: string): ProfileEntry[] {
   const entries: ProfileEntry[] = [];
   const unknown: string[] = [];
   for (const line of answer.split("\n")) {
-    // Counts can carry the host locale's digit grouping ("1,123,200" on macOS, found in CI) and the percent a decimal comma.
+    // Counts can carry the host locale's digit grouping ("1,123,200") and the percent a decimal comma.
     const row = new RegExp(`^\\s*(${COUNT})\\s+[\\d.,]+%\\s+(${COUNT})\\s+([\\d.,]+)%\\s+(\\S+)\\s*$`).exec(line);
     if (row === null) {
       if (line.trim() !== "" && !/^Total\s+%\s+Self\s+%$/.test(line.trim()) && !/^[-\s]+$/.test(line)) unknown.push(line.trim());
@@ -257,7 +257,7 @@ export function parseProfile(answer: string): ProfileEntry[] {
     if (!/^[0-9a-f]{4}$/i.test(row[4]!)) continue;
     entries.push({ address: Number.parseInt(row[4]!, 16), totalCycles: digits(row[1]!), selfCycles: digits(row[2]!), percent: Number(row[3]!.replace(",", ".")) });
   }
-  // An answer in another form must not read as "nothing ran" (found on macOS).
+  // An answer in another form must not read as "nothing ran".
   if (entries.length === 0 && unknown.length > 0) throw unknownForm("profile", unknown);
   return entries;
 }
@@ -350,14 +350,14 @@ export function flagsFromStatusRegister(value: number): Registers["flags"] {
   };
 }
 
+/** Generous bound for commands that run the machine (step/next): they answer only once it stops again. */
+export const RUNNING_COMMAND_TIMEOUT_MS = 30_000;
+
 /**
  * Domain operations over one binary-monitor connection. Every method sends
  * monitor commands, and any monitor command stops the machine; restoring the
  * run state is the session's job.
  */
-/** Generous bound for commands that run the machine (step/next): they answer only once it stops again. */
-export const RUNNING_COMMAND_TIMEOUT_MS = 30_000;
-
 export class ViceAdapter {
   readonly #monitor: BinaryMonitor;
   readonly #text: TextMonitor;
@@ -520,7 +520,7 @@ export class ViceAdapter {
   /**
    * Runs a text command that acts on the monitor's default device, with the
    * computer as that device. VICE makes drive 8 the default device when a
-   * drive checkpoint stops the machine (found live), and commands such as
+   * drive checkpoint stops the machine, and commands such as
    * load, d, hunt, mmsh and stopwatch then act on the drive instead.
    */
   async #computerText(command: string, timeoutMs?: number): Promise<string> {
@@ -561,7 +561,7 @@ export class ViceAdapter {
 
   /**
    * Adds a C64 exec checkpoint that stops the machine. Returns its VICE number.
-   * Never a VICE "temporary" checkpoint: on stock VICE 3.10 setting one resumes
+   * Never a VICE "temporary" checkpoint: in VICE, setting one resumes
    * the machine (like the text monitor's until), whatever the manual says.
    */
   async addBreak(address: number): Promise<number> {
@@ -724,7 +724,7 @@ export class ViceAdapter {
   /** The last `limit` instructions the CPU of a space executed, oldest first, with the clock each started at. */
   async history(limit: number, space: Space): Promise<Array<Omit<HistoryEntry, "rasterLine" | "rasterCycle"> & { clock: bigint }>> {
     const answer = await this.#text.command(`chis ${limit} ${space === "drive8" ? "8:" : "c:"}`);
-    // Some VICE builds print one more, older entry than asked for (found in CI on Windows and on 3.7.1); the newest count.
+    // Some VICE builds print one more, older entry than asked for; the newest count.
     return parseHistory(answer).slice(-limit);
   }
 

@@ -1,4 +1,4 @@
-// A self-authored fake of stock VICE 3.10's two monitors, for deterministic
+// A self-authored fake of VICE's two monitors, for deterministic
 // unit tests of the session. It mirrors behavior probed on real VICE; real-VICE
 // tests in test/integration/vice remain the evidence for that behavior.
 //
@@ -130,7 +130,7 @@ export class FakeVice {
   readonly attached: Buffer[] = [];
   /** Snapshot files restored, in order. */
   readonly undumps: string[] = [];
-  /** The mode a session launcher started this VICE in (D20). */
+  /** The mode a session launcher started this VICE in. */
   mode: "headless" | "window" = "headless";
   /** Undump answers with an error, as VICE does for a snapshot it cannot read. */
   refuseUndump = false;
@@ -439,7 +439,7 @@ export class FakeVice {
         return this.#leaveMonitor(socket);
       }
       case Command.displayGet: {
-        // A 504x312 PAL buffer as VICE 3.10 sends it: window at (136,51), border box from (104,15).
+        // A 504x312 PAL buffer as VICE sends it: window at (136,51), border box from (104,15).
         const width = 504;
         const height = 312;
         const header = Buffer.alloc(4 + 13 + 4);

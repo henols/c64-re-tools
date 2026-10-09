@@ -79,7 +79,7 @@ test("VICE arguments put -default before -binarymonitor and fix the profile", ()
   assert.equal(ntsc[ntsc.indexOf("-model") + 1], "ntsc");
 });
 
-test("a headless VICE has no window and no sound output; a windowed one has both (D20)", () => {
+test("a headless VICE has no window and no sound output; a windowed one has both", () => {
   const common = { binary: "x", port: 1, textPort: 2, configFile: "c", logFile: "l", videoStandard: "pal" } as const;
   const headless = viceArguments({ ...common, mode: "headless" });
   assert.ok(headless.includes("-console"));
