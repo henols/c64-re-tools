@@ -65,6 +65,22 @@ export function findGhidra(env: NodeJS.ProcessEnv = process.env): GhidraInstalla
 }
 
 /**
+ * The user name in the name of Ghidra's settings directory: Java's user.name
+ * without spaces and without a domain before the last backslash or slash. Java gives "?"
+ * for a user without an entry in the password database, where Node throws.
+ */
+export function ghidraUserName(lookup: () => string = () => userInfo().username): string {
+  let name: string;
+  try {
+    name = lookup();
+  } catch {
+    name = "?";
+  }
+  name = name.split(" ").join("");
+  return name.slice(Math.max(name.lastIndexOf("\\"), name.lastIndexOf("/")) + 1);
+}
+
+/**
  * Makes a Ghidra settings directory inside the workspace with the NMOS 6510
  * language installed as an extension. Returns the environment that makes
  * Ghidra use it.
@@ -75,7 +91,7 @@ export function prepareSettings(workspace: Workspace, ghidra: GhidraInstallation
   // With XDG_CONFIG_HOME set, Ghidra keeps its settings in [<user>-]ghidra/<settings name> below it: with
   // the user name only when that directory lies outside the user's home. The temporary directory is
   // outside it on Linux and macOS but inside it on Windows (AppData, found in CI), so both names get it.
-  for (const application of [`${userInfo().username}-ghidra`, "ghidra"]) {
+  for (const application of [`${ghidraUserName()}-ghidra`, "ghidra"]) {
     const extension = join(config, application, ghidra.settingsName, "Extensions", "C64RT");
     mkdirSync(join(extension, "data"), { recursive: true });
     cpSync(LANGUAGE_DIRECTORY, join(extension, "data", "languages"), { recursive: true });

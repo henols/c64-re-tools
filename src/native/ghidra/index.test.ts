@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../../protocol.ts";
 import { Workspace } from "../staging.ts";
-import { findGhidra, prepareSettings } from "./index.ts";
+import { findGhidra, ghidraUserName, prepareSettings } from "./index.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-ghidra-"));
 const workspace = Workspace.create();
@@ -56,11 +56,19 @@ test("the request settings directory holds the language as an extension", () => 
   assert.equal(env.PATH, "/usr/bin");
   assert.ok(env.XDG_CONFIG_HOME!.startsWith(workspace.root));
   // Ghidra adds the user name only for a settings directory outside the home (Windows keeps temp inside it).
-  for (const application of [`${userInfo().username}-ghidra`, "ghidra"]) {
+  for (const application of [`${ghidraUserName()}-ghidra`, "ghidra"]) {
     const extension = join(env.XDG_CONFIG_HOME!, application, "ghidra_12.1.3_PUBLIC", "Extensions", "C64RT");
     assert.match(readFileSync(join(extension, "extension.properties"), "utf8"), /^version=12\.1\.3$/m);
     for (const file of ["c64rt_6510.ldefs", "c64rt_6510.pspec", "c64rt_6510.cspec", "c64rt_6510.slaspec"]) {
       assert.ok(existsSync(join(extension, "data", "languages", file)), `${application}: ${file}`);
     }
   }
+});
+
+test("the settings user name is the one Ghidra uses, also for a user without a password entry", () => {
+  assert.equal(ghidraUserName(() => "henrik"), "henrik");
+  assert.equal(ghidraUserName(() => "MyDomain\\John Doe"), "JohnDoe");
+  assert.equal(ghidraUserName(() => {
+    throw new Error("uv_os_get_passwd returned ENOENT");
+  }), "?");
 });
