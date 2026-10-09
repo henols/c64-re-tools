@@ -1,4 +1,4 @@
-// The one place that opens .c64-re-tools/knowledge.db (06, 17 §9).
+// The one place that opens .c64-re-tools/knowledge.db.
 
 import { existsSync, mkdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -36,7 +36,7 @@ export function knowledgePath(root: string = projectRoot()): string {
 }
 
 function configure(db: DatabaseSync): void {
-  // A committed write must be complete in knowledge.db itself: rollback journal, never WAL (17 §6).
+  // A committed write must be complete in knowledge.db itself: rollback journal, never WAL.
   db.exec("PRAGMA journal_mode = DELETE; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
 }
 
@@ -55,7 +55,7 @@ function open(path: string): DatabaseSync {
 /**
  * Opens the project's knowledge database, migrating it to this build's schema.
  * Returns undefined when it does not exist: a missing database reads as empty
- * knowledge and is not created by a read (17 §3).
+ * knowledge and is not created by a read.
  */
 export function openForRead(root: string = projectRoot()): DatabaseSync | undefined {
   const path = knowledgePath(root);

@@ -1,4 +1,4 @@
-// The knowledge.db schema (06 §4) and its deterministic forward migrations.
+// The knowledge.db schema and its deterministic forward migrations.
 
 import type { DatabaseSync } from "node:sqlite";
 

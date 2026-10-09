@@ -1,4 +1,4 @@
-// Analyzer import (12): reconciles one analyzer's normalized findings with
+// Analyzer import: reconciles one analyzer's normalized findings with
 // current knowledge as one revision in one transaction.
 //
 // An import is a snapshot of what the analyzer asserts inside its coverage.
@@ -6,7 +6,7 @@
 // that the snapshot no longer holds are closed. Rows of the user, the LLM or
 // another analyzer are never replaced: a finding that contradicts one is
 // reported as a conflict. Code against data is a contradiction; a different
-// name or a finer data type for the same kind of memory is not (12 §12).
+// name or a finer data type for the same kind of memory is not.
 
 import type { DatabaseSync } from "node:sqlite";
 
@@ -115,7 +115,7 @@ function subtract(range: AddressRange, holes: AddressRange[]): AddressRange[] {
 }
 
 /**
- * Checks complete findings before anything is written (12 §3). Every finding
+ * Checks complete findings before anything is written. Every finding
  * lies in coverage, names are valid and unique, regions do not overlap.
  * Returns the merged coverage.
  */
@@ -303,7 +303,7 @@ function importReferences(db: DatabaseSync, change: Change, findings: Normalized
   }
 }
 
-/** Imports one analyzer result as one revision (12 §6). Nothing is written when validation fails. */
+/** Imports one analyzer result as one revision. Nothing is written when validation fails. */
 export function importFindings(db: DatabaseSync, findings: NormalizedFindings, context: ImportContext = {}): ImportResult {
   const coverage = validateFindings(findings);
   return transaction(db, () => {

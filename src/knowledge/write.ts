@@ -1,4 +1,4 @@
-// Semantic knowledge writes (06 §7, §9, §10). Every accepted change is one
+// Semantic knowledge writes. Every accepted change is one
 // revision in one transaction: superseded rows are closed, never deleted.
 
 import type { DatabaseSync } from "node:sqlite";
@@ -305,7 +305,7 @@ const KEYS = {
 
 /**
  * Makes the current knowledge equal to what it was at `revision`, as a new
- * revision (06 §9). History is never erased; restored rows keep their origin.
+ * revision. History is never erased; restored rows keep their origin.
  */
 export function revert(db: DatabaseSync, context: WriteContext, request: { revision: number }): WriteResult<{ restoredRevision: number }> {
   return write(db, context, "revert", (change) => {

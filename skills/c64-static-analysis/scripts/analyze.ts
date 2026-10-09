@@ -1,5 +1,5 @@
 // The c64-static-analysis script: analyzes a project program with DXA (fast
-// first pass) or Ghidra (deeper), which it runs itself (D16), seeded from
+// first pass) or Ghidra (deeper), which it runs itself, seeded from
 // current knowledge, and imports the structural findings into
 // .c64-re-tools/knowledge.db.
 

@@ -1,5 +1,5 @@
 // Knowledge seeds for an analyzer, and the mapping of a Ghidra result to the
-// common normalized findings (12 §4, §18).
+// common normalized findings.
 
 import type { DatabaseSync } from "node:sqlite";
 
@@ -12,11 +12,11 @@ export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
 const semantic = (row: { origin: string }) => row.origin === "user" || row.origin === "llm";
 
 /**
- * Seeds from current semantic knowledge (12 §18): routines from the user or
+ * Seeds from current semantic knowledge: routines from the user or
  * the LLM are entry points, their non-code regions are data, and their names
  * are labels. Analyzer facts are never seeds: fed back, an analyzer's own
  * earlier guess would force the same answer again, and a re-analysis could
- * not retire it (12 §7).
+ * not retire it.
  */
 export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoints: number[] = []): Seeds {
   const symbols = listSymbols(db).filter(semantic);
@@ -33,12 +33,12 @@ export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoint
 /**
  * Ghidra's result as normalized findings. A function named by an echoed seed
  * stays in the snapshot: its address holds the seed's semantic symbol, which
- * the importer never replaces, so the name keeps its owner (12 §18, 16 §10),
+ * the importer never replaces, so the name keeps its owner,
  * and a code/data disagreement with that symbol is still reported.
  */
 export function ghidraFindings(result: GhidraResult): NormalizedFindings {
   // Ghidra can give one generated name to two functions, for example
-  // thunk_FUN_e434 to two thunks of one routine (found on a real game). A name
+  // thunk_FUN_e434 to two thunks of one routine. A name
   // must have one address, so a repeated name that is not a seed gets its address.
   const uses = new Map<string, number>();
   for (const fn of result.functions) uses.set(fn.name, (uses.get(fn.name) ?? 0) + 1);
@@ -55,7 +55,7 @@ export function ghidraFindings(result: GhidraResult): NormalizedFindings {
 }
 
 /**
- * DXA's result as normalized findings (12 §17). A label in one of DXA's data
+ * DXA's result as normalized findings. A label in one of DXA's data
  * regions becomes a symbol of kind data, any other label one of kind label.
  * DXA names only referenced addresses, so labels are not authoritative, while
  * its regions cover every byte and are.

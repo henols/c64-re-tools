@@ -1,4 +1,4 @@
-// Knowledge history (06 §8): what used to be known, which revision changed
+// Knowledge history: what used to be known, which revision changed
 // it, who changed it and why. History rows are never deleted.
 
 import type { DatabaseSync } from "node:sqlite";

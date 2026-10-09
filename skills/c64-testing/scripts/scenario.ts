@@ -1,4 +1,4 @@
-// Functional-equivalence scenarios (13): a small JSON scenario of ordered
+// Functional-equivalence scenarios: a small JSON scenario of ordered
 // steps runs on the original and then on the rebuild in one VICE session.
 // Observations name semantic symbols that resolve per side, comparisons are
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
