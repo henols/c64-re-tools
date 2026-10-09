@@ -46,7 +46,7 @@ function linuxProcess(pid: number | string): { state: string; group: number } | 
   try {
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
     const [state, , group] = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-    return { state: state!, group: Number(group) };
+    return state === undefined ? undefined : { state, group: Number(group) };
   } catch {
     return undefined;
   }
@@ -185,12 +185,13 @@ export class ProcessSupervisor {
 
   /** Starts argv[0] with argv[1..] as the leader of a new process group. */
   spawn(argv: readonly string[], options: SpawnOptions = {}): SupervisedProcess {
-    if (argv[0] === undefined) throw new TypeError("argv must name a command");
+    const program = argv[0];
+    if (program === undefined) throw new TypeError("argv must name a command");
     const batch = process.platform === "win32" ? batchInvocation(argv, process.env.ComSpec) : undefined;
-    const [command, ...args] = batch === undefined ? argv : [batch.command, ...batch.args];
+    const { command, args } = batch ?? { command: program, args: argv.slice(1) };
     let child: ChildProcess;
     try {
-      child = spawn(command!, args, {
+      child = spawn(command, args, {
         cwd: options.cwd,
         env: options.env,
         stdio: options.stdio ?? "ignore",
@@ -202,7 +203,7 @@ export class ProcessSupervisor {
       // Some failures throw at once instead of an "error" event: a file Windows cannot start
       // (EFTYPE, for example a broken build) or a .bat without a shell (EINVAL).
       const code = (error as NodeJS.ErrnoException).code ?? "an unknown error";
-      throw new WireFailure("installation-incomplete", `${argv[0]} is not a program that this system can start (${code}). Install it again.`);
+      throw new WireFailure("installation-incomplete", `${program} is not a program that this system can start (${code}). Install it again.`);
     }
     const exited = new Promise<ExitStatus>((resolve) => {
       child.once("exit", (code, signal) => resolve({ code, signal }));

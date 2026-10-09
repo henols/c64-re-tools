@@ -16,9 +16,10 @@ import { isAlive, killTree, signalGroup, type Registry } from "./processes.ts";
 const POLL_MS = 500;
 const GRACE_MS = 2_000;
 
-const [ownerPidText, registryFile] = process.argv.slice(2);
+const [ownerPidText, registryArgument] = process.argv.slice(2);
 const ownerPid = Number(ownerPidText);
-if (!Number.isInteger(ownerPid) || ownerPid <= 0 || registryFile === undefined) process.exit(2);
+if (!Number.isInteger(ownerPid) || ownerPid <= 0 || registryArgument === undefined) process.exit(2);
+const registryFile: string = registryArgument;
 
 function signal(group: number, name: NodeJS.Signals): void {
   try {
@@ -32,7 +33,7 @@ function signal(group: number, name: NodeJS.Signals): void {
 function cleanUp(): void {
   let registry: Registry;
   try {
-    registry = JSON.parse(readFileSync(registryFile!, "utf8")) as Registry;
+    registry = JSON.parse(readFileSync(registryFile, "utf8")) as Registry;
   } catch {
     process.exit(0);
   }
@@ -40,7 +41,7 @@ function cleanUp(): void {
   setTimeout(() => {
     for (const group of registry.groups) signal(group, "SIGKILL");
     for (const path of registry.paths) rmSync(path, { recursive: true, force: true });
-    rmSync(dirname(registryFile!), { recursive: true, force: true });
+    rmSync(dirname(registryFile), { recursive: true, force: true });
     process.exit(0);
   }, GRACE_MS);
 }

@@ -4,7 +4,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
-import { WireFailure } from "../../protocol.ts";
+import { describeError, WireFailure } from "../../protocol.ts";
 import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, seedsInside, type GhidraParams, type GhidraResult } from "../types.ts";
 import { outputTail, type ToolContext } from "../run.ts";
 import { Workspace } from "../staging.ts";
@@ -59,7 +59,7 @@ export async function analyze(
       signal: context.signal,
       ...(context.env === undefined ? {} : { env: context.env }),
     }).catch((error: unknown) => {
-      context.log?.(`Ghidra failed: ${(error as Error).message}`);
+      context.log?.(`Ghidra failed: ${describeError(error)}`);
       throw error;
     });
     const outPath = workspace.path("out.json");
@@ -71,10 +71,11 @@ export async function analyze(
     let result: GhidraResult;
     try {
       result = checkGhidraResult(JSON.parse(readFileSync(outPath, "utf8")));
-      if (result.coverage.length !== 1 || result.coverage[0]!.start !== start || result.coverage[0]!.end !== end) throw new Error("the coverage is not the loaded program");
+      const [range] = result.coverage;
+      if (result.coverage.length !== 1 || range === undefined || range.start !== start || range.end !== end) throw new Error("the coverage is not the loaded program");
     } catch (error) {
-      context.log?.(`Ghidra result rejected: ${(error as Error).message}`);
-      throw new WireFailure("operation-failed", `Ghidra returned an incomplete or inconsistent result. Nothing was imported. The check found: ${(error as Error).message}.`);
+      context.log?.(`Ghidra result rejected: ${describeError(error)}`);
+      throw new WireFailure("operation-failed", `Ghidra returned an incomplete or inconsistent result. Nothing was imported. The check found: ${describeError(error)}.`);
     }
     return { result };
   } finally {
