@@ -11,15 +11,14 @@ import { existsSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-export const PLUGIN_ID = "c64-re-tools";
-export const ALL_HARNESSES = ["claude", "codex", "pi", "opencode", "gemini", "copilot", "cursor", "windsurf"] as const;
+const PLUGIN_ID = "c64-re-tools";
 
 export type Scope = "project" | "global";
 
 export interface InstallItem {
   harness: string;
   kind: string;
-  name: string | string[];
+  name: string;
   files: string[];
   detail?: { mergeKey?: string; names?: string[] };
 }
@@ -30,11 +29,11 @@ interface Manifest {
 }
 
 /** The directory that the manifest and relative item paths belong to. */
-export function scopeRoot(scope: Scope, cwd = process.cwd()): string {
+function scopeRoot(scope: Scope, cwd = process.cwd()): string {
   return scope === "global" ? homedir() : cwd;
 }
 
-export function manifestPath(scope: Scope, cwd = process.cwd()): string {
+function manifestPath(scope: Scope, cwd = process.cwd()): string {
   return join(scopeRoot(scope, cwd), ".ap-sdk", "install-manifest.json");
 }
 
