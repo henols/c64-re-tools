@@ -69,6 +69,13 @@ export function hex(value: number): string {
   return `$${value.toString(16).padStart(4, "0")}`;
 }
 
+const CET_OFFSET_MS = 60 * 60 * 1000;
+
+/** `time` in ISO 8601 at the fixed CET offset +01:00, also in summer, so that the text sorts in time order. */
+export function isoCet(time: Date): string {
+  return `${new Date(time.getTime() + CET_OFFSET_MS).toISOString().slice(0, -1)}+01:00`;
+}
+
 /** What a revision records about its writer. Analyzer imports may add tool details. */
 export interface ChangeContext {
   origin: Origin;
@@ -107,7 +114,7 @@ export class Change {
     const created = this.#db
       .prepare("INSERT INTO revisions (created_at, origin, operation, input_hash, tool_version, description) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
       .get(
-        new Date().toISOString(),
+        isoCet(new Date()),
         this.#context.origin,
         this.#operation,
         this.#context.inputHash ?? null,

@@ -58,5 +58,6 @@ pnpm host        # the Host Runtime from this checkout, in the foreground
 - The host refuses to start unless VICE starts (ROMs present); the host is started by hand only.
 - Tools take client paths and stream bytes; never a fixed file list or a path over the socket.
 - Stopping the Host Runtime or a skill script must stop every emulator, tool and descendant it started.
+- Every date and time the code writes is ISO 8601 in CET at a fixed `+01:00` (D30); never `toISOString()` (UTC) or a local-time format.
 - Skill docs (`SKILL.md`, references, descriptions) are written in ASD-STE100 (use the `asd-ste100` skill).
 - Don't put `\u0000`, backticks or `\b` in Write/Edit params or `node -e` edit scripts — they land as raw bytes or shell commands; use a scratch `.ts` file.

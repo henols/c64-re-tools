@@ -10,6 +10,7 @@ import { commentsAt, currentRevision, referencesFrom, regionsOverlapping, symbol
 import {
   addReference,
   classifyRegion,
+  isoCet,
   removeComment,
   removeReference,
   removeSymbol,
@@ -55,6 +56,21 @@ test("a rename creates one revision, and the old name stays in history", () => {
   assert.equal(count(db, "SELECT count(*) AS n FROM symbols WHERE address = 8448 AND valid_to_revision = 2"), 1);
   const revision = db.prepare("SELECT origin, operation, description FROM revisions WHERE id = 2").get();
   assert.deepEqual({ ...revision }, { origin: "user", operation: "rename-symbol", description: "reads joystick 2" });
+});
+
+test("a revision records its time in ISO 8601 at the CET offset", () => {
+  const db = fresh();
+  const before = Date.now();
+  renameSymbol(db, llm, { address: 0x1000, name: "start" });
+  const { created_at } = db.prepare("SELECT created_at FROM revisions WHERE id = 1").get() as { created_at: string };
+  assert.match(created_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+01:00$/);
+  const recorded = Date.parse(created_at);
+  assert.ok(recorded >= before && recorded <= Date.now());
+});
+
+test("CET is +01:00 in winter and in summer, across the date line", () => {
+  assert.equal(isoCet(new Date("2026-01-15T23:30:00.000Z")), "2026-01-16T00:30:00.000+01:00");
+  assert.equal(isoCet(new Date("2026-07-01T12:00:00.250Z")), "2026-07-01T13:00:00.250+01:00");
 });
 
 test("an unchanged write creates no revision", () => {

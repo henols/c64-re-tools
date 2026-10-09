@@ -76,7 +76,7 @@ Conceptual fields:
 
 ```text
 id            INTEGER PRIMARY KEY
-created_at    TEXT NOT NULL
+created_at    TEXT NOT NULL   -- ISO 8601 at CET, +01:00 all year
 origin        TEXT NOT NULL
 operation     TEXT NOT NULL
 input_hash    TEXT
