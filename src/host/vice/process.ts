@@ -307,7 +307,7 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
 
   try {
     const deadline = Date.now() + (options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
-    monitor = await waitForMonitor(port, () => exited, deadline - Date.now());
+    monitor = await waitForMonitor(port, () => exited, deadline);
     text = await waitForText(textPort, () => exited, deadline);
     await checkSameMachine(monitor, text);
     // Readiness stopped the machine; let it run as a freshly started C64 does.
@@ -375,8 +375,8 @@ async function checkSameMachine(monitor: BinaryMonitor, text: TextMonitor): Prom
   }
 }
 
-async function waitForMonitor(port: number, hasExited: () => boolean, timeoutMs: number): Promise<BinaryMonitor> {
-  const deadline = Date.now() + timeoutMs;
+/** Connects the binary monitor and proves it answers a ping, until `deadline`. */
+async function waitForMonitor(port: number, hasExited: () => boolean, deadline: number): Promise<BinaryMonitor> {
   while (Date.now() < deadline) {
     if (hasExited()) throw new WireFailure("machine-unavailable", "The emulator exited while it was starting.");
     let monitor: BinaryMonitor;
