@@ -3,7 +3,8 @@ import { once } from "node:events";
 import { createServer, type Server, type Socket } from "node:net";
 import { after, test, type TestContext } from "node:test";
 
-import { encodeFrame, FrameDecoder, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, WireFailure, type HostMessage } from "../protocol.ts";
+import { encodeFrame, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, WireFailure, type HostMessage } from "../protocol.ts";
+import { FrameDecoder } from "../protocol.testkit.ts";
 import { DEFAULT_READY_TIMEOUT_MS, HostConnection, hostEndpoints } from "./connect.ts";
 
 test("the default endpoints are loopback, then the Docker and Podman host bridges", () => {
