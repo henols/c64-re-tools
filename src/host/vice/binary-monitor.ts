@@ -385,8 +385,15 @@ export class BinaryMonitor {
       } else if (response.type === pending.terminalType) {
         this.#settle(response.requestId, pending);
         pending.resolve({ ...response, extras: pending.extras });
-      } else {
+      } else if (pending.command === Command.checkpointList && response.type === ResponseType.checkpointInfo) {
         pending.extras.push(response);
+      } else {
+        this.#settle(response.requestId, pending);
+        pending.reject(
+          new MonitorConnectionError(
+            `monitor command 0x${pending.command.toString(16)} got a response of type 0x${response.type.toString(16)} instead of 0x${pending.terminalType.toString(16)}`,
+          ),
+        );
       }
     }
   }

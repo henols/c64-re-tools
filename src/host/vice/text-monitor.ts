@@ -9,7 +9,7 @@
 // where the command's own output ends. The sentinel is sent only after a
 // prompt shows the command was taken: VICE drops the rest of an input chunk
 // when the command in it makes VICE enter the monitor. Only idempotent
-// commands go through here (see RESEND_AFTER_MS).
+// commands go through here (see resendAfterMs).
 //
 // Stock VICE sometimes reads a line but runs it only when more input comes
 // (seen live: a sentinel answered 10 s late, just before the next command).
@@ -29,16 +29,14 @@ export class TextMonitorTimeoutError extends TextMonitorError {
 
 const PROMPT = /\((?:C|\d+):\$[0-9a-f]{4}\) /g;
 export const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
-/**
- * How long to wait for the prompt before sending the command once more. Stock
- * VICE sometimes holds a command line until more input comes; every command
- * this client sends is idempotent, so a repeat is harmless.
- */
+/** The default of TextMonitor.resendAfterMs. */
 const RESEND_AFTER_MS = 3_000;
 /** While an earlier command timed out, later ones are waited for only this long (see BinaryMonitor). */
 const OVERDUE_COMMAND_TIMEOUT_MS = 1_000;
 /** How long to wait for a sentinel's answer before sending the sentinel again. */
 const SENTINEL_RESEND_MS = 1_000;
+/** The longest delay a Node timer takes. */
+const MAX_TIMER_MS = 2_147_483_647;
 const ANY_SENTINEL_ANSWER = /\+\d+\n\$[0-9a-f]{4}\n[0-7]+\n%[01 ]+\n/g;
 
 function sentinelPattern(nonce: number): RegExp {
@@ -62,6 +60,14 @@ export class TextMonitor {
   #failure: Error | undefined;
   /** The time limit of a command that names none. */
   defaultTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS;
+  /**
+   * How long to wait for any answer before sending the command once more.
+   * Stock VICE sometimes holds a command line until more input comes; every
+   * command this client sends is idempotent, so a repeat is harmless. A
+   * command that has printed output but no prompt yet still runs, and is not
+   * sent again.
+   */
+  resendAfterMs = RESEND_AFTER_MS;
   /** Set when a command timed out; cleared by the next command that is answered. */
   #overdue = false;
 
@@ -103,13 +109,15 @@ export class TextMonitor {
   /**
    * Runs one idempotent command and returns its output without prompts.
    * Commands run one at a time. A command makes VICE stop the machine if it
-   * was running.
+   * was running. `timeoutMs` Infinity waits with no limit, also after a
+   * command that timed out.
    */
   command(line: string, timeoutMs = this.defaultTimeoutMs): Promise<string> {
     if (/[\r\n]/.test(line)) return Promise.reject(new TypeError("a monitor command must be one line"));
     const run = this.#queue.then(async () => {
       try {
-        const output = await this.#exchange(line, this.#overdue ? Math.min(timeoutMs, OVERDUE_COMMAND_TIMEOUT_MS) : timeoutMs);
+        const limit = this.#overdue && timeoutMs !== Infinity ? Math.min(timeoutMs, OVERDUE_COMMAND_TIMEOUT_MS) : timeoutMs;
+        const output = await this.#exchange(line, limit);
         this.#overdue = false;
         return output;
       } catch (error) {
@@ -136,12 +144,13 @@ export class TextMonitor {
     this.#buffer = "";
     this.#socket.write(`${line}\n`);
     const prompted = () => new RegExp(PROMPT.source).test(this.#buffer);
-    const resendAt = Math.min(deadline, Date.now() + RESEND_AFTER_MS);
+    const resendAt = Math.min(deadline, Date.now() + this.resendAfterMs);
     try {
       await this.#waitFor(prompted, resendAt, timeoutMs);
     } catch (error) {
       if (this.#socket.destroyed || Date.now() >= deadline) throw error;
-      this.#socket.write(`${line}\n`);
+      // Output without a prompt: VICE runs the command and still prints. A repeat would run it twice.
+      if (cleanOutput(this.#buffer) === "") this.#socket.write(`${line}\n`);
       await this.#waitFor(prompted, deadline, timeoutMs);
     }
     const sentinelLine = `~ $${this.#nonce.toString(16)}\n`;
@@ -170,7 +179,8 @@ export class TextMonitor {
         throw new TextMonitorTimeoutError(`text monitor command got no answer in ${timeoutMs} ms (received: ${JSON.stringify(this.#buffer.slice(-200))})`);
       }
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, remaining);
+        // No timer for a wait with no limit; a timer longer than Node allows would fire at once.
+        const timer = remaining === Infinity ? undefined : setTimeout(resolve, Math.min(remaining, MAX_TIMER_MS));
         this.#wake = () => {
           clearTimeout(timer);
           resolve();

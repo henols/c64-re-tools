@@ -19,14 +19,21 @@ function sentinelAnswer(hex: string, prompt = "(C:$e5cf) "): string {
 /** Returned by an answer function: VICE silently drops this one line. */
 const DROP = Symbol("drop");
 
+/** An answer VICE prints in parts, `gapMs` apart, as a long hunt or memory map does; the prompt follows the last part. */
+interface Streamed {
+  parts: string[];
+  gapMs: number;
+}
+
 /**
  * A fake text monitor: `answer` maps a command to its output; the first
  * command also gets VICE's extra entry prompt. undefined hangs the monitor.
  * A line for which `hold` is true runs only when the next input arrives, as
- * stock VICE sometimes does.
+ * stock VICE sometimes does. Lines that arrive while a streamed answer prints
+ * wait until it ends.
  */
 async function fakeTextMonitor(
-  answer: (command: string) => string | undefined | typeof DROP,
+  answer: (command: string) => string | undefined | typeof DROP | Streamed,
   hold: (line: string) => boolean = () => false,
 ): Promise<{ monitor: TextMonitor; socket: () => Socket }> {
   let current: Socket | undefined;
@@ -36,16 +43,14 @@ async function fakeTextMonitor(
     let hung = false;
     let pending = "";
     let held: string[] = [];
-    socket.on("data", (chunk) => {
-      pending += chunk.toString("latin1");
-      const lines = held;
-      held = [];
-      let newline: number;
-      while ((newline = pending.indexOf("\n")) >= 0) {
-        lines.push(pending.slice(0, newline));
-        pending = pending.slice(newline + 1);
-      }
+    let waiting: string[] = [];
+    let streaming = false;
+    const run = (lines: string[]) => {
       for (const [index, line] of lines.entries()) {
+        if (streaming) {
+          waiting.push(line);
+          continue;
+        }
         if (index === lines.length - 1 && hold(line)) {
           held.push(line);
           continue;
@@ -62,9 +67,42 @@ async function fakeTextMonitor(
           hung = true; // simulate a hang: answer nothing from now on
           continue;
         }
-        socket.write(`${entered ? "" : "(C:$fd6e) "}${output}(C:$fd6e) `);
+        const entry = entered ? "" : "(C:$fd6e) ";
         entered = true;
+        if (typeof output === "string") {
+          socket.write(`${entry}${output}(C:$fd6e) `);
+          continue;
+        }
+        streaming = true;
+        const parts = [...output.parts];
+        socket.write(`${entry}${parts.shift() ?? ""}`);
+        const next = () => {
+          if (socket.destroyed) return;
+          const part = parts.shift();
+          if (parts.length > 0) {
+            socket.write(part!);
+            setTimeout(next, output.gapMs);
+            return;
+          }
+          socket.write(`${part ?? ""}(C:$fd6e) `);
+          streaming = false;
+          const later = waiting;
+          waiting = [];
+          run(later);
+        };
+        setTimeout(next, output.gapMs);
       }
+    };
+    socket.on("data", (chunk) => {
+      pending += chunk.toString("latin1");
+      const lines = held;
+      held = [];
+      let newline: number;
+      while ((newline = pending.indexOf("\n")) >= 0) {
+        lines.push(pending.slice(0, newline));
+        pending = pending.slice(newline + 1);
+      }
+      run(lines);
     });
     socket.on("error", () => {});
   });
@@ -148,4 +186,27 @@ test("a sentinel that VICE holds is sent again, and its late answer is not outpu
 test("a stray sentinel answer in the output is removed", () => {
   assert.equal(cleanOutput(`(C:$fd83) +5875\n$16f3\n0013363\n%00010110 11110011\n(C:$fd83) (C:$fd83) `), "");
   assert.equal(cleanOutput("+43981\n"), "+43981");
+});
+
+test("a command that still prints when the resend time passes is sent once and read once", async () => {
+  let runs = 0;
+  const { monitor } = await fakeTextMonitor((command) => {
+    runs++;
+    return command === "hunt" ? { parts: ["1000\n", "2000\n", "3000\n"], gapMs: 80 } : "";
+  });
+  monitor.resendAfterMs = 40;
+  // The first command gets VICE's extra entry prompt; the hunt after it gets a prompt only at its end.
+  assert.equal(await monitor.command("first"), "");
+  assert.equal(await monitor.command("hunt", 5000), "1000\n2000\n3000");
+  assert.equal(runs, 2);
+  assert.equal(await monitor.command("next"), "");
+  await monitor.close();
+});
+
+test("a command with no time limit waits for its answer, also after a command that timed out", async () => {
+  const { monitor } = await fakeTextMonitor((command) => (command === "lost" ? DROP : { parts: ["late\n", "answer\n"], gapMs: 1300 }));
+  monitor.resendAfterMs = 60_000;
+  await assert.rejects(monitor.command("lost", 50), TextMonitorError);
+  assert.equal(await monitor.command("drain", Infinity), "late\nanswer");
+  await monitor.close();
 });

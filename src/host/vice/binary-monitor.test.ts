@@ -175,6 +175,14 @@ test("checkpoint-list style answers collect the earlier same-id responses", asyn
   await monitor.close();
 });
 
+test("a response of another type for a request rejects it at once", async () => {
+  const monitor = await fakeMonitor((socket, id) => socket.write(response(0x11, id, Buffer.alloc(23))));
+  const started = Date.now();
+  await assert.rejects(monitor.request(Command.memoryGet, Buffer.alloc(8), 5000), (error: unknown) => error instanceof MonitorConnectionError && /type 0x11/.test((error as Error).message));
+  assert.ok(Date.now() - started < 1000);
+  await monitor.close();
+});
+
 test("checkpoint set resolves on its checkpoint-info answer", async () => {
   const monitor = await fakeMonitor((socket, id) => socket.write(response(0x11, id, Buffer.alloc(23))));
   assert.equal((await monitor.request(Command.checkpointSet, Buffer.alloc(8))).type, 0x11);

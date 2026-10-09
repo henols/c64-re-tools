@@ -107,6 +107,8 @@ export class FakeVice {
   returnTo: number | undefined;
   /** PC the next advance-instructions ends at; defaults to PC + count. */
   stepTo: number | undefined;
+  /** A step resumes the machine and never ends, as a next over a subroutine that does not return. */
+  stepHangs = false;
   /** When set, binary commands get no answer (a hung VICE). */
   hung = false;
   /**
@@ -116,6 +118,8 @@ export class FakeVice {
   uiPaused = false;
   readonly #heldBinary: Array<[number, number, Buffer]> = [];
   readonly #heldText: string[] = [];
+  /** Text commands still wait after the UI pause ended (see resumeUi). */
+  #textHeld = false;
   /** Autostart answers but leaves the machine stopped, as real VICE rarely does. */
   autostartStaysInMonitor = false;
   /** A reset answers but the machine stays in the monitor, with no event. */
@@ -151,6 +155,12 @@ export class FakeVice {
   /** The text monitor's default device and bank. */
   textDevice: "c" | "8" = "c";
   textBank = "cpu";
+  /** Replaces the answer of a text command when it returns a string, as another VICE build would answer. */
+  textAnswer: ((line: string) => string | undefined) | undefined;
+  /** A checkpoint at this pc hits as the next text command arrives while running: VICE stops for it, not for the command. */
+  textStopsAt: number | undefined;
+  /** Printed before the next text command's answer, as VICE prints a checkpoint's stop lines; then cleared. */
+  textPreamble = "";
   /** Whether the command being handled found the machine running. */
   #enteredForCommand = false;
 
@@ -202,6 +212,14 @@ export class FakeVice {
     return handle;
   }
 
+  /** Listens on the given monitor ports, as a VICE process does; the clients connect themselves. */
+  async serve(binaryPort: number, textPort: number): Promise<void> {
+    for (const [server, port] of [[this.binaryServer, binaryPort], [this.textServer, textPort]] as const) {
+      server.listen(port, "127.0.0.1");
+      await once(server, "listening");
+    }
+  }
+
   close(): void {
     this.binaryServer.close();
     this.textServer.close();
@@ -230,11 +248,20 @@ export class FakeVice {
     this.uiPaused = true;
   }
 
-  /** Ends the UI pause: the held binary commands run, then the held text commands. */
-  resumeUi(): void {
+  /**
+   * Ends the UI pause: the held binary commands run, then the held text
+   * commands; with `textAfterMs`, the text commands run only that much later.
+   */
+  resumeUi(textAfterMs = 0): void {
     this.uiPaused = false;
     for (const [id, command, body] of this.#heldBinary.splice(0)) this.#binaryCommand(this.#binary!, id, command, body);
-    for (const line of this.#heldText.splice(0)) this.#textCommand(this.#text!, line);
+    const runText = () => {
+      this.#textHeld = false;
+      for (const line of this.#heldText.splice(0)) this.#textCommand(this.#text!, line);
+    };
+    if (textAfterMs === 0) return runText();
+    this.#textHeld = true;
+    setTimeout(runText, textAfterMs);
   }
 
   /** Lets a pending execute-until-return reach its RTS and stop. */
@@ -344,6 +371,7 @@ export class FakeVice {
       const count = body.readUInt16LE(1);
       socket.write(frame(0x63, EVENT_REQUEST_ID, this.#pc()));
       this.running = true;
+      if (this.stepHangs) return;
       this.registers.PC = this.stepTo ?? (this.registers.PC! + count) & 0xffff;
       this.stepTo = undefined;
       this.#enterMonitor(socket);
@@ -563,7 +591,7 @@ export class FakeVice {
       while ((newline = pending.indexOf("\n")) >= 0) {
         const line = pending.slice(0, newline);
         pending = pending.slice(newline + 1);
-        if (this.uiPaused) this.#heldText.push(line);
+        if (this.uiPaused || this.#textHeld) this.#heldText.push(line);
         else this.#textCommand(socket, line);
       }
     });
@@ -581,16 +609,26 @@ export class FakeVice {
     }
     this.textCommands.push(line);
     let output = "";
-    if (this.running) {
+    if (this.running && this.textStopsAt !== undefined) {
+      const pc = this.textStopsAt;
+      this.textStopsAt = undefined;
+      this.stopSpontaneously(pc);
+      output += prompt();
+    } else if (this.running) {
       // VICE enters the monitor: binary events, then an extra prompt on the text side.
       this.#enterMonitor(this.#binary!);
       output += prompt();
     }
     const hunt = /^hunt ([0-9a-f]{4}) ([0-9a-f]{4}) ((?:(?:[0-9a-f]{2}|xx) ?)+)$/.exec(line);
     const disassemble = /^d ([0-9a-f]{4}) ([0-9a-f]{4})$/.exec(line);
+    const memory = /^m ([0-9a-f]{4}) ([0-9a-f]{4})$/.exec(line);
     const load = /^load "([^"]+)" 0(?: \$([0-9a-f]{4}))?$/.exec(line);
     const attach = /^attach "([^"]+)" 8$/.exec(line);
-    if (line === "stopwatch") output += `Stopwatch: ${this.clock.toString().padStart(10)}\n`;
+    output += this.textPreamble;
+    this.textPreamble = "";
+    const replaced = this.textAnswer?.(line);
+    if (replaced !== undefined) output += replaced;
+    else if (line === "stopwatch") output += `Stopwatch: ${this.clock.toString().padStart(10)}\n`;
     else if (line === "profile on") {
       this.profilerOn = true;
       output += "Profiling restarted.\n";
@@ -613,6 +651,11 @@ export class FakeVice {
         const value = this.#textByte(address).toString(16).toUpperCase().padStart(2, "0");
         output += `.${this.textDevice === "8" ? "8" : "C"}:${address.toString(16).padStart(4, "0")}  ${value}          LDA #$${value}\n`;
       }
+    } else if (memory !== null) {
+      const start = Number.parseInt(memory[1]!, 16);
+      const bytes = [];
+      for (let address = start; address <= Number.parseInt(memory[2]!, 16); address++) bytes.push(this.#textByte(address).toString(16).padStart(2, "0"));
+      output += `>C:${memory[1]}  ${bytes.join(" ")}\n`;
     } else if (line === "warp") output += `Warp mode is ${this.warp ? "on" : "off"}.\n`;
     else if (line === "warp on") this.warp = true;
     else if (line === "warp off") this.warp = false;

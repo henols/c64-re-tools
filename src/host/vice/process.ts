@@ -222,8 +222,18 @@ export async function checkViceStarts(options: Omit<LaunchOptions, "videoStandar
     );
   }
   // VICE_INFO: the length of the main version (4), then major, minor, build and revision.
-  const info = (await vice.monitor.request(Command.viceInfo)).body;
-  await vice.stop();
+  let info: Buffer;
+  try {
+    info = (await vice.monitor.request(Command.viceInfo)).body;
+  } catch (error) {
+    throw new WireFailure(
+      "installation-incomplete",
+      `VICE (${binary}) starts, but it did not tell its version (${error instanceof Error ? error.message : String(error)}). ` +
+        `c64-re-tools needs VICE ${MIN_VICE.major}.${MIN_VICE.minor} or later. ${VICE.remedy}`,
+    );
+  } finally {
+    await vice.stop();
+  }
   const version = { major: info[1] ?? 0, minor: info[2] ?? 0 };
   if (isOlderThanMinimum(version)) {
     throw new WireFailure(
@@ -274,18 +284,29 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
       const started = Date.now();
       const slow = setInterval(() => log(`VICE (pid ${child.pid}) is not stopped after ${Math.round((Date.now() - started) / 1000)} s: ${step}`), STOP_REPORT_MS);
       slow.unref();
+      // Every step runs, also after one fails; the first failure is reported at the end.
+      let failure: unknown;
+      const run = async (name: string, work: () => Promise<void> | void) => {
+        step = name;
+        try {
+          await work();
+        } catch (error) {
+          failure ??= error;
+        }
+      };
       try {
-        await monitor?.close();
-        step = "closing the text monitor";
-        await text?.close();
-        step = "ending the process";
-        await child.stop();
-        step = "removing its scratch directory";
-        rmSync(scratch, { recursive: true, force: true });
-        releaseScratch();
+        await run("closing the binary monitor", () => monitor?.close());
+        await run("closing the text monitor", () => text?.close());
+        await run("ending the process", () => child.stop());
+        // The supervisor keeps the directory on its list, to remove it at exit, until the removal works.
+        await run("removing its scratch directory", () => {
+          rmSync(scratch, { recursive: true, force: true });
+          releaseScratch();
+        });
       } finally {
         clearInterval(slow);
       }
+      if (failure !== undefined) throw failure;
     })();
     return stopping;
   };

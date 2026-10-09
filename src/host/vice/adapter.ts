@@ -18,7 +18,7 @@ import {
   type VideoStandard,
 } from "../../protocol.ts";
 import { decodeDisplay, decodePalette, visibleFrame, type IndexedFrame } from "./screen.ts";
-import { TextMonitorError, type TextMonitor } from "./text-monitor.ts";
+import type { TextMonitor } from "./text-monitor.ts";
 import {
   BinaryMonitor,
   Command,
@@ -139,12 +139,17 @@ function hex4(value: number): string {
 /**
  * Parses monitor disassembly lines such as ".C:e5cf  85 CC       STA $CC".
  * Hex numbers in the text become lowercase. A line that wraps past $ffff ends the list.
+ * An answer with no instruction but other text is refused.
  */
 export function parseDisassembly(answer: string, start: number): Instruction[] {
   const instructions: Instruction[] = [];
+  const unknown: string[] = [];
   for (const line of answer.split("\n")) {
     const match = /^\.(?:C|\d+):([0-9a-f]{4})\s+((?:[0-9a-f]{2} )*[0-9a-f]{2})\s+(.*?)\s*$/i.exec(line);
-    if (match === null) continue;
+    if (match === null) {
+      if (line.trim() !== "") unknown.push(line.trim());
+      continue;
+    }
     const address = Number.parseInt(match[1]!, 16);
     if (address < start || (instructions.length > 0 && address <= instructions.at(-1)!.address)) break;
     instructions.push({
@@ -153,21 +158,27 @@ export function parseDisassembly(answer: string, start: number): Instruction[] {
       text: match[3]!.replace(/\$([0-9A-Fa-f]+)/g, (_all, digits: string) => `$${digits.toLowerCase()}`),
     });
   }
+  if (instructions.length === 0 && unknown.length > 0) throw unknownForm("disassembly", unknown);
   return instructions;
 }
 
 /**
  * Parses monitor CPU history lines such as
  * ".C:e5cd  A5 C6       LDA $C6        A:00 X:00 Y:0a SP:f3 ..-...Z.      2535609".
+ * An answer with no entry but other text is refused.
  */
 export function parseHistory(answer: string): Array<Omit<HistoryEntry, "rasterLine" | "rasterCycle"> & { clock: bigint }> {
   const entries = [];
+  const unknown: string[] = [];
   for (const line of answer.split("\n")) {
     const match =
       /^\.(?:C|\d+):([0-9a-f]{4})\s+((?:[0-9a-f]{2} )*[0-9a-f]{2})\s+(.*?)\s+A:([0-9a-f]{2}) X:([0-9a-f]{2}) Y:([0-9a-f]{2}) SP:([0-9a-f]{2})\s+\S+\s+(\d+)\s*$/i.exec(
         line,
       );
-    if (match === null) continue;
+    if (match === null) {
+      if (line.trim() !== "") unknown.push(line.trim());
+      continue;
+    }
     entries.push({
       address: Number.parseInt(match[1]!, 16),
       bytes: match[2]!.replace(/ /g, "").toLowerCase(),
@@ -179,7 +190,28 @@ export function parseHistory(answer: string): Array<Omit<HistoryEntry, "rasterLi
       clock: BigInt(match[8]!),
     });
   }
+  if (entries.length === 0 && unknown.length > 0) throw unknownForm("CPU history", unknown);
   return entries;
+}
+
+/**
+ * Parses the addresses that the monitor's hunt prints, one per line; at most
+ * `limit` come back. An empty answer means no match. An answer with no
+ * address but other text is refused.
+ */
+export function parseHunt(answer: string, limit: number): number[] {
+  const matches: number[] = [];
+  const unknown: string[] = [];
+  for (const line of answer.split("\n")) {
+    const match = /^([0-9a-f]{4})$/i.exec(line.trim());
+    if (match === null) {
+      if (line.trim() !== "") unknown.push(line.trim());
+      continue;
+    }
+    if (matches.length < limit) matches.push(Number.parseInt(match[1]!, 16));
+  }
+  if (matches.length === 0 && unknown.length > 0) throw unknownForm("search result", unknown);
+  return matches;
 }
 
 /**
@@ -267,6 +299,26 @@ export function parseMemmap(answer: string, maxRanges: number): MemmapRange[] {
   return ranges;
 }
 
+/**
+ * Lines VICE prints when a checkpoint stops the machine during a text command:
+ * "#1 (Stop on  exec c000)  101/$065,  20/$14", then the instruction there.
+ */
+const STOP_LINE = /^(?:#\d+ \((?:Stop on|Trace)\s|\.(?:C|\d+):[0-9a-f]{4}\s)/i;
+
+/** The lines of a text command's answer that are not blank, not a stop line and not `known`. */
+function otherLines(answer: string, known?: RegExp): string[] {
+  return answer
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !STOP_LINE.test(line) && known?.test(line) !== true);
+}
+
+/** Refuses the answer of a text command that prints nothing, or only `known` lines, when it works. */
+function expectQuiet(what: string, answer: string, known?: RegExp): void {
+  const other = otherLines(answer, known);
+  if (other.length > 0) throw unknownForm(what, other);
+}
+
 /** Quotes a host file path for a text-monitor command. Session scratch paths never contain quotes. */
 function quoted(path: string): string {
   if (/["\r\n]/.test(path)) throw new Error(`a monitor file path cannot contain quotes or line breaks: ${path}`);
@@ -304,7 +356,7 @@ export function flagsFromStatusRegister(value: number): Registers["flags"] {
  * run state is the session's job.
  */
 /** Generous bound for commands that run the machine (step/next): they answer only once it stops again. */
-const RUNNING_COMMAND_TIMEOUT_MS = 30_000;
+export const RUNNING_COMMAND_TIMEOUT_MS = 30_000;
 
 export class ViceAdapter {
   readonly #monitor: BinaryMonitor;
@@ -476,17 +528,17 @@ export class ViceAdapter {
     return timeoutMs === undefined ? this.#text.command(command) : this.#text.command(command, timeoutMs);
   }
 
-  /** Runs a harmless text command, so every text command sent before it has run. */
+  /** Waits, with no time limit, until a harmless text command has run, so every text command sent before it has run. */
   async drainText(): Promise<void> {
-    await this.#text.command("~ $0000");
+    await this.#text.command("~ $0000", Infinity);
   }
 
   /** Executes `count` C64 instructions, with subroutine calls as one when `over`. Answers once stopped again. */
-  async step(count: number, over: boolean): Promise<void> {
+  async step(count: number, over: boolean, timeoutMs = RUNNING_COMMAND_TIMEOUT_MS): Promise<void> {
     const body = Buffer.alloc(3);
     body[0] = over ? 1 : 0;
     body.writeUInt16LE(count, 1);
-    await this.#monitor.request(Command.advanceInstructions, body, RUNNING_COMMAND_TIMEOUT_MS);
+    await this.#monitor.request(Command.advanceInstructions, body, timeoutMs);
   }
 
   /** Runs until just after the next RTS/RTI. Answers at once; the machine stops later. */
@@ -600,7 +652,10 @@ export class ViceAdapter {
   /** Attaches a disk image file from the host file system to drive 8. */
   async attachDisk(file: string): Promise<void> {
     const answer = await this.#text.command(`attach ${quoted(file)} 8`);
-    if (answer !== "") throw new WireFailure("media-error", "The emulator could not attach the disk image.");
+    // VICE prints nothing when the image attaches, and "Failed." when it does not.
+    const other = otherLines(answer);
+    if (other.includes("Failed.")) throw new WireFailure("media-error", "The emulator could not attach the disk image.");
+    if (other.length > 0) throw unknownForm("disk attach answer", other);
   }
 
   /** Queues PETSCII bytes in VICE's keyboard buffer feed, at most 255 per command. */
@@ -654,13 +709,7 @@ export class ViceAdapter {
     const answer = await this.#inTextContext(options.space, options.view, () =>
       this.#text.command(`hunt ${hex4(options.start)} ${hex4(options.end)} ${tokens}`, 30_000),
     );
-    const matches: number[] = [];
-    for (const line of answer.split("\n")) {
-      const match = /^([0-9a-f]{4})$/i.exec(line.trim());
-      if (match !== null) matches.push(Number.parseInt(match[1]!, 16));
-      if (matches.length >= options.limit) break;
-    }
-    return matches;
+    return parseHunt(answer, options.limit);
   }
 
   /** Disassembles `count` instructions from `address` with the monitor; stops at the end of memory. */
@@ -683,7 +732,7 @@ export class ViceAdapter {
   async clock(): Promise<bigint> {
     const answer = await this.#computerText("stopwatch");
     const match = /Stopwatch:\s+(\d+)/.exec(answer);
-    if (match === null) throw new TextMonitorError(`unexpected stopwatch answer: ${answer}`);
+    if (match === null) throw unknownForm("stopwatch", answer.split("\n"));
     return BigInt(match[1]!);
   }
 
@@ -709,11 +758,12 @@ export class ViceAdapter {
   /** Restores the machine from a snapshot file. The machine stays stopped. */
   async restoreSnapshot(file: string): Promise<void> {
     const name = Buffer.from(file, "utf8");
+    if (name.length > 255) throw new Error("snapshot file path is too long");
     await this.#monitor.request(Command.undump, Buffer.concat([Buffer.from([name.length]), name]), 30_000);
   }
 
   async startProfiler(): Promise<void> {
-    await this.#computerText("profile on");
+    expectQuiet("profiler answer", await this.#computerText("profile on"), /^Profiling (?:re)?started\.$/);
   }
 
   /** The routines with the most self time, from VICE's profiler. */
@@ -728,17 +778,17 @@ export class ViceAdapter {
   }
 
   async clearMemmap(): Promise<void> {
-    await this.#computerText("mmzap");
+    expectQuiet("memory map answer", await this.#computerText("mmzap"));
   }
 
   async warp(): Promise<boolean> {
     const answer = await this.#text.command("warp");
     const match = /Warp mode is (on|off)/.exec(answer);
-    if (match === null) throw new TextMonitorError(`unexpected warp answer: ${answer}`);
+    if (match === null) throw unknownForm("warp state", answer.split("\n"));
     return match[1] === "on";
   }
 
   async setWarp(enabled: boolean): Promise<void> {
-    await this.#text.command(enabled ? "warp on" : "warp off");
+    expectQuiet("warp answer", await this.#text.command(enabled ? "warp on" : "warp off"));
   }
 }

@@ -301,6 +301,18 @@ test("closing the session during a move stops the new VICE too", async () => {
   for (const { process } of vices) assert.equal(process.stopCount, 1, "every VICE the session started is stopped");
 });
 
+test("a session closed while its window VICE ends starts no headless VICE", async () => {
+  let launches = 0;
+  const { session, vices } = await startWindowSession({ onLaunch: () => launches++ });
+  await session.handle("window", { action: "open" });
+  vices[1]!.process.crash();
+  await new Promise((resolve) => setImmediate(resolve));
+  await session.close();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(launches, 1, "only the window VICE was started");
+  assert.equal(vices.length, 2);
+});
+
 test("a session without a launcher cannot open a window", async () => {
   const { fake, process } = await launchFake("headless");
   void fake;
