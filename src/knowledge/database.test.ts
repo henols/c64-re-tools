@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { backupPath, KnowledgeError, knowledgePath, openForRead, openForWrite, transaction, withWrite } from "./database.ts";
-import { currentRevision, symbolAt } from "./read.ts";
-import { migrate, SCHEMA, SCHEMA_VERSION, schemaVersion, type Schema } from "./schema.ts";
+import { KnowledgeError, knowledgePath, openForRead, openForWrite, transaction, withWrite } from "./database.ts";
+import { currentRevision } from "./read.ts";
+import { ensureSchema, SCHEMA_VERSION, schemaVersion } from "./schema.ts";
 import { removeSymbol, renameSymbol } from "./write.ts";
 
 const projects: string[] = [];
@@ -84,13 +84,14 @@ test("the schema enforces the current-row rules", () => {
   db.close();
 });
 
-test("a database from a newer c64-re-tools is refused, and garbage is invalid", () => {
+test("a database with another schema version is refused for a read and a write, and garbage is invalid", () => {
   const newer = project();
   openForWrite(newer).close();
   const raw = new DatabaseSync(knowledgePath(newer));
   raw.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION + 1));
   raw.close();
-  assert.throws(() => openForRead(newer), failsWith("unsupported-migration"));
+  assert.throws(() => openForRead(newer), failsWith("unsupported-schema"));
+  assert.throws(() => openForWrite(newer), failsWith("unsupported-schema"));
 
   const garbage = project();
   mkdirSync(join(garbage, ".c64-re-tools"));
@@ -121,14 +122,14 @@ test("two writers that create the database at the same time both get the current
   const first = new DatabaseSync(knowledgePath(root));
   const second = new DatabaseSync(knowledgePath(root));
   let raced = false;
-  // The second writer migrates after the first one read the version and before it takes the write lock.
+  // The second writer creates the schema after the first one read the version and before it takes the write lock.
   const racing = new Proxy(first, {
     get(target, property) {
       if (property === "exec") {
         return (sql: string) => {
           if (!raced && sql === "BEGIN IMMEDIATE") {
             raced = true;
-            migrate(second);
+            ensureSchema(second);
           }
           target.exec(sql);
         };
@@ -137,7 +138,7 @@ test("two writers that create the database at the same time both get the current
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
-  migrate(racing);
+  ensureSchema(racing);
   assert.equal(raced, true);
   assert.equal(schemaVersion(first), SCHEMA_VERSION);
   assert.equal((first.prepare("SELECT count(*) AS n FROM meta WHERE key = 'current_revision'").get() as { n: number }).n, 1);
@@ -158,11 +159,6 @@ test("a refused write in a project without knowledge creates nothing, and an acc
   db.close();
   assert.throws(() => withWrite((db) => removeSymbol(db, context, { address: 0x2200 }), root), failsWith("not-found"));
 });
-
-/** This build's schema plus one more step, so that a database of this build is an older schema. */
-function nextSchema(oldestReadable: number): Schema {
-  return { migrations: [...SCHEMA.migrations, (db) => db.exec("CREATE TABLE extra (x)")], oldestReadable };
-}
 
 function projectWithSymbol(): string {
   const root = project();
@@ -187,40 +183,3 @@ test("a read of an empty database file reads as no knowledge and leaves the file
   assert.equal(readFileSync(knowledgePath(root)).length, 0);
 });
 
-test("a read of an older schema that the readers support reads it as it is", () => {
-  const root = projectWithSymbol();
-  const before = readFileSync(knowledgePath(root));
-  const db = openForRead(root, nextSchema(SCHEMA_VERSION))!;
-  assert.equal(schemaVersion(db), SCHEMA_VERSION);
-  assert.equal(symbolAt(db, 0x2100)?.name, "main");
-  db.close();
-  assert.deepEqual(readFileSync(knowledgePath(root)), before);
-  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")), ["knowledge.db"]);
-});
-
-test("a read of an older schema that the readers do not support is refused and changes nothing", () => {
-  const root = projectWithSymbol();
-  const before = readFileSync(knowledgePath(root));
-  assert.throws(
-    () => openForRead(root, nextSchema(SCHEMA_VERSION + 1)),
-    (error: unknown) => failsWith("unsupported-migration")(error) && /A write command updates it\./.test((error as Error).message),
-  );
-  assert.deepEqual(readFileSync(knowledgePath(root)), before);
-});
-
-test("a write migrates an older schema and first keeps a copy of the file as it was", () => {
-  const root = projectWithSymbol();
-  const before = readFileSync(knowledgePath(root));
-  const schema = nextSchema(SCHEMA_VERSION + 1);
-  const db = openForWrite(root, schema);
-  assert.equal(schemaVersion(db), SCHEMA_VERSION + 1);
-  db.close();
-  assert.deepEqual(readFileSync(backupPath(root, SCHEMA_VERSION)), before);
-  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")).sort(), ["knowledge.db", `knowledge.db.bak-v${SCHEMA_VERSION}`]);
-  // The database is at the newest schema now: the next write makes no new copy.
-  openForWrite(root, schema).close();
-  assert.equal(readdirSync(join(root, ".c64-re-tools")).length, 2);
-  const read = openForRead(root, schema)!;
-  assert.equal(symbolAt(read, 0x2100)?.name, "main");
-  read.close();
-});

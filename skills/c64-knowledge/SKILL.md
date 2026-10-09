@@ -92,7 +92,7 @@ The exit status is 0 for a result. The exit status is 1 for an error from the kn
 - `conflict`: the change contradicts current knowledge. For example, the name belongs to another address. Read that address and its history, then decide.
 - `stale-revision`: the knowledge changed after you read it. Read it again, then decide again.
 - `not-found`: there is nothing to remove or no such revision.
-- `invalid-database` or `unsupported-migration`: tell the user the message. Do not edit the file.
+- `invalid-database` or `unsupported-schema`: tell the user the message. Do not edit the file.
 
 A revert makes a new revision. The history stays complete.
 

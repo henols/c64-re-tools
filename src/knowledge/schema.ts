@@ -1,4 +1,4 @@
-// The knowledge.db schema and its deterministic forward migrations.
+// The knowledge.db schema: one version, created in an empty database.
 
 import type { DatabaseSync } from "node:sqlite";
 
@@ -17,14 +17,15 @@ export { REFERENCE_KINDS, type ReferenceKind };
 
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 
-/** One forward step of the schema. */
-export type Migration = (db: DatabaseSync) => void;
+/** The schema version this build reads and writes. */
+export const SCHEMA_VERSION = 1;
 
-/** Each entry migrates from version (index) to version (index + 1). */
-const MIGRATIONS: readonly Migration[] = [
-  // 0 -> 1: the v1 schema. Knowledge rows are temporal: a change closes the
-  // current row (valid_to_revision) and inserts a new one in the same revision.
-  (db) => {
+/**
+ * Creates the schema in an empty database. Knowledge rows are temporal: a
+ * change closes the current row (valid_to_revision) and inserts a new one in
+ * the same revision.
+ */
+function createSchema(db: DatabaseSync): void {
     db.exec(`
       CREATE TABLE meta (
         key   TEXT PRIMARY KEY,
@@ -90,20 +91,7 @@ const MIGRATIONS: readonly Migration[] = [
       CREATE VIEW current_references AS SELECT * FROM "references" WHERE valid_to_revision IS NULL;
       INSERT INTO meta (key, value) VALUES ('current_revision', '0');
     `);
-  },
-];
-
-/** The schema steps of a build, and the oldest schema version that its read functions understand as it is. */
-export interface Schema {
-  /** Each entry migrates from version (index) to version (index + 1). */
-  readonly migrations: readonly Migration[];
-  readonly oldestReadable: number;
 }
-
-export const SCHEMA: Schema = { migrations: MIGRATIONS, oldestReadable: 1 };
-
-/** The schema version this build writes. */
-export const SCHEMA_VERSION = MIGRATIONS.length;
 
 export function schemaVersion(db: DatabaseSync): number {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();
@@ -119,59 +107,28 @@ export function schemaVersion(db: DatabaseSync): number {
   return Number(value);
 }
 
-function checkSupported(version: number, schema: Schema): void {
-  const newest = schema.migrations.length;
-  if (version > newest) {
+/** Refuses a database with any schema version other than the one this build reads and writes. */
+export function checkVersion(version: number): void {
+  if (version !== SCHEMA_VERSION) {
     throw new KnowledgeError(
-      "unsupported-migration",
-      `The knowledge database has schema version ${version}; this c64-re-tools understands up to ${newest}. Install a newer c64-re-tools.`,
+      "unsupported-schema",
+      `The knowledge database has schema version ${version}. This c64-re-tools reads and writes only version ${SCHEMA_VERSION}. Use the c64-re-tools release that wrote it.`,
     );
   }
 }
 
 /**
- * Refuses a schema version that the read functions cannot read as it is.
- * A read never migrates: an older schema stays as it is until a write.
+ * Creates the schema in an empty database and refuses any other version. The
+ * version is read again under the write lock, so two processes that open a
+ * new database at the same time create the schema once.
  */
-export function checkReadable(version: number, schema: Schema = SCHEMA): void {
-  checkSupported(version, schema);
-  if (version < schema.oldestReadable) {
-    throw new KnowledgeError(
-      "unsupported-migration",
-      `The knowledge database has schema version ${version}; a read needs version ${schema.oldestReadable} or later. A write command updates it.`,
-    );
-  }
-}
-
-export interface MigrateOptions {
-  schema?: Schema;
-  /** Runs under the write lock before the first step that changes a database at a version above 0. */
-  beforeMigration?: (version: number) => void;
-}
-
-/**
- * Brings the schema to the newest version, each step in its own transaction.
- * Refuses a database written by a newer c64-re-tools. Each step reads the
- * version again under the write lock, so two processes that open a new
- * database at the same time do not both run the same step.
- */
-export function migrate(db: DatabaseSync, options: MigrateOptions = {}): void {
-  const schema = options.schema ?? SCHEMA;
-  const newest = schema.migrations.length;
-  let prepared = false;
-  for (;;) {
-    const version = schemaVersion(db);
-    checkSupported(version, schema);
-    if (version === newest) return;
+export function ensureSchema(db: DatabaseSync): void {
+  if (schemaVersion(db) === 0) {
     db.exec("BEGIN IMMEDIATE");
     try {
-      const locked = schemaVersion(db);
-      checkSupported(locked, schema);
-      if (locked < newest) {
-        if (!prepared && locked > 0) options.beforeMigration?.(locked);
-        prepared = true;
-        schema.migrations[locked]!(db);
-        db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(String(locked + 1));
+      if (schemaVersion(db) === 0) {
+        createSchema(db);
+        db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?)").run(String(SCHEMA_VERSION));
       }
       db.exec("COMMIT");
     } catch (error) {
@@ -179,4 +136,5 @@ export function migrate(db: DatabaseSync, options: MigrateOptions = {}): void {
       throw error;
     }
   }
+  checkVersion(schemaVersion(db));
 }
