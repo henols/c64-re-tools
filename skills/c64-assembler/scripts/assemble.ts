@@ -6,12 +6,12 @@ import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
-import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectTree } from "#src/host-client/transfer.ts";
 import { assemble } from "#src/native/acme.ts";
 import { localToolContext } from "#src/native/local.ts";
 import type { AcmeParams } from "#src/native/types.ts";
 import { resolveProjectPath } from "#src/project.ts";
+import { runScript, UsageError } from "#src/script.ts";
 
 const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [options]
 
@@ -23,8 +23,6 @@ const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [
   --set-pc <address>       start address when the source sets none, for example '$0801'
 
 The result is one JSON object. Addresses are $ and four hex digits.`;
-
-class UsageError extends Error {}
 
 function parseDefine(text: string): [string, number | boolean] {
   const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.+)$/.exec(text);
@@ -95,19 +93,11 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   };
 }
 
-try {
-  const { output, failed } = await run(process.argv.slice(2));
-  process.stdout.write(`${JSON.stringify(output)}\n`);
-  if (failed) process.exitCode = 1;
-} catch (error) {
-  if (error instanceof WireFailure) {
-    process.stdout.write(`${JSON.stringify({ error: { code: error.code, message: error.message } })}\n`);
-    process.exitCode = 1;
-  } else if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
-    const message = (error as Error).message;
-    process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
-    process.exitCode = 2;
-  } else {
-    throw error;
-  }
-}
+await runScript(
+  async () => {
+    const { output, failed } = await run(process.argv.slice(2));
+    if (failed) process.exitCode = 1;
+    return output;
+  },
+  { usage: USAGE },
+);

@@ -14,6 +14,7 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
+import { runScript, UsageError } from "#src/script.ts";
 import { inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./evidence.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
@@ -29,8 +30,6 @@ capture   run the program until the CPU gets to <address>, then write memory:
 Addresses are $ and four hex digits. The result is one JSON object.`;
 
 const MAX_READ = 4096;
-
-class UsageError extends Error {}
 
 function address(text: string, option: string): number {
   try {
@@ -207,19 +206,11 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   return capture(program, { until: address(values.until, "--until"), out: values.out, ...(range === undefined ? {} : { range }), timeoutFrames });
 }
 
-try {
-  const { output, failed } = await run(process.argv.slice(2));
-  process.stdout.write(`${JSON.stringify(output)}\n`);
-  if (failed) process.exitCode = 1;
-} catch (error) {
-  if (error instanceof WireFailure) {
-    process.stdout.write(`${JSON.stringify({ error: { code: error.code, message: error.message } })}\n`);
-    process.exitCode = 1;
-  } else if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
-    const message = (error as Error).message;
-    process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
-    process.exitCode = 2;
-  } else {
-    throw error;
-  }
-}
+await runScript(
+  async () => {
+    const { output, failed } = await run(process.argv.slice(2));
+    if (failed) process.exitCode = 1;
+    return output;
+  },
+  { usage: USAGE },
+);

@@ -17,6 +17,7 @@ import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.
 import { importFindings, type Analyzer, type ImportConflict, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision } from "#src/knowledge/read.ts";
 import { resolveProjectPath } from "#src/project.ts";
+import { runScript, UsageError } from "#src/script.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
 
 const USAGE = `analyze.ts <image> [options]
@@ -40,8 +41,6 @@ function withRemedy(reason: string): string {
     ? `${reason} On macOS, build the native decompiler once: in <Ghidra>/support/gradle run ./gradlew buildNatives.`
     : reason;
 }
-
-class UsageError extends Error {}
 
 function addresses(values: string[] | undefined, option: string): number[] {
   return (values ?? []).map((value) => {
@@ -171,17 +170,4 @@ async function run(argv: string[]): Promise<unknown> {
   };
 }
 
-try {
-  process.stdout.write(`${JSON.stringify(await run(process.argv.slice(2)))}\n`);
-} catch (error) {
-  if (error instanceof WireFailure || error instanceof KnowledgeError) {
-    process.stdout.write(`${JSON.stringify({ error: { code: error.code, message: error.message } })}\n`);
-    process.exitCode = 1;
-  } else if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
-    const message = (error as Error).message;
-    process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
-    process.exitCode = 2;
-  } else {
-    throw error;
-  }
-}
+await runScript(() => run(process.argv.slice(2)), { usage: USAGE, refusals: [KnowledgeError] });
