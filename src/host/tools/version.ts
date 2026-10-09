@@ -23,13 +23,13 @@ export function requireMinimumVersion(tool: ToolSpec, executable: string, contex
       if (version === undefined) {
         throw new WireFailure(
           "installation-incomplete",
-          `${tool.name} (${executable}) does not tell its VICE version, and c64-re-tools needs VICE ${MIN_VICE.major}.${MIN_VICE.minor} or later. ${tool.remedy}`,
+          `${tool.name} does not tell its VICE version, and c64-re-tools needs VICE ${MIN_VICE.major}.${MIN_VICE.minor} or later. ${tool.remedy}`,
         );
       }
       if (isOlderThanMinimum(version)) {
         throw new WireFailure(
           "installation-incomplete",
-          `${tool.name} (${executable}) comes from VICE ${version.major}.${version.minor}, and c64-re-tools needs VICE ${MIN_VICE.major}.${MIN_VICE.minor} or later. ${tool.remedy}`,
+          `${tool.name} comes from VICE ${version.major}.${version.minor}, and c64-re-tools needs VICE ${MIN_VICE.major}.${MIN_VICE.minor} or later. ${tool.remedy}`,
         );
       }
     })();
