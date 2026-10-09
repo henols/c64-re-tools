@@ -111,6 +111,21 @@ test("a rejected Ghidra result says what the check found", { skip: posixOnly }, 
   );
 });
 
+test("a Ghidra result carries the version of the installation that made it", { skip: posixOnly }, async () => {
+  const exported = {
+    coverage: [{ start: 0x0801, end: 0x0801 }],
+    functions: [{ entry: 0x0801, name: "FUN_0801", nameSource: "generated" }],
+    regions: [{ start: 0x0801, end: 0x0801, classification: "code" }],
+    references: [],
+    decompilations: [],
+    completeness: { functions: true, regions: true, references: true },
+  };
+  // The export script's last argument is the result file.
+  const root = fakeInstallation("good-result", `for last; do :; done\necho '${JSON.stringify(exported)}' > "$last"`);
+  const { result } = await analyze(SEEDS, PRG, { ...context(), env: { ...process.env, C64RT_GHIDRA: root } });
+  assert.deepEqual(result, { ...exported, toolVersion: "Ghidra 12.1.3" });
+});
+
 test("a request for more than 32 decompilations is refused by name before Ghidra runs", async () => {
   await assert.rejects(
     analyze({ ...SEEDS, decompile: Array.from({ length: 33 }, () => 0x0801) }, PRG, { ...context(), env: { PATH: "" } }),

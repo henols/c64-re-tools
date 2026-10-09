@@ -57,9 +57,9 @@ test("the symbol list gives addresses inside the program and constants outside",
   assert.deepEqual(parseSymbols(list, { start: 0x0801, end: 0x080d }), [
     { name: "COLOR", kind: "constant", value: 2, used: true },
     { name: "MAX_ENEMIES", kind: "constant", value: 8, used: false },
-    { name: "helper", kind: "address", value: 0x080c, used: true },
-    { name: "loop", kind: "address", value: 0x0809, used: true },
-    { name: "start", kind: "address", value: 0x0801, used: false },
+    { name: "helper", kind: "address", address: 0x080c, used: true },
+    { name: "loop", kind: "address", address: 0x0809, used: true },
+    { name: "start", kind: "address", address: 0x0801, used: false },
   ]);
 });
 

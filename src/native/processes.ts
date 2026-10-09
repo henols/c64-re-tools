@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess, type StdioOptions } from "node:child_process";
+import type { Writable } from "node:stream";
 import { mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -168,6 +169,8 @@ export class ProcessSupervisor {
   /** The registry file that the watchdog reads, once a watchdog runs. */
   #registry: string | undefined;
   #watchdogPid: number | undefined;
+  /** The writing end of the watchdog's pipe. Kept open until this process ends: its end tells the watchdog that this process is gone. */
+  #watchdogPipe: Writable | undefined;
 
   constructor(options: { graceMs?: number } = {}) {
     this.#graceMs = options.graceMs ?? STOP_GRACE_MS;
@@ -266,10 +269,16 @@ export class ProcessSupervisor {
     const directory = mkdtempSync(join(tmpdir(), `c64-re-tools-${owner}-watchdog-`));
     this.#registry = join(directory, "registry.json");
     this.#writeRegistry();
-    // The watchdog can outlive this process by one poll. It runs in the temporary directory, never in
-    // the caller's directory: Windows refuses to remove a directory that a running process uses.
-    const watchdog = spawn(process.execPath, [...process.execArgv, WATCHDOG, String(process.pid), this.#registry], { cwd: tmpdir(), detached: true, stdio: "ignore", windowsHide: true });
+    // The watchdog runs in the temporary directory, never in the caller's directory: Windows refuses
+    // to remove a directory that a running process uses. Its standard input is a pipe from this
+    // process, which the system closes when this process ends.
+    const watchdog = spawn(process.execPath, [...process.execArgv, WATCHDOG, String(process.pid), this.#registry], { cwd: tmpdir(), detached: true, stdio: ["pipe", "ignore", "ignore"], windowsHide: true });
     watchdog.unref();
+    // The pipe does not keep this process running, and an error on it does not end this process.
+    const pipe = watchdog.stdin as (Writable & { unref?: () => void }) | null;
+    pipe?.on("error", () => {});
+    pipe?.unref?.();
+    this.#watchdogPipe = pipe ?? undefined;
     this.#watchdogPid = watchdog.pid;
     this.installExitGuard();
   }

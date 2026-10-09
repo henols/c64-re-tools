@@ -4,11 +4,11 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
-import { describeError, WireFailure } from "../../protocol.ts";
+import { describeError, isObject, WireFailure } from "../../protocol.ts";
 import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, seedsInside, type GhidraParams, type GhidraResult } from "../types.ts";
 import { outputTail, type ToolContext } from "../run.ts";
 import { Workspace } from "../staging.ts";
-import { findGhidra, runHeadless, SCRIPT_DIRECTORY } from "./index.ts";
+import { findGhidra, ghidraVersion, runHeadless, SCRIPT_DIRECTORY } from "./index.ts";
 
 const TIMEOUT_MS = 600_000;
 /** The part of the run that the decompilations leave for the export, the project removal and the end of Ghidra. */
@@ -70,7 +70,9 @@ export async function analyze(
     }
     let result: GhidraResult;
     try {
-      result = checkGhidraResult(JSON.parse(readFileSync(outPath, "utf8")));
+      const exported: unknown = JSON.parse(readFileSync(outPath, "utf8"));
+      // The version comes from the installation's application.properties, which findGhidra read.
+      result = checkGhidraResult(isObject(exported) ? { ...exported, toolVersion: ghidraVersion(ghidra) } : exported);
       const [range] = result.coverage;
       if (result.coverage.length !== 1 || range === undefined || range.start !== start || range.end !== end) throw new Error("the coverage is not the loaded program");
     } catch (error) {

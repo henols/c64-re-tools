@@ -12,11 +12,14 @@ import { describeError, WireFailure } from "../protocol.ts";
 import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaParams, type DxaResult } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
-import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
+import { outputTail, runTool, runToolOrFail, type ToolContext } from "./run.ts";
+import { DXA_VERSION, versionLine } from "./status.ts";
 
 const TIMEOUT_MS = 120_000;
 /** The listing is returned as an attachment; larger output is refused. */
 const MAX_LISTING = 8 * 1024 * 1024;
+const VERSION_TIMEOUT_MS = 20_000;
+const MAX_VERSION_OUTPUT = 64 * 1024;
 
 const hex = (value: number) => value.toString(16).padStart(4, "0");
 
@@ -88,6 +91,17 @@ export function parseListing(listing: string, start: number, end: number): Pick<
   return { regions, labels };
 }
 
+/**
+ * The version line of dxa, for example "dxa v0.1.5 -- symbolic 65xx
+ * disassembler". "dxa -V" prints it before its usage and exits with status 1.
+ * On Windows dxa names itself by its full path and ".exe": the line names it
+ * "dxa" on every system. Undefined when dxa prints no version line.
+ */
+export async function dxaVersion(executable: string, cwd: string, context: ToolContext): Promise<string | undefined> {
+  const run = await runTool({ argv: [executable, "-V"], cwd, supervisor: context.supervisor, signal: context.signal, timeoutMs: VERSION_TIMEOUT_MS, outputLimit: MAX_VERSION_OUTPUT, env: context.env });
+  return versionLine(`${run.stdout}\n${run.stderr}`, DXA_VERSION)?.replace(/^(?:.*[\\/])?dxa(?:\.exe)?/i, "dxa");
+}
+
 export async function analyze(
   params: DxaParams,
   image: Buffer,
@@ -100,6 +114,8 @@ export async function analyze(
 
   const workspace = Workspace.create(context.supervisor);
   try {
+    // A cancelled version run gives no version; the analysis run below then refuses the cancelled request.
+    const toolVersion = await dxaVersion(executable, workspace.root, context);
     workspace.materialize("input", [{ path: "image.bin", size: image.length }], [image]);
     const files: Parameters<typeof dxaArguments>[2] = { image: "input/image.bin" };
     const seed = (name: "routines" | "blocks" | "labels", lines: string[]) => {
@@ -133,7 +149,10 @@ export async function analyze(
     try {
       const parsed = parseListing(run.stdout, start, end);
       // DXA classifies every byte, so its regions are complete; it names only referenced addresses.
-      result = checkDxaResult({ coverage: [{ start, end }], ...parsed, listingBytes: listing.length, completeness: { regions: true, labels: false } }, [listing]);
+      result = checkDxaResult(
+        { coverage: [{ start, end }], ...parsed, listingBytes: listing.length, completeness: { regions: true, labels: false }, ...(toolVersion === undefined ? {} : { toolVersion }) },
+        [listing],
+      );
     } catch (error) {
       context.log?.(`dxa listing rejected: ${describeError(error)}`);
       // The listing is on stdout: only dxa's messages on stderr are quoted.

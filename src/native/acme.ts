@@ -66,13 +66,10 @@ export function parseSymbols(list: string, program: { start: number; end: number
   for (const line of list.split(/\r?\n/)) {
     const match = /^\s*([A-Za-z_][\w.]*)\s*=\s*\$([0-9a-fA-F]+)\s*(?:;\s*(.*?))?\s*$/.exec(line);
     if (match === null) continue;
+    const name = match[1]!;
     const value = Number.parseInt(match[2]!, 16);
-    symbols.push({
-      name: match[1]!,
-      kind: value >= program.start && value <= program.end ? "address" : "constant",
-      value,
-      used: match[3] !== "unused",
-    });
+    const used = match[3] !== "unused";
+    symbols.push(value >= program.start && value <= program.end ? { name, kind: "address", address: value, used } : { name, kind: "constant", value, used });
   }
   // Code-point order: the same on every host, whatever its locale.
   return symbols.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));

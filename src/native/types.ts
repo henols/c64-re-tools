@@ -24,12 +24,8 @@ export interface AcmeParams {
   setPc?: number;
 }
 
-export interface AssembledSymbol {
-  name: string;
-  kind: "address" | "constant";
-  value: number;
-  used: boolean;
-}
+/** A symbol from the assembly: an address inside the program, or a constant value. */
+export type AssembledSymbol = { name: string; kind: "address"; address: number; used: boolean } | { name: string; kind: "constant"; value: number; used: boolean };
 
 export interface AcmeResult {
   assembled: boolean;
@@ -65,6 +61,8 @@ export interface GhidraResult {
   notDecompiled?: Array<{ entry: number; reason: string }>;
   /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { functions: boolean; regions: boolean; references: boolean };
+  /** The version of the Ghidra that made the result, for example "Ghidra 12.1.3". */
+  toolVersion?: string;
 }
 
 /** Refuses a DXA or Ghidra request with more seeds or decompilations than the request bounds allow, by name. */
@@ -91,7 +89,15 @@ export interface DxaResult {
   listingBytes: number;
   /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { regions: boolean; labels: boolean };
+  /** The version line of the dxa that made the result; absent when dxa prints none. */
+  toolVersion?: string;
 }
+
+/** The longest tool version that a result can carry. */
+const MAX_TOOL_VERSION = 200;
+
+/** True for a tool version that a result can carry: absent, or one line of text without control characters, at most MAX_TOOL_VERSION characters. */
+const isToolVersion = (value: unknown) => value === undefined || (typeof value === "string" && value.length <= MAX_TOOL_VERSION && /^[^\p{Cc}]+$/u.test(value));
 
 /** Ends a result check with the Error that names its first problem. */
 function fail(message: string): never {
@@ -108,7 +114,7 @@ const isList = (value: unknown): value is unknown[] => Array.isArray(value);
  */
 export function checkGhidraResult(value: unknown): GhidraResult {
   if (!isObject(value)) fail("not an object");
-  const { coverage, functions, regions, references, decompilations, notDecompiled, completeness } = value;
+  const { coverage, functions, regions, references, decompilations, notDecompiled, completeness, toolVersion } = value;
   if (!isList(coverage) || coverage.length === 0) fail("no coverage");
   const ranges: Array<{ start: number; end: number }> = [];
   for (const range of coverage) {
@@ -151,6 +157,7 @@ export function checkGhidraResult(value: unknown): GhidraResult {
     }
   }
   if (!isObject(completeness) || typeof completeness.functions !== "boolean" || typeof completeness.regions !== "boolean" || typeof completeness.references !== "boolean") fail("no completeness");
+  if (!isToolVersion(toolVersion)) fail("bad tool version");
   // Every field is checked: the object is the result as it is.
   return value as unknown as GhidraResult;
 }
@@ -162,7 +169,7 @@ export function checkGhidraResult(value: unknown): GhidraResult {
  */
 export function checkDxaResult(value: unknown, attachments: readonly Uint8Array[]): DxaResult {
   if (!isObject(value)) fail("not an object");
-  const { coverage, regions, labels, listingBytes, completeness } = value;
+  const { coverage, regions, labels, listingBytes, completeness, toolVersion } = value;
   if (!isList(coverage) || coverage.length !== 1) fail("the coverage is not one range");
   const range = coverage[0];
   if (!isObject(range) || !isInteger(range.start, 0, 0xffff) || !isInteger(range.end, range.start, 0xffff)) fail("bad coverage range");
@@ -183,6 +190,7 @@ export function checkDxaResult(value: unknown, attachments: readonly Uint8Array[
   const [listing] = attachments;
   if (attachments.length !== 1 || listing === undefined || listingBytes !== listing.length) fail("the listing is missing");
   if (!isObject(completeness) || typeof completeness.regions !== "boolean" || typeof completeness.labels !== "boolean") fail("no completeness");
+  if (!isToolVersion(toolVersion)) fail("bad tool version");
   // Every field is checked: the object is the result as it is.
   return value as unknown as DxaResult;
 }

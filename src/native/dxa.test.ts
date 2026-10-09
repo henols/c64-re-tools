@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../protocol.ts";
-import { analyze, dxaArguments, parseListing } from "./dxa.ts";
+import { analyze, dxaArguments, dxaVersion, parseListing } from "./dxa.ts";
 import { ProcessSupervisor } from "./processes.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-dxa-test-"));
@@ -131,6 +131,22 @@ test("a label seed with a leading dot reaches dxa and comes back as a label", { 
   const env = standInDxa("dxa-dot-label", "grep -qxF '.loop, 0x0801, 0x0000' labels.txt || exit 3\nprintf '0801          .loop:\\n0801 60       \\trts\\n'");
   const { result } = await analyze({ ...SEEDS, labels: [{ address: 0x0801, name: ".loop" }] }, PRG, context(env));
   assert.deepEqual(result.labels, [{ address: 0x0801, name: ".loop" }]);
+  assert.equal(result.toolVersion, undefined, "this dxa prints no version line");
+});
+
+test("a DXA result carries the version line that dxa -V prints", { skip: posixOnly }, async () => {
+  const env = standInDxa(
+    "dxa-versioned",
+    `if [ "$1" = -V ]; then echo "/opt/xa/bin/dxa v0.1.5 -- symbolic 65xx disassembler" >&2; echo "Usage: /opt/xa/bin/dxa [options] [filename]" >&2; exit 1; fi\nprintf '0801 60       \\trts\\n'`,
+  );
+  const { result } = await analyze(SEEDS, PRG, context(env));
+  assert.equal(result.toolVersion, "dxa v0.1.5 -- symbolic 65xx disassembler");
+  assert.deepEqual(result.regions, [{ start: 0x0801, end: 0x0801, classification: "code" }]);
+});
+
+test("the dxa version line names dxa without the directory and .exe that Windows prints", { skip: posixOnly }, async () => {
+  const env = standInDxa("dxa-windows-version", "printf '%s\\n' 'D:\\tools\\dxa.exe v0.1.5 -- symbolic 65xx disassembler' >&2\nexit 1");
+  assert.equal(await dxaVersion(env.C64RT_DXA!, scratch, context(env)), "dxa v0.1.5 -- symbolic 65xx disassembler");
 });
 
 test("a listing larger than the limit is refused with the limit", { skip: posixOnly }, async () => {
