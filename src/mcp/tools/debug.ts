@@ -15,11 +15,10 @@ import {
   SPACES,
   TIMING_ACTIONS,
   WATCH_ACCESS,
-  WireFailure,
   type Breakpoint,
   type Watchpoint,
 } from "../../protocol.ts";
-import { AddressInput, AddressOutput, Byte, ConditionInput, ConditionOutput, defineTool, HexData, showCondition, SpaceInput, toCondition } from "../server.ts";
+import { AddressInput, AddressOutput, Byte, ConditionInput, ConditionOutput, defineTool, HexData, requireFields, showCondition, SpaceInput, toCondition } from "../server.ts";
 
 /** No default here: a filled-in default would count as a field the other actions refuse. */
 const OptionalSpace = z.enum(SPACES).optional().describe("add only: c64 (default) or drive8, the 1541 disk drive CPU");
@@ -34,16 +33,6 @@ const BreakpointOutput = z.object({
   condition: ConditionOutput.optional(),
 });
 const WatchpointOutput = BreakpointOutput.extend({ size: z.number().int().min(1).max(MAX_WATCH_SIZE), access: z.enum(WATCH_ACCESS) });
-
-/** Checks which fields an action takes, so a wrong mix is an invalid-input error. */
-function requireFields(action: string, given: Record<string, unknown>, allowed: string[], required: string[]): void {
-  for (const [field, value] of Object.entries(given)) {
-    if (value !== undefined && !allowed.includes(field)) throw new WireFailure("invalid-input", `${field} is not used with action ${action}.`);
-  }
-  for (const field of required) {
-    if (given[field] === undefined) throw new WireFailure("invalid-input", `Action ${action} needs ${field}.`);
-  }
-}
 
 function showBreakpoint(point: Breakpoint) {
   const { condition, ...rest } = point;
@@ -77,7 +66,7 @@ export const c64Breakpoint = defineTool({
   async run(input, session) {
     const { action, ...fields } = input;
     if (action === "list") {
-      requireFields(action, fields, [], []);
+      requireFields(action, fields, []);
       const result = (await session.breakpoint({ action })) as { breakpoints: Breakpoint[] };
       return { breakpoints: result.breakpoints.map(showBreakpoint) };
     }
@@ -120,7 +109,7 @@ export const c64Watchpoint = defineTool({
   async run(input, session) {
     const { action, ...fields } = input;
     if (action === "list") {
-      requireFields(action, fields, [], []);
+      requireFields(action, fields, []);
       const result = (await session.watchpoint({ action })) as { watchpoints: Watchpoint[] };
       return { watchpoints: result.watchpoints.map(showWatchpoint) };
     }
@@ -248,7 +237,7 @@ export const c64Memmap = defineTool({
   readOnly: false,
   async run(input, session) {
     if (input.action === "clear") {
-      requireFields("clear", { start: input.start, end: input.end, maxRanges: input.maxRanges }, [], []);
+      requireFields("clear", { start: input.start, end: input.end, maxRanges: input.maxRanges }, []);
       return session.memmap({ action: "clear" }) as Promise<{ cleared: boolean }>;
     }
     const result = (await session.memmap({ action: "read", start: input.start ?? 0x0000, end: input.end ?? 0xffff, maxRanges: input.maxRanges ?? 256 })) as {

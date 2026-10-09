@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
 import { CIA_SELECTIONS, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, WireFailure, type ObserveParams } from "../../protocol.ts";
-import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, SpaceInput, ToolOutput } from "../server.ts";
+import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, requireFields, SpaceInput, ToolOutput, TransientName } from "../server.ts";
 
 const Color = z.number().int().min(0).max(15);
 const NO_CHANGE = "This does not change if the machine is running or stopped.";
@@ -119,11 +119,6 @@ export const c64Sid = defineTool({
   },
 });
 
-const BaselineName = z
-  .string()
-  .regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 letters, digits, dots, underscores or hyphens")
-  .describe("a name you choose: 1 to 64 letters, digits, dots, underscores or hyphens");
-
 const Rectangle = z
   .object({ x: z.number().int().min(0), y: z.number().int().min(0), width: z.number().int().min(1), height: z.number().int().min(1) })
   .strict();
@@ -143,7 +138,7 @@ export const c64Screen = defineTool({
   inputSchema: z
     .object({
       action: z.enum(["capture", "compare", "list", "discard"]),
-      baseline: BaselineName.optional().describe("capture: keep the frame under this name; compare and discard: the baseline to use"),
+      baseline: TransientName.optional().describe("capture: keep the frame under this name; compare and discard: the baseline to use"),
       maxMismatchRatio: z.number().min(0).max(1).optional().describe("compare only: 0 to 1, default 0"),
       mask: z.array(Rectangle).max(64).optional().describe("compare only: rectangles to ignore, in frame pixels"),
       includeDiff: z.boolean().optional().describe("compare only: also return a difference image"),
@@ -163,22 +158,14 @@ export const c64Screen = defineTool({
   readOnly: false,
   async run(input, session) {
     const { action, ...fields } = input;
-    const only = (allowed: string[], required: string[]) => {
-      for (const [field, value] of Object.entries(fields)) {
-        if (value !== undefined && !allowed.includes(field)) throw new WireFailure("invalid-input", `${field} is not used with action ${action}.`);
-      }
-      for (const field of required) {
-        if ((fields as Record<string, unknown>)[field] === undefined) throw new WireFailure("invalid-input", `Action ${action} needs ${field}.`);
-      }
-    };
     if (action === "capture") {
-      only(["baseline"], []);
+      requireFields(action, fields, ["baseline"]);
       const shot = await session.screenCapture(fields.baseline);
       const result = { width: shot.width, height: shot.height, ...(shot.baseline === undefined ? {} : { baseline: shot.baseline }) };
       return new ToolOutput(result, [{ type: "image", data: shot.png, mimeType: "image/png" }]);
     }
     if (action === "compare") {
-      only(["baseline", "maxMismatchRatio", "mask", "includeDiff"], ["baseline"]);
+      requireFields(action, fields, ["baseline", "maxMismatchRatio", "mask", "includeDiff"], ["baseline"]);
       const { diffPng, ...result } = await session.screenCompare({
         baseline: fields.baseline!,
         maxMismatchRatio: fields.maxMismatchRatio ?? 0,
@@ -188,10 +175,10 @@ export const c64Screen = defineTool({
       return diffPng === undefined ? result : new ToolOutput(result, [{ type: "image", data: diffPng, mimeType: "image/png" }]);
     }
     if (action === "list") {
-      only([], []);
+      requireFields(action, fields, []);
       return session.screenBaselines();
     }
-    only(["baseline"], ["baseline"]);
+    requireFields(action, fields, ["baseline"], ["baseline"]);
     return session.screenDiscard(fields.baseline!);
   },
 });

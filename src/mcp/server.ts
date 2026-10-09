@@ -86,6 +86,25 @@ export const MemoryViewInput = z
   .default("cpu")
   .describe("cpu reads what the CPU sees now (ROM and I/O where banked in); ram reads the RAM underneath (c64 only)");
 
+/** A name the agent gives to something the session keeps, such as a screen baseline or a snapshot. */
+export const TransientName = z
+  .string()
+  .regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 letters, digits, dots, underscores or hyphens")
+  .describe("a name you choose: 1 to 64 letters, digits, dots, underscores or hyphens");
+
+/**
+ * Checks the fields of one action of a multi-action tool: a field that the
+ * action does not use, or a missing required field, is an invalid-input error.
+ */
+export function requireFields(action: string, given: Record<string, unknown>, allowed: readonly string[], required: readonly string[] = []): void {
+  for (const [field, value] of Object.entries(given)) {
+    if (value !== undefined && !allowed.includes(field)) throw new WireFailure("invalid-input", `${field} is not used with action ${action}.`);
+  }
+  for (const field of required) {
+    if (given[field] === undefined) throw new WireFailure("invalid-input", `Action ${action} needs ${field}.`);
+  }
+}
+
 /** A tool result that carries content blocks (for example an image) beside its structured result. */
 export class ToolOutput<T> {
   readonly structured: T;

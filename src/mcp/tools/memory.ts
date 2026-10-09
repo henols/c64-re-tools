@@ -16,7 +16,7 @@ import {
   WireFailure,
   type RegisterValues,
 } from "../../protocol.ts";
-import { AddressInput, AddressOutput, Byte, defineTool, HexData, HexDataInput, MemoryViewInput, SpaceInput } from "../server.ts";
+import { AddressInput, AddressOutput, Byte, defineTool, HexData, HexDataInput, MemoryViewInput, requireFields, SpaceInput } from "../server.ts";
 
 export const c64MemoryRead = defineTool({
   name: "c64_memory_read",
@@ -106,9 +106,10 @@ export const c64Registers = defineTool({
   async run(input, session) {
     let registers;
     if (input.action === "get") {
-      if (input.values !== undefined) throw new WireFailure("invalid-input", "values is used only with action set.");
+      requireFields(input.action, { values: input.values }, []);
       registers = await session.registersGet(input.space);
     } else {
+      requireFields(input.action, { values: input.values }, ["values"], ["values"]);
       const values: RegisterValues = {};
       for (const key of ["pc", "a", "x", "y", "sp"] as const) {
         const value = input.values?.[key];

@@ -5,8 +5,8 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { AUTOSTART_TYPES, DISK_TYPES, MAX_SNAPSHOTS, RUN_STATES, WireFailure } from "../../protocol.ts";
-import { AddressInput, AddressOutput, defineTool } from "../server.ts";
+import { AUTOSTART_TYPES, DISK_TYPES, MAX_SNAPSHOTS, RUN_STATES } from "../../protocol.ts";
+import { AddressInput, AddressOutput, defineTool, requireFields, TransientName } from "../server.ts";
 
 const ProjectPath = z.string().min(1).describe("path relative to the project directory, for example build/game.prg");
 
@@ -80,11 +80,7 @@ export const c64Snapshot = defineTool({
   inputSchema: z
     .object({
       action: z.enum(["save", "restore", "list", "discard"]),
-      name: z
-        .string()
-        .regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 letters, digits, dots, underscores or hyphens")
-        .optional()
-        .describe("save, restore and discard: 1 to 64 letters, digits, dots, underscores or hyphens"),
+      name: TransientName.optional().describe("save, restore and discard: 1 to 64 letters, digits, dots, underscores or hyphens"),
     })
     .strict(),
   outputSchema: z.object({
@@ -97,12 +93,13 @@ export const c64Snapshot = defineTool({
   }),
   readOnly: false,
   async run(input, session) {
-    if (input.action === "list") {
-      if (input.name !== undefined) throw new WireFailure("invalid-input", "name is not used with action list.");
-      return session.snapshot({ action: "list" });
+    const { action, name } = input;
+    if (action === "list") {
+      requireFields(action, { name }, []);
+      return session.snapshot({ action });
     }
-    if (input.name === undefined) throw new WireFailure("invalid-input", `Action ${input.action} needs name.`);
-    return session.snapshot({ action: input.action, name: input.name });
+    requireFields(action, { name }, ["name"], ["name"]);
+    return session.snapshot({ action, name: name! });
   },
 });
 
