@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { test } from "node:test";
 
-import { isAlive, isGroupRunning, signalGroup } from "./processes.ts";
+import { isAlive, isGroupRunning, ProcessSupervisor, signalGroup, type Registry } from "./processes.ts";
 
 const skip = process.platform === "win32" ? "process groups are POSIX" : false;
 
@@ -130,5 +130,57 @@ test("the registry directory of a watchdog names its owner", { skip: process.pla
     } finally {
       if (!passed) cleanUp(owner);
     }
+  }
+});
+
+/** A watchdog started directly, with this test process as its owner: an owner pid that runs on, as a reused pid does. */
+function startWatchdog(registry: Registry): { watchdog: ChildProcess; directory: string } {
+  const directory = mkdtempSync(join(tmpdir(), "c64-re-tools-watchdog-pipe-test-"));
+  const file = join(directory, "registry.json");
+  writeFileSync(file, JSON.stringify(registry));
+  const watchdog = spawn(process.execPath, [...process.execArgv, join(import.meta.dirname, "watchdog.ts"), String(process.pid), file], { stdio: ["pipe", "ignore", "ignore"] });
+  return { watchdog, directory };
+}
+
+test("the end of the owner's pipe makes the watchdog clean up, also while the owner's pid still runs", { skip, timeout: 20_000 }, async () => {
+  const supervisor = new ProcessSupervisor();
+  const group = supervisor.spawn(["sleep", "600"]).pid;
+  const path = mkdtempSync(join(tmpdir(), "c64-re-tools-watchdog-pipe-path-"));
+  const { watchdog, directory } = startWatchdog({ groups: [group], paths: [path] });
+  let passed = false;
+  try {
+    watchdog.stdin!.end();
+    assert.ok(await until(() => !groupAlive(group), 8_000), "the watchdog stopped the group");
+    assert.ok(await until(() => !existsSync(path) && !existsSync(directory), 4_000), "the watchdog removed the owned path and its registry");
+    assert.ok(await until(() => watchdog.exitCode !== null, 4_000), "the watchdog ended");
+    assert.equal(watchdog.exitCode, 0);
+    passed = true;
+  } finally {
+    // Only after a failure: an ended group's pid can belong to another process later.
+    if (!passed) supervisor.killAllSync();
+    watchdog.kill("SIGKILL");
+    rmSync(path, { recursive: true, force: true });
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("a path that the watchdog cannot remove does not stop the removal of the others", { skip: skip || (process.getuid?.() === 0 ? "root can remove any path" : false), timeout: 20_000 }, async () => {
+  const locked = mkdtempSync(join(tmpdir(), "c64-re-tools-watchdog-locked-"));
+  const stuck = join(locked, "stuck");
+  mkdirSync(stuck);
+  chmodSync(locked, 0o500);
+  const free = mkdtempSync(join(tmpdir(), "c64-re-tools-watchdog-free-"));
+  const { watchdog, directory } = startWatchdog({ groups: [], paths: [stuck, free] });
+  try {
+    watchdog.stdin!.end();
+    assert.ok(await until(() => watchdog.exitCode !== null, 8_000), "the watchdog ended");
+    assert.equal(watchdog.exitCode, 0, "the watchdog ended normally");
+    assert.equal(existsSync(stuck), true, "the locked path stays");
+    assert.equal(existsSync(free), false, "the path after it is removed");
+    assert.equal(existsSync(directory), false, "the registry is removed");
+  } finally {
+    watchdog.kill("SIGKILL");
+    chmodSync(locked, 0o700);
+    for (const path of [locked, free, directory]) rmSync(path, { recursive: true, force: true });
   }
 });
