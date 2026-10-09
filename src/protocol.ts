@@ -1227,6 +1227,11 @@ export function validateSourceTree(value: unknown, attachments: readonly Uint8Ar
   });
 }
 
+/** Refuses anything but exactly one attachment with at least one byte, named by what it must hold. */
+function oneFile(attachments: readonly Uint8Array[], what: string): void {
+  if (attachments.length !== 1 || attachments[0]!.length === 0) invalid(`${what} must be the one attachment, and it must not be empty`);
+}
+
 /** Validates tool request parameters on the host. Throws WireFailure(invalid-input). */
 export function validateToolParams<O extends ToolOperation>(op: O, params: unknown, attachments: readonly Uint8Array[]): ToolOperations[O]["params"] {
   if (!isObject(params)) invalid("parameters must be an object");
@@ -1235,7 +1240,7 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
       onlyFields(params, ["action", "imageType", "name"]);
       if (!isOneOf(DISK_ACTIONS, params.action)) invalid(`action must be one of ${DISK_ACTIONS.join(", ")}`);
       if (!isOneOf(DISK_IMAGE_TYPES, params.imageType)) invalid(`imageType must be one of ${DISK_IMAGE_TYPES.join(", ")}`);
-      if (attachments.length !== 1 || attachments[0]!.length === 0) invalid("the disk image must be the one attachment");
+      oneFile(attachments, "the disk image");
       const result: C1541Params = { action: params.action, imageType: params.imageType };
       const named = params.action === "entry" || params.action === "chain" || params.action === "read";
       if (!named) {
@@ -1255,7 +1260,7 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
     }
     case "petcat.decode": {
       onlyFields(params, []);
-      if (attachments.length !== 1) invalid("the program must be the one attachment");
+      oneFile(attachments, "the program");
       return {} as ToolOperations[O]["params"];
     }
     case "host.status":

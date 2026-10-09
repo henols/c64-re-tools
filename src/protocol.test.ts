@@ -383,6 +383,14 @@ test("c1541.inspect parameters and results are validated", () => {
   assert.deepEqual(validateToolResult("c1541.inspect", { action: "chain", found: true, sectors: [{ track: 17, sector: 0 }] }, []).action, "chain");
 });
 
+test("c1541.inspect and petcat.decode refuse an empty attachment in the same words", () => {
+  const empty = [Buffer.alloc(0)];
+  const refused = (what: string) => (error: unknown) =>
+    error instanceof WireFailure && error.code === "invalid-input" && error.message === `${what} must be the one attachment, and it must not be empty`;
+  assert.throws(() => validateToolParams("c1541.inspect", { action: "directory", imageType: "d64" }, empty), refused("the disk image"));
+  assert.throws(() => validateToolParams("petcat.decode", {}, empty), refused("the program"));
+});
+
 test("petcat.decode takes only the program and validates its result", () => {
   assert.deepEqual(validateToolParams("petcat.decode", {}, [Buffer.alloc(4)]), {});
   assert.throws(() => validateToolParams("petcat.decode", { dialect: "70" }, [Buffer.alloc(4)]), WireFailure);
