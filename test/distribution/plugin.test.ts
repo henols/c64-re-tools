@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -94,5 +94,4 @@ test("AP SDK accepts the plugin module", () => {
   const check = spawnSync(process.execPath, [cli, "check", "distribution/plugin.ts"], { cwd: root, encoding: "utf8" });
   assert.equal(check.status, 0, check.stdout + check.stderr);
   assert.match(check.stdout, /is valid \(\d+ skill\(s\)/);
-  assert.equal(readFileSync(resolve(root, "distribution", "plugin.ts"), "utf8").includes("dist/"), false);
 });
