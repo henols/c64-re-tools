@@ -1,21 +1,21 @@
-// Video and chip tools: c64_vicii (15 §25), c64_sprite (15 §26), c64_cia
-// (15 §27), c64_sid (15 §28), c64_screen (15 §29) and c64_observe (15 §30).
+// Video and chip tools: c64_vicii, c64_sprite, c64_cia, c64_sid, c64_screen
+// and c64_observe.
 
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
 import { CIA_SELECTIONS, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, WireFailure, type ObserveParams } from "../../protocol.ts";
-import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, SpaceInput, ToolOutput } from "../server.ts";
+import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, requireFields, SpaceInput, ToolOutput, TransientName } from "../server.ts";
 
 const Color = z.number().int().min(0).max(15);
-const NO_CHANGE = "This does not change if the machine is running or stopped.";
+const NO_CHANGE = "This does not change the run state of the machine.";
 
 export const c64Vicii = defineTool({
   name: "c64_vicii",
   title: "VIC-II state",
   description:
-    "Get the state of the VIC-II video chip: the raster line, the display mode, the screen and graphics addresses, " +
-    `the scroll values and the colours. The addresses include the 16 KB video bank that CIA 2 selects. ${NO_CHANGE}`,
+    "Get the state of the VIC-II video chip: the raster line, the graphics mode, the screen and graphics addresses, " +
+    `the scroll values and the colors. The addresses include the 16 KB video bank that CIA 2 selects. ${NO_CHANGE}`,
   inputSchema: z.object({}).strict(),
   outputSchema: z.object({
     rasterLine: z.number().int().min(0),
@@ -51,7 +51,7 @@ export const c64Sprite = defineTool({
   name: "c64_sprite",
   title: "Sprite state",
   description:
-    "Get the state of sprites 0 to 7: position, enabled, colour, multicolour, expansion, priority and the address of the sprite data. " +
+    "Get the state of sprites 0 to 7: position, enabled, color, multicolor, expansion, priority and the address of the sprite data. " +
     `sprites selects which sprites to give. Without it, you get all eight. ${NO_CHANGE}`,
   inputSchema: z
     .object({ sprites: z.array(z.number().int().min(0).max(7)).min(1).max(8).optional().describe("sprite numbers 0 to 7, each once") })
@@ -119,11 +119,6 @@ export const c64Sid = defineTool({
   },
 });
 
-const BaselineName = z
-  .string()
-  .regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 letters, digits, dots, underscores or hyphens")
-  .describe("a name you choose: 1 to 64 letters, digits, dots, underscores or hyphens");
-
 const Rectangle = z
   .object({ x: z.number().int().min(0), y: z.number().int().min(0), width: z.number().int().min(1), height: z.number().int().min(1) })
   .strict();
@@ -139,11 +134,11 @@ export const c64Screen = defineTool({
     "With includeDiff, compare also returns an image with the different pixels in magenta. " +
     "Action list gives the baseline names. Action discard removes a baseline. Baselines stay until the session ends. " +
     "The emulator draws frames while the CPU runs. After the CPU stops, the frame stays the same. " +
-    "This tool does not change if the machine is running or stopped.",
+    "This does not change the run state of the machine.",
   inputSchema: z
     .object({
       action: z.enum(["capture", "compare", "list", "discard"]),
-      baseline: BaselineName.optional().describe("capture: keep the frame under this name; compare and discard: the baseline to use"),
+      baseline: TransientName.optional().describe("capture: keep the frame under this name. compare and discard: the baseline to use"),
       maxMismatchRatio: z.number().min(0).max(1).optional().describe("compare only: 0 to 1, default 0"),
       mask: z.array(Rectangle).max(64).optional().describe("compare only: rectangles to ignore, in frame pixels"),
       includeDiff: z.boolean().optional().describe("compare only: also return a difference image"),
@@ -163,22 +158,14 @@ export const c64Screen = defineTool({
   readOnly: false,
   async run(input, session) {
     const { action, ...fields } = input;
-    const only = (allowed: string[], required: string[]) => {
-      for (const [field, value] of Object.entries(fields)) {
-        if (value !== undefined && !allowed.includes(field)) throw new WireFailure("invalid-input", `${field} is not used with action ${action}.`);
-      }
-      for (const field of required) {
-        if ((fields as Record<string, unknown>)[field] === undefined) throw new WireFailure("invalid-input", `Action ${action} needs ${field}.`);
-      }
-    };
     if (action === "capture") {
-      only(["baseline"], []);
+      requireFields(action, fields, ["baseline"]);
       const shot = await session.screenCapture(fields.baseline);
       const result = { width: shot.width, height: shot.height, ...(shot.baseline === undefined ? {} : { baseline: shot.baseline }) };
       return new ToolOutput(result, [{ type: "image", data: shot.png, mimeType: "image/png" }]);
     }
     if (action === "compare") {
-      only(["baseline", "maxMismatchRatio", "mask", "includeDiff"], ["baseline"]);
+      requireFields(action, fields, ["baseline", "maxMismatchRatio", "mask", "includeDiff"], ["baseline"]);
       const { diffPng, ...result } = await session.screenCompare({
         baseline: fields.baseline!,
         maxMismatchRatio: fields.maxMismatchRatio ?? 0,
@@ -188,10 +175,10 @@ export const c64Screen = defineTool({
       return diffPng === undefined ? result : new ToolOutput(result, [{ type: "image", data: diffPng, mimeType: "image/png" }]);
     }
     if (action === "list") {
-      only([], []);
+      requireFields(action, fields, []);
       return session.screenBaselines();
     }
-    only(["baseline"], ["baseline"]);
+    requireFields(action, fields, ["baseline"], ["baseline"]);
     return session.screenDiscard(fields.baseline!);
   },
 });
@@ -202,7 +189,7 @@ export const c64Observe = defineTool({
   name: "c64_observe",
   title: "Observe several things at one moment",
   description:
-    "Get several observations from one moment: the CPU stops once, all of them are read, and then the CPU continues if it was running. " +
+    "Get several observations from one moment: the CPU stops once, the tool reads all of them, and then the CPU continues if it was running. " +
     "Ask for any of registers (a space), memory ranges, vicii, sprites, cia, sid, screen and timing (the raster position). " +
     `Ask for at least one. Use at most ${MAX_OBSERVE_RANGES} memory ranges with at most ${MAX_OBSERVE_BYTES} bytes together. ` +
     "The result has only the parts you asked for. With screen, an image comes with the result.",

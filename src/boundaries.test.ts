@@ -15,7 +15,8 @@ function areaOf(path: string): string | undefined {
   const parts = path.split("/");
   if (parts[0] === "src") {
     if (parts.length === 2) {
-      const leaf = parts[1]!.replace(/\.ts$/, "");
+      // A top-level test kit, such as protocol.testkit.ts, belongs to the area of its module.
+      const leaf = parts[1]!.replace(/(?:\.testkit)?\.ts$/, "");
       return ["c64", "project", "protocol"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
@@ -37,8 +38,9 @@ const ALLOWED: Record<string, readonly string[]> = {
   knowledge: ["c64", "project"],
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
   native: ["protocol", "c64"],
-  cli: ["mcp", "host-client", "host", "native", "knowledge", "protocol", "c64", "project", "distribution"],
-  distribution: ["c64", "project"],
+  // The installation and status edge: host tool status through the host-client, local tool status through native.
+  cli: ["host-client", "native", "protocol", "distribution"],
+  distribution: [],
 };
 const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64"];
 
@@ -61,7 +63,7 @@ function checkImport(from: string, specifier: string): string | undefined {
   }
 
   const target = relative(ROOT, resolve(ROOT, dirname(from), specifier)).split(sep).join("/");
-  // An installed skill holds its own scripts and a copy of src/ reached through #src/* (08 §6).
+  // An installed skill holds its own scripts and a copy of src/ reached through #src/*.
   if (source.startsWith("skill:") && areaOf(target) !== source) return `${from}: a skill reaches src/ through #src/, never through ${specifier}`;
   return checkTarget(from, source, target);
 }
@@ -120,6 +122,12 @@ test("checkImport refuses every forbidden direction", () => {
     ["skills/c64-disk/scripts/disk.ts", "../../../src/host-client/tools.ts"],
     ["src/mcp/server.ts", AP_SDK],
     ["skills/c64-disk/scripts/disk.ts", AP_SDK],
+    ["src/cli/main.ts", "../mcp/server.ts"],
+    ["src/cli/main.ts", "../host/server.ts"],
+    ["src/cli/main.ts", "../knowledge/read.ts"],
+    ["src/cli/main.ts", "../project.ts"],
+    ["distribution/plugin.ts", "../src/c64.ts"],
+    ["distribution/plugin.ts", "../src/project.ts"],
   ];
   for (const [from, specifier] of refused) {
     assert.notEqual(checkImport(from, specifier), undefined, `${from} -> ${specifier} must be refused`);
@@ -136,11 +144,14 @@ test("checkImport accepts every allowed direction", () => {
     ["src/host/vice/session.ts", "./process.ts"],
     ["src/knowledge/read.ts", "../project.ts"],
     ["src/protocol.ts", "./c64.ts"],
+    ["src/host-client/connect.test.ts", "../protocol.testkit.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/host-client/tools.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/knowledge/write.ts"],
     ["skills/c64-disk/scripts/disk.ts", "./helpers.ts"],
     ["distribution/plugin.ts", AP_SDK],
-    ["src/cli/main.ts", "../host/server.ts"],
+    ["src/cli/main.ts", "../host-client/tools.ts"],
+    ["src/cli/main.ts", "../native/status.ts"],
+    ["src/cli/main.ts", "../../distribution/plugin.ts"],
     ["src/host/server.ts", "node:net"],
   ];
   for (const [from, specifier] of accepted) {

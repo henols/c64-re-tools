@@ -10,6 +10,7 @@ import {
   petsciiNameToText,
   textToPetscii,
   textToPetsciiName,
+  vicBankBase,
   type TokenizedLine,
 } from "./c64.ts";
 
@@ -148,4 +149,11 @@ test("handoffs come from SYS and USR in program text only", () => {
     { kind: "sys", line: 60, computed: true },
     { kind: "sys", line: 80, address: 49152 },
   ]);
+});
+
+test("the VIC-II bank comes from CIA 2 port A, inverted, with undriven lines high", () => {
+  assert.equal(vicBankBase(0x97, 0x3f), 0x0000); // KERNAL default: lines %11 -> bank 0
+  assert.equal(vicBankBase(0x96, 0x3f), 0x4000);
+  assert.equal(vicBankBase(0x94, 0x3f), 0xc000);
+  assert.equal(vicBankBase(0x00, 0x00), 0x0000, "no driven lines read high");
 });

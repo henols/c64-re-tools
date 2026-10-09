@@ -1,7 +1,7 @@
-// Short-lived typed requests to the Host Runtime for skill scripts (04 §4, 16):
+// Short-lived typed requests to the Host Runtime for skill scripts:
 // VICE's own tools (c1541, petcat) and the host tool status. Each request
 // opens its own "tool" connection, sends bytes, and closes. Skill scripts run
-// ACME, DXA and Ghidra themselves through src/native (D16).
+// ACME, DXA and Ghidra themselves through src/native.
 
 import {
   DISK_IMAGE_TYPES,
@@ -56,7 +56,7 @@ export async function callTool<O extends ToolOperation>(
       void connection.closed.then(() =>
         reject(new WireFailure("operation-failed", "The connection to the c64-re-tools host runtime was lost during the request. Check that the Host Runtime (c64-re-tools-host) is running.")),
       );
-      connection.send({ type: "request", id: 1, op, params } as never, attachments);
+      connection.send({ type: "request", id: 1, op, params }, attachments);
     });
   } finally {
     await connection.close();
@@ -71,11 +71,11 @@ export interface InspectDiskRequest {
   name?: string;
 }
 
-/** c1541.inspect (16 §12): a found read also returns the file's bytes. */
+/** c1541.inspect: a found read also returns the file's bytes. */
 export async function inspectDisk(request: InspectDiskRequest, options: ToolCallOptions = {}): Promise<C1541Result & { data?: Buffer }> {
   const file = readProjectFile(request.image);
   if (!(DISK_IMAGE_TYPES as readonly string[]).includes(file.type)) {
-    throw new WireFailure("invalid-input", `${request.image} is no disk image this tool reads; use a .d64, .d71, .d81 or .g64 file.`);
+    throw new WireFailure("invalid-input", `${request.image} is not a disk image that this tool reads. Use a .d64, .d71, .d81 or .g64 file.`);
   }
   const params: ToolOperations["c1541.inspect"]["params"] = { action: request.action, imageType: file.type as DiskImageType };
   if (request.name !== undefined) params.name = request.name;
@@ -83,7 +83,7 @@ export async function inspectDisk(request: InspectDiskRequest, options: ToolCall
   return result.action === "read" && result.found ? { ...result, data: attachments[0]! } : result;
 }
 
-/** petcat.decode (16 §13): the C64 BASIC V2 listing of a project program and its machine-code handoffs. */
+/** petcat.decode: the C64 BASIC V2 listing of a project program and its machine-code handoffs. */
 export async function decodeBasic(request: { program: string }, options: ToolCallOptions = {}): Promise<PetcatResult> {
   const file = readProjectFile(request.program);
   return (await callTool("petcat.decode", {}, [file.bytes], options)).result;
@@ -95,4 +95,14 @@ export async function hostTools(options: ToolCallOptions = {}): Promise<ToolStat
 }
 
 /** Skill scripts see failures and wire limits through the host-client, never the private protocol module. */
-export { DISK_ACTIONS, MAX_MEMORY_READ, MAX_TIMEOUT_FRAMES, WireFailure } from "../protocol.ts";
+export {
+  DISK_ACTIONS,
+  JOYSTICK_DIRECTIONS,
+  MAX_BASELINES,
+  MAX_EXECUTION_COUNT,
+  MAX_KEYBOARD_BYTES,
+  MAX_MEMORY_READ,
+  MAX_MEMORY_WRITE,
+  MAX_TIMEOUT_FRAMES,
+  WireFailure,
+} from "../protocol.ts";

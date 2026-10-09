@@ -1,6 +1,5 @@
-// Memory and CPU tools: c64_memory_read (15 §14), c64_memory_write (15 §15),
-// c64_memory_search (15 §16), c64_memory_compare (15 §17), c64_registers
-// (15 §18) and c64_disassemble (15 §19).
+// Memory and CPU tools: c64_memory_read, c64_memory_write, c64_memory_search,
+// c64_memory_compare, c64_registers and c64_disassemble.
 
 import { z } from "zod";
 
@@ -16,7 +15,7 @@ import {
   WireFailure,
   type RegisterValues,
 } from "../../protocol.ts";
-import { AddressInput, AddressOutput, Byte, defineTool, HexData, HexDataInput, MemoryViewInput, SpaceInput } from "../server.ts";
+import { AddressInput, AddressOutput, Byte, defineTool, HexData, HexDataInput, MemoryViewInput, requireFields, SpaceInput } from "../server.ts";
 
 export const c64MemoryRead = defineTool({
   name: "c64_memory_read",
@@ -24,7 +23,7 @@ export const c64MemoryRead = defineTool({
   description:
     `Read 1 to ${MAX_MEMORY_READ} bytes of memory, starting at an address. ` +
     "The range must not go past $ffff. Use space drive8 to read the memory of the 1541 disk drive. " +
-    "This read does not change if the machine is running or stopped.",
+    "This does not change the run state of the machine.",
   inputSchema: z
     .object({
       address: AddressInput,
@@ -82,7 +81,7 @@ const RegisterValuesInput = z
     x: Byte.optional(),
     y: Byte.optional(),
     sp: Byte.optional(),
-    flags: Flags.partial().strict().optional().describe("any of n, v, b, d, i, z and c; flags not named keep their value"),
+    flags: Flags.partial().strict().optional().describe("any of n, v, b, d, i, z and c. Flags that you do not name keep their value"),
   })
   .strict();
 
@@ -91,7 +90,7 @@ export const c64Registers = defineTool({
   title: "C64 CPU registers",
   description:
     "Get or set the CPU registers: pc, a, x, y, sp and the status flags n, v, b, d, i, z and c. " +
-    "Action get reads them. It does not change if the machine is running or stopped. " +
+    "Action get reads them. This does not change the run state of the machine. " +
     "Action set writes the registers that values names and returns all registers. Stop the CPU before you use set. " +
     "Use space drive8 for the CPU of the 1541 disk drive.",
   inputSchema: z
@@ -106,9 +105,10 @@ export const c64Registers = defineTool({
   async run(input, session) {
     let registers;
     if (input.action === "get") {
-      if (input.values !== undefined) throw new WireFailure("invalid-input", "values is used only with action set.");
+      requireFields(input.action, { values: input.values }, []);
       registers = await session.registersGet(input.space);
     } else {
+      requireFields(input.action, { values: input.values }, ["values"], ["values"]);
       const values: RegisterValues = {};
       for (const key of ["pc", "a", "x", "y", "sp"] as const) {
         const value = input.values?.[key];
@@ -138,11 +138,11 @@ export const c64MemorySearch = defineTool({
   description:
     `Find a byte pattern of 1 to ${MAX_SEARCH_PATTERN} bytes in memory from start to end. ?? matches any byte. ` +
     `The result gives the start address of each match, at most maxResults (1 to ${MAX_SEARCH_RESULTS}, default 100). ` +
-    "This search does not change if the machine is running or stopped.",
+    "This does not change the run state of the machine.",
   inputSchema: z
     .object({
       start: AddressInput,
-      end: AddressInput.optional().describe("last address to search; default $ffff"),
+      end: AddressInput.optional().describe("last address to search. Default $ffff"),
       pattern: SearchPattern,
       space: SpaceInput,
       view: MemoryViewInput,
@@ -153,7 +153,7 @@ export const c64MemorySearch = defineTool({
   readOnly: true,
   async run(input, session) {
     if (input.pattern.length > MAX_SEARCH_PATTERN) {
-      throw new WireFailure("invalid-input", `pattern has ${input.pattern.length} bytes; the limit is ${MAX_SEARCH_PATTERN}.`);
+      throw new WireFailure("invalid-input", `pattern has ${input.pattern.length} bytes. The limit is ${MAX_SEARCH_PATTERN}.`);
     }
     if (input.pattern.every((token) => token === null)) throw new WireFailure("invalid-input", "pattern needs at least one byte that is not ??.");
     const result = await session.memorySearch({ ...input, end: input.end ?? 0xffff });
@@ -171,7 +171,7 @@ export const c64MemoryCompare = defineTool({
   description:
     `Compare two memory ranges of size bytes (1 to ${MAX_COMPARE_SIZE}). Each range has its own address, space and view. ` +
     `The result tells if they are equal, how many bytes differ, and the first ${MAX_COMPARE_DIFFERENCES} differences with their offset. ` +
-    "This compare does not change if the machine is running or stopped.",
+    "This does not change the run state of the machine.",
   inputSchema: z
     .object({ left: Location, right: Location, size: z.number().int().min(1).max(MAX_COMPARE_SIZE) })
     .strict(),
@@ -192,7 +192,7 @@ export const c64Disassemble = defineTool({
   description:
     `Disassemble count instructions (1 to ${MAX_DISASSEMBLE}) from an address, as the bytes are in the live machine now. ` +
     "Use it to read code that a program changed or unpacked at run time. It includes the undocumented opcodes. " +
-    "This does not change if the machine is running or stopped.",
+    "This does not change the run state of the machine.",
   inputSchema: z
     .object({
       address: AddressInput,

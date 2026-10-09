@@ -1,6 +1,5 @@
-// Debug tools: c64_breakpoint (15 §12), c64_watchpoint (15 §13),
-// c64_cpu_history (15 §20), c64_backtrace (15 §21), c64_profile (15 §22),
-// c64_memmap (15 §23) and c64_timing (15 §24).
+// Debug tools: c64_breakpoint, c64_watchpoint, c64_cpu_history, c64_backtrace,
+// c64_profile, c64_memmap and c64_timing.
 
 import { z } from "zod";
 
@@ -15,11 +14,10 @@ import {
   SPACES,
   TIMING_ACTIONS,
   WATCH_ACCESS,
-  WireFailure,
   type Breakpoint,
   type Watchpoint,
 } from "../../protocol.ts";
-import { AddressInput, AddressOutput, Byte, ConditionInput, ConditionOutput, defineTool, HexData, showCondition, SpaceInput, toCondition } from "../server.ts";
+import { AddressInput, AddressOutput, Byte, ConditionInput, ConditionOutput, defineTool, HexData, requireFields, showCondition, SpaceInput, toCondition } from "../server.ts";
 
 /** No default here: a filled-in default would count as a field the other actions refuse. */
 const OptionalSpace = z.enum(SPACES).optional().describe("add only: c64 (default) or drive8, the 1541 disk drive CPU");
@@ -34,16 +32,6 @@ const BreakpointOutput = z.object({
   condition: ConditionOutput.optional(),
 });
 const WatchpointOutput = BreakpointOutput.extend({ size: z.number().int().min(1).max(MAX_WATCH_SIZE), access: z.enum(WATCH_ACCESS) });
-
-/** Checks which fields an action takes, so a wrong mix is an invalid-input error. */
-function requireFields(action: string, given: Record<string, unknown>, allowed: string[], required: string[]): void {
-  for (const [field, value] of Object.entries(given)) {
-    if (value !== undefined && !allowed.includes(field)) throw new WireFailure("invalid-input", `${field} is not used with action ${action}.`);
-  }
-  for (const field of required) {
-    if (given[field] === undefined) throw new WireFailure("invalid-input", `Action ${action} needs ${field}.`);
-  }
-}
 
 function showBreakpoint(point: Breakpoint) {
   const { condition, ...rest } = point;
@@ -77,13 +65,13 @@ export const c64Breakpoint = defineTool({
   async run(input, session) {
     const { action, ...fields } = input;
     if (action === "list") {
-      requireFields(action, fields, [], []);
-      const result = (await session.breakpoint({ action })) as { breakpoints: Breakpoint[] };
+      requireFields(action, fields, []);
+      const result = await session.breakpoint({ action });
       return { breakpoints: result.breakpoints.map(showBreakpoint) };
     }
     if (action !== "add") {
       requireFields(action, fields, ["id"], ["id"]);
-      return showBreakpoint((await session.breakpoint({ action, id: fields.id! })) as Breakpoint);
+      return showBreakpoint(await session.breakpoint({ action, id: fields.id! }));
     }
     requireFields(action, fields, ["address", "space", "condition"], ["address"]);
     const added = await session.breakpoint({
@@ -92,7 +80,7 @@ export const c64Breakpoint = defineTool({
       space: fields.space ?? "c64",
       ...(fields.condition === undefined ? {} : { condition: toCondition(fields.condition) }),
     });
-    return showBreakpoint(added as Breakpoint);
+    return showBreakpoint(added);
   },
 });
 
@@ -108,7 +96,7 @@ export const c64Watchpoint = defineTool({
     .object({
       action: z.enum(CHECKPOINT_ACTIONS),
       address: AddressInput.optional().describe("add only"),
-      size: z.number().int().min(1).max(MAX_WATCH_SIZE).optional().describe("add only; default 1"),
+      size: z.number().int().min(1).max(MAX_WATCH_SIZE).optional().describe("add only. Default 1"),
       access: z.enum(WATCH_ACCESS).optional().describe("add only"),
       space: OptionalSpace,
       condition: ConditionInput.optional().describe("add only: stop only when this is true"),
@@ -120,13 +108,13 @@ export const c64Watchpoint = defineTool({
   async run(input, session) {
     const { action, ...fields } = input;
     if (action === "list") {
-      requireFields(action, fields, [], []);
-      const result = (await session.watchpoint({ action })) as { watchpoints: Watchpoint[] };
+      requireFields(action, fields, []);
+      const result = await session.watchpoint({ action });
       return { watchpoints: result.watchpoints.map(showWatchpoint) };
     }
     if (action !== "add") {
       requireFields(action, fields, ["id"], ["id"]);
-      return showWatchpoint((await session.watchpoint({ action, id: fields.id! })) as Watchpoint);
+      return showWatchpoint(await session.watchpoint({ action, id: fields.id! }));
     }
     requireFields(action, fields, ["address", "size", "access", "space", "condition"], ["address", "access"]);
     const added = await session.watchpoint({
@@ -137,7 +125,7 @@ export const c64Watchpoint = defineTool({
       space: fields.space ?? "c64",
       ...(fields.condition === undefined ? {} : { condition: toCondition(fields.condition) }),
     });
-    return showWatchpoint(added as Watchpoint);
+    return showWatchpoint(added);
   },
 });
 
@@ -145,9 +133,10 @@ export const c64CpuHistory = defineTool({
   name: "c64_cpu_history",
   title: "CPU history",
   description:
-    `Get the last instructions the CPU executed, oldest first: limit of them (1 to ${MAX_HISTORY}, default 50). ` +
+    "Get the last instructions that the CPU executed, oldest first. " +
+    `limit is the number of instructions (1 to ${MAX_HISTORY}, default 50). ` +
     "Each entry gives the address, the bytes, the instruction and the registers a, x, y and sp. " +
-    "In space c64, it also gives the raster line and cycle when the instruction started. This does not change if the machine is running or stopped.",
+    "In space c64, it also gives the raster line and cycle when the instruction started. This does not change the run state of the machine.",
   inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput }).strict(),
   outputSchema: z.object({
     entries: z.array(
@@ -210,7 +199,8 @@ export const c64Profile = defineTool({
   name: "c64_profile",
   title: "Cycle profile",
   description:
-    `Get the routines where the C64 CPU spent the most cycles since the session started, at most limit of them (1 to ${MAX_PROFILE}, default 20). ` +
+    "Get the routines where the C64 CPU spent the most cycles since the session started. " +
+    `limit is the maximum number of routines (1 to ${MAX_PROFILE}, default 20). ` +
     "Each entry gives the routine address, its total cycles with the routines it calls, and its own cycles. " +
     "percent is the part of all cycles that the routine used itself. " +
     "Cycle counts are decimal strings.",
@@ -236,9 +226,9 @@ export const c64Memmap = defineTool({
   inputSchema: z
     .object({
       action: z.enum(["read", "clear"]),
-      start: AddressInput.optional().describe("read only; default $0000"),
-      end: AddressInput.optional().describe("read only; default $ffff"),
-      maxRanges: z.number().int().min(1).max(MAX_MEMMAP_RANGES).optional().describe("read only; default 256"),
+      start: AddressInput.optional().describe("read only. Default $0000"),
+      end: AddressInput.optional().describe("read only. Default $ffff"),
+      maxRanges: z.number().int().min(1).max(MAX_MEMMAP_RANGES).optional().describe("read only. Default 256"),
     })
     .strict(),
   outputSchema: z.object({
@@ -248,12 +238,10 @@ export const c64Memmap = defineTool({
   readOnly: false,
   async run(input, session) {
     if (input.action === "clear") {
-      requireFields("clear", { start: input.start, end: input.end, maxRanges: input.maxRanges }, [], []);
-      return session.memmap({ action: "clear" }) as Promise<{ cleared: boolean }>;
+      requireFields("clear", { start: input.start, end: input.end, maxRanges: input.maxRanges }, []);
+      return session.memmap({ action: "clear" });
     }
-    const result = (await session.memmap({ action: "read", start: input.start ?? 0x0000, end: input.end ?? 0xffff, maxRanges: input.maxRanges ?? 256 })) as {
-      ranges: Array<{ start: number; end: number; execute: boolean; read: boolean; write: boolean }>;
-    };
+    const result = await session.memmap({ action: "read", start: input.start ?? 0x0000, end: input.end ?? 0xffff, maxRanges: input.maxRanges ?? 256 });
     return { ranges: result.ranges.map((range) => ({ ...range, start: formatC64Address(range.start), end: formatC64Address(range.end) })) };
   },
 });

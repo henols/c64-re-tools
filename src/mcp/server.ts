@@ -57,7 +57,7 @@ export type SessionSource = () => Promise<ViceSessionApi>;
 type JsonObject = Record<string, unknown>;
 
 // ---------------------------------------------------------------------------
-// Public schema primitives shared by the tool groups (15 §3)
+// Public schema primitives shared by the tool groups
 
 /** Input address: "$" and four hex digits, either case. Parses to a number. */
 export const AddressInput = z
@@ -79,12 +79,31 @@ export const HexDataInput = z
   .regex(/^(?:[0-9a-fA-F]{2})+$/, "must be hex bytes, two digits per byte, no separators, for example a9008d20d0")
   .transform((value) => value.toLowerCase());
 
-export const SpaceInput = z.enum(SPACES).default("c64").describe("c64 is the computer; drive8 is the 1541 disk drive CPU");
+export const SpaceInput = z.enum(SPACES).default("c64").describe("c64 is the computer. drive8 is the 1541 disk drive CPU");
 
 export const MemoryViewInput = z
   .enum(MEMORY_VIEWS)
   .default("cpu")
-  .describe("cpu reads what the CPU sees now (ROM and I/O where banked in); ram reads the RAM underneath (c64 only)");
+  .describe("cpu reads what the CPU sees now (ROM and I/O where banked in). ram reads the RAM underneath (c64 only)");
+
+/** A name the agent gives to something the session keeps, such as a screen baseline or a snapshot. */
+export const TransientName = z
+  .string()
+  .regex(/^[A-Za-z0-9._-]{1,64}$/, "must be 1 to 64 letters, digits, dots, underscores or hyphens")
+  .describe("a name you choose: 1 to 64 letters, digits, dots, underscores or hyphens");
+
+/**
+ * Checks the fields of one action of a multi-action tool: a field that the
+ * action does not use, or a missing required field, is an invalid-input error.
+ */
+export function requireFields(action: string, given: Record<string, unknown>, allowed: readonly string[], required: readonly string[] = []): void {
+  for (const [field, value] of Object.entries(given)) {
+    if (value !== undefined && !allowed.includes(field)) throw new WireFailure("invalid-input", `${field} is not used with action ${action}.`);
+  }
+  for (const field of required) {
+    if (given[field] === undefined) throw new WireFailure("invalid-input", `Action ${action} needs ${field}.`);
+  }
+}
 
 /** A tool result that carries content blocks (for example an image) beside its structured result. */
 export class ToolOutput<T> {
@@ -108,7 +127,7 @@ export interface ToolDefinition<I extends z.ZodObject = z.ZodObject, O extends z
   run(input: z.output<I>, session: ViceSessionApi): Promise<z.input<O> | ToolOutput<z.input<O>>>;
 }
 
-/** A typed condition (15 §6): register, memory or raster. No expression language. */
+/** A typed condition: register, memory or raster. No expression language. */
 export const ConditionInput = z
   .discriminatedUnion("kind", [
     z
@@ -133,13 +152,13 @@ export const ConditionInput = z
       .object({
         kind: z.literal("raster"),
         line: z.number().int().min(0).describe("raster line: PAL 0-311, NTSC 0-262"),
-        cycle: z.number().int().min(0).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64; true from this cycle on"),
+        cycle: z.number().int().min(0).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64. True from this cycle on"),
       })
       .strict(),
   ])
-  .describe("register: a CPU register compared to a byte; memory: a byte in memory compared to a byte; raster: the raster position");
+  .describe("register: a CPU register compared to a byte. memory: a byte in memory compared to a byte. raster: the raster position");
 
-/** A condition as a result shows it: the input form, with the memory address as "$xxxx" (D21). */
+/** A condition as a result shows it: the input form, with the memory address as "$xxxx". */
 export const ConditionOutput = z
   .discriminatedUnion("kind", [
     z.object({ kind: z.literal("register"), register: z.enum(CONDITION_REGISTERS), operator: z.enum(COMPARISONS), value: Byte }),
@@ -188,14 +207,14 @@ function errorResult(error: WireError): CallToolResult {
   return { isError: true, content: [{ type: "text", text: JSON.stringify({ code: error.code, message: error.message }) }] };
 }
 
-/** "address: Invalid string: must match ..." style messages, one line per problem. */
+/** "address: Invalid string: must match ..." style messages, one sentence per problem. */
 function describeIssues(error: z.ZodError): string {
   return error.issues
     .map((issue) => {
       const where = issue.path.length === 0 ? "input" : issue.path.join(".");
       return `${where}: ${issue.message}`;
     })
-    .join("; ");
+    .join(". ");
 }
 
 const INTERNAL_FAILURE: WireError = { code: "operation-failed", message: "The operation failed inside the c64-re-tools MCP server." };
@@ -232,19 +251,20 @@ export async function callTool(
   }
 }
 
+/** The version of this package. A package.json without a version is a broken installation. */
 function packageVersion(): string {
-  try {
-    return (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
-  } catch {
-    return "0.0.0";
+  const { version } = createRequire(import.meta.url)("../../package.json") as { version?: unknown };
+  if (typeof version !== "string" || version === "") {
+    throw new Error("The package.json of c64-re-tools has no version. Install c64-re-tools again.");
   }
+  return version;
 }
 
 const INSTRUCTIONS =
   "These tools control one live Commodore 64 emulator that belongs to this session. " +
   "Addresses are four hex digits after a dollar sign, for example $c000. " +
   "Memory data is lowercase hex without separators. " +
-  "Reads do not change whether the machine is running or stopped.";
+  "A read does not change the run state of the machine.";
 
 export function createMcpServer(options: { tools: readonly ToolDefinition[]; session: SessionSource; log?: (line: string) => void }): Server {
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));

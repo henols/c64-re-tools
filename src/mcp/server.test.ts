@@ -6,12 +6,23 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import {
+  MAX_SEARCH_PATTERN,
   WireFailure,
+  type Breakpoint,
+  type BreakpointParams,
   type ExecutionParams,
+  type JoystickState,
+  type MemmapRange,
   type MemoryReadParams,
   type MemoryWriteParams,
+  type ObserveParams,
+  type ObserveResult,
   type RegisterValues,
   type Registers,
+  type RunTarget,
+  type ViceOperations,
+  type Watchpoint,
+  type WatchpointParams,
 } from "../protocol.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
 import { debugTools } from "./tools/debug.ts";
@@ -22,7 +33,7 @@ import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 import { videoTools } from "./tools/video.ts";
 
-/** The public tool list, 15 §37, in its order; c64_window was added by D20. */
+/** The public tool list, in its order. */
 const PUBLIC_TOOLS = [
   "c64_status",
   "c64_reset",
@@ -87,15 +98,15 @@ class FakeSession implements ViceSessionApi {
   }
 
   searches: unknown[] = [];
-  async memorySearch(params: import("../protocol.ts").ViceOperations["memorySearch"]["params"]) {
+  async memorySearch(params: ViceOperations["memorySearch"]["params"]) {
     this.searches.push(params);
     return { matches: [0x2100, 0x37a0] };
   }
-  async memoryCompare(params: import("../protocol.ts").ViceOperations["memoryCompare"]["params"]) {
+  async memoryCompare(params: ViceOperations["memoryCompare"]["params"]) {
     this.searches.push(params);
     return { equal: false, differentBytes: 3, firstDifferences: [{ offset: 12, left: 4, right: 5 }] };
   }
-  async disassemble(params: import("../protocol.ts").ViceOperations["disassemble"]["params"]) {
+  async disassemble(params: ViceOperations["disassemble"]["params"]) {
     return { instructions: [{ address: params.address, bytes: "a900", text: "LDA #$00" }] };
   }
 
@@ -116,12 +127,15 @@ class FakeSession implements ViceSessionApi {
     this.typed.push([...petscii]);
     return { queuedBytes: petscii.length };
   }
-  async joystick(state: { port: 1 | 2; direction: (typeof import("../protocol.ts").JOYSTICK_DIRECTIONS)[number]; fire: boolean }) {
+  async joystick(state: JoystickState) {
     return state;
   }
 
   points: unknown[] = [];
-  async breakpoint(params: import("../protocol.ts").BreakpointParams) {
+  breakpoint(params: Extract<BreakpointParams, { action: "list" }>): Promise<{ breakpoints: Breakpoint[] }>;
+  breakpoint(params: Exclude<BreakpointParams, { action: "list" }>): Promise<Breakpoint>;
+  breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }>;
+  async breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }> {
     this.points.push(params);
     if (params.action === "list") {
       const condition = { kind: "memory" as const, address: 0xc100, operator: "eq" as const, value: 7, space: "c64" as const, view: "cpu" as const };
@@ -130,7 +144,10 @@ class FakeSession implements ViceSessionApi {
     if (params.action === "add") return { id: 1, address: params.address, space: params.space, enabled: true, ...(params.condition === undefined ? {} : { condition: params.condition }) };
     return { id: params.id, address: 0x2100, space: "c64" as const, enabled: params.action !== "disable" };
   }
-  async watchpoint(params: import("../protocol.ts").WatchpointParams) {
+  watchpoint(params: Extract<WatchpointParams, { action: "list" }>): Promise<{ watchpoints: Watchpoint[] }>;
+  watchpoint(params: Exclude<WatchpointParams, { action: "list" }>): Promise<Watchpoint>;
+  watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }>;
+  async watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }> {
     this.points.push(params);
     if (params.action === "add") {
       return { id: 2, address: params.address, size: params.size, access: params.access, space: params.space, enabled: true };
@@ -139,7 +156,7 @@ class FakeSession implements ViceSessionApi {
   }
 
   runs: unknown[] = [];
-  async runUntil(params: { target: import("../protocol.ts").RunTarget; timeoutFrames: number }) {
+  async runUntil(params: { target: RunTarget; timeoutFrames: number }) {
     this.runs.push(params);
     return { reached: true, stopReason: "target" as const, state: "stopped" as const, pc: 0xc00b };
   }
@@ -155,7 +172,10 @@ class FakeSession implements ViceSessionApi {
     return { entries: [{ address: 0x2100, totalCycles: "125000", selfCycles: "82000", percent: 17.4 }] };
   }
   memmaps: unknown[] = [];
-  async memmap(params: import("../protocol.ts").ViceOperations["memmap"]["params"]) {
+  memmap(params: Extract<ViceOperations["memmap"]["params"], { action: "read" }>): Promise<{ ranges: MemmapRange[] }>;
+  memmap(params: { action: "clear" }): Promise<{ cleared: boolean }>;
+  memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]>;
+  async memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]> {
     this.memmaps.push(params);
     if (params.action === "clear") return { cleared: true };
     return { ranges: [{ start: 0x2100, end: 0x213f, execute: true, read: true, write: false }] };
@@ -204,9 +224,9 @@ class FakeSession implements ViceSessionApi {
   }
 
   observations: unknown[] = [];
-  async observe(params: import("../protocol.ts").ObserveParams) {
+  async observe(params: ObserveParams) {
     this.observations.push(params);
-    const result: import("../protocol.ts").ObserveResult = {};
+    const result: ObserveResult = {};
     if (params.registers !== undefined) result.registers = REGISTERS;
     if (params.memory !== undefined) result.memory = params.memory.map((range) => ({ address: range.address, data: "00".repeat(range.size) }));
     if (params.timing) result.timing = { rasterLine: 100, rasterCycle: 20 };
@@ -215,7 +235,7 @@ class FakeSession implements ViceSessionApi {
   }
 
   snapshots: unknown[] = [];
-  async snapshot(params: import("../protocol.ts").ViceOperations["snapshot"]["params"]) {
+  async snapshot(params: ViceOperations["snapshot"]["params"]) {
     this.snapshots.push(params);
     if (params.action === "list") return { snapshots: ["before-boss"] };
     if (params.action === "save") return { saved: true, name: params.name };
@@ -229,7 +249,7 @@ class FakeSession implements ViceSessionApi {
     return { width: 384, height: 272, png: Buffer.from("png-bytes").toString("base64"), ...(baseline === undefined ? {} : { baseline }) };
   }
   compares: unknown[] = [];
-  async screenCompare(params: import("../protocol.ts").ViceOperations["screenCompare"]["params"]) {
+  async screenCompare(params: ViceOperations["screenCompare"]["params"]) {
     this.compares.push(params);
     const result = { match: false, mismatchingPixels: 42, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 } };
     return params.includeDiff ? { ...result, diffPng: Buffer.from("diff").toString("base64") } : result;
@@ -305,7 +325,7 @@ function errorOf(result: CallToolResult): { code: string; message: string } {
   return JSON.parse((first as { text: string }).text) as { code: string; message: string };
 }
 
-test("the server lists exactly the frozen v1 tools of 15 §37 with object input and output schemas", async () => {
+test("the server lists exactly the public tools with object input and output schemas", async () => {
   const client = await connect(async () => new FakeSession());
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [...PUBLIC_TOOLS].sort());
@@ -455,7 +475,7 @@ test("c64_execution passes the action through and formats the pc", async () => {
 test("c64_reset defaults run to false and c64_warp echoes the mode", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
-  assert.deepEqual((await call(client, "c64_reset", { mode: "hard" })).structuredContent, { state: "stopped", pc: "$fce2" }, "a stopped reset gives the reset vector (D21)");
+  assert.deepEqual((await call(client, "c64_reset", { mode: "hard" })).structuredContent, { state: "stopped", pc: "$fce2" }, "a stopped reset gives the reset vector");
   assert.deepEqual((await call(client, "c64_reset", { mode: "soft", run: true })).structuredContent, { state: "running" });
   assert.deepEqual(session.resets, [
     { mode: "hard", run: false },
@@ -660,7 +680,24 @@ test("tool descriptions keep to the STE length and punctuation rules", () => {
       const words = sentence.split(/\s+/).filter((word) => word !== "");
       assert.ok(words.length <= 25, `${tool.name}: a sentence has ${words.length} words: ${sentence}`);
     }
+    assert.doesNotMatch(tool.description, /\bcolour|running or stopped/, `${tool.name}: use the field spelling and the run-state sentence`);
   }
+});
+
+test("field descriptions and refusals keep to the STE punctuation rule", async () => {
+  const client = await connect(async () => new FakeSession());
+  for (const tool of (await client.listTools()).tools) {
+    assert.doesNotMatch(JSON.stringify(tool.inputSchema), /"description":"[^"]*;/, `${tool.name}: STE bans the semicolon`);
+  }
+  for (const [name, args] of [
+    ["c64_memory_read", { address: "c000", size: 0 }],
+    ["c64_keyboard", { mode: "text", text: "x".repeat(1025) }],
+    ["c64_memory_search", { start: "$0000", pattern: Array.from({ length: MAX_SEARCH_PATTERN + 1 }, () => "a9").join(" ") }],
+  ] as const) {
+    const { message } = errorOf(await call(client, name, args));
+    assert.doesNotMatch(message, /;/, `${name}: ${message}`);
+  }
+  await client.close();
 });
 
 test("memory search parses the pattern and fills end and maxResults", async () => {

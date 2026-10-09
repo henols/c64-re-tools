@@ -1,4 +1,4 @@
-// Execution tools: c64_execution (15 §10) and c64_run_until (15 §11).
+// Execution tools: c64_execution and c64_run_until.
 
 import { z } from "zod";
 
@@ -35,7 +35,7 @@ export const c64Execution = defineTool({
         .min(1)
         .max(MAX_EXECUTION_COUNT)
         .optional()
-        .describe(`step and next: instructions (default 1); advance-frames: frames (required); 1 to ${MAX_EXECUTION_COUNT}`),
+        .describe(`step and next: instructions (default 1). advance-frames: frames (necessary). 1 to ${MAX_EXECUTION_COUNT}`),
       space: SpaceInput,
     })
     .strict(),
@@ -81,7 +81,7 @@ const RunTargetInput = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("raster"),
       line: z.number().int().min(0).describe("raster line: PAL 0-311, NTSC 0-262"),
-      cycle: z.number().int().min(0).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64; default 0"),
+      cycle: z.number().int().min(0).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64. Default 0"),
     })
     .strict(),
 ]);
@@ -92,7 +92,7 @@ export const c64RunUntil = defineTool({
   description:
     "Run the CPU until a target occurs, then stop. " +
     "Target kind address stops before the instruction at an address executes. An optional condition must also be true. " +
-    "Kind memory stops after a write makes a byte in memory compare true to a value. " +
+    "Kind memory compares the byte at address to value with operator. It stops after a write that makes this comparison true. " +
     "Kind raster stops at the first instruction at or after a raster line and cycle. If the machine is there now, it stops at the next frame's pass. " +
     `timeoutFrames (1 to ${MAX_TIMEOUT_FRAMES}, default 3000) limits the run in video frames. ` +
     "reached tells if the target occurred. stopReason tells why the CPU stopped: target, breakpoint, watchpoint, jam (a JAM opcode) or timeout. " +

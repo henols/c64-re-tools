@@ -27,7 +27,10 @@ the agent, through npx with the latest version.
 Environment:
   C64RT_VIDEO  pal (default) or ntsc; fixed for the life of the process.
   C64RT_HOST   host:port of the Host Runtime when it is not on 127.0.0.1:6464,
-               host.docker.internal:6464 or host.containers.internal:6464.`;
+               host.docker.internal:6464 or host.containers.internal:6464.
+  C64RT_HOST_TOKEN
+               the shared secret of a Host Runtime that listens on an address
+               that is not loopback. Use the same value as the Host Runtime.`;
 
 function log(line: string): void {
   process.stderr.write(`c64-re-tools-mcp: ${line}\n`);

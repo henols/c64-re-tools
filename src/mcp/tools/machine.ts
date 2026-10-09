@@ -1,5 +1,4 @@
-// Machine tools: c64_status (15 §7), c64_reset (15 §8), c64_warp (15 §9)
-// and c64_window (D20).
+// Machine tools: c64_status, c64_reset, c64_warp and c64_window.
 
 import { z } from "zod";
 
@@ -20,7 +19,7 @@ export const c64Status = defineTool({
     videoStandard: z.enum(VIDEO_STANDARDS),
     warp: z.boolean(),
     window: z.boolean().describe("true when the emulator window is open (c64_window)"),
-    pc: AddressOutput.optional().describe("program counter; present only when the CPU is stopped"),
+    pc: AddressOutput.optional().describe("program counter. Only when the CPU is stopped"),
   }),
   readOnly: true,
   async run(_input, session) {
@@ -41,14 +40,14 @@ export const c64Window = defineTool({
   description:
     "Show the C64 in a window on the host, or hide it again. The emulator has no window until you open one. " +
     "Open the window when the user must type, play or look at the C64. Then tell the user. Wait until the user tells you that they finished. " +
-    "Then close the window. The machine, the disk in drive 8, breakpoints, watchpoints, joysticks, warp mode and c64_timing go along, " +
-    "and the CPU stays running or stopped. The result names the data that does not go along (notCarried). " +
+    "Then close the window. The machine, the disk in drive 8, breakpoints, watchpoints, joysticks, warp mode and c64_timing go along. " +
+    "The run state of the machine does not change. The result names the data that does not go along (notCarried). " +
     "If the user closes the window, the machine goes back to the state of when the window opened.",
-  inputSchema: z.object({ action: z.enum(WINDOW_ACTIONS).describe("open shows the window; close hides it") }).strict(),
+  inputSchema: z.object({ action: z.enum(WINDOW_ACTIONS).describe("open shows the window. close hides it") }).strict(),
   outputSchema: z.object({
     window: z.boolean().describe("true when the window is open"),
     state: z.enum(RUN_STATES),
-    notCarried: z.array(z.string()).describe("emulator data that the move cleared; empty when nothing moved"),
+    notCarried: z.array(z.string()).describe("emulator data that the move cleared. Empty when nothing moved"),
   }),
   readOnly: false,
   async run(input, session) {
@@ -65,13 +64,13 @@ export const c64Reset = defineTool({
     "With run true, the C64 starts normally. Breakpoints and watchpoints stay.",
   inputSchema: z
     .object({
-      mode: z.enum(RESET_MODES).describe("soft is the reset button; hard is a power cycle"),
-      run: z.boolean().default(false).describe("false stops at the reset routine; true lets the C64 start"),
+      mode: z.enum(RESET_MODES).describe("soft is the reset button. hard is a power cycle"),
+      run: z.boolean().default(false).describe("false stops at the reset routine. true lets the C64 start"),
     })
     .strict(),
   outputSchema: z.object({
     state: z.enum(RUN_STATES),
-    pc: AddressOutput.optional().describe("program counter; present only when run is false"),
+    pc: AddressOutput.optional().describe("program counter. Only when run is false"),
   }),
   readOnly: false,
   async run(input, session) {
@@ -85,7 +84,7 @@ export const c64Warp = defineTool({
   title: "Warp mode",
   description:
     "Turn warp mode on or off. In warp mode the C64 runs as fast as the host can run it. " +
-    "Warp mode does not change what the C64 does. It does not change if the machine is running or stopped.",
+    "Warp mode does not change what the C64 does. This does not change the run state of the machine.",
   inputSchema: z.object({ enabled: z.boolean().describe("true turns warp mode on") }).strict(),
   outputSchema: z.object({ enabled: z.boolean() }),
   readOnly: false,

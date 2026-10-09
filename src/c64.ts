@@ -118,7 +118,7 @@ export function textToPetsciiName(text: string): Uint8Array {
     else if (character === "↑") bytes.push(0x5e);
     else if (character === "←") bytes.push(0x5f);
     else if (code >= 0x20 && code <= 0x5d) bytes.push(code);
-    else throw new RangeError(`${JSON.stringify(character)} is not a name character; write other bytes as {$xx}`);
+    else throw new RangeError(`${JSON.stringify(character)} is not a name character. Write other bytes as {$xx}.`);
     index++;
   }
   return Uint8Array.from(bytes);
@@ -240,7 +240,7 @@ export function constantExpression(bytes: Uint8Array): number | undefined {
   const value = sum();
   if (value === undefined || !Number.isFinite(value)) return undefined;
   // BASIC's evaluator ends the expression at the first byte that is no operator,
-  // so "SYS2073 TCS-CRUNCH!" jumps to 2073 (found on a real release). An operator
+  // so "SYS2073 TCS-CRUNCH!" jumps to 2073. An operator
   // this evaluator does not handle (^, AND, OR, a comparison) needs run-time values.
   if (at < tokens.length && BASIC_OPERATORS.has(tokens[at]!)) return undefined;
   return value;

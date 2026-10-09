@@ -1,4 +1,4 @@
-// Input tools: c64_keyboard (15 §31) and c64_joystick (15 §32).
+// Input tools: c64_keyboard and c64_joystick.
 
 import { z } from "zod";
 
@@ -14,7 +14,7 @@ export const c64Keyboard = defineTool({
     "Only a program that reads keys through the KERNAL sees them. A program that reads the keyboard hardware directly does not see them. Many games do that. " +
     'Mode text types text, for example "RUN\\n". Letters of either case type the normal (unshifted) key. A line break types RETURN. ' +
     "Mode petscii types PETSCII codes 1 to 255 in bytes, for example [147] to clear the screen. " +
-    "This does not change if the machine is running or stopped.",
+    "This does not change the run state of the machine.",
   inputSchema: z
     .object({
       mode: z.enum(["text", "petscii"]),
@@ -38,7 +38,7 @@ export const c64Keyboard = defineTool({
       petscii = Uint8Array.from(input.bytes);
     }
     if (petscii.length > MAX_KEYBOARD_BYTES) {
-      throw new WireFailure("invalid-input", `At most ${MAX_KEYBOARD_BYTES} keys can be queued at once; this is ${petscii.length}.`);
+      throw new WireFailure("invalid-input", `The keyboard queue takes at most ${MAX_KEYBOARD_BYTES} keys at once. This input has ${petscii.length} keys.`);
     }
     return session.keyboard(petscii);
   },
@@ -50,7 +50,7 @@ export const c64Joystick = defineTool({
   description:
     "Set the joystick in control port 1 or 2: a direction (or center) and the fire button. " +
     "The C64 sees this state until you change it. To release the joystick, set direction center and fire false. " +
-    "Most games read port 2. This does not change if the machine is running or stopped.",
+    "Most games read port 2. This does not change the run state of the machine.",
   inputSchema: z
     .object({
       port: z.union([z.literal(1), z.literal(2)]).describe("control port 1 or 2"),
