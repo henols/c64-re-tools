@@ -115,12 +115,16 @@ test("a VICE that cannot load its ROMs is refused with its own error lines", { s
   await supervisor.stopAll();
 });
 
-/** A stand-in x64sc: a shell script that runs a fake VICE on the monitor ports in its arguments. */
-function fakeViceBinary(): string {
+/**
+ * A stand-in x64sc: a shell script that runs a fake VICE on the monitor ports in its arguments.
+ * `silent` makes a VICE whose monitors accept connections and never answer.
+ */
+function fakeViceBinary(options: { silent?: boolean } = {}): string {
   const path = join(dir("fake-vice-"), "x64sc");
   const entry = fileURLToPath(new URL("./fake-vice-process.testkit.ts", import.meta.url));
   const quote = (word: string) => `'${word.replace(/'/g, "'\\''")}'`;
-  writeFileSync(path, ["#!/bin/sh", `exec ${[process.execPath, ...process.execArgv, entry].map(quote).join(" ")} "$@"`].join("\n"));
+  const command = [process.execPath, ...process.execArgv, entry, ...(options.silent === true ? ["--silent"] : [])];
+  writeFileSync(path, ["#!/bin/sh", `exec ${command.map(quote).join(" ")} "$@"`].join("\n"));
   chmodSync(path, 0o755);
   return path;
 }
@@ -187,6 +191,47 @@ test("a VICE stop that fails still removes the scratch directory", { skip: proce
     assert.equal(existsSync(scratch[0]!), false);
     assert.deepEqual([...released.values()], [true]);
     await assert.rejects(vice.stop(), /survived SIGKILL/, "a later stop reports the same failure");
+  } finally {
+    await real.stopAll();
+  }
+});
+
+test("a VICE whose monitor never answers fails at once and is stopped", { skip: process.platform === "win32" ? "the stand-in VICE is a shell script" : false }, async () => {
+  const real = new ProcessSupervisor();
+  const { supervisor, spawned, released } = watchedSupervisor(real);
+  const lines: string[] = [];
+  try {
+    await assert.rejects(
+      launchVice({ supervisor, videoStandard: "pal", readyTimeoutMs: 1000, log: (line) => lines.push(line), env: { ...process.env, C64RT_VICE: fakeViceBinary({ silent: true }) } }),
+      (error: unknown) => {
+        assert.ok(error instanceof WireFailure && error.code === "machine-unavailable", String(error));
+        assert.match(error.message, /did not become ready in time/);
+        return true;
+      },
+    );
+    assert.equal(spawned.length, 1, "a ready timeout is not tried again");
+    assert.equal(await ended(spawned[0]!), true, "the VICE is stopped");
+    assert.deepEqual([...released.values()], [true], "its scratch directory is removed");
+    assert.ok(lines.some((line) => line.startsWith("VICE failed to start: The emulator did not become ready in time.")), lines.join("\n"));
+  } finally {
+    await real.stopAll();
+  }
+});
+
+test("a VICE that exits while it starts is started again, up to three times", { skip: process.platform === "win32" ? "the stand-in VICE is a shell script" : false }, async () => {
+  const path = join(dir("bin-"), "x64sc");
+  writeFileSync(path, ["#!/bin/sh", "exit 1"].join("\n"));
+  chmodSync(path, 0o755);
+  const real = new ProcessSupervisor();
+  const { supervisor, spawned, released } = watchedSupervisor(real);
+  try {
+    await assert.rejects(launchVice({ supervisor, videoStandard: "pal", env: { ...process.env, C64RT_VICE: path } }), (error: unknown) => {
+      assert.ok(error instanceof WireFailure && error.code === "machine-unavailable", String(error));
+      assert.match(error.message, /exited while it was starting/);
+      return true;
+    });
+    assert.equal(spawned.length, 3);
+    assert.deepEqual([...released.values()], [true, true, true], "each scratch directory is removed");
   } finally {
     await real.stopAll();
   }
