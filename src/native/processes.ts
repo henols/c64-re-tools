@@ -98,10 +98,22 @@ export function batchInvocation(argv: readonly string[], comSpec = "cmd.exe"): {
 /** How long taskkill may block: it runs synchronously, so without a limit it could stop this whole process. */
 const TASKKILL_LIMIT_MS = 5_000;
 
-/** Ends a process and every descendant on Windows, which has no process groups. */
-export function killTree(pid: number): void {
-  spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true, timeout: TASKKILL_LIMIT_MS });
+/**
+ * Ends a process and every descendant on Windows, which has no process
+ * groups. taskkill finds the descendants through the process, so it must run
+ * while the process still runs. Returns undefined when taskkill ended the tree
+ * or found no such process, else why it failed.
+ */
+export function killTree(pid: number): string | undefined {
+  const result = spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true, timeout: TASKKILL_LIMIT_MS });
+  if (result.error !== undefined) return `taskkill did not run (${(result.error as NodeJS.ErrnoException).code ?? result.error.message})`;
+  // taskkill exits with 128 when no process has this pid: the process has ended.
+  if (result.status === 0 || result.status === 128) return undefined;
+  return `taskkill ended with exit code ${result.status ?? result.signal}`;
 }
+
+/** True when Node has seen the child's exit. */
+const hasExited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
 
 /** Sends a signal to a process group (POSIX). Returns false when the group no longer exists. */
 export function signalGroup(pgid: number, signal: NodeJS.Signals | 0): boolean {
@@ -276,8 +288,10 @@ export class ProcessSupervisor {
    */
   killAllSync(): void {
     for (const supervised of this.#children) {
-      if (process.platform === "win32") killTree(supervised.pid);
-      else signalGroup(supervised.pid, "SIGKILL");
+      // On Windows the pid of an ended leader can belong to another process now.
+      if (process.platform === "win32") {
+        if (!hasExited(supervised.child)) killTree(supervised.pid);
+      } else signalGroup(supervised.pid, "SIGKILL");
     }
     this.#children.clear();
     for (const path of this.#paths) rmSync(path, { recursive: true, force: true });
@@ -294,16 +308,18 @@ export class ProcessSupervisor {
 
   async #stopGroup(pid: number, child: ChildProcess, exited: Promise<ExitStatus>): Promise<void> {
     if (process.platform === "win32") {
-      // Windows has no SIGTERM for a console process. child.kill ends the leader through its own
-      // handle; taskkill then ends any descendants. The exit wait has a limit: a stop must end
-      // (found in CI: after taskkill alone the leader's exit never came).
+      // Windows has no SIGTERM for a console process. taskkill finds the descendants through the
+      // leader, so it runs first, and only while the leader runs: the pid of an ended leader can
+      // belong to another process. child.kill then ends the leader through its own handle (after
+      // taskkill alone the leader's exit never came, found in CI). The exit wait has a limit.
+      const failure = hasExited(child) ? undefined : killTree(pid);
       try {
         child.kill("SIGKILL");
       } catch {
         // The leader has ended already.
       }
-      killTree(pid);
       await Promise.race([exited, sleep(this.#graceMs)]);
+      if (!hasExited(child)) throw new Error(`process ${pid} did not end${failure === undefined ? "" : `: ${failure}`}`);
       return;
     }
     // The group outlives its leader when descendants remain, so wait on the group, not the leader.

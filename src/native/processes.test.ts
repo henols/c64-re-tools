@@ -5,7 +5,7 @@ import { createInterface } from "node:readline";
 import { test } from "node:test";
 
 import { WireFailure } from "../protocol.ts";
-import { batchInvocation, isAlive, ProcessSupervisor, windowsQuote, type SupervisedProcess } from "./processes.ts";
+import { batchInvocation, isAlive, killTree, ProcessSupervisor, windowsQuote, type SupervisedProcess } from "./processes.ts";
 
 // Windows has no process groups: an ended leader no longer leads to its orphaned descendants.
 const orphansFindable = process.platform === "win32" ? "Windows cannot find the descendants of a process that has ended" : false;
@@ -146,4 +146,9 @@ test("a program that cannot even be started is refused by name instead of crashi
     (error: unknown) => error instanceof WireFailure && error.code === "installation-incomplete" && /is not a program that this system can start/.test(error.message),
   );
   assert.equal(supervisor.size, 0);
+});
+
+test("a tree kill that cannot run reports why", { skip: process.platform === "win32" ? "taskkill runs on Windows and would end the tree" : false }, () => {
+  // taskkill is a Windows program: elsewhere it does not start.
+  assert.match(killTree(process.pid) ?? "", /^taskkill did not run \(ENOENT\)$/);
 });
