@@ -39,7 +39,8 @@ async function run(name: string, argv: string[], version: (output: string) => st
   const result = await runTool({ argv, cwd: tmpdir(), supervisor: context.supervisor, signal: context.signal, timeoutMs: PROBE_TIMEOUT_MS, env: context.env });
   const found = version(`${result.stdout}\n${result.stderr}`);
   if (found !== undefined) return { name, found: true, path: argv[0]!, version: found, runs: true };
-  return { name, found: true, path: argv[0]!, runs: false, problem: result.timedOut ? "It did not answer in time." : `It did not run correctly (exit ${result.code ?? result.signal}).` };
+  const problem = result.timedOut ? "It did not answer in time." : result.spawnError !== undefined ? `It did not start (${result.spawnError}).` : `It did not run correctly (exit ${result.code ?? result.signal}).`;
+  return { name, found: true, path: argv[0]!, runs: false, problem };
 }
 
 function missing(name: string, error: unknown): ToolStatus {

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { WireFailure } from "../protocol.ts";
 import { isAlive, ProcessSupervisor, type SpawnOptions } from "./processes.ts";
-import { runTool } from "./run.ts";
+import { runTool, runToolOrFail } from "./run.ts";
 
 const node = (code: string) => [process.execPath, "-e", code];
 
@@ -120,4 +121,21 @@ test("the output limit counts bytes, not characters", { timeout: 30_000 }, async
   });
   assert.equal(run.stdout, "€".repeat(3));
   assert.equal(run.truncated, true);
+});
+
+const context = () => ({ supervisor: new ProcessSupervisor({ graceMs: 100 }), signal: new AbortController().signal });
+const failsWith = (code: string, message: RegExp) => (error: unknown) => error instanceof WireFailure && error.code === code && message.test(error.message);
+
+test("a tool that does not start is refused by name with the cause", { timeout: 30_000 }, async () => {
+  await assert.rejects(
+    runToolOrFail("ACME", "The assembly", { argv: ["/nonexistent/c64-re-tools-test-binary"], cwd: process.cwd(), timeoutMs: 5_000 }, context()),
+    failsWith("installation-incomplete", /^ACME is not a program that this system can start \(ENOENT\)/),
+  );
+});
+
+test("a tool that a signal stops has failed and quotes its last output", { skip: process.platform === "win32" ? "a Windows process does not end by a signal" : false, timeout: 30_000 }, async () => {
+  await assert.rejects(
+    runToolOrFail("ACME", "The assembly", { argv: node('console.log("pass 1"); process.kill(process.pid, "SIGKILL")'), cwd: process.cwd(), timeoutMs: 5_000 }, context()),
+    failsWith("operation-failed", /^ACME stopped on the signal SIGKILL\.\nThe last output of ACME:\n {2}pass 1$/),
+  );
 });

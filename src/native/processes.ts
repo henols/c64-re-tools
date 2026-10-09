@@ -22,6 +22,8 @@ export interface SpawnOptions {
 export interface ExitStatus {
   code: number | null;
   signal: NodeJS.Signals | null;
+  /** The error code, for example ENOENT, when the program did not start. */
+  spawnError?: string;
 }
 
 /** A child started in its own process group. Stopping it stops every descendant in that group. */
@@ -190,8 +192,11 @@ export class ProcessSupervisor {
     }
     const exited = new Promise<ExitStatus>((resolve) => {
       child.once("exit", (code, signal) => resolve({ code, signal }));
-      // A failed spawn emits "error" and never "exit".
-      child.once("error", () => resolve({ code: null, signal: null }));
+      // A failed spawn emits "error" and never "exit". A later "error" (a failed kill) changes nothing:
+      // the listener stays, so that such an error does not end this process.
+      child.on("error", (error: NodeJS.ErrnoException) => {
+        if (child.pid === undefined) resolve({ code: null, signal: null, spawnError: error.code ?? "an unknown error" });
+      });
     });
     if (child.pid === undefined) {
       // Spawn failed (for example ENOENT); "error" follows asynchronously.

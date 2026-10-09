@@ -88,10 +88,10 @@ test("stop is idempotent and stopAll stops every group", { timeout: 30_000 }, as
   assert.equal(supervisor.size, 0);
 });
 
-test("a command that does not exist reports an exit without throwing", { timeout: 30_000 }, async () => {
+test("a command that does not exist reports an exit with the spawn error, without throwing", { timeout: 30_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   const child = supervisor.spawn(["/nonexistent/c64-re-tools-test-binary"]);
-  assert.deepEqual(await child.exited, { code: null, signal: null });
+  assert.deepEqual(await child.exited, { code: null, signal: null, spawnError: "ENOENT" });
   await child.stop();
   assert.equal(supervisor.size, 0);
 });
