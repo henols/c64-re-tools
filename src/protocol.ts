@@ -696,6 +696,11 @@ export class WireFailure extends Error implements WireError {
   }
 }
 
+/** The message of a caught value, which may not be an Error. */
+export function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export type Fields = Record<string, unknown>;
 
 export function isObject(value: unknown): value is Fields {
