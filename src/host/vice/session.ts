@@ -241,6 +241,7 @@ export class ViceSession implements ViceSessionHandle {
   async #backToHeadless(dead: ViceProcess, handover: Handover): Promise<void> {
     try {
       await dead.stop();
+      if (this.#closed) return;
       await this.#install("headless", handover);
       this.#handover = undefined;
       this.#notice = new WireFailure("machine-state-lost", WINDOW_CLOSED);
@@ -941,6 +942,7 @@ export class ViceSession implements ViceSessionHandle {
    * stopped, the current one is untouched, and the error says why.
    */
   async #install(mode: ViceMode, handover: Handover): Promise<void> {
+    if (this.#closed) throw new WireFailure("machine-unavailable", "The emulator session is closed.");
     const output: string[] = [];
     let vice: ViceProcess;
     try {
