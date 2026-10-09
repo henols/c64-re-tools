@@ -19,15 +19,20 @@ test("host.status reports VICE and the tools that come with it, and nothing else
     C64RT_C1541: standIn(scratch, "c1541", ["\u001b[97;40mOPENCBM\u001b[0m: no library", "c1541 (VICE 3.10)"]),
     C64RT_PETCAT: join(scratch, "no-petcat"),
   };
-  const { result } = await hostStatus({ supervisor: new ProcessSupervisor(), signal: new AbortController().signal, env });
-  assert.deepEqual(
-    result.tools.map((tool) => [tool.name, tool.found, tool.runs, tool.version]),
-    [
-      ["VICE (x64sc)", true, true, "x64sc (VICE 3.9)"],
-      ["c1541", true, true, "c1541 (VICE 3.10)"],
-      ["petcat", false, false, undefined],
-    ],
-  );
+  const supervisor = new ProcessSupervisor();
+  try {
+    const { result } = await hostStatus({ supervisor, signal: new AbortController().signal, env });
+    assert.deepEqual(
+      result.tools.map((tool) => [tool.name, tool.found, tool.runs, tool.version]),
+      [
+        ["VICE (x64sc)", true, true, "x64sc (VICE 3.9)"],
+        ["c1541", true, true, "c1541 (VICE 3.10)"],
+        ["petcat", false, false, undefined],
+      ],
+    );
+  } finally {
+    await supervisor.stopAll();
+  }
 });
 
 test("host.status reports a tool from a VICE older than 3.9 as not working, with the remedy", { skip, timeout: 30_000 }, async () => {
