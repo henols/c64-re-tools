@@ -38,7 +38,9 @@ import {
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
+import { formatC64Address } from "../../c64.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
 import {
@@ -62,10 +64,6 @@ const CRASH_SETTLE_MS = 500;
 const UNTIL_RETURN_LIMIT_MS = 30_000;
 /** How long a reset may take to reach the reset vector. */
 const RESET_STOP_LIMIT_MS = 5_000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 const STATE_LOST =
   "The emulator stopped unexpectedly and its machine state is lost. Restart the c64-re-tools MCP server to get a fresh C64.";
@@ -125,10 +123,6 @@ type PointRecord = { checkpoint: number; enabled: boolean; space: "c64" | "drive
 /** A command that got no answer in time on a connection that is still open. */
 function isTimeout(error: unknown): boolean {
   return error instanceof MonitorTimeoutError || error instanceof TextMonitorTimeoutError || error instanceof StepTimeout;
-}
-
-function hex(value: number): string {
-  return `$${value.toString(16).padStart(4, "0")}`;
 }
 
 /** A stop and the VICE checkpoints that caused it. */
@@ -524,7 +518,7 @@ export class ViceSession implements ViceSessionHandle {
         await this.#stop();
         throw new WireFailure(
           "limit-exceeded",
-          `The routine did not return within ${this.#untilReturnLimitMs / 1000} seconds. The machine is stopped at ${hex(await this.#pc())}.`,
+          `The routine did not return within ${this.#untilReturnLimitMs / 1000} seconds. The machine is stopped at ${formatC64Address(await this.#pc())}.`,
         );
       }
       return { state: "stopped", pc: stop.pc };

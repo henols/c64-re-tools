@@ -17,6 +17,7 @@ import {
   type Space,
   type VideoStandard,
 } from "../../protocol.ts";
+import { formatC64Address, formatC64Byte } from "../../c64.ts";
 import { decodeDisplay, decodePalette, visibleFrame, type IndexedFrame } from "./screen.ts";
 import type { TextMonitor } from "./text-monitor.ts";
 import {
@@ -56,10 +57,6 @@ function registerIds(available: RegisterInfo[], space: Space): RegisterIds {
 
 const OPERATORS: Record<Comparison, string> = { eq: "==", ne: "!=", lt: "<", lte: "<=", gt: ">", gte: ">=" };
 
-function hexByte(value: number): string {
-  return `$${value.toString(16).padStart(2, "0")}`;
-}
-
 /**
  * Builds the VICE condition expression for a typed condition, for a
  * checkpoint in `space`. VICE evaluates strictly left to right, so every
@@ -70,14 +67,13 @@ export function conditionExpression(condition: Condition, space: Space): string 
   switch (condition.kind) {
     case "register": {
       const prefix = space === "drive8" ? "8:" : "";
-      return `(${prefix}${condition.register.toUpperCase()} ${operator(condition.operator)} ${hexByte(condition.value)})`;
+      return `(${prefix}${condition.register.toUpperCase()} ${operator(condition.operator)} ${formatC64Byte(condition.value)})`;
     }
     case "memory": {
       if (condition.space !== "c64") {
         throw new WireFailure("unsupported-in-space", "A memory condition can test only space c64 memory.");
       }
-      const address = `$${condition.address.toString(16).padStart(4, "0")}`;
-      return `(@${condition.view}:${address} ${operator(condition.operator)} ${hexByte(condition.value)})`;
+      return `(@${condition.view}:${formatC64Address(condition.address)} ${operator(condition.operator)} ${formatC64Byte(condition.value)})`;
     }
     case "raster": {
       const line = `(RL == $${condition.line.toString(16)})`;

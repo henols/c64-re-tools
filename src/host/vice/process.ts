@@ -25,6 +25,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { WireFailure, type VideoStandard } from "../../protocol.ts";
 import { findTool, isOlderThanMinimum, MIN_VICE, VICE } from "../../native/discover.ts";
@@ -140,10 +141,6 @@ export interface ViceProcess {
   outputTail(): string;
   /** Closes the monitor, stops the process group and removes the scratch directory. Idempotent. */
   stop(): Promise<void>;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** The last lines of VICE's log file, or of its output while there is no log file. */
