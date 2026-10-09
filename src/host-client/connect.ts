@@ -1,4 +1,4 @@
-// Deterministic connection to the Host Runtime and the compatibility handshake.
+// Deterministic connection to the Host Runtime and the version handshake.
 
 import { connect as connectTcp, type Socket } from "node:net";
 
