@@ -14,7 +14,7 @@ import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
-import { importFindings, type Analyzer, type ImportConflict, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
+import { importFindings, runProvenance, type Analyzer, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision } from "#src/knowledge/read.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
@@ -73,11 +73,12 @@ function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<stri
 /**
  * Imports one analyzer's findings as one revision, refused when knowledge
  * changed since the seeds were read. A refused import creates no knowledge.db.
+ * The revision records the image hash and the analyzer version.
  */
-function record(findings: NormalizedFindings, revision: number, description: string) {
+function record(findings: NormalizedFindings, revision: number, description: string, provenance: Pick<ImportContext, "inputHash" | "toolVersion">) {
   let imported: ImportResult;
   try {
-    imported = withWrite((db) => importFindings(db, findings, { expectedRevision: revision, description }));
+    imported = withWrite((db) => importFindings(db, findings, { expectedRevision: revision, description, ...provenance }));
   } catch (error) {
     if (error instanceof KnowledgeError && error.code === "stale-revision") {
       throw new KnowledgeError("stale-revision", "The knowledge changed during the analysis. Nothing was imported. Run the analysis again.");
@@ -130,11 +131,12 @@ async function run(argv: string[]): Promise<unknown> {
   reader?.close();
 
   const imageKind = values.flat64k ? "flat64k" : "prg";
+  const bytes = readProjectFile(image).bytes;
   if (analyzer === "dxa") {
-    const { result, attachments } = await analyzeWithDxa({ imageKind, ...seeds }, readProjectFile(image).bytes, localToolContext());
+    const { result, attachments } = await analyzeWithDxa({ imageKind, ...seeds }, bytes, localToolContext());
     const listing = attachments[0]!.toString("utf8");
     // The listing is written only after the import: a refused import leaves no new file.
-    const imported = record(dxaFindings(result), revision, `DXA analysis of ${image}`);
+    const imported = record(dxaFindings(result), revision, `DXA analysis of ${image}`, runProvenance(bytes, result.toolVersion));
     if (listingPath !== undefined) {
       try {
         mkdirSync(dirname(listingPath), { recursive: true });
@@ -155,8 +157,8 @@ async function run(argv: string[]): Promise<unknown> {
     };
   }
 
-  const { result } = await analyzeWithGhidra({ imageKind, ...seeds, decompile }, readProjectFile(image).bytes, localToolContext());
-  const imported = record(ghidraFindings(result), revision, `Ghidra analysis of ${image}`);
+  const { result } = await analyzeWithGhidra({ imageKind, ...seeds, decompile }, bytes, localToolContext());
+  const imported = record(ghidraFindings(result), revision, `Ghidra analysis of ${image}`, runProvenance(bytes, result.toolVersion));
   return {
     analyzer: "ghidra",
     coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),

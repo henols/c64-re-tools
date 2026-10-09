@@ -8,6 +8,7 @@
 // reported as a conflict. Code against data is a contradiction; a different
 // name or a finer data type for the same kind of memory is not.
 
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { KnowledgeError, transaction } from "./database.ts";
@@ -50,8 +51,16 @@ export interface ImportContext {
   /** The revision the caller read; the import is refused if knowledge changed since. */
   expectedRevision?: number;
   description?: string;
+  /** The SHA-256 of the analyzed image, as lowercase hex. */
   inputHash?: string;
+  /** The analyzer's own version line. */
   toolVersion?: string;
+}
+
+/** What a revision records about one analyzer run: the hash of the image bytes and, when the analyzer tells it, its version. */
+export function runProvenance(image: Uint8Array, toolVersion: string | undefined): Pick<ImportContext, "inputHash" | "toolVersion"> {
+  const inputHash = createHash("sha256").update(image).digest("hex");
+  return toolVersion === undefined ? { inputHash } : { inputHash, toolVersion };
 }
 
 export type ImportConflict =
