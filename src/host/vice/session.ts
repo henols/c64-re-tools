@@ -455,18 +455,11 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   async #status(): Promise<MachineStatus> {
-    // Captured first: asking VICE anything stops a running machine until #observe resumes it.
-    const state = this.#state;
-    return this.#observe(async () => {
-      const status: MachineStatus = {
-        state,
-        videoStandard: this.#videoStandard,
-        warp: await this.#machine.warp(),
-        window: this.#mode === "window",
-      };
-      if (state === "stopped") status.pc = await this.#pc();
-      return status;
-    });
+    const warp = await this.#observe(() => this.#machine.warp());
+    // Read after #observe: it resumes a running machine, unless a breakpoint or a JAM stopped it meanwhile.
+    const status: MachineStatus = { state: this.#state, videoStandard: this.#videoStandard, warp, window: this.#mode === "window" };
+    if (status.state === "stopped") status.pc = await this.#pc();
+    return status;
   }
 
   async #execution(params: ExecutionParams): Promise<ExecutionResult> {

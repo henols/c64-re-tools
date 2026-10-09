@@ -51,6 +51,14 @@ test("status reads warp from VICE, reports no pc while running and keeps it runn
   await session.close();
 });
 
+test("a breakpoint that stops the machine while status reads warp is reported as stopped with its pc", async () => {
+  const { fake, session } = await startSession();
+  fake.textStopsAt = 0x2100;
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: 0x2100 });
+  assert.equal(fake.running, false);
+  await session.close();
+});
+
 test("a read while running pauses, reads and resumes", async () => {
   const { fake, session } = await startSession();
   const result = await session.handle("memoryRead", { address: 0x1000, size: 4, space: "c64", view: "cpu" });

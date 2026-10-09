@@ -155,6 +155,8 @@ export class FakeVice {
   textBank = "cpu";
   /** Replaces the answer of a text command when it returns a string, as another VICE build would answer. */
   textAnswer: ((line: string) => string | undefined) | undefined;
+  /** A checkpoint at this pc hits as the next text command arrives while running: VICE stops for it, not for the command. */
+  textStopsAt: number | undefined;
   /** Printed before the next text command's answer, as VICE prints a checkpoint's stop lines; then cleared. */
   textPreamble = "";
   /** Whether the command being handled found the machine running. */
@@ -596,7 +598,12 @@ export class FakeVice {
     }
     this.textCommands.push(line);
     let output = "";
-    if (this.running) {
+    if (this.running && this.textStopsAt !== undefined) {
+      const pc = this.textStopsAt;
+      this.textStopsAt = undefined;
+      this.stopSpontaneously(pc);
+      output += prompt();
+    } else if (this.running) {
       // VICE enters the monitor: binary events, then an extra prompt on the text side.
       this.#enterMonitor(this.#binary!);
       output += prompt();
