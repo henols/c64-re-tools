@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { WireFailure } from "../../protocol.ts";
-import { ProcessSupervisor } from "../../native/processes.ts";
-import { checkViceStarts, findVice, freePort, viceArguments } from "./process.ts";
+import { ProcessSupervisor, type SupervisedProcess } from "../../native/processes.ts";
+import { checkViceStarts, findVice, freePort, launchVice, viceArguments } from "./process.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -112,4 +113,79 @@ test("a VICE that cannot load its ROMs is refused with its own error lines", { s
     return true;
   });
   await supervisor.stopAll();
+});
+
+/** A stand-in x64sc: a shell script that runs a fake VICE on the monitor ports in its arguments. */
+function fakeViceBinary(): string {
+  const path = join(dir("fake-vice-"), "x64sc");
+  const entry = fileURLToPath(new URL("./fake-vice-process.testkit.ts", import.meta.url));
+  const quote = (word: string) => `'${word.replace(/'/g, "'\\''")}'`;
+  writeFileSync(path, ["#!/bin/sh", `exec ${[process.execPath, ...process.execArgv, entry].map(quote).join(" ")} "$@"`].join("\n"));
+  chmodSync(path, 0o755);
+  return path;
+}
+
+/** A supervisor that records what it spawns and which owned paths are released; `failStop` makes each stop fail after it stopped. */
+function watchedSupervisor(real: ProcessSupervisor, options: { failStop?: boolean } = {}) {
+  const spawned: SupervisedProcess[] = [];
+  const released = new Map<string, boolean>();
+  const supervisor = {
+    spawn(...args: Parameters<ProcessSupervisor["spawn"]>): SupervisedProcess {
+      const child = real.spawn(...args);
+      spawned.push(child);
+      if (options.failStop !== true) return child;
+      return {
+        pid: child.pid,
+        child: child.child,
+        exited: child.exited,
+        async stop() {
+          await child.stop();
+          throw new Error("the process group survived SIGKILL");
+        },
+      };
+    },
+    ownPath(path: string): () => void {
+      const release = real.ownPath(path);
+      released.set(path, false);
+      return () => {
+        released.set(path, true);
+        release();
+      };
+    },
+  } as unknown as ProcessSupervisor;
+  return { supervisor, spawned, released };
+}
+
+const ended = (child: SupervisedProcess) =>
+  Promise.race([child.exited.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000).unref())]);
+
+test("a VICE that does not tell its version is stopped and refused by name", { skip: process.platform === "win32" ? "the stand-in VICE is a shell script" : false }, async () => {
+  const real = new ProcessSupervisor();
+  const { supervisor, spawned, released } = watchedSupervisor(real);
+  try {
+    await assert.rejects(checkViceStarts({ supervisor, env: { ...process.env, C64RT_VICE: fakeViceBinary() } }), (error: unknown) => {
+      assert.ok(error instanceof WireFailure && error.code === "installation-incomplete", String(error));
+      assert.match(error.message, /did not tell its version/);
+      return true;
+    });
+    assert.equal(spawned.length, 1);
+    assert.equal(await ended(spawned[0]!), true, "the VICE is stopped");
+    assert.deepEqual([...released.values()], [true], "its scratch directory is removed");
+  } finally {
+    await real.stopAll();
+  }
+});
+
+test("a VICE stop that fails still removes the scratch directory", { skip: process.platform === "win32" ? "the stand-in VICE is a shell script" : false }, async () => {
+  const real = new ProcessSupervisor();
+  const { supervisor, released } = watchedSupervisor(real, { failStop: true });
+  try {
+    const vice = await launchVice({ supervisor, videoStandard: "pal", env: { ...process.env, C64RT_VICE: fakeViceBinary() } });
+    await assert.rejects(vice.stop(), /survived SIGKILL/);
+    assert.equal(existsSync(vice.scratchDir), false);
+    assert.deepEqual([...released.values()], [true]);
+    await assert.rejects(vice.stop(), /survived SIGKILL/, "a later stop reports the same failure");
+  } finally {
+    await real.stopAll();
+  }
 });

@@ -212,6 +212,14 @@ export class FakeVice {
     return handle;
   }
 
+  /** Listens on the given monitor ports, as a VICE process does; the clients connect themselves. */
+  async serve(binaryPort: number, textPort: number): Promise<void> {
+    for (const [server, port] of [[this.binaryServer, binaryPort], [this.textServer, textPort]] as const) {
+      server.listen(port, "127.0.0.1");
+      await once(server, "listening");
+    }
+  }
+
   close(): void {
     this.binaryServer.close();
     this.textServer.close();
@@ -613,6 +621,7 @@ export class FakeVice {
     }
     const hunt = /^hunt ([0-9a-f]{4}) ([0-9a-f]{4}) ((?:(?:[0-9a-f]{2}|xx) ?)+)$/.exec(line);
     const disassemble = /^d ([0-9a-f]{4}) ([0-9a-f]{4})$/.exec(line);
+    const memory = /^m ([0-9a-f]{4}) ([0-9a-f]{4})$/.exec(line);
     const load = /^load "([^"]+)" 0(?: \$([0-9a-f]{4}))?$/.exec(line);
     const attach = /^attach "([^"]+)" 8$/.exec(line);
     output += this.textPreamble;
@@ -642,6 +651,11 @@ export class FakeVice {
         const value = this.#textByte(address).toString(16).toUpperCase().padStart(2, "0");
         output += `.${this.textDevice === "8" ? "8" : "C"}:${address.toString(16).padStart(4, "0")}  ${value}          LDA #$${value}\n`;
       }
+    } else if (memory !== null) {
+      const start = Number.parseInt(memory[1]!, 16);
+      const bytes = [];
+      for (let address = start; address <= Number.parseInt(memory[2]!, 16); address++) bytes.push(this.#textByte(address).toString(16).padStart(2, "0"));
+      output += `>C:${memory[1]}  ${bytes.join(" ")}\n`;
     } else if (line === "warp") output += `Warp mode is ${this.warp ? "on" : "off"}.\n`;
     else if (line === "warp on") this.warp = true;
     else if (line === "warp off") this.warp = false;
