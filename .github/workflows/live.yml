@@ -2,7 +2,7 @@ name: Live
 
 # The live suites with a real VICE on Linux, macOS and Windows. CI installs
 # VICE itself; the product never does (it refuses by name with the remedy).
-# c64-re-tools needs VICE 3.9 or later (D23): Linux runs in Debian 13, whose
+# c64-re-tools needs VICE 3.9 or later: Linux runs in Debian 13, whose
 # package is VICE 3.9 (Ubuntu 24.04 has 3.7.1).
 
 on:
@@ -72,6 +72,10 @@ jobs:
           FILES: ${{ inputs.files }}
         run: |
           if [ -n "$FILES" ]; then xvfb-run -a node --test $FILES; else xvfb-run -a pnpm test; fi
+
+      - name: Processes left behind
+        if: always()
+        run: ps -A -o pid,ppid,etime,command | grep -E "x64sc|node" | grep -v grep || true
 
   other:
     name: live VICE (${{ matrix.os }})
