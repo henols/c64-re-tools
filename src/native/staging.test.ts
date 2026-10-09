@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, symlinkSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -28,4 +28,22 @@ test("a path that leaves the workspace or reuses a file is refused", { skip: pro
   } finally {
     workspace.remove();
   }
+});
+
+test("an owned workspace that cannot be removed stays owned and the removal does not throw", { skip: process.platform === "win32" ? "a directory without write permission is POSIX" : process.getuid?.() === 0 ? "root may remove any file" : false }, () => {
+  const owned = new Set<string>();
+  const owner = { ownPath: (path: string) => (owned.add(path), () => owned.delete(path)) };
+  const workspace = Workspace.create(owner);
+  const locked = workspace.directory("locked");
+  writeFileSync(join(locked, "file"), "x");
+  chmodSync(locked, 0o500);
+  try {
+    workspace.remove();
+    assert.ok(owned.has(workspace.root), "the workspace is no longer owned");
+  } finally {
+    chmodSync(locked, 0o700);
+    workspace.remove();
+  }
+  assert.equal(existsSync(workspace.root), false);
+  assert.equal(owned.size, 0);
 });

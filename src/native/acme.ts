@@ -4,17 +4,29 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 
-import { WireFailure } from "../protocol.ts";
+import { isRelativePath, WireFailure } from "../protocol.ts";
 import type { AcmeParams, AcmeResult, AssembledSymbol, Diagnostic } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { ACME, findTool } from "./discover.ts";
-import { runToolOrFail, type ToolContext } from "./run.ts";
+import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
 
 const PROGRAM = "program.prg";
 const SYMBOLS = "symbols.txt";
 const TIMEOUT_MS = 60_000;
 
-/** The argv for one assembly; every value comes from the validated request. */
+/** True for a relative path that stays inside the source root: no absolute path, no drive letter and no "..". */
+const insideSourceRoot = (path: string) => isRelativePath(path) && !/^[A-Za-z]:/.test(path);
+
+/** Refuses an entry source or include directory that ACME could read outside the source root, by name. */
+export function checkAcmeParams(params: AcmeParams): void {
+  if (!insideSourceRoot(params.entrySource)) throw new WireFailure("invalid-input", `The entry source ${params.entrySource} is not a relative path inside the source root.`);
+  if (params.entrySource.startsWith("-")) throw new WireFailure("invalid-input", `The entry source ${params.entrySource} starts with a hyphen, which ACME reads as an option. Give the file a different name.`);
+  for (const directory of params.includeDirs) {
+    if (!insideSourceRoot(directory)) throw new WireFailure("invalid-input", `The include directory ${directory} is not a relative path inside the source root.`);
+  }
+}
+
+/** The argv for one assembly; every value comes from the request that checkAcmeParams accepted. */
 export function acmeArguments(executable: string, params: AcmeParams, outputDirectory: string): string[] {
   const argv = [executable, "--format", "cbm", "--cpu", "6510", "--maxerrors", "100", "-o", join(outputDirectory, PROGRAM), "--symbollist", join(outputDirectory, SYMBOLS)];
   for (const directory of params.includeDirs) argv.push("-I", directory);
@@ -71,6 +83,7 @@ export async function assemble(
   files: Buffer[],
   context: ToolContext,
 ): Promise<{ result: AcmeResult; attachments?: Buffer[] }> {
+  checkAcmeParams(params);
   const executable = findTool(ACME, context.env);
   const workspace = Workspace.create(context.supervisor);
   try {
@@ -83,7 +96,7 @@ export async function assemble(
     if (run.code !== 0) {
       if (diagnostics.every((diagnostic) => diagnostic.severity !== "error")) {
         context.log?.(`ACME exited ${run.code} without a parsed error:\n${run.stdout}\n${run.stderr}`);
-        diagnostics.push({ severity: "error", message: "ACME stopped with an error it did not describe." });
+        diagnostics.push({ severity: "error", message: `ACME stopped with exit code ${run.code} and gave no error in its usual form.${outputTail("ACME", run, workspace.root)}` });
       }
       return { result: { assembled: false, diagnostics } };
     }

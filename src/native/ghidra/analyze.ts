@@ -5,18 +5,21 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { WireFailure } from "../../protocol.ts";
-import { checkGhidraResult, GHIDRA_LIMITS, imageRange, type GhidraParams, type GhidraResult } from "../types.ts";
-import type { ToolContext } from "../run.ts";
+import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, type GhidraParams, type GhidraResult } from "../types.ts";
+import { outputTail, type ToolContext } from "../run.ts";
 import { Workspace } from "../staging.ts";
 import { findGhidra, runHeadless, SCRIPT_DIRECTORY } from "./index.ts";
 
 const TIMEOUT_MS = 600_000;
+/** The part of the run that the decompilations leave for the export, the project removal and the end of Ghidra. */
+const AFTER_DECOMPILE_MS = 30_000;
 
 export async function analyze(
   params: GhidraParams,
   image: Buffer,
   context: ToolContext,
 ): Promise<{ result: GhidraResult }> {
+  checkRequestBounds(params);
   const ghidra = findGhidra(context.env);
   const { start, end, body } = imageRange(params.imageKind, image);
   const base = start;
@@ -38,7 +41,14 @@ export async function analyze(
     writeFileSync(workspace.path("seeds.json"), JSON.stringify({ start, end, entryPoints, dataRanges, labels: params.labels }));
     writeFileSync(
       workspace.path("request.json"),
-      JSON.stringify({ start, end, decompile: params.decompile, maxChars: GHIDRA_LIMITS.decompiledChars, maxTotalChars: GHIDRA_LIMITS.decompiledTotalChars }),
+      JSON.stringify({
+        start,
+        end,
+        decompile: params.decompile,
+        maxChars: GHIDRA_LIMITS.decompiledChars,
+        maxTotalChars: GHIDRA_LIMITS.decompiledTotalChars,
+        decompileDeadline: Date.now() + TIMEOUT_MS - AFTER_DECOMPILE_MS,
+      }),
     );
     const run = await runHeadless({
       ghidra,
@@ -61,8 +71,7 @@ export async function analyze(
     if (!existsSync(outPath)) {
       context.log?.(`Ghidra wrote no result:\n${run.stdout.slice(-4000)}\n${run.stderr.slice(-4000)}`);
       // Ghidra's own warnings and errors say why its export script wrote nothing.
-      const lines = (run.stdout + "\n" + run.stderr).split(/\r?\n/).filter((line) => /ERROR|WARN|Exception|Error:|SCRIPT/.test(line)).slice(-8);
-      throw new WireFailure("operation-failed", `Ghidra finished without a result${lines.length === 0 ? "." : `:\n  ${lines.map((line) => line.trim()).join("\n  ")}`}`);
+      throw new WireFailure("operation-failed", `Ghidra finished without a result.${outputTail("Ghidra", run, workspace.root, /ERROR|WARN|Exception|Error:|SCRIPT/)}`);
     }
     let result: GhidraResult;
     try {
@@ -70,7 +79,7 @@ export async function analyze(
       if (result.coverage.length !== 1 || result.coverage[0]!.start !== start || result.coverage[0]!.end !== end) throw new Error("the coverage is not the loaded program");
     } catch (error) {
       context.log?.(`Ghidra result rejected: ${(error as Error).message}`);
-      throw new WireFailure("operation-failed", "Ghidra returned an incomplete or inconsistent result. Nothing was imported.");
+      throw new WireFailure("operation-failed", `Ghidra returned an incomplete or inconsistent result. Nothing was imported. The check found: ${(error as Error).message}.`);
     }
     return { result };
   } finally {

@@ -13,7 +13,7 @@ import { WireFailure } from "../../protocol.ts";
 import { findOnPath, isExecutableFile } from "../discover.ts";
 import type { ProcessSupervisor } from "../processes.ts";
 import type { Workspace } from "../staging.ts";
-import { runToolOrFail, type ToolRun } from "../run.ts";
+import { outputTail, runToolOrFail, type ToolRun } from "../run.ts";
 
 export const GHIDRA_LANGUAGE = "C64RT_6510:LE:16:nmos";
 // Next to this module. New URL literals, so an installed skill gets the directories too (08 §6).
@@ -65,6 +65,22 @@ export function findGhidra(env: NodeJS.ProcessEnv = process.env): GhidraInstalla
 }
 
 /**
+ * The user name in the name of Ghidra's settings directory: Java's user.name
+ * without spaces and without a domain before the last backslash or slash. Java gives "?"
+ * for a user without an entry in the password database, where Node throws.
+ */
+export function ghidraUserName(lookup: () => string = () => userInfo().username): string {
+  let name: string;
+  try {
+    name = lookup();
+  } catch {
+    name = "?";
+  }
+  name = name.split(" ").join("");
+  return name.slice(Math.max(name.lastIndexOf("\\"), name.lastIndexOf("/")) + 1);
+}
+
+/**
  * Makes a Ghidra settings directory inside the workspace with the NMOS 6510
  * language installed as an extension. Returns the environment that makes
  * Ghidra use it.
@@ -75,7 +91,7 @@ export function prepareSettings(workspace: Workspace, ghidra: GhidraInstallation
   // With XDG_CONFIG_HOME set, Ghidra keeps its settings in [<user>-]ghidra/<settings name> below it: with
   // the user name only when that directory lies outside the user's home. The temporary directory is
   // outside it on Linux and macOS but inside it on Windows (AppData, found in CI), so both names get it.
-  for (const application of [`${userInfo().username}-ghidra`, "ghidra"]) {
+  for (const application of [`${ghidraUserName()}-ghidra`, "ghidra"]) {
     const extension = join(config, application, ghidra.settingsName, "Extensions", "C64RT");
     mkdirSync(join(extension, "data"), { recursive: true });
     cpSync(LANGUAGE_DIRECTORY, join(extension, "data", "languages"), { recursive: true });
@@ -129,8 +145,8 @@ export async function runHeadless(options: HeadlessOptions): Promise<ToolRun> {
   const run = await runToolOrFail("Ghidra", "The Ghidra analysis", { argv, cwd: options.workspace.root, timeoutMs: options.timeoutMs }, { supervisor: options.supervisor, signal: options.signal, env });
   if (run.code !== 0 || /^ERROR REPORT SCRIPT ERROR|Exception in thread "main"/m.test(run.stdout + run.stderr)) {
     // Ghidra's own error lines tell the user what to fix (found in CI on Windows, where the message said nothing).
-    const lines = (run.stdout + "\n" + run.stderr).split(/\r?\n/).filter((line) => /ERROR|Exception|Error:/.test(line)).slice(0, 5);
-    throw new WireFailure("operation-failed", `Ghidra stopped with an error${lines.length === 0 ? ` (exit ${run.code})` : `:\n  ${lines.map((line) => line.trim()).join("\n  ")}`}`);
+    const tail = outputTail("Ghidra", run, options.workspace.root, /ERROR|Exception|Error:/);
+    throw new WireFailure("operation-failed", `Ghidra stopped with an error${tail === "" ? ` (exit ${run.code}).` : `.${tail}`}`);
   }
   return run;
 }

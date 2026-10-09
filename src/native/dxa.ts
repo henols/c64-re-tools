@@ -8,10 +8,10 @@
 import { writeFileSync } from "node:fs";
 
 import { WireFailure } from "../protocol.ts";
-import { imageRange, type DxaParams, type DxaResult } from "./types.ts";
+import { checkRequestBounds, imageRange, type DxaParams, type DxaResult } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
-import { runToolOrFail, type ToolContext } from "./run.ts";
+import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
 
 const TIMEOUT_MS = 120_000;
 /** The listing goes back as an attachment; larger output is refused. */
@@ -90,6 +90,7 @@ export async function analyze(
   image: Buffer,
   context: ToolContext,
 ): Promise<{ result: DxaResult; attachments: Buffer[] }> {
+  checkRequestBounds(params);
   const executable = findTool(DXA, context.env);
   const { start, end } = imageRange(params.imageKind, image);
   const inside = (address: number) => address >= start && address <= end;
@@ -126,14 +127,17 @@ export async function analyze(
     );
     if (run.code !== 0) {
       context.log?.(`dxa exited ${run.code}: ${run.stderr}`);
-      throw new WireFailure("operation-failed", "dxa could not analyze the program.");
+      const tail = outputTail("dxa", run, workspace.root);
+      throw new WireFailure("operation-failed", `dxa could not analyze the program${tail === "" ? ` (exit ${run.code}).` : `.${tail}`}`);
     }
     let parsed: Pick<DxaResult, "regions" | "labels">;
     try {
       parsed = parseListing(run.stdout, start, end);
     } catch (error) {
       context.log?.(`dxa listing rejected: ${(error as Error).message}`);
-      throw new WireFailure("operation-failed", "dxa returned an incomplete or inconsistent listing. Nothing was imported.");
+      // The listing is on stdout: only dxa's messages on stderr are quoted.
+      const tail = outputTail("dxa", { stdout: "", stderr: run.stderr }, workspace.root);
+      throw new WireFailure("operation-failed", `dxa returned an incomplete or inconsistent listing. Nothing was imported. The check found: ${(error as Error).message}.${tail}`);
     }
     const listing = Buffer.from(run.stdout, "utf8");
     return {

@@ -5,7 +5,7 @@ import { createInterface } from "node:readline";
 import { test } from "node:test";
 
 import { WireFailure } from "../protocol.ts";
-import { batchInvocation, isAlive, ProcessSupervisor, windowsQuote, type SupervisedProcess } from "./processes.ts";
+import { batchInvocation, isAlive, killTree, ProcessSupervisor, windowsQuote, type SupervisedProcess } from "./processes.ts";
 
 // Windows has no process groups: an ended leader no longer leads to its orphaned descendants.
 const orphansFindable = process.platform === "win32" ? "Windows cannot find the descendants of a process that has ended" : false;
@@ -88,10 +88,10 @@ test("stop is idempotent and stopAll stops every group", { timeout: 30_000 }, as
   assert.equal(supervisor.size, 0);
 });
 
-test("a command that does not exist reports an exit without throwing", { timeout: 30_000 }, async () => {
+test("a command that does not exist reports an exit with the spawn error, without throwing", { timeout: 30_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   const child = supervisor.spawn(["/nonexistent/c64-re-tools-test-binary"]);
-  assert.deepEqual(await child.exited, { code: null, signal: null });
+  assert.deepEqual(await child.exited, { code: null, signal: null, spawnError: "ENOENT" });
   await child.stop();
   assert.equal(supervisor.size, 0);
 });
@@ -146,4 +146,9 @@ test("a program that cannot even be started is refused by name instead of crashi
     (error: unknown) => error instanceof WireFailure && error.code === "installation-incomplete" && /is not a program that this system can start/.test(error.message),
   );
   assert.equal(supervisor.size, 0);
+});
+
+test("a tree kill that cannot run reports why", { skip: process.platform === "win32" ? "taskkill runs on Windows and would end the tree" : false }, () => {
+  // taskkill is a Windows program: elsewhere it does not start.
+  assert.match(killTree(process.pid) ?? "", /^taskkill did not run \(ENOENT\)$/);
 });

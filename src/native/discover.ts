@@ -77,18 +77,35 @@ export function isOlderThanMinimum(version: { major: number; minor: number }): b
   return version.major < MIN_VICE.major || (version.major === MIN_VICE.major && version.minor < MIN_VICE.minor);
 }
 
+/** A file this process may run. Windows has no execute permission (X_OK checks nothing there): a file is enough. */
 export function isExecutableFile(path: string): boolean {
   try {
     if (!statSync(path).isFile()) return false;
-    accessSync(path, constants.X_OK);
+    if (process.platform !== "win32") accessSync(path, constants.X_OK);
     return true;
   } catch {
     return false;
   }
 }
 
+/** The extensions that the supervisor can start on Windows: programs directly, batch files through cmd.exe. */
+const STARTABLE = [".com", ".exe", ".bat", ".cmd"];
+
+/**
+ * The suffixes that a name on PATH can have. On Windows, the PATHEXT
+ * extensions that the supervisor can start, in PATHEXT order, and never the
+ * bare name: Windows does not start a file without an extension. Elsewhere
+ * only the bare name.
+ */
+export function pathSuffixes(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): string[] {
+  if (platform !== "win32") return [""];
+  const listed = (env.PATHEXT ?? "").split(";").map((suffix) => suffix.trim().toLowerCase());
+  const suffixes = listed.filter((suffix, index) => STARTABLE.includes(suffix) && listed.indexOf(suffix) === index);
+  return suffixes.length === 0 ? STARTABLE : suffixes;
+}
+
 /** The first executable named `binary + suffix` in a PATH directory, in PATH order; undefined when there is none. */
-export function findOnPath(binaries: readonly string[], env: NodeJS.ProcessEnv, suffixes: readonly string[] = process.platform === "win32" ? [".exe", ""] : [""]): string | undefined {
+export function findOnPath(binaries: readonly string[], env: NodeJS.ProcessEnv, suffixes: readonly string[] = pathSuffixes(env)): string | undefined {
   for (const dir of (env.PATH ?? "").split(delimiter)) {
     if (dir === "") continue;
     for (const binary of binaries) {

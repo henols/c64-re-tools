@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 
-import { acmeArguments, parseDiagnostics, parseSymbols } from "./acme.ts";
+import { WireFailure } from "../protocol.ts";
+import { acmeArguments, assemble, parseDiagnostics, parseSymbols } from "./acme.ts";
+import { ProcessSupervisor } from "./processes.ts";
+
+const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-acme-test-"));
+after(() => rmSync(scratch, { recursive: true, force: true }));
 
 test("argv carries only what the typed request allows", () => {
   const argv = acmeArguments("/usr/bin/acme", { files: [], entrySource: "main.a", includeDirs: ["lib"], defines: { DEBUG: 1, FAST: true, SLOW: false }, setPc: 0x0801 }, "/w/out");
@@ -54,4 +61,28 @@ test("the symbol list gives addresses inside the program and constants outside",
     { name: "loop", kind: "address", value: 0x0809, used: true },
     { name: "start", kind: "address", value: 0x0801, used: false },
   ]);
+});
+
+test("an ACME failure without a usual error message quotes the last output of ACME", { skip: process.platform === "win32" ? "the stand-in ACME is a shell script" : false }, async () => {
+  const acme = join(scratch, "acme");
+  writeFileSync(acme, '#!/bin/sh\necho "acme: out of memory in $PWD/main.a" >&2\nexit 1\n');
+  chmodSync(acme, 0o755);
+  const context = { supervisor: new ProcessSupervisor(), signal: new AbortController().signal, env: { ...process.env, C64RT_ACME: acme } };
+  const { result } = await assemble({ files: [{ path: "main.a", size: 1 }], entrySource: "main.a", includeDirs: [], defines: {} }, [Buffer.from("x")], context);
+  assert.equal(result.assembled, false);
+  assert.deepEqual(result.diagnostics, [
+    { severity: "error", message: "ACME stopped with exit code 1 and gave no error in its usual form.\nThe last output of ACME:\n  acme: out of memory in source/main.a" },
+  ]);
+});
+
+test("an entry source or include directory outside the source root is refused by name before ACME runs", async () => {
+  const context = { supervisor: new ProcessSupervisor(), signal: new AbortController().signal, env: { PATH: "" } };
+  const params = { files: [{ path: "main.a", size: 1 }], entrySource: "main.a", includeDirs: [] as string[], defines: {} };
+  const refused = (name: string) => (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message.includes(name);
+  for (const directory of ["/usr/share/acme", "../..", "lib/../../x", "C:/acme", "lib\\x"]) {
+    await assert.rejects(assemble({ ...params, includeDirs: ["lib", directory] }, [Buffer.from("x")], context), refused(`include directory ${directory} `));
+  }
+  for (const entry of ["/etc/passwd", "../main.a", "-v"]) {
+    await assert.rejects(assemble({ ...params, entrySource: entry }, [Buffer.from("x")], context), refused(`entry source ${entry} `));
+  }
 });

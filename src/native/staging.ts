@@ -8,11 +8,15 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isRelativePath, WireFailure, type SourceTree } from "../protocol.ts";
 import type { ProcessSupervisor } from "./processes.ts";
 
+/** How often a removal tries again when a file is busy, for example one that Windows still holds open. */
+const REMOVE_RETRIES = 5;
+
 export class Workspace {
   readonly root: string;
-  readonly #release: () => void;
+  /** The owner's release, when a supervisor owns the workspace. */
+  readonly #release: (() => void) | undefined;
 
-  private constructor(root: string, release: () => void) {
+  private constructor(root: string, release: (() => void) | undefined) {
     this.root = root;
     this.#release = release;
   }
@@ -23,7 +27,7 @@ export class Workspace {
    */
   static create(owner?: Pick<ProcessSupervisor, "ownPath">, prefix = "c64-re-tools-request-"): Workspace {
     const root = mkdtempSync(join(tmpdir(), prefix));
-    return new Workspace(root, owner?.ownPath(root) ?? (() => {}));
+    return new Workspace(root, owner?.ownPath(root));
   }
 
   /** The absolute path of a relative path inside the workspace; refuses any escape. */
@@ -58,8 +62,19 @@ export class Workspace {
     return full;
   }
 
+  /**
+   * Removes the workspace. An owned workspace that cannot be removed stays
+   * owned, and its supervisor removes it when its process ends: the error is
+   * not thrown, so that it cannot replace the failure of the request that
+   * used the workspace. Without an owner the error is thrown.
+   */
   remove(): void {
-    rmSync(this.root, { recursive: true, force: true });
-    this.#release();
+    try {
+      rmSync(this.root, { recursive: true, force: true, maxRetries: REMOVE_RETRIES });
+    } catch (error) {
+      if (this.#release === undefined) throw error;
+      return;
+    }
+    this.#release?.();
   }
 }
