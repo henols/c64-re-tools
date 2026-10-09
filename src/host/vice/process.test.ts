@@ -172,9 +172,10 @@ test("a VICE that does not tell its version is stopped and refused by name", { s
       assert.match(error.message, /did not tell its version/);
       return true;
     });
-    assert.equal(spawned.length, 1);
-    assert.equal(await ended(spawned[0]!), true, "the VICE is stopped");
-    assert.deepEqual([...released.values()], [true], "its scratch directory is removed");
+    // A launch that a parallel test disturbs (a taken port) is tried again, so count every VICE it started.
+    assert.ok(spawned.length >= 1);
+    for (const vice of spawned) assert.equal(await ended(vice), true, "each VICE is stopped");
+    assert.deepEqual([...released.values()], spawned.map(() => true), "each scratch directory is removed");
   } finally {
     await real.stopAll();
   }
