@@ -190,6 +190,11 @@ test("a stray sentinel answer in the output is removed", () => {
   assert.equal(cleanOutput("+43981\n"), "+43981");
 });
 
+test("a step message of a binary monitor step in the output is removed", () => {
+  assert.equal(cleanOutput("Stepping through the next 4 instruction(s).\r\n(C:$fce7) "), "");
+  assert.equal(cleanOutput("Stepping through the next 1 instruction(s).\nWarp mode is on.\n(C:$fce7) "), "Warp mode is on.");
+});
+
 test("a command that still prints when the resend time passes is sent once and read once", async () => {
   let runs = 0;
   const { monitor } = await fakeTextMonitor((command) => {

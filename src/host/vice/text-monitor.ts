@@ -13,7 +13,9 @@
 //
 // VICE sometimes reads a line but runs it only when more input comes. So a
 // late sentinel is sent again, and stray sentinel answers are removed from
-// output.
+// output. VICE also prints its step message here when the binary monitor
+// steps, sometimes after the next text command was sent; no command of this
+// client steps, so that message is removed from output too.
 
 import type { Socket } from "node:net";
 
@@ -39,15 +41,16 @@ const SENTINEL_RESEND_MS = 1_000;
 /** The longest delay a Node timer takes. */
 const MAX_TIMER_MS = 2_147_483_647;
 const ANY_SENTINEL_ANSWER = /\+\d+\n\$[0-9a-f]{4}\n[0-7]+\n%[01 ]+\n/g;
+const STEP_MESSAGE = /^Stepping through the next \d+ instruction\(s\)\.\n/gm;
 
 function sentinelPattern(nonce: number): RegExp {
   const hex = nonce.toString(16).padStart(4, "0");
   return new RegExp(`\\+${nonce}\\n\\$${hex}\\n[0-7]+\\n%[01 ]+\\n\\((?:C|\\d+):\\$[0-9a-f]{4}\\) `);
 }
 
-/** Strips prompts, stray sentinel answers and surrounding blank space from a command's raw output. */
+/** Strips prompts, stray sentinel answers, step messages and surrounding blank space from a command's raw output. */
 export function cleanOutput(raw: string): string {
-  return raw.replace(/\r/g, "").replace(ANY_SENTINEL_ANSWER, "").replace(PROMPT, "").trim();
+  return raw.replace(/\r/g, "").replace(ANY_SENTINEL_ANSWER, "").replace(STEP_MESSAGE, "").replace(PROMPT, "").trim();
 }
 
 export class TextMonitor {
