@@ -43,7 +43,7 @@ after(async () => {
 });
 
 async function skill(address: string, name: string, file: string, ...args: string[]): Promise<{ status: number | null; stdout: string; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [join(root, "skills", name, "scripts", file), ...args], { cwd: project, env: { ...process.env, C64RT_HOST: address }, stdio: ["ignore", "pipe", "inherit"] });
+  const child = spawn(process.execPath, [...process.execArgv, join(root, "skills", name, "scripts", file), ...args], { cwd: project, env: { ...process.env, C64RT_HOST: address }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];

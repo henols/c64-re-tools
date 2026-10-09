@@ -16,7 +16,7 @@ after(() => rmSync(root, { recursive: true, force: true }));
 
 function knowledge(...args: string[]): Record<string, unknown> {
   // An unreachable host: the knowledge path must never try to use it.
-  const run = spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: root, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   return JSON.parse(run.stdout) as Record<string, unknown>;
 }

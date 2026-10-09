@@ -81,13 +81,13 @@ test("every installed script runs without the repository", () => {
   for (const skill of plugin.skills!) {
     for (const resource of (skill.resources ?? []).filter((resource) => resource.executable === true)) {
       // An unknown command loads every module of the script and stops at its usage text.
-      const run = spawnSync(process.execPath, [join(skills, skill.name, resource.path), "--no-such-option"], { cwd: project, encoding: "utf8" });
+      const run = spawnSync(process.execPath, [...process.execArgv, join(skills, skill.name, resource.path), "--no-such-option"], { cwd: project, encoding: "utf8" });
       const output = run.stdout + run.stderr;
       assert.doesNotMatch(output, /ERR_MODULE_NOT_FOUND|ERR_PACKAGE_IMPORT_NOT_DEFINED|SyntaxError|ERR_UNKNOWN_FILE_EXTENSION/, `${skill.name}/${resource.path}: ${output}`);
       assert.notEqual(run.status, 0, `${skill.name}/${resource.path} refuses an unknown option`);
     }
   }
-  const memmap = spawnSync(process.execPath, [join(skills, "c64-memory-map", "scripts", "memmap.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
+  const memmap = spawnSync(process.execPath, [...process.execArgv, join(skills, "c64-memory-map", "scripts", "memmap.ts"), "at", "$d020"], { cwd: project, encoding: "utf8" });
   assert.equal(memmap.status, 0, memmap.stderr);
   assert.equal((JSON.parse(memmap.stdout) as { addresses: Array<{ name: string }> }).addresses[0]?.name, "EXTCOL");
 });
@@ -102,7 +102,7 @@ test("the agent starts the latest published MCP server through npx", () => {
 test("AP SDK accepts the plugin module", () => {
   // The CLI module itself, through node: the .bin shim is a shell script that Windows cannot run.
   const cli = resolve(dirname(fileURLToPath(import.meta.resolve("@jalco/ap-sdk"))), "cli.js");
-  const check = spawnSync(process.execPath, [cli, "check", "distribution/plugin.ts"], { cwd: root, encoding: "utf8" });
+  const check = spawnSync(process.execPath, [...process.execArgv, cli, "check", "distribution/plugin.ts"], { cwd: root, encoding: "utf8" });
   assert.equal(check.status, 0, check.stdout + check.stderr);
   assert.match(check.stdout, /is valid \(\d+ skill\(s\)/);
 });

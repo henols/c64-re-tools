@@ -24,7 +24,7 @@ cpSync(resolve(import.meta.dirname, "../fixtures/asm/counter"), join(project, "s
 after(() => rmSync(project, { recursive: true, force: true }));
 
 async function assembleScript(...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [...process.execArgv, script, ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));

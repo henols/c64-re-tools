@@ -41,7 +41,7 @@ function project(name: string): string {
 }
 
 async function analyze(root: string, dxa: string, ...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
-  const child = spawn(process.execPath, [script, "game.prg", "--analyzer", "dxa", ...args], {
+  const child = spawn(process.execPath, [...process.execArgv, script, "game.prg", "--analyzer", "dxa", ...args], {
     cwd: root,
     env: { ...process.env, C64RT_DXA: dxa, C64RT_HOST: "127.0.0.1:1" },
     stdio: ["ignore", "pipe", "pipe"],

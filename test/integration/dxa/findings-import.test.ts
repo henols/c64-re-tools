@@ -32,7 +32,7 @@ after(() => rmSync(project, { recursive: true, force: true }));
 
 async function skill(env: NodeJS.ProcessEnv, name: string, file: string, ...args: string[]): Promise<{ status: number | null; json: Record<string, unknown> }> {
   // No Host Runtime: the script would fail if it asked one for DXA.
-  const child = spawn(process.execPath, [join(skills, name, "scripts", file), ...args], { cwd: project, env: { ...env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "inherit"] });
+  const child = spawn(process.execPath, [...process.execArgv, join(skills, name, "scripts", file), ...args], { cwd: project, env: { ...env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "inherit"] });
   let stdout = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   const [status] = (await once(child, "exit")) as [number | null];

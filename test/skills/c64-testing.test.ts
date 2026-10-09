@@ -86,7 +86,7 @@ test("only differences outside the explicit tolerance count", () => {
 
 test("the checklist lists each checkpoint and what only a person can judge", () => {
   const checklist = resolvePath(home, "skills/c64-testing/scripts/checklist.ts");
-  const run = spawnSync(process.execPath, [checklist, "ok.json", "--item", "FIRE starts the game."], { cwd: project, encoding: "utf8" });
+  const run = spawnSync(process.execPath, [...process.execArgv, checklist, "ok.json", "--item", "FIRE starts the game."], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
   assert.match(run.stdout, /^# Playtest checklist/);
   assert.match(run.stdout, /- \[ \] At "moved", the rebuild looks and behaves as the original\./);

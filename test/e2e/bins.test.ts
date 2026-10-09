@@ -13,7 +13,7 @@ const PATH = [resolve(root, "node_modules", ".bin"), process.env.PATH ?? ""].joi
 
 for (const [name, entry] of Object.entries(programs)) {
   test(`${name} --help exits 0 and names the program`, () => {
-    const [command, args] = process.platform === "win32" ? [process.execPath, [entry, "--help"]] : [resolve(root, entry), ["--help"]];
+    const [command, args] = process.platform === "win32" ? [process.execPath, [...process.execArgv, entry, "--help"]] : [resolve(root, entry), ["--help"]];
     const run = spawnSync(command, args, { cwd: root, encoding: "utf8", env: { ...process.env, PATH } });
     assert.equal(run.error, undefined, String(run.error));
     assert.equal(run.status, 0, run.stderr);

@@ -49,7 +49,7 @@ test("assembled source loads into VICE and reaches its known end state", { skip,
   // 1. The skill script assembles with ACME and writes the PRG into the project.
   const assembled = spawnSync(
     process.execPath,
-    [resolve(root, "skills/c64-assembler/scripts/assemble.ts"), "--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/counter.prg"],
+    [...process.execArgv, resolve(root, "skills/c64-assembler/scripts/assemble.ts"), "--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/counter.prg"],
     { cwd: project, env: { ...process.env, C64RT_HOST: hostAddress }, encoding: "utf8" },
   );
   assert.equal(assembled.status, 0, assembled.stdout + assembled.stderr);

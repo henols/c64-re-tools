@@ -29,7 +29,7 @@ after(() => rmSync(project, { recursive: true, force: true }));
 
 /** Runs a skill script in the project. No Host Runtime runs: the scripts run their tools themselves. */
 async function skill(name: string, file: string, ...args: string[]): Promise<Record<string, unknown>> {
-  const child = spawn(process.execPath, [join(skills, name, "scripts", file), ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [...process.execArgv, join(skills, name, "scripts", file), ...args], { cwd: project, env: { ...process.env, C64RT_HOST: "127.0.0.1:1" }, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));

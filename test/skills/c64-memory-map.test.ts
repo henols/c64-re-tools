@@ -73,13 +73,13 @@ test("register values decode to their C64 meaning", () => {
 
 test("the script answers in JSON and refuses bad input", () => {
   const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memmap.ts");
-  const at = spawnSync(process.execPath, [script, "at", "$d020", "53281", "%1111111111111110"], { encoding: "utf8" });
+  const at = spawnSync(process.execPath, [...process.execArgv, script, "at", "$d020", "53281", "%1111111111111110"], { encoding: "utf8" });
   assert.equal(at.status, 0);
   assert.deepEqual(
     (JSON.parse(at.stdout) as { addresses: Array<{ name: string }> }).addresses.map((address) => address.name),
     ["EXTCOL", "BGCOL0", "IRQ vector"],
   );
-  const bad = spawnSync(process.execPath, [script, "decode", "$d020", "1"], { encoding: "utf8" });
+  const bad = spawnSync(process.execPath, [...process.execArgv, script, "decode", "$d020", "1"], { encoding: "utf8" });
   assert.equal(bad.status, 2);
   assert.equal((JSON.parse(bad.stdout) as { error: { code: string } }).error.code, "invalid-input");
 });

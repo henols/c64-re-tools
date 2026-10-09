@@ -122,13 +122,13 @@ describe("the packed package works through npx", { skip: liveSkip }, () => {
   });
 
   test("a local skill script runs from its installed location", () => {
-    const memmap = JSON.parse(sh(process.execPath, [join(skills, "c64-memory-map", "scripts", "memmap.ts"), "at", "$d020"], project)) as { addresses: Array<{ name: string }> };
+    const memmap = JSON.parse(sh(process.execPath, [...process.execArgv, join(skills, "c64-memory-map", "scripts", "memmap.ts"), "at", "$d020"], project)) as { addresses: Array<{ name: string }> };
     assert.equal(memmap.addresses[0]?.name, "EXTCOL");
   });
 
   test("a skill script assembles with ACME from its installed location", { skip: acme, timeout: 120_000 }, () => {
     cpSync(join(root, "test", "fixtures", "asm", "reconstructed"), join(project, "src"), { recursive: true });
-    const assemble = spawnSync(process.execPath, [join(skills, "c64-assembler", "scripts", "assemble.ts"), "--source-root", "src", "--entry", "game.a", "--out", "build/game.prg"], {
+    const assemble = spawnSync(process.execPath, [...process.execArgv, join(skills, "c64-assembler", "scripts", "assemble.ts"), "--source-root", "src", "--entry", "game.a", "--out", "build/game.prg"], {
       cwd: project,
       encoding: "utf8",
       env: { ...process.env, C64RT_HOST: address },
