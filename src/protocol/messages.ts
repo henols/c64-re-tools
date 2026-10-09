@@ -1,7 +1,7 @@
 // The message layer of the Host Runtime wire: protocol identity, error codes, the message shapes and
 // their parsers, and the field checks that every validator uses.
 
-import type { ToolOperation, ToolOperations } from "../protocol.ts";
+import type { ToolOperation, ToolOperations } from "./tools.ts";
 import type { ViceOperation, ViceOperations } from "../protocol.ts";
 
 /** Private Host Runtime protocol identifier. */
