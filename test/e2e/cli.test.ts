@@ -118,7 +118,12 @@ test("status reports a Host Runtime that accepts the connection but drops the re
   }
 });
 
-test("an unknown command or option exits 2 with the help", () => {
+test("an unknown command or option, or an option that status does not take, exits 2 with the help", () => {
   assert.equal(run("doctor").status, 2);
   assert.equal(run("install", "--force").status, 2);
+  for (const option of [["--global"], ["--target", "claude"]]) {
+    const refused = run("status", ...option);
+    assert.equal(refused.status, 2);
+    assert.match(refused.stderr, /^status takes no --target or --global\.\n\nc64-re-tools:/);
+  }
 });
