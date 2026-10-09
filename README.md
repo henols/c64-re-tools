@@ -5,7 +5,7 @@ unknown applications and for developing, debugging, building and testing new
 C64 applications.
 
 An agent drives a real VICE emulator through an MCP server, and uses skills
-for the rest: disk images, BASIC, static analysis with Ghidra, a project
+for the rest: disk images, BASIC, static analysis with DXA and Ghidra, a project
 knowledge database, the ACME assembler, unpacking, release comparison and
 functional-equivalence tests.
 
@@ -89,8 +89,8 @@ Clients on loopback need no token; every other client must send it.
 | `C64RT_C1541`, `C64RT_PETCAT` | host | Full path of the tool when it is not on `PATH`. |
 | `C64RT_ACME`, `C64RT_DXA` | skills, CLI | Full path of the tool when it is not on `PATH`. |
 | `C64RT_GHIDRA` | skills, CLI | The Ghidra installation directory, when `analyzeHeadless` is not on `PATH`. |
-| `C64RT_HOST` | MCP, skills | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
-| `C64RT_HOST_TOKEN` | host, MCP, skills | The shared secret for a Host Runtime that listens beyond loopback. |
+| `C64RT_HOST` | MCP, skills, CLI | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
+| `C64RT_HOST_TOKEN` | host, MCP, skills, CLI | The shared secret for a Host Runtime that listens beyond loopback. |
 | `C64RT_VIDEO` | MCP | `pal` (default) or `ntsc`, fixed for the life of the MCP process. |
 
 Ghidra runs with its own settings directory for each request. The toolkit
@@ -103,7 +103,7 @@ and settings stay unchanged.
 | --- | --- |
 | c64-reverse-engineering | Coordinates an investigation and picks the specialist for the next unknown. |
 | c64-emulator | Runs and observes the program in VICE through the MCP tools. |
-| c64-static-analysis | Ghidra analysis into knowledge, with seeds from knowledge and decompilation. |
+| c64-static-analysis | A fast first pass with DXA and a deeper pass with Ghidra into knowledge, with seeds from knowledge and decompilation. |
 | c64-knowledge | Reads and writes symbols, regions, comments and references, with history. |
 | c64-disk | Directory, BAM, entries, sector chains and extraction of disk images. |
 | c64-basic | BASIC V2 listings and the SYS/USR handoff to machine code. |
@@ -124,6 +124,7 @@ node <skills>/c64-disk/scripts/disk.ts directory original/game.d64
 node <skills>/c64-disk/scripts/disk.ts read original/game.d64 GAME --out extracted/game.prg
 node <skills>/c64-basic/scripts/basic.ts extracted/game.prg                  # the SYS address, e.g. $080d
 node <skills>/c64-unpacker/scripts/unpack.ts inspect extracted/game.prg
+node <skills>/c64-static-analysis/scripts/analyze.ts extracted/game.prg --analyzer dxa --listing analysis/game.lst
 node <skills>/c64-static-analysis/scripts/analyze.ts extracted/game.prg --entry '$080d'
 node <skills>/c64-knowledge/scripts/knowledge.ts rename '$080d' main --kind routine --reason 'entry from BASIC'
 node <skills>/c64-static-analysis/scripts/analyze.ts extracted/game.prg --entry '$080d' --decompile '$080d'
@@ -159,12 +160,12 @@ skipped, never as passed:
 C64RT_LIVE_VICE=/usr/bin/x64sc C64RT_GHIDRA=/opt/ghidra pnpm test
 ```
 
-ACME, c1541 and petcat tests run when the tools are on `PATH`.
+ACME, DXA, c1541 and petcat tests run when the tools are on `PATH`.
 
 ## Layout
 
 ```
-src/             # mcp, host, host-client, knowledge, cli; unit tests beside the source
+src/             # mcp, host, host-client, native, knowledge, cli; unit tests beside the source
 skills/          # the skills: SKILL.md, scripts (TypeScript) and references
 distribution/    # the AP SDK plugin definition: skills with the src/ modules they reach
 test/            # fixtures, integration and end-to-end tests
