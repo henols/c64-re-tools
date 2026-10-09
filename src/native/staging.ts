@@ -5,7 +5,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { isRelativePath, WireFailure, type SourceTree } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
+import { isRelativePath, type SourceTree } from "../protocol/tools.ts";
 import type { ProcessSupervisor } from "./processes.ts";
 
 /** How often a removal tries again when a file is busy, for example one that Windows still holds open. */

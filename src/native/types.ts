@@ -4,7 +4,8 @@
 // (a program, an image, a listing) go next to these values as attachments.
 
 import { prgRange, REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
-import { isInteger, isObject, isOneOf, WireFailure, type SourceTree } from "../protocol.ts";
+import { isInteger, isObject, isOneOf, WireFailure } from "../protocol/messages.ts";
+import { type SourceTree } from "../protocol/tools.ts";
 
 export interface Diagnostic {
   severity: "error" | "warning" | "note";

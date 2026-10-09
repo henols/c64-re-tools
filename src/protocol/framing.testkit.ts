@@ -1,6 +1,7 @@
 // A test reader for the framed wire: whole messages from stream chunks, for peers that never expect attachments.
 
-import { MessageReader, ProtocolError } from "./protocol.ts";
+import { MessageReader } from "./framing.ts";
+import { ProtocolError } from "./messages.ts";
 
 /** Reassembles attachment-free messages. */
 export class FrameDecoder {

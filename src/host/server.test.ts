@@ -3,14 +3,9 @@ import { connect, type Socket } from "node:net";
 import { networkInterfaces } from "node:os";
 import { after, test } from "node:test";
 
-import {
-  encodeFrame,
-  HOST_PROTOCOL_ID,
-  HOST_PROTOCOL_VERSION,
-  type ClientMessage,
-  WireFailure,
-} from "../protocol.ts";
-import { FrameDecoder } from "../protocol.testkit.ts";
+import { encodeFrame } from "../protocol/framing.ts";
+import { HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, type ClientMessage, WireFailure } from "../protocol/messages.ts";
+import { FrameDecoder } from "../protocol/framing.testkit.ts";
 import { ListenError, parsePort, startHostServer, stopSignal, type HostServer, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
 
 const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: "vice-session" } as const;

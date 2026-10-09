@@ -1,28 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  attachmentCount,
-  checkHello,
-  encodeFrame,
-  isRelativePath,
-  validateSourceTree,
-  validateToolParams,
-  validateToolResult,
-  HOST_PROTOCOL_ID,
-  HOST_PROTOCOL_VERSION,
-  MAX_ATTACHMENT_BYTES,
-  MAX_FRAME_BYTES,
-  MAX_MASK_RECTANGLES,
-  MessageReader,
-  parseClientMessage,
-  parseHostMessage,
-  ProtocolError,
-  validateViceParams,
-  validateViceResult,
-  WireFailure,
-} from "./protocol.ts";
-import { FrameDecoder } from "./protocol.testkit.ts";
+import { encodeFrame, MAX_ATTACHMENT_BYTES, MAX_FRAME_BYTES, MessageReader } from "./protocol/framing.ts";
+import { checkHello, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseClientMessage, parseHostMessage, ProtocolError, WireFailure } from "./protocol/messages.ts";
+import { isRelativePath, validateSourceTree, validateToolParams, validateToolResult } from "./protocol/tools.ts";
+import { attachmentCount, MAX_MASK_RECTANGLES, validateViceParams, validateViceResult } from "./protocol/vice.ts";
+import { FrameDecoder } from "./protocol/framing.testkit.ts";
 
 const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: "vice-session" } as const;
 

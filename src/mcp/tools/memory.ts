@@ -4,17 +4,8 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import {
-  MAX_COMPARE_DIFFERENCES,
-  MAX_COMPARE_SIZE,
-  MAX_DISASSEMBLE,
-  MAX_MEMORY_READ,
-  MAX_MEMORY_WRITE,
-  MAX_SEARCH_PATTERN,
-  MAX_SEARCH_RESULTS,
-  WireFailure,
-  type RegisterValues,
-} from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
+import { MAX_COMPARE_DIFFERENCES, MAX_COMPARE_SIZE, MAX_DISASSEMBLE, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_SEARCH_PATTERN, MAX_SEARCH_RESULTS, type RegisterValues } from "../../protocol/vice.ts";
 import { AddressInput, AddressOutput, Byte, defineTool, HexData, HexDataInput, MemoryViewInput, requireFields, SpaceInput } from "../server.ts";
 
 export const c64MemoryRead = defineTool({

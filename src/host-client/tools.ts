@@ -3,19 +3,8 @@
 // opens its own "tool" connection, sends bytes, and closes. Skill scripts run
 // ACME, DXA and Ghidra themselves through src/native.
 
-import {
-  DISK_IMAGE_TYPES,
-  ProtocolError,
-  validateToolResult,
-  WireFailure,
-  type C1541Result,
-  type DiskAction,
-  type DiskImageType,
-  type PetcatResult,
-  type ToolOperation,
-  type ToolOperations,
-  type ToolStatus,
-} from "../protocol.ts";
+import { ProtocolError, WireFailure } from "../protocol/messages.ts";
+import { DISK_IMAGE_TYPES, validateToolResult, type C1541Result, type DiskAction, type DiskImageType, type PetcatResult, type ToolOperation, type ToolOperations, type ToolStatus } from "../protocol/tools.ts";
 import { HostConnection } from "./connect.ts";
 import { readProjectFile } from "./transfer.ts";
 
@@ -95,15 +84,6 @@ export async function hostTools(options: ToolCallOptions = {}): Promise<ToolStat
 }
 
 /** Skill scripts see failures and wire limits through the host-client, never the private protocol module. */
-export {
-  DISK_ACTIONS,
-  JOYSTICK_DIRECTIONS,
-  MAX_BASELINES,
-  MAX_EXECUTION_COUNT,
-  MAX_KEYBOARD_BYTES,
-  MAX_MASK_RECTANGLES,
-  MAX_MEMORY_READ,
-  MAX_MEMORY_WRITE,
-  MAX_TIMEOUT_FRAMES,
-  WireFailure,
-} from "../protocol.ts";
+export { WireFailure } from "../protocol/messages.ts";
+export { DISK_ACTIONS } from "../protocol/tools.ts";
+export { JOYSTICK_DIRECTIONS, MAX_BASELINES, MAX_EXECUTION_COUNT, MAX_KEYBOARD_BYTES, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_TIMEOUT_FRAMES } from "../protocol/vice.ts";

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { WireFailure } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
 import { ProcessSupervisor } from "../processes.ts";
 import { Workspace } from "../staging.ts";
 import { analyze } from "./analyze.ts";

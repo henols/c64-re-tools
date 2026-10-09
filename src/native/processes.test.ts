@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { test } from "node:test";
 
-import { WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
 import { batchInvocation, isAlive, killTree, ProcessSupervisor, windowsQuote, type SupervisedProcess } from "./processes.ts";
 
 // Windows has no process groups: taskkill cannot find the descendants of a leader that has ended.

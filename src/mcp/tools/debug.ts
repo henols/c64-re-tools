@@ -4,19 +4,7 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import {
-  CHECKPOINT_ACTIONS,
-  MAX_BACKTRACE,
-  MAX_HISTORY,
-  MAX_MEMMAP_RANGES,
-  MAX_PROFILE,
-  MAX_WATCH_SIZE,
-  SPACES,
-  TIMING_ACTIONS,
-  WATCH_ACCESS,
-  type Breakpoint,
-  type Watchpoint,
-} from "../../protocol.ts";
+import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_MEMMAP_RANGES, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
 import { AddressInput, AddressOutput, Byte, ConditionInput, ConditionOutput, defineTool, HexData, requireFields, showCondition, SpaceInput, toCondition } from "../server.ts";
 
 /** No default here: a filled-in default would count as a field the other actions refuse. */

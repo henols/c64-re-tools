@@ -8,7 +8,7 @@ import { test, type TestContext } from "node:test";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { launchVice, type ViceProcess } from "../../../src/host/vice/process.ts";
 import { ViceSession } from "../../../src/host/vice/session.ts";
-import type { VideoStandard } from "../../../src/protocol.ts";
+import type { VideoStandard } from "../../../src/protocol/messages.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 // $c000: SEI ; LDX #$00 ; $c003: INX ; STX $c100 ; CPX #$0a ; BNE $c003 ; $c00b: JMP $c00b

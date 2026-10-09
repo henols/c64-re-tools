@@ -13,7 +13,7 @@ function run(body: string, options = "{ usage: USAGE }"): { status: number | nul
   const source = [
     `import { parseArgs } from "node:util";`,
     `import { runScript, UsageError } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "script.ts")).href)};`,
-    `import { WireFailure } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "protocol.ts")).href)};`,
+    `import { WireFailure } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "protocol", "messages.ts")).href)};`,
     `class Refused extends Error { code = "not-found"; }`,
     `const USAGE = ${JSON.stringify(USAGE)};`,
     `await runScript(${body}, ${options});`,

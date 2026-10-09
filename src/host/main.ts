@@ -2,7 +2,7 @@
 
 import { parseArgs } from "node:util";
 
-import { DEFAULT_HOST_PORT } from "../protocol.ts";
+import { DEFAULT_HOST_PORT } from "../protocol/messages.ts";
 import { ProcessSupervisor } from "../native/processes.ts";
 import { isLoopback, ListenError, parsePort, startHostServer, stopSignal } from "./server.ts";
 import { createToolDispatcher } from "./tools/index.ts";

@@ -2,7 +2,7 @@
 // operations find it and run once with a version option. A tool from a
 // VICE older than MIN_VICE is reported as not working, as its operations refuse it.
 
-import type { ToolStatus } from "../../protocol.ts";
+import type { ToolStatus } from "../../protocol/tools.ts";
 import { C1541, findTool, isOlderThanMinimum, MIN_VICE, PETCAT, VICE, viceVersionOf, type ToolSpec } from "../../native/discover.ts";
 import type { ToolContext } from "../../native/run.ts";
 import { probeTools } from "../../native/status.ts";

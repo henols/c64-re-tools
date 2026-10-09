@@ -11,15 +11,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { petsciiNameToText, textToPetsciiName } from "../../c64.ts";
-import {
-  CBM_FILE_TYPES,
-  WireFailure,
-  type C1541Params,
-  type C1541Result,
-  type CbmFileType,
-  type DiskFile,
-  type DiskSector,
-} from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
+import { CBM_FILE_TYPES, type C1541Params, type C1541Result, type CbmFileType, type DiskFile, type DiskSector } from "../../protocol/tools.ts";
 import { Workspace } from "../../native/staging.ts";
 import { C1541, findTool } from "../../native/discover.ts";
 import { requireMinimumVersion } from "./version.ts";

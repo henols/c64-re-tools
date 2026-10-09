@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { WireFailure } from "../../../src/protocol.ts";
+import { WireFailure } from "../../../src/protocol/messages.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";

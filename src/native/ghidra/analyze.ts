@@ -4,7 +4,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
-import { describeError, isObject, WireFailure } from "../../protocol.ts";
+import { describeError, isObject, WireFailure } from "../../protocol/messages.ts";
 import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, seedsInside, type GhidraParams, type GhidraResult } from "../types.ts";
 import { outputTail, type ToolContext } from "../run.ts";
 import { Workspace } from "../staging.ts";

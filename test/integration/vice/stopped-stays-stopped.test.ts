@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
-import { HEARTBEAT_INTERVAL_MS } from "../../../src/protocol.ts";
+import { HEARTBEAT_INTERVAL_MS } from "../../../src/protocol/messages.ts";
 import { liveSkip, startHost, stopHosts } from "./live.ts";
 
 after(stopHosts);

@@ -2,7 +2,7 @@
 // a refusal prints {"error":{code,message}} with exit status 1, and a usage error prints the
 // usage text as an invalid-input error with exit status 2.
 
-import { WireFailure } from "./protocol.ts";
+import { WireFailure } from "./protocol/messages.ts";
 
 /** A wrong command line. The message names the problem; an empty message asks for the usage text alone. */
 export class UsageError extends Error {}

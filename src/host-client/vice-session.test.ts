@@ -3,8 +3,9 @@ import { once } from "node:events";
 import { createServer, type Server, type Socket } from "node:net";
 import { after, test } from "node:test";
 
-import { encodeFrame, WireFailure, type Request } from "../protocol.ts";
-import { FrameDecoder } from "../protocol.testkit.ts";
+import { encodeFrame } from "../protocol/framing.ts";
+import { WireFailure, type Request } from "../protocol/messages.ts";
+import { FrameDecoder } from "../protocol/framing.testkit.ts";
 import { ViceSessionClient } from "./vice-session.ts";
 
 const servers: Server[] = [];

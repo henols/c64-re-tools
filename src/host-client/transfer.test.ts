@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { MAX_ATTACHMENT_BYTES, WireFailure } from "../protocol.ts";
+import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
+import { WireFailure } from "../protocol/messages.ts";
 import { readProjectFile, readProjectTree } from "./transfer.ts";
 
 const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-transfer-"));

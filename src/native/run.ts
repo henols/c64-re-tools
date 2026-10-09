@@ -5,7 +5,7 @@ import { realpathSync } from "node:fs";
 import { sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
-import { WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
 import type { ProcessSupervisor } from "./processes.ts";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 60_000;

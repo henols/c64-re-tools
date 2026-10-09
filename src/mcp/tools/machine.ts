@@ -3,7 +3,8 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { RESET_MODES, RUN_STATES, VIDEO_STANDARDS, WINDOW_ACTIONS } from "../../protocol.ts";
+import { VIDEO_STANDARDS } from "../../protocol/messages.ts";
+import { RESET_MODES, RUN_STATES, WINDOW_ACTIONS } from "../../protocol/vice.ts";
 import { AddressOutput, defineTool } from "../server.ts";
 
 export const c64Status = defineTool({

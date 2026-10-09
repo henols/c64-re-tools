@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { isAlive, ProcessSupervisor } from "../native/processes.ts";
-import { WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
 import { runApSdk } from "./ap-sdk.ts";
 
 /** Runs `body` with a supervisor and a directory for stand-in AP SDK programs; both go afterwards. */

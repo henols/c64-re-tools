@@ -15,11 +15,9 @@ function areaOf(path: string): string | undefined {
   const parts = path.split("/");
   if (parts[0] === "src") {
     if (parts.length === 2) {
-      // A top-level test kit, such as protocol.testkit.ts, belongs to the area of its module.
-      const leaf = parts[1]!.replace(/(?:\.testkit)?\.ts$/, "");
-      return ["c64", "project", "protocol", "script"].includes(leaf) ? leaf : undefined;
+      const leaf = parts[1]!.replace(/\.ts$/, "");
+      return ["c64", "project", "script"].includes(leaf) ? leaf : undefined;
     }
-    // src/protocol/ holds the parts that src/protocol.ts exports again: one area with it.
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
   }
@@ -114,10 +112,10 @@ test("checkImport refuses every forbidden direction", () => {
     ["src/knowledge/read.ts", "../host/server.ts"],
     ["src/knowledge/read.ts", "../mcp/server.ts"],
     ["src/knowledge/read.ts", "../host-client/tools.ts"],
-    ["src/knowledge/read.ts", "../protocol.ts"],
+    ["src/knowledge/read.ts", "../protocol/messages.ts"],
     ["src/host-client/tools.ts", "../knowledge/read.ts"],
-    ["src/c64.ts", "./protocol.ts"],
-    ["src/protocol.ts", "./host/server.ts"],
+    ["src/c64.ts", "./protocol/messages.ts"],
+    ["src/protocol/messages.ts", "../host/server.ts"],
     ["src/host/server.ts", "../../skills/c64-disk/scripts/disk.ts"],
     ["skills/c64-disk/scripts/disk.ts", "../../c64-basic/scripts/basic.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/host/tools/c1541.ts"],
@@ -141,7 +139,7 @@ test("checkImport refuses every forbidden direction", () => {
     ["src/protocol/vice.ts", "../script.ts"],
     ["src/knowledge/read.ts", "../protocol/vice.ts"],
     ["src/c64.ts", "./protocol/framing.ts"],
-    ["skills/c64-disk/scripts/disk.ts", "#src/protocol.ts"],
+    ["skills/c64-disk/scripts/disk.ts", "#src/protocol/messages.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/protocol/tools.ts"],
   ];
   for (const [from, specifier] of refused) {
@@ -153,13 +151,12 @@ test("checkImport accepts every allowed direction", () => {
   const accepted: Array<[string, string]> = [
     ["src/mcp/server.ts", "../host-client/vice-session.ts"],
     ["src/mcp/tools/memory.ts", "../../c64.ts"],
-    ["src/host-client/connect.ts", "../protocol.ts"],
+    ["src/host-client/connect.ts", "../protocol/messages.ts"],
     ["src/host-client/transfer.ts", "../project.ts"],
-    ["src/host/vice/session.ts", "../../protocol.ts"],
+    ["src/host/vice/session.ts", "../../protocol/vice.ts"],
     ["src/host/vice/session.ts", "./process.ts"],
     ["src/knowledge/read.ts", "../project.ts"],
-    ["src/protocol.ts", "./c64.ts"],
-    ["src/host-client/connect.test.ts", "../protocol.testkit.ts"],
+    ["src/host-client/connect.test.ts", "../protocol/framing.testkit.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/host-client/tools.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/knowledge/write.ts"],
     ["skills/c64-disk/scripts/disk.ts", "./helpers.ts"],
@@ -168,12 +165,11 @@ test("checkImport accepts every allowed direction", () => {
     ["src/cli/main.ts", "../native/status.ts"],
     ["src/cli/main.ts", "../../distribution/plugin.ts"],
     ["src/host/server.ts", "node:net"],
-    ["src/script.ts", "./protocol.ts"],
     ["src/script.ts", "./protocol/messages.ts"],
     ["src/script.ts", "./project.ts"],
     ["src/cli/main.ts", "../script.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/script.ts"],
-    ["src/protocol.ts", "./protocol/vice.ts"],
+    ["src/protocol/framing.testkit.ts", "./messages.ts"],
     ["src/protocol/vice.ts", "./framing.ts"],
     ["src/protocol/vice.ts", "../c64.ts"],
     ["src/mcp/tools/memory.ts", "../../protocol/vice.ts"],

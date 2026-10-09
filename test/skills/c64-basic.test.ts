@@ -13,7 +13,7 @@ import { ProcessSupervisor } from "../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../src/host/server.ts";
 import { findTool, PETCAT } from "../../src/native/discover.ts";
 import { createToolDispatcher } from "../../src/host/tools/index.ts";
-import { WireFailure } from "../../src/protocol.ts";
+import { WireFailure } from "../../src/protocol/messages.ts";
 import { borderLoopPrg } from "../fixtures/prg/border-loop.ts";
 
 let skip: string | false = false;

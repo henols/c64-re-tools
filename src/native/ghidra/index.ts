@@ -9,7 +9,7 @@ import { userInfo } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { WireFailure } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
 import { findOnPath, isExecutableFile } from "../discover.ts";
 import type { ProcessSupervisor } from "../processes.ts";
 import type { Workspace } from "../staging.ts";

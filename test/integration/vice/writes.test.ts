@@ -7,7 +7,7 @@ import { after, before, test } from "node:test";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import type { ViceSessionHandle } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { WireFailure } from "../../../src/protocol.ts";
+import { WireFailure } from "../../../src/protocol/messages.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 let session: ViceSessionHandle;

@@ -5,25 +5,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import {
-  MAX_SEARCH_PATTERN,
-  WireFailure,
-  type Breakpoint,
-  type BreakpointParams,
-  type ExecutionParams,
-  type JoystickState,
-  type MemmapRange,
-  type MemoryReadParams,
-  type MemoryWriteParams,
-  type ObserveParams,
-  type ObserveResult,
-  type RegisterValues,
-  type Registers,
-  type RunTarget,
-  type ViceOperations,
-  type Watchpoint,
-  type WatchpointParams,
-} from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
+import { MAX_SEARCH_PATTERN, type Breakpoint, type BreakpointParams, type ExecutionParams, type JoystickState, type MemmapRange, type MemoryReadParams, type MemoryWriteParams, type ObserveParams, type ObserveResult, type RegisterValues, type Registers, type RunTarget, type ViceOperations, type Watchpoint, type WatchpointParams } from "../protocol/vice.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
 import { debugTools } from "./tools/debug.ts";
 import { executionTools } from "./tools/execution.ts";

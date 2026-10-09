@@ -4,7 +4,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 
-import { isRelativePath, WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
+import { isRelativePath } from "../protocol/tools.ts";
 import type { AcmeParams, AcmeResult, AssembledSymbol, Diagnostic } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { ACME, findTool } from "./discover.ts";

@@ -4,7 +4,7 @@
 
 import { tmpdir } from "node:os";
 
-import { WireFailure } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
 import { isOlderThanMinimum, MIN_VICE, viceVersionOf, type ToolSpec } from "../../native/discover.ts";
 import { runToolOrFail, type ToolContext } from "../../native/run.ts";
 

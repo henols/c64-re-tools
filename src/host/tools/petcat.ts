@@ -7,7 +7,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { findHandoffs, parseTokenized } from "../../c64.ts";
-import { WireFailure, type PetcatResult } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
+import { type PetcatResult } from "../../protocol/tools.ts";
 import { Workspace } from "../../native/staging.ts";
 import { findTool, PETCAT } from "../../native/discover.ts";
 import { requireMinimumVersion } from "./version.ts";

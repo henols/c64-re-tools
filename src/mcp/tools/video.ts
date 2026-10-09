@@ -4,7 +4,8 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, WireFailure, type ObserveParams } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
+import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, type ObserveParams } from "../../protocol/vice.ts";
 import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, requireFields, SpaceInput, ToolOutput, TransientName } from "../server.ts";
 
 const Color = z.number().int().min(0).max(15);

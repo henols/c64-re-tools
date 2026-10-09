@@ -27,7 +27,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { WireFailure, type VideoStandard } from "../../protocol.ts";
+import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
 import { findTool, isOlderThanMinimum, MIN_VICE, VICE } from "../../native/discover.ts";
 import type { ExitStatus, ProcessSupervisor, SupervisedProcess } from "../../native/processes.ts";
 import { BinaryMonitor, Command, decodeMemory, memoryGetBody } from "./binary-monitor.ts";

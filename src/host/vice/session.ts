@@ -3,38 +3,8 @@
 // session starts headless and can move the machine into a VICE with a window
 // and back; breakpoints, watchpoints and the rest go along.
 
-import {
-  MAX_BASELINES,
-  MAX_SNAPSHOTS,
-  MAX_COMPARE_DIFFERENCES,
-  RASTER,
-  WireFailure,
-  type Breakpoint,
-  type BreakpointParams,
-  type Condition,
-  type ExecutionParams,
-  type HistoryEntry,
-  type RunTarget,
-  type RunUntilResult,
-  type ScreenComparison,
-  type CiaSelection,
-  type CiaState,
-  type ObserveParams,
-  type ObserveResult,
-  type SidState,
-  type SpriteState,
-  type ViciiState,
-  type JoystickState,
-  type Watchpoint,
-  type WatchpointParams,
-  type ExecutionResult,
-  type MachineStatus,
-  type RunState,
-  type VideoStandard,
-  type ViceOperation,
-  type ViceOperations,
-  type WindowResult,
-} from "../../protocol.ts";
+import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
+import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

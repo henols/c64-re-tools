@@ -13,7 +13,7 @@ import { ProcessSupervisor } from "../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../src/host/server.ts";
 import { C1541, findTool } from "../../src/native/discover.ts";
 import { createToolDispatcher } from "../../src/host/tools/index.ts";
-import { WireFailure } from "../../src/protocol.ts";
+import { WireFailure } from "../../src/protocol/messages.ts";
 import { buildD64 } from "../fixtures/d64.ts";
 import { borderLoopPrg } from "../fixtures/prg/border-loop.ts";
 

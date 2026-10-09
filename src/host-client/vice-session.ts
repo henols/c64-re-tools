@@ -1,33 +1,8 @@
 // The long-lived Host Runtime connection an MCP process owns: one connection,
 // one VICE. Exposes C64-domain operations only.
 
-import {
-  ProtocolError,
-  validateViceResult,
-  WireFailure,
-  type Breakpoint,
-  type BreakpointParams,
-  type Watchpoint,
-  type WatchpointParams,
-  type ExecutionParams,
-  type ExecutionResult,
-  type JoystickState,
-  type MachineStatus,
-  type MemmapRange,
-  type MemoryWriteParams,
-  type RegisterValues,
-  type ResetMode,
-  type RunState,
-  type RunTarget,
-  type RunUntilResult,
-  type MemoryReadParams,
-  type MemoryReadResult,
-  type Registers,
-  type Space,
-  type VideoStandard,
-  type ViceOperation,
-  type ViceOperations,
-} from "../protocol.ts";
+import { ProtocolError, WireFailure, type VideoStandard } from "../protocol/messages.ts";
+import { validateViceResult, type Breakpoint, type BreakpointParams, type Watchpoint, type WatchpointParams, type ExecutionParams, type ExecutionResult, type JoystickState, type MachineStatus, type MemmapRange, type MemoryWriteParams, type RegisterValues, type ResetMode, type RunState, type RunTarget, type RunUntilResult, type MemoryReadParams, type MemoryReadResult, type Registers, type Space, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
 import { HostConnection } from "./connect.ts";
 import { readProjectFile } from "./transfer.ts";
 

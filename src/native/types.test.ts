@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
 import { checkDxaResult, checkGhidraResult, imageRange, seedsInside } from "./types.ts";
 
 test("an analyzer image is a PRG at its load address or 64 KiB from $0000", () => {

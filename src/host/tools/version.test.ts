@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { WireFailure } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
 import { C1541, isOlderThanMinimum, viceVersionOf } from "../../native/discover.ts";
 import { ProcessSupervisor } from "../../native/processes.ts";
 import { standIn } from "../../native/standin.testkit.ts";

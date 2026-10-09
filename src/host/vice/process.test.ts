@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { WireFailure } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
 import { ProcessSupervisor, type SupervisedProcess } from "../../native/processes.ts";
 import { checkViceStarts, findVice, freePort, launchVice, viceArguments } from "./process.ts";
 

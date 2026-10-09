@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
 
 /** How long a process group gets between SIGTERM and SIGKILL. */
 export const STOP_GRACE_MS = 5_000;

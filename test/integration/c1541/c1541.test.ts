@@ -11,7 +11,8 @@ import { after, test } from "node:test";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { inspect } from "../../../src/host/tools/c1541.ts";
 import { C1541, findTool } from "../../../src/native/discover.ts";
-import { WireFailure, type C1541Params, type C1541Result } from "../../../src/protocol.ts";
+import { WireFailure } from "../../../src/protocol/messages.ts";
+import { type C1541Params, type C1541Result } from "../../../src/protocol/tools.ts";
 
 let c1541 = "";
 let skip: string | false = false;

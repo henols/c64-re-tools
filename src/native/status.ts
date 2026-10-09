@@ -6,7 +6,8 @@
 import { tmpdir } from "node:os";
 import { stripVTControlCharacters } from "node:util";
 
-import { WireFailure, type ToolStatus } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
+import { type ToolStatus } from "../protocol/tools.ts";
 import { ACME, DXA, findTool } from "./discover.ts";
 import { findGhidra, ghidraVersion } from "./ghidra/index.ts";
 import { runTool, type ToolContext } from "./run.ts";

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
 import { isAlive, ProcessSupervisor, type SpawnOptions } from "./processes.ts";
 import { runTool, runToolOrFail } from "./run.ts";
 

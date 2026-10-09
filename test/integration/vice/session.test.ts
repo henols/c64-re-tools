@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { WireFailure } from "../../../src/protocol.ts";
+import { WireFailure } from "../../../src/protocol/messages.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { liveEnv, liveLog, liveSkip, viceChildren } from "./live.ts";

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { after, test } from "node:test";
 
-import { WireFailure } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
 import { Command } from "./binary-monitor.ts";
 import { FakeVice } from "./fake-vice.testkit.ts";
 import { readPng } from "./png.testkit.ts";

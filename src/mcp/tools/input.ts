@@ -3,7 +3,8 @@
 import { z } from "zod";
 
 import { textToPetscii } from "../../c64.ts";
-import { JOYSTICK_DIRECTIONS, MAX_KEYBOARD_BYTES, WireFailure } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
+import { JOYSTICK_DIRECTIONS, MAX_KEYBOARD_BYTES } from "../../protocol/vice.ts";
 import { defineTool } from "../server.ts";
 
 export const c64Keyboard = defineTool({

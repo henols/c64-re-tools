@@ -5,7 +5,9 @@ import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { extname, join, relative, sep } from "node:path";
 
 import { isInside, projectRoot, resolveProjectFile } from "../project.ts";
-import { MAX_ATTACHMENT_BYTES, MAX_TREE_FILES, WireFailure, type SourceTree } from "../protocol.ts";
+import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
+import { WireFailure } from "../protocol/messages.ts";
+import { MAX_TREE_FILES, type SourceTree } from "../protocol/tools.ts";
 
 export interface ProjectFile {
   bytes: Buffer;

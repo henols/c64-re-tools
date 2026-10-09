@@ -6,7 +6,7 @@ import { test } from "node:test";
 
 import { ProcessSupervisor } from "../../native/processes.ts";
 import { Workspace } from "../../native/staging.ts";
-import { WireFailure } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
 import { C1541Session, fileData, parseBam, parseChain, parseDirectory, parseFreeBlocks, parseInfo, READS_PER_CALL } from "./c1541.ts";
 
 const failsWith = (code: string) => (error: unknown) => error instanceof WireFailure && error.code === code;

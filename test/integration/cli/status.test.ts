@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { startHostServer, type ToolDispatcher } from "../../../src/host/server.ts";
-import { WireFailure, type ToolStatus } from "../../../src/protocol.ts";
+import { WireFailure } from "../../../src/protocol/messages.ts";
+import { type ToolStatus } from "../../../src/protocol/tools.ts";
 import { hostStatusLines, toolLines } from "../../../src/cli/status.ts";
 
 const HOST_TOOLS: ToolStatus[] = [

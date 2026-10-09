@@ -8,7 +8,7 @@ import { analyze } from "../../../src/native/ghidra/analyze.ts";
 import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import type { GhidraParams } from "../../../src/native/types.ts";
-import { WireFailure } from "../../../src/protocol.ts";
+import { WireFailure } from "../../../src/protocol/messages.ts";
 import { analysisSubjectPrg, MAIN, MAIN_LOOP, RESULT, ROUTINE, TABLE_END, TABLE_START } from "../../fixtures/prg/analysis-subject.ts";
 
 let skip: string | false = false;

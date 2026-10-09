@@ -9,7 +9,7 @@ import { after, test } from "node:test";
 
 import { HostConnection } from "../../../src/host-client/connect.ts";
 import { isLoopback, startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { HOST_PROTOCOL_VERSION, parseClientMessage, ProtocolError, WireFailure } from "../../../src/protocol.ts";
+import { HOST_PROTOCOL_VERSION, parseClientMessage, ProtocolError, WireFailure } from "../../../src/protocol/messages.ts";
 
 const TOKEN = "a-shared-secret-of-some-length";
 const outside = Object.values(networkInterfaces())

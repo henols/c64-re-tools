@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
 import { analyze, dxaArguments, dxaVersion, parseListing } from "./dxa.ts";
 import { ProcessSupervisor } from "./processes.ts";
 

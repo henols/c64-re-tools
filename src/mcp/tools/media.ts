@@ -5,7 +5,7 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { AUTOSTART_TYPES, DISK_TYPES, MAX_SNAPSHOTS, RUN_STATES } from "../../protocol.ts";
+import { AUTOSTART_TYPES, DISK_TYPES, MAX_SNAPSHOTS, RUN_STATES } from "../../protocol/vice.ts";
 import { AddressInput, AddressOutput, defineTool, requireFields, TransientName } from "../server.ts";
 
 const ProjectPath = z.string().min(1).describe("path relative to the project directory, for example build/game.prg");

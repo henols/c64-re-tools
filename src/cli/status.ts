@@ -2,7 +2,7 @@
 // Runtime with its tools.
 
 import { hostTools, type ToolCallOptions } from "../host-client/tools.ts";
-import type { ToolStatus } from "../protocol.ts";
+import type { ToolStatus } from "../protocol/tools.ts";
 
 /** One line per tool under `heading`: its version, or why it does not run. */
 export function toolLines(heading: string, tools: readonly ToolStatus[]): string[] {

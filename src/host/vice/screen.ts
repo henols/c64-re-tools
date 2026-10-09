@@ -3,7 +3,7 @@
 
 import { crc32, deflateSync } from "node:zlib";
 
-import type { VideoStandard } from "../../protocol.ts";
+import type { VideoStandard } from "../../protocol/messages.ts";
 
 export interface IndexedFrame {
   width: number;

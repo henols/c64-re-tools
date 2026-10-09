@@ -7,7 +7,8 @@ import { after, test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { startHostServer, type HostServer, type ViceSessionFactory } from "../../../src/host/server.ts";
-import { WireFailure, type Registers } from "../../../src/protocol.ts";
+import { WireFailure } from "../../../src/protocol/messages.ts";
+import { type Registers } from "../../../src/protocol/vice.ts";
 import { waitFor } from "../../kit.ts";
 
 const REGISTERS: Registers = { pc: 0x2100, a: 0x42, x: 3, y: 0, sp: 0xf9, flags: { n: false, v: false, b: false, d: false, i: true, z: false, c: true } };

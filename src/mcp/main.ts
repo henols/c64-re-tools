@@ -3,7 +3,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { ViceSessionClient } from "../host-client/vice-session.ts";
-import { VIDEO_STANDARDS, WireFailure, type VideoStandard } from "../protocol.ts";
+import { VIDEO_STANDARDS, WireFailure, type VideoStandard } from "../protocol/messages.ts";
 import { createMcpServer, type SessionSource } from "./server.ts";
 import { debugTools } from "./tools/debug.ts";
 import { executionTools } from "./tools/execution.ts";

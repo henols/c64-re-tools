@@ -5,7 +5,7 @@
 import { accessSync, constants, statSync } from "node:fs";
 import { isAbsolute, join, posix, win32 } from "node:path";
 
-import { WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
 
 export interface ToolSpec {
   /** Human name, for messages. */

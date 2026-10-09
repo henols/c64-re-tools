@@ -5,7 +5,7 @@
 
 import type { ProcessSupervisor } from "../../native/processes.ts";
 import type { ToolContext } from "../../native/run.ts";
-import type { ToolOperation, ToolOperations } from "../../protocol.ts";
+import type { ToolOperation, ToolOperations } from "../../protocol/tools.ts";
 import type { ToolDispatcher } from "../server.ts";
 import { inspect } from "./c1541.ts";
 import { decode } from "./petcat.ts";

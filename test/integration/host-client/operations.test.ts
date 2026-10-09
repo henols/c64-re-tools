@@ -11,7 +11,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
-import { VICE_OPERATIONS, type ViceOperation } from "../../../src/protocol.ts";
+import { VICE_OPERATIONS, type ViceOperation } from "../../../src/protocol/vice.ts";
 
 const REGISTERS = { pc: 0x2100, a: 1, x: 2, y: 3, sp: 0xf9, flags: { n: false, v: false, b: false, d: false, i: true, z: false, c: true } };
 const VICII = { rasterLine: 100, mode: "text", screenAddress: 0x400, graphicsAddress: 0x1000, scrollX: 0, scrollY: 3, borderColor: 14, backgroundColors: [6, 0, 0, 0] };

@@ -10,7 +10,7 @@ import { after, afterEach, beforeEach, test } from "node:test";
 import { callTool, decodeBasic, inspectDisk } from "../../../src/host-client/tools.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { startHostServer, type HostServer, type ToolDispatcher } from "../../../src/host/server.ts";
-import { WireFailure } from "../../../src/protocol.ts";
+import { WireFailure } from "../../../src/protocol/messages.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-tools-"));
 mkdirSync(join(project, "src", "lib"), { recursive: true });

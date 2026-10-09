@@ -3,15 +3,7 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import {
-  COMPARISONS,
-  EXECUTION_ACTIONS,
-  MAX_EXECUTION_COUNT,
-  MAX_TIMEOUT_FRAMES,
-  RUN_STATES,
-  STOP_REASONS,
-  type RunTarget,
-} from "../../protocol.ts";
+import { COMPARISONS, EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_TIMEOUT_FRAMES, RUN_STATES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
 import { AddressInput, AddressOutput, Byte, ConditionInput, defineTool, MemoryViewInput, SpaceInput, toCondition } from "../server.ts";
 
 export const c64Execution = defineTool({

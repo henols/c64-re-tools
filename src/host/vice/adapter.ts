@@ -1,22 +1,8 @@
 // Translates C64-domain operations into binary-monitor commands. VICE quirks
 // and register/bank id lookups live here; callers never see monitor details.
 
-import {
-  WireFailure,
-  type Comparison,
-  type Condition,
-  type BacktraceFrame,
-  type HistoryEntry,
-  type Instruction,
-  type MemmapRange,
-  type ProfileEntry,
-  type JoystickState,
-  type MemoryView,
-  type RegisterValues,
-  type Registers,
-  type Space,
-  type VideoStandard,
-} from "../../protocol.ts";
+import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
+import { type Comparison, type Condition, type BacktraceFrame, type HistoryEntry, type Instruction, type MemmapRange, type ProfileEntry, type JoystickState, type MemoryView, type RegisterValues, type Registers, type Space } from "../../protocol/vice.ts";
 import { formatC64Address, formatC64Byte } from "../../c64.ts";
 import { decodeDisplay, decodePalette, visibleFrame, type IndexedFrame } from "./screen.ts";
 import type { TextMonitor } from "./text-monitor.ts";

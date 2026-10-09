@@ -4,7 +4,7 @@
 // last written.
 
 import { d018Offsets, vicBankBase } from "../../c64.ts";
-import type { CiaState, SidState, SpriteState, ViciiMode, ViciiState } from "../../protocol.ts";
+import type { CiaState, SidState, SpriteState, ViciiMode, ViciiState } from "../../protocol/vice.ts";
 
 export function viciiMode(d011: number, d016: number): ViciiMode {
   const ecm = (d011 & 0x40) !== 0;

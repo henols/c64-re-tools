@@ -1,29 +1,10 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
 
-import {
-  attachmentCount,
-  checkHello,
-  isOneOf,
-  TOOL_OPERATIONS,
-  validateToolParams,
-  VICE_OPERATIONS,
-  type ToolOperation,
-  type ToolOperations,
-  encodeFrame,
-  HEARTBEAT_TIMEOUT_MS,
-  MessageReader,
-  parseClientMessage,
-  ProtocolError,
-  validateViceParams,
-  type HostMessage,
-  type ReceivedRequest,
-  type VideoStandard,
-  type ViceOperation,
-  type ViceOperations,
-  type WireError,
-  WireFailure,
-} from "../protocol.ts";
+import { encodeFrame, MessageReader } from "../protocol/framing.ts";
+import { checkHello, isOneOf, HEARTBEAT_TIMEOUT_MS, parseClientMessage, ProtocolError, type HostMessage, type ReceivedRequest, type VideoStandard, type WireError, WireFailure } from "../protocol/messages.ts";
+import { TOOL_OPERATIONS, validateToolParams, type ToolOperation, type ToolOperations } from "../protocol/tools.ts";
+import { attachmentCount, VICE_OPERATIONS, validateViceParams, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
 
 /** One live VICE session, owned by one connection. */
 export interface ViceSessionHandle {

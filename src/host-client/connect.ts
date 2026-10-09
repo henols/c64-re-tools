@@ -2,25 +2,8 @@
 
 import { connect as connectTcp, type Socket } from "node:net";
 
-import {
-  DEFAULT_HOST_PORT,
-  encodeFrame,
-  HEARTBEAT_INTERVAL_MS,
-  HEARTBEAT_TIMEOUT_MS,
-  HOST_PROTOCOL_ID,
-  HOST_PROTOCOL_VERSION,
-  parseHostMessage,
-  MessageReader,
-  ProtocolError,
-  WireFailure,
-  type ErrorCode,
-  type Hello,
-  type HostMessage,
-  type Ping,
-  type Request,
-  type Role,
-  type VideoStandard,
-} from "../protocol.ts";
+import { encodeFrame, MessageReader } from "../protocol/framing.ts";
+import { DEFAULT_HOST_PORT, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseHostMessage, ProtocolError, WireFailure, type ErrorCode, type Hello, type HostMessage, type Ping, type Request, type Role, type VideoStandard } from "../protocol/messages.ts";
 
 export interface Endpoint {
   host: string;

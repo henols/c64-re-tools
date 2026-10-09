@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runToolOrFail, type ToolContext } from "../native/run.ts";
-import { WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
 
 /** How long one AP SDK install, update or uninstall may take. */
 export const AP_SDK_TIMEOUT_MS = 120_000;

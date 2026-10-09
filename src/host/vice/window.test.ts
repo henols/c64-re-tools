@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
-import { WireFailure } from "../../protocol.ts";
+import { WireFailure } from "../../protocol/messages.ts";
 import { FakeVice } from "./fake-vice.testkit.ts";
 import type { ViceMode, ViceProcess } from "./process.ts";
 import { ViceSession, type ViceLauncher } from "./session.ts";

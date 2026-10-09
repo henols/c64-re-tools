@@ -3,7 +3,7 @@ import { chmodSync, existsSync, readFileSync, symlinkSync, writeFileSync } from 
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { WireFailure } from "../protocol.ts";
+import { WireFailure } from "../protocol/messages.ts";
 import { Workspace } from "./staging.ts";
 
 test("a tree materializes as ordinary files inside the workspace and the workspace is removed", () => {

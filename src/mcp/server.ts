@@ -9,7 +9,8 @@ import { z } from "zod";
 
 import { formatC64Address, parseC64Address } from "../c64.ts";
 import type { ViceSessionClient } from "../host-client/vice-session.ts";
-import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, WireFailure, type Condition, type WireError } from "../protocol.ts";
+import { WireFailure, type WireError } from "../protocol/messages.ts";
+import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, type Condition } from "../protocol/vice.ts";
 
 /** The session operations tools may call. */
 export type ViceSessionApi = Pick<
