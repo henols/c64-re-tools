@@ -237,6 +237,8 @@ export interface MemmapRange {
 export const TRANSIENT_NAME = /^[A-Za-z0-9._-]{1,64}$/;
 export const MAX_BASELINES = 64;
 export const MAX_SNAPSHOTS = 64;
+/** Most rectangles one screen comparison mask holds. */
+export const MAX_MASK_RECTANGLES = 64;
 
 export interface Rectangle {
   x: number;
@@ -516,7 +518,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       onlyFields(params, ["baseline", "maxMismatchRatio", "mask", "includeDiff"]);
       const ratio = params.maxMismatchRatio;
       if (typeof ratio !== "number" || !(ratio >= 0 && ratio <= 1)) invalid("maxMismatchRatio must be a number from 0 to 1");
-      if (!Array.isArray(params.mask) || params.mask.length > 64) invalid("mask must be a list of at most 64 rectangles");
+      if (!Array.isArray(params.mask) || params.mask.length > MAX_MASK_RECTANGLES) invalid(`mask must be a list of at most ${MAX_MASK_RECTANGLES} rectangles`);
       const mask = params.mask.map((rectangle): Rectangle => {
         if (!isObject(rectangle)) invalid("each mask entry must be a rectangle");
         onlyFields(rectangle, ["x", "y", "width", "height"], "a mask rectangle");

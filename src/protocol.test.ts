@@ -13,6 +13,7 @@ import {
   HOST_PROTOCOL_VERSION,
   MAX_ATTACHMENT_BYTES,
   MAX_FRAME_BYTES,
+  MAX_MASK_RECTANGLES,
   MessageReader,
   parseClientMessage,
   parseHostMessage,
@@ -143,6 +144,16 @@ test("an operation refuses a field it does not take, also inside a nested object
     unknown("mask"),
   );
   assert.throws(() => validateToolParams("host.status", { verbose: true }, []), unknown("verbose"));
+});
+
+test("a screen comparison mask holds at most the rectangle limit", () => {
+  const compare = (count: number) =>
+    validateViceParams("screenCompare", { baseline: "b", maxMismatchRatio: 0, mask: Array.from({ length: count }, () => ({ x: 0, y: 0, width: 1, height: 1 })), includeDiff: false });
+  assert.equal(compare(MAX_MASK_RECTANGLES).mask.length, MAX_MASK_RECTANGLES);
+  assert.throws(
+    () => compare(MAX_MASK_RECTANGLES + 1),
+    (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message === `mask must be a list of at most ${MAX_MASK_RECTANGLES} rectangles`,
+  );
 });
 
 test("operation results are validated on the client", () => {
