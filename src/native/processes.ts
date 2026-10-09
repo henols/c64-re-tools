@@ -263,7 +263,9 @@ export class ProcessSupervisor {
     const directory = mkdtempSync(join(tmpdir(), "c64-re-tools-host-"));
     this.#registry = join(directory, "registry.json");
     this.#writeRegistry();
-    const watchdog = spawn(process.execPath, [...process.execArgv, WATCHDOG, String(process.pid), this.#registry], { detached: true, stdio: "ignore", windowsHide: true });
+    // The watchdog can outlive this process by one poll. It runs in the temporary directory, never in
+    // the caller's directory: Windows refuses to remove a directory that a running process uses.
+    const watchdog = spawn(process.execPath, [...process.execArgv, WATCHDOG, String(process.pid), this.#registry], { cwd: tmpdir(), detached: true, stdio: "ignore", windowsHide: true });
     watchdog.unref();
     this.#watchdogPid = watchdog.pid;
     this.installExitGuard();
