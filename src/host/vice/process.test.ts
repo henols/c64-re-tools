@@ -196,7 +196,7 @@ test("a VICE stop that fails still removes the scratch directory", { skip: proce
   }
 });
 
-test("a VICE whose monitor never answers fails at once and is stopped", { skip: process.platform === "win32" ? "the stand-in VICE is a shell script" : false }, async () => {
+test("a VICE whose monitor never answers is started again, up to three times, and each one is stopped", { skip: process.platform === "win32" ? "the stand-in VICE is a shell script" : false }, async () => {
   const real = new ProcessSupervisor();
   const { supervisor, spawned, released } = watchedSupervisor(real);
   const lines: string[] = [];
@@ -209,9 +209,9 @@ test("a VICE whose monitor never answers fails at once and is stopped", { skip: 
         return true;
       },
     );
-    assert.equal(spawned.length, 1, "a ready timeout is not tried again");
-    assert.equal(await ended(spawned[0]!), true, "the VICE is stopped");
-    assert.deepEqual([...released.values()], [true], "its scratch directory is removed");
+    assert.equal(spawned.length, 3, "a ready timeout is tried again");
+    for (const vice of spawned) assert.equal(await ended(vice), true, "each VICE is stopped");
+    assert.deepEqual([...released.values()], [true, true, true], "each scratch directory is removed");
     assert.ok(lines.some((line) => line.startsWith("VICE failed to start: The emulator did not become ready in time.")), lines.join("\n"));
   } finally {
     await real.stopAll();
