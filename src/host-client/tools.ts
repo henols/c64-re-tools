@@ -95,4 +95,14 @@ export async function hostTools(options: ToolCallOptions = {}): Promise<ToolStat
 }
 
 /** Skill scripts see failures and wire limits through the host-client, never the private protocol module. */
-export { DISK_ACTIONS, MAX_MEMORY_READ, MAX_TIMEOUT_FRAMES, WireFailure } from "../protocol.ts";
+export {
+  DISK_ACTIONS,
+  JOYSTICK_DIRECTIONS,
+  MAX_BASELINES,
+  MAX_EXECUTION_COUNT,
+  MAX_KEYBOARD_BYTES,
+  MAX_MEMORY_READ,
+  MAX_MEMORY_WRITE,
+  MAX_TIMEOUT_FRAMES,
+  WireFailure,
+} from "../protocol.ts";
