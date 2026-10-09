@@ -79,7 +79,7 @@ test("VICE arguments put -default before -binarymonitor and fix the profile", ()
   assert.equal(ntsc[ntsc.indexOf("-model") + 1], "ntsc");
 });
 
-test("a headless VICE has no window and no sound output; a windowed one has both (D20)", () => {
+test("a headless VICE has no window and no sound output; a windowed one has both", () => {
   const common = { binary: "x", port: 1, textPort: 2, configFile: "c", logFile: "l", videoStandard: "pal" } as const;
   const headless = viceArguments({ ...common, mode: "headless" });
   assert.ok(headless.includes("-console"));
@@ -182,7 +182,9 @@ test("a VICE stop that fails still removes the scratch directory", { skip: proce
   try {
     const vice = await launchVice({ supervisor, videoStandard: "pal", env: { ...process.env, C64RT_VICE: fakeViceBinary() } });
     await assert.rejects(vice.stop(), /survived SIGKILL/);
-    assert.equal(existsSync(vice.scratchDir), false);
+    const scratch = [...released.keys()];
+    assert.equal(scratch.length, 1);
+    assert.equal(existsSync(scratch[0]!), false);
     assert.deepEqual([...released.values()], [true]);
     await assert.rejects(vice.stop(), /survived SIGKILL/, "a later stop reports the same failure");
   } finally {

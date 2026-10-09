@@ -1,5 +1,4 @@
-// VICE launch, readiness and termination. The launch contract below was
-// established against stock VICE 3.10 (x64sc):
+// VICE launch, readiness and termination. The launch contract of x64sc:
 // - `-default` must come before `-binarymonitor`, or the monitor never binds;
 // - the monitor may accept a connection during startup and then drop it, so
 //   readiness is a connect plus a successful ping, retried until a deadline;
@@ -17,7 +16,7 @@
 //   with LC_NUMERIC=C;
 // - piped output is block-buffered and lost when VICE exits early (for
 //   example without its ROM files), so VICE also writes a log file;
-// - `-console` runs VICE with no window and needs no display (D20); the
+// - `-console` runs VICE with no window and needs no display; the
 //   monitors, the CPU and the frame buffer work as with a window. It is a
 //   start option only, so headless and windowed are two VICE processes.
 //   A headless VICE plays no sound: `-sounddev dummy` keeps the SID emulated.
@@ -26,6 +25,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { WireFailure, type VideoStandard } from "../../protocol.ts";
 import { findTool, isOlderThanMinimum, MIN_VICE, VICE } from "../../native/discover.ts";
@@ -39,7 +39,7 @@ const RETRY_MS = 50;
 const OUTPUT_TAIL_LINES = 40;
 const STOP_REPORT_MS = 10_000;
 
-/** Finds x64sc (D8): C64RT_VICE, else PATH. Refuses by name with the remedy; never installs anything. */
+/** Finds x64sc: C64RT_VICE, else PATH. Refuses by name with the remedy; never installs anything. */
 export function findVice(env: NodeJS.ProcessEnv = process.env): string {
   return findTool(VICE, env);
 }
@@ -59,7 +59,7 @@ export function freePort(): Promise<number> {
   });
 }
 
-/** A VICE with no window (the default, D20) or one with a window the user can use. */
+/** A VICE with no window (the default) or one with a window the user can use. */
 export type ViceMode = "headless" | "window";
 
 export function viceArguments(options: {
@@ -93,7 +93,7 @@ export function viceArguments(options: {
     "-autostartprgmode",
     "1",
     // The same RAM after every power-up: a hard reset is a power cycle, and VICE's default can flip
-    // random bits, so two runs from one start state could differ (found in CI on Windows).
+    // random bits, so two runs from one start state could differ.
     "-raminitstartvalue",
     "0",
     "-raminitvalueinvert",
@@ -133,8 +133,6 @@ export interface LaunchOptions {
 export interface ViceProcess {
   /** Host-internal; never leaves the Host Runtime. */
   readonly pid: number;
-  /** This VICE's private scratch directory, outside the project; removed by stop(). */
-  readonly scratchDir: string;
   readonly monitor: BinaryMonitor;
   readonly text: TextMonitor;
   /** Settles when VICE exits, for any reason. */
@@ -143,10 +141,6 @@ export interface ViceProcess {
   outputTail(): string;
   /** Closes the monitor, stops the process group and removes the scratch directory. Idempotent. */
   stop(): Promise<void>;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** The last lines of VICE's log file, or of its output while there is no log file. */
@@ -201,7 +195,7 @@ export function startErrorLines(output: string[]): string[] {
 }
 
 /**
- * Starts VICE once, as a session does, and stops it again (D14). Finding
+ * Starts VICE once, as a session does, and stops it again. Finding
  * x64sc is not enough: without its ROM files VICE exits at once. Throws
  * WireFailure installation-incomplete with VICE's own error lines.
  */
@@ -313,7 +307,7 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
 
   try {
     const deadline = Date.now() + (options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
-    monitor = await waitForMonitor(port, () => exited, deadline - Date.now());
+    monitor = await waitForMonitor(port, () => exited, deadline);
     text = await waitForText(textPort, () => exited, deadline);
     await checkSameMachine(monitor, text);
     // Readiness stopped the machine; let it run as a freshly started C64 does.
@@ -325,7 +319,7 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
     throw new WireFailure("machine-unavailable", "The emulator could not be started on the host.");
   }
   log(`VICE started (pid ${child.pid}, monitor ports ${port} and ${textPort})`);
-  return { pid: child.pid, scratchDir: scratch, monitor, text, exited: child.exited, outputTail, stop };
+  return { pid: child.pid, monitor, text, exited: child.exited, outputTail, stop };
 }
 
 /**
@@ -381,8 +375,8 @@ async function checkSameMachine(monitor: BinaryMonitor, text: TextMonitor): Prom
   }
 }
 
-async function waitForMonitor(port: number, hasExited: () => boolean, timeoutMs: number): Promise<BinaryMonitor> {
-  const deadline = Date.now() + timeoutMs;
+/** Connects the binary monitor and proves it answers a ping, until `deadline`. */
+async function waitForMonitor(port: number, hasExited: () => boolean, deadline: number): Promise<BinaryMonitor> {
   while (Date.now() < deadline) {
     if (hasExited()) throw new WireFailure("machine-unavailable", "The emulator exited while it was starting.");
     let monitor: BinaryMonitor;

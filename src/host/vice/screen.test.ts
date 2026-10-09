@@ -35,7 +35,7 @@ function displayBody(width: number, height: number, innerX: number, innerY: numb
 }
 
 test("the visible PAL frame is the 384x272 bordered area of VICE's raster buffer", () => {
-  // As on VICE 3.10: a 504x312 buffer, window at (136,51), border pixels from (104,15).
+  // As VICE sends it: a 504x312 buffer, window at (136,51), border pixels from (104,15).
   const body = displayBody(504, 312, 136, 51, (x, y) => (x >= 104 && x < 488 && y >= 15 && y < 287 ? 14 : 0));
   const frame = visibleFrame(decodeDisplay(body), "pal");
   assert.equal(frame.width, 384);

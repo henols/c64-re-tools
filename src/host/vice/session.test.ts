@@ -172,7 +172,7 @@ test("until-return that never returns stops the machine and reports the limit", 
   await session.close();
 });
 
-test("stepping drive8 is refused for now", async () => {
+test("stepping drive8 is refused", async () => {
   const { session } = await startSession();
   await assert.rejects(session.handle("execution", { action: "step", count: 1, space: "drive8" }), failsWith("unsupported-in-space"));
   await session.close();
@@ -397,6 +397,17 @@ test("a program that is too short or runs past $ffff is refused before VICE sees
   await assert.rejects(session.handle("programLoad", {}, [Buffer.from([0x00, 0xc0])]), failsWith("invalid-input"));
   await assert.rejects(session.handle("programLoad", {}, [Buffer.from([0xff, 0xff, 1, 2])]), failsWith("invalid-input"));
   assert.deepEqual(fake.textCommands, []);
+  assert.equal(fake.running, true);
+  await session.close();
+});
+
+test("a program, autostart or disk operation without exactly one file is refused before VICE sees it", async () => {
+  const { fake, session } = await startSession();
+  const file = Buffer.from([0x00, 0xc0, 0x60]);
+  await assert.rejects(session.handle("programLoad", {}, []), failsWith("invalid-input"));
+  await assert.rejects(session.handle("autostart", { type: "prg", index: 0, run: true }, []), failsWith("invalid-input"));
+  await assert.rejects(session.handle("diskAttach", { type: "d64" }, [file, file]), failsWith("invalid-input"));
+  assert.deepEqual([fake.commands, fake.textCommands], [[], []]);
   assert.equal(fake.running, true);
   await session.close();
 });

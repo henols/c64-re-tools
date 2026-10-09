@@ -1,7 +1,7 @@
 // The per-emulator session: one VICE at a time, one serialized operation
 // queue, the machine's run state, and what happens when VICE dies. The
 // session starts headless and can move the machine into a VICE with a window
-// and back (D20); breakpoints, watchpoints and the rest go along.
+// and back; breakpoints, watchpoints and the rest go along.
 
 import {
   MAX_BASELINES,
@@ -38,7 +38,9 @@ import {
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
+import { formatC64Address } from "../../c64.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
 import {
@@ -59,13 +61,9 @@ import { TextMonitorError, TextMonitorTimeoutError } from "./text-monitor.ts";
 
 const CRASH_SETTLE_MS = 500;
 /** How long until-return may run before the session stops it and reports the limit. */
-export const UNTIL_RETURN_LIMIT_MS = 30_000;
+const UNTIL_RETURN_LIMIT_MS = 30_000;
 /** How long a reset may take to reach the reset vector. */
 const RESET_STOP_LIMIT_MS = 5_000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 const STATE_LOST =
   "The emulator stopped unexpectedly and its machine state is lost. Restart the c64-re-tools MCP server to get a fresh C64.";
@@ -104,7 +102,7 @@ const WINDOW_CLOSED =
   "The machine is headless again, in the state it had when the window opened; what changed in the window is lost. " +
   "Breakpoints and watchpoints are kept. Check the machine state before you continue.";
 
-/** Emulator state that a move to another VICE cannot carry (D20). */
+/** Emulator state that a move to another VICE cannot carry. */
 const NOT_CARRIED = ["cpu history", "memory map", "profile", "keyboard input not yet typed"];
 
 /** Starts another VICE for this session; `log` also gets that launch's lines. */
@@ -127,10 +125,6 @@ function isTimeout(error: unknown): boolean {
   return error instanceof MonitorTimeoutError || error instanceof TextMonitorTimeoutError || error instanceof StepTimeout;
 }
 
-function hex(value: number): string {
-  return `$${value.toString(16).padStart(4, "0")}`;
-}
-
 /** A stop and the VICE checkpoints that caused it. */
 interface Stop {
   pc: number;
@@ -150,14 +144,14 @@ export interface SessionOptions {
   untilReturnLimitMs?: number;
   /** Upper bound for a step or next; tests shorten it. */
   stepLimitMs?: number;
-  /** Starts another VICE, for c64_window (D20). Without it the session cannot open a window. */
+  /** Starts another VICE, for c64_window. Without it the session cannot open a window. */
   launch?: ViceLauncher;
   /** Makes the host remove a path if it dies; returns the release. */
   ownPath?: (path: string) => () => void;
 }
 
 export class ViceSession implements ViceSessionHandle {
-  /** The current VICE. A window move replaces it (D20). */
+  /** The current VICE. A window move replaces it. */
   #vice: ViceProcess;
   /** The mode of the current VICE. */
   #mode: ViceMode = "headless";
@@ -185,7 +179,7 @@ export class ViceSession implements ViceSessionHandle {
    * Set by a stop that a drive 8 checkpoint caused. VICE then enters the
    * monitor from inside the drive CPU, while the computer's CPU is between two
    * cycles of an instruction: a register write to it is lost or comes late,
-   * and the next frame count ends one frame short (found live). The session
+   * and the next frame count ends one frame short. The session
    * completes such a stop before its next command (#completeDriveStop).
    */
   #driveStop = false;
@@ -198,10 +192,10 @@ export class ViceSession implements ViceSessionHandle {
   #held: Promise<void> | undefined;
   /** Why VICE takes no commands, for every operation refused while it is held. */
   #heldWhy = VICE_HELD;
-  /** Session-local snapshots by name, as files in the session directory (15 §36). */
+  /** Session-local snapshots by name, as files in the session directory. */
   readonly #snapshots = new Map<string, string>();
   #snapshotFiles = 0;
-  /** Session-local screen baselines (15 §29), lost with the session. */
+  /** Session-local screen baselines, lost with the session. */
   readonly #baselines = new Map<string, { frame: IndexedFrame; palette: Array<[number, number, number]> }>();
   /** The CPU clock when the session stopwatch last started (c64_timing). */
   #timingStart = 0n;
@@ -213,7 +207,7 @@ export class ViceSession implements ViceSessionHandle {
   #nextPointId = 1;
   /**
    * User breakpoints and watchpoints by session id, with their VICE checkpoint
-   * numbers and condition expressions: a window move sets them again (D20).
+   * numbers and condition expressions: a window move sets them again.
    */
   readonly #breakpoints = new Map<number, Breakpoint & { checkpoint: number; expression?: string }>();
   readonly #watchpoints = new Map<number, Watchpoint & { checkpoint: number; expression?: string }>();
@@ -252,8 +246,8 @@ export class ViceSession implements ViceSessionHandle {
 
   /**
    * A VICE ended or dropped its monitor without the session asking. A window
-   * VICE goes back headless from the state of when the window opened (D20);
-   * any other loss is final (D11).
+   * VICE goes back headless from the state of when the window opened;
+   * any other loss is final.
    */
   #ended(vice: ViceProcess, why: string): void {
     if (this.#closed || this.#vice !== vice || this.#lost || this.#windowClosing) return;
@@ -261,7 +255,8 @@ export class ViceSession implements ViceSessionHandle {
     if (this.#mode === "window" && this.#handover !== undefined && this.#launch !== undefined) {
       this.#windowClosing = true;
       const handover = this.#handover;
-      const run = this.#queue.then(() => this.#backToHeadless(vice, handover));
+      const launch = this.#launch;
+      const run = this.#queue.then(() => this.#backToHeadless(vice, handover, launch));
       this.#queue = run.catch(() => {});
       return;
     }
@@ -269,11 +264,11 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   /** Restarts headless from the handover saved when the window opened. */
-  async #backToHeadless(dead: ViceProcess, handover: Handover): Promise<void> {
+  async #backToHeadless(dead: ViceProcess, handover: Handover, launch: ViceLauncher): Promise<void> {
     try {
       await dead.stop();
       if (this.#closed) return;
-      await this.#install("headless", handover);
+      await this.#install(launch, "headless", handover);
       this.#handover = undefined;
       this.#notice = new WireFailure("machine-state-lost", WINDOW_CLOSED);
       if (handover.running) await this.#resume();
@@ -375,17 +370,17 @@ export class ViceSession implements ViceSessionHandle {
       case "runUntil":
         return this.#runUntil(params as ViceOperations["runUntil"]["params"]);
       case "programLoad":
-        return this.#programLoad(params as ViceOperations["programLoad"]["params"], attachments[0]!);
+        return this.#programLoad(params as ViceOperations["programLoad"]["params"], onlyAttachment(attachments));
       case "autostart": {
         const { type, index, run } = params as ViceOperations["autostart"]["params"];
-        const file = this.#stage(attachments[0]!, type);
+        const file = this.#stage(onlyAttachment(attachments), type);
         await this.#runningCommand(() => this.#machine.autostart(file, index, run));
         this.#replaceStaged("autostart", file);
         return { state: "running" };
       }
       case "diskAttach": {
         const { type } = params as ViceOperations["diskAttach"]["params"];
-        const file = this.#stage(attachments[0]!, type);
+        const file = this.#stage(onlyAttachment(attachments), type);
         await this.#observe(() => this.#machine.attachDisk(file));
         this.#replaceStaged("disk", file);
         return { attached: true };
@@ -507,7 +502,7 @@ export class ViceSession implements ViceSessionHandle {
     }
     if (params.space === "drive8") {
       // Stock VICE runs the 1541 CPU in batches that catch up with the computer's clock;
-      // neither monitor can stop it after exactly one of its instructions (tested live).
+      // neither monitor can stop it after exactly one of its instructions.
       throw new WireFailure(
         "unsupported-in-space",
         `${params.action} works only in space c64: the emulator cannot stop the disk drive CPU after a single instruction. ` +
@@ -524,7 +519,7 @@ export class ViceSession implements ViceSessionHandle {
         await this.#stop();
         throw new WireFailure(
           "limit-exceeded",
-          `The routine did not return within ${this.#untilReturnLimitMs / 1000} seconds. The machine is stopped at ${hex(await this.#pc())}.`,
+          `The routine did not return within ${this.#untilReturnLimitMs / 1000} seconds. The machine is stopped at ${formatC64Address(await this.#pc())}.`,
         );
       }
       return { state: "stopped", pc: stop.pc };
@@ -556,7 +551,7 @@ export class ViceSession implements ViceSessionHandle {
     // sent from the monitor resumes at the vector; so the reset is sent while
     // running, and only a stop caused by this breakpoint counts.
     const vector = await this.#machine.resetVector();
-    const checkpoint = await this.#machine.addBreak(vector);
+    const checkpoint = await this.#machine.addCheckpoint({ start: vector, end: vector, operation: 0x04, space: "c64" });
     await this.#resume();
     const stopped = this.#nextStop(RESET_STOP_LIMIT_MS, checkpoint);
     await this.#resumingCommand(() => this.#machine.reset(params.mode));
@@ -669,7 +664,7 @@ export class ViceSession implements ViceSessionHandle {
     return JAM_OPCODES.has(Number.parseInt(opcode, 16));
   }
 
-  /** Runs until a target is reached or `timeoutFrames` frames pass (15 §11). */
+  /** Runs until a target is reached or `timeoutFrames` frames pass. */
   async #runUntil(params: { target: RunTarget; timeoutFrames: number }): Promise<RunUntilResult> {
     const target = params.target;
     let expression: string | undefined;
@@ -682,7 +677,7 @@ export class ViceSession implements ViceSessionHandle {
         if (target.condition !== undefined) expression = this.#expression(target.condition, target.space);
         break;
       case "memory": {
-        // A store checkpoint whose condition reads memory after the write (live-tested).
+        // A store checkpoint whose condition reads memory after the write.
         range = { start: target.address, end: target.address, operation: 0x02, space: target.space };
         const { kind: _kind, ...condition } = target;
         expression = this.#expression({ kind: "memory", ...condition }, target.space);
@@ -830,7 +825,7 @@ export class ViceSession implements ViceSessionHandle {
     if (previous !== undefined) rmSync(previous, { force: true });
   }
 
-  /** Loads a PRG without reset or start (15 §34); finishes stopped. */
+  /** Loads a PRG without reset or start; finishes stopped. */
   async #programLoad(params: { address?: number }, bytes: Buffer): Promise<{ state: RunState; loadAddress: number; size: number }> {
     if (bytes.length < 3) throw new WireFailure("invalid-input", "A PRG file needs a two-byte load address and at least one byte of data.");
     const loadAddress = params.address ?? bytes.readUInt16LE(0);
@@ -896,7 +891,7 @@ export class ViceSession implements ViceSessionHandle {
     return decodeSid(await this.#machine.readIo(0xd400, 0x19));
   }
 
-  /** Several observations from one halted moment (15 §30); the run state is restored afterwards. */
+  /** Several observations from one halted moment; the run state is restored afterwards. */
   async #observeAll(params: ObserveParams): Promise<ObserveResult> {
     return this.#observe(async () => {
       const result: ObserveResult = {};
@@ -921,7 +916,7 @@ export class ViceSession implements ViceSessionHandle {
     });
   }
 
-  /** Saves, restores, lists and discards machine snapshots (15 §36). */
+  /** Saves, restores, lists and discards machine snapshots. */
   async #snapshot(params: ViceOperations["snapshot"]["params"]): Promise<ViceOperations["snapshot"]["result"]> {
     if (params.action === "list") return { snapshots: [...this.#snapshots.keys()] };
     const existing = this.#snapshots.get(params.name);
@@ -950,10 +945,10 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   /**
-   * Moves the machine into a VICE of the other mode (D20): a snapshot of this
+   * Moves the machine into a VICE of the other mode: a snapshot of this
    * one, restored in a new one, with the user points, joysticks, warp and the
    * stopwatch set again. The snapshot carries the disk in drive 8: VICE saves
-   * its data and restores it into the new drive (live-tested). The image file
+   * its data and restores it into the new drive. The image file
    * is never attached on top of a restore: VICE would write the restored disk
    * into that file. The old VICE stays as it was until the new one is ready.
    */
@@ -973,7 +968,7 @@ export class ViceSession implements ViceSessionHandle {
     await this.#machine.saveSnapshot(handover.file);
     const old = this.#vice;
     try {
-      await this.#install(mode, handover);
+      await this.#install(this.#launch, mode, handover);
     } catch (error) {
       if (running && !this.#closed) await this.#resume().catch(() => {});
       throw error;
@@ -990,16 +985,16 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   /**
-   * Starts a VICE in `mode`, restores `handover` into it and sets the session
+   * Starts a VICE in `mode` with `launch`, restores `handover` into it and sets the session
    * state again, then makes it the current VICE. On failure the new VICE is
    * stopped, the current one is untouched, and the error says why.
    */
-  async #install(mode: ViceMode, handover: Handover): Promise<void> {
+  async #install(launch: ViceLauncher, mode: ViceMode, handover: Handover): Promise<void> {
     if (this.#closed) throw new WireFailure("machine-unavailable", "The emulator session is closed.");
     const output: string[] = [];
     let vice: ViceProcess;
     try {
-      vice = await this.#launch!(mode, (line) => output.push(line));
+      vice = await launch(mode, (line) => output.push(line));
     } catch (error) {
       const reasons = startErrorLines(output);
       const what = mode === "window" ? "VICE with a window" : "a headless VICE";
@@ -1042,7 +1037,7 @@ export class ViceSession implements ViceSessionHandle {
     }
   }
 
-  /** Compares the current frame with a baseline (15 §29). */
+  /** Compares the current frame with a baseline. */
   async #screenCompare(params: ViceOperations["screenCompare"]["params"]): Promise<ScreenComparison> {
     const baseline = this.#baselines.get(params.baseline);
     if (baseline === undefined) throw new WireFailure("not-found", `There is no baseline named ${params.baseline}.`);
@@ -1064,21 +1059,21 @@ export class ViceSession implements ViceSessionHandle {
 
   /** Compares two memory ranges from one coherent stop, in any spaces and views. */
   async #memoryCompare(params: ViceOperations["memoryCompare"]["params"]): Promise<ViceOperations["memoryCompare"]["result"]> {
-    const [left, right] = await this.#observe(async () => [
+    const [left, right] = await this.#observe(async (): Promise<[Buffer, Buffer]> => [
       Buffer.from(await this.#machine.readMemory({ ...params.left, size: params.size }), "hex"),
       Buffer.from(await this.#machine.readMemory({ ...params.right, size: params.size }), "hex"),
     ]);
     const firstDifferences: Array<{ offset: number; left: number; right: number }> = [];
     let differentBytes = 0;
     for (let offset = 0; offset < params.size; offset++) {
-      if (left![offset] === right![offset]) continue;
+      if (left[offset] === right[offset]) continue;
       differentBytes++;
-      if (firstDifferences.length < MAX_COMPARE_DIFFERENCES) firstDifferences.push({ offset, left: left![offset]!, right: right![offset]! });
+      if (firstDifferences.length < MAX_COMPARE_DIFFERENCES) firstDifferences.push({ offset, left: left[offset]!, right: right[offset]! });
     }
     return { equal: differentBytes === 0, differentBytes, firstDifferences };
   }
 
-  /** Direct CPU-state writes need a stopped CPU (15 §4); they never pause it themselves. */
+  /** Direct CPU-state writes need a stopped CPU; they never pause it themselves. */
   #requireStopped(): void {
     if (this.#state === "running") {
       throw new WireFailure("machine-running", "The CPU is running. Stop it with c64_execution action pause first.");
@@ -1116,8 +1111,8 @@ export class ViceSession implements ViceSessionHandle {
 
   /**
    * Sends a command after which VICE leaves the monitor by itself (autostart,
-   * reset). Stock VICE sometimes stays in the monitor instead (seen live after
-   * an autostart, under load also after a reset), and when it was in the
+   * reset). VICE sometimes stays in the monitor instead (after an autostart,
+   * and under load also after a reset), and when it was in the
    * monitor already no event shows that. So the machine is made to run: a
    * ping stops it or finds it stopped, and an exit resumes it, unless a
    * checkpoint or a JAM stopped it in between.
@@ -1150,7 +1145,7 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   /**
-   * Runs monitor work that must not change the run state (15 §4). Any monitor
+   * Runs monitor work that must not change the run state. Any monitor
    * command stops the machine, so a machine that was running is resumed.
    */
   async #observe<T>(work: () => Promise<T>): Promise<T> {
@@ -1184,7 +1179,7 @@ export class ViceSession implements ViceSessionHandle {
     return result;
   }
 
-  /** Serializes all VICE work for this session (D3). `whileHeld` work checks a held VICE itself. */
+  /** Serializes all VICE work for this session. `whileHeld` work checks a held VICE itself. */
   #enqueue<T>(work: () => Promise<T>, options: { whileHeld?: boolean } = {}): Promise<T> {
     const run = this.#queue.then(async () => {
       if (this.#closed) throw new WireFailure("machine-unavailable", "The emulator session is closed.");
@@ -1285,6 +1280,13 @@ export class ViceSession implements ViceSessionHandle {
       this.#state = "running";
     }
   }
+}
+
+/** The one attachment of an operation that takes a file (see attachmentCount); refuses any other count. */
+function onlyAttachment(attachments: Buffer[]): Buffer {
+  const [bytes] = attachments;
+  if (bytes === undefined || attachments.length !== 1) throw new WireFailure("invalid-input", "The operation needs exactly one file attachment.");
+  return bytes;
 }
 
 /** The VICE checkpoint range and operation of a breakpoint (no size) or a watchpoint. */

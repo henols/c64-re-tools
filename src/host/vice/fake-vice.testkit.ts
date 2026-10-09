@@ -1,4 +1,4 @@
-// A self-authored fake of stock VICE 3.10's two monitors, for deterministic
+// A self-authored fake of VICE's two monitors, for deterministic
 // unit tests of the session. It mirrors behavior probed on real VICE; real-VICE
 // tests in test/integration/vice remain the evidence for that behavior.
 //
@@ -17,10 +17,8 @@
 //   prompt; VICE's extra entry prompt is reproduced.
 
 import { once } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { BinaryMonitor, Command, EVENT_REQUEST_ID } from "./binary-monitor.ts";
 import type { ViceProcess } from "./process.ts";
@@ -109,8 +107,6 @@ export class FakeVice {
   stepTo: number | undefined;
   /** A step resumes the machine and never ends, as a next over a subroutine that does not return. */
   stepHangs = false;
-  /** When set, binary commands get no answer (a hung VICE). */
-  hung = false;
   /**
    * VICE's own pause (Alt+P) or a dialog: commands on both connections wait
    * unanswered, and run in order once resumeUi() is called, as on real VICE.
@@ -130,7 +126,7 @@ export class FakeVice {
   readonly attached: Buffer[] = [];
   /** Snapshot files restored, in order. */
   readonly undumps: string[] = [];
-  /** The mode a session launcher started this VICE in (D20). */
+  /** The mode a session launcher started this VICE in. */
   mode: "headless" | "window" = "headless";
   /** Undump answers with an error, as VICE does for a snapshot it cannot read. */
   refuseUndump = false;
@@ -187,10 +183,8 @@ export class FakeVice {
     let exit!: (status: { code: number | null; signal: NodeJS.Signals | null }) => void;
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => (exit = resolve));
     const fake = this;
-    const scratchDir = mkdtempSync(join(tmpdir(), "c64-re-tools-fake-vice-"));
     const handle = {
       pid: 0,
-      scratchDir,
       monitor,
       text,
       exited,
@@ -201,7 +195,6 @@ export class FakeVice {
         await monitor.close();
         await text.close();
         fake.close();
-        rmSync(scratchDir, { recursive: true, force: true });
       },
       crash() {
         fake.#binary?.destroy();
@@ -353,7 +346,6 @@ export class FakeVice {
         const body = pending.subarray(11, 11 + length);
         pending = pending.subarray(11 + length);
         this.commands.push(command);
-        if (this.hung) continue;
         if (this.uiPaused) {
           this.#heldBinary.push([id, command, Buffer.from(body)]);
           continue;
@@ -439,7 +431,7 @@ export class FakeVice {
         return this.#leaveMonitor(socket);
       }
       case Command.displayGet: {
-        // A 504x312 PAL buffer as VICE 3.10 sends it: window at (136,51), border box from (104,15).
+        // A 504x312 PAL buffer as VICE sends it: window at (136,51), border box from (104,15).
         const width = 504;
         const height = 312;
         const header = Buffer.alloc(4 + 13 + 4);

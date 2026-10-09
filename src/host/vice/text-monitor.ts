@@ -2,7 +2,7 @@
 // cannot do (warp, file load/attach, checkpoint ignore counts, device switch).
 // Raw monitor syntax never leaves src/host/vice.
 //
-// Framing, as observed on stock VICE 3.10: every command ends with a prompt
+// Framing: every command ends with a prompt
 // such as "(C:$e5cf) ", but a command that makes VICE enter the monitor gets
 // an extra prompt first. So prompts cannot delimit answers. Each command is
 // followed by a sentinel `~ $nnnn` whose distinctive four-line answer marks
@@ -11,12 +11,13 @@
 // when the command in it makes VICE enter the monitor. Only idempotent
 // commands go through here (see resendAfterMs).
 //
-// Stock VICE sometimes reads a line but runs it only when more input comes
-// (seen live: a sentinel answered 10 s late, just before the next command).
-// So a late sentinel is sent again, and stray sentinel answers are removed
-// from output.
+// VICE sometimes reads a line but runs it only when more input comes. So a
+// late sentinel is sent again, and stray sentinel answers are removed from
+// output.
 
-import { connect, type Socket } from "node:net";
+import type { Socket } from "node:net";
+
+import { connectWithTimeout } from "./connect.ts";
 
 export class TextMonitorError extends Error {
   override name = "TextMonitorError";
@@ -31,9 +32,9 @@ const PROMPT = /\((?:C|\d+):\$[0-9a-f]{4}\) /g;
 export const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 /** The default of TextMonitor.resendAfterMs. */
 const RESEND_AFTER_MS = 3_000;
-/** While an earlier command timed out, later ones are waited for only this long (see BinaryMonitor). */
+/** The default of TextMonitor.overdueTimeoutMs. */
 const OVERDUE_COMMAND_TIMEOUT_MS = 1_000;
-/** How long to wait for a sentinel's answer before sending the sentinel again. */
+/** The default of TextMonitor.sentinelResendMs. */
 const SENTINEL_RESEND_MS = 1_000;
 /** The longest delay a Node timer takes. */
 const MAX_TIMER_MS = 2_147_483_647;
@@ -62,12 +63,16 @@ export class TextMonitor {
   defaultTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS;
   /**
    * How long to wait for any answer before sending the command once more.
-   * Stock VICE sometimes holds a command line until more input comes; every
+   * VICE sometimes holds a command line until more input comes; every
    * command this client sends is idempotent, so a repeat is harmless. A
    * command that has printed output but no prompt yet still runs, and is not
    * sent again.
    */
   resendAfterMs = RESEND_AFTER_MS;
+  /** How long to wait for a sentinel's answer before sending the sentinel again. */
+  sentinelResendMs = SENTINEL_RESEND_MS;
+  /** While an earlier command timed out, later ones are waited for only this long (see BinaryMonitor). */
+  overdueTimeoutMs = OVERDUE_COMMAND_TIMEOUT_MS;
   /** Set when a command timed out; cleared by the next command that is answered. */
   #overdue = false;
 
@@ -88,21 +93,12 @@ export class TextMonitor {
   }
 
   static connect(port: number, host = "127.0.0.1", timeoutMs = 2_000): Promise<TextMonitor> {
-    return new Promise((resolve, reject) => {
-      const socket = connect({ host, port });
-      const timer = setTimeout(() => {
-        socket.destroy();
-        reject(new TextMonitorError(`text monitor connect to port ${port} timed out`));
-      }, timeoutMs);
-      socket.once("connect", () => {
-        clearTimeout(timer);
-        socket.removeAllListeners("error");
-        resolve(new TextMonitor(socket));
-      });
-      socket.once("error", (error) => {
-        clearTimeout(timer);
-        reject(new TextMonitorError(`text monitor connect to port ${port} failed: ${error.message}`));
-      });
+    return connectWithTimeout({
+      port,
+      host,
+      timeoutMs,
+      wrap: (socket) => new TextMonitor(socket),
+      failure: (message) => new TextMonitorError(`text monitor ${message}`),
     });
   }
 
@@ -116,7 +112,7 @@ export class TextMonitor {
     if (/[\r\n]/.test(line)) return Promise.reject(new TypeError("a monitor command must be one line"));
     const run = this.#queue.then(async () => {
       try {
-        const limit = this.#overdue && timeoutMs !== Infinity ? Math.min(timeoutMs, OVERDUE_COMMAND_TIMEOUT_MS) : timeoutMs;
+        const limit = this.#overdue && timeoutMs !== Infinity ? Math.min(timeoutMs, this.overdueTimeoutMs) : timeoutMs;
         const output = await this.#exchange(line, limit);
         this.#overdue = false;
         return output;
@@ -143,7 +139,7 @@ export class TextMonitor {
     // Anything left over belongs to no command; drop it so it cannot be misread.
     this.#buffer = "";
     this.#socket.write(`${line}\n`);
-    const prompted = () => new RegExp(PROMPT.source).test(this.#buffer);
+    const prompted = () => new RegExp(PROMPT.source).exec(this.#buffer);
     const resendAt = Math.min(deadline, Date.now() + this.resendAfterMs);
     try {
       await this.#waitFor(prompted, resendAt, timeoutMs);
@@ -154,24 +150,26 @@ export class TextMonitor {
       await this.#waitFor(prompted, deadline, timeoutMs);
     }
     const sentinelLine = `~ $${this.#nonce.toString(16)}\n`;
-    let match: RegExpExecArray | null = null;
     for (;;) {
       this.#socket.write(sentinelLine);
+      let found: RegExpExecArray;
       try {
-        await this.#waitFor(() => (match = sentinel.exec(this.#buffer)) !== null, Math.min(deadline, Date.now() + SENTINEL_RESEND_MS), timeoutMs);
-        break;
+        found = await this.#waitFor(() => sentinel.exec(this.#buffer), Math.min(deadline, Date.now() + this.sentinelResendMs), timeoutMs);
       } catch (error) {
         if (this.#socket.destroyed || Date.now() >= deadline) throw error;
+        continue;
       }
+      const output = this.#buffer.slice(0, found.index);
+      this.#buffer = this.#buffer.slice(found.index + found[0].length);
+      return cleanOutput(output);
     }
-    const found = match as unknown as RegExpExecArray;
-    const output = this.#buffer.slice(0, found.index);
-    this.#buffer = this.#buffer.slice(found.index + found[0].length);
-    return cleanOutput(output);
   }
 
-  async #waitFor(done: () => boolean, deadline: number, timeoutMs: number): Promise<void> {
-    while (!done()) {
+  /** Waits until `probe` finds something in the received text, and returns what it found. */
+  async #waitFor<T>(probe: () => T | null, deadline: number, timeoutMs: number): Promise<T> {
+    for (;;) {
+      const found = probe();
+      if (found !== null) return found;
       if (this.#socket.destroyed) throw new TextMonitorError("text monitor connection closed during a command");
       const remaining = deadline - Date.now();
       if (remaining <= 0) {

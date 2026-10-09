@@ -2,7 +2,9 @@
 // API version 2). Owns framing, request/response correlation and body
 // decoding. Nothing outside src/host/vice sees these bytes.
 
-import { connect, type Socket } from "node:net";
+import type { Socket } from "node:net";
+
+import { connectWithTimeout } from "./connect.ts";
 
 export const STX = 0x02;
 export const API_VERSION = 0x02;
@@ -216,24 +218,6 @@ export function decodeBanks(body: Buffer): BankInfo[] {
   return banks;
 }
 
-export function resourceGetBody(name: string): Buffer {
-  const encoded = Buffer.from(name, "latin1");
-  return Buffer.concat([Buffer.from([encoded.length]), encoded]);
-}
-
-export function decodeResource(body: Buffer): string | number {
-  const type = body[0];
-  const length = body[1]!;
-  const value = body.subarray(2, 2 + length);
-  if (type === 0x00) return value.toString("latin1");
-  if (type === 0x01) {
-    let result = 0;
-    for (let index = length - 1; index >= 0; index--) result = result * 256 + value[index]!;
-    return result;
-  }
-  throw new MonitorConnectionError(`resource response has unknown type ${type}`);
-}
-
 /** The program counter carried by stopped, resumed and JAM events. */
 export function decodeProgramCounter(body: Buffer): number {
   return body.readUInt16LE(0);
@@ -271,6 +255,8 @@ export class BinaryMonitor {
   #closedByUs = false;
   /** The time limit of a request that names none. */
   defaultTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
+  /** The time limit of a request while an earlier one is overdue (see OVERDUE_REQUEST_TIMEOUT_MS). */
+  overdueTimeoutMs = OVERDUE_REQUEST_TIMEOUT_MS;
   /** Requests that timed out and whose late answer has not come yet. */
   readonly #overdue = new Set<number>();
 
@@ -292,21 +278,12 @@ export class BinaryMonitor {
 
   /** Opens a connection. Rejects with MonitorConnectionError when nothing listens. */
   static connect(port: number, host = "127.0.0.1", timeoutMs = 2_000): Promise<BinaryMonitor> {
-    return new Promise((resolve, reject) => {
-      const socket = connect({ host, port });
-      const timer = setTimeout(() => {
-        socket.destroy();
-        reject(new MonitorConnectionError(`monitor connect to port ${port} timed out`));
-      }, timeoutMs);
-      socket.once("connect", () => {
-        clearTimeout(timer);
-        socket.removeAllListeners("error");
-        resolve(new BinaryMonitor(socket));
-      });
-      socket.once("error", (error) => {
-        clearTimeout(timer);
-        reject(new MonitorConnectionError(`monitor connect to port ${port} failed: ${error.message}`));
-      });
+    return connectWithTimeout({
+      port,
+      host,
+      timeoutMs,
+      wrap: (socket) => new BinaryMonitor(socket),
+      failure: (message) => new MonitorConnectionError(`monitor ${message}`),
     });
   }
 
@@ -330,7 +307,7 @@ export class BinaryMonitor {
     if (this.#socket.destroyed) return Promise.reject(new MonitorConnectionError("monitor connection is closed"));
     const requestId = this.#nextId;
     this.#nextId = this.#nextId >= EVENT_REQUEST_ID - 1 ? 1 : this.#nextId + 1;
-    const limit = this.#overdue.size > 0 && timeoutMs !== Infinity ? Math.min(timeoutMs, OVERDUE_REQUEST_TIMEOUT_MS) : timeoutMs;
+    const limit = this.#overdue.size > 0 && timeoutMs !== Infinity ? Math.min(timeoutMs, this.overdueTimeoutMs) : timeoutMs;
     return new Promise((resolve, reject) => {
       const timer =
         limit === Infinity

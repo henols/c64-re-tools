@@ -1,4 +1,4 @@
-// The window move (D20): the session moves the machine between a headless VICE
+// The window move: the session moves the machine between a headless VICE
 // and one with a window, and back, through a snapshot and a new VICE.
 
 import assert from "node:assert/strict";
@@ -296,7 +296,6 @@ test("closing the session during a move stops the new VICE too", async () => {
   release();
   await assert.rejects(opening, failsWith("machine-unavailable"));
   await closing;
-  await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(vices.length, 2, "the new VICE was started");
   for (const { process } of vices) assert.equal(process.stopCount, 1, "every VICE the session started is stopped");
 });
@@ -308,14 +307,14 @@ test("a session closed while its window VICE ends starts no headless VICE", asyn
   vices[1]!.process.crash();
   await new Promise((resolve) => setImmediate(resolve));
   await session.close();
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // Queued behind the work that the crash queued: it fails once that work has ended.
+  await assert.rejects(session.handle("status", {}), failsWith("machine-unavailable", /closed/));
   assert.equal(launches, 1, "only the window VICE was started");
   assert.equal(vices.length, 2);
 });
 
 test("a session without a launcher cannot open a window", async () => {
-  const { fake, process } = await launchFake("headless");
-  void fake;
+  const { process } = await launchFake("headless");
   const session = await ViceSession.start(process, "pal");
   await assert.rejects(session.handle("window", { action: "open" }), failsWith("operation-failed"));
   await session.close();

@@ -1,4 +1,4 @@
-// Decodes C64 chip registers (VIC-II, CIA, SID) into the 15 §25-§28 shapes.
+// Decodes C64 chip registers (VIC-II, CIA, SID) into the protocol's chip state shapes.
 // Input bytes are register values as VICE's monitor reads them from the I/O
 // bank without side effects; the SID's write-only registers read back as
 // last written.

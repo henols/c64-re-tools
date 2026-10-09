@@ -17,6 +17,7 @@ import {
   type Space,
   type VideoStandard,
 } from "../../protocol.ts";
+import { formatC64Address, formatC64Byte } from "../../c64.ts";
 import { decodeDisplay, decodePalette, visibleFrame, type IndexedFrame } from "./screen.ts";
 import type { TextMonitor } from "./text-monitor.ts";
 import {
@@ -28,6 +29,7 @@ import {
   decodeRegistersAvailable,
   memoryGetBody,
   Memspace,
+  type RegisterInfo,
 } from "./binary-monitor.ts";
 
 const MEMSPACE: Record<Space, number> = { c64: Memspace.main, drive8: Memspace.drive8 };
@@ -37,22 +39,23 @@ const REGISTER_NAMES = { pc: "PC", a: "A", x: "X", y: "Y", sp: "SP", flags: "FL"
 type RegisterKey = keyof typeof REGISTER_NAMES;
 type RegisterIds = Record<RegisterKey, number>;
 
-async function registerIds(monitor: BinaryMonitor, space: Space): Promise<RegisterIds> {
-  const available = decodeRegistersAvailable((await monitor.request(Command.registersAvailable, Buffer.from([MEMSPACE[space]]))).body);
-  const ids = {} as RegisterIds;
-  for (const [key, name] of Object.entries(REGISTER_NAMES) as Array<[RegisterKey, string]>) {
-    const register = available.find((candidate) => candidate.name === name);
-    if (register === undefined) throw new Error(`VICE reports no ${name} register for ${space}`);
-    ids[key] = register.id;
-  }
-  return ids;
+async function availableRegisters(monitor: BinaryMonitor, space: Space): Promise<RegisterInfo[]> {
+  return decodeRegistersAvailable((await monitor.request(Command.registersAvailable, Buffer.from([MEMSPACE[space]]))).body);
+}
+
+/** The id of the register `name` among the registers VICE reports for `space`. */
+function registerId(available: RegisterInfo[], name: string, space: Space): number {
+  const register = available.find((candidate) => candidate.name === name);
+  if (register === undefined) throw new Error(`VICE reports no ${name} register for ${space}`);
+  return register.id;
+}
+
+function registerIds(available: RegisterInfo[], space: Space): RegisterIds {
+  const id = (key: RegisterKey) => registerId(available, REGISTER_NAMES[key], space);
+  return { pc: id("pc"), a: id("a"), x: id("x"), y: id("y"), sp: id("sp"), flags: id("flags") };
 }
 
 const OPERATORS: Record<Comparison, string> = { eq: "==", ne: "!=", lt: "<", lte: "<=", gt: ">", gte: ">=" };
-
-function hexByte(value: number): string {
-  return `$${value.toString(16).padStart(2, "0")}`;
-}
 
 /**
  * Builds the VICE condition expression for a typed condition, for a
@@ -64,14 +67,13 @@ export function conditionExpression(condition: Condition, space: Space): string 
   switch (condition.kind) {
     case "register": {
       const prefix = space === "drive8" ? "8:" : "";
-      return `(${prefix}${condition.register.toUpperCase()} ${operator(condition.operator)} ${hexByte(condition.value)})`;
+      return `(${prefix}${condition.register.toUpperCase()} ${operator(condition.operator)} ${formatC64Byte(condition.value)})`;
     }
     case "memory": {
       if (condition.space !== "c64") {
         throw new WireFailure("unsupported-in-space", "A memory condition can test only space c64 memory.");
       }
-      const address = `$${condition.address.toString(16).padStart(4, "0")}`;
-      return `(@${condition.view}:${address} ${operator(condition.operator)} ${hexByte(condition.value)})`;
+      return `(@${condition.view}:${formatC64Address(condition.address)} ${operator(condition.operator)} ${formatC64Byte(condition.value)})`;
     }
     case "raster": {
       const line = `(RL == $${condition.line.toString(16)})`;
@@ -81,7 +83,7 @@ export function conditionExpression(condition: Condition, space: Space): string 
 }
 
 /** Lines a raster window spans, so a DMA stall cannot skip every instruction start in it. */
-export const RASTER_WINDOW_LINES = 4;
+const RASTER_WINDOW_LINES = 4;
 
 function rasterLine(line: number): string {
   return `(RL == $${line.toString(16)})`;
@@ -247,7 +249,7 @@ export function parseProfile(answer: string): ProfileEntry[] {
   const entries: ProfileEntry[] = [];
   const unknown: string[] = [];
   for (const line of answer.split("\n")) {
-    // Counts can carry the host locale's digit grouping ("1,123,200" on macOS, found in CI) and the percent a decimal comma.
+    // Counts can carry the host locale's digit grouping ("1,123,200") and the percent a decimal comma.
     const row = new RegExp(`^\\s*(${COUNT})\\s+[\\d.,]+%\\s+(${COUNT})\\s+([\\d.,]+)%\\s+(\\S+)\\s*$`).exec(line);
     if (row === null) {
       if (line.trim() !== "" && !/^Total\s+%\s+Self\s+%$/.test(line.trim()) && !/^[-\s]+$/.test(line)) unknown.push(line.trim());
@@ -257,7 +259,7 @@ export function parseProfile(answer: string): ProfileEntry[] {
     if (!/^[0-9a-f]{4}$/i.test(row[4]!)) continue;
     entries.push({ address: Number.parseInt(row[4]!, 16), totalCycles: digits(row[1]!), selfCycles: digits(row[2]!), percent: Number(row[3]!.replace(",", ".")) });
   }
-  // An answer in another form must not read as "nothing ran" (found on macOS).
+  // An answer in another form must not read as "nothing ran".
   if (entries.length === 0 && unknown.length > 0) throw unknownForm("profile", unknown);
   return entries;
 }
@@ -350,14 +352,14 @@ export function flagsFromStatusRegister(value: number): Registers["flags"] {
   };
 }
 
+/** Generous bound for commands that run the machine (step/next): they answer only once it stops again. */
+export const RUNNING_COMMAND_TIMEOUT_MS = 30_000;
+
 /**
  * Domain operations over one binary-monitor connection. Every method sends
  * monitor commands, and any monitor command stops the machine; restoring the
  * run state is the session's job.
  */
-/** Generous bound for commands that run the machine (step/next): they answer only once it stops again. */
-export const RUNNING_COMMAND_TIMEOUT_MS = 30_000;
-
 export class ViceAdapter {
   readonly #monitor: BinaryMonitor;
   readonly #text: TextMonitor;
@@ -390,18 +392,14 @@ export class ViceAdapter {
       if (bank === undefined) throw new Error(`VICE reports no ${name} memory bank`);
       return bank.id;
     };
-    const c64Registers = decodeRegistersAvailable((await monitor.request(Command.registersAvailable, Buffer.from([Memspace.main]))).body);
-    const rasterId = (name: string) => {
-      const register = c64Registers.find((candidate) => candidate.name === name);
-      if (register === undefined) throw new Error(`VICE reports no ${name} register`);
-      return register.id;
-    };
+    const c64Registers = await availableRegisters(monitor, "c64");
+    const driveRegisters = await availableRegisters(monitor, "drive8");
     return new ViceAdapter(
       monitor,
       text,
-      { c64: await registerIds(monitor, "c64"), drive8: await registerIds(monitor, "drive8") },
+      { c64: registerIds(c64Registers, "c64"), drive8: registerIds(driveRegisters, "drive8") },
       { cpu: bankId("cpu"), ram: bankId("ram"), rom: bankId("rom"), io: bankId("io") },
-      { line: rasterId("LIN"), cycle: rasterId("CYC") },
+      { line: registerId(c64Registers, "LIN", "c64"), cycle: registerId(c64Registers, "CYC", "c64") },
     );
   }
 
@@ -520,7 +518,7 @@ export class ViceAdapter {
   /**
    * Runs a text command that acts on the monitor's default device, with the
    * computer as that device. VICE makes drive 8 the default device when a
-   * drive checkpoint stops the machine (found live), and commands such as
+   * drive checkpoint stops the machine, and commands such as
    * load, d, hunt, mmsh and stopwatch then act on the drive instead.
    */
   async #computerText(command: string, timeoutMs?: number): Promise<string> {
@@ -560,27 +558,10 @@ export class ViceAdapter {
   }
 
   /**
-   * Adds a C64 exec checkpoint that stops the machine. Returns its VICE number.
-   * Never a VICE "temporary" checkpoint: on stock VICE 3.10 setting one resumes
-   * the machine (like the text monitor's until), whatever the manual says.
-   */
-  async addBreak(address: number): Promise<number> {
-    const body = Buffer.alloc(9);
-    body.writeUInt16LE(address, 0);
-    body.writeUInt16LE(address, 2);
-    body[4] = 1; // stop when hit
-    body[5] = 1; // enabled
-    body[6] = 0x04; // exec
-    body[7] = 0; // not temporary
-    body[8] = Memspace.main;
-    const info = await this.#monitor.request(Command.checkpointSet, body);
-    return info.body.readUInt32LE(0);
-  }
-
-  /**
    * Adds a stopping checkpoint over [start, end]: exec for a breakpoint;
-   * load/store for a watchpoint. Returns its VICE number. Never temporary
-   * (see addBreak).
+   * load/store for a watchpoint. Returns its VICE number. Never a VICE
+   * "temporary" checkpoint: in VICE, setting one resumes the machine (like
+   * the text monitor's until), whatever the manual says.
    */
   async addCheckpoint(options: { start: number; end: number; operation: number; space: Space; enabled?: boolean }): Promise<number> {
     const body = Buffer.alloc(9);
@@ -724,7 +705,7 @@ export class ViceAdapter {
   /** The last `limit` instructions the CPU of a space executed, oldest first, with the clock each started at. */
   async history(limit: number, space: Space): Promise<Array<Omit<HistoryEntry, "rasterLine" | "rasterCycle"> & { clock: bigint }>> {
     const answer = await this.#text.command(`chis ${limit} ${space === "drive8" ? "8:" : "c:"}`);
-    // Some VICE builds print one more, older entry than asked for (found in CI on Windows and on 3.7.1); the newest count.
+    // Some VICE builds print one more, older entry than asked for; the newest count.
     return parseHistory(answer).slice(-limit);
   }
 
