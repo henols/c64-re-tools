@@ -1,7 +1,6 @@
 // The c64-provenance comparison: differences, agreeing groups and alignment.
 
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,11 +8,12 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { compareReleases, suggestShift } from "../../skills/c64-provenance/scripts/compare.ts";
+import { seededBytes } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-"));
 after(() => rmSync(project, { recursive: true, force: true }));
 
-const base = randomBytes(2048);
+const base = seededBytes(0x6510, 2048);
 const crackA = Buffer.from(base);
 // A patched check: three bytes that always differ from the base.
 const patch = [0, 1, 2].map((index) => base[0x0900 - 0x0801 + index]! ^ 0x55);

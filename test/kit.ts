@@ -40,3 +40,18 @@ export async function startMcp(address: string, options: McpOptions = {}): Promi
   await client.connect(transport);
   return { client, transport };
 }
+
+/** `length` bytes that look random but are the same in every run for one `seed` (xorshift32). */
+export function seededBytes(seed: number, length: number): Buffer {
+  const bytes = Buffer.alloc(length);
+  let state = seed >>> 0 || 1;
+  for (let index = 0; index < length; index++) {
+    state ^= state << 13;
+    state >>>= 0;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    state >>>= 0;
+    bytes[index] = state & 0xff;
+  }
+  return bytes;
+}

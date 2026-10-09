@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after, afterEach, beforeEach, test } from "node:test";
 
 import { callTool, decodeBasic, inspectDisk } from "../../../src/host-client/tools.ts";
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
@@ -19,13 +19,15 @@ writeFileSync(join(project, "src", "lib", "consts.a"), "COLOR = 2\n");
 mkdirSync(join(project, "media"));
 writeFileSync(join(project, "media", "game.D64"), Buffer.from([0xd6, 0x40]));
 writeFileSync(join(project, "media", "loader.prg"), Buffer.from([0x01, 0x08, 0x00, 0x00]));
-process.chdir(project);
+const home = process.cwd();
+// Project paths are relative to the working directory: each test runs in the project.
+beforeEach(() => process.chdir(project));
+// Windows cannot remove the current directory.
+afterEach(() => process.chdir(home));
 
 const servers: HostServer[] = [];
 after(async () => {
   await Promise.all(servers.map((server) => server.close()));
-  // Windows cannot remove the current directory.
-  process.chdir(tmpdir());
   rmSync(project, { recursive: true, force: true });
 });
 

@@ -1,7 +1,6 @@
 // The c64-unpacker packing evidence. No emulator needed.
 
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,14 +9,15 @@ import { after, test } from "node:test";
 
 import { inspect, readMemoryMap, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/evidence.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
+import { seededBytes } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpacker-"));
 after(() => rmSync(project, { recursive: true, force: true }));
 
 const stub = [0x01, 0x08, 0x0b, 0x08, 0x0a, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00];
 
-test("random bytes after a BASIC start look packed", () => {
-  const result = inspect(Uint8Array.from([...stub, ...randomBytes(4096)]));
+test("random-looking bytes after a BASIC start look packed", () => {
+  const result = inspect(Uint8Array.from([...stub, ...seededBytes(0x6502, 4096)]));
   assert.equal(result.packing, "likely");
   assert.deepEqual(result.basicStart, { line: 10, sys: "$080d" });
   assert.equal((result.entropy as { blocks: number }).blocks, 16);

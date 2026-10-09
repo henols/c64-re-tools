@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
-import { after, test } from "node:test";
+import { after, afterEach, beforeEach, test } from "node:test";
 
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
@@ -15,11 +15,10 @@ import { compare, loadSymbols, readScenario, resolve, runScenario, ScenarioError
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-testing-"));
 const home = process.cwd();
-process.chdir(project);
-after(() => {
-  process.chdir(home);
-  rmSync(project, { recursive: true, force: true });
-});
+// Scenario paths are relative to the working directory: each test runs in the project.
+beforeEach(() => process.chdir(project));
+afterEach(() => process.chdir(home));
+after(() => rmSync(project, { recursive: true, force: true }));
 
 const valid = {
   name: "moves left",
