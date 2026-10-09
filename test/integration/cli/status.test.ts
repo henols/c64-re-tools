@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { startHostServer, type ToolDispatcher } from "../host/server.ts";
-import { WireFailure, type ToolStatus } from "../protocol.ts";
-import { hostStatusLines, toolLines } from "./status.ts";
+import { startHostServer, type ToolDispatcher } from "../../../src/host/server.ts";
+import { WireFailure, type ToolStatus } from "../../../src/protocol.ts";
+import { hostStatusLines, toolLines } from "../../../src/cli/status.ts";
 
 const HOST_TOOLS: ToolStatus[] = [
   { name: "VICE", found: true, path: "/opt/vice/bin/x64sc", version: "3.9", runs: true },
