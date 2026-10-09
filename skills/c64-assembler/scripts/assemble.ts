@@ -1,5 +1,5 @@
 // The c64-assembler script: assembles project source with ACME, which it runs
-// itself (D16), and writes the program into the project.
+// itself, and writes the program into the project.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";

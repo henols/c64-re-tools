@@ -1,13 +1,13 @@
 ---
 name: c64-unpacker
-description: Use this skill to find out if a C64 program is packed or crunched, and to get the unpacked program for analysis. It shows evidence of packing without a guess of the packer name. It runs the program in an emulator until the unpacked code starts, then writes the memory into the project. Do not use it to analyze the unpacked code.
+description: Use this skill to find out if a packer or a cruncher compressed a C64 program, and to get the unpacked program for analysis. It shows evidence of packing without a guess of the packer name. It runs the program in an emulator until the unpacked code starts, then writes the memory into the project. Do not use it to analyze the unpacked code.
 ---
 
 # c64-unpacker
 
 ## Purpose
 
-Find out if a C64 program is packed. Get the unpacked program for analysis.
+Find out if a packer compressed a C64 program. Get the unpacked program for analysis.
 
 This skill does not change project knowledge.
 
@@ -42,7 +42,7 @@ The capture reads RAM, also the RAM under the ROMs and the I/O area. The script 
 1. Run `inspect`. Read `basicStart` and `packing`:
    - `likely`: most of the bytes look compressed. Packed data has this property.
    - `unlikely`: the bytes look like code and data. A simple cruncher can also give this result.
-   - `unclear`: the file is short, or the evidence is mixed.
+   - `unclear`: the file is short, or the blocks do not give clear evidence.
 2. Run `trace`. It gives the evidence from the run. Read `packing`:
    - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code. `runningRange` is the code that runs now. Its `start` is usually the entry point of the unpacked program.
    - `unclear`: the program executed a small quantity of code that it wrote. This can be code that changes itself.
@@ -65,8 +65,11 @@ Do not record the unpacker in the project knowledge, unless the user asks to exa
 
 The packing evidence, or the unpacked program in the project with the address where it starts.
 
+The exit status is 0 for a result. The exit status is 1 for `traced: false`, for `captured: false` and for an error. The exit status is 2 for a wrong argument.
+
 ## Failure and conflicts
 
+- `traced: false`: the emulator did not load the program into memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
 - `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the c64-emulator skill, or give more frames.
 - Do not name a packer from weak evidence. The script never names one.
 - Some programs unpack in more than one stage. Make sure that the captured code is the application and not a second unpacker.

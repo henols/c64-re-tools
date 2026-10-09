@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
-import { historyAt, historyNamed, revision, revisions, type HistoryEntry, type Revision } from "#src/knowledge/history.ts";
+import { historyAt, historyNamed, revision, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import {
   at,
   listComments,
@@ -113,8 +113,6 @@ function historyEntry(entry: HistoryEntry) {
   return { entity: entry.entity, ...row, fromRevision: entry.from, ...(entry.to === undefined ? {} : { toRevision: entry.to }) };
 }
 
-const revisionShape = (item: Revision) => item;
-
 function run(argv: string[]): unknown {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -177,7 +175,7 @@ function run(argv: string[]): unknown {
           const options: { limit?: number; before?: number } = {};
           if (values.limit !== undefined) options.limit = integer(values.limit, "--limit");
           if (values.before !== undefined) options.before = integer(values.before, "--before");
-          return { revisions: revisions(db, options).map(revisionShape) };
+          return { revisions: revisions(db, options) };
         }
         default: {
           const changes = revision(db, integer(args[0], "revision"));
@@ -202,7 +200,8 @@ type WriteOperation = (db: DatabaseSync) => unknown;
 function writeOperation(command: string, args: string[], kind: string | undefined, context: WriteContext): WriteOperation {
   switch (command) {
     case "rename": {
-      const request: { address: number; name: string; kind?: SymbolKind } = { address: address(args[0]), name: args[1] ?? "" };
+      if (args[1] === undefined) throw new UsageError("name is missing");
+      const request: { address: number; name: string; kind?: SymbolKind } = { address: address(args[0]), name: args[1] };
       if (kind !== undefined) request.kind = oneOf(SYMBOL_KINDS, kind, "--kind");
       return (db) => {
         const result = renameSymbol(db, context, request);
@@ -225,6 +224,7 @@ function writeOperation(command: string, args: string[], kind: string | undefine
       return (db) => ({ revision: unclassifyRegion(db, context, request).revision });
     }
     case "comment": {
+      if (args.length < 3) throw new UsageError("text is missing");
       const request = { address: address(args[0]), placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") as CommentPlacement, text: args.slice(2).join(" ") };
       return (db) => {
         const result = setComment(db, context, request);

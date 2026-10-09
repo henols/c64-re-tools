@@ -1,4 +1,4 @@
-// Current-state knowledge queries (06 §8). A project without a database
+// Current-state knowledge queries. A project without a database
 // reads as empty knowledge.
 
 import type { DatabaseSync } from "node:sqlite";
@@ -108,7 +108,7 @@ export function referencesTo(db: DatabaseSync | undefined, address: number): Ref
     .map((row) => toReference(row as Raw));
 }
 
-/** Everything currently known at one address (06 §8): the main lookup for skills. */
+/** Everything currently known at one address: the main lookup for skills. */
 export interface AddressKnowledge {
   address: number;
   symbol?: SymbolRow;

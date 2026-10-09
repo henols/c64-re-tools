@@ -104,7 +104,7 @@ If you cannot get the machine into the necessary state, say which state you coul
 
 ## Failure and conflicts
 
-- `machine-state-lost` and the message says that the VICE window closed: the window closed before `c64_window` action `close`. The emulator has no window again. The machine is in the state that it had when the window opened. The breakpoints and the watchpoints stay. Do not use results from the window time. Read the machine state again, then continue.
+- `machine-state-lost` and the message says that the VICE window closed: the window closed before `c64_window` action `close`. The emulator has no window again. The machine state is the same as at the time when the window opened. The breakpoints and the watchpoints stay. Do not use results from the window time. Read the machine state again, then continue.
 - `machine-unavailable` and the message says that the VICE window closed: the session starts the emulator again. Wait a few seconds. Then do the operation again.
 - `machine-state-lost` with a different message: the emulator stopped and its state is gone. Do not continue with results from before. Tell the user to restart the MCP server.
 - `machine-unavailable` and the message names a pause or a dialog in the emulator window: this occurs only while the window is open. Do not send more operations. Tell the user to resume the emulator (Pause, Alt+P) or to close the dialog in the VICE window. Then do the operation again. The machine state does not change.

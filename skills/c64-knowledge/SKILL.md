@@ -85,6 +85,8 @@ For a read: the current or historical knowledge in compact JSON.
 
 For a write: the new revision and the current value after the write.
 
+The exit status is 0 for a result. The exit status is 1 for an error from the knowledge, for example `conflict`. The exit status is 2 for a wrong argument.
+
 ## Failure and conflicts
 
 - `conflict`: the change contradicts current knowledge. For example, the name belongs to another address. Read that address and its history, then decide.

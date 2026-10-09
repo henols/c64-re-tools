@@ -53,7 +53,7 @@ A typical order for an unknown program:
 
 1. c64-disk: list the disk and extract the start file.
 2. c64-basic: find the SYS address of the BASIC start.
-3. c64-unpacker: find out if the program is packed. Unpack it if necessary.
+3. c64-unpacker: find out if a packer compressed the program. Unpack it if necessary.
 4. c64-emulator: run the program and observe it.
 5. c64-static-analysis: find the routines, regions and references.
 6. c64-knowledge and c64-memory-map: name the important routines and variables.

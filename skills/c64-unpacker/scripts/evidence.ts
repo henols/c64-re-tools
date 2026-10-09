@@ -5,7 +5,7 @@ import { formatC64Address } from "#src/c64.ts";
 
 export class PackingError extends Error {}
 
-/** A 256-byte block above this many bits per byte looks compressed (measured: code at most 6.95, compressed data at least 6.92). */
+/** A 256-byte block above this many bits per byte looks compressed. */
 const HIGH_ENTROPY = 6.9;
 const BLOCK = 256;
 
@@ -35,7 +35,18 @@ function basicSys(program: Uint8Array): { line: number; address: number; end: nu
   return { line: number, address: Number(match[1]), end: 0x0801 + end - 2 };
 }
 
-export function inspect(program: Uint8Array): Record<string, unknown> {
+/** The local packing evidence of one PRG. */
+export interface PackingEvidence {
+  loadRange: { start: string; end: string };
+  bytes: number;
+  /** The first BASIC line and its constant SYS address, or null when the program has none. */
+  basicStart: { line: number; sys: string } | null;
+  entropy: { blocks: number; highBlocks: number; median: number | null };
+  packing: "likely" | "unlikely" | "unclear";
+  evidence: string;
+}
+
+export function inspect(program: Uint8Array): PackingEvidence {
   if (program.length < 3) throw new PackingError("the file is too short for a PRG");
   const load = program[0]! | (program[1]! << 8);
   const end = load + program.length - 3;

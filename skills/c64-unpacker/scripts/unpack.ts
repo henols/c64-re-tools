@@ -3,13 +3,13 @@
 // wrote and then executed: the run-time evidence that also finds a simple
 // cruncher whose bytes look like code. "capture" runs the program in an
 // emulator until it reaches a given address (the unpacked entry point) and
-// writes the memory into the project. No native unpack tool is used (19 §12).
+// writes the memory into the project. No native unpack tool is used.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { formatC64Address, parseC64Address, textToPetscii } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -52,7 +52,7 @@ async function trace(program: string, options: { frames: number; entry?: number 
   const { bytes } = readProjectFile(program);
   if (bytes.length < 3) throw new UsageError("the file is too short for a PRG");
   const load = bytes[0]! | (bytes[1]! << 8);
-  const basic = (inspect(bytes) as { basicStart: { sys: string } | null }).basicStart;
+  const basic = inspect(bytes).basicStart;
   if (options.entry === undefined && basic === null) throw new UsageError("the program has no BASIC start line; give --entry <address>");
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
@@ -67,11 +67,11 @@ async function trace(program: string, options: { frames: number; entry?: number 
     if (!loaded) return { output: { traced: false, reason: `The program was not in memory at ${formatC64Address(load)} after ${LOAD_LIMIT_FRAMES} frames.` }, failed: true };
     await client.memmap({ action: "clear" });
     if (options.entry !== undefined) await client.registersSet("c64", { pc: options.entry });
-    else await client.keyboard(Uint8Array.from([0x52, 0x55, 0x4e, 0x0d])); // RUN and RETURN
+    else await client.keyboard(textToPetscii("RUN\n"));
     let ran = 0;
     while (ran < options.frames) {
       const step = await client.execution({ action: "advance-frames", count: Math.min(MAX_ADVANCE, options.frames - ran), space: "c64" });
-      const advanced = (step as { advancedFrames?: number }).advancedFrames ?? 0;
+      const advanced = step.advancedFrames ?? 0;
       ran += advanced;
       if (advanced === 0) break;
     }

@@ -2,6 +2,8 @@
 // Names follow "Mapping the Commodore 64". Only platform facts live here:
 // an address without one belongs to the application.
 
+import { d018Offsets, vicBankBase } from "#src/c64.ts";
+
 export interface Entry {
   start: number;
   end: number;
@@ -342,10 +344,10 @@ export type Decoded = Record<string, unknown>;
 
 const bits = (value: number) => [0, 1, 2, 3, 4, 5, 6, 7].filter((bit) => (value & (1 << bit)) !== 0);
 
-/** The VIC-II bank from a $DD00 value. */
-export function vicBank(dd00: number): { bank: number; start: number; end: number } {
-  const bank = 3 - (dd00 & 0x03);
-  return { bank, start: bank * 0x4000, end: bank * 0x4000 + 0x3fff };
+/** The VIC-II bank from a $DD00 value, with bits 0-1 of port A as outputs, as the KERNAL sets them. */
+function vicBank(dd00: number): { bank: number; start: number; end: number } {
+  const start = vicBankBase(dd00);
+  return { bank: start / 0x4000, start, end: start + 0x3fff };
 }
 
 /** What a value in a platform register means. `dd00` gives the VIC-II bank for $D018. */
@@ -372,9 +374,7 @@ export function decode(register: number, value: number, dd00?: number): Decoded 
     case 0xd016:
       return { xScroll: value & 0x07, columns: value & 0x08 ? 40 : 38, multicolorMode: (value & 0x10) !== 0 };
     case 0xd018: {
-      const screen = ((value >> 4) & 0x0f) * 0x400;
-      const characters = ((value >> 1) & 0x07) * 0x800;
-      const bitmap = value & 0x08 ? 0x2000 : 0x0000;
+      const { screen, characters, bitmap } = d018Offsets(value);
       const result: Decoded = { screenOffset: hex(screen), characterOffset: hex(characters), bitmapOffset: hex(bitmap) };
       if (dd00 !== undefined) {
         const bank = vicBank(dd00);

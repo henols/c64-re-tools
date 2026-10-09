@@ -37,7 +37,8 @@ function run(argv: string[]): unknown {
       return {
         addresses: rest.map((text) => {
           const found = lookup(number(text, 0xffff, "an address"));
-          const io = IO.some((block) => found.address >= block.start && found.address <= block.end);
+          // The chip registers, color RAM and the cartridge I/O areas show only while $01 maps I/O in.
+          const io = found.address >= 0xd000 && found.address <= 0xdfff;
           return {
             ...found,
             address: hex(found.address),

@@ -43,7 +43,7 @@ function findings(analyzer: "dxa" | "ghidra", start: number, end: number, parts:
 const regionList = (db: DatabaseSync) => regionsOverlapping(db, 0, 0xffff).map((region) => [region.start, region.end, region.type, region.origin]);
 const count = (db: DatabaseSync, sql: string) => (db.prepare(sql).get() as { n: number }).n;
 
-test("a re-analysis closes the analyzer's own symbol that it no longer finds (12 §7)", () => {
+test("a re-analysis closes the analyzer's own symbol that it no longer finds", () => {
   const db = fresh();
   const first = importFindings(
     db,
@@ -82,7 +82,7 @@ test("the same result again changes nothing and makes no revision", () => {
   assert.equal(currentRevision(db), 1);
 });
 
-test("stale references inside the coverage retire; references from outside stay (12 §8)", () => {
+test("stale references inside the coverage retire; references from outside stay", () => {
   const db = fresh();
   importFindings(
     db,
@@ -105,7 +105,7 @@ test("stale references inside the coverage retire; references from outside stay 
   );
 });
 
-test("a targeted region re-analysis keeps the parts outside its coverage (12 §9)", () => {
+test("a targeted region re-analysis keeps the parts outside its coverage", () => {
   const db = fresh();
   importFindings(db, findings("dxa", 0x2000, 0x2fff, { regions: [{ start: 0x2000, end: 0x2fff, type: "code" }] }));
   const result = importFindings(db, findings("dxa", 0x2400, 0x24ff, { regions: [{ start: 0x2400, end: 0x24ff, type: "bytes" }] }));
@@ -124,7 +124,7 @@ test("a targeted region re-analysis keeps the parts outside its coverage (12 §9
   assert.deepEqual(changed.regions, { added: 0, changed: 1, retired: 0, unchanged: 0 });
 });
 
-test("semantic knowledge is kept; only a code/data disagreement is a conflict (12 §10, §12)", () => {
+test("semantic knowledge is kept; only a code/data disagreement is a conflict", () => {
   const db = fresh();
   renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "update_player", kind: "routine" });
   renameSymbol(db, { origin: "user" }, { address: 0x3000, name: "player_x", kind: "variable" });
@@ -159,7 +159,7 @@ test("semantic knowledge is kept; only a code/data disagreement is a conflict (1
   ]);
 });
 
-test("an analyzer does not replace another analyzer; a contradiction is a conflict (12 §11)", () => {
+test("an analyzer does not replace another analyzer; a contradiction is a conflict", () => {
   const db = fresh();
   importFindings(db, findings("dxa", 0x3000, 0x30ff, { regions: [{ start: 0x3000, end: 0x30ff, type: "code" }], symbols: [{ address: 0x3000, name: "l3000", kind: "label" }] }));
   const result = importFindings(
@@ -172,7 +172,7 @@ test("an analyzer does not replace another analyzer; a contradiction is a confli
   assert.equal(symbolAt(db, 0x3000)?.name, "l3000", "a different generated name for code is compatible");
 });
 
-test("a non-authoritative category adds facts but retires none (12 §13)", () => {
+test("a non-authoritative category adds facts but retires none", () => {
   const db = fresh();
   importFindings(db, findings("ghidra", 0x2000, 0x20ff, { references: [{ from: 0x2010, to: 0x3000, kind: "read" }] }));
   const partial = findings("ghidra", 0x2000, 0x20ff, { references: [{ from: 0x2020, to: 0x3001, kind: "write" }] });
