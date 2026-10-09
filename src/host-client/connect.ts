@@ -88,11 +88,6 @@ function tcpConnect(endpoint: Endpoint, signal: AbortSignal | undefined): Promis
   });
 }
 
-export interface Heartbeat {
-  intervalMs: number;
-  timeoutMs: number;
-}
-
 /** A handshaken, framed connection to the Host Runtime. */
 export class HostConnection {
   /** Settles when the connection is gone; carries the reason unless we closed it. */
@@ -104,7 +99,7 @@ export class HostConnection {
   #closedByUs = false;
   #pingTimer: NodeJS.Timeout | undefined;
   #silenceTimer: NodeJS.Timeout | undefined;
-  #heartbeat: Heartbeat | undefined;
+  #heartbeat = false;
 
   private constructor(socket: Socket) {
     this.#socket = socket;
@@ -145,9 +140,6 @@ export class HostConnection {
     role: Role;
     videoStandard?: VideoStandard;
     env?: NodeJS.ProcessEnv;
-    readyTimeoutMs?: number;
-    /** Defaults to a ping every 10 s and a 30 s silence limit (D18). */
-    heartbeat?: Heartbeat;
     /** Stops the connect and the handshake at once; the open then fails and its socket is closed. */
     signal?: AbortSignal;
   }): Promise<HostConnection> {
@@ -174,7 +166,7 @@ export class HostConnection {
     const stop = () => void connection.close();
     signal?.addEventListener("abort", stop, { once: true });
     const answer = await new Promise<HostMessage | Error>((resolve) => {
-      const timer = setTimeout(() => resolve(new Error("no answer to hello in time")), options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
+      const timer = setTimeout(() => resolve(new Error("no answer to hello in time")), DEFAULT_READY_TIMEOUT_MS);
       connection.#listener = (message) => {
         clearTimeout(timer);
         resolve(message);
@@ -193,7 +185,7 @@ export class HostConnection {
     }
 
     if (!(answer instanceof Error) && answer.type === "ready") {
-      connection.#startHeartbeat(options.heartbeat ?? { intervalMs: HEARTBEAT_INTERVAL_MS, timeoutMs: HEARTBEAT_TIMEOUT_MS });
+      connection.#startHeartbeat();
       return connection;
     }
     await connection.close();
@@ -231,21 +223,20 @@ export class HostConnection {
    * without a close then fails like a closed one (D18). The timers never keep
    * the process alive.
    */
-  #startHeartbeat(heartbeat: Heartbeat): void {
-    this.#heartbeat = heartbeat;
+  #startHeartbeat(): void {
+    this.#heartbeat = true;
     const ping: Ping = { type: "ping" };
-    this.#pingTimer = setInterval(() => this.#send(ping), heartbeat.intervalMs).unref();
+    this.#pingTimer = setInterval(() => this.#send(ping), HEARTBEAT_INTERVAL_MS).unref();
     this.#restartSilence();
   }
 
   #restartSilence(): void {
-    if (this.#heartbeat === undefined || this.#socket.destroyed) return;
+    if (!this.#heartbeat || this.#socket.destroyed) return;
     clearTimeout(this.#silenceTimer);
-    const timeout = this.#heartbeat.timeoutMs;
     this.#silenceTimer = setTimeout(() => {
-      this.#failure ??= new Error(`the host runtime sent nothing for ${timeout} ms`);
+      this.#failure ??= new Error(`the host runtime sent nothing for ${HEARTBEAT_TIMEOUT_MS} ms`);
       this.#socket.destroy();
-    }, timeout).unref();
+    }, HEARTBEAT_TIMEOUT_MS).unref();
   }
 
   #send(message: Hello | Request | Ping): void {
