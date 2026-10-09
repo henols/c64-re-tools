@@ -10,7 +10,8 @@ import { after, test } from "node:test";
 
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { renameSymbol } from "../../src/knowledge/write.ts";
-import { compare, loadSymbols, readScenario, resolve, ScenarioError } from "../../skills/c64-testing/scripts/scenario.ts";
+import type { ViceSessionClient } from "../../src/host-client/vice-session.ts";
+import { compare, loadSymbols, readScenario, resolve, runScenario, ScenarioError } from "../../skills/c64-testing/scripts/scenario.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-testing-"));
 const home = process.cwd();
@@ -92,4 +93,98 @@ test("the checklist lists each checkpoint and what only a person can judge", () 
   assert.match(run.stdout, /- \[ \] At "moved", the rebuild looks and behaves as the original\./);
   assert.match(run.stdout, /- \[ \] FIRE starts the game\./);
   assert.match(run.stdout, /music and the sound effects/);
+});
+
+test("each step is checked before the scenario runs", () => {
+  const observe = valid.steps[2]!;
+  const accepted = {
+    ...valid,
+    videoStandard: "ntsc",
+    steps: [
+      { reset: "soft" },
+      { load: true },
+      { write: { at: "$c000", bytes: [0, 255] } },
+      { registers: { pc: "start", a: 0, sp: 255 } },
+      { joystick: { port: 2, direction: "up-left", fire: true } },
+      { type: "RUN\n" },
+      { frames: 10 },
+      { runUntil: { memory: { at: "game_state", equals: 2 } }, timeoutFrames: 600 },
+      { observe: "all", memory: ["player_x", { at: "$0400", size: 40, tolerance: 1 }], registers: ["pc", "flags"], screen: { maxMismatchRatio: 0.01, mask: [{ x: 0, y: 0, width: 320, height: 8 }] }, vicii: true, sprites: [0, 7] },
+    ],
+  };
+  assert.equal(readScenario(scenarioFile("accepted.json", accepted)).steps.length, 9);
+  for (const [name, step] of Object.entries({
+    notAnObject: "reset",
+    nullStep: null,
+    resetMode: { reset: "warm" },
+    loadFalse: { load: false },
+    writeNoAt: { write: { bytes: [1] } },
+    writeBadAddress: { write: { at: "$c00", bytes: [1] } },
+    writeByte: { write: { at: "$c000", bytes: [256] } },
+    writeNoBytes: { write: { at: "$c000", bytes: [] } },
+    registerName: { registers: { q: 1 } },
+    registerFlags: { registers: { flags: 1 } },
+    registerRange: { registers: { a: 256 } },
+    joystickPort: { joystick: { port: 3, direction: "left" } },
+    joystickDirection: { joystick: { port: 2, direction: "sideways" } },
+    joystickFire: { joystick: { port: 2, direction: "left", fire: "yes" } },
+    typeEmpty: { type: "" },
+    typeNoKey: { type: "é" },
+    framesZero: { frames: 0 },
+    runUntilText: { runUntil: "main", timeoutFrames: 10 },
+    runUntilBoth: { runUntil: { at: "main", memory: { at: "x", equals: 1 } }, timeoutFrames: 10 },
+    runUntilValue: { runUntil: { memory: { at: "x", equals: 256 } }, timeoutFrames: 10 },
+    runUntilTimeout: { runUntil: { at: "main" }, timeoutFrames: 0 },
+    unknownKey: { frames: 5, count: 5 },
+    observeRegister: { observe: "x", registers: ["q"] },
+    observeMemorySize: { observe: "x", memory: [{ at: "$0400", size: 0 }] },
+    observeTolerance: { observe: "x", memory: [{ at: "$0400", tolerance: -1 }] },
+    observeMask: { observe: "x", screen: { mask: [{ x: 0, y: 0, width: 0, height: 8 }] } },
+    observeRatio: { observe: "x", screen: { maxMismatchRatio: 2 } },
+    observeSprite: { observe: "x", sprites: [8] },
+    observeVicii: { observe: "x", vicii: "yes" },
+    observeTypo: { observe: "x", sprite: [0] },
+  })) {
+    assert.throws(() => readScenario(scenarioFile(`${name}.json`, { ...valid, steps: [step, observe] })), ScenarioError, name);
+  }
+  assert.throws(() => readScenario(scenarioFile("standard.json", { ...valid, videoStandard: "secam" })), ScenarioError);
+});
+
+test("each side starts from a hard reset, each checkpoint has its own baseline, and the raster line is not compared", async () => {
+  const calls: Array<[string, unknown]> = [];
+  const baselines = new Set<string>();
+  let raster = 0;
+  const fake = {
+    reset: async (params: unknown) => (calls.push(["reset", params]), { state: "stopped" }),
+    joystick: async (state: unknown) => (calls.push(["joystick", state]), state),
+    status: async () => ({ state: "stopped" }),
+    execution: async (params: unknown) => (calls.push(["execution", params]), {}),
+    registersGet: async () => ({ pc: 0x0810, a: 1, x: 2, y: 3, sp: 0xf6, flags: { n: false, v: false, b: true, d: false, i: true, z: false, c: true } }),
+    vicii: async () => ({ rasterLine: raster++, mode: "text", screenAddress: 0x0400, graphicsAddress: 0x1000, scrollX: 0, scrollY: 3, borderColor: 14, backgroundColors: [6, 0, 0, 0] }),
+    screenCapture: async (name: string) => {
+      calls.push(["screenCapture", name]);
+      baselines.add(name);
+      return {};
+    },
+    screenCompare: async (params: { baseline: string }) => {
+      assert.ok(baselines.has(params.baseline), `no baseline ${params.baseline}`);
+      return { match: true, mismatchingPixels: 0, mismatchRatio: 0 };
+    },
+    screenDiscard: async (name: string) => (baselines.delete(name), {}),
+  };
+  const scenario = readScenario(
+    scenarioFile("checkpoints.json", {
+      name: "two checkpoints",
+      original: { program: "original.prg", symbols: "none" },
+      rebuild: { program: "rebuild.prg", symbols: "none" },
+      steps: [{ frames: 10 }, { observe: "after move", screen: {}, vicii: true, registers: ["pc", "flags"] }, { observe: "after_move", screen: {} }],
+    }),
+  );
+  const result = await runScenario(fake as unknown as ViceSessionClient, scenario);
+  assert.deepEqual(result, { result: "PASS", scenario: "two checkpoints", checkpoints: ["after move", "after_move"], differences: [] });
+  const resets = calls.flatMap(([name, params], index) => (name === "reset" ? [[index, params]] : []));
+  assert.deepEqual(resets.map(([, params]) => params), [{ mode: "hard", run: false }, { mode: "hard", run: false }]);
+  assert.equal(resets[0]![0], 0, "the original side starts with the reset");
+  const captured = calls.filter(([name]) => name === "screenCapture").map(([, name]) => name);
+  assert.equal(new Set(captured).size, 2, "two checkpoints, two baselines");
 });

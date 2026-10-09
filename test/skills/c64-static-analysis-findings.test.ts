@@ -155,3 +155,32 @@ test("DXA labels are non-authoritative label symbols; its regions are authoritat
     references: [],
   });
 });
+
+test("a DXA label in a data region is a data symbol, so a user data symbol that DXA echoes gives no conflict", () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-dxa-data-"));
+  const own = openForWrite(project);
+  try {
+    renameSymbol(own, { origin: "user" }, { address: 0x0824, name: "table", kind: "variable" });
+    const findings = dxaFindings({
+      coverage: [{ start: 0x0801, end: 0x0827 }],
+      regions: [
+        { start: 0x0801, end: 0x0823, classification: "code" },
+        { start: 0x0824, end: 0x0827, classification: "data" },
+      ],
+      labels: [
+        { address: 0x080d, name: "l80d" },
+        { address: 0x0824, name: "table" },
+      ],
+      listingBytes: 100,
+      completeness: { regions: true, labels: false },
+    });
+    assert.deepEqual(findings.symbols, [
+      { address: 0x080d, name: "l80d", kind: "label" },
+      { address: 0x0824, name: "table", kind: "data" },
+    ]);
+    assert.deepEqual(importFindings(own, findings).conflicts, []);
+  } finally {
+    own.close();
+    rmSync(project, { recursive: true, force: true });
+  }
+});

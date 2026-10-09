@@ -59,3 +59,11 @@ test("the script compares PRG files and applies a shift", () => {
   const bad = spawnSync(process.execPath, [script, "release.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(bad.status, 2);
 });
+
+test("a missing release is not-found", () => {
+  const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
+  writeFileSync(join(project, "one.prg"), Buffer.from([0x01, 0x08, 0xea]));
+  const missing = spawnSync(process.execPath, [script, "one.prg", "missing.prg"], { cwd: project, encoding: "utf8" });
+  assert.equal(missing.status, 1, missing.stdout + missing.stderr);
+  assert.equal((JSON.parse(missing.stdout) as { error: { code: string } }).error.code, "not-found");
+});

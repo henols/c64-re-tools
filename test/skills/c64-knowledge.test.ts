@@ -77,3 +77,24 @@ test("a refused write in a project without knowledge creates no knowledge databa
     assert.equal(existsSync(join(root, ".c64-re-tools")), false, args.join(" "));
   }
 });
+
+test("refused writes of every kind create nothing, and the first accepted write creates the database", () => {
+  const root = project();
+  for (const args of [
+    ["classify", "$1000", "$2000", "music"],
+    ["rename", "$2100", "main", "--kind", "loop"],
+    ["comment", "$2100"],
+    ["rename", "$2100", "9lives"],
+    ["remove-symbol", "$2100"],
+    ["uncomment", "$2100", "line"],
+    ["rename", "$2100", "main", "--expect-revision", "3"],
+    ["revert", "7"],
+  ]) {
+    const result = knowledge(root, ...args);
+    assert.notEqual(result.status, 0, args.join(" "));
+    assert.ok(result.json.error !== undefined, args.join(" "));
+  }
+  assert.equal(existsSync(join(root, ".c64-re-tools")), false);
+  assert.equal(knowledge(root, "rename", "$2100", "main").json.revision, 1);
+  assert.equal(existsSync(join(root, ".c64-re-tools", "knowledge.db")), true);
+});
