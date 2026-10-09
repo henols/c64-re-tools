@@ -52,6 +52,7 @@ test("a Ghidra result must be complete and consistent", () => {
     completeness: { functions: true, regions: true, references: true },
   };
   assert.deepEqual(checkGhidraResult(result), result);
+  assert.deepEqual(checkGhidraResult({ ...result, toolVersion: "Ghidra 12.1.3" }), { ...result, toolVersion: "Ghidra 12.1.3" });
   for (const bad of [
     { ...result, functions: [{ entry: 0x0900, name: "FUN_0900", nameSource: "generated" }] },
     { ...result, regions: [result.regions[1], result.regions[0]] },
@@ -60,6 +61,10 @@ test("a Ghidra result must be complete and consistent", () => {
     { ...result, references: [{ from: 0x080d, to: 0x0818, type: "flow" }] },
     { ...result, decompilations: [{ entry: 0x080d, text: "x".repeat(16_001), truncated: true }] },
     { ...result, completeness: undefined },
+    { ...result, toolVersion: "" },
+    { ...result, toolVersion: "Ghidra 12.1.3\nmore" },
+    { ...result, toolVersion: "x".repeat(201) },
+    { ...result, toolVersion: 12 },
   ]) {
     assert.throws(() => checkGhidraResult(bad), Error, JSON.stringify(bad).slice(0, 80));
   }
@@ -78,11 +83,15 @@ test("a DXA result must cover its range exactly and carry its listing", () => {
     completeness: { regions: true, labels: false },
   };
   assert.deepEqual(checkDxaResult(result, listing), result);
+  const versioned = { ...result, toolVersion: "dxa v0.1.5 -- symbolic 65xx disassembler" };
+  assert.deepEqual(checkDxaResult(versioned, listing), versioned);
   for (const bad of [
     { ...result, regions: [result.regions[1]] },
     { ...result, regions: [result.regions[0]] },
     { ...result, labels: [{ address: 0x9000, name: "far" }] },
     { ...result, listingBytes: 8 },
+    { ...result, toolVersion: "dxa\tv0.1.5" },
+    { ...result, toolVersion: "x".repeat(201) },
   ]) {
     assert.throws(() => checkDxaResult(bad, listing), Error, JSON.stringify(bad).slice(0, 80));
   }

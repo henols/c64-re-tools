@@ -8,7 +8,7 @@ import { stripVTControlCharacters } from "node:util";
 
 import { WireFailure, type ToolStatus } from "../protocol.ts";
 import { ACME, DXA, findTool } from "./discover.ts";
-import { findGhidra } from "./ghidra/index.ts";
+import { findGhidra, ghidraVersion } from "./ghidra/index.ts";
 import { runTool, type ToolContext } from "./run.ts";
 import { Workspace } from "./staging.ts";
 
@@ -76,7 +76,7 @@ export async function probeGhidra(context: ToolContext): Promise<ToolStatus> {
         "Ghidra",
         ghidra.analyzeHeadless,
         [],
-        (output) => (/Headless Analyzer Usage/.test(output) ? `Ghidra ${ghidra.version}` : undefined),
+        (output) => (/Headless Analyzer Usage/.test(output) ? ghidraVersion(ghidra) : undefined),
         { ...context, env: { ...env, XDG_CONFIG_HOME: settings, XDG_CACHE_HOME: settings } },
       );
       return { ...status, path: ghidra.root };

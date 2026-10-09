@@ -52,6 +52,11 @@ function installationAt(root: string, source: string): GhidraInstallation {
   return { root, analyzeHeadless, settingsName: `ghidra_${version}_${release}`, version };
 }
 
+/** The version of a Ghidra installation as a result and the tool status name it, for example "Ghidra 12.1.3". */
+export function ghidraVersion(ghidra: GhidraInstallation): string {
+  return `Ghidra ${ghidra.version}`;
+}
+
 /** Finds Ghidra: C64RT_GHIDRA names the installation directory, else analyzeHeadless on PATH. */
 export function findGhidra(env: NodeJS.ProcessEnv = process.env): GhidraInstallation {
   const configured = env.C64RT_GHIDRA;
