@@ -8,7 +8,7 @@
 import { writeFileSync } from "node:fs";
 
 import { SYMBOL_NAME } from "../c64.ts";
-import { WireFailure } from "../protocol.ts";
+import { describeError, WireFailure } from "../protocol.ts";
 import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaParams, type DxaResult } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
@@ -67,8 +67,11 @@ export function parseListing(listing: string, start: number, end: number): Pick<
     if (statement === null) continue;
     statements.push({ address: Number.parseInt(statement[1]!, 16), dumped: statement[2]!.trim().split(/\s+/).length, data: dataSize(statement[3]!) });
   }
-  if (statements.length === 0) throw new Error("the listing has no statements");
-  if (statements[0]!.address !== start) throw new Error(`the listing starts at $${hex(statements[0]!.address)}, not at $${hex(start)}`);
+  const first = statements[0];
+  const last = statements.at(-1);
+  if (first === undefined || last === undefined) throw new Error("the listing has no statements");
+  if (first.address !== start) throw new Error(`the listing starts at $${hex(first.address)}, not at $${hex(start)}`);
+  if (last.address > end) throw new Error("the listing runs past the end of the program");
   const regions: DxaResult["regions"] = [];
   statements.forEach((statement, index) => {
     const next = statements[index + 1]?.address ?? end + 1;
@@ -82,7 +85,6 @@ export function parseListing(listing: string, start: number, end: number): Pick<
     if (last?.classification === classification) last.end = next - 1;
     else regions.push({ start: statement.address, end: next - 1, classification });
   });
-  if (statements.at(-1)!.address > end) throw new Error("the listing runs past the end of the program");
   return { regions, labels };
 }
 
@@ -133,10 +135,10 @@ export async function analyze(
       // DXA classifies every byte, so its regions are complete; it names only referenced addresses.
       result = checkDxaResult({ coverage: [{ start, end }], ...parsed, listingBytes: listing.length, completeness: { regions: true, labels: false } }, [listing]);
     } catch (error) {
-      context.log?.(`dxa listing rejected: ${(error as Error).message}`);
+      context.log?.(`dxa listing rejected: ${describeError(error)}`);
       // The listing is on stdout: only dxa's messages on stderr are quoted.
       const tail = outputTail("dxa", { stdout: "", stderr: run.stderr }, workspace.root);
-      throw new WireFailure("operation-failed", `dxa returned an incomplete or inconsistent listing. Nothing was imported. The check found: ${(error as Error).message}.${tail}`);
+      throw new WireFailure("operation-failed", `dxa returned an incomplete or inconsistent listing. Nothing was imported. The check found: ${describeError(error)}.${tail}`);
     }
     return { result, attachments: [listing] };
   } finally {

@@ -96,6 +96,7 @@ test("a truncated, reordered or misplaced listing is refused", () => {
   const lines = LISTING.trimEnd().split("\n");
   assert.throws(() => parseListing(lines.slice(0, -1).join("\n"), 0x0801, 0x0827), /holds 3 bytes, but the next line is 4 bytes later/);
   assert.throws(() => parseListing(LISTING, 0x0800, 0x0827), /starts at \$0801/);
+  assert.throws(() => parseListing(LISTING.replace("0824          l824:\n", ""), 0x0801, 0x0820), /runs past the end of the program/);
   const swapped = [...lines];
   [swapped[11], swapped[12]] = [swapped[12]!, swapped[11]!];
   assert.throws(() => parseListing(swapped.join("\n"), 0x0801, 0x0827), Error);
