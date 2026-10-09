@@ -7,8 +7,8 @@ import { test } from "node:test";
 import { WireFailure } from "../protocol.ts";
 import { batchInvocation, isAlive, killTree, ProcessSupervisor, windowsQuote, type SupervisedProcess } from "./processes.ts";
 
-// Windows has no process groups: an ended leader no longer leads to its orphaned descendants.
-const orphansFindable = process.platform === "win32" ? "Windows cannot find the descendants of a process that has ended" : false;
+// Windows has no process groups: taskkill cannot find the descendants of a leader that has ended.
+const orphansNotFindable = process.platform === "win32" ? "Windows cannot find the descendants of a process that has ended" : false;
 
 // A stub that forks a long-lived grandchild, prints its pid, then keeps running.
 const FORKING_STUB = `
@@ -44,7 +44,7 @@ test("stop terminates the child and every descendant in its group", { timeout: 3
   assert.equal(supervisor.size, 0);
 });
 
-test("stop reaches descendants after the leader has already exited", { skip: orphansFindable, timeout: 30_000 }, async () => {
+test("stop reaches descendants after the leader has already exited", { skip: orphansNotFindable, timeout: 30_000 }, async () => {
   const supervisor = new ProcessSupervisor();
   const stub = `
     const { spawn } = require("node:child_process");
