@@ -1,7 +1,6 @@
 {
   "name": "@henols/c64-re-tools",
-  "version": "0.0.0-dev",
-  "private": true,
+  "version": "2.0.0",
   "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing.",
   "license": "MIT",
   "author": "Henrik Olsson",
@@ -15,9 +14,9 @@
     "#src/*": "./src/*"
   },
   "bin": {
-    "c64-re-tools": "./src/cli/main.ts",
-    "c64-re-tools-mcp": "./src/mcp/main.ts",
-    "c64-re-tools-host": "./src/host/main.ts"
+    "c64-re-tools": "src/cli/main.ts",
+    "c64-re-tools-mcp": "src/mcp/main.ts",
+    "c64-re-tools-host": "src/host/main.ts"
   },
   "files": [
     "src/",

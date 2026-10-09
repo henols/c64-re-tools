@@ -1,8 +1,8 @@
 name: Release
 
-# Publishes the npm package for a version tag such as v1.0.0, with npm
-# provenance. The package stays "private": true until the first release is
-# decided; npm refuses to publish it before that changes.
+# Publishes the npm package for a version tag such as v2.0.0, with npm
+# provenance. npm trusts this workflow as the package's publisher (trusted
+# publishing through OIDC), so no npm token is stored in the repository.
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # npm provenance
+  id-token: write # npm trusted publishing and provenance
 
 jobs:
   publish:
@@ -22,15 +22,29 @@ jobs:
         with:
           node-version: "24"
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Check that the tag names the package version
-        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - name: Check that the tag names the package and plugin versions
+        run: |
+          node -e '
+            const read = (file) => JSON.parse(require("node:fs").readFileSync(file, "utf8"));
+            const marketplace = read(".claude-plugin/marketplace.json");
+            const versions = [read("package.json").version, read(".claude-plugin/plugin.json").version, marketplace.version, ...marketplace.plugins.map((plugin) => plugin.version)];
+            if (versions.some((version) => "v" + version !== process.env.GITHUB_REF_NAME)) throw new Error("versions " + versions.join(", ") + " do not match " + process.env.GITHUB_REF_NAME);
+          '
 
       - run: pnpm typecheck
       - run: pnpm test
+
+      # npm publish drops a manifest field it finds invalid (bin paths that
+      # start with ./) and only warns; npm pack keeps them, so the smoke test
+      # below cannot see it. The dry run fails for a version that is already
+      # published, so only its warning counts.
+      - name: Check that npm publishes package.json unchanged
+        run: |
+          npm publish --dry-run --access public > "$RUNNER_TEMP/publish.log" 2>&1 || true
+          if grep -q auto-corrected "$RUNNER_TEMP/publish.log"; then cat "$RUNNER_TEMP/publish.log"; exit 1; fi
 
       # The packed package through npx, as users run the published one.
       - name: Run the packed programs through npx and install the skills
@@ -49,7 +63,6 @@ jobs:
           node .claude/skills/c64-memory-map/scripts/memmap.ts at '$d020' | grep -q EXTCOL
           npx -y "$package" c64-re-tools status
 
+      # Trusted publishing needs npm 11.5.1 or later; Node 24 ships it.
       - name: Publish
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

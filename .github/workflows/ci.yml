@@ -48,6 +48,15 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
+      # npm publish drops a manifest field it finds invalid (bin paths that
+      # start with ./) and only warns; npm pack keeps them, so the smoke test
+      # below cannot see it. The dry run fails for a version that is already
+      # published, so only its warning counts.
+      - name: Check that npm publishes package.json unchanged
+        run: |
+          npm publish --dry-run --access public > "$RUNNER_TEMP/publish.log" 2>&1 || true
+          if grep -q auto-corrected "$RUNNER_TEMP/publish.log"; then cat "$RUNNER_TEMP/publish.log"; exit 1; fi
+
       # The install route: the packed package through npx, as users run
       # the published one. No build, no links.
       - name: Run the packed programs through npx and install the skills
