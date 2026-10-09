@@ -11,7 +11,7 @@ import {
   WireFailure,
 } from "../protocol.ts";
 import { FrameDecoder } from "../protocol.testkit.ts";
-import { ListenError, parsePort, startHostServer, type HostServer, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
+import { ListenError, parsePort, startHostServer, stopSignal, type HostServer, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
 
 const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: "vice-session" } as const;
 
@@ -467,4 +467,22 @@ test("a port in use names the address and the port that failed", async () => {
     return true;
   });
   assert.ok(tried > 0, `the error names port ${tried}`);
+});
+
+test("a second stop signal while the host stops is logged and does not end the process", { skip: process.platform === "win32" ? "Windows ends a process on any signal" : false }, async () => {
+  const before = { SIGINT: process.listeners("SIGINT"), SIGTERM: process.listeners("SIGTERM") };
+  const lines: string[] = [];
+  try {
+    const stopped = stopSignal((line) => lines.push(line));
+    process.kill(process.pid, "SIGINT");
+    assert.equal(await stopped, "SIGINT");
+    // Without a handler, this second signal ends the test process at once.
+    process.kill(process.pid, "SIGINT");
+    await waitFor(() => lines.length === 2);
+    assert.deepEqual(lines, ["received SIGINT, stopping", "received SIGINT again; the host is already stopping"]);
+  } finally {
+    for (const signal of ["SIGINT", "SIGTERM"] as const) {
+      for (const listener of process.listeners(signal)) if (!before[signal].includes(listener)) process.off(signal, listener);
+    }
+  }
 });

@@ -327,6 +327,28 @@ export function parsePort(text: string): number | undefined {
   return port <= 0xffff ? port : undefined;
 }
 
+/**
+ * Resolves with the first SIGINT or SIGTERM. The handlers stay: a later
+ * signal is logged and ignored, so a second Ctrl+C cannot cut the shutdown
+ * short before every emulator and tool is stopped.
+ */
+export function stopSignal(log: (line: string) => void): Promise<NodeJS.Signals> {
+  return new Promise((resolve) => {
+    let stopping = false;
+    const stop = (signal: NodeJS.Signals) => {
+      if (stopping) {
+        log(`received ${signal} again; the host is already stopping`);
+        return;
+      }
+      stopping = true;
+      log(`received ${signal}, stopping`);
+      resolve(signal);
+    };
+    process.on("SIGINT", stop);
+    process.on("SIGTERM", stop);
+  });
+}
+
 /** A listener that could not start, with the address and the port it tried and the system error code. */
 export class ListenError extends Error {
   readonly code: string | undefined;

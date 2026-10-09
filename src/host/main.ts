@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 
 import { DEFAULT_HOST_PORT } from "../protocol.ts";
 import { ProcessSupervisor } from "../native/processes.ts";
-import { isLoopback, ListenError, parsePort, startHostServer } from "./server.ts";
+import { isLoopback, ListenError, parsePort, startHostServer, stopSignal } from "./server.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
@@ -107,14 +107,7 @@ async function main(): Promise<number> {
   }
   process.stdout.write(`c64-re-tools-host listening on ${[server.host, ...extraHosts].map((address) => `${address}:${server.port}`).join(", ")}\n`);
 
-  await new Promise<void>((resolve) => {
-    const stop = (signal: NodeJS.Signals) => {
-      log(`received ${signal}, stopping`);
-      resolve();
-    };
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-  });
+  await stopSignal(log);
   await server.close();
   await supervisor.stopAll();
   return 0;
