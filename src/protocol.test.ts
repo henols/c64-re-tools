@@ -125,6 +125,31 @@ test("operation parameters are validated with invalid-input", () => {
   assert.throws(() => validateViceParams("reboot" as never, {}), WireFailure);
 });
 
+test("an operation refuses a field it does not take, also inside a nested object", () => {
+  const unknown = (field: string) => (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message.endsWith(`: ${field}`);
+  const range = { address: 0, size: 1, space: "c64", view: "cpu" };
+  assert.throws(() => validateViceParams("status", { verbose: true }), unknown("verbose"));
+  assert.throws(() => validateViceParams("memoryRead", { ...range, format: "hex" }), unknown("format"));
+  assert.throws(() => validateViceParams("snapshot", { action: "list", name: "a" }), unknown("name"));
+  assert.throws(() => validateViceParams("breakpoint", { action: "list", space: "c64" }), unknown("space"));
+  assert.throws(() => validateViceParams("breakpoint", { action: "add", address: 0, space: "c64", size: 2 }), unknown("size"));
+  assert.throws(() => validateViceParams("observe", { memory: [{ ...range, extra: 1 }] }), unknown("extra"));
+  assert.throws(() => validateViceParams("memoryCompare", { left: { address: 0, space: "c64", view: "cpu", bank: 1 }, right: { address: 0, space: "c64", view: "cpu" }, size: 1 }), unknown("bank"));
+  assert.throws(
+    () => validateViceParams("screenCompare", { baseline: "b", maxMismatchRatio: 0, mask: [{ x: 0, y: 0, width: 1, height: 1, z: 0 }], includeDiff: false }),
+    unknown("z"),
+  );
+  assert.throws(
+    () => validateViceParams("runUntil", { target: { kind: "raster", line: 0, frame: 1 }, timeoutFrames: 1 }),
+    unknown("frame"),
+  );
+  assert.throws(
+    () => validateViceParams("runUntil", { target: { kind: "address", address: 0, space: "c64", condition: { kind: "register", register: "a", operator: "eq", value: 0, mask: 1 } }, timeoutFrames: 1 }),
+    unknown("mask"),
+  );
+  assert.throws(() => validateToolParams("host.status", { verbose: true }, []), unknown("verbose"));
+});
+
 test("operation results are validated on the client", () => {
   const registers = { pc: 0xe5cf, a: 0, x: 0, y: 10, sp: 0xf3, flags: { n: false, v: false, b: true, d: false, i: true, z: false, c: false } };
   assert.deepEqual(validateViceResult("registersGet", registers), registers);

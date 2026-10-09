@@ -784,6 +784,13 @@ function invalid(message: string): never {
   throw new WireFailure("invalid-input", message);
 }
 
+/** Refuses a field that is not in `allowed`, the same way for every operation. */
+function onlyFields(value: Fields, allowed: readonly string[], where?: string): void {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) invalid(where === undefined ? `unknown field: ${key}` : `unknown field in ${where}: ${key}`);
+  }
+}
+
 /** Validates request parameters on the host. Throws WireFailure(invalid-input). */
 export function validateViceParams<O extends ViceOperation>(op: O, params: unknown): ViceOperations[O]["params"] {
   if (!isObject(params)) invalid("parameters must be an object");
@@ -792,14 +799,18 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
     case "vicii":
     case "sid":
     case "screenBaselines":
+      onlyFields(params, []);
       return {} as ViceOperations[O]["params"];
     case "screenCapture": {
+      onlyFields(params, ["baseline"]);
       if (params.baseline === undefined) return {} as ViceOperations[O]["params"];
       return { baseline: validName(params.baseline, "baseline") } as ViceOperations[O]["params"];
     }
     case "screenDiscard":
+      onlyFields(params, ["baseline"]);
       return { baseline: validName(params.baseline, "baseline") } as ViceOperations[O]["params"];
     case "snapshot": {
+      onlyFields(params, params.action === "list" ? ["action"] : ["action", "name"]);
       if (params.action === "list") return { action: "list" } as ViceOperations[O]["params"];
       if (params.action !== "save" && params.action !== "restore" && params.action !== "discard") {
         invalid("action must be save, restore, list or discard");
@@ -807,11 +818,13 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return { action: params.action, name: validName(params.name, "name") } as ViceOperations[O]["params"];
     }
     case "screenCompare": {
+      onlyFields(params, ["baseline", "maxMismatchRatio", "mask", "includeDiff"]);
       const ratio = params.maxMismatchRatio;
       if (typeof ratio !== "number" || !(ratio >= 0 && ratio <= 1)) invalid("maxMismatchRatio must be a number from 0 to 1");
       if (!Array.isArray(params.mask) || params.mask.length > 64) invalid("mask must be a list of at most 64 rectangles");
       const mask = params.mask.map((rectangle): Rectangle => {
         if (!isObject(rectangle)) invalid("each mask entry must be a rectangle");
+        onlyFields(rectangle, ["x", "y", "width", "height"], "a mask rectangle");
         const ok = isInteger(rectangle.x, 0, 4095) && isInteger(rectangle.y, 0, 4095) && isInteger(rectangle.width, 1, 4096) && isInteger(rectangle.height, 1, 4096);
         if (!ok) invalid("a mask rectangle needs integer x, y, width and height, with width and height at least 1");
         return { x: rectangle.x as number, y: rectangle.y as number, width: rectangle.width as number, height: rectangle.height as number };
@@ -820,20 +833,24 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return { baseline: validName(params.baseline, "baseline"), maxMismatchRatio: ratio, mask, includeDiff: params.includeDiff } as ViceOperations[O]["params"];
     }
     case "cpuHistory": {
+      onlyFields(params, ["limit", "space"]);
       if (!isInteger(params.limit, 1, MAX_HISTORY)) invalid(`limit must be an integer from 1 to ${MAX_HISTORY}`);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       return { limit: params.limit, space: params.space } as ViceOperations[O]["params"];
     }
     case "backtrace": {
+      onlyFields(params, ["depth", "space"]);
       if (!isInteger(params.depth, 1, MAX_BACKTRACE)) invalid(`depth must be an integer from 1 to ${MAX_BACKTRACE}`);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       return { depth: params.depth, space: params.space } as ViceOperations[O]["params"];
     }
     case "timing": {
+      onlyFields(params, ["action"]);
       if (!isOneOf(TIMING_ACTIONS, params.action)) invalid("action must be start or read");
       return { action: params.action } as ViceOperations[O]["params"];
     }
     case "observe": {
+      onlyFields(params, ["registers", "memory", "vicii", "sprites", "cia", "sid", "screen", "timing"]);
       const result: ObserveParams = {};
       if (params.registers !== undefined) {
         if (!isOneOf(SPACES, params.registers)) invalid("registers must be c64 or drive8");
@@ -860,10 +877,12 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return result as ViceOperations[O]["params"];
     }
     case "profile": {
+      onlyFields(params, ["limit"]);
       if (!isInteger(params.limit, 1, MAX_PROFILE)) invalid(`limit must be an integer from 1 to ${MAX_PROFILE}`);
       return { limit: params.limit } as ViceOperations[O]["params"];
     }
     case "memmap": {
+      onlyFields(params, params.action === "clear" ? ["action"] : ["action", "start", "end", "maxRanges"]);
       if (params.action === "clear") return { action: "clear" } as ViceOperations[O]["params"];
       if (params.action !== "read") invalid("action must be read or clear");
       if (!isInteger(params.start, 0, 0xffff) || !isInteger(params.end, 0, 0xffff)) invalid("start and end must be integers from 0 to 65535");
@@ -872,16 +891,19 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return { action: "read", start: params.start, end: params.end, maxRanges: params.maxRanges } as ViceOperations[O]["params"];
     }
     case "sprites": {
+      onlyFields(params, ["indexes"]);
       const indexes = params.indexes;
       if (!Array.isArray(indexes) || !indexes.every((index) => isInteger(index, 0, 7))) invalid("sprites holds sprite numbers 0 to 7");
       if (new Set(indexes).size !== indexes.length) invalid("sprites holds each sprite number once");
       return { indexes: indexes as number[] } as ViceOperations[O]["params"];
     }
     case "cia": {
+      onlyFields(params, ["which"]);
       if (!isOneOf(CIA_SELECTIONS, params.which)) invalid("cia must be 1, 2 or both");
       return { which: params.which } as ViceOperations[O]["params"];
     }
     case "memoryRead": {
+      onlyFields(params, ["address", "size", "space", "view"]);
       if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
       if (!isInteger(params.size, 1, MAX_MEMORY_READ)) invalid(`size must be an integer from 1 to ${MAX_MEMORY_READ}`);
       if (params.address + params.size > 0x10000) invalid("the range runs past $ffff");
@@ -891,10 +913,12 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return result as ViceOperations[O]["params"];
     }
     case "registersGet": {
+      onlyFields(params, ["space"]);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       return { space: params.space } as ViceOperations[O]["params"];
     }
     case "memoryWrite": {
+      onlyFields(params, ["address", "data", "space", "view"]);
       if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
       if (!isHexData(params.data) || params.data.length === 0) invalid("data must be lowercase hex bytes");
       const size = params.data.length / 2;
@@ -906,6 +930,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return result as ViceOperations[O]["params"];
     }
     case "memorySearch": {
+      onlyFields(params, ["start", "end", "pattern", "space", "view", "maxResults"]);
       if (!isInteger(params.start, 0, 0xffff) || !isInteger(params.end, 0, 0xffff)) invalid("start and end must be integers from 0 to 65535");
       if (params.end < params.start) invalid("end must not be before start");
       const pattern = params.pattern;
@@ -927,9 +952,11 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       } as ViceOperations[O]["params"];
     }
     case "memoryCompare": {
+      onlyFields(params, ["left", "right", "size"]);
       if (!isInteger(params.size, 1, MAX_COMPARE_SIZE)) invalid(`size must be an integer from 1 to ${MAX_COMPARE_SIZE}`);
       const location = (value: unknown, name: string): MemoryLocation => {
         if (!isObject(value)) invalid(`${name} must be an object`);
+        onlyFields(value, ["address", "space", "view"], name);
         if (!isInteger(value.address, 0, 0xffff)) invalid(`${name} address must be an integer from 0 to 65535`);
         if ((value.address as number) + (params.size as number) > 0x10000) invalid(`the ${name} range runs past $ffff`);
         if (!isOneOf(SPACES, value.space)) invalid(`${name} space must be c64 or drive8`);
@@ -939,6 +966,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return { left: location(params.left, "left"), right: location(params.right, "right"), size: params.size } as ViceOperations[O]["params"];
     }
     case "disassemble": {
+      onlyFields(params, ["address", "count", "space", "view"]);
       if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
       if (!isInteger(params.count, 1, MAX_DISASSEMBLE)) invalid(`count must be an integer from 1 to ${MAX_DISASSEMBLE}`);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
@@ -946,6 +974,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return { address: params.address, count: params.count, space: params.space, view: params.view } as ViceOperations[O]["params"];
     }
     case "registersSet": {
+      onlyFields(params, ["space", "values"]);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       const values = params.values;
       if (!isObject(values)) invalid("values must be an object");
@@ -976,6 +1005,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return { space: params.space, values: result } as ViceOperations[O]["params"];
     }
     case "execution": {
+      onlyFields(params, ["action", "space", "count"]);
       if (!isOneOf(EXECUTION_ACTIONS, params.action)) invalid(`action must be one of ${EXECUTION_ACTIONS.join(", ")}`);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       const counted = params.action === "step" || params.action === "next" || params.action === "advance-frames";
@@ -990,24 +1020,29 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return result as ViceOperations[O]["params"];
     }
     case "runUntil": {
+      onlyFields(params, ["target", "timeoutFrames"]);
       if (!isInteger(params.timeoutFrames, 1, MAX_TIMEOUT_FRAMES)) invalid(`timeoutFrames must be an integer from 1 to ${MAX_TIMEOUT_FRAMES}`);
       return { target: validateRunTarget(params.target), timeoutFrames: params.timeoutFrames } as ViceOperations[O]["params"];
     }
     case "programLoad": {
+      onlyFields(params, ["address"]);
       if (params.address !== undefined && !isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
       return (params.address === undefined ? {} : { address: params.address }) as ViceOperations[O]["params"];
     }
     case "autostart": {
+      onlyFields(params, ["type", "index", "run"]);
       if (!isOneOf(AUTOSTART_TYPES, params.type)) invalid(`the file must be one of: ${AUTOSTART_TYPES.map((type) => `.${type}`).join(", ")}`);
       if (!isInteger(params.index, 0, 0xffff)) invalid("index must be an integer from 0 to 65535");
       if (typeof params.run !== "boolean") invalid("run must be true or false");
       return { type: params.type, index: params.index, run: params.run } as ViceOperations[O]["params"];
     }
     case "diskAttach": {
+      onlyFields(params, ["type"]);
       if (!isOneOf(DISK_TYPES, params.type)) invalid(`the disk image must be one of: ${DISK_TYPES.map((type) => `.${type}`).join(", ")}`);
       return { type: params.type } as ViceOperations[O]["params"];
     }
     case "keyboard": {
+      onlyFields(params, ["data"]);
       if (!isHexData(params.data) || params.data.length === 0) invalid("data must be PETSCII bytes as lowercase hex");
       if (params.data.length / 2 > MAX_KEYBOARD_BYTES) invalid(`at most ${MAX_KEYBOARD_BYTES} bytes can be queued at once`);
       // VICE feeds a C string, so a zero byte would end the text early.
@@ -1015,6 +1050,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return { data: params.data } as ViceOperations[O]["params"];
     }
     case "joystick": {
+      onlyFields(params, ["port", "direction", "fire"]);
       if (params.port !== 1 && params.port !== 2) invalid("port must be 1 or 2");
       if (!isOneOf(JOYSTICK_DIRECTIONS, params.direction)) invalid(`direction must be one of ${JOYSTICK_DIRECTIONS.join(", ")}`);
       if (typeof params.fire !== "boolean") invalid("fire must be true or false");
@@ -1023,11 +1059,16 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
     case "breakpoint":
     case "watchpoint": {
       if (!isOneOf(CHECKPOINT_ACTIONS, params.action)) invalid(`action must be one of ${CHECKPOINT_ACTIONS.join(", ")}`);
-      if (params.action === "list") return { action: "list" } as ViceOperations[O]["params"];
+      if (params.action === "list") {
+        onlyFields(params, ["action"]);
+        return { action: "list" } as ViceOperations[O]["params"];
+      }
       if (params.action !== "add") {
+        onlyFields(params, ["action", "id"]);
         if (!isInteger(params.id, 1, 0xffff_ffff)) invalid("id must be a positive integer");
         return { action: params.action, id: params.id } as ViceOperations[O]["params"];
       }
+      onlyFields(params, op === "watchpoint" ? ["action", "address", "space", "size", "access", "condition"] : ["action", "address", "space", "condition"]);
       if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       const added: Record<string, unknown> = { action: "add", address: params.address, space: params.space };
@@ -1042,15 +1083,18 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return added as ViceOperations[O]["params"];
     }
     case "reset": {
+      onlyFields(params, ["mode", "run"]);
       if (!isOneOf(RESET_MODES, params.mode)) invalid("mode must be soft or hard");
       if (typeof params.run !== "boolean") invalid("run must be true or false");
       return { mode: params.mode, run: params.run } as ViceOperations[O]["params"];
     }
     case "warp": {
+      onlyFields(params, ["enabled"]);
       if (typeof params.enabled !== "boolean") invalid("enabled must be true or false");
       return { enabled: params.enabled } as ViceOperations[O]["params"];
     }
     case "window": {
+      onlyFields(params, ["action"]);
       if (!isOneOf(WINDOW_ACTIONS, params.action)) invalid("action must be open or close");
       return { action: params.action } as ViceOperations[O]["params"];
     }
@@ -1070,11 +1114,13 @@ export function validateCondition(value: unknown): Condition {
   };
   switch (value.kind) {
     case "register": {
+      onlyFields(value, ["kind", "register", "operator", "value"], "the condition");
       if (!isOneOf(CONDITION_REGISTERS, value.register)) invalid("condition register must be a, x, y or sp");
       if (!isOneOf(COMPARISONS, value.operator)) invalid(`condition operator must be one of ${COMPARISONS.join(", ")}`);
       return { kind: "register", register: value.register, operator: value.operator, value: byte(value.value, "value") };
     }
     case "memory": {
+      onlyFields(value, ["kind", "address", "operator", "value", "space", "view"], "the condition");
       if (!isInteger(value.address, 0, 0xffff)) invalid("condition address must be an integer from 0 to 65535");
       if (!isOneOf(COMPARISONS, value.operator)) invalid(`condition operator must be one of ${COMPARISONS.join(", ")}`);
       if (!isOneOf(SPACES, value.space)) invalid("condition space must be c64 or drive8");
@@ -1089,6 +1135,7 @@ export function validateCondition(value: unknown): Condition {
       };
     }
     case "raster": {
+      onlyFields(value, ["kind", "line", "cycle"], "the condition");
       if (!isInteger(value.line, 0, RASTER.pal.lines - 1)) invalid("condition line must be a raster line number");
       if (value.cycle !== undefined && !isInteger(value.cycle, 0, RASTER.ntsc.cycles - 1)) {
         invalid("condition cycle must be a cycle number in the raster line");
@@ -1103,6 +1150,7 @@ function validateRunTarget(value: unknown): RunTarget {
   if (!isObject(value)) invalid("target must be an object");
   switch (value.kind) {
     case "address": {
+      onlyFields(value, ["kind", "address", "space", "condition"], "the target");
       if (!isInteger(value.address, 0, 0xffff)) invalid("target address must be an integer from 0 to 65535");
       if (!isOneOf(SPACES, value.space)) invalid("target space must be c64 or drive8");
       const target: RunTarget = { kind: "address", address: value.address, space: value.space };
@@ -1110,10 +1158,12 @@ function validateRunTarget(value: unknown): RunTarget {
       return target;
     }
     case "memory": {
+      onlyFields(value, ["kind", "address", "operator", "value", "space", "view"], "the target");
       const { kind: _kind, ...condition } = validateCondition({ ...value, kind: "memory" }) as Extract<Condition, { kind: "memory" }>;
       return { kind: "memory", ...condition };
     }
     case "raster": {
+      onlyFields(value, ["kind", "line", "cycle"], "the target");
       const raster = validateCondition(value) as Extract<Condition, { kind: "raster" }>;
       return raster;
     }
@@ -1178,7 +1228,7 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
   if (!isObject(params)) invalid("parameters must be an object");
   switch (op) {
     case "c1541.inspect": {
-      for (const key of Object.keys(params)) if (!["action", "imageType", "name"].includes(key)) invalid(`unknown field: ${key}`);
+      onlyFields(params, ["action", "imageType", "name"]);
       if (!isOneOf(DISK_ACTIONS, params.action)) invalid(`action must be one of ${DISK_ACTIONS.join(", ")}`);
       if (!isOneOf(DISK_IMAGE_TYPES, params.imageType)) invalid(`imageType must be one of ${DISK_IMAGE_TYPES.join(", ")}`);
       if (attachments.length !== 1 || attachments[0]!.length === 0) invalid("the disk image must be the one attachment");
@@ -1200,12 +1250,12 @@ export function validateToolParams<O extends ToolOperation>(op: O, params: unkno
       return result as ToolOperations[O]["params"];
     }
     case "petcat.decode": {
-      for (const key of Object.keys(params)) invalid(`unknown field: ${key}`);
+      onlyFields(params, []);
       if (attachments.length !== 1) invalid("the program must be the one attachment");
       return {} as ToolOperations[O]["params"];
     }
     case "host.status":
-      for (const key of Object.keys(params)) invalid(`unknown field: ${key}`);
+      onlyFields(params, []);
       if (attachments.length !== 0) invalid("host.status takes no attachment");
       return {} as ToolOperations[O]["params"];
   }
