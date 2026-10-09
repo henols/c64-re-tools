@@ -24,12 +24,8 @@ export interface AcmeParams {
   setPc?: number;
 }
 
-export interface AssembledSymbol {
-  name: string;
-  kind: "address" | "constant";
-  value: number;
-  used: boolean;
-}
+/** A symbol from the assembly: an address inside the program, or a constant value. */
+export type AssembledSymbol = { name: string; kind: "address"; address: number; used: boolean } | { name: string; kind: "constant"; value: number; used: boolean };
 
 export interface AcmeResult {
   assembled: boolean;
