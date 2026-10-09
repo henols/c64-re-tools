@@ -3,6 +3,7 @@
 // usage text as an invalid-input error with exit status 2.
 
 import { WireFailure } from "./protocol/messages.ts";
+import { elapsedMs, startTrace, trace, type TraceFields } from "./trace.ts";
 
 /** A wrong command line. The message names the problem; an empty message asks for the usage text alone. */
 export class UsageError extends Error {}
@@ -28,6 +29,10 @@ function printLine(value: unknown): void {
  * The body may set process.exitCode itself for an extra exit status; a value it returns is printed as usual.
  */
 export async function runScript(body: () => unknown, options: { usage: string; refusals?: readonly RefusalClass[] }): Promise<void> {
+  // The trace of the script, when C64RT_TRACE is set; its start event carries the script and its arguments.
+  startTrace("script", { warn: (line) => process.stderr.write(`${line}\n`) });
+  const started = performance.now();
+  const end = (fields: TraceFields) => trace().event("script.end", { ms: elapsedMs(started), status: process.exitCode ?? 0, ...fields });
   let result: unknown;
   try {
     result = await body();
@@ -36,15 +41,19 @@ export async function runScript(body: () => unknown, options: { usage: string; r
       const { code, message } = error as Error & { code: string };
       printLine({ error: { code, message } });
       process.exitCode = 1;
+      end({ error: { code, message } });
       return;
     }
     if (error instanceof UsageError || isParseArgsError(error)) {
       const { message } = error;
       printLine({ error: { code: "invalid-input", message: message === "" ? options.usage : `${message}\n\n${options.usage}` } });
       process.exitCode = 2;
+      end({ error: { code: "invalid-input", message } });
       return;
     }
+    end({ status: 1, error });
     throw error;
   }
   if (result !== undefined) printLine(result);
+  end({ result });
 }

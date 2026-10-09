@@ -10,7 +10,6 @@ import { commentsAt, currentRevision, referencesFrom, regionsOverlapping, symbol
 import {
   addReference,
   classifyRegion,
-  isoCet,
   removeComment,
   removeReference,
   removeSymbol,
@@ -66,11 +65,6 @@ test("a revision records its time in ISO 8601 at the CET offset", () => {
   assert.match(created_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+01:00$/);
   const recorded = Date.parse(created_at);
   assert.ok(recorded >= before && recorded <= Date.now());
-});
-
-test("CET is +01:00 in winter and in summer, across the date line", () => {
-  assert.equal(isoCet(new Date("2026-01-15T23:30:00.000Z")), "2026-01-16T00:30:00.000+01:00");
-  assert.equal(isoCet(new Date("2026-07-01T12:00:00.250Z")), "2026-07-01T13:00:00.250+01:00");
 });
 
 test("an unchanged write creates no revision", () => {

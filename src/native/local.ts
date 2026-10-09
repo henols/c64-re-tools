@@ -2,12 +2,15 @@
 // one supervisor whose exit guard stops every tool process group when
 // the script ends, also on Ctrl+C or SIGTERM, and whose watchdog does the same
 // when the script dies without its exit guard, for example by SIGKILL.
+// A line that a tool adapter logs goes to the trace of the script.
 
+import { trace } from "../trace.ts";
 import { ProcessSupervisor } from "./processes.ts";
 
 export interface LocalToolContext {
   supervisor: ProcessSupervisor;
   signal: AbortSignal;
+  log: (line: string) => void;
 }
 
 let shared: LocalToolContext | undefined;
@@ -26,6 +29,6 @@ export function localToolContext(): LocalToolContext {
       process.exit(code);
     });
   }
-  shared = { supervisor, signal: controller.signal };
+  shared = { supervisor, signal: controller.signal, log: (line) => trace().log(line) };
   return shared;
 }

@@ -12,6 +12,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { formatC64Address } from "../../c64.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
+import { trace } from "../../trace.ts";
 import type { ViceSessionFactory, ViceSessionHandle } from "../server.ts";
 import {
   backtraceFromStack,
@@ -611,6 +612,7 @@ export class ViceSession implements ViceSessionHandle {
         // The drive can hit its checkpoint again before the computer gets to the next instruction.
         if (stop.hits.includes(boundary)) {
           this.#driveStop = false;
+          trace().event("vice.drive-stop", { pc: stop.pc, resumes: attempt + 1 });
           return stop.pc;
         }
       }

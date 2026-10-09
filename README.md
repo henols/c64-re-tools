@@ -92,6 +92,7 @@ Clients on loopback need no token; every other client must send it.
 | `C64RT_HOST` | MCP, skills, CLI | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
 | `C64RT_HOST_TOKEN` | host, MCP, skills, CLI | The shared secret for a Host Runtime that listens beyond loopback. |
 | `C64RT_VIDEO` | MCP | `pal` (default) or `ntsc`, fixed for the life of the MCP process. |
+| `C64RT_TRACE` | host, MCP, skills, CLI | A directory for a trace of what the programs do, for a person who debugs a run. Each program appends its events as JSON lines to a file of its own there: host requests, VICE starts and exits, MCP tool calls, native tool runs, script ends, each with its time and outcome, and every line the program prints to stderr. The host also keeps a copy of VICE's own log. Nothing of the trace reaches the agent. |
 
 Ghidra runs with its own settings directory for each request. The toolkit
 brings its own NMOS 6510 language (all 256 opcodes); your Ghidra installation

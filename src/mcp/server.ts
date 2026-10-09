@@ -11,6 +11,7 @@ import { formatC64Address, parseC64Address } from "../c64.ts";
 import type { ViceSessionClient } from "../host-client/vice-session.ts";
 import { WireFailure, type WireError } from "../protocol/messages.ts";
 import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, type Condition } from "../protocol/vice.ts";
+import { elapsedMs, trace, type TraceFields } from "../trace.ts";
 
 /** The session operations tools may call. */
 export type ViceSessionApi = Pick<
@@ -220,13 +221,38 @@ function describeIssues(error: z.ZodError): string {
 
 const INTERNAL_FAILURE: WireError = { code: "operation-failed", message: "The operation failed inside the c64-re-tools MCP server." };
 
-/** Runs one tool call and translates every outcome into an MCP result. */
+/** Runs one tool call and translates every outcome into an MCP result. The trace gets the call, its time and its outcome. */
 export async function callTool(
   tools: ReadonlyMap<string, ToolDefinition>,
   name: string,
   args: unknown,
   session: SessionSource,
   log: (line: string) => void = () => {},
+): Promise<CallToolResult> {
+  const started = performance.now();
+  const result = await runCall(tools, name, args, session, log);
+  trace().event("tool.call", { name, args, ms: elapsedMs(started), ...outcome(result) });
+  return result;
+}
+
+/** What the trace records of a result: the structured result, or the code and message of the error. */
+function outcome(result: CallToolResult): TraceFields {
+  if (result.isError !== true) return { ok: true, result: result.structuredContent };
+  const first = result.content[0];
+  const text = first?.type === "text" ? first.text : "";
+  try {
+    return { ok: false, ...(JSON.parse(text) as WireError) };
+  } catch {
+    return { ok: false, message: text };
+  }
+}
+
+async function runCall(
+  tools: ReadonlyMap<string, ToolDefinition>,
+  name: string,
+  args: unknown,
+  session: SessionSource,
+  log: (line: string) => void,
 ): Promise<CallToolResult> {
   const tool = tools.get(name);
   if (tool === undefined) return errorResult({ code: "invalid-input", message: `There is no tool named ${name}.` });

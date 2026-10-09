@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/\.ts$/, "");
-      return ["c64", "project", "script"].includes(leaf) ? leaf : undefined;
+      return ["c64", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -29,21 +29,25 @@ function areaOf(path: string): string | undefined {
 /** Areas each area may import besides itself. */
 const ALLOWED: Record<string, readonly string[]> = {
   c64: [],
+  // The one time format (ISO 8601 at +01:00).
+  time: [],
+  // The opt-in trace of a process, for people. Every program may write to it.
+  trace: ["time"],
   project: ["c64"],
   protocol: ["c64"],
-  "host-client": ["protocol", "c64", "project"],
-  mcp: ["host-client", "protocol", "c64"],
-  host: ["native", "protocol", "c64"],
-  knowledge: ["c64", "project"],
+  "host-client": ["protocol", "c64", "project", "trace"],
+  mcp: ["host-client", "protocol", "c64", "trace"],
+  host: ["native", "protocol", "c64", "trace"],
+  knowledge: ["c64", "project", "time"],
   // The error envelope of the skill scripts and the CLI. It takes other refusal classes as a parameter.
-  script: ["protocol", "project"],
+  script: ["protocol", "project", "trace"],
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
-  native: ["protocol", "c64"],
+  native: ["protocol", "c64", "trace"],
   // The installation and status edge: host tool status through the host-client, local tool status through native.
-  cli: ["host-client", "native", "protocol", "script", "distribution"],
+  cli: ["host-client", "native", "protocol", "script", "distribution", "trace"],
   distribution: [],
 };
-const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "script"];
+const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "script", "time"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.
@@ -141,6 +145,12 @@ test("checkImport refuses every forbidden direction", () => {
     ["src/c64.ts", "./protocol/framing.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/protocol/messages.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/protocol/tools.ts"],
+    ["src/trace.ts", "./protocol/messages.ts"],
+    ["src/time.ts", "./trace.ts"],
+    ["src/c64.ts", "./trace.ts"],
+    ["src/knowledge/write.ts", "../trace.ts"],
+    ["distribution/plugin.ts", "../src/trace.ts"],
+    ["skills/c64-disk/scripts/disk.ts", "#src/trace.ts"],
   ];
   for (const [from, specifier] of refused) {
     assert.notEqual(checkImport(from, specifier), undefined, `${from} -> ${specifier} must be refused`);
@@ -177,6 +187,13 @@ test("checkImport accepts every allowed direction", () => {
     ["src/host-client/connect.ts", "../protocol/framing.ts"],
     ["src/native/run.ts", "../protocol/tools.ts"],
     ["src/cli/main.ts", "../protocol/tools.ts"],
+    ["src/trace.ts", "./time.ts"],
+    ["src/knowledge/write.ts", "../time.ts"],
+    ["src/host/server.ts", "../trace.ts"],
+    ["src/host-client/connect.ts", "../trace.ts"],
+    ["src/native/run.ts", "../trace.ts"],
+    ["src/script.ts", "./trace.ts"],
+    ["skills/c64-disk/scripts/disk.ts", "#src/time.ts"],
   ];
   for (const [from, specifier] of accepted) {
     assert.equal(checkImport(from, specifier), undefined);

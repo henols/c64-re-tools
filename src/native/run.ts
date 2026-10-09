@@ -6,6 +6,7 @@ import { sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
 import { WireFailure } from "../protocol/messages.ts";
+import { elapsedMs, trace } from "../trace.ts";
 import type { ProcessSupervisor } from "./processes.ts";
 
 export const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
@@ -34,6 +35,16 @@ export interface ToolRun {
 
 const TAIL_LINES = 20;
 const TAIL_CHARS = 2_000;
+const TRACE_TAIL_LINES = 40;
+
+/** The last lines of a tool's output, without empty ones, for the trace. */
+function lastLines(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "")
+    .slice(-TRACE_TAIL_LINES)
+    .join("\n");
+}
 
 /**
  * The last lines that a tool printed, for a refusal: empty lines and lines
@@ -75,6 +86,7 @@ export async function runTool(options: {
   env?: NodeJS.ProcessEnv | undefined;
 }): Promise<ToolRun> {
   const limit = options.outputLimit ?? DEFAULT_OUTPUT_LIMIT;
+  const started = performance.now();
   const child = options.supervisor.spawn(options.argv, { cwd: options.cwd, env: options.env, stdio: ["ignore", "pipe", "pipe"] });
   // "exit" can come before the output streams finish; "close" comes after both.
   const closed = new Promise<void>((resolve) => {
@@ -124,6 +136,7 @@ export async function runTool(options: {
     await closed;
     output.stdout += decoders.stdout.end();
     output.stderr += decoders.stderr.end();
+    trace().event("tool.run", { argv: options.argv, cwd: options.cwd, pid: child.pid, ms: elapsedMs(started), ...status, timedOut, aborted, truncated: output.truncated, stdout: lastLines(output.stdout), stderr: lastLines(output.stderr) });
     return { ...status, ...output, timedOut, aborted };
   } finally {
     clearTimeout(timer);

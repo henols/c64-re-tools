@@ -3,6 +3,7 @@
 import { connect as connectTcp, type Socket } from "node:net";
 
 import { encodeFrame, MessageReader } from "../protocol/framing.ts";
+import { elapsedMs, trace } from "../trace.ts";
 import { DEFAULT_HOST_PORT, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseHostMessage, ProtocolError, WireFailure, type ErrorCode, type Hello, type HostMessage, type Ping, type Request, type Role, type VideoStandard } from "../protocol/messages.ts";
 
 export interface Endpoint {
@@ -89,7 +90,11 @@ export class HostConnection {
     socket.setNoDelay(true);
     socket.setKeepAlive(true, 10_000);
     this.closed = new Promise((resolve) => {
-      socket.on("close", () => resolve(this.#closedByUs ? undefined : (this.#failure ?? new Error("the host runtime closed the connection"))));
+      socket.on("close", () => {
+        const reason = this.#closedByUs ? undefined : (this.#failure ?? new Error("the host runtime closed the connection"));
+        trace().event("host.closed", { byUs: this.#closedByUs, reason });
+        resolve(reason);
+      });
     });
     socket.on("error", (error) => (this.#failure ??= error));
     socket.on("close", () => {
@@ -127,10 +132,13 @@ export class HostConnection {
     signal?: AbortSignal;
   }): Promise<HostConnection> {
     const signal = options.signal;
+    const started = performance.now();
     let socket: Socket | undefined;
     for (const endpoint of hostEndpoints(options.env)) {
       if (signal?.aborted) break;
+      const attempt = performance.now();
       socket = await tcpConnect(endpoint, signal);
+      trace().event("host.connect", { ...endpoint, role: options.role, accepted: socket !== undefined, ms: elapsedMs(attempt) });
       if (socket !== undefined) break;
     }
     if (signal?.aborted) {
@@ -168,9 +176,11 @@ export class HostConnection {
     }
 
     if (!(answer instanceof Error) && answer.type === "ready") {
+      trace().event("host.ready", { role: options.role, ms: elapsedMs(started) });
       connection.#startHeartbeat();
       return connection;
     }
+    trace().event("host.handshake-failed", { role: options.role, ms: elapsedMs(started), ...(answer instanceof Error ? { error: answer } : answer) });
     await connection.close();
     if (answer instanceof Error) {
       if (answer instanceof ProtocolError) {

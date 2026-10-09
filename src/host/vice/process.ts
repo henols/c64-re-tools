@@ -28,6 +28,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
+import { elapsedMs, trace } from "../../trace.ts";
 import { findTool, isOlderThanMinimum, MIN_VICE, VICE } from "../../native/discover.ts";
 import type { ExitStatus, ProcessSupervisor, SupervisedProcess } from "../../native/processes.ts";
 import { BinaryMonitor, Command, decodeMemory, memoryGetBody } from "./binary-monitor.ts";
@@ -248,27 +249,23 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
   const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-vice-"));
   // Owned by the supervisor: its exit guard and the watchdog remove it if this process dies.
   const releaseScratch = options.supervisor.ownPath(scratch);
-  const child = options.supervisor.spawn(
-    viceArguments({
-      binary,
-      port,
-      textPort,
-      configFile: join(scratch, "vicerc"),
-      logFile: join(scratch, "vice.log"),
-      videoStandard: options.videoStandard,
-      mode: options.mode ?? "headless",
-    }),
-    {
-      cwd: scratch,
-      // Keep VICE's config, cache and state away from the user's own VICE setup, and
-      // make its monitor print numbers the same way on every host.
-      env: { ...env, XDG_CONFIG_HOME: scratch, XDG_CACHE_HOME: scratch, XDG_STATE_HOME: scratch, LC_NUMERIC: "C" },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  const mode = options.mode ?? "headless";
+  const argv = viceArguments({ binary, port, textPort, configFile: join(scratch, "vicerc"), logFile: join(scratch, "vice.log"), videoStandard: options.videoStandard, mode });
+  const child = options.supervisor.spawn(argv, {
+    cwd: scratch,
+    // Keep VICE's config, cache and state away from the user's own VICE setup, and
+    // make its monitor print numbers the same way on every host.
+    env: { ...env, XDG_CONFIG_HOME: scratch, XDG_CACHE_HOME: scratch, XDG_STATE_HOME: scratch, LC_NUMERIC: "C" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const launched = performance.now();
+  trace().event("vice.launch", { pid: child.pid, mode, videoStandard: options.videoStandard, ports: [port, textPort], scratch, argv });
   const outputTail = tailCollector(child, join(scratch, "vice.log"));
   let exited = false;
-  void child.exited.then(() => (exited = true));
+  void child.exited.then((status) => {
+    exited = true;
+    trace().event("vice.exit", { pid: child.pid, ...status, ms: elapsedMs(launched) });
+  });
 
   let monitor: BinaryMonitor | undefined;
   let text: TextMonitor | undefined;
@@ -296,6 +293,8 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
         await run("ending the process", () => child.stop());
         // The supervisor keeps the directory on its list, to remove it at exit, until the removal works.
         await run("removing its scratch directory", () => {
+          // VICE's own log goes with the directory; the trace keeps a copy.
+          trace().keep(join(scratch, "vice.log"), `vice-${child.pid}.log`);
           rmSync(scratch, { recursive: true, force: true });
           releaseScratch();
         });
@@ -316,11 +315,13 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
     await monitor.request(Command.exit);
   } catch (error) {
     log(`VICE failed to start: ${error instanceof Error ? error.message : String(error)}\n${outputTail()}`);
+    trace().event("vice.launch-failed", { pid: child.pid, ms: elapsedMs(launched), error });
     await stop();
     if (error instanceof WireFailure) throw error;
     throw new WireFailure("machine-unavailable", "The emulator could not be started on the host.");
   }
   log(`VICE started (pid ${child.pid}, monitor ports ${port} and ${textPort})`);
+  trace().event("vice.ready", { pid: child.pid, ms: elapsedMs(launched) });
   return { pid: child.pid, monitor, text, exited: child.exited, outputTail, stop };
 }
 

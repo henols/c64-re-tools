@@ -36,3 +36,7 @@ node_modules/
 
 # Graphify raw scratch output. Regenerable, so it is ignored.
 /graphify-out/
+
+# Field-test reports that test/field/collect.ts gathers from a test project.
+# They hold session transcripts, so they stay on this machine.
+/field-reports/

@@ -4,6 +4,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { SYMBOL_NAME } from "../c64.ts";
+import { isoCet } from "../time.ts";
 import { KnowledgeError, transaction } from "./database.ts";
 import {
   COMMENT_COLUMNS,
@@ -67,13 +68,6 @@ function checkOneOf<T extends string>(values: readonly T[], value: string, what:
 
 export function hex(value: number): string {
   return `$${value.toString(16).padStart(4, "0")}`;
-}
-
-const CET_OFFSET_MS = 60 * 60 * 1000;
-
-/** `time` in ISO 8601 at the fixed CET offset +01:00, also in summer, so that the text sorts in time order. */
-export function isoCet(time: Date): string {
-  return `${new Date(time.getTime() + CET_OFFSET_MS).toISOString().slice(0, -1)}+01:00`;
 }
 
 /** What a revision records about its writer. Analyzer imports may add tool details. */

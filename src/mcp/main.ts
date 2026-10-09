@@ -3,6 +3,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { ViceSessionClient } from "../host-client/vice-session.ts";
+import { elapsedMs, startTrace, trace } from "../trace.ts";
 import { VIDEO_STANDARDS, WireFailure, type VideoStandard } from "../protocol/messages.ts";
 import { createMcpServer, type SessionSource } from "./server.ts";
 import { debugTools } from "./tools/debug.ts";
@@ -34,6 +35,7 @@ Environment:
 
 function log(line: string): void {
   process.stderr.write(`c64-re-tools-mcp: ${line}\n`);
+  trace().log(line);
 }
 
 function videoStandard(env: NodeJS.ProcessEnv): VideoStandard {
@@ -54,7 +56,9 @@ function sessionSource(): { get: SessionSource; close(): Promise<void> } {
   let closed = false;
   const stop = new AbortController();
   const open = () => {
+    const started = performance.now();
     opening = (async () => ViceSessionClient.open({ videoStandard: videoStandard(process.env), signal: stop.signal }))();
+    void opening.then(() => trace().event("session.opened", { ms: elapsedMs(started) }), () => {});
     opening.catch((error: unknown) => {
       log(`session not opened: ${error instanceof Error ? error.message : String(error)}`);
       opening = undefined;
@@ -81,6 +85,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${HELP}\n`);
     return;
   }
+  startTrace("mcp", { warn: log });
   const session = sessionSource();
   const server = createMcpServer({ tools: [...machineTools, ...executionTools, ...debugTools, ...memoryTools, ...videoTools, ...inputTools, ...mediaTools], session: session.get, log });
 
@@ -88,6 +93,7 @@ async function main(): Promise<void> {
   const stop = async () => {
     if (stopping) return;
     stopping = true;
+    trace().event("mcp.stop");
     await session.close();
     process.exit(0);
   };

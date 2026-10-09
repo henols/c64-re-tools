@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 
 import { DEFAULT_HOST_PORT } from "../protocol/messages.ts";
 import { ProcessSupervisor } from "../native/processes.ts";
+import { startTrace, trace } from "../trace.ts";
 import { isLoopback, ListenError, parsePort, startHostServer, stopSignal } from "./server.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
@@ -32,6 +33,7 @@ Options:
 
 function log(line: string): void {
   process.stderr.write(`c64-re-tools-host: ${line}\n`);
+  trace().log(line);
 }
 
 async function main(): Promise<number> {
@@ -46,6 +48,7 @@ async function main(): Promise<number> {
     process.stdout.write(`${HELP}\n`);
     return 0;
   }
+  startTrace("host", { warn: log });
 
   const port = values.port === undefined ? DEFAULT_HOST_PORT : parsePort(values.port);
   if (port === undefined) {
@@ -105,9 +108,11 @@ async function main(): Promise<number> {
     }
     throw error;
   }
-  process.stdout.write(`c64-re-tools-host listening on ${[server.host, ...extraHosts].map((address) => `${address}:${server.port}`).join(", ")}\n`);
+  const addresses = [server.host, ...extraHosts].map((address) => `${address}:${server.port}`);
+  process.stdout.write(`c64-re-tools-host listening on ${addresses.join(", ")}\n`);
+  trace().event("host.listening", { addresses });
 
-  await stopSignal(log);
+  trace().event("host.stop", { signal: await stopSignal(log) });
   await server.close();
   await supervisor.stopAll();
   return 0;

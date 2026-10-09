@@ -5,6 +5,7 @@ import { encodeFrame, MessageReader } from "../protocol/framing.ts";
 import { checkHello, isOneOf, HEARTBEAT_TIMEOUT_MS, parseClientMessage, ProtocolError, type HostMessage, type ReceivedRequest, type VideoStandard, type WireError, WireFailure } from "../protocol/messages.ts";
 import { TOOL_OPERATIONS, validateToolParams, type ToolOperation, type ToolOperations } from "../protocol/tools.ts";
 import { attachmentCount, VICE_OPERATIONS, validateViceParams, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
+import { elapsedMs, trace } from "../trace.ts";
 
 /** One live VICE session, owned by one connection. */
 export interface ViceSessionHandle {
@@ -79,9 +80,13 @@ function toWireError(error: unknown, fallback: WireError): WireError {
   return error instanceof WireFailure ? error.toWire() : fallback;
 }
 
+/** Numbers the connections of this process, for the trace. */
+let connectionCount = 0;
+
 /** Owns one client connection: handshake, then requests against at most one VICE session. */
 class Connection {
   readonly closed: Promise<void>;
+  readonly #id = ++connectionCount;
   #state: "handshake" | "starting" | "open" | "closed" = "handshake";
   #session: ViceSessionHandle | undefined;
   #starting: Promise<ViceSessionHandle | undefined> | undefined;
@@ -116,6 +121,7 @@ class Connection {
     this.#options = options;
     this.#log = log;
     this.closed = new Promise((resolve) => (this.#resolveClosed = resolve));
+    trace().event("connection.open", { connection: this.#id, remote: `${socket.remoteAddress}:${socket.remotePort}`, local: socket.localAddress });
     this.#handshakeTimer = setTimeout(
       () => this.#abort("no hello before the handshake timeout"),
       options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS,
@@ -188,6 +194,7 @@ class Connection {
       const mismatch = checkHello(message) ?? this.#checkToken(message.token);
       if (mismatch !== undefined) {
         this.#log(`refusing a client: ${mismatch.message}`);
+        trace().event("connection.refused", { connection: this.#id, role: message.role, ...mismatch });
         this.#send({ type: "error", error: mismatch });
         this.#endRefused();
         this.#state = "closed";
@@ -197,6 +204,7 @@ class Connection {
         this.#isTool = true;
         this.#state = "open";
         this.#send({ type: "ready" });
+        trace().event("connection.ready", { connection: this.#id, role: "tool" });
         this.#restartHeartbeat();
         return;
       }
@@ -214,6 +222,7 @@ class Connection {
   }
 
   async #startSession(videoStandard: VideoStandard): Promise<void> {
+    const started = performance.now();
     this.#starting = this.#createSession(videoStandard);
     const session = await this.#starting;
     // A connection closed while starting is shut down by #shutdown, which awaits #starting.
@@ -221,6 +230,7 @@ class Connection {
     this.#session = session;
     this.#state = "open";
     this.#send({ type: "ready" });
+    trace().event("connection.ready", { connection: this.#id, role: "vice-session", videoStandard, ms: elapsedMs(started) });
     this.#restartHeartbeat();
   }
 
@@ -230,6 +240,7 @@ class Connection {
       return await this.#options.createViceSession({ videoStandard });
     } catch (error) {
       this.#log(`VICE session failed to start: ${error instanceof Error ? error.message : String(error)}`);
+      trace().event("connection.session-failed", { connection: this.#id, error });
       this.#send({
         type: "error",
         error: toWireError(error, { code: "machine-unavailable", message: "The emulator could not be started." }),
@@ -240,6 +251,9 @@ class Connection {
   }
 
   async #answer(request: ReceivedRequest, attachments: Buffer[]): Promise<void> {
+    const started = performance.now();
+    const record = (outcome: Record<string, unknown>) =>
+      trace().event("request", { connection: this.#id, op: request.op, id: request.id, params: request.params, attachments: attachments.length, ms: elapsedMs(started), ...outcome });
     try {
       let result: unknown;
       let replyAttachments: Buffer[] = [];
@@ -262,15 +276,14 @@ class Connection {
         result = await session.handle(op, params, attachments);
       }
       this.#send({ type: "reply", id: request.id, result }, replyAttachments);
+      record({ ok: true, result });
     } catch (error) {
       if (!(error instanceof WireFailure)) {
         this.#log(`operation ${request.op} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
       }
-      this.#send({
-        type: "reply",
-        id: request.id,
-        error: toWireError(error, { code: "operation-failed", message: "The operation failed inside the host runtime." }),
-      });
+      const wire = toWireError(error, { code: "operation-failed", message: "The operation failed inside the host runtime." });
+      this.#send({ type: "reply", id: request.id, error: wire });
+      record({ ok: false, ...wire });
     }
   }
 
@@ -278,6 +291,7 @@ class Connection {
     if (this.#shuttingDown) return;
     this.#shuttingDown = true;
     this.#state = "closed";
+    trace().event("connection.close", { connection: this.#id });
     clearTimeout(this.#handshakeTimer);
     clearTimeout(this.#heartbeatTimer);
     clearTimeout(this.#refusedTimer);

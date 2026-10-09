@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -7,6 +10,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { WireFailure } from "../protocol/messages.ts";
 import { MAX_SEARCH_PATTERN, type Breakpoint, type BreakpointParams, type ExecutionParams, type JoystickState, type MemmapRange, type MemoryReadParams, type MemoryWriteParams, type ObserveParams, type ObserveResult, type RegisterValues, type Registers, type RunTarget, type ViceOperations, type Watchpoint, type WatchpointParams } from "../protocol/vice.ts";
+import { startTrace, TRACE_VARIABLE } from "../trace.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
 import { debugTools } from "./tools/debug.ts";
 import { executionTools } from "./tools/execution.ts";
@@ -809,4 +813,34 @@ test("c64_observe returns only the asked parts and an image for the screen", asy
   assert.equal(errorOf(await call(client, "c64_observe", {})).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_observe", { vicii: false })).code, "invalid-input");
   await client.close();
+});
+
+test("with C64RT_TRACE every tool call leaves one trace line with its name, arguments, time and outcome", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-trace-"));
+  try {
+    const on = startTrace("mcp", { env: { [TRACE_VARIABLE]: dir } });
+    const client = await connect(async () => new FakeSession());
+    await call(client, "c64_status");
+    await call(client, "no_such_tool", { a: 1 });
+    await client.close();
+
+    const calls = readFileSync(on.file!, "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((event) => event.event === "tool.call");
+    assert.equal(calls.length, 2);
+    const [status, missing] = calls as [Record<string, unknown>, Record<string, unknown>];
+    assert.equal(status.name, "c64_status");
+    assert.equal(status.ok, true);
+    assert.equal(typeof status.ms, "number");
+    assert.equal(typeof status.result, "object");
+    assert.equal(missing.name, "no_such_tool");
+    assert.deepEqual(missing.args, { a: 1 });
+    assert.equal(missing.ok, false);
+    assert.equal(missing.code, "invalid-input");
+  } finally {
+    startTrace("mcp", { env: {} });
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

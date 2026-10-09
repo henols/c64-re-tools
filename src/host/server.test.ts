@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { connect, type Socket } from "node:net";
-import { networkInterfaces } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
+import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { encodeFrame } from "../protocol/framing.ts";
 import { HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, type ClientMessage, WireFailure } from "../protocol/messages.ts";
 import { FrameDecoder } from "../protocol/framing.testkit.ts";
+import { startTrace, TRACE_VARIABLE } from "../trace.ts";
 import { ListenError, parsePort, startHostServer, stopSignal, type HostServer, type ViceSessionFactory, type ViceSessionHandle } from "./server.ts";
 
 const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: "vice-session" } as const;
@@ -482,5 +485,48 @@ test("a second stop signal while the host stops is logged and does not end the p
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
       for (const listener of process.listeners(signal)) if (!before[signal].includes(listener)) process.off(signal, listener);
     }
+  }
+});
+
+test("with C64RT_TRACE every connection and request leaves a trace line with the op, the time and the outcome", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "c64-re-tools-host-trace-"));
+  try {
+    const on = startTrace("host", { env: { [TRACE_VARIABLE]: dir } });
+    const log: StubLog = { started: [], closed: 0 };
+    const client = await RawClient.open(await serve(stubFactory(log)));
+    client.send(hello);
+    await client.next();
+    client.send({ type: "request", id: 1, op: "status", params: {} });
+    await client.next();
+    client.send({ type: "request", id: 2, op: "registersGet", params: { space: "drive8" } });
+    await client.next();
+    client.end();
+    await client.closed;
+    await waitFor(() => log.closed === 1);
+
+    const events = readFileSync(on.file!, "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const names = events.map((event) => event.event);
+    for (const expected of ["trace.start", "connection.open", "connection.ready", "request", "connection.close"]) {
+      assert.ok(names.includes(expected), `${expected} is in ${names.join(", ")}`);
+    }
+    const [ok, failed] = events.filter((event) => event.event === "request") as [Record<string, unknown>, Record<string, unknown>];
+    assert.equal(ok.op, "status");
+    assert.equal(ok.id, 1);
+    assert.equal(ok.ok, true);
+    assert.equal(typeof ok.ms, "number");
+    assert.deepEqual(ok.result, { state: "running", videoStandard: "pal", warp: false, window: false });
+    assert.equal(failed.op, "registersGet");
+    assert.equal(failed.ok, false);
+    assert.equal(failed.code, "unsupported-in-space");
+    assert.deepEqual(failed.params, { space: "drive8" });
+    const ready = events.find((event) => event.event === "connection.ready")!;
+    assert.equal(ready.role, "vice-session");
+    assert.equal(ready.connection, ok.connection);
+  } finally {
+    startTrace("host", { env: {} });
+    rmSync(dir, { recursive: true, force: true });
   }
 });
