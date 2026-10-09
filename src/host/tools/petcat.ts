@@ -4,6 +4,7 @@
 // (it prints any bytes as text).
 
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { findHandoffs, parseTokenized } from "../../c64.ts";
 import { WireFailure, type PetcatResult } from "../../protocol.ts";
@@ -37,15 +38,14 @@ export async function decode(
   const workspace = Workspace.create(context.supervisor);
   try {
     workspace.materialize("input", [{ path: "program.prg", size: program.length }], [program]);
-    const output = workspace.directory("out");
+    const listingPath = join(workspace.directory("out"), LISTING);
     const run = await runToolOrFail(
       "petcat",
       "The BASIC decode",
       // -2: C64 BASIC V2 keywords. -nh: no header. The input is never read as an option.
-      { argv: [executable, "-2", "-nh", "-o", `${output}/${LISTING}`, "--", "input/program.prg"], cwd: workspace.root, timeoutMs: TIMEOUT_MS },
+      { argv: [executable, "-2", "-nh", "-o", listingPath, "--", "input/program.prg"], cwd: workspace.root, timeoutMs: TIMEOUT_MS },
       context,
     );
-    const listingPath = `${output}/${LISTING}`;
     if (run.code !== 0 || !existsSync(listingPath)) {
       context.log?.(`petcat exited ${run.code}:\n${run.stdout}\n${run.stderr}`);
       throw new WireFailure("operation-failed", "petcat could not decode the program.");

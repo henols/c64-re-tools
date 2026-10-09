@@ -8,6 +8,7 @@
 // from the output files it was asked to write.
 
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { petsciiNameToText, textToPetsciiName } from "../../c64.ts";
 import {
@@ -113,10 +114,11 @@ function fileType(typeByte: number): CbmFileType {
 /** The disk header and the directory entries, from the raw header block and the directory blocks after it. */
 export function parseDirectory(blocks: Buffer[], layout: Layout): { diskName: string; diskId: string; dosType: string; entries: DiskEntry[] } {
   const [header, ...directory] = blocks;
+  if (header === undefined) throw new WireFailure("operation-failed", "c1541 returned no header block.");
   const entries: DiskEntry[] = [];
   for (const block of directory) {
     for (let offset = 0; offset < BLOCK_BYTES; offset += 32) {
-      const typeByte = block[offset + 2]!;
+      const typeByte = block.readUInt8(offset + 2);
       // Type 0 is an empty or scratched slot; the DOS lists no file there.
       if (typeByte === 0) continue;
       const nameBytes = nameField(block, offset + 5, 16);
@@ -127,15 +129,15 @@ export function parseDirectory(blocks: Buffer[], layout: Layout): { diskName: st
         blocks: block.readUInt16LE(offset + 30),
         closed: (typeByte & 0x80) !== 0,
         locked: (typeByte & 0x40) !== 0,
-        startTrack: block[offset + 3]!,
-        startSector: block[offset + 4]!,
+        startTrack: block.readUInt8(offset + 3),
+        startSector: block.readUInt8(offset + 4),
       });
     }
   }
   return {
-    diskName: petsciiNameToText(nameField(header!, layout.name, 16)),
-    diskId: petsciiNameToText(header!.subarray(layout.id, layout.id + 2)),
-    dosType: petsciiNameToText(header!.subarray(layout.dos, layout.dos + 2)),
+    diskName: petsciiNameToText(nameField(header, layout.name, 16)),
+    diskId: petsciiNameToText(header.subarray(layout.id, layout.id + 2)),
+    dosType: petsciiNameToText(header.subarray(layout.dos, layout.dos + 2)),
     entries,
   };
 }
@@ -147,7 +149,7 @@ export function fileData(blocks: Buffer[], chain: DiskSector[]): Buffer {
     const next = chain[index + 1];
     if (next === undefined) {
       if (block[0] !== 0) throw new WireFailure("operation-failed", "c1541 returned a last file block that links further.");
-      parts.push(block.subarray(2, Math.max(2, block[1]! + 1)));
+      parts.push(block.subarray(2, Math.max(2, block.readUInt8(1) + 1)));
     } else {
       if (block[0] !== next.track || block[1] !== next.sector) throw new WireFailure("operation-failed", "c1541 returned file blocks that do not match the sector chain.");
       parts.push(block.subarray(2));
@@ -205,14 +207,13 @@ export class C1541Session {
 
   async #readBlocks(sectors: DiskSector[]): Promise<Buffer[]> {
     const directory = `blocks-${this.#reads++}`;
-    this.#workspace.directory(directory);
-    const files = sectors.map((_, index) => `${directory}/${index}.bin`);
-    const output = await this.run(sectors.flatMap((at, index) => ["-bread", files[index]!, String(at.track), String(at.sector)]));
-    return files.map((file, index) => {
-      const path = this.#workspace.path(file);
+    const full = this.#workspace.directory(directory);
+    const reads = sectors.map((at, index) => ({ at, file: `${index}.bin` }));
+    const output = await this.run(reads.flatMap(({ at, file }) => ["-bread", join(directory, file), String(at.track), String(at.sector)]));
+    return reads.map(({ at, file }) => {
+      const path = join(full, file);
       const block = existsSync(path) ? readFileSync(path) : undefined;
       if (block?.length === BLOCK_BYTES) return block;
-      const at = sectors[index]!;
       if (/cannot read track|out of bounds/.test(output)) throw damaged(`track ${at.track} sector ${at.sector} cannot be read.`);
       throw new WireFailure("operation-failed", `c1541 did not write track ${at.track} sector ${at.sector}.`);
     });
@@ -242,7 +243,8 @@ export async function inspect(params: C1541Params, image: Buffer, context: ToolC
       return { result: { action: "directory", diskName, diskId, dosType, freeBlocks: parseFreeBlocks(overview), entries: entries.map(toFile) } };
     }
 
-    const wanted = textToPetsciiName(params.name!);
+    if (params.name === undefined) throw new WireFailure("invalid-input", `action ${params.action} needs a file name`);
+    const wanted = textToPetsciiName(params.name);
     const entry = directory.entries.find((candidate) => sameBytes(candidate.nameBytes, wanted));
     if (entry === undefined) return { result: { action: params.action, found: false } };
     if (params.action === "entry") {
