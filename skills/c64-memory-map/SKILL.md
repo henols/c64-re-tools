@@ -42,7 +42,7 @@ The script prints one JSON object.
 2. Read `kind`:
    - `platform`: the C64 gives the address a meaning. Read `name` and `meaning`.
    - `application`: the address has no platform meaning. The program decides its use. Find its use with the c64-static-analysis or c64-emulator skill.
-3. For an I/O register, `mirrorOf` shows the register that a mirror address repeats. `visible` tells that the register is visible only when `$01` shows I/O at `$D000`.
+3. For an I/O register, `mirrorOf` shows the register that a mirror address repeats. `visible` tells that an address in `$D000`-`$DFFF` is visible only when `$01` shows I/O at `$D000`. This area holds the chip registers, the color RAM and the cartridge I/O areas.
 4. For a byte in a multi-byte entry, for example the high byte of a vector, `entryStart` gives the first address of the entry.
 5. To understand a value in a register, run `decode`. For the memory configuration, decode the value of `$01`.
 
@@ -60,6 +60,8 @@ A conclusion about the application can be project knowledge. For example: "the p
 ## Result
 
 The platform meaning of each address, or the decoded meaning of a register value.
+
+The exit status is 0 for a result. The exit status is 2 for a wrong argument.
 
 ## Failure and conflicts
 
