@@ -207,6 +207,8 @@ export class ViceSession implements ViceSessionHandle {
   #timingStart = 0n;
   /** Counts staged media files, for unique names. */
   #staged = 0;
+  /** The last staged file of each kind that VICE took; VICE can still read it. */
+  readonly #stagedFiles = new Map<"autostart" | "disk", string>();
   /** Session-local ids: one counter for breakpoints and watchpoints, from 1. */
   #nextPointId = 1;
   /**
@@ -378,12 +380,14 @@ export class ViceSession implements ViceSessionHandle {
         const { type, index, run } = params as ViceOperations["autostart"]["params"];
         const file = this.#stage(attachments[0]!, type);
         await this.#runningCommand(() => this.#machine.autostart(file, index, run));
+        this.#replaceStaged("autostart", file);
         return { state: "running" };
       }
       case "diskAttach": {
         const { type } = params as ViceOperations["diskAttach"]["params"];
         const file = this.#stage(attachments[0]!, type);
         await this.#observe(() => this.#machine.attachDisk(file));
+        this.#replaceStaged("disk", file);
         return { attached: true };
       }
       case "reset":
@@ -804,14 +808,26 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   /**
-   * Writes transferred bytes into the session directory. Media stay there for
-   * the session: VICE reads an attached image from its file.
+   * Writes transferred bytes into the session directory. VICE reads an
+   * attached image from its file, so an image stays until another one
+   * replaces it (#replaceStaged).
    */
   #stage(bytes: Buffer, type: string): string {
     this.#staged++;
     const file = join(this.#workDir, `media-${this.#staged}${type === "" ? "" : `.${type}`}`);
     writeFileSync(file, bytes);
     return file;
+  }
+
+  /**
+   * Records the staged file that VICE took for `kind`, and removes the file
+   * it replaces: VICE does not read that one again. A file that VICE did not
+   * take stays until the session closes, because a held VICE can still read it.
+   */
+  #replaceStaged(kind: "autostart" | "disk", file: string): void {
+    const previous = this.#stagedFiles.get(kind);
+    this.#stagedFiles.set(kind, file);
+    if (previous !== undefined) rmSync(previous, { force: true });
   }
 
   /** Loads a PRG without reset or start (15 §34); finishes stopped. */
@@ -825,6 +841,8 @@ export class ViceSession implements ViceSessionHandle {
     const file = this.#stage(bytes, "prg");
     await this.#stop();
     const loaded = await this.#machine.loadProgram(file, params.address);
+    // VICE read the file during the load.
+    rmSync(file, { force: true });
     return { state: "stopped", ...loaded };
   }
 

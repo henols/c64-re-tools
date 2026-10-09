@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../../protocol.ts";
@@ -486,6 +487,31 @@ test("a profiler that VICE starts fresh is taken", async () => {
   const refused = await refusing.start();
   processes.push(refused);
   await assert.rejects(ViceSession.start(refused, "pal"), /does not read/);
+});
+
+test("a staged program, disk or autostart file is removed once VICE no longer reads it", async () => {
+  const { fake, session } = await startSession();
+  const quotedPath = (command: string | undefined) => /"([^"]+)"/.exec(command ?? "")![1]!;
+  await session.handle("programLoad", {}, [Buffer.from([0x00, 0xc0, 0x60])]);
+  assert.equal(existsSync(quotedPath(fake.textCommands.find((command) => command.startsWith("load ")))), false);
+
+  await session.handle("diskAttach", { type: "d64" }, [Buffer.alloc(174848)]);
+  const first = quotedPath(fake.textCommands.filter((command) => command.startsWith("attach ")).at(-1));
+  assert.equal(existsSync(first), true, "VICE reads the attached image from its file");
+  await assert.rejects(session.handle("diskAttach", { type: "d64" }, [Buffer.alloc(100)]), failsWith("media-error"));
+  assert.equal(existsSync(first), true, "a refused image does not replace the attached one");
+  await session.handle("diskAttach", { type: "d64" }, [Buffer.alloc(174848)]);
+  const second = quotedPath(fake.textCommands.filter((command) => command.startsWith("attach ")).at(-1));
+  assert.deepEqual([existsSync(first), existsSync(second)], [false, true]);
+
+  await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
+  await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
+  assert.deepEqual(
+    fake.autostarts.map((start) => existsSync(start.file)),
+    [false, true],
+  );
+  assert.equal(existsSync(second), true, "an autostart does not replace the attached disk file");
+  await session.close();
 });
 
 test("the session releases both joysticks at start", async () => {
