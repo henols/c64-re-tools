@@ -3,6 +3,7 @@
 
 import { parseArgs } from "node:util";
 
+import { runScript, UsageError } from "#src/script.ts";
 import { decode, IO, lookup, ROM, SYSTEM, type Entry } from "./platform.ts";
 
 const USAGE = `memmap.ts at <address> [<address> ...]
@@ -11,8 +12,6 @@ memmap.ts list <vic|sid|cia1|cia2|kernal|system>
 
 Addresses and values are $ and hex digits, decimal, or % and binary digits.
 The result is one JSON object.`;
-
-class UsageError extends Error {}
 
 const hex = (value: number, digits = 4) => `$${value.toString(16).padStart(digits, "0")}`;
 
@@ -79,14 +78,4 @@ function run(argv: string[]): unknown {
   }
 }
 
-try {
-  process.stdout.write(`${JSON.stringify(run(process.argv.slice(2)))}\n`);
-} catch (error) {
-  if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
-    const message = (error as Error).message;
-    process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
-    process.exitCode = 2;
-  } else {
-    throw error;
-  }
-}
+await runScript(() => run(process.argv.slice(2)), { usage: USAGE });

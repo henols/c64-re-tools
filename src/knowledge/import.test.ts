@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { KnowledgeError, openForWrite } from "./database.ts";
-import { revision as revisionChanges } from "./history.ts";
-import { importFindings, type NormalizedFindings } from "./import.ts";
+import { revision as revisionChanges, revisions } from "./history.ts";
+import { importFindings, runProvenance, type NormalizedFindings } from "./import.ts";
 import { currentRevision, listReferences, listSymbols, regionsOverlapping, symbolAt } from "./read.ts";
 import { classifyRegion, renameSymbol } from "./write.ts";
 
@@ -233,4 +233,56 @@ test("history shows an import as one revision of the analyzer", () => {
   importFindings(db, findings("dxa", 0x0801, 0x08ff, { symbols: [{ address: 0x080d, name: "l080d", kind: "label" }], regions: [{ start: 0x080d, end: 0x0812, type: "code" }] }));
   const changes = revisionChanges(db, 1);
   assert.equal(changes.revision.origin, "dxa");
+});
+
+test("an analyzer import records the image hash and the analyzer version in its revision", () => {
+  const db = fresh();
+  const image = Buffer.from("abc");
+  const sha256 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+  importFindings(db, findings("dxa", 0x0801, 0x08ff, { symbols: [{ address: 0x080d, name: "l080d", kind: "label" }] }), runProvenance(image, "dxa 0.1.5"));
+  importFindings(db, findings("ghidra", 0x2000, 0x20ff, { symbols: [{ address: 0x2000, name: "FUN_2000", kind: "routine" }] }), runProvenance(image, undefined));
+  assert.deepEqual(
+    revisions(db).map((revision) => [revision.origin, revision.inputHash, revision.toolVersion]),
+    [
+      ["ghidra", sha256, undefined],
+      ["dxa", sha256, "dxa 0.1.5"],
+    ],
+  );
+});
+
+test("a non-authoritative symbol import moves the analyzer's own name and keeps its other rows", () => {
+  const db = fresh();
+  const partial = (symbols: NormalizedFindings["symbols"]) => {
+    const result = findings("ghidra", 0x2000, 0x2fff, { symbols });
+    result.authoritative.symbols = false;
+    return result;
+  };
+  importFindings(db, partial([
+    { address: 0x2100, name: "FUN_main", kind: "routine" },
+    { address: 0x2200, name: "FUN_2200", kind: "routine" },
+  ]));
+  const moved = importFindings(db, partial([{ address: 0x2300, name: "FUN_main", kind: "routine" }]));
+  assert.deepEqual(moved.conflicts, []);
+  assert.deepEqual(moved.symbols, { added: 1, changed: 0, retired: 1, unchanged: 0 });
+  assert.deepEqual(listSymbols(db).map((symbol) => [symbol.address, symbol.name]), [
+    [0x2200, "FUN_2200"],
+    [0x2300, "FUN_main"],
+  ]);
+});
+
+test("a non-authoritative region import changes the type of the analyzer's own region under a finding", () => {
+  const db = fresh();
+  const partial = (regions: NormalizedFindings["regions"]) => {
+    const result = findings("dxa", 0x2000, 0x2fff, { regions });
+    result.authoritative.regions = false;
+    return result;
+  };
+  importFindings(db, partial([{ start: 0x2000, end: 0x20ff, type: "bytes" }, { start: 0x2400, end: 0x24ff, type: "code" }]));
+  const result = importFindings(db, partial([{ start: 0x2080, end: 0x217f, type: "code" }, { start: 0x2400, end: 0x24ff, type: "code" }]));
+  assert.deepEqual(result.regions, { added: 1, changed: 1, retired: 0, unchanged: 1 });
+  assert.deepEqual(regionList(db), [
+    [0x2000, 0x207f, "bytes", "dxa"],
+    [0x2080, 0x217f, "code", "dxa"],
+    [0x2400, 0x24ff, "code", "dxa"],
+  ]);
 });

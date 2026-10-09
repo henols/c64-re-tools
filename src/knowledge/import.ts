@@ -8,6 +8,7 @@
 // reported as a conflict. Code against data is a contradiction; a different
 // name or a finer data type for the same kind of memory is not.
 
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { KnowledgeError, transaction } from "./database.ts";
@@ -50,8 +51,16 @@ export interface ImportContext {
   /** The revision the caller read; the import is refused if knowledge changed since. */
   expectedRevision?: number;
   description?: string;
+  /** The SHA-256 of the analyzed image, as lowercase hex. */
   inputHash?: string;
+  /** The analyzer's own version line. */
   toolVersion?: string;
+}
+
+/** What a revision records about one analyzer run: the hash of the image bytes and, when the analyzer tells it, its version. */
+export function runProvenance(image: Uint8Array, toolVersion: string | undefined): Pick<ImportContext, "inputHash" | "toolVersion"> {
+  const inputHash = createHash("sha256").update(image).digest("hex");
+  return toolVersion === undefined ? { inputHash } : { inputHash, toolVersion };
 }
 
 export type ImportConflict =
@@ -208,7 +217,11 @@ function importSymbols(db: DatabaseSync, change: Change, findings: NormalizedFin
       continue;
     }
     const owner = symbolNamed(db, finding.name);
-    if (owner !== undefined) {
+    if (owner?.origin === analyzer) {
+      // The analyzer moved its own name: its newer finding replaces its own older row.
+      change.close("symbols", "address = ?", owner.address);
+      result.symbols.retired++;
+    } else if (owner !== undefined) {
       result.conflicts.push({ category: "symbol", address: finding.address, reason: "name-taken", current: owner, finding: { name: finding.name, kind: finding.kind } });
       if (replaced.has(finding.address)) result.symbols.retired++;
       continue;
@@ -233,14 +246,27 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
   };
 
   if (!findings.authoritative.regions) {
-    // Add only: fill addresses that no region covers yet.
+    // Retire nothing the snapshot leaves out. Fill addresses that no region covers yet, and
+    // give the analyzer's own regions under a finding the type that the analyzer finds now.
     for (const region of findings.regions) {
       const current = regionsOverlapping(db, region.start, region.end);
-      for (const row of current) if (row.origin !== analyzer) conflictWith(row, region);
-      for (const piece of subtract(region, current)) {
-        change.insertRegion({ ...piece, type: region.type, origin: analyzer });
-        result.regions.added++;
+      const protectedRows = current.filter((row) => row.origin !== analyzer);
+      for (const row of protectedRows) conflictWith(row, region);
+      const own = current.filter((row) => row.origin === analyzer);
+      const kept = own.filter((row) => row.type === region.type);
+      result.regions.unchanged += kept.length;
+      for (const row of own.filter((candidate) => candidate.type !== region.type)) {
+        // Close the row and keep its parts outside the finding.
+        change.close("regions", "start_address = ? AND end_address = ? AND origin = ?", row.start, row.end, analyzer);
+        if (row.start < region.start) change.insertRegion({ start: row.start, end: region.start - 1, type: row.type, origin: analyzer });
+        if (row.end > region.end) change.insertRegion({ start: region.end + 1, end: row.end, type: row.type, origin: analyzer });
+        result.regions.changed++;
       }
+      const empty = subtract(region, current);
+      for (const piece of subtract(region, [...protectedRows, ...kept])) {
+        change.insertRegion({ ...piece, type: region.type, origin: analyzer });
+      }
+      result.regions.added += empty.length;
     }
     return;
   }

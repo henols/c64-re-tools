@@ -1,11 +1,11 @@
 // The one place that opens .c64-re-tools/knowledge.db.
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 
 import { projectRoot } from "../project.ts";
-import { migrate } from "./schema.ts";
+import { checkReadable, migrate, SCHEMA, schemaVersion, type Schema } from "./schema.ts";
 
 export const KNOWLEDGE_DIRECTORY = ".c64-re-tools";
 export const KNOWLEDGE_FILE = "knowledge.db";
@@ -40,10 +40,10 @@ function configure(db: DatabaseSync): void {
   db.exec("PRAGMA journal_mode = DELETE; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
 }
 
-function open(path: string): DatabaseSync {
+function open(path: string, readOnly: boolean): DatabaseSync {
   let db: DatabaseSync;
   try {
-    db = new DatabaseSync(path);
+    db = new DatabaseSync(path, { readOnly });
     configure(db);
     db.prepare("SELECT count(*) FROM sqlite_master").get();
   } catch (error) {
@@ -53,16 +53,22 @@ function open(path: string): DatabaseSync {
 }
 
 /**
- * Opens the project's knowledge database, migrating it to this build's schema.
- * Returns undefined when it does not exist: a missing database reads as empty
- * knowledge and is not created by a read.
+ * Opens the project's knowledge database read-only, as it is: a read never
+ * migrates and never writes. Returns undefined when the database does not
+ * exist or has no schema yet: that reads as empty knowledge, and a read
+ * creates nothing. Refuses a schema that the read functions cannot read.
  */
-export function openForRead(root: string = projectRoot()): DatabaseSync | undefined {
+export function openForRead(root: string = projectRoot(), schema: Schema = SCHEMA): DatabaseSync | undefined {
   const path = knowledgePath(root);
   if (!existsSync(path)) return undefined;
-  const db = open(path);
+  const db = open(path, true);
   try {
-    migrate(db);
+    const version = schemaVersion(db);
+    if (version === 0) {
+      db.close();
+      return undefined;
+    }
+    checkReadable(version, schema);
   } catch (error) {
     db.close();
     throw error;
@@ -70,13 +76,34 @@ export function openForRead(root: string = projectRoot()): DatabaseSync | undefi
   return db;
 }
 
-/** Opens the project's knowledge database for a write, creating .c64-re-tools/knowledge.db when needed. */
-export function openForWrite(root: string = projectRoot()): DatabaseSync {
+/** The copy of knowledge.db that a migration from `version` keeps. */
+export function backupPath(root: string, version: number): string {
+  return `${knowledgePath(root)}.bak-v${version}`;
+}
+
+/**
+ * Opens the project's knowledge database for a write, creating
+ * .c64-re-tools/knowledge.db when needed, and migrates it to the newest
+ * schema. Before a migration changes a database that has a schema, it copies
+ * the file to knowledge.db.bak-v<old version>.
+ */
+export function openForWrite(root: string = projectRoot(), schema: Schema = SCHEMA): DatabaseSync {
   const path = knowledgePath(root);
   mkdirSync(join(root, KNOWLEDGE_DIRECTORY), { recursive: true });
-  const db = open(path);
+  const db = open(path, false);
+  const beforeMigration = (version: number) => {
+    try {
+      // This connection holds the write lock: no other writer changes the file during the copy.
+      writeFileSync(backupPath(root, version), readFileSync(path));
+    } catch (error) {
+      throw new KnowledgeError(
+        "unsupported-migration",
+        `The knowledge database needs a migration from schema version ${version}, but the copy to ${KNOWLEDGE_DIRECTORY}/${KNOWLEDGE_FILE}.bak-v${version} failed: ${(error as Error).message}. Nothing changed.`,
+      );
+    }
+  };
   try {
-    migrate(db);
+    migrate(db, { schema, beforeMigration });
   } catch (error) {
     db.close();
     throw error;

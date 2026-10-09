@@ -9,6 +9,7 @@ import {
   MAX_BASELINES,
   MAX_EXECUTION_COUNT,
   MAX_KEYBOARD_BYTES,
+  MAX_MASK_RECTANGLES,
   MAX_MEMORY_READ,
   MAX_MEMORY_WRITE,
   MAX_TIMEOUT_FRAMES,
@@ -101,9 +102,6 @@ type ObservedRegister = (typeof OBSERVED_REGISTERS)[number];
 const SET_REGISTERS = ["pc", "a", "x", "y", "sp"];
 
 type JoystickDirection = (typeof JOYSTICK_DIRECTIONS)[number];
-
-/** The most mask rectangles the host accepts for one screen comparison. */
-const MAX_MASK_RECTANGLES = 64;
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const isInteger = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;

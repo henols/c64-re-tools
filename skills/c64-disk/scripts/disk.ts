@@ -5,8 +5,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { inspectDisk, WireFailure } from "#src/host-client/tools.ts";
+import { inspectDisk } from "#src/host-client/tools.ts";
 import { resolveProjectPath } from "#src/project.ts";
+import { runScript, UsageError } from "#src/script.ts";
 
 const USAGE = `disk.ts <action> <image> [name] [--out <file>]
 
@@ -22,8 +23,6 @@ character as {$xx}, for example {$c1}. The result is one JSON object.`;
 
 const ACTIONS = ["directory", "bam", "entry", "chain", "read"] as const;
 type Action = (typeof ACTIONS)[number];
-
-class UsageError extends Error {}
 
 async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }> {
   const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { out: { type: "string" }, help: { type: "boolean" } } });
@@ -56,19 +55,11 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   return { output, failed: false };
 }
 
-try {
-  const { output, failed } = await run(process.argv.slice(2));
-  process.stdout.write(`${JSON.stringify(output)}\n`);
-  if (failed) process.exitCode = 1;
-} catch (error) {
-  if (error instanceof WireFailure) {
-    process.stdout.write(`${JSON.stringify({ error: { code: error.code, message: error.message } })}\n`);
-    process.exitCode = 1;
-  } else if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
-    const message = (error as Error).message;
-    process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
-    process.exitCode = 2;
-  } else {
-    throw error;
-  }
-}
+await runScript(
+  async () => {
+    const { output, failed } = await run(process.argv.slice(2));
+    if (failed) process.exitCode = 1;
+    return output;
+  },
+  { usage: USAGE },
+);

@@ -214,3 +214,21 @@ test("a failure in the middle of a write rolls all of it back", () => {
   assert.equal(count(db, "SELECT count(*) AS n FROM revisions"), 1);
   db.exec("DROP TRIGGER fail_boom");
 });
+
+test("a write over a row of another origin returns the replaced row", () => {
+  const db = fresh();
+  const user: WriteContext = { origin: "user" };
+  renameSymbol(db, user, { address: 0x2100, name: "update_player", kind: "routine" });
+  const renamed = renameSymbol(db, llm, { address: 0x2100, name: "move_player" });
+  assert.deepEqual(renamed.previous, { address: 0x2100, name: "update_player", kind: "routine", origin: "user", revision: 1 });
+  assert.equal(renameSymbol(db, llm, { address: 0x2100, name: "step_player" }).previous, undefined, "a row of the same origin is no surprise");
+
+  classifyRegion(db, user, { start: 0x3000, end: 0x30ff, type: "sprite" });
+  classifyRegion(db, llm, { start: 0x3100, end: 0x31ff, type: "bytes" });
+  const classified = classifyRegion(db, llm, { start: 0x3080, end: 0x317f, type: "bitmap" });
+  assert.deepEqual(
+    classified.previous?.map((region) => [region.start, region.end, region.type, region.origin]),
+    [[0x3000, 0x30ff, "sprite", "user"]],
+  );
+  assert.equal(classifyRegion(db, llm, { start: 0x3080, end: 0x317f, type: "bitmap" }).previous, undefined, "an unchanged write replaces nothing");
+});

@@ -41,6 +41,7 @@ import {
   unclassifyRegion,
   type WriteContext,
 } from "#src/knowledge/write.ts";
+import { runScript, UsageError } from "#src/script.ts";
 
 const USAGE = `knowledge.ts <command> [arguments] [options]
 
@@ -72,8 +73,6 @@ Write options:
   --origin user|llm        who decided (default llm)
 
 Addresses are $ and four hex digits; quote them in a shell: '$2100'.`;
-
-class UsageError extends Error {}
 
 function address(value: string | undefined, what = "address"): number {
   if (value === undefined) throw new UsageError(`${what} is missing`);
@@ -205,7 +204,7 @@ function writeOperation(command: string, args: string[], kind: string | undefine
       if (kind !== undefined) request.kind = oneOf(SYMBOL_KINDS, kind, "--kind");
       return (db) => {
         const result = renameSymbol(db, context, request);
-        return { revision: result.revision, symbol: symbol(result.current) };
+        return { revision: result.revision, symbol: symbol(result.current), ...(result.previous === undefined ? {} : { previous: symbol(result.previous) }) };
       };
     }
     case "remove-symbol": {
@@ -216,7 +215,7 @@ function writeOperation(command: string, args: string[], kind: string | undefine
       const request = { start: address(args[0], "start"), end: address(args[1], "end"), type: oneOf(REGION_TYPES, args[2], "type") as RegionType };
       return (db) => {
         const result = classifyRegion(db, context, request);
-        return { revision: result.revision, regions: result.current.map(region) };
+        return { revision: result.revision, regions: result.current.map(region), ...(result.previous === undefined ? {} : { previous: result.previous.map(region) }) };
       };
     }
     case "unclassify": {
@@ -255,17 +254,4 @@ function writeOperation(command: string, args: string[], kind: string | undefine
   }
 }
 
-try {
-  process.stdout.write(`${JSON.stringify(run(process.argv.slice(2)))}\n`);
-} catch (error) {
-  if (error instanceof KnowledgeError) {
-    process.stdout.write(`${JSON.stringify({ error: { code: error.code, message: error.message } })}\n`);
-    process.exitCode = 1;
-  } else if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
-    const message = (error as Error).message;
-    process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
-    process.exitCode = 2;
-  } else {
-    throw error;
-  }
-}
+await runScript(() => run(process.argv.slice(2)), { usage: USAGE, refusals: [KnowledgeError] });

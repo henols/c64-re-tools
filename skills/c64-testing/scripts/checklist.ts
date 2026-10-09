@@ -4,13 +4,12 @@
 
 import { parseArgs } from "node:util";
 
+import { runScript, UsageError } from "#src/script.ts";
 import { readScenario, ScenarioError, type Scenario } from "./scenario.ts";
 
 const USAGE = `checklist.ts <scenario.json> [<scenario.json> ...] [--item <text> ...]
 
 Prints a Markdown checklist. --item adds an application-specific line.`;
-
-class UsageError extends Error {}
 
 /** Behavior that only a person can judge. */
 const ALWAYS = [
@@ -44,14 +43,9 @@ function run(argv: string[]): string {
   return `${lines.join("\n")}\n`;
 }
 
-try {
-  process.stdout.write(run(process.argv.slice(2)));
-} catch (error) {
-  if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
-    const message = (error as Error).message;
-    process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
-    process.exitCode = 2;
-  } else {
-    throw error;
-  }
-}
+await runScript(
+  () => {
+    process.stdout.write(run(process.argv.slice(2)));
+  },
+  { usage: USAGE },
+);

@@ -6,6 +6,7 @@ import { parseArgs } from "node:util";
 
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
+import { runScript, UsageError } from "#src/script.ts";
 import { readScenario, runScenario, ScenarioError, type ScenarioResult } from "./scenario.ts";
 
 const USAGE = `test.ts <scenario.json>
@@ -14,8 +15,6 @@ const USAGE = `test.ts <scenario.json>
 references/scenario-format.md. The result is one JSON object.`;
 
 const EXIT = { PASS: 0, FAIL: 1, INCONCLUSIVE: 3 } as const;
-
-class UsageError extends Error {}
 
 async function run(argv: string[]): Promise<ScenarioResult> {
   const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { help: { type: "boolean" } } });
@@ -46,16 +45,11 @@ async function runScenarioFile(path: string): Promise<ScenarioResult> {
   }
 }
 
-try {
-  const result = await run(process.argv.slice(2));
-  process.stdout.write(`${JSON.stringify(result)}\n`);
-  process.exitCode = EXIT[result.result];
-} catch (error) {
-  if (error instanceof UsageError || (error as NodeJS.ErrnoException).code?.startsWith("ERR_PARSE_ARGS")) {
-    const message = (error as Error).message;
-    process.stdout.write(`${JSON.stringify({ error: { code: "invalid-input", message: message === "" ? USAGE : `${message}\n\n${USAGE}` } })}\n`);
-    process.exitCode = 2;
-  } else {
-    throw error;
-  }
-}
+await runScript(
+  async () => {
+    const result = await run(process.argv.slice(2));
+    process.exitCode = EXIT[result.result];
+    return result;
+  },
+  { usage: USAGE },
+);
