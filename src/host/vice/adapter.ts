@@ -562,27 +562,10 @@ export class ViceAdapter {
   }
 
   /**
-   * Adds a C64 exec checkpoint that stops the machine. Returns its VICE number.
-   * Never a VICE "temporary" checkpoint: in VICE, setting one resumes
-   * the machine (like the text monitor's until), whatever the manual says.
-   */
-  async addBreak(address: number): Promise<number> {
-    const body = Buffer.alloc(9);
-    body.writeUInt16LE(address, 0);
-    body.writeUInt16LE(address, 2);
-    body[4] = 1; // stop when hit
-    body[5] = 1; // enabled
-    body[6] = 0x04; // exec
-    body[7] = 0; // not temporary
-    body[8] = Memspace.main;
-    const info = await this.#monitor.request(Command.checkpointSet, body);
-    return info.body.readUInt32LE(0);
-  }
-
-  /**
    * Adds a stopping checkpoint over [start, end]: exec for a breakpoint;
-   * load/store for a watchpoint. Returns its VICE number. Never temporary
-   * (see addBreak).
+   * load/store for a watchpoint. Returns its VICE number. Never a VICE
+   * "temporary" checkpoint: in VICE, setting one resumes the machine (like
+   * the text monitor's until), whatever the manual says.
    */
   async addCheckpoint(options: { start: number; end: number; operation: number; space: Space; enabled?: boolean }): Promise<number> {
     const body = Buffer.alloc(9);

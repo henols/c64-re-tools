@@ -556,7 +556,7 @@ export class ViceSession implements ViceSessionHandle {
     // sent from the monitor resumes at the vector; so the reset is sent while
     // running, and only a stop caused by this breakpoint counts.
     const vector = await this.#machine.resetVector();
-    const checkpoint = await this.#machine.addBreak(vector);
+    const checkpoint = await this.#machine.addCheckpoint({ start: vector, end: vector, operation: 0x04, space: "c64" });
     await this.#resume();
     const stopped = this.#nextStop(RESET_STOP_LIMIT_MS, checkpoint);
     await this.#resumingCommand(() => this.#machine.reset(params.mode));
