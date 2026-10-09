@@ -3,7 +3,7 @@
 // refused by name with the remedy; nothing is ever installed.
 
 import { accessSync, constants, statSync } from "node:fs";
-import { delimiter, isAbsolute, join } from "node:path";
+import { isAbsolute, join, posix, win32 } from "node:path";
 
 import { WireFailure } from "../protocol.ts";
 
@@ -87,6 +87,16 @@ export function isExecutableFile(path: string): boolean {
   }
 }
 
+/**
+ * The value of an environment variable. Windows ignores the case of the name,
+ * also in a copied environment, where PATH is often named "Path".
+ */
+export function environmentValue(env: NodeJS.ProcessEnv, name: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  if (platform !== "win32" || env[name] !== undefined) return env[name];
+  const key = Object.keys(env).find((candidate) => candidate.toUpperCase() === name.toUpperCase());
+  return key === undefined ? undefined : env[key];
+}
+
 /** The extensions that the supervisor can start on Windows: programs directly, batch files through cmd.exe. */
 const STARTABLE = [".com", ".exe", ".bat", ".cmd"];
 
@@ -98,14 +108,15 @@ const STARTABLE = [".com", ".exe", ".bat", ".cmd"];
  */
 export function pathSuffixes(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): string[] {
   if (platform !== "win32") return [""];
-  const listed = (env.PATHEXT ?? "").split(";").map((suffix) => suffix.trim().toLowerCase());
+  const listed = (environmentValue(env, "PATHEXT", platform) ?? "").split(";").map((suffix) => suffix.trim().toLowerCase());
   const suffixes = listed.filter((suffix, index) => STARTABLE.includes(suffix) && listed.indexOf(suffix) === index);
   return suffixes.length === 0 ? STARTABLE : suffixes;
 }
 
 /** The first executable named `binary + suffix` in a PATH directory, in PATH order; undefined when there is none. */
-export function findOnPath(binaries: readonly string[], env: NodeJS.ProcessEnv, suffixes: readonly string[] = pathSuffixes(env)): string | undefined {
-  for (const dir of (env.PATH ?? "").split(delimiter)) {
+export function findOnPath(binaries: readonly string[], env: NodeJS.ProcessEnv, suffixes: readonly string[] = pathSuffixes(env), platform: NodeJS.Platform = process.platform): string | undefined {
+  const delimiter = platform === "win32" ? win32.delimiter : posix.delimiter;
+  for (const dir of (environmentValue(env, "PATH", platform) ?? "").split(delimiter)) {
     if (dir === "") continue;
     for (const binary of binaries) {
       for (const suffix of suffixes) {
