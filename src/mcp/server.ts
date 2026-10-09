@@ -251,12 +251,13 @@ export async function callTool(
   }
 }
 
+/** The version of this package. A package.json without a version is a broken installation. */
 function packageVersion(): string {
-  try {
-    return (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
-  } catch {
-    return "0.0.0";
+  const { version } = createRequire(import.meta.url)("../../package.json") as { version?: unknown };
+  if (typeof version !== "string" || version === "") {
+    throw new Error("The package.json of c64-re-tools has no version. Install c64-re-tools again.");
   }
+  return version;
 }
 
 const INSTRUCTIONS =
