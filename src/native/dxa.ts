@@ -7,6 +7,7 @@
 
 import { writeFileSync } from "node:fs";
 
+import { SYMBOL_NAME } from "../c64.ts";
 import { WireFailure } from "../protocol.ts";
 import { checkRequestBounds, imageRange, type DxaParams, type DxaResult } from "./types.ts";
 import { Workspace } from "./staging.ts";
@@ -16,7 +17,6 @@ import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
 const TIMEOUT_MS = 120_000;
 /** The listing is returned as an attachment; larger output is refused. */
 const MAX_LISTING = 8 * 1024 * 1024;
-const LABEL_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 const hex = (value: number) => value.toString(16).padStart(4, "0");
 
@@ -54,10 +54,11 @@ export function parseListing(listing: string, start: number, end: number): Pick<
   const statements: Array<{ address: number; dumped: number; data: number | undefined }> = [];
   const labels: DxaResult["labels"] = [];
   for (const line of listing.split(/\r?\n/)) {
-    const label = /^([0-9a-f]{4})\s+([A-Za-z_]\w*):\s*$/.exec(line);
+    // dxa prints a seed label as it is, also a local name that starts with a dot.
+    const label = /^([0-9a-f]{4})\s+(\.?[A-Za-z_]\w*):\s*$/.exec(line);
     if (label !== null) {
       const address = Number.parseInt(label[1]!, 16);
-      if (address < start || address > end || !LABEL_NAME.test(label[2]!)) throw new Error(`label ${label[2]} at $${label[1]} is not usable`);
+      if (address < start || address > end || !SYMBOL_NAME.test(label[2]!)) throw new Error(`label ${label[2]} at $${label[1]} is not usable`);
       labels.push({ address, name: label[2]! });
       continue;
     }
@@ -111,8 +112,8 @@ export async function analyze(
     };
     seed("routines", entryPoints.map((address) => `${hex(address)}\n`));
     seed("blocks", dataRanges.map((range) => `${hex(range.start)}-${hex(range.end)}\n`));
-    // The xa label file format: name, address, flags.
-    seed("labels", params.labels.filter((label) => LABEL_NAME.test(label.name)).map((label) => `${label.name}, 0x${hex(label.address)}, 0x0000\n`));
+    // The xa label file format: name, address, flags. dxa reads the name up to the first blank, so a leading dot stays.
+    seed("labels", params.labels.filter((label) => SYMBOL_NAME.test(label.name)).map((label) => `${label.name}, 0x${hex(label.address)}, 0x0000\n`));
     const run = await runToolOrFail(
       "dxa",
       "The DXA analysis",

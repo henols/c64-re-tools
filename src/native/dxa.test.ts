@@ -126,6 +126,12 @@ test("a rejected listing says what the check found and quotes the messages of dx
   );
 });
 
+test("a label seed with a leading dot reaches dxa and comes back as a label", { skip: posixOnly }, async () => {
+  const env = standInDxa("dxa-dot-label", "grep -qxF '.loop, 0x0801, 0x0000' labels.txt || exit 3\nprintf '0801          .loop:\\n0801 60       \\trts\\n'");
+  const { result } = await analyze({ ...SEEDS, labels: [{ address: 0x0801, name: ".loop" }] }, PRG, context(env));
+  assert.deepEqual(result.labels, [{ address: 0x0801, name: ".loop" }]);
+});
+
 test("a listing larger than the limit is refused with the limit", { skip: posixOnly }, async () => {
   const env = standInDxa("dxa-too-much", "head -c 9000000 /dev/zero | tr '\\0' a");
   await assert.rejects(analyze(SEEDS, PRG, context(env)), refusedWith("dxa printed a listing that is larger than 8 MiB. Nothing was imported."));
