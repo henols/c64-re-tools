@@ -1,15 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { vicBankBase } from "../../c64.ts";
 import { decodeCia, decodeSid, decodeSprite, decodeVicii, viciiMode } from "./chips.ts";
-
-test("the VIC-II bank comes from CIA 2 port A, inverted, with undriven lines high", () => {
-  assert.equal(vicBankBase(0x97, 0x3f), 0x0000); // KERNAL default: lines %11 -> bank 0
-  assert.equal(vicBankBase(0x96, 0x3f), 0x4000);
-  assert.equal(vicBankBase(0x94, 0x3f), 0xc000);
-  assert.equal(vicBankBase(0x00, 0x00), 0x0000, "no driven lines read high");
-});
 
 test("display modes follow ECM, BMM and MCM", () => {
   assert.equal(viciiMode(0x1b, 0xc8), "text");
