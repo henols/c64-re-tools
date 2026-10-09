@@ -1744,6 +1744,8 @@ export class MessageReader {
   #collect(body: Buffer): void {
     const current = this.#current!;
     const expected = current.sizes[current.done.length]!;
+    // An attachment of size 0 is complete without a frame, so the pending one needs bytes; an empty frame would only add an empty part.
+    if (body.length === 0) throw new ProtocolError("attachment frame is empty");
     if (current.received + body.length > expected) throw new ProtocolError("attachment frame runs past its announced size");
     current.parts.push(body);
     current.received += body.length;

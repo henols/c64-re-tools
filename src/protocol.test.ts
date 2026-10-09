@@ -188,7 +188,7 @@ test("an attachment larger than one frame is split and rejoined", () => {
   assert.ok(received!.attachments[0]!.equals(big));
 });
 
-test("bad attachment announcements and overlong attachment frames are refused", () => {
+test("bad attachment announcements and empty or overlong attachment frames are refused", () => {
   const raw = (value: unknown, ...extra: Buffer[]) => {
     const body = Buffer.from(JSON.stringify(value));
     const header = Buffer.alloc(4);
@@ -204,6 +204,7 @@ test("bad attachment announcements and overlong attachment frames are refused", 
   assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: "3" })), ProtocolError);
   assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [MAX_ATTACHMENT_BYTES, 1] })), ProtocolError);
   assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [2] }, frameOf(Buffer.from("abc")))), /runs past/);
+  assert.throws(() => new MessageReader().push(raw({ type: "request", attachments: [2] }, frameOf(Buffer.alloc(0)))), /attachment frame is empty/);
   assert.throws(() => encodeFrame({ type: "ready" }, [Buffer.alloc(MAX_ATTACHMENT_BYTES + 1)]), ProtocolError);
   assert.throws(() => new FrameDecoder().push(encodeFrame({ type: "ready" }, [Buffer.from("x")])), /unexpected attachments/);
 });
