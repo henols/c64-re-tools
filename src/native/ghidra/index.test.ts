@@ -110,3 +110,10 @@ test("a rejected Ghidra result says what the check found", { skip: posixOnly }, 
     refusedWith("Ghidra returned an incomplete or inconsistent result. Nothing was imported. The check found: no coverage."),
   );
 });
+
+test("a request for more than 32 decompilations is refused by name before Ghidra runs", async () => {
+  await assert.rejects(
+    analyze({ ...SEEDS, decompile: Array.from({ length: 33 }, () => 0x0801) }, PRG, { ...context(), env: { PATH: "" } }),
+    (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message === "The request has 33 routines to decompile. Give at most 32 routines to decompile.",
+  );
+});

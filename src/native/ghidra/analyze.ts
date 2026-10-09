@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { WireFailure } from "../../protocol.ts";
-import { checkGhidraResult, GHIDRA_LIMITS, imageRange, type GhidraParams, type GhidraResult } from "../types.ts";
+import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, type GhidraParams, type GhidraResult } from "../types.ts";
 import { outputTail, type ToolContext } from "../run.ts";
 import { Workspace } from "../staging.ts";
 import { findGhidra, runHeadless, SCRIPT_DIRECTORY } from "./index.ts";
@@ -17,6 +17,7 @@ export async function analyze(
   image: Buffer,
   context: ToolContext,
 ): Promise<{ result: GhidraResult }> {
+  checkRequestBounds(params);
   const ghidra = findGhidra(context.env);
   const { start, end, body } = imageRange(params.imageKind, image);
   const base = start;

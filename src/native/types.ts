@@ -80,6 +80,19 @@ export interface GhidraResult {
   completeness: { functions: boolean; regions: boolean; references: boolean };
 }
 
+/** Refuses a DXA or Ghidra request with more seeds or decompilations than the request bounds allow, by name. */
+export function checkRequestBounds(params: DxaParams & { decompile?: number[] }): void {
+  const bounds = [
+    ["entry points", params.entryPoints.length, GHIDRA_LIMITS.entryPoints],
+    ["data ranges", params.dataRanges.length, GHIDRA_LIMITS.dataRanges],
+    ["labels", params.labels.length, GHIDRA_LIMITS.labels],
+    ["routines to decompile", params.decompile?.length ?? 0, GHIDRA_LIMITS.decompile],
+  ] as const;
+  for (const [name, count, limit] of bounds) {
+    if (count > limit) throw new WireFailure("invalid-input", `The request has ${count} ${name}. Give at most ${limit} ${name}.`);
+  }
+}
+
 /** dxa.analyze (16 §9): the same image and seeds as Ghidra, without decompilation. */
 export type DxaParams = Omit<GhidraParams, "decompile">;
 

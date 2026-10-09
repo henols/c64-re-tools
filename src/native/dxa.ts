@@ -8,7 +8,7 @@
 import { writeFileSync } from "node:fs";
 
 import { WireFailure } from "../protocol.ts";
-import { imageRange, type DxaParams, type DxaResult } from "./types.ts";
+import { checkRequestBounds, imageRange, type DxaParams, type DxaResult } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
 import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
@@ -90,6 +90,7 @@ export async function analyze(
   image: Buffer,
   context: ToolContext,
 ): Promise<{ result: DxaResult; attachments: Buffer[] }> {
+  checkRequestBounds(params);
   const executable = findTool(DXA, context.env);
   const { start, end } = imageRange(params.imageKind, image);
   const inside = (address: number) => address >= start && address <= end;
