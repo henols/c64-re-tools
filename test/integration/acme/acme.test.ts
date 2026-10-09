@@ -40,7 +40,7 @@ test("the fixture assembles to a PRG with its load range and symbols", { skip: a
   assert.equal(result.program?.readUInt16LE(0), 0x0801);
   assert.equal(result.loadRange?.bytes, result.program!.length - 2);
   const byName = new Map(result.symbols!.map((symbol) => [symbol.name, symbol]));
-  assert.deepEqual(byName.get("start"), { name: "start", kind: "address", value: 0x080d, used: false });
+  assert.deepEqual(byName.get("start"), { name: "start", kind: "address", address: 0x080d, used: false });
   assert.deepEqual(byName.get("MAX"), { name: "MAX", kind: "constant", value: 10, used: true });
   assert.equal(byName.get("UNUSED_CONSTANT")?.used, false);
   assert.equal(byName.get("RESULT")?.kind, "constant", "$c100 is outside the program");

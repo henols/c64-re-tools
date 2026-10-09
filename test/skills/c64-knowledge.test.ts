@@ -108,3 +108,19 @@ test("a missing name or comment text is a usage error and creates no knowledge d
   }
   assert.equal(existsSync(join(root, ".c64-re-tools")), false);
 });
+
+test("a write over a row of another origin prints the replaced row", () => {
+  const root = project();
+  knowledge(root, "rename", "$2100", "update_player", "--kind", "routine", "--origin", "user");
+  assert.deepEqual(knowledge(root, "rename", "$2100", "move_player").json, {
+    revision: 2,
+    symbol: { address: "$2100", name: "move_player", kind: "routine", origin: "llm", revision: 2 },
+    previous: { address: "$2100", name: "update_player", kind: "routine", origin: "user", revision: 1 },
+  });
+  knowledge(root, "classify", "$3000", "$303f", "sprite", "--origin", "user");
+  assert.deepEqual(knowledge(root, "classify", "$3020", "$305f", "bytes").json, {
+    revision: 4,
+    regions: [{ start: "$3020", end: "$305f", type: "bytes", origin: "llm", revision: 4 }],
+    previous: [{ start: "$3000", end: "$303f", type: "sprite", origin: "user", revision: 3 }],
+  });
+});
