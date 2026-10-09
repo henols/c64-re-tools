@@ -63,7 +63,7 @@ type JsonObject = Record<string, unknown>;
 export const AddressInput = z
   .string()
   .regex(/^\$[0-9a-fA-F]{4}$/, "must be $ followed by four hex digits, for example $c000")
-  .transform((value) => parseC64Address(value) as number)
+  .transform((value) => parseC64Address(value))
   .describe("C64 address, $0000 to $ffff");
 
 /** Output address: "$" and four lowercase hex digits. */

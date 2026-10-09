@@ -17,10 +17,11 @@ function areaOf(path: string): string | undefined {
     if (parts.length === 2) {
       // A top-level test kit, such as protocol.testkit.ts, belongs to the area of its module.
       const leaf = parts[1]!.replace(/(?:\.testkit)?\.ts$/, "");
-      return ["c64", "project", "protocol"].includes(leaf) ? leaf : undefined;
+      return ["c64", "project", "protocol", "script"].includes(leaf) ? leaf : undefined;
     }
+    // src/protocol/ holds the parts that src/protocol.ts exports again: one area with it.
     const dir = parts[1]!;
-    return ["mcp", "host-client", "host", "knowledge", "cli", "native"].includes(dir) ? dir : undefined;
+    return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
   }
   if (parts[0] === "skills" && parts.length > 2) return `skill:${parts[1]}`;
   if (parts[0] === "distribution") return "distribution";
@@ -36,13 +37,15 @@ const ALLOWED: Record<string, readonly string[]> = {
   mcp: ["host-client", "protocol", "c64"],
   host: ["native", "protocol", "c64"],
   knowledge: ["c64", "project"],
+  // The error envelope of the skill scripts and the CLI. It takes other refusal classes as a parameter.
+  script: ["protocol", "project"],
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
   native: ["protocol", "c64"],
   // The installation and status edge: host tool status through the host-client, local tool status through native.
-  cli: ["host-client", "native", "protocol", "distribution"],
+  cli: ["host-client", "native", "protocol", "script", "distribution"],
   distribution: [],
 };
-const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64"];
+const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "script"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.
@@ -128,6 +131,18 @@ test("checkImport refuses every forbidden direction", () => {
     ["src/cli/main.ts", "../project.ts"],
     ["distribution/plugin.ts", "../src/c64.ts"],
     ["distribution/plugin.ts", "../src/project.ts"],
+    ["src/script.ts", "./knowledge/database.ts"],
+    ["src/script.ts", "./host-client/tools.ts"],
+    ["src/script.ts", "./c64.ts"],
+    ["src/mcp/server.ts", "../script.ts"],
+    ["src/host/server.ts", "../script.ts"],
+    ["src/knowledge/database.ts", "../script.ts"],
+    ["src/protocol/vice.ts", "../host/server.ts"],
+    ["src/protocol/vice.ts", "../script.ts"],
+    ["src/knowledge/read.ts", "../protocol/vice.ts"],
+    ["src/c64.ts", "./protocol/framing.ts"],
+    ["skills/c64-disk/scripts/disk.ts", "#src/protocol.ts"],
+    ["skills/c64-disk/scripts/disk.ts", "#src/protocol/tools.ts"],
   ];
   for (const [from, specifier] of refused) {
     assert.notEqual(checkImport(from, specifier), undefined, `${from} -> ${specifier} must be refused`);
@@ -153,6 +168,19 @@ test("checkImport accepts every allowed direction", () => {
     ["src/cli/main.ts", "../native/status.ts"],
     ["src/cli/main.ts", "../../distribution/plugin.ts"],
     ["src/host/server.ts", "node:net"],
+    ["src/script.ts", "./protocol.ts"],
+    ["src/script.ts", "./protocol/messages.ts"],
+    ["src/script.ts", "./project.ts"],
+    ["src/cli/main.ts", "../script.ts"],
+    ["skills/c64-disk/scripts/disk.ts", "#src/script.ts"],
+    ["src/protocol.ts", "./protocol/vice.ts"],
+    ["src/protocol/vice.ts", "./framing.ts"],
+    ["src/protocol/vice.ts", "../c64.ts"],
+    ["src/mcp/tools/memory.ts", "../../protocol/vice.ts"],
+    ["src/host/server.ts", "../protocol/tools.ts"],
+    ["src/host-client/connect.ts", "../protocol/framing.ts"],
+    ["src/native/run.ts", "../protocol/tools.ts"],
+    ["src/cli/main.ts", "../protocol/tools.ts"],
   ];
   for (const [from, specifier] of accepted) {
     assert.equal(checkImport(from, specifier), undefined);

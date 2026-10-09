@@ -4,7 +4,7 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { CIA_SELECTIONS, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, WireFailure, type ObserveParams } from "../../protocol.ts";
+import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, WireFailure, type ObserveParams } from "../../protocol.ts";
 import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, requireFields, SpaceInput, ToolOutput, TransientName } from "../server.ts";
 
 const Color = z.number().int().min(0).max(15);
@@ -140,7 +140,7 @@ export const c64Screen = defineTool({
       action: z.enum(["capture", "compare", "list", "discard"]),
       baseline: TransientName.optional().describe("capture: keep the frame under this name. compare and discard: the baseline to use"),
       maxMismatchRatio: z.number().min(0).max(1).optional().describe("compare only: 0 to 1, default 0"),
-      mask: z.array(Rectangle).max(64).optional().describe("compare only: rectangles to ignore, in frame pixels"),
+      mask: z.array(Rectangle).max(MAX_MASK_RECTANGLES).optional().describe("compare only: rectangles to ignore, in frame pixels"),
       includeDiff: z.boolean().optional().describe("compare only: also return a difference image"),
     })
     .strict(),
