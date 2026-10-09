@@ -55,16 +55,18 @@ export function ghidraFindings(result: GhidraResult): NormalizedFindings {
 }
 
 /**
- * DXA's result as normalized findings (12 §17). Its labels become symbols of
- * kind label; DXA names only referenced addresses, so labels are not
- * authoritative, while its regions cover every byte and are.
+ * DXA's result as normalized findings (12 §17). A label in one of DXA's data
+ * regions becomes a symbol of kind data, any other label one of kind label.
+ * DXA names only referenced addresses, so labels are not authoritative, while
+ * its regions cover every byte and are.
  */
 export function dxaFindings(result: DxaResult): NormalizedFindings {
+  const inData = (address: number) => result.regions.some((region) => region.classification === "data" && region.start <= address && address <= region.end);
   return {
     analyzer: "dxa",
     coverage: result.coverage,
     authoritative: { symbols: result.completeness.labels, regions: result.completeness.regions, references: false },
-    symbols: result.labels.map((label) => ({ address: label.address, name: label.name, kind: "label" as const })),
+    symbols: result.labels.map((label) => ({ address: label.address, name: label.name, kind: inData(label.address) ? ("data" as const) : ("label" as const) })),
     regions: result.regions.map((region) => ({ start: region.start, end: region.end, type: region.classification === "code" ? ("code" as const) : ("bytes" as const) })),
     references: [],
   };

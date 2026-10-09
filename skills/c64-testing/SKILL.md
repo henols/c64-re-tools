@@ -19,7 +19,7 @@ A PASS proves only the behavior that the scenario does and observes. It does not
 
 ## Tools / execution path
 
-The script starts one emulator through the host runtime. It runs the scenario on the original, then resets the emulator and runs the scenario on the rebuild.
+The script starts one emulator through the host runtime. It runs the scenario on the original and then on the rebuild. Before each side, it does a hard reset of the emulator. The CPU then stops at the reset vector.
 
 ```
 node <skill>/scripts/test.ts tests/moves-left.json
@@ -32,7 +32,7 @@ The checklist script prints a Markdown checklist for a human tester.
 
 ## Workflow
 
-1. Write the scenario file. Start with a reset and a frame count, so both sides start from the same state.
+1. Write the scenario file. Start the steps with a frame count, for example `{ "frames": 150 }`. Each side starts at the reset vector, and the C64 needs these frames to start.
 2. Use symbol names, for example `player_x`, not fixed addresses. Each side finds the name in its own symbols. Use a `$` address only when both programs use the same address.
 3. Make each checkpoint a condition, for example `runUntil` at a routine. Do not wait for a time.
 4. Save the c64-assembler output of the rebuild to the symbol file: `assemble.ts ... > build/game.json`.
@@ -62,6 +62,7 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 
 ## Failure and conflicts
 
+- `invalid-input`: the scenario file has an error. The message names the step. Change the step and run the test again.
 - INCONCLUSIVE, "did not reach the checkpoint": one side did not reach the checkpoint in the frame limit. Find the reason with the c64-emulator skill. Do not report a FAIL.
 - INCONCLUSIVE, "has no symbol": one side has no symbol with that name. Add the name to the knowledge or to the rebuild source.
 - INCONCLUSIVE, "no emulator" or "could not run": the host runtime or the emulator failed. Tell the user the message.

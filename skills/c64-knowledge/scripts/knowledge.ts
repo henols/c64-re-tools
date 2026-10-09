@@ -1,10 +1,11 @@
 // The c64-knowledge script: reads and writes .c64-re-tools/knowledge.db in the
 // project directory (the working directory) and prints one compact JSON result.
 
+import type { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
-import { KnowledgeError, openForRead, openForWrite } from "#src/knowledge/database.ts";
+import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
 import { historyAt, historyNamed, revision, revisions, type HistoryEntry, type Revision } from "#src/knowledge/history.ts";
 import {
   at,
@@ -191,48 +192,66 @@ function run(argv: string[]): unknown {
   const context: WriteContext = { origin: values.origin === undefined ? "llm" : oneOf(["user", "llm"] as const, values.origin, "--origin") };
   if (values.reason !== undefined) context.description = values.reason;
   if (values["expect-revision"] !== undefined) context.expectedRevision = integer(values["expect-revision"], "--expect-revision");
-  const db = openForWrite();
-  try {
-    switch (command) {
-      case "rename": {
-        const request: { address: number; name: string; kind?: SymbolKind } = { address: address(args[0]), name: args[1] ?? "" };
-        if (values.kind !== undefined) request.kind = oneOf(SYMBOL_KINDS, values.kind, "--kind");
+  // Every argument is checked before the database opens: a refused write creates no database.
+  const operation = writeOperation(command, args, values.kind, context);
+  return withWrite(operation);
+}
+
+type WriteOperation = (db: DatabaseSync) => unknown;
+
+function writeOperation(command: string, args: string[], kind: string | undefined, context: WriteContext): WriteOperation {
+  switch (command) {
+    case "rename": {
+      const request: { address: number; name: string; kind?: SymbolKind } = { address: address(args[0]), name: args[1] ?? "" };
+      if (kind !== undefined) request.kind = oneOf(SYMBOL_KINDS, kind, "--kind");
+      return (db) => {
         const result = renameSymbol(db, context, request);
         return { revision: result.revision, symbol: symbol(result.current) };
-      }
-      case "remove-symbol":
-        return { revision: removeSymbol(db, context, { address: address(args[0]) }).revision };
-      case "classify": {
-        const result = classifyRegion(db, context, { start: address(args[0], "start"), end: address(args[1], "end"), type: oneOf(REGION_TYPES, args[2], "type") as RegionType });
-        return { revision: result.revision, regions: result.current.map(region) };
-      }
-      case "unclassify":
-        return { revision: unclassifyRegion(db, context, { start: address(args[0], "start"), end: address(args[1], "end") }).revision };
-      case "comment": {
-        const result = setComment(db, context, {
-          address: address(args[0]),
-          placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") as CommentPlacement,
-          text: args.slice(2).join(" "),
-        });
-        return { revision: result.revision, comment: comment(result.current) };
-      }
-      case "uncomment":
-        return { revision: removeComment(db, context, { address: address(args[0]), placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") }).revision };
-      case "reference": {
-        const result = addReference(db, context, { from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") as ReferenceKind });
-        return { revision: result.revision, reference: reference(result.current) };
-      }
-      case "unreference":
-        return {
-          revision: removeReference(db, context, { from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") }).revision,
-        };
-      case "revert":
-        return { revision: revert(db, context, { revision: integer(args[0], "revision") }).revision };
-      default:
-        throw new UsageError(`unknown command: ${command}`);
+      };
     }
-  } finally {
-    db.close();
+    case "remove-symbol": {
+      const request = { address: address(args[0]) };
+      return (db) => ({ revision: removeSymbol(db, context, request).revision });
+    }
+    case "classify": {
+      const request = { start: address(args[0], "start"), end: address(args[1], "end"), type: oneOf(REGION_TYPES, args[2], "type") as RegionType };
+      return (db) => {
+        const result = classifyRegion(db, context, request);
+        return { revision: result.revision, regions: result.current.map(region) };
+      };
+    }
+    case "unclassify": {
+      const request = { start: address(args[0], "start"), end: address(args[1], "end") };
+      return (db) => ({ revision: unclassifyRegion(db, context, request).revision });
+    }
+    case "comment": {
+      const request = { address: address(args[0]), placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") as CommentPlacement, text: args.slice(2).join(" ") };
+      return (db) => {
+        const result = setComment(db, context, request);
+        return { revision: result.revision, comment: comment(result.current) };
+      };
+    }
+    case "uncomment": {
+      const request = { address: address(args[0]), placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") };
+      return (db) => ({ revision: removeComment(db, context, request).revision });
+    }
+    case "reference": {
+      const request = { from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") as ReferenceKind };
+      return (db) => {
+        const result = addReference(db, context, request);
+        return { revision: result.revision, reference: reference(result.current) };
+      };
+    }
+    case "unreference": {
+      const request = { from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") };
+      return (db) => ({ revision: removeReference(db, context, request).revision });
+    }
+    case "revert": {
+      const request = { revision: integer(args[0], "revision") };
+      return (db) => ({ revision: revert(db, context, request).revision });
+    }
+    default:
+      throw new UsageError(`unknown command: ${command}`);
   }
 }
 

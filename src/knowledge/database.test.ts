@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { KnowledgeError, knowledgePath, openForRead, openForWrite, transaction } from "./database.ts";
-import { SCHEMA_VERSION, schemaVersion } from "./schema.ts";
+import { KnowledgeError, knowledgePath, openForRead, openForWrite, transaction, withWrite } from "./database.ts";
+import { currentRevision } from "./read.ts";
+import { migrate, SCHEMA_VERSION, schemaVersion } from "./schema.ts";
+import { removeSymbol, renameSymbol } from "./write.ts";
 
 const projects: string[] = [];
 after(() => {
@@ -101,4 +103,58 @@ test("a database from a newer c64-re-tools is refused, and garbage is invalid", 
   other.exec("CREATE TABLE something (x)");
   other.close();
   assert.throws(() => openForWrite(foreign), failsWith("invalid-database"));
+});
+
+test("a schema version that is not a whole number is invalid", () => {
+  const root = project();
+  openForWrite(root).close();
+  const raw = new DatabaseSync(knowledgePath(root));
+  raw.prepare("UPDATE meta SET value = 'one' WHERE key = 'schema_version'").run();
+  raw.close();
+  assert.throws(() => openForRead(root), failsWith("invalid-database"));
+  assert.throws(() => openForWrite(root), failsWith("invalid-database"));
+});
+
+test("two writers that create the database at the same time both get the current schema", () => {
+  const root = project();
+  mkdirSync(join(root, ".c64-re-tools"));
+  const first = new DatabaseSync(knowledgePath(root));
+  const second = new DatabaseSync(knowledgePath(root));
+  let raced = false;
+  // The second writer migrates after the first one read the version and before it takes the write lock.
+  const racing = new Proxy(first, {
+    get(target, property) {
+      if (property === "exec") {
+        return (sql: string) => {
+          if (!raced && sql === "BEGIN IMMEDIATE") {
+            raced = true;
+            migrate(second);
+          }
+          target.exec(sql);
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  migrate(racing);
+  assert.equal(raced, true);
+  assert.equal(schemaVersion(first), SCHEMA_VERSION);
+  assert.equal((first.prepare("SELECT count(*) AS n FROM meta WHERE key = 'current_revision'").get() as { n: number }).n, 1);
+  first.close();
+  second.close();
+});
+
+test("a refused write in a project without knowledge creates nothing, and an accepted one creates the database", () => {
+  const root = project();
+  const context = { origin: "llm" as const };
+  assert.throws(() => withWrite((db) => removeSymbol(db, context, { address: 0x2100 }), root), failsWith("not-found"));
+  assert.throws(() => withWrite((db) => renameSymbol(db, { ...context, expectedRevision: 3 }, { address: 0x2100, name: "main" }), root), failsWith("stale-revision"));
+  assert.equal(existsSync(join(root, ".c64-re-tools")), false);
+  const renamed = withWrite((db) => renameSymbol(db, context, { address: 0x2100, name: "main" }), root);
+  assert.equal(renamed.revision, 1);
+  const db = openForRead(root)!;
+  assert.equal(currentRevision(db), 1);
+  db.close();
+  assert.throws(() => withWrite((db) => removeSymbol(db, context, { address: 0x2200 }), root), failsWith("not-found"));
 });

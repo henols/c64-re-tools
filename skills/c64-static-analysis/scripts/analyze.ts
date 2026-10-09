@@ -13,8 +13,8 @@ import { readProjectFile } from "#src/host-client/transfer.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
-import { KnowledgeError, openForRead, openForWrite } from "#src/knowledge/database.ts";
-import { importFindings, type ImportConflict } from "#src/knowledge/import.ts";
+import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
+import { importFindings, type Analyzer, type ImportConflict, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision } from "#src/knowledge/read.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
@@ -53,36 +53,35 @@ function addresses(values: string[] | undefined, option: string): number[] {
   });
 }
 
-function showConflict(conflict: ImportConflict): Record<string, unknown> {
+/** One conflict: what the knowledge has, and what the analyzer found, under the analyzer's name. */
+function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<string, unknown> {
   if (conflict.category === "symbol") {
     return {
       at: formatC64Address(conflict.address),
       knowledge: { name: conflict.current.name, kind: conflict.current.kind, origin: conflict.current.origin, at: formatC64Address(conflict.current.address) },
-      ghidra: conflict.finding,
+      [analyzer]: conflict.finding,
       problem: conflict.reason === "kind" ? "code and data disagree" : "another address has this name",
     };
   }
   return {
     range: { start: formatC64Address(conflict.start), end: formatC64Address(conflict.end) },
     knowledge: conflict.current,
-    ghidra: conflict.finding,
+    [analyzer]: conflict.finding,
     problem: "code and data disagree",
   };
 }
 
-/** Imports one analyzer's findings as one revision, refused when knowledge changed since the seeds were read. */
-function record(findings: Parameters<typeof importFindings>[1], revision: number, description: string) {
-  const db = openForWrite();
-  try {
-    const imported = importFindings(db, findings, { expectedRevision: revision, description });
-    return {
-      revision: imported.revision,
-      changes: { symbols: imported.symbols, regions: imported.regions, references: imported.references },
-      conflicts: imported.conflicts.map(showConflict),
-    };
-  } finally {
-    db.close();
-  }
+/**
+ * Imports one analyzer's findings as one revision, refused when knowledge
+ * changed since the seeds were read. A refused import creates no knowledge.db.
+ */
+function record(findings: NormalizedFindings, revision: number, description: string) {
+  const imported = withWrite((db) => importFindings(db, findings, { expectedRevision: revision, description }));
+  return {
+    revision: imported.revision,
+    changes: { symbols: imported.symbols, regions: imported.regions, references: imported.references },
+    conflicts: imported.conflicts.map((conflict) => showConflict(conflict, findings.analyzer)),
+  };
 }
 
 async function run(argv: string[]): Promise<unknown> {
@@ -127,11 +126,17 @@ async function run(argv: string[]): Promise<unknown> {
   if (analyzer === "dxa") {
     const { result, attachments } = await analyzeWithDxa({ imageKind, ...seeds }, readProjectFile(image).bytes, localToolContext());
     const listing = attachments[0]!.toString("utf8");
-    if (listingPath !== undefined) {
-      mkdirSync(dirname(listingPath), { recursive: true });
-      writeFileSync(listingPath, listing);
-    }
+    // The listing is written only after the import: a refused import leaves no new file.
     const imported = record(dxaFindings(result), revision, `DXA analysis of ${image}`);
+    if (listingPath !== undefined) {
+      try {
+        mkdirSync(dirname(listingPath), { recursive: true });
+        writeFileSync(listingPath, listing);
+      } catch (error) {
+        const recorded = imported.revision === null ? "The knowledge did not change." : `The knowledge has the findings as revision ${imported.revision}.`;
+        throw new WireFailure("operation-failed", `The script did not write the listing to ${values.listing}: ${(error as Error).message}. ${recorded}`);
+      }
+    }
     return {
       analyzer: "dxa",
       coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),

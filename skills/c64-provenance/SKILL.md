@@ -62,7 +62,8 @@ The differing ranges with the bytes of each release and the groups that agree, a
 - Do not call a byte original only because one release has it. A majority of releases is also not proof.
 - `common: null`: the releases do not cover the same addresses. Use `--shift`, or compare a range that all releases cover.
 - `moreDifferences: true`: the script shows only the first differences. Use `--from` and `--to` to see the others.
-- `invalid-input`: a file, an address or a shift is wrong. Read the message.
+- `not-found`: the project has no file at that path.
+- `invalid-input`: a file, an address or a shift is wrong. A path that goes out of the project directory is also wrong, also through a link. Read the message.
 
 ## Handoffs
 
