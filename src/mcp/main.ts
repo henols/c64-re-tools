@@ -43,13 +43,15 @@ function videoStandard(env: NodeJS.ProcessEnv): VideoStandard {
  * One session for the life of the process (1 MCP = 1 session = 1 VICE).
  * It opens at start; if that fails before a session existed (for example the
  * host was not running yet), the next tool call tries again. Once a session
- * existed, its loss is final and reported by the session itself.
+ * existed, its loss is final and reported by the session itself. Close stops
+ * an open that is still waiting for the host at once.
  */
 function sessionSource(): { get: SessionSource; close(): Promise<void> } {
   let opening: Promise<ViceSessionClient> | undefined;
   let closed = false;
+  const stop = new AbortController();
   const open = () => {
-    opening = (async () => ViceSessionClient.open({ videoStandard: videoStandard(process.env) }))();
+    opening = (async () => ViceSessionClient.open({ videoStandard: videoStandard(process.env), signal: stop.signal }))();
     opening.catch((error: unknown) => {
       log(`session not opened: ${error instanceof Error ? error.message : String(error)}`);
       opening = undefined;
@@ -64,6 +66,7 @@ function sessionSource(): { get: SessionSource; close(): Promise<void> } {
     },
     async close() {
       closed = true;
+      stop.abort();
       const session = await opening?.catch(() => undefined);
       await session?.close();
     },

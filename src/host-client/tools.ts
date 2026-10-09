@@ -45,8 +45,12 @@ export async function callTool<O extends ToolOperation>(
         try {
           resolve({ result: validateToolResult(op, message.result, received), attachments: received });
         } catch (error) {
-          if (!(error instanceof ProtocolError)) throw error;
-          reject(new WireFailure("operation-failed", "The c64-re-tools host runtime sent an invalid reply."));
+          reject(
+            new WireFailure(
+              "operation-failed",
+              error instanceof ProtocolError ? "The c64-re-tools host runtime sent an invalid reply." : "The c64-re-tools host-client could not read the reply of the host runtime.",
+            ),
+          );
         }
       });
       void connection.closed.then(() =>

@@ -160,7 +160,7 @@ export const c64Screen = defineTool({
     baselines: z.array(z.string()).optional(),
     discarded: z.boolean().optional(),
   }),
-  readOnly: true,
+  readOnly: false,
   async run(input, session) {
     const { action, ...fields } = input;
     const only = (allowed: string[], required: string[]) => {

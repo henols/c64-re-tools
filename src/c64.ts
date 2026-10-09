@@ -156,8 +156,9 @@ export function parseTokenized(program: Uint8Array): TokenizedProgram {
   let at = 2;
   // File offset k (from 2 on) loads at loadAddress + k - 2.
   for (;;) {
-    // A file that ends right after a line leaves the end marker to the zeros after it in memory.
-    if (at === program.length && lines.length > 0) return { loadAddress, basicEnd: loadAddress + at - 2, lines };
+    // A file that ends right after a line leaves the end marker to the zeros after it in memory;
+    // basicEnd is the address after that marker, as when the file holds it.
+    if (at === program.length && lines.length > 0) return { loadAddress, basicEnd: loadAddress + at, lines };
     if (at + 1 >= program.length) return { reason: "The BASIC program has no end marker." };
     if (program[at + 1] === 0) {
       // An end marker before any line, with more bytes after it, is how machine code at a non-BASIC address often starts.
@@ -182,10 +183,25 @@ export function constantExpression(bytes: Uint8Array): number | undefined {
   const tokens = [...bytes].filter((byte) => byte !== 0x20);
   let at = 0;
   const peek = () => tokens[at];
+  const isDigit = () => peek() !== undefined && peek()! >= 0x30 && peek()! <= 0x39;
+  // A number as BASIC reads it: digits and a point, then an optional E with an
+  // optional sign (token or character) and exponent digits, so 2E3 is 2000.
   const number = (): number | undefined => {
     let text = "";
-    while (peek() !== undefined && ((peek()! >= 0x30 && peek()! <= 0x39) || peek() === 0x2e)) text += String.fromCharCode(tokens[at++]!);
-    return text === "" || text === "." ? undefined : Number(text);
+    while (isDigit() || peek() === 0x2e) text += String.fromCharCode(tokens[at++]!);
+    if (text === "" || text === ".") return undefined;
+    if (peek() === 0x45) {
+      at++;
+      let exponent = "";
+      if (peek() === TOKEN.minus || peek() === 0x2d) {
+        exponent = "-";
+        at++;
+      } else if (peek() === TOKEN.plus || peek() === 0x2b) at++;
+      let digits = "";
+      while (isDigit()) digits += String.fromCharCode(tokens[at++]!);
+      text += `e${exponent}${digits === "" ? "0" : digits}`;
+    }
+    return Number(text);
   };
   const primary = (): number | undefined => {
     if (peek() === TOKEN.minus || peek() === TOKEN.plus) {

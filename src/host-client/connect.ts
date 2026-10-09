@@ -29,8 +29,11 @@ export interface Endpoint {
 
 /** How long one endpoint may take to accept a TCP connection. */
 const CONNECT_TIMEOUT_MS = 1_500;
-/** How long the host may take to answer hello; a VICE session starts its emulator first. */
-export const DEFAULT_READY_TIMEOUT_MS = 60_000;
+/**
+ * How long the host may take to answer hello. A VICE session starts its
+ * emulator first, and the host tries the start up to three times.
+ */
+export const DEFAULT_READY_TIMEOUT_MS = 120_000;
 
 /**
  * The endpoints to try, in order (D5): C64RT_HOST=host:port alone when set,
@@ -57,23 +60,31 @@ function unreachable(role: Role): WireFailure {
   );
 }
 
-function tcpConnect(endpoint: Endpoint): Promise<Socket | undefined> {
+function stopped(role: Role): WireFailure {
+  return new WireFailure(
+    role === "vice-session" ? "machine-unavailable" : "operation-failed",
+    "The connection to the c64-re-tools host runtime stopped before the host runtime was ready.",
+  );
+}
+
+/** Resolves undefined when the endpoint refuses, does not answer in time, or `signal` stops the attempt. */
+function tcpConnect(endpoint: Endpoint, signal: AbortSignal | undefined): Promise<Socket | undefined> {
   return new Promise((resolve) => {
     const socket = connectTcp({ host: endpoint.host, port: endpoint.port });
-    const timer = setTimeout(() => {
-      socket.destroy();
-      resolve(undefined);
-    }, CONNECT_TIMEOUT_MS);
+    const fail = () => finish(undefined);
+    const finish = (result: Socket | undefined) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", fail);
+      if (result === undefined) socket.destroy();
+      resolve(result);
+    };
+    const timer = setTimeout(fail, CONNECT_TIMEOUT_MS);
+    signal?.addEventListener("abort", fail, { once: true });
     socket.once("connect", () => {
-      clearTimeout(timer);
       socket.removeAllListeners("error");
-      resolve(socket);
+      finish(socket);
     });
-    socket.once("error", () => {
-      clearTimeout(timer);
-      socket.destroy();
-      resolve(undefined);
-    });
+    socket.once("error", fail);
   });
 }
 
@@ -115,8 +126,12 @@ export class HostConnection {
           if (parsed.type !== "pong") this.#listener?.(parsed, attachments);
         }
       } catch (error) {
-        if (!(error instanceof ProtocolError)) throw error;
-        this.#failure = error;
+        // A broken frame, or a listener that throws, ends the connection with a
+        // reason; nothing escapes the socket handler.
+        this.#failure =
+          error instanceof ProtocolError
+            ? error
+            : new Error(`could not handle a message from the host runtime: ${error instanceof Error ? error.message : String(error)}`);
         socket.destroy();
       }
     });
@@ -133,11 +148,19 @@ export class HostConnection {
     readyTimeoutMs?: number;
     /** Defaults to a ping every 10 s and a 30 s silence limit (D18). */
     heartbeat?: Heartbeat;
+    /** Stops the connect and the handshake at once; the open then fails and its socket is closed. */
+    signal?: AbortSignal;
   }): Promise<HostConnection> {
+    const signal = options.signal;
     let socket: Socket | undefined;
     for (const endpoint of hostEndpoints(options.env)) {
-      socket = await tcpConnect(endpoint);
+      if (signal?.aborted) break;
+      socket = await tcpConnect(endpoint, signal);
       if (socket !== undefined) break;
+    }
+    if (signal?.aborted) {
+      socket?.destroy();
+      throw stopped(options.role);
     }
     if (socket === undefined) throw unreachable(options.role);
 
@@ -148,6 +171,8 @@ export class HostConnection {
     const token = (options.env ?? process.env).C64RT_HOST_TOKEN;
     if (token !== undefined && token !== "") hello.token = token;
 
+    const stop = () => void connection.close();
+    signal?.addEventListener("abort", stop, { once: true });
     const answer = await new Promise<HostMessage | Error>((resolve) => {
       const timer = setTimeout(() => resolve(new Error("no answer to hello in time")), options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
       connection.#listener = (message) => {
@@ -161,6 +186,11 @@ export class HostConnection {
       connection.#send(hello);
     });
     connection.#listener = undefined;
+    signal?.removeEventListener("abort", stop);
+    if (signal?.aborted) {
+      await connection.close();
+      throw stopped(options.role);
+    }
 
     if (!(answer instanceof Error) && answer.type === "ready") {
       connection.#startHeartbeat(options.heartbeat ?? { intervalMs: HEARTBEAT_INTERVAL_MS, timeoutMs: HEARTBEAT_TIMEOUT_MS });

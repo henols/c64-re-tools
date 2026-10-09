@@ -33,6 +33,7 @@ import { readProjectFile } from "./transfer.ts";
 const HOST_LOST =
   "The connection to the c64-re-tools host runtime was lost, and the emulator and its machine state went with it. " +
   "Check that the Host Runtime (c64-re-tools-host) is running, then restart the c64-re-tools MCP server.";
+const SESSION_CLOSED = "The C64 session is closed because the c64-re-tools MCP server stops.";
 
 interface Pending {
   op: ViceOperation;
@@ -63,25 +64,30 @@ export class ViceSessionClient {
       try {
         pending.resolve(validateViceResult(pending.op, message.result));
       } catch (error) {
-        if (!(error instanceof ProtocolError)) throw error;
-        pending.reject(new WireFailure("operation-failed", "The c64-re-tools host runtime sent an invalid reply."));
+        pending.reject(
+          new WireFailure(
+            "operation-failed",
+            error instanceof ProtocolError ? "The c64-re-tools host runtime sent an invalid reply." : "The c64-re-tools MCP server could not read the reply of the host runtime.",
+          ),
+        );
         this.#fail();
       }
     });
     this.closed = connection.closed.then(() => {
-      this.#lost = new WireFailure("machine-state-lost", HOST_LOST);
+      this.#lost ??= new WireFailure("machine-state-lost", HOST_LOST);
       for (const pending of this.#pending.values()) pending.reject(this.#lost);
       this.#pending.clear();
     });
   }
 
-  /** Connects and waits until the host has started this session's emulator. */
-  static async open(options: { videoStandard: VideoStandard; env?: NodeJS.ProcessEnv; readyTimeoutMs?: number }): Promise<ViceSessionClient> {
+  /** Connects and waits until the host has started this session's emulator; `signal` stops the wait at once. */
+  static async open(options: { videoStandard: VideoStandard; env?: NodeJS.ProcessEnv; readyTimeoutMs?: number; signal?: AbortSignal }): Promise<ViceSessionClient> {
     const connection = await HostConnection.open({
       role: "vice-session",
       videoStandard: options.videoStandard,
       ...(options.env === undefined ? {} : { env: options.env }),
       ...(options.readyTimeoutMs === undefined ? {} : { readyTimeoutMs: options.readyTimeoutMs }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     return new ViceSessionClient(connection);
   }
@@ -236,8 +242,9 @@ export class ViceSessionClient {
     return this.#request("window", { action });
   }
 
-  /** Ends the session; the host stops its emulator. */
+  /** Ends the session; the host stops its emulator. Open and later requests fail as closed. */
   async close(): Promise<void> {
+    this.#lost ??= new WireFailure("machine-unavailable", SESSION_CLOSED);
     await this.#connection.close();
     await this.closed;
   }

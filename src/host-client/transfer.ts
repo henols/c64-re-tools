@@ -38,7 +38,7 @@ export function readProjectFile(path: string, options: { root?: string; maxBytes
   if (stat.size > maxBytes) {
     throw new WireFailure("limit-exceeded", `${path} has ${stat.size} bytes; the limit is ${maxBytes} bytes.`);
   }
-  return { bytes: readFileSync(real), type: extname(real).slice(1).toLowerCase() };
+  return { bytes: readFileSync(real), type: extname(path).slice(1).toLowerCase() };
 }
 
 /** Directories never staged: version control and the toolkit's own project state. */
@@ -64,10 +64,13 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
   const files: SourceTree = [];
   const contents: Buffer[] = [];
   let total = 0;
-  const walk = (directory: string): void => {
+  // `realDirectory` is where `directory` really is; `ancestors` holds the real
+  // location of every directory on the walk down to it, so a link to one of
+  // them is a loop.
+  const walk = (directory: string, realDirectory: string, ancestors: Set<string>): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       const full = join(directory, entry.name);
-      let target = full;
+      let target = join(realDirectory, entry.name);
       if (lstatSync(full).isSymbolicLink()) {
         target = realpathSync(full);
         if (!isInside(sourceRoot, target)) {
@@ -76,7 +79,11 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
       }
       const stat = statSync(target);
       if (stat.isDirectory()) {
-        if (!SKIPPED_DIRECTORIES.has(entry.name)) walk(full);
+        if (SKIPPED_DIRECTORIES.has(entry.name)) continue;
+        if (ancestors.has(target)) {
+          throw new WireFailure("invalid-input", `${relative(projectRootPath, full)} points at a directory that contains it. Staging refuses a link loop.`);
+        }
+        walk(full, target, new Set(ancestors).add(target));
         continue;
       }
       if (!stat.isFile()) continue;
@@ -87,6 +94,6 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
       contents.push(readFileSync(target));
     }
   };
-  walk(sourceRoot);
+  walk(sourceRoot, sourceRoot, new Set([sourceRoot]));
   return { files, contents };
 }

@@ -315,7 +315,6 @@ test("the server lists exactly the frozen v1 tools of 15 §37 with object input 
     const readOnly = [
       "c64_status",
       "c64_memory_read",
-      "c64_screen",
       "c64_memory_search",
       "c64_memory_compare",
       "c64_disassemble",
@@ -413,6 +412,26 @@ test("an unexpected exception becomes operation-failed without internals", async
   await client.close();
 });
 
+test("a result goes out in its output schema: an extra key is removed, and a result that does not fit fails", async () => {
+  const lines: string[] = [];
+  const session = new FakeSession();
+  session.window = async () => ({ window: true, state: "running" as const, notCarried: [], hostPid: 4242 });
+  const server = createMcpServer({ tools: ALL_TOOLS, session: async () => session, log: (line) => lines.push(line) });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  const client = new Client({ name: "test", version: "0" });
+  await client.connect(clientTransport);
+  const opened = await call(client, "c64_window", { action: "open" });
+  assert.deepEqual(opened.structuredContent, { window: true, state: "running", notCarried: [] });
+  assert.doesNotMatch((opened.content[0] as { text: string }).text, /hostPid|4242/);
+  session.status = async () => ({ state: "dancing", videoStandard: "pal", warp: false, window: false }) as never;
+  const error = errorOf(await call(client, "c64_status"));
+  assert.equal(error.code, "operation-failed");
+  assert.doesNotMatch(error.message, /dancing|state/);
+  assert.match(lines.join("\n"), /c64_status gave a result outside its output schema: state:/);
+  await client.close();
+});
+
 test("c64_execution passes the action through and formats the pc", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
@@ -481,6 +500,8 @@ test("c64_registers set writes only the named registers; get refuses values", as
   assert.deepEqual(session.registerWrites, [{ space: "c64", values: { pc: 0x2100, a: 1, flags: { c: false } } }]);
   assert.equal(errorOf(await call(client, "c64_registers", { action: "set" })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: {} })).code, "invalid-input");
+  assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { flags: {} } })).code, "invalid-input");
+  assert.equal(session.registerWrites.length, 1, "a set with no register value writes nothing");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { q: 1 } })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "set", values: { a: 256 } })).code, "invalid-input");
   assert.equal(errorOf(await call(client, "c64_registers", { action: "get", values: { a: 1 } })).code, "invalid-input");
