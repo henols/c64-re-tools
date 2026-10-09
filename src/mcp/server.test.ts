@@ -6,6 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import {
+  MAX_SEARCH_PATTERN,
   WireFailure,
   type Breakpoint,
   type BreakpointParams,
@@ -679,7 +680,24 @@ test("tool descriptions keep to the STE length and punctuation rules", () => {
       const words = sentence.split(/\s+/).filter((word) => word !== "");
       assert.ok(words.length <= 25, `${tool.name}: a sentence has ${words.length} words: ${sentence}`);
     }
+    assert.doesNotMatch(tool.description, /\bcolour|running or stopped/, `${tool.name}: use the field spelling and the run-state sentence`);
   }
+});
+
+test("field descriptions and refusals keep to the STE punctuation rule", async () => {
+  const client = await connect(async () => new FakeSession());
+  for (const tool of (await client.listTools()).tools) {
+    assert.doesNotMatch(JSON.stringify(tool.inputSchema), /"description":"[^"]*;/, `${tool.name}: STE bans the semicolon`);
+  }
+  for (const [name, args] of [
+    ["c64_memory_read", { address: "c000", size: 0 }],
+    ["c64_keyboard", { mode: "text", text: "x".repeat(1025) }],
+    ["c64_memory_search", { start: "$0000", pattern: Array.from({ length: MAX_SEARCH_PATTERN + 1 }, () => "a9").join(" ") }],
+  ] as const) {
+    const { message } = errorOf(await call(client, name, args));
+    assert.doesNotMatch(message, /;/, `${name}: ${message}`);
+  }
+  await client.close();
 });
 
 test("memory search parses the pattern and fills end and maxResults", async () => {

@@ -23,7 +23,7 @@ export const c64Autostart = defineTool({
   inputSchema: z
     .object({
       path: ProjectPath,
-      index: z.number().int().min(0).max(0xffff).default(0).describe("file number on a disk image; 0 is the first file"),
+      index: z.number().int().min(0).max(0xffff).default(0).describe("file number on a disk image. 0 is the first file"),
       run: z.boolean().default(true).describe("true runs the program after it loads"),
     })
     .strict(),
@@ -61,7 +61,7 @@ export const c64DiskAttach = defineTool({
   description:
     `Put a disk image from the project into drive 8 (${list(DISK_TYPES)}). ` +
     "Nothing loads or runs. To load from the disk, type LOAD on the C64 or use c64_autostart. " +
-    "This does not change if the machine is running or stopped.",
+    "This does not change the run state of the machine.",
   inputSchema: z.object({ path: ProjectPath }).strict(),
   outputSchema: z.object({ attached: z.boolean() }),
   readOnly: false,

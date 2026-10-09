@@ -96,7 +96,7 @@ export const c64Watchpoint = defineTool({
     .object({
       action: z.enum(CHECKPOINT_ACTIONS),
       address: AddressInput.optional().describe("add only"),
-      size: z.number().int().min(1).max(MAX_WATCH_SIZE).optional().describe("add only; default 1"),
+      size: z.number().int().min(1).max(MAX_WATCH_SIZE).optional().describe("add only. Default 1"),
       access: z.enum(WATCH_ACCESS).optional().describe("add only"),
       space: OptionalSpace,
       condition: ConditionInput.optional().describe("add only: stop only when this is true"),
@@ -133,9 +133,10 @@ export const c64CpuHistory = defineTool({
   name: "c64_cpu_history",
   title: "CPU history",
   description:
-    `Get the last instructions the CPU executed, oldest first: limit of them (1 to ${MAX_HISTORY}, default 50). ` +
+    "Get the last instructions that the CPU executed, oldest first. " +
+    `limit is the number of instructions (1 to ${MAX_HISTORY}, default 50). ` +
     "Each entry gives the address, the bytes, the instruction and the registers a, x, y and sp. " +
-    "In space c64, it also gives the raster line and cycle when the instruction started. This does not change if the machine is running or stopped.",
+    "In space c64, it also gives the raster line and cycle when the instruction started. This does not change the run state of the machine.",
   inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput }).strict(),
   outputSchema: z.object({
     entries: z.array(
@@ -198,7 +199,8 @@ export const c64Profile = defineTool({
   name: "c64_profile",
   title: "Cycle profile",
   description:
-    `Get the routines where the C64 CPU spent the most cycles since the session started, at most limit of them (1 to ${MAX_PROFILE}, default 20). ` +
+    "Get the routines where the C64 CPU spent the most cycles since the session started. " +
+    `limit is the maximum number of routines (1 to ${MAX_PROFILE}, default 20). ` +
     "Each entry gives the routine address, its total cycles with the routines it calls, and its own cycles. " +
     "percent is the part of all cycles that the routine used itself. " +
     "Cycle counts are decimal strings.",
@@ -224,9 +226,9 @@ export const c64Memmap = defineTool({
   inputSchema: z
     .object({
       action: z.enum(["read", "clear"]),
-      start: AddressInput.optional().describe("read only; default $0000"),
-      end: AddressInput.optional().describe("read only; default $ffff"),
-      maxRanges: z.number().int().min(1).max(MAX_MEMMAP_RANGES).optional().describe("read only; default 256"),
+      start: AddressInput.optional().describe("read only. Default $0000"),
+      end: AddressInput.optional().describe("read only. Default $ffff"),
+      maxRanges: z.number().int().min(1).max(MAX_MEMMAP_RANGES).optional().describe("read only. Default 256"),
     })
     .strict(),
   outputSchema: z.object({

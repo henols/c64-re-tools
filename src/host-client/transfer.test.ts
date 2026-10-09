@@ -35,7 +35,10 @@ test("a file over the transfer limit is refused before it is read", () => {
   // A sparse file: its size is over the limit, but it takes no space on disk.
   writeFileSync(join(project, "huge.prg"), "");
   truncateSync(join(project, "huge.prg"), MAX_ATTACHMENT_BYTES + 1);
-  assert.throws(() => readProjectFile("huge.prg", { root: project }), failsWith("limit-exceeded"));
+  assert.throws(
+    () => readProjectFile("huge.prg", { root: project }),
+    (error: unknown) => failsWith("limit-exceeded")(error) && (error as Error).message === `huge.prg has ${MAX_ATTACHMENT_BYTES + 1} bytes. The limit is ${MAX_ATTACHMENT_BYTES} bytes.`,
+  );
   truncateSync(join(project, "huge.prg"), MAX_ATTACHMENT_BYTES);
   assert.equal(readProjectFile("huge.prg", { root: project }).bytes.length, MAX_ATTACHMENT_BYTES);
 });
@@ -61,7 +64,10 @@ test("a link out of the source root is refused, as is a missing or plain-file ro
   const tree = join(project, "escape");
   mkdirSync(tree);
   symlinkSync(join(project, "noext"), join(tree, "outside.a"));
-  assert.throws(() => readProjectTree("escape", { root: project }), failsWith("invalid-input"));
+  assert.throws(
+    () => readProjectTree("escape", { root: project }),
+    (error: unknown) => failsWith("invalid-input")(error) && !(error as Error).message.includes(";") && /links outside escape/.test((error as Error).message),
+  );
   assert.throws(() => readProjectTree("nope", { root: project }), failsWith("not-found"));
   assert.throws(() => readProjectTree("noext", { root: project }), failsWith("invalid-input"));
 });

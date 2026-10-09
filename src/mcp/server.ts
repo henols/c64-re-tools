@@ -79,12 +79,12 @@ export const HexDataInput = z
   .regex(/^(?:[0-9a-fA-F]{2})+$/, "must be hex bytes, two digits per byte, no separators, for example a9008d20d0")
   .transform((value) => value.toLowerCase());
 
-export const SpaceInput = z.enum(SPACES).default("c64").describe("c64 is the computer; drive8 is the 1541 disk drive CPU");
+export const SpaceInput = z.enum(SPACES).default("c64").describe("c64 is the computer. drive8 is the 1541 disk drive CPU");
 
 export const MemoryViewInput = z
   .enum(MEMORY_VIEWS)
   .default("cpu")
-  .describe("cpu reads what the CPU sees now (ROM and I/O where banked in); ram reads the RAM underneath (c64 only)");
+  .describe("cpu reads what the CPU sees now (ROM and I/O where banked in). ram reads the RAM underneath (c64 only)");
 
 /** A name the agent gives to something the session keeps, such as a screen baseline or a snapshot. */
 export const TransientName = z
@@ -152,11 +152,11 @@ export const ConditionInput = z
       .object({
         kind: z.literal("raster"),
         line: z.number().int().min(0).describe("raster line: PAL 0-311, NTSC 0-262"),
-        cycle: z.number().int().min(0).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64; true from this cycle on"),
+        cycle: z.number().int().min(0).optional().describe("cycle in the line: PAL 0-62, NTSC 0-64. True from this cycle on"),
       })
       .strict(),
   ])
-  .describe("register: a CPU register compared to a byte; memory: a byte in memory compared to a byte; raster: the raster position");
+  .describe("register: a CPU register compared to a byte. memory: a byte in memory compared to a byte. raster: the raster position");
 
 /** A condition as a result shows it: the input form, with the memory address as "$xxxx". */
 export const ConditionOutput = z
@@ -207,14 +207,14 @@ function errorResult(error: WireError): CallToolResult {
   return { isError: true, content: [{ type: "text", text: JSON.stringify({ code: error.code, message: error.message }) }] };
 }
 
-/** "address: Invalid string: must match ..." style messages, one line per problem. */
+/** "address: Invalid string: must match ..." style messages, one sentence per problem. */
 function describeIssues(error: z.ZodError): string {
   return error.issues
     .map((issue) => {
       const where = issue.path.length === 0 ? "input" : issue.path.join(".");
       return `${where}: ${issue.message}`;
     })
-    .join("; ");
+    .join(". ");
 }
 
 const INTERNAL_FAILURE: WireError = { code: "operation-failed", message: "The operation failed inside the c64-re-tools MCP server." };
@@ -264,7 +264,7 @@ const INSTRUCTIONS =
   "These tools control one live Commodore 64 emulator that belongs to this session. " +
   "Addresses are four hex digits after a dollar sign, for example $c000. " +
   "Memory data is lowercase hex without separators. " +
-  "Reads do not change whether the machine is running or stopped.";
+  "A read does not change the run state of the machine.";
 
 export function createMcpServer(options: { tools: readonly ToolDefinition[]; session: SessionSource; log?: (line: string) => void }): Server {
   const tools = new Map(options.tools.map((tool) => [tool.name, tool]));

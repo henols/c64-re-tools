@@ -75,7 +75,7 @@ export interface InspectDiskRequest {
 export async function inspectDisk(request: InspectDiskRequest, options: ToolCallOptions = {}): Promise<C1541Result & { data?: Buffer }> {
   const file = readProjectFile(request.image);
   if (!(DISK_IMAGE_TYPES as readonly string[]).includes(file.type)) {
-    throw new WireFailure("invalid-input", `${request.image} is no disk image this tool reads; use a .d64, .d71, .d81 or .g64 file.`);
+    throw new WireFailure("invalid-input", `${request.image} is not a disk image that this tool reads. Use a .d64, .d71, .d81 or .g64 file.`);
   }
   const params: ToolOperations["c1541.inspect"]["params"] = { action: request.action, imageType: file.type as DiskImageType };
   if (request.name !== undefined) params.name = request.name;

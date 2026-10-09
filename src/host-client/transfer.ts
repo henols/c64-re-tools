@@ -35,7 +35,7 @@ export function readProjectFile(path: string, options: { root?: string } = {}): 
   const stat = statSync(real);
   if (!stat.isFile()) throw new WireFailure("invalid-input", `${path} is not a file.`);
   if (stat.size > MAX_ATTACHMENT_BYTES) {
-    throw new WireFailure("limit-exceeded", `${path} has ${stat.size} bytes; the limit is ${MAX_ATTACHMENT_BYTES} bytes.`);
+    throw new WireFailure("limit-exceeded", `${path} has ${stat.size} bytes. The limit is ${MAX_ATTACHMENT_BYTES} bytes.`);
   }
   return { bytes: readFileSync(real), type: extname(path).slice(1).toLowerCase() };
 }
@@ -73,7 +73,7 @@ export function readProjectTree(path: string, options: { root?: string } = {}): 
       if (entry.isSymbolicLink()) {
         target = realpathSync(full);
         if (!isInside(sourceRoot, target)) {
-          throw new WireFailure("invalid-input", `${relative(projectRootPath, full)} links outside ${path}; staging refuses it.`);
+          throw new WireFailure("invalid-input", `${relative(projectRootPath, full)} links outside ${path}. Staging refuses a link that goes outside the source directory.`);
         }
       }
       const stat = statSync(target);

@@ -118,7 +118,7 @@ export function textToPetsciiName(text: string): Uint8Array {
     else if (character === "↑") bytes.push(0x5e);
     else if (character === "←") bytes.push(0x5f);
     else if (code >= 0x20 && code <= 0x5d) bytes.push(code);
-    else throw new RangeError(`${JSON.stringify(character)} is not a name character; write other bytes as {$xx}`);
+    else throw new RangeError(`${JSON.stringify(character)} is not a name character. Write other bytes as {$xx}.`);
     index++;
   }
   return Uint8Array.from(bytes);
