@@ -154,6 +154,17 @@ test("search answers parse into addresses up to the limit; an empty answer is no
   assert.deepEqual(parseHunt("", 10), []);
 });
 
+test("the adapter asks VICE once for the registers of each memory space", async () => {
+  const fake = new FakeVice();
+  const process = await fake.start();
+  try {
+    await ViceAdapter.create(process.monitor, process.text);
+    assert.equal(fake.commands.filter((command) => command === Command.registersAvailable).length, 2);
+  } finally {
+    await process.stop();
+  }
+});
+
 test("a snapshot path longer than VICE takes is refused before VICE sees it", async () => {
   const fake = new FakeVice();
   const process = await fake.start();

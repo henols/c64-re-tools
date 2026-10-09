@@ -28,6 +28,7 @@ import {
   decodeRegistersAvailable,
   memoryGetBody,
   Memspace,
+  type RegisterInfo,
 } from "./binary-monitor.ts";
 
 const MEMSPACE: Record<Space, number> = { c64: Memspace.main, drive8: Memspace.drive8 };
@@ -37,15 +38,20 @@ const REGISTER_NAMES = { pc: "PC", a: "A", x: "X", y: "Y", sp: "SP", flags: "FL"
 type RegisterKey = keyof typeof REGISTER_NAMES;
 type RegisterIds = Record<RegisterKey, number>;
 
-async function registerIds(monitor: BinaryMonitor, space: Space): Promise<RegisterIds> {
-  const available = decodeRegistersAvailable((await monitor.request(Command.registersAvailable, Buffer.from([MEMSPACE[space]]))).body);
-  const ids = {} as RegisterIds;
-  for (const [key, name] of Object.entries(REGISTER_NAMES) as Array<[RegisterKey, string]>) {
-    const register = available.find((candidate) => candidate.name === name);
-    if (register === undefined) throw new Error(`VICE reports no ${name} register for ${space}`);
-    ids[key] = register.id;
-  }
-  return ids;
+async function availableRegisters(monitor: BinaryMonitor, space: Space): Promise<RegisterInfo[]> {
+  return decodeRegistersAvailable((await monitor.request(Command.registersAvailable, Buffer.from([MEMSPACE[space]]))).body);
+}
+
+/** The id of the register `name` among the registers VICE reports for `space`. */
+function registerId(available: RegisterInfo[], name: string, space: Space): number {
+  const register = available.find((candidate) => candidate.name === name);
+  if (register === undefined) throw new Error(`VICE reports no ${name} register for ${space}`);
+  return register.id;
+}
+
+function registerIds(available: RegisterInfo[], space: Space): RegisterIds {
+  const id = (key: RegisterKey) => registerId(available, REGISTER_NAMES[key], space);
+  return { pc: id("pc"), a: id("a"), x: id("x"), y: id("y"), sp: id("sp"), flags: id("flags") };
 }
 
 const OPERATORS: Record<Comparison, string> = { eq: "==", ne: "!=", lt: "<", lte: "<=", gt: ">", gte: ">=" };
@@ -390,18 +396,14 @@ export class ViceAdapter {
       if (bank === undefined) throw new Error(`VICE reports no ${name} memory bank`);
       return bank.id;
     };
-    const c64Registers = decodeRegistersAvailable((await monitor.request(Command.registersAvailable, Buffer.from([Memspace.main]))).body);
-    const rasterId = (name: string) => {
-      const register = c64Registers.find((candidate) => candidate.name === name);
-      if (register === undefined) throw new Error(`VICE reports no ${name} register`);
-      return register.id;
-    };
+    const c64Registers = await availableRegisters(monitor, "c64");
+    const driveRegisters = await availableRegisters(monitor, "drive8");
     return new ViceAdapter(
       monitor,
       text,
-      { c64: await registerIds(monitor, "c64"), drive8: await registerIds(monitor, "drive8") },
+      { c64: registerIds(c64Registers, "c64"), drive8: registerIds(driveRegisters, "drive8") },
       { cpu: bankId("cpu"), ram: bankId("ram"), rom: bankId("rom"), io: bankId("io") },
-      { line: rasterId("LIN"), cycle: rasterId("CYC") },
+      { line: registerId(c64Registers, "LIN", "c64"), cycle: registerId(c64Registers, "CYC", "c64") },
     );
   }
 
