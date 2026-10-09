@@ -262,6 +262,20 @@ test("a held text command does not leave the machine stopped once VICE goes on",
   await session.close();
 });
 
+test("a held VICE whose text commands run later than the time limit still gets its run state back", async () => {
+  const { fake, session, process } = await startSession();
+  shortLimits(process);
+  fake.pauseUi();
+  await assert.rejects(session.handle("disassemble", { address: 0xe5cf, count: 2, space: "c64", view: "cpu" }), held);
+  fake.resumeUi(400);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  await assert.rejects(session.handle("registersGet", { space: "c64" }), held);
+  await untilTakesCommands(session);
+  assert.equal(fake.running, true);
+  assert.equal((await session.handle("status", {})).state, "running");
+  await session.close();
+});
+
 test("a machine that was stopped stays stopped once a held VICE goes on", async () => {
   const { fake, session, process } = await startSession();
   shortLimits(process);

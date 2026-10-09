@@ -528,9 +528,9 @@ export class ViceAdapter {
     return timeoutMs === undefined ? this.#text.command(command) : this.#text.command(command, timeoutMs);
   }
 
-  /** Runs a harmless text command, so every text command sent before it has run. */
+  /** Waits, with no time limit, until a harmless text command has run, so every text command sent before it has run. */
   async drainText(): Promise<void> {
-    await this.#text.command("~ $0000");
+    await this.#text.command("~ $0000", Infinity);
   }
 
   /** Executes `count` C64 instructions, with subroutine calls as one when `over`. Answers once stopped again. */

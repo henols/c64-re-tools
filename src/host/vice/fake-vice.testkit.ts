@@ -116,6 +116,8 @@ export class FakeVice {
   uiPaused = false;
   readonly #heldBinary: Array<[number, number, Buffer]> = [];
   readonly #heldText: string[] = [];
+  /** Text commands still wait after the UI pause ended (see resumeUi). */
+  #textHeld = false;
   /** Autostart answers but leaves the machine stopped, as real VICE rarely does. */
   autostartStaysInMonitor = false;
   /** A reset answers but the machine stays in the monitor, with no event. */
@@ -234,11 +236,20 @@ export class FakeVice {
     this.uiPaused = true;
   }
 
-  /** Ends the UI pause: the held binary commands run, then the held text commands. */
-  resumeUi(): void {
+  /**
+   * Ends the UI pause: the held binary commands run, then the held text
+   * commands; with `textAfterMs`, the text commands run only that much later.
+   */
+  resumeUi(textAfterMs = 0): void {
     this.uiPaused = false;
     for (const [id, command, body] of this.#heldBinary.splice(0)) this.#binaryCommand(this.#binary!, id, command, body);
-    for (const line of this.#heldText.splice(0)) this.#textCommand(this.#text!, line);
+    const runText = () => {
+      this.#textHeld = false;
+      for (const line of this.#heldText.splice(0)) this.#textCommand(this.#text!, line);
+    };
+    if (textAfterMs === 0) return runText();
+    this.#textHeld = true;
+    setTimeout(runText, textAfterMs);
   }
 
   /** Lets a pending execute-until-return reach its RTS and stop. */
@@ -567,7 +578,7 @@ export class FakeVice {
       while ((newline = pending.indexOf("\n")) >= 0) {
         const line = pending.slice(0, newline);
         pending = pending.slice(newline + 1);
-        if (this.uiPaused) this.#heldText.push(line);
+        if (this.uiPaused || this.#textHeld) this.#heldText.push(line);
         else this.#textCommand(socket, line);
       }
     });

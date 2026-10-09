@@ -1195,15 +1195,22 @@ export class ViceSession implements ViceSessionHandle {
   #recover(runningBefore: boolean, halts: number): void {
     if (this.#held !== undefined) return;
     this.#log("VICE takes no commands (paused in its window, or a dialog is open); waiting until it goes on");
+    const why = (error: unknown) => (error instanceof Error ? error.message : String(error));
     this.#held = (async () => {
       try {
-        await this.#machine.answered();
-        await this.#machine.drainText();
+        try {
+          await this.#machine.answered();
+          await this.#machine.drainText();
+        } catch (error) {
+          if (!this.#closed) this.#log(`VICE did not come back: ${why(error)}`);
+        }
+        if (this.#closed || this.#lost) return;
+        // The ping that answered stopped the machine; put back the run state of before the operation.
         this.#state = "stopped";
         if (runningBefore && this.#haltCount === halts) await this.#resume();
         this.#log(`VICE takes commands again; the machine is ${this.#state} as before`);
       } catch (error) {
-        if (!this.#closed) this.#log(`VICE did not come back: ${error instanceof Error ? error.message : String(error)}`);
+        if (!this.#closed) this.#log(`restoring the run state failed: ${why(error)}`);
       } finally {
         this.#held = undefined;
       }
