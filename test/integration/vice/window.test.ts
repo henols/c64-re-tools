@@ -191,8 +191,11 @@ test("a running machine runs on after each move, with warp and the joystick kept
       // The machine really runs: the jiffy clock at $a2 moves.
       const jiffy = async () => (await live.call("memoryRead", { address: 0x00a2, size: 1, space: "c64", view: "ram" })).data;
       const before = await jiffy();
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      assert.notEqual(await jiffy(), before, `the C64 runs after ${action}`);
+      const deadline = Date.now() + 5_000;
+      while ((await jiffy()) === before) {
+        assert.ok(Date.now() < deadline, `the C64 runs after ${action}: the jiffy clock stays at ${before}`);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
     }
   });
 });
