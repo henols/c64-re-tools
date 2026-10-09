@@ -630,7 +630,7 @@ export interface Hello {
 }
 
 /** Longest accepted shared token. */
-export const MAX_TOKEN_LENGTH = 256;
+const MAX_TOKEN_LENGTH = 256;
 
 export interface Ready {
   type: "ready";
@@ -685,11 +685,6 @@ export class WireFailure extends Error implements WireError {
   toWire(): WireError {
     return { code: this.code, message: this.message };
   }
-}
-
-/** The message of a caught value, which may not be an Error. */
-export function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export type Fields = Record<string, unknown>;
@@ -1812,18 +1807,5 @@ export class MessageReader {
     if (current.done.length < current.sizes.length) return undefined;
     this.#current = undefined;
     return { message: current.message, attachments: current.done };
-  }
-}
-
-/** Reassembles attachment-free messages; kept for callers that never expect attachments. */
-export class FrameDecoder {
-  readonly #reader = new MessageReader();
-
-  /** Returns every complete message body, parsed as JSON. Throws ProtocolError, also on attachments. */
-  push(chunk: Buffer): unknown[] {
-    return this.#reader.push(chunk).map(({ message, attachments }) => {
-      if (attachments.length > 0) throw new ProtocolError("unexpected attachments");
-      return message;
-    });
   }
 }

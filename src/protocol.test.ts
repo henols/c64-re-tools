@@ -5,7 +5,6 @@ import {
   attachmentCount,
   checkHello,
   encodeFrame,
-  FrameDecoder,
   isRelativePath,
   validateSourceTree,
   validateToolParams,
@@ -22,6 +21,7 @@ import {
   validateViceResult,
   WireFailure,
 } from "./protocol.ts";
+import { FrameDecoder } from "./protocol.testkit.ts";
 
 const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: "vice-session" } as const;
 
