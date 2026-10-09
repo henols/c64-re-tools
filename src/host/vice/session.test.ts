@@ -860,6 +860,18 @@ test("snapshots save, restore to stopped, list and discard", async () => {
   await session.close();
 });
 
+test("a snapshot restore keeps the stopwatch reading", async () => {
+  const { fake, session } = await startSession();
+  fake.clock += 500n;
+  await session.handle("snapshot", { action: "save", name: "early" });
+  fake.clock += 1000n;
+  await session.handle("snapshot", { action: "restore", name: "early" });
+  assert.deepEqual(await session.handle("timing", { action: "read" }), { cycles: "1500" });
+  fake.clock += 100n;
+  assert.deepEqual(await session.handle("timing", { action: "read" }), { cycles: "1600" });
+  await session.close();
+});
+
 test("observe reads every asked part from one stop and keeps the run state", async () => {
   const { fake, session } = await startSession();
   fake.ram[0xd020] = 2;

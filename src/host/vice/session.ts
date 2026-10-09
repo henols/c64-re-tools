@@ -923,10 +923,11 @@ export class ViceSession implements ViceSessionHandle {
       return { discarded: true };
     }
     await this.#stop();
+    const elapsed = (await this.#machine.clock()) - this.#timingStart;
     await this.#machine.restoreSnapshot(existing);
     this.#state = "stopped";
-    // The cycle clock jumped with the restore; the stopwatch starts again here.
-    this.#timingStart = await this.#machine.clock();
+    // The cycle clock jumped with the restore; the stopwatch keeps its reading, as a window move does.
+    this.#timingStart = (await this.#machine.clock()) - elapsed;
     return { restored: true, state: "stopped" };
   }
 
