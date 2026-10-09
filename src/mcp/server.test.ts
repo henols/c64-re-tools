@@ -7,11 +7,17 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import {
   WireFailure,
+  type Breakpoint,
+  type BreakpointParams,
   type ExecutionParams,
+  type MemmapRange,
   type MemoryReadParams,
   type MemoryWriteParams,
   type RegisterValues,
   type Registers,
+  type ViceOperations,
+  type Watchpoint,
+  type WatchpointParams,
 } from "../protocol.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
 import { debugTools } from "./tools/debug.ts";
@@ -121,7 +127,10 @@ class FakeSession implements ViceSessionApi {
   }
 
   points: unknown[] = [];
-  async breakpoint(params: import("../protocol.ts").BreakpointParams) {
+  breakpoint(params: Extract<BreakpointParams, { action: "list" }>): Promise<{ breakpoints: Breakpoint[] }>;
+  breakpoint(params: Exclude<BreakpointParams, { action: "list" }>): Promise<Breakpoint>;
+  breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }>;
+  async breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }> {
     this.points.push(params);
     if (params.action === "list") {
       const condition = { kind: "memory" as const, address: 0xc100, operator: "eq" as const, value: 7, space: "c64" as const, view: "cpu" as const };
@@ -130,7 +139,10 @@ class FakeSession implements ViceSessionApi {
     if (params.action === "add") return { id: 1, address: params.address, space: params.space, enabled: true, ...(params.condition === undefined ? {} : { condition: params.condition }) };
     return { id: params.id, address: 0x2100, space: "c64" as const, enabled: params.action !== "disable" };
   }
-  async watchpoint(params: import("../protocol.ts").WatchpointParams) {
+  watchpoint(params: Extract<WatchpointParams, { action: "list" }>): Promise<{ watchpoints: Watchpoint[] }>;
+  watchpoint(params: Exclude<WatchpointParams, { action: "list" }>): Promise<Watchpoint>;
+  watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }>;
+  async watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }> {
     this.points.push(params);
     if (params.action === "add") {
       return { id: 2, address: params.address, size: params.size, access: params.access, space: params.space, enabled: true };
@@ -155,7 +167,10 @@ class FakeSession implements ViceSessionApi {
     return { entries: [{ address: 0x2100, totalCycles: "125000", selfCycles: "82000", percent: 17.4 }] };
   }
   memmaps: unknown[] = [];
-  async memmap(params: import("../protocol.ts").ViceOperations["memmap"]["params"]) {
+  memmap(params: Extract<ViceOperations["memmap"]["params"], { action: "read" }>): Promise<{ ranges: MemmapRange[] }>;
+  memmap(params: { action: "clear" }): Promise<{ cleared: boolean }>;
+  memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]>;
+  async memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]> {
     this.memmaps.push(params);
     if (params.action === "clear") return { cleared: true };
     return { ranges: [{ start: 0x2100, end: 0x213f, execute: true, read: true, write: false }] };

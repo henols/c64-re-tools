@@ -67,12 +67,12 @@ export const c64Breakpoint = defineTool({
     const { action, ...fields } = input;
     if (action === "list") {
       requireFields(action, fields, []);
-      const result = (await session.breakpoint({ action })) as { breakpoints: Breakpoint[] };
+      const result = await session.breakpoint({ action });
       return { breakpoints: result.breakpoints.map(showBreakpoint) };
     }
     if (action !== "add") {
       requireFields(action, fields, ["id"], ["id"]);
-      return showBreakpoint((await session.breakpoint({ action, id: fields.id! })) as Breakpoint);
+      return showBreakpoint(await session.breakpoint({ action, id: fields.id! }));
     }
     requireFields(action, fields, ["address", "space", "condition"], ["address"]);
     const added = await session.breakpoint({
@@ -81,7 +81,7 @@ export const c64Breakpoint = defineTool({
       space: fields.space ?? "c64",
       ...(fields.condition === undefined ? {} : { condition: toCondition(fields.condition) }),
     });
-    return showBreakpoint(added as Breakpoint);
+    return showBreakpoint(added);
   },
 });
 
@@ -110,12 +110,12 @@ export const c64Watchpoint = defineTool({
     const { action, ...fields } = input;
     if (action === "list") {
       requireFields(action, fields, []);
-      const result = (await session.watchpoint({ action })) as { watchpoints: Watchpoint[] };
+      const result = await session.watchpoint({ action });
       return { watchpoints: result.watchpoints.map(showWatchpoint) };
     }
     if (action !== "add") {
       requireFields(action, fields, ["id"], ["id"]);
-      return showWatchpoint((await session.watchpoint({ action, id: fields.id! })) as Watchpoint);
+      return showWatchpoint(await session.watchpoint({ action, id: fields.id! }));
     }
     requireFields(action, fields, ["address", "size", "access", "space", "condition"], ["address", "access"]);
     const added = await session.watchpoint({
@@ -126,7 +126,7 @@ export const c64Watchpoint = defineTool({
       space: fields.space ?? "c64",
       ...(fields.condition === undefined ? {} : { condition: toCondition(fields.condition) }),
     });
-    return showWatchpoint(added as Watchpoint);
+    return showWatchpoint(added);
   },
 });
 
@@ -238,11 +238,9 @@ export const c64Memmap = defineTool({
   async run(input, session) {
     if (input.action === "clear") {
       requireFields("clear", { start: input.start, end: input.end, maxRanges: input.maxRanges }, []);
-      return session.memmap({ action: "clear" }) as Promise<{ cleared: boolean }>;
+      return session.memmap({ action: "clear" });
     }
-    const result = (await session.memmap({ action: "read", start: input.start ?? 0x0000, end: input.end ?? 0xffff, maxRanges: input.maxRanges ?? 256 })) as {
-      ranges: Array<{ start: number; end: number; execute: boolean; read: boolean; write: boolean }>;
-    };
+    const result = await session.memmap({ action: "read", start: input.start ?? 0x0000, end: input.end ?? 0xffff, maxRanges: input.maxRanges ?? 256 });
     return { ranges: result.ranges.map((range) => ({ ...range, start: formatC64Address(range.start), end: formatC64Address(range.end) })) };
   },
 });
