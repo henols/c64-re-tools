@@ -2,7 +2,7 @@
 // their parsers, and the field checks that every validator uses.
 
 import type { ToolOperation, ToolOperations } from "./tools.ts";
-import type { ViceOperation, ViceOperations } from "../protocol.ts";
+import type { ViceOperation, ViceOperations } from "./vice.ts";
 
 /** Private Host Runtime protocol identifier. */
 export const HOST_PROTOCOL_ID = "c64-re-tools-host" as const;
