@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { WireFailure } from "../protocol.ts";
+import { MAX_ATTACHMENT_BYTES, WireFailure } from "../protocol.ts";
 import { readProjectFile, readProjectTree } from "./transfer.ts";
 
 const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-transfer-"));
@@ -29,7 +29,15 @@ test("paths outside the project, missing files, directories and large files are 
   assert.throws(() => readProjectFile("../outside.prg", { root: project }), failsWith("invalid-input"));
   assert.throws(() => readProjectFile("escape.prg", { root: project }), failsWith("invalid-input"));
   assert.throws(() => readProjectFile("original", { root: project }), failsWith("invalid-input"));
-  assert.throws(() => readProjectFile("original/Game.D64", { root: project, maxBytes: 2 }), failsWith("limit-exceeded"));
+});
+
+test("a file over the transfer limit is refused before it is read", () => {
+  // A sparse file: its size is over the limit, but it takes no space on disk.
+  writeFileSync(join(project, "huge.prg"), "");
+  truncateSync(join(project, "huge.prg"), MAX_ATTACHMENT_BYTES + 1);
+  assert.throws(() => readProjectFile("huge.prg", { root: project }), failsWith("limit-exceeded"));
+  truncateSync(join(project, "huge.prg"), MAX_ATTACHMENT_BYTES);
+  assert.equal(readProjectFile("huge.prg", { root: project }).bytes.length, MAX_ATTACHMENT_BYTES);
 });
 
 test("a source tree is read with relative paths, inner links followed and VCS directories skipped", () => {

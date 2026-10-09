@@ -18,9 +18,8 @@ export interface ProjectFile {
  * project rules refuse, not-found when nothing is there, limit-exceeded when
  * the file is too large to transfer.
  */
-export function readProjectFile(path: string, options: { root?: string; maxBytes?: number } = {}): ProjectFile {
+export function readProjectFile(path: string, options: { root?: string } = {}): ProjectFile {
   const root = options.root ?? projectRoot();
-  const maxBytes = options.maxBytes ?? MAX_ATTACHMENT_BYTES;
   let real: string;
   try {
     real = resolveProjectFile(path, root);
@@ -35,8 +34,8 @@ export function readProjectFile(path: string, options: { root?: string; maxBytes
   }
   const stat = statSync(real);
   if (!stat.isFile()) throw new WireFailure("invalid-input", `${path} is not a file.`);
-  if (stat.size > maxBytes) {
-    throw new WireFailure("limit-exceeded", `${path} has ${stat.size} bytes; the limit is ${maxBytes} bytes.`);
+  if (stat.size > MAX_ATTACHMENT_BYTES) {
+    throw new WireFailure("limit-exceeded", `${path} has ${stat.size} bytes; the limit is ${MAX_ATTACHMENT_BYTES} bytes.`);
   }
   return { bytes: readFileSync(real), type: extname(path).slice(1).toLowerCase() };
 }
