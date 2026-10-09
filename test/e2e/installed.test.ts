@@ -24,7 +24,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { mcpServerFor } from "../../distribution/plugin.ts";
+import { mcpServerFor } from "../../distribution/package.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { killTree, signalGroup } from "../../src/native/processes.ts";
 import { liveEnv, liveSkip } from "../integration/vice/live.ts";

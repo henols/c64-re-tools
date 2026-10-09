@@ -10,7 +10,8 @@ import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import plugin, { closureOf, MCP_SERVER, mcpServerFor, scriptsOf, SKILL_PACKAGE } from "../../distribution/plugin.ts";
+import { mcpServerFor } from "../../distribution/package.ts";
+import plugin, { closureOf, scriptsOf, SKILL_PACKAGE } from "../../distribution/plugin.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-plugin-"));
@@ -52,6 +53,17 @@ test("a reach out of the skill and src/ is refused", () => {
   assert.throws(() => closureOf(skill, [join(skill, "scripts", "bad.ts")]), /outside the skill and src/);
 });
 
+test("a module named in single or double quotes is in the closure", () => {
+  const skill = join(scratch, "quoted-skill");
+  mkdirSync(join(skill, "scripts"), { recursive: true });
+  writeFileSync(join(skill, "scripts", "main.ts"), "import { a } from './single.ts';\nimport { b } from \"./double.ts\";\nawait import('./dynamic.ts');\n");
+  for (const name of ["single", "double", "dynamic"]) writeFileSync(join(skill, "scripts", `${name}.ts`), "export {};\n");
+  assert.deepEqual(
+    closureOf(skill, [join(skill, "scripts", "main.ts")]).map((path) => path.slice(skill.length + 1).split("\\").join("/")),
+    ["scripts/double.ts", "scripts/dynamic.ts", "scripts/main.ts", "scripts/single.ts"],
+  );
+});
+
 test("every installed script runs without the repository", () => {
   const skills = join(scratch, "installed");
   for (const skill of plugin.skills!) {
@@ -81,11 +93,10 @@ test("every installed script runs without the repository", () => {
 });
 
 test("the agent starts the latest published MCP server through npx", () => {
-  assert.deepEqual(plugin.mcpServers, { "c64-re-tools": MCP_SERVER });
+  assert.deepEqual(plugin.mcpServers, { "c64-re-tools": mcpServerFor(process.platform) });
   assert.deepEqual(mcpServerFor("linux"), { command: "npx", args: ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"] });
   assert.deepEqual(mcpServerFor("darwin"), mcpServerFor("linux"));
   assert.deepEqual(mcpServerFor("win32"), { command: "cmd", args: ["/c", "npx", "-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"] }, "npx is a .cmd shim on Windows");
-  assert.deepEqual(MCP_SERVER, mcpServerFor(process.platform));
 });
 
 test("AP SDK accepts the plugin module", () => {

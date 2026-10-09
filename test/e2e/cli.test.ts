@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { mcpServerFor } from "../../distribution/plugin.ts";
+import { mcpServerFor } from "../../distribution/package.ts";
 import { encodeFrame, FrameDecoder } from "../../src/protocol.ts";
 
 const cli = resolve(import.meta.dirname, "../../src/cli/main.ts");
