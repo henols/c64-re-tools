@@ -1,7 +1,29 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
 
-import { dxaArguments, parseListing } from "./dxa.ts";
+import { WireFailure } from "../protocol.ts";
+import { analyze, dxaArguments, parseListing } from "./dxa.ts";
+import { ProcessSupervisor } from "./processes.ts";
+
+const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-dxa-test-"));
+after(() => rmSync(scratch, { recursive: true, force: true }));
+const posixOnly = process.platform === "win32" ? "the stand-in dxa is a shell script" : false;
+
+/** A stand-in dxa: a shell script with the given body. It runs in the request workspace. */
+function standInDxa(name: string, body: string): NodeJS.ProcessEnv {
+  const path = join(scratch, name);
+  writeFileSync(path, `#!/bin/sh\n${body}\n`);
+  chmodSync(path, 0o755);
+  return { ...process.env, C64RT_DXA: path };
+}
+
+const context = (env: NodeJS.ProcessEnv) => ({ supervisor: new ProcessSupervisor(), signal: new AbortController().signal, env });
+const PRG = Buffer.from([0x01, 0x08, 0x60]);
+const SEEDS = { imageKind: "prg" as const, entryPoints: [], dataRanges: [], labels: [] };
+const refusedWith = (message: string) => (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && error.message === message;
 
 // Real dxa 0.1.5 output (-a dump -p all-nmos6502 -d skip-scanning -U, with a
 // routine and a label seed) for test/fixtures/prg/analysis-subject.ts.
@@ -88,5 +110,18 @@ test("argv carries only the fixed options, the seed files that have lines, and t
   assert.deepEqual(
     dxaArguments("/usr/bin/dxa", { imageKind: "flat64k", entryPoints: [0x1000], dataRanges: [], labels: [] }, { image: "input/image.bin", routines: "routines.txt", labels: "labels.txt" }),
     ["/usr/bin/dxa", "-a", "dump", "-p", "all-nmos6502", "-d", "skip-scanning", "-R", "routines.txt", "-l", "labels.txt", "-g", "0000", "-q", "input/image.bin"],
+  );
+});
+
+test("a dxa failure quotes the last output of dxa without the workspace path", { skip: posixOnly }, async () => {
+  const env = standInDxa("dxa-fails", 'echo "dxa: cannot read $PWD/input/image.bin" >&2\nexit 2');
+  await assert.rejects(analyze(SEEDS, PRG, context(env)), refusedWith("dxa could not analyze the program.\nThe last output of dxa:\n  dxa: cannot read input/image.bin"));
+});
+
+test("a rejected listing says what the check found and quotes the messages of dxa", { skip: posixOnly }, async () => {
+  const env = standInDxa("dxa-no-listing", 'echo "; nothing here"\necho "dxa: odd input" >&2');
+  await assert.rejects(
+    analyze(SEEDS, PRG, context(env)),
+    refusedWith("dxa returned an incomplete or inconsistent listing. Nothing was imported. The check found: the listing has no statements.\nThe last output of dxa:\n  dxa: odd input"),
   );
 });

@@ -5,8 +5,10 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../../protocol.ts";
+import { ProcessSupervisor } from "../processes.ts";
 import { Workspace } from "../staging.ts";
-import { findGhidra, ghidraUserName, prepareSettings } from "./index.ts";
+import { analyze } from "./analyze.ts";
+import { findGhidra, ghidraUserName, prepareSettings, runHeadless } from "./index.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-ghidra-"));
 const workspace = Workspace.create();
@@ -18,12 +20,12 @@ after(() => {
 /** Ghidra's launcher: a shell script, and a batch file on Windows. */
 const LAUNCHER = process.platform === "win32" ? "analyzeHeadless.bat" : "analyzeHeadless";
 
-/** A directory that looks like a Ghidra installation. */
-function fakeInstallation(name: string): string {
+/** A directory that looks like a Ghidra installation; its launcher runs `body` as a shell script. */
+function fakeInstallation(name: string, body = ""): string {
   const root = join(scratch, name);
   mkdirSync(join(root, "support"), { recursive: true });
   mkdirSync(join(root, "Ghidra"));
-  writeFileSync(join(root, "support", LAUNCHER), "#!/bin/sh\n");
+  writeFileSync(join(root, "support", LAUNCHER), `#!/bin/sh\n${body}\n`);
   chmodSync(join(root, "support", LAUNCHER), 0o755);
   writeFileSync(join(root, "Ghidra", "application.properties"), "application.name=Ghidra\napplication.version=12.1.3\napplication.release.name=PUBLIC\n");
   return root;
@@ -71,4 +73,40 @@ test("the settings user name is the one Ghidra uses, also for a user without a p
   assert.equal(ghidraUserName(() => {
     throw new Error("uv_os_get_passwd returned ENOENT");
   }), "?");
+});
+
+const posixOnly = process.platform === "win32" ? "the stand-in Ghidra is a shell script" : false;
+const context = () => ({ supervisor: new ProcessSupervisor(), signal: new AbortController().signal });
+const refusedWith = (message: string) => (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && error.message === message;
+const PRG = Buffer.from([0x01, 0x08, 0x60]);
+const SEEDS = { imageKind: "prg" as const, entryPoints: [0x0801], dataRanges: [], labels: [], decompile: [] };
+
+test("a Ghidra error quotes the error lines of Ghidra without the workspace path", { skip: posixOnly }, async () => {
+  const ghidra = findGhidra({ C64RT_GHIDRA: fakeInstallation("fails", 'echo "INFO starting"\necho "ERROR cannot open $PWD/ghidra-project" >&2\nexit 1'), PATH: "" });
+  const own = Workspace.create();
+  try {
+    await assert.rejects(
+      runHeadless({ ghidra, workspace: own, file: "input/image.bin", baseAddress: 0x0801, scriptDirectories: [], analyze: false, timeoutMs: 20_000, ...context() }),
+      refusedWith("Ghidra stopped with an error.\nThe last output of Ghidra:\n  ERROR cannot open ghidra-project"),
+    );
+  } finally {
+    own.remove();
+  }
+});
+
+test("a Ghidra run without a result quotes the warnings of Ghidra", { skip: posixOnly }, async () => {
+  const root = fakeInstallation("no-result", 'echo "INFO done"\necho "WARN script C64Export.java not found"');
+  await assert.rejects(
+    analyze(SEEDS, PRG, { ...context(), env: { ...process.env, C64RT_GHIDRA: root } }),
+    refusedWith("Ghidra finished without a result.\nThe last output of Ghidra:\n  WARN script C64Export.java not found"),
+  );
+});
+
+test("a rejected Ghidra result says what the check found", { skip: posixOnly }, async () => {
+  // The export script's last argument is the result file.
+  const root = fakeInstallation("bad-result", 'for last; do :; done\necho "{}" > "$last"');
+  await assert.rejects(
+    analyze(SEEDS, PRG, { ...context(), env: { ...process.env, C64RT_GHIDRA: root } }),
+    refusedWith("Ghidra returned an incomplete or inconsistent result. Nothing was imported. The check found: no coverage."),
+  );
 });

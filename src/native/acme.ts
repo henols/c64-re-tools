@@ -8,7 +8,7 @@ import { WireFailure } from "../protocol.ts";
 import type { AcmeParams, AcmeResult, AssembledSymbol, Diagnostic } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { ACME, findTool } from "./discover.ts";
-import { runToolOrFail, type ToolContext } from "./run.ts";
+import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
 
 const PROGRAM = "program.prg";
 const SYMBOLS = "symbols.txt";
@@ -83,7 +83,7 @@ export async function assemble(
     if (run.code !== 0) {
       if (diagnostics.every((diagnostic) => diagnostic.severity !== "error")) {
         context.log?.(`ACME exited ${run.code} without a parsed error:\n${run.stdout}\n${run.stderr}`);
-        diagnostics.push({ severity: "error", message: "ACME stopped with an error it did not describe." });
+        diagnostics.push({ severity: "error", message: `ACME stopped with exit code ${run.code} and gave no error in its usual form.${outputTail("ACME", run, workspace.root)}` });
       }
       return { result: { assembled: false, diagnostics } };
     }

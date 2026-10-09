@@ -13,7 +13,7 @@ import { WireFailure } from "../../protocol.ts";
 import { findOnPath, isExecutableFile } from "../discover.ts";
 import type { ProcessSupervisor } from "../processes.ts";
 import type { Workspace } from "../staging.ts";
-import { runToolOrFail, type ToolRun } from "../run.ts";
+import { outputTail, runToolOrFail, type ToolRun } from "../run.ts";
 
 export const GHIDRA_LANGUAGE = "C64RT_6510:LE:16:nmos";
 // Next to this module. New URL literals, so an installed skill gets the directories too (08 §6).
@@ -145,8 +145,8 @@ export async function runHeadless(options: HeadlessOptions): Promise<ToolRun> {
   const run = await runToolOrFail("Ghidra", "The Ghidra analysis", { argv, cwd: options.workspace.root, timeoutMs: options.timeoutMs }, { supervisor: options.supervisor, signal: options.signal, env });
   if (run.code !== 0 || /^ERROR REPORT SCRIPT ERROR|Exception in thread "main"/m.test(run.stdout + run.stderr)) {
     // Ghidra's own error lines tell the user what to fix (found in CI on Windows, where the message said nothing).
-    const lines = (run.stdout + "\n" + run.stderr).split(/\r?\n/).filter((line) => /ERROR|Exception|Error:/.test(line)).slice(0, 5);
-    throw new WireFailure("operation-failed", `Ghidra stopped with an error${lines.length === 0 ? ` (exit ${run.code})` : `:\n  ${lines.map((line) => line.trim()).join("\n  ")}`}`);
+    const tail = outputTail("Ghidra", run, options.workspace.root, /ERROR|Exception|Error:/);
+    throw new WireFailure("operation-failed", `Ghidra stopped with an error${tail === "" ? ` (exit ${run.code}).` : `.${tail}`}`);
   }
   return run;
 }
