@@ -1,4 +1,4 @@
-// The built c64-re-tools-mcp over real stdio, against a real Host Runtime
+// c64-re-tools-mcp from this checkout over real stdio, against a real Host Runtime
 // server with a stub session. Proves the MCP opens one session at start,
 // passes the video standard, retries a host that was not up yet, and ends
 // the session when the harness closes it.
@@ -6,17 +6,23 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { startHostServer, type HostServer, type ViceSessionFactory } from "../../../src/host/server.ts";
 import { freePort } from "../../../src/host/vice/process.ts";
+import { startMcp, waitFor } from "../../kit.ts";
 
-const root = resolve(import.meta.dirname, "../../..");
+/** Every tool that the MCP server registers. */
+const TOOLS = [
+  "c64_autostart", "c64_backtrace", "c64_breakpoint", "c64_cia", "c64_cpu_history", "c64_disassemble", "c64_disk_attach", "c64_execution",
+  "c64_joystick", "c64_keyboard", "c64_memmap", "c64_memory_compare", "c64_memory_read", "c64_memory_search", "c64_memory_write", "c64_observe",
+  "c64_profile", "c64_program_load", "c64_registers", "c64_reset", "c64_run_until", "c64_screen", "c64_sid", "c64_snapshot",
+  "c64_sprite", "c64_status", "c64_timing", "c64_vicii", "c64_warp", "c64_watchpoint", "c64_window",
+];
 
 interface StubState {
   opened: string[];
@@ -48,19 +54,8 @@ after(async () => {
   await Promise.all(servers.map((server) => server.close()));
 });
 
-async function mcp(port: number, extraEnv: Record<string, string> = {}, cwd?: string): Promise<Client> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [resolve(root, "src/mcp/main.ts")],
-    env: { ...env, C64RT_HOST: `127.0.0.1:${port}`, ...extraEnv },
-    stderr: "ignore",
-    ...(cwd === undefined ? {} : { cwd }),
-  });
-  const client = new Client({ name: "stdio-test", version: "0" });
-  await client.connect(transport);
-  return client;
+async function mcp(port: number, env: Record<string, string> = {}, cwd?: string): Promise<Client> {
+  return (await startMcp(`127.0.0.1:${port}`, { env, stderr: "ignore", ...(cwd === undefined ? {} : { cwd }) })).client;
 }
 
 async function status(client: Client): Promise<CallToolResult> {
@@ -72,12 +67,12 @@ test("the MCP opens one session at start and closes it when the harness disconne
   const server = await startHostServer({ port: 0, createViceSession: stub(state) });
   servers.push(server);
   const client = await mcp(server.port, { C64RT_VIDEO: "ntsc" });
-  assert.equal((await client.listTools()).tools.length, 31, "the built server registers every 15 §37 tool and c64_window (D20)");
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), TOOLS);
   assert.deepEqual((await status(client)).structuredContent, { state: "running", videoStandard: "ntsc", warp: false, window: false });
   await status(client);
   assert.deepEqual(state.opened, ["ntsc"], "one MCP process must own exactly one session");
   await client.close();
-  await waitFor(() => state.closed === 1);
+  await waitFor(() => state.closed === 1, "the session closed");
 });
 
 test("a host that starts after the MCP is used on the next tool call", async () => {
@@ -92,7 +87,7 @@ test("a host that starts after the MCP is used on the next tool call", async () 
   assert.equal((await status(client)).isError, undefined);
   assert.equal(state.opened.length, 1);
   await client.close();
-  await waitFor(() => state.closed === 1);
+  await waitFor(() => state.closed === 1, "the session closed");
 });
 
 test("a bad C64RT_VIDEO is reported to the caller", async () => {
@@ -127,10 +122,3 @@ test("a project path is read in the MCP's working directory and only its bytes r
   }
 });
 
-async function waitFor(condition: () => boolean, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error("condition not reached in time");
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-}
