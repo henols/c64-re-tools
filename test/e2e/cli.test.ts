@@ -39,7 +39,7 @@ test("install puts the skills and the MCP declaration into the project; uninstal
   assert.equal(existsSync(join(project, ".claude", "skills", "c64-emulator")), false);
 });
 
-test("a project install for every harness leaves the home directory alone; uninstall leaves nothing behind (D21)", () => {
+test("a project install for every harness leaves the home directory alone; uninstall leaves nothing behind", () => {
   const home = mkdtempSync(join(tmpdir(), "c64-re-tools-home-"));
   const fresh = mkdtempSync(join(tmpdir(), "c64-re-tools-cli-all-"));
   try {

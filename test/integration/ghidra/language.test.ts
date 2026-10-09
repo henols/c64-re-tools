@@ -1,4 +1,4 @@
-// Acceptance of the c64-re-tools NMOS 6510 Ghidra language (19 §10, 16 §9):
+// The c64-re-tools NMOS 6510 Ghidra language:
 // it compiles, decodes all 105 undocumented opcodes with the right lengths,
 // executes the deterministic ones correctly (decimal mode included), keeps the
 // unstable ones opaque and stops flow at JAM. Skipped (never passed) without Ghidra.

@@ -1,6 +1,5 @@
-// Milestone 9 acceptance (19 §11): one scenario PASSes an equivalent
-// reconstruction, FAILs a behaviorally different one, and is INCONCLUSIVE
-// when its checkpoint cannot be reached. Original and rebuild run one after
+// One scenario PASSes an equivalent reconstruction, FAILs a behaviorally
+// different one, and is INCONCLUSIVE when its checkpoint cannot be reached. Original and rebuild run one after
 // the other in one real VICE; the original's names come from knowledge.db,
 // the rebuild's from its symbol files. Opt-in with C64RT_LIVE_VICE.
 

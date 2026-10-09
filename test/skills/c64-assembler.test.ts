@@ -1,4 +1,4 @@
-// The c64-assembler script with real ACME, which it runs itself (D16).
+// The c64-assembler script with real ACME, which it runs itself.
 // Skipped (never passed) when ACME is not installed.
 
 import assert from "node:assert/strict";

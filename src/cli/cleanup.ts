@@ -1,4 +1,4 @@
-// Tidying that AP SDK leaves to its caller (D21):
+// Tidying that AP SDK leaves to its caller:
 // - A project install must not change the home directory. AP SDK writes the
 //   Windsurf MCP declaration to ~/.codeium/windsurf/mcp_config.json even in
 //   project scope, and records it in the project manifest, so a project

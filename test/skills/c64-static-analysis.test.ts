@@ -1,5 +1,5 @@
 // The c64-static-analysis script with real Ghidra and DXA, which it runs
-// itself (D16). Skipped (never passed) when Ghidra is not found.
+// itself. Skipped (never passed) when Ghidra is not found.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";

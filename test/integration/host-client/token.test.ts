@@ -1,4 +1,4 @@
-// Container binding (D5/D6): a host that also listens beyond loopback needs
+// Container binding: a host that also listens beyond loopback needs
 // the shared token from those clients; loopback clients need none.
 
 import assert from "node:assert/strict";

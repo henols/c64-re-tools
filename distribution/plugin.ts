@@ -1,4 +1,4 @@
-// The portable c64-re-tools plugin for @jalco/ap-sdk (08 §2-3): the skills
+// The portable c64-re-tools plugin for @jalco/ap-sdk: the skills
 // with their TypeScript scripts, the src/ modules those scripts reach, their
 // references, and the VICE MCP declaration. AP SDK maps it to each harness's
 // native layout; nothing at run time depends on it.

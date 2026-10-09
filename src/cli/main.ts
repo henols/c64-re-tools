@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-// The human CLI (08 §5, 18 §10): installs the skills and the VICE MCP
+// The human CLI: installs the skills and the VICE MCP
 // declaration into agent harnesses through AP SDK, and reports status. It is
 // thin: AP SDK does the harness-specific work.
 
@@ -79,7 +79,7 @@ async function main(argv: string[]): Promise<number> {
     case "update": {
       const before = windsurfBefore();
       const { code, output } = await apSdk("install", flags);
-      // A project install leaves the home directory as it was (D21).
+      // A project install leaves the home directory as it was.
       const note = scope === "project" && (targets === undefined || targets.includes("windsurf")) ? undoWindsurfProjectMcp(before) : undefined;
       process.stdout.write(note === undefined ? output : withoutWindsurfMcp(output));
       if (note !== undefined) console.log(`  ${note}\n`);

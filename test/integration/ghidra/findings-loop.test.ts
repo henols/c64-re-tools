@@ -1,5 +1,5 @@
-// Milestone 8 acceptance (19 §10), the iterative loop through the real skill
-// scripts with real Ghidra, which the script runs itself (D16):
+// The iterative loop through the real skill scripts with real Ghidra, which
+// the script runs itself:
 //   Ghidra import → semantic rename → Ghidra seeded from knowledge →
 //   the same importer, history and conflicts kept, echoed seeds not owned.
 // The language checks are in language.test.ts. Skipped without Ghidra.

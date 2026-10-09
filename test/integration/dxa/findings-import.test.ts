@@ -1,8 +1,8 @@
-// Milestone 7 acceptance (19 §9) through the real skill scripts and real
-// DXA, which the script runs itself (D16): a fixture PRG goes through DXA, normalized findings
-// and the importer into knowledge.db; a second, seeded run changes the result
-// and retires the obsolete DXA facts, keeps the history and protects the
-// semantic knowledge; a malformed listing imports nothing.
+// Through the real skill scripts and real DXA, which the script runs itself:
+// a fixture PRG goes through DXA, normalized findings and the importer into
+// knowledge.db; a second, seeded run changes the result and retires the
+// obsolete DXA facts, keeps the history and protects the semantic knowledge;
+// a malformed listing imports nothing.
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";

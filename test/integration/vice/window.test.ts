@@ -1,4 +1,4 @@
-// Real-VICE checks for D20: a session starts headless, and c64_window moves the
+// Real-VICE checks: a session starts headless, and c64_window moves the
 // machine into a VICE with a window and back. Each test has its own session.
 // The window tests open real VICE windows on the host's desktop.
 
