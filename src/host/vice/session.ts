@@ -255,7 +255,8 @@ export class ViceSession implements ViceSessionHandle {
     if (this.#mode === "window" && this.#handover !== undefined && this.#launch !== undefined) {
       this.#windowClosing = true;
       const handover = this.#handover;
-      const run = this.#queue.then(() => this.#backToHeadless(vice, handover));
+      const launch = this.#launch;
+      const run = this.#queue.then(() => this.#backToHeadless(vice, handover, launch));
       this.#queue = run.catch(() => {});
       return;
     }
@@ -263,11 +264,11 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   /** Restarts headless from the handover saved when the window opened. */
-  async #backToHeadless(dead: ViceProcess, handover: Handover): Promise<void> {
+  async #backToHeadless(dead: ViceProcess, handover: Handover, launch: ViceLauncher): Promise<void> {
     try {
       await dead.stop();
       if (this.#closed) return;
-      await this.#install("headless", handover);
+      await this.#install(launch, "headless", handover);
       this.#handover = undefined;
       this.#notice = new WireFailure("machine-state-lost", WINDOW_CLOSED);
       if (handover.running) await this.#resume();
@@ -369,17 +370,17 @@ export class ViceSession implements ViceSessionHandle {
       case "runUntil":
         return this.#runUntil(params as ViceOperations["runUntil"]["params"]);
       case "programLoad":
-        return this.#programLoad(params as ViceOperations["programLoad"]["params"], attachments[0]!);
+        return this.#programLoad(params as ViceOperations["programLoad"]["params"], onlyAttachment(attachments));
       case "autostart": {
         const { type, index, run } = params as ViceOperations["autostart"]["params"];
-        const file = this.#stage(attachments[0]!, type);
+        const file = this.#stage(onlyAttachment(attachments), type);
         await this.#runningCommand(() => this.#machine.autostart(file, index, run));
         this.#replaceStaged("autostart", file);
         return { state: "running" };
       }
       case "diskAttach": {
         const { type } = params as ViceOperations["diskAttach"]["params"];
-        const file = this.#stage(attachments[0]!, type);
+        const file = this.#stage(onlyAttachment(attachments), type);
         await this.#observe(() => this.#machine.attachDisk(file));
         this.#replaceStaged("disk", file);
         return { attached: true };
@@ -967,7 +968,7 @@ export class ViceSession implements ViceSessionHandle {
     await this.#machine.saveSnapshot(handover.file);
     const old = this.#vice;
     try {
-      await this.#install(mode, handover);
+      await this.#install(this.#launch, mode, handover);
     } catch (error) {
       if (running && !this.#closed) await this.#resume().catch(() => {});
       throw error;
@@ -984,16 +985,16 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   /**
-   * Starts a VICE in `mode`, restores `handover` into it and sets the session
+   * Starts a VICE in `mode` with `launch`, restores `handover` into it and sets the session
    * state again, then makes it the current VICE. On failure the new VICE is
    * stopped, the current one is untouched, and the error says why.
    */
-  async #install(mode: ViceMode, handover: Handover): Promise<void> {
+  async #install(launch: ViceLauncher, mode: ViceMode, handover: Handover): Promise<void> {
     if (this.#closed) throw new WireFailure("machine-unavailable", "The emulator session is closed.");
     const output: string[] = [];
     let vice: ViceProcess;
     try {
-      vice = await this.#launch!(mode, (line) => output.push(line));
+      vice = await launch(mode, (line) => output.push(line));
     } catch (error) {
       const reasons = startErrorLines(output);
       const what = mode === "window" ? "VICE with a window" : "a headless VICE";
@@ -1058,16 +1059,16 @@ export class ViceSession implements ViceSessionHandle {
 
   /** Compares two memory ranges from one coherent stop, in any spaces and views. */
   async #memoryCompare(params: ViceOperations["memoryCompare"]["params"]): Promise<ViceOperations["memoryCompare"]["result"]> {
-    const [left, right] = await this.#observe(async () => [
+    const [left, right] = await this.#observe(async (): Promise<[Buffer, Buffer]> => [
       Buffer.from(await this.#machine.readMemory({ ...params.left, size: params.size }), "hex"),
       Buffer.from(await this.#machine.readMemory({ ...params.right, size: params.size }), "hex"),
     ]);
     const firstDifferences: Array<{ offset: number; left: number; right: number }> = [];
     let differentBytes = 0;
     for (let offset = 0; offset < params.size; offset++) {
-      if (left![offset] === right![offset]) continue;
+      if (left[offset] === right[offset]) continue;
       differentBytes++;
-      if (firstDifferences.length < MAX_COMPARE_DIFFERENCES) firstDifferences.push({ offset, left: left![offset]!, right: right![offset]! });
+      if (firstDifferences.length < MAX_COMPARE_DIFFERENCES) firstDifferences.push({ offset, left: left[offset]!, right: right[offset]! });
     }
     return { equal: differentBytes === 0, differentBytes, firstDifferences };
   }
@@ -1279,6 +1280,13 @@ export class ViceSession implements ViceSessionHandle {
       this.#state = "running";
     }
   }
+}
+
+/** The one attachment of an operation that takes a file (see attachmentCount); refuses any other count. */
+function onlyAttachment(attachments: Buffer[]): Buffer {
+  const [bytes] = attachments;
+  if (bytes === undefined || attachments.length !== 1) throw new WireFailure("invalid-input", "The operation needs exactly one file attachment.");
+  return bytes;
 }
 
 /** The VICE checkpoint range and operation of a breakpoint (no size) or a watchpoint. */

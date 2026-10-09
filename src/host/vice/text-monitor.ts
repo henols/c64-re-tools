@@ -139,7 +139,7 @@ export class TextMonitor {
     // Anything left over belongs to no command; drop it so it cannot be misread.
     this.#buffer = "";
     this.#socket.write(`${line}\n`);
-    const prompted = () => new RegExp(PROMPT.source).test(this.#buffer);
+    const prompted = () => new RegExp(PROMPT.source).exec(this.#buffer);
     const resendAt = Math.min(deadline, Date.now() + this.resendAfterMs);
     try {
       await this.#waitFor(prompted, resendAt, timeoutMs);
@@ -150,24 +150,26 @@ export class TextMonitor {
       await this.#waitFor(prompted, deadline, timeoutMs);
     }
     const sentinelLine = `~ $${this.#nonce.toString(16)}\n`;
-    let match: RegExpExecArray | null = null;
     for (;;) {
       this.#socket.write(sentinelLine);
+      let found: RegExpExecArray;
       try {
-        await this.#waitFor(() => (match = sentinel.exec(this.#buffer)) !== null, Math.min(deadline, Date.now() + this.sentinelResendMs), timeoutMs);
-        break;
+        found = await this.#waitFor(() => sentinel.exec(this.#buffer), Math.min(deadline, Date.now() + this.sentinelResendMs), timeoutMs);
       } catch (error) {
         if (this.#socket.destroyed || Date.now() >= deadline) throw error;
+        continue;
       }
+      const output = this.#buffer.slice(0, found.index);
+      this.#buffer = this.#buffer.slice(found.index + found[0].length);
+      return cleanOutput(output);
     }
-    const found = match as unknown as RegExpExecArray;
-    const output = this.#buffer.slice(0, found.index);
-    this.#buffer = this.#buffer.slice(found.index + found[0].length);
-    return cleanOutput(output);
   }
 
-  async #waitFor(done: () => boolean, deadline: number, timeoutMs: number): Promise<void> {
-    while (!done()) {
+  /** Waits until `probe` finds something in the received text, and returns what it found. */
+  async #waitFor<T>(probe: () => T | null, deadline: number, timeoutMs: number): Promise<T> {
+    for (;;) {
+      const found = probe();
+      if (found !== null) return found;
       if (this.#socket.destroyed) throw new TextMonitorError("text monitor connection closed during a command");
       const remaining = deadline - Date.now();
       if (remaining <= 0) {

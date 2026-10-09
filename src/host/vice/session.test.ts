@@ -401,6 +401,17 @@ test("a program that is too short or runs past $ffff is refused before VICE sees
   await session.close();
 });
 
+test("a program, autostart or disk operation without exactly one file is refused before VICE sees it", async () => {
+  const { fake, session } = await startSession();
+  const file = Buffer.from([0x00, 0xc0, 0x60]);
+  await assert.rejects(session.handle("programLoad", {}, []), failsWith("invalid-input"));
+  await assert.rejects(session.handle("autostart", { type: "prg", index: 0, run: true }, []), failsWith("invalid-input"));
+  await assert.rejects(session.handle("diskAttach", { type: "d64" }, [file, file]), failsWith("invalid-input"));
+  assert.deepEqual([fake.commands, fake.textCommands], [[], []]);
+  assert.equal(fake.running, true);
+  await session.close();
+});
+
 test("autostart stages the bytes with their type and leaves the machine running", async () => {
   const { fake, session } = await startSession();
   await session.handle("execution", { action: "pause", space: "c64" });
