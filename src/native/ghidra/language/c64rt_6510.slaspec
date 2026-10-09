@@ -146,7 +146,8 @@ OP1: imm8,X      is bbb=5 & X; imm8      { local a:2 = zext(imm8 + X); export *:
 OP1: imm16       is bbb=3; imm16         { export *:1 imm16; }
 OP1: imm16,X     is bbb=7 & X; imm16     { local a:2 = imm16 + zext(X); export *:1 a; }
 OP1: imm16,Y     is bbb=6 & Y; imm16     { local a:2 = imm16 + zext(Y); export *:1 a; }
-OP1: (imm8,X)    is bbb=0 & X; imm8      { local z:2 = zext(imm8 + X); local a:2 = *:2 z; export *:1 a; }
+# (zp,X): the pointer wraps in zero page, so at $ff its high byte comes from $00.
+OP1: (imm8,X)    is bbb=0 & X; imm8      { local z:1 = imm8 + X; local lo:2 = zext(z); local hi:2 = zext(z + 1); local a:2 = zext(*:1 hi) << 8 | zext(*:1 lo); export *:1 a; }
 OP1: (imm8),Y    is bbb=4 & Y; imm8      { local z:2 = imm8; local a:2 = (*:2 z) + zext(Y); export *:1 a; }
 # (zp),Y with zp $ff: the pointer's high byte comes from $00.
 OP1: (imm8),Y    is bbb=4 & Y; imm8 & zpff=0xff { local a:2 = (zext(*:1 0x00:2) << 8 | zext(*:1 0xff:2)) + zext(Y); export *:1 a; }
@@ -157,7 +158,7 @@ MEM: imm8,X      is bbb=5 & X; imm8      { local a:2 = zext(imm8 + X); export *:
 MEM: imm16       is bbb=3; imm16         { export *:1 imm16; }
 MEM: imm16,X     is bbb=7 & X; imm16     { local a:2 = imm16 + zext(X); export *:1 a; }
 MEM: imm16,Y     is bbb=6 & Y; imm16     { local a:2 = imm16 + zext(Y); export *:1 a; }
-MEM: (imm8,X)    is bbb=0 & X; imm8      { local z:2 = zext(imm8 + X); local a:2 = *:2 z; export *:1 a; }
+MEM: (imm8,X)    is bbb=0 & X; imm8      { local z:1 = imm8 + X; local lo:2 = zext(z); local hi:2 = zext(z + 1); local a:2 = zext(*:1 hi) << 8 | zext(*:1 lo); export *:1 a; }
 MEM: (imm8),Y    is bbb=4 & Y; imm8      { local z:2 = imm8; local a:2 = (*:2 z) + zext(Y); export *:1 a; }
 MEM: (imm8),Y    is bbb=4 & Y; imm8 & zpff=0xff { local a:2 = (zext(*:1 0x00:2) << 8 | zext(*:1 0xff:2)) + zext(Y); export *:1 a; }
 
@@ -211,7 +212,7 @@ ZPYB: imm8,Y     is Y & imm8             { local a:2 = zext(imm8 + Y); export *:
 ABSB: imm16      is imm16                { export *:1 imm16; }
 ABSXB: imm16,X   is X & imm16            { local a:2 = imm16 + zext(X); export *:1 a; }
 ABSYB: imm16,Y   is Y & imm16            { local a:2 = imm16 + zext(Y); export *:1 a; }
-INDXB: (imm8,X)  is X & imm8             { local z:2 = zext(imm8 + X); local a:2 = *:2 z; export *:1 a; }
+INDXB: (imm8,X)  is X & imm8             { local z:1 = imm8 + X; local lo:2 = zext(z); local hi:2 = zext(z + 1); local a:2 = zext(*:1 hi) << 8 | zext(*:1 lo); export *:1 a; }
 INDYB: (imm8),Y  is Y & imm8             { local z:2 = imm8; local a:2 = (*:2 z) + zext(Y); export *:1 a; }
 
 REL: target      is rel [ target = inst_next + rel; ] { export *:2 target; }
