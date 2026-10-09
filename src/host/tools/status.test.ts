@@ -29,3 +29,28 @@ test("host.status reports VICE and the tools that come with it, and nothing else
     ],
   );
 });
+
+test("host.status reports a tool from a VICE older than 3.9 as not working, with the remedy", { skip, timeout: 30_000 }, async () => {
+  const env = {
+    PATH: "/usr/bin:/bin",
+    C64RT_VICE: standIn(scratch, "x64sc-old", ["x64sc (VICE 3.7.1)"]),
+    C64RT_C1541: standIn(scratch, "c1541-current", ["c1541 (VICE 3.9)"]),
+    C64RT_PETCAT: standIn(scratch, "petcat-old", ["petcat (VICE 3.8)"]),
+  };
+  const supervisor = new ProcessSupervisor();
+  try {
+    const { result } = await hostStatus({ supervisor, signal: new AbortController().signal, env });
+    assert.deepEqual(
+      result.tools.map((tool) => [tool.name, tool.found, tool.runs]),
+      [
+        ["VICE (x64sc)", true, false],
+        ["c1541", true, true],
+        ["petcat", true, false],
+      ],
+    );
+    assert.match(result.tools[0]!.problem!, /VICE 3\.7, and c64-re-tools needs VICE 3\.9 or later\. Install VICE 3\.9 or later/);
+    assert.match(result.tools[2]!.problem!, /VICE 3\.8, and c64-re-tools needs VICE 3\.9 or later\. Install VICE 3\.9 or later/);
+  } finally {
+    await supervisor.stopAll();
+  }
+});

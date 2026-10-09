@@ -29,7 +29,7 @@ test("VICE versions are read from the tools' version lines and compared with 3.9
   assert.equal(isOlderThanMinimum({ major: 4, minor: 0 }), false);
 });
 
-test("a c1541 from an older VICE is refused by name with the remedy; a current or unreadable one is let through", { skip: posixOnly }, async () => {
+test("a c1541 from an older VICE or with an unreadable version is refused by name with the remedy; a current one is let through", { skip: posixOnly }, async () => {
   const context = { supervisor, signal: new AbortController().signal };
   const old = standIn(scratch, "c1541-old", ["c1541 (VICE 3.7.1)"]);
   await assert.rejects(
@@ -37,7 +37,10 @@ test("a c1541 from an older VICE is refused by name with the remedy; a current o
     (error: unknown) => error instanceof WireFailure && error.code === "installation-incomplete" && /VICE 3\.7, and c64-re-tools needs VICE 3\.9 or later/.test(error.message),
   );
   await requireMinimumVersion(C1541, standIn(scratch, "c1541-new", ["c1541 (VICE 3.10)"]), context);
-  await requireMinimumVersion(C1541, standIn(scratch, "c1541-odd", ["something else"]), context);
+  await assert.rejects(
+    requireMinimumVersion(C1541, standIn(scratch, "c1541-odd", ["something else"]), context),
+    (error: unknown) => error instanceof WireFailure && error.code === "installation-incomplete" && /c1541 .* does not tell its VICE version/.test(error.message) && error.message.includes(C1541.remedy),
+  );
 });
 
 test("a caller that cancels does not cancel the version check that another caller waits for", { skip: posixOnly, timeout: 30_000 }, async () => {
