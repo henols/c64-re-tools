@@ -3,22 +3,8 @@
 // these tools itself: nothing here crosses the Host Runtime wire. Bytes
 // (a program, an image, a listing) go next to these values as attachments.
 
-import { REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
-import { WireFailure, type SourceTree } from "../protocol.ts";
-
-type Fields = Record<string, unknown>;
-
-function isObject(value: unknown): value is Fields {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
-  return typeof value === "string" && (values as readonly string[]).includes(value);
-}
-
-function isInteger(value: unknown, min: number, max: number): value is number {
-  return Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
-}
+import { prgRange, REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
+import { isInteger, isObject, isOneOf, WireFailure, type Fields, type SourceTree } from "../protocol.ts";
 
 export interface Diagnostic {
   severity: "error" | "warning" | "note";
@@ -205,8 +191,24 @@ export function imageRange(kind: ImageKind, image: Uint8Array): { start: number;
     if (image.length !== 0x10000) throw new WireFailure("invalid-input", "A flat 64 KiB image has exactly 65536 bytes.");
     return { start: 0, end: 0xffff, body: image };
   }
-  if (image.length < 3) throw new WireFailure("invalid-input", "A PRG has a 2-byte load address and at least one byte.");
-  const start = image[0]! | (image[1]! << 8);
-  if (start + image.length - 2 > 0x10000) throw new WireFailure("invalid-input", "The PRG runs past $ffff.");
-  return { start, end: start + image.length - 3, body: image.subarray(2) };
+  try {
+    return prgRange(image);
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    throw new WireFailure("invalid-input", error.message);
+  }
+}
+
+/**
+ * The seeds that an analysis of [start, end] can use: the entry points inside
+ * it, and the data ranges cut to it. A data range that holds an entry point
+ * is left out, so that the entry point is disassembled.
+ */
+export function seedsInside(params: Pick<DxaParams, "entryPoints" | "dataRanges">, start: number, end: number): Pick<DxaParams, "entryPoints" | "dataRanges"> {
+  const entryPoints = params.entryPoints.filter((address) => address >= start && address <= end);
+  const dataRanges = params.dataRanges
+    .filter((range) => range.end >= start && range.start <= end)
+    .map((range) => ({ start: Math.max(range.start, start), end: Math.min(range.end, end) }))
+    .filter((range) => !entryPoints.some((entry) => entry >= range.start && entry <= range.end));
+  return { entryPoints, dataRanges };
 }

@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import { WireFailure } from "../../protocol.ts";
-import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, type GhidraParams, type GhidraResult } from "../types.ts";
+import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, seedsInside, type GhidraParams, type GhidraResult } from "../types.ts";
 import { outputTail, type ToolContext } from "../run.ts";
 import { Workspace } from "../staging.ts";
 import { findGhidra, runHeadless, SCRIPT_DIRECTORY } from "./index.ts";
@@ -23,17 +23,12 @@ export async function analyze(
   const ghidra = findGhidra(context.env);
   const { start, end, body } = imageRange(params.imageKind, image);
   const base = start;
-  const inside = (address: number) => address >= start && address <= end;
 
   // Ghidra disassembles and defines data only in the loaded bytes; labels may name any address.
-  const entryPoints = params.entryPoints.filter(inside);
+  const { entryPoints, dataRanges } = seedsInside(params, start, end);
   if (entryPoints.length === 0) {
     throw new WireFailure("invalid-input", "Give at least one entry point inside the program, for example the SYS address of its BASIC loader.");
   }
-  const dataRanges = params.dataRanges
-    .filter((range) => range.end >= start && range.start <= end)
-    .map((range) => ({ start: Math.max(range.start, start), end: Math.min(range.end, end) }))
-    .filter((range) => !entryPoints.some((entry) => entry >= range.start && entry <= range.end));
 
   const workspace = Workspace.create(context.supervisor);
   try {

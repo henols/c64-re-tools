@@ -9,7 +9,7 @@ import { writeFileSync } from "node:fs";
 
 import { SYMBOL_NAME } from "../c64.ts";
 import { WireFailure } from "../protocol.ts";
-import { checkDxaResult, checkRequestBounds, imageRange, type DxaParams, type DxaResult } from "./types.ts";
+import { checkDxaResult, checkRequestBounds, imageRange, seedsInside, type DxaParams, type DxaResult } from "./types.ts";
 import { Workspace } from "./staging.ts";
 import { DXA, findTool } from "./discover.ts";
 import { outputTail, runToolOrFail, type ToolContext } from "./run.ts";
@@ -94,12 +94,7 @@ export async function analyze(
   checkRequestBounds(params);
   const executable = findTool(DXA, context.env);
   const { start, end } = imageRange(params.imageKind, image);
-  const inside = (address: number) => address >= start && address <= end;
-  const entryPoints = params.entryPoints.filter(inside);
-  const dataRanges = params.dataRanges
-    .filter((range) => range.end >= start && range.start <= end)
-    .map((range) => ({ start: Math.max(range.start, start), end: Math.min(range.end, end) }))
-    .filter((range) => !entryPoints.some((entry) => entry >= range.start && entry <= range.end));
+  const { entryPoints, dataRanges } = seedsInside(params, start, end);
 
   const workspace = Workspace.create(context.supervisor);
   try {
