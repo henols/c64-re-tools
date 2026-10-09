@@ -356,7 +356,7 @@ export function flagsFromStatusRegister(value: number): Registers["flags"] {
  * run state is the session's job.
  */
 /** Generous bound for commands that run the machine (step/next): they answer only once it stops again. */
-const RUNNING_COMMAND_TIMEOUT_MS = 30_000;
+export const RUNNING_COMMAND_TIMEOUT_MS = 30_000;
 
 export class ViceAdapter {
   readonly #monitor: BinaryMonitor;
@@ -534,11 +534,11 @@ export class ViceAdapter {
   }
 
   /** Executes `count` C64 instructions, with subroutine calls as one when `over`. Answers once stopped again. */
-  async step(count: number, over: boolean): Promise<void> {
+  async step(count: number, over: boolean, timeoutMs = RUNNING_COMMAND_TIMEOUT_MS): Promise<void> {
     const body = Buffer.alloc(3);
     body[0] = over ? 1 : 0;
     body.writeUInt16LE(count, 1);
-    await this.#monitor.request(Command.advanceInstructions, body, RUNNING_COMMAND_TIMEOUT_MS);
+    await this.#monitor.request(Command.advanceInstructions, body, timeoutMs);
   }
 
   /** Runs until just after the next RTS/RTI. Answers at once; the machine stops later. */

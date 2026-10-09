@@ -107,6 +107,8 @@ export class FakeVice {
   returnTo: number | undefined;
   /** PC the next advance-instructions ends at; defaults to PC + count. */
   stepTo: number | undefined;
+  /** A step resumes the machine and never ends, as a next over a subroutine that does not return. */
+  stepHangs = false;
   /** When set, binary commands get no answer (a hung VICE). */
   hung = false;
   /**
@@ -361,6 +363,7 @@ export class FakeVice {
       const count = body.readUInt16LE(1);
       socket.write(frame(0x63, EVENT_REQUEST_ID, this.#pc()));
       this.running = true;
+      if (this.stepHangs) return;
       this.registers.PC = this.stepTo ?? (this.registers.PC! + count) & 0xffff;
       this.stepTo = undefined;
       this.#enterMonitor(socket);

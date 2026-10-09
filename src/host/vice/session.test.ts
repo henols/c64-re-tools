@@ -221,7 +221,9 @@ function shortLimits(process: { monitor: { defaultTimeoutMs: number }; text: { d
   process.text.defaultTimeoutMs = 100;
 }
 
-const held = (error: unknown) => failsWith("machine-unavailable")(error) && /paused in its window/.test((error as Error).message);
+/** The refusal of a held headless VICE: it names no window. */
+const held = (error: unknown) =>
+  failsWith("machine-unavailable")(error) && /does not take commands now/.test((error as Error).message) && !/window/i.test((error as Error).message);
 
 /** Retries a read until the session takes commands again. */
 async function untilTakesCommands(session: ViceSession): Promise<void> {
@@ -281,6 +283,27 @@ test("a held VICE whose text commands run later than the time limit still gets i
   await untilTakesCommands(session);
   assert.equal(fake.running, true);
   assert.equal((await session.handle("status", {})).state, "running");
+  await session.close();
+});
+
+test("a step that does not end is named, and the session takes commands again once VICE answers", async () => {
+  const { fake, session } = await startSession({ stepLimitMs: 100 });
+  fake.stepHangs = true;
+  const notEnded = (error: unknown) =>
+    failsWith("machine-unavailable")(error) && /the next of 2 instructions did not end in 0.1 seconds/.test((error as Error).message) && !/window/i.test((error as Error).message);
+  await assert.rejects(session.handle("execution", { action: "next", count: 2, space: "c64" }), notEnded);
+  fake.stepHangs = false;
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    try {
+      await session.handle("registersGet", { space: "c64" });
+      break;
+    } catch (error) {
+      if (!notEnded(error) || Date.now() > deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+  assert.equal(fake.running, true, "it ran before the step");
   await session.close();
 });
 
