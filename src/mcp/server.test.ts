@@ -10,11 +10,15 @@ import {
   type Breakpoint,
   type BreakpointParams,
   type ExecutionParams,
+  type JoystickState,
   type MemmapRange,
   type MemoryReadParams,
   type MemoryWriteParams,
+  type ObserveParams,
+  type ObserveResult,
   type RegisterValues,
   type Registers,
+  type RunTarget,
   type ViceOperations,
   type Watchpoint,
   type WatchpointParams,
@@ -93,15 +97,15 @@ class FakeSession implements ViceSessionApi {
   }
 
   searches: unknown[] = [];
-  async memorySearch(params: import("../protocol.ts").ViceOperations["memorySearch"]["params"]) {
+  async memorySearch(params: ViceOperations["memorySearch"]["params"]) {
     this.searches.push(params);
     return { matches: [0x2100, 0x37a0] };
   }
-  async memoryCompare(params: import("../protocol.ts").ViceOperations["memoryCompare"]["params"]) {
+  async memoryCompare(params: ViceOperations["memoryCompare"]["params"]) {
     this.searches.push(params);
     return { equal: false, differentBytes: 3, firstDifferences: [{ offset: 12, left: 4, right: 5 }] };
   }
-  async disassemble(params: import("../protocol.ts").ViceOperations["disassemble"]["params"]) {
+  async disassemble(params: ViceOperations["disassemble"]["params"]) {
     return { instructions: [{ address: params.address, bytes: "a900", text: "LDA #$00" }] };
   }
 
@@ -122,7 +126,7 @@ class FakeSession implements ViceSessionApi {
     this.typed.push([...petscii]);
     return { queuedBytes: petscii.length };
   }
-  async joystick(state: { port: 1 | 2; direction: (typeof import("../protocol.ts").JOYSTICK_DIRECTIONS)[number]; fire: boolean }) {
+  async joystick(state: JoystickState) {
     return state;
   }
 
@@ -151,7 +155,7 @@ class FakeSession implements ViceSessionApi {
   }
 
   runs: unknown[] = [];
-  async runUntil(params: { target: import("../protocol.ts").RunTarget; timeoutFrames: number }) {
+  async runUntil(params: { target: RunTarget; timeoutFrames: number }) {
     this.runs.push(params);
     return { reached: true, stopReason: "target" as const, state: "stopped" as const, pc: 0xc00b };
   }
@@ -219,9 +223,9 @@ class FakeSession implements ViceSessionApi {
   }
 
   observations: unknown[] = [];
-  async observe(params: import("../protocol.ts").ObserveParams) {
+  async observe(params: ObserveParams) {
     this.observations.push(params);
-    const result: import("../protocol.ts").ObserveResult = {};
+    const result: ObserveResult = {};
     if (params.registers !== undefined) result.registers = REGISTERS;
     if (params.memory !== undefined) result.memory = params.memory.map((range) => ({ address: range.address, data: "00".repeat(range.size) }));
     if (params.timing) result.timing = { rasterLine: 100, rasterCycle: 20 };
@@ -230,7 +234,7 @@ class FakeSession implements ViceSessionApi {
   }
 
   snapshots: unknown[] = [];
-  async snapshot(params: import("../protocol.ts").ViceOperations["snapshot"]["params"]) {
+  async snapshot(params: ViceOperations["snapshot"]["params"]) {
     this.snapshots.push(params);
     if (params.action === "list") return { snapshots: ["before-boss"] };
     if (params.action === "save") return { saved: true, name: params.name };
@@ -244,7 +248,7 @@ class FakeSession implements ViceSessionApi {
     return { width: 384, height: 272, png: Buffer.from("png-bytes").toString("base64"), ...(baseline === undefined ? {} : { baseline }) };
   }
   compares: unknown[] = [];
-  async screenCompare(params: import("../protocol.ts").ViceOperations["screenCompare"]["params"]) {
+  async screenCompare(params: ViceOperations["screenCompare"]["params"]) {
     this.compares.push(params);
     const result = { match: false, mismatchingPixels: 42, mismatchRatio: 0.0004, bounds: { x: 112, y: 84, width: 18, height: 21 } };
     return params.includeDiff ? { ...result, diffPng: Buffer.from("diff").toString("base64") } : result;
