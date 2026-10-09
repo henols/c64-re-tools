@@ -662,6 +662,15 @@ export interface Pong {
 }
 
 export type ClientMessage = Hello | Request | Ping;
+
+/** A request as the host receives it: the operation is not checked yet, so the host answers an unknown one with invalid-input. */
+export interface ReceivedRequest {
+  type: "request";
+  id: number;
+  op: string;
+  params: Fields;
+}
+export type ReceivedClientMessage = Hello | ReceivedRequest | Ping;
 export type HostMessage = Ready | HandshakeError | Reply | Pong;
 
 // ---------------------------------------------------------------------------
@@ -711,7 +720,7 @@ function isWireError(value: unknown): value is WireError {
 }
 
 /** Validates a message the host received. Throws ProtocolError on any contract break. */
-export function parseClientMessage(value: unknown): ClientMessage {
+export function parseClientMessage(value: unknown): ReceivedClientMessage {
   if (!isObject(value)) throw new ProtocolError("message is not an object");
   if (value.type === "hello") {
     // protocol/version are checked by the handshake, which answers a mismatch
@@ -735,7 +744,7 @@ export function parseClientMessage(value: unknown): ClientMessage {
     if (!isRequestId(value.id)) throw new ProtocolError("request id is not a 32-bit unsigned integer");
     if (typeof value.op !== "string") throw new ProtocolError("request op is not a string");
     if (!isObject(value.params)) throw new ProtocolError("request params is not an object");
-    return { type: "request", id: value.id, op: value.op as ViceOperation, params: value.params as never };
+    return { type: "request", id: value.id, op: value.op, params: value.params };
   }
   if (value.type === "ping") return { type: "ping" };
   throw new ProtocolError("unknown message type");

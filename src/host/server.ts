@@ -4,6 +4,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import {
   attachmentCount,
   checkHello,
+  isOneOf,
   TOOL_OPERATIONS,
   validateToolParams,
   VICE_OPERATIONS,
@@ -16,7 +17,7 @@ import {
   ProtocolError,
   validateViceParams,
   type HostMessage,
-  type Request,
+  type ReceivedRequest,
   type VideoStandard,
   type ViceOperation,
   type ViceOperations,
@@ -257,34 +258,32 @@ class Connection {
     }
   }
 
-  async #answer(request: Request, attachments: Buffer[]): Promise<void> {
+  async #answer(request: ReceivedRequest, attachments: Buffer[]): Promise<void> {
     try {
       let result: unknown;
       let replyAttachments: Buffer[] = [];
       if (this.#isTool) {
-        if (!(TOOL_OPERATIONS as readonly string[]).includes(request.op) || this.#options.tools === undefined) {
-          throw new WireFailure("invalid-input", `unknown operation: ${String(request.op)}`);
-        }
-        const op = request.op as ToolOperation;
+        const { op } = request;
+        const tools = this.#options.tools;
+        if (!isOneOf(TOOL_OPERATIONS, op) || tools === undefined) throw new WireFailure("invalid-input", `unknown operation: ${op}`);
         const params = validateToolParams(op, request.params, attachments);
-        const answer = await this.#options.tools(op, params, attachments, this.#toolAbort.signal);
+        const answer = await tools(op, params, attachments, this.#toolAbort.signal);
         result = answer.result;
         replyAttachments = answer.attachments ?? [];
       } else {
-        if (this.#session === undefined || !(VICE_OPERATIONS as readonly string[]).includes(request.op)) {
-          throw new WireFailure("invalid-input", `unknown operation: ${String(request.op)}`);
-        }
-        const op = request.op as ViceOperation;
+        const { op } = request;
+        const session = this.#session;
+        if (session === undefined || !isOneOf(VICE_OPERATIONS, op)) throw new WireFailure("invalid-input", `unknown operation: ${op}`);
         const params = validateViceParams(op, request.params);
         if (attachments.length !== attachmentCount(op)) {
           throw new WireFailure("invalid-input", `${op} takes ${attachmentCount(op)} file attachment(s)`);
         }
-        result = await this.#session.handle(op, params, attachments);
+        result = await session.handle(op, params, attachments);
       }
       this.#send({ type: "reply", id: request.id, result }, replyAttachments);
     } catch (error) {
       if (!(error instanceof WireFailure)) {
-        this.#log(`operation ${String(request.op)} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+        this.#log(`operation ${request.op} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
       }
       this.#send({
         type: "reply",
