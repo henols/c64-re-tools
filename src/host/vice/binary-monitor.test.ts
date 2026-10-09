@@ -214,14 +214,16 @@ test("while a request is overdue, later ones wait briefly; its late answer ends 
     if (holding) held.push(answer);
     else answer();
   });
+  monitor.overdueTimeoutMs = 50;
   await assert.rejects(monitor.request(Command.ping, undefined, 50), MonitorTimeoutError);
   // Overdue: a long limit is cut to the short one, but the command is still sent.
-  const started = Date.now();
   await assert.rejects(monitor.request(Command.ping, undefined, 60_000), MonitorTimeoutError);
-  assert.ok(Date.now() - started < 5_000);
   assert.equal(held.length, 2);
-  const waiting = monitor.request(Command.ping, undefined, Infinity);
-  await new Promise((resolve) => setTimeout(resolve, 1_200));
+  let settled = false;
+  const waiting = monitor.request(Command.ping, undefined, Infinity).finally(() => (settled = true));
+  // A request sent after it times out at the short limit; the one with no limit still waits.
+  await assert.rejects(monitor.request(Command.ping, undefined, 60_000), MonitorTimeoutError);
+  assert.equal(settled, false);
   holding = false;
   for (const answer of held.splice(0)) answer();
   await waiting;

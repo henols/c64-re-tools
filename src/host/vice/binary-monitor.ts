@@ -255,6 +255,8 @@ export class BinaryMonitor {
   #closedByUs = false;
   /** The time limit of a request that names none. */
   defaultTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
+  /** The time limit of a request while an earlier one is overdue (see OVERDUE_REQUEST_TIMEOUT_MS). */
+  overdueTimeoutMs = OVERDUE_REQUEST_TIMEOUT_MS;
   /** Requests that timed out and whose late answer has not come yet. */
   readonly #overdue = new Set<number>();
 
@@ -305,7 +307,7 @@ export class BinaryMonitor {
     if (this.#socket.destroyed) return Promise.reject(new MonitorConnectionError("monitor connection is closed"));
     const requestId = this.#nextId;
     this.#nextId = this.#nextId >= EVENT_REQUEST_ID - 1 ? 1 : this.#nextId + 1;
-    const limit = this.#overdue.size > 0 && timeoutMs !== Infinity ? Math.min(timeoutMs, OVERDUE_REQUEST_TIMEOUT_MS) : timeoutMs;
+    const limit = this.#overdue.size > 0 && timeoutMs !== Infinity ? Math.min(timeoutMs, this.overdueTimeoutMs) : timeoutMs;
     return new Promise((resolve, reject) => {
       const timer =
         limit === Infinity

@@ -166,6 +166,7 @@ test("a command whose line VICE dropped is sent once more", async () => {
     seen++;
     return seen === 1 ? DROP : `${command} done\n`;
   });
+  monitor.resendAfterMs = 20;
   assert.equal(await monitor.command("stopwatch", 8000), "stopwatch done");
   assert.equal(seen, 2);
   await monitor.close();
@@ -177,6 +178,7 @@ test("a sentinel that VICE holds is sent again, and its late answer is not outpu
     (command) => `${command} done\n`,
     (line) => line.startsWith("~") && held++ === 0,
   );
+  monitor.sentinelResendMs = 20;
   assert.equal(await monitor.command("load", 5000), "load done");
   assert.equal(held, 2, "the first sentinel was held, the resend released it");
   assert.equal(await monitor.command("attach"), "attach done");
@@ -204,8 +206,10 @@ test("a command that still prints when the resend time passes is sent once and r
 });
 
 test("a command with no time limit waits for its answer, also after a command that timed out", async () => {
-  const { monitor } = await fakeTextMonitor((command) => (command === "lost" ? DROP : { parts: ["late\n", "answer\n"], gapMs: 1300 }));
+  // The answer takes longer than the limit for commands after a timed-out one.
+  const { monitor } = await fakeTextMonitor((command) => (command === "lost" ? DROP : { parts: ["late\n", "answer\n"], gapMs: 100 }));
   monitor.resendAfterMs = 60_000;
+  monitor.overdueTimeoutMs = 20;
   await assert.rejects(monitor.command("lost", 50), TextMonitorError);
   assert.equal(await monitor.command("drain", Infinity), "late\nanswer");
   await monitor.close();

@@ -32,9 +32,9 @@ const PROMPT = /\((?:C|\d+):\$[0-9a-f]{4}\) /g;
 export const DEFAULT_COMMAND_TIMEOUT_MS = 10_000;
 /** The default of TextMonitor.resendAfterMs. */
 const RESEND_AFTER_MS = 3_000;
-/** While an earlier command timed out, later ones are waited for only this long (see BinaryMonitor). */
+/** The default of TextMonitor.overdueTimeoutMs. */
 const OVERDUE_COMMAND_TIMEOUT_MS = 1_000;
-/** How long to wait for a sentinel's answer before sending the sentinel again. */
+/** The default of TextMonitor.sentinelResendMs. */
 const SENTINEL_RESEND_MS = 1_000;
 /** The longest delay a Node timer takes. */
 const MAX_TIMER_MS = 2_147_483_647;
@@ -69,6 +69,10 @@ export class TextMonitor {
    * sent again.
    */
   resendAfterMs = RESEND_AFTER_MS;
+  /** How long to wait for a sentinel's answer before sending the sentinel again. */
+  sentinelResendMs = SENTINEL_RESEND_MS;
+  /** While an earlier command timed out, later ones are waited for only this long (see BinaryMonitor). */
+  overdueTimeoutMs = OVERDUE_COMMAND_TIMEOUT_MS;
   /** Set when a command timed out; cleared by the next command that is answered. */
   #overdue = false;
 
@@ -108,7 +112,7 @@ export class TextMonitor {
     if (/[\r\n]/.test(line)) return Promise.reject(new TypeError("a monitor command must be one line"));
     const run = this.#queue.then(async () => {
       try {
-        const limit = this.#overdue && timeoutMs !== Infinity ? Math.min(timeoutMs, OVERDUE_COMMAND_TIMEOUT_MS) : timeoutMs;
+        const limit = this.#overdue && timeoutMs !== Infinity ? Math.min(timeoutMs, this.overdueTimeoutMs) : timeoutMs;
         const output = await this.#exchange(line, limit);
         this.#overdue = false;
         return output;
@@ -150,7 +154,7 @@ export class TextMonitor {
     for (;;) {
       this.#socket.write(sentinelLine);
       try {
-        await this.#waitFor(() => (match = sentinel.exec(this.#buffer)) !== null, Math.min(deadline, Date.now() + SENTINEL_RESEND_MS), timeoutMs);
+        await this.#waitFor(() => (match = sentinel.exec(this.#buffer)) !== null, Math.min(deadline, Date.now() + this.sentinelResendMs), timeoutMs);
         break;
       } catch (error) {
         if (this.#socket.destroyed || Date.now() >= deadline) throw error;
