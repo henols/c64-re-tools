@@ -266,7 +266,7 @@ test("a ping before ready closes the connection", async () => {
   await client.closed;
 });
 
-test("a ready client that sends nothing for the heartbeat timeout is closed with its session (D18)", async () => {
+test("a ready client that sends nothing for the heartbeat timeout is closed with its session", async () => {
   const log: StubLog = { started: [], closed: 0 };
   const client = await RawClient.open(await serve(stubFactory(log), undefined, 100));
   client.send(hello);
@@ -278,10 +278,13 @@ test("a ready client that sends nothing for the heartbeat timeout is closed with
 
 test("a client that keeps pinging stays open past the heartbeat timeout", async () => {
   const log: StubLog = { started: [], closed: 0 };
-  const client = await RawClient.open(await serve(stubFactory(log), undefined, 150));
+  const timeoutMs = 600;
+  const client = await RawClient.open(await serve(stubFactory(log), undefined, timeoutMs));
   client.send(hello);
   await client.next();
-  for (let i = 0; i < 6; i++) {
+  // A ping every 50 ms for two timeouts: only a stall of more than 550 ms between two pings could close the connection.
+  const end = Date.now() + 2 * timeoutMs;
+  while (Date.now() < end) {
     await new Promise((resolve) => setTimeout(resolve, 50));
     client.send({ type: "ping" });
     assert.deepEqual(await client.next(), { type: "pong" });
