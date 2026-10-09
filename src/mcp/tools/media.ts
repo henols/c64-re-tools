@@ -75,7 +75,7 @@ export const c64Snapshot = defineTool({
   title: "Machine snapshots",
   description:
     "Save and restore the whole machine state, attached disks included. Action save keeps a snapshot under a name you choose. " +
-    "Action restore puts the machine back in that state and stops the CPU. It also starts the c64_timing stopwatch again. " +
+    "Action restore puts the machine back in that state and stops the CPU. The c64_timing stopwatch keeps its reading. " +
     `Action list gives the names, and action discard removes one. A session keeps at most ${MAX_SNAPSHOTS} snapshots until it ends.`,
   inputSchema: z
     .object({
