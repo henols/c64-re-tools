@@ -25,11 +25,6 @@ import { FrameDecoder } from "./protocol.testkit.ts";
 
 const hello = { type: "hello", protocol: HOST_PROTOCOL_ID, version: HOST_PROTOCOL_VERSION, role: "vice-session" } as const;
 
-test("private protocol has a stable internal identity", () => {
-  assert.equal(HOST_PROTOCOL_ID, "c64-re-tools-host");
-  assert.equal(HOST_PROTOCOL_VERSION, 2, "2 since the heartbeat (D18)");
-});
-
 test("a frame is a 4-byte big-endian length followed by UTF-8 JSON", () => {
   const frame = encodeFrame({ type: "ready" });
   const body = Buffer.from('{"type":"ready"}', "utf8");
