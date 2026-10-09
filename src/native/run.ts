@@ -1,4 +1,4 @@
-// Bounded native-tool execution (16 §3): argv only, no shell, a fixed
+// Bounded native-tool execution: argv only, no shell, a fixed
 // timeout, capped output, and the whole process group stopped on timeout or abort.
 
 import { realpathSync } from "node:fs";
@@ -56,8 +56,9 @@ export function outputTail(tool: string, run: Pick<ToolRun, "stdout" | "stderr">
     .slice(-TAIL_LINES)
     .map(withoutRoot);
   while (lines.length > 1 && lines.join("\n").length > TAIL_CHARS) lines.shift();
-  if (lines.length === 0) return "";
-  lines[0] = lines[0]!.slice(-TAIL_CHARS);
+  const first = lines[0];
+  if (first === undefined) return "";
+  lines[0] = first.slice(-TAIL_CHARS);
   return `\nThe last output of ${tool}:\n  ${lines.join("\n  ")}`;
 }
 

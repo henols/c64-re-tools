@@ -1,4 +1,4 @@
-// The ACME adapter (16 §8): argv from the typed request only, structured
+// The ACME adapter: argv from the typed request only, structured
 // diagnostics and symbols, and a validated C64 PRG as the result.
 
 import { existsSync, readFileSync } from "node:fs";

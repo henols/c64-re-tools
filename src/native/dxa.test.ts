@@ -96,6 +96,7 @@ test("a truncated, reordered or misplaced listing is refused", () => {
   const lines = LISTING.trimEnd().split("\n");
   assert.throws(() => parseListing(lines.slice(0, -1).join("\n"), 0x0801, 0x0827), /holds 3 bytes, but the next line is 4 bytes later/);
   assert.throws(() => parseListing(LISTING, 0x0800, 0x0827), /starts at \$0801/);
+  assert.throws(() => parseListing(LISTING.replace("0824          l824:\n", ""), 0x0801, 0x0820), /runs past the end of the program/);
   const swapped = [...lines];
   [swapped[11], swapped[12]] = [swapped[12]!, swapped[11]!];
   assert.throws(() => parseListing(swapped.join("\n"), 0x0801, 0x0827), Error);
@@ -124,6 +125,17 @@ test("a rejected listing says what the check found and quotes the messages of dx
     analyze(SEEDS, PRG, context(env)),
     refusedWith("dxa returned an incomplete or inconsistent listing. Nothing was imported. The check found: the listing has no statements.\nThe last output of dxa:\n  dxa: odd input"),
   );
+});
+
+test("a label seed with a leading dot reaches dxa and comes back as a label", { skip: posixOnly }, async () => {
+  const env = standInDxa("dxa-dot-label", "grep -qxF '.loop, 0x0801, 0x0000' labels.txt || exit 3\nprintf '0801          .loop:\\n0801 60       \\trts\\n'");
+  const { result } = await analyze({ ...SEEDS, labels: [{ address: 0x0801, name: ".loop" }] }, PRG, context(env));
+  assert.deepEqual(result.labels, [{ address: 0x0801, name: ".loop" }]);
+});
+
+test("a listing larger than the limit is refused with the limit", { skip: posixOnly }, async () => {
+  const env = standInDxa("dxa-too-much", "head -c 9000000 /dev/zero | tr '\\0' a");
+  await assert.rejects(analyze(SEEDS, PRG, context(env)), refusedWith("dxa printed a listing that is larger than 8 MiB. Nothing was imported."));
 });
 
 test("a request beyond the seed bounds is refused by name before dxa runs", async () => {

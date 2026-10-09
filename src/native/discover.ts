@@ -1,9 +1,9 @@
-// One discovery rule for every native tool (16 §15): C64RT_<TOOL> names
+// One discovery rule for every native tool: C64RT_<TOOL> names
 // the executable, else the tool's usual name on PATH. A missing tool is
 // refused by name with the remedy; nothing is ever installed.
 
 import { accessSync, constants, statSync } from "node:fs";
-import { delimiter, isAbsolute, join } from "node:path";
+import { isAbsolute, join, posix, win32 } from "node:path";
 
 import { WireFailure } from "../protocol.ts";
 
@@ -14,7 +14,7 @@ export interface ToolSpec {
   envVar: string;
   /** Executable names to look for on PATH, in order. */
   binaries: string[];
-  /** Where the tool runs: the Host Runtime's machine, or the skill script's (D16). */
+  /** Where the tool runs: the Host Runtime's machine, or the skill script's. */
   where: "on the host" | "on this machine";
   /** What the user does when the tool is missing. */
   remedy: string;
@@ -61,9 +61,8 @@ export const VICE: ToolSpec = {
 };
 
 /**
- * The oldest VICE that works (D23): 3.7 has no monitor profiler, and its CPU
- * history, until-return and c1541 chain output differ (found in CI with the
- * VICE 3.7.1 of Ubuntu 24.04). 3.9 and 3.10 are tested live.
+ * The oldest VICE that works: 3.7 has no monitor profiler, and its CPU
+ * history, until-return and c1541 chain output differ.
  */
 export const MIN_VICE = { major: 3, minor: 9 } as const;
 
@@ -88,6 +87,16 @@ export function isExecutableFile(path: string): boolean {
   }
 }
 
+/**
+ * The value of an environment variable. Windows ignores the case of the name,
+ * also in a copied environment, where PATH is often named "Path".
+ */
+export function environmentValue(env: NodeJS.ProcessEnv, name: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  if (platform !== "win32" || env[name] !== undefined) return env[name];
+  const key = Object.keys(env).find((candidate) => candidate.toUpperCase() === name.toUpperCase());
+  return key === undefined ? undefined : env[key];
+}
+
 /** The extensions that the supervisor can start on Windows: programs directly, batch files through cmd.exe. */
 const STARTABLE = [".com", ".exe", ".bat", ".cmd"];
 
@@ -99,14 +108,15 @@ const STARTABLE = [".com", ".exe", ".bat", ".cmd"];
  */
 export function pathSuffixes(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): string[] {
   if (platform !== "win32") return [""];
-  const listed = (env.PATHEXT ?? "").split(";").map((suffix) => suffix.trim().toLowerCase());
+  const listed = (environmentValue(env, "PATHEXT", platform) ?? "").split(";").map((suffix) => suffix.trim().toLowerCase());
   const suffixes = listed.filter((suffix, index) => STARTABLE.includes(suffix) && listed.indexOf(suffix) === index);
   return suffixes.length === 0 ? STARTABLE : suffixes;
 }
 
 /** The first executable named `binary + suffix` in a PATH directory, in PATH order; undefined when there is none. */
-export function findOnPath(binaries: readonly string[], env: NodeJS.ProcessEnv, suffixes: readonly string[] = pathSuffixes(env)): string | undefined {
-  for (const dir of (env.PATH ?? "").split(delimiter)) {
+export function findOnPath(binaries: readonly string[], env: NodeJS.ProcessEnv, suffixes: readonly string[] = pathSuffixes(env), platform: NodeJS.Platform = process.platform): string | undefined {
+  const delimiter = platform === "win32" ? win32.delimiter : posix.delimiter;
+  for (const dir of (environmentValue(env, "PATH", platform) ?? "").split(delimiter)) {
     if (dir === "") continue;
     for (const binary of binaries) {
       for (const suffix of suffixes) {

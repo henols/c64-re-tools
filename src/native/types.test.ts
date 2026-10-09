@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { WireFailure } from "../protocol.ts";
-import { checkDxaResult, checkGhidraResult, imageRange } from "./types.ts";
+import { checkDxaResult, checkGhidraResult, imageRange, seedsInside } from "./types.ts";
 
 test("an analyzer image is a PRG at its load address or 64 KiB from $0000", () => {
   assert.deepEqual({ ...imageRange("prg", Buffer.from([0x01, 0x08, 0x60, 0x00])), body: undefined }, { start: 0x0801, end: 0x0802, body: undefined });
@@ -14,6 +14,29 @@ test("an analyzer image is a PRG at its load address or 64 KiB from $0000", () =
   ] as const) {
     assert.throws(() => imageRange(kind, bytes), (error: unknown) => error instanceof WireFailure && error.code === "invalid-input");
   }
+});
+
+test("the seeds of an analysis are the entry points inside its range and the data ranges cut to it", () => {
+  const seeds = seedsInside(
+    {
+      entryPoints: [0x07ff, 0x0810, 0x0900],
+      dataRanges: [
+        { start: 0x0700, end: 0x0805 },
+        { start: 0x080c, end: 0x0812 },
+        { start: 0x0820, end: 0x0a00 },
+        { start: 0x0a00, end: 0x0b00 },
+      ],
+    },
+    0x0801,
+    0x0827,
+  );
+  assert.deepEqual(seeds, {
+    entryPoints: [0x0810],
+    dataRanges: [
+      { start: 0x0801, end: 0x0805 },
+      { start: 0x0820, end: 0x0827 },
+    ],
+  });
 });
 
 test("a Ghidra result must be complete and consistent", () => {

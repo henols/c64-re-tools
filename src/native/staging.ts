@@ -1,4 +1,4 @@
-// Request-owned temporary workspaces (04 §7, 16 §3). Everything staged lives
+// Request-owned temporary workspaces. Everything staged lives
 // outside the user's project and is removed when the request ends.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -46,10 +46,12 @@ export class Workspace {
     const base = this.path(directory);
     mkdirSync(base, { recursive: true });
     files.forEach((file, index) => {
+      const content = contents[index];
+      if (content === undefined) throw new WireFailure("invalid-input", `The request gives no bytes for ${file.path}.`);
       const target = this.path(`${directory}/${file.path}`);
       mkdirSync(dirname(target), { recursive: true });
       // wx: never write through a file or link that is already there.
-      writeFileSync(target, contents[index]!, { flag: "wx" });
+      writeFileSync(target, content, { flag: "wx" });
     });
     return base;
   }

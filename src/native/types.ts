@@ -1,23 +1,10 @@
 // Types of the native tools that skill scripts run directly (ACME, DXA,
-// Ghidra), and the checks of their complete results (16 §11). Nothing here
-// crosses the Host Runtime wire.
+// Ghidra), and the checks of their complete results. The skill script runs
+// these tools itself: nothing here crosses the Host Runtime wire. Bytes
+// (a program, an image, a listing) go next to these values as attachments.
 
-import { REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
-import { WireFailure, type SourceTree } from "../protocol.ts";
-
-type Fields = Record<string, unknown>;
-
-function isObject(value: unknown): value is Fields {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
-  return typeof value === "string" && (values as readonly string[]).includes(value);
-}
-
-function isInteger(value: unknown, min: number, max: number): value is number {
-  return Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
-}
+import { prgRange, REFERENCE_KINDS, SYMBOL_NAME, type ReferenceKind } from "../c64.ts";
+import { isInteger, isObject, isOneOf, WireFailure, type SourceTree } from "../protocol.ts";
 
 export interface Diagnostic {
   severity: "error" | "warning" | "note";
@@ -46,7 +33,7 @@ export interface AssembledSymbol {
 
 export interface AcmeResult {
   assembled: boolean;
-  /** Present when assembled: where the program loads. The program bytes are the reply's attachment. */
+  /** Present when assembled: where the program loads. The program bytes are the one attachment that assemble returns. */
   loadRange?: { start: number; end: number; bytes: number };
   symbols?: AssembledSymbol[];
   diagnostics: Diagnostic[];
@@ -57,7 +44,7 @@ export type ImageKind = (typeof IMAGE_KINDS)[number];
 
 export const GHIDRA_LIMITS = { entryPoints: 1024, dataRanges: 1024, labels: 4096, decompile: 32, decompiledChars: 16_000, decompiledTotalChars: 128_000 } as const;
 
-/** ghidra.analyze (16 §10). The image is the request's one attachment: a PRG, or 64 KiB from $0000. */
+/** The Ghidra analysis. Its image is given next to these fields: a PRG, or 64 KiB from $0000. */
 export interface GhidraParams {
   imageKind: ImageKind;
   /** Seeds from current knowledge. */
@@ -76,7 +63,7 @@ export interface GhidraResult {
   decompilations: Array<{ entry: number; text: string; truncated: boolean }>;
   /** Requested routines without decompiled code, with the decompiler's reason. */
   notDecompiled?: Array<{ entry: number; reason: string }>;
-  /** Which categories are complete inside the coverage (12 §4); private to the importer. */
+  /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { functions: boolean; regions: boolean; references: boolean };
 }
 
@@ -93,19 +80,26 @@ export function checkRequestBounds(params: DxaParams & { decompile?: number[] })
   }
 }
 
-/** dxa.analyze (16 §9): the same image and seeds as Ghidra, without decompilation. */
+/** The DXA analysis: the same image and seeds as Ghidra, without decompilation. */
 export type DxaParams = Omit<GhidraParams, "decompile">;
 
 export interface DxaResult {
   coverage: Array<{ start: number; end: number }>;
   regions: Array<{ start: number; end: number; classification: "code" | "data" }>;
   labels: Array<{ address: number; name: string }>;
-  /** The size of the listing, which is the reply's one attachment (UTF-8 text). */
+  /** The size of the listing, which is the one attachment that analyze returns (UTF-8 text). */
   listingBytes: number;
-  /** Which categories are complete inside the coverage (12 §4); private to the importer. */
+  /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { regions: boolean; labels: boolean };
 }
 
+/** Ends a result check with the Error that names its first problem. */
+function fail(message: string): never {
+  throw new Error(message);
+}
+
+/** Narrows to a list whose items are still unchecked. */
+const isList = (value: unknown): value is unknown[] => Array.isArray(value);
 
 /**
  * Checks a complete Ghidra result: every field typed and in range, every
@@ -113,52 +107,52 @@ export interface DxaResult {
  * and without overlap. Throws an Error naming the first problem.
  */
 export function checkGhidraResult(value: unknown): GhidraResult {
-  const fail = (message: string): never => {
-    throw new Error(message);
-  };
   if (!isObject(value)) fail("not an object");
-  const result = value as Fields;
-  const coverage = result.coverage;
-  if (!Array.isArray(coverage) || coverage.length === 0) fail("no coverage");
-  for (const range of coverage as unknown[]) if (!isObject(range) || !isInteger(range.start, 0, 0xffff) || !isInteger(range.end, range.start as number, 0xffff)) fail("bad coverage range");
-  const covered = (address: number) => (coverage as Array<{ start: number; end: number }>).some((range) => range.start <= address && address <= range.end);
-  if (!Array.isArray(result.functions)) fail("no functions");
-  for (const fn of result.functions as unknown[]) {
-    if (!isObject(fn) || !isInteger(fn.entry, 0, 0xffff) || typeof fn.name !== "string" || !SYMBOL_NAME.test(fn.name) || !isOneOf(["seed", "generated", "native"] as const, fn.nameSource)) fail("bad function");
-    if (!covered((fn as Fields).entry as number)) fail("a function lies outside the coverage");
+  const { coverage, functions, regions, references, decompilations, notDecompiled, completeness } = value;
+  if (!isList(coverage) || coverage.length === 0) fail("no coverage");
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (const range of coverage) {
+    if (!isObject(range) || !isInteger(range.start, 0, 0xffff) || !isInteger(range.end, range.start, 0xffff)) fail("bad coverage range");
+    ranges.push({ start: range.start, end: range.end });
   }
-  if (!Array.isArray(result.regions)) fail("no regions");
+  const covered = (address: number) => ranges.some((range) => range.start <= address && address <= range.end);
+  if (!isList(functions)) fail("no functions");
+  for (const fn of functions) {
+    if (!isObject(fn) || !isInteger(fn.entry, 0, 0xffff) || typeof fn.name !== "string" || !SYMBOL_NAME.test(fn.name) || !isOneOf(["seed", "generated", "native"] as const, fn.nameSource)) fail("bad function");
+    if (!covered(fn.entry)) fail("a function lies outside the coverage");
+  }
+  if (!isList(regions)) fail("no regions");
   let previousEnd = -1;
-  for (const region of result.regions as unknown[]) {
-    if (!isObject(region) || !isInteger(region.start, 0, 0xffff) || !isInteger(region.end, region.start as number, 0xffff) || (region.classification !== "code" && region.classification !== "data")) fail("bad region");
-    const { start, end } = region as { start: number; end: number };
+  for (const region of regions) {
+    if (!isObject(region) || !isInteger(region.start, 0, 0xffff) || !isInteger(region.end, region.start, 0xffff) || (region.classification !== "code" && region.classification !== "data")) fail("bad region");
+    const start = region.start;
+    const end = region.end;
     if (start <= previousEnd) fail("regions overlap or are out of order");
-    if (!(coverage as Array<{ start: number; end: number }>).some((range) => range.start <= start && end <= range.end)) fail("a region lies outside the coverage");
+    if (!ranges.some((range) => range.start <= start && end <= range.end)) fail("a region lies outside the coverage");
     previousEnd = end;
   }
-  if (!Array.isArray(result.references)) fail("no references");
-  for (const reference of result.references as unknown[]) {
+  if (!isList(references)) fail("no references");
+  for (const reference of references) {
     if (!isObject(reference) || !isInteger(reference.from, 0, 0xffff) || !isInteger(reference.to, 0, 0xffff) || !isOneOf(REFERENCE_KINDS, reference.type)) fail("bad reference");
-    if (!covered((reference as Fields).from as number)) fail("a reference source lies outside the coverage");
+    if (!covered(reference.from)) fail("a reference source lies outside the coverage");
   }
-  if (!Array.isArray(result.decompilations) || result.decompilations.length > GHIDRA_LIMITS.decompile) fail("bad decompilations");
+  if (!isList(decompilations) || decompilations.length > GHIDRA_LIMITS.decompile) fail("bad decompilations");
   let total = 0;
-  for (const item of result.decompilations as unknown[]) {
+  for (const item of decompilations) {
     if (!isObject(item) || !isInteger(item.entry, 0, 0xffff) || typeof item.text !== "string" || typeof item.truncated !== "boolean") fail("bad decompilation");
-    const text = (item as Fields).text as string;
-    if (text.length > GHIDRA_LIMITS.decompiledChars) fail("a decompilation is too long");
-    total += text.length;
+    if (item.text.length > GHIDRA_LIMITS.decompiledChars) fail("a decompilation is too long");
+    total += item.text.length;
   }
   if (total > GHIDRA_LIMITS.decompiledTotalChars) fail("the decompilations are too long together");
-  if (result.notDecompiled !== undefined) {
-    if (!Array.isArray(result.notDecompiled) || result.notDecompiled.length > GHIDRA_LIMITS.decompile) fail("bad list of routines that were not decompiled");
-    for (const item of result.notDecompiled as unknown[]) {
+  if (notDecompiled !== undefined) {
+    if (!isList(notDecompiled) || notDecompiled.length > GHIDRA_LIMITS.decompile) fail("bad list of routines that were not decompiled");
+    for (const item of notDecompiled) {
       if (!isObject(item) || !isInteger(item.entry, 0, 0xffff) || typeof item.reason !== "string" || item.reason.length > 1000) fail("bad routine that was not decompiled");
     }
   }
-  const completeness = result.completeness;
   if (!isObject(completeness) || typeof completeness.functions !== "boolean" || typeof completeness.regions !== "boolean" || typeof completeness.references !== "boolean") fail("no completeness");
-  return result as unknown as GhidraResult;
+  // Every field is checked: the object is the result as it is.
+  return value as unknown as GhidraResult;
 }
 
 /**
@@ -167,32 +161,30 @@ export function checkGhidraResult(value: unknown): GhidraResult {
  * the listing as the one attachment. Throws an Error naming the first problem.
  */
 export function checkDxaResult(value: unknown, attachments: readonly Uint8Array[]): DxaResult {
-  const fail = (message: string): never => {
-    throw new Error(message);
-  };
   if (!isObject(value)) fail("not an object");
-  const result = value as Fields;
-  const coverage = result.coverage;
-  if (!Array.isArray(coverage) || coverage.length !== 1) fail("the coverage is not one range");
-  const range = (coverage as unknown[])[0];
-  if (!isObject(range) || !isInteger(range.start, 0, 0xffff) || !isInteger(range.end, range.start as number, 0xffff)) fail("bad coverage range");
-  const { start, end } = range as { start: number; end: number };
-  if (!Array.isArray(result.regions)) fail("no regions");
+  const { coverage, regions, labels, listingBytes, completeness } = value;
+  if (!isList(coverage) || coverage.length !== 1) fail("the coverage is not one range");
+  const range = coverage[0];
+  if (!isObject(range) || !isInteger(range.start, 0, 0xffff) || !isInteger(range.end, range.start, 0xffff)) fail("bad coverage range");
+  const start = range.start;
+  const end = range.end;
+  if (!isList(regions)) fail("no regions");
   let next = start;
-  for (const region of result.regions as unknown[]) {
-    if (!isObject(region) || !isInteger(region.start, 0, 0xffff) || !isInteger(region.end, region.start as number, 0xffff) || (region.classification !== "code" && region.classification !== "data")) fail("bad region");
-    if ((region as Fields).start !== next) fail("the regions leave a gap or overlap");
-    next = ((region as Fields).end as number) + 1;
+  for (const region of regions) {
+    if (!isObject(region) || !isInteger(region.start, 0, 0xffff) || !isInteger(region.end, region.start, 0xffff) || (region.classification !== "code" && region.classification !== "data")) fail("bad region");
+    if (region.start !== next) fail("the regions leave a gap or overlap");
+    next = region.end + 1;
   }
   if (next !== end + 1) fail("the regions do not reach the end of the coverage");
-  if (!Array.isArray(result.labels)) fail("no labels");
-  for (const label of result.labels as unknown[]) {
+  if (!isList(labels)) fail("no labels");
+  for (const label of labels) {
     if (!isObject(label) || !isInteger(label.address, start, end) || typeof label.name !== "string" || !SYMBOL_NAME.test(label.name)) fail("bad label");
   }
-  if (attachments.length !== 1 || result.listingBytes !== attachments[0]!.length) fail("the listing is missing");
-  const completeness = result.completeness;
+  const [listing] = attachments;
+  if (attachments.length !== 1 || listing === undefined || listingBytes !== listing.length) fail("the listing is missing");
   if (!isObject(completeness) || typeof completeness.regions !== "boolean" || typeof completeness.labels !== "boolean") fail("no completeness");
-  return result as unknown as DxaResult;
+  // Every field is checked: the object is the result as it is.
+  return value as unknown as DxaResult;
 }
 
 /**
@@ -204,8 +196,24 @@ export function imageRange(kind: ImageKind, image: Uint8Array): { start: number;
     if (image.length !== 0x10000) throw new WireFailure("invalid-input", "A flat 64 KiB image has exactly 65536 bytes.");
     return { start: 0, end: 0xffff, body: image };
   }
-  if (image.length < 3) throw new WireFailure("invalid-input", "A PRG has a 2-byte load address and at least one byte.");
-  const start = image[0]! | (image[1]! << 8);
-  if (start + image.length - 2 > 0x10000) throw new WireFailure("invalid-input", "The PRG runs past $ffff.");
-  return { start, end: start + image.length - 3, body: image.subarray(2) };
+  try {
+    return prgRange(image);
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    throw new WireFailure("invalid-input", error.message);
+  }
+}
+
+/**
+ * The seeds that an analysis of [start, end] can use: the entry points inside
+ * it, and the data ranges cut to it. A data range that holds an entry point
+ * is left out, so that the entry point is disassembled.
+ */
+export function seedsInside(params: Pick<DxaParams, "entryPoints" | "dataRanges">, start: number, end: number): Pick<DxaParams, "entryPoints" | "dataRanges"> {
+  const entryPoints = params.entryPoints.filter((address) => address >= start && address <= end);
+  const dataRanges = params.dataRanges
+    .filter((range) => range.end >= start && range.start <= end)
+    .map((range) => ({ start: Math.max(range.start, start), end: Math.min(range.end, end) }))
+    .filter((range) => !entryPoints.some((entry) => entry >= range.start && entry <= range.end));
+  return { entryPoints, dataRanges };
 }

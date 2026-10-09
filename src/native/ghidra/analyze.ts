@@ -1,11 +1,11 @@
-// The Ghidra analysis (16 §10, §11): one disposable headless run with the NMOS
+// The Ghidra analysis: one disposable headless run with the NMOS
 // 6510 language, knowledge seeds before analysis, and the structural export
 // after it. The result is checked completely before the script imports it.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
-import { WireFailure } from "../../protocol.ts";
-import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, type GhidraParams, type GhidraResult } from "../types.ts";
+import { describeError, WireFailure } from "../../protocol.ts";
+import { checkGhidraResult, checkRequestBounds, GHIDRA_LIMITS, imageRange, seedsInside, type GhidraParams, type GhidraResult } from "../types.ts";
 import { outputTail, type ToolContext } from "../run.ts";
 import { Workspace } from "../staging.ts";
 import { findGhidra, runHeadless, SCRIPT_DIRECTORY } from "./index.ts";
@@ -23,17 +23,12 @@ export async function analyze(
   const ghidra = findGhidra(context.env);
   const { start, end, body } = imageRange(params.imageKind, image);
   const base = start;
-  const inside = (address: number) => address >= start && address <= end;
 
   // Ghidra disassembles and defines data only in the loaded bytes; labels may name any address.
-  const entryPoints = params.entryPoints.filter(inside);
+  const { entryPoints, dataRanges } = seedsInside(params, start, end);
   if (entryPoints.length === 0) {
     throw new WireFailure("invalid-input", "Give at least one entry point inside the program, for example the SYS address of its BASIC loader.");
   }
-  const dataRanges = params.dataRanges
-    .filter((range) => range.end >= start && range.start <= end)
-    .map((range) => ({ start: Math.max(range.start, start), end: Math.min(range.end, end) }))
-    .filter((range) => !entryPoints.some((entry) => entry >= range.start && entry <= range.end));
 
   const workspace = Workspace.create(context.supervisor);
   try {
@@ -64,7 +59,7 @@ export async function analyze(
       signal: context.signal,
       ...(context.env === undefined ? {} : { env: context.env }),
     }).catch((error: unknown) => {
-      context.log?.(`Ghidra failed: ${(error as Error).message}`);
+      context.log?.(`Ghidra failed: ${describeError(error)}`);
       throw error;
     });
     const outPath = workspace.path("out.json");
@@ -76,10 +71,11 @@ export async function analyze(
     let result: GhidraResult;
     try {
       result = checkGhidraResult(JSON.parse(readFileSync(outPath, "utf8")));
-      if (result.coverage.length !== 1 || result.coverage[0]!.start !== start || result.coverage[0]!.end !== end) throw new Error("the coverage is not the loaded program");
+      const [range] = result.coverage;
+      if (result.coverage.length !== 1 || range === undefined || range.start !== start || range.end !== end) throw new Error("the coverage is not the loaded program");
     } catch (error) {
-      context.log?.(`Ghidra result rejected: ${(error as Error).message}`);
-      throw new WireFailure("operation-failed", `Ghidra returned an incomplete or inconsistent result. Nothing was imported. The check found: ${(error as Error).message}.`);
+      context.log?.(`Ghidra result rejected: ${describeError(error)}`);
+      throw new WireFailure("operation-failed", `Ghidra returned an incomplete or inconsistent result. Nothing was imported. The check found: ${describeError(error)}.`);
     }
     return { result };
   } finally {

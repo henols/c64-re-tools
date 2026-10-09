@@ -23,11 +23,10 @@ export interface Probe {
   pattern: RegExp;
 }
 
-
-/** The first output line that matches, without terminal color codes (c1541 colors an OpenCBM notice). */
 /** dxa's version line, also as "D:\\tools\\dxa.exe v0.1.5 -- symbolic 65xx disassembler" on Windows. */
 export const DXA_VERSION = /^(?:.*[\\/])?dxa(?:\.exe)? v\d/i;
 
+/** The first output line that matches, without terminal color codes (c1541 colors an OpenCBM notice). */
 export function versionLine(output: string, pattern: RegExp): string | undefined {
   return stripVTControlCharacters(output)
     .split(/\r?\n/)
@@ -35,12 +34,12 @@ export function versionLine(output: string, pattern: RegExp): string | undefined
     .find((line) => pattern.test(line));
 }
 
-async function run(name: string, argv: string[], version: (output: string) => string | undefined, context: ToolContext): Promise<ToolStatus> {
-  const result = await runTool({ argv, cwd: tmpdir(), supervisor: context.supervisor, signal: context.signal, timeoutMs: PROBE_TIMEOUT_MS, env: context.env });
+async function run(name: string, path: string, args: string[], version: (output: string) => string | undefined, context: ToolContext): Promise<ToolStatus> {
+  const result = await runTool({ argv: [path, ...args], cwd: tmpdir(), supervisor: context.supervisor, signal: context.signal, timeoutMs: PROBE_TIMEOUT_MS, env: context.env });
   const found = version(`${result.stdout}\n${result.stderr}`);
-  if (found !== undefined) return { name, found: true, path: argv[0]!, version: found, runs: true };
+  if (found !== undefined) return { name, found: true, path, version: found, runs: true };
   const problem = result.timedOut ? "It did not answer in time." : result.spawnError !== undefined ? `It did not start (${result.spawnError}).` : `It did not run correctly (exit ${result.code ?? result.signal}).`;
-  return { name, found: true, path: argv[0]!, runs: false, problem };
+  return { name, found: true, path, runs: false, problem };
 }
 
 function missing(name: string, error: unknown): ToolStatus {
@@ -59,7 +58,7 @@ export function probeTools(probes: Probe[], context: ToolContext): Promise<ToolS
       } catch (error) {
         return missing(probe.name, error);
       }
-      return run(probe.name, [path, ...probe.args], (output) => versionLine(output, probe.pattern), context);
+      return run(probe.name, path, probe.args, (output) => versionLine(output, probe.pattern), context);
     }),
   );
 }
@@ -75,7 +74,8 @@ export async function probeGhidra(context: ToolContext): Promise<ToolStatus> {
     try {
       const status = await run(
         "Ghidra",
-        [ghidra.analyzeHeadless],
+        ghidra.analyzeHeadless,
+        [],
         (output) => (/Headless Analyzer Usage/.test(output) ? `Ghidra ${ghidra.version}` : undefined),
         { ...context, env: { ...env, XDG_CONFIG_HOME: settings, XDG_CACHE_HOME: settings } },
       );
@@ -93,7 +93,7 @@ export async function localToolStatus(context: ToolContext): Promise<ToolStatus[
   const probes: Probe[] = [
     { name: "ACME", find: (env) => findTool(ACME, env), args: ["--version"], pattern: /^This is ACME, release / },
     // dxa -V prints its version and exits with status 1. It names itself by argv[0], without the
-    // directory only where that uses "/": on Windows the line starts with the full path (found in CI).
+    // directory only where that uses "/": on Windows the line starts with the full path.
     { name: "dxa", find: (env) => findTool(DXA, env), args: ["-V"], pattern: DXA_VERSION },
   ];
   return [...(await probeTools(probes, context)), await probeGhidra(context)];
