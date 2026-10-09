@@ -15,7 +15,8 @@ function areaOf(path: string): string | undefined {
   const parts = path.split("/");
   if (parts[0] === "src") {
     if (parts.length === 2) {
-      const leaf = parts[1]!.replace(/\.ts$/, "");
+      // A top-level test kit, such as protocol.testkit.ts, belongs to the area of its module.
+      const leaf = parts[1]!.replace(/(?:\.testkit)?\.ts$/, "");
       return ["c64", "project", "protocol"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
@@ -143,6 +144,7 @@ test("checkImport accepts every allowed direction", () => {
     ["src/host/vice/session.ts", "./process.ts"],
     ["src/knowledge/read.ts", "../project.ts"],
     ["src/protocol.ts", "./c64.ts"],
+    ["src/host-client/connect.test.ts", "../protocol.testkit.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/host-client/tools.ts"],
     ["skills/c64-disk/scripts/disk.ts", "#src/knowledge/write.ts"],
     ["skills/c64-disk/scripts/disk.ts", "./helpers.ts"],
