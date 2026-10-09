@@ -15,8 +15,10 @@ const checked = new Map<string, Promise<void>>();
 export function requireMinimumVersion(tool: ToolSpec, executable: string, context: ToolContext): Promise<void> {
   let check = checked.get(executable);
   if (check === undefined) {
+    // Every caller waits for the same check, so no caller's cancel may stop it; its own time limit bounds it.
+    const shared: ToolContext = { ...context, signal: new AbortController().signal };
     check = (async () => {
-      const run = await runToolOrFail(tool.name, `The ${tool.name} version check`, { argv: [executable, "-version"], cwd: tmpdir(), timeoutMs: VERSION_TIMEOUT_MS }, context);
+      const run = await runToolOrFail(tool.name, `The ${tool.name} version check`, { argv: [executable, "-version"], cwd: tmpdir(), timeoutMs: VERSION_TIMEOUT_MS }, shared);
       const version = viceVersionOf(`${run.stdout}\n${run.stderr}`);
       if (version !== undefined && isOlderThanMinimum(version)) {
         throw new WireFailure(

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -38,4 +38,16 @@ test("a c1541 from an older VICE is refused by name with the remedy; a current o
   );
   await requireMinimumVersion(C1541, standIn(scratch, "c1541-new", ["c1541 (VICE 3.10)"]), context);
   await requireMinimumVersion(C1541, standIn(scratch, "c1541-odd", ["something else"]), context);
+});
+
+test("a caller that cancels does not cancel the version check that another caller waits for", { skip: posixOnly, timeout: 30_000 }, async () => {
+  const slow = join(scratch, "c1541-slow");
+  writeFileSync(slow, "#!/bin/sh\nsleep 0.5\necho 'c1541 (VICE 3.10)'\n");
+  chmodSync(slow, 0o755);
+  const leaving = new AbortController();
+  const first = requireMinimumVersion(C1541, slow, { supervisor, signal: leaving.signal });
+  const second = requireMinimumVersion(C1541, slow, { supervisor, signal: new AbortController().signal });
+  leaving.abort();
+  await second;
+  await first;
 });
