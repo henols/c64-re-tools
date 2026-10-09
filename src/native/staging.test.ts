@@ -16,6 +16,18 @@ test("a tree materializes as ordinary files inside the workspace and the workspa
   assert.equal(existsSync(workspace.root), false);
 });
 
+test("a file of the tree without bytes is refused by name", () => {
+  const workspace = Workspace.create();
+  try {
+    assert.throws(
+      () => workspace.materialize("source", [{ path: "main.a", size: 1 }, { path: "lib/x.a", size: 2 }], [Buffer.from("m")]),
+      (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && error.message === "The request gives no bytes for lib/x.a.",
+    );
+  } finally {
+    workspace.remove();
+  }
+});
+
 test("a path that leaves the workspace or reuses a file is refused", { skip: process.platform === "win32" ? "planting a symbolic link needs extra rights on Windows" : false }, () => {
   const workspace = Workspace.create();
   try {
