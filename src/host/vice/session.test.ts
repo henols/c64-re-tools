@@ -633,6 +633,14 @@ function clockOf(fake: FakeVice) {
   return [...fake.checkpoints.values()].find((checkpoint) => checkpoint.start === 0 && checkpoint.end === 0xffff && checkpoint.operation === 0x04);
 }
 
+test("advance-frames without a count is refused and leaves the machine running", async () => {
+  const { fake, session } = await startSession();
+  await assert.rejects(session.handle("execution", { action: "advance-frames", space: "c64" }), failsWith("invalid-input"));
+  assert.equal(fake.running, true);
+  assert.deepEqual(fake.commands, []);
+  await session.close();
+});
+
 test("advance-frames counts two clock stops per frame and removes the clock", async () => {
   const { fake, session } = await startSession();
   let stops = 0;

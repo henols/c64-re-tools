@@ -512,6 +512,11 @@ export class ViceSession implements ViceSessionHandle {
           "and the drive can run a few instructions more before it stops.",
       );
     }
+    if (params.action === "advance-frames") {
+      if (params.count === undefined) throw new WireFailure("invalid-input", "advance-frames needs count, the number of frames");
+      const outcome = await this.#runFrames(params.count);
+      return { state: "stopped", pc: outcome.pc, advancedFrames: outcome.frames };
+    }
     await this.#stop();
     if (params.action === "until-return") {
       const stopped = this.#nextStop(this.#untilReturnLimitMs);
@@ -525,10 +530,6 @@ export class ViceSession implements ViceSessionHandle {
         );
       }
       return { state: "stopped", pc: stop.pc };
-    }
-    if (params.action === "advance-frames") {
-      const outcome = await this.#runFrames(params.count!);
-      return { state: "stopped", pc: outcome.pc, advancedFrames: outcome.frames };
     }
     const count = params.count ?? 1;
     try {
