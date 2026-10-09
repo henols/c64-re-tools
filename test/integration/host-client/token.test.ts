@@ -70,9 +70,9 @@ test("the host refuses --listen beyond loopback without a long enough token", ()
   const main = resolve(import.meta.dirname, "../../../src/host/main.ts");
   const env = { ...process.env };
   delete env.C64RT_HOST_TOKEN;
-  const run = spawnSync(process.execPath, [main, "--port", "0", "--listen", "10.255.255.1"], { encoding: "utf8", env });
+  const run = spawnSync(process.execPath, [...process.execArgv, main, "--port", "0", "--listen", "10.255.255.1"], { encoding: "utf8", env });
   assert.equal(run.status, 2);
   assert.match(run.stderr, /C64RT_HOST_TOKEN/);
-  const short = spawnSync(process.execPath, [main, "--port", "0", "--listen", "10.255.255.1"], { encoding: "utf8", env: { ...env, C64RT_HOST_TOKEN: "short" } });
+  const short = spawnSync(process.execPath, [...process.execArgv, main, "--port", "0", "--listen", "10.255.255.1"], { encoding: "utf8", env: { ...env, C64RT_HOST_TOKEN: "short" } });
   assert.equal(short.status, 2);
 });
