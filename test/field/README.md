@@ -19,11 +19,11 @@ The agent, the MCP server and the skill scripts run in the container. The Host R
 
    ```
    export C64RT_HOST_TOKEN=<secret>
-   git clone -q --depth 1 --branch v2.0.0-rc.1 https://github.com/henols/c64-re-tools ~/.cache/c64-field-kit
+   git clone -q --depth 1 --branch "v$(npm view @henols/c64-re-tools@next version)" https://github.com/henols/c64-re-tools ~/.cache/c64-field-kit
    node ~/.cache/c64-field-kit/test/field/kit/install.ts
    ```
 
-   The script installs `@henols/c64-re-tools@next` through npx and copies the debug skill and the prompts into the project. It writes `C64RT_TRACE` and the token into `.claude/settings.local.json`. Claude Code gives that env to the MCP server and to every skill script.
+   The clone is the kit of the version that `next` names. The script installs `@henols/c64-re-tools@next` through npx and copies the debug skill and the prompts into the project. It writes `C64RT_TRACE` and the token into `.claude/settings.local.json`. Claude Code gives that env to the MCP server and to every skill script.
 
    On Linux, the container must resolve `host.docker.internal`. Add `"runArgs": ["--add-host=host.docker.internal:host-gateway"]` to `devcontainer.json`.
 

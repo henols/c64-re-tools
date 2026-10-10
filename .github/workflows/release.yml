@@ -1,22 +1,43 @@
 name: Release
 
-# Publishes the npm package for a version tag such as v2.0.0, with npm
-# provenance. npm trusts this workflow as the package's publisher (trusted
-# publishing through OIDC), so no npm token is stored in the repository.
+# Bumps the version, checks the package, commits and tags the bump, and
+# publishes it to npm with provenance. Start it from the Actions tab or with
+#   gh workflow run release.yml -f bump=prerelease
+# A prerelease (a version with a hyphen, 2.0.0-rc.2) goes to the dist-tag
+# next, a release to latest. npm trusts this workflow file as the package's
+# publisher (trusted publishing through OIDC), so no npm token is stored.
+#
+# The bump is pushed before the publish. If the publish fails, re-run the
+# failed publish job: it publishes the same tag, with no second bump.
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "npm version bump. prerelease: 2.0.0-rc.1 -> 2.0.0-rc.2. patch: 2.0.0-rc.2 -> 2.0.0, 2.0.0 -> 2.0.1."
+        type: choice
+        default: prerelease
+        options: [prerelease, patch, minor, major, prepatch, preminor, premajor]
+
+# One release at a time.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: read
-  id-token: write # npm trusted publishing and provenance
 
 jobs:
-  publish:
+  prepare:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # the bump commit and the tag
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -25,28 +46,26 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Check that the tag names the package and plugin versions
+      - name: Bump the version in package.json and every manifest
+        id: bump
         run: |
-          node -e '
-            const read = (file) => JSON.parse(require("node:fs").readFileSync(file, "utf8"));
-            const marketplace = read(".claude-plugin/marketplace.json");
-            const versions = [read("package.json").version, read(".claude-plugin/plugin.json").version, marketplace.version, ...marketplace.plugins.map((plugin) => plugin.version)];
-            if (versions.some((version) => "v" + version !== process.env.GITHUB_REF_NAME)) throw new Error("versions " + versions.join(", ") + " do not match " + process.env.GITHUB_REF_NAME);
-          '
+          npm version "${{ inputs.bump }}" --preid rc --no-git-tag-version
+          node distribution/version.ts sync
+          node distribution/version.ts check
+          version=$(node -p 'require("./package.json").version')
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "The tag v$version exists already. Choose another bump." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "DIST_TAG=$(node -p 'require("./package.json").version.includes("-") ? "next" : "latest"')" >> "$GITHUB_ENV"
 
       - run: pnpm typecheck
       - run: pnpm test
 
       # npm publish drops a manifest field it finds invalid (bin paths that
       # start with ./) and only warns; npm pack keeps them, so the smoke test
-      # below cannot see it. The dry run fails for a version that is already
-      # published, so only its warning counts.
-      # A prerelease (a version with a hyphen, 2.0.0-rc.1) goes to the dist-tag
-      # next, so latest keeps the last release.
-      - name: Choose the dist-tag
-        run: |
-          echo "DIST_TAG=$(node -p 'require("./package.json").version.includes("-") ? "next" : "latest"')" >> "$GITHUB_ENV"
-
+      # below cannot see it.
       - name: Check that npm publishes package.json unchanged
         run: |
           npm publish --dry-run --access public --tag "$DIST_TAG" > "$RUNNER_TEMP/publish.log" 2>&1 || true
@@ -65,10 +84,39 @@ jobs:
           test -f .claude/skills/c64-memory-map/scripts/memmap.ts
           test -f .claude/skills/c64-memory-map/package.json
           test -z "$(find . -type l)"
-          grep -qE 'c64-re-tools@(latest|next)"' .mcp.json
+          grep -q "c64-re-tools@$DIST_TAG\"" .mcp.json
           node .claude/skills/c64-memory-map/scripts/memmap.ts at '$d020' | grep -q EXTCOL
           npx -y "$package" c64-re-tools status
 
+      # The commit and the tag go together, or neither does.
+      - name: Commit and tag the bump
+        run: |
+          version="${{ steps.bump.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json .claude-plugin/plugin.json .claude-plugin/marketplace.json
+          git commit -m "chore(release): $version"
+          git tag -a "v$version" -m "$version"
+          git push --atomic origin HEAD:main "refs/tags/v$version"
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
       # Trusted publishing needs npm 11.5.1 or later; Node 24 ships it.
       - name: Publish
-        run: npm publish --provenance --access public --tag "$DIST_TAG"
+        run: |
+          npm --version
+          tag=$(node -p 'require("./package.json").version.includes("-") ? "next" : "latest"')
+          npm publish --provenance --access public --tag "$tag"
