@@ -190,14 +190,44 @@ C64RT_LIVE_VICE=/usr/bin/x64sc C64RT_GHIDRA=/opt/ghidra pnpm test
 
 ACME, DXA, c1541 and petcat tests run when the tools are on `PATH`.
 
-To release, push a tag on a commit of `main`. The tag gives the version:
+## Releasing
+
+A release is a tag push. The tag gives the version, and CI does the rest. Never change the version in the repository: it stays `0.0.0-development`.
+
+| Release | Tag | npm channel |
+| --- | --- | --- |
+| Prerelease | `v<major>.<minor>.<patch>-<label>`, for example `v2.0.0-rc.3` | `next` |
+| Release | `v<major>.<minor>.<patch>`, for example `v2.0.0` | `latest` |
+
+A version can be released only once, so each tag needs a new number. `v2.0.0-rc.1` and `v2.0.0-rc.2` are used.
+
+Tag a commit of `main` that is pushed, and push the tag:
 
 ```
-git tag v2.0.0-rc.2 && git push origin v2.0.0-rc.2   # a prerelease, to npm next
-git tag v2.0.0      && git push origin v2.0.0        # a release, to npm latest
+git checkout main && git pull
+git tag v2.0.0-rc.3 && git push origin v2.0.0-rc.3   # a prerelease
+git tag v2.0.0      && git push origin v2.0.0        # a release
 ```
 
-CI checks and tests the tagged commit, publishes it to npm and makes a GitHub Release. The repository keeps the version `0.0.0-development`.
+The tag push starts the CI workflow (`ci.yml`):
+
+1. **test** runs the typecheck and the tests on Linux, macOS and Windows.
+2. **installed package** gives the package the tag's version and checks that the tag is on `main`. Then it runs a publish dry run, and runs the packed package through npx.
+3. **publish** publishes to npm under `next` or `latest`, with provenance. npm trusts `ci.yml` as the publisher, so no token is stored.
+4. **github-release** makes a GitHub Release with notes from the commits since the last tag. A prerelease is marked as one.
+
+Check the result. npm can take a minute to show a new version:
+
+```
+npm view @henols/c64-re-tools dist-tags --prefer-online
+npx -y @henols/c64-re-tools@next status
+```
+
+If a release goes wrong:
+
+- **A job failed:** re-run the failed jobs of the run. The publish and the GitHub Release skip what exists.
+- **Not published yet:** delete the tag (`git push origin :refs/tags/v2.0.0-rc.3 && git tag -d v2.0.0-rc.3`), fix `main`, and tag again.
+- **Already published:** that version is used. Fix `main` and tag the next number.
 
 ## Layout
 
