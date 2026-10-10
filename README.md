@@ -17,69 +17,73 @@ run ACME, DXA and Ghidra themselves, and keep project knowledge local in
 The design is in [`docs/redesign/`](docs/redesign/README.md), and
 [`docs/plan.md`](docs/plan.md) tracks the implementation.
 
-## Install
+## Install and start
 
-Requirements: Node.js 24 or newer with npx, and on the graphical host stock VICE
-3.9 or later (`x64sc`, `c1541`, `petcat`) with its ROM files. The Host Runtime
-refuses an older VICE by name: 3.7 has no monitor profiler, and its CPU
-history, until-return and c1541 output differ. ACME, DXA and Ghidra are
-needed for the skills that use them, on the machine where the agent runs its
-skill scripts (inside the container, for an agent in one). The toolkit never
-installs a native tool for you: when one is missing, the operation that needs
-it says which one and how to install it. The `status` command runs each tool
-once and shows which ones work.
+Requirements:
 
-Everything runs through npx with the latest published version, so it
-updates itself; nothing is installed globally or linked:
+- Node.js 24 or newer with npx.
+- On the machine with VICE: VICE 3.9 or later (`x64sc`, `c1541`, `petcat`) with its ROM files.
+- Where the agent runs: ACME, DXA and Ghidra, for the skills that use them.
+
+Everything runs through npx. Nothing is installed globally.
+
+### Release or prerelease
+
+| Channel | Version |
+| --- | --- |
+| `latest` | The current release. |
+| `next` | The current prerelease, for example `2.0.0-rc.1`. |
+
+Until 2.0.0 is released, `latest` is the old 1.1.0. Use `next` until then. In the commands below, replace `<channel>` with `latest` or `next`. Use the same channel on both machines.
+
+### On one machine
+
+Start the Host Runtime in its own terminal. Ctrl+C stops it and every emulator:
+
+```
+npx -y --package=@henols/c64-re-tools@<channel> c64-re-tools-host
+```
+
+Install into the project, check it, and start the agent:
 
 ```
 cd my-c64-project
-npx -y @henols/c64-re-tools@latest install --target claude   # the skills and the VICE MCP for this project
-npx -y @henols/c64-re-tools@latest status
+npx -y @henols/c64-re-tools@<channel> install --target claude
+npx -y @henols/c64-re-tools@<channel> status
+claude
 ```
 
-The skills are copied into the project. The MCP declaration starts the MCP
-server the same way: `npx -y --package=@henols/c64-re-tools@latest
-c64-re-tools-mcp`. On native Windows, where `npx` is a `.cmd` file, an install
-made there declares it as `cmd /c npx ...`.
+### In a dev container
 
-Everything is TypeScript, also when installed, and nothing is built. The
-programs run with [tsx](https://tsx.is), because Node does not run
-TypeScript inside `node_modules`; the installed skill scripts are `.ts` files
-in the project, and Node runs them itself.
-
-`install` uses [AP SDK](https://ap-sdk.dev) for the harness
-layouts: `claude`, `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor` and
-`windsurf` (comma-separated; all of them without `--target`). Add `--global`
-to install into your home directory instead of the project. `uninstall`
-removes it. The MCP server and the Host Runtime get the latest version each
-time they start; run `update` in a project to copy the latest skills.
-
-Start the Host Runtime on the graphical host and leave it in the foreground:
+On the host, start the Host Runtime on the container bridge with a shared secret:
 
 ```
-npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host   # listens on 127.0.0.1:6464; Ctrl+C stops it and every emulator
+export C64RT_HOST_TOKEN=$(openssl rand -hex 16)
+npx -y --package=@henols/c64-re-tools@<channel> c64-re-tools-host --listen 172.17.0.1
 ```
 
-It starts VICE once before it listens, and does not start when VICE cannot
-run, for example without its ROM files.
-
-Each MCP process gets its own emulator, which stops when the MCP process
-ends. If the Host Runtime itself is killed, its watchdog stops what it
-started.
-
-### Agents in a container
-
-An agent in a devcontainer reaches the Host Runtime through
-`host.docker.internal` or `host.containers.internal`. Let the runtime listen on
-the container bridge as well, with a shared secret on both sides:
+In the container, set the same `C64RT_HOST_TOKEN`, then:
 
 ```
-export C64RT_HOST_TOKEN=$(openssl rand -hex 16)   # the same value inside the container
-npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host --listen 172.17.0.1
+npx -y @henols/c64-re-tools@<channel> install --target claude
+npx -y @henols/c64-re-tools@<channel> status
+claude
 ```
 
-Clients on loopback need no token; every other client must send it.
+The container reaches the host as `host.docker.internal`. `status` must show the Host Runtime as reachable.
+
+### Update and remove
+
+```
+npx -y @henols/c64-re-tools@<channel> update      # the newest skills into the project
+npx -y @henols/c64-re-tools@<channel> uninstall
+```
+
+Restart the Host Runtime after a new release. `--target` also takes `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor` and `windsurf`. `--global` installs into your home directory.
+
+### Debugging
+
+See [docs/debugging.md](docs/debugging.md) for the trace and the field test.
 
 ### Settings
 
@@ -92,7 +96,7 @@ Clients on loopback need no token; every other client must send it.
 | `C64RT_HOST` | MCP, skills, CLI | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
 | `C64RT_HOST_TOKEN` | host, MCP, skills, CLI | The shared secret for a Host Runtime that listens beyond loopback. |
 | `C64RT_VIDEO` | MCP | `pal` (default) or `ntsc`, fixed for the life of the MCP process. |
-| `C64RT_TRACE` | host, MCP, skills, CLI | A directory for a trace of what the programs do, for a person who debugs a run. Each program appends its events as JSON lines to a file of its own there: host requests, VICE starts and exits, MCP tool calls, native tool runs, script ends, each with its time and outcome, and every line the program prints to stderr. The host also keeps a copy of VICE's own log. Nothing of the trace reaches the agent. |
+| `C64RT_TRACE` | host, MCP, skills, CLI | A directory for a trace of what the programs do, for a person who debugs a run. See [docs/debugging.md](docs/debugging.md). Nothing of the trace reaches the agent. |
 
 Ghidra runs with its own settings directory for each request. The toolkit
 brings its own NMOS 6510 language (all 256 opcodes); your Ghidra installation
