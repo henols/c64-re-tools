@@ -197,7 +197,7 @@ git tag v2.0.0-rc.2 && git push origin v2.0.0-rc.2   # a prerelease, to npm next
 git tag v2.0.0      && git push origin v2.0.0        # a release, to npm latest
 ```
 
-The release workflow checks and tests the commit, publishes it to npm and makes a GitHub Release. The repository keeps the version `0.0.0-development`.
+CI checks and tests the tagged commit, publishes it to npm and makes a GitHub Release. The repository keeps the version `0.0.0-development`.
 
 ## Layout
 
