@@ -44,7 +44,8 @@ jobs:
       # A prerelease (a version with a hyphen, 2.0.0-rc.1) goes to the dist-tag
       # next, so latest keeps the last release.
       - name: Choose the dist-tag
-        run: echo "DIST_TAG=$(node -p 'require("./package.json").version.includes("-") ? "next" : "latest"')" >> "$GITHUB_ENV"
+        run: |
+          echo "DIST_TAG=$(node -p 'require("./package.json").version.includes("-") ? "next" : "latest"')" >> "$GITHUB_ENV"
 
       - name: Check that npm publishes package.json unchanged
         run: |
