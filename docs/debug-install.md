@@ -38,4 +38,11 @@ For the MCP server and the skill scripts, in the project's `.claude/settings.loc
 
 ## Field test
 
-To test c64-re-tools with an agent and bring back one report, see [test/field/README.md](../test/field/README.md).
+Tests c64-re-tools with an agent and brings back one report. In the project:
+
+```
+git clone -q --depth 1 --branch "v$(npm view @henols/c64-re-tools@next version)" https://github.com/henols/c64-re-tools ~/.cache/c64-field-kit
+node ~/.cache/c64-field-kit/test/field/kit/install.ts
+```
+
+It prints the next steps.
