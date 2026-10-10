@@ -13,7 +13,9 @@
 //
 // VICE sometimes reads a line but runs it only when more input comes. So a
 // late sentinel is sent again, and stray sentinel answers are removed from
-// output. VICE also prints its step message here when the binary monitor
+// output. The second answer of a resent sentinel can arrive in parts, while
+// the next command starts: that command waits until the answer is whole
+// before it drops what is left over, so no part of it is read as output. VICE also prints its step message here when the binary monitor
 // steps, sometimes after the next text command was sent; no command of this
 // client steps, so that message is removed from output too.
 
@@ -78,6 +80,8 @@ export class TextMonitor {
   overdueTimeoutMs = OVERDUE_COMMAND_TIMEOUT_MS;
   /** Set when a command timed out; cleared by the next command that is answered. */
   #overdue = false;
+  /** The answers that a resent sentinel of the last command can still give. */
+  #strays: { nonce: number; count: number } | undefined;
 
   private constructor(socket: Socket) {
     this.#socket = socket;
@@ -139,6 +143,7 @@ export class TextMonitor {
     this.#nonce = this.#nonce >= 0xfffe ? 0x1000 : this.#nonce + 1;
     const sentinel = sentinelPattern(this.#nonce);
     const deadline = Date.now() + timeoutMs;
+    await this.#settleStrays(deadline, timeoutMs);
     // Anything left over belongs to no command; drop it so it cannot be misread.
     this.#buffer = "";
     this.#socket.write(`${line}\n`);
@@ -153,8 +158,10 @@ export class TextMonitor {
       await this.#waitFor(prompted, deadline, timeoutMs);
     }
     const sentinelLine = `~ $${this.#nonce.toString(16)}\n`;
+    let sends = 0;
     for (;;) {
       this.#socket.write(sentinelLine);
+      sends++;
       let found: RegExpExecArray;
       try {
         found = await this.#waitFor(() => sentinel.exec(this.#buffer), Math.min(deadline, Date.now() + this.sentinelResendMs), timeoutMs);
@@ -164,7 +171,30 @@ export class TextMonitor {
       }
       const output = this.#buffer.slice(0, found.index);
       this.#buffer = this.#buffer.slice(found.index + found[0].length);
+      this.#strays = sends > 1 ? { nonce: this.#nonce, count: sends - 1 } : undefined;
       return cleanOutput(output);
+    }
+  }
+
+  /**
+   * Waits a short time for the answers that a resent sentinel of the last
+   * command can still give, and until an answer that has begun is whole. An
+   * answer that VICE holds until more input comes arrives whole inside the
+   * next command's output, where cleanOutput removes it.
+   */
+  async #settleStrays(deadline: number, timeoutMs: number): Promise<void> {
+    const strays = this.#strays;
+    this.#strays = undefined;
+    if (strays === undefined) return;
+    const whole = new RegExp(sentinelPattern(strays.nonce).source, "g");
+    const begun = new RegExp(`\\+${strays.nonce}\\b|\\+\\d*$`);
+    const complete = () => ((this.#buffer.match(whole)?.length ?? 0) >= strays.count ? true : null);
+    const partial = () => begun.test(this.#buffer.replace(whole, ""));
+    try {
+      await this.#waitFor(complete, Math.min(deadline, Date.now() + this.sentinelResendMs), timeoutMs);
+    } catch (error) {
+      if (!(error instanceof TextMonitorTimeoutError)) throw error;
+      if (partial()) await this.#waitFor(() => (partial() ? null : true), deadline, timeoutMs);
     }
   }
 

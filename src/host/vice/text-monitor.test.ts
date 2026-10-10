@@ -219,3 +219,56 @@ test("a command with no time limit waits for its answer, also after a command th
   assert.equal(await monitor.command("drain", Infinity), "late\nanswer");
   await monitor.close();
 });
+
+test("a held sentinel's second answer that arrives in parts never reaches the next command's output", async () => {
+  // Stock VICE, seen on a slow CI runner: the first sentinel is held, the resend
+  // releases it, and VICE prints a second answer whose last line comes only after
+  // the client has sent its next command.
+  const hex = { first: "", sentinels: 0 };
+  let tailWritten: Promise<void> = Promise.resolve();
+  const server = createServer((socket) => {
+    let pending = "";
+    socket.on("data", (chunk) => {
+      pending += chunk.toString("latin1");
+      let newline: number;
+      while ((newline = pending.indexOf("\n")) >= 0) {
+        const line = pending.slice(0, newline);
+        pending = pending.slice(newline + 1);
+        const sentinel = /^~ \$([0-9a-f]{4})$/.exec(line);
+        if (sentinel === null) {
+          // A command runs after whatever VICE is still printing.
+          void tailWritten.then(() => socket.write(`${line} done\n(C:$fd6e) `));
+          continue;
+        }
+        if (hex.first === "") hex.first = sentinel[1]!;
+        if (sentinel[1] !== hex.first) {
+          void tailWritten.then(() => socket.write(sentinelAnswer(sentinel[1]!)));
+          continue;
+        }
+        if (++hex.sentinels === 1) continue; // held
+        const answer = sentinelAnswer(hex.first);
+        const cut = answer.indexOf("%");
+        socket.write(answer + answer.slice(0, cut));
+        tailWritten = new Promise((resolve) =>
+          setTimeout(() => {
+            socket.write(answer.slice(cut));
+            resolve();
+          }, 60),
+        );
+      }
+    });
+    socket.on("error", () => {});
+  });
+  servers.push(server);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const monitor = await TextMonitor.connect((server.address() as { port: number }).port);
+  monitor.sentinelResendMs = 20;
+  try {
+    assert.equal(await monitor.command("warp"), "warp done");
+    assert.equal(hex.sentinels, 2, "the first sentinel was held and sent again");
+    assert.equal(await monitor.command("warp off"), "warp off done");
+  } finally {
+    await monitor.close();
+  }
+});
