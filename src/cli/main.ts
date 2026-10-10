@@ -29,10 +29,10 @@ Harnesses: claude, codex, pi, opencode, gemini, copilot, cursor, windsurf
 (comma-separated; default: all). Without --global the files go into the
 current project; with --global into your home directory.
 
-Run it in the project: npx -y ${PACKAGE.name}@latest install. The VICE
+Run it in the project: npx -y ${PACKAGE.name}@${PACKAGE.tag} install. The VICE
 MCP declaration starts the latest c64-re-tools-mcp through npx. The Host
 Runtime runs on the machine with VICE: start it there with
-npx -y --package=${PACKAGE.name}@latest c64-re-tools-host.
+npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host.
 It runs VICE and the tools that come with it (c1541, petcat). The skill
 scripts run ACME, DXA and Ghidra themselves, on the machine of the agent.`;
 

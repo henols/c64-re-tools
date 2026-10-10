@@ -184,7 +184,10 @@ export class HostConnection {
     await connection.close();
     if (answer instanceof Error) {
       if (answer instanceof ProtocolError) {
-        throw new WireFailure("installation-incomplete", "The c64-re-tools host runtime speaks a different protocol. Install the same c64-re-tools release on both sides.");
+        throw new WireFailure(
+          "installation-incomplete",
+          "The c64-re-tools host runtime is from another release. Stop the host runtime and start it again with npx, then restart the agent session. npx then starts the newest release on both sides.",
+        );
       }
       throw new WireFailure(
         options.role === "vice-session" ? "machine-unavailable" : "operation-failed",

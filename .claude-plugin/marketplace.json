@@ -5,13 +5,13 @@
     "url": "https://github.com/henols"
   },
   "description": "Agent-friendly Commodore 64 engineering toolkit.",
-  "version": "2.0.0",
+  "version": "2.0.0-rc.1",
   "plugins": [
     {
       "name": "c64-re-tools",
       "source": "./",
       "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing.",
-      "version": "2.0.0",
+      "version": "2.0.0-rc.1",
       "author": {
         "name": "Henrik Olsson"
       }

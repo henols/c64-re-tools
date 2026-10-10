@@ -3,7 +3,7 @@
 // of its own in that directory; unset, every call does nothing. The trace is
 // for people: nothing of it reaches the agent, and no result depends on it.
 
-import { appendFileSync, copyFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { fileStampCet, isoCet } from "./time.ts";
@@ -43,6 +43,20 @@ export function summarize(value: unknown, depth = 0): unknown {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, summarize(item, depth + 1)]));
 }
 
+/**
+ * The version of c64-re-tools that runs, from the package.json next to src/:
+ * the package's own, or the one that install writes into a skill. Undefined
+ * when there is none.
+ */
+function runningVersion(): string | undefined {
+  try {
+    const { version } = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { version?: unknown };
+    return typeof version === "string" ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Milliseconds since `since`, a performance.now() reading, to a tenth. */
 export function elapsedMs(since: number): number {
   return Math.round((performance.now() - since) * 10) / 10;
@@ -75,7 +89,7 @@ export class Trace {
   static open(kind: TraceKind, dir: string, now = new Date()): Trace {
     mkdirSync(dir, { recursive: true });
     const trace = new Trace(kind, dir, join(dir, `${kind}-${fileStampCet(now)}-${process.pid}.jsonl`));
-    trace.event("trace.start", { pid: process.pid, argv: process.argv.slice(1), cwd: process.cwd(), node: process.version, platform: process.platform });
+    trace.event("trace.start", { version: runningVersion(), pid: process.pid, argv: process.argv.slice(1), cwd: process.cwd(), node: process.version, platform: process.platform });
     return trace;
   }
 

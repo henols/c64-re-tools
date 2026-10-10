@@ -206,13 +206,35 @@ export function parseHostMessage(value: unknown): HostMessage {
 }
 
 /** Checks a hello against this build's protocol. Returns the failure to send, or undefined. */
+/**
+ * Refuses a client of another protocol version, and names the older side and
+ * how to update it. A release that changes the wire increments the protocol
+ * version, so the first client of a new release refuses an older host.
+ */
 export function checkHello(hello: Hello): WireError | undefined {
-  if (hello.protocol !== HOST_PROTOCOL_ID || hello.version !== HOST_PROTOCOL_VERSION) {
+  if (hello.protocol !== HOST_PROTOCOL_ID) {
     return {
       code: "installation-incomplete",
       message:
         "The c64-re-tools host runtime and this client come from different installations. " +
         "Install the same c64-re-tools release for both and restart the host runtime.",
+    };
+  }
+  if (hello.version > HOST_PROTOCOL_VERSION) {
+    return {
+      code: "installation-incomplete",
+      message:
+        "The c64-re-tools host runtime is from an older release than this client. " +
+        "Stop the host runtime and start it again with the same npx command. npx then starts the newest release.",
+    };
+  }
+  if (hello.version < HOST_PROTOCOL_VERSION) {
+    return {
+      code: "installation-incomplete",
+      message:
+        "This client is from an older release of c64-re-tools than the host runtime. " +
+        "Restart the agent session, so that npx starts the newest MCP server. " +
+        "For the skill scripts, run c64-re-tools update in the project.",
     };
   }
   return undefined;

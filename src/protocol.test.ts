@@ -79,6 +79,16 @@ test("a hello from another protocol version is installation-incomplete without n
   }
 });
 
+test("a version refusal names the older side and how to update it", () => {
+  const olderHost = checkHello({ ...hello, version: HOST_PROTOCOL_VERSION + 1 })!.message;
+  assert.match(olderHost, /host runtime is from an older release/);
+  assert.match(olderHost, /start it again with the same npx command/);
+  const olderClient = checkHello({ ...hello, version: HOST_PROTOCOL_VERSION - 1 })!.message;
+  assert.match(olderClient, /This client is from an older release/);
+  assert.match(olderClient, /Restart the agent session/);
+  assert.match(olderClient, /c64-re-tools update/);
+});
+
 test("operation parameters are validated with invalid-input", () => {
   assert.deepEqual(validateViceParams("memoryRead", { address: 0xe000, size: 16, space: "c64", view: "cpu" }), {
     address: 0xe000,

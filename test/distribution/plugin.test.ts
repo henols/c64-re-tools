@@ -10,7 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { mcpServerFor } from "../../distribution/package.ts";
+import { mcpServerFor, channelOf, PACKAGE } from "../../distribution/package.ts";
 import plugin, { closureOf, scriptsOf, SKILL_PACKAGE } from "../../distribution/plugin.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -92,11 +92,22 @@ test("every installed script runs without the repository", () => {
   assert.equal((JSON.parse(memmap.stdout) as { addresses: Array<{ name: string }> }).addresses[0]?.name, "EXTCOL");
 });
 
-test("the agent starts the latest published MCP server through npx", () => {
+test("the agent starts the newest MCP server of the installed channel through npx", () => {
+  const spec = `--package=@henols/c64-re-tools@${channelOf(PACKAGE.version)}`;
   assert.deepEqual(plugin.mcpServers, { "c64-re-tools": mcpServerFor(process.platform) });
-  assert.deepEqual(mcpServerFor("linux"), { command: "npx", args: ["-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"] });
+  assert.deepEqual(mcpServerFor("linux"), { command: "npx", args: ["-y", spec, "c64-re-tools-mcp"] });
   assert.deepEqual(mcpServerFor("darwin"), mcpServerFor("linux"));
-  assert.deepEqual(mcpServerFor("win32"), { command: "cmd", args: ["/c", "npx", "-y", "--package=@henols/c64-re-tools@latest", "c64-re-tools-mcp"] }, "npx is a .cmd shim on Windows");
+  assert.deepEqual(mcpServerFor("win32"), { command: "cmd", args: ["/c", "npx", "-y", spec, "c64-re-tools-mcp"] }, "npx is a .cmd shim on Windows");
+});
+
+test("a prerelease goes to the next channel and a release to latest", () => {
+  assert.equal(channelOf("2.0.0"), "latest");
+  assert.equal(channelOf("2.0.0-rc.1"), "next");
+  assert.equal(channelOf("12.3.4-beta"), "next");
+});
+
+test("an installed skill's package.json names the version it comes from", () => {
+  assert.equal((JSON.parse(SKILL_PACKAGE) as { version: string }).version, PACKAGE.version);
 });
 
 test("AP SDK accepts the plugin module", () => {

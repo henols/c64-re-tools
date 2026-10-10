@@ -71,6 +71,6 @@ jobs:
           test -f .claude/skills/c64-memory-map/scripts/memmap.ts
           test -f .claude/skills/c64-memory-map/package.json
           test -z "$(find . -type l)"
-          grep -q 'c64-re-tools@latest' .mcp.json
+          grep -qE 'c64-re-tools@(latest|next)"' .mcp.json
           node .claude/skills/c64-memory-map/scripts/memmap.ts at '$d020' | grep -q EXTCOL
           npx -y "$package" c64-re-tools status

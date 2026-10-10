@@ -41,9 +41,14 @@ jobs:
       # start with ./) and only warns; npm pack keeps them, so the smoke test
       # below cannot see it. The dry run fails for a version that is already
       # published, so only its warning counts.
+      # A prerelease (a version with a hyphen, 2.0.0-rc.1) goes to the dist-tag
+      # next, so latest keeps the last release.
+      - name: Choose the dist-tag
+        run: echo "DIST_TAG=$(node -p 'require("./package.json").version.includes("-") ? "next" : "latest"')" >> "$GITHUB_ENV"
+
       - name: Check that npm publishes package.json unchanged
         run: |
-          npm publish --dry-run --access public > "$RUNNER_TEMP/publish.log" 2>&1 || true
+          npm publish --dry-run --access public --tag "$DIST_TAG" > "$RUNNER_TEMP/publish.log" 2>&1 || true
           if grep -q auto-corrected "$RUNNER_TEMP/publish.log"; then cat "$RUNNER_TEMP/publish.log"; exit 1; fi
 
       # The packed package through npx, as users run the published one.
@@ -59,10 +64,10 @@ jobs:
           test -f .claude/skills/c64-memory-map/scripts/memmap.ts
           test -f .claude/skills/c64-memory-map/package.json
           test -z "$(find . -type l)"
-          grep -q 'c64-re-tools@latest' .mcp.json
+          grep -qE 'c64-re-tools@(latest|next)"' .mcp.json
           node .claude/skills/c64-memory-map/scripts/memmap.ts at '$d020' | grep -q EXTCOL
           npx -y "$package" c64-re-tools status
 
       # Trusted publishing needs npm 11.5.1 or later; Node 24 ships it.
       - name: Publish
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag "$DIST_TAG"

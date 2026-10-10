@@ -1,52 +1,77 @@
 # Field test
 
-A field test installs the toolkit into a fresh project, as a user does, and lets a Claude session work with it. One report comes back here with what the programs did, what the agent thought, and what the tester saw.
+A field test installs c64-re-tools into a fresh project, as a user does, and lets a Claude session work with it. One report comes back here. It shows what the programs did, what the agent thought, and what the tester saw.
 
-Nothing in this directory is part of the package. You copy the `c64-field-debug` skill into the test project by hand, and never into `skills/`.
+Nothing in this directory is part of the npm package. The kit in `kit/` holds the `c64-field-debug` skill, the session prompts, `install.ts` and `bundle.ts`. The kit imports nothing from `src/`, so a git clone of the release tag is enough to run it. `report.ts` runs here, in this checkout.
 
-## Steps
+## In a dev container
 
-1. Set the project up. The tarball comes from `npm pack` of this checkout, because `npx …@latest` still installs 1.1.0:
+The agent, the MCP server and the skill scripts run in the container. The Host Runtime runs on the machine with VICE. They share no files: they use TCP only.
 
-   ```
-   node test/field/setup.ts ../field-project
-   ```
-
-   It prints the next commands, with the paths filled in. In short:
-
-2. Copy the debug skill and the prompts into the project:
+1. On the host, start the Host Runtime with its trace. Use a token of 16 characters or more, and the address of the container bridge:
 
    ```
-   cp -r test/field/c64-field-debug ../field-project/.claude/skills/
-   mkdir -p ../field-project/field-test && cp test/field/prompts/*.md ../field-project/field-test/
+   export C64RT_HOST_TOKEN=<secret>
+   C64RT_TRACE=$HOME/c64-field/host-trace npx -y --package=@henols/c64-re-tools@next c64-re-tools-host --listen 172.17.0.1
    ```
 
-   For the reverse-engineering task, put a `.prg` or a `.d64` into `field-test/target/` and write its name into `03-re-workflow.md`.
-
-3. Start the Host Runtime with the trace on, in its own terminal:
+2. In the container, in the project directory, set the same token and run the kit:
 
    ```
-   C64RT_TRACE=../field-project-field/trace npx -y --package=<tarball> c64-re-tools-host
+   export C64RT_HOST_TOKEN=<secret>
+   git clone -q --depth 1 --branch v2.0.0-rc.1 https://github.com/henols/c64-re-tools ~/.cache/c64-field-kit
+   node ~/.cache/c64-field-kit/test/field/kit/install.ts
    ```
 
-4. Start Claude in the project with the trace on, so that the skill scripts write to it too (the MCP server gets it from `.mcp.json`):
+   The script installs `@henols/c64-re-tools@next` through npx and copies the debug skill and the prompts into the project. It writes `C64RT_TRACE` and the token into `.claude/settings.local.json`. Claude Code gives that env to the MCP server and to every skill script.
+
+   On Linux, the container must resolve `host.docker.internal`. Add `"runArgs": ["--add-host=host.docker.internal:host-gateway"]` to `devcontainer.json`.
+
+3. Put a `.prg` or a `.d64` into `field-test/target/`. Write its name into `field-test/03-re-workflow.md`.
+
+4. Start Claude Code in the project. Paste the prompts in this order: `field-test/01-comprehension.md`, `02-dev-workflow.md`, `03-re-workflow.md`, `99-debrief.md`. To record what you see, start a chat message with `note:`. The agent saves your words as your note, and adds its own note on the same problem.
+
+5. Quit Claude Code. Then bundle the run in the container:
 
    ```
-   cd ../field-project && C64RT_TRACE=../field-project-field/trace claude
+   node ~/.cache/c64-field-kit/test/field/kit/bundle.ts
    ```
 
-5. Paste `field-test/01-comprehension.md` as the first message. Then `02-dev-workflow.md`, then `03-re-workflow.md`, then `99-debrief.md`. While the agent works, write what does not work as you expect as a chat message that starts with `note:`. The agent saves it as your note, next to its own.
+   The bundle is `field-test/bundle-<time>.tgz`. It holds the notes, the container trace, the Claude transcripts, a knowledge summary, the skill descriptions, the status and the configuration without its secrets. With the usual workspace mount, the host sees the file at once. Otherwise, copy it to the host with `docker cp`.
 
-6. Collect the report:
+6. In this checkout, make the report:
 
    ```
-   node test/field/collect.ts ../field-project
+   node test/field/report.ts <bundle.tgz> --host-trace $HOME/c64-field/host-trace
    ```
 
-   It writes `field-reports/field-report-<time>/` with the trace, the notes, the transcripts, a knowledge summary and `summary.md`. Git ignores that directory.
+   The report goes to `field-reports/<bundle>/`, which git ignores. Read `summary.md`.
 
-7. In a session in this repository: read `field-reports/<run>/summary.md` and turn its findings into plan steps.
+## On one machine
+
+`setup.ts` packs this checkout, makes a fresh project and runs the kit's `install.ts` with the tarball. The host then writes into the project's trace, so the report needs no `--host-trace`.
+
+```
+node test/field/setup.ts ../field-project
+```
+
+Then do steps 3 to 6 above. The script prints each command with its paths.
+
+## The report
+
+`summary.md` has these sections:
+
+- **Builds and clocks**: the c64-re-tools version of each program, and the clock difference between the container and the host. All times in the report use the host's clock.
+- **Failures**, grouped by program, event and error code.
+- **Slowest operations**.
+- **Host connections**: each address that the clients tried, and each refused handshake.
+- **VICE**: starts, exits, drive stops, timeouts.
+- **Notes**, grouped by component. The tester's notes come first. Each note shows the trace events of the same minute that are nearest to it.
+- **Comprehension**: what the agent thinks each skill and tool does, next to its description.
+- **Knowledge**: the rows in `knowledge.db` by origin.
 
 ## What the trace holds
 
-`C64RT_TRACE` makes every program append JSON lines to a file of its own: `host-…`, `mcp-…`, `script-…` and `cli-…`. Each line has `t` (ISO 8601 at `+01:00`), `kind`, `event` and the fields of the event. The host also keeps a copy of VICE's own log. See `src/trace.ts`.
+With `C64RT_TRACE`, every program appends JSON lines to a file of its own: `host-…`, `mcp-…`, `script-…` and `cli-…`. Each line has `t` (ISO 8601 at `+01:00`), `kind`, `event` and the fields of the event. The first line, `trace.start`, names the version that runs. The host also keeps a copy of VICE's own log. See `src/trace.ts`.
+
+A host and a client of different releases speak different protocol versions, and the handshake refuses them. The refusal names the older side and how to update it.

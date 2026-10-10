@@ -1,6 +1,6 @@
 {
   "name": "@henols/c64-re-tools",
-  "version": "2.0.0",
+  "version": "2.0.0-rc.1",
   "description": "Agent-friendly Commodore 64 engineering toolkit for reverse engineering, debugging, development and testing.",
   "license": "MIT",
   "author": "Henrik Olsson",

@@ -36,6 +36,7 @@ test("with C64RT_TRACE each event is one JSON line with a CET time, the kind and
   const [start, call, log] = lines(on.file!);
   assert.equal(start!.event, "trace.start");
   assert.equal(start!.pid, process.pid);
+  assert.equal(start!.version, (JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { version: string }).version);
   assert.match(String(call!.t), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+01:00$/);
   const { t: _t, ...rest } = call!;
   assert.deepEqual(rest, { kind: "mcp", event: "tool.call", name: "c64_status", ms: 1.5 });

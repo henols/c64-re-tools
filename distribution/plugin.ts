@@ -25,8 +25,11 @@ const SCRIPT_REFERENCE = /scripts\/([a-z][a-z0-9-]*)\.ts/g;
  */
 const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(?\s*|\bnew URL\(\s*)(["'])((?:\.\.?\/|#src\/)[^"']*)\1/g;
 
-/** The package.json of an installed skill: ES modules, and #src/* resolved inside the skill. */
-export const SKILL_PACKAGE = `${JSON.stringify({ type: "module", imports: { "#src/*": "./src/*" } }, null, 2)}\n`;
+/**
+ * The package.json of an installed skill: ES modules, #src/* resolved inside
+ * the skill, and the version of c64-re-tools that the copy comes from.
+ */
+export const SKILL_PACKAGE = `${JSON.stringify({ type: "module", version: PACKAGE.version, imports: { "#src/*": "./src/*" } }, null, 2)}\n`;
 
 /** The scripts that a SKILL.md runs, by file name. */
 export function scriptsOf(skillMarkdown: string): string[] {
