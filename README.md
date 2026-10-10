@@ -17,73 +17,27 @@ run ACME, DXA and Ghidra themselves, and keep project knowledge local in
 The design is in [`docs/redesign/`](docs/redesign/README.md), and
 [`docs/plan.md`](docs/plan.md) tracks the implementation.
 
-## Install and start
+## Install
 
-Requirements:
+You need Node.js 24 or newer, and VICE 3.9 or later (`x64sc`, `c1541`, `petcat`) with its ROM files. ACME, DXA and Ghidra are needed only for the skills that use them.
 
-- Node.js 24 or newer with npx.
-- On the machine with VICE: VICE 3.9 or later (`x64sc`, `c1541`, `petcat`) with its ROM files.
-- Where the agent runs: ACME, DXA and Ghidra, for the skills that use them.
-
-Everything runs through npx. Nothing is installed globally.
-
-### Release or prerelease
-
-| Channel | Version |
-| --- | --- |
-| `latest` | The current release. |
-| `next` | The current prerelease, for example `2.0.0-rc.1`. |
-
-Until 2.0.0 is released, `latest` is the old 1.1.0. Use `next` until then. In the commands below, replace `<channel>` with `latest` or `next`. Use the same channel on both machines.
-
-### On one machine
-
-Start the Host Runtime in its own terminal. Ctrl+C stops it and every emulator:
+Start the Host Runtime and leave it running:
 
 ```
-npx -y --package=@henols/c64-re-tools@<channel> c64-re-tools-host
+npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host
 ```
 
-Install into the project, check it, and start the agent:
+Install into your project and start the agent:
 
 ```
 cd my-c64-project
-npx -y @henols/c64-re-tools@<channel> install --target claude
-npx -y @henols/c64-re-tools@<channel> status
+npx -y @henols/c64-re-tools@latest install --target claude
 claude
 ```
 
-### In a dev container
+`npx -y @henols/c64-re-tools@latest status` shows what works.
 
-On the host, start the Host Runtime on the container bridge with a shared secret:
-
-```
-export C64RT_HOST_TOKEN=$(openssl rand -hex 16)
-npx -y --package=@henols/c64-re-tools@<channel> c64-re-tools-host --listen 172.17.0.1
-```
-
-In the container, set the same `C64RT_HOST_TOKEN`, then:
-
-```
-npx -y @henols/c64-re-tools@<channel> install --target claude
-npx -y @henols/c64-re-tools@<channel> status
-claude
-```
-
-The container reaches the host as `host.docker.internal`. `status` must show the Host Runtime as reachable.
-
-### Update and remove
-
-```
-npx -y @henols/c64-re-tools@<channel> update      # the newest skills into the project
-npx -y @henols/c64-re-tools@<channel> uninstall
-```
-
-Restart the Host Runtime after a new release. `--global` installs into your home directory.
-
-### Debugging
-
-See [docs/debugging.md](docs/debugging.md) for the trace and the field test.
+Until 2.0.0 is released, `@latest` is the old 1.1.0. Use the prerelease instead. For the prerelease, a dev container and debugging, see [docs/debug-install.md](docs/debug-install.md).
 
 ### Settings
 
@@ -96,11 +50,13 @@ See [docs/debugging.md](docs/debugging.md) for the trace and the field test.
 | `C64RT_HOST` | MCP, skills, CLI | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
 | `C64RT_HOST_TOKEN` | host, MCP, skills, CLI | The shared secret for a Host Runtime that listens beyond loopback. |
 | `C64RT_VIDEO` | MCP | `pal` (default) or `ntsc`, fixed for the life of the MCP process. |
-| `C64RT_TRACE` | host, MCP, skills, CLI | A directory for a trace of what the programs do, for a person who debugs a run. See [docs/debugging.md](docs/debugging.md). Nothing of the trace reaches the agent. |
+| `C64RT_TRACE` | host, MCP, skills, CLI | A directory for a trace of what the programs do, for a person who debugs a run. See [docs/debug-install.md](docs/debug-install.md). Nothing of the trace reaches the agent. |
 
 Ghidra runs with its own settings directory for each request. The toolkit
 brings its own NMOS 6510 language (all 256 opcodes); your Ghidra installation
 and settings stay unchanged.
+
+## Use it with an agent
 
 ## Use it with an agent
 
@@ -190,44 +146,7 @@ C64RT_LIVE_VICE=/usr/bin/x64sc C64RT_GHIDRA=/opt/ghidra pnpm test
 
 ACME, DXA, c1541 and petcat tests run when the tools are on `PATH`.
 
-## Releasing
-
-A release is a tag push. The tag gives the version, and CI does the rest. Never change the version in the repository: it stays `0.0.0-development`.
-
-| Release | Tag | npm channel |
-| --- | --- | --- |
-| Prerelease | `v<major>.<minor>.<patch>-<label>`, for example `v2.0.0-rc.3` | `next` |
-| Release | `v<major>.<minor>.<patch>`, for example `v2.0.0` | `latest` |
-
-A version can be released only once, so each tag needs a new number. `v2.0.0-rc.1` and `v2.0.0-rc.2` are used.
-
-Tag a commit of `main` that is pushed, and push the tag:
-
-```
-git checkout main && git pull
-git tag v2.0.0-rc.3 && git push origin v2.0.0-rc.3   # a prerelease
-git tag v2.0.0      && git push origin v2.0.0        # a release
-```
-
-The tag push starts the CI workflow (`ci.yml`):
-
-1. **test** runs the typecheck and the tests on Linux, macOS and Windows.
-2. **installed package** gives the package the tag's version and checks that the tag is on `main`. Then it runs a publish dry run, and runs the packed package through npx.
-3. **publish** publishes to npm under `next` or `latest`, with provenance. npm trusts `ci.yml` as the publisher, so no token is stored.
-4. **github-release** makes a GitHub Release with notes from the commits since the last tag. A prerelease is marked as one.
-
-Check the result. npm can take a minute to show a new version:
-
-```
-npm view @henols/c64-re-tools dist-tags --prefer-online
-npx -y @henols/c64-re-tools@next status
-```
-
-If a release goes wrong:
-
-- **A job failed:** re-run the failed jobs of the run. The publish and the GitHub Release skip what exists.
-- **Not published yet:** delete the tag (`git push origin :refs/tags/v2.0.0-rc.3 && git tag -d v2.0.0-rc.3`), fix `main`, and tag again.
-- **Already published:** that version is used. Fix `main` and tag the next number.
+To release, push a tag. See [docs/releasing.md](docs/releasing.md).
 
 ## Layout
 
