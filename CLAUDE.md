@@ -41,6 +41,8 @@ pnpm test        # node --test "src/**/*.test.ts" "test/**/*.test.ts"
 pnpm host        # the Host Runtime from this checkout, in the foreground
 ```
 
+- Release by tag only: `git tag v2.0.0-rc.2 && git push origin v2.0.0-rc.2` (prerelease, npm `next`) or `v2.0.0` (release, `latest`). The tag gives the version; the repo keeps `0.0.0-development`. Never bump the version in a commit.
+
 - Unit tests sit beside source (`src/**/*.test.ts`); `test/` is for integration/e2e.
   Node runs `.ts` by type stripping, so relative imports end in `.ts` and only
   erasable syntax is allowed (no enums, namespaces or parameter properties).

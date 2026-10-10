@@ -190,6 +190,15 @@ C64RT_LIVE_VICE=/usr/bin/x64sc C64RT_GHIDRA=/opt/ghidra pnpm test
 
 ACME, DXA, c1541 and petcat tests run when the tools are on `PATH`.
 
+To release, push a tag on a commit of `main`. The tag gives the version:
+
+```
+git tag v2.0.0-rc.2 && git push origin v2.0.0-rc.2   # a prerelease, to npm next
+git tag v2.0.0      && git push origin v2.0.0        # a release, to npm latest
+```
+
+The release workflow checks and tests the commit, publishes it to npm and makes a GitHub Release. The repository keeps the version `0.0.0-development`.
+
 ## Layout
 
 ```
