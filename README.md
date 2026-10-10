@@ -79,7 +79,7 @@ npx -y @henols/c64-re-tools@<channel> update      # the newest skills into the p
 npx -y @henols/c64-re-tools@<channel> uninstall
 ```
 
-Restart the Host Runtime after a new release. `--target` also takes `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor` and `windsurf`. `--global` installs into your home directory.
+Restart the Host Runtime after a new release. `--global` installs into your home directory.
 
 ### Debugging
 
@@ -101,6 +101,29 @@ See [docs/debugging.md](docs/debugging.md) for the trace and the field test.
 Ghidra runs with its own settings directory for each request. The toolkit
 brings its own NMOS 6510 language (all 256 opcodes); your Ghidra installation
 and settings stay unchanged.
+
+## Use it with an agent
+
+1. Install for your harness: `--target claude`, `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor` or `windsurf`. Without `--target`, `install` installs for all of them.
+2. Start the Host Runtime and leave it running.
+3. Start the harness in the project, for example `claude` or `codex`, or open the project in Cursor or Windsurf. The harness starts the MCP server and finds the skills by itself.
+4. Ask for the result you want, in plain words. The agent picks the skills and the `c64_*` tools.
+
+Examples:
+
+```
+Reverse engineer original/game.d64. Find how it starts, unpack it if it is packed,
+and name the main routines in project knowledge.
+
+Find the routine that draws the score, and explain how it works.
+
+Write a program in ACME that scrolls a text at the bottom of the screen.
+Build it, run it in the emulator, and write a test for it.
+
+Show me the emulator window.
+```
+
+The agent keeps what it learns about the program in `.c64-re-tools/knowledge.db`. Commit that file with the project.
 
 ## Skills
 
