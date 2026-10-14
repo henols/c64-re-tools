@@ -10,7 +10,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { WireFailure } from "../../protocol/messages.ts";
-import { findOnPath, isExecutableFile } from "../discover.ts";
+import { findOnPath, INSTALL_STEPS, isExecutableFile } from "../discover.ts";
 import type { ProcessSupervisor } from "../processes.ts";
 import type { Workspace } from "../staging.ts";
 import { outputTail, runToolOrFail, type ToolRun } from "../run.ts";
@@ -22,7 +22,7 @@ export const SCRIPT_DIRECTORY = fileURLToPath(new URL("./scripts/", import.meta.
 
 const REMEDY =
   "Install Ghidra on the machine that runs the skill scripts and set C64RT_GHIDRA to its installation directory " +
-  "(the directory that holds support/analyzeHeadless), or put analyzeHeadless on PATH.";
+  `(the directory that holds support/analyzeHeadless), or put analyzeHeadless on PATH. ${INSTALL_STEPS}`;
 
 export interface GhidraInstallation {
   /** The installation directory. */

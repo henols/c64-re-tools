@@ -7,6 +7,9 @@ import { isAbsolute, join, posix, win32 } from "node:path";
 
 import { WireFailure } from "../protocol/messages.ts";
 
+/** Where the user finds the install steps of the native tools for each system (D38). */
+export const INSTALL_STEPS = "Steps for each system: https://github.com/henols/c64-re-tools/blob/main/docs/install-tools.md";
+
 export interface ToolSpec {
   /** Human name, for messages. */
   name: string;
@@ -25,7 +28,7 @@ export const ACME: ToolSpec = {
   envVar: "C64RT_ACME",
   binaries: ["acme"],
   where: "on this machine",
-  remedy: "Install the ACME cross-assembler on the machine that runs the skill scripts so that acme is on PATH, or set C64RT_ACME to its full path.",
+  remedy: `Install the ACME cross-assembler on the machine that runs the skill scripts so that acme is on PATH, or set C64RT_ACME to its full path. ${INSTALL_STEPS}`,
 };
 
 export const C1541: ToolSpec = {
@@ -49,7 +52,7 @@ export const DXA: ToolSpec = {
   envVar: "C64RT_DXA",
   binaries: ["dxa"],
   where: "on this machine",
-  remedy: "Install dxa (from the xa package, https://www.floodgap.com/retrotech/xa/) on the machine that runs the skill scripts so that dxa is on PATH, or set C64RT_DXA to its full path.",
+  remedy: `Install dxa 0.1.5 on the machine that runs the skill scripts so that dxa is on PATH, or set C64RT_DXA to its full path. ${INSTALL_STEPS}`,
 };
 
 export const VICE: ToolSpec = {
