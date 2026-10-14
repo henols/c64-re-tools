@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { formatC64Address, parseC64Address, prgRange } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
@@ -21,6 +21,7 @@ import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageFiles } from "./coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
+import { findIdioms } from "./idioms.ts";
 
 const USAGE = `analyze.ts <image> [options]
 
@@ -146,15 +147,38 @@ async function run(argv: string[]): Promise<unknown> {
   const coverage = readCoverageFiles(values.coverage ?? []);
   const byteAt = imageReader(bytes, imageKind);
 
+  let loaded: { start: number; end: number };
+  try {
+    loaded = imageKind === "flat64k" ? { start: 0x0000, end: bytes.length - 1 } : prgRange(bytes);
+  } catch (error) {
+    throw new UsageError(`${image}: ${(error as Error).message}`);
+  }
+  const idioms = findIdioms(byteAt, { start: loaded.start, end: loaded.end }, coverage);
+
   const reader = openForRead();
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries);
-  // Knowledge routines and --entry first, then code regions and JMP tables, then coverage, up to the seed bound (D44).
+  // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound (D44).
   const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, byteAt);
-  const ordered = [...new Set([...seeds.entryPoints, ...codeEntries(reader, byteAt), ...fromCoverage])];
+  const ordered = [...new Set([...seeds.entryPoints, ...codeEntries(reader, byteAt), ...idioms.entryPoints, ...fromCoverage])];
   seeds.entryPoints = ordered.slice(0, GHIDRA_LIMITS.entryPoints).sort((a, b) => a - b);
+  // Idiom tables are data for this run too; semantic data ranges come first.
+  seeds.dataRanges = [...seeds.dataRanges, ...idioms.dataRanges.filter((range) => !seeds.dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start))].slice(0, GHIDRA_LIMITS.dataRanges);
   const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry)).length;
   reader?.close();
+  /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
+  const idiomsResult = () => {
+    const imported = withWrite((db) => importFindings(db, idioms.findings, { description: `Idioms in ${image}` }));
+    return {
+      idioms: {
+        ...idioms.counts,
+        revision: imported.revision,
+        changes: { regions: imported.regions, references: imported.references },
+        conflicts: imported.conflicts.map((conflict) => showConflict(conflict, "heuristic")),
+        candidates: { dop: idioms.candidates.dop.map(formatC64Address), selfModified: idioms.candidates.selfModified.map(formatC64Address) },
+      },
+    };
+  };
   /** The coverage part of a result: its seeds, and the analyzer data that it shows to be code. */
   const coverageResult = () => {
     if (coverage === undefined) return {};
@@ -185,8 +209,10 @@ async function run(argv: string[]): Promise<unknown> {
         throw new WireFailure("operation-failed", `The script did not write the listing to ${values.listing}: ${(error as Error).message}. ${recorded}`);
       }
     }
+    const found = idiomsResult();
     return {
       analyzer: "dxa",
+      ...found,
       ...coverageResult(),
       coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
       ...imported,
@@ -198,8 +224,10 @@ async function run(argv: string[]): Promise<unknown> {
 
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, decompile }, bytes, localToolContext());
   const imported = record(ghidraFindings(result), revision, `Ghidra analysis of ${image}`, runProvenance(bytes, result.toolVersion));
+  const found = idiomsResult();
   return {
     analyzer: "ghidra",
+    ...found,
     ...coverageResult(),
     coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     ...imported,

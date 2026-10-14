@@ -32,7 +32,7 @@ import { Change, checkAddress, hex, subtract, SYMBOL_NAME, type AddressRange } f
 
 export type { AddressRange };
 
-export const ANALYZERS = ["dxa", "ghidra"] as const satisfies readonly Origin[];
+export const ANALYZERS = ["dxa", "ghidra", "heuristic"] as const satisfies readonly Origin[];
 export type Analyzer = (typeof ANALYZERS)[number];
 
 export interface NormalizedFindings {
@@ -224,8 +224,20 @@ function importSymbols(db: DatabaseSync, change: Change, findings: NormalizedFin
   }
 }
 
+/** Analyzers whose regions a heuristic finding replaces where it lies (D44): user/LLM > heuristic > DXA/Ghidra. */
+const YIELDS_TO_HEURISTIC = new Set<Origin>(["dxa", "ghidra"]);
+
 function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
+  if (analyzer === "heuristic") {
+    // An idiom is specific evidence about its bytes: the DXA or Ghidra region there gives way, its parts outside stay.
+    for (const region of findings.regions) {
+      for (const row of regionsOverlapping(db, region.start, region.end).filter((candidate) => YIELDS_TO_HEURISTIC.has(candidate.origin))) {
+        change.close("regions", "start_address = ? AND end_address = ? AND origin = ?", row.start, row.end, row.origin);
+        for (const piece of subtract(row, [region])) change.insertRegion({ ...piece, type: row.type, ...(row.element === undefined ? {} : { element: row.element }), origin: row.origin });
+      }
+    }
+  }
   const conflictWith = (row: RegionRow, region: { start: number; end: number; type: RegionType }) => {
     // dual-use bytes are code at one time and data at another: neither finding contradicts them (D42).
     if (isCode(row.type) === isCode(region.type) || row.type === "dual-use") return;

@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 
 import { KnowledgeError, openForWrite } from "./database.ts";
 import { revision as revisionChanges, revisions } from "./history.ts";
-import { importFindings, runProvenance, type NormalizedFindings } from "./import.ts";
+import { importFindings, runProvenance, type Analyzer, type NormalizedFindings } from "./import.ts";
 import { currentRevision, listReferences, listSuppressions, listSymbols, regionsOverlapping, symbolAt } from "./read.ts";
 import { addReference, classifyRegion, removeReference, removeSymbol, renameSymbol, revert, unclassifyRegion } from "./write.ts";
 
@@ -28,7 +28,7 @@ function fresh(): DatabaseSync {
 
 const failsWith = (code: string) => (error: unknown) => error instanceof KnowledgeError && error.code === code;
 
-function findings(analyzer: "dxa" | "ghidra", start: number, end: number, parts: Partial<NormalizedFindings> = {}): NormalizedFindings {
+function findings(analyzer: Analyzer, start: number, end: number, parts: Partial<NormalizedFindings> = {}): NormalizedFindings {
   return {
     analyzer,
     coverage: [{ start, end }],
@@ -399,4 +399,18 @@ test("a JMP table is code, and dual-use bytes conflict with no finding (D42)", (
     [[0x0500, 0x0508, "jumps"]],
     "data over a JMP table conflicts; code over dual-use bytes does not",
   );
+});
+
+test("a heuristic region replaces the DXA region where it lies, and DXA never replaces a heuristic region (D44)", () => {
+  const db = fresh();
+  importFindings(db, findings("dxa", 0x1000, 0x10ff, { regions: [{ start: 0x1000, end: 0x10ff, type: "code" }] }));
+  importFindings(db, findings("heuristic", 0x1000, 0x10ff, { regions: [{ start: 0x1040, end: 0x104f, type: "rts-addresses" }] }));
+  assert.deepEqual(regionList(db), [
+    [0x1000, 0x103f, "code", "dxa"],
+    [0x1040, 0x104f, "rts-addresses", "heuristic"],
+    [0x1050, 0x10ff, "code", "dxa"],
+  ]);
+  const again = importFindings(db, findings("dxa", 0x1000, 0x10ff, { regions: [{ start: 0x1000, end: 0x10ff, type: "code" }] }));
+  assert.deepEqual(regionList(db)[1], [0x1040, 0x104f, "rts-addresses", "heuristic"], "a DXA re-run keeps the table");
+  assert.equal(again.conflicts.length, 1, "DXA's code over the table is a conflict");
 });

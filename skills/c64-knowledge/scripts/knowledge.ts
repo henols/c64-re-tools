@@ -70,8 +70,8 @@ Read (no database needed):
   revision <id>
   export --out <file> [--start A --end A --origin O]   all current knowledge to a project file
 
-Read option --origin O: user, llm, dxa, ghidra, semantic (user and llm) or
-analyzer (dxa and ghidra), or a comma list of them. search takes it too.
+Read option --origin O: user, llm, dxa, ghidra, heuristic, semantic (user and
+llm) or analyzer (dxa, ghidra and heuristic), or a comma list. search takes it too.
 
 Write (one revision each; creates the database when needed):
   rename <address> <name> [--kind K]
@@ -280,7 +280,7 @@ function originFilter(value: string): Origin[] {
   const origins = new Set<Origin>();
   for (const part of value.split(",")) {
     if (part === "semantic") origins.add("user").add("llm");
-    else if (part === "analyzer") origins.add("dxa").add("ghidra");
+    else if (part === "analyzer") origins.add("dxa").add("ghidra").add("heuristic");
     else origins.add(oneOf(ORIGINS, part, "--origin"));
   }
   return [...origins];

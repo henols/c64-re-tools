@@ -5,7 +5,8 @@ import type { DatabaseSync } from "node:sqlite";
 import { REFERENCE_KINDS, type ReferenceKind } from "../c64.ts";
 import { KnowledgeError } from "./database.ts";
 
-export const ORIGINS = ["user", "llm", "dxa", "ghidra"] as const;
+/** heuristic: 6502 idioms that the static analysis finds by pattern (D44); an analyzer origin. */
+export const ORIGINS = ["user", "llm", "dxa", "ghidra", "heuristic"] as const;
 export type Origin = (typeof ORIGINS)[number];
 export const SYMBOL_KINDS = ["label", "routine", "variable", "data", "vector"] as const;
 export type SymbolKind = (typeof SYMBOL_KINDS)[number];
@@ -45,7 +46,7 @@ export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 
 /** The schema version this build reads and writes. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Creates the schema in an empty database. Knowledge rows are temporal: a

@@ -35,7 +35,7 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 | Everything known at one address | `at '$2100'` |
 | Find names and comment text | `search player` |
 | Lists in a range | `symbols`, `regions`, `comments`, `references` with `--start` and `--end` |
-| Only some origins | add `--origin semantic`, `--origin analyzer`, or `--origin user,llm` |
+| Only some origins | add `--origin semantic`, `--origin analyzer` (dxa, ghidra and heuristic), or `--origin user,llm` |
 | All knowledge in one file | `export --out exports/knowledge.json` |
 | Name the symbol at an address | `rename '$2100' update_player --kind routine` |
 | Remove a symbol | `remove-symbol '$2100'` |
