@@ -1,13 +1,21 @@
-// Byte comparison of releases for the c64-provenance script. Each release is
-// placed at its load address plus an optional shift; the comparison reports
-// where the releases differ and which releases agree there. It never decides
-// which bytes are original: that needs evidence beyond one comparison.
+// Byte comparison of releases for the c64-provenance script. Each release
+// has bytes in one or more segments: a PRG at its load address plus an
+// optional shift, or the segments of an unpacker image (D50). The comparison
+// covers the addresses where every release has bytes, and reports where the
+// releases differ and which releases agree there. It never decides which
+// bytes are original: that needs evidence beyond one comparison.
+
+export interface Range {
+  start: number;
+  end: number;
+}
 
 export interface Release {
   name: string;
-  /** Address of the first byte after the shift. */
-  start: number;
-  bytes: Uint8Array;
+  /** Where the release has bytes, after the shift, in address order. */
+  segments: Range[];
+  /** The byte at an address inside a segment. */
+  byteAt: (address: number) => number;
 }
 
 export interface DifferingRange {
@@ -20,8 +28,8 @@ export interface DifferingRange {
 }
 
 export interface Comparison {
-  /** The addresses that every release covers. */
-  common: { start: number; end: number } | null;
+  /** The addresses where every release has bytes. */
+  common: Range[];
   identicalBytes: number;
   differingBytes: number;
   differences: DifferingRange[];
@@ -32,22 +40,37 @@ export interface Comparison {
 /** Joins differing addresses that are at most this far apart into one range. */
 const JOIN_GAP = 4;
 
+export const covers = (release: Release, address: number) => release.segments.some((segment) => address >= segment.start && address <= segment.end);
+
+/** The ranges where every release has bytes, inside from..to. */
+export function commonRanges(releases: Release[], from = 0x0000, to = 0xffff): Range[] {
+  const ranges: Range[] = [];
+  for (let address = from; address <= to; address++) {
+    if (!releases.every((release) => covers(release, address))) continue;
+    const last = ranges.at(-1);
+    if (last !== undefined && last.end + 1 === address) last.end = address;
+    else ranges.push({ start: address, end: address });
+  }
+  return ranges;
+}
+
 export function compareReleases(releases: Release[], options: { from?: number; to?: number; maxRanges?: number } = {}): Comparison {
-  const start = Math.max(options.from ?? 0, ...releases.map((release) => release.start));
-  const end = Math.min(options.to ?? 0xffff, ...releases.map((release) => release.start + release.bytes.length - 1));
-  if (start > end) return { common: null, identicalBytes: 0, differingBytes: 0, differences: [], moreDifferences: false };
-  const at = (release: Release, address: number) => release.bytes[address - release.start]!;
+  const common = commonRanges(releases, options.from, options.to);
   let identicalBytes = 0;
   const differing: number[] = [];
-  for (let address = start; address <= end; address++) {
-    const first = at(releases[0]!, address);
-    if (releases.every((release) => at(release, address) === first)) identicalBytes++;
-    else differing.push(address);
+  for (const range of common) {
+    for (let address = range.start; address <= range.end; address++) {
+      const first = releases[0]!.byteAt(address);
+      if (releases.every((release) => release.byteAt(address) === first)) identicalBytes++;
+      else differing.push(address);
+    }
   }
-  const ranges: Array<{ start: number; end: number }> = [];
+  // A joined range stays inside one common range, so every release has all of its bytes.
+  const inSameCommon = (a: number, b: number) => common.some((range) => a >= range.start && b <= range.end);
+  const ranges: Range[] = [];
   for (const address of differing) {
     const last = ranges.at(-1);
-    if (last !== undefined && address - last.end <= JOIN_GAP) last.end = address;
+    if (last !== undefined && address - last.end <= JOIN_GAP && inSameCommon(last.start, address)) last.end = address;
     else ranges.push({ start: address, end: address });
   }
   const limit = options.maxRanges ?? 64;
@@ -55,14 +78,19 @@ export function compareReleases(releases: Release[], options: { from?: number; t
     const values: Record<string, number[]> = {};
     const groups = new Map<string, string[]>();
     for (const release of releases) {
-      const bytes = Array.from(release.bytes.subarray(range.start - release.start, range.end - release.start + 1));
+      const bytes = Array.from({ length: range.end - range.start + 1 }, (_, offset) => release.byteAt(range.start + offset));
       values[release.name] = bytes;
       const key = bytes.join(",");
       groups.set(key, [...(groups.get(key) ?? []), release.name]);
     }
     return { ...range, values, groups: [...groups.values()].sort((a, b) => b.length - a.length) };
   });
-  return { common: { start, end }, identicalBytes, differingBytes: differing.length, differences, moreDifferences: ranges.length > limit };
+  return { common, identicalBytes, differingBytes: differing.length, differences, moreDifferences: ranges.length > limit };
+}
+
+/** The addresses of a release in order, so that a window of bytes can run over its segments. */
+function addressesOf(release: Release): number[] {
+  return release.segments.flatMap((segment) => Array.from({ length: segment.end - segment.start + 1 }, (_, offset) => segment.start + offset));
 }
 
 /**
@@ -71,18 +99,21 @@ export function compareReleases(releases: Release[], options: { from?: number; t
  */
 export function suggestShift(base: Release, other: Release): { shift: number; matches: number } | undefined {
   const WINDOW = 8;
-  const key = (bytes: Uint8Array, at: number) => Buffer.from(bytes.subarray(at, at + WINDOW)).toString("latin1");
+  const key = (release: Release, addresses: number[], at: number) =>
+    String.fromCharCode(...addresses.slice(at, at + WINDOW).map((address) => release.byteAt(address)));
+  const baseAddresses = addressesOf(base);
+  const otherAddresses = addressesOf(other);
   const positions = new Map<string, number[]>();
-  for (let at = 0; at + WINDOW <= base.bytes.length; at++) {
-    const positionsOfKey = positions.get(key(base.bytes, at));
+  for (let at = 0; at + WINDOW <= baseAddresses.length; at++) {
+    const found = positions.get(key(base, baseAddresses, at));
     // Very common sequences (fill bytes) say nothing about the alignment.
-    if (positionsOfKey === undefined) positions.set(key(base.bytes, at), [at]);
-    else if (positionsOfKey.length < 8) positionsOfKey.push(at);
+    if (found === undefined) positions.set(key(base, baseAddresses, at), [baseAddresses[at]!]);
+    else if (found.length < 8) found.push(baseAddresses[at]!);
   }
   const votes = new Map<number, number>();
-  for (let at = 0; at + WINDOW <= other.bytes.length; at++) {
-    for (const position of positions.get(key(other.bytes, at)) ?? []) {
-      const shift = base.start + position - (other.start + at);
+  for (let at = 0; at + WINDOW <= otherAddresses.length; at++) {
+    for (const address of positions.get(key(other, otherAddresses, at)) ?? []) {
+      const shift = address - otherAddresses[at]!;
       votes.set(shift, (votes.get(shift) ?? 0) + 1);
     }
   }

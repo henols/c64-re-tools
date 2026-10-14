@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -21,14 +21,17 @@ crackA.set(patch, 0x0900 - 0x0801);
 const crackB = Buffer.from(base);
 crackB[0x0a00 - 0x0801] = crackB[0x0a00 - 0x0801]! ^ 0xff; // a changed text byte
 
+/** A release with one segment from `start`. */
+const at = (name: string, start: number, bytes: Uint8Array) => ({ name, segments: [{ start, end: start + bytes.length - 1 }], byteAt: (address: number) => bytes[address - start]! });
+
 test("differences show the bytes of each release and which releases agree", () => {
   const releases = [
-    { name: "release", start: 0x0801, bytes: base },
-    { name: "crack-a", start: 0x0801, bytes: crackA },
-    { name: "crack-b", start: 0x0801, bytes: crackB },
+    at("release", 0x0801, base),
+    at("crack-a", 0x0801, crackA),
+    at("crack-b", 0x0801, crackB),
   ];
   const result = compareReleases(releases);
-  assert.deepEqual(result.common, { start: 0x0801, end: 0x0801 + 2047 });
+  assert.deepEqual(result.common, [{ start: 0x0801, end: 0x0801 + 2047 }]);
   assert.equal(result.differingBytes, 4);
   assert.deepEqual(result.differences.map((difference) => [difference.start, difference.end, difference.groups]), [
     [0x0900, 0x0902, [["release", "crack-b"], ["crack-a"]]],
@@ -39,8 +42,7 @@ test("differences show the bytes of each release and which releases agree", () =
 });
 
 test("a release at another address gets a suggested shift", () => {
-  const moved = { name: "moved", start: 0x0901, bytes: base };
-  assert.deepEqual(suggestShift({ name: "release", start: 0x0801, bytes: base }, moved), { shift: -256, matches: 2041 });
+  assert.deepEqual(suggestShift(at("release", 0x0801, base), at("moved", 0x0901, base)), { shift: -256, matches: 2041 });
 });
 
 test("the script compares PRG files and applies a shift", () => {
@@ -66,4 +68,22 @@ test("a missing release is not-found", () => {
   const missing = spawnSync(process.execPath, [...process.execArgv, script, "one.prg", "missing.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(missing.status, 1, missing.stdout + missing.stderr);
   assert.equal((JSON.parse(missing.stdout) as { error: { code: string } }).error.code, "not-found");
+});
+
+test("an image release counts only inside its segments, and a common range never joins across a gap (D50)", () => {
+  const memory = new Uint8Array(0x10000);
+  memory.set(base.subarray(0, 0x100), 0x0801);
+  memory.set(base.subarray(0x200, 0x300), 0x0a01);
+  mkdirSync(join(project, "unpacked"), { recursive: true });
+  writeFileSync(join(project, "unpacked", "image.bin"), memory);
+  writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ image: "image.bin", segments: [{ start: "$0801", end: "$0900" }, { start: "$0a01", end: "$0b00" }] }));
+  writeFileSync(join(project, "whole.prg"), Buffer.concat([Buffer.from([0x01, 0x08]), crackA]));
+  const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "unpacked/image.json", "whole.prg"], { cwd: project, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const result = JSON.parse(run.stdout) as { common: unknown; differences: Array<{ start: string; end: string }>; identicalBytes: number };
+  assert.deepEqual(result.common, [{ start: "$0801", end: "$0900" }, { start: "$0a01", end: "$0b00" }]);
+  assert.deepEqual(result.differences.map((difference) => [difference.start, difference.end]), [["$0900", "$0900"]], "the patch at $0900-$0902 counts only where the image has bytes");
+  const steps = spawnSync(process.execPath, [...process.execArgv, script, "unpacked/image.json", "whole.prg", "--steps", "s.json"], { cwd: project, encoding: "utf8" });
+  assert.equal(steps.status, 2, "--steps needs --run");
 });

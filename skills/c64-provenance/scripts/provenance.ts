@@ -1,21 +1,33 @@
 // The c64-provenance script: compares two or more releases byte by byte at
-// their addresses and reports where they differ and which releases agree.
+// their addresses and reports where they differ and which releases agree. A
+// release is a PRG or an unpacker image.json (D50). With --run, each release
+// runs in its own emulator, and each listed difference gets its first access
+// and whether the run changed it.
 
+import { posix } from "node:path";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { checkActionSteps, type ActionStep } from "#src/host-client/steps.ts";
+import { MAX_EXECUTION_COUNT, WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
+import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { compareReleases, suggestShift, type Release } from "./compare.ts";
+import { compareReleases, suggestShift, type Range, type Release } from "./compare.ts";
+import { watchRelease, type ImageState, type Start } from "./runtime.ts";
 
-const USAGE = `provenance.ts <release.prg> <release.prg> [<release.prg> ...] [options]
+const USAGE = `provenance.ts <release> <release> [<release> ...] [options]
 
   --shift <n>:<bytes>   move release n (1 = the first) by a number of bytes, for example 2:-256
   --from <address>      compare from this address
   --to <address>        compare up to this address
+  --run <frames>        run each release in its own emulator for this many frames, and
+                        give each listed difference its first access and whether it changed
+  --steps <file>        with --run: action steps (JSON) to run before the frames
 
-Each release is a PRG file relative to the project directory, placed at its
-load address. The result is one JSON object.`;
+A release is a PRG, placed at its load address, or an image.json of the
+c64-unpacker skill, compared inside its segments. Paths are relative to the
+project directory. The result is one JSON object.`;
 
 function address(text: string, option: string): number {
   try {
@@ -27,12 +39,96 @@ function address(text: string, option: string): number {
 
 const hexBytes = (bytes: number[]) => Buffer.from(bytes).toString("hex").replace(/(..)(?!$)/g, "$1 ");
 
-function run(argv: string[]): unknown {
+interface LoadedRelease {
+  release: Release;
+  shift: number;
+  start: Start | { kind: "none"; reason: string };
+}
+
+/** Reads entry_state.json of the c64-unpacker skill for a start by writes. */
+function entryState(path: string): ImageState | string {
+  let value: Record<string, any>;
+  try {
+    value = JSON.parse(readProjectFile(path).bytes.toString("utf8")) as Record<string, any>;
+  } catch (error) {
+    if (error instanceof WireFailure && error.code === "not-found") return `It has no ${path}; capture it with c64-unpacker.`;
+    if (error instanceof WireFailure) throw error;
+    return `${path} is not JSON: ${(error as Error).message}`;
+  }
+  const registers = value.registers ?? {};
+  const byte = (item: unknown) => Number.isInteger(item) && (item as number) >= 0 && (item as number) <= 0xff;
+  const pages = ["$0000", "$0100", "$0200", "$0300"].map((page) => value.pages?.[page]);
+  const ok =
+    typeof registers.pc === "string" &&
+    /^\$[0-9a-f]{4}$/i.test(registers.pc) &&
+    ["a", "x", "y", "sp"].every((name) => byte(registers[name])) &&
+    typeof registers.flags === "object" &&
+    byte(value.cpuPort?.$00) &&
+    byte(value.cpuPort?.$01) &&
+    pages.every((page) => typeof page === "string" && /^[0-9a-f]{512}$/i.test(page));
+  if (!ok) return `${path} is not an entry_state.json of the c64-unpacker skill.`;
+  const flag = (name: string) => registers.flags[name] === true;
+  return {
+    pc: Number.parseInt(registers.pc.slice(1), 16),
+    a: registers.a,
+    x: registers.x,
+    y: registers.y,
+    sp: registers.sp,
+    flags: { n: flag("n"), v: flag("v"), d: flag("d"), i: flag("i"), z: flag("z"), c: flag("c") },
+    port: [value.cpuPort.$00, value.cpuPort.$01],
+    pages: Buffer.from(pages.join(""), "hex"),
+  };
+}
+
+function readRelease(path: string, shift: number): LoadedRelease {
+  const { bytes } = readProjectFile(path);
+  const moved = (range: Range) => ({ start: range.start + shift, end: range.end + shift });
+  const inside = (range: Range) => range.start >= 0 && range.end <= 0xffff;
+  if (!path.endsWith(".json")) {
+    if (bytes.length < 3) throw new UsageError(`${path} is too short for a PRG`);
+    const load = bytes.readUInt16LE(0);
+    const segment = moved({ start: load, end: load + bytes.length - 3 });
+    if (!inside(segment)) throw new UsageError(`the shift moves ${path} outside $0000-$ffff`);
+    return { release: { name: path, segments: [segment], byteAt: (at) => bytes[2 + at - segment.start]! }, shift, start: { kind: "program", path } };
+  }
+  const fail = (what: string): never => {
+    throw new UsageError(`${path} is not an image.json of the c64-unpacker skill: ${what}`);
+  };
+  let manifest: Record<string, unknown>;
+  try {
+    manifest = JSON.parse(bytes.toString("utf8")) as Record<string, unknown>;
+  } catch (error) {
+    return fail((error as Error).message);
+  }
+  const parse = (value: unknown) => (typeof value === "string" && /^\$[0-9a-f]{4}$/i.test(value) ? Number.parseInt(value.slice(1), 16) : fail("a segment needs start and end as $ addresses"));
+  if (typeof manifest.image !== "string" || !Array.isArray(manifest.segments) || manifest.segments.length === 0) fail("it needs image and segments");
+  const own = (manifest.segments as Array<Record<string, unknown>>).map((segment) => ({ start: parse(segment.start), end: parse(segment.end) })).sort((a, b) => a.start - b.start);
+  const directory = posix.dirname(path);
+  const memory = readProjectFile(posix.join(directory, manifest.image as string)).bytes;
+  if (memory.length !== 0x10000) fail(`its image has ${memory.length} bytes, not 65536`);
+  const segments = own.map(moved);
+  if (!segments.every(inside)) throw new UsageError(`the shift moves ${path} outside $0000-$ffff`);
+  const state = entryState(posix.join(directory, "entry_state.json"));
+  return {
+    release: { name: path, segments, byteAt: (at) => memory[at - shift]! },
+    shift,
+    start: typeof state === "string" ? { kind: "none", reason: state } : { kind: "image", segments: own, byteAt: (at) => memory[at]!, state },
+  };
+}
+
+async function run(argv: string[]): Promise<unknown> {
   const { values, positionals } = parseArgs({
     args: argv,
     strict: true,
     allowPositionals: true,
-    options: { shift: { type: "string", multiple: true }, from: { type: "string" }, to: { type: "string" }, help: { type: "boolean" } },
+    options: {
+      shift: { type: "string", multiple: true },
+      from: { type: "string" },
+      to: { type: "string" },
+      run: { type: "string" },
+      steps: { type: "string" },
+      help: { type: "boolean" },
+    },
   });
   if (values.help) throw new UsageError("");
   if (positionals.length < 2) throw new UsageError("give two or more releases");
@@ -42,13 +138,27 @@ function run(argv: string[]): unknown {
     if (match === null || Number(match[1]) < 1 || Number(match[1]) > positionals.length) throw new UsageError(`--shift must be <release number>:<bytes>, not ${text}`);
     shifts.set(Number(match[1]), Number(match[2]));
   }
-  const releases: Release[] = positionals.map((path, index) => {
-    const { bytes } = readProjectFile(path);
-    if (bytes.length < 3) throw new UsageError(`${path} is too short for a PRG`);
-    const start = bytes.readUInt16LE(0) + (shifts.get(index + 1) ?? 0);
-    if (start < 0 || start + bytes.length - 3 > 0xffff) throw new UsageError(`the shift moves ${path} outside $0000-$ffff`);
-    return { name: path, start, bytes: bytes.subarray(2) };
-  });
+  if (values.steps !== undefined && values.run === undefined) throw new UsageError("--steps works only with --run");
+  let frames: number | undefined;
+  if (values.run !== undefined) {
+    if (!/^\d{1,6}$/.test(values.run) || Number(values.run) < 1 || Number(values.run) > MAX_EXECUTION_COUNT) throw new UsageError(`--run needs a frame count from 1 to ${MAX_EXECUTION_COUNT}, not ${values.run}`);
+    frames = Number(values.run);
+  }
+  let steps: ActionStep[] = [];
+  if (values.steps !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readProjectFile(values.steps).bytes.toString("utf8"));
+    } catch (error) {
+      if (error instanceof WireFailure) throw error;
+      throw new UsageError(`the steps file ${values.steps} is not JSON: ${(error as Error).message}`);
+    }
+    steps = checkActionSteps(parsed, (message) => {
+      throw new UsageError(`steps file ${values.steps}: ${message}`);
+    });
+  }
+  const loaded = positionals.map((path, index) => readRelease(path, shifts.get(index + 1) ?? 0));
+  const releases = loaded.map((item) => item.release);
   const comparison = compareReleases(releases, {
     ...(values.from === undefined ? {} : { from: address(values.from, "--from") }),
     ...(values.to === undefined ? {} : { to: address(values.to, "--to") }),
@@ -63,20 +173,48 @@ function run(argv: string[]): unknown {
           return best === undefined || best.shift === 0 ? [] : [{ release: index + 2, shift: best.shift, matchingSequences: best.matches }];
         })
       : [];
+
+  // The runtime evidence: one emulator for each release, the differences at the release's own addresses.
+  const runtime = new Map<string, Array<{ first: string; changed: boolean }>>();
+  const runs: Record<string, unknown> = {};
+  if (frames !== undefined && comparison.differences.length > 0) {
+    for (const item of loaded) {
+      const name = item.release.name;
+      if (item.start.kind === "none") {
+        runs[name] = { started: false, reason: item.start.reason };
+        continue;
+      }
+      const ranges = comparison.differences.map((difference) => ({ start: difference.start - item.shift, end: difference.end - item.shift }));
+      const client = await ViceSessionClient.open({ videoStandard: "pal" });
+      try {
+        const watched = await watchRelease(client, item.start, ranges, (at) => item.release.byteAt(at + item.shift), { frames, steps });
+        if (!watched.started) runs[name] = { started: false, reason: watched.reason };
+        else {
+          runs[name] = { started: true };
+          runtime.set(name, watched.accesses);
+        }
+      } finally {
+        await client.close();
+      }
+    }
+  }
+
   return {
-    releases: releases.map((release) => ({ name: release.name, start: formatC64Address(release.start), end: formatC64Address(release.start + release.bytes.length - 1) })),
-    common: comparison.common === null ? null : { start: formatC64Address(comparison.common.start), end: formatC64Address(comparison.common.end) },
+    releases: loaded.map((item) => ({ name: item.release.name, segments: item.release.segments.map((segment) => ({ start: formatC64Address(segment.start), end: formatC64Address(segment.end) })) })),
+    common: comparison.common.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     identicalBytes: comparison.identicalBytes,
     differingBytes: comparison.differingBytes,
     identicalShare: Number(identicalShare.toFixed(3)),
-    differences: comparison.differences.map((difference) => ({
+    differences: comparison.differences.map((difference, index) => ({
       start: formatC64Address(difference.start),
       end: formatC64Address(difference.end),
       values: Object.fromEntries(Object.entries(difference.values).map(([name, bytes]) => [name, hexBytes(bytes.slice(0, 32)) + (bytes.length > 32 ? " ..." : "")])),
       groups: difference.groups,
+      ...(runtime.size === 0 ? {} : { runtime: Object.fromEntries([...runtime].map(([name, accesses]) => [name, accesses[index]!])) }),
     })),
     ...(comparison.moreDifferences ? { moreDifferences: true } : {}),
     ...(suggestions.length > 0 ? { suggestedShifts: suggestions } : {}),
+    ...(frames === undefined ? {} : { run: { frames, steps: steps.length, releases: runs } }),
   };
 }
 
