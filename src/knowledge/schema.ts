@@ -43,10 +43,13 @@ export { REFERENCE_KINDS, type ReferenceKind };
 export const SUPPRESSION_ENTITIES = ["symbol", "region", "reference"] as const;
 export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 
+/** A module file of the generated source (D48): a plain name that ends in .asm, no directory. */
+export const MODULE_FILE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}\.asm$/;
+
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 
 /** The schema version this build reads and writes. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * Creates the schema in an empty database. Knowledge rows are temporal: a
@@ -136,11 +139,23 @@ function createSchema(db: DatabaseSync): void {
         CHECK (entity = 'region' OR start_address = end_address)
       );
       CREATE INDEX suppressions_start ON suppressions (start_address);
+      CREATE TABLE modules (
+        id                  INTEGER PRIMARY KEY,
+        start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
+        file                TEXT NOT NULL CHECK (length(file) > 0),
+        title               TEXT CHECK (title IS NULL OR length(title) > 0),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
+        valid_to_revision   INTEGER REFERENCES revisions (id)
+      );
+      CREATE UNIQUE INDEX modules_current_start ON modules (start_address) WHERE valid_to_revision IS NULL;
+      CREATE UNIQUE INDEX modules_current_file ON modules (file) WHERE valid_to_revision IS NULL;
       CREATE VIEW current_symbols AS SELECT * FROM symbols WHERE valid_to_revision IS NULL;
       CREATE VIEW current_regions AS SELECT * FROM regions WHERE valid_to_revision IS NULL;
       CREATE VIEW current_comments AS SELECT * FROM comments WHERE valid_to_revision IS NULL;
       CREATE VIEW current_references AS SELECT * FROM "references" WHERE valid_to_revision IS NULL;
       CREATE VIEW current_suppressions AS SELECT * FROM suppressions WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_modules AS SELECT * FROM modules WHERE valid_to_revision IS NULL;
       INSERT INTO meta (key, value) VALUES ('current_revision', '0');
     `);
 }

@@ -46,6 +46,8 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 | Set or remove a comment | `comment '$2100' line Reads joystick 2.` / `uncomment '$2100' line` |
 | Add or remove a reference | `reference '$2000' '$2100' call` / `unreference ...` |
 | Places that a removal blocks | `suppressions` with `--start` and `--end` |
+| Start a file of generated source | `module '$2000' player.asm --title 'Player movement'` / `unmodule '$2000'` |
+| Files of generated source | `modules` |
 | History | `history '$2100'`, `history --name update_player`, `revisions`, `revision 12` |
 | Go back to an earlier state | `revert 12` |
 
@@ -92,7 +94,11 @@ For more than a few writes, put them in one JSON file and use `apply`. The file 
 ]
 ```
 
-The ops are `rename`, `remove-symbol`, `classify`, `unclassify`, `comment`, `uncomment`, `reference` and `unreference`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
+The ops are `rename`, `remove-symbol`, `classify`, `unclassify`, `comment`, `uncomment`, `reference`, `unreference`, `module` and `unmodule`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
+
+## Modules
+
+A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The title becomes the first line of the file. Modules have a history, and `revert` restores them.
 
 ## Removals
 
@@ -140,3 +146,4 @@ A revert makes a new revision. The history stays complete.
 
 - Runtime evidence → c64-emulator
 - Static evidence → c64-static-analysis
+- Source from the knowledge → c64-source

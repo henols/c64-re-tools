@@ -104,6 +104,7 @@ The agent keeps what it learns about the program in `.c64-re-tools/knowledge.db`
 | c64-unpacker | Packing evidence, and capture of the unpacked program from the emulator. |
 | c64-memory-map | Platform meaning of addresses and register values. |
 | c64-provenance | Byte comparison of releases. |
+| c64-source | ACME source from the image and the knowledge, checked byte by byte, and a loader for the entry state. |
 | c64-assembler | ACME builds with diagnostics and symbols. |
 | c64-testing | Original-against-rebuild scenarios with PASS, FAIL or INCONCLUSIVE. |
 

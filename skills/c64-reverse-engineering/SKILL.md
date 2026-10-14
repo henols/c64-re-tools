@@ -41,13 +41,14 @@ This skill uses the other skills. It does not use the host runtime or the emulat
 | The routines, code, data and references of the program | c64-static-analysis |
 | The platform meaning of an address or a register | c64-memory-map |
 | Differences between releases of the program | c64-provenance |
+| Source code from the knowledge | c64-source |
 | Source code to build | c64-assembler |
 | Proof that a rebuild behaves as the original | c64-testing |
 
 4. Interpret the result. Keep observed facts apart from your conclusions.
 5. Record each conclusion that the evidence supports with the c64-knowledge skill: names of routines and variables, data classifications, comments.
 6. Go back to step 3 until the scope is complete.
-7. For a rebuild scope: write the source, build it with the c64-assembler skill, and test it against the original with the c64-testing skill.
+7. For a rebuild scope: generate the source with the c64-source skill and build it with the c64-assembler skill. Test it against the original with the c64-testing skill. Make the source better through the knowledge, and generate again.
 
 A typical order for an unknown program:
 
@@ -58,7 +59,7 @@ A typical order for an unknown program:
 5. c64-static-analysis: find the routines, regions and references.
 6. c64-knowledge and c64-memory-map: name the important routines and variables.
 7. c64-static-analysis again: Ghidra now uses the names.
-8. c64-assembler and c64-testing: rebuild and test when the scope asks for it.
+8. c64-source, c64-assembler and c64-testing: generate, build and test when the scope asks for it.
 
 ## Knowledge
 

@@ -10,6 +10,9 @@ import {
   COMMENT_COLUMNS,
   commentsAt,
   currentRevision,
+  MODULE_COLUMNS,
+  moduleAt,
+  moduleWithFile,
   REFERENCE_COLUMNS,
   referencesFrom,
   REGION_COLUMNS,
@@ -20,11 +23,13 @@ import {
   symbolAt,
   symbolNamed,
   toComment,
+  toModule,
   toReference,
   toRegion,
   toSuppression,
   toSymbol,
   type CommentRow,
+  type ModuleRow,
   type ReferenceRow,
   type RegionRow,
   type SuppressionRow,
@@ -34,6 +39,7 @@ import {
   COMMENT_PLACEMENTS,
   EVIDENCE_KINDS,
   MAX_ELEMENT,
+  MODULE_FILE,
   NO_ELEMENT_TYPES,
   REFERENCE_KINDS,
   REGION_TYPES,
@@ -183,6 +189,10 @@ export class Change {
     this.#db
       .prepare('INSERT INTO "references" (from_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?)')
       .run(row.from, row.to, row.kind, row.origin, this.id());
+  }
+
+  insertModule(row: Omit<ModuleRow, "revision">): void {
+    this.#db.prepare("INSERT INTO modules (start_address, file, title, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?)").run(row.start, row.file, row.title ?? null, row.origin, this.id());
   }
 
   insertSuppression(row: Omit<SuppressionRow, "revision">): void {
@@ -386,6 +396,33 @@ function unreferenceStep(db: DatabaseSync, change: Change, origin: Origin, reque
   return { current: null };
 }
 
+type ModuleRequest = { start: number; file: string; title?: string };
+
+function checkModule(request: ModuleRequest): void {
+  checkAddress(request.start, "start");
+  if (!MODULE_FILE.test(request.file)) throw new KnowledgeError("invalid-input", "A module file is a name of letters, digits, underscores or hyphens (at most 60) that ends in .asm, without a directory.");
+  if (request.title !== undefined && (request.title.trim().length === 0 || request.title.length > MAX_COMMENT)) throw new KnowledgeError("invalid-input", `A module title has 1 to ${MAX_COMMENT} characters.`);
+}
+
+function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: ModuleRequest): Step<ModuleRow> {
+  const title = request.title?.trim();
+  const existing = moduleAt(db, request.start);
+  if (existing !== undefined && existing.file === request.file && existing.title === title) return { current: existing };
+  const owner = moduleWithFile(db, request.file);
+  if (owner !== undefined && owner.start !== request.start) {
+    throw new KnowledgeError("conflict", `The file ${request.file} already belongs to the module at ${hex(owner.start)}. Give this module another file, or remove that module first.`);
+  }
+  if (existing !== undefined) change.close("modules", "start_address = ?", request.start);
+  change.insertModule({ start: request.start, file: request.file, ...(title === undefined ? {} : { title }), origin: origin as ModuleRow["origin"] });
+  return { current: moduleAt(db, request.start)! };
+}
+
+function unmoduleStep(db: DatabaseSync, change: Change, _origin: Origin, request: { start: number }): Step<null> {
+  if (moduleAt(db, request.start) === undefined) throw new KnowledgeError("not-found", `No module starts at ${hex(request.start)}.`);
+  change.close("modules", "start_address = ?", request.start);
+  return { current: null };
+}
+
 /** Names the symbol at an address (one current symbol per address, unique names). */
 export function renameSymbol(db: DatabaseSync, context: WriteContext, request: SymbolRequest): WriteResult<SymbolRow, SymbolRow> {
   checkSymbol(request);
@@ -429,6 +466,17 @@ export function removeReference(db: DatabaseSync, context: WriteContext, request
   return result(write(db, context, "remove-reference", (change) => unreferenceStep(db, change, context.origin, request)));
 }
 
+/** Starts a file of the generated source at an address (D48); one module per address and per file. */
+export function setModule(db: DatabaseSync, context: WriteContext, request: ModuleRequest): WriteResult<ModuleRow> {
+  checkModule(request);
+  return result(write(db, context, "set-module", (change) => moduleStep(db, change, context.origin, request)));
+}
+
+export function removeModule(db: DatabaseSync, context: WriteContext, request: { start: number }): WriteResult<null> {
+  checkAddress(request.start, "start");
+  return result(write(db, context, "remove-module", (change) => unmoduleStep(db, change, context.origin, request)));
+}
+
 /** One write of a batch (D42), named as the command that does it alone. */
 export type BatchOperation =
   | ({ op: "rename" } & SymbolRequest)
@@ -438,12 +486,14 @@ export type BatchOperation =
   | ({ op: "comment" } & CommentRequest)
   | ({ op: "uncomment" } & PlacementRequest)
   | ({ op: "reference" } & ReferenceRequest)
-  | ({ op: "unreference" } & ReferenceRequest);
+  | ({ op: "unreference" } & ReferenceRequest)
+  | ({ op: "module" } & ModuleRequest)
+  | { op: "unmodule"; start: number };
 
 export const MAX_BATCH = 10_000;
 
 /** The result of each write of a batch, in order. */
-export type BatchStep = Step<SymbolRow | RegionRow[] | CommentRow | ReferenceRow | null, SymbolRow | RegionRow[]>;
+export type BatchStep = Step<SymbolRow | RegionRow[] | CommentRow | ReferenceRow | ModuleRow | null, SymbolRow | RegionRow[]>;
 
 /**
  * Applies many writes as one revision in one transaction (D42): all of them,
@@ -469,8 +519,12 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
         case "reference":
         case "unreference":
           return checkReference(operation);
+        case "module":
+          return checkModule(operation);
+        case "unmodule":
+          return checkAddress(operation.start, "start");
         default:
-          throw new KnowledgeError("invalid-input", `op must be one of rename, remove-symbol, classify, unclassify, comment, uncomment, reference, unreference.`);
+          throw new KnowledgeError("invalid-input", `op must be one of rename, remove-symbol, classify, unclassify, comment, uncomment, reference, unreference, module, unmodule.`);
       }
     } catch (error) {
       if (error instanceof KnowledgeError) throw new KnowledgeError(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
@@ -497,6 +551,10 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
             return referenceStep(db, change, context.origin, operation);
           case "unreference":
             return unreferenceStep(db, change, context.origin, operation);
+          case "module":
+            return moduleStep(db, change, context.origin, operation);
+          case "unmodule":
+            return unmoduleStep(db, change, context.origin, operation);
         }
       } catch (error) {
         if (error instanceof KnowledgeError) throw new KnowledgeError(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
@@ -513,6 +571,7 @@ const KEYS = {
   regions: { columns: REGION_COLUMNS, map: toRegion, key: (row: RegionRow) => `${row.start}|${row.end}|${row.type}|${row.element ?? ""}|${row.origin}` },
   comments: { columns: COMMENT_COLUMNS, map: toComment, key: (row: CommentRow) => `${row.address}|${row.placement}|${row.text}|${row.origin}` },
   references: { columns: REFERENCE_COLUMNS, map: toReference, key: (row: ReferenceRow) => `${row.from}|${row.to}|${row.kind}|${row.origin}` },
+  modules: { columns: MODULE_COLUMNS, map: toModule, key: (row: ModuleRow) => `${row.start}|${row.file}|${row.title ?? ""}|${row.origin}` },
   suppressions: {
     columns: SUPPRESSION_COLUMNS,
     map: toSuppression,
@@ -544,6 +603,10 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         if (nowKeys.has(key(row))) continue;
         if (table === "suppressions") {
           change.insertSuppression(spec.map(row as never) as SuppressionRow);
+          continue;
+        }
+        if (table === "modules") {
+          change.insertModule(spec.map(row as never) as ModuleRow);
           continue;
         }
         const mapped = spec.map(row as never) as SymbolRow & RegionRow & CommentRow & ReferenceRow;

@@ -4,7 +4,7 @@
 
 A project is simply the developer's project directory/repository.
 
-c64-re-tools does not require a project manifest in v1 and does not impose a source layout.
+c64-re-tools does not require a project manifest in v1 and does not impose a source layout. The c64-source skill writes generated source in the layout that module records in knowledge give (D48); the user's own source stays free.
 
 Examples are all valid:
 
@@ -304,6 +304,19 @@ valid_to_revision     INTEGER
 A symbol suppression blocks every analyzer symbol at its address. A region suppression blocks every analyzer region in its range. A reference suppression blocks that one reference. The reason is the description of the revision that wrote it.
 
 A later user/LLM write at the place (`rename`, `classify`, `reference`) closes the suppression there. A revert restores the suppressions of the selected revision, as it does for every other row.
+
+### `modules`
+
+A module records where a file of the generated source starts (D48). The c64-source skill gives each module its own file, which runs to the next module or the end of its segment. Only the user or the LLM writes modules; no analyzer does.
+
+```text
+start_address         INTEGER NOT NULL   one current module per address
+file                  TEXT NOT NULL      a plain name that ends in .asm; one current module per file
+title                 TEXT               the first line of the file
+origin                TEXT NOT NULL      user | llm
+valid_from_revision   INTEGER NOT NULL
+valid_to_revision     INTEGER
+```
 
 ## 5. Automatic DXA/Ghidra import
 

@@ -40,6 +40,7 @@ All skills follow these rules:
 | c64-emulator | MCP / live VICE | none | runtime evidence/state |
 | c64-static-analysis | broker-backed script | analyzer structural findings | structural analysis + conflicts |
 | c64-knowledge | project-local | explicit requested writes | current/history knowledge or committed semantic change |
+| c64-source | local script (Ghidra, ACME; VICE for the loader check) | none | byte-identical ACME source + optional loader (D48) |
 | c64-assembler | broker-backed script | none | PRG/artifacts or actionable diagnostics |
 | c64-testing | MCP + local comparison helpers | none | pass/fail/inconclusive evidence |
 | c64-disk | broker-backed script | none | disk structure/extracted content |

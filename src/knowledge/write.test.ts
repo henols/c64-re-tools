@@ -6,18 +6,20 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { KnowledgeError, openForWrite } from "./database.ts";
-import { commentsAt, currentRevision, listSuppressions, listSymbols, referencesFrom, regionsOverlapping, symbolAt } from "./read.ts";
+import { commentsAt, currentRevision, listModules, listSuppressions, listSymbols, moduleAt, referencesFrom, regionsOverlapping, symbolAt } from "./read.ts";
 import { revision as revisionChanges } from "./history.ts";
 import {
   addReference,
   applyBatch,
   classifyRegion,
   removeComment,
+  removeModule,
   removeReference,
   removeSymbol,
   renameSymbol,
   revert,
   setComment,
+  setModule,
   unclassifyRegion,
   type WriteContext,
 } from "./write.ts";
@@ -319,4 +321,25 @@ test("lists keep only the origins asked for", () => {
   assert.deepEqual(listSymbols(db, undefined, undefined, ["user"]).map((row) => row.name), ["draw_room"]);
   assert.deepEqual(listSymbols(db, undefined, undefined, ["dxa", "ghidra"]), []);
   assert.equal(listSymbols(db).length, 2);
+});
+
+test("a module starts a file of generated source: one per address and per file, with history and revert", () => {
+  const db = fresh();
+  const first = setModule(db, llm, { start: 0x0801, file: "boot.asm", title: "BASIC start and setup" });
+  assert.deepEqual(first.current, { start: 0x0801, file: "boot.asm", title: "BASIC start and setup", origin: "llm", revision: 1 });
+  assert.equal(setModule(db, llm, { start: 0x0801, file: "boot.asm", title: "BASIC start and setup" }).revision, null);
+  setModule(db, { origin: "user" }, { start: 0x2000, file: "player.asm" });
+  assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
+  for (const file of ["../x.asm", "sub/x.asm", "x.a", ".asm", "x y.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
+  setModule(db, llm, { start: 0x0801, file: "start.asm" });
+  assert.deepEqual(moduleAt(db, 0x0801), { start: 0x0801, file: "start.asm", origin: "llm", revision: 3 });
+  assert.deepEqual(listModules(db, undefined, ["user"]).map((row) => row.file), ["player.asm"]);
+  assert.equal(revisionChanges(db, 3).closed[0]?.entity, "module");
+
+  removeModule(db, llm, { start: 0x2000 });
+  assert.throws(() => removeModule(db, llm, { start: 0x2000 }), failsWith("not-found"));
+  revert(db, llm, { revision: 2 });
+  assert.deepEqual(listModules(db).map((row) => [row.start, row.file]), [[0x0801, "boot.asm"], [0x2000, "player.asm"]]);
+  applyBatch(db, llm, [{ op: "unmodule", start: 0x2000 }, { op: "module", start: 0x2100, file: "player.asm", title: "Player" }]);
+  assert.deepEqual(listModules(db).map((row) => [row.start, row.file]), [[0x0801, "boot.asm"], [0x2100, "player.asm"]]);
 });

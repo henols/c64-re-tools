@@ -185,8 +185,20 @@ test("export writes all current knowledge to a project file and answers with cou
   knowledge(root, "rename", "$2100", "update_player");
   knowledge(root, "classify", "$3000", "$303f", "sprite");
   const exported = knowledge(root, "export", "--out", "exports/knowledge.json").json;
-  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, regions: 1, comments: 0, references: 0, suppressions: 0 }, revision: 2 });
+  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, regions: 1, comments: 0, references: 0, suppressions: 0, modules: 0 }, revision: 2 });
   const file = JSON.parse(readFileSync(join(root, "exports", "knowledge.json"), "utf8")) as { symbols: Array<{ name: string }> };
   assert.equal(file.symbols[0]!.name, "update_player");
   assert.equal(knowledge(root, "export").status, 2, "export needs --out");
+});
+
+test("module records where a file of generated source starts, and modules lists them (D48)", () => {
+  const root = project();
+  const set = knowledge(root, "module", "$0801", "boot.asm", "--title", "BASIC start");
+  assert.equal(set.status, 0, JSON.stringify(set.json));
+  assert.deepEqual(set.json, { revision: 1, module: { start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", revision: 1 } });
+  assert.deepEqual(knowledge(root, "modules").json, { modules: [{ start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", revision: 1 }] });
+  assert.equal(knowledge(root, "module", "$1000", "sub/x.asm").status, 1);
+  assert.equal(knowledge(root, "rename", "$1000", "x", "--title", "T").status, 2, "--title is for module only");
+  assert.equal(knowledge(root, "unmodule", "$0801").json.revision, 2);
+  assert.deepEqual(knowledge(root, "history", "$0801").json.history, [{ entity: "module", start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", fromRevision: 1, toRevision: 2 }]);
 });

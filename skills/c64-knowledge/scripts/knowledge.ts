@@ -14,12 +14,14 @@ import {
   at,
   currentRevision,
   listComments,
+  listModules,
   listReferences,
   listRegions,
   listSuppressions,
   listSymbols,
   search,
   type CommentRow,
+  type ModuleRow,
   type ReferenceRow,
   type RegionRow,
   type SuppressionRow,
@@ -43,11 +45,13 @@ import {
   applyBatch,
   classifyRegion,
   removeComment,
+  removeModule,
   removeReference,
   removeSymbol,
   renameSymbol,
   revert,
   setComment,
+  setModule,
   unclassifyRegion,
   type BatchOperation,
   type Evidence,
@@ -65,6 +69,7 @@ Read (no database needed):
   comments [--start A --end A --origin O]
   references [--start A --end A --kind K --origin O]
   suppressions [--start A --end A]   places that removals keep free of analyzer facts
+  modules [--start A --end A --origin O]   where the files of generated source start
   history <address> | history --name <name>
   revisions [--limit N --before N]
   revision <id>
@@ -82,6 +87,8 @@ Write (one revision each; creates the database when needed):
   uncomment <address> <line|side>
   reference <from> <to> <kind>
   unreference <from> <to> <kind>
+  module <start> <file.asm> [--title T]   a file of generated source starts here
+  unmodule <start>
   revert <revision>
   apply <file>             many writes from a JSON file ('-' reads standard input),
                            all as one revision, or none when one is refused
@@ -125,6 +132,7 @@ const region = (row: RegionRow) => ({
   revision: row.revision,
 });
 const comment = (row: CommentRow) => ({ address: formatC64Address(row.address), placement: row.placement, text: row.text, origin: row.origin, revision: row.revision });
+const module = (row: ModuleRow) => ({ start: formatC64Address(row.start), file: row.file, ...(row.title === undefined ? {} : { title: row.title }), origin: row.origin, revision: row.revision });
 const reference = (row: ReferenceRow) => ({ from: formatC64Address(row.from), to: formatC64Address(row.to), kind: row.kind, origin: row.origin, revision: row.revision });
 function suppression(row: SuppressionRow) {
   const place =
@@ -146,7 +154,9 @@ function historyEntry(entry: HistoryEntry) {
           ? comment(entry.row)
           : entry.entity === "reference"
             ? reference(entry.row)
-            : suppression(entry.row);
+            : entry.entity === "module"
+              ? module(entry.row)
+              : suppression(entry.row);
   const { revision: _revision, ...row } = shown;
   return { entity: entry.entity, ...row, fromRevision: entry.from, ...(entry.to === undefined ? {} : { toRevision: entry.to }) };
 }
@@ -182,6 +192,7 @@ function run(argv: string[]): unknown {
       element: { type: "string" },
       evidence: { type: "string", multiple: true },
       out: { type: "string" },
+      title: { type: "string" },
       help: { type: "boolean" },
     },
   });
@@ -189,8 +200,8 @@ function run(argv: string[]): unknown {
   if (values.help || command === undefined) throw new UsageError("");
   const range = { start: values.start === undefined ? 0x0000 : address(values.start, "--start"), end: values.end === undefined ? 0xffff : address(values.end, "--end") };
 
-  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "history", "revisions", "revision", "export"]);
-  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "revert", "apply"]);
+  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "history", "revisions", "revision", "export"]);
+  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "revert", "apply"]);
   // Refuse a mistyped command before anything opens, so no database appears by accident.
   if (!read.has(command) && !write.has(command)) throw new UsageError(`unknown command: ${command}`);
   if (read.has(command)) {
@@ -233,13 +244,14 @@ function run(argv: string[]): unknown {
             comments: listComments(db, range, origins).map(comment),
             references: listReferences(db, range, undefined, origins).map(reference),
             suppressions: listSuppressions(db, range).map(suppression),
+            modules: listModules(db, range, origins).map(module),
           };
           const bytes = Buffer.from(`${JSON.stringify(exported, null, 2)}\n`, "utf8");
           writeProjectFile(values.out!, bytes, { what: "--out" });
           return {
             out: values.out,
             bytes: bytes.length,
-            counts: { symbols: exported.symbols.length, regions: exported.regions.length, comments: exported.comments.length, references: exported.references.length, suppressions: exported.suppressions.length },
+            counts: { symbols: exported.symbols.length, regions: exported.regions.length, comments: exported.comments.length, references: exported.references.length, suppressions: exported.suppressions.length, modules: exported.modules.length },
             revision: exported.revision,
           };
         }
@@ -248,6 +260,8 @@ function run(argv: string[]): unknown {
           const reasons = reasonsOf(db, rows);
           return { suppressions: rows.map((row) => ({ ...suppression(row), ...(reasons.has(row.revision) ? { reason: reasons.get(row.revision) } : {}) })) };
         }
+        case "modules":
+          return { modules: listModules(db, range, origins).map(module) };
         case "history":
           return { history: (values.name === undefined ? historyAt(db, address(args[0])) : historyNamed(db, values.name)).map(historyEntry) };
         case "revisions": {
@@ -271,7 +285,8 @@ function run(argv: string[]): unknown {
   if (values["expect-revision"] !== undefined) context.expectedRevision = integer(values["expect-revision"], "--expect-revision");
   if (values.evidence !== undefined) context.evidence = values.evidence.map(evidenceOf);
   // Every argument is checked before the database opens: a refused write creates no database.
-  const operation = command === "apply" ? applyOperation(args, context) : writeOperation(command, args, values.kind, values.element, context);
+  if (values.title !== undefined && command !== "module") throw new UsageError("--title works only with module");
+  const operation = command === "apply" ? applyOperation(args, context) : writeOperation(command, args, values.kind, values.element, context, values.title);
   return withWrite(operation);
 }
 
@@ -324,6 +339,8 @@ const BATCH_FIELDS: Record<BatchOperation["op"], string[]> = {
   uncomment: ["address", "placement"],
   reference: ["from", "to", "kind"],
   unreference: ["from", "to", "kind"],
+  module: ["start", "file", "title"],
+  unmodule: ["start"],
 };
 
 /** One write of a batch, with its addresses parsed. */
@@ -353,6 +370,10 @@ function batchOperation(item: unknown, at: string): BatchOperation {
       return { op, address: place("address"), placement: oneOf(COMMENT_PLACEMENTS, text("placement"), `${at}: placement`), text: text("text") };
     case "uncomment":
       return { op, address: place("address"), placement: oneOf(COMMENT_PLACEMENTS, text("placement"), `${at}: placement`) };
+    case "module":
+      return { op, start: place("start"), file: text("file"), ...(fields.title === undefined ? {} : { title: text("title") }) };
+    case "unmodule":
+      return { op, start: place("start") };
     default:
       return { op, from: place("from"), to: place("to"), kind: oneOf(REFERENCE_KINDS, text("kind"), `${at}: kind`) };
   }
@@ -360,7 +381,7 @@ function batchOperation(item: unknown, at: string): BatchOperation {
 
 type WriteOperation = (db: DatabaseSync) => unknown;
 
-function writeOperation(command: string, args: string[], kind: string | undefined, element: string | undefined, context: WriteContext): WriteOperation {
+function writeOperation(command: string, args: string[], kind: string | undefined, element: string | undefined, context: WriteContext, title?: string): WriteOperation {
   switch (command) {
     case "rename": {
       if (args[1] === undefined) throw new UsageError("name is missing");
@@ -413,6 +434,18 @@ function writeOperation(command: string, args: string[], kind: string | undefine
     case "unreference": {
       const request = { from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") };
       return (db) => ({ revision: removeReference(db, context, request).revision });
+    }
+    case "module": {
+      if (args[1] === undefined) throw new UsageError("file is missing");
+      const request = { start: address(args[0], "start"), file: args[1], ...(title === undefined ? {} : { title }) };
+      return (db) => {
+        const result = setModule(db, context, request);
+        return { revision: result.revision, module: module(result.current) };
+      };
+    }
+    case "unmodule": {
+      const request = { start: address(args[0], "start") };
+      return (db) => ({ revision: removeModule(db, context, request).revision });
     }
     case "revert": {
       const request = { revision: integer(args[0], "revision") };

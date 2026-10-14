@@ -50,6 +50,15 @@ export interface SuppressionRow {
   revision: number;
 }
 
+/** Where a file of the generated source starts (D48): it runs to the next module or the end of its segment. */
+export interface ModuleRow {
+  start: number;
+  file: string;
+  title?: string;
+  origin: Extract<Origin, "user" | "llm">;
+  revision: number;
+}
+
 type Raw = Record<string, unknown>;
 
 export const SYMBOL_COLUMNS = "address, name, kind, origin, valid_from_revision";
@@ -57,6 +66,7 @@ export const REGION_COLUMNS = "start_address, end_address, type, element, origin
 export const COMMENT_COLUMNS = "address, placement, text, origin, valid_from_revision";
 export const REFERENCE_COLUMNS = "from_address, to_address, kind, origin, valid_from_revision";
 export const SUPPRESSION_COLUMNS = "entity, start_address, end_address, to_address, kind, origin, valid_from_revision";
+export const MODULE_COLUMNS = "start_address, file, title, origin, valid_from_revision";
 
 export function toSymbol(row: Raw): SymbolRow {
   return { address: row.address as number, name: row.name as string, kind: row.kind as SymbolKind, origin: row.origin as Origin, revision: row.valid_from_revision as number };
@@ -87,6 +97,12 @@ export function toSuppression(row: Raw): SuppressionRow {
   if (row.to_address !== null) suppression.to = row.to_address as number;
   if (row.kind !== null) suppression.kind = row.kind as ReferenceKind;
   return suppression;
+}
+
+export function toModule(row: Raw): ModuleRow {
+  const module: ModuleRow = { start: row.start_address as number, file: row.file as string, origin: row.origin as ModuleRow["origin"], revision: row.valid_from_revision as number };
+  if (row.title !== null && row.title !== undefined) module.title = row.title as string;
+  return module;
 }
 
 export function currentRevision(db: DatabaseSync | undefined): number {
@@ -249,6 +265,26 @@ export function listSuppressions(db: DatabaseSync | undefined, range: Range = AL
     )
     .all(range.end, range.start, range.start, range.end)
     .map((row) => toSuppression(row as Raw));
+}
+
+export function moduleAt(db: DatabaseSync | undefined, start: number): ModuleRow | undefined {
+  const row = db?.prepare(`SELECT ${MODULE_COLUMNS} FROM current_modules WHERE start_address = ?`).get(start) as Raw | undefined;
+  return row === undefined ? undefined : toModule(row);
+}
+
+export function moduleWithFile(db: DatabaseSync | undefined, file: string): ModuleRow | undefined {
+  const row = db?.prepare(`SELECT ${MODULE_COLUMNS} FROM current_modules WHERE file = ?`).get(file) as Raw | undefined;
+  return row === undefined ? undefined : toModule(row);
+}
+
+/** Current modules that start in the range, in address order. */
+export function listModules(db: DatabaseSync | undefined, range: Range = ALL, origins?: OriginFilter): ModuleRow[] {
+  if (db === undefined) return [];
+  return db
+    .prepare(`SELECT ${MODULE_COLUMNS} FROM current_modules WHERE start_address BETWEEN ? AND ? ORDER BY start_address`)
+    .all(range.start, range.end)
+    .map((row) => toModule(row as Raw))
+    .filter(kept(origins));
 }
 
 /** Case-insensitive text search in current symbol names and comment texts. */

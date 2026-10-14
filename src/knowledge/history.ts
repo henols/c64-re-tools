@@ -6,16 +6,19 @@ import type { DatabaseSync } from "node:sqlite";
 import { KnowledgeError } from "./database.ts";
 import {
   COMMENT_COLUMNS,
+  MODULE_COLUMNS,
   REFERENCE_COLUMNS,
   REGION_COLUMNS,
   SUPPRESSION_COLUMNS,
   SYMBOL_COLUMNS,
   toComment,
+  toModule,
   toReference,
   toRegion,
   toSuppression,
   toSymbol,
   type CommentRow,
+  type ModuleRow,
   type ReferenceRow,
   type RegionRow,
   type SuppressionRow,
@@ -42,7 +45,8 @@ export type HistoryEntry =
   | { entity: "region"; row: RegionRow; from: number; to?: number }
   | { entity: "comment"; row: CommentRow; from: number; to?: number }
   | { entity: "reference"; row: ReferenceRow; from: number; to?: number }
-  | { entity: "suppression"; row: SuppressionRow; from: number; to?: number };
+  | { entity: "suppression"; row: SuppressionRow; from: number; to?: number }
+  | { entity: "module"; row: ModuleRow; from: number; to?: number };
 
 type Raw = Record<string, unknown>;
 
@@ -87,6 +91,7 @@ export function historyAt(db: DatabaseSync | undefined, address: number): Histor
     .all(address, address, address) as Raw[]) {
     entries.push(entry("suppression", toSuppression(raw), raw));
   }
+  for (const raw of db.prepare(`SELECT ${MODULE_COLUMNS}${validity} FROM modules WHERE start_address = ?`).all(address) as Raw[]) entries.push(entry("module", toModule(raw), raw));
   return entries.sort(bySequence);
 }
 
@@ -134,6 +139,7 @@ export function revision(db: DatabaseSync | undefined, id: number): RevisionChan
     ["comment", "comments", COMMENT_COLUMNS, toComment],
     ["reference", '"references"', REFERENCE_COLUMNS, toReference],
     ["suppression", "suppressions", SUPPRESSION_COLUMNS, toSuppression],
+    ["module", "modules", MODULE_COLUMNS, toModule],
   ] as const;
   const added: HistoryEntry[] = [];
   const closed: HistoryEntry[] = [];
