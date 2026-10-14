@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
 
 import { encodeFrame, MessageReader } from "../protocol/framing.ts";
@@ -37,16 +36,8 @@ export interface HostServerOptions {
   createViceSession: ViceSessionFactory;
   /** Native-tool requests on "tool" connections; without it they are refused. */
   tools?: ToolDispatcher;
-  /** Defaults to 127.0.0.1. More addresses listen on the same port, for example a container bridge. */
+  /** Defaults to 127.0.0.1; 0.0.0.0 listens on every address, so a container reaches it too. */
   host?: string;
-  /** Extra addresses to listen on, on the same port as `host`. */
-  extraHosts?: string[];
-  /**
-   * The shared secret. A connection that arrives on an address that is
-   * not loopback must send it in its hello; without a token such a
-   * connection is refused.
-   */
-  token?: string;
   /** 0 picks a free port. */
   port: number;
   /** How long a new connection may stay silent before it must send hello. */
@@ -66,10 +57,6 @@ export interface HostServer {
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
 /** How long a refused client may keep its side of the connection open after the host has ended its side. */
 const REFUSED_CLOSE_MS = 1_000;
-
-function digest(text: string): Buffer {
-  return createHash("sha256").update(text, "utf8").digest();
-}
 
 /** A caught value for the log, with its stack when it has one. */
 function describe(error: unknown): string {
@@ -95,18 +82,6 @@ class Connection {
   #isTool = false;
   readonly #reader = new MessageReader();
 
-  /** A connection on a loopback address needs no token; any other needs the host's token. */
-  #checkToken(token: string | undefined): WireError | undefined {
-    if (isLoopback(this.#socket.localAddress ?? "")) return undefined;
-    const expected = this.#options.token;
-    // Equal-length digests: the comparison takes the same time for any token, also one with multibyte characters.
-    const matches = expected !== undefined && token !== undefined && timingSafeEqual(digest(token), digest(expected));
-    if (matches) return undefined;
-    return {
-      code: "installation-incomplete",
-      message: "The c64-re-tools host runtime refused this client: a connection from outside the host needs C64RT_HOST_TOKEN with the same value on both sides.",
-    };
-  }
   readonly #socket: Socket;
   readonly #options: HostServerOptions;
   readonly #log: (line: string) => void;
@@ -191,7 +166,7 @@ class Connection {
     if (this.#state === "handshake") {
       if (message.type !== "hello") throw new ProtocolError("first message is not hello");
       clearTimeout(this.#handshakeTimer);
-      const mismatch = checkHello(message) ?? this.#checkToken(message.token);
+      const mismatch = checkHello(message);
       if (mismatch !== undefined) {
         this.#log(`refusing a client: ${mismatch.message}`);
         trace().event("connection.refused", { connection: this.#id, role: message.role, ...mismatch });
@@ -308,12 +283,6 @@ class Connection {
   }
 }
 
-/** True for 127.0.0.0/8 and ::1, also in their IPv4-mapped IPv6 form. */
-export function isLoopback(address: string): boolean {
-  const plain = address.startsWith("::ffff:") ? address.slice(7) : address;
-  return plain === "::1" || /^127\.\d+\.\d+\.\d+$/.test(plain);
-}
-
 /** A port as the user gives it: decimal digits only, 0 to 65535. Anything else gives undefined. */
 export function parsePort(text: string): number | undefined {
   if (!/^\d{1,5}$/.test(text)) return undefined;
@@ -386,8 +355,6 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
   let port: number;
   try {
     port = await listen(host, options.port);
-    // The extra addresses share the port, so one endpoint setting reaches every address.
-    for (const extra of options.extraHosts ?? []) await listen(extra, port);
   } catch (error) {
     await Promise.all(servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
     throw error;

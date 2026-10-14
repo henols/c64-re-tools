@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { connect, type Socket } from "node:net";
-import { networkInterfaces, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
@@ -383,27 +383,6 @@ test("operations get exactly the attachments they take", async () => {
   client.end();
 });
 
-const outside = Object.values(networkInterfaces())
-  .flat()
-  .find((address) => address?.family === "IPv4" && !address.internal)?.address;
-
-test("a token with multibyte characters is refused, and the host keeps serving", { skip: outside === undefined ? "this machine has no non-loopback IPv4 address" : false }, async () => {
-  const token = "a-shared-secret-of-some-length";
-  const server = await startHostServer({ port: 0, extraHosts: [outside!], token, createViceSession: stubFactory({ started: [], closed: 0 }) });
-  servers.push(server);
-  // The same number of characters as the token, but twice the bytes in UTF-8.
-  const client = await RawClient.open(server, outside!);
-  client.send({ ...hello, role: "tool", token: "\u00e9".repeat(token.length) });
-  const reply = (await client.next()) as { type: string; error: { code: string } };
-  assert.equal(reply.type, "error");
-  assert.equal(reply.error.code, "installation-incomplete");
-  await client.closed;
-  const next = await RawClient.open(server, outside!);
-  next.send({ ...hello, role: "tool", token });
-  assert.deepEqual(await next.next(), { type: "ready" });
-  next.end();
-});
-
 test("a session factory that throws at once is reported, and the host keeps serving", async () => {
   let calls = 0;
   const inner = stubFactory({ started: [], closed: 0 });
@@ -461,13 +440,6 @@ test("a port in use names the address and the port that failed", async () => {
     startHostServer({ port: busy.port, createViceSession: stubFactory({ started: [], closed: 0 }) }),
     (error: unknown) => error instanceof ListenError && error.code === "EADDRINUSE" && error.address === "127.0.0.1" && error.port === busy.port,
   );
-  // An extra address that fails reports the port the first address got, not the 0 that was asked for.
-  let tried = 0;
-  await assert.rejects(startHostServer({ port: 0, extraHosts: ["127.0.0.1"], createViceSession: stubFactory({ started: [], closed: 0 }) }), (error: unknown) => {
-    tried = error instanceof ListenError && error.code === "EADDRINUSE" && error.address === "127.0.0.1" ? error.port : -1;
-    return true;
-  });
-  assert.ok(tried > 0, `the error names port ${tried}`);
 });
 
 test("a second stop signal while the host stops is logged and does not end the process", { skip: process.platform === "win32" ? "Windows ends a process on any signal" : false }, async () => {

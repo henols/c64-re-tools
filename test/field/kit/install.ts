@@ -86,10 +86,8 @@ function main(): void {
   const settingsFile = join(project, ".claude", "settings.local.json");
   const settings = readJson<{ env?: Record<string, string> }>(settingsFile, {});
   settings.env = { ...settings.env, C64RT_TRACE: traceDir };
-  for (const name of ["C64RT_HOST", "C64RT_HOST_TOKEN"]) {
-    const value = process.env[name];
-    if (value !== undefined && value !== "") settings.env[name] = value;
-  }
+  const endpoint = process.env.C64RT_HOST;
+  if (endpoint !== undefined && endpoint !== "") settings.env.C64RT_HOST = endpoint;
   mkdirSync(join(project, ".claude"), { recursive: true });
   writeJson(settingsFile, settings);
 
@@ -119,19 +117,13 @@ function main(): void {
 
   // On one machine the host can write into the project's trace; in a container it writes on the host.
   const hostTrace = container ? join("$HOME", "c64-field", "host-trace") : traceDir;
-  const tokenSet = settings.env.C64RT_HOST_TOKEN !== undefined;
-  const hostCommand = container
-    ? `C64RT_TRACE=${hostTrace} C64RT_HOST_TOKEN=<the same secret> npx -y --package=${spec} c64-re-tools-host --listen <the container bridge, for example 172.17.0.1>`
-    : `C64RT_TRACE=${hostTrace} npx -y --package=${spec} c64-re-tools-host`;
+  const hostCommand = `C64RT_TRACE=${hostTrace} npx -y --package=${spec} c64-re-tools-host`;
   console.log(`
 Installed c64-re-tools ${version ?? "(version unknown)"} with the c64-field-debug skill.
 Trace for Claude Code's programs: ${traceDir} (in .claude/settings.local.json)
 
 1. On the machine with VICE, in its own terminal, start the host runtime:
-   ${hostCommand}${container && !tokenSet ? `
-
-   No C64RT_HOST_TOKEN was set here. Set the same secret (16 characters or more)
-   in .claude/settings.local.json under "env", or export it and run install again.` : ""}${spec.endsWith(".tgz") && container ? `
+   ${hostCommand}${spec.endsWith(".tgz") && container ? `
 
    The host needs the same tarball: copy ${spec} to the host first.` : ""}
 

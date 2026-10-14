@@ -11,14 +11,13 @@ npx -y @henols/c64-re-tools@next install --target claude
 
 ## Dev container
 
-The agent runs in the container, VICE and the Host Runtime on the host. On the host:
+The agent runs in the container, VICE and the Host Runtime on the host. Start the Host Runtime on the host as usual; it listens on every address. In `devcontainer.json`:
 
-```
-export C64RT_HOST_TOKEN=$(openssl rand -hex 16)
-npx -y --package=@henols/c64-re-tools@next c64-re-tools-host --listen 172.17.0.1
+```json
+"runArgs": ["--add-host=host.docker.internal:host-gateway"]
 ```
 
-In the container, set the same `C64RT_HOST_TOKEN`, then install as usual. `status` must show the Host Runtime as reachable.
+Then install in the container as usual. `status` must show the Host Runtime as reachable.
 
 ## Trace
 

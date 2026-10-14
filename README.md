@@ -48,7 +48,6 @@ Until 2.0.0 is released, `@latest` is the old 1.1.0. Use the prerelease instead.
 | `C64RT_ACME`, `C64RT_DXA` | skills, CLI | Full path of the tool when it is not on `PATH`. |
 | `C64RT_GHIDRA` | skills, CLI | The Ghidra installation directory, when `analyzeHeadless` is not on `PATH`. |
 | `C64RT_HOST` | MCP, skills, CLI | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
-| `C64RT_HOST_TOKEN` | host, MCP, skills, CLI | The shared secret for a Host Runtime that listens beyond loopback. |
 | `C64RT_VIDEO` | MCP | `pal` (default) or `ntsc`, fixed for the life of the MCP process. |
 | `C64RT_TRACE` | host, MCP, skills, CLI | A directory for a trace of what the programs do, for a person who debugs a run. See [docs/debug-install.md](docs/debug-install.md). Nothing of the trace reaches the agent. |
 
