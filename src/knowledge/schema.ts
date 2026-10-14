@@ -46,10 +46,19 @@ export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 /** A module file of the generated source (D48): a plain name that ends in .asm, no directory. */
 export const MODULE_FILE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}\.asm$/;
 
+/**
+ * The address space of a knowledge row (D53): the C64, the 1541 drive, or a
+ * cartridge bank. Drive code and banks reuse C64 addresses.
+ */
+export const SPACE = /^(c64|drive8|bank(0|[1-9][0-9]?|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$/;
+export type Space = string;
+export const DEFAULT_SPACE: Space = "c64";
+const SPACE_CHECK = "space IN ('c64', 'drive8') OR space GLOB 'bank[0-9]' OR space GLOB 'bank[1-9][0-9]' OR space GLOB 'bank[12][0-9][0-9]'";
+
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 
 /** The schema version this build reads and writes. */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * Creates the schema in an empty database. Knowledge rows are temporal: a
@@ -73,6 +82,7 @@ function createSchema(db: DatabaseSync): void {
       );
       CREATE TABLE symbols (
         id                  INTEGER PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         name                TEXT NOT NULL CHECK (length(name) > 0),
         kind                TEXT NOT NULL CHECK (kind IN (${list(SYMBOL_KINDS)})),
@@ -80,11 +90,12 @@ function createSchema(db: DatabaseSync): void {
         valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
         valid_to_revision   INTEGER REFERENCES revisions (id)
       );
-      CREATE UNIQUE INDEX symbols_current_address ON symbols (address) WHERE valid_to_revision IS NULL;
-      CREATE UNIQUE INDEX symbols_current_name ON symbols (name) WHERE valid_to_revision IS NULL;
-      CREATE INDEX symbols_address ON symbols (address);
+      CREATE UNIQUE INDEX symbols_current_address ON symbols (space, address) WHERE valid_to_revision IS NULL;
+      CREATE UNIQUE INDEX symbols_current_name ON symbols (space, name) WHERE valid_to_revision IS NULL;
+      CREATE INDEX symbols_address ON symbols (space, address);
       CREATE TABLE regions (
         id                  INTEGER PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
         type                TEXT NOT NULL CHECK (type IN (${list(REGION_TYPES)})),
@@ -93,7 +104,7 @@ function createSchema(db: DatabaseSync): void {
         valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
         valid_to_revision   INTEGER REFERENCES revisions (id)
       );
-      CREATE INDEX regions_start ON regions (start_address);
+      CREATE INDEX regions_start ON regions (space, start_address);
       CREATE TABLE evidence (
         id       INTEGER PRIMARY KEY,
         revision INTEGER NOT NULL REFERENCES revisions (id),
@@ -104,6 +115,7 @@ function createSchema(db: DatabaseSync): void {
       CREATE INDEX evidence_revision ON evidence (revision);
       CREATE TABLE comments (
         id                  INTEGER PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         placement           TEXT NOT NULL CHECK (placement IN (${list(COMMENT_PLACEMENTS)})),
         text                TEXT NOT NULL CHECK (length(text) > 0),
@@ -111,10 +123,11 @@ function createSchema(db: DatabaseSync): void {
         valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
         valid_to_revision   INTEGER REFERENCES revisions (id)
       );
-      CREATE UNIQUE INDEX comments_current ON comments (address, placement) WHERE valid_to_revision IS NULL;
-      CREATE INDEX comments_address ON comments (address);
+      CREATE UNIQUE INDEX comments_current ON comments (space, address, placement) WHERE valid_to_revision IS NULL;
+      CREATE INDEX comments_address ON comments (space, address);
       CREATE TABLE "references" (
         id                  INTEGER PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         from_address        INTEGER NOT NULL CHECK (from_address BETWEEN 0 AND 65535),
         to_address          INTEGER NOT NULL CHECK (to_address BETWEEN 0 AND 65535),
         kind                TEXT NOT NULL CHECK (kind IN (${list(REFERENCE_KINDS)})),
@@ -122,11 +135,12 @@ function createSchema(db: DatabaseSync): void {
         valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
         valid_to_revision   INTEGER REFERENCES revisions (id)
       );
-      CREATE UNIQUE INDEX references_current ON "references" (from_address, to_address, kind) WHERE valid_to_revision IS NULL;
-      CREATE INDEX references_from ON "references" (from_address);
-      CREATE INDEX references_to ON "references" (to_address);
+      CREATE UNIQUE INDEX references_current ON "references" (space, from_address, to_address, kind) WHERE valid_to_revision IS NULL;
+      CREATE INDEX references_from ON "references" (space, from_address);
+      CREATE INDEX references_to ON "references" (space, to_address);
       CREATE TABLE suppressions (
         id                  INTEGER PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         entity              TEXT NOT NULL CHECK (entity IN (${list(SUPPRESSION_ENTITIES)})),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
@@ -138,9 +152,10 @@ function createSchema(db: DatabaseSync): void {
         CHECK ((entity = 'reference') = (to_address IS NOT NULL AND kind IS NOT NULL)),
         CHECK (entity = 'region' OR start_address = end_address)
       );
-      CREATE INDEX suppressions_start ON suppressions (start_address);
+      CREATE INDEX suppressions_start ON suppressions (space, start_address);
       CREATE TABLE modules (
         id                  INTEGER PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         file                TEXT NOT NULL CHECK (length(file) > 0),
         title               TEXT CHECK (title IS NULL OR length(title) > 0),
@@ -148,8 +163,8 @@ function createSchema(db: DatabaseSync): void {
         valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
         valid_to_revision   INTEGER REFERENCES revisions (id)
       );
-      CREATE UNIQUE INDEX modules_current_start ON modules (start_address) WHERE valid_to_revision IS NULL;
-      CREATE UNIQUE INDEX modules_current_file ON modules (file) WHERE valid_to_revision IS NULL;
+      CREATE UNIQUE INDEX modules_current_start ON modules (space, start_address) WHERE valid_to_revision IS NULL;
+      CREATE UNIQUE INDEX modules_current_file ON modules (space, file) WHERE valid_to_revision IS NULL;
       CREATE VIEW current_symbols AS SELECT * FROM symbols WHERE valid_to_revision IS NULL;
       CREATE VIEW current_regions AS SELECT * FROM regions WHERE valid_to_revision IS NULL;
       CREATE VIEW current_comments AS SELECT * FROM comments WHERE valid_to_revision IS NULL;

@@ -48,8 +48,11 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 | Places that a removal blocks | `suppressions` with `--start` and `--end` |
 | Start a file of generated source | `module '$2000' player.asm --title 'Player movement'` / `unmodule '$2000'` |
 | Files of generated source | `modules` |
+| The address spaces that hold knowledge | `spaces` |
 | History | `history '$2100'`, `history --name update_player`, `revisions`, `revision 12` |
 | Go back to an earlier state | `revert 12` |
+
+Every command takes `--space`: `c64` (the default), `drive8` for code in the 1541 drive, or `bank0` to `bank255` for cartridge banks. Drive code and banks use the same addresses as the C64, so each space has its own knowledge. A name is unique inside one space. In a batch, a write can name its own `space`.
 
 Symbol kinds are `label`, `routine`, `variable`, `data` and `vector`. Reference kinds are `call`, `jump`, `read`, `write` and `reference`.
 

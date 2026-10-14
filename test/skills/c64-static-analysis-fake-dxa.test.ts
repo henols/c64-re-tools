@@ -117,3 +117,20 @@ test("an import refused because knowledge changed during the analysis tells to r
   assert.equal(error.code, "stale-revision");
   assert.match(error.message, /Run the analysis again\.$/);
 });
+
+test("--space imports the findings into that space and leaves the C64 alone (D53)", { timeout: 60_000 }, async () => {
+  const root = project("space");
+  const dxa = fakeDxa("dxa-space", LISTING);
+  const run = await analyze(root, dxa, "--space", "drive8");
+  assert.equal(run.status, 0, JSON.stringify(run.json));
+  assert.equal(run.json.space, "drive8");
+  const db = openForWrite(root);
+  try {
+    const spaces = db.prepare("SELECT DISTINCT space FROM current_symbols").all() as Array<{ space: string }>;
+    assert.deepEqual(spaces.map((row) => row.space), ["drive8"]);
+  } finally {
+    db.close();
+  }
+  assert.equal((await analyze(root, dxa, "--space", "drive8", "--coverage", "x.bin")).status, 2, "coverage is of the C64 CPU");
+  assert.equal((await analyze(root, dxa, "--space", "drive9")).status, 2);
+});

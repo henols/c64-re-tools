@@ -50,7 +50,7 @@ test("a rename creates one revision, and the old name stays in history", () => {
   const db = fresh();
   const first = renameSymbol(db, { origin: "llm", description: "entry point" }, { address: 0x2100, name: "FUN_2100", kind: "routine" });
   assert.equal(first.revision, 1);
-  assert.deepEqual(first.current, { address: 0x2100, name: "FUN_2100", kind: "routine", origin: "llm", revision: 1 });
+  assert.deepEqual(first.current, { space: "c64", address: 0x2100, name: "FUN_2100", kind: "routine", origin: "llm", revision: 1 });
   const second = renameSymbol(db, { origin: "user", description: "reads joystick 2" }, { address: 0x2100, name: "update_player" });
   assert.equal(second.revision, 2);
   assert.equal(second.current.kind, "routine", "the kind stays when not given");
@@ -234,7 +234,7 @@ test("a write over a row of another origin returns the replaced row", () => {
   const user: WriteContext = { origin: "user" };
   renameSymbol(db, user, { address: 0x2100, name: "update_player", kind: "routine" });
   const renamed = renameSymbol(db, llm, { address: 0x2100, name: "move_player" });
-  assert.deepEqual(renamed.previous, { address: 0x2100, name: "update_player", kind: "routine", origin: "user", revision: 1 });
+  assert.deepEqual(renamed.previous, { space: "c64", address: 0x2100, name: "update_player", kind: "routine", origin: "user", revision: 1 });
   assert.equal(renameSymbol(db, llm, { address: 0x2100, name: "step_player" }).previous, undefined, "a row of the same origin is no surprise");
 
   classifyRegion(db, user, { start: 0x3000, end: 0x30ff, type: "sprite" });
@@ -326,13 +326,13 @@ test("lists keep only the origins asked for", () => {
 test("a module starts a file of generated source: one per address and per file, with history and revert", () => {
   const db = fresh();
   const first = setModule(db, llm, { start: 0x0801, file: "boot.asm", title: "BASIC start and setup" });
-  assert.deepEqual(first.current, { start: 0x0801, file: "boot.asm", title: "BASIC start and setup", origin: "llm", revision: 1 });
+  assert.deepEqual(first.current, { space: "c64", start: 0x0801, file: "boot.asm", title: "BASIC start and setup", origin: "llm", revision: 1 });
   assert.equal(setModule(db, llm, { start: 0x0801, file: "boot.asm", title: "BASIC start and setup" }).revision, null);
   setModule(db, { origin: "user" }, { start: 0x2000, file: "player.asm" });
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
   for (const file of ["../x.asm", "sub/x.asm", "x.a", ".asm", "x y.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
-  assert.deepEqual(moduleAt(db, 0x0801), { start: 0x0801, file: "start.asm", origin: "llm", revision: 3 });
+  assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", origin: "llm", revision: 3 });
   assert.deepEqual(listModules(db, undefined, ["user"]).map((row) => row.file), ["player.asm"]);
   assert.equal(revisionChanges(db, 3).closed[0]?.entity, "module");
 
@@ -342,4 +342,26 @@ test("a module starts a file of generated source: one per address and per file, 
   assert.deepEqual(listModules(db).map((row) => [row.start, row.file]), [[0x0801, "boot.asm"], [0x2000, "player.asm"]]);
   applyBatch(db, llm, [{ op: "unmodule", start: 0x2000 }, { op: "module", start: 0x2100, file: "player.asm", title: "Player" }]);
   assert.deepEqual(listModules(db).map((row) => [row.start, row.file]), [[0x0801, "boot.asm"], [0x2100, "player.asm"]]);
+});
+
+test("each space has its own rows and names (D53)", () => {
+  const db = fresh();
+  renameSymbol(db, llm, { address: 0x0500, name: "loop" });
+  renameSymbol(db, llm, { space: "drive8", address: 0x0500, name: "loop" });
+  renameSymbol(db, llm, { space: "bank3", address: 0x8000, name: "loop" });
+  assert.equal(symbolAt(db, 0x0500)?.space, "c64");
+  assert.equal(symbolAt(db, 0x0500, "drive8")?.space, "drive8");
+  assert.equal(symbolAt(db, 0x8000), undefined);
+  removeSymbol(db, llm, { space: "drive8", address: 0x0500 });
+  assert.equal(symbolAt(db, 0x0500, "drive8"), undefined);
+  assert.equal(symbolAt(db, 0x0500)?.name, "loop", "the C64 row stays");
+  assert.deepEqual(listSuppressions(db, undefined, "drive8").map((row) => [row.space, row.entity, row.start]), [["drive8", "symbol", 0x0500]]);
+  assert.deepEqual(listSuppressions(db), []);
+  classifyRegion(db, llm, { space: "bank3", start: 0x8000, end: 0x80ff, type: "bytes" });
+  assert.deepEqual(regionsOverlapping(db, 0x8000, 0x8000), []);
+  assert.throws(() => renameSymbol(db, llm, { space: "bank256", address: 0x8000, name: "x" }), failsWith("invalid-input"));
+  assert.throws(() => applyBatch(db, llm, [{ op: "rename", space: "drive9", address: 0x0300, name: "x" }]), failsWith("invalid-input"));
+  revert(db, llm, { revision: 2 });
+  assert.equal(symbolAt(db, 0x0500, "drive8")?.name, "loop", "a revert restores rows of every space");
+  assert.equal(symbolAt(db, 0x8000, "bank3"), undefined);
 });

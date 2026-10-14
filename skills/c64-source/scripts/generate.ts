@@ -16,7 +16,7 @@ import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts"
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
 import { currentRevision, listComments, listModules, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, SPACE, type Space } from "#src/knowledge/schema.ts";
 import { assemble } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
@@ -36,6 +36,8 @@ const USAGE = `generate.ts <image> --out <dir> [options]
   --entry <address>  an entry point for Ghidra, for example '$080d' (repeatable)
   --coverage <file>  a coverage map of 64 KiB from c64_memmap (repeatable): code
                      that no run executed is marked and listed
+  --space <space>    the knowledge space of the image: c64 (the default), drive8, or
+                     bank0 to bank255; --coverage and --loader are for c64 only
   --loader           also write loader.asm and loader.prg: the loader copies the
                      segments into place, sets the entry state from entry_state.json
                      next to image.json, and jumps to the entry; it is checked in
@@ -98,17 +100,17 @@ function readImage(path: string): Image {
   return image;
 }
 
-/** The knowledge that the source uses, read once. */
-function readKnowledge() {
+/** The knowledge of one space that the source uses, read once. */
+function readKnowledge(space: Space) {
   const db = openForRead();
   try {
     return {
       revision: currentRevision(db),
-      symbols: listSymbols(db),
-      regions: listRegions(db),
-      comments: listComments(db),
-      modules: listModules(db),
-      references: listReferences(db),
+      symbols: listSymbols(db, undefined, undefined, undefined, space),
+      regions: listRegions(db, undefined, undefined, undefined, space),
+      comments: listComments(db, undefined, undefined, space),
+      modules: listModules(db, undefined, undefined, space),
+      references: listReferences(db, undefined, undefined, undefined, space),
     };
   } finally {
     db?.close();
@@ -275,7 +277,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     args: argv,
     strict: true,
     allowPositionals: true,
-    options: { out: { type: "string" }, entry: { type: "string", multiple: true }, coverage: { type: "string", multiple: true }, loader: { type: "boolean" }, help: { type: "boolean" } },
+    options: { out: { type: "string" }, entry: { type: "string", multiple: true }, coverage: { type: "string", multiple: true }, space: { type: "string" }, loader: { type: "boolean" }, help: { type: "boolean" } },
   });
   if (values.help) throw new UsageError("");
   if (positionals.length !== 1) throw new UsageError("give one image");
@@ -292,6 +294,9 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
       throw new UsageError(`--entry must be $ followed by four hex digits, not ${value}`);
     }
   });
+  const space = values.space ?? DEFAULT_SPACE;
+  if (!SPACE.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
+  if (space !== DEFAULT_SPACE && (values.coverage !== undefined || values.loader)) throw new UsageError("--coverage and --loader work only in space c64");
   const image = readImage(positionals[0]!);
   const coverage = readCoverageFiles(values.coverage ?? [], (message) => {
     throw new UsageError(message);
@@ -299,7 +304,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   if (values.loader && (image.statePath === undefined || image.entry === undefined)) throw new UsageError("--loader needs an image.json with an entry and an entry_state.json next to it, from c64-unpacker capture");
   // Read the entry state before the long steps, so a missing file stops the run at once.
   const state = values.loader ? readEntryState(readProjectFile(image.statePath!).bytes.toString("utf8"), image.statePath!) : undefined;
-  const knowledge = readKnowledge();
+  const knowledge = readKnowledge(space);
   const instructions = await decode(image, knowledge, entries);
   const laid = layout({
     segments: image.segments,
@@ -312,10 +317,11 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     modules: knowledge.modules,
     referenceTargets: knowledge.references.map((reference) => reference.to),
     ...(coverage === undefined ? {} : { coverage }),
-    platform: new Map(platformNames().map((item) => [item.address, item.name])),
+    // The platform names are C64 names: drive code and banks get none.
+    ...(space === DEFAULT_SPACE ? { platform: new Map(platformNames().map((item) => [item.address, item.name])) } : {}),
   });
   const asBytes = await probe(laid);
-  const header = [`Generated by c64-source from ${image.path} and knowledge revision ${knowledge.revision}.`, "Change names, comments, regions and modules in knowledge, then generate again."];
+  const header = [`Generated by c64-source from ${image.path}${space === DEFAULT_SPACE ? "" : ` in space ${space}`} and knowledge revision ${knowledge.revision}.`, "Change names, comments, regions and modules in knowledge, then generate again."];
   const rendered = render(laid, asBytes, header);
   const files = [...rendered.files];
   let loader: LoaderPlan | undefined;

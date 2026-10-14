@@ -7,7 +7,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { COVERAGE, instructionLength } from "#src/c64.ts";
 import { FULL_COVERAGE, readCoverageFiles as readFiles } from "#src/host-client/coverage.ts";
 import { listRegions, type RegionRow } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, type Space } from "#src/knowledge/schema.ts";
 import { UsageError } from "#src/script.ts";
 
 const FULL_MAP = FULL_COVERAGE;
@@ -50,9 +50,9 @@ export function coverageEntries(map: Uint8Array, image: ImageByte): number[] {
 }
 
 /** Entry points from semantic knowledge beyond routines: the start of each code region, and each entry of a JMP table with its target. */
-export function codeEntries(db: DatabaseSync | undefined, image: ImageByte): number[] {
+export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, space: Space = DEFAULT_SPACE): number[] {
   const entries: number[] = [];
-  for (const region of listRegions(db).filter((row) => row.origin === "user" || row.origin === "llm")) {
+  for (const region of listRegions(db, undefined, undefined, undefined, space).filter((row) => row.origin === "user" || row.origin === "llm")) {
     if (region.type === "code") entries.push(region.start);
     if (region.type !== "jumps") continue;
     for (let at = region.start; at + 2 <= region.end; at += 3) {

@@ -33,6 +33,7 @@ node <skill>/scripts/analyze.ts extracted/game.prg --entry '$080d' --decompile '
 | `--flat64k` | The file is 64 KiB of memory from `$0000`, not a PRG. |
 | `--max-listed 20` | List at most this number of labels or functions. The default is 50. Use 0 to list none. |
 | `--instructions analysis/instructions.json` | Ghidra only: write every instruction to this project file as JSON. Each has `address`, `bytes`, `mnemonic`, `mode` and `operand` in 6502 syntax. A branch, jump or call also has its `target`. With `--coverage`, `executed` tells if it ran. |
+| `--space drive8` | The knowledge space of the image: `drive8` for code from the 1541 drive, or `bank0` to `bank255` for a cartridge bank. The default is `c64`. The seeds come from that space, and the findings go into it. |
 | `--coverage coverage/attract.bin` | A coverage file of 64 KiB from `c64_memmap` (action `read` with `out`). Use it again for more runs. The executed code becomes entry points. |
 
 The script prints one JSON object. Addresses are `$` and four hex digits.

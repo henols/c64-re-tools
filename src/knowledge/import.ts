@@ -27,8 +27,8 @@ import {
   type RegionRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Origin, type ReferenceKind, type RegionType, type SymbolKind } from "./schema.ts";
-import { Change, checkAddress, hex, subtract, SYMBOL_NAME, type AddressRange } from "./write.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
+import { Change, checkAddress, checkSpace, hex, subtract, SYMBOL_NAME, type AddressRange } from "./write.ts";
 
 export type { AddressRange };
 
@@ -37,6 +37,8 @@ export type Analyzer = (typeof ANALYZERS)[number];
 
 export interface NormalizedFindings {
   analyzer: Analyzer;
+  /** The address space that the analyzed image belongs to (D53); the C64 when absent. */
+  space?: Space;
   /** The address ranges the analyzer examined; it makes claims only there. */
   coverage: AddressRange[];
   /** A category is authoritative when its findings are complete in coverage, so absence means "no longer asserted". */
@@ -118,6 +120,7 @@ function mergeCoverage(coverage: AddressRange[]): AddressRange[] {
  */
 export function validateFindings(findings: NormalizedFindings): AddressRange[] {
   if (!(ANALYZERS as readonly string[]).includes(findings.analyzer)) invalid(`the analyzer must be one of ${ANALYZERS.join(", ")}.`);
+  checkSpace(findings);
   if (!Array.isArray(findings.coverage) || findings.coverage.length === 0) invalid("the result has no coverage.");
   for (const range of findings.coverage) {
     checkAddress(range.start, "coverage start");
@@ -158,49 +161,50 @@ export function validateFindings(findings: NormalizedFindings): AddressRange[] {
   return coverage;
 }
 
-function ownSymbols(db: DatabaseSync, analyzer: Analyzer, range: AddressRange): SymbolRow[] {
+function ownSymbols(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, space: Space): SymbolRow[] {
   return db
-    .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE origin = ? AND address BETWEEN ? AND ? ORDER BY address`)
-    .all(analyzer, range.start, range.end)
+    .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE space = ? AND origin = ? AND address BETWEEN ? AND ? ORDER BY address`)
+    .all(space, analyzer, range.start, range.end)
     .map((row) => toSymbol(row as Record<string, unknown>));
 }
 
-function ownReferences(db: DatabaseSync, analyzer: Analyzer, range: AddressRange): ReferenceRow[] {
+function ownReferences(db: DatabaseSync, analyzer: Analyzer, range: AddressRange, space: Space): ReferenceRow[] {
   return db
-    .prepare(`SELECT ${REFERENCE_COLUMNS} FROM current_references WHERE origin = ? AND from_address BETWEEN ? AND ? ORDER BY from_address`)
-    .all(analyzer, range.start, range.end)
+    .prepare(`SELECT ${REFERENCE_COLUMNS} FROM current_references WHERE space = ? AND origin = ? AND from_address BETWEEN ? AND ? ORDER BY from_address`)
+    .all(space, analyzer, range.start, range.end)
     .map((row) => toReference(row as Record<string, unknown>));
 }
 
 function importSymbols(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
+  const space = findings.space ?? DEFAULT_SPACE;
   const wanted = new Map(findings.symbols.map((symbol) => [symbol.address, symbol]));
   const settled = new Set<number>();
   const replaced = new Set<number>();
   // Close first, so a name can move between addresses within one import.
   for (const range of coverage) {
-    for (const own of ownSymbols(db, analyzer, range)) {
+    for (const own of ownSymbols(db, analyzer, range, space)) {
       const finding = wanted.get(own.address);
       if (finding === undefined) {
         if (!findings.authoritative.symbols) continue;
-        change.close("symbols", "address = ?", own.address);
+        change.close("symbols", "space = ? AND address = ?", space, own.address);
         result.symbols.retired++;
       } else if (finding.name === own.name && finding.kind === own.kind) {
         settled.add(own.address);
         result.symbols.unchanged++;
       } else {
-        change.close("symbols", "address = ?", own.address);
+        change.close("symbols", "space = ? AND address = ?", space, own.address);
         replaced.add(own.address);
       }
     }
   }
   for (const finding of findings.symbols) {
     if (settled.has(finding.address)) continue;
-    if (symbolSuppressed(db, finding.address)) {
+    if (symbolSuppressed(db, finding.address, space)) {
       result.symbols.suppressed++;
       continue;
     }
-    const current = symbolAt(db, finding.address);
+    const current = symbolAt(db, finding.address, space);
     if (current !== undefined) {
       // A semantic or other-analyzer row stays; only a code/data disagreement matters.
       if (isCode(current.kind) !== isCode(finding.kind)) {
@@ -208,17 +212,17 @@ function importSymbols(db: DatabaseSync, change: Change, findings: NormalizedFin
       }
       continue;
     }
-    const owner = symbolNamed(db, finding.name);
+    const owner = symbolNamed(db, finding.name, space);
     if (owner?.origin === analyzer) {
       // The analyzer moved its own name: its newer finding replaces its own older row.
-      change.close("symbols", "address = ?", owner.address);
+      change.close("symbols", "space = ? AND address = ?", space, owner.address);
       result.symbols.retired++;
     } else if (owner !== undefined) {
       result.conflicts.push({ category: "symbol", address: finding.address, reason: "name-taken", current: owner, finding: { name: finding.name, kind: finding.kind } });
       if (replaced.has(finding.address)) result.symbols.retired++;
       continue;
     }
-    change.insertSymbol({ address: finding.address, name: finding.name, kind: finding.kind, origin: analyzer });
+    change.insertSymbol({ space, address: finding.address, name: finding.name, kind: finding.kind, origin: analyzer });
     if (replaced.has(finding.address)) result.symbols.changed++;
     else result.symbols.added++;
   }
@@ -229,12 +233,13 @@ const YIELDS_TO_HEURISTIC = new Set<Origin>(["dxa", "ghidra"]);
 
 function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
+  const space = findings.space ?? DEFAULT_SPACE;
   if (analyzer === "heuristic") {
     // An idiom is specific evidence about its bytes: the DXA or Ghidra region there gives way, its parts outside stay.
     for (const region of findings.regions) {
-      for (const row of regionsOverlapping(db, region.start, region.end).filter((candidate) => YIELDS_TO_HEURISTIC.has(candidate.origin))) {
-        change.close("regions", "start_address = ? AND end_address = ? AND origin = ?", row.start, row.end, row.origin);
-        for (const piece of subtract(row, [region])) change.insertRegion({ ...piece, type: row.type, ...(row.element === undefined ? {} : { element: row.element }), origin: row.origin });
+      for (const row of regionsOverlapping(db, region.start, region.end, space).filter((candidate) => YIELDS_TO_HEURISTIC.has(candidate.origin))) {
+        change.close("regions", "space = ? AND start_address = ? AND end_address = ? AND origin = ?", space, row.start, row.end, row.origin);
+        for (const piece of subtract(row, [region])) change.insertRegion({ space, ...piece, type: row.type, ...(row.element === undefined ? {} : { element: row.element }), origin: row.origin });
       }
     }
   }
@@ -254,9 +259,9 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
     // Retire nothing the snapshot leaves out. Fill addresses that no region covers yet, and
     // give the analyzer's own regions under a finding the type that the analyzer finds now.
     for (const region of findings.regions) {
-      const suppressed = suppressionsOverlapping(db, "region", region.start, region.end);
+      const suppressed = suppressionsOverlapping(db, "region", region.start, region.end, space);
       if (suppressed.length > 0) result.regions.suppressed++;
-      const current = regionsOverlapping(db, region.start, region.end);
+      const current = regionsOverlapping(db, region.start, region.end, space);
       const protectedRows = current.filter((row) => row.origin !== analyzer);
       for (const row of protectedRows) conflictWith(row, region);
       const own = current.filter((row) => row.origin === analyzer);
@@ -264,14 +269,14 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
       result.regions.unchanged += kept.length;
       for (const row of own.filter((candidate) => candidate.type !== region.type)) {
         // Close the row and keep its parts outside the finding.
-        change.close("regions", "start_address = ? AND end_address = ? AND origin = ?", row.start, row.end, analyzer);
-        if (row.start < region.start) change.insertRegion({ start: row.start, end: region.start - 1, type: row.type, origin: analyzer });
-        if (row.end > region.end) change.insertRegion({ start: region.end + 1, end: row.end, type: row.type, origin: analyzer });
+        change.close("regions", "space = ? AND start_address = ? AND end_address = ? AND origin = ?", space, row.start, row.end, analyzer);
+        if (row.start < region.start) change.insertRegion({ space, start: row.start, end: region.start - 1, type: row.type, origin: analyzer });
+        if (row.end > region.end) change.insertRegion({ space, start: region.end + 1, end: row.end, type: row.type, origin: analyzer });
         result.regions.changed++;
       }
       const empty = subtract(region, [...current, ...suppressed]);
       for (const piece of subtract(region, [...protectedRows, ...kept, ...suppressed])) {
-        change.insertRegion({ ...piece, type: region.type, origin: analyzer });
+        change.insertRegion({ space, ...piece, type: region.type, origin: analyzer });
       }
       result.regions.added += empty.length;
     }
@@ -279,14 +284,14 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
   }
 
   for (const range of coverage) {
-    const current = regionsOverlapping(db, range.start, range.end);
+    const current = regionsOverlapping(db, range.start, range.end, space);
     const protectedRows = current.filter((row) => row.origin !== analyzer);
     const own = current.filter((row) => row.origin === analyzer);
     // What the analyzer may own here: its regions minus protected rows.
     const desired = new Map<string, { start: number; end: number; type: RegionType }>();
     for (const region of findings.regions.filter((candidate) => candidate.start >= range.start && candidate.end <= range.end)) {
       for (const row of protectedRows) if (row.start <= region.end && row.end >= region.start) conflictWith(row, region);
-      const suppressed = suppressionsOverlapping(db, "region", region.start, region.end);
+      const suppressed = suppressionsOverlapping(db, "region", region.start, region.end, space);
       if (suppressed.length > 0) result.regions.suppressed++;
       for (const piece of subtract(region, [...protectedRows, ...suppressed])) desired.set(`${piece.start}-${piece.end}`, { ...piece, type: region.type });
     }
@@ -300,13 +305,13 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
         continue;
       }
       // Close the row and keep its parts outside the coverage.
-      change.close("regions", "start_address = ? AND end_address = ? AND origin = ?", row.start, row.end, analyzer);
-      if (row.start < range.start) change.insertRegion({ start: row.start, end: range.start - 1, type: row.type, origin: analyzer });
-      if (row.end > range.end) change.insertRegion({ start: range.end + 1, end: row.end, type: row.type, origin: analyzer });
+      change.close("regions", "space = ? AND start_address = ? AND end_address = ? AND origin = ?", space, row.start, row.end, analyzer);
+      if (row.start < range.start) change.insertRegion({ space, start: row.start, end: range.start - 1, type: row.type, origin: analyzer });
+      if (row.end > range.end) change.insertRegion({ space, start: range.end + 1, end: row.end, type: row.type, origin: analyzer });
       retiredRanges.add(key);
     }
     for (const [key, piece] of desired) {
-      change.insertRegion({ ...piece, origin: analyzer });
+      change.insertRegion({ space, ...piece, origin: analyzer });
       if (retiredRanges.delete(key)) result.regions.changed++;
       else result.regions.added++;
     }
@@ -316,24 +321,25 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
 
 function importReferences(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
+  const space = findings.space ?? DEFAULT_SPACE;
   const key = (reference: { from: number; to: number; kind: ReferenceKind }) => `${reference.from}|${reference.to}|${reference.kind}`;
   const wanted = new Map(findings.references.map((reference) => [key(reference), reference]));
   for (const range of coverage) {
-    for (const own of ownReferences(db, analyzer, range)) {
+    for (const own of ownReferences(db, analyzer, range, space)) {
       if (wanted.has(key(own))) continue;
       if (!findings.authoritative.references) continue;
-      change.close('"references"', "from_address = ? AND to_address = ? AND kind = ? AND origin = ?", own.from, own.to, own.kind, analyzer);
+      change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ? AND origin = ?", space, own.from, own.to, own.kind, analyzer);
       result.references.retired++;
     }
   }
-  const existing = db.prepare('SELECT origin FROM current_references WHERE from_address = ? AND to_address = ? AND kind = ?');
+  const existing = db.prepare("SELECT origin FROM current_references WHERE space = ? AND from_address = ? AND to_address = ? AND kind = ?");
   for (const reference of wanted.values()) {
-    const rows = existing.all(reference.from, reference.to, reference.kind) as Array<{ origin: Origin }>;
+    const rows = existing.all(space, reference.from, reference.to, reference.kind) as Array<{ origin: Origin }>;
     if (rows.some((row) => row.origin === analyzer)) result.references.unchanged++;
-    else if (rows.length === 0 && referenceSuppressed(db, reference)) result.references.suppressed++;
+    else if (rows.length === 0 && referenceSuppressed(db, reference, space)) result.references.suppressed++;
     // The same fact from the user, the LLM or another analyzer already holds.
     else if (rows.length === 0) {
-      change.insertReference({ ...reference, origin: analyzer });
+      change.insertReference({ space, ...reference, origin: analyzer });
       result.references.added++;
     }
   }

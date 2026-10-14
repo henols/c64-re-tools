@@ -5,7 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
 import { listRegions, listSymbols } from "#src/knowledge/read.ts";
-import { CODE_REGION_TYPES } from "#src/knowledge/schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, type Space } from "#src/knowledge/schema.ts";
 import type { DxaResult, GhidraParams, GhidraResult } from "#src/native/types.ts";
 
 export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
@@ -19,12 +19,12 @@ const semantic = (row: { origin: string }) => row.origin === "user" || row.origi
  * earlier guess would force the same answer again, and a re-analysis could
  * not retire it.
  */
-export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoints: number[] = []): Seeds {
-  const symbols = listSymbols(db).filter(semantic);
+export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoints: number[] = [], space: Space = DEFAULT_SPACE): Seeds {
+  const symbols = listSymbols(db, undefined, undefined, undefined, space).filter(semantic);
   const entryPoints = [...new Set([...extraEntryPoints, ...symbols.filter((symbol) => symbol.kind === "routine").map((symbol) => symbol.address)])].sort((a, b) => a - b);
   return {
     entryPoints,
-    dataRanges: listRegions(db)
+    dataRanges: listRegions(db, undefined, undefined, undefined, space)
       // A JMP table is code and dual-use bytes are both: neither is a data range (D42).
       .filter((region) => semantic(region) && !CODE_REGION_TYPES.includes(region.type) && region.type !== "dual-use")
       .map((region) => ({ start: region.start, end: region.end })),

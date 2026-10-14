@@ -81,7 +81,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
     [0x0824, 0x0827, "sprite", "user"],
   ]);
   const db = openForRead(project);
-  assert.deepEqual(symbolAt(db, 0x0818), { address: 0x0818, name: "init_result", kind: "routine", origin: "llm", revision: 2 }, "the echoed seed stays semantic");
+  assert.deepEqual(symbolAt(db, 0x0818), { space: "c64", address: 0x0818, name: "init_result", kind: "routine", origin: "llm", revision: 2 }, "the echoed seed stays semantic");
   const regionHistory = historyAt(db, 0x0816).flatMap((entry) => (entry.entity === "region" ? [[entry.row.type, entry.row.origin, entry.to ?? null]] : []));
   assert.deepEqual(regionHistory, [
     ["bytes", "dxa", 4],

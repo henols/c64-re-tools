@@ -139,6 +139,8 @@ current_references
 
 so normal queries do not need to repeat the validity predicate.
 
+Every knowledge row also has a `space` (D53): `c64` (the default), `drive8` for code in the 1541 drive, or `bank0` to `bank255` for cartridge banks. Drive code and banks reuse C64 addresses, so every uniqueness rule below holds inside one space, and every query reads one space.
+
 ### `symbols`
 
 Conceptual fields:

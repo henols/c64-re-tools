@@ -24,7 +24,7 @@ import {
   type SuppressionRow,
   type SymbolRow,
 } from "./read.ts";
-import type { EvidenceKind, Origin } from "./schema.ts";
+import { DEFAULT_SPACE, type EvidenceKind, type Origin, type Space } from "./schema.ts";
 import type { Evidence } from "./write.ts";
 
 export interface Revision {
@@ -73,32 +73,32 @@ function bySequence(a: HistoryEntry, b: HistoryEntry): number {
   return a.from - b.from || (a.to ?? Infinity) - (b.to ?? Infinity);
 }
 
-/** Every row, current or closed, that concerns one address, oldest first. */
-export function historyAt(db: DatabaseSync | undefined, address: number): HistoryEntry[] {
+/** Every row, current or closed, that concerns one address of a space, oldest first. */
+export function historyAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): HistoryEntry[] {
   if (db === undefined) return [];
   const validity = ", valid_to_revision";
   const entries: HistoryEntry[] = [];
-  for (const raw of db.prepare(`SELECT ${SYMBOL_COLUMNS}${validity} FROM symbols WHERE address = ?`).all(address) as Raw[]) entries.push(entry("symbol", toSymbol(raw), raw));
-  for (const raw of db.prepare(`SELECT ${REGION_COLUMNS}${validity} FROM regions WHERE start_address <= ? AND end_address >= ?`).all(address, address) as Raw[]) {
+  for (const raw of db.prepare(`SELECT ${SYMBOL_COLUMNS}${validity} FROM symbols WHERE space = ? AND address = ?`).all(space, address) as Raw[]) entries.push(entry("symbol", toSymbol(raw), raw));
+  for (const raw of db.prepare(`SELECT ${REGION_COLUMNS}${validity} FROM regions WHERE space = ? AND start_address <= ? AND end_address >= ?`).all(space, address, address) as Raw[]) {
     entries.push(entry("region", toRegion(raw), raw));
   }
-  for (const raw of db.prepare(`SELECT ${COMMENT_COLUMNS}${validity} FROM comments WHERE address = ?`).all(address) as Raw[]) entries.push(entry("comment", toComment(raw), raw));
-  for (const raw of db.prepare(`SELECT ${REFERENCE_COLUMNS}${validity} FROM "references" WHERE from_address = ? OR to_address = ?`).all(address, address) as Raw[]) {
+  for (const raw of db.prepare(`SELECT ${COMMENT_COLUMNS}${validity} FROM comments WHERE space = ? AND address = ?`).all(space, address) as Raw[]) entries.push(entry("comment", toComment(raw), raw));
+  for (const raw of db.prepare(`SELECT ${REFERENCE_COLUMNS}${validity} FROM "references" WHERE space = ? AND (from_address = ? OR to_address = ?)`).all(space, address, address) as Raw[]) {
     entries.push(entry("reference", toReference(raw), raw));
   }
   for (const raw of db
-    .prepare(`SELECT ${SUPPRESSION_COLUMNS}${validity} FROM suppressions WHERE (start_address <= ? AND end_address >= ?) OR to_address = ?`)
-    .all(address, address, address) as Raw[]) {
+    .prepare(`SELECT ${SUPPRESSION_COLUMNS}${validity} FROM suppressions WHERE space = ? AND ((start_address <= ? AND end_address >= ?) OR to_address = ?)`)
+    .all(space, address, address, address) as Raw[]) {
     entries.push(entry("suppression", toSuppression(raw), raw));
   }
-  for (const raw of db.prepare(`SELECT ${MODULE_COLUMNS}${validity} FROM modules WHERE start_address = ?`).all(address) as Raw[]) entries.push(entry("module", toModule(raw), raw));
+  for (const raw of db.prepare(`SELECT ${MODULE_COLUMNS}${validity} FROM modules WHERE space = ? AND start_address = ?`).all(space, address) as Raw[]) entries.push(entry("module", toModule(raw), raw));
   return entries.sort(bySequence);
 }
 
-/** Every symbol row that ever had this name, oldest first: a name can move between addresses. */
-export function historyNamed(db: DatabaseSync | undefined, name: string): HistoryEntry[] {
+/** Every symbol row of a space that ever had this name, oldest first: a name can move between addresses. */
+export function historyNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): HistoryEntry[] {
   if (db === undefined) return [];
-  return (db.prepare(`SELECT ${SYMBOL_COLUMNS}, valid_to_revision FROM symbols WHERE name = ?`).all(name) as Raw[])
+  return (db.prepare(`SELECT ${SYMBOL_COLUMNS}, valid_to_revision FROM symbols WHERE space = ? AND name = ?`).all(space, name) as Raw[])
     .map((raw) => entry("symbol", toSymbol(raw), raw))
     .sort(bySequence);
 }

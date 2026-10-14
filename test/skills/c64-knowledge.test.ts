@@ -202,3 +202,19 @@ test("module records where a file of generated source starts, and modules lists 
   assert.equal(knowledge(root, "unmodule", "$0801").json.revision, 2);
   assert.deepEqual(knowledge(root, "history", "$0801").json.history, [{ entity: "module", start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", fromRevision: 1, toRevision: 2 }]);
 });
+
+test("--space keeps drive code and cartridge banks apart from the C64 (D53)", () => {
+  const root = project();
+  assert.equal(knowledge(root, "rename", "$0500", "loop").status, 0);
+  const drive = knowledge(root, "rename", "$0500", "loop", "--space", "drive8");
+  assert.equal(drive.status, 0, JSON.stringify(drive.json));
+  assert.deepEqual(drive.json.symbol, { space: "drive8", address: "$0500", name: "loop", kind: "label", origin: "llm", revision: 2 });
+  writeFileSync(join(root, "bank.json"), JSON.stringify([{ op: "classify", start: "$8000", end: "$80ff", type: "bytes" }, { op: "rename", address: "$8000", name: "cart_start", space: "bank1" }]));
+  assert.equal(knowledge(root, "apply", "bank.json", "--space", "bank0").status, 0);
+  assert.deepEqual(knowledge(root, "spaces").json, { spaces: ["c64", "drive8", "bank0", "bank1"] });
+  assert.deepEqual((knowledge(root, "at", "$0500", "--space", "drive8").json as { space: string; symbol: { name: string } }).space, "drive8");
+  assert.equal((knowledge(root, "regions", "--space", "bank0").json.regions as unknown[]).length, 1);
+  assert.equal((knowledge(root, "regions").json.regions as unknown[]).length, 0, "the C64 has no region");
+  assert.equal((knowledge(root, "symbols", "--space", "bank1").json.symbols as Array<{ name: string }>)[0]!.name, "cart_start");
+  assert.equal(knowledge(root, "symbols", "--space", "drive9").status, 2);
+});

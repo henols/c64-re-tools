@@ -15,6 +15,7 @@ import {
   currentRevision,
   listComments,
   listModules,
+  listSpaces,
   listReferences,
   listRegions,
   listSuppressions,
@@ -29,10 +30,12 @@ import {
 } from "#src/knowledge/read.ts";
 import {
   COMMENT_PLACEMENTS,
+  DEFAULT_SPACE,
   EVIDENCE_KINDS,
   ORIGINS,
   REFERENCE_KINDS,
   REGION_TYPES,
+  SPACE,
   SYMBOL_KINDS,
   type CommentPlacement,
   type Origin,
@@ -70,10 +73,15 @@ Read (no database needed):
   references [--start A --end A --kind K --origin O]
   suppressions [--start A --end A]   places that removals keep free of analyzer facts
   modules [--start A --end A --origin O]   where the files of generated source start
+  spaces                              the address spaces that hold knowledge
   history <address> | history --name <name>
   revisions [--limit N --before N]
   revision <id>
   export --out <file> [--start A --end A --origin O]   all current knowledge to a project file
+
+Every command takes --space S: c64 (the default), drive8 for code in the 1541
+drive, or bank0 to bank255 for cartridge banks. A write in a batch can name its
+own space.
 
 Read option --origin O: user, llm, dxa, ghidra, heuristic, semantic (user and
 llm) or analyzer (dxa, ghidra and heuristic), or a comma list. search takes it too.
@@ -122,8 +130,11 @@ function integer(value: string | undefined, what: string): number {
 }
 
 // Output shapes: addresses as $xxxx, nothing internal.
-const symbol = (row: SymbolRow) => ({ address: formatC64Address(row.address), name: row.name, kind: row.kind, origin: row.origin, revision: row.revision });
+/** The space of a row, shown only when it is not the C64 (D53). */
+const spaceOf = (row: { space: string }) => (row.space === "c64" ? {} : { space: row.space });
+const symbol = (row: SymbolRow) => ({ ...spaceOf(row), address: formatC64Address(row.address), name: row.name, kind: row.kind, origin: row.origin, revision: row.revision });
 const region = (row: RegionRow) => ({
+  ...spaceOf(row),
   start: formatC64Address(row.start),
   end: formatC64Address(row.end),
   type: row.type,
@@ -131,9 +142,9 @@ const region = (row: RegionRow) => ({
   origin: row.origin,
   revision: row.revision,
 });
-const comment = (row: CommentRow) => ({ address: formatC64Address(row.address), placement: row.placement, text: row.text, origin: row.origin, revision: row.revision });
-const module = (row: ModuleRow) => ({ start: formatC64Address(row.start), file: row.file, ...(row.title === undefined ? {} : { title: row.title }), origin: row.origin, revision: row.revision });
-const reference = (row: ReferenceRow) => ({ from: formatC64Address(row.from), to: formatC64Address(row.to), kind: row.kind, origin: row.origin, revision: row.revision });
+const comment = (row: CommentRow) => ({ ...spaceOf(row), address: formatC64Address(row.address), placement: row.placement, text: row.text, origin: row.origin, revision: row.revision });
+const module = (row: ModuleRow) => ({ ...spaceOf(row), start: formatC64Address(row.start), file: row.file, ...(row.title === undefined ? {} : { title: row.title }), origin: row.origin, revision: row.revision });
+const reference = (row: ReferenceRow) => ({ ...spaceOf(row), from: formatC64Address(row.from), to: formatC64Address(row.to), kind: row.kind, origin: row.origin, revision: row.revision });
 function suppression(row: SuppressionRow) {
   const place =
     row.entity === "symbol"
@@ -141,7 +152,7 @@ function suppression(row: SuppressionRow) {
       : row.entity === "region"
         ? { start: formatC64Address(row.start), end: formatC64Address(row.end) }
         : { from: formatC64Address(row.start), to: formatC64Address(row.to!), kind: row.kind! };
-  return { suppresses: row.entity, ...place, origin: row.origin, revision: row.revision };
+  return { ...spaceOf(row), suppresses: row.entity, ...place, origin: row.origin, revision: row.revision };
 }
 
 function historyEntry(entry: HistoryEntry) {
@@ -193,14 +204,17 @@ function run(argv: string[]): unknown {
       evidence: { type: "string", multiple: true },
       out: { type: "string" },
       title: { type: "string" },
+      space: { type: "string" },
       help: { type: "boolean" },
     },
   });
   const [command, ...args] = positionals;
   if (values.help || command === undefined) throw new UsageError("");
   const range = { start: values.start === undefined ? 0x0000 : address(values.start, "--start"), end: values.end === undefined ? 0xffff : address(values.end, "--end") };
+  if (values.space !== undefined && !SPACE.test(values.space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
+  const space = values.space ?? DEFAULT_SPACE;
 
-  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "history", "revisions", "revision", "export"]);
+  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "spaces", "history", "revisions", "revision", "export"]);
   const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "revert", "apply"]);
   // Refuse a mistyped command before anything opens, so no database appears by accident.
   if (!read.has(command) && !write.has(command)) throw new UsageError(`unknown command: ${command}`);
@@ -211,8 +225,9 @@ function run(argv: string[]): unknown {
     try {
       switch (command) {
         case "at": {
-          const known = at(db, address(args[0]));
+          const known = at(db, address(args[0]), space);
           return {
+            ...(space === DEFAULT_SPACE ? {} : { space }),
             address: formatC64Address(known.address),
             ...(known.symbol === undefined ? {} : { symbol: symbol(known.symbol) }),
             ...(known.region === undefined ? {} : { region: region(known.region) }),
@@ -225,26 +240,27 @@ function run(argv: string[]): unknown {
         }
         case "search": {
           if (args[0] === undefined || args[0] === "") throw new UsageError("search needs text");
-          const found = search(db, args[0], values.limit === undefined ? 50 : integer(values.limit, "--limit"), origins);
+          const found = search(db, args[0], values.limit === undefined ? 50 : integer(values.limit, "--limit"), origins, space);
           return { symbols: found.symbols.map(symbol), comments: found.comments.map(comment) };
         }
         case "symbols":
-          return { symbols: listSymbols(db, range, values.kind === undefined ? undefined : oneOf(SYMBOL_KINDS, values.kind, "--kind"), origins).map(symbol) };
+          return { symbols: listSymbols(db, range, values.kind === undefined ? undefined : oneOf(SYMBOL_KINDS, values.kind, "--kind"), origins, space).map(symbol) };
         case "regions":
-          return { regions: listRegions(db, range, values.type === undefined ? undefined : oneOf(REGION_TYPES, values.type, "--type"), origins).map(region) };
+          return { regions: listRegions(db, range, values.type === undefined ? undefined : oneOf(REGION_TYPES, values.type, "--type"), origins, space).map(region) };
         case "comments":
-          return { comments: listComments(db, range, origins).map(comment) };
+          return { comments: listComments(db, range, origins, space).map(comment) };
         case "references":
-          return { references: listReferences(db, range, values.kind === undefined ? undefined : oneOf(REFERENCE_KINDS, values.kind, "--kind"), origins).map(reference) };
+          return { references: listReferences(db, range, values.kind === undefined ? undefined : oneOf(REFERENCE_KINDS, values.kind, "--kind"), origins, space).map(reference) };
         case "export": {
           const exported = {
             revision: currentRevision(db),
-            symbols: listSymbols(db, range, undefined, origins).map(symbol),
-            regions: listRegions(db, range, undefined, origins).map(region),
-            comments: listComments(db, range, origins).map(comment),
-            references: listReferences(db, range, undefined, origins).map(reference),
-            suppressions: listSuppressions(db, range).map(suppression),
-            modules: listModules(db, range, origins).map(module),
+            ...(space === DEFAULT_SPACE ? {} : { space }),
+            symbols: listSymbols(db, range, undefined, origins, space).map(symbol),
+            regions: listRegions(db, range, undefined, origins, space).map(region),
+            comments: listComments(db, range, origins, space).map(comment),
+            references: listReferences(db, range, undefined, origins, space).map(reference),
+            suppressions: listSuppressions(db, range, space).map(suppression),
+            modules: listModules(db, range, origins, space).map(module),
           };
           const bytes = Buffer.from(`${JSON.stringify(exported, null, 2)}\n`, "utf8");
           writeProjectFile(values.out!, bytes, { what: "--out" });
@@ -256,14 +272,16 @@ function run(argv: string[]): unknown {
           };
         }
         case "suppressions": {
-          const rows = listSuppressions(db, range);
+          const rows = listSuppressions(db, range, space);
           const reasons = reasonsOf(db, rows);
           return { suppressions: rows.map((row) => ({ ...suppression(row), ...(reasons.has(row.revision) ? { reason: reasons.get(row.revision) } : {}) })) };
         }
         case "modules":
-          return { modules: listModules(db, range, origins).map(module) };
+          return { modules: listModules(db, range, origins, space).map(module) };
+        case "spaces":
+          return { spaces: listSpaces(db) };
         case "history":
-          return { history: (values.name === undefined ? historyAt(db, address(args[0])) : historyNamed(db, values.name)).map(historyEntry) };
+          return { history: (values.name === undefined ? historyAt(db, address(args[0]), space) : historyNamed(db, values.name, space)).map(historyEntry) };
         case "revisions": {
           const options: { limit?: number; before?: number } = {};
           if (values.limit !== undefined) options.limit = integer(values.limit, "--limit");
@@ -286,7 +304,7 @@ function run(argv: string[]): unknown {
   if (values.evidence !== undefined) context.evidence = values.evidence.map(evidenceOf);
   // Every argument is checked before the database opens: a refused write creates no database.
   if (values.title !== undefined && command !== "module") throw new UsageError("--title works only with module");
-  const operation = command === "apply" ? applyOperation(args, context) : writeOperation(command, args, values.kind, values.element, context, values.title);
+  const operation = command === "apply" ? applyOperation(args, context, space) : writeOperation(command, args, values.kind, values.element, context, values.title, space);
   return withWrite(operation);
 }
 
@@ -312,7 +330,7 @@ function evidenceOf(value: string): Evidence {
 }
 
 /** apply <file>: the batch as BatchOperation values, checked before the database opens. */
-function applyOperation(args: string[], context: WriteContext): WriteOperation {
+function applyOperation(args: string[], context: WriteContext, space: string): WriteOperation {
   if (args.length !== 1) throw new UsageError("apply needs one file, or - for standard input");
   const text = args[0] === "-" ? readFileSync(0, "utf8") : readProjectFile(args[0]!).bytes.toString("utf8");
   let parsed: unknown;
@@ -322,7 +340,7 @@ function applyOperation(args: string[], context: WriteContext): WriteOperation {
     throw new UsageError(`the batch is not JSON: ${(error as Error).message}`);
   }
   if (!Array.isArray(parsed)) throw new UsageError("the batch is a JSON list of writes, for example [{\"op\": \"rename\", \"address\": \"$2100\", \"name\": \"update_player\"}]");
-  const operations = parsed.map((item, index) => batchOperation(item, `write ${index + 1}`));
+  const operations = parsed.map((item, index) => batchOperation(item, `write ${index + 1}`, space));
   return (db) => {
     const applied = applyBatch(db, context, operations);
     // replaced: writes that replaced a row of another origin, as previous does for one write.
@@ -343,12 +361,20 @@ const BATCH_FIELDS: Record<BatchOperation["op"], string[]> = {
   unmodule: ["start"],
 };
 
-/** One write of a batch, with its addresses parsed. */
-function batchOperation(item: unknown, at: string): BatchOperation {
+/** One write of a batch. A write names its own space, or takes the one of --space. */
+function batchOperation(item: unknown, at: string, space: string): BatchOperation {
+  const operation = batchFields(item, at);
+  const own = (item as Record<string, unknown>).space;
+  if (own !== undefined && typeof own !== "string") throw new UsageError(`${at}: space must be a string`);
+  return { ...operation, space: own ?? space };
+}
+
+/** The fields of one write of a batch, with its addresses parsed. */
+function batchFields(item: unknown, at: string): BatchOperation {
   if (typeof item !== "object" || item === null || Array.isArray(item)) throw new UsageError(`${at}: a write is an object with op`);
   const fields = item as Record<string, unknown>;
   const op = oneOf(Object.keys(BATCH_FIELDS) as Array<BatchOperation["op"]>, String(fields.op), `${at}: op`);
-  const unknown = Object.keys(fields).filter((key) => key !== "op" && !BATCH_FIELDS[op].includes(key));
+  const unknown = Object.keys(fields).filter((key) => key !== "op" && key !== "space" && !BATCH_FIELDS[op].includes(key));
   if (unknown.length > 0) throw new UsageError(`${at}: ${op} takes ${BATCH_FIELDS[op].join(", ")}, not ${unknown.join(", ")}`);
   const text = (key: string) => {
     if (typeof fields[key] !== "string") throw new UsageError(`${at}: ${key} must be a string`);
@@ -381,11 +407,11 @@ function batchOperation(item: unknown, at: string): BatchOperation {
 
 type WriteOperation = (db: DatabaseSync) => unknown;
 
-function writeOperation(command: string, args: string[], kind: string | undefined, element: string | undefined, context: WriteContext, title?: string): WriteOperation {
+function writeOperation(command: string, args: string[], kind: string | undefined, element: string | undefined, context: WriteContext, title: string | undefined, space: string): WriteOperation {
   switch (command) {
     case "rename": {
       if (args[1] === undefined) throw new UsageError("name is missing");
-      const request: { address: number; name: string; kind?: SymbolKind } = { address: address(args[0]), name: args[1] };
+      const request: { space: string; address: number; name: string; kind?: SymbolKind } = { space, address: address(args[0]), name: args[1] };
       if (kind !== undefined) request.kind = oneOf(SYMBOL_KINDS, kind, "--kind");
       return (db) => {
         const result = renameSymbol(db, context, request);
@@ -393,11 +419,12 @@ function writeOperation(command: string, args: string[], kind: string | undefine
       };
     }
     case "remove-symbol": {
-      const request = { address: address(args[0]) };
+      const request = { space, address: address(args[0]) };
       return (db) => ({ revision: removeSymbol(db, context, request).revision });
     }
     case "classify": {
       const request = {
+        space,
         start: address(args[0], "start"),
         end: address(args[1], "end"),
         type: oneOf(REGION_TYPES, args[2], "type") as RegionType,
@@ -409,42 +436,42 @@ function writeOperation(command: string, args: string[], kind: string | undefine
       };
     }
     case "unclassify": {
-      const request = { start: address(args[0], "start"), end: address(args[1], "end") };
+      const request = { space, start: address(args[0], "start"), end: address(args[1], "end") };
       return (db) => ({ revision: unclassifyRegion(db, context, request).revision });
     }
     case "comment": {
       if (args.length < 3) throw new UsageError("text is missing");
-      const request = { address: address(args[0]), placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") as CommentPlacement, text: args.slice(2).join(" ") };
+      const request = { space, address: address(args[0]), placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") as CommentPlacement, text: args.slice(2).join(" ") };
       return (db) => {
         const result = setComment(db, context, request);
         return { revision: result.revision, comment: comment(result.current) };
       };
     }
     case "uncomment": {
-      const request = { address: address(args[0]), placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") };
+      const request = { space, address: address(args[0]), placement: oneOf(COMMENT_PLACEMENTS, args[1], "placement") };
       return (db) => ({ revision: removeComment(db, context, request).revision });
     }
     case "reference": {
-      const request = { from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") as ReferenceKind };
+      const request = { space, from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") as ReferenceKind };
       return (db) => {
         const result = addReference(db, context, request);
         return { revision: result.revision, reference: reference(result.current) };
       };
     }
     case "unreference": {
-      const request = { from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") };
+      const request = { space, from: address(args[0], "from"), to: address(args[1], "to"), kind: oneOf(REFERENCE_KINDS, args[2], "kind") };
       return (db) => ({ revision: removeReference(db, context, request).revision });
     }
     case "module": {
       if (args[1] === undefined) throw new UsageError("file is missing");
-      const request = { start: address(args[0], "start"), file: args[1], ...(title === undefined ? {} : { title }) };
+      const request = { space, start: address(args[0], "start"), file: args[1], ...(title === undefined ? {} : { title }) };
       return (db) => {
         const result = setModule(db, context, request);
         return { revision: result.revision, module: module(result.current) };
       };
     }
     case "unmodule": {
-      const request = { start: address(args[0], "start") };
+      const request = { space, start: address(args[0], "start") };
       return (db) => ({ revision: removeModule(db, context, request).revision });
     }
     case "revert": {

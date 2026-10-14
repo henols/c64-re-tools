@@ -17,6 +17,7 @@ import { GHIDRA_LIMITS } from "#src/native/types.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
 import { importFindings, runProvenance, type Analyzer, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision } from "#src/knowledge/read.ts";
+import { DEFAULT_SPACE, SPACE } from "#src/knowledge/schema.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageFiles } from "./coverage.ts";
@@ -38,6 +39,8 @@ const USAGE = `analyze.ts <image> [options]
                           executed code is seeded, and analyzer data over it is reported
   --max-listed <n>        list at most n labels or functions (default 50, 0 for none);
                           the counts are always given, and knowledge has all of them
+  --space <space>         the knowledge space of the image: c64 (the default), drive8
+                          for 1541 drive code, or bank0 to bank255 for a cartridge bank
 
 Routine symbols in knowledge are entry points too. Ghidra needs at least one
 entry point; dxa finds the SYS of a BASIC start by itself. The result is one
@@ -121,6 +124,7 @@ async function run(argv: string[]): Promise<unknown> {
       "max-listed": { type: "string" },
       coverage: { type: "string", multiple: true },
       instructions: { type: "string" },
+      space: { type: "string" },
       help: { type: "boolean" },
     },
   });
@@ -147,6 +151,10 @@ async function run(argv: string[]): Promise<unknown> {
     }
   }
 
+  const space = values.space ?? DEFAULT_SPACE;
+  if (!SPACE.test(space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
+  // A coverage map is of the C64 CPU: VICE keeps none for the drive (D53).
+  if (space !== DEFAULT_SPACE && values.coverage !== undefined) throw new UsageError("--coverage works only in space c64");
   const imageKind = values.flat64k ? "flat64k" : "prg";
   const bytes = readProjectFile(image).bytes;
   const coverage = readCoverageFiles(values.coverage ?? []);
@@ -162,10 +170,10 @@ async function run(argv: string[]): Promise<unknown> {
 
   const reader = openForRead();
   const revision = currentRevision(reader);
-  const seeds = seedsFromKnowledge(reader, entries);
+  const seeds = seedsFromKnowledge(reader, entries, space);
   // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound (D44).
   const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, byteAt);
-  const ordered = [...new Set([...seeds.entryPoints, ...codeEntries(reader, byteAt), ...idioms.entryPoints, ...fromCoverage])];
+  const ordered = [...new Set([...seeds.entryPoints, ...codeEntries(reader, byteAt, space), ...idioms.entryPoints, ...fromCoverage])];
   seeds.entryPoints = ordered.slice(0, GHIDRA_LIMITS.entryPoints).sort((a, b) => a - b);
   // Idiom tables are data for this run too; semantic data ranges come first.
   seeds.dataRanges = [...seeds.dataRanges, ...idioms.dataRanges.filter((range) => !seeds.dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start))].slice(0, GHIDRA_LIMITS.dataRanges);
@@ -173,7 +181,7 @@ async function run(argv: string[]): Promise<unknown> {
   reader?.close();
   /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
   const idiomsResult = () => {
-    const imported = withWrite((db) => importFindings(db, idioms.findings, { description: `Idioms in ${image}` }));
+    const imported = withWrite((db) => importFindings(db, { ...idioms.findings, space }, { description: `Idioms in ${image}` }));
     return {
       idioms: {
         ...idioms.counts,
@@ -204,7 +212,7 @@ async function run(argv: string[]): Promise<unknown> {
     const { result, attachments } = await analyzeWithDxa({ imageKind, ...seeds }, bytes, localToolContext());
     const listing = attachments[0]!.toString("utf8");
     // The listing is written only after the import: a refused import leaves no new file.
-    const imported = record(dxaFindings(result), revision, `DXA analysis of ${image}`, runProvenance(bytes, result.toolVersion));
+    const imported = record({ ...dxaFindings(result), space }, revision, `DXA analysis of ${image}`, runProvenance(bytes, result.toolVersion));
     if (listingPath !== undefined) {
       try {
         mkdirSync(dirname(listingPath), { recursive: true });
@@ -217,6 +225,7 @@ async function run(argv: string[]): Promise<unknown> {
     const found = idiomsResult();
     return {
       analyzer: "dxa",
+      ...(space === DEFAULT_SPACE ? {} : { space }),
       ...found,
       ...coverageResult(),
       coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
@@ -228,7 +237,7 @@ async function run(argv: string[]): Promise<unknown> {
   }
 
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, decompile }, bytes, localToolContext());
-  const imported = record(ghidraFindings(result), revision, `Ghidra analysis of ${image}`, runProvenance(bytes, result.toolVersion));
+  const imported = record({ ...ghidraFindings(result), space }, revision, `Ghidra analysis of ${image}`, runProvenance(bytes, result.toolVersion));
   const found = idiomsResult();
   let instructions: { out: string; count: number } | undefined;
   if (values.instructions !== undefined) {
@@ -238,6 +247,7 @@ async function run(argv: string[]): Promise<unknown> {
   }
   return {
     analyzer: "ghidra",
+    ...(space === DEFAULT_SPACE ? {} : { space }),
     ...(instructions === undefined ? {} : { instructions }),
     ...found,
     ...coverageResult(),
