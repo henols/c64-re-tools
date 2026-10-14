@@ -9,7 +9,7 @@ import { stripVTControlCharacters } from "node:util";
 import { WireFailure } from "../protocol/messages.ts";
 import { type ToolStatus } from "../protocol/tools.ts";
 import { ACME, DXA, findTool } from "./discover.ts";
-import { findGhidra, ghidraVersion } from "./ghidra/index.ts";
+import { findGhidra, ghidraVersion, NO_USABLE_JDK, noJdk } from "./ghidra/index.ts";
 import { runTool, type ToolContext } from "./run.ts";
 import { Workspace } from "./staging.ts";
 
@@ -35,10 +35,21 @@ export function versionLine(output: string, pattern: RegExp): string | undefined
     .find((line) => pattern.test(line));
 }
 
-async function run(name: string, path: string, args: string[], version: (output: string) => string | undefined, context: ToolContext): Promise<ToolStatus> {
+async function run(
+  name: string,
+  path: string,
+  args: string[],
+  version: (output: string) => string | undefined,
+  context: ToolContext,
+  /** A known cause in the output, said in place of the exit status. */
+  cause?: (output: string) => string | undefined,
+): Promise<ToolStatus> {
   const result = await runTool({ argv: [path, ...args], cwd: tmpdir(), supervisor: context.supervisor, signal: context.signal, timeoutMs: PROBE_TIMEOUT_MS, env: context.env });
-  const found = version(`${result.stdout}\n${result.stderr}`);
+  const output = `${result.stdout}\n${result.stderr}`;
+  const found = version(output);
   if (found !== undefined) return { name, found: true, path, version: found, runs: true };
+  const known = cause?.(output);
+  if (known !== undefined) return { name, found: true, path, runs: false, problem: known };
   const problem = result.timedOut ? "It did not answer in time." : result.spawnError !== undefined ? `It did not start (${result.spawnError}).` : `It did not run correctly (exit ${result.code ?? result.signal}).`;
   return { name, found: true, path, runs: false, problem };
 }
@@ -79,6 +90,7 @@ export async function probeGhidra(context: ToolContext): Promise<ToolStatus> {
         [],
         (output) => (/Headless Analyzer Usage/.test(output) ? ghidraVersion(ghidra) : undefined),
         { ...context, env: { ...env, XDG_CONFIG_HOME: settings, XDG_CACHE_HOME: settings } },
+        (output) => (NO_USABLE_JDK.test(output) ? noJdk(ghidra).message : undefined),
       );
       return { ...status, path: ghidra.root };
     } finally {

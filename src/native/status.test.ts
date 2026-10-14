@@ -59,3 +59,15 @@ test("the local tools are reported as running, missing, or found but not running
   assert.match(dxa!.problem!, /C64RT_DXA/);
   assert.equal(ghidraStatus?.found, false);
 });
+
+test("a Ghidra without a usable JDK is reported with the Java it needs", { skip, timeout: 30_000 }, async () => {
+  const ghidra = join(scratch, "ghidra-no-java");
+  mkdirSync(join(ghidra, "support"), { recursive: true });
+  mkdirSync(join(ghidra, "Ghidra"));
+  writeFileSync(join(ghidra, "Ghidra", "application.properties"), "application.version=12.1.3\napplication.release.name=PUBLIC\napplication.java.min=21\n");
+  standIn(join(ghidra, "support"), "analyzeHeadless", ["ERROR: Failed to find a supported JDK."], 1);
+  const supervisor = new ProcessSupervisor();
+  const [, , status] = await localToolStatus({ supervisor, signal: new AbortController().signal, env: { PATH: "/usr/bin:/bin", C64RT_GHIDRA: ghidra } });
+  assert.deepEqual([status?.name, status?.found, status?.runs], ["Ghidra", true, false]);
+  assert.match(status!.problem!, /^Ghidra 12\.1\.3 found no Java that it can use\. It needs JDK 21 or later\./);
+});

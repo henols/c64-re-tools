@@ -50,4 +50,5 @@ test("status shows a Host Runtime that does not answer as not reachable, with th
   const lines = await hostStatusLines({ env: { C64RT_HOST: endpoint } });
   assert.equal(lines.length, 1);
   assert.match(lines[0]!, /^Host Runtime: not reachable\. \S/);
+  assert.doesNotMatch(lines[0]!, /Stop the task/, "the instruction for an agent is not for a person");
 });

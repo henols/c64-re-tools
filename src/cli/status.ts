@@ -2,6 +2,7 @@
 // Runtime with its tools.
 
 import { hostTools, type ToolCallOptions } from "../host-client/tools.ts";
+import { STOP_AND_ASK } from "../protocol/messages.ts";
 import type { ToolStatus } from "../protocol/tools.ts";
 
 /** One line per tool under `heading`: its version, or why it does not run. */
@@ -28,7 +29,8 @@ export async function hostStatusLines(options: ToolCallOptions = {}): Promise<st
   try {
     tools = await hostTools(options);
   } catch (error) {
-    return [`Host Runtime: not reachable. ${(error as Error).message}`];
+    // status is read by a person: the instruction for an agent (D37) stays out.
+    return [`Host Runtime: not reachable. ${(error as Error).message.replace(` ${STOP_AND_ASK}`, "")}`];
   }
   return ["Host Runtime: reachable", ...toolLines("Tools on the host:", tools)];
 }

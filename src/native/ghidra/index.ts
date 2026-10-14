@@ -31,6 +31,8 @@ export interface GhidraInstallation {
   /** For example ghidra_12.1.3_PUBLIC: the name of Ghidra's settings directory. */
   settingsName: string;
   version: string;
+  /** The lowest Java version this Ghidra runs on (application.java.min), when it names one. */
+  javaMin?: string;
 }
 
 /** Ghidra's launcher is a shell script, and a batch file on Windows. */
@@ -49,7 +51,8 @@ function installationAt(root: string, source: string): GhidraInstallation {
   const version = value("application.version");
   const release = value("application.release.name");
   if (version === undefined || release === undefined) throw new WireFailure("installation-incomplete", `The Ghidra installation at ${source} has no version. ${REMEDY}`);
-  return { root, analyzeHeadless, settingsName: `ghidra_${version}_${release}`, version };
+  const javaMin = value("application.java.min");
+  return { root, analyzeHeadless, settingsName: `ghidra_${version}_${release}`, version, ...(javaMin === undefined || javaMin === "" ? {} : { javaMin }) };
 }
 
 /** The version of a Ghidra installation as a result and the tool status name it, for example "Ghidra 12.1.3". */
@@ -123,6 +126,18 @@ export interface HeadlessOptions {
   env?: NodeJS.ProcessEnv;
 }
 
+/** What Ghidra's launcher (launch.sh, launch.bat) prints when it finds no Java that it can use. */
+export const NO_USABLE_JDK = /The 'java' command could not be found in your PATH or with JAVA_HOME|Unable to prompt user for JDK path, no TTY detected|Failed to find a supported JDK/;
+
+/** A Ghidra without a usable JDK is an incomplete installation that names the Java version it needs (D38). */
+export function noJdk(ghidra: GhidraInstallation): WireFailure {
+  const java = ghidra.javaMin === undefined ? "a JDK" : `JDK ${ghidra.javaMin} or later`;
+  return new WireFailure(
+    "installation-incomplete",
+    `${ghidraVersion(ghidra)} found no Java that it can use. It needs ${java}. Install it on the machine that runs the skill scripts and put its java on PATH, or set JAVA_HOME to it. ${INSTALL_STEPS}`,
+  );
+}
+
 /** Imports one file into a disposable project and runs the scripts. Fails on timeout, abort or a Ghidra error exit. */
 export async function runHeadless(options: HeadlessOptions): Promise<ToolRun> {
   const env = prepareSettings(options.workspace, options.ghidra, options.env);
@@ -148,6 +163,7 @@ export async function runHeadless(options: HeadlessOptions): Promise<ToolRun> {
   for (const script of options.preScripts ?? []) argv.push("-preScript", script.name, ...script.args);
   for (const script of options.postScripts ?? []) argv.push("-postScript", script.name, ...script.args);
   const run = await runToolOrFail("Ghidra", "The Ghidra analysis", { argv, cwd: options.workspace.root, timeoutMs: options.timeoutMs }, { supervisor: options.supervisor, signal: options.signal, env });
+  if (run.code !== 0 && NO_USABLE_JDK.test(run.stdout + run.stderr)) throw noJdk(options.ghidra);
   if (run.code !== 0 || /^ERROR REPORT SCRIPT ERROR|Exception in thread "main"/m.test(run.stdout + run.stderr)) {
     // Ghidra's own error lines tell the user what to fix.
     const tail = outputTail("Ghidra", run, options.workspace.root, /ERROR|Exception|Error:/);

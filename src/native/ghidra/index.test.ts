@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../../protocol/messages.ts";
+import { INSTALL_STEPS } from "../discover.ts";
 import { ProcessSupervisor } from "../processes.ts";
 import { Workspace } from "../staging.ts";
 import { analyze } from "./analyze.ts";
@@ -93,6 +94,30 @@ test("a Ghidra error quotes the error lines of Ghidra without the workspace path
     own.remove();
   }
 });
+
+for (const [name, lines] of [
+  ["no-java", 'echo "ERROR: The \'java\' command could not be found in your PATH or with JAVA_HOME."'],
+  ["old-java", 'echo "WARNING: JAVA_HOME environment specifies unsupported java version: /opt/java/openjdk"\necho "ERROR: Unable to prompt user for JDK path, no TTY detected."'],
+] as const) {
+  test(`a Ghidra without a usable JDK is installation-incomplete and names the Java it needs (${name})`, { skip: posixOnly }, async () => {
+    const root = fakeInstallation(name, `${lines}\nexit 1`);
+    writeFileSync(join(root, "Ghidra", "application.properties"), "application.version=12.1.3\napplication.release.name=PUBLIC\napplication.java.min=21\n");
+    const ghidra = findGhidra({ C64RT_GHIDRA: root, PATH: "" });
+    assert.equal(ghidra.javaMin, "21");
+    const own = Workspace.create();
+    try {
+      await assert.rejects(
+        runHeadless({ ghidra, workspace: own, file: "input/image.bin", baseAddress: 0x0801, scriptDirectories: [], analyze: false, timeoutMs: 20_000, ...context() }),
+        (error: unknown) =>
+          failsWith("installation-incomplete")(error) &&
+          (error as Error).message.startsWith("Ghidra 12.1.3 found no Java that it can use. It needs JDK 21 or later.") &&
+          (error as Error).message.includes(INSTALL_STEPS),
+      );
+    } finally {
+      own.remove();
+    }
+  });
+}
 
 test("a Ghidra run without a result quotes the warnings of Ghidra", { skip: posixOnly }, async () => {
   const root = fakeInstallation("no-result", 'echo "INFO done"\necho "WARN script C64Export.java not found"');
