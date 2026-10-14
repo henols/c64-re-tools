@@ -15,6 +15,7 @@ import {
   MAX_TIMEOUT_FRAMES,
   WireFailure,
 } from "#src/host-client/tools.ts";
+import { autostartLoaded, LOAD_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
@@ -350,6 +351,27 @@ export function baselineName(checkpoint: number, label: string): string {
   return `test-${checkpoint}-${label}`.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 64);
 }
 
+/** CURLIN high byte: $ff while BASIC waits in direct mode, a line number's high byte while a program runs. */
+const CURLIN_HIGH = 0x003a;
+const RUN_LIMIT_FRAMES = 300;
+
+/**
+ * Autostart that returns only when the program runs: load without VICE's
+ * own RUN, type RUN, and wait until BASIC runs a program line. A key that a
+ * later step types then reaches the program, never the READY prompt.
+ */
+async function startProgram(client: ViceSessionClient, program: string, side: Side): Promise<void> {
+  if (!(await autostartLoaded(client, program, readProjectFile(program).bytes))) {
+    throw new Inconclusive(`the ${side} program was not in memory after ${LOAD_LIMIT_FRAMES} frames of autostart`);
+  }
+  await client.keyboard(textToPetscii("RUN\n"));
+  const started = await client.runUntil({
+    target: { kind: "memory", address: CURLIN_HIGH, operator: "ne", value: 0xff, space: "c64", view: "ram" },
+    timeoutFrames: RUN_LIMIT_FRAMES,
+  });
+  if (!started.reached) throw new Inconclusive(`the ${side} program did not start within ${RUN_LIMIT_FRAMES} frames of RUN; autostart runs only a program with a BASIC start line`);
+}
+
 async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side, symbols: Map<string, number>): Promise<Map<string, Observation>> {
   const subject = scenario[side];
   const observations = new Map<string, Observation>();
@@ -399,7 +421,7 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
     } else if ("load" in step) {
       await client.programLoad({ path: subject.program });
     } else if ("autostart" in step) {
-      await client.autostart({ path: subject.program, index: 0, run: true });
+      await startProgram(client, subject.program, side);
     } else if ("write" in step) {
       await stop();
       await client.memoryWrite({ address: at(step.write.at), data: Buffer.from(step.write.bytes).toString("hex"), space: "c64", view: "cpu" });

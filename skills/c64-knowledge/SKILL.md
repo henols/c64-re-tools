@@ -38,9 +38,10 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 | Name the symbol at an address | `rename '$2100' update_player --kind routine` |
 | Remove a symbol | `remove-symbol '$2100'` |
 | Classify memory | `classify '$3000' '$303f' sprite` |
-| Make memory unknown again | `unclassify '$3000' '$303f'` |
+| Make memory unknown, and keep the analyzers out of it | `unclassify '$3000' '$303f'` |
 | Set or remove a comment | `comment '$2100' line Reads joystick 2.` / `uncomment '$2100' line` |
 | Add or remove a reference | `reference '$2000' '$2100' call` / `unreference ...` |
+| Places that a removal blocks | `suppressions` with `--start` and `--end` |
 | History | `history '$2100'`, `history --name update_player`, `revisions`, `revision 12` |
 | Go back to an earlier state | `revert 12` |
 
@@ -61,6 +62,14 @@ Write:
 4. Read the result. A `revision` of `null` means that nothing changed.
 
 Each write is one revision. A classification inside a region splits that region, so regions never overlap.
+
+## Removals
+
+`remove-symbol`, `unclassify` and `unreference` block the place for DXA and Ghidra. An analysis does not add a symbol at that address, a region in that range or that reference again. This applies to every removed fact, also to a fact from the LLM.
+
+- `suppressions` lists the blocked places with the reason of each removal. `at` and `history` also show them.
+- A `rename`, `classify` or `reference` at a blocked place ends the block there, because your own fact is at the place then.
+- A `revert` to a revision before the removal also ends the block.
 
 ## Knowledge
 

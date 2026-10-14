@@ -9,7 +9,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { WireFailure } from "../protocol/messages.ts";
-import { MAX_SEARCH_PATTERN, type Breakpoint, type BreakpointParams, type ExecutionParams, type JoystickState, type MemmapRange, type MemoryReadParams, type MemoryWriteParams, type ObserveParams, type ObserveResult, type RegisterValues, type Registers, type RunTarget, type ViceOperations, type Watchpoint, type WatchpointParams } from "../protocol/vice.ts";
+import { MAX_SEARCH_PATTERN, type Breakpoint, type BreakpointParams, type ExecutionParams, type JoystickState, type MemmapRange, type MemoryReadParams, type PointRemoved, type MemoryWriteParams, type ObserveParams, type ObserveResult, type RegisterValues, type Registers, type RunTarget, type ViceOperations, type Watchpoint, type WatchpointParams } from "../protocol/vice.ts";
 import { startTrace, TRACE_VARIABLE } from "../trace.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
 import { debugTools } from "./tools/debug.ts";
@@ -120,20 +120,24 @@ class FakeSession implements ViceSessionApi {
 
   points: unknown[] = [];
   breakpoint(params: Extract<BreakpointParams, { action: "list" }>): Promise<{ breakpoints: Breakpoint[] }>;
-  breakpoint(params: Exclude<BreakpointParams, { action: "list" }>): Promise<Breakpoint>;
-  async breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }> {
+  breakpoint(params: Extract<BreakpointParams, { action: "remove" }>): Promise<PointRemoved>;
+  breakpoint(params: Exclude<BreakpointParams, { action: "list" | "remove" }>): Promise<Breakpoint>;
+  async breakpoint(params: BreakpointParams): Promise<Breakpoint | PointRemoved | { breakpoints: Breakpoint[] }> {
     this.points.push(params);
     if (params.action === "list") {
       const condition = { kind: "memory" as const, address: 0xc100, operator: "eq" as const, value: 7, space: "c64" as const, view: "cpu" as const };
       return { breakpoints: [{ id: 1, address: 0x2100, space: "c64" as const, enabled: true, condition }] };
     }
     if (params.action === "add") return { id: 1, address: params.address, space: params.space, enabled: true, ...(params.condition === undefined ? {} : { condition: params.condition }) };
+    if (params.action === "remove") return { removed: true, id: params.id };
     return { id: params.id, address: 0x2100, space: "c64" as const, enabled: params.action !== "disable" };
   }
   watchpoint(params: Extract<WatchpointParams, { action: "list" }>): Promise<{ watchpoints: Watchpoint[] }>;
-  watchpoint(params: Exclude<WatchpointParams, { action: "list" }>): Promise<Watchpoint>;
-  async watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }> {
+  watchpoint(params: Extract<WatchpointParams, { action: "remove" }>): Promise<PointRemoved>;
+  watchpoint(params: Exclude<WatchpointParams, { action: "list" | "remove" }>): Promise<Watchpoint>;
+  async watchpoint(params: WatchpointParams): Promise<Watchpoint | PointRemoved | { watchpoints: Watchpoint[] }> {
     this.points.push(params);
+    if (params.action === "remove") return { removed: true, id: params.id };
     if (params.action === "add") {
       return { id: 2, address: params.address, size: params.size, access: params.access, space: params.space, enabled: true };
     }
@@ -157,12 +161,14 @@ class FakeSession implements ViceSessionApi {
     return { entries: [{ address: 0x2100, totalCycles: "125000", selfCycles: "82000", percent: 17.4 }] };
   }
   memmaps: unknown[] = [];
-  memmap(params: Extract<ViceOperations["memmap"]["params"], { action: "read" }>): Promise<{ ranges: MemmapRange[] }>;
+  memmapNext: number | undefined;
+  memmap(params: Extract<ViceOperations["memmap"]["params"], { action: "read" }>): Promise<{ ranges: MemmapRange[]; next?: number }>;
   memmap(params: { action: "clear" }): Promise<{ cleared: boolean }>;
   async memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]> {
     this.memmaps.push(params);
     if (params.action === "clear") return { cleared: true };
-    return { ranges: [{ start: 0x2100, end: 0x213f, execute: true, read: true, write: false }] };
+    const ranges = [{ start: 0x2100, end: 0x213f, execute: true, read: true, write: false }];
+    return this.memmapNext === undefined ? { ranges } : { ranges, next: this.memmapNext };
   }
   async timing(action: "start" | "read") {
     return action === "start" ? { started: true } : { cycles: "1234" };
@@ -599,6 +605,7 @@ test("c64_breakpoint passes typed conditions through and checks fields per actio
     space: "c64",
     enabled: false,
   });
+  assert.deepEqual((await call(client, "c64_breakpoint", { action: "remove", id: 1 })).structuredContent, { removed: true, id: 1 });
   for (const args of [
     { action: "add" },
     { action: "remove" },
@@ -631,6 +638,7 @@ test("c64_watchpoint fills size and space and needs access", async () => {
     condition: { kind: "memory", address: 0xc020, operator: "eq", value: 3, space: "c64", view: "cpu" },
   });
   assert.equal(errorOf(await call(client, "c64_watchpoint", { action: "add", address: "$c020" })).code, "invalid-input");
+  assert.deepEqual((await call(client, "c64_watchpoint", { action: "remove", id: 2 })).structuredContent, { removed: true, id: 2 });
   await client.close();
 });
 
@@ -753,6 +761,12 @@ test("profile and memmap format addresses and fill read defaults", async () => {
   assert.deepEqual((await call(client, "c64_memmap", { action: "clear" })).structuredContent, { cleared: true });
   assert.deepEqual(session.memmaps, [{ action: "read", start: 0, end: 0xffff, maxRanges: 256 }, { action: "clear" }]);
   assert.equal(errorOf(await call(client, "c64_memmap", { action: "clear", start: "$1000" })).code, "invalid-input");
+  session.memmapNext = 0x2140;
+  assert.deepEqual((await call(client, "c64_memmap", { action: "read", maxRanges: 1 })).structuredContent, {
+    ranges: [{ start: "$2100", end: "$213f", execute: true, read: true, write: false }],
+    truncated: true,
+    next: "$2140",
+  });
   await client.close();
 });
 

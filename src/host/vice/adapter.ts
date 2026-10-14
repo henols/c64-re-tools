@@ -261,9 +261,10 @@ function unknownForm(what: string, lines: string[]): WireFailure {
 /**
  * Parses memmap rows such as "00c2: --- --- rw- (uninitialized read)": the I/O,
  * ROM and RAM access flags of one address. Adjacent addresses with the same
- * combined flags merge into one range; at most `maxRanges` come back.
+ * combined flags merge into one range; at most `maxRanges` come back. When
+ * more ranges follow, `next` is the first touched address that is not reported.
  */
-export function parseMemmap(answer: string, maxRanges: number): MemmapRange[] {
+export function parseMemmap(answer: string, maxRanges: number): { ranges: MemmapRange[]; next?: number } {
   const ranges: MemmapRange[] = [];
   const unknown: string[] = [];
   for (const line of answer.split("\n")) {
@@ -280,11 +281,11 @@ export function parseMemmap(answer: string, maxRanges: number): MemmapRange[] {
       last.end = address;
       continue;
     }
-    if (ranges.length >= maxRanges) break;
+    if (ranges.length >= maxRanges) return { ranges, next: address };
     ranges.push({ start: address, end: address, ...access });
   }
   if (ranges.length === 0 && unknown.length > 0) throw unknownForm("memory map", unknown);
-  return ranges;
+  return { ranges };
 }
 
 /**
@@ -739,7 +740,7 @@ export class ViceAdapter {
   }
 
   /** How the C64 CPU accessed [start, end] since the memmap was last cleared, as merged ranges. */
-  async memmap(start: number, end: number, maxRanges: number): Promise<MemmapRange[]> {
+  async memmap(start: number, end: number, maxRanges: number): Promise<{ ranges: MemmapRange[]; next?: number }> {
     // The first argument is the access mask ("ioRWXrwx"); ff shows every kind of access.
     return parseMemmap(await this.#computerText(`mmsh ff ${hex4(start)} ${hex4(end)}`, 60_000), maxRanges);
   }

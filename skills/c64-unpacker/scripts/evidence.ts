@@ -88,27 +88,18 @@ export interface AccessRange {
   execute: boolean;
 }
 
-/** The addresses that one memory map read covers before it is split. */
-const MEMMAP_WINDOW = 0x1000;
-
 /**
- * Reads the memory map of $0000-$ffff in windows, in address order. `read`
- * gives at most `maxRanges` ranges for one window; a window that gives that
- * many can have more, so it is read again as two halves.
+ * Reads the memory map of $0000-$ffff in address order. One `read` gives a
+ * limited number of ranges, and `next` when more follow: the next read starts there.
  */
-export async function readMemoryMap(read: (start: number, end: number) => Promise<AccessRange[]>, maxRanges: number): Promise<AccessRange[]> {
+export async function readMemoryMap(read: (start: number) => Promise<{ ranges: AccessRange[]; next?: number }>): Promise<AccessRange[]> {
   const ranges: AccessRange[] = [];
-  const window = async (start: number, end: number): Promise<void> => {
-    const found = await read(start, end);
-    if (found.length < maxRanges || start === end) {
-      ranges.push(...found);
-      return;
-    }
-    const middle = Math.floor((start + end) / 2);
-    await window(start, middle);
-    await window(middle + 1, end);
-  };
-  for (let start = 0; start <= 0xffff; start += MEMMAP_WINDOW) await window(start, start + MEMMAP_WINDOW - 1);
+  for (let start: number | undefined = 0; start !== undefined; ) {
+    const found: { ranges: AccessRange[]; next?: number } = await read(start);
+    ranges.push(...found.ranges);
+    if (found.next !== undefined && found.next <= start) throw new Error(`the memory map did not move on from ${start}`);
+    start = found.next;
+  }
   return ranges;
 }
 

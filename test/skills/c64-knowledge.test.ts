@@ -124,3 +124,23 @@ test("a write over a row of another origin prints the replaced row", () => {
     previous: [{ start: "$3000", end: "$303f", type: "sprite", origin: "user", revision: 3 }],
   });
 });
+
+test("a removal shows as a suppression with its reason, in at and in the history", () => {
+  const root = project();
+  knowledge(root, "rename", "$0408", "l0408");
+  knowledge(root, "reference", "$0410", "$ef29", "jump");
+  knowledge(root, "classify", "$0480", "$04ff", "bytes");
+  knowledge(root, "remove-symbol", "$0408", "--reason", "not an entry");
+  knowledge(root, "unreference", "$0410", "$ef29", "jump", "--reason", "the vector is written at run time");
+  knowledge(root, "unclassify", "$0480", "$04ff");
+  assert.deepEqual(knowledge(root, "suppressions").json, {
+    suppressions: [
+      { suppresses: "symbol", address: "$0408", origin: "llm", revision: 4, reason: "not an entry" },
+      { suppresses: "reference", from: "$0410", to: "$ef29", kind: "jump", origin: "llm", revision: 5, reason: "the vector is written at run time" },
+      { suppresses: "region", start: "$0480", end: "$04ff", origin: "llm", revision: 6 },
+    ],
+  });
+  assert.deepEqual(knowledge(root, "at", "$0408").json.suppressions, [{ suppresses: "symbol", address: "$0408", origin: "llm", revision: 4 }]);
+  const history = knowledge(root, "history", "$0408").json.history as Array<Record<string, unknown>>;
+  assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "symbol", address: "$0408", origin: "llm", fromRevision: 4 });
+});

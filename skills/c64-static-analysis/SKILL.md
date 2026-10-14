@@ -31,6 +31,7 @@ node <skill>/scripts/analyze.ts extracted/game.prg --entry '$080d' --decompile '
 | `--listing analysis/game.lst` | DXA only: write the disassembly listing to this project file. |
 | `--decompile '$0818'` | Ghidra only: decompile the routine at this address. Use it again for more routines, at most 32. |
 | `--flat64k` | The file is 64 KiB of memory from `$0000`, not a PRG. |
+| `--max-listed 20` | List at most this number of labels or functions. The default is 50. Use 0 to list none. |
 
 The script prints one JSON object. Addresses are `$` and four hex digits.
 
@@ -49,9 +50,10 @@ Facts that an analyzer found are not seeds. A new analysis can then correct or r
 3. Find the important routines. Give them names with the c64-knowledge skill.
 4. Run a deeper pass with Ghidra. Give the entry points with `--entry`. Ask for decompiled code of the routines that you must understand.
 5. Read the result:
-   - `changes` counts the symbols, regions and references that the analysis `added`, `changed`, `retired` or kept `unchanged`.
-   - DXA: `regions` lists the code and data regions, and `labels` lists the addresses that DXA named.
-   - Ghidra: `functions` lists the routines that Ghidra found, and `decompilations` gives C-like code for the requested routines.
+   - `changes` counts the symbols, regions and references that the analysis `added`, `changed`, `retired` or kept `unchanged`. `suppressed` counts the findings that the analysis did not write, because a removal blocks that place.
+   - DXA: `regions` lists the code and data regions. `labels` gives the number of names that DXA found (`count`) and lists the first names (`listed`).
+   - Ghidra: `functions` gives the number of routines that Ghidra found (`count`) and lists the first routines (`listed`). `decompilations` gives C-like code for the requested routines.
+   - If a list is not complete, `rest` gives the c64-knowledge command that lists all of them.
    - `conflicts` lists the places where the analyzer and the current knowledge disagree.
 6. Give each important routine a name with the c64-knowledge skill. Then run the analysis again. The analyzers use the new names.
 
@@ -67,6 +69,8 @@ Automatic write:
 The script never replaces a name or a region from the user or the LLM. A name that an analyzer only shows back stays with its owner. DXA and Ghidra do not replace the facts of each other.
 
 A new analysis replaces the earlier facts of the same analyzer in the analyzed range. The history keeps the earlier facts. DXA labels stay until a person or the LLM removes them, because DXA names only the addresses that it sees used.
+
+A fact that the user or the LLM removes does not come back. The next analysis does not write a fact at that place, and counts it as `suppressed`. To remove a wrong fact, use the c64-knowledge skill.
 
 Do not store:
 - the listing or decompiled code

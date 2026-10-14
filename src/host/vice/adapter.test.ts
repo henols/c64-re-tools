@@ -129,13 +129,19 @@ test("memmap rows merge into ranges of equal access", () => {
     "e000: --- r-x ---",
     "e001: --- r-x ---",
   ].join("\n");
-  assert.deepEqual(parseMemmap(answer, 100), [
-    { start: 0x0099, end: 0x009a, execute: false, read: false, write: true },
-    { start: 0x00c1, end: 0x00c1, execute: false, read: true, write: false },
-    { start: 0x00c2, end: 0x00c3, execute: false, read: true, write: true },
-    { start: 0xe000, end: 0xe001, execute: true, read: true, write: false },
-  ]);
-  assert.equal(parseMemmap(answer, 2).length, 2);
+  assert.deepEqual(parseMemmap(answer, 100), {
+    ranges: [
+      { start: 0x0099, end: 0x009a, execute: false, read: false, write: true },
+      { start: 0x00c1, end: 0x00c1, execute: false, read: true, write: false },
+      { start: 0x00c2, end: 0x00c3, execute: false, read: true, write: true },
+      { start: 0xe000, end: 0xe001, execute: true, read: true, write: false },
+    ],
+  });
+  const cut = parseMemmap(answer, 2);
+  assert.equal(cut.ranges.length, 2);
+  assert.equal(cut.ranges[1]!.end, 0x00c1, "the last reported range is complete");
+  assert.equal(cut.next, 0x00c2, "next is the first address that is not reported");
+  assert.equal(parseMemmap(answer, 4).next, undefined, "a result that just fits is complete");
 });
 
 const unknownForm = (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && /does not read/.test(error.message);

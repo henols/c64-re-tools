@@ -8,14 +8,17 @@ import {
   COMMENT_COLUMNS,
   REFERENCE_COLUMNS,
   REGION_COLUMNS,
+  SUPPRESSION_COLUMNS,
   SYMBOL_COLUMNS,
   toComment,
   toReference,
   toRegion,
+  toSuppression,
   toSymbol,
   type CommentRow,
   type ReferenceRow,
   type RegionRow,
+  type SuppressionRow,
   type SymbolRow,
 } from "./read.ts";
 import type { Origin } from "./schema.ts";
@@ -35,7 +38,8 @@ export type HistoryEntry =
   | { entity: "symbol"; row: SymbolRow; from: number; to?: number }
   | { entity: "region"; row: RegionRow; from: number; to?: number }
   | { entity: "comment"; row: CommentRow; from: number; to?: number }
-  | { entity: "reference"; row: ReferenceRow; from: number; to?: number };
+  | { entity: "reference"; row: ReferenceRow; from: number; to?: number }
+  | { entity: "suppression"; row: SuppressionRow; from: number; to?: number };
 
 type Raw = Record<string, unknown>;
 
@@ -75,6 +79,11 @@ export function historyAt(db: DatabaseSync | undefined, address: number): Histor
   for (const raw of db.prepare(`SELECT ${REFERENCE_COLUMNS}${validity} FROM "references" WHERE from_address = ? OR to_address = ?`).all(address, address) as Raw[]) {
     entries.push(entry("reference", toReference(raw), raw));
   }
+  for (const raw of db
+    .prepare(`SELECT ${SUPPRESSION_COLUMNS}${validity} FROM suppressions WHERE (start_address <= ? AND end_address >= ?) OR to_address = ?`)
+    .all(address, address, address) as Raw[]) {
+    entries.push(entry("suppression", toSuppression(raw), raw));
+  }
   return entries.sort(bySequence);
 }
 
@@ -113,6 +122,7 @@ export function revision(db: DatabaseSync | undefined, id: number): RevisionChan
     ["region", "regions", REGION_COLUMNS, toRegion],
     ["comment", "comments", COMMENT_COLUMNS, toComment],
     ["reference", '"references"', REFERENCE_COLUMNS, toReference],
+    ["suppression", "suppressions", SUPPRESSION_COLUMNS, toSuppression],
   ] as const;
   const added: HistoryEntry[] = [];
   const closed: HistoryEntry[] = [];

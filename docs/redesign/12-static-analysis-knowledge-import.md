@@ -268,6 +268,8 @@ do not create a generated-name conflict
 
 The address correlation is enough; preserving FUN_2100 as a current alias is unnecessary. Older generated names remain available in history if they previously existed.
 
+A user/LLM removal is protected too (D36). It writes a suppression, and an import adds no symbol, region or reference at a suppressed place. The import result counts such findings as `suppressed`. They are not conflicts: the user or the LLM already decided.
+
 ## 11. Cross-analyzer disagreement
 
 DXA does not silently replace contradictory current Ghidra knowledge, and Ghidra does not silently replace contradictory current DXA knowledge.
@@ -327,6 +329,7 @@ Conceptually:
 added
 changed/retired
 unchanged
+suppressed
 conflicts
 important requested findings
 ~~~

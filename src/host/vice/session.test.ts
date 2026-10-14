@@ -580,7 +580,7 @@ test("breakpoints get session ids, a condition, and a full lifecycle", async () 
   assert.deepEqual(await session.handle("breakpoint", { action: "disable", id: 1 }), { ...added, enabled: false });
   assert.equal(checkpoint!.enabled, false);
   assert.deepEqual(await session.handle("breakpoint", { action: "list" }), { breakpoints: [{ ...added, enabled: false }] });
-  await session.handle("breakpoint", { action: "remove", id: 1 });
+  assert.deepEqual(await session.handle("breakpoint", { action: "remove", id: 1 }), { removed: true, id: 1 });
   assert.equal(fake.checkpoints.size, 0);
   assert.deepEqual(await session.handle("breakpoint", { action: "list" }), { breakpoints: [] });
   await assert.rejects(session.handle("breakpoint", { action: "enable", id: 1 }), failsWith("not-found"));
@@ -600,6 +600,8 @@ test("watchpoints cover their range with the right access and share the id count
   // A watchpoint id is not a breakpoint id.
   await assert.rejects(session.handle("breakpoint", { action: "remove", id: 2 }), failsWith("not-found"));
   assert.equal((await session.handle("watchpoint", { action: "list" }) as { watchpoints: unknown[] }).watchpoints.length, 2);
+  assert.deepEqual(await session.handle("watchpoint", { action: "remove", id: 2 }), { removed: true, id: 2 });
+  assert.equal((await session.handle("watchpoint", { action: "list" }) as { watchpoints: unknown[] }).watchpoints.length, 1);
   await session.close();
 });
 

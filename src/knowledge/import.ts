@@ -14,10 +14,13 @@ import type { DatabaseSync } from "node:sqlite";
 import { KnowledgeError, transaction } from "./database.ts";
 import {
   REFERENCE_COLUMNS,
+  referenceSuppressed,
   regionsOverlapping,
+  suppressionsOverlapping,
   SYMBOL_COLUMNS,
   symbolAt,
   symbolNamed,
+  symbolSuppressed,
   toReference,
   toSymbol,
   type ReferenceRow,
@@ -25,15 +28,12 @@ import {
   type SymbolRow,
 } from "./read.ts";
 import { REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Origin, type ReferenceKind, type RegionType, type SymbolKind } from "./schema.ts";
-import { Change, checkAddress, hex, SYMBOL_NAME } from "./write.ts";
+import { Change, checkAddress, hex, subtract, SYMBOL_NAME, type AddressRange } from "./write.ts";
+
+export type { AddressRange };
 
 export const ANALYZERS = ["dxa", "ghidra"] as const satisfies readonly Origin[];
 export type Analyzer = (typeof ANALYZERS)[number];
-
-export interface AddressRange {
-  start: number;
-  end: number;
-}
 
 export interface NormalizedFindings {
   analyzer: Analyzer;
@@ -78,6 +78,8 @@ export interface ImportCounts {
   changed: number;
   retired: number;
   unchanged: number;
+  /** Findings at a place that a user/LLM removal blocks (D36); not written. */
+  suppressed: number;
 }
 
 export interface ImportResult {
@@ -91,7 +93,7 @@ export interface ImportResult {
 
 const isCode = (value: SymbolKind | RegionType) => value === "label" || value === "routine" || value === "code";
 
-const counts = (): ImportCounts => ({ added: 0, changed: 0, retired: 0, unchanged: 0 });
+const counts = (): ImportCounts => ({ added: 0, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
 
 function invalid(message: string): never {
   throw new KnowledgeError("invalid-input", `The analyzer result is not usable: ${message} Nothing was imported.`);
@@ -107,20 +109,6 @@ function mergeCoverage(coverage: AddressRange[]): AddressRange[] {
     else merged.push({ ...range });
   }
   return merged;
-}
-
-/** Parts of `range` that no range in `holes` covers. */
-function subtract(range: AddressRange, holes: AddressRange[]): AddressRange[] {
-  let pieces = [range];
-  for (const hole of holes) {
-    pieces = pieces.flatMap((piece) => {
-      if (hole.end < piece.start || hole.start > piece.end) return [piece];
-      const left = hole.start > piece.start ? [{ start: piece.start, end: hole.start - 1 }] : [];
-      const right = hole.end < piece.end ? [{ start: hole.end + 1, end: piece.end }] : [];
-      return [...left, ...right];
-    });
-  }
-  return pieces;
 }
 
 /**
@@ -208,6 +196,10 @@ function importSymbols(db: DatabaseSync, change: Change, findings: NormalizedFin
   }
   for (const finding of findings.symbols) {
     if (settled.has(finding.address)) continue;
+    if (symbolSuppressed(db, finding.address)) {
+      result.symbols.suppressed++;
+      continue;
+    }
     const current = symbolAt(db, finding.address);
     if (current !== undefined) {
       // A semantic or other-analyzer row stays; only a code/data disagreement matters.
@@ -249,6 +241,8 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
     // Retire nothing the snapshot leaves out. Fill addresses that no region covers yet, and
     // give the analyzer's own regions under a finding the type that the analyzer finds now.
     for (const region of findings.regions) {
+      const suppressed = suppressionsOverlapping(db, "region", region.start, region.end);
+      if (suppressed.length > 0) result.regions.suppressed++;
       const current = regionsOverlapping(db, region.start, region.end);
       const protectedRows = current.filter((row) => row.origin !== analyzer);
       for (const row of protectedRows) conflictWith(row, region);
@@ -262,8 +256,8 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
         if (row.end > region.end) change.insertRegion({ start: region.end + 1, end: row.end, type: row.type, origin: analyzer });
         result.regions.changed++;
       }
-      const empty = subtract(region, current);
-      for (const piece of subtract(region, [...protectedRows, ...kept])) {
+      const empty = subtract(region, [...current, ...suppressed]);
+      for (const piece of subtract(region, [...protectedRows, ...kept, ...suppressed])) {
         change.insertRegion({ ...piece, type: region.type, origin: analyzer });
       }
       result.regions.added += empty.length;
@@ -279,7 +273,9 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
     const desired = new Map<string, { start: number; end: number; type: RegionType }>();
     for (const region of findings.regions.filter((candidate) => candidate.start >= range.start && candidate.end <= range.end)) {
       for (const row of protectedRows) if (row.start <= region.end && row.end >= region.start) conflictWith(row, region);
-      for (const piece of subtract(region, protectedRows)) desired.set(`${piece.start}-${piece.end}`, { ...piece, type: region.type });
+      const suppressed = suppressionsOverlapping(db, "region", region.start, region.end);
+      if (suppressed.length > 0) result.regions.suppressed++;
+      for (const piece of subtract(region, [...protectedRows, ...suppressed])) desired.set(`${piece.start}-${piece.end}`, { ...piece, type: region.type });
     }
     const retiredRanges = new Set<string>();
     for (const row of own) {
@@ -321,6 +317,7 @@ function importReferences(db: DatabaseSync, change: Change, findings: Normalized
   for (const reference of wanted.values()) {
     const rows = existing.all(reference.from, reference.to, reference.kind) as Array<{ origin: Origin }>;
     if (rows.some((row) => row.origin === analyzer)) result.references.unchanged++;
+    else if (rows.length === 0 && referenceSuppressed(db, reference)) result.references.suppressed++;
     // The same fact from the user, the LLM or another analyzer already holds.
     else if (rows.length === 0) {
       change.insertReference({ ...reference, origin: analyzer });

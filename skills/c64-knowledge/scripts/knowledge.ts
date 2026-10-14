@@ -12,11 +12,13 @@ import {
   listComments,
   listReferences,
   listRegions,
+  listSuppressions,
   listSymbols,
   search,
   type CommentRow,
   type ReferenceRow,
   type RegionRow,
+  type SuppressionRow,
   type SymbolRow,
 } from "#src/knowledge/read.ts";
 import {
@@ -52,6 +54,7 @@ Read (no database needed):
   regions [--start A --end A --type T]
   comments [--start A --end A]
   references [--start A --end A --kind K]
+  suppressions [--start A --end A]   places that removals keep free of analyzer facts
   history <address> | history --name <name>
   revisions [--limit N --before N]
   revision <id>
@@ -98,6 +101,15 @@ const symbol = (row: SymbolRow) => ({ address: formatC64Address(row.address), na
 const region = (row: RegionRow) => ({ start: formatC64Address(row.start), end: formatC64Address(row.end), type: row.type, origin: row.origin, revision: row.revision });
 const comment = (row: CommentRow) => ({ address: formatC64Address(row.address), placement: row.placement, text: row.text, origin: row.origin, revision: row.revision });
 const reference = (row: ReferenceRow) => ({ from: formatC64Address(row.from), to: formatC64Address(row.to), kind: row.kind, origin: row.origin, revision: row.revision });
+function suppression(row: SuppressionRow) {
+  const place =
+    row.entity === "symbol"
+      ? { address: formatC64Address(row.start) }
+      : row.entity === "region"
+        ? { start: formatC64Address(row.start), end: formatC64Address(row.end) }
+        : { from: formatC64Address(row.start), to: formatC64Address(row.to!), kind: row.kind! };
+  return { suppresses: row.entity, ...place, origin: row.origin, revision: row.revision };
+}
 
 function historyEntry(entry: HistoryEntry) {
   const shown =
@@ -107,9 +119,23 @@ function historyEntry(entry: HistoryEntry) {
         ? region(entry.row)
         : entry.entity === "comment"
           ? comment(entry.row)
-          : reference(entry.row);
+          : entry.entity === "reference"
+            ? reference(entry.row)
+            : suppression(entry.row);
   const { revision: _revision, ...row } = shown;
   return { entity: entry.entity, ...row, fromRevision: entry.from, ...(entry.to === undefined ? {} : { toRevision: entry.to }) };
+}
+
+/** The reason of each revision that wrote one of the rows. */
+function reasonsOf(db: DatabaseSync | undefined, rows: SuppressionRow[]): Map<number, string> {
+  const reasons = new Map<number, string>();
+  const query = db?.prepare("SELECT description FROM revisions WHERE id = ?");
+  for (const { revision } of rows) {
+    if (query === undefined || reasons.has(revision)) continue;
+    const found = query.get(revision) as { description: string | null } | undefined;
+    if (found?.description != null) reasons.set(revision, found.description);
+  }
+  return reasons;
 }
 
 function run(argv: string[]): unknown {
@@ -135,7 +161,7 @@ function run(argv: string[]): unknown {
   if (values.help || command === undefined) throw new UsageError("");
   const range = { start: values.start === undefined ? 0x0000 : address(values.start, "--start"), end: values.end === undefined ? 0xffff : address(values.end, "--end") };
 
-  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "history", "revisions", "revision"]);
+  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "history", "revisions", "revision"]);
   const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "revert"]);
   // Refuse a mistyped command before anything opens, so no database appears by accident.
   if (!read.has(command) && !write.has(command)) throw new UsageError(`unknown command: ${command}`);
@@ -152,6 +178,7 @@ function run(argv: string[]): unknown {
             comments: known.comments.map(comment),
             referencesFrom: known.referencesFrom.map(reference),
             referencesTo: known.referencesTo.map(reference),
+            ...(known.suppressions.length === 0 ? {} : { suppressions: known.suppressions.map(suppression) }),
             revision: known.revision,
           };
         }
@@ -168,6 +195,11 @@ function run(argv: string[]): unknown {
           return { comments: listComments(db, range).map(comment) };
         case "references":
           return { references: listReferences(db, range, values.kind === undefined ? undefined : oneOf(REFERENCE_KINDS, values.kind, "--kind")).map(reference) };
+        case "suppressions": {
+          const rows = listSuppressions(db, range);
+          const reasons = reasonsOf(db, rows);
+          return { suppressions: rows.map((row) => ({ ...suppression(row), ...(reasons.has(row.revision) ? { reason: reasons.get(row.revision) } : {}) })) };
+        }
         case "history":
           return { history: (values.name === undefined ? historyAt(db, address(args[0])) : historyNamed(db, values.name)).map(historyEntry) };
         case "revisions": {

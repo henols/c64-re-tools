@@ -3,7 +3,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import type { CommentPlacement, Origin, ReferenceKind, RegionType, SymbolKind } from "./schema.ts";
+import type { CommentPlacement, Origin, ReferenceKind, RegionType, SuppressionEntity, SymbolKind } from "./schema.ts";
 
 export interface SymbolRow {
   address: number;
@@ -37,12 +37,24 @@ export interface ReferenceRow {
   revision: number;
 }
 
+/** A place that a user/LLM removal blocks for every analyzer (D36). `to` and `kind` are set for a reference only. */
+export interface SuppressionRow {
+  entity: SuppressionEntity;
+  start: number;
+  end: number;
+  to?: number;
+  kind?: ReferenceKind;
+  origin: Extract<Origin, "user" | "llm">;
+  revision: number;
+}
+
 type Raw = Record<string, unknown>;
 
 export const SYMBOL_COLUMNS = "address, name, kind, origin, valid_from_revision";
 export const REGION_COLUMNS = "start_address, end_address, type, origin, valid_from_revision";
 export const COMMENT_COLUMNS = "address, placement, text, origin, valid_from_revision";
 export const REFERENCE_COLUMNS = "from_address, to_address, kind, origin, valid_from_revision";
+export const SUPPRESSION_COLUMNS = "entity, start_address, end_address, to_address, kind, origin, valid_from_revision";
 
 export function toSymbol(row: Raw): SymbolRow {
   return { address: row.address as number, name: row.name as string, kind: row.kind as SymbolKind, origin: row.origin as Origin, revision: row.valid_from_revision as number };
@@ -58,6 +70,19 @@ export function toComment(row: Raw): CommentRow {
 
 export function toReference(row: Raw): ReferenceRow {
   return { from: row.from_address as number, to: row.to_address as number, kind: row.kind as ReferenceKind, origin: row.origin as Origin, revision: row.valid_from_revision as number };
+}
+
+export function toSuppression(row: Raw): SuppressionRow {
+  const suppression: SuppressionRow = {
+    entity: row.entity as SuppressionEntity,
+    start: row.start_address as number,
+    end: row.end_address as number,
+    origin: row.origin as SuppressionRow["origin"],
+    revision: row.valid_from_revision as number,
+  };
+  if (row.to_address !== null) suppression.to = row.to_address as number;
+  if (row.kind !== null) suppression.kind = row.kind as ReferenceKind;
+  return suppression;
 }
 
 export function currentRevision(db: DatabaseSync | undefined): number {
@@ -108,6 +133,34 @@ export function referencesTo(db: DatabaseSync | undefined, address: number): Ref
     .map((row) => toReference(row as Raw));
 }
 
+/** Current suppressions of one entity that share at least one address with [start, end], in address order. */
+export function suppressionsOverlapping(db: DatabaseSync | undefined, entity: SuppressionEntity, start: number, end: number): SuppressionRow[] {
+  if (db === undefined) return [];
+  return db
+    .prepare(`SELECT ${SUPPRESSION_COLUMNS} FROM current_suppressions WHERE entity = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address, to_address, kind`)
+    .all(entity, end, start)
+    .map((row) => toSuppression(row as Raw));
+}
+
+export function symbolSuppressed(db: DatabaseSync | undefined, address: number): boolean {
+  return suppressionsOverlapping(db, "symbol", address, address).length > 0;
+}
+
+export function referenceSuppressed(db: DatabaseSync | undefined, reference: { from: number; to: number; kind: ReferenceKind }): boolean {
+  return suppressionsOverlapping(db, "reference", reference.from, reference.from).some((row) => row.to === reference.to && row.kind === reference.kind);
+}
+
+/** Current suppressions at an address: its symbol, the region range that holds it, references from or to it. */
+export function suppressionsAt(db: DatabaseSync | undefined, address: number): SuppressionRow[] {
+  if (db === undefined) return [];
+  return db
+    .prepare(
+      `SELECT ${SUPPRESSION_COLUMNS} FROM current_suppressions WHERE (start_address <= ? AND end_address >= ?) OR to_address = ? ORDER BY entity, start_address, to_address, kind`,
+    )
+    .all(address, address, address)
+    .map((row) => toSuppression(row as Raw));
+}
+
 /** Everything currently known at one address: the main lookup for skills. */
 export interface AddressKnowledge {
   address: number;
@@ -117,6 +170,8 @@ export interface AddressKnowledge {
   comments: CommentRow[];
   referencesFrom: ReferenceRow[];
   referencesTo: ReferenceRow[];
+  /** What user/LLM removals block here for the analyzers. */
+  suppressions: SuppressionRow[];
   revision: number;
 }
 
@@ -126,6 +181,7 @@ export function at(db: DatabaseSync | undefined, address: number): AddressKnowle
     comments: commentsAt(db, address),
     referencesFrom: referencesFrom(db, address),
     referencesTo: referencesTo(db, address),
+    suppressions: suppressionsAt(db, address),
     revision: currentRevision(db),
   };
   const symbol = symbolAt(db, address);
@@ -173,6 +229,17 @@ export function listReferences(db: DatabaseSync | undefined, range: Range = ALL,
     .all(range.start, range.end, range.start, range.end)
     .map((row) => toReference(row as Raw))
     .filter((reference) => kind === undefined || reference.kind === kind);
+}
+
+/** Current suppressions whose place lies in the range: a reference by its source or target. */
+export function listSuppressions(db: DatabaseSync | undefined, range: Range = ALL): SuppressionRow[] {
+  if (db === undefined) return [];
+  return db
+    .prepare(
+      `SELECT ${SUPPRESSION_COLUMNS} FROM current_suppressions WHERE (start_address <= ? AND end_address >= ?) OR to_address BETWEEN ? AND ? ORDER BY start_address, entity, to_address, kind`,
+    )
+    .all(range.end, range.start, range.start, range.end)
+    .map((row) => toSuppression(row as Raw));
 }
 
 /** Case-insensitive text search in current symbol names and comment texts. */

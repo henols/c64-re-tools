@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { KnowledgeError, openForWrite } from "./database.ts";
-import { commentsAt, currentRevision, referencesFrom, regionsOverlapping, symbolAt } from "./read.ts";
+import { commentsAt, currentRevision, listSuppressions, referencesFrom, regionsOverlapping, symbolAt } from "./read.ts";
 import {
   addReference,
   classifyRegion,
@@ -241,4 +241,19 @@ test("a write over a row of another origin returns the replaced row", () => {
     [[0x3000, 0x30ff, "sprite", "user"]],
   );
   assert.equal(classifyRegion(db, llm, { start: 0x3080, end: 0x317f, type: "bitmap" }).previous, undefined, "an unchanged write replaces nothing");
+});
+
+test("an unclassify over a range that is partly suppressed adds only the free parts, so suppressions never overlap", () => {
+  const db = fresh();
+  classifyRegion(db, llm, { start: 0x1000, end: 0x10ff, type: "bytes" });
+  unclassifyRegion(db, llm, { start: 0x1040, end: 0x107f });
+  unclassifyRegion(db, llm, { start: 0x1000, end: 0x10ff });
+  assert.deepEqual(
+    listSuppressions(db).map((row) => [row.start, row.end, row.revision]),
+    [
+      [0x1000, 0x103f, 3],
+      [0x1040, 0x107f, 2],
+      [0x1080, 0x10ff, 3],
+    ],
+  );
 });

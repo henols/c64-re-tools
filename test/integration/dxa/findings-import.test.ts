@@ -74,7 +74,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   assert.equal(second.status, 0, JSON.stringify(second.json));
   assert.equal(second.json.revision, 4);
   assert.deepEqual(second.json.conflicts, [], "a finer data type from the user is no conflict");
-  assert.deepEqual((second.json.changes as { regions: unknown }).regions, { added: 1, changed: 0, retired: 3, unchanged: 1 });
+  assert.deepEqual((second.json.changes as { regions: unknown }).regions, { added: 1, changed: 0, retired: 3, unchanged: 1, suppressed: 0 });
   assert.deepEqual(regions(), [
     [0x0801, 0x080c, "bytes", "dxa"],
     [0x080d, 0x0823, "code", "dxa"],

@@ -50,12 +50,15 @@ test("an analysis imports Ghidra's structure into knowledge and reports it", { s
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.coverage, [{ start: "$0801", end: "$0827" }]);
   assert.equal(json.revision, 1);
-  assert.deepEqual((json.changes as { symbols: unknown }).symbols, { added: 2, changed: 0, retired: 0, unchanged: 0 });
+  assert.deepEqual((json.changes as { symbols: unknown }).symbols, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
   assert.deepEqual(json.conflicts, []);
-  assert.deepEqual(json.functions, [
-    { entry: "$080d", name: "FUN_080d" },
-    { entry: "$0818", name: "FUN_0818" },
-  ]);
+  assert.deepEqual(json.functions, {
+    count: 2,
+    listed: [
+      { entry: "$080d", name: "FUN_080d" },
+      { entry: "$0818", name: "FUN_0818" },
+    ],
+  });
   assert.equal((json.decompilations as Array<{ entry: string }>)[0]?.entry, "$0818");
 
   const db = openForRead(project);
@@ -83,6 +86,14 @@ test("a DXA pass imports its regions and labels and writes the listing", { skip:
     { start: "$0824", end: "$0827", classification: "data" },
   ]);
   assert.match(readFileSync(join(project, "analysis", "game.lst"), "utf8"), /jsr /);
+  const labels = json.labels as { count: number; listed: unknown[]; rest?: string };
+  assert.equal(labels.listed.length, labels.count, "a short list is not cut");
+  assert.equal(labels.rest, undefined);
+
+  const cut = (await analyze("game.prg", "--analyzer", "dxa", "--max-listed", "1")).json.labels as { count: number; listed: unknown[]; rest?: string };
+  assert.equal(cut.count, labels.count);
+  assert.equal(cut.listed.length, 1);
+  assert.equal(cut.rest, "c64-knowledge: knowledge.ts symbols");
   const db = openForRead(project);
   // DXA's own facts sit beside Ghidra's from the test above; it does not replace them.
   assert.ok(regionsOverlapping(db, 0x0801, 0x080c).some((region) => region.origin === "dxa" && region.type === "bytes"));
@@ -97,6 +108,8 @@ test("bad calls are refused before anything is sent", { skip }, async () => {
     ["game.prg", "--analyzer", "ida"],
     ["game.prg", "--analyzer", "dxa", "--decompile", "$0818"],
     ["game.prg", "--listing", "x.lst"],
+    ["game.prg", "--max-listed", "-1"],
+    ["game.prg", "--max-listed", "many"],
   ]) {
     const { status, json } = await analyze(...args);
     assert.equal(status, 2, args.join(" "));

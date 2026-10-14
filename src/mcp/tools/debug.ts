@@ -37,7 +37,7 @@ export const c64Breakpoint = defineTool({
   description:
     "Manage breakpoints. A breakpoint stops the CPU when it is about to execute the instruction at an address. " +
     "Action add sets one at address in space c64 or drive8. With a condition, it stops only when the condition is true. " +
-    "add returns the new id. Actions remove, enable and disable take that id. Action list gives all breakpoints. Each breakpoint shows its condition, when it has one. " +
+    "add returns the new id. Actions remove, enable and disable take that id. remove returns removed true and the id. Action list gives all breakpoints. Each breakpoint shows its condition, when it has one. " +
     "Breakpoints stay through a reset.",
   inputSchema: z
     .object({
@@ -48,7 +48,7 @@ export const c64Breakpoint = defineTool({
       id: Id.optional().describe("remove, enable and disable only"),
     })
     .strict(),
-  outputSchema: BreakpointOutput.partial().extend({ breakpoints: z.array(BreakpointOutput).optional() }),
+  outputSchema: BreakpointOutput.partial().extend({ removed: z.literal(true).optional(), breakpoints: z.array(BreakpointOutput).optional() }),
   readOnly: false,
   async run(input, session) {
     const { action, ...fields } = input;
@@ -59,6 +59,7 @@ export const c64Breakpoint = defineTool({
     }
     if (action !== "add") {
       requireFields(action, fields, ["id"], ["id"]);
+      if (action === "remove") return session.breakpoint({ action, id: fields.id! });
       return showBreakpoint(await session.breakpoint({ action, id: fields.id! }));
     }
     requireFields(action, fields, ["address", "space", "condition"], ["address"]);
@@ -79,7 +80,7 @@ export const c64Watchpoint = defineTool({
     "Manage watchpoints. A watchpoint stops the CPU when an instruction reads or writes memory in a range. " +
     `Action add sets one at address for size bytes (1 to ${MAX_WATCH_SIZE}, default 1), with access read, write or read-write. ` +
     "With a condition, it stops only when the condition is true. For a write, a memory condition sees the memory after the write. " +
-    "add returns the new id. Actions remove, enable and disable take that id. Action list gives all watchpoints. Each watchpoint shows its condition, when it has one.",
+    "add returns the new id. Actions remove, enable and disable take that id. remove returns removed true and the id. Action list gives all watchpoints. Each watchpoint shows its condition, when it has one.",
   inputSchema: z
     .object({
       action: z.enum(CHECKPOINT_ACTIONS),
@@ -91,7 +92,7 @@ export const c64Watchpoint = defineTool({
       id: Id.optional().describe("remove, enable and disable only"),
     })
     .strict(),
-  outputSchema: WatchpointOutput.partial().extend({ watchpoints: z.array(WatchpointOutput).optional() }),
+  outputSchema: WatchpointOutput.partial().extend({ removed: z.literal(true).optional(), watchpoints: z.array(WatchpointOutput).optional() }),
   readOnly: false,
   async run(input, session) {
     const { action, ...fields } = input;
@@ -102,6 +103,7 @@ export const c64Watchpoint = defineTool({
     }
     if (action !== "add") {
       requireFields(action, fields, ["id"], ["id"]);
+      if (action === "remove") return session.watchpoint({ action, id: fields.id! });
       return showWatchpoint(await session.watchpoint({ action, id: fields.id! }));
     }
     requireFields(action, fields, ["address", "size", "access", "space", "condition"], ["address", "access"]);
@@ -210,6 +212,7 @@ export const c64Memmap = defineTool({
     "Get how the C64 CPU used memory since the session started or since the last clear. " +
     "Action read gives ranges of addresses with the same access (execute, read, write) from start to end. " +
     `It gives at most maxRanges ranges (1 to ${MAX_MEMMAP_RANGES}, default 256). Addresses the CPU did not touch are not in the result. ` +
+    "If more ranges follow, the result also gives truncated: true and next. Read again with start set to next. " +
     "Action clear sets all access records to zero.",
   inputSchema: z
     .object({
@@ -221,6 +224,8 @@ export const c64Memmap = defineTool({
     .strict(),
   outputSchema: z.object({
     ranges: z.array(z.object({ start: AddressOutput, end: AddressOutput, execute: z.boolean(), read: z.boolean(), write: z.boolean() })).optional(),
+    truncated: z.boolean().optional(),
+    next: AddressOutput.optional(),
     cleared: z.boolean().optional(),
   }),
   readOnly: false,
@@ -230,7 +235,8 @@ export const c64Memmap = defineTool({
       return session.memmap({ action: "clear" });
     }
     const result = await session.memmap({ action: "read", start: input.start ?? 0x0000, end: input.end ?? 0xffff, maxRanges: input.maxRanges ?? 256 });
-    return { ranges: result.ranges.map((range) => ({ ...range, start: formatC64Address(range.start), end: formatC64Address(range.end) })) };
+    const ranges = result.ranges.map((range) => ({ ...range, start: formatC64Address(range.start), end: formatC64Address(range.end) }));
+    return result.next === undefined ? { ranges } : { ranges, truncated: true, next: formatC64Address(result.next) };
   },
 });
 

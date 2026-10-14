@@ -113,13 +113,21 @@ export interface Watchpoint {
 
 export type BreakpointParams =
   | { action: "add"; address: number; space: Space; condition?: Condition }
-  | { action: "remove" | "enable" | "disable"; id: number }
+  | { action: "remove"; id: number }
+  | { action: "enable" | "disable"; id: number }
   | { action: "list" };
 
 export type WatchpointParams =
   | { action: "add"; address: number; size: number; access: WatchAccess; space: Space; condition?: Condition }
-  | { action: "remove" | "enable" | "disable"; id: number }
+  | { action: "remove"; id: number }
+  | { action: "enable" | "disable"; id: number }
   | { action: "list" };
+
+/** The result of remove: the point is gone, so only its id comes back. */
+export interface PointRemoved {
+  removed: true;
+  id: number;
+}
 
 // Chip state
 
@@ -412,8 +420,8 @@ export interface ViceOperations {
   /** `data`: PETSCII bytes as lowercase hex. */
   keyboard: { params: { data: string }; result: { queuedBytes: number } };
   joystick: { params: JoystickState; result: JoystickState };
-  breakpoint: { params: BreakpointParams; result: Breakpoint | { breakpoints: Breakpoint[] } };
-  watchpoint: { params: WatchpointParams; result: Watchpoint | { watchpoints: Watchpoint[] } };
+  breakpoint: { params: BreakpointParams; result: Breakpoint | PointRemoved | { breakpoints: Breakpoint[] } };
+  watchpoint: { params: WatchpointParams; result: Watchpoint | PointRemoved | { watchpoints: Watchpoint[] } };
   cpuHistory: { params: { limit: number; space: Space }; result: { entries: HistoryEntry[] } };
   backtrace: { params: { depth: number; space: Space }; result: { frames: BacktraceFrame[] } };
   /** `cycles` is a decimal string. */
@@ -421,7 +429,8 @@ export interface ViceOperations {
   profile: { params: { limit: number }; result: { entries: ProfileEntry[] } };
   memmap: {
     params: { action: "read"; start: number; end: number; maxRanges: number } | { action: "clear" };
-    result: { ranges: MemmapRange[] } | { cleared: boolean };
+    /** `next`: more ranges follow from this address; read again from there. */
+    result: { ranges: MemmapRange[]; next?: number } | { cleared: boolean };
   };
   vicii: { params: Record<string, never>; result: ViciiState };
   /** `indexes`: unique sprite numbers 0-7, in the order to report them. */
@@ -868,6 +877,10 @@ function validateRunTarget(value: unknown): RunTarget {
   return invalid("target kind must be address, memory or raster");
 }
 
+function isRemoved(value: unknown): value is PointRemoved {
+  return isObject(value) && value.removed === true && isInteger(value.id, 1, 0xffff_ffff) && Object.keys(value).length === 2;
+}
+
 function isBreakpoint(value: unknown): value is Breakpoint {
   return (
     isObject(value) &&
@@ -1017,12 +1030,12 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       break;
     }
     case "breakpoint": {
-      const ok = Array.isArray(value.breakpoints) ? value.breakpoints.every(isBreakpoint) : isBreakpoint(value);
+      const ok = Array.isArray(value.breakpoints) ? value.breakpoints.every(isBreakpoint) : isRemoved(value) || isBreakpoint(value);
       if (!ok) throw new ProtocolError("breakpoint result is malformed");
       break;
     }
     case "watchpoint": {
-      const ok = Array.isArray(value.watchpoints) ? value.watchpoints.every(isWatchpoint) : isWatchpoint(value);
+      const ok = Array.isArray(value.watchpoints) ? value.watchpoints.every(isWatchpoint) : isRemoved(value) || isWatchpoint(value);
       if (!ok) throw new ProtocolError("watchpoint result is malformed");
       break;
     }
@@ -1112,7 +1125,9 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         isInteger(range.start, 0, 0xffff) &&
         isInteger(range.end, 0, 0xffff) &&
         (["execute", "read", "write"] as const).every((flag) => typeof range[flag] === "boolean");
-      const ok = Array.isArray(value.ranges) ? value.ranges.every(isRange) : value.cleared === true;
+      const ok = Array.isArray(value.ranges)
+        ? value.ranges.every(isRange) && (value.next === undefined || isInteger(value.next, 0, 0xffff))
+        : value.cleared === true;
       if (!ok) throw new ProtocolError("memmap result is malformed");
       break;
     }

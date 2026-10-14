@@ -40,7 +40,7 @@ test("at() gives the symbol, containing region, comments and references of an ad
   assert.deepEqual(known.referencesFrom.map((reference) => [reference.to, reference.kind]), [[0xdc00, "read"]]);
   assert.equal(known.revision, 8);
   // Inside a region, without a symbol of its own.
-  assert.deepEqual({ ...at(db, 0x2105), region: undefined }, { address: 0x2105, region: undefined, comments: [], referencesFrom: [], referencesTo: [], revision: 8 });
+  assert.deepEqual({ ...at(db, 0x2105), region: undefined }, { address: 0x2105, region: undefined, comments: [], referencesFrom: [], referencesTo: [], suppressions: [], revision: 8 });
 });
 
 test("a project without a database reads as empty knowledge", () => {
@@ -48,7 +48,7 @@ test("a project without a database reads as empty knowledge", () => {
   try {
     const none = openForRead(empty);
     assert.equal(none, undefined);
-    assert.deepEqual(at(none, 0x2100), { address: 0x2100, comments: [], referencesFrom: [], referencesTo: [], revision: 0 });
+    assert.deepEqual(at(none, 0x2100), { address: 0x2100, comments: [], referencesFrom: [], referencesTo: [], suppressions: [], revision: 0 });
     assert.deepEqual(search(none, "x"), { symbols: [], comments: [] });
     assert.deepEqual(historyAt(none, 0x2100), []);
     assert.deepEqual(revisions(none), []);

@@ -574,6 +574,15 @@ Remove/enable/disable use:
 }
 ~~~
 
+Enable and disable give the breakpoint, as add does. Remove gives only the id, because the breakpoint is gone:
+
+~~~json
+{
+  "removed": true,
+  "id": 4
+}
+~~~
+
 List input:
 
 ~~~json
@@ -1058,6 +1067,8 @@ Output:
   ]
 }
 ~~~
+
+When more ranges follow after `maxRanges`, the output also has `"truncated": true` and `"next": "$2140"`, the first address that is not reported. Read again with `start` set to `next`.
 
 Clear:
 

@@ -14,16 +14,20 @@ import {
   referencesFrom,
   REGION_COLUMNS,
   regionsOverlapping,
+  SUPPRESSION_COLUMNS,
+  suppressionsOverlapping,
   SYMBOL_COLUMNS,
   symbolAt,
   symbolNamed,
   toComment,
   toReference,
   toRegion,
+  toSuppression,
   toSymbol,
   type CommentRow,
   type ReferenceRow,
   type RegionRow,
+  type SuppressionRow,
   type SymbolRow,
 } from "./read.ts";
 import {
@@ -68,6 +72,25 @@ function checkOneOf<T extends string>(values: readonly T[], value: string, what:
 
 export function hex(value: number): string {
   return `$${value.toString(16).padStart(4, "0")}`;
+}
+
+export interface AddressRange {
+  start: number;
+  end: number;
+}
+
+/** Parts of `range` that no range in `holes` covers. */
+export function subtract(range: AddressRange, holes: AddressRange[]): AddressRange[] {
+  let pieces = [range];
+  for (const hole of holes) {
+    pieces = pieces.flatMap((piece) => {
+      if (hole.end < piece.start || hole.start > piece.end) return [piece];
+      const left = hole.start > piece.start ? [{ start: piece.start, end: hole.start - 1 }] : [];
+      const right = hole.end < piece.end ? [{ start: hole.end + 1, end: piece.end }] : [];
+      return [...left, ...right];
+    });
+  }
+  return pieces;
 }
 
 /** What a revision records about its writer. Analyzer imports may add tool details. */
@@ -144,6 +167,23 @@ export class Change {
       .prepare('INSERT INTO "references" (from_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?)')
       .run(row.from, row.to, row.kind, row.origin, this.id());
   }
+
+  insertSuppression(row: Omit<SuppressionRow, "revision">): void {
+    this.#db
+      .prepare("INSERT INTO suppressions (entity, start_address, end_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(row.entity, row.start, row.end, row.to ?? null, row.kind ?? null, row.origin, this.id());
+  }
+}
+
+/** Closes the current region suppressions over [start, end] and keeps their parts outside it: a user/LLM region there decides now. */
+function liftRegionSuppressions(db: DatabaseSync, change: Change, start: number, end: number): void {
+  const overlapping = suppressionsOverlapping(db, "region", start, end);
+  if (overlapping.length === 0) return;
+  change.close("suppressions", "entity = 'region' AND start_address <= ? AND end_address >= ?", end, start);
+  for (const row of overlapping) {
+    if (row.start < start) change.insertSuppression({ ...row, end: start - 1 });
+    if (row.end > end) change.insertSuppression({ ...row, start: end + 1 });
+  }
 }
 
 /** Runs one semantic write in a transaction. */
@@ -183,6 +223,7 @@ export function renameSymbol(
       if (existing.origin !== context.origin) previous = existing;
     }
     change.insertSymbol({ address: request.address, name: request.name, kind, origin: context.origin });
+    change.close("suppressions", "entity = 'symbol' AND start_address = ?", request.address);
     return symbolAt(db, request.address)!;
   });
   return previous === undefined ? result : { ...result, previous };
@@ -193,6 +234,7 @@ export function removeSymbol(db: DatabaseSync, context: WriteContext, request: {
   return write(db, context, "remove-symbol", (change) => {
     if (symbolAt(db, request.address) === undefined) throw new KnowledgeError("not-found", `There is no symbol at ${hex(request.address)}.`);
     change.close("symbols", "address = ?", request.address);
+    change.insertSuppression({ entity: "symbol", start: request.address, end: request.address, origin: context.origin });
     return null;
   });
 }
@@ -225,6 +267,7 @@ export function classifyRegion(
     if (!same) {
       clearRange(db, change, request.start, request.end);
       change.insertRegion({ start: request.start, end: request.end, type: request.type, origin: context.origin });
+      liftRegionSuppressions(db, change, request.start, request.end);
       previous = overlapping.filter((row) => row.origin !== context.origin);
     }
     return regionsOverlapping(db, request.start, request.end);
@@ -242,6 +285,10 @@ export function unclassifyRegion(db: DatabaseSync, context: WriteContext, reques
       throw new KnowledgeError("not-found", `No region covers ${hex(request.start)}-${hex(request.end)}.`);
     }
     clearRange(db, change, request.start, request.end);
+    // Suppress only the parts that no region suppression holds yet, so suppressions never overlap.
+    for (const piece of subtract(request, suppressionsOverlapping(db, "region", request.start, request.end))) {
+      change.insertSuppression({ entity: "region", ...piece, origin: context.origin });
+    }
     return null;
   });
 }
@@ -289,6 +336,7 @@ export function addReference(
     const existing = find();
     if (existing !== undefined) return existing;
     change.insertReference({ ...request, origin: context.origin });
+    change.close("suppressions", "entity = 'reference' AND start_address = ? AND to_address = ? AND kind = ?", request.from, request.to, request.kind);
     return find()!;
   });
 }
@@ -302,6 +350,7 @@ export function removeReference(db: DatabaseSync, context: WriteContext, request
       throw new KnowledgeError("not-found", `There is no ${request.kind} reference from ${hex(request.from)} to ${hex(request.to)}.`);
     }
     change.close('"references"', "from_address = ? AND to_address = ? AND kind = ?", request.from, request.to, request.kind);
+    change.insertSuppression({ entity: "reference", start: request.from, end: request.from, to: request.to, kind: request.kind, origin: context.origin });
     return null;
   });
 }
@@ -312,6 +361,11 @@ const KEYS = {
   regions: { columns: REGION_COLUMNS, map: toRegion, key: (row: RegionRow) => `${row.start}|${row.end}|${row.type}|${row.origin}` },
   comments: { columns: COMMENT_COLUMNS, map: toComment, key: (row: CommentRow) => `${row.address}|${row.placement}|${row.text}|${row.origin}` },
   references: { columns: REFERENCE_COLUMNS, map: toReference, key: (row: ReferenceRow) => `${row.from}|${row.to}|${row.kind}|${row.origin}` },
+  suppressions: {
+    columns: SUPPRESSION_COLUMNS,
+    map: toSuppression,
+    key: (row: SuppressionRow) => `${row.entity}|${row.start}|${row.end}|${row.to ?? ""}|${row.kind ?? ""}|${row.origin}`,
+  },
 } as const;
 
 /**
@@ -336,6 +390,10 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
       for (const row of now) if (!thenKeys.has(key(row))) change.close(name, "id = ?", row.id as number);
       for (const row of then) {
         if (nowKeys.has(key(row))) continue;
+        if (table === "suppressions") {
+          change.insertSuppression(spec.map(row as never) as SuppressionRow);
+          continue;
+        }
         const mapped = spec.map(row as never) as SymbolRow & RegionRow & CommentRow & ReferenceRow;
         if (table === "symbols") change.insertSymbol(mapped);
         else if (table === "regions") change.insertRegion(mapped);

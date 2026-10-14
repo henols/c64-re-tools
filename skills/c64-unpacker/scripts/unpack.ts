@@ -10,6 +10,7 @@ import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address, textToPetscii } from "#src/c64.ts";
+import { autostartLoaded, LOAD_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -41,8 +42,6 @@ function address(text: string, option: string): number {
 
 /** Written-then-executed bytes from this many on are unpacking, decrypting or relocating, not self-changing code. */
 const UNPACKED_BYTES = 256;
-const LOAD_POLL_FRAMES = 25;
-const LOAD_LIMIT_FRAMES = 1500;
 const MAX_ADVANCE = 10_000;
 /** The most ranges one memory map read gives. */
 const MAX_RANGES = 1000;
@@ -56,14 +55,7 @@ async function trace(program: string, options: { frames: number; entry?: number 
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     // Loaded but not started, so the memory map can start empty: the KERNAL start-up writes all of RAM.
-    await client.autostart({ path: program, index: 0, run: false });
-    const head = bytes.subarray(2, Math.min(bytes.length, 2 + 64)).toString("hex");
-    let loaded = false;
-    for (let frames = 0; frames < LOAD_LIMIT_FRAMES && !loaded; frames += LOAD_POLL_FRAMES) {
-      await client.execution({ action: "advance-frames", count: LOAD_POLL_FRAMES, space: "c64" });
-      loaded = (await client.memoryRead({ address: load, size: head.length / 2, space: "c64", view: "ram" })).data === head;
-    }
-    if (!loaded) return { output: { traced: false, reason: `The program was not in memory at ${formatC64Address(load)} after ${LOAD_LIMIT_FRAMES} frames.` }, failed: true };
+    if (!(await autostartLoaded(client, program, bytes))) return { output: { traced: false, reason: `The program was not in memory at ${formatC64Address(load)} after ${LOAD_LIMIT_FRAMES} frames.` }, failed: true };
     await client.memmap({ action: "clear" });
     if (options.entry !== undefined) await client.registersSet("c64", { pc: options.entry });
     else await client.keyboard(textToPetscii("RUN\n"));
@@ -75,11 +67,11 @@ async function trace(program: string, options: { frames: number; entry?: number 
       if (advanced === 0) break;
     }
     const { pc } = await client.registersGet("c64");
-    const ranges = await readMemoryMap(async (start, end) => {
-      const map = await client.memmap({ action: "read", start, end, maxRanges: MAX_RANGES });
+    const ranges = await readMemoryMap(async (start) => {
+      const map = await client.memmap({ action: "read", start, end: 0xffff, maxRanges: MAX_RANGES });
       if (!("ranges" in map)) throw new WireFailure("operation-failed", "The emulator did not give the memory map.");
-      return map.ranges;
-    }, MAX_RANGES);
+      return map;
+    });
     const { written, bytes: count, running } = writtenThenExecuted(ranges, pc);
     const packing = count >= UNPACKED_BYTES || running !== undefined ? "likely" : count > 0 ? "unclear" : "unlikely";
     return {

@@ -28,12 +28,19 @@ const USAGE = `analyze.ts <image> [options]
   --entry <address>       an entry point, for example '$080d' (repeatable)
   --decompile <address>   ghidra: a routine to decompile, at most 32 (repeatable)
   --listing <file>        dxa: write the disassembly listing to this project file
+  --max-listed <n>        list at most n labels or functions (default 50, 0 for none);
+                          the counts are always given, and knowledge has all of them
 
 Routine symbols in knowledge are entry points too. Ghidra needs at least one
 entry point; dxa finds the SYS of a BASIC start by itself. The result is one
 JSON object. Addresses are $ and four hex digits.`;
 
-const MAX_LISTED_FUNCTIONS = 200;
+const DEFAULT_MAX_LISTED = 50;
+
+/** The first `max` items, the count, and where to read the rest when the list is cut. */
+function listed<T, U>(items: T[], max: number, show: (item: T) => U, all: string) {
+  return { count: items.length, listed: items.slice(0, max).map(show), ...(items.length > max ? { rest: all } : {}) };
+}
 
 /** A decompiler that did not start gets the remedy: Ghidra ships no native decompiler for macOS. */
 function withRemedy(reason: string): string {
@@ -103,6 +110,7 @@ async function run(argv: string[]): Promise<unknown> {
       entry: { type: "string", multiple: true },
       decompile: { type: "string", multiple: true },
       listing: { type: "string" },
+      "max-listed": { type: "string" },
       help: { type: "boolean" },
     },
   });
@@ -112,6 +120,9 @@ async function run(argv: string[]): Promise<unknown> {
   const entries = addresses(values.entry, "--entry");
   const decompile = addresses(values.decompile, "--decompile");
   if (decompile.length > 32) throw new UsageError("--decompile takes at most 32 routines");
+  const maxListed = values["max-listed"] ?? String(DEFAULT_MAX_LISTED);
+  if (!/^\d{1,5}$/.test(maxListed)) throw new UsageError(`--max-listed must be a whole number, not ${maxListed}`);
+  const max = Number(maxListed);
   const analyzer = values.analyzer ?? "ghidra";
   if (analyzer !== "dxa" && analyzer !== "ghidra") throw new UsageError(`--analyzer must be dxa or ghidra, not ${analyzer}`);
   if (analyzer === "dxa" && decompile.length > 0) throw new UsageError("--decompile works only with --analyzer ghidra");
@@ -151,8 +162,7 @@ async function run(argv: string[]): Promise<unknown> {
       coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
       ...imported,
       regions: result.regions.map((region) => ({ start: formatC64Address(region.start), end: formatC64Address(region.end), classification: region.classification })),
-      labels: result.labels.slice(0, MAX_LISTED_FUNCTIONS).map((label) => ({ address: formatC64Address(label.address), name: label.name })),
-      ...(result.labels.length > MAX_LISTED_FUNCTIONS ? { moreLabels: result.labels.length - MAX_LISTED_FUNCTIONS } : {}),
+      labels: listed(result.labels, max, (label) => ({ address: formatC64Address(label.address), name: label.name }), "c64-knowledge: knowledge.ts symbols"),
       ...(listingPath === undefined ? {} : { listing: values.listing }),
     };
   }
@@ -163,8 +173,7 @@ async function run(argv: string[]): Promise<unknown> {
     analyzer: "ghidra",
     coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     ...imported,
-    functions: result.functions.slice(0, MAX_LISTED_FUNCTIONS).map((fn) => ({ entry: formatC64Address(fn.entry), name: fn.name })),
-    ...(result.functions.length > MAX_LISTED_FUNCTIONS ? { moreFunctions: result.functions.length - MAX_LISTED_FUNCTIONS } : {}),
+    functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), "c64-knowledge: knowledge.ts symbols --kind routine"),
     decompilations: result.decompilations.map((item) => ({ entry: formatC64Address(item.entry), text: item.text, ...(item.truncated ? { truncated: true } : {}) })),
     ...((result.notDecompiled ?? []).length === 0
       ? {}

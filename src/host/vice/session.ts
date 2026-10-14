@@ -4,7 +4,7 @@
 // and back; breakpoints, watchpoints and the rest go along.
 
 import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
-import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
+import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type PointRemoved, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -422,7 +422,7 @@ export class ViceSession implements ViceSessionHandle {
           await this.#observe(() => this.#machine.clearMemmap());
           return { cleared: true };
         }
-        return { ranges: await this.#observe(() => this.#machine.memmap(request.start, request.end, request.maxRanges)) };
+        return await this.#observe(() => this.#machine.memmap(request.start, request.end, request.maxRanges));
       }
       case "vicii":
         return this.#observe(() => this.#vicii());
@@ -716,25 +716,33 @@ export class ViceSession implements ViceSessionHandle {
   async #changePoint<T extends { checkpoint: number; enabled: boolean }>(
     registry: Map<number, T>,
     kind: string,
-    params: { action: "remove" | "enable" | "disable"; id: number },
+    params: { action: "enable" | "disable"; id: number },
   ): Promise<T> {
-    const point = registry.get(params.id);
-    if (point === undefined) throw new WireFailure("not-found", `There is no ${kind} with id ${params.id}.`);
-    if (params.action === "remove") {
-      await this.#observe(() => this.#machine.deleteCheckpoint(point.checkpoint));
-      registry.delete(params.id);
-    } else {
-      const enabled = params.action === "enable";
-      await this.#observe(() => this.#machine.toggleCheckpoint(point.checkpoint, enabled));
-      point.enabled = enabled;
-    }
+    const point = this.#point(registry, kind, params.id);
+    const enabled = params.action === "enable";
+    await this.#observe(() => this.#machine.toggleCheckpoint(point.checkpoint, enabled));
+    point.enabled = enabled;
     return point;
   }
 
-  async #breakpoint(params: BreakpointParams): Promise<Breakpoint | { breakpoints: Breakpoint[] }> {
+  async #removePoint(registry: Map<number, { checkpoint: number }>, kind: string, id: number): Promise<PointRemoved> {
+    const point = this.#point(registry, kind, id);
+    await this.#observe(() => this.#machine.deleteCheckpoint(point.checkpoint));
+    registry.delete(id);
+    return { removed: true, id };
+  }
+
+  #point<T>(registry: Map<number, T>, kind: string, id: number): T {
+    const point = registry.get(id);
+    if (point === undefined) throw new WireFailure("not-found", `There is no ${kind} with id ${id}.`);
+    return point;
+  }
+
+  async #breakpoint(params: BreakpointParams): Promise<Breakpoint | PointRemoved | { breakpoints: Breakpoint[] }> {
     const publicView = ({ checkpoint: _checkpoint, expression: _expression, ...point }: Breakpoint & { checkpoint: number; expression?: string }): Breakpoint =>
       point;
     if (params.action === "list") return { breakpoints: [...this.#breakpoints.values()].map(publicView) };
+    if (params.action === "remove") return this.#removePoint(this.#breakpoints, "breakpoint", params.id);
     if (params.action !== "add") return publicView(await this.#changePoint(this.#breakpoints, "breakpoint", params));
     const added = await this.#addPoint({
       ...pointRange({ address: params.address }),
@@ -753,10 +761,11 @@ export class ViceSession implements ViceSessionHandle {
     return publicView(point);
   }
 
-  async #watchpoint(params: WatchpointParams): Promise<Watchpoint | { watchpoints: Watchpoint[] }> {
+  async #watchpoint(params: WatchpointParams): Promise<Watchpoint | PointRemoved | { watchpoints: Watchpoint[] }> {
     const publicView = ({ checkpoint: _checkpoint, expression: _expression, ...point }: Watchpoint & { checkpoint: number; expression?: string }): Watchpoint =>
       point;
     if (params.action === "list") return { watchpoints: [...this.#watchpoints.values()].map(publicView) };
+    if (params.action === "remove") return this.#removePoint(this.#watchpoints, "watchpoint", params.id);
     if (params.action !== "add") return publicView(await this.#changePoint(this.#watchpoints, "watchpoint", params));
     const added = await this.#addPoint({
       ...pointRange({ address: params.address, size: params.size, access: params.access }),

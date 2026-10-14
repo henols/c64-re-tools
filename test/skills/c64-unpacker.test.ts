@@ -46,22 +46,17 @@ test("a short program is unclear, and the script reports it", () => {
   }
 });
 
-test("the memory map is read in windows, and a window at the range limit is read again in halves", async () => {
-  // One range for each executed byte in $2000-$27ff: more than one read may give.
+test("the memory map is read again from next until no more ranges follow", async () => {
+  // One range for each executed byte in $2000-$27ff: more than one read gives.
   const executed = Array.from({ length: 0x800 }, (_, index) => ({ start: 0x2000 + index, end: 0x2000 + index, read: false, write: true, execute: true }));
-  const reads: Array<[number, number]> = [];
-  const ranges = await readMemoryMap(async (start, end) => {
-    reads.push([start, end]);
-    return executed.filter((range) => range.start >= start && range.end <= end).slice(0, 1000);
-  }, 1000);
+  const reads: number[] = [];
+  const ranges = await readMemoryMap(async (start) => {
+    reads.push(start);
+    const rest = executed.filter((range) => range.start >= start);
+    return rest.length > 1000 ? { ranges: rest.slice(0, 1000), next: rest[1000]!.start } : { ranges: rest };
+  });
   assert.deepEqual(ranges, executed);
-  assert.deepEqual(reads.slice(0, 3), [
-    [0x0000, 0x0fff],
-    [0x1000, 0x1fff],
-    [0x2000, 0x2fff],
-  ]);
-  assert.ok(reads.some(([start, end]) => start === 0x2000 && end === 0x27ff), "the full window is read again as two halves");
-  assert.deepEqual(reads.at(-1), [0xf000, 0xffff]);
+  assert.deepEqual(reads, [0x0000, 0x2000 + 1000, 0x2000 + 2000]);
 });
 
 test("code that runs in a ROM area is not unpacked code, also when the program wrote the RAM below it", () => {

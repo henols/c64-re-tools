@@ -272,6 +272,25 @@ References are stored because incoming/outgoing relationships are central to lat
 
 Raw control-flow graphs, decompiler text and complete analyzer projects are not stored.
 
+### `suppressions`
+
+A suppression records that the user or the LLM removed a fact at a place, so that no analyzer puts a fact there again (D36). Every user/LLM removal writes one, whatever the origin of the removed row:
+
+```text
+entity                TEXT NOT NULL      symbol | region | reference
+start_address         INTEGER NOT NULL   the symbol address, the region start or the reference source
+end_address           INTEGER NOT NULL   equal to start_address except for a region
+to_address            INTEGER            reference target only
+kind                  TEXT               reference kind only
+origin                TEXT NOT NULL      user | llm
+valid_from_revision   INTEGER NOT NULL
+valid_to_revision     INTEGER
+```
+
+A symbol suppression blocks every analyzer symbol at its address. A region suppression blocks every analyzer region in its range. A reference suppression blocks that one reference. The reason is the description of the revision that wrote it.
+
+A later user/LLM write at the place (`rename`, `classify`, `reference`) closes the suppression there. A revert restores the suppressions of the selected revision, as it does for every other row.
+
 ## 5. Automatic DXA/Ghidra import
 
 Analyzer processes run on the Host Runtime and never open `knowledge.db`.
@@ -399,13 +418,14 @@ The normal API presents current knowledge unless history is explicitly requested
 - containing region;
 - comments;
 - incoming references;
-- outgoing references.
+- outgoing references;
+- the suppressions that cover the address.
 
 This should be one of the main operations used by skills/LLMs.
 
 ### Search/list
 
-The API also supports current-state symbol/region/comment/reference listing and textual search.
+The API also supports current-state symbol/region/comment/reference/suppression listing and textual search.
 
 ### History
 

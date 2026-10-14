@@ -14,11 +14,14 @@ export type RegionType = (typeof REGION_TYPES)[number];
 export const COMMENT_PLACEMENTS = ["line", "side"] as const;
 export type CommentPlacement = (typeof COMMENT_PLACEMENTS)[number];
 export { REFERENCE_KINDS, type ReferenceKind };
+/** What a suppression blocks: a symbol address, a region range or one reference (D36). */
+export const SUPPRESSION_ENTITIES = ["symbol", "region", "reference"] as const;
+export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 
 /** The schema version this build reads and writes. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * Creates the schema in an empty database. Knowledge rows are temporal: a
@@ -85,10 +88,25 @@ function createSchema(db: DatabaseSync): void {
       CREATE UNIQUE INDEX references_current ON "references" (from_address, to_address, kind) WHERE valid_to_revision IS NULL;
       CREATE INDEX references_from ON "references" (from_address);
       CREATE INDEX references_to ON "references" (to_address);
+      CREATE TABLE suppressions (
+        id                  INTEGER PRIMARY KEY,
+        entity              TEXT NOT NULL CHECK (entity IN (${list(SUPPRESSION_ENTITIES)})),
+        start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
+        end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
+        to_address          INTEGER CHECK (to_address BETWEEN 0 AND 65535),
+        kind                TEXT CHECK (kind IN (${list(REFERENCE_KINDS)})),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
+        valid_to_revision   INTEGER REFERENCES revisions (id),
+        CHECK ((entity = 'reference') = (to_address IS NOT NULL AND kind IS NOT NULL)),
+        CHECK (entity = 'region' OR start_address = end_address)
+      );
+      CREATE INDEX suppressions_start ON suppressions (start_address);
       CREATE VIEW current_symbols AS SELECT * FROM symbols WHERE valid_to_revision IS NULL;
       CREATE VIEW current_regions AS SELECT * FROM regions WHERE valid_to_revision IS NULL;
       CREATE VIEW current_comments AS SELECT * FROM comments WHERE valid_to_revision IS NULL;
       CREATE VIEW current_references AS SELECT * FROM "references" WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_suppressions AS SELECT * FROM suppressions WHERE valid_to_revision IS NULL;
       INSERT INTO meta (key, value) VALUES ('current_revision', '0');
     `);
 }
