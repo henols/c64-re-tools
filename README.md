@@ -57,8 +57,6 @@ and settings stay unchanged.
 
 ## Use it with an agent
 
-## Use it with an agent
-
 1. Install for your harness: `--target claude`, `codex`, `pi`, `opencode`, `gemini`, `copilot`, `cursor` or `windsurf`. Without `--target`, `install` installs for all of them.
 2. Start the Host Runtime and leave it running.
 3. Start the harness in the project, for example `claude` or `codex`, or open the project in Cursor or Windsurf. The harness starts the MCP server and finds the skills by itself.
