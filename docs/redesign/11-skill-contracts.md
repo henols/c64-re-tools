@@ -43,7 +43,7 @@ All skills follow these rules:
 | c64-source | local script (Ghidra, ACME; VICE for the loader check) | none | byte-identical ACME source + optional loader (D48) |
 | c64-assembler | broker-backed script | none | PRG/artifacts or actionable diagnostics |
 | c64-testing | MCP + local comparison helpers | none | pass/fail/inconclusive evidence |
-| c64-disk | broker-backed script | none | disk structure/extracted content |
+| c64-disk | broker-backed script; T64 and CRT read locally (D54) | none | disk, tape or cartridge structure/extracted content |
 | c64-basic | broker-backed/local deterministic decode | none | BASIC listing + handoff address |
 | c64-unpacker | broker-backed detection + MCP when runtime depack is needed | none | unpacked subject/artifact |
 | c64-memory-map | local deterministic lookup/decoder | none | C64 address/register meaning |

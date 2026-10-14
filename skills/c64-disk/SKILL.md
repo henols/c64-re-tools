@@ -1,13 +1,13 @@
 ---
 name: c64-disk
-description: Use this skill to examine a C64 disk image (D64, D71, D81 or G64) and to extract files from it into the project. It shows the directory, the BAM, the directory entry of a file and the sector chain of a file. Do not use it to run a program or to decode BASIC. Give an extracted file to the c64-basic, c64-unpacker or c64-static-analysis skill.
+description: Use this skill to examine a C64 disk image (D64, D71, D81 or G64), a T64 tape file or a CRT cartridge file. It extracts files into the project. It shows the directory, the BAM, the directory entry of a file and the sector chain of a file. It writes each bank of a cartridge as a PRG. Do not use it to run a program or to decode BASIC. Give an extracted file to the c64-basic, c64-unpacker or c64-static-analysis skill.
 ---
 
 # c64-disk
 
 ## Purpose
 
-Examine a C64 disk image. Extract a file from the image into the project.
+Examine a C64 disk image, a T64 tape file or a CRT cartridge file. Extract a file from it into the project.
 
 This skill does not change the disk image and does not change project knowledge.
 
@@ -16,10 +16,11 @@ This skill does not change the disk image and does not change project knowledge.
 - The disk image: a `.d64`, `.d71`, `.d81` or `.g64` file, relative to the project directory.
 - For one file: the file name as the directory shows it.
 - To extract a file: the output path, relative to the project directory.
+- A T64 tape file or a CRT cartridge file, relative to the project directory.
 
 ## Tools / execution path
 
-The script sends the image to the host runtime. The host runs c1541 and sends the result back. The script writes an extracted file into the project.
+The script sends a disk image to the host runtime. The host runs c1541 and sends the result back. The script writes an extracted file into the project. It reads T64 and CRT files itself.
 
 ```
 node <skill>/scripts/disk.ts <action> <image> [name] [--out <file>]
@@ -32,6 +33,10 @@ node <skill>/scripts/disk.ts <action> <image> [name] [--out <file>]
 | The type, size and first block of one file | `entry original/game.d64 GAME` |
 | The track and sector of each block of one file | `chain original/game.d64 GAME` |
 | Extract one file | `read original/game.d64 GAME --out extracted/game.prg` |
+| The files of a tape | `directory original/game.t64` |
+| Extract one file of a tape | `read original/game.t64 GAME --out extracted/game.prg` |
+| The banks of a cartridge | `directory original/game.crt` |
+| Write each bank of a cartridge as a PRG | `crt original/game.crt --out cart` |
 
 The script prints one JSON object.
 
@@ -55,6 +60,15 @@ Do not store:
 
 A downstream skill records the meaning of the extracted content.
 
+## Tapes and cartridges
+
+The script reads T64 and CRT files itself. The host runtime is not necessary for them.
+
+- T64: `directory` and `read`. Many T64 files have a wrong end address. Then the entry has `fixedSize: true`, and the size comes from the position of the next file.
+- CRT: `directory` and `crt`. The script reads hardware types 0 (normal 8K, 16K or Ultimax), 5 (Ocean), 19 (Magic Desk) and 32 (EasyFlash). It refuses other types by name. `crt` writes `crt.json` and one PRG for each CHIP packet, for example `bank3-8000.prg`.
+- A cartridge bank uses the same addresses as other banks. Analyze each bank PRG with c64-static-analysis and `--space bank3`, and record its knowledge in space `bank3`.
+- TAP: a TAP file holds tape signals, and turbo loaders have their own formats. The script does not read it. Start it with the c64-emulator skill, or capture its parts with `loads` of the c64-unpacker skill.
+
 ## Result
 
 The directory, the BAM, an entry or a sector chain as JSON. Or the extracted file in the project at the output path.
@@ -74,5 +88,6 @@ A file that is not `closed` was not written fully. Its data can be incomplete.
 
 - BASIC program → c64-basic
 - Packed program → c64-unpacker
-- Machine code → c64-static-analysis
+- Machine code, also a cartridge bank → c64-static-analysis
+- A TAP file → c64-unpacker
 - Run the program → c64-emulator
