@@ -28,11 +28,12 @@ const shellStandIn = process.platform === "win32" ? "the stand-in VICE is a shel
 test("c64-re-tools-host runs in the foreground, serves the protocol and stops on SIGTERM", { skip: liveSkip }, async () => {
   // The runtime starts VICE once before it listens, so this needs the real one.
   const host = await startHost();
-  const match = /listening on (127\.0\.0\.1):(\d+)$/.exec(host.line);
+  // The host listens on every address (D35), so a dev container reaches it too.
+  const match = /listening on 0\.0\.0\.0:(\d+)$/.exec(host.line);
   assert.ok(match, host.line);
 
   // A client from another installation is refused without starting an emulator.
-  const socket = connect({ host: match[1]!, port: Number(match[2]) });
+  const socket = connect({ host: "127.0.0.1", port: Number(match[1]) });
   await once(socket, "connect");
   socket.write(encodeFrame({ type: "hello", protocol: HOST_PROTOCOL_ID, version: 0, role: "vice-session" }));
   const decoder = new FrameDecoder();
