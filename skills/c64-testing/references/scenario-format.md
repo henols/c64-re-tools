@@ -71,6 +71,38 @@ A `tolerance` is the largest permitted difference for each byte. A `mask` has at
 
 A `pc` value is an address. Compare `pc` only when both programs have the code at the same address.
 
+## Runs
+
+A run file (for `run.ts`) has:
+
+- `name`: a short name.
+- `start`: `{ "program": "game.prg" }` to autostart a program with a BASIC start line, `{ "program": "game.prg", "load": true }` to load it with the CPU stopped (set `pc` in a step), or `{ "snapshot": "snapshots/room0.vsf" }`.
+- `symbols`: optional, `knowledge`, `none` (default), or a JSON file as for a subject.
+- `videoStandard`: optional, `pal` (default) or `ntsc`.
+- `steps`: the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of a scenario, and the run steps `snapshot`, `save`, `screen`, `coverage` and `observe`.
+
+A name in `save`, `screen`, `coverage` and `observe` has 1 to 64 letters, digits, dots, underscores or hyphens. The files go into the `--out` directory, with `results.json`. It has the observations, the files and the steps done. If a `runUntil` step did not reach its target, it also tells why the run stopped.
+
+Example: visit two rooms from the same start.
+
+```json
+{
+  "name": "rooms",
+  "start": { "snapshot": "snapshots/room0.vsf" },
+  "steps": [
+    { "write": { "at": "$0350", "bytes": [1] } },
+    { "frames": 50 },
+    { "screen": "room1" },
+    { "coverage": "room1" },
+    { "snapshot": "snapshots/room0.vsf" },
+    { "write": { "at": "$0350", "bytes": [2] } },
+    { "frames": 50 },
+    { "screen": "room2" },
+    { "coverage": "room2" }
+  ]
+}
+```
+
 ## Checks
 
 The script checks the scenario before it starts the emulator. A step with an unknown key or a wrong value stops the script with `invalid-input`. The message names the step.

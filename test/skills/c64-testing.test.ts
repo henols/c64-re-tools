@@ -199,3 +199,14 @@ test("the checklist refuses a bad scenario or no scenario as invalid input, with
     assert.match(error.message, /\n\nchecklist\.ts <scenario\.json>/, args.join(" "));
   }
 });
+
+test("a run refuses a bad call before it opens an emulator (D45)", () => {
+  const script = resolvePath(home, "skills/c64-testing/scripts/run.ts");
+  const call = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  writeFileSync(join(project, "run.json"), JSON.stringify({ name: "r", start: { program: "game.prg" }, steps: [{ screen: "../escape" }] }));
+  writeFileSync(join(project, "two.json"), JSON.stringify({ name: "r", start: { program: "game.prg", snapshot: "s.vsf" }, steps: [{ frames: 1 }] }));
+  for (const args of [["run.json"], ["run.json", "--out", "../outside"], ["run.json", "--out", "out"], ["two.json", "--out", "out"]]) {
+    const run = call(...args);
+    assert.equal(run.status, 2, `${args.join(" ")}: ${run.stdout}`);
+  }
+});

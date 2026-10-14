@@ -1,6 +1,6 @@
 ---
 name: c64-testing
-description: Use this skill to test if a rebuilt or changed C64 program behaves as the original. It runs one scenario on the original and then on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. It also makes a checklist for a human playtest. Do not use it to find the cause of a difference.
+description: Use this skill to test if a rebuilt or changed C64 program behaves as the original. It runs one scenario on the original and then on the rebuild in an emulator. It compares memory, registers, chip state and the screen with explicit rules, and gives PASS, FAIL or INCONCLUSIVE. It also makes a checklist for a human playtest. Use its run command to explore a program with many steps, for example to visit each room or level. A run keeps screens, coverage maps and snapshots as files. Do not use it to find the cause of a difference.
 ---
 
 # c64-testing
@@ -29,6 +29,26 @@ node <skill>/scripts/checklist.ts tests/moves-left.json --item 'FIRE starts the 
 The test script prints one JSON object. The exit status is 0 for PASS, 1 for FAIL, 3 for INCONCLUSIVE and 2 for a bad call.
 
 The checklist script prints a Markdown checklist for a human tester.
+
+### Runs
+
+A run does steps on one program, with no comparison, and keeps the results as files. Use it for many steps. One run replaces many emulator calls, for example a visit to each room of a game.
+
+```
+node <skill>/scripts/run.ts runs/rooms.json --out runs/rooms
+```
+
+The run file gives where to start (a program, or a snapshot file), the steps, and optional symbols. To go on from the live emulator, save its state with `c64_snapshot` action `save` and `out`, and start the run from that file. Besides the steps of a scenario, a run has these steps:
+
+| Step | Effect |
+|---|---|
+| `{ "snapshot": "snapshots/room0.vsf" }` | Restore a snapshot file. |
+| `{ "save": "room3" }` | Write the state now to `room3.vsf` in the output directory. |
+| `{ "screen": "room3" }` | Write the screen to `room3.png`. |
+| `{ "coverage": "room3" }` | Write the coverage map since the start or the last coverage step to `room3.bin`, then clear the map. |
+| `{ "observe": "room3", "memory": ["$c100"], "registers": true }` | Record memory, registers, `vicii` or `sprites` in `results.json`. |
+
+See [references/scenario-format.md](references/scenario-format.md), section Runs. The script prints one JSON object. The exit status is 0 when all steps ran, 1 when a step did not reach its target, and 2 for a bad call. A long run can need more time than one shell call. Then run it in the background.
 
 ## Workflow
 
