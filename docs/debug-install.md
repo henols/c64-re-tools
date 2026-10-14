@@ -21,7 +21,7 @@ Then install in the container as usual, or add the Feature from the README with 
 
 ```json
 "features": {
-  "https://github.com/henols/c64-re-tools/releases/download/v<version>/devcontainer-feature-c64-re-tools.tgz": { "channel": "next" }
+  "https://github.com/henols/c64-re-tools/releases/download/v<version>/devcontainer-feature-c64-re-tools.tgz": { "target": "claude", "channel": "next" }
 }
 ```
 

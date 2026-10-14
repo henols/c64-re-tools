@@ -50,6 +50,8 @@ The agent runs in the container, VICE and the Host Runtime on the host. In `.dev
 "runArgs": ["--add-host=host.docker.internal:host-gateway"]
 ```
 
+Until 2.0.0 is released, the `latest` URL has no Feature. Use the prerelease: `https://github.com/henols/c64-re-tools/releases/download/v2.0.0-rc.4/devcontainer-feature-c64-re-tools.tgz` with `{ "target": "claude", "channel": "next" }`.
+
 The Feature installs ACME, dxa, Java 21 and Ghidra, puts the toolkit into the project when the container is created, and updates it at each start. `target` is a harness or a comma list. `channel` is `latest` (default) or `next`. Debian and Ubuntu images only. `runArgs` is for Docker on Linux. Start the Host Runtime on the host as above.
 
 ### Settings
