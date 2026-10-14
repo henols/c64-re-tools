@@ -22,11 +22,11 @@ A PASS proves only the behavior that the scenario does and observes. It does not
 The script starts one emulator through the host runtime. It runs the scenario on the original and then on the rebuild. Before each side, it does a hard reset of the emulator. The CPU then stops at the reset vector.
 
 ```
-node <skill>/scripts/test.ts tests/moves-left.json
+node <skill>/scripts/test.ts tests/moves-left.json --out results/moves-left
 node <skill>/scripts/checklist.ts tests/moves-left.json --item 'FIRE starts the game.'
 ```
 
-The test script prints one JSON object. The exit status is 0 for PASS, 1 for FAIL, 3 for INCONCLUSIVE and 2 for a bad call.
+The test script prints one JSON object. The exit status is 0 for PASS, 1 for FAIL, 3 for INCONCLUSIVE and 2 for a bad call. With `--out`, a FAIL writes files into that directory: both screens and the difference image for each screen difference, and `memory.json` with each byte that differs. `files` in the result names them.
 
 The checklist script prints a Markdown checklist for a human tester.
 
@@ -89,6 +89,9 @@ PASS, FAIL or INCONCLUSIVE, the checkpoints and the smallest differences that ex
 - `installation-incomplete`, or a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 - A FAIL with only a `screen` difference: add `vicii` or `sprites` to the observation to find which chip state is different.
 - A program that uses random numbers: set the random seed with a `write` step on both sides. If that is not possible, observe only values that do not depend on the random numbers.
+- The two sides start differently, for example the original after a cracked intro. Give the steps that only one side needs a `side`. Then make the memory the same with a `normalize` step from the entry state of the c64-unpacker skill.
+- Frame counts drift by one frame between the sides: the sides got to the same address at different raster positions. Do not sync on an IRQ handler. Sync on a value that the IRQ changes, with `runUntil` `memory`, or on an address and a raster line together.
+- A byte that cannot be the same on both sides, for example a read-only collision register: use `exclude` with the reason. Do not use `exclude` to hide a real difference.
 
 Do not add a mask or a tolerance only to make a test pass. A tolerance must have a reason in the behavior of the program.
 

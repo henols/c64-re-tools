@@ -4,7 +4,7 @@
 
 import { parseC64Address, textToPetscii } from "../c64.ts";
 import { JOYSTICK_DIRECTIONS, MAX_EXECUTION_COUNT, MAX_KEYBOARD_BYTES, MAX_MEMORY_WRITE, MAX_TIMEOUT_FRAMES } from "../protocol/vice.ts";
-import type { RunUntilResult } from "../protocol/vice.ts";
+import type { RunTarget, RunUntilResult } from "../protocol/vice.ts";
 import type { ViceSessionClient } from "./vice-session.ts";
 
 /** A "$xxxx" address, or a symbol name where the caller resolves names. */
@@ -18,7 +18,10 @@ export type ActionStep =
   | { joystick: { port: 1 | 2; direction: JoystickDirection; fire?: boolean } }
   | { type: string }
   | { frames: number }
-  | { runUntil: { at: Location } | { memory: { at: Location; equals: number } }; timeoutFrames: number };
+  | { runUntil: { at: Location; raster?: number } | { raster: number } | { memory: { at: Location; equals: number } }; timeoutFrames: number };
+
+/** The highest raster line of a PAL frame; an NTSC frame has fewer, which the emulator checks. */
+const MAX_RASTER_LINE = 311;
 
 export const ACTION_STEP_KINDS = ["write", "registers", "joystick", "type", "frames", "runUntil"] as const;
 
@@ -91,10 +94,14 @@ export function checkActionStep(kind: string, step: Record<string, unknown>, at:
       return;
     case "runUntil": {
       const target = step.runUntil;
-      if (!isObject(target) || Object.keys(target).length !== 1 || !("at" in target || "memory" in target)) return fail(`${at}: runUntil needs at or memory`);
-      if ("at" in target) checkLocation(target.at, `${at}: runUntil.at`, fail, names);
-      else {
-        const memory = target.memory;
+      const keys = isObject(target) ? Object.keys(target).sort().join(",") : "";
+      // at, raster, at with raster (the address only on that line, D46), or memory.
+      if (!["at", "raster", "at,raster", "memory"].includes(keys)) return fail(`${at}: runUntil needs at, raster, at and raster, or memory`);
+      const until = target as Record<string, unknown>;
+      if ("raster" in until && !isInteger(until.raster, 0, MAX_RASTER_LINE)) fail(`${at}: runUntil.raster must be a raster line from 0 to ${MAX_RASTER_LINE}`);
+      if ("at" in until) checkLocation(until.at, `${at}: runUntil.at`, fail, names);
+      else if ("memory" in until) {
+        const memory = until.memory;
         if (!isObject(memory) || Object.keys(memory).some((key) => key !== "at" && key !== "equals")) return fail(`${at}: runUntil.memory needs at and equals, and nothing else`);
         checkLocation(memory.at, `${at}: runUntil.memory.at`, fail, names);
         if (!isInteger(memory.equals, 0, 0xff)) fail(`${at}: runUntil.memory.equals must be a number from 0 to 255`);
@@ -149,10 +156,13 @@ export async function runActionStep(client: ViceSessionClient, step: ActionStep,
     await stop(client);
     await client.execution({ action: "advance-frames", count: step.frames, space: "c64" });
   } else {
-    const target =
-      "at" in step.runUntil
-        ? { kind: "address" as const, address: at(step.runUntil.at), space: "c64" as const }
-        : { kind: "memory" as const, address: at(step.runUntil.memory.at), operator: "eq" as const, value: step.runUntil.memory.equals, space: "c64" as const, view: "cpu" as const };
+    const until = step.runUntil;
+    const target: RunTarget =
+      "at" in until
+        ? { kind: "address", address: at(until.at), space: "c64", ...(until.raster === undefined ? {} : { condition: { kind: "raster" as const, line: until.raster } }) }
+        : "raster" in until
+          ? { kind: "raster", line: until.raster }
+          : { kind: "memory", address: at(until.memory.at), operator: "eq", value: until.memory.equals, space: "c64", view: "cpu" };
     const reached = await client.runUntil({ target, timeoutFrames: step.timeoutFrames });
     if (!reached.reached) return reached;
   }

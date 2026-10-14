@@ -7,7 +7,7 @@ import { formatC64Address, parseC64Address } from "#src/c64.ts";
 import { MAX_BASELINES, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
 import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
 import { ACTION_STEP_KEYS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type Location } from "#src/host-client/steps.ts";
-import { readProjectFile } from "#src/host-client/transfer.ts";
+import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
 import { listSymbols } from "#src/knowledge/read.ts";
@@ -26,6 +26,8 @@ export interface MemoryObservation {
   size?: number;
   /** The largest allowed difference per byte; 0 when not given. */
   tolerance?: number;
+  /** Bytes in the range that the comparison leaves out, each with the reason (D46). */
+  exclude?: Array<{ at: Location; reason: string }>;
 }
 
 export interface ScreenPolicy {
@@ -35,12 +37,17 @@ export interface ScreenPolicy {
   mask?: Array<{ x: number; y: number; width: number; height: number }>;
 }
 
-export type Step =
+type StepBody =
   | { reset: "hard" | "soft" }
   | { load: true }
   | { autostart: true }
+  | { snapshot: string }
+  | { normalize: string }
   | ActionStep
   | { observe: string; memory?: Array<Location | MemoryObservation>; registers?: ObservedRegister[]; screen?: ScreenPolicy; vicii?: boolean; sprites?: number[] };
+
+/** A step; with side, only that side does it (D46). An observe step has no side: it compares both. */
+export type Step = StepBody & { side?: Side };
 
 export interface Subject {
   program: string;
@@ -72,9 +79,13 @@ export interface ScenarioResult {
   reason?: string;
   checkpoints: string[];
   differences: Difference[];
+  /** The bytes that the comparison left out, with their reasons (D46). */
+  excluded?: Array<{ checkpoint: string; at: Location; reason: string }>;
+  /** The files that a FAIL wrote with --out. */
+  files?: string[];
 }
 
-const STEP_KINDS = ["reset", "load", "autostart", "write", "registers", "joystick", "type", "frames", "runUntil", "observe"];
+const STEP_KINDS = ["reset", "load", "autostart", "snapshot", "normalize", "write", "registers", "joystick", "type", "frames", "runUntil", "observe"];
 
 /** The keys each kind of step can have. */
 const STEP_KEYS: Record<string, readonly string[]> = {
@@ -115,8 +126,9 @@ export function readScenario(path: string): Scenario {
     const kinds = "observe" in step ? ["observe"] : Object.keys(step).filter((key) => STEP_KINDS.includes(key));
     if (kinds.length !== 1) return fail(`${at} must have exactly one of ${STEP_KINDS.join(", ")}`);
     const kind = kinds[0]!;
-    const allowed = STEP_KEYS[kind] ?? [kind];
+    const allowed = [...(STEP_KEYS[kind] ?? [kind]), ...(kind === "observe" ? [] : ["side"])];
     for (const key of Object.keys(step)) if (!allowed.includes(key)) fail(`${at} has the key ${key}, which a ${kind} step does not have`);
+    if (step.side !== undefined && !(SIDES as unknown[]).includes(step.side)) fail(`${at}: side must be original or rebuild`);
     checkStep(kind, step, at, fail);
     if (kind === "observe") {
       if (labels.has(step.observe as string)) fail(`${at} needs a new checkpoint name`);
@@ -139,6 +151,12 @@ function checkStep(kind: string, step: Record<string, unknown>, at: string, fail
     case "autostart":
       if (step[kind] !== true) fail(`${at}: ${kind} must be true`);
       return;
+    case "snapshot":
+      if (typeof step.snapshot !== "string" || step.snapshot === "") fail(`${at}: snapshot needs a .vsf file in the project`);
+      return;
+    case "normalize":
+      if (typeof step.normalize !== "string" || step.normalize === "") fail(`${at}: normalize needs an entry state file in the project`);
+      return;
     case "write":
     case "registers":
     case "joystick":
@@ -160,7 +178,15 @@ function checkObserve(step: Record<string, unknown>, at: string, fail: (message:
         checkLocation(item, `${at}: memory`, fail);
         continue;
       }
-      if (!isObject(item) || Object.keys(item).some((key) => !["at", "size", "tolerance"].includes(key))) return fail(`${at}: a memory object has at, size and tolerance, and nothing else`);
+      if (!isObject(item) || Object.keys(item).some((key) => !["at", "size", "tolerance", "exclude"].includes(key))) return fail(`${at}: a memory object has at, size, tolerance and exclude, and nothing else`);
+      if (item.exclude !== undefined) {
+        if (!Array.isArray(item.exclude) || item.exclude.length === 0) fail(`${at}: memory.exclude must be a list of objects with at and reason`);
+        for (const excluded of item.exclude as unknown[]) {
+          if (!isObject(excluded) || Object.keys(excluded).some((key) => key !== "at" && key !== "reason")) return fail(`${at}: an exclude has at and reason, and nothing else`);
+          checkLocation(excluded.at, `${at}: memory.exclude.at`, fail);
+          if (typeof excluded.reason !== "string" || excluded.reason.trim() === "") fail(`${at}: an exclude needs a reason: why this byte may differ`);
+        }
+      }
       checkLocation(item.at, `${at}: memory.at`, fail);
       if (item.size !== undefined && !isInteger(item.size, 1, MAX_MEMORY_READ)) fail(`${at}: memory.size must be a number from 1 to ${MAX_MEMORY_READ}`);
       if (item.tolerance !== undefined && !isInteger(item.tolerance, 0, 0xff)) fail(`${at}: memory.tolerance must be a number from 0 to 255`);
@@ -255,11 +281,34 @@ export function resolve(location: Location, symbols: Map<string, number>, side: 
 }
 
 interface Observation {
-  memory: Array<{ label: string; bytes: number[]; tolerance: number }>;
+  memory: Array<{ label: string; address: number; bytes: number[]; tolerance: number; excluded: Array<{ offset: number; at: Location; reason: string }> }>;
   registers: Partial<Record<ObservedRegister, unknown>>;
   screen?: { match: boolean; mismatchingPixels: number; mismatchRatio: number; bounds?: unknown };
   vicii?: unknown;
   sprites?: unknown;
+  /** PNG images for the files of a FAIL (D46): the side's screen, and on the rebuild the difference image. */
+  png?: string;
+  diffPng?: string;
+}
+
+/** Writes pages 0-3 and $00/$01 from an entry state file (D43, D46): both sides then start from the same RAM. */
+async function normalize(client: ViceSessionClient, path: string): Promise<void> {
+  let state: { pages?: Record<string, string>; cpuPort?: Record<string, number> };
+  try {
+    state = JSON.parse(readProjectFile(path).bytes.toString("utf8")) as typeof state;
+  } catch (error) {
+    if (error instanceof WireFailure) throw error;
+    throw new ScenarioError(`${path} is not an entry state file: ${(error as Error).message}`);
+  }
+  const pages = ["$0000", "$0100", "$0200", "$0300"].map((page) => state.pages?.[page]);
+  const port = [state.cpuPort?.$00, state.cpuPort?.$01];
+  if (pages.some((page) => typeof page !== "string" || !/^[0-9a-f]{512}$/.test(page)) || port.some((value) => !isInteger(value, 0, 0xff))) {
+    throw new ScenarioError(`${path} is not an entry state file: it needs pages $0000 to $0300 and cpuPort $00 and $01`);
+  }
+  if ((await client.status()).state === "running") await client.execution({ action: "pause", space: "c64" });
+  // Pages 0 to 3 in RAM from $0002, then the CPU port: the port bits switch what the CPU sees.
+  await client.memoryWrite({ address: 0x0002, data: pages.join("").slice(4), space: "c64", view: "ram" });
+  await client.memoryWrite({ address: 0x0000, data: Buffer.from(port as number[]).toString("hex"), space: "c64", view: "cpu" });
 }
 
 /**
@@ -278,7 +327,7 @@ async function startProgram(client: ViceSessionClient, program: string, side: Si
   if (failed === "not-started") throw new Inconclusive(`the ${side} program did not start within ${RUN_LIMIT_FRAMES} frames of RUN; autostart runs only a program with a BASIC start line`);
 }
 
-async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side, symbols: Map<string, number>): Promise<Map<string, Observation>> {
+async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side, symbols: Map<string, number>, files: boolean): Promise<Map<string, Observation>> {
   const subject = scenario[side];
   const observations = new Map<string, Observation>();
   const at = (location: Location) => resolve(location, symbols, side);
@@ -288,14 +337,22 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
   await client.joystick({ port: 2, direction: "center", fire: false });
   let checkpoint = 0;
   for (const step of scenario.steps) {
+    if (step.side !== undefined && step.side !== side) continue;
     // Observe first: an observe step may also carry "registers" or "memory".
     if ("observe" in step) {
       checkpoint++;
       const observation: Observation = { memory: [], registers: {} };
       for (const item of step.memory ?? []) {
-        const spec = typeof item === "string" ? { at: item } : item;
-        const read = await client.memoryRead({ address: at(spec.at), size: spec.size ?? 1, space: "c64", view: "cpu" });
-        observation.memory.push({ label: spec.size !== undefined && spec.size > 1 ? `${spec.at} (${spec.size} bytes)` : spec.at, bytes: [...Buffer.from(read.data, "hex")], tolerance: spec.tolerance ?? 0 });
+        const spec: MemoryObservation = typeof item === "string" ? { at: item } : item;
+        const address = at(spec.at);
+        const size = spec.size ?? 1;
+        const read = await client.memoryRead({ address, size, space: "c64", view: "cpu" });
+        const excluded = (spec.exclude ?? []).map((exclude) => {
+          const offset = at(exclude.at) - address;
+          if (offset < 0 || offset >= size) throw new ScenarioError(`the exclude ${exclude.at} lies outside the observed ${spec.at} (${size} bytes)`);
+          return { offset, at: exclude.at, reason: exclude.reason };
+        });
+        observation.memory.push({ label: size > 1 ? `${spec.at} (${size} bytes)` : spec.at, address, bytes: [...Buffer.from(read.data, "hex")], tolerance: spec.tolerance ?? 0, excluded });
       }
       if (step.registers !== undefined) {
         const registers = await client.registersGet("c64");
@@ -310,10 +367,15 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
       if (step.screen !== undefined) {
         const baseline = baselineName(checkpoint, step.observe);
         if (side === "original") {
-          await client.screenCapture(baseline);
+          const shot = await client.screenCapture(baseline);
+          if (files) observation.png = shot.png;
         } else {
-          const compared = await client.screenCompare({ baseline, maxMismatchRatio: step.screen.maxMismatchRatio ?? 0, mask: step.screen.mask ?? [], includeDiff: false });
+          const compared = await client.screenCompare({ baseline, maxMismatchRatio: step.screen.maxMismatchRatio ?? 0, mask: step.screen.mask ?? [], includeDiff: files });
           observation.screen = { match: compared.match, mismatchingPixels: compared.mismatchingPixels, mismatchRatio: compared.mismatchRatio, ...(compared.bounds === undefined ? {} : { bounds: compared.bounds }) };
+          if (files) {
+            observation.png = (await client.screenCapture()).png;
+            if (compared.diffPng !== undefined) observation.diffPng = compared.diffPng;
+          }
           await client.screenDiscard(baseline);
         }
       }
@@ -325,8 +387,13 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
       await client.programLoad({ path: subject.program });
     } else if ("autostart" in step) {
       await startProgram(client, subject.program, side);
+    } else if ("snapshot" in step) {
+      await client.snapshotRestore(readProjectFile(step.snapshot).bytes);
+    } else if ("normalize" in step) {
+      await normalize(client, step.normalize);
     } else {
-      const notReached = await runActionStep(client, step, at);
+      const { side: _side, ...action } = step;
+      const notReached = await runActionStep(client, action as ActionStep, at);
       if (notReached !== undefined && "runUntil" in step) {
         throw new Inconclusive(`the ${side} side did not reach the checkpoint before ${step.timeoutFrames} frames (it stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)})`);
       }
@@ -342,7 +409,8 @@ export function compare(original: Map<string, Observation>, rebuild: Map<string,
     const right = rebuild.get(checkpoint)!;
     left.memory.forEach((item, index) => {
       const other = right.memory[index]!;
-      if (item.bytes.some((byte, at) => Math.abs(byte - other.bytes[at]!) > item.tolerance)) {
+      const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
+      if (item.bytes.some((byte, at) => !skipped.has(at) && Math.abs(byte - other.bytes[at]!) > item.tolerance)) {
         const show = (bytes: number[]) => (bytes.length === 1 ? bytes[0] : Buffer.from(bytes).toString("hex"));
         differences.push({ checkpoint, what: `memory ${item.label}`, original: show(item.bytes), rebuild: show(other.bytes) });
       }
@@ -359,13 +427,46 @@ export function compare(original: Map<string, Observation>, rebuild: Map<string,
   return differences;
 }
 
-/** Runs the scenario on the original, then on the rebuild, in one VICE session. */
-export async function runScenario(client: ViceSessionClient, scenario: Scenario): Promise<ScenarioResult> {
+/**
+ * Writes the files of a FAIL into `out` (D46): for a screen difference both
+ * screens and the difference image, and memory.json with each differing byte.
+ */
+function writeFailFiles(out: string, original: Map<string, Observation>, rebuild: Map<string, Observation>, differences: Difference[]): string[] {
+  const files: string[] = [];
+  const write = (name: string, bytes: Uint8Array) => {
+    writeProjectFile(`${out}/${name}`, bytes, { what: "--out" });
+    files.push(name);
+  };
+  const memory: Array<{ checkpoint: string; what: string; bytes: Array<{ address: string; original: number; rebuild: number }> }> = [];
+  for (const difference of differences) {
+    const left = original.get(difference.checkpoint)!;
+    const right = rebuild.get(difference.checkpoint)!;
+    const name = difference.checkpoint.replace(/[^A-Za-z0-9._-]/g, "_");
+    if (difference.what === "screen") {
+      if (left.png !== undefined) write(`${name}-original.png`, Buffer.from(left.png, "base64"));
+      if (right.png !== undefined) write(`${name}-rebuild.png`, Buffer.from(right.png, "base64"));
+      if (right.diffPng !== undefined) write(`${name}-diff.png`, Buffer.from(right.diffPng, "base64"));
+    }
+    if (difference.what.startsWith("memory ")) {
+      const index = left.memory.findIndex((item) => `memory ${item.label}` === difference.what);
+      const item = left.memory[index]!;
+      const other = right.memory[index]!;
+      const skipped = new Set(item.excluded.map((excluded) => excluded.offset));
+      const bytes = item.bytes.flatMap((byte, offset) => (!skipped.has(offset) && Math.abs(byte - other.bytes[offset]!) > item.tolerance ? [{ address: formatC64Address(item.address + offset), original: byte, rebuild: other.bytes[offset]! }] : []));
+      memory.push({ checkpoint: difference.checkpoint, what: difference.what, bytes });
+    }
+  }
+  if (memory.length > 0) write("memory.json", Buffer.from(`${JSON.stringify(memory, null, 2)}\n`));
+  return files;
+}
+
+/** Runs the scenario on the original, then on the rebuild, in one VICE session. With out, a FAIL leaves files there. */
+export async function runScenario(client: ViceSessionClient, scenario: Scenario, options: { out?: string } = {}): Promise<ScenarioResult> {
   const checkpoints = scenario.steps.flatMap((step) => ("observe" in step ? [step.observe] : []));
   const observed = new Map<Side, Map<string, Observation>>();
   for (const side of SIDES) {
     try {
-      observed.set(side, await runSide(client, scenario, side, loadSymbols(scenario[side])));
+      observed.set(side, await runSide(client, scenario, side, loadSymbols(scenario[side]), options.out !== undefined));
     } catch (error) {
       if (error instanceof Inconclusive) return { result: "INCONCLUSIVE", scenario: scenario.name, reason: error.message, checkpoints, differences: [] };
       if (error instanceof WireFailure) {
@@ -374,6 +475,17 @@ export async function runScenario(client: ViceSessionClient, scenario: Scenario)
       throw error;
     }
   }
-  const differences = compare(observed.get("original")!, observed.get("rebuild")!);
-  return { result: differences.length === 0 ? "PASS" : "FAIL", scenario: scenario.name, checkpoints, differences };
+  const original = observed.get("original")!;
+  const rebuild = observed.get("rebuild")!;
+  const differences = compare(original, rebuild);
+  const excluded = [...original].flatMap(([checkpoint, observation]) => observation.memory.flatMap((item) => item.excluded.map((excluded) => ({ checkpoint, at: excluded.at, reason: excluded.reason }))));
+  const files = differences.length > 0 && options.out !== undefined ? writeFailFiles(options.out, original, rebuild, differences) : [];
+  return {
+    result: differences.length === 0 ? "PASS" : "FAIL",
+    scenario: scenario.name,
+    checkpoints,
+    differences,
+    ...(excluded.length === 0 ? {} : { excluded }),
+    ...(files.length === 0 ? {} : { files }),
+  };
 }
