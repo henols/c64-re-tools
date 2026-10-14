@@ -80,3 +80,19 @@ test("a missing ACME is refused with the stop instruction (D37)", async () => {
   assert.equal(error.code, "installation-incomplete");
   assert.ok(error.message.endsWith(STOP_AND_ASK), error.message);
 });
+
+test("--compare checks the build against a reference and fails on a difference (D47)", { skip: acmeSkip }, async () => {
+  const first = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/reference.prg");
+  assert.equal(first.status, 0, JSON.stringify(first.json));
+  const same = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare", "build/reference.prg");
+  assert.equal(same.status, 0, JSON.stringify(same.json));
+  assert.equal((same.json.compare as { identical: boolean }).identical, true);
+  const changed = readFileSync(join(project, "build", "reference.prg"));
+  changed[10] = changed[10]! ^ 0xff;
+  writeFileSync(join(project, "build", "changed.prg"), changed);
+  const different = await assembleScript("--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/again.prg", "--compare", "build/changed.prg");
+  assert.equal(different.status, 1, "a build that differs is a failed check");
+  const [segment] = (different.json.compare as { segments: Array<{ result: string; firstDifference: { address: string } }> }).segments;
+  assert.equal(segment!.result, "different");
+  assert.equal(segment!.firstDifference.address, "$0809");
+});

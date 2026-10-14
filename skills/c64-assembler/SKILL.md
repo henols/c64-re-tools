@@ -31,6 +31,7 @@ node <skill>/scripts/assemble.ts --source-root src --entry main.a --out build/ga
 | `--include lib` | An include directory, relative to the source root. Use it again for more directories. |
 | `--define DEBUG=1` | An assembler symbol: an integer, also as `$` hex, or `true` or `false`. Use it again for more symbols. |
 | `--set-pc '$0801'` | The start address when the source does not set one. |
+| `--compare unpacked/image.json` | Check the program byte by byte against a reference. The reference is the `image.json` of the c64-unpacker skill, a PRG, or 64 KiB of memory. |
 
 The script copies the full source root. Put all files that the program includes under it. Version control directories stay out.
 
@@ -59,7 +60,9 @@ A symbol from the rebuilt source can give the address of a routine in the rebuil
 
 The PRG in the project at the output path, with its load range and symbols. Or the source diagnostics when the assembly failed.
 
-The exit status is 0 for a PRG. The exit status is 1 for `assembled: false` and for an error. The exit status is 2 for a wrong argument.
+With `--compare`, `compare` gives `identical` and one check for each segment of the reference. A check is `identical`, `different` with the first different address, or `not covered` when the program does not hold the segment.
+
+The exit status is 0 for a PRG. The exit status is 1 for `assembled: false`, for a `--compare` that is not identical, and for an error. The exit status is 2 for a wrong argument.
 
 ## Failure and conflicts
 

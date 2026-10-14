@@ -12,6 +12,7 @@ import { localToolContext } from "#src/native/local.ts";
 import type { AcmeParams } from "#src/native/types.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
+import { compareBuild } from "./compare.ts";
 
 const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [options]
 
@@ -21,6 +22,8 @@ const USAGE = `assemble.ts --source-root <dir> --entry <file> --out <file.prg> [
   --include <dir>          include directory relative to the source root (repeatable)
   --define NAME=VALUE      assembler symbol: an integer ($hex allowed) or true/false (repeatable)
   --set-pc <address>       start address when the source sets none, for example '$0801'
+  --compare <file>         check the program byte by byte against an image.json of the
+                           c64-unpacker skill (each segment), a PRG, or 64 KiB of memory
 
 The result is one JSON object. Addresses are $ and four hex digits.`;
 
@@ -45,6 +48,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
       include: { type: "string", multiple: true },
       define: { type: "string", multiple: true },
       "set-pc": { type: "string" },
+      compare: { type: "string" },
       help: { type: "boolean" },
     },
   });
@@ -77,6 +81,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, attachments![0]!);
   const range = result.loadRange!;
+  const compared = values.compare === undefined ? undefined : compareBuild(attachments![0]!, values.compare);
   return {
     output: {
       assembled: true,
@@ -88,8 +93,10 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
           : { name: symbol.name, kind: "constant", value: symbol.value, used: symbol.used },
       ),
       diagnostics: result.diagnostics,
+      ...(compared === undefined ? {} : { compare: compared }),
     },
-    failed: false,
+    // A build that differs from its reference is a failed check.
+    failed: compared !== undefined && !compared.identical,
   };
 }
 
