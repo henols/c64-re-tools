@@ -34,8 +34,15 @@ node <skill>/scripts/unpack.ts capture original/game.prg --until '$c000' --out u
 | `--timeout-frames 3000` | How many frames the program can run before the capture stops (default 3000). |
 | `--frames 3000` | `trace` only: how many frames the program runs (default 3000). |
 | `--entry '$c000'` | `trace` only: start the program at this address. Without it, `trace` types RUN. A program without a BASIC start line needs it. |
+| `--steps input.json` | Input for the program, right after it starts: a JSON list of steps. Use it when an intro waits for a key or a menu waits for a choice. |
 
 The capture reads RAM, also the RAM under the ROMs and the I/O area. The script prints one JSON object.
+
+A steps file has the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of the c64-testing skill. Addresses are `$` and four hex digits. For example, wait 50 frames and press the space bar:
+
+```json
+[{ "frames": 50 }, { "type": " " }]
+```
 
 ## Workflow
 
@@ -70,7 +77,8 @@ The exit status is 0 for a result. The exit status is 1 for `traced: false`, for
 ## Failure and conflicts
 
 - `traced: false`: the emulator did not load the program into memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
-- `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the c64-emulator skill, or give more frames.
+- `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the c64-emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a key.
+- A step did not reach its target: the reason names the step. Change the step or give it more frames.
 - Do not name a packer from weak evidence. The script never names one.
 - Some programs unpack in more than one stage. Make sure that the captured code is the application and not a second unpacker.
 - `not-found` or `invalid-input`: a path or an argument is wrong. Read the message.

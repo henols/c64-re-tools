@@ -3,19 +3,10 @@
 // Observations name semantic symbols that resolve per side, comparisons are
 // explicit, and the result is PASS, FAIL or INCONCLUSIVE.
 
-import { formatC64Address, parseC64Address, textToPetscii } from "#src/c64.ts";
-import {
-  JOYSTICK_DIRECTIONS,
-  MAX_BASELINES,
-  MAX_EXECUTION_COUNT,
-  MAX_KEYBOARD_BYTES,
-  MAX_MASK_RECTANGLES,
-  MAX_MEMORY_READ,
-  MAX_MEMORY_WRITE,
-  MAX_TIMEOUT_FRAMES,
-  WireFailure,
-} from "#src/host-client/tools.ts";
-import { autostartLoaded, LOAD_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
+import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { MAX_BASELINES, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
+import { LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
+import { ACTION_STEP_KEYS, checkActionStep, checkLocation, isInteger, isObject, runActionStep, type ActionStep, type Location } from "#src/host-client/steps.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import type { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { openForRead } from "#src/knowledge/database.ts";
@@ -27,7 +18,7 @@ export type Side = "original" | "rebuild";
 export const SIDES: Side[] = ["original", "rebuild"];
 
 /** A "$xxxx" address or a symbol name that each side resolves on its own. */
-export type Location = string;
+export type { Location };
 
 export interface MemoryObservation {
   at: Location;
@@ -48,12 +39,7 @@ export type Step =
   | { reset: "hard" | "soft" }
   | { load: true }
   | { autostart: true }
-  | { write: { at: Location; bytes: number[] } }
-  | { registers: Partial<Record<"pc" | "a" | "x" | "y" | "sp", number | Location>> }
-  | { joystick: { port: 1 | 2; direction: JoystickDirection; fire?: boolean } }
-  | { type: string }
-  | { frames: number }
-  | { runUntil: { at: Location } | { memory: { at: Location; equals: number } }; timeoutFrames: number }
+  | ActionStep
   | { observe: string; memory?: Array<Location | MemoryObservation>; registers?: ObservedRegister[]; screen?: ScreenPolicy; vicii?: boolean; sprites?: number[] };
 
 export interface Subject {
@@ -92,20 +78,13 @@ const STEP_KINDS = ["reset", "load", "autostart", "write", "registers", "joystic
 
 /** The keys each kind of step can have. */
 const STEP_KEYS: Record<string, readonly string[]> = {
-  runUntil: ["runUntil", "timeoutFrames"],
+  ...ACTION_STEP_KEYS,
   observe: ["observe", "memory", "registers", "screen", "vicii", "sprites"],
 };
 
 /** The registers an observe step can compare. */
 export const OBSERVED_REGISTERS = ["pc", "a", "x", "y", "sp", "flags"] as const;
 type ObservedRegister = (typeof OBSERVED_REGISTERS)[number];
-/** The registers a registers step can set. */
-const SET_REGISTERS = ["pc", "a", "x", "y", "sp"];
-
-type JoystickDirection = (typeof JOYSTICK_DIRECTIONS)[number];
-
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-const isInteger = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
 
 /** Reads and checks a scenario file. Throws ScenarioError naming the first problem. */
 export function readScenario(path: string): Scenario {
@@ -150,18 +129,6 @@ export function readScenario(path: string): Scenario {
   return scenario;
 }
 
-/** Checks a "$xxxx" address or a symbol name. */
-function checkLocation(value: unknown, what: string, fail: (message: string) => never): void {
-  if (typeof value !== "string" || value === "") fail(`${what} must be a $ address or a symbol name`);
-  if ((value as string).startsWith("$")) {
-    try {
-      parseC64Address(value as string);
-    } catch {
-      fail(`${what} must be $ followed by four hex digits, not ${value as string}`);
-    }
-  }
-}
-
 /** Checks the value of one step against its kind. */
 function checkStep(kind: string, step: Record<string, unknown>, at: string, fail: (message: string) => never): void {
   switch (kind) {
@@ -172,60 +139,13 @@ function checkStep(kind: string, step: Record<string, unknown>, at: string, fail
     case "autostart":
       if (step[kind] !== true) fail(`${at}: ${kind} must be true`);
       return;
-    case "write": {
-      const write = step.write;
-      if (!isObject(write) || Object.keys(write).some((key) => key !== "at" && key !== "bytes")) return fail(`${at}: write needs at and bytes, and nothing else`);
-      checkLocation(write.at, `${at}: write.at`, fail);
-      if (!Array.isArray(write.bytes) || write.bytes.length === 0 || write.bytes.length > MAX_MEMORY_WRITE || !write.bytes.every((byte) => isInteger(byte, 0, 0xff))) {
-        fail(`${at}: write.bytes must be a list of 1 to ${MAX_MEMORY_WRITE} numbers from 0 to 255`);
-      }
-      return;
-    }
-    case "registers": {
-      const registers = step.registers;
-      if (!isObject(registers) || Object.keys(registers).length === 0) return fail(`${at}: registers must name at least one of ${SET_REGISTERS.join(", ")}`);
-      for (const [name, value] of Object.entries(registers)) {
-        if (!SET_REGISTERS.includes(name)) fail(`${at}: registers can set only ${SET_REGISTERS.join(", ")}, not ${name}`);
-        if (typeof value === "string") checkLocation(value, `${at}: registers.${name}`, fail);
-        else if (!isInteger(value, 0, name === "pc" ? 0xffff : 0xff)) fail(`${at}: registers.${name} must be a symbol name, a $ address or a number from 0 to ${name === "pc" ? 65535 : 255}`);
-      }
-      return;
-    }
-    case "joystick": {
-      const joystick = step.joystick;
-      if (!isObject(joystick) || Object.keys(joystick).some((key) => !["port", "direction", "fire"].includes(key))) return fail(`${at}: joystick needs port and direction, and fire is optional`);
-      if (joystick.port !== 1 && joystick.port !== 2) fail(`${at}: joystick.port must be 1 or 2`);
-      if (!(JOYSTICK_DIRECTIONS as readonly unknown[]).includes(joystick.direction)) fail(`${at}: joystick.direction must be one of ${JOYSTICK_DIRECTIONS.join(", ")}`);
-      if (joystick.fire !== undefined && typeof joystick.fire !== "boolean") fail(`${at}: joystick.fire must be true or false`);
-      return;
-    }
-    case "type": {
-      if (typeof step.type !== "string" || step.type === "") return fail(`${at}: type needs text`);
-      let bytes: Uint8Array;
-      try {
-        bytes = textToPetscii(step.type);
-      } catch (error) {
-        return fail(`${at}: ${(error as Error).message}`);
-      }
-      if (bytes.length > MAX_KEYBOARD_BYTES) fail(`${at}: type can have at most ${MAX_KEYBOARD_BYTES} keys`);
-      return;
-    }
+    case "write":
+    case "registers":
+    case "joystick":
+    case "type":
     case "frames":
-      if (!isInteger(step.frames, 1, MAX_EXECUTION_COUNT)) fail(`${at} needs a frame count from 1 to ${MAX_EXECUTION_COUNT}`);
-      return;
-    case "runUntil": {
-      const target = step.runUntil;
-      if (!isObject(target) || Object.keys(target).length !== 1 || !("at" in target || "memory" in target)) return fail(`${at}: runUntil needs at or memory`);
-      if ("at" in target) checkLocation(target.at, `${at}: runUntil.at`, fail);
-      else {
-        const memory = target.memory;
-        if (!isObject(memory) || Object.keys(memory).some((key) => key !== "at" && key !== "equals")) return fail(`${at}: runUntil.memory needs at and equals, and nothing else`);
-        checkLocation(memory.at, `${at}: runUntil.memory.at`, fail);
-        if (!isInteger(memory.equals, 0, 0xff)) fail(`${at}: runUntil.memory.equals must be a number from 0 to 255`);
-      }
-      if (!isInteger(step.timeoutFrames, 1, MAX_TIMEOUT_FRAMES)) fail(`${at} needs timeoutFrames from 1 to ${MAX_TIMEOUT_FRAMES}`);
-      return;
-    }
+    case "runUntil":
+      return checkActionStep(kind, step, at, fail);
     default:
       checkObserve(step, at, fail);
   }
@@ -351,34 +271,17 @@ export function baselineName(checkpoint: number, label: string): string {
   return `test-${checkpoint}-${label}`.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 64);
 }
 
-/** CURLIN high byte: $ff while BASIC waits in direct mode, a line number's high byte while a program runs. */
-const CURLIN_HIGH = 0x003a;
-const RUN_LIMIT_FRAMES = 300;
-
-/**
- * Autostart that returns only when the program runs: load without VICE's
- * own RUN, type RUN, and wait until BASIC runs a program line. A key that a
- * later step types then reaches the program, never the READY prompt.
- */
+/** Autostart that returns only when the program runs (runProgram), or INCONCLUSIVE with the reason. */
 async function startProgram(client: ViceSessionClient, program: string, side: Side): Promise<void> {
-  if (!(await autostartLoaded(client, program, readProjectFile(program).bytes))) {
-    throw new Inconclusive(`the ${side} program was not in memory after ${LOAD_LIMIT_FRAMES} frames of autostart`);
-  }
-  await client.keyboard(textToPetscii("RUN\n"));
-  const started = await client.runUntil({
-    target: { kind: "memory", address: CURLIN_HIGH, operator: "ne", value: 0xff, space: "c64", view: "ram" },
-    timeoutFrames: RUN_LIMIT_FRAMES,
-  });
-  if (!started.reached) throw new Inconclusive(`the ${side} program did not start within ${RUN_LIMIT_FRAMES} frames of RUN; autostart runs only a program with a BASIC start line`);
+  const failed = await runProgram(client, program, readProjectFile(program).bytes);
+  if (failed === "not-loaded") throw new Inconclusive(`the ${side} program was not in memory after ${LOAD_LIMIT_FRAMES} frames of autostart`);
+  if (failed === "not-started") throw new Inconclusive(`the ${side} program did not start within ${RUN_LIMIT_FRAMES} frames of RUN; autostart runs only a program with a BASIC start line`);
 }
 
 async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side, symbols: Map<string, number>): Promise<Map<string, Observation>> {
   const subject = scenario[side];
   const observations = new Map<string, Observation>();
   const at = (location: Location) => resolve(location, symbols, side);
-  const stop = async () => {
-    if ((await client.status()).state === "running") await client.execution({ action: "pause", space: "c64" });
-  };
   // Each side starts from a hard reset, stopped at the reset vector, with the control ports released.
   await client.reset({ mode: "hard", run: false });
   await client.joystick({ port: 1, direction: "center", fire: false });
@@ -422,29 +325,10 @@ async function runSide(client: ViceSessionClient, scenario: Scenario, side: Side
       await client.programLoad({ path: subject.program });
     } else if ("autostart" in step) {
       await startProgram(client, subject.program, side);
-    } else if ("write" in step) {
-      await stop();
-      await client.memoryWrite({ address: at(step.write.at), data: Buffer.from(step.write.bytes).toString("hex"), space: "c64", view: "cpu" });
-    } else if ("registers" in step) {
-      await stop();
-      const values: Record<string, number> = {};
-      for (const [name, value] of Object.entries(step.registers)) values[name] = typeof value === "number" ? value : at(value as Location);
-      await client.registersSet("c64", values);
-    } else if ("joystick" in step) {
-      await client.joystick({ port: step.joystick.port, direction: step.joystick.direction, fire: step.joystick.fire ?? false });
-    } else if ("type" in step) {
-      await client.keyboard(textToPetscii(step.type));
-    } else if ("frames" in step) {
-      await stop();
-      await client.execution({ action: "advance-frames", count: step.frames, space: "c64" });
-    } else if ("runUntil" in step) {
-      const target =
-        "at" in step.runUntil
-          ? { kind: "address" as const, address: at(step.runUntil.at), space: "c64" as const }
-          : { kind: "memory" as const, address: at(step.runUntil.memory.at), operator: "eq" as const, value: step.runUntil.memory.equals, space: "c64" as const, view: "cpu" as const };
-      const reached = await client.runUntil({ target, timeoutFrames: step.timeoutFrames });
-      if (!reached.reached) {
-        throw new Inconclusive(`the ${side} side did not reach the checkpoint before ${step.timeoutFrames} frames (it stopped by ${reached.stopReason} at ${formatC64Address(reached.pc)})`);
+    } else {
+      const notReached = await runActionStep(client, step, at);
+      if (notReached !== undefined && "runUntil" in step) {
+        throw new Inconclusive(`the ${side} side did not reach the checkpoint before ${step.timeoutFrames} frames (it stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)})`);
       }
     }
   }

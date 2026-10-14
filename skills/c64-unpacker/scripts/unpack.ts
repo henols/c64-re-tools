@@ -10,7 +10,8 @@ import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 import { EXECUTE, formatC64Address, parseC64Address, READ, textToPetscii, WRITE } from "#src/c64.ts";
-import { autostartLoaded, LOAD_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
+import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, runProgram } from "#src/host-client/autostart.ts";
+import { checkActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -19,14 +20,19 @@ import { runScript, UsageError } from "#src/script.ts";
 import { inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./evidence.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
-unpack.ts trace <program.prg> [--frames <n>] [--entry <address>]
-unpack.ts capture <program.prg> --until <address> --out <file> [--range <start> <end>] [--timeout-frames <n>]
+unpack.ts trace <program.prg> [--frames <n>] [--entry <address>] [--steps <file>]
+unpack.ts capture <program.prg> --until <address> --out <file> [--range <start> <end>] [--timeout-frames <n>] [--steps <file>]
 
 inspect   packing evidence: the BASIC start and the entropy of the bytes
 trace     run the program for <n> frames (default 3000) and report the memory
           that it wrote and then executed; --entry starts it there instead of RUN
 capture   run the program until the CPU gets to <address>, then write memory:
           with --range, a PRG of that range; without it, all 64 KiB of RAM
+
+--steps <file>  a JSON list of input steps that run right after the program
+          starts: write, registers, joystick, type, frames and runUntil, as in
+          c64-testing scenarios, with $ addresses only. Use it to press a key
+          in an intro or to get through a menu.
 
 Addresses are $ and four hex digits. The result is one JSON object.`;
 
@@ -46,7 +52,32 @@ const MAX_ADVANCE = 10_000;
 /** The most ranges one memory map read gives. */
 const MAX_RANGES = 1000;
 
-async function trace(program: string, options: { frames: number; entry?: number }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+/** Reads and checks a steps file: action steps with $ addresses only (D43). */
+function readSteps(path: string): ActionStep[] {
+  let value: unknown;
+  try {
+    value = JSON.parse(readProjectFile(path).bytes.toString("utf8"));
+  } catch (error) {
+    if (error instanceof WireFailure) throw error;
+    throw new UsageError(`--steps ${path} is not JSON: ${(error as Error).message}`);
+  }
+  return checkActionSteps(value, (message) => {
+    throw new UsageError(`--steps ${path}: ${message}`);
+  });
+}
+
+/** Runs the steps; the reason when a runUntil step did not reach its target. */
+async function runSteps(client: ViceSessionClient, steps: ActionStep[]): Promise<string | undefined> {
+  for (const [index, step] of steps.entries()) {
+    const notReached = await runActionStep(client, step, parseC64Address);
+    if (notReached !== undefined && "runUntil" in step) {
+      return `Step ${index + 1} did not reach its target in ${step.timeoutFrames} frames. It stopped by ${notReached.stopReason} at ${formatC64Address(notReached.pc)}.`;
+    }
+  }
+  return undefined;
+}
+
+async function trace(program: string, options: { frames: number; entry?: number; steps: ActionStep[] }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const { bytes } = readProjectFile(program);
   if (bytes.length < 3) throw new UsageError("the file is too short for a PRG");
   const load = bytes[0]! | (bytes[1]! << 8);
@@ -59,6 +90,8 @@ async function trace(program: string, options: { frames: number; entry?: number 
     await client.memmap({ action: "clear" });
     if (options.entry !== undefined) await client.registersSet("c64", { pc: options.entry });
     else await client.keyboard(textToPetscii("RUN\n"));
+    const stepFailed = await runSteps(client, options.steps);
+    if (stepFailed !== undefined) return { output: { traced: false, reason: stepFailed }, failed: true };
     let ran = 0;
     while (ran < options.frames) {
       const step = await client.execution({ action: "advance-frames", count: Math.min(MAX_ADVANCE, options.frames - ran), space: "c64" });
@@ -105,10 +138,18 @@ async function trace(program: string, options: { frames: number; entry?: number 
   }
 }
 
-async function capture(program: string, options: { until: number; out: string; range?: [number, number]; timeoutFrames: number }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
+async function capture(program: string, options: { until: number; out: string; range?: [number, number]; timeoutFrames: number; steps: ActionStep[] }): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
-    await client.autostart({ path: program, index: 0, run: true });
+    if (options.steps.length === 0) {
+      await client.autostart({ path: program, index: 0, run: true });
+    } else {
+      // Steps type keys: the program must run first, or the keys reach the READY prompt.
+      const failed = await runProgram(client, program, readProjectFile(program).bytes);
+      if (failed !== undefined) return { output: { captured: false, reason: failed === "not-loaded" ? `The program was not in memory after ${LOAD_LIMIT_FRAMES} frames.` : `The program did not start within ${RUN_LIMIT_FRAMES} frames of RUN. It needs a BASIC start line.` }, failed: true };
+      const stepFailed = await runSteps(client, options.steps);
+      if (stepFailed !== undefined) return { output: { captured: false, reason: stepFailed }, failed: true };
+    }
     const reached = await client.runUntil({ target: { kind: "address", address: options.until, space: "c64" }, timeoutFrames: options.timeoutFrames });
     if (!reached.reached) {
       return {
@@ -156,6 +197,7 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
       "timeout-frames": { type: "string" },
       frames: { type: "string" },
       entry: { type: "string" },
+      steps: { type: "string" },
       help: { type: "boolean" },
     },
   });
@@ -176,7 +218,8 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     if (rest.length > 0) throw new UsageError("trace takes one program");
     const frames = values.frames === undefined ? 3000 : Number(values.frames);
     if (!Number.isInteger(frames) || frames < 1 || frames > 30_000) throw new UsageError("--frames must be from 1 to 30000");
-    return trace(program, { frames, ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }) });
+    const steps = values.steps === undefined ? [] : readSteps(values.steps);
+    return trace(program, { frames, steps, ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }) });
   }
   if (command !== "capture") throw new UsageError(`unknown command ${command}`);
   if (values.until === undefined || values.out === undefined) throw new UsageError("capture needs --until and --out");
@@ -196,7 +239,8 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   }
   const timeoutFrames = values["timeout-frames"] === undefined ? 3000 : Number(values["timeout-frames"]);
   if (!Number.isInteger(timeoutFrames) || timeoutFrames < 1 || timeoutFrames > 30_000) throw new UsageError("--timeout-frames must be from 1 to 30000");
-  return capture(program, { until: address(values.until, "--until"), out: values.out, ...(range === undefined ? {} : { range }), timeoutFrames });
+  const steps = values.steps === undefined ? [] : readSteps(values.steps);
+  return capture(program, { until: address(values.until, "--until"), out: values.out, ...(range === undefined ? {} : { range }), timeoutFrames, steps });
 }
 
 await runScript(

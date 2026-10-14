@@ -1,6 +1,7 @@
 // Autostart without the autostart's own RUN: the caller decides when the
 // program starts, so keys it types later never mix with VICE's typing.
 
+import { textToPetscii } from "../c64.ts";
 import type { ViceSessionClient } from "./vice-session.ts";
 
 /** How often, and for how long, a load is checked. */
@@ -21,4 +22,24 @@ export async function autostartLoaded(client: ViceSessionClient, path: string, p
     if ((await client.memoryRead({ address: load, size: head.length / 2, space: "c64", view: "ram" })).data === head) return true;
   }
   return false;
+}
+
+/** CURLIN high byte: $ff while BASIC waits in direct mode, a line number's high byte while a program runs. */
+const CURLIN_HIGH = 0x003a;
+export const RUN_LIMIT_FRAMES = 300;
+
+/**
+ * Autostart that returns only when the program runs: load without VICE's
+ * own RUN, type RUN, and wait until BASIC runs a program line. A key that a
+ * later step types then reaches the program, never the READY prompt. Returns
+ * why it did not start, or undefined when it runs.
+ */
+export async function runProgram(client: ViceSessionClient, path: string, prg: Uint8Array): Promise<"not-loaded" | "not-started" | undefined> {
+  if (!(await autostartLoaded(client, path, prg))) return "not-loaded";
+  await client.keyboard(textToPetscii("RUN\n"));
+  const started = await client.runUntil({
+    target: { kind: "memory", address: CURLIN_HIGH, operator: "ne", value: 0xff, space: "c64", view: "ram" },
+    timeoutFrames: RUN_LIMIT_FRAMES,
+  });
+  return started.reached ? undefined : "not-started";
 }

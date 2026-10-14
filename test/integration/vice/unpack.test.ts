@@ -16,12 +16,15 @@ import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
 import { borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
+import { gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
 import { xorPackedPrg } from "../../fixtures/prg/xor-packed.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
 const script = resolve(import.meta.dirname, "../../../skills/c64-unpacker/scripts/unpack.ts");
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpack-"));
 writeFileSync(join(project, "packed.prg"), xorPackedPrg);
+writeFileSync(join(project, "gated.prg"), gatedPackedPrg);
+writeFileSync(join(project, "press-key.json"), JSON.stringify([{ frames: 50 }, { type: " " }]));
 let server: HostServer | undefined;
 after(async () => {
   await server?.close();
@@ -89,4 +92,16 @@ test("trace finds no written code in a program that runs as it loaded; a program
   assert.equal(started.status, 0, JSON.stringify(started.json));
   assert.equal(started.json.packing, "unlikely");
   assert.deepEqual(started.json.writtenThenExecuted, [], "the counter runs where it loaded");
+});
+
+test("a steps file presses the key that an intro waits for (D43)", { skip: liveSkip, timeout: 240_000 }, async () => {
+  const end = 0xc000 + ORIGINAL.prg.length - 3;
+  const range = ["--range", "$c000", `$${end.toString(16)}`];
+  const blocked = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/blocked.prg", "--timeout-frames", "300", ...range);
+  assert.equal(blocked.json.captured, false, "without a key the intro waits");
+  const { status, json } = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/gated.prg", "--steps", "press-key.json", ...range);
+  assert.equal(status, 0, JSON.stringify(json));
+  assert.deepEqual([...readFileSync(join(project, "unpacked", "gated.prg"))], [...ORIGINAL.prg]);
+  const traced = await unpack("trace", "gated.prg", "--steps", "press-key.json", "--frames", "100");
+  assert.equal(traced.json.packing, "likely", JSON.stringify(traced.json));
 });
