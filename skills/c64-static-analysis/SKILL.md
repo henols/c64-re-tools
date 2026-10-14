@@ -32,6 +32,7 @@ node <skill>/scripts/analyze.ts extracted/game.prg --entry '$080d' --decompile '
 | `--decompile '$0818'` | Ghidra only: decompile the routine at this address. Use it again for more routines, at most 32. |
 | `--flat64k` | The file is 64 KiB of memory from `$0000`, not a PRG. |
 | `--max-listed 20` | List at most this number of labels or functions. The default is 50. Use 0 to list none. |
+| `--coverage coverage/attract.bin` | A coverage file of 64 KiB from `c64_memmap` (action `read` with `out`). Use it again for more runs. The executed code becomes entry points. |
 
 The script prints one JSON object. Addresses are `$` and four hex digits.
 
@@ -42,6 +43,13 @@ Both analyzers use the knowledge from the user and the LLM as seeds:
 - Each name is a label. The listing, Ghidra and the decompiler show that name.
 
 Facts that an analyzer found are not seeds. A new analysis can then correct or remove them.
+
+More seeds come from evidence:
+
+- The start of each `code` region and each entry of a `jumps` table from the user or the LLM is an entry point.
+- With `--coverage`, each executed instruction that starts a flow is an entry point. A flow starts after a gap, or after RTS, RTI, JMP or BRK. Then the analyzers find code that only a vector, an RTS table or an interrupt reaches.
+
+The analyzers take at most 1024 entry points. Knowledge routines and `--entry` come first, then code regions and tables, then coverage. `coverageSeeds` gives how many entry points the coverage gave and how many the analysis used.
 
 ## Workflow
 
@@ -55,6 +63,7 @@ Facts that an analyzer found are not seeds. A new analysis can then correct or r
    - Ghidra: `functions` gives the number of routines that Ghidra found (`count`) and lists the first routines (`listed`). `decompilations` gives C-like code for the requested routines.
    - If a list is not complete, `rest` gives the c64-knowledge command that lists all of them.
    - `conflicts` lists the places where the analyzer and the current knowledge disagree.
+   - With `--coverage`, `coverageConflicts` lists the analyzer data regions where the coverage shows executed code. Classify them as code with the c64-knowledge skill, or as `dual-use` when the bytes are also data.
 6. Give each important routine a name with the c64-knowledge skill. Then run the analysis again. The analyzers use the new names.
 
 The script records only structure: generated names, code and data regions, and references from Ghidra. The listing and the decompiled code are only for the current task. The script does not record them in the knowledge.
@@ -86,6 +95,11 @@ The exit status is 0 for a result, also with conflicts. The exit status is 1 for
 
 - A conflict: the analyzer finds code where the knowledge has data, or data where the knowledge has code. The knowledge stays unchanged. Find the correct answer with the c64-emulator skill, then correct the knowledge with the c64-knowledge skill.
 - A conflict with the problem "another address has this name": the knowledge has the generated name at a different address. The knowledge stays unchanged.
+- A false reference through a vector: the code jumps through a vector, for example `JMP ($0408)`, and the program writes the vector at run time. The analyzer follows the bytes that the image has there. Do these steps:
+  1. Find the real targets with the c64-emulator skill, or in a coverage file.
+  2. If the vector bytes are also code at another time, classify them as `dual-use`.
+  3. Remove the false reference with `unreference`. It does not come back.
+  4. Add a `jump` reference from the JMP to each real target, and name each target as a routine.
 - `invalid-input` with a message about an entry point: no entry point is inside the program for Ghidra. Give one with `--entry`.
 - `stale-revision`: the knowledge changed during the analysis. The script recorded nothing. Run the analysis again.
 - `operation-failed` with a message about an incomplete result or listing: the analyzer did not give a complete result. The script recorded nothing. Tell the user.

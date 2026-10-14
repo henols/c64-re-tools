@@ -13,11 +13,13 @@ import { readProjectFile } from "#src/host-client/transfer.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
+import { GHIDRA_LIMITS } from "#src/native/types.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
 import { importFindings, runProvenance, type Analyzer, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
 import { currentRevision } from "#src/knowledge/read.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
+import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageFiles } from "./coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
 
 const USAGE = `analyze.ts <image> [options]
@@ -28,6 +30,8 @@ const USAGE = `analyze.ts <image> [options]
   --entry <address>       an entry point, for example '$080d' (repeatable)
   --decompile <address>   ghidra: a routine to decompile, at most 32 (repeatable)
   --listing <file>        dxa: write the disassembly listing to this project file
+  --coverage <file>       a coverage map of 64 KiB from c64_memmap (repeatable): its
+                          executed code is seeded, and analyzer data over it is reported
   --max-listed <n>        list at most n labels or functions (default 50, 0 for none);
                           the counts are always given, and knowledge has all of them
 
@@ -111,6 +115,7 @@ async function run(argv: string[]): Promise<unknown> {
       decompile: { type: "string", multiple: true },
       listing: { type: "string" },
       "max-listed": { type: "string" },
+      coverage: { type: "string", multiple: true },
       help: { type: "boolean" },
     },
   });
@@ -136,13 +141,36 @@ async function run(argv: string[]): Promise<unknown> {
     }
   }
 
+  const imageKind = values.flat64k ? "flat64k" : "prg";
+  const bytes = readProjectFile(image).bytes;
+  const coverage = readCoverageFiles(values.coverage ?? []);
+  const byteAt = imageReader(bytes, imageKind);
+
   const reader = openForRead();
   const revision = currentRevision(reader);
   const seeds = seedsFromKnowledge(reader, entries);
+  // Knowledge routines and --entry first, then code regions and JMP tables, then coverage, up to the seed bound (D44).
+  const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, byteAt);
+  const ordered = [...new Set([...seeds.entryPoints, ...codeEntries(reader, byteAt), ...fromCoverage])];
+  seeds.entryPoints = ordered.slice(0, GHIDRA_LIMITS.entryPoints).sort((a, b) => a - b);
+  const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry)).length;
   reader?.close();
-
-  const imageKind = values.flat64k ? "flat64k" : "prg";
-  const bytes = readProjectFile(image).bytes;
+  /** The coverage part of a result: its seeds, and the analyzer data that it shows to be code. */
+  const coverageResult = () => {
+    if (coverage === undefined) return {};
+    const db = openForRead();
+    const conflicts = coverageConflicts(db, coverage);
+    db?.close();
+    return {
+      coverageSeeds: { entryPoints: fromCoverage.length, used: coverageUsed },
+      coverageConflicts: conflicts.map(({ region, executed }) => ({
+        range: { start: formatC64Address(region.start), end: formatC64Address(region.end) },
+        knowledge: { type: region.type, origin: region.origin },
+        executed,
+        problem: "coverage shows code",
+      })),
+    };
+  };
   if (analyzer === "dxa") {
     const { result, attachments } = await analyzeWithDxa({ imageKind, ...seeds }, bytes, localToolContext());
     const listing = attachments[0]!.toString("utf8");
@@ -159,6 +187,7 @@ async function run(argv: string[]): Promise<unknown> {
     }
     return {
       analyzer: "dxa",
+      ...coverageResult(),
       coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
       ...imported,
       regions: result.regions.map((region) => ({ start: formatC64Address(region.start), end: formatC64Address(region.end), classification: region.classification })),
@@ -171,6 +200,7 @@ async function run(argv: string[]): Promise<unknown> {
   const imported = record(ghidraFindings(result), revision, `Ghidra analysis of ${image}`, runProvenance(bytes, result.toolVersion));
   return {
     analyzer: "ghidra",
+    ...coverageResult(),
     coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     ...imported,
     functions: listed(result.functions, max, (fn) => ({ entry: formatC64Address(fn.entry), name: fn.name }), "c64-knowledge: knowledge.ts symbols --kind routine"),
