@@ -448,6 +448,14 @@ export interface ViceOperations {
     params: { action: "save" | "restore" | "discard"; name: string } | { action: "list" };
     result: { saved: boolean; name: string } | { restored: boolean; state: RunState } | { snapshots: string[] } | { discarded: boolean };
   };
+  /**
+   * Snapshot files (D41): export sends the bytes of a named snapshot back as
+   * one attachment; restore takes the bytes of a .vsf as one attachment.
+   */
+  snapshotFile: {
+    params: { action: "export"; name: string } | { action: "restore" };
+    result: { exported: boolean; bytes: number } | { restored: boolean; state: RunState };
+  };
   screenDiscard: { params: { baseline: string }; result: { discarded: boolean } };
   warp: { params: { enabled: boolean }; result: { enabled: boolean } };
   window: { params: { action: (typeof WINDOW_ACTIONS)[number] }; result: WindowResult };
@@ -477,6 +485,7 @@ export const VICE_OPERATIONS = [
   "screenBaselines",
   "screenDiscard",
   "snapshot",
+  "snapshotFile",
   "cpuHistory",
   "backtrace",
   "timing",
@@ -491,8 +500,9 @@ export const VICE_OPERATIONS = [
   "window",
 ] as const satisfies readonly ViceOperation[];
 
-/** How many attachments each operation takes. */
-export function attachmentCount(op: ViceOperation): number {
+/** How many attachments an operation takes; a snapshotFile restore takes the .vsf. */
+export function attachmentCount(op: ViceOperation, params?: unknown): number {
+  if (op === "snapshotFile") return isObject(params) && params.action === "restore" ? 1 : 0;
   return op === "programLoad" || op === "autostart" || op === "diskAttach" ? 1 : 0;
 }
 
@@ -521,6 +531,15 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
         invalid("action must be save, restore, list or discard");
       }
       return { action: params.action, name: validName(params.name, "name") } as ViceOperations[O]["params"];
+    }
+    case "snapshotFile": {
+      if (params.action === "restore") {
+        onlyFields(params, ["action"]);
+        return { action: "restore" } as ViceOperations[O]["params"];
+      }
+      if (params.action !== "export") invalid("action must be export or restore");
+      onlyFields(params, ["action", "name"]);
+      return { action: "export", name: validName(params.name, "name") } as ViceOperations[O]["params"];
     }
     case "screenCompare": {
       onlyFields(params, ["baseline", "maxMismatchRatio", "mask", "includeDiff"]);
@@ -1069,6 +1088,11 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         (Array.isArray(value.snapshots) && value.snapshots.every((name) => typeof name === "string")) ||
         value.discarded === true;
       if (!ok) throw new ProtocolError("snapshot result is malformed");
+      break;
+    }
+    case "snapshotFile": {
+      const ok = (value.exported === true && isInteger(value.bytes, 1, 0xffff_ffff)) || (value.restored === true && isOneOf(RUN_STATES, value.state));
+      if (!ok) throw new ProtocolError("snapshotFile result is malformed");
       break;
     }
     case "cpuHistory": {

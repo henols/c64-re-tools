@@ -13,7 +13,7 @@ const SESSION_CLOSED = "The C64 session is closed because the c64-re-tools MCP s
 
 interface Pending {
   op: ViceOperation;
-  resolve: (value: unknown) => void;
+  resolve: (value: unknown, attachments: Buffer[]) => void;
   reject: (error: Error) => void;
 }
 
@@ -27,7 +27,7 @@ export class ViceSessionClient {
 
   private constructor(connection: HostConnection) {
     this.#connection = connection;
-    connection.onMessage((message) => {
+    connection.onMessage((message, attachments) => {
       // Anything but a reply after the handshake breaks the contract.
       if (message.type !== "reply") return this.#fail();
       const pending = this.#pending.get(message.id);
@@ -38,7 +38,7 @@ export class ViceSessionClient {
         return;
       }
       try {
-        pending.resolve(validateViceResult(pending.op, message.result));
+        pending.resolve(validateViceResult(pending.op, message.result), attachments);
       } catch (error) {
         pending.reject(
           new WireFailure(
@@ -211,6 +211,19 @@ export class ViceSessionClient {
     return this.#request("snapshot", params);
   }
 
+  /** The bytes of a named snapshot, as a .vsf file holds them (D41). */
+  async snapshotExport(name: string): Promise<Buffer> {
+    const { attachments } = await this.#requestWithAttachments("snapshotFile", { action: "export", name });
+    const [bytes] = attachments;
+    if (bytes === undefined || attachments.length !== 1) throw new WireFailure("operation-failed", "The c64-re-tools host runtime sent no snapshot file.");
+    return bytes;
+  }
+
+  /** Restores the machine from the bytes of a .vsf file; the CPU stays stopped. */
+  snapshotRestore(bytes: Uint8Array): Promise<ViceOperations["snapshotFile"]["result"]> {
+    return this.#request("snapshotFile", { action: "restore" }, [bytes]);
+  }
+
   screenBaselines(): Promise<{ baselines: string[] }> {
     return this.#request("screenBaselines", {});
   }
@@ -235,16 +248,25 @@ export class ViceSessionClient {
     await this.closed;
   }
 
-  #request<O extends ViceOperation>(
+  async #request<O extends ViceOperation>(
     op: O,
     params: ViceOperations[O]["params"],
     attachments: readonly Uint8Array[] = [],
   ): Promise<ViceOperations[O]["result"]> {
+    return (await this.#requestWithAttachments(op, params, attachments)).result;
+  }
+
+  /** One request; the reply's result and the attachments that came with it. */
+  #requestWithAttachments<O extends ViceOperation>(
+    op: O,
+    params: ViceOperations[O]["params"],
+    attachments: readonly Uint8Array[] = [],
+  ): Promise<{ result: ViceOperations[O]["result"]; attachments: Buffer[] }> {
     if (this.#lost !== undefined) return Promise.reject(this.#lost);
     const id = this.#nextId;
     this.#nextId = this.#nextId >= 0xffff_ffff ? 1 : this.#nextId + 1;
     return new Promise((resolve, reject) => {
-      this.#pending.set(id, { op, resolve: resolve as (value: unknown) => void, reject });
+      this.#pending.set(id, { op, resolve: (result, received) => resolve({ result: result as ViceOperations[O]["result"], attachments: received }), reject });
       this.#connection.send({ type: "request", id, op, params }, attachments);
     });
   }

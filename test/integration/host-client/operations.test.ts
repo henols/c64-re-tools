@@ -98,6 +98,7 @@ const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Pro
   screenBaselines: { call: (c) => c.screenBaselines(), params: {}, result: { baselines: ["title"] } },
   screenDiscard: { call: (c) => c.screenDiscard("title"), params: { baseline: "title" }, result: { discarded: true } },
   snapshot: { call: (c) => c.snapshot({ action: "restore", name: "boss" }), params: { action: "restore", name: "boss" }, result: { restored: true, state: "stopped" } },
+  snapshotFile: { call: (c) => c.snapshotRestore(Buffer.from("VICE Snapshot File")), params: { action: "restore" }, result: { restored: true, state: "stopped" }, attachments: 1 },
   cpuHistory: {
     call: (c) => c.cpuHistory({ limit: 1, space: "c64" }),
     params: { limit: 1, space: "c64" },
@@ -154,5 +155,26 @@ test("every operation crosses the real host boundary with its parameters and res
     assert.deepEqual(await example.call(client), example.result, op);
     assert.deepEqual(seen.get(op)?.params, example.params, `${op} parameters`);
     assert.equal(seen.get(op)?.attachments, example.attachments ?? 0, `${op} attachments`);
+  }
+});
+
+test("a snapshot export comes back as the one attachment of the reply (D41)", async () => {
+  const exporting = await startHostServer({
+    port: 0,
+    createViceSession: async () => ({
+      async handle(op, params, _attachments, reply) {
+        assert.deepEqual([op, params], ["snapshotFile", { action: "export", name: "room0" }]);
+        reply?.push(Buffer.from("VICE Snapshot File"));
+        return { exported: true, bytes: 18 } as never;
+      },
+      async close() {},
+    }),
+  });
+  const exportClient = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${exporting.host}:${exporting.port}` } });
+  try {
+    assert.equal((await exportClient.snapshotExport("room0")).toString(), "VICE Snapshot File");
+  } finally {
+    await exportClient.close();
+    await exporting.close();
   }
 });

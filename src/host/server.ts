@@ -11,9 +11,10 @@ export interface ViceSessionHandle {
   /**
    * Runs one operation. The session serializes its own work. Throws
    * WireFailure for domain failures. `attachments` holds the bytes the
-   * operation takes (see attachmentCount).
+   * operation takes (see attachmentCount); bytes the operation sends back go
+   * into `reply`.
    */
-  handle<O extends ViceOperation>(op: O, params: ViceOperations[O]["params"], attachments?: Buffer[]): Promise<ViceOperations[O]["result"]>;
+  handle<O extends ViceOperation>(op: O, params: ViceOperations[O]["params"], attachments?: Buffer[], reply?: Buffer[]): Promise<ViceOperations[O]["result"]>;
   /** Stops the emulator and drops queued work. Safe to call more than once. */
   close(): Promise<void>;
 }
@@ -245,10 +246,10 @@ class Connection {
         const session = this.#session;
         if (session === undefined || !isOneOf(VICE_OPERATIONS, op)) throw new WireFailure("invalid-input", `unknown operation: ${op}`);
         const params = validateViceParams(op, request.params);
-        if (attachments.length !== attachmentCount(op)) {
-          throw new WireFailure("invalid-input", `${op} takes ${attachmentCount(op)} file attachment(s)`);
+        if (attachments.length !== attachmentCount(op, params)) {
+          throw new WireFailure("invalid-input", `${op} takes ${attachmentCount(op, params)} file attachment(s)`);
         }
-        result = await session.handle(op, params, attachments);
+        result = await session.handle(op, params, attachments, replyAttachments);
       }
       this.#send({ type: "reply", id: request.id, result }, replyAttachments);
       record({ ok: true, result });

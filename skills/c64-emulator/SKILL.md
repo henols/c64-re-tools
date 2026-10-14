@@ -44,7 +44,7 @@ Use only the MCP tools. Each MCP session has its own C64. Nothing else can chang
 | Several of these from one moment | `c64_observe` |
 | Keys, joystick | `c64_keyboard`, `c64_joystick` |
 | Program and disk media | `c64_autostart`, `c64_program_load`, `c64_disk_attach` |
-| Machine state to go back to | `c64_snapshot` |
+| Machine state to go back to, also in a later session | `c64_snapshot` (with `out` and `file`) |
 
 Each memory and register tool has a `space`. Use `c64` for the computer. Use `drive8` for the CPU of the 1541 disk drive. The memory `view` is `cpu` or `ram`. With `cpu`, you see what the CPU sees now, with ROM and I/O where the memory configuration puts them. With `ram`, you see the RAM under them.
 

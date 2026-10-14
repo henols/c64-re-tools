@@ -127,7 +127,7 @@ Visual baselines and snapshots use caller-chosen names:
 letters, digits, dot, underscore, hyphen
 ~~~
 
-They are session-local and are lost when the session ends or emulator state is lost.
+They are session-local and are lost when the session ends or emulator state is lost. A snapshot can also be written to a project file and restored from one (§36, D41).
 
 ## 4. Execution-state semantics
 
@@ -1731,7 +1731,9 @@ Output:
 }
 ~~~
 
-Snapshots are session-local; filesystem snapshot paths are never exposed.
+Named snapshots are session-local; the host's snapshot paths are never exposed.
+
+Snapshot files (D41): save with `out` (a project path) also writes the snapshot as a `.vsf` file; the output then adds `out`, `bytes` and `sha256`. Restore with `file` (a project path, in place of `name`) restores the machine from a `.vsf` file and stops the CPU. The bytes cross the wire as attachments of the `snapshotFile` operation; the host never sees a client path. The file holds the attached disk images but not the ROMs, and it restores only in the emulator version and with the machine settings that saved it; any other file is refused with `invalid-input` and the machine stays as it was.
 
 ## 37. Public MCP tool list
 

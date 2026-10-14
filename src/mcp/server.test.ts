@@ -232,6 +232,14 @@ class FakeSession implements ViceSessionApi {
     if (params.action === "restore") return { restored: true, state: "stopped" as const };
     return { discarded: true };
   }
+  restoredFiles: string[] = [];
+  async snapshotExport(name: string) {
+    return Buffer.from(`VSF of ${name}`);
+  }
+  async snapshotRestore(bytes: Uint8Array) {
+    this.restoredFiles.push(Buffer.from(bytes).toString());
+    return { restored: true, state: "stopped" as const };
+  }
 
   baselines = new Set<string>();
   async screenCapture(baseline?: string) {
@@ -926,6 +934,33 @@ test("c64_memmap writes a coverage map with out and gives a summary (D40)", asyn
       writtenAndExecuted: [],
     });
     assert.equal(errorOf(await call(client, "c64_memmap", { action: "summary", out: "x.bin" })).code, "invalid-input");
+    await client.close();
+  } finally {
+    process.chdir(home);
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test("c64_snapshot writes a snapshot file with out and restores one with file (D41)", async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-snapshot-"));
+  const home = process.cwd();
+  process.chdir(project);
+  try {
+    const session = new FakeSession();
+    const client = await connect(async () => session);
+    const saved = (await call(client, "c64_snapshot", { action: "save", name: "room0", out: "snapshots/room0.vsf" })).structuredContent as Record<string, unknown>;
+    assert.deepEqual([saved.saved, saved.name, saved.out], [true, "room0", "snapshots/room0.vsf"]);
+    assert.equal(readFileSync(join(project, "snapshots", "room0.vsf"), "utf8"), "VSF of room0");
+    assert.deepEqual((await call(client, "c64_snapshot", { action: "restore", file: "snapshots/room0.vsf" })).structuredContent, { restored: true, state: "stopped" });
+    assert.deepEqual(session.restoredFiles, ["VSF of room0"]);
+    for (const args of [
+      { action: "restore", file: "snapshots/room0.vsf", name: "room0" },
+      { action: "restore", out: "x.vsf", name: "room0" },
+      { action: "discard", name: "room0", file: "x.vsf" },
+    ]) {
+      assert.equal(errorOf(await call(client, "c64_snapshot", args)).code, "invalid-input", JSON.stringify(args));
+    }
+    assert.equal(errorOf(await call(client, "c64_snapshot", { action: "restore", file: "missing.vsf" })).code, "not-found");
     await client.close();
   } finally {
     process.chdir(home);

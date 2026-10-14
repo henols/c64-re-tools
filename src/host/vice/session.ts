@@ -5,7 +5,7 @@
 
 import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
 import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type PointRemoved, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -283,9 +283,10 @@ export class ViceSession implements ViceSessionHandle {
     op: O,
     params: ViceOperations[O]["params"],
     attachments: Buffer[] = [],
+    reply: Buffer[] = [],
   ): Promise<ViceOperations[O]["result"]> {
     // A window request for the mode the session is in sends nothing to VICE, so a held VICE does not stop it.
-    return this.#enqueue(() => this.#run(op, params, attachments), { whileHeld: op === "window" }) as Promise<ViceOperations[O]["result"]>;
+    return this.#enqueue(() => this.#run(op, params, attachments, reply), { whileHeld: op === "window" }) as Promise<ViceOperations[O]["result"]>;
   }
 
   async close(): Promise<void> {
@@ -303,7 +304,7 @@ export class ViceSession implements ViceSessionHandle {
     return this.#adapter;
   }
 
-  async #run(op: ViceOperation, params: unknown, attachments: Buffer[]): Promise<unknown> {
+  async #run(op: ViceOperation, params: unknown, attachments: Buffer[], reply: Buffer[]): Promise<unknown> {
     switch (op) {
       case "status":
         return this.#status();
@@ -394,6 +395,8 @@ export class ViceSession implements ViceSessionHandle {
       }
       case "snapshot":
         return this.#snapshot(params as ViceOperations["snapshot"]["params"]);
+      case "snapshotFile":
+        return this.#snapshotFile(params as ViceOperations["snapshotFile"]["params"], attachments, reply);
       case "cpuHistory":
         return this.#cpuHistory(params as ViceOperations["cpuHistory"]["params"]);
       case "backtrace": {
@@ -919,13 +922,38 @@ export class ViceSession implements ViceSessionHandle {
       this.#snapshots.delete(params.name);
       return { discarded: true };
     }
+    return this.#restoreFrom(existing);
+  }
+
+  /** Restores the machine from a .vsf in the session directory; the CPU stays stopped. */
+  async #restoreFrom(file: string): Promise<{ restored: true; state: "stopped" }> {
     await this.#stop();
     const elapsed = (await this.#machine.clock()) - this.#timingStart;
-    await this.#machine.restoreSnapshot(existing);
+    await this.#machine.restoreSnapshot(file);
     this.#state = "stopped";
     // The cycle clock jumped with the restore; the stopwatch keeps its reading, as a window move does.
     this.#timingStart = (await this.#machine.clock()) - elapsed;
     return { restored: true, state: "stopped" };
+  }
+
+  /** A snapshot as bytes (D41): export a named one into `reply`, or restore from the attached .vsf. */
+  async #snapshotFile(params: ViceOperations["snapshotFile"]["params"], attachments: Buffer[], reply: Buffer[]): Promise<ViceOperations["snapshotFile"]["result"]> {
+    if (params.action === "export") {
+      const file = this.#snapshots.get(params.name);
+      if (file === undefined) throw new WireFailure("not-found", `There is no snapshot named ${params.name}.`);
+      const bytes = readFileSync(file);
+      reply.push(bytes);
+      return { exported: true, bytes: bytes.length };
+    }
+    const file = this.#stage(onlyAttachment(attachments), "vsf");
+    try {
+      return await this.#restoreFrom(file);
+    } catch (error) {
+      if (error instanceof WireFailure) throw error;
+      throw new WireFailure("invalid-input", "The emulator did not restore this snapshot file. A snapshot file restores only in the emulator version and with the machine settings that saved it.");
+    } finally {
+      rmSync(file, { force: true });
+    }
   }
 
   /**
