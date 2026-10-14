@@ -89,7 +89,7 @@ The exit status is 0 for a result, also with conflicts. The exit status is 1 for
 - `invalid-input` with a message about an entry point: no entry point is inside the program for Ghidra. Give one with `--entry`.
 - `stale-revision`: the knowledge changed during the analysis. The script recorded nothing. Run the analysis again.
 - `operation-failed` with a message about an incomplete result or listing: the analyzer did not give a complete result. The script recorded nothing. Tell the user.
-- `installation-incomplete`: DXA or Ghidra is not installed on this machine. Tell the user the message.
+- `installation-incomplete`, or a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 - `notDecompiled`: Ghidra did not decompile these routines. Each entry has the reason. If the reason says that the decompiler did not start, tell the user the remedy in the reason. On macOS, Ghidra has no native decompiler until the user builds it: `./gradlew buildNatives` in the `support/gradle` directory of Ghidra.
 
 ## Handoffs

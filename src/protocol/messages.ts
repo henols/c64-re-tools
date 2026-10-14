@@ -106,6 +106,22 @@ export class ProtocolError extends Error {
 }
 
 /** Thrown by parameter/result validators; carries the wire code to answer with. */
+/**
+ * The instruction at the end of a refusal that only the user can fix: a
+ * missing or broken tool, or a Host Runtime that does not run (D37).
+ */
+export const STOP_AND_ASK = "Stop the task. Give this message to the user and wait for the user. Do not make a replacement for the tool or the host runtime.";
+
+/** The message with STOP_AND_ASK at its end, once. */
+export function withStopAndAsk(message: string): string {
+  return message.endsWith(STOP_AND_ASK) ? message : `${message} ${STOP_AND_ASK}`;
+}
+
+/** The message that the agent sees for a refusal: an installation-incomplete one ends with STOP_AND_ASK. */
+export function shownMessage(error: { code: string; message: string }): string {
+  return error.code === "installation-incomplete" ? withStopAndAsk(error.message) : error.message;
+}
+
 export class WireFailure extends Error implements WireError {
   override name = "WireFailure";
   readonly code: ErrorCode;

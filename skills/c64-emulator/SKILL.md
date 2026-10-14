@@ -108,9 +108,8 @@ If you cannot get the machine into the necessary state, say which state you coul
 - `machine-unavailable` and the message says that the VICE window closed: the session starts the emulator again. Wait a few seconds. Then do the operation again.
 - `machine-state-lost` with a different message: the emulator stopped and its state is gone. Do not continue with results from before. Tell the user to restart the MCP server.
 - `machine-unavailable` and the message names a pause or a dialog in the emulator window: this occurs only while the window is open. Do not send more operations. Tell the user to resume the emulator (Pause, Alt+P) or to close the dialog in the VICE window. Then do the operation again. The machine state does not change.
-- `machine-unavailable` with a different message: the host runtime does not run, or it does not answer. Tell the user to start the host runtime with `npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host`.
 - `machine-running`: stop the CPU first, then try again.
-- `installation-incomplete`: tell the user the message. Do not try to repair the installation.
+- `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script. Do not try to repair the installation.
 - `c64_run_until` with `stopReason` `timeout`: the target did not occur in the frame limit. This is evidence too. Report it.
 - `c64_run_until` with `stopReason` `jam`: the CPU executed a JAM opcode and stopped. Report the address.
 

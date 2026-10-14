@@ -4,7 +4,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { after, test, type TestContext } from "node:test";
 
 import { encodeFrame } from "../protocol/framing.ts";
-import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, WireFailure, type HostMessage } from "../protocol/messages.ts";
+import { HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, STOP_AND_ASK, WireFailure, type HostMessage } from "../protocol/messages.ts";
 import { FrameDecoder } from "../protocol/framing.testkit.ts";
 import { DEFAULT_READY_TIMEOUT_MS, HostConnection, hostEndpoints } from "./connect.ts";
 
@@ -79,9 +79,13 @@ test("a host that is not running is machine-unavailable for a VICE session and n
     assert.ok(failsWith("machine-unavailable")(error));
     assert.match((error as Error).message, /npx -y --package=@henols\/c64-re-tools@latest c64-re-tools-host/);
     assert.doesNotMatch((error as Error).message, /127\.0\.0\.1|\d{4,}/);
+    assert.ok((error as Error).message.endsWith(STOP_AND_ASK), "only the user can start the host (D37)");
     return true;
   });
-  await assert.rejects(HostConnection.open({ role: "tool", env: await closedPort() }), failsWith("operation-failed"));
+  await assert.rejects(
+    HostConnection.open({ role: "tool", env: await closedPort() }),
+    (error: unknown) => failsWith("operation-failed")(error) && (error as Error).message.endsWith(STOP_AND_ASK),
+  );
 });
 
 test("a host speaking another protocol is installation-incomplete", async () => {

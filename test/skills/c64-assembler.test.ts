@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { ACME, findTool } from "../../src/native/discover.ts";
+import { STOP_AND_ASK } from "../../src/protocol/messages.ts";
 
 let acmeSkip: string | false = false;
 try {
@@ -67,4 +68,15 @@ test("bad options are refused before anything is sent", { skip: acmeSkip }, asyn
     assert.equal(status, 2, args.join(" "));
     assert.equal((json.error as { code: string }).code, "invalid-input");
   }
+});
+
+test("a missing ACME is refused with the stop instruction (D37)", async () => {
+  const child = spawn(process.execPath, [...process.execArgv, script, "--source-root", "src", "--entry", "main.a", "--include", "lib", "--out", "build/none.prg"], { cwd: project, env: { ...process.env, C64RT_ACME: join(project, "no-acme") }, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  child.stdout.on("data", (chunk) => (stdout += chunk));
+  const [status] = (await once(child, "exit")) as [number | null];
+  const { error } = JSON.parse(stdout) as { error: { code: string; message: string } };
+  assert.equal(status, 1);
+  assert.equal(error.code, "installation-incomplete");
+  assert.ok(error.message.endsWith(STOP_AND_ASK), error.message);
 });

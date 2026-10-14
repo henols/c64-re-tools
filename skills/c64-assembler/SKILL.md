@@ -64,7 +64,7 @@ The exit status is 0 for a PRG. The exit status is 1 for `assembled: false` and 
 ## Failure and conflicts
 
 - `assembled: false`: the source has errors. This is a normal result. Correct the source.
-- `installation-incomplete`: ACME is not installed on this machine. Tell the user the message.
+- `installation-incomplete`, or a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disk parser, disassembler or emulator script.
 - `invalid-input`: an option or a path is wrong. Read the message and correct the call.
 
 ## Handoffs

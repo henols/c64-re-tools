@@ -4,7 +4,7 @@ import { connect as connectTcp, type Socket } from "node:net";
 
 import { encodeFrame, MessageReader } from "../protocol/framing.ts";
 import { elapsedMs, trace } from "../trace.ts";
-import { DEFAULT_HOST_PORT, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseHostMessage, ProtocolError, WireFailure, type ErrorCode, type Hello, type HostMessage, type Ping, type Request, type Role, type VideoStandard } from "../protocol/messages.ts";
+import { DEFAULT_HOST_PORT, HEARTBEAT_INTERVAL_MS, HEARTBEAT_TIMEOUT_MS, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseHostMessage, ProtocolError, WireFailure, withStopAndAsk, type ErrorCode, type Hello, type HostMessage, type Ping, type Request, type Role, type VideoStandard } from "../protocol/messages.ts";
 
 export interface Endpoint {
   host: string;
@@ -40,7 +40,9 @@ function unreachable(role: Role): WireFailure {
   const code: ErrorCode = role === "vice-session" ? "machine-unavailable" : "operation-failed";
   return new WireFailure(
     code,
-    "The c64-re-tools host runtime is not running or cannot be reached. Start it on the host (npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host) and try again.",
+    withStopAndAsk(
+      "The c64-re-tools host runtime is not running or cannot be reached. Start it on the host (npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host) and try again.",
+    ),
   );
 }
 

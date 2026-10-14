@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { encodeFrame, MAX_ATTACHMENT_BYTES, MAX_FRAME_BYTES, MessageReader } from "./protocol/framing.ts";
-import { checkHello, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseClientMessage, parseHostMessage, ProtocolError, WireFailure } from "./protocol/messages.ts";
+import { checkHello, HOST_PROTOCOL_ID, HOST_PROTOCOL_VERSION, parseClientMessage, parseHostMessage, ProtocolError, shownMessage, STOP_AND_ASK, WireFailure, withStopAndAsk } from "./protocol/messages.ts";
 import { isRelativePath, validateSourceTree, validateToolParams, validateToolResult } from "./protocol/tools.ts";
 import { attachmentCount, MAX_MASK_RECTANGLES, validateViceParams, validateViceResult } from "./protocol/vice.ts";
 import { FrameDecoder } from "./protocol/framing.testkit.ts";
@@ -414,4 +414,10 @@ test("petcat.decode takes only the program and validates its result", () => {
   assert.deepEqual(validateToolResult("petcat.decode", { decoded: false, reason: "no end" }, []), { decoded: false, reason: "no end" });
   assert.throws(() => validateToolResult("petcat.decode", { ...decoded, handoffs: [{ kind: "usr", line: 10, address: 1 }] }, []), ProtocolError);
   assert.throws(() => validateToolResult("petcat.decode", { ...decoded, handoffs: [{ kind: "sys", line: 10, address: 1, computed: true }] }, []), ProtocolError);
+});
+
+test("a refusal that only the user can fix ends with the stop instruction once (D37)", () => {
+  assert.equal(shownMessage({ code: "installation-incomplete", message: "dxa is not installed." }), `dxa is not installed. ${STOP_AND_ASK}`);
+  assert.equal(withStopAndAsk(withStopAndAsk("The host runtime is not running.")), `The host runtime is not running. ${STOP_AND_ASK}`);
+  assert.equal(shownMessage({ code: "machine-unavailable", message: "The VICE window closed." }), "The VICE window closed.", "other refusals keep their own advice");
 });

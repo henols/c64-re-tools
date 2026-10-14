@@ -9,7 +9,7 @@ import { z } from "zod";
 
 import { formatC64Address, parseC64Address } from "../c64.ts";
 import type { ViceSessionClient } from "../host-client/vice-session.ts";
-import { WireFailure, type WireError } from "../protocol/messages.ts";
+import { shownMessage, WireFailure, type WireError } from "../protocol/messages.ts";
 import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, type Condition } from "../protocol/vice.ts";
 import { elapsedMs, trace, type TraceFields } from "../trace.ts";
 
@@ -206,7 +206,7 @@ export function toolListing(tool: ToolDefinition): McpTool {
 }
 
 function errorResult(error: WireError): CallToolResult {
-  return { isError: true, content: [{ type: "text", text: JSON.stringify({ code: error.code, message: error.message }) }] };
+  return { isError: true, content: [{ type: "text", text: JSON.stringify({ code: error.code, message: shownMessage(error) }) }] };
 }
 
 /** "address: Invalid string: must match ..." style messages, one sentence per problem. */

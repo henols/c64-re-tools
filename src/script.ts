@@ -2,7 +2,7 @@
 // a refusal prints {"error":{code,message}} with exit status 1, and a usage error prints the
 // usage text as an invalid-input error with exit status 2.
 
-import { WireFailure } from "./protocol/messages.ts";
+import { shownMessage, WireFailure } from "./protocol/messages.ts";
 import { elapsedMs, startTrace, trace, type TraceFields } from "./trace.ts";
 
 /** A wrong command line. The message names the problem; an empty message asks for the usage text alone. */
@@ -38,7 +38,8 @@ export async function runScript(body: () => unknown, options: { usage: string; r
     result = await body();
   } catch (error) {
     if ([WireFailure, ...(options.refusals ?? [])].some((refusal) => error instanceof refusal)) {
-      const { code, message } = error as Error & { code: string };
+      const { code } = error as Error & { code: string };
+      const message = shownMessage(error as Error & { code: string });
       printLine({ error: { code, message } });
       process.exitCode = 1;
       end({ error: { code, message } });

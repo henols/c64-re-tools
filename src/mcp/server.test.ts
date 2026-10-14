@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-import { WireFailure } from "../protocol/messages.ts";
+import { STOP_AND_ASK, WireFailure } from "../protocol/messages.ts";
 import { MAX_SEARCH_PATTERN, type Breakpoint, type BreakpointParams, type ExecutionParams, type JoystickState, type MemmapRange, type MemoryReadParams, type PointRemoved, type MemoryWriteParams, type ObserveParams, type ObserveResult, type RegisterValues, type Registers, type RunTarget, type ViceOperations, type Watchpoint, type WatchpointParams } from "../protocol/vice.ts";
 import { startTrace, TRACE_VARIABLE } from "../trace.ts";
 import { createMcpServer, type SessionSource, type ViceSessionApi } from "./server.ts";
@@ -410,6 +410,17 @@ test("host and session failures keep their code and message", async () => {
   assert.equal(errorOf(await call(unavailable, "c64_registers", { action: "get" })).code, "machine-unavailable");
   await client.close();
   await unavailable.close();
+});
+
+test("an installation-incomplete error tells the agent to stop and ask the user (D37)", async () => {
+  const broken = await connect(async () => {
+    throw new WireFailure("installation-incomplete", "VICE (x64sc) is not installed on the host.");
+  });
+  assert.deepEqual(errorOf(await call(broken, "c64_status")), {
+    code: "installation-incomplete",
+    message: `VICE (x64sc) is not installed on the host. ${STOP_AND_ASK}`,
+  });
+  await broken.close();
 });
 
 test("an unexpected exception becomes operation-failed without internals", async () => {
