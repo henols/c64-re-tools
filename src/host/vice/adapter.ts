@@ -3,7 +3,7 @@
 
 import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
 import { type Comparison, type Condition, type BacktraceFrame, type HistoryEntry, type Instruction, type MemmapRange, type ProfileEntry, type JoystickState, type MemoryView, type RegisterValues, type Registers, type Space } from "../../protocol/vice.ts";
-import { formatC64Address, formatC64Byte } from "../../c64.ts";
+import { COVERAGE, formatC64Address, formatC64Byte } from "../../c64.ts";
 import { decodeDisplay, decodePalette, visibleFrame, type IndexedFrame } from "./screen.ts";
 import type { TextMonitor } from "./text-monitor.ts";
 import {
@@ -258,11 +258,25 @@ function unknownForm(what: string, lines: string[]): WireFailure {
   return new WireFailure("operation-failed", `VICE printed the ${what} in a form that c64-re-tools does not read: ${JSON.stringify(lines.slice(0, 3))}`);
 }
 
+/** The coverage byte (D40) of one memmap row's I/O, ROM and RAM columns, each "rwx" with "-" for no access. */
+export function memmapFlags(io: string, rom: string, ram: string): number {
+  let flags = 0;
+  if (ram[0] === "r") flags |= COVERAGE.ramRead;
+  if (ram[1] === "w") flags |= COVERAGE.ramWrite;
+  if (ram[2] === "x") flags |= COVERAGE.ramExecute;
+  if (rom[0] === "r") flags |= COVERAGE.romRead;
+  if (rom[2] === "x") flags |= COVERAGE.romExecute;
+  if (io[0] === "r") flags |= COVERAGE.ioRead;
+  if (io[1] === "w") flags |= COVERAGE.ioWrite;
+  if (io[2] === "x") flags |= COVERAGE.ioExecute;
+  return flags;
+}
+
 /**
  * Parses memmap rows such as "00c2: --- --- rw- (uninitialized read)": the I/O,
  * ROM and RAM access flags of one address. Adjacent addresses with the same
- * combined flags merge into one range; at most `maxRanges` come back. When
- * more ranges follow, `next` is the first touched address that is not reported.
+ * flags merge into one range; at most `maxRanges` come back. When more ranges
+ * follow, `next` is the first touched address that is not reported.
  */
 export function parseMemmap(answer: string, maxRanges: number): { ranges: MemmapRange[]; next?: number } {
   const ranges: MemmapRange[] = [];
@@ -274,15 +288,15 @@ export function parseMemmap(answer: string, maxRanges: number): { ranges: Memmap
       continue;
     }
     const address = Number.parseInt(match[1]!, 16);
-    const flags = match[2]! + match[3]! + match[4]!;
-    const access = { execute: flags.includes("x"), read: flags.includes("r"), write: flags.includes("w") };
+    const flags = memmapFlags(match[2]!, match[3]!, match[4]!);
+    if (flags === 0) continue;
     const last = ranges.at(-1);
-    if (last !== undefined && last.end === address - 1 && last.execute === access.execute && last.read === access.read && last.write === access.write) {
+    if (last !== undefined && last.end === address - 1 && last.flags === flags) {
       last.end = address;
       continue;
     }
     if (ranges.length >= maxRanges) return { ranges, next: address };
-    ranges.push({ start: address, end: address, ...access });
+    ranges.push({ start: address, end: address, flags });
   }
   if (ranges.length === 0 && unknown.length > 0) throw unknownForm("memory map", unknown);
   return { ranges };

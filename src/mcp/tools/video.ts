@@ -1,12 +1,12 @@
 // Video and chip tools: c64_vicii, c64_sprite, c64_cia, c64_sid, c64_screen
 // and c64_observe.
 
-import { OutInput, writeOut, WrittenOutput } from "../output.ts";
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, type ObserveParams } from "../../protocol/vice.ts";
+import { OutInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, requireFields, SpaceInput, ToolOutput, TransientName } from "../server.ts";
 
 const Color = z.number().int().min(0).max(15);

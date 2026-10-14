@@ -1068,11 +1068,30 @@ Output:
       "end": "$213f",
       "execute": true,
       "read": true,
-      "write": false
+      "write": false,
+      "in": ["ram"]
     }
   ]
 }
 ~~~
+
+`in` names where the access occurred: `ram`, `rom` or `io`. RAM, ROM and I/O stay apart, so code in RAM under the KERNAL does not merge with KERNAL code (D40).
+
+With `out` (a project path, D39), read writes a coverage map in place of the ranges: one byte for each address from `start` to `end`, offset 0 at `start`. Bits 0 to 2 are RAM read, write and execute, bits 3 and 4 ROM read and execute, bits 5 to 7 I/O read, write and execute. Execute is set only on the opcode byte of an executed instruction; a reader adds the operand bytes with the 6502 instruction lengths (`src/c64.ts`).
+
+Action `summary` (with optional `start` and `end`) gives:
+
+~~~json
+{
+  "ram": { "executed": 4, "read": 1, "written": 0 },
+  "rom": { "executed": 0, "read": 0 },
+  "io": { "executed": 0, "read": 0, "written": 1 },
+  "code": [{ "start": "$c000", "end": "$c00a" }],
+  "writtenAndExecuted": []
+}
+~~~
+
+`executed` counts instruction starts. `code` is the executed code in RAM with its operand bytes, and `writtenAndExecuted` the part of it that the program also wrote. Each list has at most 64 ranges; `codeTruncated` or `writtenAndExecutedTruncated` is true when a list is cut.
 
 When more ranges follow after `maxRanges`, the output also has `"truncated": true` and `"next": "$2140"`, the first address that is not reported. Read again with `start` set to `next`.
 

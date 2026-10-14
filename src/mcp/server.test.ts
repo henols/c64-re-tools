@@ -167,7 +167,7 @@ class FakeSession implements ViceSessionApi {
   async memmap(params: ViceOperations["memmap"]["params"]): Promise<ViceOperations["memmap"]["result"]> {
     this.memmaps.push(params);
     if (params.action === "clear") return { cleared: true };
-    const ranges = [{ start: 0x2100, end: 0x213f, execute: true, read: true, write: false }];
+    const ranges = [{ start: 0x2100, end: 0x213f, flags: 5 }];
     return this.memmapNext === undefined ? { ranges } : { ranges, next: this.memmapNext };
   }
   async timing(action: "start" | "read") {
@@ -765,14 +765,14 @@ test("profile and memmap format addresses and fill read defaults", async () => {
     entries: [{ address: "$2100", totalCycles: "125000", selfCycles: "82000", percent: 17.4 }],
   });
   assert.deepEqual((await call(client, "c64_memmap", { action: "read" })).structuredContent, {
-    ranges: [{ start: "$2100", end: "$213f", execute: true, read: true, write: false }],
+    ranges: [{ start: "$2100", end: "$213f", execute: true, read: true, write: false, in: ["ram"] }],
   });
   assert.deepEqual((await call(client, "c64_memmap", { action: "clear" })).structuredContent, { cleared: true });
   assert.deepEqual(session.memmaps, [{ action: "read", start: 0, end: 0xffff, maxRanges: 256 }, { action: "clear" }]);
   assert.equal(errorOf(await call(client, "c64_memmap", { action: "clear", start: "$1000" })).code, "invalid-input");
   session.memmapNext = 0x2140;
   assert.deepEqual((await call(client, "c64_memmap", { action: "read", maxRanges: 1 })).structuredContent, {
-    ranges: [{ start: "$2100", end: "$213f", execute: true, read: true, write: false }],
+    ranges: [{ start: "$2100", end: "$213f", execute: true, read: true, write: false, in: ["ram"] }],
     truncated: true,
     next: "$2140",
   });
@@ -898,6 +898,34 @@ test("out writes memory, a listing, the history and a screen to project files (D
     assert.equal(readFileSync(join(project, "screens", "title.png"), "utf8"), "png-bytes");
     await call(client, "c64_screen", { action: "compare", baseline: "b", out: "screens/diff.png" });
     assert.equal(readFileSync(join(project, "screens", "diff.png"), "utf8"), "diff");
+    await client.close();
+  } finally {
+    process.chdir(home);
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test("c64_memmap writes a coverage map with out and gives a summary (D40)", async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-coverage-"));
+  const home = process.cwd();
+  process.chdir(project);
+  try {
+    const session = new FakeSession();
+    const client = await connect(async () => session);
+    const written = (await call(client, "c64_memmap", { action: "read", start: "$2000", end: "$21ff", out: "coverage/run.bin" })).structuredContent as Record<string, unknown>;
+    assert.equal(written.bytes, 0x200);
+    const map = readFileSync(join(project, "coverage", "run.bin"));
+    assert.equal(map[0x100], 5, "$2100 is RAM read and execute");
+    assert.equal(map[0x0ff], 0);
+    // The fake memory is all $a9 (LDA #imm, two bytes): 64 instruction starts at $2100-$213f.
+    assert.deepEqual((await call(client, "c64_memmap", { action: "summary" })).structuredContent, {
+      ram: { executed: 64, read: 64, written: 0 },
+      rom: { executed: 0, read: 0 },
+      io: { executed: 0, read: 0, written: 0 },
+      code: [{ start: "$2100", end: "$2140" }],
+      writtenAndExecuted: [],
+    });
+    assert.equal(errorOf(await call(client, "c64_memmap", { action: "summary", out: "x.bin" })).code, "invalid-input");
     await client.close();
   } finally {
     process.chdir(home);

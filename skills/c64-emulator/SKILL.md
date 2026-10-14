@@ -50,6 +50,8 @@ Each memory and register tool has a `space`. Use `c64` for the computer. Use `dr
 
 For a large result, give `out` with a path in the project. `c64_memory_read`, `c64_disassemble`, `c64_cpu_history` and `c64_screen` then write the result to that file. The answer gives only the file, the number of bytes and a SHA-256. Use it for a memory dump of more than a few hundred bytes, a long listing, or a screen that the user wants to keep.
 
+`c64_memmap` keeps RAM, ROM and I/O apart. Use action `summary` to see which code ran. Use action `read` with `out` to keep a coverage run as a file, for example `coverage/attract.bin`. Clear the map before each run that you want to keep apart.
+
 ## Workflow
 
 1. Read the project knowledge for the addresses in the question. Use the c64-knowledge skill.

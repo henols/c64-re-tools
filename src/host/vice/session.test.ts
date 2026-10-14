@@ -928,7 +928,7 @@ test("the profiler runs from session start; profile and memmap read through it",
   });
   fake.memmapRows = ["c000: --- --- r-x", "c001: --- --- r-x"];
   assert.deepEqual(await session.handle("memmap", { action: "read", start: 0xc000, end: 0xc0ff, maxRanges: 10 }), {
-    ranges: [{ start: 0xc000, end: 0xc001, execute: true, read: true, write: false }],
+    ranges: [{ start: 0xc000, end: 0xc001, flags: 5 }],
   });
   assert.deepEqual(await session.handle("memmap", { action: "clear" }), { cleared: true });
   assert.equal(fake.memmapCleared, true);

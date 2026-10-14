@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { COVERAGE } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import {
   conditionExpression,
@@ -10,6 +11,7 @@ import {
   parseDisassembly,
   parseHistory,
   parseHunt,
+  memmapFlags,
   parseMemmap,
   parseProfile,
   statusRegisterFromFlags,
@@ -131,10 +133,10 @@ test("memmap rows merge into ranges of equal access", () => {
   ].join("\n");
   assert.deepEqual(parseMemmap(answer, 100), {
     ranges: [
-      { start: 0x0099, end: 0x009a, execute: false, read: false, write: true },
-      { start: 0x00c1, end: 0x00c1, execute: false, read: true, write: false },
-      { start: 0x00c2, end: 0x00c3, execute: false, read: true, write: true },
-      { start: 0xe000, end: 0xe001, execute: true, read: true, write: false },
+      { start: 0x0099, end: 0x009a, flags: COVERAGE.ramWrite },
+      { start: 0x00c1, end: 0x00c1, flags: COVERAGE.ramRead },
+      { start: 0x00c2, end: 0x00c3, flags: COVERAGE.ramRead | COVERAGE.ramWrite },
+      { start: 0xe000, end: 0xe001, flags: COVERAGE.romRead | COVERAGE.romExecute },
     ],
   });
   const cut = parseMemmap(answer, 2);
@@ -142,6 +144,14 @@ test("memmap rows merge into ranges of equal access", () => {
   assert.equal(cut.ranges[1]!.end, 0x00c1, "the last reported range is complete");
   assert.equal(cut.next, 0x00c2, "next is the first address that is not reported");
   assert.equal(parseMemmap(answer, 4).next, undefined, "a result that just fits is complete");
+});
+
+test("memmap keeps RAM, ROM and I/O apart in the coverage byte", () => {
+  assert.equal(memmapFlags("---", "---", "r-x"), COVERAGE.ramRead | COVERAGE.ramExecute);
+  assert.equal(memmapFlags("---", "r-x", "-w-"), COVERAGE.romRead | COVERAGE.romExecute | COVERAGE.ramWrite, "code in ROM over RAM that a program wrote");
+  assert.equal(memmapFlags("rwx", "---", "---"), COVERAGE.ioRead | COVERAGE.ioWrite | COVERAGE.ioExecute);
+  const rows = ["e000: --- r-x ---", "e001: --- --- r-x"].join("\n");
+  assert.equal(parseMemmap(rows, 10).ranges.length, 2, "KERNAL code and code in the RAM below it do not merge");
 });
 
 const unknownForm = (error: unknown) => error instanceof WireFailure && error.code === "operation-failed" && /does not read/.test(error.message);

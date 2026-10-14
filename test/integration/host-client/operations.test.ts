@@ -109,7 +109,7 @@ const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Pro
   memmap: {
     call: (c) => c.memmap({ action: "read", start: 0, end: 0xffff, maxRanges: 256 }),
     params: { action: "read", start: 0, end: 0xffff, maxRanges: 256 },
-    result: { ranges: [{ start: 0x2100, end: 0x213f, execute: true, read: true, write: false }] },
+    result: { ranges: [{ start: 0x2100, end: 0x213f, flags: 5 }] },
   },
   vicii: { call: (c) => c.vicii(), params: {}, result: VICII },
   sprites: { call: (c) => c.sprites([0]), params: { indexes: [0] }, result: { sprites: [SPRITE] } },

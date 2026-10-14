@@ -9,7 +9,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address, textToPetscii } from "#src/c64.ts";
+import { EXECUTE, formatC64Address, parseC64Address, READ, textToPetscii, WRITE } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile } from "#src/host-client/transfer.ts";
@@ -70,7 +70,8 @@ async function trace(program: string, options: { frames: number; entry?: number 
     const ranges = await readMemoryMap(async (start) => {
       const map = await client.memmap({ action: "read", start, end: 0xffff, maxRanges: MAX_RANGES });
       if (!("ranges" in map)) throw new WireFailure("operation-failed", "The emulator did not give the memory map.");
-      return map;
+      const ranges = map.ranges.map(({ start: from, end, flags }) => ({ start: from, end, read: (flags & READ) !== 0, write: (flags & WRITE) !== 0, execute: (flags & EXECUTE) !== 0 }));
+      return map.next === undefined ? { ranges } : { ranges, next: map.next };
     });
     const { written, bytes: count, running } = writtenThenExecuted(ranges, pc);
     const packing = count >= UNPACKED_BYTES || running !== undefined ? "likely" : count > 0 ? "unclear" : "unlikely";

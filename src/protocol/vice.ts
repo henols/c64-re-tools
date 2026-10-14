@@ -231,12 +231,11 @@ export interface ProfileEntry {
   percent: number;
 }
 
+/** Addresses with the same access flags: the coverage byte of src/c64.ts (D40), RAM, ROM and I/O apart. */
 export interface MemmapRange {
   start: number;
   end: number;
-  execute: boolean;
-  read: boolean;
-  write: boolean;
+  flags: number;
 }
 
 // Screen baselines and snapshots
@@ -1124,7 +1123,7 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         isObject(range) &&
         isInteger(range.start, 0, 0xffff) &&
         isInteger(range.end, 0, 0xffff) &&
-        (["execute", "read", "write"] as const).every((flag) => typeof range[flag] === "boolean");
+        isInteger(range.flags, 1, 0xff);
       const ok = Array.isArray(value.ranges)
         ? value.ranges.every(isRange) && (value.next === undefined || isInteger(value.next, 0, 0xffff))
         : value.cleared === true;

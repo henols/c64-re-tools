@@ -279,3 +279,66 @@ export function findHandoffs(lines: TokenizedLine[]): BasicHandoff[] {
   }
   return handoffs;
 }
+
+// Execution coverage (D40): the byte format of a coverage map, and the 6502
+// instruction lengths that turn the instruction starts in it into code ranges.
+// VICE marks only the opcode byte of an executed instruction as executed.
+
+/** One byte per address: the access flags as VICE reports them, RAM, ROM and I/O apart. */
+export const COVERAGE = {
+  ramRead: 1 << 0,
+  ramWrite: 1 << 1,
+  ramExecute: 1 << 2,
+  romRead: 1 << 3,
+  romExecute: 1 << 4,
+  ioRead: 1 << 5,
+  ioWrite: 1 << 6,
+  ioExecute: 1 << 7,
+} as const;
+
+export const EXECUTE = COVERAGE.ramExecute | COVERAGE.romExecute | COVERAGE.ioExecute;
+export const READ = COVERAGE.ramRead | COVERAGE.romRead | COVERAGE.ioRead;
+export const WRITE = COVERAGE.ramWrite | COVERAGE.ioWrite;
+
+/**
+ * The length in bytes of the NMOS 6502/6510 instruction with this opcode, for
+ * all 256 opcodes with the undocumented ones. The opcode is aaabbbcc: bbb
+ * selects the addressing mode within a group cc. JAM (KIL) and BRK count one byte.
+ */
+export function instructionLength(opcode: number): 1 | 2 | 3 {
+  const group = opcode & 0b11;
+  const mode = (opcode >> 2) & 0b111;
+  if (group === 0b00) {
+    if (mode === 0b000) return opcode === 0x20 ? 3 : opcode === 0x00 || opcode === 0x40 || opcode === 0x60 ? 1 : 2;
+    return ([2, 2, 1, 3, 2, 2, 1, 3] as const)[mode]!;
+  }
+  if (group === 0b10) {
+    if (mode === 0b000) return opcode === 0x02 || opcode === 0x22 || opcode === 0x42 || opcode === 0x62 ? 1 : 2;
+    return ([2, 2, 1, 3, 1, 2, 1, 3] as const)[mode]!;
+  }
+  // Groups 01 and 11 share their addressing modes.
+  return ([2, 2, 2, 3, 2, 2, 3, 3] as const)[mode]!;
+}
+
+export interface CodeRange {
+  start: number;
+  end: number;
+}
+
+/**
+ * The executed code in RAM as ranges: each RAM instruction start in `map`
+ * with its operand bytes, by the opcode in `memory` (64 KiB from $0000).
+ * `map` starts at `base`. Adjacent and overlapping instructions merge.
+ */
+export function executedRamCode(map: Uint8Array, base: number, memory: Uint8Array): CodeRange[] {
+  const ranges: CodeRange[] = [];
+  for (let offset = 0; offset < map.length; offset++) {
+    if ((map[offset]! & COVERAGE.ramExecute) === 0) continue;
+    const start = base + offset;
+    const end = Math.min(0xffff, start + instructionLength(memory[start]!) - 1);
+    const last = ranges.at(-1);
+    if (last !== undefined && start <= last.end + 1) last.end = Math.max(last.end, end);
+    else ranges.push({ start, end });
+  }
+  return ranges;
+}
