@@ -3,7 +3,8 @@
 // wrote and then executed: the run-time evidence that also finds a simple
 // cruncher whose bytes look like code. "capture" runs the program in an
 // emulator until it reaches a given address (the unpacked entry point) and
-// writes the memory into the project. No native unpack tool is used.
+// writes the memory into the project. "loads" captures each part of a
+// multi-load program (D53). No native unpack tool is used.
 
 import { parseArgs } from "node:util";
 
@@ -17,11 +18,14 @@ import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./evidence.ts";
+import { loads, readLoadSteps } from "./loads.ts";
+import { entryState, IO_AREAS, json, machineState, readRam, READY_FRAMES, vectorsOf } from "./machine.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
 unpack.ts trace <program.prg> [--frames <n>] [--entry <address>] [--steps <file>]
 unpack.ts capture <program.prg> --until <address> --out <dir> [--range <start> <end>] [--timeout-frames <n>] [--steps <file>] [--min-stage <bytes>]
 unpack.ts stages <program.prg> [--frames <n>] [--entry <address>] [--steps <file>] [--min-stage <bytes>]
+unpack.ts loads <program> --steps <file> --out <dir> [--drive] [--min-block <bytes>]
 
 inspect   packing evidence: the BASIC start and the entropy of the bytes
 trace     run the program for <n> frames (default 3000) and report the memory
@@ -38,6 +42,13 @@ stages    run the program for <n> frames (default 3000) and report each stage:
           A stage starts when the CPU executes a block of at least
           --min-stage bytes (default 64) that the stage before wrote.
 
+loads     run a multi-load program (a PRG, or a disk, tape or cartridge image)
+          with the steps file; each capture step {"capture": "<name>"} writes
+          <dir>/<name>/ with image.bin, image.json, entry_state.json and a PRG
+          for each block of at least --min-block bytes (default 64) that the C64
+          side changed since the previous capture. --drive also writes the 2 KiB
+          drive RAM as drive8.prg, for knowledge space drive8.
+
 --steps <file>  a JSON list of input steps that run right after the program
           starts: write, registers, joystick, type, frames and runUntil, as in
           c64-testing scenarios, with $ addresses only. Use it to press a key
@@ -45,7 +56,6 @@ stages    run the program for <n> frames (default 3000) and report each stage:
 
 Addresses are $ and four hex digits. The result is one JSON object.`;
 
-const MAX_READ = 4096;
 
 function address(text: string, option: string): number {
   try {
@@ -288,31 +298,6 @@ async function stages(program: string, options: { frames: number; entry?: number
   }
 }
 
-/** The I/O areas of the entry state, read without side effects (D43). */
-const IO_AREAS = { vic: [0xd000, 0x2f], sid: [0xd400, 0x1d], cia1: [0xdc00, 0x10], cia2: [0xdd00, 0x10] } as const;
-/** Frames from a hard reset to the READY prompt, with margin. */
-const READY_FRAMES = 200;
-
-/** Reads `size` bytes from `address` in the RAM view, in parts. */
-async function readRam(client: ViceSessionClient, address: number, size: number): Promise<Buffer> {
-  const parts: Buffer[] = [];
-  for (let at = address; at < address + size; at += MAX_READ) {
-    parts.push(Buffer.from((await client.memoryRead({ address: at, size: Math.min(MAX_READ, address + size - at), space: "c64", view: "ram" })).data, "hex"));
-  }
-  return Buffer.concat(parts);
-}
-
-/** The state the program finds at its entry: what a rebuild's loader must recreate. */
-async function machineState(client: ViceSessionClient): Promise<{ port: Buffer; pages: Buffer; io: Record<keyof typeof IO_AREAS, Buffer>; romVectors: Buffer }> {
-  const port = Buffer.from((await client.memoryRead({ address: 0x0000, size: 2, space: "c64", view: "cpu" })).data, "hex");
-  const pages = await readRam(client, 0x0000, 0x400);
-  const io = {} as Record<keyof typeof IO_AREAS, Buffer>;
-  for (const [name, [address, size]] of Object.entries(IO_AREAS)) io[name as keyof typeof IO_AREAS] = Buffer.from((await client.ioRead(address, size)).data, "hex");
-  const romVectors = Buffer.from((await client.memoryRead({ address: 0xfffa, size: 6, space: "c64", view: "cpu" })).data, "hex");
-  return { port, pages, io, romVectors };
-}
-
-const word = (bytes: Buffer, offset: number) => formatC64Address(bytes[offset]! | (bytes[offset + 1]! << 8));
 
 async function capture(
   program: string,
@@ -344,13 +329,7 @@ async function capture(
       write(name, Buffer.concat([Buffer.from([segment.start & 0xff, segment.start >> 8]), memory.subarray(segment.start, segment.end + 1)]));
       return name;
     });
-    const vectors = {
-      irq: word(state.pages, 0x314),
-      brk: word(state.pages, 0x316),
-      nmi: word(state.pages, 0x318),
-      ram: { nmi: word(memory, 0xfffa), reset: word(memory, 0xfffc), irq: word(memory, 0xfffe) },
-      rom: { nmi: word(state.romVectors, 0), reset: word(state.romVectors, 2), irq: word(state.romVectors, 4) },
-    };
+    const vectors = vectorsOf(state, memory);
     write(
       "image.json",
       Buffer.from(
@@ -376,23 +355,7 @@ async function capture(
     compare(0x0000, state.port, clean.port);
     compare(0x0002, state.pages.subarray(2), clean.pages.subarray(2));
     for (const [name, [address]] of Object.entries(IO_AREAS)) compare(address, state.io[name as keyof typeof IO_AREAS], clean.io[name as keyof typeof IO_AREAS]);
-    write(
-      "entry_state.json",
-      Buffer.from(
-        `${JSON.stringify(
-          {
-            registers: { pc: formatC64Address(registers.pc), a: registers.a, x: registers.x, y: registers.y, sp: registers.sp, flags: registers.flags },
-            cpuPort: { $00: state.port[0], $01: state.port[1] },
-            pages: Object.fromEntries([0, 1, 2, 3].map((page) => [formatC64Address(page << 8), state.pages.subarray(page << 8, (page + 1) << 8).toString("hex")])),
-            io: Object.fromEntries(Object.entries(IO_AREAS).map(([name, [address]]) => [name, { from: formatC64Address(address), bytes: state.io[name as keyof typeof IO_AREAS].toString("hex") }])),
-            vectors,
-            differsFromReset: differs,
-          },
-          null,
-          2,
-        )}\n`,
-      ),
-    );
+    write("entry_state.json", json(entryState(registers, state, vectors, differs)));
     return {
       output: {
         captured: true,
@@ -424,6 +387,8 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
       entry: { type: "string" },
       steps: { type: "string" },
       "min-stage": { type: "string" },
+      "min-block": { type: "string" },
+      drive: { type: "boolean" },
       help: { type: "boolean" },
     },
   });
@@ -458,6 +423,19 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     if (steps.some((step) => "runUntil" in step)) throw new UsageError("stages takes no runUntil step; use frames steps");
     return stages(program, { frames, steps, minStage, ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }) });
   }
+  if (command === "loads") {
+    if (rest.length > 0) throw new UsageError("loads takes one program");
+    if (values.steps === undefined || values.out === undefined) throw new UsageError("loads needs --steps and --out");
+    try {
+      resolveProjectPath(values.out);
+    } catch {
+      throw new UsageError(`--out must be a path relative to the project directory that stays inside it, not ${values.out}`);
+    }
+    const minBlock = values["min-block"] === undefined ? 64 : Number(values["min-block"]);
+    if (!Number.isInteger(minBlock) || minBlock < 1 || minBlock > 0x10000) throw new UsageError("--min-block must be from 1 to 65536");
+    return loads(program, { out: values.out, steps: readLoadSteps(values.steps), drive: values.drive === true, minBlock });
+  }
+  if (values.drive !== undefined || values["min-block"] !== undefined) throw new UsageError("--drive and --min-block work only with loads");
   if (command !== "capture") throw new UsageError(`unknown command ${command}`);
   if (values.until === undefined || values.out === undefined) throw new UsageError("capture needs --until and --out");
   // --range takes two values: the end is the next positional argument.

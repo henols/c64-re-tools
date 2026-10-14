@@ -1,6 +1,6 @@
 ---
 name: c64-unpacker
-description: Use this skill to find out if a packer or a cruncher compressed a C64 program, and to get the unpacked program for analysis. It shows evidence of packing without a guess of the packer name. It runs the program in an emulator until the unpacked code starts, then writes the memory into the project. Do not use it to analyze the unpacked code.
+description: Use this skill to find out if a packer or a cruncher compressed a C64 program, and to get the unpacked program for analysis. It shows evidence of packing without a guess of the packer name. It runs the program in an emulator until the unpacked code starts, then writes the memory into the project. It also captures each part of a multi-load program and the drive RAM. Do not use it to analyze the unpacked code.
 ---
 
 # c64-unpacker
@@ -23,6 +23,7 @@ node <skill>/scripts/unpack.ts inspect original/game.prg
 node <skill>/scripts/unpack.ts trace original/game.prg
 node <skill>/scripts/unpack.ts capture original/game.prg --until '$c000' --out unpacked
 node <skill>/scripts/unpack.ts stages original/game.prg --steps input.json
+node <skill>/scripts/unpack.ts loads original/game.d64 --steps parts.json --out parts --drive
 ```
 
 `inspect` examines the file locally. `trace` and `capture` start their own emulator through the host runtime and start the program. `trace` runs the program and finds the memory that the program wrote and then executed. `capture` stops the program when the CPU gets to the `--until` address. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). In `stages`, a `frames` step counts as run time, and a `runUntil` step is not possible.
@@ -36,6 +37,8 @@ node <skill>/scripts/unpack.ts stages original/game.prg --steps input.json
 | `--frames 3000` | `trace` only: how many frames the program runs (default 3000). |
 | `--entry '$c000'` | `trace` only: start the program at this address. Without it, `trace` types RUN. A program without a BASIC start line needs it. |
 | `--steps input.json` | Input for the program, right after it starts: a JSON list of steps. Use it when an intro waits for a key or a menu waits for a choice. |
+| `--drive` | `loads` only: each capture also writes the 2 KiB RAM of the 1541 drive as `drive8.prg`. |
+| `--min-block 64` | `loads` only: the smallest block of changed memory that becomes a segment (default 64). The result counts smaller changes as `smallChanges`. |
 | `--min-stage 64` | `stages` only: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). |
 
 The capture reads RAM, also the RAM under the ROMs and the I/O area. The script prints one JSON object.
@@ -75,6 +78,28 @@ A steps file has the steps `write`, `registers`, `joystick`, `type`, `frames` an
 6. Give `image.bin` to the c64-static-analysis skill with its `--flat64k` option, or give it the segment PRGs.
 7. Use `--range` only when you know the area of the program. Then the capture writes that one segment.
 
+## Multi-load programs
+
+A multi-load program loads more parts from the disk while it runs, for example one part for each level. Use `loads` to capture each part. The program can be a PRG, or a disk, tape or cartridge image that VICE starts.
+
+1. Write a steps file. Put a `capture` step after each point where a part is in memory, for example:
+
+```json
+[
+  { "runUntil": { "at": "$080d" }, "timeoutFrames": 6000 },
+  { "capture": "main" },
+  { "type": " " },
+  { "runUntil": { "at": "$c000" }, "timeoutFrames": 6000 },
+  { "capture": "level1" }
+]
+```
+
+2. Run `loads` with the steps file and a directory in `--out`. Add `--drive` when the program has its own drive code, for example a fast loader.
+3. Each capture writes `<out>/<name>/` with `image.bin`, `image.json`, `entry_state.json` and a PRG for each segment. A segment is a block of RAM from `$0400` that the program changed after the capture before. The first capture also has the program itself.
+4. With `--drive`, `drive8.prg` is the drive RAM at `$0000`-`$07ff`. Analyze it with c64-static-analysis and `--space drive8`, and record its knowledge in space `drive8`.
+
+VICE records no memory access map for the drive CPU. Thus no tool gives coverage of drive code.
+
 ## Knowledge
 
 Automatic write:
@@ -86,7 +111,9 @@ Do not record the unpacker in the project knowledge, unless the user asks to exa
 
 The packing evidence, the stages, or the unpacked program with its image, segments and entry state in a directory of the project.
 
-The exit status is 0 for a result. The exit status is 1 for `traced: false`, for `captured: false` and for an error. The exit status is 2 for a wrong argument.
+For `loads`: `captures`, with the name, the PC, the segments and the drive file of each capture.
+
+The exit status is 0 for a result. The exit status is 1 for `traced: false`, for `captured: false`, for `loaded: false` and for an error. The exit status is 2 for a wrong argument.
 
 ## Failure and conflicts
 
