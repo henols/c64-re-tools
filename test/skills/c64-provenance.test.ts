@@ -2,12 +2,14 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
+import { COVERAGE } from "../../src/c64.ts";
 import { compareReleases, suggestShift } from "../../skills/c64-provenance/scripts/compare.ts";
+import { separate } from "../../skills/c64-provenance/scripts/separate.ts";
 import { seededBytes } from "../kit.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-provenance-"));
@@ -86,4 +88,75 @@ test("an image release counts only inside its segments, and a common range never
   assert.deepEqual(result.differences.map((difference) => [difference.start, difference.end]), [["$0900", "$0900"]], "the patch at $0900-$0902 counts only where the image has bytes");
   const steps = spawnSync(process.execPath, [...process.execArgv, script, "unpacked/image.json", "whole.prg", "--steps", "s.json"], { cwd: project, encoding: "utf8" });
   assert.equal(steps.status, 2, "--steps needs --run");
+});
+
+test("separate gives each range its stage and access, each code region its reachability, and what runs outside the image (D51)", () => {
+  const memory = new Uint8Array(0x10000);
+  memory.set([0x20, 0x08, 0x10, 0x60, 0x01, 0x02, 0x03, 0x04, 0x60, 0x00, 0xea, 0x60], 0x1000);
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x1000] = COVERAGE.ramExecute;
+  coverage[0x1003] = COVERAGE.ramExecute;
+  coverage[0x1008] = COVERAGE.ramExecute;
+  coverage[0x1004] = COVERAGE.ramRead;
+  coverage[0x1005] = COVERAGE.ramWrite;
+  coverage[0x1006] = COVERAGE.ramRead | COVERAGE.ramWrite;
+  coverage[0xc000] = COVERAGE.ramRead;
+  coverage[0xc100] = COVERAGE.ramWrite | COVERAGE.ramExecute;
+  coverage[0xc200] = COVERAGE.ramExecute;
+  const found = separate({
+    segments: [{ start: 0x1000, end: 0x100b }],
+    memory,
+    entry: 0x1000,
+    stages: [
+      { entry: 0x0810, wrote: [{ start: 0x1000, end: 0x1007 }] },
+      { entry: 0x1000, wrote: [{ start: 0x1004, end: 0x100b }] },
+    ],
+    coverage,
+    codeRegions: [
+      { start: 0x1000, end: 0x1003, type: "code" },
+      { start: 0x1008, end: 0x1008, type: "code" },
+      { start: 0x100a, end: 0x100b, type: "code" },
+    ],
+    references: [{ from: 0x1000, to: 0x1008, kind: "call" }],
+  });
+  assert.deepEqual(found.ranges, [
+    { start: 0x1000, end: 0x1003, stage: 0, access: "executed" },
+    { start: 0x1004, end: 0x1004, stage: 1, access: "read" },
+    { start: 0x1005, end: 0x1005, stage: 1, access: "written" },
+    { start: 0x1006, end: 0x1006, stage: 1, access: "read-written" },
+    { start: 0x1007, end: 0x1007, stage: 1, access: "untouched" },
+    { start: 0x1008, end: 0x1008, stage: 1, access: "executed" },
+    { start: 0x1009, end: 0x100b, stage: 1, access: "untouched" },
+  ]);
+  assert.deepEqual(
+    found.codeRegions.map((region) => [region.start, region.reachable, region.executed]),
+    [
+      [0x1000, true, true],
+      [0x1008, true, true],
+      [0x100a, false, false],
+    ],
+  );
+  assert.deepEqual(found.outside, { read: [{ start: 0xc000, end: 0xc000 }], executed: [{ start: 0xc200, end: 0xc200 }], generated: [{ start: 0xc100, end: 0xc100 }] });
+});
+
+test("the separate command reads an image with its stages and writes all ranges to --out", () => {
+  const memory = new Uint8Array(0x10000);
+  memory.fill(0xea, 0x2000, 0x20ff);
+  mkdirSync(join(project, "one"), { recursive: true });
+  writeFileSync(join(project, "one", "image.bin"), memory);
+  writeFileSync(
+    join(project, "one", "image.json"),
+    JSON.stringify({ entry: "$2000", image: "image.bin", segments: [{ start: "$2000", end: "$20ff" }], stages: [{ stage: 0, entry: "$0810", wrote: [{ start: "$2000", end: "$207f" }] }, { stage: 1, entry: "$2000", wrote: [{ start: "$2080", end: "$20ff" }] }] }),
+  );
+  writeFileSync(join(project, "one", "cov.bin"), new Uint8Array(0x10000));
+  const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "separate", "one/image.json", "--coverage", "one/cov.bin", "--out", "one/separate.json", "--max-listed", "1"], { cwd: project, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const result = JSON.parse(run.stdout) as Record<string, any>;
+  assert.deepEqual(result.bytesByStage, { 0: 128, 1: 128, none: 0 });
+  assert.equal(result.bytesByAccess.untouched, 256);
+  assert.equal(result.ranges.count, 2);
+  assert.equal(result.ranges.listed.length, 1);
+  assert.equal((JSON.parse(readFileSync(join(project, "one", "separate.json"), "utf8")) as { ranges: unknown[] }).ranges.length, 2);
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "one/image.json", "--run", "5"], { cwd: project, encoding: "utf8" }).status, 2);
 });

@@ -1,6 +1,6 @@
 ---
 name: c64-provenance
-description: Use this skill to compare two or more releases of a C64 program, for example cracked versions from different groups. It finds the bytes where the releases differ and shows which releases agree there. It can run each release and tell how the program uses each difference. Use the result to separate the content of the application from changes that a release added. Do not use it to analyze the code.
+description: Use this skill to compare two or more releases of a C64 program, for example cracked versions from different groups. It finds the bytes where the releases differ and shows which releases agree there. It can run each release and tell how the program uses each difference. With one release, it gives evidence for each range: the unpack stage, the access, and the code that the entry does not reach. Use the result to separate the content of the application from changes that a release added. Do not use it to analyze the code.
 ---
 
 # c64-provenance
@@ -17,6 +17,7 @@ This skill does not change project knowledge.
 - Optional: an address range to compare.
 - Optional: a shift for a release that loads at a different address.
 - Optional: a number of frames to run each release, and a steps file.
+- For one release: the release, coverage files, and the knowledge of the project.
 
 ## Tools / execution path
 
@@ -26,6 +27,7 @@ The script compares the files locally. Only `--run` uses the host runtime: each 
 node <skill>/scripts/provenance.ts releases/a.prg releases/b.prg releases/c.prg
 node <skill>/scripts/provenance.ts releases/a.prg releases/b.prg --shift 2:-256 --from '$0900' --to '$09ff'
 node <skill>/scripts/provenance.ts releases/a.prg unpacked/b/image.json --run 600 --steps steps/start-game.json
+node <skill>/scripts/provenance.ts separate unpacked/image.json --coverage coverage/attract.bin --coverage coverage/level1.bin --out notes/separate.json
 ```
 
 | Option | Meaning |
@@ -55,6 +57,17 @@ With `--run`, a PRG starts with autostart and RUN. An image starts from its byte
    - Find what the change does, for example a trainer, a removed copy protection, or a changed text.
 6. Decide which bytes are probably the original application. Use more than the byte comparison: the code, the text, and the history of the releases.
 7. Record the conclusion as a comment or a region with the c64-knowledge skill.
+
+## One release
+
+Use `separate` when you have only one release. It gives evidence, not a decision:
+
+- `ranges`: the image in ranges with the same stage and access. `stage` is the last unpack stage that wrote the range. In `image.json`, the last stage is the program. An earlier stage is a depacker, an intro or a loader.
+- `access`: from the joined `--coverage` files: `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs.
+- `codeRegions.unreachable`: code regions of the knowledge that no chain of call and jump references reaches from the entry. Run c64-static-analysis first, so that the knowledge has the code regions and the references.
+- `outside`: RAM outside the image that the program `read` or `executed` but did not write, and code it `generated`. A loader or an earlier stage put the bytes that the program did not write.
+
+The result lists the first ranges. `--out` writes all of them. Run more coverage runs for parts that are `untouched` before you decide.
 
 ## Knowledge
 

@@ -2,21 +2,28 @@
 // their addresses and reports where they differ and which releases agree. A
 // release is a PRG or an unpacker image.json (D50). With --run, each release
 // runs in its own emulator, and each listed difference gets its first access
-// and whether the run changed it.
+// and whether the run changed it. The separate command gives evidence from
+// one release (D51).
 
 import { posix } from "node:path";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { readCoverageFiles } from "#src/host-client/coverage.ts";
 import { checkActionSteps, type ActionStep } from "#src/host-client/steps.ts";
 import { MAX_EXECUTION_COUNT, WireFailure } from "#src/host-client/tools.ts";
-import { readProjectFile } from "#src/host-client/transfer.ts";
+import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
+import { listReferences, listRegions } from "#src/knowledge/read.ts";
+import { CODE_REGION_TYPES } from "#src/knowledge/schema.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { compareReleases, suggestShift, type Range, type Release } from "./compare.ts";
 import { watchRelease, type ImageState, type Start } from "./runtime.ts";
+import { separate } from "./separate.ts";
 
 const USAGE = `provenance.ts <release> <release> [<release> ...] [options]
+provenance.ts separate <release> [--coverage <file> ...] [--out <file>] [--max-listed <n>]
 
   --shift <n>:<bytes>   move release n (1 = the first) by a number of bytes, for example 2:-256
   --from <address>      compare from this address
@@ -24,6 +31,12 @@ const USAGE = `provenance.ts <release> <release> [<release> ...] [options]
   --run <frames>        run each release in its own emulator for this many frames, and
                         give each listed difference its first access and whether it changed
   --steps <file>        with --run: action steps (JSON) to run before the frames
+
+separate gives evidence from one release: the unpack stage that wrote each range,
+its access in the --coverage files (64 KiB each, repeatable), whether call and
+jump references in knowledge reach each code region from the entry, and what the
+program reads or executes outside the image. --out writes all ranges to a file;
+the result lists at most --max-listed of them (default 50).
 
 A release is a PRG, placed at its load address, or an image.json of the
 c64-unpacker skill, compared inside its segments. Paths are relative to the
@@ -43,6 +56,10 @@ interface LoadedRelease {
   release: Release;
   shift: number;
   start: Start | { kind: "none"; reason: string };
+  /** 64 KiB with the release bytes at their own addresses. */
+  memory: Uint8Array;
+  entry?: number;
+  stages?: Array<{ entry: number; wrote: Range[] }>;
 }
 
 /** Reads entry_state.json of the c64-unpacker skill for a start by writes. */
@@ -89,7 +106,9 @@ function readRelease(path: string, shift: number): LoadedRelease {
     const load = bytes.readUInt16LE(0);
     const segment = moved({ start: load, end: load + bytes.length - 3 });
     if (!inside(segment)) throw new UsageError(`the shift moves ${path} outside $0000-$ffff`);
-    return { release: { name: path, segments: [segment], byteAt: (at) => bytes[2 + at - segment.start]! }, shift, start: { kind: "program", path } };
+    const memory = new Uint8Array(0x10000);
+    memory.set(bytes.subarray(2), load);
+    return { release: { name: path, segments: [segment], byteAt: (at) => bytes[2 + at - segment.start]! }, shift, start: { kind: "program", path }, memory };
   }
   const fail = (what: string): never => {
     throw new UsageError(`${path} is not an image.json of the c64-unpacker skill: ${what}`);
@@ -109,10 +128,19 @@ function readRelease(path: string, shift: number): LoadedRelease {
   const segments = own.map(moved);
   if (!segments.every(inside)) throw new UsageError(`the shift moves ${path} outside $0000-$ffff`);
   const state = entryState(posix.join(directory, "entry_state.json"));
+  const stages = Array.isArray(manifest.stages)
+    ? (manifest.stages as Array<Record<string, unknown>>).map((stage) => ({
+        entry: parse(stage.entry),
+        wrote: (Array.isArray(stage.wrote) ? (stage.wrote as Array<Record<string, unknown>>) : []).map((range) => ({ start: parse(range.start), end: parse(range.end) })),
+      }))
+    : undefined;
   return {
     release: { name: path, segments, byteAt: (at) => memory[at - shift]! },
     shift,
     start: typeof state === "string" ? { kind: "none", reason: state } : { kind: "image", segments: own, byteAt: (at) => memory[at]!, state },
+    memory,
+    ...(manifest.entry === undefined ? {} : { entry: parse(manifest.entry) }),
+    ...(stages === undefined ? {} : { stages }),
   };
 }
 
@@ -127,10 +155,20 @@ async function run(argv: string[]): Promise<unknown> {
       to: { type: "string" },
       run: { type: "string" },
       steps: { type: "string" },
+      coverage: { type: "string", multiple: true },
+      out: { type: "string" },
+      "max-listed": { type: "string" },
       help: { type: "boolean" },
     },
   });
   if (values.help) throw new UsageError("");
+  if (positionals[0] === "separate") {
+    const used = ["shift", "from", "to", "run", "steps"].filter((option) => values[option as keyof typeof values] !== undefined);
+    if (used.length > 0) throw new UsageError(`separate does not take --${used.join(", --")}`);
+    if (positionals.length !== 2) throw new UsageError("separate needs one release");
+    return separateCommand(positionals[1]!, values.coverage ?? [], values.out, values["max-listed"]);
+  }
+  if (values.coverage !== undefined || values.out !== undefined || values["max-listed"] !== undefined) throw new UsageError("--coverage, --out and --max-listed work only with separate");
   if (positionals.length < 2) throw new UsageError("give two or more releases");
   const shifts = new Map<number, number>();
   for (const text of values.shift ?? []) {
@@ -218,4 +256,57 @@ async function run(argv: string[]): Promise<unknown> {
   };
 }
 
-await runScript(() => run(process.argv.slice(2)), { usage: USAGE });
+/** separate: evidence from one release (D51), with all ranges in --out and the first ones in the result. */
+function separateCommand(path: string, coveragePaths: string[], out: string | undefined, maxListed: string | undefined): unknown {
+  const max = maxListed ?? "50";
+  if (!/^\d{1,5}$/.test(max)) throw new UsageError(`--max-listed must be a whole number, not ${max}`);
+  const loaded = readRelease(path, 0);
+  const coverage = readCoverageFiles(coveragePaths, (message) => {
+    throw new UsageError(message);
+  });
+  const db = openForRead();
+  let regions: ReturnType<typeof listRegions>;
+  let references: ReturnType<typeof listReferences>;
+  try {
+    regions = listRegions(db).filter((region) => CODE_REGION_TYPES.includes(region.type));
+    references = listReferences(db);
+  } finally {
+    db?.close();
+  }
+  const found = separate({
+    segments: loaded.release.segments,
+    memory: loaded.memory,
+    ...(loaded.entry === undefined ? {} : { entry: loaded.entry }),
+    ...(loaded.stages === undefined ? {} : { stages: loaded.stages }),
+    ...(coverage === undefined ? {} : { coverage }),
+    codeRegions: regions,
+    references,
+  });
+  const show = (range: Range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) });
+  const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
+  const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }) }));
+  const outside = { read: found.outside.read.map(show), executed: found.outside.executed.map(show), generated: found.outside.generated.map(show) };
+  if (out !== undefined) writeProjectFile(out, Buffer.from(`${JSON.stringify({ release: path, ranges, codeRegions, outside }, null, 1)}\n`), { what: "--out" });
+  const bytes = (filter: (range: (typeof found.ranges)[number]) => boolean) => found.ranges.filter(filter).reduce((sum, range) => sum + range.end - range.start + 1, 0);
+  const lastStage = loaded.stages === undefined ? undefined : loaded.stages.length - 1;
+  return {
+    release: path,
+    ...(loaded.entry === undefined ? {} : { entry: formatC64Address(loaded.entry) }),
+    ...(lastStage === undefined
+      ? {}
+      : {
+          stages: lastStage + 1,
+          bytesByStage: Object.fromEntries([...[...Array(lastStage + 1).keys()].map((stage): [string, number] => [String(stage), bytes((range) => range.stage === stage)]), ["none", bytes((range) => range.stage === undefined)]]),
+        }),
+    ...(coverage === undefined ? {} : { bytesByAccess: Object.fromEntries((["executed", "read", "written", "read-written", "untouched"] as const).map((access) => [access, bytes((range) => range.access === access)])) }),
+    ranges: { count: ranges.length, listed: ranges.slice(0, Number(max)) },
+    codeRegions: {
+      count: codeRegions.length,
+      ...(loaded.entry === undefined ? {} : { unreachable: codeRegions.filter((region) => region.reachable === false) }),
+    },
+    ...(coverage === undefined ? {} : { outside }),
+    ...(out === undefined ? {} : { out }),
+  };
+}
+
+await runScript(() => run(process.argv.slice(2)), { usage: USAGE, refusals: [KnowledgeError] });
