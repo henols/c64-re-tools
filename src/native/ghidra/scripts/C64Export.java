@@ -2,7 +2,8 @@
 //
 // Writes the structural result for the loaded image: functions with the
 // source of their names, code and defined-data regions, memory references
-// from instructions, and the requested decompilations within their bounds.
+// from instructions, every instruction with its bytes, mnemonic, operand
+// text and flow targets (D44), and the requested decompilations within their bounds.
 //@category c64-re-tools
 
 import java.io.FileReader;
@@ -53,6 +54,7 @@ public class C64Export extends GhidraScript {
 		out.add("functions", functions(coverage));
 		out.add("regions", regions(coverage));
 		out.add("references", references(coverage));
+		out.add("instructions", instructions(coverage));
 		JsonArray notDecompiled = new JsonArray();
 		out.add("decompilations", decompile(request, notDecompiled));
 		out.add("notDecompiled", notDecompiled);
@@ -154,6 +156,36 @@ public class C64Export extends GhidraScript {
 			}
 		}
 		return references;
+	}
+
+	/** Every instruction in the coverage, in address order, as Ghidra decoded it with the 6510 language. */
+	private JsonArray instructions(AddressSet coverage) throws Exception {
+		JsonArray instructions = new JsonArray();
+		for (Instruction instruction : currentProgram.getListing().getInstructions(coverage, true)) {
+			JsonObject item = new JsonObject();
+			item.addProperty("address", instruction.getMinAddress().getOffset());
+			StringBuilder bytes = new StringBuilder();
+			for (byte value : instruction.getBytes()) {
+				bytes.append(String.format("%02x", value & 0xff));
+			}
+			item.addProperty("bytes", bytes.toString());
+			item.addProperty("mnemonic", instruction.getMnemonicString().toLowerCase());
+			StringBuilder operands = new StringBuilder();
+			for (int index = 0; index < instruction.getNumOperands(); index++) {
+				if (index > 0) {
+					operands.append(",");
+				}
+				operands.append(instruction.getDefaultOperandRepresentation(index));
+			}
+			item.addProperty("operands", operands.toString());
+			JsonArray flows = new JsonArray();
+			for (Address flow : instruction.getFlows()) {
+				flows.add(flow.getOffset());
+			}
+			item.add("flows", flows);
+			instructions.add(item);
+		}
+		return instructions;
 	}
 
 	private static void add(JsonArray references, Set<String> seen, long from, long to, String type) {

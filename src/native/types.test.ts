@@ -49,6 +49,7 @@ test("a Ghidra result must be complete and consistent", () => {
     ],
     references: [{ from: 0x080d, to: 0x0818, type: "call" }],
     decompilations: [{ entry: 0x080d, text: "void FUN_080d(void) {}", truncated: false }],
+    instructions: [],
     completeness: { functions: true, regions: true, references: true },
   };
   assert.deepEqual(checkGhidraResult(result), result);

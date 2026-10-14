@@ -52,6 +52,17 @@ export interface GhidraParams {
   decompile: number[];
 }
 
+export interface GhidraInstruction {
+  address: number;
+  /** Lowercase hex, 1 to 3 bytes. */
+  bytes: string;
+  mnemonic: string;
+  /** Ghidra's text of the operands, empty for an implied operand. */
+  operands: string;
+  /** Where the flow goes besides the next instruction: a branch, jump or call target. */
+  flows: number[];
+}
+
 export interface GhidraResult {
   coverage: Array<{ start: number; end: number }>;
   functions: Array<{ entry: number; name: string; nameSource: "seed" | "generated" | "native" }>;
@@ -60,6 +71,8 @@ export interface GhidraResult {
   decompilations: Array<{ entry: number; text: string; truncated: boolean }>;
   /** Requested routines without decompiled code, with the decompiler's reason. */
   notDecompiled?: Array<{ entry: number; reason: string }>;
+  /** Every instruction in the coverage, as Ghidra decoded it (D44). */
+  instructions: GhidraInstruction[];
   /** Which categories are complete inside the coverage; private to the importer. */
   completeness: { functions: boolean; regions: boolean; references: boolean };
   /** The version of the Ghidra that made the result, for example "Ghidra 12.1.3". */
@@ -115,7 +128,7 @@ const isList = (value: unknown): value is unknown[] => Array.isArray(value);
  */
 export function checkGhidraResult(value: unknown): GhidraResult {
   if (!isObject(value)) fail("not an object");
-  const { coverage, functions, regions, references, decompilations, notDecompiled, completeness, toolVersion } = value;
+  const { coverage, functions, regions, references, decompilations, notDecompiled, completeness, toolVersion, instructions } = value;
   if (!isList(coverage) || coverage.length === 0) fail("no coverage");
   const ranges: Array<{ start: number; end: number }> = [];
   for (const range of coverage) {
@@ -137,6 +150,22 @@ export function checkGhidraResult(value: unknown): GhidraResult {
     if (start <= previousEnd) fail("regions overlap or are out of order");
     if (!ranges.some((range) => range.start <= start && end <= range.end)) fail("a region lies outside the coverage");
     previousEnd = end;
+  }
+  if (!isList(instructions)) fail("no instructions");
+  for (const instruction of instructions) {
+    if (
+      !isObject(instruction) ||
+      !isInteger(instruction.address, 0, 0xffff) ||
+      typeof instruction.bytes !== "string" ||
+      !/^(?:[0-9a-f]{2}){1,3}$/.test(instruction.bytes) ||
+      typeof instruction.mnemonic !== "string" ||
+      typeof instruction.operands !== "string" ||
+      !isList(instruction.flows) ||
+      !instruction.flows.every((flow) => isInteger(flow, 0, 0xffff))
+    ) {
+      fail("bad instruction");
+    }
+    if (!covered(instruction.address)) fail("an instruction lies outside the coverage");
   }
   if (!isList(references)) fail("no references");
   for (const reference of references) {

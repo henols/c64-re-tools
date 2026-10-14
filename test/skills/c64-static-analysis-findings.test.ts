@@ -66,6 +66,7 @@ test("functions become routine symbols, code is code and data is bytes", () => {
     ],
     references: [{ from: 0x080d, to: 0x0818, type: "call" }],
     decompilations: [],
+    instructions: [],
     completeness: { functions: true, regions: true, references: false },
   });
   assert.deepEqual(findings, {
@@ -96,6 +97,7 @@ test("a generated name that Ghidra gives to two functions gets each function's a
     regions: [],
     references: [],
     decompilations: [],
+    instructions: [],
     completeness: { functions: true, regions: true, references: true },
   });
   assert.deepEqual(
@@ -121,6 +123,7 @@ test("an echoed seed stays with its semantic owner, and a code/data disagreement
         regions: [],
         references: [],
         decompilations: [],
+        instructions: [],
         completeness: { functions: true, regions: true, references: true },
       }),
     );

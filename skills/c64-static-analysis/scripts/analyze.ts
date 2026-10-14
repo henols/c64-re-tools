@@ -9,7 +9,7 @@ import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address, prgRange } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
-import { readProjectFile } from "#src/host-client/transfer.ts";
+import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
 import { analyze as analyzeWithGhidra } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
@@ -22,6 +22,7 @@ import { runScript, UsageError } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageFiles } from "./coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
 import { findIdioms } from "./idioms.ts";
+import { instructionList } from "./instructions.ts";
 
 const USAGE = `analyze.ts <image> [options]
 
@@ -31,6 +32,8 @@ const USAGE = `analyze.ts <image> [options]
   --entry <address>       an entry point, for example '$080d' (repeatable)
   --decompile <address>   ghidra: a routine to decompile, at most 32 (repeatable)
   --listing <file>        dxa: write the disassembly listing to this project file
+  --instructions <file>   ghidra: write every instruction (address, bytes, mnemonic,
+                          mode, operand, target, executed) to this project file as JSON
   --coverage <file>       a coverage map of 64 KiB from c64_memmap (repeatable): its
                           executed code is seeded, and analyzer data over it is reported
   --max-listed <n>        list at most n labels or functions (default 50, 0 for none);
@@ -117,6 +120,7 @@ async function run(argv: string[]): Promise<unknown> {
       listing: { type: "string" },
       "max-listed": { type: "string" },
       coverage: { type: "string", multiple: true },
+      instructions: { type: "string" },
       help: { type: "boolean" },
     },
   });
@@ -133,6 +137,7 @@ async function run(argv: string[]): Promise<unknown> {
   if (analyzer !== "dxa" && analyzer !== "ghidra") throw new UsageError(`--analyzer must be dxa or ghidra, not ${analyzer}`);
   if (analyzer === "dxa" && decompile.length > 0) throw new UsageError("--decompile works only with --analyzer ghidra");
   if (analyzer === "ghidra" && values.listing !== undefined) throw new UsageError("--listing works only with --analyzer dxa");
+  if (analyzer === "dxa" && values.instructions !== undefined) throw new UsageError("--instructions works only with --analyzer ghidra");
   let listingPath: string | undefined;
   if (values.listing !== undefined) {
     try {
@@ -225,8 +230,15 @@ async function run(argv: string[]): Promise<unknown> {
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, decompile }, bytes, localToolContext());
   const imported = record(ghidraFindings(result), revision, `Ghidra analysis of ${image}`, runProvenance(bytes, result.toolVersion));
   const found = idiomsResult();
+  let instructions: { out: string; count: number } | undefined;
+  if (values.instructions !== undefined) {
+    const list = instructionList(result.instructions, coverage);
+    writeProjectFile(values.instructions, Buffer.from(`${JSON.stringify(list, null, 1)}\n`), { what: "--instructions" });
+    instructions = { out: values.instructions, count: list.length };
+  }
   return {
     analyzer: "ghidra",
+    ...(instructions === undefined ? {} : { instructions }),
     ...found,
     ...coverageResult(),
     coverage: result.coverage.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),

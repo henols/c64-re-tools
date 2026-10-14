@@ -143,6 +143,7 @@ test("a Ghidra result carries the version of the installation that made it", { s
     regions: [{ start: 0x0801, end: 0x0801, classification: "code" }],
     references: [],
     decompilations: [],
+    instructions: [],
     completeness: { functions: true, regions: true, references: true },
   };
   // The export script's last argument is the result file.
