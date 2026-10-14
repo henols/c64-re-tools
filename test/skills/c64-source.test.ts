@@ -197,3 +197,16 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
   const refused = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(refused.status, 2, "--out is necessary");
 });
+
+test("with coverage, each run of instructions that no run executed is marked and listed (D49)", () => {
+  // $1000 NOP (executed), $1001 NOP, $1002 NOP, $1003-$1004 data, $1005 RTS
+  const bytes = [0xea, 0xea, 0xea, 0x00, 0x00, 0x60];
+  const coverage = new Uint8Array(0x10000);
+  coverage[0x1000] = 0x04;
+  const instructions = new Map([[0x1000, 1], [0x1001, 1], [0x1002, 1], [0x1005, 1]]);
+  const regions: SourceInput["regions"] = [{ start: 0x1003, end: 0x1004, type: "bytes" }];
+  const rendered = render(layout(input(bytes, 0x1000, { instructions, regions, coverage })), new Set(), []);
+  assert.deepEqual(rendered.notExecuted, { instructions: 3, ranges: [{ start: 0x1001, end: 0x1002 }, { start: 0x1005, end: 0x1005 }] });
+  assert.match(textOf(rendered, "segment_1000.asm"), /^ {8}nop\n; not executed\n {8}nop\n {8}nop\n {8}!byte \$00,\$00\n; not executed\n {8}rts\n$/m);
+  assert.equal(render(layout(input(bytes, 0x1000, { instructions, regions })), new Set(), []).notExecuted, undefined);
+});

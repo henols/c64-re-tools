@@ -5,7 +5,7 @@
 // generator forces operand sizes, and writes an opcode form that ACME
 // encodes differently as bytes (see the probe in generate.ts).
 
-import { formatC64Address } from "#src/c64.ts";
+import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import type { CommentPlacement, RegionType } from "#src/knowledge/schema.ts";
 import { hasZeroPageForm, MNEMONICS, MODE_LENGTH, OPCODES, takesAddress, type Mode } from "./opcodes.ts";
@@ -29,6 +29,8 @@ export interface SourceInput {
   modules: ReadonlyArray<{ start: number; file: string; title?: string }>;
   /** Targets of knowledge references: each one inside the image gets a label. */
   referenceTargets: readonly number[];
+  /** Joined coverage files (D40): an instruction that no run executed is marked (D49). */
+  coverage?: Uint8Array;
 }
 
 /** Files that the generator writes itself; a module cannot have these names. */
@@ -81,6 +83,7 @@ export interface Layout {
   inImage: (address: number) => boolean;
   byteAt: (address: number) => number;
   comments: SourceInput["comments"];
+  coverage?: Uint8Array;
   generatedLabels: number;
   namedLabels: number;
   unusedModules: Array<{ start: number; file: string }>;
@@ -217,6 +220,7 @@ export function layout(input: SourceInput): Layout {
     inImage,
     byteAt: input.byteAt,
     comments: input.comments,
+    ...(input.coverage === undefined ? {} : { coverage: input.coverage }),
     generatedLabels,
     namedLabels,
     unusedModules,
@@ -449,6 +453,8 @@ export interface Rendered {
   undecodedBytes: number;
   /** Instructions written as bytes, because ACME writes their form with other bytes. */
   asBytes: Array<{ address: number; text: string }>;
+  /** With coverage: runs of instructions that no run executed. */
+  notExecuted?: { instructions: number; ranges: Range[] };
 }
 
 const withSide = (text: string, side: string | undefined) => (side === undefined ? text : `${text.padEnd(SIDE_COLUMN - 1)} ; ${side}`);
@@ -464,9 +470,13 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
   }
   const breaks = new Set<number>([...layout.names.keys(), ...lineComments.keys(), ...sideComments.keys()]);
   const result: Rendered = { files: [], instructions: 0, dataBytes: 0, undecodedBytes: 0, asBytes: [] };
+  const { coverage } = layout;
+  const notExecuted = { instructions: 0, ranges: [] as Range[] };
 
   for (const piece of layout.pieces) {
     const out: string[] = [`; ${piece.title}`, `; ${hex4(piece.start)}-${hex4(piece.end)}`, ""];
+    /** True while the instructions before have not executed: they form one range. */
+    let running = false;
     const head = (address: number) => {
       for (const text of lineComments.get(address) ?? []) out.push(`; ${text}`.trimEnd());
       const label = layout.names.get(address);
@@ -475,6 +485,16 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     for (const item of piece.items) {
       if (item.kind === "instruction") {
         head(item.address);
+        const executed = coverage === undefined || (coverage[item.address]! & COVERAGE.ramExecute) !== 0;
+        if (!executed) {
+          if (running) notExecuted.ranges.at(-1)!.end = item.address + item.length - 1;
+          else {
+            notExecuted.ranges.push({ start: item.address, end: item.address + item.length - 1 });
+            out.push("; not executed");
+          }
+          notExecuted.instructions++;
+        }
+        running = !executed;
         const sides: string[] = [];
         if (sideComments.has(item.address)) sides.push(sideComments.get(item.address)!);
         for (let offset = 1; offset < item.length; offset++) {
@@ -499,6 +519,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         result.instructions++;
         continue;
       }
+      running = false;
       const lines = dataLines(item, layout, breaks);
       lines.forEach((line, index) => {
         head(line.address);
@@ -521,5 +542,6 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     main.push(`!source "${piece.file}"`);
   }
   result.files.push({ name: "main.asm", text: `${main.join("\n")}\n` });
+  if (coverage !== undefined) result.notExecuted = notExecuted;
   return result;
 }

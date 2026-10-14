@@ -32,6 +32,7 @@ node <skill>/scripts/generate.ts unpacked/image.json --out src --loader
 |---|---|
 | `--out src` | The directory for the source files. The script writes over the files that it generated before. |
 | `--entry '$080d'` | An entry point for Ghidra. Use it again for more entry points. The entry of `image.json`, the routines and the code regions in the knowledge are entry points too. |
+| `--coverage coverage/attract.bin` | A coverage file of 64 KiB from `c64_memmap` with `out`. Use it again for more runs. Code that no run executed gets the line `; not executed`, and `notExecuted` lists it. |
 | `--loader` | Also write `loader.asm` and `loader.prg`. This needs `image.json` with an entry, and `entry_state.json`. |
 
 ## Workflow
@@ -57,6 +58,7 @@ node <skill>/scripts/generate.ts unpacked/image.json --out src --loader
 - `name = * + 1` is a label inside an instruction, for example for code that changes its own operand.
 - `!byte` with an instruction as its comment: ACME writes this instruction with a different opcode. The bytes keep the source identical.
 - `not decoded` marks bytes in a code region that Ghidra did not decode.
+- `; not executed` starts code that no run of the `--coverage` files executed.
 
 Do not edit the generated files. The next run writes over them.
 
@@ -93,6 +95,7 @@ One JSON object:
 - `labels`: `named` labels from the knowledge and `generated` labels `l_xxxx`.
 - `asBytes`: the instructions that the source has as bytes.
 - `unusedModules`: modules that start outside the image.
+- `notExecuted`: with `--coverage`, the count of instructions that no run executed, and their ranges. Put these ranges in the report.
 - `check`: `identical`, and the result for each segment. A different segment gives its first different address.
 - `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`.
 

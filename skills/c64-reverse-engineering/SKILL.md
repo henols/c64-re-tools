@@ -28,6 +28,13 @@ This skill uses the other skills. It does not use the host runtime or the emulat
 
 ## Workflow
 
+Select the path for the scope:
+
+- A narrow scope, for example one routine, the IRQ handler or the input system: use the loop.
+- A full rebuild of the program: use the stages.
+
+### The loop
+
 1. Write down the scope. Stop when the scope is complete.
 2. Read the current knowledge for the subject with the c64-knowledge skill. Do not examine again what the knowledge already explains.
 3. Find the next unknown or blocker, and use the specialist for it:
@@ -48,18 +55,63 @@ This skill uses the other skills. It does not use the host runtime or the emulat
 4. Interpret the result. Keep observed facts apart from your conclusions.
 5. Record each conclusion that the evidence supports with the c64-knowledge skill: names of routines and variables, data classifications, comments.
 6. Go back to step 3 until the scope is complete.
-7. For a rebuild scope: generate the source with the c64-source skill and build it with the c64-assembler skill. Test it against the original with the c64-testing skill. Make the source better through the knowledge, and generate again.
 
-A typical order for an unknown program:
+### The stages of a full rebuild
 
-1. c64-disk: list the disk and extract the start file.
-2. c64-basic: find the SYS address of the BASIC start.
-3. c64-unpacker: find out if a packer compressed the program. Unpack it if necessary.
-4. c64-emulator: run the program and observe it.
-5. c64-static-analysis: find the routines, regions and references.
-6. c64-knowledge and c64-memory-map: name the important routines and variables.
-7. c64-static-analysis again: Ghidra now uses the names.
-8. c64-source, c64-assembler and c64-testing: generate, build and test when the scope asks for it.
+Do the stages in this sequence. Go to the next stage only when its exit check is true, or when the user accepts an exception. Write each exception in the report.
+
+| Stage | Work | Exit check |
+|---|---|---|
+| 1. Acceptance | Ask the user for the criteria of the rebuild. Offer these: identical source, a verified loader, passed c64-testing scenarios, a list of the code that no run executed. Write the criteria in `report.md`. | The user gave the criteria. |
+| 2. Get | c64-disk: list the disk. Extract the start file into `original/`. | The start file is in the project. |
+| 3. Start | c64-basic: find the SYS address of the BASIC start. | You have the entry address. |
+| 4. Unpack | c64-unpacker: examine the program. Capture a packed program into `unpacked/`. | `image.json` and `entry_state.json` exist, or the evidence shows no packer. |
+| 5. Run | c64-emulator and the run of c64-testing: run each part that the scope names. Write a coverage file for each part into `coverage/`. | Each part that the scope names has a coverage file. |
+| 6. Analyze | c64-static-analysis with `--coverage` for each coverage file. | No coverage conflict is open. |
+| 7. Name | c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. | Each routine in the scope has a name and a comment. |
+| 8. Generate | c64-source with `--coverage` into `src/`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
+| 9. Build and test | c64-assembler with `--compare` into `build/`. c64-testing scenarios in `tests/`. | The criteria of stage 1 are true. |
+| 10. Report | Write `report.md`. | The report has all its sections. |
+
+In stage 5, if you cannot get to a part of the program, ask the user how to get to it. Do stages 7 and 8 again until the source is clear. Each run of c64-source writes the source again.
+
+### Deliverables of a full rebuild
+
+- `.c64-re-tools/knowledge.db` with the names, regions, comments and modules
+- the image and the entry state
+- the coverage files
+- the generated source
+- the built program and the loader
+- the c64-testing scenarios and their results
+- `report.md`.
+
+### The report
+
+`report.md` is short. It has these sections:
+
+1. Acceptance: each criterion of stage 1 and its result, and each exception that the user accepted.
+2. The program: what the program does, in a few sentences.
+3. Modules: the file, the address range and the title of each module.
+4. Untested code: the `notExecuted` ranges from c64-source. Tell why no run executed them, if you know.
+5. Open questions: what the evidence does not explain.
+
+Keep observed facts apart from your conclusions.
+
+### Project layout
+
+If the project has no layout, use this one. It is a proposal. No script checks it. Each script takes the paths that you give.
+
+```
+original/      the disk image or the program as you got it
+unpacked/      image.json, image.bin and entry_state.json from c64-unpacker
+coverage/      coverage files from c64_memmap
+src/           the generated source from c64-source
+build/         programs from c64-assembler
+tests/         c64-testing scenarios and their results
+report.md      the report
+```
+
+If the project has a layout, use that layout.
 
 ## Knowledge
 
@@ -77,7 +129,7 @@ Record durable conclusions with the c64-knowledge skill. Do not store:
 
 ## Result
 
-A clear answer for the scope, with the durable conclusions in the project knowledge. For a rebuild scope, also a rebuilt program that passes its tests.
+A clear answer for the scope, with the durable conclusions in the project knowledge. For a full rebuild, the deliverables and the report, with the criteria of the user met or each exception in the report.
 
 ## Failure and conflicts
 

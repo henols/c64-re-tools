@@ -5,29 +5,21 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { COVERAGE, instructionLength } from "#src/c64.ts";
-import { readProjectFile } from "#src/host-client/transfer.ts";
+import { FULL_COVERAGE, readCoverageFiles as readFiles } from "#src/host-client/coverage.ts";
 import { listRegions, type RegionRow } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES } from "#src/knowledge/schema.ts";
 import { UsageError } from "#src/script.ts";
 
-/** A coverage file for analysis covers all of memory: offset n is address n (D40). */
-const FULL_MAP = 0x10000;
+const FULL_MAP = FULL_COVERAGE;
 /** Instructions after which the next instruction is not reached by falling through. */
 const FLOW_ENDS = new Set([0x00, 0x40, 0x4c, 0x60, 0x6c]);
 const ANALYZER_ORIGINS = new Set(["dxa", "ghidra", "heuristic"]);
 
 /** Reads coverage files and joins them: an address has every flag that any run gave it. */
 export function readCoverageFiles(paths: string[]): Uint8Array | undefined {
-  if (paths.length === 0) return undefined;
-  const joined = new Uint8Array(FULL_MAP);
-  for (const path of paths) {
-    const { bytes } = readProjectFile(path);
-    if (bytes.length !== FULL_MAP) {
-      throw new UsageError(`--coverage ${path} has ${bytes.length} bytes; a coverage file for analysis has 65536, one for each address. Write it with c64_memmap action read and out, without start and end.`);
-    }
-    for (let address = 0; address < FULL_MAP; address++) joined[address]! |= bytes[address]!;
-  }
-  return joined;
+  return readFiles(paths, (message) => {
+    throw new UsageError(message);
+  });
 }
 
 /** The byte at an address of the analyzed image, or undefined outside it. */

@@ -47,7 +47,7 @@ test("coverage seeds the first instruction of each flow, not every instruction",
 
 test("a coverage file for analysis covers all 64 KiB", () => {
   writeFileSync(join(project, "part.bin"), new Uint8Array(256));
-  assert.throws(() => readCoverageFiles(["part.bin"]), /has 256 bytes; a coverage file for analysis has 65536/);
+  assert.throws(() => readCoverageFiles(["part.bin"]), /has 256 bytes; a full coverage file has 65536/);
   writeFileSync(join(project, "a.bin"), mapWith([0x1000]));
   writeFileSync(join(project, "b.bin"), mapWith([0x2000]));
   const joined = readCoverageFiles(["a.bin", "b.bin"])!;
