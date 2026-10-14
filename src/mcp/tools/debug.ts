@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { COVERAGE, executedRamCode, EXECUTE, formatC64Address, READ, WRITE, type CodeRange } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
-import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type MemmapRange, type Watchpoint } from "../../protocol/vice.ts";
+import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
+import { readCoverage } from "../../host-client/coverage.ts";
 import { OutInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, AddressOutput, Byte, ConditionInput, ConditionOutput, defineTool, HexData, requireFields, showCondition, SpaceInput, toCondition, type ViceSessionApi } from "../server.ts";
 import { spaced } from "./memory.ts";
@@ -221,17 +222,6 @@ export const c64Profile = defineTool({
 
 /** The most code ranges a memmap summary lists. */
 const MAX_SUMMARY_RANGES = 64;
-
-/** The coverage bytes (D40) of start..end, read from the session in parts. */
-async function readCoverage(session: ViceSessionApi, start: number, end: number): Promise<Uint8Array> {
-  const map = new Uint8Array(end - start + 1);
-  for (let from: number | undefined = start; from !== undefined; ) {
-    const part: { ranges: MemmapRange[]; next?: number } = await session.memmap({ action: "read", start: from, end, maxRanges: MAX_MEMMAP_RANGES });
-    for (const range of part.ranges) map.fill(range.flags, range.start - start, range.end - start + 1);
-    from = part.next;
-  }
-  return map;
-}
 
 /** Where an access happened: RAM, ROM or I/O. */
 function sources(flags: number): Array<"ram" | "rom" | "io"> {

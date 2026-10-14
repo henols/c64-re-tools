@@ -747,14 +747,16 @@ export class ViceSession implements ViceSessionHandle {
     if (params.action === "list") return { breakpoints: [...this.#breakpoints.values()].map(publicView) };
     if (params.action === "remove") return this.#removePoint(this.#breakpoints, "breakpoint", params.id);
     if (params.action !== "add") return publicView(await this.#changePoint(this.#breakpoints, "breakpoint", params));
+    // A breakpoint over a range stops at the first instruction executed in it: exec, not a watch (D43).
     const added = await this.#addPoint({
-      ...pointRange({ address: params.address }),
+      ...(params.size === undefined ? pointRange({ address: params.address }) : { start: params.address, end: params.address + params.size - 1, operation: 0x04 }),
       space: params.space,
       ...(params.condition === undefined ? {} : { condition: params.condition }),
     });
     const point = {
       id: this.#nextPointId++,
       address: params.address,
+      ...(params.size === undefined ? {} : { size: params.size }),
       space: params.space,
       enabled: true,
       ...(params.condition === undefined ? {} : { condition: params.condition }),

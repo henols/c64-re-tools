@@ -94,6 +94,8 @@ export const MAX_WATCH_SIZE = 256;
 export interface Breakpoint {
   id: number;
   address: number;
+  /** A range from address: the CPU stops at the first instruction it executes in it (D43). One address when not given. */
+  size?: number;
   space: Space;
   enabled: boolean;
   /** The condition given at add, when there was one. */
@@ -112,7 +114,7 @@ export interface Watchpoint {
 }
 
 export type BreakpointParams =
-  | { action: "add"; address: number; space: Space; condition?: Condition }
+  | { action: "add"; address: number; size?: number; space: Space; condition?: Condition }
   | { action: "remove"; id: number }
   | { action: "enable" | "disable"; id: number }
   | { action: "list" };
@@ -792,7 +794,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
         if (!isInteger(params.id, 1, 0xffff_ffff)) invalid("id must be a positive integer");
         return { action: params.action, id: params.id } as ViceOperations[O]["params"];
       }
-      onlyFields(params, op === "watchpoint" ? ["action", "address", "space", "size", "access", "condition"] : ["action", "address", "space", "condition"]);
+      onlyFields(params, op === "watchpoint" ? ["action", "address", "space", "size", "access", "condition"] : ["action", "address", "space", "size", "condition"]);
       if (!isInteger(params.address, 0, 0xffff)) invalid("address must be an integer from 0 to 65535");
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       const added: Record<string, unknown> = { action: "add", address: params.address, space: params.space };
@@ -802,6 +804,9 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
         if (!isOneOf(WATCH_ACCESS, params.access)) invalid("access must be read, write or read-write");
         added.size = params.size;
         added.access = params.access;
+      } else if (params.size !== undefined) {
+        if (!isInteger(params.size, 1, 0x10000) || params.address + params.size > 0x10000) invalid("size must keep the range inside $0000-$ffff");
+        added.size = params.size;
       }
       if (params.condition !== undefined) added.condition = validateCondition(params.condition);
       return added as ViceOperations[O]["params"];
@@ -904,6 +909,7 @@ function isBreakpoint(value: unknown): value is Breakpoint {
     isObject(value) &&
     isInteger(value.id, 1, 0xffff_ffff) &&
     isInteger(value.address, 0, 0xffff) &&
+    (value.size === undefined || isInteger(value.size, 1, 0x10000)) &&
     isOneOf(SPACES, value.space) &&
     typeof value.enabled === "boolean" &&
     (value.condition === undefined || isCondition(value.condition))

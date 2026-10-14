@@ -17,6 +17,7 @@ import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
 import { borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
 import { gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
+import { stagedPrg } from "../../fixtures/prg/staged.ts";
 import { xorPackedPrg } from "../../fixtures/prg/xor-packed.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
 
@@ -24,6 +25,7 @@ const script = resolve(import.meta.dirname, "../../../skills/c64-unpacker/script
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpack-"));
 writeFileSync(join(project, "packed.prg"), xorPackedPrg);
 writeFileSync(join(project, "gated.prg"), gatedPackedPrg);
+writeFileSync(join(project, "staged.prg"), stagedPrg);
 writeFileSync(join(project, "press-key.json"), JSON.stringify([{ frames: 50 }, { type: " " }]));
 let server: HostServer | undefined;
 after(async () => {
@@ -102,6 +104,24 @@ test("a steps file presses the key that an intro waits for (D43)", { skip: liveS
   const { status, json } = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/gated.prg", "--steps", "press-key.json", ...range);
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual([...readFileSync(join(project, "unpacked", "gated.prg"))], [...ORIGINAL.prg]);
+  // Whether the CPU is in the unpacked code at the end depends on the moment (an IRQ can be running); that it ran there does not.
   const traced = await unpack("trace", "gated.prg", "--steps", "press-key.json", "--frames", "100");
-  assert.equal(traced.json.packing, "likely", JSON.stringify(traced.json));
+  assert.ok((traced.json.writtenThenExecuted as Array<{ start: string }>).some((range) => range.start === "$c000"), JSON.stringify(traced.json));
+});
+
+test("stages finds each stage of a staged release and where the next one starts (D43)", { skip: liveSkip, timeout: 300_000 }, async () => {
+  const { status, json } = await unpack("stages", "staged.prg", "--steps", "press-key.json", "--frames", "400");
+  assert.equal(status, 0, JSON.stringify(json));
+  const found = json.stages as Array<{ stage: number; entry: string; next?: string; wrote: Array<{ start: string; end: string }> }>;
+  assert.deepEqual(
+    found.map((stage) => [stage.entry, stage.next]),
+    [
+      ["$080d", "$c000"],
+      ["$c000", "$4000"],
+      ["$4000", undefined],
+    ],
+    JSON.stringify(found),
+  );
+  assert.deepEqual(found[0]!.wrote, [{ start: "$c000", end: "$c07f" }], "stage 0 wrote stage 1");
+  assert.deepEqual(found[1]!.wrote, [{ start: "$4000", end: "$407f" }], "stage 1 wrote the program");
 });

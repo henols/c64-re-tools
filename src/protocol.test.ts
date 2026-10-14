@@ -121,7 +121,9 @@ test("an operation refuses a field it does not take, also inside a nested object
   assert.throws(() => validateViceParams("memoryRead", { ...range, format: "hex" }), unknown("format"));
   assert.throws(() => validateViceParams("snapshot", { action: "list", name: "a" }), unknown("name"));
   assert.throws(() => validateViceParams("breakpoint", { action: "list", space: "c64" }), unknown("space"));
-  assert.throws(() => validateViceParams("breakpoint", { action: "add", address: 0, space: "c64", size: 2 }), unknown("size"));
+  assert.throws(() => validateViceParams("breakpoint", { action: "add", address: 0, space: "c64", access: "read" }), unknown("access"));
+  assert.deepEqual(validateViceParams("breakpoint", { action: "add", address: 0xc000, space: "c64", size: 128 }), { action: "add", address: 0xc000, space: "c64", size: 128 }, "a breakpoint over a range (D43)");
+  assert.throws(() => validateViceParams("breakpoint", { action: "add", address: 0xffff, space: "c64", size: 2 }), /inside \$0000-\$ffff/);
   assert.throws(() => validateViceParams("observe", { memory: [{ ...range, extra: 1 }] }), unknown("extra"));
   assert.throws(() => validateViceParams("memoryCompare", { left: { address: 0, space: "c64", view: "cpu", bank: 1 }, right: { address: 0, space: "c64", view: "cpu" }, size: 1 }), unknown("bank"));
   assert.throws(
