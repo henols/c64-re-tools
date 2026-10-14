@@ -17,6 +17,8 @@ export interface RegionRow {
   start: number;
   end: number;
   type: RegionType;
+  /** Bytes per element of a table; the length is a multiple of it (D42). */
+  element?: number;
   origin: Origin;
   revision: number;
 }
@@ -51,7 +53,7 @@ export interface SuppressionRow {
 type Raw = Record<string, unknown>;
 
 export const SYMBOL_COLUMNS = "address, name, kind, origin, valid_from_revision";
-export const REGION_COLUMNS = "start_address, end_address, type, origin, valid_from_revision";
+export const REGION_COLUMNS = "start_address, end_address, type, element, origin, valid_from_revision";
 export const COMMENT_COLUMNS = "address, placement, text, origin, valid_from_revision";
 export const REFERENCE_COLUMNS = "from_address, to_address, kind, origin, valid_from_revision";
 export const SUPPRESSION_COLUMNS = "entity, start_address, end_address, to_address, kind, origin, valid_from_revision";
@@ -61,7 +63,9 @@ export function toSymbol(row: Raw): SymbolRow {
 }
 
 export function toRegion(row: Raw): RegionRow {
-  return { start: row.start_address as number, end: row.end_address as number, type: row.type as RegionType, origin: row.origin as Origin, revision: row.valid_from_revision as number };
+  const region: RegionRow = { start: row.start_address as number, end: row.end_address as number, type: row.type as RegionType, origin: row.origin as Origin, revision: row.valid_from_revision as number };
+  if (row.element !== null && row.element !== undefined) region.element = row.element as number;
+  return region;
 }
 
 export function toComment(row: Raw): CommentRow {
@@ -198,29 +202,34 @@ export interface Range {
 
 const ALL: Range = { start: 0x0000, end: 0xffff };
 
-export function listSymbols(db: DatabaseSync | undefined, range: Range = ALL, kind?: SymbolKind): SymbolRow[] {
+/** Rows of these origins only; undefined keeps every origin (D42). */
+export type OriginFilter = readonly Origin[] | undefined;
+const kept = (origins: OriginFilter) => (row: { origin: Origin }) => origins === undefined || origins.includes(row.origin);
+
+export function listSymbols(db: DatabaseSync | undefined, range: Range = ALL, kind?: SymbolKind, origins?: OriginFilter): SymbolRow[] {
   if (db === undefined) return [];
   const rows =
     kind === undefined
       ? db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE address BETWEEN ? AND ? ORDER BY address`).all(range.start, range.end)
       : db.prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE address BETWEEN ? AND ? AND kind = ? ORDER BY address`).all(range.start, range.end, kind);
-  return rows.map((row) => toSymbol(row as Raw));
+  return rows.map((row) => toSymbol(row as Raw)).filter(kept(origins));
 }
 
-export function listRegions(db: DatabaseSync | undefined, range: Range = ALL, type?: RegionType): RegionRow[] {
-  return regionsOverlapping(db, range.start, range.end).filter((region) => type === undefined || region.type === type);
+export function listRegions(db: DatabaseSync | undefined, range: Range = ALL, type?: RegionType, origins?: OriginFilter): RegionRow[] {
+  return regionsOverlapping(db, range.start, range.end).filter((region) => (type === undefined || region.type === type) && kept(origins)(region));
 }
 
-export function listComments(db: DatabaseSync | undefined, range: Range = ALL): CommentRow[] {
+export function listComments(db: DatabaseSync | undefined, range: Range = ALL, origins?: OriginFilter): CommentRow[] {
   if (db === undefined) return [];
   return db
     .prepare(`SELECT ${COMMENT_COLUMNS} FROM current_comments WHERE address BETWEEN ? AND ? ORDER BY address, placement`)
     .all(range.start, range.end)
-    .map((row) => toComment(row as Raw));
+    .map((row) => toComment(row as Raw))
+    .filter(kept(origins));
 }
 
 /** Current references whose source or target lies in the range. */
-export function listReferences(db: DatabaseSync | undefined, range: Range = ALL, kind?: ReferenceKind): ReferenceRow[] {
+export function listReferences(db: DatabaseSync | undefined, range: Range = ALL, kind?: ReferenceKind, origins?: OriginFilter): ReferenceRow[] {
   if (db === undefined) return [];
   return db
     .prepare(
@@ -228,7 +237,7 @@ export function listReferences(db: DatabaseSync | undefined, range: Range = ALL,
     )
     .all(range.start, range.end, range.start, range.end)
     .map((row) => toReference(row as Raw))
-    .filter((reference) => kind === undefined || reference.kind === kind);
+    .filter((reference) => (kind === undefined || reference.kind === kind) && kept(origins)(reference));
 }
 
 /** Current suppressions whose place lies in the range: a reference by its source or target. */
@@ -243,16 +252,18 @@ export function listSuppressions(db: DatabaseSync | undefined, range: Range = AL
 }
 
 /** Case-insensitive text search in current symbol names and comment texts. */
-export function search(db: DatabaseSync | undefined, text: string, limit = 50): { symbols: SymbolRow[]; comments: CommentRow[] } {
+export function search(db: DatabaseSync | undefined, text: string, limit = 50, origins?: OriginFilter): { symbols: SymbolRow[]; comments: CommentRow[] } {
   if (db === undefined || text.length === 0) return { symbols: [], comments: [] };
   const pattern = `%${text.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+  const only = origins === undefined ? "" : ` AND origin IN (${origins.map(() => "?").join(", ")})`;
+  const values = origins ?? [];
   const symbols = db
-    .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE name LIKE ? ESCAPE '\\' ORDER BY address LIMIT ?`)
-    .all(pattern, limit)
+    .prepare(`SELECT ${SYMBOL_COLUMNS} FROM current_symbols WHERE name LIKE ? ESCAPE '\\'${only} ORDER BY address LIMIT ?`)
+    .all(pattern, ...values, limit)
     .map((row) => toSymbol(row as Raw));
   const comments = db
-    .prepare(`SELECT ${COMMENT_COLUMNS} FROM current_comments WHERE text LIKE ? ESCAPE '\\' ORDER BY address, placement LIMIT ?`)
-    .all(pattern, limit)
+    .prepare(`SELECT ${COMMENT_COLUMNS} FROM current_comments WHERE text LIKE ? ESCAPE '\\'${only} ORDER BY address, placement LIMIT ?`)
+    .all(pattern, ...values, limit)
     .map((row) => toComment(row as Raw));
   return { symbols, comments };
 }

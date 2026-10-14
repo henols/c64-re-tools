@@ -1,14 +1,18 @@
 // The c64-knowledge script: reads and writes .c64-re-tools/knowledge.db in the
 // project directory (the working directory) and prints one compact JSON result.
 
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
 import { historyAt, historyNamed, revision, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import {
   at,
+  currentRevision,
   listComments,
   listReferences,
   listRegions,
@@ -23,16 +27,20 @@ import {
 } from "#src/knowledge/read.ts";
 import {
   COMMENT_PLACEMENTS,
+  EVIDENCE_KINDS,
+  ORIGINS,
   REFERENCE_KINDS,
   REGION_TYPES,
   SYMBOL_KINDS,
   type CommentPlacement,
+  type Origin,
   type ReferenceKind,
   type RegionType,
   type SymbolKind,
 } from "#src/knowledge/schema.ts";
 import {
   addReference,
+  applyBatch,
   classifyRegion,
   removeComment,
   removeReference,
@@ -41,6 +49,8 @@ import {
   revert,
   setComment,
   unclassifyRegion,
+  type BatchOperation,
+  type Evidence,
   type WriteContext,
 } from "#src/knowledge/write.ts";
 import { runScript, UsageError } from "#src/script.ts";
@@ -50,28 +60,36 @@ const USAGE = `knowledge.ts <command> [arguments] [options]
 Read (no database needed):
   at <address>                        everything known at one address
   search <text>                       symbol names and comment texts
-  symbols [--start A --end A --kind K]
-  regions [--start A --end A --type T]
-  comments [--start A --end A]
-  references [--start A --end A --kind K]
+  symbols [--start A --end A --kind K --origin O]
+  regions [--start A --end A --type T --origin O]
+  comments [--start A --end A --origin O]
+  references [--start A --end A --kind K --origin O]
   suppressions [--start A --end A]   places that removals keep free of analyzer facts
   history <address> | history --name <name>
   revisions [--limit N --before N]
   revision <id>
+  export --out <file> [--start A --end A --origin O]   all current knowledge to a project file
+
+Read option --origin O: user, llm, dxa, ghidra, semantic (user and llm) or
+analyzer (dxa and ghidra), or a comma list of them. search takes it too.
 
 Write (one revision each; creates the database when needed):
   rename <address> <name> [--kind K]
   remove-symbol <address>
-  classify <start> <end> <type>
+  classify <start> <end> <type> [--element N]
   unclassify <start> <end>
   comment <address> <line|side> <text>
   uncomment <address> <line|side>
   reference <from> <to> <kind>
   unreference <from> <to> <kind>
   revert <revision>
+  apply <file>             many writes from a JSON file ('-' reads standard input),
+                           all as one revision, or none when one is refused
 
 Write options:
   --reason <text>          why, kept with the revision
+  --evidence <kind:ref>    what the change rests on: coverage:<file>, test:<file>,
+                           file:<file> or note:<text> (repeatable)
   --expect-revision <N>    refuse the write if knowledge changed after revision N
   --origin user|llm        who decided (default llm)
 
@@ -98,7 +116,14 @@ function integer(value: string | undefined, what: string): number {
 
 // Output shapes: addresses as $xxxx, nothing internal.
 const symbol = (row: SymbolRow) => ({ address: formatC64Address(row.address), name: row.name, kind: row.kind, origin: row.origin, revision: row.revision });
-const region = (row: RegionRow) => ({ start: formatC64Address(row.start), end: formatC64Address(row.end), type: row.type, origin: row.origin, revision: row.revision });
+const region = (row: RegionRow) => ({
+  start: formatC64Address(row.start),
+  end: formatC64Address(row.end),
+  type: row.type,
+  ...(row.element === undefined ? {} : { element: row.element, count: (row.end - row.start + 1) / row.element }),
+  origin: row.origin,
+  revision: row.revision,
+});
 const comment = (row: CommentRow) => ({ address: formatC64Address(row.address), placement: row.placement, text: row.text, origin: row.origin, revision: row.revision });
 const reference = (row: ReferenceRow) => ({ from: formatC64Address(row.from), to: formatC64Address(row.to), kind: row.kind, origin: row.origin, revision: row.revision });
 function suppression(row: SuppressionRow) {
@@ -154,6 +179,9 @@ function run(argv: string[]): unknown {
       reason: { type: "string" },
       "expect-revision": { type: "string" },
       origin: { type: "string" },
+      element: { type: "string" },
+      evidence: { type: "string", multiple: true },
+      out: { type: "string" },
       help: { type: "boolean" },
     },
   });
@@ -161,11 +189,13 @@ function run(argv: string[]): unknown {
   if (values.help || command === undefined) throw new UsageError("");
   const range = { start: values.start === undefined ? 0x0000 : address(values.start, "--start"), end: values.end === undefined ? 0xffff : address(values.end, "--end") };
 
-  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "history", "revisions", "revision"]);
-  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "revert"]);
+  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "history", "revisions", "revision", "export"]);
+  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "revert", "apply"]);
   // Refuse a mistyped command before anything opens, so no database appears by accident.
   if (!read.has(command) && !write.has(command)) throw new UsageError(`unknown command: ${command}`);
   if (read.has(command)) {
+    const origins = values.origin === undefined ? undefined : originFilter(values.origin);
+    if (command === "export" && values.out === undefined) throw new UsageError("export needs --out <file>");
     const db = openForRead();
     try {
       switch (command) {
@@ -184,17 +214,35 @@ function run(argv: string[]): unknown {
         }
         case "search": {
           if (args[0] === undefined || args[0] === "") throw new UsageError("search needs text");
-          const found = search(db, args[0], values.limit === undefined ? 50 : integer(values.limit, "--limit"));
+          const found = search(db, args[0], values.limit === undefined ? 50 : integer(values.limit, "--limit"), origins);
           return { symbols: found.symbols.map(symbol), comments: found.comments.map(comment) };
         }
         case "symbols":
-          return { symbols: listSymbols(db, range, values.kind === undefined ? undefined : oneOf(SYMBOL_KINDS, values.kind, "--kind")).map(symbol) };
+          return { symbols: listSymbols(db, range, values.kind === undefined ? undefined : oneOf(SYMBOL_KINDS, values.kind, "--kind"), origins).map(symbol) };
         case "regions":
-          return { regions: listRegions(db, range, values.type === undefined ? undefined : oneOf(REGION_TYPES, values.type, "--type")).map(region) };
+          return { regions: listRegions(db, range, values.type === undefined ? undefined : oneOf(REGION_TYPES, values.type, "--type"), origins).map(region) };
         case "comments":
-          return { comments: listComments(db, range).map(comment) };
+          return { comments: listComments(db, range, origins).map(comment) };
         case "references":
-          return { references: listReferences(db, range, values.kind === undefined ? undefined : oneOf(REFERENCE_KINDS, values.kind, "--kind")).map(reference) };
+          return { references: listReferences(db, range, values.kind === undefined ? undefined : oneOf(REFERENCE_KINDS, values.kind, "--kind"), origins).map(reference) };
+        case "export": {
+          const exported = {
+            revision: currentRevision(db),
+            symbols: listSymbols(db, range, undefined, origins).map(symbol),
+            regions: listRegions(db, range, undefined, origins).map(region),
+            comments: listComments(db, range, origins).map(comment),
+            references: listReferences(db, range, undefined, origins).map(reference),
+            suppressions: listSuppressions(db, range).map(suppression),
+          };
+          const bytes = Buffer.from(`${JSON.stringify(exported, null, 2)}\n`, "utf8");
+          writeProjectFile(values.out!, bytes, { what: "--out" });
+          return {
+            out: values.out,
+            bytes: bytes.length,
+            counts: { symbols: exported.symbols.length, regions: exported.regions.length, comments: exported.comments.length, references: exported.references.length, suppressions: exported.suppressions.length },
+            revision: exported.revision,
+          };
+        }
         case "suppressions": {
           const rows = listSuppressions(db, range);
           const reasons = reasonsOf(db, rows);
@@ -221,14 +269,98 @@ function run(argv: string[]): unknown {
   const context: WriteContext = { origin: values.origin === undefined ? "llm" : oneOf(["user", "llm"] as const, values.origin, "--origin") };
   if (values.reason !== undefined) context.description = values.reason;
   if (values["expect-revision"] !== undefined) context.expectedRevision = integer(values["expect-revision"], "--expect-revision");
+  if (values.evidence !== undefined) context.evidence = values.evidence.map(evidenceOf);
   // Every argument is checked before the database opens: a refused write creates no database.
-  const operation = writeOperation(command, args, values.kind, context);
+  const operation = command === "apply" ? applyOperation(args, context) : writeOperation(command, args, values.kind, values.element, context);
   return withWrite(operation);
+}
+
+/** --origin for reads: one origin, semantic (user and llm), analyzer (dxa and ghidra), or a comma list. */
+function originFilter(value: string): Origin[] {
+  const origins = new Set<Origin>();
+  for (const part of value.split(",")) {
+    if (part === "semantic") origins.add("user").add("llm");
+    else if (part === "analyzer") origins.add("dxa").add("ghidra");
+    else origins.add(oneOf(ORIGINS, part, "--origin"));
+  }
+  return [...origins];
+}
+
+/** --evidence kind:ref. A file kind names a project file and keeps its SHA-256, so a later change of the file shows. */
+function evidenceOf(value: string): Evidence {
+  const colon = value.indexOf(":");
+  const kind = oneOf(EVIDENCE_KINDS, colon < 0 ? value : value.slice(0, colon), "--evidence kind");
+  const ref = colon < 0 ? "" : value.slice(colon + 1);
+  if (ref === "") throw new UsageError(`--evidence needs ${kind}:<${kind === "note" ? "text" : "file"}>`);
+  if (kind === "note") return { kind, ref };
+  return { kind, ref, sha256: createHash("sha256").update(readProjectFile(ref).bytes).digest("hex") };
+}
+
+/** apply <file>: the batch as BatchOperation values, checked before the database opens. */
+function applyOperation(args: string[], context: WriteContext): WriteOperation {
+  if (args.length !== 1) throw new UsageError("apply needs one file, or - for standard input");
+  const text = args[0] === "-" ? readFileSync(0, "utf8") : readProjectFile(args[0]!).bytes.toString("utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new UsageError(`the batch is not JSON: ${(error as Error).message}`);
+  }
+  if (!Array.isArray(parsed)) throw new UsageError("the batch is a JSON list of writes, for example [{\"op\": \"rename\", \"address\": \"$2100\", \"name\": \"update_player\"}]");
+  const operations = parsed.map((item, index) => batchOperation(item, `write ${index + 1}`));
+  return (db) => {
+    const applied = applyBatch(db, context, operations);
+    // replaced: writes that replaced a row of another origin, as previous does for one write.
+    return { revision: applied.revision, writes: applied.steps.length, replaced: applied.steps.filter((step) => step.previous !== undefined).length };
+  };
+}
+
+const BATCH_FIELDS: Record<BatchOperation["op"], string[]> = {
+  rename: ["address", "name", "kind"],
+  "remove-symbol": ["address"],
+  classify: ["start", "end", "type", "element"],
+  unclassify: ["start", "end"],
+  comment: ["address", "placement", "text"],
+  uncomment: ["address", "placement"],
+  reference: ["from", "to", "kind"],
+  unreference: ["from", "to", "kind"],
+};
+
+/** One write of a batch, with its addresses parsed. */
+function batchOperation(item: unknown, at: string): BatchOperation {
+  if (typeof item !== "object" || item === null || Array.isArray(item)) throw new UsageError(`${at}: a write is an object with op`);
+  const fields = item as Record<string, unknown>;
+  const op = oneOf(Object.keys(BATCH_FIELDS) as Array<BatchOperation["op"]>, String(fields.op), `${at}: op`);
+  const unknown = Object.keys(fields).filter((key) => key !== "op" && !BATCH_FIELDS[op].includes(key));
+  if (unknown.length > 0) throw new UsageError(`${at}: ${op} takes ${BATCH_FIELDS[op].join(", ")}, not ${unknown.join(", ")}`);
+  const text = (key: string) => {
+    if (typeof fields[key] !== "string") throw new UsageError(`${at}: ${key} must be a string`);
+    return fields[key] as string;
+  };
+  const place = (key: string) => address(text(key), `${at}: ${key}`);
+  switch (op) {
+    case "rename":
+      return { op, address: place("address"), name: text("name"), ...(fields.kind === undefined ? {} : { kind: oneOf(SYMBOL_KINDS, text("kind"), `${at}: kind`) }) };
+    case "remove-symbol":
+      return { op, address: place("address") };
+    case "classify": {
+      if (fields.element !== undefined && typeof fields.element !== "number") throw new UsageError(`${at}: element must be a number`);
+      return { op, start: place("start"), end: place("end"), type: oneOf(REGION_TYPES, text("type"), `${at}: type`), ...(fields.element === undefined ? {} : { element: fields.element as number }) };
+    }
+    case "unclassify":
+      return { op, start: place("start"), end: place("end") };
+    case "comment":
+      return { op, address: place("address"), placement: oneOf(COMMENT_PLACEMENTS, text("placement"), `${at}: placement`), text: text("text") };
+    case "uncomment":
+      return { op, address: place("address"), placement: oneOf(COMMENT_PLACEMENTS, text("placement"), `${at}: placement`) };
+    default:
+      return { op, from: place("from"), to: place("to"), kind: oneOf(REFERENCE_KINDS, text("kind"), `${at}: kind`) };
+  }
 }
 
 type WriteOperation = (db: DatabaseSync) => unknown;
 
-function writeOperation(command: string, args: string[], kind: string | undefined, context: WriteContext): WriteOperation {
+function writeOperation(command: string, args: string[], kind: string | undefined, element: string | undefined, context: WriteContext): WriteOperation {
   switch (command) {
     case "rename": {
       if (args[1] === undefined) throw new UsageError("name is missing");
@@ -244,7 +376,12 @@ function writeOperation(command: string, args: string[], kind: string | undefine
       return (db) => ({ revision: removeSymbol(db, context, request).revision });
     }
     case "classify": {
-      const request = { start: address(args[0], "start"), end: address(args[1], "end"), type: oneOf(REGION_TYPES, args[2], "type") as RegionType };
+      const request = {
+        start: address(args[0], "start"),
+        end: address(args[1], "end"),
+        type: oneOf(REGION_TYPES, args[2], "type") as RegionType,
+        ...(element === undefined ? {} : { element: integer(element, "--element") }),
+      };
       return (db) => {
         const result = classifyRegion(db, context, request);
         return { revision: result.revision, regions: result.current.map(region), ...(result.previous === undefined ? {} : { previous: result.previous.map(region) }) };

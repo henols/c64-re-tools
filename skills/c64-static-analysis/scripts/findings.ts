@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
 import { listRegions, listSymbols } from "#src/knowledge/read.ts";
+import { CODE_REGION_TYPES } from "#src/knowledge/schema.ts";
 import type { DxaResult, GhidraParams, GhidraResult } from "#src/native/types.ts";
 
 export type Seeds = Pick<GhidraParams, "entryPoints" | "dataRanges" | "labels">;
@@ -24,7 +25,8 @@ export function seedsFromKnowledge(db: DatabaseSync | undefined, extraEntryPoint
   return {
     entryPoints,
     dataRanges: listRegions(db)
-      .filter((region) => semantic(region) && region.type !== "code")
+      // A JMP table is code and dual-use bytes are both: neither is a data range (D42).
+      .filter((region) => semantic(region) && !CODE_REGION_TYPES.includes(region.type) && region.type !== "dual-use")
       .map((region) => ({ start: region.start, end: region.end })),
     labels: symbols.map((symbol) => ({ address: symbol.address, name: symbol.name })),
   };

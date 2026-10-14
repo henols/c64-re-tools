@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { KnowledgeError, openForWrite } from "./database.ts";
-import { commentsAt, currentRevision, listSuppressions, referencesFrom, regionsOverlapping, symbolAt } from "./read.ts";
+import { commentsAt, currentRevision, listSuppressions, listSymbols, referencesFrom, regionsOverlapping, symbolAt } from "./read.ts";
+import { revision as revisionChanges } from "./history.ts";
 import {
   addReference,
+  applyBatch,
   classifyRegion,
   removeComment,
   removeReference,
@@ -256,4 +258,65 @@ test("an unclassify over a range that is partly suppressed adds only the free pa
       [0x1080, 0x10ff, 3],
     ],
   );
+});
+
+// D42: element sizes, batches, evidence and the origin filter.
+
+test("a data region takes an element size that divides its length, and a split keeps it where it still fits", () => {
+  const db = fresh();
+  const table = classifyRegion(db, llm, { start: 0x3000, end: 0x303b, type: "bytes", element: 6 });
+  assert.equal(table.current[0]!.element, 6);
+  assert.throws(() => classifyRegion(db, llm, { start: 0x3000, end: 0x3009, type: "bytes", element: 6 }), failsWith("invalid-input"), "10 bytes are not whole elements of 6");
+  assert.throws(() => classifyRegion(db, llm, { start: 0x4000, end: 0x4005, type: "jumps", element: 3 }), failsWith("invalid-input"), "a JMP table has no element size");
+  classifyRegion(db, llm, { start: 0x3000, end: 0x3005, type: "petscii" });
+  assert.deepEqual(
+    regionsOverlapping(db, 0x3000, 0x303b).map((region) => [region.start, region.end, region.type, region.element]),
+    [
+      [0x3000, 0x3005, "petscii", undefined],
+      [0x3006, 0x303b, "bytes", 6],
+    ],
+  );
+  classifyRegion(db, llm, { start: 0x3006, end: 0x3007, type: "words" });
+  assert.equal(regionsOverlapping(db, 0x3008, 0x3008)[0]!.element, undefined, "52 bytes are no whole elements of 6: the size goes");
+});
+
+test("a batch is one revision, and a refused write leaves nothing written", () => {
+  const db = fresh();
+  const applied = applyBatch(db, { origin: "llm", description: "names from the coverage run" }, [
+    { op: "rename", address: 0x2100, name: "update_player", kind: "routine" },
+    { op: "classify", start: 0x3000, end: 0x303f, type: "sprite" },
+    { op: "comment", address: 0x2100, placement: "line", text: "Reads joystick 2." },
+    { op: "reference", from: 0x2000, to: 0x2100, kind: "call" },
+  ]);
+  assert.equal(applied.revision, 1);
+  assert.equal(applied.steps.length, 4);
+  assert.equal(count(db, "SELECT count(*) AS n FROM revisions"), 1);
+  assert.equal(symbolAt(db, 0x2100)?.revision, 1);
+
+  assert.throws(
+    () => applyBatch(db, llm, [{ op: "rename", address: 0x2200, name: "other" }, { op: "remove-symbol", address: 0x2300 }]),
+    (error: unknown) => failsWith("not-found")(error) && /^Write 2: /.test((error as Error).message),
+  );
+  assert.equal(symbolAt(db, 0x2200), undefined, "the first write of the refused batch is gone too");
+  assert.equal(currentRevision(db), 1);
+  assert.throws(() => applyBatch(db, llm, [{ op: "classify", start: 0x10, end: 0x0f, type: "bytes" }]), (error: unknown) => failsWith("invalid-input")(error) && /^Write 1: /.test((error as Error).message));
+});
+
+test("evidence is kept with the revision that a write makes, and a write that changes nothing keeps none", () => {
+  const db = fresh();
+  const evidence = [{ kind: "coverage" as const, ref: "coverage/attract.bin", sha256: "a".repeat(64) }, { kind: "note" as const, ref: "watchpoint shows a write before the read" }];
+  const named = renameSymbol(db, { origin: "llm", evidence }, { address: 0x2100, name: "update_player" });
+  assert.deepEqual(revisionChanges(db, named.revision!).revision.evidence, evidence);
+  assert.equal(renameSymbol(db, { origin: "llm", evidence }, { address: 0x2100, name: "update_player" }).revision, null);
+  assert.equal(count(db, "SELECT count(*) AS n FROM evidence"), 2);
+  assert.throws(() => renameSymbol(db, { origin: "llm", evidence: [{ kind: "rumour" as never, ref: "x" }] }, { address: 0x2200, name: "x" }), failsWith("invalid-input"));
+});
+
+test("lists keep only the origins asked for", () => {
+  const db = fresh();
+  renameSymbol(db, llm, { address: 0x2100, name: "update_player" });
+  renameSymbol(db, { origin: "user" }, { address: 0x2200, name: "draw_room" });
+  assert.deepEqual(listSymbols(db, undefined, undefined, ["user"]).map((row) => row.name), ["draw_room"]);
+  assert.deepEqual(listSymbols(db, undefined, undefined, ["dxa", "ghidra"]), []);
+  assert.equal(listSymbols(db).length, 2);
 });

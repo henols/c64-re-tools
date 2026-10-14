@@ -32,15 +32,26 @@ import {
 } from "./read.ts";
 import {
   COMMENT_PLACEMENTS,
+  EVIDENCE_KINDS,
+  MAX_ELEMENT,
+  NO_ELEMENT_TYPES,
   REFERENCE_KINDS,
   REGION_TYPES,
   SYMBOL_KINDS,
   type CommentPlacement,
+  type EvidenceKind,
   type Origin,
   type ReferenceKind,
   type RegionType,
   type SymbolKind,
 } from "./schema.ts";
+
+/** What a change rests on (D42): a coverage run, a test or another project file with its SHA-256, or a note. */
+export interface Evidence {
+  kind: EvidenceKind;
+  ref: string;
+  sha256?: string;
+}
 
 /** Who writes and why. Semantic writes come from the user or the LLM, never as an analyzer. */
 export interface WriteContext {
@@ -49,6 +60,8 @@ export interface WriteContext {
   description?: string;
   /** The revision the caller read; the write is refused if knowledge changed since. */
   expectedRevision?: number;
+  /** Kept with the revision when the write changes something. */
+  evidence?: Evidence[];
 }
 
 /** The revision a write created, or null when nothing needed to change. */
@@ -61,6 +74,7 @@ export interface WriteResult<T, P = never> {
 
 export { SYMBOL_NAME };
 const MAX_COMMENT = 4000;
+const MAX_EVIDENCE_REF = 1000;
 
 export function checkAddress(value: number, what = "address"): void {
   if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new KnowledgeError("invalid-input", `${what} must be from $0000 to $ffff.`);
@@ -100,6 +114,7 @@ export interface ChangeContext {
   expectedRevision?: number;
   inputHash?: string;
   toolVersion?: string;
+  evidence?: Evidence[];
 }
 
 /**
@@ -125,7 +140,7 @@ export class Change {
     }
   }
 
-  /** The id of this write's revision, created on first use. */
+  /** The id of this write's revision, created on first use with its evidence. */
   id(): number {
     if (this.revision !== null) return this.revision;
     const created = this.#db
@@ -140,6 +155,8 @@ export class Change {
       ) as { id: number };
     this.revision = created.id;
     this.#db.prepare("UPDATE meta SET value = ? WHERE key = 'current_revision'").run(String(created.id));
+    const evidence = this.#db.prepare("INSERT INTO evidence (revision, kind, ref, sha256) VALUES (?, ?, ?, ?)");
+    for (const item of this.#context.evidence ?? []) evidence.run(created.id, item.kind, item.ref, item.sha256 ?? null);
     return created.id;
   }
 
@@ -154,8 +171,8 @@ export class Change {
 
   insertRegion(row: Omit<RegionRow, "revision">): void {
     this.#db
-      .prepare("INSERT INTO regions (start_address, end_address, type, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?)")
-      .run(row.start, row.end, row.type, row.origin, this.id());
+      .prepare("INSERT INTO regions (start_address, end_address, type, element, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(row.start, row.end, row.type, row.element ?? null, row.origin, this.id());
   }
 
   insertComment(row: Omit<CommentRow, "revision">): void {
@@ -186,11 +203,20 @@ function liftRegionSuppressions(db: DatabaseSync, change: Change, start: number,
   }
 }
 
-/** Runs one semantic write in a transaction. */
-function write<T>(db: DatabaseSync, context: WriteContext, operation: string, work: (change: Change) => T): WriteResult<T> {
+function checkEvidence(evidence: Evidence[] | undefined): void {
+  for (const item of evidence ?? []) {
+    checkOneOf(EVIDENCE_KINDS, item.kind, "evidence kind");
+    if (item.ref.trim().length === 0 || item.ref.length > MAX_EVIDENCE_REF) throw new KnowledgeError("invalid-input", `evidence has 1 to ${MAX_EVIDENCE_REF} characters after its kind.`);
+    if (item.sha256 !== undefined && !/^[0-9a-f]{64}$/.test(item.sha256)) throw new KnowledgeError("invalid-input", "evidence sha256 must be 64 lowercase hex digits.");
+  }
+}
+
+/** Runs semantic writes in one transaction, as one revision. */
+function write<T>(db: DatabaseSync, context: WriteContext, operation: string, work: (change: Change) => T): { revision: number | null; current: T } {
   if (context.origin !== "user" && context.origin !== "llm") {
     throw new KnowledgeError("invalid-input", "A semantic write comes from the user or the LLM.");
   }
+  checkEvidence(context.evidence);
   return transaction(db, () => {
     const change = new Change(db, context, operation);
     const current = work(change);
@@ -198,45 +224,74 @@ function write<T>(db: DatabaseSync, context: WriteContext, operation: string, wo
   });
 }
 
-/** Names the symbol at an address (one current symbol per address, unique names). */
-export function renameSymbol(
-  db: DatabaseSync,
-  context: WriteContext,
-  request: { address: number; name: string; kind?: SymbolKind },
-): WriteResult<SymbolRow, SymbolRow> {
+/** One step of a write inside a change: its current value, and the rows of another origin it replaced. */
+interface Step<T, P = never> {
+  current: T;
+  previous?: P;
+}
+
+const result = <T, P>(written: { revision: number | null; current: Step<T, P> }): WriteResult<T, P> =>
+  written.current.previous === undefined ? { revision: written.revision, current: written.current.current } : { revision: written.revision, current: written.current.current, previous: written.current.previous };
+
+// Each write has a check, which refuses bad input before anything opens, and a
+// step, which runs inside a change. A single write and a batch share both (D42).
+
+type SymbolRequest = { address: number; name: string; kind?: SymbolKind };
+type RegionRequest = { start: number; end: number; type: RegionType; element?: number };
+type RangeRequest = { start: number; end: number };
+type CommentRequest = { address: number; placement: CommentPlacement; text: string };
+type PlacementRequest = { address: number; placement: CommentPlacement };
+type ReferenceRequest = { from: number; to: number; kind: ReferenceKind };
+
+function checkSymbol(request: SymbolRequest): void {
   checkAddress(request.address);
   if (!SYMBOL_NAME.test(request.name)) {
     throw new KnowledgeError("invalid-input", "A symbol name is a letter or underscore, then letters, digits or underscores (at most 64), with an optional leading dot.");
   }
   if (request.kind !== undefined) checkOneOf(SYMBOL_KINDS, request.kind, "kind");
-  let previous: SymbolRow | undefined;
-  const result = write(db, context, "rename-symbol", (change) => {
-    const existing = symbolAt(db, request.address);
-    const kind = request.kind ?? existing?.kind ?? "label";
-    if (existing !== undefined && existing.name === request.name && existing.kind === kind) return existing;
-    const owner = symbolNamed(db, request.name);
-    if (owner !== undefined && owner.address !== request.address) {
-      throw new KnowledgeError("conflict", `The name ${request.name} already belongs to ${hex(owner.address)}. Rename or remove that symbol first.`);
-    }
-    if (existing !== undefined) {
-      change.close("symbols", "address = ?", request.address);
-      if (existing.origin !== context.origin) previous = existing;
-    }
-    change.insertSymbol({ address: request.address, name: request.name, kind, origin: context.origin });
-    change.close("suppressions", "entity = 'symbol' AND start_address = ?", request.address);
-    return symbolAt(db, request.address)!;
-  });
-  return previous === undefined ? result : { ...result, previous };
 }
 
-export function removeSymbol(db: DatabaseSync, context: WriteContext, request: { address: number }): WriteResult<null> {
-  checkAddress(request.address);
-  return write(db, context, "remove-symbol", (change) => {
-    if (symbolAt(db, request.address) === undefined) throw new KnowledgeError("not-found", `There is no symbol at ${hex(request.address)}.`);
-    change.close("symbols", "address = ?", request.address);
-    change.insertSuppression({ entity: "symbol", start: request.address, end: request.address, origin: context.origin });
-    return null;
-  });
+function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: SymbolRequest): Step<SymbolRow, SymbolRow> {
+  const existing = symbolAt(db, request.address);
+  const kind = request.kind ?? existing?.kind ?? "label";
+  if (existing !== undefined && existing.name === request.name && existing.kind === kind) return { current: existing };
+  const owner = symbolNamed(db, request.name);
+  if (owner !== undefined && owner.address !== request.address) {
+    throw new KnowledgeError("conflict", `The name ${request.name} already belongs to ${hex(owner.address)}. Rename or remove that symbol first.`);
+  }
+  if (existing !== undefined) change.close("symbols", "address = ?", request.address);
+  change.insertSymbol({ address: request.address, name: request.name, kind, origin });
+  change.close("suppressions", "entity = 'symbol' AND start_address = ?", request.address);
+  const current = symbolAt(db, request.address)!;
+  return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
+}
+
+function removeSymbolStep(db: DatabaseSync, change: Change, origin: Origin, request: { address: number }): Step<null> {
+  if (symbolAt(db, request.address) === undefined) throw new KnowledgeError("not-found", `There is no symbol at ${hex(request.address)}.`);
+  change.close("symbols", "address = ?", request.address);
+  change.insertSuppression({ entity: "symbol", start: request.address, end: request.address, origin: origin as SuppressionRow["origin"] });
+  return { current: null };
+}
+
+function checkRange(request: RangeRequest): void {
+  checkAddress(request.start, "start");
+  checkAddress(request.end, "end");
+  if (request.end < request.start) throw new KnowledgeError("invalid-input", "end must not be before start.");
+}
+
+function checkRegion(request: RegionRequest): void {
+  checkRange(request);
+  checkOneOf(REGION_TYPES, request.type, "type");
+  if (request.element === undefined) return;
+  if (NO_ELEMENT_TYPES.includes(request.type)) throw new KnowledgeError("invalid-input", `A ${request.type} region has no element size.`);
+  if (!Number.isInteger(request.element) || request.element < 1 || request.element > MAX_ELEMENT) throw new KnowledgeError("invalid-input", `element must be from 1 to ${MAX_ELEMENT}.`);
+  const length = request.end - request.start + 1;
+  if (length % request.element !== 0) throw new KnowledgeError("invalid-input", `The region has ${length} bytes, which is not a multiple of the element size ${request.element}.`);
+}
+
+/** The element size of a piece of a region: kept when the piece still holds whole elements. */
+function elementOf(piece: AddressRange, element: number | undefined): { element?: number } {
+  return element !== undefined && (piece.end - piece.start + 1) % element === 0 ? { element } : {};
 }
 
 /** Closes the current regions over [start, end] and keeps their parts outside it. */
@@ -245,120 +300,217 @@ export function clearRange(db: DatabaseSync, change: Change, start: number, end:
   if (overlapping.length === 0) return;
   change.close("regions", "start_address <= ? AND end_address >= ?", end, start);
   for (const region of overlapping) {
-    if (region.start < start) change.insertRegion({ start: region.start, end: start - 1, type: region.type, origin: region.origin });
-    if (region.end > end) change.insertRegion({ start: end + 1, end: region.end, type: region.type, origin: region.origin });
+    const left = { start: region.start, end: start - 1 };
+    const right = { start: end + 1, end: region.end };
+    if (region.start < start) change.insertRegion({ ...left, type: region.type, ...elementOf(left, region.element), origin: region.origin });
+    if (region.end > end) change.insertRegion({ ...right, type: region.type, ...elementOf(right, region.element), origin: region.origin });
   }
 }
 
-/** Classifies [start, end]; overlapping regions are split so current regions never overlap. */
-export function classifyRegion(
-  db: DatabaseSync,
-  context: WriteContext,
-  request: { start: number; end: number; type: RegionType },
-): WriteResult<RegionRow[], RegionRow[]> {
-  checkAddress(request.start, "start");
-  checkAddress(request.end, "end");
-  if (request.end < request.start) throw new KnowledgeError("invalid-input", "end must not be before start.");
-  checkOneOf(REGION_TYPES, request.type, "type");
-  let previous: RegionRow[] = [];
-  const result = write(db, context, "classify-region", (change) => {
-    const overlapping = regionsOverlapping(db, request.start, request.end);
-    const same = overlapping.length === 1 && overlapping[0]!.start === request.start && overlapping[0]!.end === request.end && overlapping[0]!.type === request.type;
-    if (!same) {
-      clearRange(db, change, request.start, request.end);
-      change.insertRegion({ start: request.start, end: request.end, type: request.type, origin: context.origin });
-      liftRegionSuppressions(db, change, request.start, request.end);
-      previous = overlapping.filter((row) => row.origin !== context.origin);
-    }
-    return regionsOverlapping(db, request.start, request.end);
-  });
-  return previous.length === 0 ? result : { ...result, previous };
+function classifyStep(db: DatabaseSync, change: Change, origin: Origin, request: RegionRequest): Step<RegionRow[], RegionRow[]> {
+  const overlapping = regionsOverlapping(db, request.start, request.end);
+  const [only] = overlapping;
+  const same = overlapping.length === 1 && only!.start === request.start && only!.end === request.end && only!.type === request.type && only!.element === request.element;
+  if (same) return { current: overlapping };
+  clearRange(db, change, request.start, request.end);
+  change.insertRegion({ start: request.start, end: request.end, type: request.type, ...(request.element === undefined ? {} : { element: request.element }), origin });
+  liftRegionSuppressions(db, change, request.start, request.end);
+  const previous = overlapping.filter((row) => row.origin !== origin);
+  const current = regionsOverlapping(db, request.start, request.end);
+  return previous.length === 0 ? { current } : { current, previous };
 }
 
-/** Makes [start, end] unclassified again; parts of regions outside it stay. */
-export function unclassifyRegion(db: DatabaseSync, context: WriteContext, request: { start: number; end: number }): WriteResult<null> {
-  checkAddress(request.start, "start");
-  checkAddress(request.end, "end");
-  if (request.end < request.start) throw new KnowledgeError("invalid-input", "end must not be before start.");
-  return write(db, context, "unclassify-region", (change) => {
-    if (regionsOverlapping(db, request.start, request.end).length === 0) {
-      throw new KnowledgeError("not-found", `No region covers ${hex(request.start)}-${hex(request.end)}.`);
-    }
-    clearRange(db, change, request.start, request.end);
-    // Suppress only the parts that no region suppression holds yet, so suppressions never overlap.
-    for (const piece of subtract(request, suppressionsOverlapping(db, "region", request.start, request.end))) {
-      change.insertSuppression({ entity: "region", ...piece, origin: context.origin });
-    }
-    return null;
-  });
+function unclassifyStep(db: DatabaseSync, change: Change, origin: Origin, request: RangeRequest): Step<null> {
+  if (regionsOverlapping(db, request.start, request.end).length === 0) {
+    throw new KnowledgeError("not-found", `No region covers ${hex(request.start)}-${hex(request.end)}.`);
+  }
+  clearRange(db, change, request.start, request.end);
+  // Suppress only the parts that no region suppression holds yet, so suppressions never overlap.
+  for (const piece of subtract(request, suppressionsOverlapping(db, "region", request.start, request.end))) {
+    change.insertSuppression({ entity: "region", ...piece, origin: origin as SuppressionRow["origin"] });
+  }
+  return { current: null };
 }
 
-export function setComment(
-  db: DatabaseSync,
-  context: WriteContext,
-  request: { address: number; placement: CommentPlacement; text: string },
-): WriteResult<CommentRow> {
+function checkComment(request: CommentRequest): string {
   checkAddress(request.address);
   checkOneOf(COMMENT_PLACEMENTS, request.placement, "placement");
   const text = request.text.trim();
   if (text.length === 0 || text.length > MAX_COMMENT) throw new KnowledgeError("invalid-input", `A comment has 1 to ${MAX_COMMENT} characters.`);
-  return write(db, context, "set-comment", (change) => {
-    const existing = commentsAt(db, request.address).find((comment) => comment.placement === request.placement);
-    if (existing?.text === text) return existing;
-    if (existing !== undefined) change.close("comments", "address = ? AND placement = ?", request.address, request.placement);
-    change.insertComment({ address: request.address, placement: request.placement, text, origin: context.origin });
-    return commentsAt(db, request.address).find((comment) => comment.placement === request.placement)!;
-  });
+  return text;
 }
 
-export function removeComment(db: DatabaseSync, context: WriteContext, request: { address: number; placement: CommentPlacement }): WriteResult<null> {
+function commentStep(db: DatabaseSync, change: Change, origin: Origin, request: CommentRequest): Step<CommentRow> {
+  const text = request.text.trim();
+  const existing = commentsAt(db, request.address).find((comment) => comment.placement === request.placement);
+  if (existing?.text === text) return { current: existing };
+  if (existing !== undefined) change.close("comments", "address = ? AND placement = ?", request.address, request.placement);
+  change.insertComment({ address: request.address, placement: request.placement, text, origin });
+  return { current: commentsAt(db, request.address).find((comment) => comment.placement === request.placement)! };
+}
+
+function checkPlacement(request: PlacementRequest): void {
   checkAddress(request.address);
   checkOneOf(COMMENT_PLACEMENTS, request.placement, "placement");
-  return write(db, context, "remove-comment", (change) => {
-    if (!commentsAt(db, request.address).some((comment) => comment.placement === request.placement)) {
-      throw new KnowledgeError("not-found", `There is no ${request.placement} comment at ${hex(request.address)}.`);
-    }
-    change.close("comments", "address = ? AND placement = ?", request.address, request.placement);
-    return null;
-  });
 }
 
-export function addReference(
-  db: DatabaseSync,
-  context: WriteContext,
-  request: { from: number; to: number; kind: ReferenceKind },
-): WriteResult<ReferenceRow> {
+function uncommentStep(db: DatabaseSync, change: Change, _origin: Origin, request: PlacementRequest): Step<null> {
+  if (!commentsAt(db, request.address).some((comment) => comment.placement === request.placement)) {
+    throw new KnowledgeError("not-found", `There is no ${request.placement} comment at ${hex(request.address)}.`);
+  }
+  change.close("comments", "address = ? AND placement = ?", request.address, request.placement);
+  return { current: null };
+}
+
+function checkReference(request: ReferenceRequest): void {
   checkAddress(request.from, "from");
   checkAddress(request.to, "to");
   checkOneOf(REFERENCE_KINDS, request.kind, "kind");
-  return write(db, context, "add-reference", (change) => {
-    const find = () => referencesFrom(db, request.from).find((reference) => reference.to === request.to && reference.kind === request.kind);
-    const existing = find();
-    if (existing !== undefined) return existing;
-    change.insertReference({ ...request, origin: context.origin });
-    change.close("suppressions", "entity = 'reference' AND start_address = ? AND to_address = ? AND kind = ?", request.from, request.to, request.kind);
-    return find()!;
-  });
 }
 
-export function removeReference(db: DatabaseSync, context: WriteContext, request: { from: number; to: number; kind: ReferenceKind }): WriteResult<null> {
-  checkAddress(request.from, "from");
-  checkAddress(request.to, "to");
-  checkOneOf(REFERENCE_KINDS, request.kind, "kind");
-  return write(db, context, "remove-reference", (change) => {
-    if (!referencesFrom(db, request.from).some((reference) => reference.to === request.to && reference.kind === request.kind)) {
-      throw new KnowledgeError("not-found", `There is no ${request.kind} reference from ${hex(request.from)} to ${hex(request.to)}.`);
+function referenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<ReferenceRow> {
+  const find = () => referencesFrom(db, request.from).find((reference) => reference.to === request.to && reference.kind === request.kind);
+  const existing = find();
+  if (existing !== undefined) return { current: existing };
+  change.insertReference({ ...request, origin });
+  change.close("suppressions", "entity = 'reference' AND start_address = ? AND to_address = ? AND kind = ?", request.from, request.to, request.kind);
+  return { current: find()! };
+}
+
+function unreferenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<null> {
+  if (!referencesFrom(db, request.from).some((reference) => reference.to === request.to && reference.kind === request.kind)) {
+    throw new KnowledgeError("not-found", `There is no ${request.kind} reference from ${hex(request.from)} to ${hex(request.to)}.`);
+  }
+  change.close('"references"', "from_address = ? AND to_address = ? AND kind = ?", request.from, request.to, request.kind);
+  change.insertSuppression({ entity: "reference", start: request.from, end: request.from, to: request.to, kind: request.kind, origin: origin as SuppressionRow["origin"] });
+  return { current: null };
+}
+
+/** Names the symbol at an address (one current symbol per address, unique names). */
+export function renameSymbol(db: DatabaseSync, context: WriteContext, request: SymbolRequest): WriteResult<SymbolRow, SymbolRow> {
+  checkSymbol(request);
+  return result(write(db, context, "rename-symbol", (change) => renameStep(db, change, context.origin, request)));
+}
+
+export function removeSymbol(db: DatabaseSync, context: WriteContext, request: { address: number }): WriteResult<null> {
+  checkAddress(request.address);
+  return result(write(db, context, "remove-symbol", (change) => removeSymbolStep(db, change, context.origin, request)));
+}
+
+/** Classifies [start, end]; overlapping regions are split so current regions never overlap. */
+export function classifyRegion(db: DatabaseSync, context: WriteContext, request: RegionRequest): WriteResult<RegionRow[], RegionRow[]> {
+  checkRegion(request);
+  return result(write(db, context, "classify-region", (change) => classifyStep(db, change, context.origin, request)));
+}
+
+/** Makes [start, end] unclassified again; parts of regions outside it stay. */
+export function unclassifyRegion(db: DatabaseSync, context: WriteContext, request: RangeRequest): WriteResult<null> {
+  checkRange(request);
+  return result(write(db, context, "unclassify-region", (change) => unclassifyStep(db, change, context.origin, request)));
+}
+
+export function setComment(db: DatabaseSync, context: WriteContext, request: CommentRequest): WriteResult<CommentRow> {
+  checkComment(request);
+  return result(write(db, context, "set-comment", (change) => commentStep(db, change, context.origin, request)));
+}
+
+export function removeComment(db: DatabaseSync, context: WriteContext, request: PlacementRequest): WriteResult<null> {
+  checkPlacement(request);
+  return result(write(db, context, "remove-comment", (change) => uncommentStep(db, change, context.origin, request)));
+}
+
+export function addReference(db: DatabaseSync, context: WriteContext, request: ReferenceRequest): WriteResult<ReferenceRow> {
+  checkReference(request);
+  return result(write(db, context, "add-reference", (change) => referenceStep(db, change, context.origin, request)));
+}
+
+export function removeReference(db: DatabaseSync, context: WriteContext, request: ReferenceRequest): WriteResult<null> {
+  checkReference(request);
+  return result(write(db, context, "remove-reference", (change) => unreferenceStep(db, change, context.origin, request)));
+}
+
+/** One write of a batch (D42), named as the command that does it alone. */
+export type BatchOperation =
+  | ({ op: "rename" } & SymbolRequest)
+  | { op: "remove-symbol"; address: number }
+  | ({ op: "classify" } & RegionRequest)
+  | ({ op: "unclassify" } & RangeRequest)
+  | ({ op: "comment" } & CommentRequest)
+  | ({ op: "uncomment" } & PlacementRequest)
+  | ({ op: "reference" } & ReferenceRequest)
+  | ({ op: "unreference" } & ReferenceRequest);
+
+export const MAX_BATCH = 10_000;
+
+/** The result of each write of a batch, in order. */
+export type BatchStep = Step<SymbolRow | RegionRow[] | CommentRow | ReferenceRow | null, SymbolRow | RegionRow[]>;
+
+/**
+ * Applies many writes as one revision in one transaction (D42): all of them,
+ * or none when one is refused. Every write is checked before anything opens.
+ */
+export function applyBatch(db: DatabaseSync, context: WriteContext, operations: BatchOperation[]): { revision: number | null; steps: BatchStep[] } {
+  if (operations.length === 0 || operations.length > MAX_BATCH) throw new KnowledgeError("invalid-input", `A batch has 1 to ${MAX_BATCH} writes.`);
+  operations.forEach((operation, index) => {
+    try {
+      switch (operation.op) {
+        case "rename":
+          return checkSymbol(operation);
+        case "remove-symbol":
+          return checkAddress(operation.address);
+        case "classify":
+          return checkRegion(operation);
+        case "unclassify":
+          return checkRange(operation);
+        case "comment":
+          return void checkComment(operation);
+        case "uncomment":
+          return checkPlacement(operation);
+        case "reference":
+        case "unreference":
+          return checkReference(operation);
+        default:
+          throw new KnowledgeError("invalid-input", `op must be one of rename, remove-symbol, classify, unclassify, comment, uncomment, reference, unreference.`);
+      }
+    } catch (error) {
+      if (error instanceof KnowledgeError) throw new KnowledgeError(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
+      throw error;
     }
-    change.close('"references"', "from_address = ? AND to_address = ? AND kind = ?", request.from, request.to, request.kind);
-    change.insertSuppression({ entity: "reference", start: request.from, end: request.from, to: request.to, kind: request.kind, origin: context.origin });
-    return null;
   });
+  const written = write(db, context, "apply", (change) =>
+    operations.map((operation, index): BatchStep => {
+      try {
+        switch (operation.op) {
+          case "rename":
+            return renameStep(db, change, context.origin, operation);
+          case "remove-symbol":
+            return removeSymbolStep(db, change, context.origin, operation);
+          case "classify":
+            return classifyStep(db, change, context.origin, operation);
+          case "unclassify":
+            return unclassifyStep(db, change, context.origin, operation);
+          case "comment":
+            return commentStep(db, change, context.origin, operation);
+          case "uncomment":
+            return uncommentStep(db, change, context.origin, operation);
+          case "reference":
+            return referenceStep(db, change, context.origin, operation);
+          case "unreference":
+            return unreferenceStep(db, change, context.origin, operation);
+        }
+      } catch (error) {
+        if (error instanceof KnowledgeError) throw new KnowledgeError(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
+        throw error;
+      }
+    }),
+  );
+  return { revision: written.revision, steps: written.current };
 }
 
 /** Row content without its revision, as a comparable key. */
 const KEYS = {
   symbols: { columns: SYMBOL_COLUMNS, map: toSymbol, key: (row: SymbolRow) => `${row.address}|${row.name}|${row.kind}|${row.origin}` },
-  regions: { columns: REGION_COLUMNS, map: toRegion, key: (row: RegionRow) => `${row.start}|${row.end}|${row.type}|${row.origin}` },
+  regions: { columns: REGION_COLUMNS, map: toRegion, key: (row: RegionRow) => `${row.start}|${row.end}|${row.type}|${row.element ?? ""}|${row.origin}` },
   comments: { columns: COMMENT_COLUMNS, map: toComment, key: (row: CommentRow) => `${row.address}|${row.placement}|${row.text}|${row.origin}` },
   references: { columns: REFERENCE_COLUMNS, map: toReference, key: (row: ReferenceRow) => `${row.from}|${row.to}|${row.kind}|${row.origin}` },
   suppressions: {

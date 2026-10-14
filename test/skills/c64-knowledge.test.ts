@@ -3,7 +3,8 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -143,4 +144,49 @@ test("a removal shows as a suppression with its reason, in at and in the history
   assert.deepEqual(knowledge(root, "at", "$0408").json.suppressions, [{ suppresses: "symbol", address: "$0408", origin: "llm", revision: 4 }]);
   const history = knowledge(root, "history", "$0408").json.history as Array<Record<string, unknown>>;
   assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "symbol", address: "$0408", origin: "llm", fromRevision: 4 });
+});
+
+test("apply writes a batch from a file or standard input as one revision (D42)", () => {
+  const root = project();
+  writeFileSync(
+    join(root, "batch.json"),
+    JSON.stringify([
+      { op: "rename", address: "$2100", name: "update_player", kind: "routine" },
+      { op: "classify", start: "$3000", end: "$303b", type: "bytes", element: 6 },
+    ]),
+  );
+  assert.deepEqual(knowledge(root, "apply", "batch.json", "--reason", "first names", "--evidence", "note:seen in the attract mode").json, { revision: 1, writes: 2, replaced: 0 });
+  const piped = spawnSync(process.execPath, [...process.execArgv, script, "apply", "-"], { cwd: root, encoding: "utf8", input: JSON.stringify([{ op: "comment", address: "$2100", placement: "line", text: "Reads joystick 2." }]) });
+  assert.deepEqual(JSON.parse(piped.stdout), { revision: 2, writes: 1, replaced: 0 });
+  assert.deepEqual((knowledge(root, "regions").json.regions as unknown[])[0], { start: "$3000", end: "$303b", type: "bytes", element: 6, count: 10, origin: "llm", revision: 1 });
+  const refused = knowledge(root, "apply", "batch.json", "--expect-revision", "1");
+  assert.equal((refused.json.error as { code: string }).code, "stale-revision");
+  writeFileSync(join(root, "bad.json"), JSON.stringify([{ op: "rename", address: "2100", name: "x" }]));
+  assert.equal(knowledge(root, "apply", "bad.json").status, 2);
+});
+
+test("evidence names a project file with its SHA-256, and --origin filters the reads", () => {
+  const root = project();
+  mkdirSync(join(root, "coverage"));
+  writeFileSync(join(root, "coverage", "attract.bin"), Buffer.from([4, 0, 4]));
+  const written = knowledge(root, "rename", "$2100", "update_player", "--evidence", "coverage:coverage/attract.bin", "--origin", "user").json;
+  const evidence = ((knowledge(root, "revision", String(written.revision)).json.revision as { evidence: unknown[] }).evidence);
+  assert.deepEqual(evidence, [{ kind: "coverage", ref: "coverage/attract.bin", sha256: createHash("sha256").update(Buffer.from([4, 0, 4])).digest("hex") }]);
+  assert.equal((knowledge(root, "rename", "$2200", "x", "--evidence", "coverage:coverage/missing.bin").json.error as { code: string }).code, "not-found");
+  knowledge(root, "rename", "$2300", "helper");
+  assert.deepEqual((knowledge(root, "symbols", "--origin", "user").json.symbols as Array<{ name: string }>).map((row) => row.name), ["update_player"]);
+  assert.deepEqual((knowledge(root, "symbols", "--origin", "semantic").json.symbols as unknown[]).length, 2);
+  assert.deepEqual(knowledge(root, "symbols", "--origin", "analyzer").json, { symbols: [] });
+  assert.equal(knowledge(root, "symbols", "--origin", "robot").status, 2);
+});
+
+test("export writes all current knowledge to a project file and answers with counts", () => {
+  const root = project();
+  knowledge(root, "rename", "$2100", "update_player");
+  knowledge(root, "classify", "$3000", "$303f", "sprite");
+  const exported = knowledge(root, "export", "--out", "exports/knowledge.json").json;
+  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, regions: 1, comments: 0, references: 0, suppressions: 0 }, revision: 2 });
+  const file = JSON.parse(readFileSync(join(root, "exports", "knowledge.json"), "utf8")) as { symbols: Array<{ name: string }> };
+  assert.equal(file.symbols[0]!.name, "update_player");
+  assert.equal(knowledge(root, "export").status, 2, "export needs --out");
 });

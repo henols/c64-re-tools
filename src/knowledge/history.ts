@@ -21,7 +21,8 @@ import {
   type SuppressionRow,
   type SymbolRow,
 } from "./read.ts";
-import type { Origin } from "./schema.ts";
+import type { EvidenceKind, Origin } from "./schema.ts";
+import type { Evidence } from "./write.ts";
 
 export interface Revision {
   id: number;
@@ -31,6 +32,8 @@ export interface Revision {
   description?: string;
   inputHash?: string;
   toolVersion?: string;
+  /** What the change rests on (D42). */
+  evidence?: Evidence[];
 }
 
 /** One knowledge row with its validity: from its first revision until the revision that closed it. */
@@ -95,6 +98,14 @@ export function historyNamed(db: DatabaseSync | undefined, name: string): Histor
     .sort(bySequence);
 }
 
+/** The revision with its evidence, when it has any. */
+function withEvidence(db: DatabaseSync, revision: Revision): Revision {
+  const rows = db.prepare("SELECT kind, ref, sha256 FROM evidence WHERE revision = ? ORDER BY id").all(revision.id) as Raw[];
+  if (rows.length === 0) return revision;
+  const evidence = rows.map((row): Evidence => ({ kind: row.kind as EvidenceKind, ref: row.ref as string, ...(row.sha256 === null ? {} : { sha256: row.sha256 as string }) }));
+  return { ...revision, evidence };
+}
+
 /** Revisions, newest first; with `before`, only revisions older than it. */
 export function revisions(db: DatabaseSync | undefined, options: { limit?: number; before?: number } = {}): Revision[] {
   if (db === undefined) return [];
@@ -102,7 +113,7 @@ export function revisions(db: DatabaseSync | undefined, options: { limit?: numbe
     db
       .prepare("SELECT * FROM revisions WHERE id < ? ORDER BY id DESC LIMIT ?")
       .all(options.before ?? Number.MAX_SAFE_INTEGER, options.limit ?? 50) as Raw[]
-  ).map(toRevision);
+  ).map((row) => withEvidence(db, toRevision(row)));
 }
 
 export interface RevisionChanges {
@@ -134,5 +145,5 @@ export function revision(db: DatabaseSync | undefined, id: number): RevisionChan
       closed.push(entry(entity, map(row), row));
     }
   }
-  return { revision: toRevision(raw), added, closed };
+  return { revision: withEvidence(db, toRevision(raw)), added, closed };
 }

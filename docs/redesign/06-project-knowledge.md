@@ -183,12 +183,13 @@ Conceptual fields:
 start_address         INTEGER NOT NULL
 end_address           INTEGER NOT NULL
 type                  TEXT NOT NULL
+element               INTEGER            bytes per element of a table, 1..256 (D42)
 origin                TEXT NOT NULL
 valid_from_revision   INTEGER NOT NULL
 valid_to_revision     INTEGER
 ```
 
-Initial `type` vocabulary:
+`type` vocabulary:
 
 ```text
 code
@@ -196,10 +197,16 @@ bytes
 words
 addresses
 addresses-split
+rts-addresses
+rts-addresses-split
+jumps
 petscii
 screen
 bitmap
 sprite
+workspace
+unused
+dual-use
 ```
 
 Meanings:
@@ -207,7 +214,14 @@ Meanings:
 - `words`: little-endian 16-bit values;
 - `addresses`: contiguous little-endian address table;
 - `addresses-split`: low-byte table followed/corresponding to high-byte table;
+- `rts-addresses`, `rts-addresses-split`: the same, with each value the target minus 1 (PHA/PHA/RTS dispatch);
+- `jumps`: a table of `JMP abs` instructions, each 3-byte entry an entry point; it is code;
+- `workspace`: RAM that the program writes at run time; its bytes in the image do not matter;
+- `unused`: bytes that nothing executes or reads;
+- `dual-use`: code at one time and data or a vector at another; it is neither code nor data, so no analyzer finding conflicts with it;
 - absence of a current region means unknown/unclassified.
+
+`element` is optional on every type except `code` and `jumps`; the length of the region is a multiple of it. A split keeps it on a piece that still holds whole elements.
 
 Current regions never overlap.
 
@@ -406,6 +420,23 @@ The current symbol is `update_player`, while `FUN_2100` remains reviewable in hi
 
 The application determines the origin from the caller/context; the LLM does not spoof analyzer origins.
 
+### Evidence
+
+A revision can name what it rests on (D42): a coverage run, a test, another project file, or a note.
+
+```text
+revision   INTEGER NOT NULL      the revision of the change
+kind       TEXT NOT NULL         coverage | test | file | note
+ref        TEXT NOT NULL         a project path, or the text of a note
+sha256     TEXT                  the SHA-256 of the file when the change was written
+```
+
+A write that changes nothing makes no revision and keeps no evidence.
+
+### Batches
+
+`apply` writes many semantic changes as one revision in one transaction: all of them, or none when one is refused (D42). Each write is checked before the database opens.
+
 ## 8. Query model
 
 The normal API presents current knowledge unless history is explicitly requested.
@@ -425,7 +456,7 @@ This should be one of the main operations used by skills/LLMs.
 
 ### Search/list
 
-The API also supports current-state symbol/region/comment/reference/suppression listing and textual search.
+The API also supports current-state symbol/region/comment/reference/suppression listing and textual search. Lists and search can keep only some origins: `semantic` (user and LLM), `analyzer` (DXA and Ghidra), or named origins. An export writes all current knowledge, or a filtered part, to a project file (D42).
 
 ### History
 

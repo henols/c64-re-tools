@@ -380,3 +380,23 @@ test("a revision shows the suppression it wrote", () => {
   );
   assert.deepEqual(changes.closed.map((entry) => entry.entity), ["symbol"]);
 });
+
+test("a JMP table is code, and dual-use bytes conflict with no finding (D42)", () => {
+  const db = fresh();
+  classifyRegion(db, { origin: "llm" }, { start: 0x0500, end: 0x0508, type: "jumps" });
+  classifyRegion(db, { origin: "llm" }, { start: 0x0408, end: 0x0409, type: "dual-use" });
+  const result = importFindings(
+    db,
+    findings("ghidra", 0x0400, 0x05ff, {
+      regions: [
+        { start: 0x0400, end: 0x04ff, type: "code" },
+        { start: 0x0500, end: 0x0508, type: "bytes" },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    result.conflicts.map((conflict) => (conflict.category === "region" ? [conflict.start, conflict.end, conflict.current.type] : [])),
+    [[0x0500, 0x0508, "jumps"]],
+    "data over a JMP table conflicts; code over dual-use bytes does not",
+  );
+});

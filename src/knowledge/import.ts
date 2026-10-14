@@ -27,7 +27,7 @@ import {
   type RegionRow,
   type SymbolRow,
 } from "./read.ts";
-import { REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Origin, type ReferenceKind, type RegionType, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Origin, type ReferenceKind, type RegionType, type SymbolKind } from "./schema.ts";
 import { Change, checkAddress, hex, subtract, SYMBOL_NAME, type AddressRange } from "./write.ts";
 
 export type { AddressRange };
@@ -91,7 +91,7 @@ export interface ImportResult {
   conflicts: ImportConflict[];
 }
 
-const isCode = (value: SymbolKind | RegionType) => value === "label" || value === "routine" || value === "code";
+const isCode = (value: SymbolKind | RegionType) => value === "label" || value === "routine" || (CODE_REGION_TYPES as readonly string[]).includes(value);
 
 const counts = (): ImportCounts => ({ added: 0, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
 
@@ -227,7 +227,8 @@ function importSymbols(db: DatabaseSync, change: Change, findings: NormalizedFin
 function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
   const conflictWith = (row: RegionRow, region: { start: number; end: number; type: RegionType }) => {
-    if (isCode(row.type) === isCode(region.type)) return;
+    // dual-use bytes are code at one time and data at another: neither finding contradicts them (D42).
+    if (isCode(row.type) === isCode(region.type) || row.type === "dual-use") return;
     result.conflicts.push({
       category: "region",
       start: Math.max(row.start, region.start),

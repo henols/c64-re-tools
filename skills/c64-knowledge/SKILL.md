@@ -35,9 +35,13 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 | Everything known at one address | `at '$2100'` |
 | Find names and comment text | `search player` |
 | Lists in a range | `symbols`, `regions`, `comments`, `references` with `--start` and `--end` |
+| Only some origins | add `--origin semantic`, `--origin analyzer`, or `--origin user,llm` |
+| All knowledge in one file | `export --out exports/knowledge.json` |
 | Name the symbol at an address | `rename '$2100' update_player --kind routine` |
 | Remove a symbol | `remove-symbol '$2100'` |
 | Classify memory | `classify '$3000' '$303f' sprite` |
+| Classify a table of records | `classify '$3000' '$303b' bytes --element 6` |
+| Many writes as one revision | `apply batch.json`, or `apply -` with the JSON on standard input |
 | Make memory unknown, and keep the analyzers out of it | `unclassify '$3000' '$303f'` |
 | Set or remove a comment | `comment '$2100' line Reads joystick 2.` / `uncomment '$2100' line` |
 | Add or remove a reference | `reference '$2000' '$2100' call` / `unreference ...` |
@@ -45,7 +49,22 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 | History | `history '$2100'`, `history --name update_player`, `revisions`, `revision 12` |
 | Go back to an earlier state | `revert 12` |
 
-Symbol kinds are `label`, `routine`, `variable`, `data` and `vector`. Region types are `code`, `bytes`, `words`, `addresses`, `addresses-split`, `petscii`, `screen`, `bitmap` and `sprite`. Reference kinds are `call`, `jump`, `read`, `write` and `reference`.
+Symbol kinds are `label`, `routine`, `variable`, `data` and `vector`. Reference kinds are `call`, `jump`, `read`, `write` and `reference`.
+
+Region types:
+
+| Type | Meaning |
+|---|---|
+| `code` | Instructions. |
+| `bytes`, `words`, `petscii`, `screen`, `bitmap`, `sprite` | Data of that form. |
+| `addresses`, `addresses-split` | A table of addresses: one table of 16-bit values, or a low-byte table and then a high-byte table. |
+| `rts-addresses`, `rts-addresses-split` | The same, with each value the target minus 1, for a PHA, PHA, RTS dispatch. |
+| `jumps` | A table of `JMP abs` instructions. Each 3-byte entry is an entry point. It is code. |
+| `workspace` | RAM that the program writes at run time. Its bytes in the image do not matter. |
+| `unused` | Bytes that nothing executes or reads. |
+| `dual-use` | Code at one time and data or a vector at another time. No analyzer finding conflicts with it. |
+
+`--element` gives the bytes of one element of a table. The length of the region must be a multiple of it. The result shows `element` and `count`.
 
 ## Workflow
 
@@ -58,10 +77,22 @@ Write:
 
 1. Read the current value with `at`. Note the `revision` in the result.
 2. Decide the change. Keep observed facts apart from your conclusions.
-3. Write it with `--reason` and `--expect-revision` set to the revision you read.
+3. Write it with `--reason` and `--expect-revision` set to the revision you read. Add `--evidence` for each thing that the change rests on: `coverage:<file>`, `test:<file>`, `file:<file>` or `note:<text>`. The script keeps the SHA-256 of each file.
 4. Read the result. A `revision` of `null` means that nothing changed.
 
 Each write is one revision. A classification inside a region splits that region, so regions never overlap.
+
+For more than a few writes, put them in one JSON file and use `apply`. The file is a list of writes. Each write has `op` and the arguments of the command with the same name, for example:
+
+```json
+[
+  { "op": "rename", "address": "$2100", "name": "update_player", "kind": "routine" },
+  { "op": "classify", "start": "$3000", "end": "$303b", "type": "bytes", "element": 6 },
+  { "op": "comment", "address": "$2100", "placement": "line", "text": "Reads joystick 2." }
+]
+```
+
+The ops are `rename`, `remove-symbol`, `classify`, `unclassify`, `comment`, `uncomment`, `reference` and `unreference`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
 
 ## Removals
 

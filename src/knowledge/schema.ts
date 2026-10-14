@@ -9,8 +9,32 @@ export const ORIGINS = ["user", "llm", "dxa", "ghidra"] as const;
 export type Origin = (typeof ORIGINS)[number];
 export const SYMBOL_KINDS = ["label", "routine", "variable", "data", "vector"] as const;
 export type SymbolKind = (typeof SYMBOL_KINDS)[number];
-export const REGION_TYPES = ["code", "bytes", "words", "addresses", "addresses-split", "petscii", "screen", "bitmap", "sprite"] as const;
+export const REGION_TYPES = [
+  "code",
+  "bytes",
+  "words",
+  "addresses",
+  "addresses-split",
+  "rts-addresses",
+  "rts-addresses-split",
+  "jumps",
+  "petscii",
+  "screen",
+  "bitmap",
+  "sprite",
+  "workspace",
+  "unused",
+  "dual-use",
+] as const;
 export type RegionType = (typeof REGION_TYPES)[number];
+/** Region types that are code: a JMP table is code too. dual-use is neither code nor data (D42). */
+export const CODE_REGION_TYPES: readonly RegionType[] = ["code", "jumps"];
+/** Region types that take no element size: their elements are instructions. */
+export const NO_ELEMENT_TYPES: readonly RegionType[] = ["code", "jumps"];
+export const MAX_ELEMENT = 256;
+/** What a revision can name as its evidence (D42): a coverage run, a test, any project file, or a note. */
+export const EVIDENCE_KINDS = ["coverage", "test", "file", "note"] as const;
+export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 export const COMMENT_PLACEMENTS = ["line", "side"] as const;
 export type CommentPlacement = (typeof COMMENT_PLACEMENTS)[number];
 export { REFERENCE_KINDS, type ReferenceKind };
@@ -21,7 +45,7 @@ export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 
 /** The schema version this build reads and writes. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * Creates the schema in an empty database. Knowledge rows are temporal: a
@@ -60,11 +84,20 @@ function createSchema(db: DatabaseSync): void {
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
         type                TEXT NOT NULL CHECK (type IN (${list(REGION_TYPES)})),
+        element             INTEGER CHECK (element BETWEEN 1 AND ${MAX_ELEMENT}),
         origin              TEXT NOT NULL CHECK (origin IN (${list(ORIGINS)})),
         valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
         valid_to_revision   INTEGER REFERENCES revisions (id)
       );
       CREATE INDEX regions_start ON regions (start_address);
+      CREATE TABLE evidence (
+        id       INTEGER PRIMARY KEY,
+        revision INTEGER NOT NULL REFERENCES revisions (id),
+        kind     TEXT NOT NULL CHECK (kind IN (${list(EVIDENCE_KINDS)})),
+        ref      TEXT NOT NULL CHECK (length(ref) > 0),
+        sha256   TEXT CHECK (sha256 IS NULL OR length(sha256) = 64)
+      );
+      CREATE INDEX evidence_revision ON evidence (revision);
       CREATE TABLE comments (
         id                  INTEGER PRIMARY KEY,
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
