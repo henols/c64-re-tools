@@ -322,17 +322,15 @@ test("the server lists exactly the public tools with object input and output sch
   for (const tool of tools) {
     assert.equal(tool.inputSchema.type, "object");
     assert.equal(tool.outputSchema?.type, "object");
+    // c64_memory_read, c64_disassemble and c64_cpu_history can write a project file (out, D39).
     const readOnly = [
       "c64_status",
-      "c64_memory_read",
       "c64_memory_search",
       "c64_memory_compare",
-      "c64_disassemble",
       "c64_vicii",
       "c64_sprite",
       "c64_cia",
       "c64_sid",
-      "c64_cpu_history",
       "c64_backtrace",
       "c64_profile",
       "c64_observe",
@@ -867,5 +865,42 @@ test("with C64RT_TRACE every tool call leaves one trace line with its name, argu
   } finally {
     startTrace("mcp", { env: {} });
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("out writes memory, a listing, the history and a screen to project files (D39)", async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-out-"));
+  const home = process.cwd();
+  process.chdir(project);
+  try {
+    const session = new FakeSession();
+    const client = await connect(async () => session);
+
+    const dump = (await call(client, "c64_memory_read", { address: "$1000", size: 5000, out: "dumps/mem.bin" })).structuredContent as Record<string, unknown>;
+    assert.deepEqual({ ...dump, sha256: undefined }, { address: "$1000", size: 5000, out: "dumps/mem.bin", bytes: 5000, sha256: undefined });
+    assert.deepEqual(session.reads.map((read) => [read.address, read.size]), [[0x1000, 4096], [0x2000, 904]]);
+    assert.deepEqual(readFileSync(join(project, "dumps", "mem.bin")), Buffer.alloc(5000, 0xa9));
+    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 5000 })).code, "invalid-input");
+    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$f000", size: 8192, out: "x.bin" })).code, "invalid-input");
+
+    const listing = (await call(client, "c64_disassemble", { address: "$1000", count: 3, out: "listing.txt" })).structuredContent as Record<string, unknown>;
+    assert.equal(listing.count, 3);
+    assert.equal(readFileSync(join(project, "listing.txt"), "utf8"), "$1000  a9 00     LDA #$00\n$1002  a9 00     LDA #$00\n$1004  a9 00     LDA #$00\n");
+    assert.equal(errorOf(await call(client, "c64_disassemble", { address: "$1000", count: 300 })).code, "invalid-input");
+
+    const history = (await call(client, "c64_cpu_history", { out: "history.txt" })).structuredContent as Record<string, unknown>;
+    assert.equal(history.count, 1);
+    assert.equal(readFileSync(join(project, "history.txt"), "utf8"), "$2100  a9 00     LDA #$00         a=00 x=03 y=00 sp=f9  line 100 cycle 20\n");
+
+    const shot = await call(client, "c64_screen", { action: "capture", out: "screens/title.png" });
+    assert.equal((shot.structuredContent as Record<string, unknown>).out, "screens/title.png");
+    assert.ok(!(shot.content as Array<{ type: string }>).some((part) => part.type === "image"), "no image in the context");
+    assert.equal(readFileSync(join(project, "screens", "title.png"), "utf8"), "png-bytes");
+    await call(client, "c64_screen", { action: "compare", baseline: "b", out: "screens/diff.png" });
+    assert.equal(readFileSync(join(project, "screens", "diff.png"), "utf8"), "diff");
+    await client.close();
+  } finally {
+    process.chdir(home);
+    rmSync(project, { recursive: true, force: true });
   }
 });

@@ -48,6 +48,8 @@ Use only the MCP tools. Each MCP session has its own C64. Nothing else can chang
 
 Each memory and register tool has a `space`. Use `c64` for the computer. Use `drive8` for the CPU of the 1541 disk drive. The memory `view` is `cpu` or `ram`. With `cpu`, you see what the CPU sees now, with ROM and I/O where the memory configuration puts them. With `ram`, you see the RAM under them.
 
+For a large result, give `out` with a path in the project. `c64_memory_read`, `c64_disassemble`, `c64_cpu_history` and `c64_screen` then write the result to that file. The answer gives only the file, the number of bytes and a SHA-256. Use it for a memory dump of more than a few hundred bytes, a long listing, or a screen that the user wants to keep.
+
 ## Workflow
 
 1. Read the project knowledge for the addresses in the question. Use the c64-knowledge skill.

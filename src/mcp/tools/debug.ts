@@ -1,6 +1,8 @@
 // Debug tools: c64_breakpoint, c64_watchpoint, c64_cpu_history, c64_backtrace,
 // c64_profile, c64_memmap and c64_timing.
 
+import { OutInput, writeOut, WrittenOutput } from "../output.ts";
+import { spaced } from "./memory.ts";
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
@@ -126,8 +128,10 @@ export const c64CpuHistory = defineTool({
     "Get the last instructions that the CPU executed, oldest first. " +
     `limit is the number of instructions (1 to ${MAX_HISTORY}, default 50). ` +
     "Each entry gives the address, the bytes, the instruction and the registers a, x, y and sp. " +
-    "In space c64, it also gives the raster line and cycle when the instruction started. This does not change the run state of the machine.",
-  inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput }).strict(),
+    "In space c64, it also gives the raster line and cycle when the instruction started. " +
+    "With out, it writes the entries as text lines to that project file, and the result gives the file in place of the entries. " +
+    "This does not change the run state of the machine.",
+  inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput, out: OutInput.optional() }).strict(),
   outputSchema: z.object({
     entries: z.array(
       z.object({
@@ -141,12 +145,21 @@ export const c64CpuHistory = defineTool({
         rasterLine: z.number().int().min(0).optional(),
         rasterCycle: z.number().int().min(0).optional(),
       }),
-    ),
+    ).optional(),
+    count: z.number().int().min(0).optional(),
+    ...WrittenOutput,
   }),
-  readOnly: true,
+  readOnly: false,
   async run(input, session) {
-    const { entries } = await session.cpuHistory(input);
-    return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+    const { out, ...request } = input;
+    const { entries } = await session.cpuHistory(request);
+    if (out === undefined) return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
+    const byte = (value: number) => value.toString(16).padStart(2, "0");
+    const lines = entries.map((entry) => {
+      const raster = entry.rasterLine === undefined ? "" : `  line ${entry.rasterLine} cycle ${entry.rasterCycle ?? 0}`;
+      return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${byte(entry.a)} x=${byte(entry.x)} y=${byte(entry.y)} sp=${byte(entry.sp)}${raster}`;
+    });
+    return { count: entries.length, ...writeOut(out, `${lines.join("\n")}\n`) };
   },
 });
 

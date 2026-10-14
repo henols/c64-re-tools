@@ -1,10 +1,10 @@
 // Reads project files on the client side for transfer to the Host Runtime.
 // The host never sees a client path: only bytes and the file's type.
 
-import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { extname, join, relative, sep } from "node:path";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { dirname, extname, join, relative, sep } from "node:path";
 
-import { isInside, projectRoot, resolveProjectFile } from "../project.ts";
+import { isInside, projectRoot, resolveProjectFile, resolveProjectPath } from "../project.ts";
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { MAX_TREE_FILES, type SourceTree } from "../protocol/tools.ts";
@@ -40,6 +40,32 @@ export function readProjectFile(path: string, options: { root?: string } = {}): 
     throw new WireFailure("limit-exceeded", `${path} has ${stat.size} bytes. The limit is ${MAX_ATTACHMENT_BYTES} bytes.`);
   }
   return { bytes: readFileSync(real), type: extname(path).slice(1).toLowerCase() };
+}
+
+/**
+ * Writes bytes to a project file on the client side, making its directories
+ * and overwriting it. Throws WireFailure(invalid-input) for a path outside the
+ * project, also one that leaves it through a symbolic link.
+ */
+export function writeProjectFile(path: string, bytes: Uint8Array, options: { root?: string; what?: string } = {}): void {
+  const root = options.root ?? projectRoot();
+  const refuse = () => new WireFailure("invalid-input", `${options.what ?? path}: give a path relative to the project directory that stays inside it, not ${path}.`);
+  let file: string;
+  try {
+    file = resolveProjectPath(path, root);
+  } catch {
+    throw refuse();
+  }
+  mkdirSync(dirname(file), { recursive: true });
+  if (!isInside(realpathSync(root), realpathSync(dirname(file)))) throw refuse();
+  let link = false;
+  try {
+    link = lstatSync(file).isSymbolicLink();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (link) throw refuse();
+  writeFileSync(file, bytes);
 }
 
 /** Directories never staged: version control and the toolkit's own project state. */

@@ -1,6 +1,7 @@
 // Video and chip tools: c64_vicii, c64_sprite, c64_cia, c64_sid, c64_screen
 // and c64_observe.
 
+import { OutInput, writeOut, WrittenOutput } from "../output.ts";
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
@@ -129,6 +130,7 @@ export const c64Screen = defineTool({
   title: "Capture and compare the C64 screen",
   description:
     "Action capture returns the last frame the C64 drew, with its borders, as a PNG image, plus its width and height in pixels. " +
+    "With out, capture writes the PNG to that project file, and compare writes its difference image there. The result then has no image. " +
     "With baseline, the session also keeps that frame under the name. " +
     "Action compare compares the current frame with a baseline, pixel by pixel. mask lists rectangles to ignore. " +
     "match is true when the part of compared pixels that differ is at most maxMismatchRatio (default 0). bounds holds every different pixel. " +
@@ -143,6 +145,7 @@ export const c64Screen = defineTool({
       maxMismatchRatio: z.number().min(0).max(1).optional().describe("compare only: 0 to 1, default 0"),
       mask: z.array(Rectangle).max(MAX_MASK_RECTANGLES).optional().describe("compare only: rectangles to ignore, in frame pixels"),
       includeDiff: z.boolean().optional().describe("compare only: also return a difference image"),
+      out: OutInput.optional(),
     })
     .strict(),
   outputSchema: z.object({
@@ -155,24 +158,27 @@ export const c64Screen = defineTool({
     bounds: Rectangle.optional(),
     baselines: z.array(z.string()).optional(),
     discarded: z.boolean().optional(),
+    ...WrittenOutput,
   }),
   readOnly: false,
   async run(input, session) {
     const { action, ...fields } = input;
     if (action === "capture") {
-      requireFields(action, fields, ["baseline"]);
+      requireFields(action, fields, ["baseline", "out"]);
       const shot = await session.screenCapture(fields.baseline);
       const result = { width: shot.width, height: shot.height, ...(shot.baseline === undefined ? {} : { baseline: shot.baseline }) };
+      if (fields.out !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(shot.png, "base64")) };
       return new ToolOutput(result, [{ type: "image", data: shot.png, mimeType: "image/png" }]);
     }
     if (action === "compare") {
-      requireFields(action, fields, ["baseline", "maxMismatchRatio", "mask", "includeDiff"], ["baseline"]);
+      requireFields(action, fields, ["baseline", "maxMismatchRatio", "mask", "includeDiff", "out"], ["baseline"]);
       const { diffPng, ...result } = await session.screenCompare({
         baseline: fields.baseline!,
         maxMismatchRatio: fields.maxMismatchRatio ?? 0,
         mask: fields.mask ?? [],
-        includeDiff: fields.includeDiff ?? false,
+        includeDiff: (fields.includeDiff ?? false) || fields.out !== undefined,
       });
+      if (fields.out !== undefined && diffPng !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(diffPng, "base64")) };
       return diffPng === undefined ? result : new ToolOutput(result, [{ type: "image", data: diffPng, mimeType: "image/png" }]);
     }
     if (action === "list") {

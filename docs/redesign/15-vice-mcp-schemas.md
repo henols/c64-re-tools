@@ -705,6 +705,8 @@ Output:
 
 No encoding selector exists.
 
+With `out` (a project path, D39), `size` may be up to 65536. The MCP server reads in parts, writes the raw bytes to that file, and the output gives `out`, `bytes` and `sha256` in place of `data`.
+
 ## 15. c64_memory_write
 
 Input:
@@ -921,6 +923,8 @@ Output:
 
 Self-modified/unpacked live RAM is therefore inspectable without routing through static-analysis skills.
 
+With `out` (D39), `count` may be up to 32768. The listing goes to that file, one instruction per line (address, bytes, text), and the output gives `count`, `out`, `bytes` and `sha256` in place of `instructions`.
+
 ## 20. c64_cpu_history
 
 Input:
@@ -958,6 +962,8 @@ Output:
   ]
 }
 ~~~
+
+With `out` (D39), the entries go to that file as text lines, and the output gives `count`, `out`, `bytes` and `sha256` in place of `entries`.
 
 ## 21. c64_backtrace
 
@@ -1386,6 +1392,8 @@ Output:
   "discarded": true
 }
 ~~~
+
+With `out` (D39), capture writes the PNG to that project file and compare writes its difference image there. The output then has `out`, `bytes` and `sha256`, and no image content block.
 
 ## 30. c64_observe
 
