@@ -44,7 +44,7 @@ Before the first step of each side, the script does a hard reset. The CPU stops 
 | `{ "write": { "at": "seed", "bytes": [1, 2] } }` | Write bytes into memory: 1 to 4096 numbers from 0 to 255. |
 | `{ "registers": { "pc": "start", "a": 0 } }` | Set registers: `pc`, `a`, `x`, `y` or `sp`. A value is a number or a name. |
 | `{ "joystick": { "port": 2, "direction": "left", "fire": true } }` | Set a joystick. The joystick stays in this state until the next joystick step. |
-| `{ "type": "RUN\n" }` | Type text on the keyboard, at most 1024 keys. |
+| `{ "type": "RUN\n" }` | Type text on the keyboard, at most 1024 keys. The keys go into the keyboard queue of the KERNAL. A program that reads the keyboard hardware does not see them. A step cannot press one specific key of the keyboard matrix. |
 | `{ "runUntil": { "at": "main_loop" }, "timeoutFrames": 600 }` | Run until the CPU gets to an address. |
 | `{ "runUntil": { "memory": { "at": "game_state", "equals": 2 } }, "timeoutFrames": 600 }` | Run until a byte in memory has a value. |
 | `{ "runUntil": { "raster": 250 }, "timeoutFrames": 5 }` | Run until the raster beam gets to a line (0 to 311 for PAL, 0 to 262 for NTSC). |

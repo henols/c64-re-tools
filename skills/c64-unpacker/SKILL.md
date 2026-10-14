@@ -49,6 +49,8 @@ A steps file has the steps `write`, `registers`, `joystick`, `type`, `frames` an
 [{ "frames": 50 }, { "type": " " }]
 ```
 
+A `type` step puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard hardware does not see them. A step cannot press one specific key of the keyboard matrix. A wait for any key that reads all keyboard columns can end without a key.
+
 ## Workflow
 
 1. Run `inspect`. Read `basicStart` and `packing`:
