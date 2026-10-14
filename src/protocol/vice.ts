@@ -395,6 +395,8 @@ export interface RunUntilResult {
 export interface ViceOperations {
   status: { params: Record<string, never>; result: MachineStatus };
   memoryRead: { params: MemoryReadParams; result: MemoryReadResult };
+  /** The I/O registers at $d000-$dfff as the chips hold them, whatever the CPU banks in, without side effects (D43). */
+  ioRead: { params: { address: number; size: number }; result: MemoryReadResult };
   registersGet: { params: { space: Space }; result: Registers };
   memoryWrite: { params: MemoryWriteParams; result: { address: number; bytesWritten: number } };
   /** `pattern`: bytes, with null as a wildcard. */
@@ -488,6 +490,7 @@ export const VICE_OPERATIONS = [
   "screenDiscard",
   "snapshot",
   "snapshotFile",
+  "ioRead",
   "cpuHistory",
   "backtrace",
   "timing",
@@ -637,6 +640,12 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       if (!isOneOf(MEMORY_VIEWS, params.view)) invalid("view must be cpu or ram");
       const result: MemoryReadParams = { address: params.address, size: params.size, space: params.space, view: params.view };
       return result as ViceOperations[O]["params"];
+    }
+    case "ioRead": {
+      onlyFields(params, ["address", "size"]);
+      if (!isInteger(params.address, 0xd000, 0xdfff)) invalid("address must be in the I/O area $d000-$dfff");
+      if (!isInteger(params.size, 1, 0x1000) || params.address + params.size > 0xe000) invalid("the range must stay inside $d000-$dfff");
+      return { address: params.address, size: params.size } as ViceOperations[O]["params"];
     }
     case "registersGet": {
       onlyFields(params, ["space"]);
@@ -958,9 +967,10 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       if (!ok) throw new ProtocolError("status result is malformed");
       break;
     }
-    case "memoryRead": {
+    case "memoryRead":
+    case "ioRead": {
       if (!isInteger(value.address, 0, 0xffff) || !isHexData(value.data)) {
-        throw new ProtocolError("memoryRead result is malformed");
+        throw new ProtocolError(`${op} result is malformed`);
       }
       break;
     }

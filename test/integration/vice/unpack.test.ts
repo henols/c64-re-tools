@@ -48,23 +48,20 @@ async function unpack(...args: string[]): Promise<{ status: number | null; json:
 
 test("a capture at the unpacked entry gives the original program back", { skip: liveSkip, timeout: 180_000 }, async () => {
   const end = 0xc000 + ORIGINAL.prg.length - 3;
-  const { status, json } = await unpack("capture", "packed.prg", "--until", "$c000", "--out", "unpacked/game.prg", "--range", "$c000", `$${end.toString(16)}`);
+  const { status, json } = await unpack("capture", "packed.prg", "--until", "$c000", "--out", "unpacked/game", "--range", "$c000", `$${end.toString(16)}`);
   assert.equal(status, 0, JSON.stringify(json));
-  assert.deepEqual(json.loadRange, { start: "$c000", end: `$${end.toString(16)}` });
+  assert.deepEqual(json.segments, [{ start: "$c000", end: `$${end.toString(16)}` }]);
   assert.equal(json.pc, "$c000");
-  assert.deepEqual([...readFileSync(join(project, "unpacked", "game.prg"))], [...ORIGINAL.prg]);
-
-  const full = await unpack("capture", "packed.prg", "--until", "$c000", "--out", "unpacked/memory.bin");
-  assert.equal(full.json.flat64k, true);
-  assert.equal(readFileSync(join(project, "unpacked", "memory.bin")).length, 0x10000);
+  assert.deepEqual([...readFileSync(join(project, "unpacked", "game", `segment-c000-${end.toString(16)}.prg`))], [...ORIGINAL.prg]);
+  assert.equal(readFileSync(join(project, "unpacked", "game", "image.bin")).length, 0x10000);
 });
 
 test("an address that the program never gets to captures nothing", { skip: liveSkip, timeout: 180_000 }, async () => {
-  const { status, json } = await unpack("capture", "packed.prg", "--until", "$c0f0", "--out", "unpacked/never.prg", "--timeout-frames", "200");
+  const { status, json } = await unpack("capture", "packed.prg", "--until", "$c0f0", "--out", "unpacked/never", "--timeout-frames", "200");
   assert.equal(status, 1);
   assert.equal(json.captured, false);
   assert.match(json.reason as string, /did not get to \$c0f0 in 200 frames/);
-  assert.equal(existsSync(join(project, "unpacked", "never.prg")), false);
+  assert.equal(existsSync(join(project, "unpacked", "never")), false);
 });
 
 test("trace finds the code that the packed program wrote and runs; its range start is the entry for capture", { skip: liveSkip, timeout: 180_000 }, async () => {
@@ -76,9 +73,9 @@ test("trace finds the code that the packed program wrote and runs; its range sta
   assert.equal(traced.json.suggestedUntil, traced.json.pc);
 
   const end = 0xc000 + ORIGINAL.prg.length - 3;
-  const captured = await unpack("capture", "packed.prg", "--until", running.start, "--out", "unpacked/traced.prg", "--range", "$c000", `$${end.toString(16)}`);
+  const captured = await unpack("capture", "packed.prg", "--until", running.start, "--out", "unpacked/traced", "--range", "$c000", `$${end.toString(16)}`);
   assert.equal(captured.status, 0, JSON.stringify(captured.json));
-  assert.deepEqual([...readFileSync(join(project, "unpacked", "traced.prg"))], [...ORIGINAL.prg]);
+  assert.deepEqual([...readFileSync(join(project, "unpacked", "traced", `segment-c000-${end.toString(16)}.prg`))], [...ORIGINAL.prg]);
 });
 
 test("trace finds no written code in a program that runs as it loaded; a program without BASIC needs --entry", { skip: liveSkip, timeout: 180_000 }, async () => {
@@ -99,11 +96,11 @@ test("trace finds no written code in a program that runs as it loaded; a program
 test("a steps file presses the key that an intro waits for (D43)", { skip: liveSkip, timeout: 240_000 }, async () => {
   const end = 0xc000 + ORIGINAL.prg.length - 3;
   const range = ["--range", "$c000", `$${end.toString(16)}`];
-  const blocked = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/blocked.prg", "--timeout-frames", "300", ...range);
+  const blocked = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/blocked", "--timeout-frames", "300", ...range);
   assert.equal(blocked.json.captured, false, "without a key the intro waits");
-  const { status, json } = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/gated.prg", "--steps", "press-key.json", ...range);
+  const { status, json } = await unpack("capture", "gated.prg", "--until", "$c000", "--out", "unpacked/gated", "--steps", "press-key.json", ...range);
   assert.equal(status, 0, JSON.stringify(json));
-  assert.deepEqual([...readFileSync(join(project, "unpacked", "gated.prg"))], [...ORIGINAL.prg]);
+  assert.deepEqual([...readFileSync(join(project, "unpacked", "gated", `segment-c000-${end.toString(16)}.prg`))], [...ORIGINAL.prg]);
   // Whether the CPU is in the unpacked code at the end depends on the moment (an IRQ can be running); that it ran there does not.
   const traced = await unpack("trace", "gated.prg", "--steps", "press-key.json", "--frames", "100");
   assert.ok((traced.json.writtenThenExecuted as Array<{ start: string }>).some((range) => range.start === "$c000"), JSON.stringify(traced.json));
@@ -124,4 +121,22 @@ test("stages finds each stage of a staged release and where the next one starts 
   );
   assert.deepEqual(found[0]!.wrote, [{ start: "$c000", end: "$c07f" }], "stage 0 wrote stage 1");
   assert.deepEqual(found[1]!.wrote, [{ start: "$4000", end: "$407f" }], "stage 1 wrote the program");
+});
+
+test("a capture at the last stage writes the image, its segments and the entry state (D43)", { skip: liveSkip, timeout: 300_000 }, async () => {
+  const { status, json } = await unpack("capture", "staged.prg", "--until", "$4000", "--out", "unpacked/staged", "--steps", "press-key.json", "--timeout-frames", "400");
+  assert.equal(status, 0, JSON.stringify(json));
+  const image = JSON.parse(readFileSync(join(project, "unpacked", "staged", "image.json"), "utf8")) as Record<string, unknown>;
+  assert.equal(image.entry, "$4000");
+  // Stage 1's own code at $c000 is loader code: only the program that it wrote is a segment.
+  assert.deepEqual(image.segments, [{ start: "$4000", end: "$407f", writtenBy: 1, file: "segment-4000-407f.prg" }]);
+  assert.deepEqual((image.stages as Array<{ entry: string }>).map((stage) => stage.entry), ["$080d", "$c000", "$4000"]);
+  const segment = readFileSync(join(project, "unpacked", "staged", "segment-4000-407f.prg"));
+  assert.deepEqual([...segment.subarray(0, 8)], [0x00, 0x40, 0xee, 0x00, 0x41, 0x4c, 0x00, 0x40], "the program at $4000");
+  const state = JSON.parse(readFileSync(join(project, "unpacked", "staged", "entry_state.json"), "utf8")) as Record<string, any>;
+  assert.equal(state.registers.pc, "$4000");
+  assert.deepEqual(Object.keys(state.pages), ["$0000", "$0100", "$0200", "$0300"]);
+  assert.equal(state.io.vic.bytes.length, 0x2f * 2);
+  assert.equal(state.vectors.irq, "$ea31", "the KERNAL IRQ handler: this release does not change it");
+  assert.ok(Array.isArray(state.differsFromReset) && state.differsFromReset.length > 0, "a run leaves zero page and stack different from a fresh READY");
 });

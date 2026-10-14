@@ -308,6 +308,11 @@ export class ViceSession implements ViceSessionHandle {
     switch (op) {
       case "status":
         return this.#status();
+      case "ioRead": {
+        const read = params as ViceOperations["ioRead"]["params"];
+        const bytes = await this.#observe(() => this.#machine.readIo(read.address, read.size));
+        return { address: read.address, data: Buffer.from(bytes).toString("hex") };
+      }
       case "memoryRead": {
         const read = params as ViceOperations["memoryRead"]["params"];
         const data = await this.#observe(() => this.#machine.readMemory(read));

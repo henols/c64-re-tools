@@ -99,6 +99,7 @@ const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Pro
   screenDiscard: { call: (c) => c.screenDiscard("title"), params: { baseline: "title" }, result: { discarded: true } },
   snapshot: { call: (c) => c.snapshot({ action: "restore", name: "boss" }), params: { action: "restore", name: "boss" }, result: { restored: true, state: "stopped" } },
   snapshotFile: { call: (c) => c.snapshotRestore(Buffer.from("VICE Snapshot File")), params: { action: "restore" }, result: { restored: true, state: "stopped" }, attachments: 1 },
+  ioRead: { call: (c) => c.ioRead(0xd011, 2), params: { address: 0xd011, size: 2 }, result: { address: 0xd011, data: "1b00" } },
   cpuHistory: {
     call: (c) => c.cpuHistory({ limit: 1, space: "c64" }),
     params: { limit: 1, space: "c64" },

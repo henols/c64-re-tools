@@ -75,6 +75,11 @@ export class ViceSessionClient {
     return this.#request("memoryRead", params);
   }
 
+  /** The I/O registers at $d000-$dfff as the chips hold them, without side effects. */
+  ioRead(address: number, size: number): Promise<MemoryReadResult> {
+    return this.#request("ioRead", { address, size });
+  }
+
   registersGet(space: Space): Promise<Registers> {
     return this.#request("registersGet", { space });
   }

@@ -14,14 +14,14 @@ This skill does not change project knowledge.
 ## Inputs
 
 - The program: a PRG file, relative to the project directory.
-- For a capture: the address where the unpacked program starts, and where to write the result.
+- For a capture: the address where the unpacked program starts, and the directory for the result.
 
 ## Tools / execution path
 
 ```
 node <skill>/scripts/unpack.ts inspect original/game.prg
 node <skill>/scripts/unpack.ts trace original/game.prg
-node <skill>/scripts/unpack.ts capture original/game.prg --until '$c000' --out unpacked/game.prg --range '$c000' '$cfff'
+node <skill>/scripts/unpack.ts capture original/game.prg --until '$c000' --out unpacked
 node <skill>/scripts/unpack.ts stages original/game.prg --steps input.json
 ```
 
@@ -57,11 +57,17 @@ A steps file has the steps `write`, `registers`, `joystick`, `type`, `frames` an
    - `unclear`: the program executed a small quantity of code that it wrote. This can be code that changes itself.
    - `unlikely`: the program executed no code that it wrote. If the program waits for a key or a joystick, it can move code after that input. Then use the c64-emulator skill.
 3. Find the address where the unpacked program starts:
-   - Use `runningRange.start` from `trace`, or `suggestedUntil`. The CPU gets to `suggestedUntil` after the unpacking.
+   - Run `stages`. The `entry` of the last stage is usually the start of the program.
+   - Or use `runningRange.start` from `trace`, or `suggestedUntil`. The CPU gets to `suggestedUntil` after the unpacking.
    - Or use the c64-emulator skill: set a breakpoint after the unpack loop, or look at the last JMP of the unpacker.
-4. Run `capture` with that address. Use `--range` for the area that holds the unpacked program, if you know it.
-5. Make sure that the result is the application: the code at the start address must not be the unpacker again.
-6. Give the result to the c64-static-analysis skill. For a flat 64 KiB file, use its `--flat64k` option.
+4. Run `capture` with that address and a directory in `--out`. Give the same `--steps` as before. The directory gets:
+   - `image.bin`: all 64 KiB of RAM at the entry.
+   - `image.json`: the entry, the segments, the vectors and the stages. A segment is a block that a stage wrote. Blocks with the code of an earlier stage are not segments. `writtenBy` tells which stage wrote the segment.
+   - One PRG for each segment.
+   - `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, and the vectors. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
+5. Make sure that the result is the application: the code at the entry must not be the unpacker again. A segment can be data that a loader left, for example intro graphics. Keep it until other evidence shows that the program does not use it.
+6. Give `image.bin` to the c64-static-analysis skill with its `--flat64k` option, or give it the segment PRGs.
+7. Use `--range` only when you know the area of the program. Then the capture writes that one segment.
 
 ## Knowledge
 
@@ -72,7 +78,7 @@ Do not record the unpacker in the project knowledge, unless the user asks to exa
 
 ## Result
 
-The packing evidence, or the unpacked program in the project with the address where it starts.
+The packing evidence, the stages, or the unpacked program with its image, segments and entry state in a directory of the project.
 
 The exit status is 0 for a result. The exit status is 1 for `traced: false`, for `captured: false` and for an error. The exit status is 2 for a wrong argument.
 
