@@ -17,7 +17,15 @@ The agent runs in the container, VICE and the Host Runtime on the host. Start th
 "runArgs": ["--add-host=host.docker.internal:host-gateway"]
 ```
 
-Then install in the container as usual. `status` must show the Host Runtime as reachable.
+Then install in the container as usual, or add the Feature from the README with the prerelease:
+
+```json
+"features": {
+  "https://github.com/henols/c64-re-tools/releases/download/v<version>/devcontainer-feature-c64-re-tools.tgz": { "channel": "next" }
+}
+```
+
+`status` must show the Host Runtime as reachable.
 
 ## Trace
 

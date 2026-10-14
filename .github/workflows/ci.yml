@@ -136,8 +136,12 @@ jobs:
             npm publish --provenance --access public --tag "${{ needs.installed.outputs.channel }}"
           fi
 
+  feature:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/devcontainer.yml
+
   github-release:
-    needs: [installed, publish]
+    needs: [installed, publish, feature]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -154,3 +158,19 @@ jobs:
             prerelease=$([ "${{ needs.installed.outputs.channel }}" = next ] && echo --prerelease || true)
             gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME" $prerelease
           fi
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # The dev container Feature (D38), referenced by the https URL of this asset.
+      # The spec wants the name devcontainer-feature-<id>.tgz.
+      - name: Attach the dev container Feature
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          node distribution/version.ts tag "$GITHUB_REF_NAME"
+          tar -czf "$RUNNER_TEMP/devcontainer-feature-c64-re-tools.tgz" -C devcontainer/src/c64-re-tools .
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/devcontainer-feature-c64-re-tools.tgz" --clobber

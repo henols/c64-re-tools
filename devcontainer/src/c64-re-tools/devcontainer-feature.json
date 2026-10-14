@@ -1,0 +1,31 @@
+{
+  "id": "c64-re-tools",
+  "version": "0.0.0-development",
+  "name": "c64-re-tools",
+  "description": "ACME, dxa, Ghidra and Java 21 for the c64-re-tools skills, and the toolkit installed into the project. The Host Runtime with VICE runs on the graphical host.",
+  "documentationURL": "https://github.com/henols/c64-re-tools#dev-container",
+  "licenseURL": "https://github.com/henols/c64-re-tools/blob/main/LICENSE",
+  "options": {
+    "target": {
+      "type": "string",
+      "default": "claude",
+      "proposals": ["claude", "codex", "pi", "opencode", "gemini", "copilot", "cursor", "windsurf"],
+      "description": "The harnesses to install the toolkit for, one name or a comma list, for example claude,codex."
+    },
+    "channel": {
+      "type": "string",
+      "default": "latest",
+      "enum": ["latest", "next"],
+      "description": "The npm channel of the toolkit: latest for the release, next for the prerelease."
+    }
+  },
+  "dependsOn": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "24" },
+    "ghcr.io/devcontainers/features/java:1": { "version": "21" }
+  },
+  "containerEnv": {
+    "C64RT_GHIDRA": "/opt/ghidra_12.1.3_PUBLIC"
+  },
+  "postCreateCommand": "/usr/local/share/c64-re-tools/project.sh install",
+  "postStartCommand": "/usr/local/share/c64-re-tools/project.sh update"
+}

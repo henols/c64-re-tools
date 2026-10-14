@@ -16,8 +16,23 @@ import { channelOf } from "./package.ts";
 /** The files that repeat the package version, relative to the repository root. */
 export const MANIFESTS = [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"];
 
+/** The dev container Feature (D38): only its own, top-level version follows the package; its dependencies keep theirs. */
+export const FEATURE = "devcontainer/src/c64-re-tools/devcontainer-feature.json";
+
 const VERSION_FIELD = /("version"\s*:\s*")([^"]*)(")/g;
 const RELEASE_TAG = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$/;
+
+/** The Feature manifest with its own version set to `version`: the first "version" field, which must be the top-level one. */
+export function withFeatureVersion(text: string, version: string): string {
+  let first = true;
+  const stamped = text.replace(VERSION_FIELD, (match, start: string, _old: string, end: string) => {
+    if (!first) return match;
+    first = false;
+    return `${start}${version}${end}`;
+  });
+  if ((JSON.parse(stamped) as { version?: unknown }).version !== version) throw new Error(`${FEATURE}: the first "version" field is not the top-level one.`);
+  return stamped;
+}
 
 /** Every version that a manifest's text names, in order. */
 export function versionsIn(text: string): string[] {
@@ -47,14 +62,17 @@ export function packageVersion(root: string): string {
 /** The manifests whose versions differ from package.json, with what they name. */
 export function mismatches(root: string): Array<{ file: string; versions: string[] }> {
   const version = packageVersion(root);
-  return MANIFESTS.map((file) => ({ file, versions: versionsIn(readFileSync(join(root, file), "utf8")) })).filter(
-    ({ versions }) => versions.length === 0 || versions.some((named) => named !== version),
-  );
+  const feature = (JSON.parse(readFileSync(join(root, FEATURE), "utf8")) as { version?: string }).version;
+  return [
+    ...MANIFESTS.map((file) => ({ file, versions: versionsIn(readFileSync(join(root, file), "utf8")) })),
+    { file: FEATURE, versions: feature === undefined ? [] : [feature] },
+  ].filter(({ versions }) => versions.length === 0 || versions.some((named) => named !== version));
 }
 
 /** Writes `version` into package.json and every manifest. */
 export function set(root: string, version: string): void {
   for (const file of ["package.json", ...MANIFESTS]) writeFileSync(join(root, file), withVersion(readFileSync(join(root, file), "utf8"), version));
+  writeFileSync(join(root, FEATURE), withFeatureVersion(readFileSync(join(root, FEATURE), "utf8"), version));
 }
 
 function main([command, value]: string[]): number {

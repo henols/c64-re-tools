@@ -39,6 +39,19 @@ claude
 
 Until 2.0.0 is released, `@latest` is the old 1.1.0. Use the prerelease instead. For the prerelease, a dev container and debugging, see [docs/debug-install.md](docs/debug-install.md).
 
+### Dev container
+
+The agent runs in the container, VICE and the Host Runtime on the host. In `.devcontainer/devcontainer.json`:
+
+```json
+"features": {
+  "https://github.com/henols/c64-re-tools/releases/latest/download/devcontainer-feature-c64-re-tools.tgz": { "target": "claude" }
+},
+"runArgs": ["--add-host=host.docker.internal:host-gateway"]
+```
+
+The Feature installs ACME, dxa, Java 21 and Ghidra, puts the toolkit into the project when the container is created, and updates it at each start. `target` is a harness or a comma list. `channel` is `latest` (default) or `next`. Debian and Ubuntu images only. `runArgs` is for Docker on Linux. Start the Host Runtime on the host as above.
+
 ### Settings
 
 | Variable | Read by | Meaning |

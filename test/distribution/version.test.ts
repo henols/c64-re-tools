@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
-import { MANIFESTS, mismatches, packageVersion, releaseOf, set, versionsIn, withVersion } from "../../distribution/version.ts";
+import { FEATURE, MANIFESTS, mismatches, packageVersion, releaseOf, set, versionsIn, withFeatureVersion, withVersion } from "../../distribution/version.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-version-"));
@@ -34,9 +34,18 @@ test("set writes the version into package.json and every manifest, and nothing e
   mkdirSync(copy);
   cpSync(join(root, "package.json"), join(copy, "package.json"));
   cpSync(join(root, ".claude-plugin"), join(copy, ".claude-plugin"), { recursive: true });
+  mkdirSync(join(copy, FEATURE, ".."), { recursive: true });
+  cpSync(join(root, FEATURE), join(copy, FEATURE));
   const before = readFileSync(join(copy, "package.json"), "utf8");
   set(copy, "2.0.0-rc.2");
   assert.equal(packageVersion(copy), "2.0.0-rc.2");
   assert.deepEqual(mismatches(copy), []);
   assert.equal(readFileSync(join(copy, "package.json"), "utf8"), withVersion(before, "2.0.0-rc.2"));
+  const feature = JSON.parse(readFileSync(join(copy, FEATURE), "utf8")) as { version: string; dependsOn: Record<string, { version: string }> };
+  assert.equal(feature.version, "2.0.0-rc.2");
+  assert.deepEqual(Object.values(feature.dependsOn).map((dependency) => dependency.version), ["24", "21"], "the Node and Java versions stay");
+});
+
+test("the Feature's own version is its first version field", () => {
+  assert.throws(() => withFeatureVersion('{ "dependsOn": { "x": { "version": "24" } }, "version": "1.0.0" }', "2.0.0"), /not the top-level one/);
 });

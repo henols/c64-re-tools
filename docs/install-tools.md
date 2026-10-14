@@ -6,13 +6,15 @@ The skill scripts run ACME, dxa and Ghidra on the machine of the agent: in a dev
 npx -y @henols/c64-re-tools@latest status
 ```
 
-Ghidra 12.1.3 needs Java 21. Ghidra 12.2 and later need Java 25. These steps are the ones that live CI runs.
+Ghidra 12.1.3 needs Java 21. Ghidra 12.2 and later need Java 25. These steps are the ones that live CI runs. In a dev container, the Feature in the README does all of this.
 
-## Debian / Ubuntu
+## Debian 13 / Ubuntu 22.04 or later
+
+Debian 12 has no OpenJDK 21: install [Temurin 21](https://adoptium.net/installation/) instead of `openjdk-21-jdk-headless`.
 
 ```
 sudo apt-get install acme openjdk-21-jdk-headless unzip curl
-curl -fsSLO https://raw.githubusercontent.com/henols/c64-re-tools/main/docs/install-dxa.sh
+curl -fsSLO https://raw.githubusercontent.com/henols/c64-re-tools/main/devcontainer/src/c64-re-tools/install-dxa.sh
 bash install-dxa.sh
 curl -fsSLO https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.3_build/ghidra_12.1.3_PUBLIC_20260817.zip
 echo "93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54  ghidra_12.1.3_PUBLIC_20260817.zip" | sha256sum -c -
