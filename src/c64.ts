@@ -174,6 +174,34 @@ export function parseTokenized(program: Uint8Array): TokenizedProgram {
   }
 }
 
+/** BASIC V2 keywords for the tokens $80 to $cb, in token order. */
+const KEYWORDS = [
+  "END", "FOR", "NEXT", "DATA", "INPUT#", "INPUT", "DIM", "READ", "LET", "GOTO", "RUN", "IF", "RESTORE", "GOSUB", "RETURN", "REM",
+  "STOP", "ON", "WAIT", "LOAD", "SAVE", "VERIFY", "DEF", "POKE", "PRINT#", "PRINT", "CONT", "LIST", "CLR", "CMD", "SYS", "OPEN",
+  "CLOSE", "GET", "NEW", "TAB(", "TO", "FN", "SPC(", "THEN", "NOT", "STEP", "+", "-", "*", "/", "^", "AND",
+  "OR", ">", "=", "<", "SGN", "INT", "ABS", "USR", "FRE", "POS", "SQR", "RND", "LOG", "EXP", "COS", "SIN",
+  "TAN", "ATN", "PEEK", "LEN", "STR$", "VAL", "ASC", "CHR$", "LEFT$", "RIGHT$", "MID$", "GO",
+] as const;
+
+/**
+ * One BASIC line as text: keywords for tokens, text in quotes and after REM
+ * as it is, and {$xx} for bytes that are no character. For evidence, not a listing.
+ */
+export function basicLineText(line: TokenizedLine): string {
+  let text = `${line.number} `;
+  let literal = false;
+  for (const byte of line.tokens) {
+    if (byte === QUOTE) literal = !literal;
+    if (!literal && byte >= 0x80 && byte < 0x80 + KEYWORDS.length) {
+      text += KEYWORDS[byte - 0x80];
+      if (byte === TOKEN.rem) literal = true;
+    } else {
+      text += petsciiNameToText(Uint8Array.of(byte));
+    }
+  }
+  return text;
+}
+
 /**
  * Evaluates a SYS argument that holds only numbers, + - * / and brackets.
  * Returns undefined for anything that needs run-time values.

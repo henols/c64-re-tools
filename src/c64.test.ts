@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseC64Address, parseTokenized, constantExpression, COVERAGE, findHandoffs, formatC64Address, instructionLength, type TokenizedLine, petsciiNameToText, vicBankBase, executedRamCode, textToPetscii, textToPetsciiName } from "./c64.ts";
+import { basicLineText, constantExpression, COVERAGE, executedRamCode, findHandoffs, formatC64Address, instructionLength, parseC64Address, parseTokenized, petsciiNameToText, textToPetscii, textToPetsciiName, type TokenizedLine, vicBankBase } from "./c64.ts";
 
 test("C64 address primitives use canonical four-digit hexadecimal", () => {
   assert.equal(parseC64Address("$d020"), 0xd020);
@@ -179,4 +179,13 @@ test("executed code in RAM is each instruction start with its operand bytes, mer
   map[0xe000] = COVERAGE.romExecute;
   assert.deepEqual(executedRamCode(map, 0, memory), [{ start: 0xc000, end: 0xc007 }]);
   assert.deepEqual(executedRamCode(map.subarray(0xc002), 0xc002, memory), [{ start: 0xc002, end: 0xc007 }], "a map that starts later keeps its addresses");
+});
+
+test("a BASIC line reads as text: keywords for tokens, quotes and REM as they are", () => {
+  const line = (bytes: number[]) => basicLineText({ number: 10, tokens: Uint8Array.from(bytes) });
+  assert.equal(line([0x9e, 0x32, 0x30, 0x36, 0x31]), "10 SYS2061");
+  // PRINT "GOTO" with the GOTO bytes inside quotes stays text.
+  assert.equal(line([0x99, 0x22, 0x47, 0x4f, 0x54, 0x4f, 0x22]), '10 PRINT"GOTO"');
+  assert.equal(line([0x8f, 0x20, 0x89, 0x41]), "10 REM {$89}A", "after REM a token byte is no keyword");
+  assert.equal(line([0x97, 0x35, 0x33, 0x32, 0x38, 0x30, 0x2c, 0x30]), "10 POKE53280,0");
 });

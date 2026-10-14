@@ -90,3 +90,30 @@ test("inspect refuses a link to a file outside the project", { skip: process.pla
     rmSync(outside, { recursive: true, force: true });
   }
 });
+
+test("inspect reports the start code that decodes and moves bytes, and the BASIC text, as evidence (D43)", () => {
+  const result = inspect(xorPackedPrg);
+  assert.deepEqual(result.basicText, ["10 SYS2061"]);
+  assert.deepEqual(result.start, { at: "$080d", jumpsOutside: "$c000", writesOutside: "$c000" });
+  assert.deepEqual(result.decodeLoops, ["$0812"], "LDA payload,X / EOR #key / STA $c000,X / ... / BNE");
+});
+
+test("plain-looking bytes behind start code that moves them are unclear, not unlikely, and a banner shows as text", () => {
+  // 10 SYS<start> CRUNCHED BY SOMEONE: the banner is text after the SYS address, as crunchers write it.
+  const banner = [...Buffer.from(" CRUNCHED BY SOMEONE", "latin1")];
+  // The line with a 4-digit address is 4 + 1 + 4 + banner + 1 bytes long, the end marker 2: the code starts after them.
+  const start = 0x0801 + 4 + 1 + 4 + banner.length + 1 + 2;
+  const line = [0x9e, ...Buffer.from(String(start), "latin1"), ...banner];
+  const next = 0x0801 + 4 + line.length + 1;
+  const basic = [0x01, 0x08, next & 0xff, next >> 8, 0x0a, 0x00, ...line, 0x00, 0x00, 0x00];
+  assert.equal(0x0801 + basic.length - 2, start, "the code starts at the SYS address");
+  // At the SYS address: LDA $0900,X / STA $c000,X / INX / BNE / JMP $c000, then 4 KiB that looks like code.
+  const code = [0xbd, 0x00, 0x09, 0x9d, 0x00, 0xc0, 0xe8, 0xd0, 0xf7, 0x4c, 0x00, 0xc0];
+  const plain = Array.from({ length: 4096 }, (_, index) => [0xbd, 0x00, 0x20, 0x99, 0x00, 0x30, 0xe8, 0xd0, 0xf7][index % 9]!);
+  const result = inspect(Uint8Array.from([...basic, ...code, ...plain]));
+  assert.deepEqual(result.basicText, [`10 SYS${start} CRUNCHED BY SOMEONE`]);
+  assert.deepEqual(result.start, { at: `$${start.toString(16).padStart(4, "0")}`, jumpsOutside: "$c000", writesOutside: "$c000" });
+  assert.deepEqual(result.decodeLoops, [], "a copy without EOR is no decode loop");
+  assert.equal(result.packing, "unclear", "the entropy alone says unlikely");
+  assert.match(result.evidence, /decodes or moves bytes outside the program/);
+});

@@ -51,7 +51,13 @@ A steps file has the steps `write`, `registers`, `joystick`, `type`, `frames` an
 1. Run `inspect`. Read `basicStart` and `packing`:
    - `likely`: most of the bytes look compressed. Packed data has this property.
    - `unlikely`: the bytes look like code and data. A simple cruncher can also give this result.
-   - `unclear`: the file is short, or the blocks do not give clear evidence.
+   - `unclear`: the file is short, or the blocks do not give clear evidence. Or the code at the SYS address decodes or moves bytes outside the program.
+
+   Also read the evidence that the script finds in the file. The script never names a packer from it:
+   - `basicText`: the BASIC lines as text. A packer or a crack often puts its name there.
+   - `strings`: readable text near the start of the code.
+   - `start`: the code at the SYS address. `jumpsOutside` and `writesOutside` give an address outside the loaded program, where the code jumps or writes.
+   - `decodeLoops`: EOR instructions in loops that store with an index. This is usually decryption or decoding.
 2. Run `trace`. It gives the evidence from the run. Read `packing`:
    - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code. `runningRange` is the code that runs now. Its `start` is usually the entry point of the unpacked program.
    - `unclear`: the program executed a small quantity of code that it wrote. This can be code that changes itself.
