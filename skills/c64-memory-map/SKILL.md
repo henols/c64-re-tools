@@ -24,6 +24,7 @@ The script looks up local reference data. It does not use the host runtime.
 node <skill>/scripts/memmap.ts at '$d020' '$0314' '$ffd2'
 node <skill>/scripts/memmap.ts decode '$d018' '$15' --bank '$97'
 node <skill>/scripts/memmap.ts list vic
+node <skill>/scripts/memmap.ts export --out src/hw.asm
 ```
 
 | Command | Result |
@@ -31,6 +32,7 @@ node <skill>/scripts/memmap.ts list vic
 | `at <address> ...` | For each address: `kind` (`platform` or `application`), the area, the name and the meaning. |
 | `decode <register> <value>` | The meaning of the value. Use `--bank` with the value of `$DD00` to get the addresses for `$D018`. |
 | `list <vic\|sid\|cia1\|cia2\|kernal\|system>` | All entries of that group. |
+| `export --out <file>` | Writes all platform names to a project file as an ACME include: one `NAME = $xxxx` line for each name, with its meaning as a comment. |
 
 Write an address or a value as `$` and hex digits, as a decimal number, or as `%` and binary digits. Put a `$` value in single quotes in a shell.
 
@@ -45,6 +47,7 @@ The script prints one JSON object.
 3. For an I/O register, `mirrorOf` shows the register that a mirror address repeats. `visible` tells that an address in `$D000`-`$DFFF` is visible only when `$01` shows I/O at `$D000`. This area holds the chip registers, the color RAM and the cartridge I/O areas.
 4. For a byte in a multi-byte entry, for example the high byte of a vector, `entryStart` gives the first address of the entry.
 5. To understand a value in a register, run `decode`. For the memory configuration, decode the value of `$01`.
+6. For source that you write by hand, run `export` and include the file with `!source`. The c64-source skill uses the same names without the file.
 
 The decoders are for `$01`, `$D010`, `$D011`, `$D015` to `$D01F` (the sprite and interrupt bits), `$D016`, `$D018`, `$DC0D`, `$DD00` and `$DD0D`.
 
@@ -59,7 +62,7 @@ A conclusion about the application can be project knowledge. For example: "the p
 
 ## Result
 
-The platform meaning of each address, or the decoded meaning of a register value.
+The platform meaning of each address, or the decoded meaning of a register value. For `export`: the file, the count of names and the bytes.
 
 The exit status is 0 for a result. The exit status is 2 for a wrong argument.
 

@@ -1,14 +1,17 @@
 // The c64-memory-map script: the platform meaning of C64 addresses and of
-// values in platform registers. Local lookup only; nothing is stored.
+// values in platform registers. Local lookup only; nothing is stored. export
+// writes the platform names to a project file as an ACME include (D52).
 
 import { parseArgs } from "node:util";
 
+import { writeProjectFile } from "#src/host-client/transfer.ts";
+import { decode, IO, lookup, platformNames, ROM, SYSTEM, type Entry } from "#src/platform.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { decode, IO, lookup, ROM, SYSTEM, type Entry } from "./platform.ts";
 
 const USAGE = `memmap.ts at <address> [<address> ...]
 memmap.ts decode <register> <value> [--bank <$dd00 value>]
 memmap.ts list <vic|sid|cia1|cia2|kernal|system>
+memmap.ts export --out <file>     the platform names as an ACME include (NAME = $xxxx)
 
 Addresses and values are $ and hex digits, decimal, or % and binary digits.
 The result is one JSON object.`;
@@ -27,7 +30,7 @@ function number(text: string, max: number, what: string): number {
 const show = (entry: Entry) => ({ start: hex(entry.start), ...(entry.end !== entry.start ? { end: hex(entry.end) } : {}), name: entry.name, meaning: entry.meaning });
 
 function run(argv: string[]): unknown {
-  const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { bank: { type: "string" }, help: { type: "boolean" } } });
+  const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { bank: { type: "string" }, out: { type: "string" }, help: { type: "boolean" } } });
   if (values.help || positionals.length === 0) throw new UsageError("");
   const [command, ...rest] = positionals;
   switch (command) {
@@ -72,6 +75,14 @@ function run(argv: string[]): unknown {
       const list = lists[rest[0] ?? ""];
       if (list === undefined || rest.length !== 1) throw new UsageError(`list takes one of ${Object.keys(lists).join(", ")}`);
       return { entries: list.map(show) };
+    }
+    case "export": {
+      if (rest.length !== 0 || values.out === undefined) throw new UsageError("export takes --out <file> and nothing else");
+      const names = platformNames();
+      const lines = ["; C64 platform names from the c64-memory-map skill, for ACME.", ...names.map((item) => `${item.name} = ${hex(item.address)}`.padEnd(24) + `; ${item.meaning}`)];
+      const bytes = Buffer.from(`${lines.join("\n")}\n`, "utf8");
+      writeProjectFile(values.out, bytes, { what: "--out" });
+      return { out: values.out, names: names.length, bytes: bytes.length };
     }
     default:
       throw new UsageError(`unknown command ${command}`);

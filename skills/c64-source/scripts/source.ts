@@ -31,6 +31,8 @@ export interface SourceInput {
   referenceTargets: readonly number[];
   /** Joined coverage files (D40): an instruction that no run executed is marked (D49). */
   coverage?: Uint8Array;
+  /** Platform names (D52): the name of an address that knowledge does not name. */
+  platform?: ReadonlyMap<number, string>;
 }
 
 /** Files that the generator writes itself; a module cannot have these names. */
@@ -178,9 +180,12 @@ export function layout(input: SourceInput): Layout {
   const want = (address: number) => inImage(address) && wanted.add(address);
   const outside = new Set<number>();
   const symbols = new Map(input.symbols.map((symbol) => [symbol.address, symbol.name]));
+  // A platform name that knowledge gives to another address, or that reads as an instruction, is not used.
+  const knowledgeNames = new Set(input.symbols.map((symbol) => symbol.name));
+  const platform = new Map([...(input.platform ?? [])].filter(([, name]) => !knowledgeNames.has(name) && !MNEMONICS.has(name.toLowerCase())));
   const use = (address: number) => {
     if (inImage(address)) wanted.add(address);
-    else if (symbols.has(address)) outside.add(address);
+    else if (symbols.has(address) || platform.has(address)) outside.add(address);
   };
   for (const piece of pieces) {
     for (const item of piece.items) {
@@ -196,7 +201,7 @@ export function layout(input: SourceInput): Layout {
   if (input.entry !== undefined) want(input.entry);
 
   const names = new Map<number, string>();
-  const taken = new Set(input.symbols.map((symbol) => symbol.name));
+  const taken = new Set([...knowledgeNames, ...platform.values()]);
   let generatedLabels = 0;
   let namedLabels = 0;
   for (const address of [...wanted, ...outside].sort((a, b) => a - b)) {
@@ -204,6 +209,12 @@ export function layout(input: SourceInput): Layout {
     if (known !== undefined) {
       if (MNEMONICS.has(known.toLowerCase())) throw new WireFailure("invalid-input", `The symbol ${known} at ${hex4(address)} has the name of an instruction, which ACME cannot read as a label. Rename the symbol with c64-knowledge.`);
       names.set(address, known);
+      if (inImage(address)) namedLabels++;
+      continue;
+    }
+    const named = platform.get(address);
+    if (named !== undefined) {
+      names.set(address, named);
       if (inImage(address)) namedLabels++;
       continue;
     }

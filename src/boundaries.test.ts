@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/\.ts$/, "");
-      return ["c64", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
+      return ["c64", "platform", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -29,6 +29,8 @@ function areaOf(path: string): string | undefined {
 /** Areas each area may import besides itself. */
 const ALLOWED: Record<string, readonly string[]> = {
   c64: [],
+  // The platform memory map (D52): names and meanings of C64 addresses.
+  platform: ["c64"],
   // The one time format (ISO 8601 at +01:00).
   time: [],
   // The opt-in trace of a process, for people. Every program may write to it.
@@ -47,7 +49,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   cli: ["host-client", "native", "protocol", "script", "distribution", "trace"],
   distribution: [],
 };
-const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "script", "time"];
+const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "platform", "script", "time"];
 
 /**
  * Checks one import. `from` is the repository-relative importing file.

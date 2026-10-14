@@ -1,8 +1,9 @@
-// C64 platform reference data and decoders for the c64-memory-map script.
+// C64 platform reference data and decoders: the c64-memory-map script, and the
+// platform names that c64-source uses (D52).
 // Names follow "Mapping the Commodore 64". Only platform facts live here:
 // an address without one belongs to the application.
 
-import { d018Offsets, vicBankBase } from "#src/c64.ts";
+import { d018Offsets, vicBankBase } from "./c64.ts";
 
 export interface Entry {
   start: number;
@@ -338,6 +339,21 @@ export function lookup(address: number): Lookup {
     return { address, kind: "platform", area: area.area, name: entry.name, meaning: entry.meaning, ...(entry.start !== address ? { entryStart: entry.start } : {}) };
   }
   return { address, kind: area.kind, area: area.area, meaning: area.meaning };
+}
+
+/**
+ * The platform name of each named address (D52): system variables, ROM
+ * entries and I/O registers, not mirrors, in address order. Only names that
+ * an assembler can use as a symbol, and each name once, at its lowest address.
+ */
+export function platformNames(): Array<{ address: number; name: string; meaning: string }> {
+  const io = IO.flatMap((block) => block.registers);
+  const seen = new Set<string>();
+  return [...SYSTEM, ...ROM, ...io]
+    .map((entry) => ({ address: entry.start, name: entry.name, meaning: entry.meaning }))
+    .filter((entry) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.name))
+    .sort((a, b) => a.address - b.address)
+    .filter((entry) => !seen.has(entry.name) && seen.add(entry.name) !== undefined);
 }
 
 export type Decoded = Record<string, unknown>;

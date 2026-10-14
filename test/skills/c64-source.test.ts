@@ -210,3 +210,14 @@ test("with coverage, each run of instructions that no run executed is marked and
   assert.match(textOf(rendered, "segment_1000.asm"), /^ {8}nop\n; not executed\n {8}nop\n {8}nop\n {8}!byte \$00,\$00\n; not executed\n {8}rts\n$/m);
   assert.equal(render(layout(input(bytes, 0x1000, { instructions, regions })), new Set(), []).notExecuted, undefined);
 });
+
+test("an address without a knowledge name gets its platform name; a knowledge name wins, and a taken platform name is not used (D52)", () => {
+  // STA $D020, STA $D021, JSR $FFD2, RTS
+  const bytes = [0x8d, 0x20, 0xd0, 0x8d, 0x21, 0xd0, 0x20, 0xd2, 0xff, 0x60];
+  const instructions = new Map([[0x1000, 3], [0x1003, 3], [0x1006, 3], [0x1009, 1]]);
+  const platform = new Map([[0xd020, "EXTCOL"], [0xd021, "BGCOL0"], [0xffd2, "CHROUT"]]);
+  const laid = layout(input(bytes, 0x1000, { instructions, platform, symbols: [{ address: 0xd021, name: "background" }, { address: 0x2000, name: "CHROUT" }] }));
+  const rendered = render(laid, new Set(), []);
+  assert.match(textOf(rendered, "segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}jsr \$ffd2\n/);
+  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nEXTCOL = $d020\nbackground = $d021\n");
+});

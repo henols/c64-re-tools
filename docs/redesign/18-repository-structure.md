@@ -14,6 +14,7 @@ Do not create a workspace/monorepo package graph unless a future concrete requir
 c64-re-tools/
 ├── src/
 │   ├── c64.ts
+│   ├── platform.ts
 │   ├── project.ts
 │   ├── protocol.ts
 │   │
@@ -116,6 +117,10 @@ Keep small C64-wide primitives here:
 - byte/range helpers that are truly shared.
 
 Do not turn this into a generic domain layer.
+
+### src/platform.ts
+
+The C64 platform memory map: names and meanings of system variables, ROM entries and I/O registers, and the register decoders. c64-memory-map answers from it, and c64-source names addresses with it (D52). It imports only `src/c64.ts`.
 
 ### src/project.ts
 

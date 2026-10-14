@@ -50,8 +50,8 @@ node <skill>/scripts/generate.ts unpacked/image.json --out src --loader
 
 - `main.asm` sets the address of each segment and includes the files in address order.
 - Each module in the knowledge is one file. A module starts at its address and stops at the next module or at the end of its segment. Without modules, each segment is one file, `segment_xxxx.asm`.
-- `constants.asm` holds the names of addresses outside the image, for example a name for $d020.
-- A label is the name of the address in the knowledge. An address without a name gets `l_xxxx`.
+- `constants.asm` holds the names of addresses outside the image, for example `EXTCOL = $d020`.
+- A label or a constant gets the name of the address in the knowledge. Without a knowledge name, it gets the platform name of the c64-memory-map skill, for example `EXTCOL` or `CHROUT`. An address in the image without a name gets `l_xxxx`.
 - Code regions, and the instructions that Ghidra decodes outside of data regions, become instructions.
 - Data regions become data by their type: `!byte`, `!word`, `!pet`, `!scr`, `!fill`, tables of labels, and sprite bytes in binary.
 - `lda+2 $0012` is an absolute operand below $0100. `+1` is a zero-page operand with a label.

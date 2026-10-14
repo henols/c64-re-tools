@@ -2,10 +2,24 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
-import { test } from "node:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { after, test } from "node:test";
 
-import { decode, IO, lookup, ROM } from "../../skills/c64-memory-map/scripts/platform.ts";
+import { assemble } from "../../src/native/acme.ts";
+import { ACME, findTool } from "../../src/native/discover.ts";
+import { localToolContext } from "../../src/native/local.ts";
+import { decode, IO, lookup, platformNames, ROM } from "../../src/platform.ts";
+
+const project = mkdtempSync(join(tmpdir(), "c64-re-tools-memmap-"));
+after(() => rmSync(project, { recursive: true, force: true }));
+let acmeSkip: string | false = false;
+try {
+  findTool(ACME);
+} catch {
+  acmeSkip = "ACME is not installed: install acme or set C64RT_ACME to run this test";
+}
 
 test("platform addresses have names; application RAM says so", () => {
   assert.equal(lookup(0xd020).name, "EXTCOL");
@@ -90,4 +104,30 @@ test("every address in $d000-$dfff says that it is visible only while $01 maps I
   assert.equal(run.status, 0);
   const visible = (JSON.parse(run.stdout) as { addresses: Array<{ visible?: string }> }).addresses.map((address) => address.visible !== undefined);
   assert.deepEqual(visible, [true, true, true, true, false, false]);
+});
+
+test("the platform names are symbols, each name once (D52)", () => {
+  const names = platformNames();
+  assert.ok(names.every((item) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(item.name)));
+  assert.equal(new Set(names.map((item) => item.name)).size, names.length);
+  assert.ok(names.some((item) => item.name === "EXTCOL" && item.address === 0xd020));
+  assert.ok(names.some((item) => item.name === "CHROUT" && item.address === 0xffd2));
+});
+
+test("export writes the platform names as an ACME include that ACME reads (D52)", { skip: acmeSkip }, async () => {
+  const script = resolve(import.meta.dirname, "../../skills/c64-memory-map/scripts/memmap.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "export", "--out", "src/hw.asm"], { cwd: project, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.equal((JSON.parse(run.stdout) as { names: number }).names, platformNames().length);
+  const include = readFileSync(join(project, "src", "hw.asm"));
+  assert.match(include.toString(), /^EXTCOL = \$d020 +; Border color/m);
+  const main = Buffer.from('!source "hw.asm"\n* = $1000\n        sta EXTCOL\n        jsr CHROUT\n');
+  const { result, attachments } = await assemble(
+    { files: [{ path: "hw.asm", size: include.length }, { path: "main.asm", size: main.length }], entrySource: "main.asm", includeDirs: [], defines: {} },
+    [include, main],
+    localToolContext(),
+  );
+  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+  assert.deepEqual([...attachments![0]!.subarray(2)], [0x8d, 0x20, 0xd0, 0x20, 0xd2, 0xff]);
+  assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "export"], { cwd: project, encoding: "utf8" }).status, 2);
 });
