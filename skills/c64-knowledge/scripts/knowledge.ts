@@ -7,14 +7,17 @@ import type { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
+import { ImageError, readImage } from "#src/host-client/image.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
+import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import {
   at,
   currentRevision,
   listComments,
   listModules,
+  listOperands,
   listSpaces,
   listReferences,
   listRegions,
@@ -23,6 +26,7 @@ import {
   search,
   type CommentRow,
   type ModuleRow,
+  type OperandRow,
   type ReferenceRow,
   type RegionRow,
   type SuppressionRow,
@@ -32,12 +36,14 @@ import {
   COMMENT_PLACEMENTS,
   DEFAULT_SPACE,
   EVIDENCE_KINDS,
+  OPERAND_SELECTS,
   ORIGINS,
   REFERENCE_KINDS,
   REGION_TYPES,
   SPACE,
   SYMBOL_KINDS,
   type CommentPlacement,
+  type OperandSelect,
   type Origin,
   type ReferenceKind,
   type RegionType,
@@ -49,17 +55,21 @@ import {
   classifyRegion,
   removeComment,
   removeModule,
+  removeOperand,
   removeReference,
   removeSymbol,
   renameSymbol,
   revert,
   setComment,
   setModule,
+  setOperand,
   unclassifyRegion,
   type BatchOperation,
   type Evidence,
+  type OperandImage,
   type WriteContext,
 } from "#src/knowledge/write.ts";
+import { platformNames } from "#src/platform.ts";
 import { runScript, UsageError } from "#src/script.ts";
 
 const USAGE = `knowledge.ts <command> [arguments] [options]
@@ -73,6 +83,7 @@ Read (no database needed):
   references [--start A --end A --kind K --origin O]
   suppressions [--start A --end A]   places that removals keep free of analyzer facts
   modules [--start A --end A --origin O]   where the files of generated source start
+  operands [--start A --end A --origin O]  operand expressions of instructions
   spaces                              the address spaces that hold knowledge
   history <address> | history --name <name>
   revisions [--limit N --before N]
@@ -97,9 +108,18 @@ Write (one revision each; creates the database when needed):
   unreference <from> <to> <kind>
   module <start> <file.asm> [--title T]   a file of generated source starts here
   unmodule <start>
+  operand <address> --lo|--hi|--value <symbol> [--offset N] --image <file>
+  operand <address> --expr <text> --image <file>
+                           write the operand of the instruction at <address> as
+                           an expression: the low or high byte of symbol + N, the
+                           value symbol + N, or ACME expression text; refused when
+                           it does not give the operand in the image (image.json
+                           or PRG); give a negative offset as --offset=-1
+  unoperand <address>
   revert <revision>
   apply <file>             many writes from a JSON file ('-' reads standard input),
-                           all as one revision, or none when one is refused
+                           all as one revision, or none when one is refused;
+                           operand writes need --image <file>
 
 Write options:
   --reason <text>          why, kept with the revision
@@ -144,6 +164,17 @@ const region = (row: RegionRow) => ({
 });
 const comment = (row: CommentRow) => ({ ...spaceOf(row), address: formatC64Address(row.address), placement: row.placement, text: row.text, origin: row.origin, revision: row.revision });
 const module = (row: ModuleRow) => ({ ...spaceOf(row), start: formatC64Address(row.start), file: row.file, ...(row.title === undefined ? {} : { title: row.title }), origin: row.origin, revision: row.revision });
+const operand = (row: OperandRow) => ({
+  ...spaceOf(row),
+  address: formatC64Address(row.address),
+  select: row.select,
+  ...(row.symbol === undefined ? {} : { symbol: row.symbol }),
+  ...(row.offset === 0 ? {} : { offset: row.offset }),
+  ...(row.expression === undefined ? {} : { expression: row.expression }),
+  text: operandText(row),
+  origin: row.origin,
+  revision: row.revision,
+});
 const reference = (row: ReferenceRow) => ({ ...spaceOf(row), from: formatC64Address(row.from), to: formatC64Address(row.to), kind: row.kind, origin: row.origin, revision: row.revision });
 function suppression(row: SuppressionRow) {
   const place =
@@ -167,7 +198,9 @@ function historyEntry(entry: HistoryEntry) {
             ? reference(entry.row)
             : entry.entity === "module"
               ? module(entry.row)
-              : suppression(entry.row);
+              : entry.entity === "operand"
+                ? operand(entry.row)
+                : suppression(entry.row);
   const { revision: _revision, ...row } = shown;
   return { entity: entry.entity, ...row, fromRevision: entry.from, ...(entry.to === undefined ? {} : { toRevision: entry.to }) };
 }
@@ -205,6 +238,12 @@ function run(argv: string[]): unknown {
       out: { type: "string" },
       title: { type: "string" },
       space: { type: "string" },
+      lo: { type: "string" },
+      hi: { type: "string" },
+      value: { type: "string" },
+      expr: { type: "string" },
+      offset: { type: "string" },
+      image: { type: "string" },
       help: { type: "boolean" },
     },
   });
@@ -214,8 +253,8 @@ function run(argv: string[]): unknown {
   if (values.space !== undefined && !SPACE.test(values.space)) throw new UsageError("--space must be c64, drive8, or bank0 to bank255");
   const space = values.space ?? DEFAULT_SPACE;
 
-  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "spaces", "history", "revisions", "revision", "export"]);
-  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "revert", "apply"]);
+  const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "operands", "spaces", "history", "revisions", "revision", "export"]);
+  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "operand", "unoperand", "revert", "apply"]);
   // Refuse a mistyped command before anything opens, so no database appears by accident.
   if (!read.has(command) && !write.has(command)) throw new UsageError(`unknown command: ${command}`);
   if (read.has(command)) {
@@ -234,6 +273,7 @@ function run(argv: string[]): unknown {
             comments: known.comments.map(comment),
             referencesFrom: known.referencesFrom.map(reference),
             referencesTo: known.referencesTo.map(reference),
+            ...(known.operand === undefined ? {} : { operand: operand(known.operand) }),
             ...(known.suppressions.length === 0 ? {} : { suppressions: known.suppressions.map(suppression) }),
             revision: known.revision,
           };
@@ -261,13 +301,14 @@ function run(argv: string[]): unknown {
             references: listReferences(db, range, undefined, origins, space).map(reference),
             suppressions: listSuppressions(db, range, space).map(suppression),
             modules: listModules(db, range, origins, space).map(module),
+            operands: listOperands(db, range, origins, space).map(operand),
           };
           const bytes = Buffer.from(`${JSON.stringify(exported, null, 2)}\n`, "utf8");
           writeProjectFile(values.out!, bytes, { what: "--out" });
           return {
             out: values.out,
             bytes: bytes.length,
-            counts: { symbols: exported.symbols.length, regions: exported.regions.length, comments: exported.comments.length, references: exported.references.length, suppressions: exported.suppressions.length, modules: exported.modules.length },
+            counts: { symbols: exported.symbols.length, regions: exported.regions.length, comments: exported.comments.length, references: exported.references.length, suppressions: exported.suppressions.length, modules: exported.modules.length, operands: exported.operands.length },
             revision: exported.revision,
           };
         }
@@ -278,6 +319,8 @@ function run(argv: string[]): unknown {
         }
         case "modules":
           return { modules: listModules(db, range, origins, space).map(module) };
+        case "operands":
+          return { operands: listOperands(db, range, origins, space).map(operand) };
         case "spaces":
           return { spaces: listSpaces(db) };
         case "history":
@@ -307,7 +350,16 @@ function run(argv: string[]): unknown {
   if (values.evidence !== undefined) context.evidence = values.evidence.map(evidenceOf);
   // Every argument is checked before the database opens: a refused write creates no database.
   if (values.title !== undefined && command !== "module") throw new UsageError("--title works only with module");
-  const operation = command === "apply" ? applyOperation(args, context, space) : writeOperation(command, args, values.kind, values.element, context, values.title, space);
+  for (const option of ["lo", "hi", "value", "expr", "offset"] as const) {
+    if (values[option] !== undefined && command !== "operand") throw new UsageError(`--${option} works only with operand`);
+  }
+  if (values.image !== undefined && command !== "operand" && command !== "apply") throw new UsageError("--image works only with operand and apply");
+  const operation =
+    command === "apply"
+      ? applyOperation(args, context, space, values.image)
+      : command === "operand"
+        ? operandOperation(args, values, context, space)
+        : writeOperation(command, args, values.kind, values.element, context, values.title, space);
   return withWrite(operation);
 }
 
@@ -332,8 +384,54 @@ function evidenceOf(value: string): Evidence {
   return { kind, ref, sha256: createHash("sha256").update(readProjectFile(ref).bytes).digest("hex") };
 }
 
+/**
+ * The image that operand writes are checked against (D65), with the platform
+ * names. A byte outside the segments of the image is no operand.
+ */
+function operandImage(path: string | undefined, what: string): OperandImage {
+  if (path === undefined) throw new UsageError(`${what} checks each operand expression against the image: give --image <image.json|prg>`);
+  let image: ReturnType<typeof readImage>;
+  try {
+    image = readImage(path);
+  } catch (error) {
+    if (error instanceof ImageError) throw new UsageError(error.message);
+    throw error;
+  }
+  const inside = (at: number) => image.segments.some((segment) => at >= segment.start && at <= segment.end);
+  return { byteAt: (at) => (inside(at) ? image.byteAt(at) : undefined), platform: new Map(platformNames().map((entry) => [entry.name, entry.address])) };
+}
+
+/** An offset: a whole number in decimal or $ hex, with an optional minus sign. */
+function offsetOf(value: unknown, what: string): number {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  const match = typeof value === "string" ? /^(-?)(\$[0-9A-Fa-f]{1,4}|[0-9]{1,5})$/.exec(value) : null;
+  if (match === null) throw new UsageError(`${what} must be a whole number such as 1, -1 or '$1000'`);
+  const size = match[2]!.startsWith("$") ? Number.parseInt(match[2]!.slice(1), 16) : Number(match[2]);
+  return match[1] === "-" ? -size : size;
+}
+
+/** operand <address> with one of --lo, --hi, --value or --expr. */
+function operandOperation(args: string[], values: Record<string, unknown>, context: WriteContext, space: string): WriteOperation {
+  const given = (["lo", "hi", "value", "expr"] as const).filter((option) => values[option] !== undefined);
+  if (given.length !== 1) throw new UsageError("operand needs exactly one of --lo, --hi, --value or --expr");
+  const select: OperandSelect = given[0]!;
+  const request: { space: string; address: number; select: OperandSelect; symbol?: string; offset?: number; expression?: string } = { space, address: address(args[0]), select };
+  if (select === "expr") {
+    if (values.offset !== undefined) throw new UsageError("--offset works with --lo, --hi and --value, not with --expr");
+    request.expression = values.expr as string;
+  } else {
+    request.symbol = values[select] as string;
+    if (values.offset !== undefined) request.offset = offsetOf(values.offset, "--offset");
+  }
+  const image = operandImage(values.image as string | undefined, "operand");
+  return (db) => {
+    const result = setOperand(db, { ...context, image }, request);
+    return { revision: result.revision, operand: operand(result.current), ...(result.previous === undefined ? {} : { previous: operand(result.previous) }) };
+  };
+}
+
 /** apply <file>: the batch as BatchOperation values, checked before the database opens. */
-function applyOperation(args: string[], context: WriteContext, space: string): WriteOperation {
+function applyOperation(args: string[], context: WriteContext, space: string, imagePath: string | undefined): WriteOperation {
   if (args.length !== 1) throw new UsageError("apply needs one file, or - for standard input");
   const text = args[0] === "-" ? readFileSync(0, "utf8") : readProjectFile(args[0]!).bytes.toString("utf8");
   let parsed: unknown;
@@ -344,11 +442,14 @@ function applyOperation(args: string[], context: WriteContext, space: string): W
   }
   if (!Array.isArray(parsed)) throw new UsageError("the batch is a JSON list of writes, for example [{\"op\": \"rename\", \"address\": \"$2100\", \"name\": \"update_player\"}]");
   const operations = parsed.map((item, index) => batchOperation(item, `write ${index + 1}`, space));
+  const withImage = operations.some((operation) => operation.op === "operand") ? { ...context, image: operandImage(imagePath, "apply with operand writes") } : context;
   return (db) => {
-    const applied = applyBatch(db, context, operations);
+    const applied = applyBatch(db, withImage, operations);
     // replaced: each write that replaced a row of another origin, with that row as previous gives it for one write (b2/07).
     const replaced = applied.steps.flatMap((step, index) =>
-      step.previous === undefined ? [] : [{ write: index + 1, op: operations[index]!.op, previous: Array.isArray(step.previous) ? step.previous.map(region) : symbol(step.previous) }],
+      step.previous === undefined
+        ? []
+        : [{ write: index + 1, op: operations[index]!.op, previous: Array.isArray(step.previous) ? step.previous.map(region) : "select" in step.previous ? operand(step.previous) : symbol(step.previous) }],
     );
     return { revision: applied.revision, writes: applied.steps.length, replaced };
   };
@@ -365,6 +466,8 @@ const BATCH_FIELDS: Record<BatchOperation["op"], string[]> = {
   unreference: ["from", "to", "kind"],
   module: ["start", "file", "title"],
   unmodule: ["start"],
+  operand: ["address", "select", "symbol", "offset", "expression"],
+  unoperand: ["address"],
 };
 
 /** One write of a batch. A write names its own space, or takes the one of --space. */
@@ -406,7 +509,21 @@ function batchFields(item: unknown, at: string): BatchOperation {
       return { op, start: place("start"), file: text("file"), ...(fields.title === undefined ? {} : { title: text("title") }) };
     case "unmodule":
       return { op, start: place("start") };
-    default:
+    case "operand": {
+      const select = oneOf(OPERAND_SELECTS, text("select"), `${at}: select`);
+      return {
+        op,
+        address: place("address"),
+        select,
+        ...(fields.symbol === undefined ? {} : { symbol: text("symbol") }),
+        ...(fields.offset === undefined ? {} : { offset: offsetOf(fields.offset, `${at}: offset`) }),
+        ...(fields.expression === undefined ? {} : { expression: text("expression") }),
+      };
+    }
+    case "unoperand":
+      return { op, address: place("address") };
+    case "reference":
+    case "unreference":
       return { op, from: place("from"), to: place("to"), kind: oneOf(REFERENCE_KINDS, text("kind"), `${at}: kind`) };
   }
 }
@@ -479,6 +596,10 @@ function writeOperation(command: string, args: string[], kind: string | undefine
     case "unmodule": {
       const request = { space, start: address(args[0], "start") };
       return (db) => ({ revision: removeModule(db, context, request).revision });
+    }
+    case "unoperand": {
+      const request = { space, address: address(args[0]) };
+      return (db) => ({ revision: removeOperand(db, context, request).revision });
     }
     case "revert": {
       const request = { revision: integer(args[0], "revision") };

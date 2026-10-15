@@ -189,7 +189,7 @@ test("export writes all current knowledge to a project file and answers with cou
   knowledge(root, "rename", "$2100", "update_player");
   knowledge(root, "classify", "$3000", "$303f", "sprite");
   const exported = knowledge(root, "export", "--out", "exports/knowledge.json").json;
-  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, regions: 1, comments: 0, references: 0, suppressions: 0, modules: 0 }, revision: 2 });
+  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, regions: 1, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0 }, revision: 2 });
   const file = JSON.parse(readFileSync(join(root, "exports", "knowledge.json"), "utf8")) as { symbols: Array<{ name: string }> };
   assert.equal(file.symbols[0]!.name, "update_player");
   assert.equal(knowledge(root, "export").status, 2, "export needs --out");
@@ -221,4 +221,30 @@ test("--space keeps drive code and cartridge banks apart from the C64 (D53)", ()
   assert.equal((knowledge(root, "regions").json.regions as unknown[]).length, 0, "the C64 has no region");
   assert.equal((knowledge(root, "symbols", "--space", "bank1").json.symbols as Array<{ name: string }>)[0]!.name, "cart_start");
   assert.equal(knowledge(root, "symbols", "--space", "drive9").status, 2);
+});
+
+test("operand writes an expression after a check against the image, and at and operands show it (D65)", () => {
+  const root = project();
+  // $8079 LDA #$c0 / STA $0314 / LDA #$80
+  writeFileSync(join(root, "game.prg"), Buffer.from([0x79, 0x80, 0xa9, 0xc0, 0x8d, 0x14, 0x03, 0xa9, 0x80]));
+  knowledge(root, "rename", "$80c0", "irq_handler");
+  assert.equal(knowledge(root, "operand", "$8079", "--lo", "irq_handler").status, 2, "operand needs --image");
+  assert.equal(knowledge(root, "operand", "$8079", "--lo", "irq_handler", "--hi", "irq_handler", "--image", "game.prg").status, 2, "one selector only");
+  assert.deepEqual(knowledge(root, "operand", "$8079", "--lo", "irq_handler", "--image", "game.prg").json, {
+    revision: 2,
+    operand: { address: "$8079", select: "lo", symbol: "irq_handler", text: "<irq_handler", origin: "llm", revision: 2 },
+  });
+  const refused = knowledge(root, "operand", "$807e", "--lo", "irq_handler", "--image", "game.prg");
+  assert.equal(refused.status, 1);
+  assert.match((refused.json.error as { message: string }).message, /<irq_handler gives \$c0, but the operand in the image is \$80/);
+  assert.equal(knowledge(root, "operand", "$807b", "--value", "CINV", "--offset=0", "--image", "game.prg").json.revision, 3, "a platform name");
+  writeFileSync(join(root, "batch.json"), JSON.stringify([{ op: "operand", address: "$807e", select: "expr", expression: ">irq_handler" }]));
+  assert.equal(knowledge(root, "apply", "batch.json").status, 2, "apply with operand writes needs --image");
+  assert.equal(knowledge(root, "apply", "batch.json", "--image", "game.prg").json.revision, 4);
+  const known = knowledge(root, "at", "$807e").json as { operand: { text: string }; referencesFrom: Array<{ to: string; kind: string }> };
+  assert.equal(known.operand.text, ">irq_handler");
+  assert.deepEqual(known.referencesFrom.map((row) => [row.to, row.kind]), [["$80c0", "pointer"]]);
+  assert.deepEqual((knowledge(root, "operands").json.operands as Array<{ address: string }>).map((row) => row.address), ["$8079", "$807b", "$807e"]);
+  assert.equal(knowledge(root, "remove-symbol", "$80c0").status, 1, "the operands use it");
+  assert.equal(knowledge(root, "unoperand", "$807e").json.revision, 5);
 });

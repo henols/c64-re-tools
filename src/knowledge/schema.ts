@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { REFERENCE_KINDS, type ReferenceKind } from "../c64.ts";
 import { KnowledgeError } from "./database.ts";
+import { OPERAND_SELECTS } from "./expression.ts";
 
 /** heuristic: 6502 idioms that the static analysis finds by pattern (D44); an analyzer origin. */
 export const ORIGINS = ["user", "llm", "dxa", "ghidra", "heuristic"] as const;
@@ -39,6 +40,9 @@ export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 export const COMMENT_PLACEMENTS = ["line", "side"] as const;
 export type CommentPlacement = (typeof COMMENT_PLACEMENTS)[number];
 export { REFERENCE_KINDS, type ReferenceKind };
+/** The reference kind that only operand expressions write (D65): code that builds the address of a symbol. */
+export const POINTER_KIND: ReferenceKind = "pointer";
+export { OPERAND_SELECTS, type OperandSelect } from "./expression.ts";
 /** What a suppression blocks: a symbol address, a region range or one reference (D36). */
 export const SUPPRESSION_ENTITIES = ["symbol", "region", "reference"] as const;
 export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
@@ -65,7 +69,7 @@ const SPACE_CHECK = "space IN ('c64', 'drive8') OR space GLOB 'bank[0-9]' OR spa
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 
 /** The schema version this build reads and writes. */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /**
  * Creates the schema in an empty database. Knowledge rows are temporal: a
@@ -172,12 +176,29 @@ function createSchema(db: DatabaseSync): void {
       );
       CREATE UNIQUE INDEX modules_current_start ON modules (space, start_address) WHERE valid_to_revision IS NULL;
       CREATE UNIQUE INDEX modules_current_file ON modules (space, file) WHERE valid_to_revision IS NULL;
+      CREATE TABLE operands (
+        id                  INTEGER PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
+        selector            TEXT NOT NULL CHECK (selector IN (${list(OPERAND_SELECTS)})),
+        symbol              TEXT CHECK (symbol IS NULL OR length(symbol) > 0),
+        offset              INTEGER NOT NULL DEFAULT 0,
+        expression          TEXT CHECK (expression IS NULL OR length(expression) > 0),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
+        valid_to_revision   INTEGER REFERENCES revisions (id),
+        CHECK ((selector = 'expr') = (expression IS NOT NULL AND symbol IS NULL AND offset = 0)),
+        CHECK (selector = 'expr' OR symbol IS NOT NULL)
+      );
+      CREATE UNIQUE INDEX operands_current ON operands (space, address) WHERE valid_to_revision IS NULL;
+      CREATE INDEX operands_address ON operands (space, address);
       CREATE VIEW current_symbols AS SELECT * FROM symbols WHERE valid_to_revision IS NULL;
       CREATE VIEW current_regions AS SELECT * FROM regions WHERE valid_to_revision IS NULL;
       CREATE VIEW current_comments AS SELECT * FROM comments WHERE valid_to_revision IS NULL;
       CREATE VIEW current_references AS SELECT * FROM "references" WHERE valid_to_revision IS NULL;
       CREATE VIEW current_suppressions AS SELECT * FROM suppressions WHERE valid_to_revision IS NULL;
       CREATE VIEW current_modules AS SELECT * FROM modules WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_operands AS SELECT * FROM operands WHERE valid_to_revision IS NULL;
       INSERT INTO meta (key, value) VALUES ('current_revision', '0');
     `);
 }

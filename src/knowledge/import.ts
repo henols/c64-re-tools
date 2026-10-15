@@ -29,7 +29,7 @@ import {
   type RegionRow,
   type SymbolRow,
 } from "./read.ts";
-import { CODE_REGION_TYPES, DEFAULT_SPACE, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
+import { CODE_REGION_TYPES, DEFAULT_SPACE, POINTER_KIND, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
 import { Change, checkAddress, checkSpace, hex, subtract, SYMBOL_NAME, type AddressRange, type Evidence } from "./write.ts";
 
 export type { AddressRange };
@@ -163,6 +163,7 @@ export function validateFindings(findings: NormalizedFindings): AddressRange[] {
     checkAddress(reference.to, "reference target");
     if (!covering(reference.from, reference.from)) invalid(`the reference from ${hex(reference.from)} is outside the coverage.`);
     if (!(REFERENCE_KINDS as readonly string[]).includes(reference.kind)) invalid(`the reference kind ${reference.kind} is not known.`);
+    if (reference.kind === POINTER_KIND) invalid(`only an operand expression writes a pointer reference (D65), not an analyzer.`);
   }
   return coverage;
 }

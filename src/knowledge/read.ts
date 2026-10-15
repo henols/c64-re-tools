@@ -4,7 +4,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { DEFAULT_SPACE, type CommentPlacement, type Origin, type ReferenceKind, type RegionType, type Space, type SuppressionEntity, type SymbolKind } from "./schema.ts";
+import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SuppressionEntity, type SymbolKind } from "./schema.ts";
 
 export interface SymbolRow {
   space: Space;
@@ -66,6 +66,22 @@ export interface ModuleRow {
   revision: number;
 }
 
+/**
+ * How the operand of the instruction at `address` is written (D65): a byte
+ * (lo, hi) or the value of a symbol plus an offset, or expression text (expr).
+ */
+export interface OperandRow {
+  space: Space;
+  address: number;
+  select: OperandSelect;
+  symbol?: string;
+  /** Added to the symbol before lo or hi takes its byte; 0 for expr. */
+  offset: number;
+  expression?: string;
+  origin: Extract<Origin, "user" | "llm">;
+  revision: number;
+}
+
 type Raw = Record<string, unknown>;
 
 export const SYMBOL_COLUMNS = "space, address, name, kind, origin, valid_from_revision";
@@ -74,6 +90,7 @@ export const COMMENT_COLUMNS = "space, address, placement, text, origin, valid_f
 export const REFERENCE_COLUMNS = "space, from_address, to_address, kind, origin, valid_from_revision";
 export const SUPPRESSION_COLUMNS = "space, entity, start_address, end_address, to_address, kind, origin, valid_from_revision";
 export const MODULE_COLUMNS = "space, start_address, file, title, origin, valid_from_revision";
+export const OPERAND_COLUMNS = "space, address, selector, symbol, offset, expression, origin, valid_from_revision";
 
 export function toSymbol(row: Raw): SymbolRow {
   return { space: row.space as Space, address: row.address as number, name: row.name as string, kind: row.kind as SymbolKind, origin: row.origin as Origin, revision: row.valid_from_revision as number };
@@ -125,6 +142,20 @@ export function toModule(row: Raw): ModuleRow {
   const module: ModuleRow = { space: row.space as Space, start: row.start_address as number, file: row.file as string, origin: row.origin as ModuleRow["origin"], revision: row.valid_from_revision as number };
   if (row.title !== null && row.title !== undefined) module.title = row.title as string;
   return module;
+}
+
+export function toOperand(row: Raw): OperandRow {
+  const operand: OperandRow = {
+    space: row.space as Space,
+    address: row.address as number,
+    select: row.selector as OperandSelect,
+    offset: row.offset as number,
+    origin: row.origin as OperandRow["origin"],
+    revision: row.valid_from_revision as number,
+  };
+  if (row.symbol !== null && row.symbol !== undefined) operand.symbol = row.symbol as string;
+  if (row.expression !== null && row.expression !== undefined) operand.expression = row.expression as string;
+  return operand;
 }
 
 export function currentRevision(db: DatabaseSync | undefined): number {
@@ -213,6 +244,11 @@ export function moduleWithFile(db: DatabaseSync | undefined, file: string, space
   return row === undefined ? undefined : toModule(row);
 }
 
+export function operandAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): OperandRow | undefined {
+  const row = db?.prepare(`SELECT ${OPERAND_COLUMNS} FROM current_operands WHERE space = ? AND address = ?`).get(space, address) as Raw | undefined;
+  return row === undefined ? undefined : toOperand(row);
+}
+
 /** Everything currently known at one address: the main lookup for skills. */
 export interface AddressKnowledge {
   space: Space;
@@ -223,6 +259,8 @@ export interface AddressKnowledge {
   comments: CommentRow[];
   referencesFrom: ReferenceRow[];
   referencesTo: ReferenceRow[];
+  /** How the operand of the instruction here is written (D65). */
+  operand?: OperandRow;
   /** What user/LLM removals block here for the analyzers. */
   suppressions: SuppressionRow[];
   revision: number;
@@ -242,6 +280,8 @@ export function at(db: DatabaseSync | undefined, address: number, space: Space =
   if (symbol !== undefined) result.symbol = symbol;
   const [region] = regionsOverlapping(db, address, address, space);
   if (region !== undefined) result.region = region;
+  const operand = operandAt(db, address, space);
+  if (operand !== undefined) result.operand = operand;
   return result;
 }
 
@@ -312,12 +352,22 @@ export function listModules(db: DatabaseSync | undefined, range: Range = ALL, or
     .filter(kept(origins));
 }
 
+/** Current operand expressions of instructions in the range, in address order. */
+export function listOperands(db: DatabaseSync | undefined, range: Range = ALL, origins?: OriginFilter, space: Space = DEFAULT_SPACE): OperandRow[] {
+  if (db === undefined) return [];
+  return db
+    .prepare(`SELECT ${OPERAND_COLUMNS} FROM current_operands WHERE space = ? AND address BETWEEN ? AND ? ORDER BY address`)
+    .all(space, range.start, range.end)
+    .map((row) => toOperand(row as Raw))
+    .filter(kept(origins));
+}
+
 /** The spaces that hold current knowledge, the C64 first. */
 export function listSpaces(db: DatabaseSync | undefined): Space[] {
   if (db === undefined) return [];
   const rows = db
     .prepare(
-      `SELECT space FROM current_symbols UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules`,
+      `SELECT space FROM current_symbols UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands`,
     )
     .all() as Array<{ space: Space }>;
   const order = (space: Space) => (space === "c64" ? -2 : space === "drive8" ? -1 : Number(space.slice(4)));

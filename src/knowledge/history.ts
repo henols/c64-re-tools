@@ -7,18 +7,21 @@ import { KnowledgeError } from "./database.ts";
 import {
   COMMENT_COLUMNS,
   MODULE_COLUMNS,
+  OPERAND_COLUMNS,
   REFERENCE_COLUMNS,
   REGION_COLUMNS,
   SUPPRESSION_COLUMNS,
   SYMBOL_COLUMNS,
   toComment,
   toModule,
+  toOperand,
   toReference,
   toRegion,
   toSuppression,
   toSymbol,
   type CommentRow,
   type ModuleRow,
+  type OperandRow,
   type ReferenceRow,
   type RegionRow,
   type SuppressionRow,
@@ -46,7 +49,8 @@ export type HistoryEntry =
   | { entity: "comment"; row: CommentRow; from: number; to?: number }
   | { entity: "reference"; row: ReferenceRow; from: number; to?: number }
   | { entity: "suppression"; row: SuppressionRow; from: number; to?: number }
-  | { entity: "module"; row: ModuleRow; from: number; to?: number };
+  | { entity: "module"; row: ModuleRow; from: number; to?: number }
+  | { entity: "operand"; row: OperandRow; from: number; to?: number };
 
 type Raw = Record<string, unknown>;
 
@@ -92,6 +96,7 @@ export function historyAt(db: DatabaseSync | undefined, address: number, space: 
     entries.push(entry("suppression", toSuppression(raw), raw));
   }
   for (const raw of db.prepare(`SELECT ${MODULE_COLUMNS}${validity} FROM modules WHERE space = ? AND start_address = ?`).all(space, address) as Raw[]) entries.push(entry("module", toModule(raw), raw));
+  for (const raw of db.prepare(`SELECT ${OPERAND_COLUMNS}${validity} FROM operands WHERE space = ? AND address = ?`).all(space, address) as Raw[]) entries.push(entry("operand", toOperand(raw), raw));
   return entries.sort(bySequence);
 }
 
@@ -148,6 +153,7 @@ export function revision(db: DatabaseSync | undefined, id: number): RevisionChan
     ["reference", '"references"', REFERENCE_COLUMNS, toReference],
     ["suppression", "suppressions", SUPPRESSION_COLUMNS, toSuppression],
     ["module", "modules", MODULE_COLUMNS, toModule],
+    ["operand", "operands", OPERAND_COLUMNS, toOperand],
   ] as const;
   const added: HistoryEntry[] = [];
   const closed: HistoryEntry[] = [];

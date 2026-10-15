@@ -12,6 +12,7 @@ import { parseArgs } from "node:util";
 import { formatC64Address, parseC64Address, prgRange, textToPetscii } from "#src/c64.ts";
 import { autostartLoaded, RUN_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
 import { readCoverageFiles } from "#src/host-client/coverage.ts";
+import { ImageError, readImage as readSharedImage, type Image } from "#src/host-client/image.ts";
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
@@ -53,53 +54,13 @@ const PROBE_SLOT = 4;
 /** The copies of a full 64 KiB take about 140 frames. */
 const LOADER_FRAMES = 1500;
 
-interface Image {
-  path: string;
-  segments: Range[];
-  byteAt: (address: number) => number;
-  /** The bytes that Ghidra analyzes, and how. */
-  analyzed: { bytes: Buffer; kind: "prg" | "flat64k" };
-  entry?: number;
-  /** entry_state.json next to image.json, when it exists. */
-  statePath?: string;
-}
-
 function readImage(path: string): Image {
-  const { bytes } = readProjectFile(path);
-  if (!path.endsWith(".json")) {
-    let range: ReturnType<typeof prgRange>;
-    try {
-      range = prgRange(bytes);
-    } catch (error) {
-      throw new UsageError(`${path}: ${(error as Error).message}`);
-    }
-    return { path, segments: [{ start: range.start, end: range.end }], byteAt: (address) => range.body[address - range.start]!, analyzed: { bytes, kind: "prg" } };
-  }
-  const fail = (what: string): never => {
-    throw new UsageError(`${path} is not an image.json of the c64-unpacker skill: ${what}`);
-  };
-  let manifest: Record<string, unknown>;
   try {
-    manifest = JSON.parse(bytes.toString("utf8")) as Record<string, unknown>;
+    return readSharedImage(path);
   } catch (error) {
-    return fail((error as Error).message);
+    if (error instanceof ImageError) throw new UsageError(error.message);
+    throw error;
   }
-  const address = (value: unknown, what: string) => (typeof value === "string" && /^\$[0-9a-f]{4}$/i.test(value) ? Number.parseInt(value.slice(1), 16) : fail(`${what} is not a $ address`));
-  if (typeof manifest.image !== "string") fail("it has no image");
-  if (!Array.isArray(manifest.segments) || manifest.segments.length === 0) fail("it has no segments");
-  const segments = (manifest.segments as Array<Record<string, unknown>>)
-    .map((segment, index) => ({ start: address(segment.start, `segment ${index + 1} start`), end: address(segment.end, `segment ${index + 1} end`) }))
-    .sort((a, b) => a.start - b.start);
-  segments.forEach((segment, index) => {
-    if (segment.end < segment.start) fail(`the segment at ${formatC64Address(segment.start)} ends before it starts`);
-    if (index > 0 && segment.start <= segments[index - 1]!.end) fail(`the segments at ${formatC64Address(segments[index - 1]!.start)} and ${formatC64Address(segment.start)} overlap`);
-  });
-  const directory = posix.dirname(path);
-  const memory = readProjectFile(posix.join(directory, manifest.image as string)).bytes;
-  if (memory.length !== 0x10000) fail(`its image has ${memory.length} bytes, not 65536`);
-  const image: Image = { path, segments, byteAt: (at) => memory[at]!, analyzed: { bytes: memory, kind: "flat64k" }, statePath: posix.join(directory, "entry_state.json") };
-  if (manifest.entry !== undefined) image.entry = address(manifest.entry, "entry");
-  return image;
 }
 
 /** The knowledge of one space that the source uses, read once. */

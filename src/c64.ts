@@ -37,8 +37,8 @@ export function prgRange(prg: Uint8Array): { start: number; end: number; body: U
   return { start, end: start + prg.length - 3, body: prg.subarray(2) };
 }
 
-/** How 6502 code refers to an address. */
-export const REFERENCE_KINDS = ["call", "jump", "read", "write", "reference"] as const;
+/** How 6502 code refers to an address. A pointer is code that builds the address from immediates (D65). */
+export const REFERENCE_KINDS = ["call", "jump", "read", "write", "reference", "pointer"] as const;
 export type ReferenceKind = (typeof REFERENCE_KINDS)[number];
 
 /** A symbol or label name: assembler label syntax, at most 64 characters; a leading dot marks a local label. */

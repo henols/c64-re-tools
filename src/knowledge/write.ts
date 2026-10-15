@@ -3,16 +3,20 @@
 
 import type { DatabaseSync } from "node:sqlite";
 
-import { SYMBOL_NAME } from "../c64.ts";
+import { instructionLength, SYMBOL_NAME } from "../c64.ts";
 import { isoCet } from "../time.ts";
 import { KnowledgeError, transaction } from "./database.ts";
+import { checkExpression, evaluate, ExpressionError, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
 import {
   COMMENT_COLUMNS,
   commentsAt,
   currentRevision,
+  listOperands,
   MODULE_COLUMNS,
   moduleAt,
   moduleWithFile,
+  OPERAND_COLUMNS,
+  operandAt,
   REFERENCE_COLUMNS,
   referencesFrom,
   REGION_COLUMNS,
@@ -24,12 +28,14 @@ import {
   symbolNamed,
   toComment,
   toModule,
+  toOperand,
   toReference,
   toRegion,
   toSuppression,
   toSymbol,
   type CommentRow,
   type ModuleRow,
+  type OperandRow,
   type ReferenceRow,
   type RegionRow,
   type SuppressionRow,
@@ -45,11 +51,14 @@ import {
   isGeneratedFile,
   SPACE,
   NO_ELEMENT_TYPES,
+  OPERAND_SELECTS,
+  POINTER_KIND,
   REFERENCE_KINDS,
   REGION_TYPES,
   SYMBOL_KINDS,
   type CommentPlacement,
   type EvidenceKind,
+  type OperandSelect,
   type Origin,
   type ReferenceKind,
   type RegionType,
@@ -73,6 +82,14 @@ export interface WriteContext {
   expectedRevision?: number;
   /** Kept with the revision when the write changes something. */
   evidence?: Evidence[];
+  /** The image that an operand write is checked against (D65). */
+  image?: OperandImage;
+}
+
+/** The bytes of the image and the platform names (C64 space only) that operand expressions are checked against. */
+export interface OperandImage {
+  byteAt(address: number): number | undefined;
+  platform: ReadonlyMap<string, number>;
 }
 
 /** The revision a write created, or null when nothing needed to change. */
@@ -204,6 +221,12 @@ export class Change {
       .run(row.space, row.start, row.file, row.title ?? null, row.origin, this.id());
   }
 
+  insertOperand(row: Omit<OperandRow, "revision">): void {
+    this.#db
+      .prepare("INSERT INTO operands (space, address, selector, symbol, offset, expression, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(row.space, row.address, row.select, row.symbol ?? null, row.offset, row.expression ?? null, row.origin, this.id());
+  }
+
   insertSuppression(row: Omit<SuppressionRow, "revision">): void {
     this.#db
       .prepare("INSERT INTO suppressions (space, entity, start_address, end_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
@@ -291,6 +314,7 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
   }
   if (existing !== undefined) change.close("symbols", "space = ? AND address = ?", space, request.address);
   change.insertSymbol({ space, address: request.address, name: request.name, kind, origin });
+  if (existing !== undefined && existing.name !== request.name) renameInOperands(db, change, space, existing.name, request.name);
   change.close("suppressions", "space = ? AND entity = 'symbol' AND start_address = ?", space, request.address);
   const current = symbolAt(db, request.address, space)!;
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
@@ -298,7 +322,15 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
 
 function removeSymbolStep(db: DatabaseSync, change: Change, origin: Origin, request: AddressRequest): Step<null> {
   const space = spaceOf(request);
-  if (symbolAt(db, request.address, space) === undefined) throw new KnowledgeError("not-found", `There is no symbol at ${hex(request.address)}.`);
+  const existing = symbolAt(db, request.address, space);
+  if (existing === undefined) throw new KnowledgeError("not-found", `There is no symbol at ${hex(request.address)}.`);
+  const users = operandsNaming(db, space, existing.name);
+  if (users.length > 0) {
+    throw new KnowledgeError(
+      "conflict",
+      `The operand expressions at ${users.map((row) => hex(row.address)).join(", ")} use ${existing.name}. Change or remove them first (unoperand), or rename the symbol.`,
+    );
+  }
   change.close("symbols", "space = ? AND address = ?", space, request.address);
   change.insertSuppression({ space, entity: "symbol", start: request.address, end: request.address, origin: origin as SuppressionRow["origin"] });
   return { current: null };
@@ -405,6 +437,7 @@ function checkReference(request: ReferenceRequest): void {
   checkAddress(request.from, "from");
   checkAddress(request.to, "to");
   checkOneOf(REFERENCE_KINDS, request.kind, "kind");
+  if (request.kind === POINTER_KIND) throw new KnowledgeError("invalid-input", "Only an operand expression writes a pointer reference (D65): use operand and unoperand.");
 }
 
 function referenceStep(db: DatabaseSync, change: Change, origin: Origin, request: ReferenceRequest): Step<ReferenceRow> {
@@ -424,6 +457,112 @@ function unreferenceStep(db: DatabaseSync, change: Change, origin: Origin, reque
   }
   change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.from, request.to, request.kind);
   change.insertSuppression({ space, entity: "reference", start: request.from, end: request.from, to: request.to, kind: request.kind, origin: origin as SuppressionRow["origin"] });
+  return { current: null };
+}
+
+type OperandRequest = InSpace & { address: number; select: OperandSelect; symbol?: string; offset?: number; expression?: string };
+
+/** Current operand expressions that use a name, as a symbol or inside expression text. */
+function operandsNaming(db: DatabaseSync, space: Space, name: string): OperandRow[] {
+  return listOperands(db, undefined, undefined, space).filter((row) => row.symbol === name || (row.expression !== undefined && identifiers(row.expression).includes(name)));
+}
+
+/** A rename of a symbol renames it in every operand expression that uses it; the rows keep their origin. */
+function renameInOperands(db: DatabaseSync, change: Change, space: Space, from: string, to: string): void {
+  for (const row of operandsNaming(db, space, from)) {
+    change.close("operands", "space = ? AND address = ?", space, row.address);
+    const renamed: Omit<OperandRow, "revision"> = { ...row };
+    if (row.symbol === from) renamed.symbol = to;
+    if (row.expression !== undefined) renamed.expression = replaceIdentifiers(row.expression, (name) => (name === from ? to : name));
+    change.insertOperand(renamed);
+  }
+}
+
+function checkOperand(request: OperandRequest): void {
+  checkSpace(request);
+  checkAddress(request.address);
+  checkOneOf(OPERAND_SELECTS, request.select, "select");
+  if (request.select === "expr") {
+    if (request.symbol !== undefined || request.offset !== undefined) throw new KnowledgeError("invalid-input", "An expr operand has expression text, and no symbol or offset.");
+    if (typeof request.expression !== "string") throw new KnowledgeError("invalid-input", "An expr operand has expression text.");
+    try {
+      checkExpression(request.expression);
+    } catch (error) {
+      if (error instanceof ExpressionError) throw new KnowledgeError("invalid-input", error.message);
+      throw error;
+    }
+    return;
+  }
+  if (request.expression !== undefined) throw new KnowledgeError("invalid-input", `A ${request.select} operand has a symbol and an optional offset, and no expression text.`);
+  if (request.symbol === undefined || !SYMBOL_NAME.test(request.symbol)) throw new KnowledgeError("invalid-input", `A ${request.select} operand names a symbol: a letter or underscore, then letters, digits or underscores.`);
+  if (request.offset !== undefined && (!Number.isInteger(request.offset) || Math.abs(request.offset) > 0xffff)) throw new KnowledgeError("invalid-input", "offset must be a whole number from -$ffff to $ffff.");
+}
+
+const shown = (value: number, size: number) => (value < 0 ? String(value) : `$${value.toString(16).padStart(size === 0x100 ? 2 : 4, "0")}`);
+
+/**
+ * Refuses an expression whose value is not the operand in the image (D65), and
+ * returns the addresses of its names. Symbols of the knowledge come first, then
+ * the platform names of the C64 space.
+ */
+function checkOperandValue(db: DatabaseSync, space: Space, image: OperandImage, request: OperandRequest, text: string): number[] {
+  const where = hex(request.address);
+  const opcode = image.byteAt(request.address);
+  if (opcode === undefined) throw new KnowledgeError("invalid-input", `${where} is outside the image.`);
+  const length = instructionLength(opcode);
+  if (length === 1) throw new KnowledgeError("invalid-input", `The instruction at ${where} (opcode ${shown(opcode, 0x100)}) has no operand.`);
+  if ((opcode & 0x1f) === 0x10) throw new KnowledgeError("invalid-input", `The instruction at ${where} is a branch: its operand is a distance, not a value.`);
+  if ((request.select === "lo" || request.select === "hi") && length === 3) {
+    throw new KnowledgeError("invalid-input", `lo and hi give one byte, but the instruction at ${where} has a 2-byte operand. Use value.`);
+  }
+  const bytes = [image.byteAt(request.address + 1), length === 3 ? image.byteAt(request.address + 2) : 0];
+  if (bytes.some((byte) => byte === undefined)) throw new KnowledgeError("invalid-input", `The instruction at ${where} runs past the end of the image.`);
+  const operand = bytes[0]! | (bytes[1]! << 8);
+  const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? (space === DEFAULT_SPACE ? image.platform.get(name) : undefined);
+  let value: number;
+  try {
+    value = evaluate(text, resolve);
+  } catch (error) {
+    if (error instanceof ExpressionError) throw new KnowledgeError("invalid-input", `${where}: ${error.message}`);
+    throw error;
+  }
+  const size = length === 2 ? 0x100 : 0x10000;
+  if (value < -size / 2 || value >= size || ((value % size) + size) % size !== operand) {
+    throw new KnowledgeError("invalid-input", `At ${where}, ${text} gives ${shown(value, size)}, but the operand in the image is ${shown(operand, size)}.`);
+  }
+  return identifiers(text).map((name) => resolve(name)!);
+}
+
+function operandStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: OperandImage }, request: OperandRequest): Step<OperandRow, OperandRow> {
+  const space = spaceOf(request);
+  if (context.image === undefined) throw new KnowledgeError("invalid-input", "An operand expression is checked against the image, and no image was given.");
+  const wanted: Omit<OperandRow, "space" | "address" | "origin" | "revision"> = { select: request.select, offset: request.offset ?? 0 };
+  if (request.symbol !== undefined) wanted.symbol = request.symbol;
+  if (request.expression !== undefined) wanted.expression = request.expression.trim();
+  const targets = new Set(checkOperandValue(db, space, context.image, request, operandText(wanted)));
+  const existing = operandAt(db, request.address, space);
+  if (existing !== undefined && existing.select === wanted.select && existing.symbol === wanted.symbol && existing.offset === wanted.offset && existing.expression === wanted.expression) {
+    return { current: existing };
+  }
+  const origin = context.origin as OperandRow["origin"];
+  if (existing !== undefined) change.close("operands", "space = ? AND address = ?", space, request.address);
+  change.insertOperand({ space, address: request.address, ...wanted, origin });
+  const pointers = referencesFrom(db, request.address, space).filter((reference) => reference.kind === POINTER_KIND);
+  for (const reference of pointers) {
+    if (!targets.has(reference.to)) change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ?", space, request.address, reference.to, POINTER_KIND);
+  }
+  for (const to of targets) {
+    if (!pointers.some((reference) => reference.to === to)) change.insertReference({ space, from: request.address, to, kind: POINTER_KIND, origin });
+  }
+  const current = operandAt(db, request.address, space)!;
+  return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
+}
+
+function unoperandStep(db: DatabaseSync, change: Change, _origin: Origin, request: AddressRequest): Step<null> {
+  const space = spaceOf(request);
+  if (operandAt(db, request.address, space) === undefined) throw new KnowledgeError("not-found", `There is no operand expression at ${hex(request.address)}.`);
+  change.close("operands", "space = ? AND address = ?", space, request.address);
+  change.close('"references"', "space = ? AND from_address = ? AND kind = ?", space, request.address, POINTER_KIND);
   return { current: null };
 }
 
@@ -517,6 +656,21 @@ export function removeModule(db: DatabaseSync, context: WriteContext, request: I
   return result(write(db, context, "remove-module", (change) => unmoduleStep(db, change, context.origin, request)));
 }
 
+/**
+ * Writes the operand expression of the instruction at an address (D65), after
+ * a check against the image, and a pointer reference to each name it uses.
+ */
+export function setOperand(db: DatabaseSync, context: WriteContext, request: OperandRequest): WriteResult<OperandRow, OperandRow> {
+  checkOperand(request);
+  return result(write(db, context, "set-operand", (change) => operandStep(db, change, context, request)));
+}
+
+export function removeOperand(db: DatabaseSync, context: WriteContext, request: AddressRequest): WriteResult<null> {
+  checkSpace(request);
+  checkAddress(request.address);
+  return result(write(db, context, "remove-operand", (change) => unoperandStep(db, change, context.origin, request)));
+}
+
 /** One write of a batch (D42), named as the command that does it alone. */
 export type BatchOperation =
   | ({ op: "rename" } & SymbolRequest)
@@ -528,12 +682,14 @@ export type BatchOperation =
   | ({ op: "reference" } & ReferenceRequest)
   | ({ op: "unreference" } & ReferenceRequest)
   | ({ op: "module" } & ModuleRequest)
-  | ({ op: "unmodule" } & InSpace & { start: number });
+  | ({ op: "unmodule" } & InSpace & { start: number })
+  | ({ op: "operand" } & OperandRequest)
+  | ({ op: "unoperand" } & AddressRequest);
 
 export const MAX_BATCH = 10_000;
 
 /** The result of each write of a batch, in order. */
-export type BatchStep = Step<SymbolRow | RegionRow[] | CommentRow | ReferenceRow | ModuleRow | null, SymbolRow | RegionRow[]>;
+export type BatchStep = Step<SymbolRow | RegionRow[] | CommentRow | ReferenceRow | ModuleRow | OperandRow | null, SymbolRow | RegionRow[] | OperandRow>;
 
 /**
  * Applies many writes as one revision in one transaction (D42): all of them,
@@ -565,8 +721,13 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
         case "unmodule":
           checkSpace(operation);
           return checkAddress(operation.start, "start");
+        case "operand":
+          return checkOperand(operation);
+        case "unoperand":
+          checkSpace(operation);
+          return checkAddress(operation.address);
         default:
-          throw new KnowledgeError("invalid-input", `op must be one of rename, remove-symbol, classify, unclassify, comment, uncomment, reference, unreference, module, unmodule.`);
+          throw new KnowledgeError("invalid-input", `op must be one of rename, remove-symbol, classify, unclassify, comment, uncomment, reference, unreference, module, unmodule, operand, unoperand.`);
       }
     } catch (error) {
       if (error instanceof KnowledgeError) throw new KnowledgeError(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
@@ -597,6 +758,10 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
             return moduleStep(db, change, context.origin, operation);
           case "unmodule":
             return unmoduleStep(db, change, context.origin, operation);
+          case "operand":
+            return operandStep(db, change, context, operation);
+          case "unoperand":
+            return unoperandStep(db, change, context.origin, operation);
         }
       } catch (error) {
         if (error instanceof KnowledgeError) throw new KnowledgeError(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
@@ -614,6 +779,11 @@ const KEYS = {
   comments: { columns: COMMENT_COLUMNS, map: toComment, key: (row: CommentRow) => `${row.space}|${row.address}|${row.placement}|${row.text}|${row.origin}` },
   references: { columns: REFERENCE_COLUMNS, map: toReference, key: (row: ReferenceRow) => `${row.space}|${row.from}|${row.to}|${row.kind}|${row.origin}` },
   modules: { columns: MODULE_COLUMNS, map: toModule, key: (row: ModuleRow) => `${row.space}|${row.start}|${row.file}|${row.title ?? ""}|${row.origin}` },
+  operands: {
+    columns: OPERAND_COLUMNS,
+    map: toOperand,
+    key: (row: OperandRow) => `${row.space}|${row.address}|${row.select}|${row.symbol ?? ""}|${row.offset}|${row.expression ?? ""}|${row.origin}`,
+  },
   suppressions: {
     columns: SUPPRESSION_COLUMNS,
     map: toSuppression,
@@ -649,6 +819,10 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         }
         if (table === "modules") {
           change.insertModule(spec.map(row as never) as ModuleRow);
+          continue;
+        }
+        if (table === "operands") {
+          change.insertOperand(spec.map(row as never) as OperandRow);
           continue;
         }
         const mapped = spec.map(row as never) as SymbolRow & RegionRow & CommentRow & ReferenceRow;

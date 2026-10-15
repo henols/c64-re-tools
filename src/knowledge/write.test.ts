@@ -6,21 +6,24 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { KnowledgeError, openForWrite } from "./database.ts";
-import { commentsAt, currentRevision, listModules, listSuppressions, listSymbols, moduleAt, referencesFrom, regionsOverlapping, symbolAt } from "./read.ts";
-import { revision as revisionChanges } from "./history.ts";
+import { at, commentsAt, currentRevision, listModules, listSuppressions, listSymbols, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
+import { historyAt, revision as revisionChanges } from "./history.ts";
 import {
   addReference,
   applyBatch,
   classifyRegion,
   removeComment,
   removeModule,
+  removeOperand,
   removeReference,
   removeSymbol,
   renameSymbol,
   revert,
   setComment,
   setModule,
+  setOperand,
   unclassifyRegion,
+  type OperandImage,
   type WriteContext,
 } from "./write.ts";
 
@@ -368,4 +371,94 @@ test("each space has its own rows and names (D53)", () => {
   revert(db, llm, { revision: 2 });
   assert.equal(symbolAt(db, 0x0500, "drive8")?.name, "loop", "a revert restores rows of every space");
   assert.equal(symbolAt(db, 0x8000, "bank3"), undefined);
+});
+
+/**
+ * $8079 LDA #$c0, $807b STA $0314, $807e LDA #$80, $8a85 LDA $8a97,X,
+ * $82aa LDA #$18, $8000 BNE, $8005 NOP. VICSCN is a platform name.
+ */
+function operandImage(): OperandImage {
+  const bytes = new Map<number, number>();
+  const put = (address: number, ...values: number[]) => values.forEach((value, index) => bytes.set(address + index, value));
+  put(0x8079, 0xa9, 0xc0, 0x8d, 0x14, 0x03, 0xa9, 0x80);
+  put(0x8a85, 0xbd, 0x97, 0x8a);
+  put(0x82aa, 0xa9, 0x18);
+  put(0x8000, 0xd0, 0x05);
+  put(0x8005, 0xea);
+  return { byteAt: (address) => bytes.get(address), platform: new Map([["VICSCN", 0x0400], ["CINV", 0x0314]]) };
+}
+
+function operands(): { db: DatabaseSync; context: WriteContext } {
+  const db = fresh();
+  renameSymbol(db, llm, { address: 0x80c0, name: "irq_handler" });
+  renameSymbol(db, llm, { address: 0x8a98, name: "bar_colours" });
+  renameSymbol(db, llm, { address: 0x2000, name: "charset" });
+  return { db, context: { origin: "llm", image: operandImage() } };
+}
+
+test("an operand expression is checked against the image and writes pointer references (D65)", () => {
+  const { db, context } = operands();
+  const lo = setOperand(db, context, { address: 0x8079, select: "lo", symbol: "irq_handler" });
+  assert.deepEqual(lo.current, { space: "c64", address: 0x8079, select: "lo", symbol: "irq_handler", offset: 0, origin: "llm", revision: 4 });
+  setOperand(db, context, { address: 0x807e, select: "hi", symbol: "irq_handler" });
+  setOperand(db, context, { address: 0x8a85, select: "value", symbol: "bar_colours", offset: -1 });
+  setOperand(db, context, { address: 0x807b, select: "value", symbol: "CINV" });
+  setOperand(db, context, { address: 0x82aa, select: "expr", expression: " ((VICSCN & $3c00) >> 6) | ((charset & $3800) >> 10) " });
+  assert.equal(operandAt(db, 0x82aa)?.expression, "((VICSCN & $3c00) >> 6) | ((charset & $3800) >> 10)", "the text is trimmed");
+  assert.deepEqual(referencesTo(db, 0x80c0).map((row) => [row.from, row.kind]), [[0x8079, "pointer"], [0x807e, "pointer"]]);
+  assert.deepEqual(referencesFrom(db, 0x82aa).map((row) => [row.to, row.kind]), [[0x0400, "pointer"], [0x2000, "pointer"]]);
+  assert.equal(at(db, 0x8a85).operand?.offset, -1);
+  assert.equal(setOperand(db, context, { address: 0x8079, select: "lo", symbol: "irq_handler" }).revision, null, "no change, no revision");
+  assert.deepEqual(historyAt(db, 0x8079).map((entry) => entry.entity), ["reference", "operand"]);
+});
+
+test("an operand expression that does not give the operand in the image is refused with both values (D65)", () => {
+  const { db, context } = operands();
+  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "hi", symbol: "irq_handler" }), /At \$8079, >irq_handler gives \$80, but the operand in the image is \$c0\./);
+  assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "value", symbol: "bar_colours" }), /gives \$8a98, but the operand in the image is \$8a97/);
+  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo", symbol: "nowhere" }), /"nowhere" is no symbol of the knowledge and no platform name/);
+  assert.throws(() => setOperand(db, context, { address: 0x8000, select: "expr", expression: "5" }), /is a branch/);
+  assert.throws(() => setOperand(db, context, { address: 0x8005, select: "expr", expression: "5" }), /has no operand/);
+  assert.throws(() => setOperand(db, context, { address: 0x8a85, select: "lo", symbol: "bar_colours" }), /lo and hi give one byte/);
+  assert.throws(() => setOperand(db, context, { address: 0x9000, select: "lo", symbol: "bar_colours" }), /outside the image/);
+  assert.throws(() => setOperand(db, llm, { address: 0x8079, select: "lo", symbol: "irq_handler" }), /no image was given/);
+  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "expr", expression: "<irq_handler", offset: 1 }), failsWith("invalid-input"));
+  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "expr", expression: "<irq_handler +" }), failsWith("invalid-input"));
+  assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo" }), failsWith("invalid-input"));
+  assert.throws(() => addReference(db, llm, { from: 0x8079, to: 0x80c0, kind: "pointer" }), /Only an operand expression writes a pointer reference/);
+  assert.equal(currentRevision(db), 3, "a refused write leaves no revision");
+});
+
+test("a rename of a symbol follows into operand expressions, and a removal is refused while one uses it (D65)", () => {
+  const { db, context } = operands();
+  setOperand(db, context, { address: 0x8079, select: "lo", symbol: "irq_handler" });
+  setOperand(db, { ...context, origin: "user" }, { address: 0x82aa, select: "expr", expression: "((VICSCN & $3c00) >> 6) | ((charset & $3800) >> 10)" });
+  renameSymbol(db, llm, { address: 0x80c0, name: "irq" });
+  renameSymbol(db, llm, { address: 0x2000, name: "font" });
+  assert.equal(operandAt(db, 0x8079)?.symbol, "irq");
+  assert.equal(operandAt(db, 0x82aa)?.expression, "((VICSCN & $3c00) >> 6) | ((font & $3800) >> 10)");
+  assert.equal(operandAt(db, 0x82aa)?.origin, "user", "the row keeps its origin");
+  assert.throws(() => removeSymbol(db, llm, { address: 0x80c0 }), /The operand expressions at \$8079 use irq\./);
+  removeOperand(db, llm, { address: 0x8079 });
+  assert.deepEqual(referencesFrom(db, 0x8079), [], "the pointer references go with the operand");
+  removeSymbol(db, llm, { address: 0x80c0 });
+  assert.throws(() => removeOperand(db, llm, { address: 0x8079 }), failsWith("not-found"));
+});
+
+test("a batch writes symbols and the operands that use them, and a revert restores operands (D65)", () => {
+  const db = fresh();
+  const context: WriteContext = { origin: "llm", image: operandImage() };
+  const applied = applyBatch(db, context, [
+    { op: "rename", address: 0x80c0, name: "irq_handler" },
+    { op: "operand", address: 0x8079, select: "lo", symbol: "irq_handler" },
+    { op: "operand", address: 0x807e, select: "hi", symbol: "irq_handler" },
+  ]);
+  assert.equal(applied.revision, 1);
+  assert.deepEqual(revisionChanges(db, 1).added.map((entry) => entry.entity), ["symbol", "reference", "reference", "operand", "operand"]);
+  applyBatch(db, context, [{ op: "unoperand", address: 0x807e }]);
+  assert.equal(operandAt(db, 0x807e), undefined);
+  revert(db, llm, { revision: 1 });
+  assert.equal(operandAt(db, 0x807e)?.select, "hi");
+  assert.deepEqual(referencesFrom(db, 0x807e).map((row) => row.kind), ["pointer"]);
+  assert.throws(() => applyBatch(db, llm, [{ op: "operand", address: 0x8079, select: "hi", symbol: "irq_handler" }]), /Write 1: An operand expression is checked against the image/);
 });
