@@ -2,8 +2,9 @@
 // knowledge and Ghidra's instructions, which it runs itself, and checks with
 // ACME that the source assembles to the image byte by byte. With --loader it
 // also writes a loader that recreates the entry state, simulates it, and
-// checks it in the emulator. Exit status: 0 when every check passes, 1 when
-// one fails, 2 for a bad call.
+// checks it in the emulator. Each switch of the patches (D72) is built on
+// alone and checked. Exit status: 0 when every check passes, 1 when one
+// fails, 2 for a bad call.
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, posix } from "node:path";
@@ -18,7 +19,7 @@ import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts"
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
-import { currentRevision, listComments, listModules, listOperands, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
+import { currentRevision, listComments, listModules, listOperands, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, SPACE, type Space } from "#src/knowledge/schema.ts";
 import { assemble } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
@@ -29,7 +30,7 @@ import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { LOADER_JUMP, planLoader, rasterLine, readEntryState, simulate, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./loader.ts";
 import { OPCODES } from "./opcodes.ts";
-import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, type Layout, type Range, type Rendered } from "./source.ts";
+import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, switchesOf, type Layout, type PatchBlock, type Range, type Rendered } from "./source.ts";
 
 const USAGE = `generate.ts <image> --out <dir> [options]
 
@@ -81,6 +82,7 @@ function readKnowledge(space: Space) {
       modules: listModules(db, undefined, undefined, space),
       references: listReferences(db, undefined, undefined, undefined, space),
       operands: listOperands(db, undefined, undefined, space),
+      patches: listPatches(db, undefined, undefined, undefined, space),
     };
   } finally {
     db?.close();
@@ -120,10 +122,14 @@ async function decode(image: Image, knowledge: ReturnType<typeof readKnowledge>,
 }
 
 /** Assembles files given as text with ACME; the program or the diagnostics. */
-async function assembleFiles(files: Array<{ name: string; text: string }>, entry: string): Promise<{ program?: Buffer; start?: number; symbols?: AssembledSymbol[]; diagnostics: Diagnostic[] }> {
+async function assembleFiles(
+  files: Array<{ name: string; text: string }>,
+  entry: string,
+  defines: Record<string, number> = {},
+): Promise<{ program?: Buffer; start?: number; symbols?: AssembledSymbol[]; diagnostics: Diagnostic[] }> {
   const contents = files.map((file) => Buffer.from(file.text, "utf8"));
   const { result, attachments } = await assemble(
-    { files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: entry, includeDirs: [], defines: {} },
+    { files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: entry, includeDirs: [], defines },
     contents,
     localToolContext(),
   );
@@ -226,6 +232,57 @@ function check(program: Buffer, start: number, image: Image): { identical: boole
     return differences === 0 ? { ...shown, result: "identical" } : { ...shown, result: "different", differences, firstDifference: first! };
   });
   return { identical: segments.every((segment) => segment.result === "identical"), segments };
+}
+
+/** What a build with one switch on gives (D72). */
+interface SwitchCheck {
+  name: string;
+  define: string;
+  patches: Array<{ start: string; end: string; bytes: number; insideNames?: string[] }>;
+  result: "fits" | "overflow" | "changes outside" | "does not assemble";
+  changedBytes?: number;
+  outside?: { count: number; first: { address: string; built: number; default: number } };
+  overflow?: Array<{ start: string; message: string }>;
+  diagnostics?: Diagnostic[];
+}
+
+/**
+ * Builds the source with one switch on and compares it with the default
+ * build: only the ranges of its patches may change, and the program keeps its
+ * start and length. A patch longer than its range stops ACME with !error.
+ */
+async function checkSwitch(name: string, patches: PatchBlock[], files: Array<{ name: string; text: string }>, base: { program: Buffer; start: number }, names: Layout["names"]): Promise<SwitchCheck> {
+  const shown: SwitchCheck = {
+    name,
+    define: `--define ${name}=1`,
+    patches: patches.map((patch) => {
+      const inside = patch.inner.map((address) => names.get(address)!);
+      return { start: formatC64Address(patch.start), end: formatC64Address(patch.end), bytes: patch.end - patch.start + 1, ...(inside.length === 0 ? {} : { insideNames: inside }) };
+    }),
+    result: "fits",
+  };
+  const built = await assembleFiles(files, "main.asm", { [name]: 1 });
+  if (built.program === undefined) {
+    const overflow = built.diagnostics.flatMap((diagnostic) => {
+      const found = /The patch \S+ at (\$[0-9a-f]{4}) has .*/.exec(diagnostic.message);
+      return found === null ? [] : [{ start: found[1]!, message: found[0] }];
+    });
+    if (overflow.length > 0) return { ...shown, result: "overflow", overflow };
+    return { ...shown, result: "does not assemble", diagnostics: built.diagnostics.slice(0, MAX_LISTED) };
+  }
+  const inside = (address: number) => patches.some((patch) => address >= patch.start && address <= patch.end);
+  let changed = 0;
+  let outside: SwitchCheck["outside"];
+  const end = Math.max(base.start + base.program.length, built.start! + built.program.length) - 2;
+  for (let address = Math.min(base.start, built.start!); address < end; address++) {
+    const at = (program: Buffer, start: number) => (address >= start && address < start + program.length - 2 ? program[2 + address - start]! : -1);
+    const now = at(built.program, built.start!);
+    const before = at(base.program, base.start);
+    if (now === before) continue;
+    if (inside(address)) changed++;
+    else outside = { count: (outside?.count ?? 0) + 1, first: outside?.first ?? { address: formatC64Address(address), built: now, default: before } };
+  }
+  return outside === undefined ? { ...shown, changedBytes: changed } : { ...shown, result: "changes outside", changedBytes: changed, outside };
 }
 
 /** Reads RAM in parts. */
@@ -368,6 +425,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     modules: knowledge.modules,
     referenceTargets: knowledge.references.map((reference) => reference.to),
     operands: knowledge.operands,
+    patches: knowledge.patches,
     ...(coverage === undefined ? {} : { coverage }),
     // The platform names are C64 names: drive code and banks get none.
     ...(space === DEFAULT_SPACE ? { platform: platformNames(), describe: describeAddress } : {}),
@@ -450,6 +508,15 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
             listed: rendered.operandsAsNumbers.slice(0, MAX_LISTED).map((item) => ({ address: formatC64Address(item.address), expression: item.expression, reason: item.reason })),
           },
         }),
+    // A patch that the source cannot write fails the run: the switch would miss a part (D72).
+    ...(laid.patchesNotWritten.length === 0
+      ? {}
+      : {
+          patchesNotWritten: {
+            count: laid.patchesNotWritten.length,
+            listed: laid.patchesNotWritten.slice(0, MAX_LISTED).map((item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), switch: item.switch, reason: item.reason })),
+          },
+        }),
   };
   // The loader includes the source, so it is built only from a source that is identical to the image.
   const notBuilt = (reason: string) => (state === undefined ? {} : { loader: { verified: false, reason: loaderRefused ?? reason } });
@@ -459,8 +526,13 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   const checked = check(built.program, built.start!, image);
   output.check = checked;
   if (!checked.identical) return { output: { ...output, ...notBuilt("The source does not assemble to the image, and the loader includes it.") }, failed: true };
+  // Each switch on alone, against the default build (D72); combinations are not built.
+  const switches: SwitchCheck[] = [];
+  for (const [name, patches] of switchesOf(laid)) switches.push(await checkSwitch(name, patches, files, { program: built.program, start: built.start! }, laid.names));
+  if (switches.length > 0) output.switches = switches;
+  const sourceFailed = laid.patchesNotWritten.length > 0 || switches.some((item) => item.result !== "fits");
   if (loaderRefused !== undefined) return { output: { ...output, loader: { verified: false, reason: loaderRefused } }, failed: true };
-  if (loader === undefined || state === undefined) return { output, failed: missingEntry !== undefined };
+  if (loader === undefined || state === undefined) return { output, failed: missingEntry !== undefined || sourceFailed };
 
   const loaderBuilt = await assembleFiles(files, "loader.asm");
   if (loaderBuilt.program === undefined) return { output: { ...output, loader: { verified: false, reason: "loader.asm does not assemble.", diagnostics: loaderBuilt.diagnostics.slice(0, MAX_LISTED) } }, failed: true };
@@ -494,7 +566,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     // What the loader cannot set as it was at the entry (D63).
     ...(loader.cia === undefined || loader.cia.limits.length === 0 ? {} : { limits: loader.cia.limits }),
   };
-  return { output, failed: !ran.verified };
+  return { output, failed: !ran.verified || sourceFailed };
 }
 
 await runScript(

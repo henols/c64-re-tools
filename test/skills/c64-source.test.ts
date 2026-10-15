@@ -646,3 +646,103 @@ test("a CIA timer that the loader cannot set as it was is a named limit (D63)", 
   // Without the CIA state, the loader sets nothing.
   assert.equal(ciaSection({ ...ciaState(KERNAL_CIA2(), KERNAL_CIA2()), cia: undefined } as unknown as EntryState), undefined);
 });
+
+/** Assembles rendered files with ACME; the program bytes after the load address, or the diagnostics. */
+async function assembleRendered(rendered: ReturnType<typeof render>, defines: Record<string, number> = {}): Promise<{ bytes?: number[]; messages: string[] }> {
+  const contents = rendered.files.map((file) => Buffer.from(file.text));
+  const { result, attachments } = await assemble(
+    { files: rendered.files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "main.asm", includeDirs: [], defines },
+    contents,
+    localToolContext(),
+  );
+  return { ...(result.assembled ? { bytes: [...attachments![0]!.subarray(2)] } : {}), messages: result.diagnostics.map((diagnostic) => diagnostic.message) };
+}
+
+/** $1000 LDA #$00; $1002 STA $d020; $1005 JMP $1000; $1008 eight data bytes; $1010 LDA $1003; $1013 RTS. */
+function patchInput(patches: NonNullable<SourceInput["patches"]>, overrides: Partial<SourceInput> = {}): SourceInput {
+  const bytes = [0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x4c, 0x00, 0x10, 1, 2, 3, 4, 5, 6, 7, 8, 0xad, 0x03, 0x10, 0x60];
+  const instructions = new Map([[0x1000, 2], [0x1002, 3], [0x1005, 3], [0x1010, 3], [0x1013, 1]]);
+  return input(bytes, 0x1000, { instructions, regions: [{ start: 0x1008, end: 0x100f, type: "bytes" }], symbols: [{ address: 0x1002, name: "store" }], patches, ...overrides });
+}
+
+const CRACK = { start: 0x1000, end: 0x1004, switch: "CRACK", code: "        lda #1\n        sta $d021", comment: "A grey border." };
+
+test("a patch is written as !if SWITCH { code, NOP } else { original }, with its inner names before it (D72)", () => {
+  const laid = layout(patchInput([CRACK, { start: 0x1008, end: 0x100b, switch: "DEBUG", code: "" }]));
+  assert.deepEqual(laid.patchesNotWritten, []);
+  const rendered = render(laid, new Set(), []);
+  assert.equal(rendered.patches, 2);
+  const text = textOf(rendered, "segment_1000.asm");
+  assert.match(
+    text,
+    /^l_1000\nstore = \* \+ 2\nl_1003 = \* \+ 3\n!zone patch_CRACK_1000 \{\n\.patch_start\n!if CRACK \{\n {8}; CRACK on: 5 bytes at \$1000-\$1004, NOP after the code\n {8}; A grey border\.\n {8}lda #1\n {8}sta \$d021\n {8}!if \* - \.patch_start > 5 \{ !error .*\} else \{ !fill 5 - \(\* - \.patch_start\), \$ea \}\n\} else \{\n {8}lda #\$00\n {8}sta \$d020\n\}\n\}\n {8}jmp l_1000\n/m,
+  );
+  assert.match(text, /!if DEBUG \{\n.*\n {8}!if \* - \.patch_start > 4 .*\n\} else \{\n {8}!byte \$01,\$02,\$03,\$04\n\}\n\}\n {8}!byte \$05,\$06,\$07,\$08\n/);
+  assert.match(textOf(rendered, "constants.asm"), /^; Switches: .*\n.*\n!ifndef CRACK \{ CRACK = 0 \} ; 1 patch: \$1000-\$1004\n!ifndef DEBUG \{ DEBUG = 0 \} ; 1 patch: \$1008-\$100b\n\n; Names/);
+});
+
+test("a patch that cuts an instruction, leaves its file or has the name of a label is not written (D72)", () => {
+  const laid = layout(
+    patchInput(
+      [
+        { start: 0x1001, end: 0x1004, switch: "CUT", code: "" },
+        { start: 0x1006, end: 0x1007, switch: "CUT", code: "" },
+        { start: 0x1008, end: 0x1009, switch: "store", code: "" },
+        { start: 0x100c, end: 0x1011, switch: "LONG", code: "" },
+      ],
+      { modules: [{ start: 0x1010, file: "tail.asm" }] },
+    ),
+  );
+  assert.deepEqual(
+    laid.patchesNotWritten.map((row) => [row.start, row.reason]),
+    [
+      [0x1001, "The range cuts the instruction at $1000."],
+      [0x1006, "The range cuts the instruction at $1005."],
+      [0x1008, "The switch name store is also a name of the source."],
+      [0x100c, "The range runs past the end of the file segment_1000.asm at $100f: a patch is in one file."],
+    ],
+  );
+  assert.equal(laid.patches.size, 0);
+});
+
+test("with real ACME, a switch off gives the image, on changes only its range, and a patch too long stops ACME (D72)", { skip: acmeSkip }, async () => {
+  const source = patchInput([CRACK, { start: 0x1008, end: 0x100b, switch: "DEBUG", code: "" }]);
+  const image = Array.from({ length: 20 }, (_, offset) => source.byteAt(0x1000 + offset));
+  const rendered = render(layout(source), new Set(), []);
+  assert.deepEqual((await assembleRendered(rendered)).bytes, image);
+  const on = [...image];
+  on.splice(0, 5, 0xa9, 0x01, 0x8d, 0x21, 0xd0);
+  assert.deepEqual((await assembleRendered(rendered, { CRACK: 1 })).bytes, on);
+  const nop = [...image];
+  nop.splice(8, 4, 0xea, 0xea, 0xea, 0xea);
+  assert.deepEqual((await assembleRendered(rendered, { DEBUG: 1 })).bytes, nop, "empty code is only NOP");
+  const long = render(layout(patchInput([{ ...CRACK, code: "        lda #1\n        sta $d021\n        rts" }])), new Set(), []);
+  assert.deepEqual((await assembleRendered(long)).bytes, image, "off, the code is not assembled");
+  const refused = await assembleRendered(long, { CRACK: 1 });
+  assert.equal(refused.bytes, undefined);
+  assert.deepEqual(refused.messages, ["!error: The patch CRACK at $1000 has 6 (0x6) bytes; the range has 5."]);
+});
+
+test("with real Ghidra and ACME, the script builds each switch on and reports it; a patch too long fails the run (D72)", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
+  projects.push(project);
+  // $1000 LDA #$00; STA $d020; JMP $1000.
+  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, 0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x4c, 0x00, 0x10]));
+  const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
+  assert.equal(knowledge("rename", "$1000", "start", "--kind", "routine").status, 0);
+  assert.equal(knowledge("patch", "$1000", "$1004", "CRACK", "--code", "        lda #1\n        sta $d021", "--image", "test.prg").status, 0);
+  assert.equal(knowledge("patch", "$1005", "$1007", "BIG", "--code", "        nop\n        nop\n        nop\n        nop", "--image", "test.prg").status, 0);
+  const generate = () => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg", "--out", "src"], { cwd: project, encoding: "utf8" });
+  type Result = { check: { identical: boolean }; switches: Array<{ name: string; result: string; changedBytes?: number; overflow?: Array<{ start: string; message: string }> }> };
+  const first = generate();
+  assert.equal(first.status, 1, first.stdout);
+  const json = JSON.parse(first.stdout) as Result;
+  assert.equal(json.check.identical, true, "off, every switch gives the image");
+  assert.deepEqual(json.switches.map((item) => [item.name, item.result]), [["BIG", "overflow"], ["CRACK", "fits"]]);
+  assert.deepEqual(json.switches[0]!.overflow, [{ start: "$1005", message: "The patch BIG at $1005 has 4 (0x4) bytes; the range has 3." }]);
+  assert.equal(json.switches[1]!.changedBytes, 2);
+  assert.equal(knowledge("unpatch", "$1005").status, 0);
+  const second = generate();
+  assert.equal(second.status, 0, second.stdout);
+  assert.deepEqual((JSON.parse(second.stdout) as Result).switches.map((item) => [item.name, item.result]), [["CRACK", "fits"]]);
+});

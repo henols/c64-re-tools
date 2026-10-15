@@ -4,7 +4,8 @@
 // written by its region type. The source assembles to the same bytes: the
 // generator forces operand sizes, and writes an opcode form that ACME
 // encodes differently as bytes (see the probe in generate.ts). An operand
-// expression of the knowledge is written in place of its number (D65).
+// expression of the knowledge is written in place of its number (D65). A
+// patch is written as !if SWITCH { code } else { original } (D72).
 
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
@@ -42,6 +43,27 @@ export interface SourceInput {
   describe?: (address: number) => { area: Area; mirrorOf?: number };
   /** Operand expressions of the knowledge (D65), by instruction address. */
   operands?: ReadonlyArray<OperandExpression & { address: number }>;
+  /** Patches of the knowledge (D72): code that replaces a range when the build defines the switch. */
+  patches?: ReadonlyArray<{ start: number; end: number; switch: string; code: string; comment?: string }>;
+}
+
+/** A patch that the source writes (D72), with the addresses inside it that have a name. */
+export interface PatchBlock {
+  start: number;
+  end: number;
+  switch: string;
+  code: string;
+  comment?: string;
+  /** Named addresses after the start of the range: the source defines them before the patch, so both builds have them. */
+  inner: number[];
+}
+
+/** A patch of the knowledge that the source does not write, and why. */
+export interface PatchNotWritten {
+  start: number;
+  end: number;
+  switch: string;
+  reason: string;
 }
 
 /** An operand expression that the source writes as a number, with its text and why. */
@@ -110,6 +132,9 @@ export interface Layout {
   operands: Map<number, string>;
   /** Operand expressions that cannot be written. */
   operandsAsNumbers: OperandAsNumber[];
+  /** The patches that the source writes, by start (D72). */
+  patches: Map<number, PatchBlock>;
+  patchesNotWritten: PatchNotWritten[];
 }
 
 const hex2 = (value: number) => `$${value.toString(16).padStart(2, "0")}`;
@@ -160,6 +185,10 @@ export function layout(input: SourceInput): Layout {
   const modules = [...input.modules].sort((a, b) => a.start - b.start);
   const unusedModules = modules.filter((module) => !inImage(module.start)).map(({ start, file }) => ({ start, file }));
 
+  // A patch starts and ends at an item boundary, so a data run stops there (D72).
+  const patches = [...(input.patches ?? [])].sort((a, b) => a.start - b.start);
+  const cuts = new Set(patches.flatMap((patch) => [patch.start, patch.end + 1]));
+
   const pieces: Piece[] = [];
   for (const segment of input.segments) {
     const starts = modules.filter((module) => module.start > segment.start && module.start <= segment.end).map((module) => module.start);
@@ -202,7 +231,7 @@ export function layout(input: SourceInput): Layout {
       const type: DataItem["type"] = codeRegion ? "undecoded" : (region?.type ?? "unclassified");
       let end = address;
       const same = (at: number) => {
-        if (at > piece.end) return false;
+        if (at > piece.end || cuts.has(at)) return false;
         const next = regionAt(at);
         if (region !== undefined && !codeRegion) return next === region;
         if (codeRegion) return next === region && !input.instructions.has(at);
@@ -210,7 +239,7 @@ export function layout(input: SourceInput): Layout {
       };
       while (same(end + 1)) end++;
       const last = piece.items.at(-1);
-      if (last?.kind === "data" && last.type === type && last.region === region && last.end + 1 === address) last.end = end;
+      if (last?.kind === "data" && last.type === type && last.region === region && last.end + 1 === address && !cuts.has(address)) last.end = end;
       else piece.items.push({ kind: "data", start: address, end, type, ...(region === undefined ? {} : { region }) });
       address = end + 1;
     }
@@ -308,6 +337,35 @@ export function layout(input: SourceInput): Layout {
     names.set(address, name);
     generatedLabels++;
   }
+  // A patch is written when its range is whole items of one file and its switch is no name of the source (D72).
+  const blocks = new Map<number, PatchBlock>();
+  const patchesNotWritten: PatchNotWritten[] = [];
+  const sourceNames = new Set([...names.values(), ...taken]);
+  for (const patch of patches) {
+    const refuse = (reason: string) => patchesNotWritten.push({ start: patch.start, end: patch.end, switch: patch.switch, reason });
+    const piece = pieces.find((row) => patch.start >= row.start && patch.start <= row.end);
+    if (piece === undefined) {
+      refuse("The range is not in the image.");
+      continue;
+    }
+    if (patch.end > piece.end) {
+      refuse(`The range runs past the end of the file ${piece.file} at ${hex4(piece.end)}: a patch is in one file.`);
+      continue;
+    }
+    const starts = new Set(piece.items.map((item) => (item.kind === "instruction" ? item.address : item.start)));
+    const ends = new Set(piece.items.map((item) => (item.kind === "instruction" ? item.address + item.length - 1 : item.end)));
+    if (!starts.has(patch.start) || !ends.has(patch.end)) {
+      const cut = piece.items.find((item) => item.kind === "instruction" && ((patch.start > item.address && patch.start < item.address + item.length) || (patch.end >= item.address && patch.end < item.address + item.length - 1)));
+      refuse(cut === undefined ? "The range does not start and end at an item of the source." : `The range cuts the instruction at ${hex4((cut as InstructionItem).address)}.`);
+      continue;
+    }
+    if (sourceNames.has(patch.switch)) {
+      refuse(`The switch name ${patch.switch} is also a name of the source.`);
+      continue;
+    }
+    const inner = [...names.keys()].filter((address) => address > patch.start && address <= patch.end).sort((a, b) => a - b);
+    blocks.set(patch.start, { start: patch.start, end: patch.end, switch: patch.switch, code: patch.code, ...(patch.comment === undefined ? {} : { comment: patch.comment }), inner });
+  }
   // The high byte of a vector is NMINV+1. A zero-page entry keeps zero-page instructions: its constant has two digits.
   for (const [address, start] of insideEntry) names.set(address, `${names.get(start)!}+${address - start}`);
   const operands = new Map<number, string>();
@@ -337,6 +395,8 @@ export function layout(input: SourceInput): Layout {
     unusedModules,
     operands,
     operandsAsNumbers: operandsAsNumbers.sort((a, b) => a.address - b.address),
+    patches: blocks,
+    patchesNotWritten,
   };
 }
 
@@ -585,6 +645,25 @@ function usageText(kinds: ReadonlyMap<UseKind, number> | undefined): string | un
   return parts.length === 0 ? undefined : `Used: ${parts.join(", ")}.`;
 }
 
+/** The switches of the patches (D72), each 0 unless the build defines it, with the ranges of its patches. */
+export function switchesOf(layout: Pick<Layout, "patches">): Map<string, PatchBlock[]> {
+  const switches = new Map<string, PatchBlock[]>();
+  for (const patch of [...layout.patches.values()].sort((a, b) => a.start - b.start)) switches.set(patch.switch, [...(switches.get(patch.switch) ?? []), patch]);
+  return new Map([...switches].sort(([a], [b]) => (a < b ? -1 : 1)));
+}
+
+function switchLines(layout: Layout): string[] {
+  const switches = switchesOf(layout);
+  if (switches.size === 0) return [];
+  const width = Math.max(...[...switches.keys()].map((name) => name.length));
+  const lines = ["; Switches: each is 0 unless the build defines it. Assemble with -DNAME=1", "; (c64-assembler --define NAME=1) to put in the patches of NAME."];
+  for (const [name, patches] of switches) {
+    const ranges = patches.map((patch) => `${hex4(patch.start)}-${hex4(patch.end)}`).join(", ");
+    lines.push(`!ifndef ${name} { ${name} = 0 }${" ".repeat(width - name.length)} ; ${patches.length} patch${patches.length === 1 ? "" : "es"}: ${ranges}`);
+  }
+  return [...lines, ""];
+}
+
 /** constants.asm: the names outside the image by platform area, each with what it is and how the source uses it. */
 function constantsText(layout: Layout): string {
   const { describe } = layout;
@@ -594,10 +673,11 @@ function constantsText(layout: Layout): string {
   });
   const nameColumn = Math.min(MAX_NAME_COLUMN, Math.max(0, ...rows.map((row) => row.name.length)));
   const valueColumn = Math.max(0, ...rows.map((row) => row.value.length));
-  const out = [
+  const out = [...switchLines(layout)];
+  out.push(
     describe === undefined ? "; Names of addresses outside the image." : "; Names of addresses outside the image, by memory area.",
     '; "Used" counts the instructions and table entries of this source that use the name.',
-  ];
+  );
   // Without platform areas the names form one group.
   if (describe === undefined && rows.length > 0) out.push("");
   let area: Area | undefined;
@@ -629,6 +709,25 @@ export interface Rendered {
   expressions: Array<{ address: number; length: number; file: string; line: number }>;
   /** Operand expressions written as numbers, in address order (D65). */
   operandsAsNumbers: OperandAsNumber[];
+  /** The patches written, in address order (D72). */
+  patches: number;
+}
+
+/** The lines that open a patch (D72): its zone, the switch, the code, and the guard that stops a patch longer than its range. */
+function patchOpening(patch: PatchBlock): string[] {
+  const bytes = patch.end - patch.start + 1;
+  const range = `${hex4(patch.start)}-${hex4(patch.end)}`;
+  const comment = patch.comment === undefined ? [] : patch.comment.split(/\r?\n/).map((line) => `${INDENT}; ${line}`.trimEnd());
+  return [
+    `!zone patch_${patch.switch}_${patch.start.toString(16).padStart(4, "0")} {`,
+    ".patch_start",
+    `!if ${patch.switch} {`,
+    `${INDENT}; ${patch.switch} on: ${bytes} byte${bytes === 1 ? "" : "s"} at ${range}, NOP after the code`,
+    ...comment,
+    ...(patch.code === "" ? [] : patch.code.split(/\r?\n/)),
+    `${INDENT}!if * - .patch_start > ${bytes} { !error "The patch ${patch.switch} at ${hex4(patch.start)} has ", * - .patch_start, " bytes; the range has ${bytes}." } else { !fill ${bytes} - (* - .patch_start), $ea }`,
+    "} else {",
+  ];
 }
 
 const withSide = (text: string, side: string | undefined) => (side === undefined ? text : `${text.padEnd(SIDE_COLUMN - 1)} ; ${side}`);
@@ -647,7 +746,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     else sideComments.set(comment.address, comment.text.replace(/\s*\r?\n\s*/g, " "));
   }
   const breaks = new Set<number>([...layout.names.keys(), ...lineComments.keys(), ...sideComments.keys()]);
-  const result: Rendered = { files: [], instructions: 0, dataBytes: 0, undecodedBytes: 0, asBytes: [], expressions: [], operandsAsNumbers: [...layout.operandsAsNumbers] };
+  const result: Rendered = { files: [], instructions: 0, dataBytes: 0, undecodedBytes: 0, asBytes: [], expressions: [], operandsAsNumbers: [...layout.operandsAsNumbers], patches: 0 };
   const unwritten = new Map(layout.operandsAsNumbers.map((row) => [row.address, row.expression]));
   const { coverage } = layout;
   const notExecuted = { instructions: 0, ranges: [] as Range[] };
@@ -658,12 +757,30 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     let running = false;
     /** The line of the mark of the open range of instructions that did not execute. */
     let markLine = 0;
+    /** The open patch: its labels are defined before it, so the original code writes none (D72). */
+    let patch: PatchBlock | undefined;
     const head = (address: number) => {
+      if (patch?.start === address) return;
       for (const text of lineComments.get(address) ?? []) out.push(`; ${text}`.trimEnd());
       const label = layout.names.get(address);
-      if (label !== undefined) out.push(label);
+      if (label !== undefined && patch === undefined) out.push(label);
     };
     for (const item of piece.items) {
+      const itemStart = item.kind === "instruction" ? item.address : item.start;
+      const opened = layout.patches.get(itemStart);
+      if (opened !== undefined) {
+        head(itemStart);
+        for (const address of opened.inner) out.push(`${layout.names.get(address)!} = * + ${address - opened.start}`);
+        out.push(...patchOpening(opened));
+        patch = opened;
+        result.patches++;
+      }
+      const close = () => {
+        const itemEnd = item.kind === "instruction" ? item.address + item.length - 1 : item.end;
+        if (patch === undefined || itemEnd !== patch.end) return;
+        out.push("}", "}");
+        patch = undefined;
+      };
       if (item.kind === "instruction") {
         head(item.address);
         const executed = coverage === undefined || (coverage[item.address]! & COVERAGE.ramExecute) !== 0;
@@ -685,7 +802,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         for (let offset = 1; offset < item.length; offset++) {
           const inside = item.address + offset;
           const label = layout.names.get(inside);
-          if (label !== undefined) out.push(`${label} = * + ${offset}`);
+          if (label !== undefined && patch === undefined) out.push(`${label} = * + ${offset}`);
           for (const text of lineComments.get(inside) ?? []) sides.push(text);
           if (sideComments.has(inside)) sides.push(sideComments.get(inside)!);
         }
@@ -717,6 +834,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
           out.push(withSide(`${INDENT}${instructionText(item.opcode, form.suffix, expression)}`, sides.length === 0 ? undefined : sides.join(" ")));
         }
         result.instructions++;
+        close();
         continue;
       }
       running = false;
@@ -730,6 +848,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
       const bytes = item.end - item.start + 1;
       if (item.type === "undecoded") result.undecodedBytes += bytes;
       else result.dataBytes += bytes;
+      close();
     }
     result.files.push({ name: piece.file, text: `${out.join("\n")}\n` });
   }
