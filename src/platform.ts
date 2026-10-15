@@ -323,10 +323,33 @@ const AREAS: Array<{ start: number; end: number; area: string; kind: Lookup["kin
 
 const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
 
+export interface Area {
+  name: string;
+  start: number;
+  end: number;
+  kind: Lookup["kind"];
+  /** What a memory area holds. A chip register block has none: its name says it. */
+  meaning?: string;
+}
+
+/** The memory area or the I/O register block of an address. */
+export function areaOf(address: number): Area {
+  const block = IO.find((candidate) => address >= candidate.start && address <= candidate.end);
+  if (block !== undefined) return { name: block.area, start: block.start, end: block.end, kind: "platform" };
+  const area = AREAS.find((candidate) => address >= candidate.start && address <= candidate.end)!;
+  return { name: area.area, start: area.start, end: area.end, kind: area.kind, meaning: area.meaning };
+}
+
+/** The area of an address, and the register that an I/O mirror repeats: c64-source groups and describes its constants with them. */
+export function describeAddress(address: number): { area: Area; mirrorOf?: number } {
+  const { mirrorOf } = lookup(address);
+  return { area: areaOf(address), ...(mirrorOf === undefined ? {} : { mirrorOf }) };
+}
+
 /** The platform meaning of one address, or its application area. */
 export function lookup(address: number): Lookup {
-  for (const block of IO) {
-    if (address < block.start || address > block.end) continue;
+  const block = IO.find((candidate) => address >= candidate.start && address <= candidate.end);
+  if (block !== undefined) {
     const base = block.start + ((address - block.start) % block.period);
     const register = block.registers.find((entry) => entry.start === base);
     const mirror = base !== address ? { mirrorOf: base } : {};
@@ -334,11 +357,11 @@ export function lookup(address: number): Lookup {
     return { address, kind: "platform", area: block.area, name: register.name, meaning: register.meaning, ...mirror };
   }
   const entry = [...SYSTEM, ...ROM].find((candidate) => address >= candidate.start && address <= candidate.end);
-  const area = AREAS.find((candidate) => address >= candidate.start && address <= candidate.end)!;
+  const area = areaOf(address);
   if (entry !== undefined) {
-    return { address, kind: "platform", area: area.area, name: entry.name, meaning: entry.meaning, ...(entry.start !== address ? { entryStart: entry.start } : {}) };
+    return { address, kind: "platform", area: area.name, name: entry.name, meaning: entry.meaning, ...(entry.start !== address ? { entryStart: entry.start } : {}) };
   }
-  return { address, kind: area.kind, area: area.area, meaning: area.meaning };
+  return { address, kind: area.kind, area: area.name, meaning: area.meaning! };
 }
 
 /**

@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 import { assemble } from "../../src/native/acme.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { decode, IO, lookup, platformNames, ROM } from "../../src/platform.ts";
+import { areaOf, decode, describeAddress, IO, lookup, platformNames, ROM } from "../../src/platform.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-memmap-"));
 after(() => rmSync(project, { recursive: true, force: true }));
@@ -40,6 +40,16 @@ test("I/O registers repeat through their area", () => {
   assert.match(lookup(0xdc0d).meaning, /^CIA 1: Interrupt control/);
   assert.equal(IO[0]!.registers.length, 47);
   assert.equal(IO[1]!.registers.length, 29);
+});
+
+test("each address has one area: a chip register block, or a memory area with its meaning", () => {
+  assert.deepEqual(areaOf(0xd020), { name: "VIC-II registers", start: 0xd000, end: 0xd3ff, kind: "platform" });
+  assert.deepEqual(areaOf(0xdc0d), { name: "CIA 1 registers", start: 0xdc00, end: 0xdcff, kind: "platform" });
+  assert.deepEqual(areaOf(0x00fb), { name: "zero page", start: 0x0000, end: 0x00ff, kind: "platform", meaning: "Zero page. The system uses most of it; $FB-$FE are free." });
+  assert.equal(areaOf(0x2000).kind, "application");
+  for (let address = 0; address <= 0xffff; address++) assert.equal(areaOf(address).name, lookup(address).area, `area of ${address.toString(16)}`);
+  assert.deepEqual(describeAddress(0xd060), { area: areaOf(0xd020), mirrorOf: 0xd020 });
+  assert.deepEqual(describeAddress(0xd020), { area: areaOf(0xd020) });
 });
 
 test("the KERNAL jump table has 39 entries of 3 bytes from $ff81", () => {

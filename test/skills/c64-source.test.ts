@@ -19,6 +19,7 @@ import { localToolContext } from "../../src/native/local.ts";
 import { ciaSection, copyOrder, planLoader, readEntryState, simulate, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/loader.ts";
 import { MODE_LENGTH, OPCODES } from "../../skills/c64-source/scripts/opcodes.ts";
 import { entriesInData, entryOutsideImage, layout, render, type SourceInput } from "../../skills/c64-source/scripts/source.ts";
+import { describeAddress, platformNames } from "../../src/platform.ts";
 
 let acmeSkip: string | false = false;
 try {
@@ -53,6 +54,8 @@ function input(bytes: number[], start: number, overrides: Partial<SourceInput> =
 }
 
 const textOf = (rendered: ReturnType<typeof render>, name: string) => rendered.files.find((file) => file.name === name)!.text;
+/** The head of constants.asm without platform areas. */
+const CONSTANTS = '; Names of addresses outside the image.\n; "Used" counts the instructions and table entries of this source that use the name.\n\n';
 
 test("the ACME table has every opcode, with the 6502 length of each", () => {
   for (let opcode = 0; opcode < 0x100; opcode++) {
@@ -72,7 +75,7 @@ test("operands get names, forced sizes and labels inside instructions", () => {
   assert.match(text, /^start\n {8}lda\+2 \$0012$/m);
   assert.match(text, /sta l_1007\nl_1007 = \* \+ 1\n {8}lda #\$00/);
   assert.match(text, /lda border\n {8}jmp start/);
-  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nborder = $d020\n");
+  assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}border = $d020 ; Used: read 1.\n`);
   assert.match(textOf(rendered, "main.asm"), /^; header\n\n!cpu 6510\n!source "constants.asm"\n\n\* = \$1000\n!source "segment_1000.asm"\n$/);
   assert.deepEqual([laid.namedLabels, laid.generatedLabels], [1, 1]);
 });
@@ -243,7 +246,7 @@ test("with real ACME, zero-page names outside the image assemble to zero-page in
   const symbols = [{ address: 0x66, name: "ptr" }, { address: 0x05, name: "small" }];
   const platform = [{ address: 0x03, end: 0x04, name: "ADRAY1" }, { address: 0x0318, end: 0x0319, name: "NMINV" }];
   const rendered = render(layout(input(bytes, 0x1000, { instructions, symbols, platform })), new Set(), []);
-  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nADRAY1 = $03\nsmall = $05\nptr = $66\nNMINV = $0318\n");
+  assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}ADRAY1 = $03   ; Used: read 2.\nsmall  = $05   ; Used: read 1.\nptr    = $66   ; Used: read 2, pointer 1.\nNMINV  = $0318 ; Used: written 1.\n`);
   assert.match(textOf(rendered, "segment_1000.asm"), /sta \(ptr\),y\n {8}lda ptr,x\n {8}lda\+2 small\n {8}sta NMINV\+1\n {8}lda ADRAY1\+1\n {8}lda\+2 ADRAY1\+1\n/);
   const contents = rendered.files.map((file) => Buffer.from(file.text));
   const { result, attachments } = await assemble(
@@ -302,7 +305,7 @@ test("operand expressions are written in place of numbers, with the names of the
     "lda #$05                        ; = nowhere + 5",
   ]);
   assert.doesNotMatch(text, /l_101f/, "the byte before the table gets no label");
-  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nVICSCN = $0400\ncharset = $2000\nEXTCOL = $d020\n");
+  assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}VICSCN  = $0400 ; Used: address 1.\ncharset = $2000 ; Used: address 1.\nEXTCOL  = $d020 ; Used: written 1.\n`);
   assert.deepEqual(
     rendered.operandsAsNumbers.map((row) => [row.address, row.expression]),
     [[0x1001, "<table"], [0x100f, "1"], [0x1010, "nowhere + 5"]],
@@ -514,7 +517,7 @@ test("an address without a knowledge name gets its platform name; a knowledge na
   const laid = layout(input(bytes, 0x1000, { instructions, platform, symbols: [{ address: 0xd021, name: "background" }, { address: 0x2000, name: "CHROUT" }] }));
   const rendered = render(laid, new Set(), []);
   assert.match(textOf(rendered, "segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}jsr \$ffd2\n/);
-  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nEXTCOL = $d020\nbackground = $d021\n");
+  assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}EXTCOL     = $d020 ; Used: written 1.\nbackground = $d021 ; Used: written 1.\n`);
 });
 
 test("an analyzer name gives way to the platform name, and a user or LLM name still wins (D61)", () => {
@@ -530,7 +533,7 @@ test("an analyzer name gives way to the platform name, and a user or LLM name st
   ];
   const rendered = render(layout(input(bytes, 0x1000, { instructions, platform, symbols })), new Set(), []);
   assert.match(textOf(rendered, "segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}sta CINV\n/);
-  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nCINV = $0314\nEXTCOL = $d020\nbackground = $d021\n");
+  assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}CINV       = $0314 ; Used: written 1.\nEXTCOL     = $d020 ; Used: written 1.\nbackground = $d021 ; Used: written 1.\n`);
 });
 
 test("an address inside a platform entry gets NAME+n only when it has no name of its own and the entry name is in use (F-20)", () => {
@@ -542,7 +545,44 @@ test("an address inside a platform entry gets NAME+n only when it has no name of
   const symbols = [{ address: 0x0315, name: "irqHigh" }, { address: 0x0316, name: "brkVector" }, { address: 0x2000, name: "NMINV" }];
   const rendered = render(layout(input(bytes, 0x1000, { instructions, platform, symbols })), new Set(), []);
   assert.match(textOf(rendered, "segment_1000.asm"), / {8}sta \$0319\n {8}sta irqHigh\n {8}sta brkVector\+1\n/);
-  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nirqHigh = $0315\nbrkVector = $0316\n");
+  assert.equal(textOf(rendered, "constants.asm"), `${CONSTANTS}irqHigh   = $0315 ; Used: written 1.\nbrkVector = $0316 ; Used: written 1.\n`);
+});
+
+test("constants.asm groups its names by platform area, and says what each name is and how the source uses it", () => {
+  // LDA $0C, STA $0C, LDA ($FB),Y, STA $D020, STA $D021, STA $D060, JSR $FFD2, RTS, then a pointer table with $C000
+  const bytes = [0xa5, 0x0c, 0x85, 0x0c, 0xb1, 0xfb, 0x8d, 0x20, 0xd0, 0x8d, 0x21, 0xd0, 0x8d, 0x60, 0xd0, 0x20, 0xd2, 0xff, 0x60, 0x00, 0xc0];
+  const instructions = new Map([[0x1000, 2], [0x1002, 2], [0x1004, 2], [0x1006, 3], [0x1009, 3], [0x100c, 3], [0x100f, 3], [0x1012, 1]]);
+  const symbols = [{ address: 0x0c, name: "joy_state" }, { address: 0xd021, name: "background" }, { address: 0xd060, name: "border_mirror" }, { address: 0xc000, name: "buffer" }];
+  const regions: SourceInput["regions"] = [{ start: 0x1013, end: 0x1014, type: "addresses" }];
+  // A knowledge comment wins over the platform meaning.
+  const comments: SourceInput["comments"] = [{ address: 0x0c, placement: "side", text: "Joystick 2 bits,\nlow active." }, { address: 0xd020, placement: "line", text: "Flashes on a hit." }];
+  const rendered = render(layout(input(bytes, 0x1000, { instructions, symbols, regions, comments, platform: platformNames(), describe: describeAddress })), new Set(), []);
+  assert.equal(
+    textOf(rendered, "constants.asm"),
+    [
+      "; Names of addresses outside the image, by memory area.",
+      '; "Used" counts the instructions and table entries of this source that use the name.',
+      "",
+      "; Zero page $0000-$00ff",
+      "; Zero page. The system uses most of it; $FB-$FE are free.",
+      "joy_state     = $0c   ; Joystick 2 bits, low active. Used: read 1, written 1.",
+      "FREEZP        = $fb   ; Free zero page: the system does not use these bytes. Used: pointer 1.",
+      "",
+      "; Free RAM $c000-$cfff",
+      "; Free RAM. The application decides what is here.",
+      "buffer        = $c000 ; Used: table 1.",
+      "",
+      "; VIC-II registers $d000-$d3ff",
+      "EXTCOL        = $d020 ; Flashes on a hit. Used: written 1.",
+      "background    = $d021 ; BGCOL0: Background color 0 (bits 0-3). Used: written 1.",
+      "border_mirror = $d060 ; Mirror of $d020 (EXTCOL). Used: written 1.",
+      "",
+      "; KERNAL ROM or RAM $e000-$ffff",
+      "; KERNAL ROM when $01 bit 1 is set, else RAM.",
+      "CHROUT        = $ffd2 ; KERNAL jump table: Writes the character in A to the output channel. Used: called 1.",
+      "",
+    ].join("\n"),
+  );
 });
 
 test("an --entry in a data region of the knowledge is reported with the region (F-27)", () => {

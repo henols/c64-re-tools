@@ -59,3 +59,22 @@ export function takesAddress(mode: Mode): boolean {
 export function isZeroPageMode(mode: Mode): boolean {
   return mode === "zp" || mode === "zpx" || mode === "zpy" || mode === "izx" || mode === "izy";
 }
+
+/** How an instruction uses the address of its operand, in the order a summary lists them. */
+export const USE_KINDS = ["read", "written", "modified", "called", "jumped to", "jumped through", "branched to", "pointer", "address", "table"] as const;
+export type UseKind = (typeof USE_KINDS)[number];
+
+const WRITES = new Set(["sta", "stx", "sty", "sax", "sha", "shx", "shy", "tas"]);
+const MODIFIES = new Set(["inc", "dec", "asl", "lsr", "rol", "ror", "slo", "rla", "sre", "rra", "dcp", "isc"]);
+
+/** The use of the operand address of an instruction that takes an address. Through (zp),y and (zp,x) the address is a pointer. */
+export function useKind(opcode: number): UseKind {
+  const { mnemonic, mode } = OPCODES[opcode]!;
+  if (mode === "izx" || mode === "izy") return "pointer";
+  if (mode === "rel") return "branched to";
+  if (mnemonic === "jsr") return "called";
+  if (mnemonic === "jmp") return mode === "ind" ? "jumped through" : "jumped to";
+  if (WRITES.has(mnemonic)) return "written";
+  if (MODIFIES.has(mnemonic)) return "modified";
+  return "read";
+}

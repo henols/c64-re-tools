@@ -11,7 +11,8 @@ import { WireFailure } from "#src/host-client/tools.ts";
 import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
 import { ANALYZERS } from "#src/knowledge/import.ts";
 import { isGeneratedFile, type CommentPlacement, type Origin, type RegionType } from "#src/knowledge/schema.ts";
-import { hasZeroPageForm, MNEMONICS, MODE_LENGTH, OPCODES, takesAddress, type Mode } from "./opcodes.ts";
+import type { Area } from "#src/platform.ts";
+import { hasZeroPageForm, MNEMONICS, MODE_LENGTH, OPCODES, takesAddress, USE_KINDS, useKind, type Mode, type UseKind } from "./opcodes.ts";
 
 export interface Range {
   start: number;
@@ -35,8 +36,10 @@ export interface SourceInput {
   referenceTargets: readonly number[];
   /** Joined coverage files (D40): an instruction that no run executed is marked (D49). */
   coverage?: Uint8Array;
-  /** Platform names (D52): the name of an address that knowledge does not name, and the last address of its entry. */
-  platform?: ReadonlyArray<{ address: number; end: number; name: string }>;
+  /** Platform names (D52): the name of an address that knowledge does not name, the last address of its entry, and what it is. */
+  platform?: ReadonlyArray<{ address: number; end: number; name: string; meaning?: string }>;
+  /** The platform area of an address, and the register that an I/O mirror repeats: constants.asm groups and describes its names with them. */
+  describe?: (address: number) => { area: Area; mirrorOf?: number };
   /** Operand expressions of the knowledge (D65), by instruction address. */
   operands?: ReadonlyArray<OperandExpression & { address: number }>;
 }
@@ -92,6 +95,10 @@ export interface Layout {
   names: Map<number, string>;
   /** Addresses outside the image that the source names, as constants. */
   constants: number[];
+  /** How the source uses each constant: instructions by kind, and pointer table entries. */
+  uses: Map<number, Map<UseKind, number>>;
+  platform: NonNullable<SourceInput["platform"]>;
+  describe?: SourceInput["describe"];
   inImage: (address: number) => boolean;
   byteAt: (address: number) => number;
   comments: SourceInput["comments"];
@@ -221,13 +228,20 @@ export function layout(input: SourceInput): Layout {
   const symbols = new Map(input.symbols.filter((symbol) => !(isAnalyzer(symbol.origin) && platform.has(symbol.address))).map((symbol) => [symbol.address, symbol.name]));
   /** Addresses outside the image without a name of their own, inside a named platform entry of more bytes: the start of that entry (F-20). */
   const insideEntry = new Map<number, number>();
-  const use = (address: number) => {
+  const uses = new Map<number, Map<UseKind, number>>();
+  const count = (constant: number, kind: UseKind) => {
+    outside.add(constant);
+    const kinds = uses.get(constant) ?? new Map<UseKind, number>();
+    kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
+    uses.set(constant, kinds);
+  };
+  const use = (address: number, kind: UseKind) => {
     if (inImage(address)) wanted.add(address);
-    else if (symbols.has(address) || platform.has(address)) outside.add(address);
+    else if (symbols.has(address) || platform.has(address)) count(address, kind);
     else {
       const entry = input.platform?.find((row) => address > row.address && address <= row.end && !inImage(row.address) && (symbols.has(row.address) || platform.has(row.address)));
       if (entry === undefined) return;
-      outside.add(entry.address);
+      count(entry.address, kind);
       insideEntry.set(address, entry.address);
     }
   };
@@ -236,7 +250,7 @@ export function layout(input: SourceInput): Layout {
   for (const row of input.platform ?? []) if (!byName.has(row.name)) byName.set(row.name, row.address);
   for (const symbol of input.symbols) byName.set(symbol.name, symbol.address);
   const instructionAt = new Map(pieces.flatMap((piece) => piece.items.flatMap((item) => (item.kind === "instruction" ? [[item.address, item] as const] : []))));
-  const expressions: Array<{ address: number; text: string }> = [];
+  const expressions: Array<{ address: number; text: string; kind: UseKind }> = [];
   const operandsAsNumbers: OperandAsNumber[] = [];
   for (const operand of [...(input.operands ?? [])].sort((a, b) => a.address - b.address)) {
     const expression = operandText(operand);
@@ -251,18 +265,19 @@ export function layout(input: SourceInput): Layout {
       operandsAsNumbers.push({ address: operand.address, expression, reason: `No symbol and no platform name is ${missing.join(", ")}.` });
       continue;
     }
-    expressions.push({ address: operand.address, text: expression });
+    // An immediate operand builds the address of a name; any other operand uses the address as the instruction does.
+    expressions.push({ address: operand.address, text: expression, kind: mode === "imm" ? "address" : useKind(item!.opcode) });
   }
-  for (const { text: expression } of expressions) for (const name of identifiers(expression)) use(byName.get(name)!);
+  for (const { text: expression, kind } of expressions) for (const name of identifiers(expression)) use(byName.get(name)!, kind);
   // An instruction with an expression names what the expression names, not its plain target (D65).
   const written = new Set(expressions.map((expression) => expression.address));
   for (const piece of pieces) {
     for (const item of piece.items) {
       if (item.kind === "instruction") {
-        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address)) use(operandValue(item.address, item.opcode, input.byteAt)!);
+        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address)) use(operandValue(item.address, item.opcode, input.byteAt)!, useKind(item.opcode));
         continue;
       }
-      for (const pointer of pointersOf(item, input.byteAt)) use(pointer);
+      for (const pointer of pointersOf(item, input.byteAt)) use(pointer, "table");
     }
   }
   for (const symbol of input.symbols) want(symbol.address);
@@ -310,6 +325,9 @@ export function layout(input: SourceInput): Layout {
     pieces,
     names,
     constants: [...outside].sort((a, b) => a - b),
+    uses,
+    platform: input.platform ?? [],
+    ...(input.describe === undefined ? {} : { describe: input.describe }),
     inImage,
     byteAt: input.byteAt,
     comments: input.comments,
@@ -539,6 +557,63 @@ function dataLines(item: DataItem, layout: Layout, breaks: Set<number>): Array<{
   return lines;
 }
 
+// --- Constants --------------------------------------------------------------
+
+/** A longer name moves only its own comment, not the columns of the file. */
+const MAX_NAME_COLUMN = 24;
+
+/** What an address outside the image is: the comment of the knowledge, else the platform meaning, else the register that a mirror repeats. */
+function describeConstant(layout: Layout, address: number): string | undefined {
+  const comments = layout.comments.filter((comment) => comment.address === address);
+  // Line comments come before the side comment, as they do in the code.
+  const own = [...comments.filter((comment) => comment.placement === "line"), ...comments.filter((comment) => comment.placement === "side")];
+  if (own.length > 0) return own.map((comment) => comment.text.replace(/\s*\r?\n\s*/g, " ").trim()).join(" ");
+  const entry = layout.platform.find((row) => address >= row.address && address <= row.end);
+  if (entry?.meaning !== undefined) {
+    const platformName = address === entry.address ? entry.name : `${entry.name}+${address - entry.address}`;
+    return platformName === layout.names.get(address) ? entry.meaning : `${platformName}: ${entry.meaning}`;
+  }
+  const mirrorOf = layout.describe?.(address).mirrorOf;
+  if (mirrorOf === undefined) return undefined;
+  const register = layout.platform.find((row) => row.address === mirrorOf);
+  return `Mirror of ${hex4(mirrorOf)}${register === undefined ? "" : ` (${register.name})`}.`;
+}
+
+/** How the source uses a constant, for example "Used: read 4, written 1." */
+function usageText(kinds: ReadonlyMap<UseKind, number> | undefined): string | undefined {
+  const parts = USE_KINDS.filter((kind) => kinds?.has(kind)).map((kind) => `${kind} ${kinds!.get(kind)!}`);
+  return parts.length === 0 ? undefined : `Used: ${parts.join(", ")}.`;
+}
+
+/** constants.asm: the names outside the image by platform area, each with what it is and how the source uses it. */
+function constantsText(layout: Layout): string {
+  const { describe } = layout;
+  const rows = layout.constants.map((address) => {
+    const comment = [describeConstant(layout, address), usageText(layout.uses.get(address))].filter((text) => text !== undefined).join(" ");
+    return { address, name: layout.names.get(address)!, value: constantValue(address), comment };
+  });
+  const nameColumn = Math.min(MAX_NAME_COLUMN, Math.max(0, ...rows.map((row) => row.name.length)));
+  const valueColumn = Math.max(0, ...rows.map((row) => row.value.length));
+  const out = [
+    describe === undefined ? "; Names of addresses outside the image." : "; Names of addresses outside the image, by memory area.",
+    '; "Used" counts the instructions and table entries of this source that use the name.',
+  ];
+  // Without platform areas the names form one group.
+  if (describe === undefined && rows.length > 0) out.push("");
+  let area: Area | undefined;
+  for (const row of rows) {
+    const next = describe?.(row.address).area;
+    if (next !== undefined && next.start !== area?.start) {
+      area = next;
+      out.push("", `; ${area.name[0]!.toUpperCase()}${area.name.slice(1)} ${hex4(area.start)}-${hex4(area.end)}`);
+      if (area.meaning !== undefined) out.push(`; ${area.meaning}`);
+    }
+    const line = `${row.name.padEnd(nameColumn)} = ${row.value.padEnd(valueColumn)}`;
+    out.push(row.comment === "" ? line.trimEnd() : `${line} ; ${row.comment}`);
+  }
+  return `${out.join("\n")}\n`;
+}
+
 // --- Rendering --------------------------------------------------------------
 
 export interface Rendered {
@@ -659,8 +734,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     result.files.push({ name: piece.file, text: `${out.join("\n")}\n` });
   }
 
-  const constants = ["; Names outside the image.", ...layout.constants.map((address) => `${layout.names.get(address)} = ${constantValue(address)}`)];
-  result.files.push({ name: "constants.asm", text: `${constants.join("\n")}\n` });
+  result.files.push({ name: "constants.asm", text: constantsText(layout) });
   const main = [...header.map((line) => `; ${line}`), "", "!cpu 6510", '!source "constants.asm"'];
   for (const piece of layout.pieces) {
     if (piece.segmentStart) main.push("", `* = ${hex4(piece.start)}`);
