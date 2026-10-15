@@ -4,7 +4,7 @@ name: Live
 # VICE itself; the product never does (it refuses by name with the remedy).
 # c64-re-tools needs VICE 3.9 or later and supports the latest release (D56):
 # Linux runs in Debian 13, whose package is VICE 3.9, the minimum (Ubuntu
-# 24.04 has 3.7.1); macOS (Homebrew) and Windows run the latest release.
+# 24.04 has 3.7.1); Windows runs the latest release. macOS (Homebrew) is off for now.
 
 on:
   push:
@@ -83,7 +83,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        # macOS is off for now (2026-10-15): Homebrew's VICE 3.10 x64sc stops on -version, and the macOS job failed on it.
+        # Its steps stay; add macos-latest here again to run it.
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
