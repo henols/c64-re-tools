@@ -30,14 +30,15 @@ When c64-re-tools first needs persistent project knowledge, it creates:
 ~~~text
 <project root>/
 └── .c64-re-tools/
-    └── knowledge.db
+    ├── knowledge/      the knowledge text, committed (D69)
+    └── local/          the index knowledge.db and the agent's scratch, never committed
 ~~~
 
 The directory marks the project (§2) and holds toolkit-owned storage.
 
-Read-only knowledge access may treat a missing knowledge.db as an empty knowledge store without creating the file.
+A read of a project without `knowledge/` is empty knowledge and creates nothing.
 
-The first durable semantic write or analyzer import creates .c64-re-tools/ and knowledge.db automatically.
+The first durable semantic write or analyzer import creates .c64-re-tools/knowledge/ with its .gitattributes, and the index in local/.
 
 ## 4. Project-relative paths
 
@@ -64,10 +65,10 @@ The LLM normally sees these project-relative paths. A shell redirect is relative
 The committed toolkit-owned project state is:
 
 ~~~text
-.c64-re-tools/knowledge.db
+.c64-re-tools/knowledge/
 ~~~
 
-Beside it, `.c64-re-tools/local/` holds what the agent saves for itself: script results, batches and step files (D70). It has a `.gitignore` with `*`, so git ignores it in a workspace and in a single project alike. The scripts and the MCP server make it when they resolve a project that has `.c64-re-tools/`, and the first knowledge write makes it with the database.
+Beside it, `.c64-re-tools/local/` holds the index `knowledge.db` and what the agent saves for itself: script results, batches and step files (D70). It has a `.gitignore` with `*`, so git ignores it in a workspace and in a single project alike. The scripts and the MCP server make it when they resolve a project that has `.c64-re-tools/`, and the first knowledge write makes it with the index.
 
 Do not create other runtime/cache trees in the project, such as:
 
@@ -81,15 +82,11 @@ staging/
 builds/
 ~~~
 
-## 6. SQLite side files
+## 6. Text and index
 
-knowledge.db must remain a self-contained source-controlled database after each successful committed write.
+Each committed write leaves complete knowledge files: they are written through a temporary file and a rename before the index commits.
 
-Use SQLite rollback-journal semantics for v1 rather than relying on persistent WAL state.
-
-Temporary SQLite journal/locking files may exist while a process is active, but committed project knowledge must be present in knowledge.db when the transaction completes.
-
-SQLite owns database locking/concurrency; no additional project lock file is required.
+The index uses rollback-journal semantics. Its journal and lock files stay in local/. SQLite owns locking; no additional project lock file is required.
 
 ## 7. Where non-project state lives
 
@@ -123,7 +120,7 @@ Assembler outputs are normal developer/project artifacts written by the skill to
 
 ### Test scenarios
 
-Persisted scenario definitions are ordinary developer-authored project files at locations chosen by the developer. They are not hidden toolkit state and are not stored in knowledge.db.
+Persisted scenario definitions are ordinary developer-authored project files at locations chosen by the developer. They are not hidden toolkit state and are not stored in the knowledge.
 
 ## 8. Shared runtime
 
@@ -140,7 +137,7 @@ Released skill scripts should still use bundled/shared runtime code rather than 
 
 ## 9. Knowledge API ownership
 
-All access to knowledge.db goes through one shared local knowledge library.
+All access to the knowledge goes through one shared local knowledge library.
 
 It owns:
 
@@ -167,4 +164,4 @@ knowledge database requires an unsupported migration
 
 ## 11. Operational invariant
 
-> A project is a folder with .c64-re-tools/. Start the harness in it, or above several of them and name one with --project (scripts) or project (MCP tools). c64-re-tools stores durable knowledge in its .c64-re-tools/knowledge.db and scratch in its .c64-re-tools/local/.
+> A project is a folder with .c64-re-tools/. Start the harness in it, or above several of them and name one with --project (scripts) or project (MCP tools). c64-re-tools stores durable knowledge in its .c64-re-tools/knowledge/ and scratch in its .c64-re-tools/local/.

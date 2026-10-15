@@ -27,8 +27,8 @@ mined, ported or kept for reference.
 Architecture in one line: one MCP process owns one VICE instance and is
 VICE-only; a Host Runtime on the graphical host owns VICE and the tools that
 come with it (c1541, petcat); skill scripts call the Host Runtime for those,
-run ACME, DXA and Ghidra themselves (D16), and keep project knowledge local in
-`.c64-re-tools/knowledge.db`.
+run ACME, DXA and Ghidra themselves (D16), and keep project knowledge local as
+text in `.c64-re-tools/knowledge/` (D69), with a SQLite index in `local/`.
 
 ## Commands
 

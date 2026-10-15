@@ -231,7 +231,7 @@ The original application (for example `.prg`, `.d64` or `.crt`) remains wherever
 The only mandatory persistent toolkit-owned state is:
 
 ```text
-.c64-re-tools/knowledge.db
+.c64-re-tools/knowledge/
 ```
 
 Runtime/session/tool scratch data stays outside the project. `.c64-re-tools/` is reserved for durable project knowledge.
@@ -256,7 +256,7 @@ LLM and user findings may add semantic names and interpretations that are more m
 
 The schema must remain deliberately small. New tables/fields require a concrete feature requirement.
 
-SQLite is the sole authoritative representation. The project shall not maintain synchronized JSON/JSONL mirrors.
+The knowledge text (sorted JSON lines, D69) is the sole authoritative representation; SQLite is an index made again from it.
 
 ## 12.1 Ghidra CPU-language requirements
 

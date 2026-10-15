@@ -195,7 +195,7 @@ A comparison can return useful domain-level information such as:
 
 Explicit threshold/mask policy comes from the test scenario.
 
-Baseline images are temporary MCP-session state. They do not belong in knowledge.db.
+Baseline images are temporary MCP-session state. They do not belong in the knowledge.
 
 ## 8. Atomic composite observation
 

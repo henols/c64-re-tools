@@ -13,7 +13,7 @@
                 │                ├──────────────┐
                 │                │              │
                 ▼                ▼              ▼
-           stateful VICE    Host Runtime    knowledge.db
+           stateful VICE    Host Runtime    knowledge text
               path          tool requests    project-local
                 │                │
                 ▼                ▼
@@ -25,7 +25,7 @@ The architecture intentionally exposes three different execution surfaces:
 
 1. **MCP** for stateful interaction with the one live VICE machine owned by that MCP process.
 2. **Skill-owned scripts** for deterministic non-VICE operations, using short-lived typed Host Runtime requests when a native host tool is required.
-3. **Project-local knowledge access** for `knowledge.db`; knowledge never goes through the Host Runtime.
+3. **Project-local knowledge access** for the knowledge; knowledge never goes through the Host Runtime.
 
 ## 2. MCP boundary
 
@@ -80,7 +80,7 @@ Skill scripts do not each implement their own broker protocol, staging mechanism
 
 ## 4. Project knowledge boundary
 
-`knowledge.db` belongs to the project environment.
+The knowledge (`.c64-re-tools/knowledge/`) belongs to the project environment.
 
 Knowledge operations run locally:
 
@@ -89,7 +89,7 @@ skill / local knowledge script
         ↓
 knowledge component
         ↓
-.c64-re-tools/knowledge.db
+.c64-re-tools/knowledge/
 ```
 
 The Host Runtime and native analyzers never open, own or mutate the database.
@@ -107,13 +107,13 @@ normalized findings
      ↓
 local deterministic knowledge importer
      ↓
-knowledge.db
+knowledge text
 ```
 
 The reverse direction is also local-first:
 
 ```text
-knowledge.db
+knowledge text
      ↓
 current symbols/regions
      ↓
@@ -150,7 +150,7 @@ A native-tool request does not select or inherit an MCP-owned VICE instance.
 
 - source code;
 - original application files;
-- `knowledge.db`;
+- the knowledge (`.c64-re-tools/knowledge/`);
 - developer-authored test/scenario files, if/when introduced.
 
 ### MCP/VICE-session-owned

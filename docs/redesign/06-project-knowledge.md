@@ -11,7 +11,7 @@ Examples are all valid:
 ```text
 game/
 ├── game.d64
-└── .c64-re-tools/knowledge.db
+└── .c64-re-tools/knowledge/
 ```
 
 ```text
@@ -19,18 +19,23 @@ game/
 ├── original.prg
 ├── src/
 │   └── main.a
-└── .c64-re-tools/knowledge.db
+└── .c64-re-tools/knowledge/
 ```
 
 The original application remains in the project where the developer chose to place it. Operations receive explicit project-relative paths when they need bytes/source.
 
 ## 2. Persistent toolkit state
 
-The only authoritative persistent toolkit-owned project state in v1 is:
+The only authoritative persistent toolkit-owned project state is the knowledge text (D69 in docs/plan.md):
 
 ```text
-.c64-re-tools/knowledge.db
+.c64-re-tools/knowledge/
+├── .gitattributes        *.jsonl merge=union
+├── revisions.jsonl
+└── <table>.jsonl         symbols, regions, comments, references, suppressions, modules, operands
 ```
+
+`.c64-re-tools/local/knowledge.db` is an index of that text. It is never committed and is made again whenever a knowledge file has another SHA-256 than the index holds.
 
 Do not create a general project-local runtime/cache tree under `.c64-re-tools`. Host Runtime state, screenshots, snapshots, analyzer scratch, staging and logs belong outside the project. See [17 — Project root and local state](17-project-root-and-local-state.md).
 
@@ -38,13 +43,13 @@ The project is the folder that holds `.c64-re-tools/` (17 §2, D67 in docs/plan.
 
 ## 3. One representation
 
-SQLite is the single source of truth for project knowledge and its history.
+The knowledge text is the single source of truth for project knowledge and its history (D69). Each line is one row, current or closed, with its id, its `added` and `closed` revision, keys in a fixed order and addresses as `"$c000"`; lines are sorted by space, address and revision. A revision id is the CET time in ISO 8601 basic form and six random characters (`20261015T214501.123-k3f9qz`), so ids from two computers never collide and sort by time; a row id is its revision id and its order in that revision.
 
-Do not maintain synchronized JSON, JSONL, YAML or other mirrors. If diagnostic/export commands are later useful, they render on demand; their output is not another authoritative project file.
+SQLite is the index that every read, write and check runs on. A write runs in SQLite, writes each changed knowledge file through a temporary file and a rename, and then commits, so a failed commit is healed from the text.
 
-Git may version the database file, but Git history is not the knowledge-history model. Knowledge history must be stored and queryable inside `knowledge.db`.
+Git history is not the knowledge-history model: the history is in the text and queryable through the index. Git joins the work of two computers line by line (`merge=union`); rows of both sides that break a current-row rule are conflicts. Reads show them, writes are refused, and `merge` keeps the newest row of each in one merge revision. Export output renders on demand and is not another authoritative project file.
 
-## 4. Database v1
+## 4. Tables
 
 Keep the first schema deliberately small:
 
@@ -342,7 +347,7 @@ A write is checked against the image that the caller names: the value of the exp
 
 ## 5. Automatic DXA/Ghidra import
 
-Analyzer processes run on the Host Runtime and never open `knowledge.db`.
+Analyzer processes run on the Host Runtime and never open the knowledge.
 
 The flow is:
 
@@ -357,7 +362,7 @@ deterministic knowledge importer
      ↓
 single SQLite transaction/revision
      ↓
-knowledge.db
+knowledge text
 ```
 
 The importer stores only durable reusable knowledge.
@@ -419,7 +424,7 @@ This creates an iterative loop:
 ```text
 DXA
  ↓
-knowledge.db
+knowledge text
  ↓
 VICE/LLM investigation
  ↓
@@ -429,7 +434,7 @@ Ghidra seeded by current knowledge
  ↓
 new structural findings
  ↓
-knowledge.db
+knowledge text
 ```
 
 Only current accepted knowledge is used to seed analysis; historical rows remain available for review but are not treated as current truth.
@@ -542,16 +547,18 @@ Typical write flow:
 BEGIN
   verify expected current revision if supplied
   validate operation/conflicts
+  refuse when the knowledge has conflicts (not for merge)
   insert revision row
   close superseded current rows
   insert new current rows
-  update meta.current_revision
+  check the current-row rules
+  write the changed knowledge files
 COMMIT
 ```
 
 A failure writes no partial revision and leaves current knowledge unchanged.
 
-Use SQLite rollback-journal semantics appropriate for a source-controlled single-file database. A successful committed write must be fully represented in `knowledge.db`; do not rely on persistent WAL state. SQLite owns locking/concurrency; no additional project lock file is required.
+The index uses SQLite rollback-journal semantics, and SQLite owns locking: one write or one rebuild of the index at a time, no additional project lock file.
 
 ## 11. What is not stored in v1
 

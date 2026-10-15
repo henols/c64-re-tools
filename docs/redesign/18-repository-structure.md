@@ -448,10 +448,14 @@ src/knowledge is the sole implementation allowed to understand the knowledge dat
 
 Owns:
 
-- .c64-re-tools/knowledge.db path;
-- open/create;
+- the paths of the knowledge text and of the index in local/;
+- open/create, and the rebuild of the index from the text;
 - SQLite connection settings;
-- transaction helper.
+- transaction helper, which writes the changed knowledge files.
+
+### text.ts, conflicts.ts
+
+The line format of the knowledge text and the revision ids; the conflicts that a git merge leaves (D69).
 
 ### schema.ts
 

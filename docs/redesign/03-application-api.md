@@ -117,7 +117,7 @@ normalized structural findings
       ↓
 local automatic knowledge import
       ↓
-knowledge.db
+knowledge text
       ↓
 LLM + VICE investigation
       ↓
@@ -131,10 +131,10 @@ normalized structural findings
       ↓
 local automatic knowledge import
       ↓
-knowledge.db
+knowledge text
 ```
 
-DXA and Ghidra never open `knowledge.db`.
+DXA and Ghidra never open the knowledge.
 
 The static-analysis script normalizes their output. The local knowledge importer then persists only durable reusable findings in one revision/transaction.
 

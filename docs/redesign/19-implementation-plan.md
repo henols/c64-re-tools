@@ -49,7 +49,7 @@ normalized findings
  ↓
 knowledge reconciliation
  ↓
-knowledge.db
+knowledge text
 ~~~
 
 ## 2. Milestone 0 — Greenfield scaffold
@@ -296,7 +296,7 @@ knowledge read
 → no database required
 
 first write
-→ .c64-re-tools/knowledge.db created
+→ .c64-re-tools/knowledge/ created
 
 write several semantic changes
 → current view correct
@@ -445,7 +445,7 @@ normalized structural findings
  ↓
 knowledge import
  ↓
-knowledge.db
+knowledge text
 ~~~
 
 Then run DXA again with deliberately changed coverage/result and prove:
@@ -495,7 +495,7 @@ Then prove the intended iterative loop:
 ~~~text
 DXA
  ↓
-knowledge.db
+knowledge text
  ↓
 semantic rename/classification
  ↓

@@ -12,8 +12,8 @@ functional-equivalence tests.
 Architecture in one line: one MCP process owns one VICE instance and is
 VICE-only; a Host Runtime on the graphical host owns VICE and the tools that
 come with it (c1541, petcat); skill scripts call the Host Runtime for those,
-run ACME, DXA and Ghidra themselves, and keep project knowledge local in
-`.c64-re-tools/knowledge.db`.
+run ACME, DXA and Ghidra themselves, and keep project knowledge local as
+text in `.c64-re-tools/knowledge/`.
 The design is in [`docs/redesign/`](docs/redesign/README.md), and
 [`docs/plan.md`](docs/plan.md) tracks the implementation.
 
@@ -95,7 +95,7 @@ Build it, run it in the emulator, and write a test for it.
 Show me the emulator window.
 ```
 
-The agent keeps what it learns about the program in `.c64-re-tools/knowledge.db`. Commit that file with the project.
+The agent keeps what it learns about the program as text in `.c64-re-tools/knowledge/`. Commit that folder with the project. After a `git pull` that joined the work of two computers, run `knowledge.ts merge` when a command reports conflicts.
 
 ## Skills
 

@@ -23,10 +23,10 @@ normalized findings
      ↓
 local deterministic importer
      ↓
-knowledge.db
+knowledge text
 ~~~
 
-DXA, Ghidra and the Host Runtime never open knowledge.db.
+DXA, Ghidra and the Host Runtime never open the knowledge.
 
 The LLM does not manually loop over hundreds of analyzer findings.
 

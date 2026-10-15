@@ -155,7 +155,7 @@ rather than assuming the same physical address.
 
 ### Original-side resolution
 
-Use semantic knowledge from knowledge.db where available.
+Use semantic knowledge from the knowledge where available.
 
 ### Rebuild-side resolution
 
@@ -504,7 +504,7 @@ Example:
 [ ] music/SFX sound correct
 ~~~
 
-Human acceptance does not belong in knowledge.db as ordinary structural knowledge.
+Human acceptance does not belong in the knowledge as ordinary structural knowledge.
 
 ## 16. Audio
 
@@ -523,11 +523,11 @@ Perceptual/audio-waveform comparison can be considered later if a concrete requi
 
 ## 17. Persistence
 
-Ordinary test executions and screenshots are not durable project knowledge and do not belong in knowledge.db.
+Ordinary test executions and screenshots are not durable project knowledge and do not belong in the knowledge.
 
 Durable semantic conclusions discovered while investigating a failure are recorded separately through c64-knowledge.
 
-Scenario definitions, if/when persisted, are developer-authored project files rather than knowledge.db rows.
+Scenario definitions, if/when persisted, are developer-authored project files rather than knowledge rows.
 
 The exact scenario serialization format is intentionally deferred until implementation experience justifies one.
 

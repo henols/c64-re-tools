@@ -105,7 +105,7 @@ Temporary workspaces and children belong to one request and are removed/killed w
 
 ### Parse before durable write
 
-Host-tool execution never modifies knowledge.db.
+Host-tool execution never modifies the knowledge.
 
 Analyzer results return to the project side first. Local deterministic code validates/normalizes/imports them transactionally.
 
@@ -452,7 +452,7 @@ It is not normally shown to the LLM.
 
 The c64-static-analysis script maps this DXA-specific result into the common normalized findings/import model.
 
-The full listing is transient analysis material and is not automatically persisted in knowledge.db.
+The full listing is transient analysis material and is not automatically persisted in the knowledge.
 
 ## 10. Ghidra facade
 
@@ -599,7 +599,7 @@ The static-analysis script maps these Ghidra-specific structures into the normal
 
 A seed echoed back by Ghidra remains a seed; Ghidra does not become the owner of an existing semantic name merely by returning it.
 
-Decompiler text is transient and never automatically imported into knowledge.db.
+Decompiler text is transient and never automatically imported into the knowledge.
 
 ## 11. Analyzer atomicity
 
@@ -969,7 +969,7 @@ No v1 native-tool facade for:
 - BASIC dialect selection;
 - caller-selected native executable paths;
 - caller-selected timeouts;
-- knowledge.db access;
+- knowledge access;
 - direct VICE operations.
 
 Those belong elsewhere or require a future concrete use case.

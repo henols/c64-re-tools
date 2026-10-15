@@ -70,7 +70,7 @@ skill
  ↓
 local skill/runtime code
  ↓
-knowledge.db
+knowledge text
 ```
 
 Example: `c64-knowledge`.

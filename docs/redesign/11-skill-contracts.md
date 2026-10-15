@@ -347,7 +347,7 @@ Read:
 ~~~text
 resolve project
     ↓
-open knowledge.db
+open the knowledge
     ↓
 return current/history context
 ~~~
@@ -514,7 +514,7 @@ Automatic write:
 Semantic write:
 - unexpected behavior may lead to a separate justified knowledge update after investigation.
 
-Do not store ordinary test runs, transient screenshots, comparison artifacts or manual playtest outcomes in knowledge.db.
+Do not store ordinary test runs, transient screenshots, comparison artifacts or manual playtest outcomes in the knowledge.
 
 ### Result
 
