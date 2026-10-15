@@ -103,7 +103,10 @@ jobs:
           test -z "$(find . -type l)"
           grep -qE 'c64-re-tools@${{ steps.tag.outputs.channel || '(latest|next)' }}"' .mcp.json
           node .claude/skills/c64-memory-map/scripts/memmap.ts at '$d020' | grep -q EXTCOL
-          npx -y "$package" c64-re-tools status
+          # No host and no native tools here: status reports them and exits 1.
+          code=0
+          npx -y "$package" c64-re-tools status || code=$?
+          test "$code" -eq 1
 
   publish:
     needs: [test, installed]
