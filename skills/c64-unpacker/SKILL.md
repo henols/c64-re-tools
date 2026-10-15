@@ -36,7 +36,7 @@ node <skill>/scripts/unpack.ts loads original/game.d64 --steps parts.json --out 
 | `--timeout-frames 3000` | How many frames the program can run before the capture stops (default 3000). |
 | `--frames 3000` | `trace` only: how many frames the program runs (default 3000). |
 | `--entry '$c000'` | `trace`, `stages` and `capture`: start the program at this address. Without it, the script types RUN. A file that is not a BASIC program at `$0801` needs it. |
-| `--steps input.json` | Input for the program, right after it starts: a JSON list of steps. Use it when an intro waits for a key or a menu waits for a choice. |
+| `--steps input.json` | Input for the program, right after it starts: a JSON list of steps. Use it when an intro waits for a key or a menu waits for a choice. The scripts start the program as a c64-testing scenario does. Thus the same steps in a scenario get the program to the entry at the same time. |
 | `--drive` | `loads` only: each capture also writes the 2 KiB RAM of the 1541 drive as `drive8.prg`. |
 | `--min-block 64` | `loads` only: the smallest block of changed memory that becomes a segment (default 64). The result counts smaller changes as `smallChanges`. |
 | `--min-stage 64` | `stages` and `capture`: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). |

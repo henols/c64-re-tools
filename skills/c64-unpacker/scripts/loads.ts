@@ -4,8 +4,8 @@
 // image with its entry state, and with --drive the drive RAM as a PRG for
 // knowledge space drive8. No tool guesses where a load ends: the steps decide.
 
-import { COVERAGE, formatC64Address, parseC64Address, textToPetscii } from "#src/c64.ts";
-import { autostartLoaded, LOAD_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
+import { COVERAGE, formatC64Address, parseC64Address } from "#src/c64.ts";
+import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { ACTION_STEP_KEYS, ACTION_STEP_KINDS, checkActionStep, isObject, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
@@ -113,7 +113,8 @@ export async function loads(program: string, options: { out: string; steps: Load
       previous.fill(0, load, Math.min(0x10000, load + bytes.length - 2));
       loadedProgram = bytes;
       await client.memmap({ action: "clear" });
-      await client.keyboard(textToPetscii("RUN\n"));
+      // RUN as c64-testing types it: the steps start at the same time as a scenario's (D62).
+      if (!(await typeRun(client))) return { output: { loaded: false, reason: `After RUN, BASIC ran no program line in ${RUN_LIMIT_FRAMES} frames.` }, failed: true };
     } else {
       // A disk, tape or cartridge: VICE loads and starts it. The RAM test of the KERNAL puts back what it writes.
       previous = await readRam(client, 0x0000, 0x10000);

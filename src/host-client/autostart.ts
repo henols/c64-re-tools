@@ -36,10 +36,20 @@ export const RUN_LIMIT_FRAMES = 300;
  */
 export async function runProgram(client: ViceSessionClient, path: string, prg: Uint8Array): Promise<"not-loaded" | "not-started" | undefined> {
   if (!(await autostartLoaded(client, path, prg))) return "not-loaded";
+  return (await typeRun(client)) ? undefined : "not-started";
+}
+
+/**
+ * Types RUN at the READY prompt and stops where BASIC starts the first line,
+ * before its SYS. Every tool that starts a loaded program this way reaches
+ * its entry at the same raster line and timer values (D62). False when BASIC
+ * runs no line within RUN_LIMIT_FRAMES.
+ */
+export async function typeRun(client: ViceSessionClient): Promise<boolean> {
   await client.keyboard(textToPetscii("RUN\n"));
   const started = await client.runUntil({
     target: { kind: "memory", address: CURLIN_HIGH, operator: "ne", value: 0xff, space: "c64", view: "ram" },
     timeoutFrames: RUN_LIMIT_FRAMES,
   });
-  return started.reached ? undefined : "not-started";
+  return started.reached;
 }

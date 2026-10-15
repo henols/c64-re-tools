@@ -11,6 +11,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
+import { runProgram } from "../../../src/host-client/autostart.ts";
+import { textToPetscii } from "../../../src/c64.ts";
+import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
@@ -143,6 +146,24 @@ test("a capture at the last stage writes the image, its segments and the entry s
   assert.equal(state.io.vic.bytes.length, 0x2f * 2);
   assert.equal(state.vectors.irq, "$ea31", "the KERNAL IRQ handler: this release does not change it");
   assert.ok(Array.isArray(state.differsFromReset) && state.differsFromReset.length > 0, "a run leaves zero page and stack different from a fresh READY");
+
+  // A scenario starts the program and runs the same steps: it reaches $4000 at the same raster position and timer values (D62).
+  const client = await ViceSessionClient.open({ videoStandard: "pal", env: { ...process.env, C64RT_HOST: `${server!.host}:${server!.port}` } });
+  const cwd = process.cwd();
+  process.chdir(project);
+  try {
+    await client.reset({ mode: "hard", run: false });
+    assert.equal(await runProgram(client, "staged.prg", stagedPrg), undefined);
+    await client.execution({ action: "advance-frames", count: 50, space: "c64" });
+    await client.keyboard(textToPetscii(" "));
+    assert.equal((await client.runUntil({ target: { kind: "address", address: 0x4000, space: "c64" }, timeoutFrames: 400 })).reached, true);
+    const io = async (address: number, size: number) => Buffer.from((await client.ioRead(address, size)).data, "hex").toString("hex");
+    assert.equal(await io(0xd011, 2), state.io.vic.bytes.slice(0x11 * 2, 0x13 * 2), "the raster line");
+    assert.equal(await io(0xdc04, 4), state.io.cia1.bytes.slice(4 * 2, 8 * 2), "CIA 1 timers A and B");
+  } finally {
+    process.chdir(cwd);
+    await client.close();
+  }
 });
 
 test("stages follows a release whose stages write over code that ran before, and a SYS π*656 start (F-17, F-15)", { skip: liveSkip, timeout: 300_000 }, async () => {

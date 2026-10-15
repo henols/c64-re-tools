@@ -8,8 +8,8 @@
 
 import { parseArgs } from "node:util";
 
-import { COVERAGE, EXECUTE, formatC64Address, parseC64Address, READ, textToPetscii, WRITE } from "#src/c64.ts";
-import { autostartLoaded, LOAD_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
+import { COVERAGE, EXECUTE, formatC64Address, parseC64Address, READ, WRITE } from "#src/c64.ts";
+import { autostartLoaded, LOAD_LIMIT_FRAMES, RUN_LIMIT_FRAMES, typeRun } from "#src/host-client/autostart.ts";
 import { readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { checkActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
@@ -107,10 +107,8 @@ async function trace(program: string, options: { frames: number; entry?: number;
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     // Loaded but not started, so the memory map can start empty: the KERNAL start-up writes all of RAM.
-    if (!(await autostartLoaded(client, program, bytes))) return { output: { traced: false, reason: `The program was not in memory at ${formatC64Address(load)} after ${LOAD_LIMIT_FRAMES} frames.` }, failed: true };
-    await client.memmap({ action: "clear" });
-    if (options.entry !== undefined) await client.registersSet("c64", { pc: options.entry });
-    else await client.keyboard(textToPetscii("RUN\n"));
+    const notStarted = await startLoaded(client, program, bytes, options.entry);
+    if (notStarted !== undefined) return { output: { traced: false, reason: notStarted }, failed: true };
     const stepFailed = await runSteps(client, options.steps);
     if (stepFailed !== undefined) return { output: { traced: false, reason: stepFailed }, failed: true };
     let ran = 0;
@@ -191,6 +189,26 @@ const SYS_FRAMES = 50;
  * The first PC in the program after its BASIC text, for a SYS whose address
  * BASIC computes: an exec breakpoint over that part of the program stops there.
  */
+/**
+ * Starts the program as a c64-testing scenario does (D62): hard reset, load,
+ * an empty memory map, then RUN up to the first BASIC line, or the pc at
+ * `entry`. Gives why it did not start.
+ */
+async function startLoaded(client: ViceSessionClient, program: string, bytes: Uint8Array, entry: number | undefined): Promise<string | undefined> {
+  await client.reset({ mode: "hard", run: false });
+  if (!(await autostartLoaded(client, program, bytes))) return `The program was not in memory at ${formatC64Address(bytes[0]! | (bytes[1]! << 8))} after ${LOAD_LIMIT_FRAMES} frames.`;
+  await client.memmap({ action: "clear" });
+  if (entry !== undefined) await client.registersSet("c64", { pc: entry });
+  else if (!(await typeRun(client))) return `After RUN, BASIC ran no program line in ${RUN_LIMIT_FRAMES} frames.`;
+  return undefined;
+}
+
+/** The raster position now: where a step's frames end (D62). */
+async function rasterAt(client: ViceSessionClient): Promise<{ line: number; cycle: number }> {
+  const { timing } = await client.observe({ timing: true });
+  return { line: timing!.rasterLine, cycle: timing!.rasterCycle };
+}
+
 async function firstPcAfterBasic(client: ViceSessionClient, from: number, to: number): Promise<number | undefined> {
   return from > to ? undefined : firstPcIn(client, [{ start: from, end: to }]);
 }
@@ -246,10 +264,11 @@ async function follow(
   const load = bytes[0]! | (bytes[1]! << 8);
   const basic = basicStart(bytes);
   if (options.entry === undefined && basic === undefined) throw new UsageError(NO_BASIC);
-  if (!(await autostartLoaded(client, program, bytes))) return { stages: [], frames: 0, reached: false, failed: `The program was not in memory at ${formatC64Address(load)} after ${LOAD_LIMIT_FRAMES} frames.` };
-  await client.memmap({ action: "clear" });
-  if (options.entry !== undefined) await client.registersSet("c64", { pc: options.entry });
-  else await client.keyboard(textToPetscii("RUN\n"));
+  const notStarted = await startLoaded(client, program, bytes, options.entry);
+  if (notStarted !== undefined) return { stages: [], frames: 0, reached: false, failed: notStarted };
+  // The frames of each step end where a scenario's do: the first step counts from RUN, a later one from where it starts (D62).
+  let anchor: { line: number; cycle: number } | undefined = await rasterAt(client);
+  const framed = () => (anchor === undefined ? {} : { anchor });
   const found: Stage[] = [];
   const start = options.entry ?? basic!.sys?.address ?? (await firstPcAfterBasic(client, basic!.basicEnd, load + bytes.length - 3));
   if (start === undefined) return { stages: [], frames: 0, reached: false, failed: `After RUN, the CPU did not execute the program after its BASIC text (${formatC64Address(basic!.basicEnd)} on) in ${SYS_FRAMES} frames. Give --entry <address>.` };
@@ -311,7 +330,7 @@ async function follow(
       await client.snapshot({ action: "save", name: CALL_SNAPSHOT });
       const point = await client.breakpoint({ action: "add", address: back, space: "c64" });
       try {
-        const run = await client.execution({ action: "advance-frames", count: frames, space: "c64" });
+        const run = await client.execution({ action: "advance-frames", count: frames, space: "c64", ...framed() });
         if ((run.pc ?? (await client.registersGet("c64")).pc) === back) return run.advancedFrames ?? 0;
         await client.snapshot({ action: "restore", name: CALL_SNAPSHOT });
         return undefined;
@@ -330,7 +349,7 @@ async function follow(
         }
         const written = (address: number) => ((stage.map[address]! | map[address]!) & COVERAGE.ramWrite) !== 0;
         await arm(stagePoints(candidates, stage.own, written, stage.called));
-        const run = await client.execution({ action: "advance-frames", count: left, space: "c64" });
+        const run = await client.execution({ action: "advance-frames", count: left, space: "c64", ...framed() });
         const advanced = run.advancedFrames ?? 0;
         used += advanced;
         left -= advanced;
@@ -365,13 +384,21 @@ async function follow(
 
   /** Tracks the stages for some frames; true when the CPU got to stopAt. */
   const track = async (frames: number): Promise<boolean> => {
+    anchor ??= await rasterAt(client);
+    try {
+      return await trackFrom(frames);
+    } finally {
+      anchor = undefined;
+    }
+  };
+  const trackFrom = async (frames: number): Promise<boolean> => {
     let left = frames;
     let stopped = false;
     while (left > 0 && !ended && !stopped && found.length < MAX_STAGES) {
       await client.snapshot({ action: "save", name: STAGE_SNAPSHOT });
       await client.memmap({ action: "clear" });
       const chunk = Math.min(STAGE_CHUNK_FRAMES, left);
-      const first = await client.execution({ action: "advance-frames", count: chunk, space: "c64" });
+      const first = await client.execution({ action: "advance-frames", count: chunk, space: "c64", ...framed() });
       const firstPc = first.pc ?? (await client.registersGet("c64")).pc;
       const map = await readCoverage(client);
       const candidates = stageCandidates(stage.map, map, stage.own, options.minStage, stage.called);

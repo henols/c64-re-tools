@@ -388,6 +388,12 @@ export interface ExecutionParams {
   /** step and next: defaults to 1; advance-frames: required. */
   count?: number;
   space: Space;
+  /**
+   * advance-frames only: the raster position that ends a frame, instead of the
+   * position where this call starts. Runs that stop between frames then keep
+   * the frames of one timeline (D62).
+   */
+  anchor?: { line: number; cycle: number };
 }
 
 export interface ExecutionResult {
@@ -769,7 +775,7 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       return { space: params.space, values: result } as ViceOperations[O]["params"];
     }
     case "execution": {
-      onlyFields(params, ["action", "space", "count"]);
+      onlyFields(params, ["action", "space", "count", "anchor"]);
       if (!isOneOf(EXECUTION_ACTIONS, params.action)) invalid(`action must be one of ${EXECUTION_ACTIONS.join(", ")}`);
       if (!isOneOf(SPACES, params.space)) invalid("space must be c64 or drive8");
       const counted = params.action === "step" || params.action === "next" || params.action === "advance-frames";
@@ -781,6 +787,13 @@ export function validateViceParams<O extends ViceOperation>(op: O, params: unkno
       }
       const result: ExecutionParams = { action: params.action, space: params.space };
       if (counted) result.count = (params.count as number | undefined) ?? 1;
+      if (params.anchor !== undefined) {
+        if (params.action !== "advance-frames") invalid(`anchor is not used with action ${params.action}`);
+        const anchor = params.anchor;
+        if (!isObject(anchor) || !isInteger(anchor.line, 0, 511) || !isInteger(anchor.cycle, 0, 127)) invalid("anchor needs line from 0 to 511 and cycle from 0 to 127");
+        onlyFields(anchor as Record<string, unknown>, ["line", "cycle"]);
+        result.anchor = { line: anchor.line as number, cycle: anchor.cycle as number };
+      }
       return result as ViceOperations[O]["params"];
     }
     case "runUntil": {

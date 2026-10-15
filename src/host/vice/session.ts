@@ -534,7 +534,11 @@ export class ViceSession implements ViceSessionHandle {
     }
     if (params.action === "advance-frames") {
       if (params.count === undefined) throw new WireFailure("invalid-input", "advance-frames needs count, the number of frames");
-      const outcome = await this.#runFrames(params.count);
+      const raster = RASTER[this.#videoStandard];
+      if (params.anchor !== undefined && (params.anchor.line >= raster.lines || params.anchor.cycle >= raster.cycles)) {
+        throw new WireFailure("invalid-input", `The anchor is outside the frame: a ${this.#videoStandard} frame has lines 0-${raster.lines - 1} and cycles 0-${raster.cycles - 1}.`);
+      }
+      const outcome = await this.#runFrames(params.count, undefined, params.anchor);
       return { state: "stopped", pc: outcome.pc, advancedFrames: outcome.frames };
     }
     await this.#stop();
@@ -596,10 +600,11 @@ export class ViceSession implements ViceSessionHandle {
    * checkpoint, a user breakpoint or watchpoint, or a JAM ends the run early.
    * The machine is stopped afterwards.
    */
-  async #runFrames(limit: number, target?: { checkpoint: number; deferred: boolean }): Promise<{ end: RunEnd; frames: number; pc: number; space: "c64" | "drive8" }> {
+  async #runFrames(limit: number, target?: { checkpoint: number; deferred: boolean }, anchor?: { line: number; cycle: number }): Promise<{ end: RunEnd; frames: number; pc: number; space: "c64" | "drive8" }> {
     await this.#stop();
     const lines = RASTER[this.#videoStandard].lines;
-    const start = await this.#machine.rasterPosition();
+    // A frame ends where the raster passes the anchor; without one, where this run starts.
+    const start = anchor ?? (await this.#machine.rasterPosition());
     const arming = rasterLinesExpression((start.line + Math.floor(lines / 2)) % lines, lines);
     const ending = rasterWindowExpression(start.line, start.cycle, lines);
     const clock = await this.#machine.addCheckpoint({ start: 0x0000, end: 0xffff, operation: 0x04, space: "c64" });

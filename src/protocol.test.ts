@@ -302,6 +302,11 @@ test("advance-frames needs a count and run-until targets are validated", () => {
     count: 20,
     space: "c64",
   });
+  // An anchor keeps the frames of one timeline across stops (D62).
+  assert.deepEqual(validateViceParams("execution", { action: "advance-frames", count: 2, space: "c64", anchor: { line: 251, cycle: 3 } }).anchor, { line: 251, cycle: 3 });
+  assert.throws(() => validateViceParams("execution", { action: "step", space: "c64", anchor: { line: 1, cycle: 1 } }), /anchor is not used with action step/);
+  assert.throws(() => validateViceParams("execution", { action: "advance-frames", count: 1, space: "c64", anchor: { line: 512, cycle: 0 } }), /anchor needs line/);
+  assert.throws(() => validateViceParams("execution", { action: "advance-frames", count: 1, space: "c64", anchor: { line: 1, cycle: 1, x: 1 } }), /unknown field/);
   assert.deepEqual(validateViceParams("runUntil", { target: { kind: "raster", line: 100, cycle: 20 }, timeoutFrames: 3000 }), {
     target: { kind: "raster", line: 100, cycle: 20 },
     timeoutFrames: 3000,

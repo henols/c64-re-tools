@@ -689,6 +689,14 @@ test("advance-frames without a count is refused and leaves the machine running",
   await session.close();
 });
 
+test("an advance-frames anchor outside the frame is refused (D62)", async () => {
+  const { fake, session } = await startSession();
+  await assert.rejects(session.handle("execution", { action: "advance-frames", count: 1, space: "c64", anchor: { line: 312, cycle: 0 } }), /lines 0-311 and cycles 0-62/);
+  await assert.rejects(session.handle("execution", { action: "advance-frames", count: 1, space: "c64", anchor: { line: 0, cycle: 63 } }), failsWith("invalid-input"));
+  assert.deepEqual(fake.commands, []);
+  await session.close();
+});
+
 test("advance-frames counts two clock stops per frame and removes the clock", async () => {
   const { fake, session } = await startSession();
   let stops = 0;
