@@ -124,6 +124,8 @@ export class FakeVice {
   readonly autostarts: Array<{ file: string; run: boolean; index: number; bytes: Buffer }> = [];
   /** Disk images attached to drive 8; the last one is in the drive. */
   readonly attached: Buffer[] = [];
+  /** How many times the text monitor detached the cartridges. */
+  cartridgeDetaches = 0;
   /** Snapshot files restored, in order. */
   readonly undumps: string[] = [];
   /** The mode a session launcher started this VICE in. */
@@ -440,6 +442,8 @@ export class FakeVice {
         const index = body.readUInt16LE(1);
         const file = body.subarray(4, 4 + body[3]!).toString("utf8");
         this.autostarts.push({ file, run, index, bytes: readFileSync(file) });
+        // Autostart resets the machine.
+        this.clock = 6n;
         answer();
         if (this.autostartStaysInMonitor) return;
         return this.#leaveMonitor(socket);
@@ -516,6 +520,8 @@ export class FakeVice {
         const enteredForThis = this.#enteredForCommand;
         answer();
         this.registers.PC = this.rom.readUInt16LE(0xfffc);
+        // VICE sets the CPU clock back to the cycles of the reset sequence.
+        this.clock = 6n;
         if (this.resetStaysInMonitor) return;
         if (enteredForThis) return this.#leaveMonitor(socket);
         this.running = true;
@@ -661,6 +667,7 @@ export class FakeVice {
       output += `>C:${memory[1]}  ${bytes.join(" ")}\n`;
     } else if (line === "warp") output += `Warp mode is ${this.warp ? "on" : "off"}.\n`;
     else if (line === "warp on") this.warp = true;
+    else if (line === "detach 20") this.cartridgeDetaches++;
     else if (line === "warp off") this.warp = false;
     else if (load !== null) output += this.#load(load[1]!, load[2]);
     else if (attach !== null) {

@@ -4,7 +4,9 @@
 // starts only where the CPU executes an opcode byte that the current stage
 // wrote before the CPU got there. Code that the stage executed before it wrote
 // it is the stage's own code: it stops the run once, and then a write watch
-// over it arms it again.
+// over it arms it again. Written code that the stage calls, and that returns
+// to the stage, is the stage's own code too (D59): a packer hands off by JMP,
+// RTS or RTI and never runs its own code again.
 
 import { COVERAGE } from "#src/c64.ts";
 import { writtenBlocks } from "#src/host-client/coverage.ts";
@@ -26,12 +28,13 @@ export function mergeMaps(into: Uint8Array, from: Uint8Array): void {
  * code that can start a stage: every executed address except own code that
  * the stage has not written.
  */
-export function stageCandidates(stage: Uint8Array, chunk: Uint8Array, own: ReadonlySet<number>, minimum: number): Range[] {
+export function stageCandidates(stage: Uint8Array, chunk: Uint8Array, own: ReadonlySet<number>, minimum: number, called: readonly Range[] = []): Range[] {
   const combined = Uint8Array.from(stage);
   mergeMaps(combined, chunk);
   return writtenBlocks(combined, minimum).filter((block) => {
     for (let address = block.start; address <= block.end; address++) {
       if ((chunk[address]! & COVERAGE.ramExecute) === 0) continue;
+      if (inRanges(called, address)) continue;
       if (own.has(address) && (combined[address]! & COVERAGE.ramWrite) === 0) continue;
       return true;
     }
@@ -44,7 +47,7 @@ export function stageCandidates(stage: Uint8Array, chunk: Uint8Array, own: Reado
  * them except own code that is not written yet, and write watches over that
  * own code.
  */
-export function stagePoints(blocks: readonly Range[], own: ReadonlySet<number>, written: (address: number) => boolean): { exec: Range[]; watch: Range[] } {
+export function stagePoints(blocks: readonly Range[], own: ReadonlySet<number>, written: (address: number) => boolean, called: readonly Range[] = []): { exec: Range[]; watch: Range[] } {
   const exec: Range[] = [];
   const watch: Range[] = [];
   const add = (list: Range[], address: number) => {
@@ -54,6 +57,7 @@ export function stagePoints(blocks: readonly Range[], own: ReadonlySet<number>, 
   };
   for (const block of blocks) {
     for (let address = block.start; address <= block.end; address++) {
+      if (inRanges(called, address)) continue;
       if (own.has(address) && !written(address)) add(watch, address);
       else add(exec, address);
     }
@@ -64,4 +68,32 @@ export function stagePoints(blocks: readonly Range[], own: ReadonlySet<number>, 
 /** True when the address lies in one of the ranges. */
 export function inRanges(ranges: readonly Range[], address: number): boolean {
   return ranges.some((range) => contains(range, address));
+}
+
+/**
+ * Where a call returns to the stage (D59): the return address on top of the
+ * stack, when a JSR that the stage executed pushed it. `stack` is page 1.
+ * Returns the address of the instruction after that JSR.
+ */
+export function callReturn(stack: Uint8Array, sp: number, byteAt: (address: number) => number, executed: (address: number) => boolean): number | undefined {
+  const pushed = stack[(sp + 1) & 0xff]! | (stack[(sp + 2) & 0xff]! << 8);
+  const jsr = (pushed - 2) & 0xffff;
+  if (byteAt(jsr) !== 0x20 || !executed(jsr)) return undefined;
+  return (pushed + 1) & 0xffff;
+}
+
+/**
+ * The code that ran in a block: its executed opcode bytes with the two bytes
+ * after each, which can be operands, joined and cut at the block's end.
+ */
+export function executedIn(map: Uint8Array, block: Range): Range[] {
+  const ranges: Range[] = [];
+  for (let address = block.start; address <= block.end; address++) {
+    if ((map[address]! & COVERAGE.ramExecute) === 0) continue;
+    const end = Math.min(block.end, address + 2);
+    const last = ranges[ranges.length - 1];
+    if (last !== undefined && address <= last.end + 1) last.end = Math.max(last.end, end);
+    else ranges.push({ start: address, end });
+  }
+  return ranges;
 }

@@ -63,3 +63,33 @@ test("autostart of a D64 loads the first file and runs it", { skip: liveSkip, ti
   assert.deepEqual(await session.handle("autostart", { type: "d64", index: 0, run: true }, [image]), { state: "running" });
   await waitForPcIn(BORDER_LOOP_START, BORDER_LOOP_END, 60_000);
 });
+
+/** An 8 KiB normal cartridge (type 0) whose start code at $8009 loops: INC $D020 ; JMP $8009. */
+function loopCartridge(): Buffer {
+  const header = Buffer.alloc(0x40);
+  header.write("C64 CARTRIDGE   ", 0, "latin1");
+  header.writeUInt32BE(0x40, 0x10);
+  header.writeUInt16BE(0x0100, 0x14);
+  header[0x18] = 0; // EXROM active
+  header[0x19] = 1; // GAME inactive: 8 KiB at $8000
+  header.write("LOOP", 0x20, "latin1");
+  const rom = Buffer.alloc(0x2000, 0xea);
+  rom.set([0x09, 0x80, 0x09, 0x80, 0xc3, 0xc2, 0xcd, 0x38, 0x30, 0xee, 0x20, 0xd0, 0x4c, 0x09, 0x80], 0);
+  const chip = Buffer.alloc(0x10);
+  chip.write("CHIP", 0, "latin1");
+  chip.writeUInt32BE(0x10 + rom.length, 4);
+  chip.writeUInt16BE(0x8000, 0x0c);
+  chip.writeUInt16BE(rom.length, 0x0e);
+  return Buffer.concat([header, chip, rom]);
+}
+
+test("a cartridge stays through a reset; an autostart of a PRG detaches it and runs the PRG", { skip: liveSkip, timeout: 120_000 }, async () => {
+  await session.handle("autostart", { type: "crt", index: 0, run: true }, [loopCartridge()]);
+  await waitForPcIn(0x8009, 0x800e);
+  assert.equal((await session.handle("status", {})).cartridge, true);
+  await session.handle("reset", { mode: "hard", run: true });
+  await waitForPcIn(0x8009, 0x800e);
+  await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from(borderLoopPrg)]);
+  await waitForPcIn(BORDER_LOOP_START, BORDER_LOOP_END, 60_000);
+  assert.equal((await session.handle("status", {})).cartridge, undefined);
+});

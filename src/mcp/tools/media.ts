@@ -20,6 +20,7 @@ export const c64Autostart = defineTool({
   description:
     `Start a program, or a disk, tape or cartridge image, from the project (${list(AUTOSTART_TYPES)}). ` +
     "The C64 resets and loads the file. With run true (the default), it also runs the file. A disk image stays in drive 8. " +
+    "A cartridge stays in the C64 through every reset, as on a real C64. An autostart of a file that is not a cartridge detaches it first. " +
     "Without index, a disk image loads like LOAD\"*\",8,1. index selects one directory entry by its number in the c64-disk directory list (0 is the first entry). " +
     "The machine runs when this tool returns, and the load continues.",
   inputSchema: z
@@ -29,7 +30,10 @@ export const c64Autostart = defineTool({
       run: z.boolean().default(true).describe("true runs the program after it loads"),
     })
     .strict(),
-  outputSchema: z.object({ state: z.enum(RUN_STATES) }),
+  outputSchema: z.object({
+    state: z.enum(RUN_STATES),
+    emulatorFlaw: z.string().optional().describe("for a tape image: a known flaw of this VICE version that stops a tape load"),
+  }),
   readOnly: false,
   async run(input, session) {
     // VICE numbers the directory entries from 1, and its 0 loads "*".

@@ -134,7 +134,7 @@ export class ViceSessionClient {
   }
 
   /** Autostarts a project program or image, as VICE's autostart does. */
-  async autostart(params: { path: string; index: number; run: boolean }): Promise<{ state: RunState }> {
+  async autostart(params: { path: string; index: number; run: boolean }): Promise<{ state: RunState; emulatorFlaw?: string }> {
     const file = readProjectFile(params.path);
     return this.#request("autostart", { type: file.type, index: params.index, run: params.run }, [file.bytes]);
   }

@@ -310,6 +310,8 @@ export interface MachineStatus {
   window: boolean;
   /** Present only while the C64 CPU is stopped. */
   pc?: number;
+  /** Present, true, while a cartridge from an autostart is attached. */
+  cartridge?: true;
 }
 
 export interface MemoryReadParams {
@@ -417,7 +419,8 @@ export interface ViceOperations {
   /** Attachment: the PRG bytes, load address first. */
   programLoad: { params: { address?: number }; result: { state: RunState; loadAddress: number; size: number } };
   /** Attachment: the program or image bytes; `type` is the file's extension. `index` is VICE's file number: 0 loads "*", 1 is the first directory entry. */
-  autostart: { params: { type: string; index: number; run: boolean }; result: { state: RunState } };
+  /** `emulatorFlaw`: for a tape image, a known flaw of the host's VICE version that a tape load meets (D56). */
+  autostart: { params: { type: string; index: number; run: boolean }; result: { state: RunState; emulatorFlaw?: string } };
   /** Attachment: the disk image bytes; `type` is the file's extension. */
   diskAttach: { params: { type: string }; result: { attached: boolean } };
   /** pc is the reset vector when run is false: the CPU stops there. */
@@ -966,7 +969,8 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         isOneOf(VIDEO_STANDARDS, value.videoStandard) &&
         typeof value.warp === "boolean" &&
         typeof value.window === "boolean" &&
-        (value.pc === undefined || isInteger(value.pc, 0, 0xffff));
+        (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
+        (value.cartridge === undefined || value.cartridge === true);
       if (!ok) throw new ProtocolError("status result is malformed");
       break;
     }
@@ -1052,6 +1056,7 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
     case "autostart": {
       if (!isOneOf(RUN_STATES, value.state)) throw new ProtocolError(`${op} result is malformed`);
       if (op === "reset" && value.pc !== undefined && !isInteger(value.pc, 0, 0xffff)) throw new ProtocolError("reset result is malformed");
+      if (op === "autostart" && !(value.emulatorFlaw === undefined || typeof value.emulatorFlaw === "string")) throw new ProtocolError("autostart result is malformed");
       break;
     }
     case "programLoad": {

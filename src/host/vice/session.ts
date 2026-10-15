@@ -179,6 +179,8 @@ export class ViceSession implements ViceSessionHandle {
   #timingStart = 0n;
   /** Counts staged media files, for unique names. */
   #staged = 0;
+  /** True after an autostart of a cartridge, until an autostart of another file detaches it. */
+  #cartridge = false;
   /** The last staged file of each kind that VICE took; VICE can still read it. */
   readonly #stagedFiles = new Map<"autostart" | "disk", string>();
   /** Session-local ids: one counter for breakpoints and watchpoints, from 1. */
@@ -359,9 +361,17 @@ export class ViceSession implements ViceSessionHandle {
       case "autostart": {
         const { type, index, run } = params as ViceOperations["autostart"]["params"];
         const file = this.#stage(onlyAttachment(attachments), type);
+        // VICE keeps a cartridge through every reset and autostart, as a real C64 does.
+        if (type !== "crt" && this.#cartridge) {
+          await this.#observe(() => this.#machine.detachCartridge());
+          this.#cartridge = false;
+        }
         await this.#runningCommand(() => this.#machine.autostart(file, index, run));
+        if (type === "crt") this.#cartridge = true;
         this.#replaceStaged("autostart", file);
-        return { state: "running" };
+        // A reset sets the CPU clock back, so the stopwatch starts again.
+        this.#timingStart = 0n;
+        return { state: "running", ...(type === "tap" && this.#inputFlaw !== undefined ? { emulatorFlaw: this.#inputFlaw } : {}) };
       }
       case "diskAttach": {
         const { type } = params as ViceOperations["diskAttach"]["params"];
@@ -474,6 +484,7 @@ export class ViceSession implements ViceSessionHandle {
     const warp = await this.#observe(() => this.#machine.warp());
     // Read after #observe: it resumes a running machine, unless a breakpoint or a JAM stopped it meanwhile.
     const status: MachineStatus = { state: this.#state, videoStandard: this.#videoStandard, warp, window: this.#mode === "window" };
+    if (this.#cartridge) status.cartridge = true;
     if (status.state === "stopped") status.pc = await this.#pc();
     return status;
   }
@@ -531,6 +542,8 @@ export class ViceSession implements ViceSessionHandle {
 
   async #reset(params: { mode: "soft" | "hard"; run: boolean }): Promise<{ state: RunState; pc?: number }> {
     await this.#stop();
+    // A reset sets the CPU clock back, so the stopwatch starts again.
+    this.#timingStart = 0n;
     if (params.run) {
       await this.#runningCommand(() => this.#machine.reset(params.mode));
       return { state: "running" };

@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { inspect, readMemoryMap, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/evidence.ts";
-import { stageCandidates, stagePoints } from "../../skills/c64-unpacker/scripts/stages.ts";
+import { callReturn, executedIn, stageCandidates, stagePoints } from "../../skills/c64-unpacker/scripts/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
 import { seededBytes } from "../kit.ts";
@@ -152,6 +152,38 @@ test("a written block is a stage candidate only through code that is not own cod
   unwritten[0x080c] = COVERAGE.ramExecute;
   assert.deepEqual(stageCandidates(stage, unwritten, new Set([0x080c]), 64), []);
   assert.deepEqual(stageCandidates(stage, chunk, new Set(), 512), []);
+});
+
+test("a call into written code returns to the instruction after a JSR that the stage executed (D59)", () => {
+  const stack = new Uint8Array(0x100);
+  // JSR $7ec3 at $7a10 pushed $7a12; SP is $f7 after the push.
+  stack[0xf8] = 0x12;
+  stack[0xf9] = 0x7a;
+  const code = new Map([[0x7a10, 0x20]]);
+  const byteAt = (address: number) => code.get(address) ?? 0xea;
+  assert.equal(callReturn(stack, 0xf7, byteAt, (address) => address === 0x7a10), 0x7a13);
+  assert.equal(callReturn(stack, 0xf7, byteAt, () => false), undefined, "a JSR that the stage did not execute");
+  assert.equal(callReturn(stack, 0xf5, byteAt, () => true), undefined, "no JSR before the address on top of the stack");
+  // The stack pointer wraps in page 1.
+  const wrapped = new Uint8Array(0x100);
+  wrapped[0xff] = 0x12;
+  wrapped[0x00] = 0x7a;
+  assert.equal(callReturn(wrapped, 0xfe, byteAt, () => true), 0x7a13);
+});
+
+test("the code that a called block ran, with operand bytes, is the stage's own code and makes no candidate (D59)", () => {
+  const map = new Uint8Array(0x10000);
+  for (const address of [0x9e00, 0x9e02, 0x9e05, 0x9e40]) map[address] = COVERAGE.ramExecute;
+  assert.deepEqual(executedIn(map, { start: 0x9e00, end: 0x9e41 }), [
+    { start: 0x9e00, end: 0x9e07 },
+    { start: 0x9e40, end: 0x9e41 },
+  ]);
+  const stage = new Uint8Array(0x10000);
+  stage.fill(COVERAGE.ramWrite, 0x9e00, 0xa000);
+  const chunk = new Uint8Array(0x10000);
+  chunk[0x9e00] = COVERAGE.ramExecute;
+  assert.deepEqual(stageCandidates(stage, chunk, new Set(), 64, [{ start: 0x9e00, end: 0x9e07 }]), []);
+  assert.deepEqual(stagePoints([{ start: 0x9e00, end: 0x9e09 }], new Set(), () => true, [{ start: 0x9e00, end: 0x9e07 }]), { exec: [{ start: 0x9e08, end: 0x9e09 }], watch: [] });
 });
 
 test("the points of a run: exec breakpoints over the blocks, write watches over own code that is not written (F-17)", () => {

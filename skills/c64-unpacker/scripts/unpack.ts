@@ -19,7 +19,7 @@ import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { basicStart, inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./evidence.ts";
 import { loads, readLoadSteps } from "./loads.ts";
-import { inRanges, mergeMaps, stageCandidates, stagePoints, type Range } from "./stages.ts";
+import { callReturn, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, type Range } from "./stages.ts";
 import { entryState, IO_AREAS, json, machineState, readRam, READY_FRAMES, vectorsOf } from "./machine.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
@@ -200,6 +200,8 @@ const MAX_STAGES = 16;
 /** Most stops of one re-run of a chunk: own code and writes over it each stop once. */
 const MAX_STAGE_STOPS = 4096;
 const STAGE_SNAPSHOT = "stage-chunk";
+/** The snapshot at a call into written code, while the run checks if the call returns (D59). */
+const CALL_SNAPSHOT = "stage-call";
 
 interface Stage {
   entry: number;
@@ -251,14 +253,14 @@ async function follow(
   let ended = false;
   let reached = false;
   const atTarget = (pc: number) => options.until !== undefined && pc === options.until;
-  // The current stage: its memory map since it started, chunk by chunk, and its own code.
-  let stage = { map: new Uint8Array(0x10000), own: new Set<number>() };
+  // The current stage: its memory map since it started, chunk by chunk, its own code, and the written code it calls (D59).
+  let stage = { map: new Uint8Array(0x10000), own: new Set<number>(), called: [] as Range[] };
   const startStage = async (next: number, last: Uint8Array) => {
     mergeMaps(stage.map, last);
     found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(stage.map, options.minStage), next });
     entry = next;
     firstFrame = total;
-    stage = { map: new Uint8Array(0x10000), own: new Set<number>() };
+    stage = { map: new Uint8Array(0x10000), own: new Set<number>(), called: [] };
     await client.memmap({ action: "clear" });
   };
 
@@ -286,6 +288,31 @@ async function follow(
         if (!points.has(key)) points.set(key, { kind: "watch", id: (await client.watchpoint({ action: "add", address: range.start, size: range.end - range.start + 1, access: "write", space: "c64" })).id });
       }
     };
+    /**
+     * At written code that a JSR of the stage called: runs on until the call
+     * returns, in the frames left. Gives the frames used when it returns;
+     * otherwise the machine goes back to the stop and nothing is given.
+     */
+    const returns = async (map: Uint8Array, frames: number): Promise<number | undefined> => {
+      const { sp } = await client.registersGet("c64");
+      const stack = await readRam(client, 0x0100, 0x100);
+      const pushed = stack[(sp + 1) & 0xff]! | (stack[(sp + 2) & 0xff]! << 8);
+      const [opcode] = await readRam(client, (pushed - 2) & 0xffff, 1);
+      const back = callReturn(stack, sp, () => opcode!, (address) => ((stage.map[address]! | map[address]!) & COVERAGE.ramExecute) !== 0);
+      if (back === undefined) return undefined;
+      await arm({ exec: [], watch: [] });
+      await client.snapshot({ action: "save", name: CALL_SNAPSHOT });
+      const point = await client.breakpoint({ action: "add", address: back, space: "c64" });
+      try {
+        const run = await client.execution({ action: "advance-frames", count: frames, space: "c64" });
+        if ((run.pc ?? (await client.registersGet("c64")).pc) === back) return run.advancedFrames ?? 0;
+        await client.snapshot({ action: "restore", name: CALL_SNAPSHOT });
+        return undefined;
+      } finally {
+        await client.breakpoint({ action: "remove", id: point.id });
+        await client.snapshot({ action: "discard", name: CALL_SNAPSHOT });
+      }
+    };
     let left = frames;
     let used = 0;
     let map: Uint8Array = new Uint8Array(0x10000);
@@ -295,15 +322,27 @@ async function follow(
           throw new WireFailure("operation-failed", `The stage that starts at ${formatC64Address(entry)} stopped ${MAX_STAGE_STOPS} times in one chunk of frames without a new stage. Use --min-stage with a larger block size, or capture with --until.`);
         }
         const written = (address: number) => ((stage.map[address]! | map[address]!) & COVERAGE.ramWrite) !== 0;
-        await arm(stagePoints(candidates, stage.own, written));
+        await arm(stagePoints(candidates, stage.own, written, stage.called));
         const run = await client.execution({ action: "advance-frames", count: left, space: "c64" });
         const advanced = run.advancedFrames ?? 0;
         used += advanced;
         left -= advanced;
         const pc = run.pc ?? (await client.registersGet("c64")).pc;
         map = await readCoverage(client);
-        if (inRanges(candidates, pc)) {
-          if (written(pc)) return { used, map, next: pc, atTarget: atTarget(pc) };
+        // A frame can end in written code that the stage called before (D59): that stop starts no stage.
+        if (inRanges(candidates, pc) && !inRanges(stage.called, pc)) {
+          if (written(pc)) {
+            const back = left > 0 && !atTarget(pc) ? await returns(map, left) : undefined;
+            if (back === undefined) return { used, map, next: pc, atTarget: atTarget(pc) };
+            used += back;
+            left -= back;
+            map = await readCoverage(client);
+            // The stage called the block and got the CPU back: the code that ran there is its own code.
+            const block = candidates.find((range) => pc >= range.start && pc <= range.end)!;
+            stage.called.push(...executedIn(map, block));
+            if (left <= 0) return { used, map, atTarget: false };
+            continue;
+          }
           stage.own.add(pc);
         }
         if (atTarget(pc)) return { used, map, atTarget: true };
@@ -326,7 +365,7 @@ async function follow(
       const first = await client.execution({ action: "advance-frames", count: chunk, space: "c64" });
       const firstPc = first.pc ?? (await client.registersGet("c64")).pc;
       const map = await readCoverage(client);
-      const candidates = stageCandidates(stage.map, map, stage.own, options.minStage);
+      const candidates = stageCandidates(stage.map, map, stage.own, options.minStage, stage.called);
       if (candidates.length === 0) {
         const advanced = first.advancedFrames ?? 0;
         total += advanced;

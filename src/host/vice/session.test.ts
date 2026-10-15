@@ -426,6 +426,20 @@ test("autostart stages the bytes with their type and leaves the machine running"
   await session.close();
 });
 
+test("an autostart of another file detaches the cartridge that an autostart attached, and status names it until then", async () => {
+  const { fake, session } = await startSession();
+  await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
+  assert.equal(fake.cartridgeDetaches, 0, "no cartridge, no detach");
+  await session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.from("C64 CARTRIDGE   ")]);
+  assert.equal((await session.handle("status", {})).cartridge, true);
+  await session.handle("reset", { mode: "hard", run: true });
+  assert.equal((await session.handle("status", {})).cartridge, true, "a reset keeps the cartridge");
+  await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
+  assert.equal(fake.cartridgeDetaches, 1);
+  assert.equal((await session.handle("status", {})).cartridge, undefined);
+  await session.close();
+});
+
 test("an autostart after which VICE stays in the monitor is resumed", async () => {
   const { fake, session } = await startSession();
   fake.autostartStaysInMonitor = true;
@@ -928,6 +942,19 @@ test("the stopwatch counts cycles from session start, then from each start", asy
   assert.deepEqual(await session.handle("timing", { action: "start" }), { started: true });
   fake.clock += 19656n;
   assert.deepEqual(await session.handle("timing", { action: "read" }), { cycles: "19656" });
+  await session.close();
+});
+
+test("a reset and an autostart start the stopwatch again, so a read after them is never negative", async () => {
+  const { fake, session } = await startSession();
+  fake.clock += 500n;
+  await session.handle("timing", { action: "start" });
+  await session.handle("reset", { mode: "soft", run: true });
+  fake.clock += 100n;
+  assert.deepEqual(await session.handle("timing", { action: "read" }), { cycles: "106" });
+  await session.handle("timing", { action: "start" });
+  await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
+  assert.deepEqual(await session.handle("timing", { action: "read" }), { cycles: "6" });
   await session.close();
 });
 

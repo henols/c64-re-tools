@@ -490,6 +490,8 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     const out: string[] = [`; ${piece.title}`, `; ${hex4(piece.start)}-${hex4(piece.end)}`, ""];
     /** True while the instructions before have not executed: they form one range. */
     let running = false;
+    /** The line of the mark of the open range of instructions that did not execute. */
+    let markLine = 0;
     const head = (address: number) => {
       for (const text of lineComments.get(address) ?? []) out.push(`; ${text}`.trimEnd());
       const label = layout.names.get(address);
@@ -503,8 +505,12 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
           if (running) notExecuted.ranges.at(-1)!.end = item.address + item.length - 1;
           else {
             notExecuted.ranges.push({ start: item.address, end: item.address + item.length - 1 });
-            out.push("; not executed");
+            markLine = out.length;
+            out.push("");
           }
+          // The mark gives the range, so a reader finds it in the full list (D49).
+          const range = notExecuted.ranges.at(-1)!;
+          out[markLine] = `; not executed ${hex4(range.start)}-${hex4(range.end)}`;
           notExecuted.instructions++;
         }
         running = !executed;

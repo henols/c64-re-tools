@@ -96,7 +96,8 @@ const VICE_FLAWS = [
     text:
       "VICE 3.10 and older hold bits 5-7 of CIA 1 ports A and B low with the joystick device that c64-re-tools uses (VICE bug #2202). " +
       "$DC00 and $DC01 read $1F with no input. A program that waits for one key of the keyboard matrix (for example LDA $DC01 / CMP #$EF for SPACE) waits forever. " +
-      "A program that compares the full byte of a joystick port also waits forever. The fix is in the next VICE release, and in VICE nightly builds now (SVN r45971 or later). " +
+      "A program that compares the full byte of a joystick port also waits forever. " +
+      "A KERNAL tape LOAD of a .tap image stops after FOUND, with no LOADING, and the C64 shows READY. The fix is in the next VICE release, and in VICE nightly builds now (SVN r45971 or later). " +
       "Install the latest VICE when this matters.",
   },
 ] as const;

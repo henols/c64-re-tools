@@ -92,7 +92,7 @@ In stage 5, if you cannot get to a part of the program, ask the user how to get 
 1. Acceptance: each criterion of stage 1 and its result, and each exception that the user accepted.
 2. The program: what the program does, in a few sentences.
 3. Modules: the file, the address range and the title of each module.
-4. Untested code: the `notExecuted` ranges from c64-source. Tell why no run executed them, if you know.
+4. Untested code: all ranges in the `not_executed.json` file of c64-source. Tell why no run executed them, if you know.
 5. Open questions: what the evidence does not explain.
 
 Keep observed facts apart from your conclusions.

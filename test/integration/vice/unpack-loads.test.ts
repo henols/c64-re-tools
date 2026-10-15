@@ -80,3 +80,25 @@ test("each capture step writes what the C64 changed since the capture before, an
   assert.equal(drive.readUInt16LE(0), 0x0000);
   assert.ok(existsSync(join(project, "parts", "part", "entry_state.json")));
 });
+
+test("loads that capture no segment give loaded false, and a capture at READY. tells the key wait", { skip: liveSkip, timeout: 300_000 }, async () => {
+  const supervisor = new ProcessSupervisor();
+  supervisor.installExitGuard();
+  server ??= await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
+  // 10 END: the program is smaller than one segment, and the C64 goes back to READY.
+  writeFileSync(join(project, "end.d64"), buildD64([{ name: "END", bytes: Uint8Array.from([0x01, 0x08, 0x07, 0x08, 0x0a, 0x00, 0x80, 0x00, 0x00, 0x00]) }]));
+  writeFileSync(join(project, "ready.json"), JSON.stringify([{ frames: 600 }, { capture: "ready" }]));
+  const child = spawn(process.execPath, [...process.execArgv, script, "loads", "end.d64", "--steps", "ready.json", "--out", "ready"], {
+    cwd: project,
+    env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  let stdout = "";
+  child.stdout.on("data", (chunk) => (stdout += chunk));
+  const [status] = (await once(child, "exit")) as [number | null];
+  assert.equal(status, 1, stdout);
+  const json = JSON.parse(stdout) as { loaded: boolean; reason: string; captures: Array<{ segments: unknown[]; keyWait?: boolean }> };
+  assert.equal(json.loaded, false);
+  assert.match(json.reason, /No capture has a segment/);
+  assert.equal(json.captures[0]!.keyWait, true, stdout);
+});

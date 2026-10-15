@@ -64,13 +64,14 @@ A `type` step puts keys in the keyboard queue of the KERNAL. A program that read
    - `start`: the code at the SYS address. `jumpsOutside` and `writesOutside` give an address outside the loaded program, where the code jumps or writes.
    - `decodeLoops`: EOR instructions in loops that store with an index. This is usually decryption or decoding.
 2. Run `trace`. It gives the evidence from the run. Read `packing`:
-   - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code. `runningRange` is the written code that runs at the end of the trace. When the trace ends in ROM code, for example in an interrupt, it is the written code that runs next. Its `start` is usually the entry point of the unpacked program. When no written code runs in 50 more frames, the result has no `runningRange` and no `suggestedUntil`.
+   - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code. `runningRange` is the written code that runs at the end of the trace. When the trace ends in ROM code, for example in an interrupt, it is the written code that runs next. Its `start` is code that runs after the unpacking. It is not always the entry point of the program. When no written code runs in 50 more frames, the result has no `runningRange` and no `suggestedUntil`.
    - `unclear`: the program executed a small quantity of code that it wrote. This can be code that changes itself.
    - `unlikely`: the program executed no code that it wrote. If the program waits for a key or a joystick, it can move code after that input. Then use the c64-emulator skill.
 3. Find the address where the unpacked program starts:
-   - Run `stages`. The `entry` of the last stage is usually the start of the program.
+   - Run `stages`. The `entry` of the last stage is usually the start of the program. A routine that a stage writes and calls is part of that stage when it returns to the stage.
    - Or use `runningRange.start` from `trace`, or `suggestedUntil`. The CPU gets to `suggestedUntil` after the unpacking.
    - Or use the c64-emulator skill: set a breakpoint after the unpack loop, or look at the last JMP of the unpacker.
+   - Disassemble the code at the address with the c64-emulator skill. Make sure that it is the start of the program. The start of a program often sets the stack pointer, the interrupts and the vectors.
 4. Run `capture` with that address and a directory in `--out`. Give the same `--steps` as before. The directory gets:
    - `image.bin`: all 64 KiB of RAM at the entry.
    - `image.json`: the entry, the segments, the vectors and the stages. A segment is a block that a stage wrote. Blocks with the code of an earlier stage are not segments. `writtenBy` tells which stage wrote the segment.
@@ -113,7 +114,7 @@ Do not record the unpacker in the project knowledge, unless the user asks to exa
 
 The packing evidence, the stages, or the unpacked program with its image, segments and entry state in a directory of the project.
 
-For `loads`: `captures`, with the name, the PC, the segments and the drive file of each capture.
+For `loads`: `captures`, with the name, the PC, the segments and the drive file of each capture. `keyWait: true` tells that the CPU was in the KERNAL wait for a key.
 
 The exit status is 0 for a result. The exit status is 1 for `traced: false`, for `captured: false`, for `loaded: false` and for an error. The exit status is 2 for a wrong argument.
 
@@ -122,6 +123,7 @@ The exit status is 0 for a result. The exit status is 1 for `traced: false`, for
 - `traced: false`: the emulator did not load the program into memory in the time limit. The reason gives the load address. Make sure that the file is a PRG that the C64 can load.
 - `captured: false`: the program did not get to the address in the time limit. The reason tells where it stopped. Find a better address with the c64-emulator skill, or give more frames. If it stopped in a key wait, give `--steps` with a key.
 - A step did not reach its target: the reason names the step. Change the step or give it more frames.
+- `loaded: false` and no capture has a segment: the program did not load a part, or it did not start. `keyWait: true` on a capture tells that the C64 waited at READY. or at an INPUT statement. For a tape image, read `emulatorFlaw`. A known VICE flaw can stop a tape load. Tell the user to install the latest VICE.
 - Do not name a packer from weak evidence. The script never names one.
 - Some programs unpack in more than one stage. Run `stages` to find each stage. Capture at the entry of the last stage. Make sure that it is the application and not a second unpacker.
 - `not-found` or `invalid-input`: a path or an argument is wrong. Read the message.

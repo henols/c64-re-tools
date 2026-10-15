@@ -631,6 +631,12 @@ export class ViceAdapter {
     await this.#monitor.request(Command.autostart, Buffer.concat([head, name]));
   }
 
+  /** Detaches every cartridge. VICE powers the cartridge off; the C64 keeps running. */
+  async detachCartridge(): Promise<void> {
+    // Device 32 is the cartridge port; the monitor reads numbers as hex. VICE prints nothing when it detaches.
+    expectQuiet("cartridge detach answer", await this.#text.command("detach 20"));
+  }
+
   /** Attaches a disk image file from the host file system to drive 8. */
   async attachDisk(file: string): Promise<void> {
     const answer = await this.#text.command(`attach ${quoted(file)} 8`);

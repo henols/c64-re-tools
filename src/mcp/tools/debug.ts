@@ -191,7 +191,8 @@ export const c64Timing = defineTool({
   title: "Cycle stopwatch",
   description:
     "A stopwatch that counts C64 CPU cycles. Action start sets it to zero. Action read gives the cycles since the last start, " +
-    "or since the session started, as a decimal string. A PAL frame has 19656 cycles and an NTSC frame 17095.",
+    "or since the session started, as a decimal string. A reset and c64_autostart start it again from the reset. " +
+    "A PAL frame has 19656 cycles and an NTSC frame 17095.",
   inputSchema: z.object({ action: z.enum(TIMING_ACTIONS) }).strict(),
   outputSchema: z.object({ started: z.boolean().optional(), cycles: z.string().regex(/^\d+$/).optional() }),
   readOnly: false,

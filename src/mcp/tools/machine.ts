@@ -13,7 +13,8 @@ export const c64Status = defineTool({
   description:
     "Get the state of the C64. The result tells if the CPU runs or has stopped, the video standard (pal or ntsc), " +
     "and if warp mode is on. It also tells if the emulator window is open (window). " +
-    "When the CPU has stopped, the result also gives the program counter (pc).",
+    "When the CPU has stopped, the result also gives the program counter (pc). " +
+    "cartridge is true while a cartridge from c64_autostart is attached: a reset keeps it, and an autostart of another file detaches it.",
   inputSchema: z.object({}).strict(),
   outputSchema: z.object({
     state: z.enum(RUN_STATES),
@@ -21,6 +22,7 @@ export const c64Status = defineTool({
     warp: z.boolean(),
     window: z.boolean().describe("true when the emulator window is open (c64_window)"),
     pc: AddressOutput.optional().describe("program counter. Only when the CPU is stopped"),
+    cartridge: z.literal(true).optional().describe("true while a cartridge is attached. Absent when none is"),
   }),
   readOnly: true,
   async run(_input, session) {
@@ -31,6 +33,7 @@ export const c64Status = defineTool({
       warp: status.warp,
       window: status.window,
       ...(status.pc === undefined ? {} : { pc: formatC64Address(status.pc) }),
+      ...(status.cartridge === undefined ? {} : { cartridge: status.cartridge }),
     };
   },
 });
