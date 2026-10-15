@@ -168,9 +168,14 @@ export interface CiaState {
   ddrB: number;
   timerA: number;
   timerB: number;
+  /** The values that a timer loads at an underflow: write-only on the chip, from VICE's dump (D63). */
+  latchA: number;
+  latchB: number;
   controlA: number;
   controlB: number;
   interruptStatus: number;
+  /** The interrupt sources that are on: bits 0-4 of a write to $xd0d with bit 7 set. */
+  interruptMask: number;
   tod: { hours: number; minutes: number; seconds: number; tenths: number };
 }
 
@@ -1272,8 +1277,8 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         isObject(chip) &&
         (chip.id === 1 || chip.id === 2) &&
         (["portA", "portB", "ddrA", "ddrB", "controlA", "controlB", "interruptStatus"] as const).every((name) => isInteger(chip[name], 0, 0xff)) &&
-        isInteger(chip.timerA, 0, 0xffff) &&
-        isInteger(chip.timerB, 0, 0xffff) &&
+        isInteger(chip.interruptMask, 0, 0x1f) &&
+        (["timerA", "timerB", "latchA", "latchB"] as const).every((name) => isInteger(chip[name], 0, 0xffff)) &&
         isObject(chip.tod) &&
         isInteger(chip.tod.hours, 0, 23) &&
         isInteger(chip.tod.minutes, 0, 99) &&

@@ -82,6 +82,8 @@ export interface FakeCheckpoint {
 export class FakeVice {
   running = true;
   warp = false;
+  /** What the text monitor's io dump gives for each CIA. */
+  ciaHidden = { dc00: { latchA: 0x4025, latchB: 0xffff, interruptMask: 0x01 }, dd00: { latchA: 0xffff, latchB: 0xffff, interruptMask: 0x00 } };
   /** Binary command bytes in arrival order. */
   readonly commands: number[] = [];
   /** Text monitor commands in arrival order (sentinels excluded). */
@@ -665,6 +667,11 @@ export class FakeVice {
       const bytes = [];
       for (let address = start; address <= Number.parseInt(memory[2]!, 16); address++) bytes.push(this.#textByte(address).toString(16).padStart(2, "0"));
       output += `>C:${memory[1]}  ${bytes.join(" ")}\n`;
+    } else if (/^io d[cd]00$/.test(line)) {
+      const cia = this.ciaHidden[line.slice(3) as "dc00" | "dd00"];
+      const hex = (value: number, digits: number) => value.toString(16).padStart(digits, "0");
+      output += `ICR: 00 (mask: ${hex(cia.interruptMask, 2)})  CTRLA: 01  CTRLB: 08, delay: 0000 rclk--12 to_ack: 00\n\n`;
+      output += `Timer A: 1492 (latched ${hex(cia.latchA, 4)})\nTimer B: ffff (latched ${hex(cia.latchB, 4)})\n`;
     } else if (line === "warp") output += `Warp mode is ${this.warp ? "on" : "off"}.\n`;
     else if (line === "warp on") this.warp = true;
     else if (line === "detach 20") this.cartridgeDetaches++;

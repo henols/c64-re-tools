@@ -70,7 +70,14 @@ test("the loader puts every segment and pages 0-3 in place and gets to the entry
       cpuPort: { $00: 0x2f, $01: 0x35 },
       pages: Object.fromEntries([0, 1, 2, 3].map((page) => [hex(page << 8), Buffer.from(pages.subarray(page << 8, (page + 1) << 8)).toString("hex")])),
       // The VIC-II at the entry (D60): raster line $123, screen at $0c00 with bitmap mode, VIC bank 2, other colours.
-      io: { vic: { from: "$d000", bytes: Buffer.from(vic).toString("hex") }, cia2: { from: "$dd00", bytes: "c6".padEnd(32, "0") } },
+      // The CIAs (D63): CIA 1 timer A runs with TOD at 50 Hz and its own latch, timer B counts its underflows;
+      // CIA 2 timer A runs one-shot, timer B is as the KERNAL leaves it. CIA 1 has timers A and B as interrupt sources.
+      io: {
+        vic: { from: "$d000", bytes: Buffer.from(vic).toString("hex") },
+        cia1: { from: "$dc00", bytes: "7fffff00" + "3412" + "5500" + "00000001" + "00" + "00" + "81" + "41" },
+        cia2: { from: "$dd00", bytes: "c63f3f00" + "0020" + "ffff" + "00000001" + "00" + "00" + "09" + "08" },
+      },
+      cia: { cia1: { latchA: 0x2345, latchB: 0x0100, interruptMask: 0x03 }, cia2: { latchA: 0x3000, latchB: 0xffff, interruptMask: 0x00 } },
     }),
   );
 

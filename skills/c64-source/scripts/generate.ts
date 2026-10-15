@@ -288,6 +288,21 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
       const wanted = rasterLine(state.vic.registers);
       if (line !== wanted && line !== wanted + 1) differences.push(`the raster line is ${line}, not ${wanted}`);
     }
+    if (plan.cia !== undefined) {
+      // The CIA timers (D63): at the jump a running timer is 3 cycles, the JMP, before its value at the entry.
+      const chips = (await client.cia("both")).chips;
+      const word = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
+      const differWord = (what: string, got: number, wanted: number) => got !== wanted && differences.push(`${what} is ${word(got)}, not ${word(wanted)}`);
+      for (const timer of plan.cia.timers) {
+        const chip = chips[timer.cia - 1]!;
+        const name = `CIA ${timer.cia} timer ${timer.timer}`;
+        const [counter, latch, control] = timer.timer === "A" ? [chip.timerA, chip.latchA, chip.controlA] : [chip.timerB, chip.latchB, chip.controlB];
+        differ(`${name} control`, control, timer.control);
+        differWord(`${name} latch`, latch, timer.latch);
+        if (timer.counterAtJump !== undefined) differWord(`${name} counter`, counter, timer.counterAtJump);
+      }
+      plan.cia.masks.forEach((mask, index) => differ(`CIA ${index + 1} interrupt mask`, chips[index]!.interruptMask, mask));
+    }
     return { verified: differences.length === 0, differences: differences.slice(0, MAX_LISTED) };
   } finally {
     await client.close();
@@ -459,6 +474,8 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     copier: formatC64Address(loader.copier),
     stackByte: formatC64Address(loader.stackByte),
     ...ran,
+    // What the loader cannot set as it was at the entry (D63).
+    ...(loader.cia === undefined || loader.cia.limits.length === 0 ? {} : { limits: loader.cia.limits }),
   };
   return { output, failed: !ran.verified };
 }

@@ -72,11 +72,12 @@ Do not edit the generated files. The next run writes over them.
 2. It moves its copier to two free pages. The copier runs with interrupts off and with all RAM visible.
 3. It copies each segment and the pages $0002-$03ff of the entry state into place. The script selects an order in which no copy writes over the packed bytes of a copy that has not run yet.
 4. It sets the display registers of the VIC-II and the VIC bank from `io` in the entry state. Then it waits for the raster line of the entry.
-5. It sets $00/$01, the stack pointer, A, X, Y and the flags, and jumps to the entry.
+5. It sets the CIA timers, their latches and the interrupt masks from `io` and `cia` in the entry state. A running timer gets the value that counts down to the timer value of the entry at the entry.
+6. It sets $00/$01, the stack pointer, A, X, Y and the flags, and jumps to the entry.
 
-The flags go through the free stack byte below the stack pointer (`stackByte`). The loader changes this byte. The loader does not set the SID, the CIA timers or the interrupt registers of the VIC-II. They stay as the KERNAL set them. Thus a scenario can still find a difference in an interrupt or a timer. Then use `runUntil` with `raster` in the c64-testing skill.
+The flags go through the free stack byte below the stack pointer (`stackByte`). The loader changes this byte. The loader does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. `loader.limits` names each CIA value that the loader cannot set as it was at the entry. A program that reads the SID voice 3 for random numbers can still differ in a scenario. A raster sync does not change a timer or the SID. Then observe after the program sets up its own random numbers.
 
-The script simulates the copies first. Then it runs `loader.prg` in the emulator to its jump to the entry. It compares the memory, $00/$01, the registers, the display registers of the VIC-II, the VIC bank and the raster line with the entry state there. `loader.verified: true` tells that all of them are equal. An interrupt can run right at the entry, as in the original program.
+The script simulates the copies first. Then it runs `loader.prg` in the emulator to its jump to the entry. It compares the memory, $00/$01, the registers, the display registers of the VIC-II, the VIC bank and the raster line with the entry state there. It also compares the CIA timers, latches and interrupt masks. `loader.verified: true` tells that all of them are equal. An interrupt can run right at the entry, as in the original program.
 
 ## Knowledge
 
@@ -102,7 +103,7 @@ One JSON object:
 - `entryOutside`: the entry of `image.json` is in no segment of the image, with a `reason`. The image does not hold the program.
 - `notExecuted`: with `--coverage`, the count of instructions that no run executed, the count of their ranges, and the first ranges. `all` names the file `not_executed.json` in `--out`. It has all of the ranges. Put all of these ranges in the report.
 - `check`: `identical`, and the result for each segment. A different segment gives its first different address.
-- `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`. When the script cannot make the loader, `loader` has `verified: false` and a `reason`. The loader includes the source. Thus a source that does not assemble to the image also stops the loader.
+- `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`. `limits` lists the CIA values that the loader cannot set. When the script cannot make the loader, `loader` has `verified: false` and a `reason`. The loader includes the source. Thus a source that does not assemble to the image also stops the loader.
 
 The exit status is 0 when the source is identical and the emulator check of the loader passes. The exit status is 1 for a failed check, for an entry in no segment, and for an error. The exit status is 2 for a wrong argument.
 

@@ -16,7 +16,7 @@ import { VICE_OPERATIONS, type ViceOperation } from "../../../src/protocol/vice.
 const REGISTERS = { pc: 0x2100, a: 1, x: 2, y: 3, sp: 0xf9, flags: { n: false, v: false, b: false, d: false, i: true, z: false, c: true } };
 const VICII = { rasterLine: 100, mode: "text", screenAddress: 0x400, graphicsAddress: 0x1000, scrollX: 0, scrollY: 3, borderColor: 14, backgroundColors: [6, 0, 0, 0] };
 const SPRITE = { index: 0, x: 145, y: 96, enabled: true, color: 1, multicolor: false, expandX: false, expandY: false, behindBackground: false, dataAddress: 0x3000 };
-const CIA = { id: 1, portA: 255, portB: 127, ddrA: 0, ddrB: 255, timerA: 65535, timerB: 65535, controlA: 0, controlB: 0, interruptStatus: 0, tod: { hours: 12, minutes: 34, seconds: 56, tenths: 7 } };
+const CIA = { id: 1, portA: 255, portB: 127, ddrA: 0, ddrB: 255, timerA: 65535, timerB: 65535, latchA: 65535, latchB: 65535, controlA: 0, controlB: 0, interruptStatus: 0, interruptMask: 0, tod: { hours: 12, minutes: 34, seconds: 56, tenths: 7 } };
 const SID = {
   voices: [1, 2, 3].map((index) => ({ index, frequency: 8192, pulseWidth: 2048, control: 17, attackDecay: 34, sustainRelease: 248 })),
   filter: { cutoff: 1024, resonance: 8, routing: 7, mode: 5 },

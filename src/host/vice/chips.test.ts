@@ -56,7 +56,8 @@ test("a sprite decodes position, flags, colour and data address", () => {
 
 test("a CIA decodes ports, timers and its BCD time of day", () => {
   const registers = Uint8Array.from([0x7f, 0xff, 0xff, 0x00, 0x25, 0x40, 0xff, 0xff, 0x07, 0x56, 0x34, 0x92, 0, 0x81, 0x11, 0x08]);
-  assert.deepEqual(decodeCia(1, registers), {
+  const hidden = { latchA: 0x4025, latchB: 0x1234, interruptMask: 0x01 };
+  assert.deepEqual(decodeCia(1, registers, hidden), {
     id: 1,
     portA: 0x7f,
     portB: 0xff,
@@ -64,16 +65,19 @@ test("a CIA decodes ports, timers and its BCD time of day", () => {
     ddrB: 0x00,
     timerA: 0x4025,
     timerB: 0xffff,
+    latchA: 0x4025,
+    latchB: 0x1234,
     controlA: 0x11,
     controlB: 0x08,
     interruptStatus: 0x81,
+    interruptMask: 0x01,
     tod: { hours: 12, minutes: 34, seconds: 56, tenths: 7 },
   });
   // $92 above is 12 PM (noon). 12 AM is hour 0 and 1 PM is hour 13.
   registers[0x0b] = 0x12;
-  assert.equal(decodeCia(1, registers).tod.hours, 0);
+  assert.equal(decodeCia(1, registers, hidden).tod.hours, 0);
   registers[0x0b] = 0x81;
-  assert.equal(decodeCia(1, registers).tod.hours, 13);
+  assert.equal(decodeCia(1, registers, hidden).tod.hours, 13);
 });
 
 test("the SID decodes voices, filter and volume from its registers", () => {

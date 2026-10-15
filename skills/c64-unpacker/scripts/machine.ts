@@ -14,10 +14,19 @@ export const IO_AREAS = { vic: [0xd000, 0x2f], sid: [0xd400, 0x1d], cia1: [0xdc0
 /** Frames from a hard reset to the READY prompt, with margin. */
 export const READY_FRAMES = 200;
 
+/** What no register read of a CIA gives (D63). */
+export interface CiaHidden {
+  latchA: number;
+  latchB: number;
+  interruptMask: number;
+}
+
 export interface MachineState {
   port: Buffer;
   pages: Buffer;
   io: Record<keyof typeof IO_AREAS, Buffer>;
+  /** The timer latches and the interrupt mask of each CIA. */
+  cia: { cia1: CiaHidden; cia2: CiaHidden };
   romVectors: Buffer;
 }
 
@@ -36,8 +45,9 @@ export async function machineState(client: ViceSessionClient): Promise<MachineSt
   const pages = await readRam(client, 0x0000, 0x400);
   const io = {} as Record<keyof typeof IO_AREAS, Buffer>;
   for (const [name, [address, size]] of Object.entries(IO_AREAS)) io[name as keyof typeof IO_AREAS] = Buffer.from((await client.ioRead(address, size)).data, "hex");
+  const [cia1, cia2] = (await client.cia("both")).chips.map(({ latchA, latchB, interruptMask }) => ({ latchA, latchB, interruptMask }));
   const romVectors = Buffer.from((await client.memoryRead({ address: 0xfffa, size: 6, space: "c64", view: "cpu" })).data, "hex");
-  return { port, pages, io, romVectors };
+  return { port, pages, io, cia: { cia1: cia1!, cia2: cia2! }, romVectors };
 }
 
 const word = (bytes: Buffer, offset: number) => formatC64Address(bytes[offset]! | (bytes[offset + 1]! << 8));
@@ -60,6 +70,8 @@ export function entryState(registers: Registers, state: MachineState, vectors: R
     cpuPort: { $00: state.port[0], $01: state.port[1] },
     pages: Object.fromEntries([0, 1, 2, 3].map((page) => [formatC64Address(page << 8), state.pages.subarray(page << 8, (page + 1) << 8).toString("hex")])),
     io: Object.fromEntries(Object.entries(IO_AREAS).map(([name, [address]]) => [name, { from: formatC64Address(address), bytes: state.io[name as keyof typeof IO_AREAS].toString("hex") }])),
+    // The CIA latches and interrupt masks: write-only on the chip, so the I/O bytes do not hold them (D63).
+    cia: state.cia,
     vectors,
     ...(differsFromReset === undefined ? {} : { differsFromReset }),
   };

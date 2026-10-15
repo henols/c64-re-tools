@@ -933,7 +933,10 @@ export class ViceSession implements ViceSessionHandle {
   async #cias(which: CiaSelection): Promise<CiaState[]> {
     const ids: Array<1 | 2> = which === "both" ? [1, 2] : [Number(which) as 1 | 2];
     const chips = [];
-    for (const id of ids) chips.push(decodeCia(id, await this.#machine.readIo(id === 1 ? 0xdc00 : 0xdd00, 0x10)));
+    for (const id of ids) {
+      const base = id === 1 ? 0xdc00 : 0xdd00;
+      chips.push(decodeCia(id, await this.#machine.readIo(base, 0x10), await this.#machine.ciaHidden(base)));
+    }
     return chips;
   }
 

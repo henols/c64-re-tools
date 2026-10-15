@@ -74,9 +74,12 @@ const CiaOutput = z.object({
   ddrB: Byte,
   timerA: z.number().int().min(0).max(0xffff),
   timerB: z.number().int().min(0).max(0xffff),
+  latchA: z.number().int().min(0).max(0xffff).describe("the value that timer A loads when it underflows"),
+  latchB: z.number().int().min(0).max(0xffff).describe("the value that timer B loads when it underflows"),
   controlA: Byte,
   controlB: Byte,
   interruptStatus: Byte,
+  interruptMask: z.number().int().min(0).max(0x1f).describe("the interrupt sources that are on, as bits 0-4 of the interrupt control register"),
   tod: z.object({ hours: z.number().int(), minutes: z.number().int(), seconds: z.number().int(), tenths: z.number().int() }),
 });
 
@@ -84,8 +87,8 @@ export const c64Cia = defineTool({
   name: "c64_cia",
   title: "CIA state",
   description:
-    "Get the state of CIA 1, CIA 2 or both. The state has the ports, the data direction registers and the current timer values. " +
-    `It also has the control registers, the interrupt flags and the time of day (hours 0 to 23). ${NO_CHANGE}`,
+    "Get the state of CIA 1, CIA 2 or both. The state has the ports, the data direction registers, the current timer values and the timer latches. " +
+    `It also has the control registers, the interrupt flags, the interrupt mask and the time of day (hours 0 to 23). ${NO_CHANGE}`,
   inputSchema: z.object({ cia: z.enum(CIA_SELECTIONS).default("both") }).strict(),
   outputSchema: z.object({ chips: z.array(CiaOutput) }),
   readOnly: true,

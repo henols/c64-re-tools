@@ -57,8 +57,15 @@ function bcd(value: number): number {
   return (value >> 4) * 10 + (value & 0x0f);
 }
 
+/** The parts of a CIA that no register read gives: the timer latches and the interrupt mask. */
+export interface CiaHidden {
+  latchA: number;
+  latchB: number;
+  interruptMask: number;
+}
+
 /** `registers` holds $dc00-$dc0f or $dd00-$dd0f. TOD hours become 0-23. */
-export function decodeCia(id: 1 | 2, registers: Uint8Array): CiaState {
+export function decodeCia(id: 1 | 2, registers: Uint8Array, hidden: CiaHidden): CiaState {
   const word = (low: number) => registers[low]! | (registers[low + 1]! << 8);
   const hourRegister = registers[0x0b]!;
   const pm = (hourRegister & 0x80) !== 0;
@@ -70,9 +77,12 @@ export function decodeCia(id: 1 | 2, registers: Uint8Array): CiaState {
     ddrB: registers[0x03]!,
     timerA: word(0x04),
     timerB: word(0x06),
+    latchA: hidden.latchA,
+    latchB: hidden.latchB,
     controlA: registers[0x0e]!,
     controlB: registers[0x0f]!,
     interruptStatus: registers[0x0d]!,
+    interruptMask: hidden.interruptMask,
     tod: {
       hours: (bcd(hourRegister & 0x1f) % 12) + (pm ? 12 : 0),
       minutes: bcd(registers[0x0a]! & 0x7f),

@@ -1,8 +1,8 @@
 // The loader of a generated source (D48): a PRG that copies each segment and
 // the entry state's pages $0002-$03ff into place, sets the display registers
 // of the VIC-II and the VIC bank, waits for the entry's raster line (D60),
-// sets $00/$01, the stack pointer, A, X, Y and the flags, and jumps to the
-// entry. The copies run
+// sets the CIA timers and interrupt masks (D63), sets $00/$01, the stack
+// pointer, A, X, Y and the flags, and jumps to the entry. The copies run
 // from a free page with SEI and all RAM visible, in an order where no copy
 // overwrites the packed bytes of a copy that has not run yet. The plan is
 // simulated here before the emulator runs it.
@@ -24,6 +24,16 @@ export interface EntryState {
   pages: Uint8Array;
   /** The VIC-II at the entry (D60): $d000-$d02e, and the VIC bank (bits 0-1 of $dd00). */
   vic?: { registers: Uint8Array; bank: number };
+  /** CIA 1 and CIA 2 at the entry (D63). */
+  cia?: [EntryCia, EntryCia];
+}
+
+/** A CIA at the entry: $xx00-$xx0f as a read without side effects gives them, and what no read gives. */
+export interface EntryCia {
+  registers: Uint8Array;
+  latchA: number;
+  latchB: number;
+  interruptMask: number;
 }
 
 /**
@@ -85,6 +95,7 @@ export function readEntryState(text: string, path: string): EntryState {
     port: [byte(value.cpuPort?.$00, "cpuPort.$00"), byte(value.cpuPort?.$01, "cpuPort.$01")],
     pages,
     ...readVic(value.io, fail),
+    ...readCia(value, fail),
   };
 }
 
@@ -114,6 +125,8 @@ export interface LoaderPlan {
   stackByte: number;
   end: number;
   text: string;
+  /** The CIA timers and masks that the loader sets, when the entry state has them (D63). */
+  cia?: CiaPlan;
 }
 
 /** The label of the loader's jump to the entry, in ACME's symbol list. */
@@ -190,6 +203,151 @@ function readVic(io: Record<string, any> | undefined, fail: (what: string) => ne
   return { vic: { registers: Buffer.from(vic, "hex"), bank: Number.parseInt(cia2.slice(0, 2), 16) & 0x03 } };
 }
 
+function readCia(value: Record<string, any>, fail: (what: string) => never): { cia: [EntryCia, EntryCia] } | Record<string, never> {
+  if (value.cia === undefined) return {};
+  const chip = (name: "cia1" | "cia2"): EntryCia => {
+    const bytes = value.io?.[name]?.bytes;
+    if (typeof bytes !== "string" || !/^[0-9a-f]{32}$/i.test(bytes)) return fail(`io.${name}.bytes is not 16 bytes of hex`);
+    const hidden = value.cia[name];
+    const number = (item: unknown, what: string, max: number) => (Number.isInteger(item) && (item as number) >= 0 && (item as number) <= max ? (item as number) : fail(`cia.${name}.${what} is not a number from 0 to ${max}`));
+    return { registers: Buffer.from(bytes, "hex"), latchA: number(hidden?.latchA, "latchA", 0xffff), latchB: number(hidden?.latchB, "latchB", 0xffff), interruptMask: number(hidden?.interruptMask, "interruptMask", 0x1f) };
+  };
+  return { cia: [chip("cia1"), chip("cia2")] };
+}
+
+/** One CIA timer that the loader sets, and what the check of the loader expects of it at the jump. */
+export interface CiaTimerPlan {
+  cia: 1 | 2;
+  timer: "A" | "B";
+  /** The control register as a read gives it: without bit 4, the force load. */
+  control: number;
+  latch: number;
+  /** The counter at the jump, 3 cycles before the entry; undefined when the loader cannot set it. */
+  counterAtJump?: number;
+}
+
+export interface CiaPlan {
+  timers: CiaTimerPlan[];
+  masks: [number, number];
+  /** What the loader cannot set as it was at the entry. */
+  limits: string[];
+}
+
+/**
+ * The CIA timers as the KERNAL leaves them when RUN starts the loader, on a
+ * PAL C64: only CIA 1 timer A runs, for the 60 Hz interrupt. A timer that the
+ * entry has in this state is not written. The loader check reads every timer.
+ */
+const KERNAL_TIMERS: ReadonlyArray<{ control: number; latch: number; counter?: number }> = [
+  { control: 0x01, latch: 0x4025 },
+  { control: 0x08, latch: 0xffff, counter: 0xffff },
+  { control: 0x08, latch: 0xffff, counter: 0xffff },
+  { control: 0x08, latch: 0xffff, counter: 0xffff },
+];
+const KERNAL_MASKS: readonly [number, number] = [0x01, 0x00];
+/** Cycles from the end of the CIA part to the entry: $00, $01, the stack pointer, the flags, A, X, Y, PLP and JMP. */
+const TAIL_CYCLES = 33;
+/** Cycles after the write that starts a CIA timer in which it does not count yet, measured in VICE. */
+const CIA_START_DELAY = 1;
+/** Cycles of one raster line of a PAL C64. */
+const LINE_CYCLES = 63;
+const PAL_LINES = 312;
+
+interface Op {
+  text: string;
+  bytes: number;
+  cycles: number;
+}
+
+/**
+ * The copier's CIA part (D63), after the raster wait: the timers and
+ * interrupt masks of the entry state. A running timer is stopped, loaded
+ * with its counter at the entry plus the cycles to the entry, started, and
+ * given its latch, so it counts to the entry's value just at the entry.
+ * Then the interrupt flags that the copy left are read away.
+ */
+export function ciaSection(state: EntryState): { ops: Op[]; plan: CiaPlan } | undefined {
+  if (state.cia === undefined) return undefined;
+  const lda = (value: number): Op => ({ text: `lda #${hex2(value)}`, bytes: 2, cycles: 2 });
+  const sta = (address: number): Op => ({ text: `sta ${hex4(address)}`, bytes: 3, cycles: 4 });
+  const limits: string[] = [];
+  const timers: CiaTimerPlan[] = [];
+  const disable: Op[] = [];
+  const loads: Array<Op | ((cycles: number[]) => Op)> = [];
+  const starts: Op[] = [];
+  const latches: Op[] = [];
+  const acks: Op[] = [];
+  const masks: Op[] = [];
+  /** For each running timer: its index in starts, and how its load value follows from the cycles after its start. */
+  const running: Array<{ start: number; counter: number; latch: number; system: boolean; name: string; plan: CiaTimerPlan }> = [];
+  state.cia.forEach((chip, index) => {
+    const id = (index + 1) as 1 | 2;
+    const base = index === 0 ? 0xdc00 : 0xdd00;
+    let touched = false;
+    for (const timer of ["A", "B"] as const) {
+      const at = timer === "A" ? 0x04 : 0x06;
+      const controlAt = base + (timer === "A" ? 0x0e : 0x0f);
+      const control = chip.registers[timer === "A" ? 0x0e : 0x0f]! & 0xef;
+      const counter = chip.registers[at]! | (chip.registers[at + 1]! << 8);
+      const latch = timer === "A" ? chip.latchA : chip.latchB;
+      const name = `CIA ${id} timer ${timer}`;
+      const plan: CiaTimerPlan = { cia: id, timer, control, latch, counterAtJump: counter };
+      timers.push(plan);
+      const kernal = KERNAL_TIMERS[index * 2 + (timer === "A" ? 0 : 1)]!;
+      const runs = (control & 0x01) !== 0;
+      if (!runs && control === kernal.control && latch === kernal.latch && counter === kernal.counter) continue;
+      touched = true;
+      // Stopped, a write of the high latch byte also loads the counter.
+      loads.push(lda(control & 0xee), sta(controlAt));
+      if (runs) {
+        // Timer A counts system cycles without bit 5, timer B without bits 5 and 6; other inputs do not count in the loader.
+        const system = timer === "A" ? (control & 0x20) === 0 : (control & 0x60) === 0;
+        const slot = running.length;
+        running.push({ start: starts.length, counter, latch, system, name, plan });
+        loads.push((values) => lda(values[slot]! & 0xff), sta(base + at), (values) => lda(values[slot]! >> 8), sta(base + at + 1));
+        starts.push(lda(control), sta(controlAt));
+        latches.push(lda(latch & 0xff), sta(base + at), lda(latch >> 8), sta(base + at + 1));
+        if (system) plan.counterAtJump = counter + 3;
+        continue;
+      }
+      loads.push(lda(counter & 0xff), sta(base + at), lda(counter >> 8), sta(base + at + 1));
+      if (latch === counter) continue;
+      if (latch >> 8 === counter >> 8) {
+        loads.push(lda(latch & 0xff), sta(base + at));
+        continue;
+      }
+      // The high byte loads the counter of a stopped timer too.
+      loads.push(lda(latch & 0xff), sta(base + at), lda(latch >> 8), sta(base + at + 1));
+      plan.counterAtJump = latch;
+      limits.push(`${name} is stopped with the counter $${counter.toString(16).padStart(4, "0")} and the latch $${latch.toString(16).padStart(4, "0")}: a stopped CIA timer loads its latch, so the counter is the latch.`);
+    }
+    const mask = chip.interruptMask;
+    if (mask !== KERNAL_MASKS[index]) {
+      disable.push(lda(0x7f), sta(base + 0x0d));
+      if (mask !== 0) masks.push(lda(0x80 | mask), sta(base + 0x0d));
+      touched = true;
+    }
+    if (touched) acks.push({ text: `lda ${hex4(base + 0x0d)}`, bytes: 3, cycles: 4 });
+    const flags = chip.registers[0x0d]! & 0x1f;
+    if (flags !== 0) limits.push(`CIA ${id} has the interrupt flags $${flags.toString(16).padStart(2, "0")} at the entry: only an event sets a flag, so the loader cannot.`);
+  });
+  if (loads.length === 0 && disable.length === 0) return { ops: [], plan: { timers, masks: [state.cia[0].interruptMask, state.cia[1].interruptMask], limits } };
+  // The cycles from each start write to the entry: what follows it here, and the tail.
+  const after = [...starts, ...latches, ...acks, ...masks];
+  const values = running.map((item) => {
+    const followers = after.slice(item.start + 2).reduce((sum, op) => sum + op.cycles, 0);
+    if (!item.system) return item.counter;
+    const load = item.counter + followers + TAIL_CYCLES - CIA_START_DELAY;
+    if (load <= 0xffff) return load;
+    limits.push(`${item.name} counts from $${item.counter.toString(16).padStart(4, "0")} at the entry: the loader cannot start it so near $ffff without an underflow, so the counter differs.`);
+    delete item.plan.counterAtJump;
+    return item.counter;
+  });
+  const pre: Op[] = state.vic === undefined ? [lda(0x35), { text: "sta $01", bytes: 2, cycles: 3 }] : [];
+  const ops = [...pre, ...disable, ...loads.map((op) => (typeof op === "function" ? op(values) : op)), ...after];
+  return { ops, plan: { timers, masks: [state.cia[0].interruptMask, state.cia[1].interruptMask], limits } };
+}
+
 export interface LoaderInput {
   /** The segments with the files that hold them, in address order. */
   segments: Array<Range & { files: string[] }>;
@@ -222,9 +380,13 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     }
     at += block.range.end - block.range.start + 1;
   }
-  if (plain.length > MAX_COPIES) throw new WireFailure("invalid-input", `The loader needs ${plain.length} copies; it can do at most ${MAX_COPIES}. Join segments in the unpacker capture (--range) or write the loader by hand.`);
+  const cia = ciaSection(state);
+  const ciaSize = cia === undefined ? 0 : cia.ops.reduce((sum, op) => sum + op.bytes, 0);
+  // The CIA part takes room from the copy table in the copier's two pages.
+  const maxCopies = Math.min(MAX_COPIES, Math.floor((COPIER_LIMIT - COPIER_CODE_SIZE - (state.vic === undefined ? 0 : VIC_SIZE) - ciaSize - 2) / COPY_ENTRY));
+  if (plain.length > maxCopies) throw new WireFailure("invalid-input", `The loader needs ${plain.length} copies; it can do at most ${maxCopies}. Join segments in the unpacker capture (--range) or write the loader by hand.`);
   const copierImage = at;
-  const copierSize = COPIER_CODE_SIZE + (state.vic === undefined ? 0 : VIC_SIZE) + COPY_ENTRY * plain.length + 2;
+  const copierSize = COPIER_CODE_SIZE + (state.vic === undefined ? 0 : VIC_SIZE) + ciaSize + COPY_ENTRY * plain.length + 2;
   const end = copierImage + copierSize - 1;
   if (end > LOAD_LIMIT) throw new WireFailure("invalid-input", `The loader would end at ${hex4(end)}, after ${hex4(LOAD_LIMIT)}: loading it would write the I/O area. The image is too large for one loader file.`);
 
@@ -330,7 +492,9 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     "        tax",
     "        jmp .next",
     ".done",
-    ...vicLines(state),
+    // The CIA part runs after the raster wait: the wait ends its whole lines earlier, so the entry comes in its line.
+    ...vicLines(state, Math.floor((cia?.ops.reduce((sum, op) => sum + op.cycles, 0) ?? 0) / LINE_CYCLES)),
+    ...(cia === undefined ? [] : cia.ops.map((op) => `        ${op.text}`)),
     `        lda #${hex2(port0)}`,
     "        sta $00",
     `        lda #${hex2(port1)}`,
@@ -371,6 +535,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     stackByte,
     end,
     text: `${lines.join("\n")}\n`,
+    ...(cia === undefined ? {} : { cia: cia.plan }),
   };
 }
 
@@ -379,9 +544,9 @@ export function planLoader(input: LoaderInput): LoaderPlan {
  * display registers and the VIC bank of the entry state, then waits for the
  * entry's raster line, so the program starts in the same phase of the frame.
  */
-function vicLines(state: EntryState): string[] {
+function vicLines(state: EntryState, earlier: number): string[] {
   if (state.vic === undefined) return [];
-  const line = rasterLine(state.vic.registers);
+  const line = (rasterLine(state.vic.registers) - earlier + PAL_LINES) % PAL_LINES;
   return [
     "        lda #$35",
     "        sta $01",

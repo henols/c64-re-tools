@@ -6,6 +6,7 @@ import { type Comparison, type Condition, type BacktraceFrame, type HistoryEntry
 import { COVERAGE, formatC64Address, formatC64Byte } from "../../c64.ts";
 import { decodeDisplay, decodePalette, visibleFrame, type IndexedFrame } from "./screen.ts";
 import type { TextMonitor } from "./text-monitor.ts";
+import type { CiaHidden } from "./chips.ts";
 import {
   BinaryMonitor,
   Command,
@@ -429,6 +430,19 @@ export class ViceAdapter {
     const bytes = decodeMemory(response.body);
     if (bytes.length !== options.size) throw new Error(`VICE returned ${bytes.length} bytes for a ${options.size}-byte read`);
     return bytes.toString("hex");
+  }
+
+  /**
+   * The timer latches and the interrupt mask of the CIA at `base`, from VICE's
+   * text-monitor dump: no register read gives them (D63).
+   */
+  async ciaHidden(base: 0xdc00 | 0xdd00): Promise<CiaHidden> {
+    const answer = await this.#computerText(`io ${hex4(base)}`);
+    const mask = /\(mask: ([0-9a-f]{2})\)/i.exec(answer);
+    const latchA = /Timer A: [0-9a-f]{4} \(latched ([0-9a-f]{4})\)/i.exec(answer);
+    const latchB = /Timer B: [0-9a-f]{4} \(latched ([0-9a-f]{4})\)/i.exec(answer);
+    if (mask === null || latchA === null || latchB === null) throw unknownForm("CIA dump", answer.split("\n"));
+    return { latchA: Number.parseInt(latchA[1]!, 16), latchB: Number.parseInt(latchB[1]!, 16), interruptMask: Number.parseInt(mask[1]!, 16) & 0x1f };
   }
 
   /** Reads C64 I/O registers through the I/O bank, whatever the CPU has banked in, without side effects. */

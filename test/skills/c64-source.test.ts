@@ -16,7 +16,7 @@ import { assemble } from "../../src/native/acme.ts";
 import { ACME, findTool } from "../../src/native/discover.ts";
 import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
-import { copyOrder, planLoader, readEntryState, simulate, type EntryState } from "../../skills/c64-source/scripts/loader.ts";
+import { ciaSection, copyOrder, planLoader, readEntryState, simulate, type EntryCia, type EntryState } from "../../skills/c64-source/scripts/loader.ts";
 import { MODE_LENGTH, OPCODES } from "../../skills/c64-source/scripts/opcodes.ts";
 import { entriesInData, entryOutsideImage, layout, render, type SourceInput } from "../../skills/c64-source/scripts/source.ts";
 
@@ -388,4 +388,50 @@ test("an image entry in no segment is named: the image does not hold the program
   assert.match(entryOutsideImage(0x0801, segments)!, /^The entry \$0801 is in no segment of the image: the image does not hold the program\./);
   assert.equal(entryOutsideImage(0xc300, segments), undefined);
   assert.equal(entryOutsideImage(undefined, segments), undefined);
+});
+
+/** A CIA at the entry: counters, controls and interrupt flags in their registers. */
+function entryCia(timerA: number, timerB: number, controlA: number, controlB: number, hidden: Omit<EntryCia, "registers">, flags = 0): EntryCia {
+  const registers = new Uint8Array(16);
+  registers.set([timerA & 0xff, timerA >> 8, timerB & 0xff, timerB >> 8], 4);
+  registers.set([flags, controlA, controlB], 0x0d);
+  return { registers, ...hidden };
+}
+
+function ciaState(cia1: EntryCia, cia2: EntryCia): EntryState {
+  return { pc: 0x1000, a: 0, x: 0, y: 0, sp: 0xff, flags: 0x20, port: [0x2f, 0x37], pages: new Uint8Array(0x400), vic: { registers: new Uint8Array(0x2f), bank: 3 }, cia: [cia1, cia2] };
+}
+
+const KERNAL_CIA2 = () => entryCia(0xffff, 0xffff, 0x08, 0x08, { latchA: 0xffff, latchB: 0xffff, interruptMask: 0 });
+
+test("the loader sets only the CIA timers that differ from the KERNAL's, and a running one counts to its entry value (D63)", () => {
+  const section = ciaSection(ciaState(entryCia(0x1234, 0xffff, 0x01, 0x08, { latchA: 0x4025, latchB: 0xffff, interruptMask: 0x01 }), KERNAL_CIA2()))!;
+  // Stop, load, start, latch, and read the flags away; after the start come 12 + 4 cycles and the tail of 33, less the start delay of 1.
+  assert.deepEqual(section.ops.map((op) => op.text), [
+    "lda #$00", "sta $dc0e",
+    "lda #$64", "sta $dc04", "lda #$12", "sta $dc05",
+    "lda #$01", "sta $dc0e",
+    "lda #$25", "sta $dc04", "lda #$40", "sta $dc05",
+    "lda $dc0d",
+  ]);
+  assert.equal(0x1264 - 0x1234, 12 + 4 + 33 - 1);
+  assert.deepEqual(section.plan.timers[0], { cia: 1, timer: "A", control: 0x01, latch: 0x4025, counterAtJump: 0x1237 });
+  assert.deepEqual(section.plan.limits, []);
+});
+
+test("a CIA timer that the loader cannot set as it was is a named limit (D63)", () => {
+  // CIA 1 timer A runs so near $ffff that the cycles to the entry do not fit; timer B is stopped with a counter that is not its latch.
+  const near = ciaSection(ciaState(entryCia(0xfff0, 0x1000, 0x01, 0x08, { latchA: 0xffff, latchB: 0x2000, interruptMask: 0x01 }, 0x01), KERNAL_CIA2()))!;
+  assert.equal(near.plan.timers[0]!.counterAtJump, undefined);
+  assert.equal(near.plan.timers[1]!.counterAtJump, 0x2000, "a stopped timer loads its latch");
+  assert.equal(near.plan.limits.length, 3);
+  assert.match(near.plan.limits.join("\n"), /CIA 1 timer A counts from \$fff0/);
+  assert.match(near.plan.limits.join("\n"), /CIA 1 timer B is stopped with the counter \$1000 and the latch \$2000/);
+  assert.match(near.plan.limits.join("\n"), /CIA 1 has the interrupt flags \$01 at the entry/);
+  // A latch with the high byte of the counter needs only its low byte: no limit.
+  const low = ciaSection(ciaState(entryCia(0x1234, 0x1210, 0x01, 0x08, { latchA: 0x4025, latchB: 0x1280, interruptMask: 0x01 }), KERNAL_CIA2()))!;
+  assert.deepEqual(low.plan.limits, []);
+  assert.equal(low.plan.timers[1]!.counterAtJump, 0x1210);
+  // Without the CIA state, the loader sets nothing.
+  assert.equal(ciaSection({ ...ciaState(KERNAL_CIA2(), KERNAL_CIA2()), cia: undefined } as unknown as EntryState), undefined);
 });
