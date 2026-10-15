@@ -16,7 +16,7 @@ function areaOf(path: string): string | undefined {
   if (parts[0] === "src") {
     if (parts.length === 2) {
       const leaf = parts[1]!.replace(/\.ts$/, "");
-      return ["c64", "platform", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
+      return ["c64", "package", "platform", "project", "script", "time", "trace"].includes(leaf) ? leaf : undefined;
     }
     const dir = parts[1]!;
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
@@ -37,17 +37,19 @@ const ALLOWED: Record<string, readonly string[]> = {
   trace: ["time"],
   project: ["c64"],
   protocol: ["c64"],
-  "host-client": ["protocol", "c64", "project", "trace"],
-  mcp: ["host-client", "protocol", "c64", "trace"],
-  host: ["native", "protocol", "c64", "trace"],
+  // The package name and channel: the npx command in refusals and help texts.
+  package: [],
+  "host-client": ["protocol", "c64", "project", "trace", "package"],
+  mcp: ["host-client", "protocol", "c64", "trace", "package"],
+  host: ["native", "protocol", "c64", "trace", "package"],
   knowledge: ["c64", "project", "time"],
   // The error envelope of the skill scripts and the CLI. It takes other refusal classes as a parameter.
   script: ["protocol", "project", "trace"],
   // Running native tools (processes, workspaces, ACME, DXA, Ghidra): shared by the host and the skill scripts.
   native: ["protocol", "c64", "trace"],
   // The installation and status edge: host tool status through the host-client, local tool status through native.
-  cli: ["host-client", "native", "protocol", "script", "distribution", "trace"],
-  distribution: [],
+  cli: ["host-client", "native", "protocol", "script", "distribution", "trace", "package"],
+  distribution: ["package"],
 };
 const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "platform", "script", "time"];
 

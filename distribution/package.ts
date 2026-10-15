@@ -2,22 +2,7 @@
 // only reads package.json, so a caller that needs the declaration does not
 // build the plugin.
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-/**
- * The npm dist-tag that a version is published under: a prerelease
- * (2.0.0-rc.1) goes to "next", a release to "latest".
- */
-export function channelOf(version: string): "latest" | "next" {
-  return version.includes("-") ? "next" : "latest";
-}
-
-/** The name, version and dist-tag of this npm package, from its package.json. */
-export const PACKAGE = (() => {
-  const metadata = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")) as { name: string; version: string };
-  return { name: metadata.name, version: metadata.version, tag: channelOf(metadata.version) };
-})();
+import { PACKAGE } from "../src/package.ts";
 
 /**
  * The agent starts the MCP server through npx with the newest version of the

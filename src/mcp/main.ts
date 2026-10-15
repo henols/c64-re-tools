@@ -13,17 +13,18 @@ import { machineTools } from "./tools/machine.ts";
 import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 import { videoTools } from "./tools/video.ts";
+import { PACKAGE } from "../package.ts";
 
 const HELP = `c64-re-tools-mcp
 
 Usage:
-  npx -y --package=@henols/c64-re-tools@latest c64-re-tools-mcp
+  npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-mcp
   c64-re-tools-mcp --help
 
 Runs the stateful C64 MCP server on stdio. Each c64-re-tools-mcp process owns
 one C64 emulator, started by the Host Runtime (c64-re-tools-host) when this
 server starts and stopped when it exits. c64-re-tools install declares it for
-the agent, through npx with the latest version.
+the agent, through npx with the newest version of its channel.
 
 Environment:
   C64RT_VIDEO  pal (default) or ntsc; fixed for the life of the process.
@@ -42,32 +43,59 @@ function videoStandard(env: NodeJS.ProcessEnv): VideoStandard {
 }
 
 /**
- * One session for the life of the process (1 MCP = 1 session = 1 VICE).
- * It opens at start; if that fails before a session existed (for example the
- * host was not running yet), the next tool call tries again. Once a session
- * existed, its loss is final and reported by the session itself. Close stops
+ * One session at a time (1 MCP = 1 session = 1 VICE). It opens at start; if
+ * that fails (for example the host was not running yet), the next tool call
+ * tries again. When the host connection is lost, the next call opens a new
+ * session (D57). A lost session that the emulator answered first gives its
+ * machine-state-lost once, unless a pending call got it already. Close stops
  * an open that is still waiting for the host at once.
  */
 function sessionSource(): { get: SessionSource; close(): Promise<void> } {
   let opening: Promise<ViceSessionClient> | undefined;
+  let lostNotice: WireFailure | undefined;
   let closed = false;
   const stop = new AbortController();
   const open = () => {
     const started = performance.now();
-    opening = (async () => ViceSessionClient.open({ videoStandard: videoStandard(process.env), signal: stop.signal }))();
-    void opening.then(() => trace().event("session.opened", { ms: elapsedMs(started) }), () => {});
-    opening.catch((error: unknown) => {
+    const current = (async () => ViceSessionClient.open({ videoStandard: videoStandard(process.env), signal: stop.signal }))();
+    opening = current;
+    void current.then(
+      (client) => {
+        trace().event("session.opened", { ms: elapsedMs(started) });
+        void client.closed.then(() => drop(current, client));
+      },
+      () => {},
+    );
+    current.catch((error: unknown) => {
       log(`session not opened: ${error instanceof Error ? error.message : String(error)}`);
-      opening = undefined;
+      if (opening === current) opening = undefined;
     });
-    return opening;
+    return current;
+  };
+  /** Forgets a lost session, once; the next call opens a new one. */
+  const drop = (current: Promise<ViceSessionClient>, client: ViceSessionClient) => {
+    if (closed || opening !== current) return;
+    log("the connection to the host runtime was lost; the next call opens a new session");
+    opening = undefined;
+    if (client.answered) lostNotice = client.unreportedLoss;
   };
   open();
+  const get = async (): Promise<ViceSessionClient> => {
+    if (closed) throw new WireFailure("machine-unavailable", "The C64 session is shutting down.");
+    if (lostNotice !== undefined) {
+      const notice = lostNotice;
+      lostNotice = undefined;
+      throw notice;
+    }
+    const current = opening ?? open();
+    const client = await current;
+    if (!client.lost) return client;
+    // The loss is known here before the close event reaches drop.
+    drop(current, client);
+    return get();
+  };
   return {
-    get: () => {
-      if (closed) return Promise.reject(new WireFailure("machine-unavailable", "The C64 session is shutting down."));
-      return opening ?? open();
-    },
+    get,
     async close() {
       closed = true;
       stop.abort();

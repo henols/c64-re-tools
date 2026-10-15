@@ -10,11 +10,12 @@ import { viceFlaws } from "../native/discover.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
+import { PACKAGE } from "../package.ts";
 
 const HELP = `c64-re-tools-host
 
 Usage:
-  npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host [--port <port>]
+  npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host [--port <port>]
   c64-re-tools-host --help
 
 Runs the c64-re-tools Host Runtime in the foreground. It first starts VICE

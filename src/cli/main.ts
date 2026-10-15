@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { PACKAGE } from "../../distribution/package.ts";
+import { PACKAGE } from "../package.ts";
 import { localToolContext } from "../native/local.ts";
 import { localToolStatus } from "../native/status.ts";
 import { WireFailure } from "../protocol/messages.ts";

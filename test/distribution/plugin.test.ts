@@ -10,7 +10,8 @@ import { dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { mcpServerFor, channelOf, PACKAGE } from "../../distribution/package.ts";
+import { mcpServerFor } from "../../distribution/package.ts";
+import { channelOf, PACKAGE } from "../../src/package.ts";
 import plugin, { closureOf, scriptsOf, SKILL_PACKAGE } from "../../distribution/plugin.ts";
 
 const root = resolve(import.meta.dirname, "../..");

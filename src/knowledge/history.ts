@@ -103,6 +103,14 @@ export function historyNamed(db: DatabaseSync | undefined, name: string, space: 
     .sort(bySequence);
 }
 
+/** Why a revision was written and what it rests on: its description and its evidence, when it has them. */
+export function revisionNote(db: DatabaseSync | undefined, id: number): { reason?: string; evidence?: Evidence[] } {
+  const raw = db?.prepare("SELECT * FROM revisions WHERE id = ?").get(id) as Raw | undefined;
+  if (db === undefined || raw === undefined) return {};
+  const { description, evidence } = withEvidence(db, toRevision(raw));
+  return { ...(description === undefined ? {} : { reason: description }), ...(evidence === undefined ? {} : { evidence }) };
+}
+
 /** The revision with its evidence, when it has any. */
 function withEvidence(db: DatabaseSync, revision: Revision): Revision {
   const rows = db.prepare("SELECT kind, ref, sha256 FROM evidence WHERE revision = ? ORDER BY id").all(revision.id) as Raw[];

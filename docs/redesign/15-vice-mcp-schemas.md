@@ -506,9 +506,12 @@ Output:
   "reached": true,
   "stopReason": "target",
   "state": "stopped",
-  "pc": "$2100"
+  "pc": "$2100",
+  "space": "c64"
 }
 ~~~
+
+space is the CPU that stopped: c64, or drive8 for a stop in the disk drive, for example by a drive8 breakpoint during a c64 run. pc is the address in that space.
 
 stopReason:
 

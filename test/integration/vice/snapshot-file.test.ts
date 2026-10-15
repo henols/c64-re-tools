@@ -41,6 +41,11 @@ test("a snapshot file from one session restores the machine in a new session", {
     assert.equal((await second.memoryRead({ address: 0xc000, size: 3, space: "c64", view: "ram" })).data, "c0ffee");
     await assert.rejects(
       second.snapshotRestore(Buffer.from("this is not a snapshot")),
+      (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && /not a VICE snapshot file/.test(error.message),
+    );
+    // A snapshot file that VICE does not read: the right header, then bytes of no snapshot.
+    await assert.rejects(
+      second.snapshotRestore(Buffer.concat([file.subarray(0, 19), Buffer.alloc(64, 0x55)])),
       (error: unknown) => error instanceof WireFailure && error.code === "invalid-input" && /restores only in the emulator version/.test(error.message),
     );
     assert.equal((await second.memoryRead({ address: 0xc000, size: 3, space: "c64", view: "ram" })).data, "c0ffee", "a refused file leaves the machine as it was");

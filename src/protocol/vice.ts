@@ -389,7 +389,9 @@ export interface RunUntilResult {
   reached: boolean;
   stopReason: StopReason;
   state: RunState;
+  /** The PC of the CPU in `space`: the CPU that stopped. */
   pc: number;
+  space: Space;
 }
 
 export interface ViceOperations {
@@ -1032,7 +1034,8 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         typeof value.reached === "boolean" &&
         isOneOf(STOP_REASONS, value.stopReason) &&
         isOneOf(RUN_STATES, value.state) &&
-        isInteger(value.pc, 0, 0xffff);
+        isInteger(value.pc, 0, 0xffff) &&
+        isOneOf(SPACES, value.space);
       if (!ok) throw new ProtocolError("runUntil result is malformed");
       break;
     }

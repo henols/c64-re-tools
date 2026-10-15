@@ -690,6 +690,7 @@ test("run-until stops at its target and removes both checkpoints", async () => {
     stopReason: "target",
     state: "stopped",
     pc: 0xc00b,
+    space: "c64",
   });
   assert.equal(fake.checkpoints.size, 0);
   await session.close();
@@ -699,7 +700,7 @@ test("run-until times out after its frames, and reports a user breakpoint", asyn
   const { fake, session } = await startSession();
   fake.onResume = (vice) => ({ pc: 0x1000, hits: [clockOf(vice)!.number] });
   const timeout = await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 2 });
-  assert.deepEqual(timeout, { reached: false, stopReason: "timeout", state: "stopped", pc: 0x1000 });
+  assert.deepEqual(timeout, { reached: false, stopReason: "timeout", state: "stopped", pc: 0x1000, space: "c64" });
 
   await session.handle("breakpoint", { action: "add", address: 0x2000, space: "c64" });
   fake.onResume = (vice) => {
@@ -722,6 +723,7 @@ test("a stop on a JAM opcode is a jam; another unexplained stop is an error", as
     stopReason: "jam",
     state: "stopped",
     pc: 0x3000,
+    space: "c64",
   });
   fake.ram[0x3000] = 0xea;
   await assert.rejects(session.handle("execution", { action: "advance-frames", count: 1, space: "c64" }), failsWith("operation-failed"));

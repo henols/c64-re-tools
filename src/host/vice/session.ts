@@ -74,6 +74,8 @@ const WINDOW_CLOSED =
   "Breakpoints and watchpoints are kept. Check the machine state before you continue.";
 
 /** Emulator state that a move to another VICE cannot carry. */
+/** The first bytes of every VICE snapshot file. */
+const VSF_MAGIC = Buffer.from("VICE Snapshot File\x1a", "latin1");
 const NOT_CARRIED = ["cpu history", "memory map", "profile", "keyboard input not yet typed"];
 
 /** Starts another VICE for this session; `log` also gets that launch's lines. */
@@ -558,7 +560,7 @@ export class ViceSession implements ViceSessionHandle {
    * checkpoint, a user breakpoint or watchpoint, or a JAM ends the run early.
    * The machine is stopped afterwards.
    */
-  async #runFrames(limit: number, target?: { checkpoint: number; deferred: boolean }): Promise<{ end: RunEnd; frames: number; pc: number }> {
+  async #runFrames(limit: number, target?: { checkpoint: number; deferred: boolean }): Promise<{ end: RunEnd; frames: number; pc: number; space: "c64" | "drive8" }> {
     await this.#stop();
     const lines = RASTER[this.#videoStandard].lines;
     const start = await this.#machine.rasterPosition();
@@ -587,18 +589,19 @@ export class ViceSession implements ViceSessionHandle {
             }
           } else {
             frames++;
-            if (frames >= limit) return { end: "frames", frames, pc: stop.pc };
+            if (frames >= limit) return { end: "frames", frames, pc: stop.pc, space: "c64" };
             await this.#machine.setCondition(clock, arming);
           }
           armingPhase = !armingPhase;
           continue;
         }
         if (end === "unknown") {
-          if (await this.#jammedAt(stop.pc)) return { end: "jam", frames, pc: stop.pc };
+          if (await this.#jammedAt(stop.pc)) return { end: "jam", frames, pc: stop.pc, space: "c64" };
           throw new WireFailure("operation-failed", "The emulator stopped the machine for a reason outside this run.");
         }
-        // A drive stop is completed before the result names the computer's pc.
-        return { end, frames, pc: (await this.#completeDriveStop()) ?? stop.pc };
+        // A drive stop is completed before the result names the computer's pc; `space` says which CPU stopped.
+        const driveStop = this.#driveStop;
+        return { end, frames, pc: (await this.#completeDriveStop()) ?? stop.pc, space: driveStop ? "drive8" : "c64" };
       }
     } finally {
       await this.#machine.deleteCheckpoint(clock);
@@ -690,9 +693,9 @@ export class ViceSession implements ViceSessionHandle {
       if (expression !== undefined) await this.#machine.setCondition(checkpoint, expression);
       const outcome = await this.#runFrames(params.timeoutFrames, { checkpoint, deferred });
       const stopReason = outcome.end === "frames" ? "timeout" : outcome.end;
-      // A stop event carries the computer's PC; a drive target reports the drive's.
-      const pc = target.kind !== "raster" && target.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc;
-      return { reached: stopReason === "target", stopReason, state: "stopped", pc };
+      // A stop event carries the computer's PC; a stop in the drive reports the drive's (F-31).
+      const pc = outcome.space === "drive8" ? (await this.#machine.readRegisters("drive8")).pc : outcome.pc;
+      return { reached: stopReason === "target", stopReason, state: "stopped", pc, space: outcome.space };
     } finally {
       await this.#machine.deleteCheckpoint(checkpoint);
     }
@@ -957,7 +960,10 @@ export class ViceSession implements ViceSessionHandle {
       reply.push(bytes);
       return { exported: true, bytes: bytes.length };
     }
-    const file = this.#stage(onlyAttachment(attachments), "vsf");
+    const bytes = onlyAttachment(attachments);
+    // Checked before the machine stops: VICE gives no reason for a file that is no snapshot (F-07).
+    if (!bytes.subarray(0, VSF_MAGIC.length).equals(VSF_MAGIC)) throw new WireFailure("invalid-input", "The file is not a VICE snapshot file (.vsf). Give a file that c64_snapshot save wrote.");
+    const file = this.#stage(bytes, "vsf");
     try {
       return await this.#restoreFrom(file);
     } catch (error) {

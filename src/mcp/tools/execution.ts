@@ -3,7 +3,7 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { COMPARISONS, EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_TIMEOUT_FRAMES, RUN_STATES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
+import { COMPARISONS, EXECUTION_ACTIONS, MAX_EXECUTION_COUNT, MAX_TIMEOUT_FRAMES, RUN_STATES, SPACES, STOP_REASONS, type RunTarget } from "../../protocol/vice.ts";
 import { AddressInput, AddressOutput, Byte, ConditionInput, defineTool, MemoryViewInput, SpaceInput, toCondition } from "../server.ts";
 
 export const c64Execution = defineTool({
@@ -88,6 +88,7 @@ export const c64RunUntil = defineTool({
     "Kind raster stops at the first instruction at or after a raster line and cycle. If the machine is there now, it stops at the next frame's pass. " +
     `timeoutFrames (1 to ${MAX_TIMEOUT_FRAMES}, default 3000) limits the run in video frames. ` +
     "reached tells if the target occurred. stopReason tells why the CPU stopped: target, breakpoint, watchpoint, jam (a JAM opcode) or timeout. " +
+    "space tells which CPU stopped: c64, or drive8 for a stop in the disk drive. pc is the address in that space. " +
     "The CPU is always stopped after this tool.",
   inputSchema: z
     .object({
@@ -95,7 +96,7 @@ export const c64RunUntil = defineTool({
       timeoutFrames: z.number().int().min(1).max(MAX_TIMEOUT_FRAMES).default(3000),
     })
     .strict(),
-  outputSchema: z.object({ reached: z.boolean(), stopReason: z.enum(STOP_REASONS), state: z.enum(RUN_STATES), pc: AddressOutput }),
+  outputSchema: z.object({ reached: z.boolean(), stopReason: z.enum(STOP_REASONS), state: z.enum(RUN_STATES), pc: AddressOutput, space: z.enum(SPACES) }),
   readOnly: false,
   async run(input, session) {
     const { target: given } = input;

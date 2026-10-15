@@ -332,7 +332,7 @@ test("a module starts a file of generated source: one per address and per file, 
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
   for (const file of ["../x.asm", "sub/x.asm", "x.a", ".asm", "x y.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
-  assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", origin: "llm", revision: 3 });
+  assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: 3 }, "a write without a title keeps it (F-26)");
   assert.deepEqual(listModules(db, undefined, ["user"]).map((row) => row.file), ["player.asm"]);
   assert.equal(revisionChanges(db, 3).closed[0]?.entity, "module");
 

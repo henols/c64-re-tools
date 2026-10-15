@@ -71,7 +71,7 @@ const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Pro
   runUntil: {
     call: (c) => c.runUntil({ target: { kind: "raster", line: 100, cycle: 20 }, timeoutFrames: 3000 }),
     params: { target: { kind: "raster", line: 100, cycle: 20 }, timeoutFrames: 3000 },
-    result: { reached: false, stopReason: "timeout", state: "stopped", pc: 0x2100 },
+    result: { reached: false, stopReason: "timeout", state: "stopped", pc: 0x2100, space: "c64" },
   },
   programLoad: { call: (c) => c.programLoad({ path: "game.prg", address: 0xc000 }), params: { address: 0xc000 }, result: { state: "stopped", loadAddress: 0xc000, size: 1 }, attachments: 1 },
   autostart: { call: (c) => c.autostart({ path: "game.prg", index: 0, run: true }), params: { type: "prg", index: 0, run: true }, result: { state: "running" }, attachments: 1 },

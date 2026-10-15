@@ -44,7 +44,7 @@ async function scenario(client: Client) {
   await tool(client, "c64_joystick", { port: 2, direction: "left" });
 
   const reached = (await tool(client, "c64_run_until", { target: { kind: "address", address: hex(LEFT_SEEN) }, timeoutFrames: 10 })).result;
-  assert.deepEqual(reached, { reached: true, stopReason: "target", state: "stopped", pc: hex(LEFT_SEEN) });
+  assert.deepEqual(reached, { reached: true, stopReason: "target", state: "stopped", pc: hex(LEFT_SEEN), space: "c64" });
 
   const advanced = (await tool(client, "c64_execution", { action: "advance-frames", count: 20 })).result;
   assert.deepEqual(advanced, { state: "stopped", pc: hex(LEFT_SEEN), advancedFrames: 20 });

@@ -143,7 +143,7 @@ test("a removal shows as a suppression with its reason, in at and in the history
   });
   assert.deepEqual(knowledge(root, "at", "$0408").json.suppressions, [{ suppresses: "symbol", address: "$0408", origin: "llm", revision: 4 }]);
   const history = knowledge(root, "history", "$0408").json.history as Array<Record<string, unknown>>;
-  assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "symbol", address: "$0408", origin: "llm", fromRevision: 4 });
+  assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "symbol", address: "$0408", origin: "llm", fromRevision: 4, reason: "not an entry" }, "the history gives the reason of the revision (F-26)");
 });
 
 test("apply writes a batch from a file or standard input as one revision (D42)", () => {

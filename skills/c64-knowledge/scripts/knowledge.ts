@@ -9,7 +9,7 @@ import { parseArgs } from "node:util";
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
-import { historyAt, historyNamed, revision, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
+import { historyAt, historyNamed, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
 import {
   at,
   currentRevision,
@@ -281,7 +281,10 @@ function run(argv: string[]): unknown {
         case "spaces":
           return { spaces: listSpaces(db) };
         case "history":
-          return { history: (values.name === undefined ? historyAt(db, address(args[0]), space) : historyNamed(db, values.name, space)).map(historyEntry) };
+          // Each row with the reason and the evidence of the revision that wrote it (F-26).
+          return {
+            history: (values.name === undefined ? historyAt(db, address(args[0]), space) : historyNamed(db, values.name, space)).map((entry) => ({ ...historyEntry(entry), ...revisionNote(db, entry.from) })),
+          };
         case "revisions": {
           const options: { limit?: number; before?: number } = {};
           if (values.limit !== undefined) options.limit = integer(values.limit, "--limit");

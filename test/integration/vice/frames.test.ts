@@ -85,6 +85,7 @@ test("run-until reaches address, memory and raster targets", { skip: liveSkip, t
     stopReason: "target",
     state: "stopped",
     pc: 0xc00b,
+    space: "c64",
   });
   assert.equal((await session.handle("registersGet", { space: "c64" })).x, 10);
 
@@ -133,5 +134,5 @@ test("run-until reports timeout, breakpoint and jam as the stop reason", { skip:
 
   await load(session, "02");
   const jam = await session.handle("runUntil", { target: { kind: "address", address: 0xc0ff, space: "c64" }, timeoutFrames: 5 });
-  assert.deepEqual(jam, { reached: false, stopReason: "jam", state: "stopped", pc: 0xc000 });
+  assert.deepEqual(jam, { reached: false, stopReason: "jam", state: "stopped", pc: 0xc000, space: "c64" });
 });

@@ -7,9 +7,20 @@ import { HostConnection } from "./connect.ts";
 import { readProjectFile } from "./transfer.ts";
 
 const HOST_LOST =
-  "The connection to the c64-re-tools host runtime was lost, and the emulator and its machine state went with it. " +
-  "Check that the Host Runtime (c64-re-tools-host) is running, then restart the c64-re-tools MCP server.";
+  "The connection to the c64-re-tools host runtime was lost. The emulator and its machine state are gone: memory, registers, breakpoints, snapshots and the loaded program. " +
+  "The next call starts a new machine when the Host Runtime (c64-re-tools-host) runs. Load the program again and set the breakpoints again.";
 const SESSION_CLOSED = "The C64 session is closed because the c64-re-tools MCP server stops.";
+const LOST_BEFORE_ANSWER = "The connection to the c64-re-tools host runtime was lost before the emulator answered. No machine state was lost. Do the call again.";
+
+/**
+ * The loss of a session that never answered (D57): it had no machine state,
+ * so the caller can do the call again on a new session.
+ */
+export class LostBeforeAnswer extends WireFailure {
+  constructor() {
+    super("machine-unavailable", LOST_BEFORE_ANSWER);
+  }
+}
 
 interface Pending {
   op: ViceOperation;
@@ -24,6 +35,8 @@ export class ViceSessionClient {
   readonly #pending = new Map<number, Pending>();
   #nextId = 1;
   #lost: WireFailure | undefined;
+  #answered = false;
+  #lossReported = false;
 
   private constructor(connection: HostConnection) {
     this.#connection = connection;
@@ -33,6 +46,7 @@ export class ViceSessionClient {
       const pending = this.#pending.get(message.id);
       if (pending === undefined) return; // not ours; ignore
       this.#pending.delete(message.id);
+      this.#answered = true;
       if ("error" in message) {
         pending.reject(new WireFailure(message.error.code, message.error.message));
         return;
@@ -50,7 +64,8 @@ export class ViceSessionClient {
       }
     });
     this.closed = connection.closed.then(() => {
-      this.#lost ??= new WireFailure("machine-state-lost", HOST_LOST);
+      this.#lost ??= this.#answered ? new WireFailure("machine-state-lost", HOST_LOST) : new LostBeforeAnswer();
+      this.#lossReported = this.#pending.size > 0;
       for (const pending of this.#pending.values()) pending.reject(this.#lost);
       this.#pending.clear();
     });
@@ -246,6 +261,21 @@ export class ViceSessionClient {
     return this.#request("window", { action });
   }
 
+  /** True when the connection to the host is gone, whatever the reason. */
+  get lost(): boolean {
+    return this.#lost !== undefined;
+  }
+
+  /** True when the emulator answered a request: then the session had machine state to lose (D57). */
+  get answered(): boolean {
+    return this.#answered;
+  }
+
+  /** The loss of a lost session, when no request got it; undefined while the session lives (D57). */
+  get unreportedLoss(): WireFailure | undefined {
+    return this.#lost?.code === "machine-state-lost" && !this.#lossReported ? this.#lost : undefined;
+  }
+
   /** Ends the session; the host stops its emulator. Open and later requests fail as closed. */
   async close(): Promise<void> {
     this.#lost ??= new WireFailure("machine-unavailable", SESSION_CLOSED);
@@ -267,7 +297,10 @@ export class ViceSessionClient {
     params: ViceOperations[O]["params"],
     attachments: readonly Uint8Array[] = [],
   ): Promise<{ result: ViceOperations[O]["result"]; attachments: Buffer[] }> {
-    if (this.#lost !== undefined) return Promise.reject(this.#lost);
+    if (this.#lost !== undefined) {
+      this.#lossReported = true;
+      return Promise.reject(this.#lost);
+    }
     const id = this.#nextId;
     this.#nextId = this.#nextId >= 0xffff_ffff ? 1 : this.#nextId + 1;
     return new Promise((resolve, reject) => {

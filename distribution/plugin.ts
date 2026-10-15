@@ -13,7 +13,8 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { definePlugin, defineSkill, type Skill } from "@jalco/ap-sdk";
 
-import { MCP_SERVER, PACKAGE } from "./package.ts";
+import { PACKAGE } from "../src/package.ts";
+import { MCP_SERVER } from "./package.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const SOURCE = join(root, "src");
@@ -27,9 +28,10 @@ const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(?\s*|\bnew URL\(\s*)(["'])((?:\.\.?
 
 /**
  * The package.json of an installed skill: ES modules, #src/* resolved inside
- * the skill, and the version of c64-re-tools that the copy comes from.
+ * the skill, and the name and version of c64-re-tools that the copy comes
+ * from, which src/package.ts reads.
  */
-export const SKILL_PACKAGE = `${JSON.stringify({ type: "module", version: PACKAGE.version, imports: { "#src/*": "./src/*" } }, null, 2)}\n`;
+export const SKILL_PACKAGE = `${JSON.stringify({ name: PACKAGE.name, type: "module", version: PACKAGE.version, imports: { "#src/*": "./src/*" } }, null, 2)}\n`;
 
 /** The scripts that a SKILL.md runs, by file name. */
 export function scriptsOf(skillMarkdown: string): string[] {

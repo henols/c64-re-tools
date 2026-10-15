@@ -436,8 +436,9 @@ function checkModule(request: ModuleRequest): void {
 
 function moduleStep(db: DatabaseSync, change: Change, origin: Origin, request: ModuleRequest): Step<ModuleRow> {
   const space = spaceOf(request);
-  const title = request.title?.trim();
   const existing = moduleAt(db, request.start, space);
+  // A module write without a title keeps the title it has (F-26).
+  const title = request.title === undefined ? existing?.title : request.title.trim();
   if (existing !== undefined && existing.file === request.file && existing.title === title) return { current: existing };
   const owner = moduleWithFile(db, request.file, space);
   if (owner !== undefined && owner.start !== request.start) {

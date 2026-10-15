@@ -90,6 +90,40 @@ test("a host that starts after the MCP is used on the next tool call", async () 
   await waitFor(() => state.closed === 1, "the session closed");
 });
 
+test("after the host comes back, the next call opens a new session; a lost session that served calls says so once (D57)", async () => {
+  const port = await freePort();
+  const code = (result: CallToolResult) => (result.isError === true ? JSON.parse((result.content[0] as { text: string }).text).code : "ok");
+  const host = async (state: StubState) => {
+    const server = await startHostServer({ port, createViceSession: stub(state) });
+    servers.push(server);
+    return server;
+  };
+
+  // The session that the MCP opens at start served no call: after a host restart the next call goes on without a word.
+  const first: StubState = { opened: [], closed: 0 };
+  let server = await host(first);
+  const client = (await startMcp(`127.0.0.1:${port}`, { stderr: "inherit" })).client;
+  try {
+    await waitFor(() => first.opened.length === 1, "the session opened at start");
+    await server.close();
+    const second: StubState = { opened: [], closed: 0 };
+    server = await host(second);
+    assert.equal(code(await status(client)), "ok");
+    assert.equal(second.opened.length, 1);
+
+    // This session served a call: its loss is told once, then a host that is not there is unavailable, then a new session opens.
+    await server.close();
+    assert.equal(code(await status(client)), "machine-state-lost");
+    assert.equal(code(await status(client)), "machine-unavailable");
+    const third: StubState = { opened: [], closed: 0 };
+    await host(third);
+    assert.equal(code(await status(client)), "ok");
+    assert.equal(third.opened.length, 1);
+  } finally {
+    await client.close();
+  }
+});
+
 test("a bad C64RT_VIDEO is reported to the caller", async () => {
   const state: StubState = { opened: [], closed: 0 };
   const server = await startHostServer({ port: 0, createViceSession: stub(state) });

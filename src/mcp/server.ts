@@ -8,7 +8,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, typ
 import { z } from "zod";
 
 import { formatC64Address, parseC64Address } from "../c64.ts";
-import type { ViceSessionClient } from "../host-client/vice-session.ts";
+import { LostBeforeAnswer, type ViceSessionClient } from "../host-client/vice-session.ts";
 import { shownMessage, WireFailure, type WireError } from "../protocol/messages.ts";
 import { COMPARISONS, CONDITION_REGISTERS, MEMORY_VIEWS, SPACES, type Condition } from "../protocol/vice.ts";
 import { elapsedMs, trace, type TraceFields } from "../trace.ts";
@@ -261,7 +261,14 @@ async function runCall(
   const parsed = tool.inputSchema.safeParse(args ?? {});
   if (!parsed.success) return errorResult({ code: "invalid-input", message: describeIssues(parsed.error) });
   try {
-    const output = await tool.run(parsed.data, await session());
+    let output: unknown;
+    try {
+      output = await tool.run(parsed.data, await session());
+    } catch (error) {
+      // A session that the emulator never answered had no machine state: the call goes again on a new session (D57).
+      if (!(error instanceof LostBeforeAnswer)) throw error;
+      output = await tool.run(parsed.data, await session());
+    }
     // The result goes out in the shape that the tool listing advertises: keys
     // that the output schema does not name are removed, and a result that does
     // not fit the schema is an internal failure.

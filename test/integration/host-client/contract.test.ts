@@ -111,10 +111,11 @@ test("two clients get two independent sessions", async () => {
   await waitFor(() => state.closed === 2, "both sessions closed");
 });
 
-test("a host that shuts down fails the session as lost machine state", async () => {
+test("a host that shuts down fails a session that the emulator answered as lost machine state", async () => {
   const state: StubState = { opened: [], closed: 0, calls: [] };
   const server = await startHostServer({ port: 0, createViceSession: stub(state) });
   const client = await ViceSessionClient.open({ videoStandard: "pal", env: { C64RT_HOST: `${server.host}:${server.port}` } });
+  await client.status();
   await server.close();
   await client.closed;
   await assert.rejects(client.status(), failsWith("machine-state-lost"));

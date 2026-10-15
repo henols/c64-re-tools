@@ -11,7 +11,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { channelOf } from "./package.ts";
+import { channelOf } from "../src/package.ts";
 
 /** The files that repeat the package version, relative to the repository root. */
 export const MANIFESTS = [".claude-plugin/plugin.json", ".claude-plugin/marketplace.json"];

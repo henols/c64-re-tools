@@ -76,7 +76,7 @@ Region types:
 Read:
 
 1. Use `at` for the addresses in the question before other work.
-2. Use `history` when the current knowledge is surprising or disputed.
+2. Use `history` when the current knowledge is surprising or disputed. Each row gives the `reason` and the `evidence` of the revision that wrote it.
 
 Write:
 
@@ -97,11 +97,25 @@ For more than a few writes, put them in one JSON file and use `apply`. The file 
 ]
 ```
 
-The ops are `rename`, `remove-symbol`, `classify`, `unclassify`, `comment`, `uncomment`, `reference`, `unreference`, `module` and `unmodule`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
+The ops and their fields:
+
+| op | Fields |
+|---|---|
+| `rename` | `address`, `name`, `kind` (optional) |
+| `remove-symbol` | `address` |
+| `classify` | `start`, `end`, `type`, `element` (optional) |
+| `unclassify` | `start`, `end` |
+| `comment` | `address`, `placement` (`line` or `side`), `text` |
+| `uncomment` | `address`, `placement` |
+| `reference`, `unreference` | `from`, `to`, `kind` |
+| `module` | `start`, `file`, `title` (optional) |
+| `unmodule` | `start` |
+
+A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
 
 ## Modules
 
-A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The title becomes the first line of the file. Modules have a history, and `revert` restores them.
+A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The title becomes the first line of the file. A `module` write without a title keeps the title that the module has. Modules have a history, and `revert` restores them.
 
 ## Removals
 

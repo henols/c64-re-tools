@@ -147,7 +147,7 @@ class FakeSession implements ViceSessionApi {
   runs: unknown[] = [];
   async runUntil(params: { target: RunTarget; timeoutFrames: number }) {
     this.runs.push(params);
-    return { reached: true, stopReason: "target" as const, state: "stopped" as const, pc: 0xc00b };
+    return { reached: true, stopReason: "target" as const, state: "stopped" as const, pc: 0xc00b, space: "c64" as const };
   }
 
   async cpuHistory(params: { limit: number; space: string }) {
@@ -665,7 +665,7 @@ test("c64_run_until fills the timeout and passes typed targets", async () => {
   const session = new FakeSession();
   const client = await connect(async () => session);
   const result = await call(client, "c64_run_until", { target: { kind: "address", address: "$c00b" } });
-  assert.deepEqual(result.structuredContent, { reached: true, stopReason: "target", state: "stopped", pc: "$c00b" });
+  assert.deepEqual(result.structuredContent, { reached: true, stopReason: "target", state: "stopped", pc: "$c00b", space: "c64" });
   await call(client, "c64_run_until", { target: { kind: "memory", address: "$c020", operator: "eq", value: 3 }, timeoutFrames: 10 });
   await call(client, "c64_run_until", { target: { kind: "raster", line: 100, cycle: 20 } });
   assert.deepEqual(session.runs, [
