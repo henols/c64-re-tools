@@ -88,6 +88,9 @@ export interface LoaderPlan {
   text: string;
 }
 
+/** The label of the loader's jump to the entry, in ACME's symbol list. */
+export const LOADER_JUMP = "c64_source_loader_jump";
+
 const LOAD = 0x0801;
 const STUB = 0x080d;
 /** sei, ldx, the 2-page move loop and jmp. */
@@ -295,7 +298,8 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     `        ldx #${hex2(state.x)}`,
     `        ldy #${hex2(state.y)}`,
     "        plp",
-    `        jmp ${hex4(input.entry)}`,
+    // A global label: the check of the loader stops here, before an interrupt can run (F-32).
+    `${LOADER_JUMP} jmp ${hex4(input.entry)}`,
     ".count  !word 0",
     ".index  !byte 0",
     ".back   !byte 0",

@@ -74,7 +74,7 @@ Do not edit the generated files. The next run writes over them.
 
 The flags go through the free stack byte below the stack pointer (`stackByte`). The loader changes this byte. The loader does not set the VIC, SID and CIA registers. They stay as the KERNAL set them.
 
-The script simulates the copies first. Then it runs `loader.prg` in the emulator to the entry. It compares the memory, $00/$01 and the registers with the entry state. `loader.verified: true` tells that all of them are equal.
+The script simulates the copies first. Then it runs `loader.prg` in the emulator to its jump to the entry. It compares the memory, $00/$01 and the registers with the entry state there. `loader.verified: true` tells that all of them are equal. An interrupt can run right at the entry, as in the original program.
 
 ## Knowledge
 

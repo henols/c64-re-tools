@@ -134,6 +134,7 @@ test("the loader plan refuses a loader that would load into the I/O area, and pu
   assert.equal(plan.copier, 0xc400);
   assert.equal(plan.stackByte, 0x01f6);
   assert.match(plan.text, /ldx #\$f5\n {8}txs\n {8}lda #\$24\n {8}sta \$01f6/);
+  assert.match(plan.text, /\n {8}plp\nc64_source_loader_jump jmp \$0810\n/, "the check of the loader stops at this label (F-32)");
 });
 
 test("an entry state file is read with its flags as PLP reads them, and a wrong one is refused", () => {

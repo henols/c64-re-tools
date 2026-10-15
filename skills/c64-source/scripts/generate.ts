@@ -21,11 +21,11 @@ import { CODE_REGION_TYPES, DEFAULT_SPACE, SPACE, type Space } from "#src/knowle
 import { assemble } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
 import { localToolContext } from "#src/native/local.ts";
-import { GHIDRA_LIMITS, type Diagnostic } from "#src/native/types.ts";
+import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/native/types.ts";
 import { platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { planLoader, readEntryState, simulate, type EntryState, type LoaderPlan } from "./loader.ts";
+import { LOADER_JUMP, planLoader, readEntryState, simulate, type EntryState, type LoaderPlan } from "./loader.ts";
 import { OPCODES } from "./opcodes.ts";
 import { instructionText, layout, literalOperand, probeForms, render, type Layout, type Range } from "./source.ts";
 
@@ -149,7 +149,7 @@ async function decode(image: Image, knowledge: ReturnType<typeof readKnowledge>,
 }
 
 /** Assembles files given as text with ACME; the program or the diagnostics. */
-async function assembleFiles(files: Array<{ name: string; text: string }>, entry: string): Promise<{ program?: Buffer; start?: number; diagnostics: Diagnostic[] }> {
+async function assembleFiles(files: Array<{ name: string; text: string }>, entry: string): Promise<{ program?: Buffer; start?: number; symbols?: AssembledSymbol[]; diagnostics: Diagnostic[] }> {
   const contents = files.map((file) => Buffer.from(file.text, "utf8"));
   const { result, attachments } = await assemble(
     { files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: entry, includeDirs: [], defines: {} },
@@ -157,7 +157,7 @@ async function assembleFiles(files: Array<{ name: string; text: string }>, entry
     localToolContext(),
   );
   if (!result.assembled) return { diagnostics: result.diagnostics };
-  return { program: attachments![0]!, start: result.loadRange!.start, diagnostics: result.diagnostics };
+  return { program: attachments![0]!, start: result.loadRange!.start, ...(result.symbols === undefined ? {} : { symbols: result.symbols }), diagnostics: result.diagnostics };
 }
 
 /**
@@ -239,7 +239,13 @@ async function readRam(client: ViceSessionClient, start: number, size: number): 
 }
 
 /** Runs the loader in the emulator to the entry and compares memory, $00/$01 and the registers with the entry state. */
-async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image: Image, state: EntryState): Promise<{ verified: boolean; differences: string[] }> {
+/**
+ * Runs the loader in the emulator to its jump to the entry and compares the
+ * machine with the entry state there. At the jump, every byte and register is
+ * set and no interrupt has run since the PLP: the 6502 takes one only after
+ * the JMP, as the original program can take one right at its entry (F-32).
+ */
+async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image: Image, state: EntryState, jump: number): Promise<{ verified: boolean; differences: string[] }> {
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     await client.reset({ mode: "hard", run: false });
@@ -247,9 +253,12 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
     await client.keyboard(textToPetscii("RUN\n"));
     const copier = await client.runUntil({ target: { kind: "address", address: plan.copier, space: "c64" }, timeoutFrames: RUN_LIMIT_FRAMES });
     if (!copier.reached) return { verified: false, differences: [`The loader did not get to its copier at ${formatC64Address(plan.copier)}; it stopped at ${formatC64Address(copier.pc)}.`] };
-    const entry = await client.runUntil({ target: { kind: "address", address: state.pc, space: "c64" }, timeoutFrames: LOADER_FRAMES });
-    if (!entry.reached) return { verified: false, differences: [`The loader did not get to the entry ${formatC64Address(state.pc)}; it stopped at ${formatC64Address(entry.pc)}.`] };
+    const atJump = await client.runUntil({ target: { kind: "address", address: jump, space: "c64" }, timeoutFrames: LOADER_FRAMES });
+    if (!atJump.reached) return { verified: false, differences: [`The loader did not get to its jump to the entry at ${formatC64Address(jump)}; it stopped at ${formatC64Address(atJump.pc)}.`] };
     const memory = await readRam(client, 0x0000, 0x10000);
+    if (memory[jump] !== 0x4c || (memory[jump + 1]! | (memory[jump + 2]! << 8)) !== state.pc) {
+      return { verified: false, differences: [`The instruction at ${formatC64Address(jump)} is not JMP ${formatC64Address(state.pc)}.`] };
+    }
     const port = Buffer.from((await client.memoryRead({ address: 0x0000, size: 2, space: "c64", view: "cpu" })).data, "hex");
     const registers = await client.registersGet("c64");
     const differences: string[] = [];
@@ -407,12 +416,15 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   if (loaderBuilt.start !== 0x0801 || loaderBuilt.start + program.length - 3 !== loader.end || wrongPacking !== undefined) {
     throw new WireFailure("operation-failed", `The assembled loader does not have the planned layout${wrongPacking === undefined ? "" : ` (${wrongPacking.what})`}. This is a defect of the c64-source script.`);
   }
+  const jumpSymbol = loaderBuilt.symbols?.find((symbol) => symbol.name === LOADER_JUMP);
+  if (jumpSymbol === undefined) throw new WireFailure("operation-failed", `The assembled loader has no ${LOADER_JUMP} label. This is a defect of the c64-source script.`);
+  const jump = jumpSymbol.kind === "address" ? jumpSymbol.address : jumpSymbol.value;
   const wrong = simulate(memory, loader.copies, expected);
   if (wrong !== undefined) throw new WireFailure("operation-failed", `The simulated loader writes a wrong byte at ${formatC64Address(wrong)}. This is a defect of the c64-source script.`);
   const loaderPath = `${values.out}/loader.prg`;
   writeProjectFile(loaderPath, program, { what: "--out" });
   (output.files as string[]).push("loader.prg");
-  const ran = await runLoader(loaderPath, program, loader, image, state);
+  const ran = await runLoader(loaderPath, program, loader, image, state, jump);
   output.loader = {
     program: loaderPath,
     copies: loader.copies.map((copy) => ({ what: copy.what, to: `${formatC64Address(copy.target.start)}-${formatC64Address(copy.target.end)}` })),
