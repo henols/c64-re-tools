@@ -537,6 +537,16 @@ test("a staged program, disk or autostart file is removed once VICE no longer re
     [false, true],
   );
   assert.equal(existsSync(second), true, "an autostart does not replace the attached disk file");
+
+  // An autostarted disk stays in drive 8 and a cartridge in the port: a program autostart removes neither.
+  await session.handle("autostart", { type: "d64", index: 0, run: true }, [Buffer.alloc(174848)]);
+  const disk = fake.autostarts.at(-1)!.file;
+  assert.equal(existsSync(second), false, "the autostarted disk replaces the attached one in drive 8");
+  await session.handle("autostart", { type: "crt", index: 0, run: true }, [Buffer.from("C64 CARTRIDGE   ")]);
+  const cartridge = fake.autostarts.at(-1)!.file;
+  assert.deepEqual([existsSync(disk), existsSync(cartridge)], [true, true]);
+  await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
+  assert.deepEqual([existsSync(disk), existsSync(cartridge)], [true, false], "the detached cartridge goes, the disk in drive 8 stays");
   await session.close();
 });
 

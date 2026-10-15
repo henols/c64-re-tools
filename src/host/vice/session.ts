@@ -125,6 +125,20 @@ export interface SessionOptions {
   flaws?: readonly string[];
 }
 
+/**
+ * Where VICE keeps a staged file: an autostarted disk stays in drive 8, a tape
+ * in the datasette and a cartridge in the port, until the same place gets
+ * another file. Only a program is read once.
+ */
+type StagedKind = "program" | "disk" | "tape" | "cartridge";
+
+function stagedKind(type: string): StagedKind {
+  if (type === "crt") return "cartridge";
+  if (type === "tap" || type === "t64") return "tape";
+  if (type === "prg" || type === "p00") return "program";
+  return "disk";
+}
+
 export class ViceSession implements ViceSessionHandle {
   /** The current VICE. A window move replaces it. */
   #vice: ViceProcess;
@@ -182,7 +196,7 @@ export class ViceSession implements ViceSessionHandle {
   /** True after an autostart of a cartridge, until an autostart of another file detaches it. */
   #cartridge = false;
   /** The last staged file of each kind that VICE took; VICE can still read it. */
-  readonly #stagedFiles = new Map<"autostart" | "disk", string>();
+  readonly #stagedFiles = new Map<StagedKind, string>();
   /** Session-local ids: one counter for breakpoints and watchpoints, from 1. */
   #nextPointId = 1;
   /**
@@ -365,10 +379,11 @@ export class ViceSession implements ViceSessionHandle {
         if (type !== "crt" && this.#cartridge) {
           await this.#observe(() => this.#machine.detachCartridge());
           this.#cartridge = false;
+          this.#replaceStaged("cartridge", undefined);
         }
         await this.#runningCommand(() => this.#machine.autostart(file, index, run));
         if (type === "crt") this.#cartridge = true;
-        this.#replaceStaged("autostart", file);
+        this.#replaceStaged(stagedKind(type), file);
         // A reset sets the CPU clock back, so the stopwatch starts again.
         this.#timingStart = 0n;
         return { state: "running", ...(type === "tap" && this.#inputFlaw !== undefined ? { emulatorFlaw: this.#inputFlaw } : {}) };
@@ -830,14 +845,21 @@ export class ViceSession implements ViceSessionHandle {
   }
 
   /**
-   * Records the staged file that VICE took for `kind`, and removes the file
-   * it replaces: VICE does not read that one again. A file that VICE did not
-   * take stays until the session closes, because a held VICE can still read it.
+   * Records the staged file that VICE took for `kind`, or that it no longer
+   * has, and removes the file it replaces: VICE does not read that one again.
+   * A file that VICE did not take stays until the session closes, because a
+   * held VICE can still read it. So does a file that Windows does not let go.
    */
-  #replaceStaged(kind: "autostart" | "disk", file: string): void {
+  #replaceStaged(kind: StagedKind, file: string | undefined): void {
     const previous = this.#stagedFiles.get(kind);
-    this.#stagedFiles.set(kind, file);
-    if (previous !== undefined) rmSync(previous, { force: true });
+    if (file === undefined) this.#stagedFiles.delete(kind);
+    else this.#stagedFiles.set(kind, file);
+    if (previous === undefined || previous === file) return;
+    try {
+      rmSync(previous, { force: true });
+    } catch {
+      // The session directory goes when the session closes.
+    }
   }
 
   /** Loads a PRG without reset or start; finishes stopped. */
