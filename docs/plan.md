@@ -299,7 +299,7 @@ Henrik wants one git repository with one folder for each reverse-engineered prog
 - [x] M19.2 **One path base (D68)** — every path that a skill script or an MCP tool takes is relative to the project folder. The MCP tools with a path (`src/mcp/tools/media.ts`, `src/mcp/output.ts`, coverage) take `project` with the D67 rules; 15 and 16 name it. The host still sees no path.
 - [x] M19.3 **Install once, scratch in local/ (D70)** — the installer (`src/cli/ap-sdk.ts`) puts the skills, `.mcp.json` and the AP SDK state at the workspace root once, and writes no `.gitignore`: `.c64-re-tools/local/` gets its own `.gitignore` with `*` when the project has `.c64-re-tools/`. The skill texts send saved results, batches and step files to `.c64-re-tools/local/` and use `apply -` for a batch.
 - [x] M19.4 **Texts** — 17 rewritten for D67; 08 for D70; every SKILL.md says "relative to the project folder" and names `--project`. ASD-STE100, ste-lint at 0 hard.
-- [ ] M19.5 **Acceptance** — one repository with Hover Bovver and a second program; the agent started at the root works on both, with no write at the root and no path with the folder name inside a project.
+- [~] M19.5 **Acceptance** — one repository with Hover Bovver and a second program; the agent started at the root works on both, with no write at the root and no path with the folder name inside a project. Automated in `test/e2e/workspace.test.ts` (scripts) and `src/mcp/server.test.ts` (MCP); the run with Hover Bovver needs a Host Runtime started by hand.
 
 ## M20 — Knowledge as text
 

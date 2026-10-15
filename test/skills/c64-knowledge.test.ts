@@ -1,4 +1,4 @@
-// The c64-knowledge script, run as the LLM runs it: in a project directory,
+// The c64-knowledge script, run as the LLM runs it: in a project folder,
 // with arguments, reading one JSON object from stdout.
 
 import assert from "node:assert/strict";

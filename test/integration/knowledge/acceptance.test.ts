@@ -1,4 +1,4 @@
-// From a clean C64 project directory, a read needs no database, the first
+// From a clean C64 project folder, a read needs no database, the first
 // write creates .c64-re-tools/knowledge.db, and several semantic changes give
 // a correct current view with the full history.
 // Only the c64-knowledge script runs: no Host Runtime is involved.

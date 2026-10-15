@@ -17,7 +17,7 @@ export async function waitFor(condition: () => boolean, what: string, timeoutMs 
 }
 
 export interface McpOptions {
-  /** The project directory of the agent. */
+  /** The project folder of the agent. */
   cwd?: string;
   /** More environment variables for the MCP server. */
   env?: Record<string, string>;
