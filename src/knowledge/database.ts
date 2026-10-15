@@ -16,7 +16,7 @@ export const TEXT_DIRECTORY = "knowledge";
 /** The index file in .c64-re-tools/local/. */
 export const INDEX_FILE = "knowledge.db";
 /** Git keeps the lines of both sides when two computers changed the same knowledge file. */
-const GIT_ATTRIBUTES = "# The knowledge of c64-re-tools: git keeps the lines of both sides of a merge.\n*.jsonl merge=union\n";
+export const GIT_ATTRIBUTES = "# The knowledge of c64-re-tools: git keeps the lines of both sides of a merge.\n*.jsonl merge=union\n";
 
 export const KNOWLEDGE_ERROR_CODES = [
   "invalid-input",
