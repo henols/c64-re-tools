@@ -138,6 +138,9 @@ test("the loader plan refuses a loader that would load into the I/O area, and pu
   assert.equal(plan.stackByte, 0x01f6);
   assert.match(plan.text, /ldx #\$f5\n {8}txs\n {8}lda #\$24\n {8}sta \$01f6/);
   assert.match(plan.text, /\n {8}plp\nc64_source_loader_jump jmp \$0810\n/, "the check of the loader stops at this label (F-32)");
+  assert.doesNotMatch(plan.text, /macros\.asm/);
+  const withMacros = planLoader({ segments: [{ start: 0x0801, end: 0x0fff, files: ["a.asm"] }], byteAt, state: state(), entry: 0x0810, header, macros: true });
+  assert.match(withMacros.text, /^!source "constants\.asm"\n!source "macros\.asm"\n/m, "the source of the loader has the macros (D73)");
 });
 
 /** Runs the copy table at the end of an assembled loader on a memory model, as the copier does. */
@@ -745,4 +748,93 @@ test("with real Ghidra and ACME, the script builds each switch on and reports it
   const second = generate();
   assert.equal(second.status, 0, second.stdout);
   assert.deepEqual((JSON.parse(second.stdout) as Result).switches.map((item) => [item.name, item.result]), [["CRACK", "fits"]]);
+});
+
+const INC16 = { name: "inc16", params: ["dst"], body: "        inc .dst\n        bne +\n        inc .dst+1\n+", comment: "Adds 1 to a 16-bit value." };
+
+/** $1000 INC $fb; BNE +2; INC $fc; $1006 INC $fd; BNE +2; INC $fe; $100c RTS. ptr is $fb. */
+function macroInput(macroUses: NonNullable<SourceInput["macroUses"]>, overrides: Partial<SourceInput> = {}): SourceInput {
+  const bytes = [0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xe6, 0xfd, 0xd0, 0x02, 0xe6, 0xfe, 0x60];
+  const instructions = new Map([[0x1000, 2], [0x1002, 2], [0x1004, 2], [0x1006, 2], [0x1008, 2], [0x100a, 2], [0x100c, 1]]);
+  return input(bytes, 0x1000, { instructions, symbols: [{ address: 0x1000, name: "start" }, { address: 0x00fb, name: "ptr" }], macros: [INC16], macroUses, ...overrides });
+}
+
+test("a macro use is one +name args line, and macros.asm holds the macros (D73)", () => {
+  const laid = layout(macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["ptr+2"] }], { comments: [{ address: 0x1004, placement: "side", text: "high byte" }] }));
+  assert.deepEqual(laid.macrosAsInstructions, []);
+  const rendered = render(laid, new Set(), []);
+  assert.equal(textOf(rendered, "segment_1000.asm"), `; Segment $1000-$100c\n; $1000-$100c\n\nstart\n        +inc16 ptr                      ; high byte\n        +inc16 ptr+2\n        rts\n`);
+  assert.equal(textOf(rendered, "macros.asm"), "; Macros of the knowledge. The source writes a use as +name args.\n\n; Adds 1 to a 16-bit value.\n!macro inc16 .dst {\n        inc .dst\n        bne +\n        inc .dst+1\n+\n}\n");
+  assert.deepEqual(rendered.macroLines, new Map([["inc16", { first: 4, last: 9 }]]));
+  assert.match(textOf(rendered, "main.asm"), /!source "constants\.asm"\n!source "macros\.asm"\n/);
+  assert.match(textOf(rendered, "constants.asm"), /^ptr = \$fb ; Used: macro argument 2\.$/m);
+  assert.equal(rendered.instructions, 7);
+  assert.deepEqual(rendered.uses.map((use) => [use.start, use.line]), [[0x1000, 5], [0x1006, 6]]);
+  const without = render(layout(macroInput([], { macros: [] })), new Set(), []);
+  assert.equal(without.files.some((file) => file.name === "macros.asm"), false, "no macros, no macros.asm");
+});
+
+test("a macro use with a label inside it, in a patch, of a missing macro or not of whole instructions is written as its instructions (D73)", () => {
+  const laid = layout(
+    macroInput(
+      [
+        { start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] },
+        { start: 0x1006, end: 0x100b, macro: "inc16", args: ["ptr", "1"] },
+        { start: 0x100c, end: 0x100c, macro: "nothing", args: [] },
+      ],
+      { symbols: [{ address: 0x1004, name: "high" }, { address: 0x00fb, name: "ptr" }] },
+    ),
+  );
+  assert.deepEqual(
+    laid.macrosAsInstructions.map((row) => [row.start, row.reason]),
+    [
+      [0x1000, "The source has a label at $1004, inside the use."],
+      [0x1006, "The macro has 1 params, and the use gives 2 args."],
+      [0x100c, "There is no macro nothing."],
+    ],
+  );
+  const cut = layout(macroInput([{ start: 0x1001, end: 0x1005, macro: "inc16", args: ["ptr"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["$fd"] }], { patches: [{ start: 0x1008, end: 0x1009, switch: "SKIP", code: "" }] }));
+  assert.deepEqual(cut.macrosAsInstructions.map((row) => [row.start, row.reason]), [[0x1001, "The range is not a run of whole instructions of one file."], [0x1006, "The use lies in a patch."]]);
+  const text = textOf(render(laid, new Set(), []), "segment_1000.asm");
+  assert.match(text, /^ {8}inc ptr\n {8}bne l_1006\nhigh\n {8}inc \$fc\nl_1006\n/m, "a use written as instructions names its targets");
+  const blamed = render(layout(macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }])), new Set(), [], new Map(), new Map([[0x1000, "ACME refuses it."]]));
+  assert.deepEqual(blamed.uses, []);
+  assert.deepEqual(blamed.macrosAsInstructions, [{ start: 0x1000, end: 0x1005, macro: "inc16", reason: "ACME refuses it." }]);
+});
+
+test("with real ACME, macro uses assemble to the same bytes (D73)", { skip: acmeSkip }, async () => {
+  const source = macroInput([{ start: 0x1000, end: 0x1005, macro: "inc16", args: ["ptr"] }, { start: 0x1006, end: 0x100b, macro: "inc16", args: ["$fd"] }]);
+  const rendered = render(layout(source), new Set(), []);
+  assert.equal(rendered.uses.length, 2);
+  assert.deepEqual((await assembleRendered(rendered)).bytes, Array.from({ length: 13 }, (_, offset) => source.byteAt(0x1000 + offset)));
+});
+
+test("with real Ghidra and ACME, a macro use that ACME refuses or assembles to other bytes is written as its instructions, and the source stays identical (D73)", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
+  projects.push(project);
+  // $1000, $1006 and $100c INC $fb/$fd/$02; BNE +2; INC $fc/$fe/$03; $1012 RTS.
+  const code = [0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xe6, 0xfd, 0xd0, 0x02, 0xe6, 0xfe, 0xe6, 0x02, 0xd0, 0x02, 0xe6, 0x03, 0x60];
+  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, ...code]));
+  const knowledge = (...args: string[]) => spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts"), ...args], { cwd: project, encoding: "utf8" });
+  writeFileSync(join(project, "batch.json"), JSON.stringify([
+    { op: "rename", address: "$1000", name: "start", kind: "routine" },
+    { op: "rename", address: "$00fb", name: "ptr" },
+    { op: "macro", name: "inc16", params: ["dst"], body: "        inc .dst\n        bne +\n        inc .dst+1\n+" },
+    { op: "macro", name: "short", params: ["dst"], body: "        inc .dst" },
+    { op: "macro", name: "broken", params: ["dst"], body: "        lda .dst\n        lda no_such_name" },
+    { op: "use", start: "$1000", end: "$1005", macro: "inc16", args: ["ptr"] },
+    { op: "use", start: "$1006", end: "$100b", macro: "short", args: ["$fd"] },
+    { op: "use", start: "$100c", end: "$1011", macro: "broken", args: ["$02"] },
+  ]));
+  assert.equal(knowledge("apply", "batch.json", "--image", "test.prg").status, 0);
+  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg", "--out", "src"], { cwd: project, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stdout);
+  const json = JSON.parse(run.stdout) as { check: { identical: boolean }; files: string[]; macroUses: number; macrosAsInstructions: { listed: Array<{ start: string; macro: string; reason: string }> } };
+  assert.equal(json.check.identical, true);
+  assert.deepEqual(json.files, ["segment_1000.asm", "constants.asm", "macros.asm", "main.asm"]);
+  assert.equal(json.macroUses, 1);
+  assert.deepEqual(json.macrosAsInstructions.listed.map((row) => [row.start, row.macro]), [["$1006", "short"], ["$100c", "broken"]]);
+  assert.equal(json.macrosAsInstructions.listed[0]!.reason, "ACME assembles it to 2 bytes, and the range has 6.");
+  assert.match(json.macrosAsInstructions.listed[1]!.reason, /^ACME refuses the macro broken: Value not defined \(no_such_name\)/);
+  assert.match(readFileSync(join(project, "src", "segment_1000.asm"), "utf8"), /^start\n {8}\+inc16 ptr\n {8}inc \$fd\n/m);
 });

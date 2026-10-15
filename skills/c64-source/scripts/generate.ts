@@ -3,8 +3,9 @@
 // ACME that the source assembles to the image byte by byte. With --loader it
 // also writes a loader that recreates the entry state, simulates it, and
 // checks it in the emulator. Each switch of the patches (D72) is built on
-// alone and checked. Exit status: 0 when every check passes, 1 when one
-// fails, 2 for a bad call.
+// alone and checked. A macro use (D73) that does not give the bytes of the
+// image is written as its instructions. Exit status: 0 when every check
+// passes, 1 when one fails, 2 for a bad call.
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, posix } from "node:path";
@@ -19,7 +20,8 @@ import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts"
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { conflicts } from "#src/knowledge/conflicts.ts";
 import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
-import { currentRevision, listComments, listModules, listOperands, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
+import { identifiers } from "#src/knowledge/expression.ts";
+import { currentRevision, listComments, listMacros, listMacroUses, listModules, listOperands, listPatches, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, SPACE, type Space } from "#src/knowledge/schema.ts";
 import { assemble } from "#src/native/acme.ts";
 import { analyze } from "#src/native/ghidra/analyze.ts";
@@ -51,8 +53,8 @@ const USAGE = `generate.ts <image> --out <dir> [options]
 The result is one JSON object. Addresses are $ and four hex digits.`;
 
 const MAX_LISTED = 20;
-/** Rounds of assembly that move operand expressions to numbers (D65). */
-const OPERAND_ROUNDS = 3;
+/** Rounds of assembly that move operand expressions to numbers (D65) and macro uses to instructions (D73). */
+const ROUNDS = 6;
 const PROBE_BASE = 0x1000;
 const PROBE_SLOT = 4;
 /** The copies of a full 64 KiB take about 140 frames. */
@@ -83,6 +85,8 @@ function readKnowledge(space: Space) {
       references: listReferences(db, undefined, undefined, undefined, space),
       operands: listOperands(db, undefined, undefined, space),
       patches: listPatches(db, undefined, undefined, undefined, space),
+      macros: listMacros(db, undefined, space),
+      macroUses: listMacroUses(db, undefined, undefined, undefined, space),
     };
   } finally {
     db?.close();
@@ -179,12 +183,88 @@ async function probe(laid: Layout): Promise<Set<string>> {
   throw new WireFailure("operation-failed", "ACME refused the opcode probe three times.");
 }
 
+/** The macro uses that an ACME error names: its line, or a line of the macro body in macros.asm, which every use of that macro shares. */
+function usesInErrors(diagnostics: Diagnostic[], lineOf: ReadonlyMap<string, number>, uses: ReadonlyArray<{ start: number; macro: string }>, macroLines: Rendered["macroLines"], markLines: number): Map<number, string> {
+  const blamed = new Map<number, string>();
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.severity !== "error" || diagnostic.file === undefined || diagnostic.line === undefined) continue;
+    const start = lineOf.get(`${diagnostic.file}:${diagnostic.line}`);
+    if (start !== undefined) blamed.set(start, `ACME refuses it: ${diagnostic.message}`);
+    if (diagnostic.file !== "macros.asm") continue;
+    for (const [macro, lines] of macroLines) {
+      if (diagnostic.line < lines.first + markLines || diagnostic.line > lines.last + markLines) continue;
+      for (const use of uses) if (use.macro === macro) blamed.set(use.start, `ACME refuses the macro ${macro}: ${diagnostic.message}`);
+    }
+  }
+  return blamed;
+}
+
+/** The first address where two byte runs differ, as a reason. */
+function firstDifference(start: number, built: (address: number) => number, original: (address: number) => number, end: number): string | undefined {
+  for (let address = start; address <= end; address++) {
+    if (built(address) !== original(address)) return `ACME assembles it to other bytes than the image: at ${formatC64Address(address)} it gives $${built(address).toString(16).padStart(2, "0")}, and the image has $${original(address).toString(16).padStart(2, "0")}.`;
+  }
+  return undefined;
+}
+
 /**
- * The operand expressions that made the assembly fail or that ACME assembled
- * to other bytes than the image, with the reason (D65). `markLines` is the
- * number of lines added before the rendered text of each file.
+ * Assembles each macro use alone at its own address, with the constants and
+ * the macros, and gives the uses that ACME refuses or assembles to other bytes
+ * than the image, with the reason (D73). A use of another length moves no
+ * other use, so each one is checked on its own, as the opcode probe does.
  */
-function blame(rendered: Rendered, built: Awaited<ReturnType<typeof assembleFiles>>, image: Image, markLines: number): Map<number, string> {
+async function probeUses(laid: Layout, rendered: Rendered, image: Image): Promise<Map<number, string>> {
+  const blamed = new Map<number, string>();
+  const support = rendered.files.filter((file) => file.name === "constants.asm" || file.name === "macros.asm");
+  for (let round = 0; round < 3; round++) {
+    const uses = [...laid.macroUses.values()].filter((use) => !blamed.has(use.start));
+    if (uses.length === 0) return blamed;
+    // The labels of the image that the args name, with their values: the probe has no other source.
+    const labels = new Map<string, number>();
+    for (const [address, name] of laid.names) if (laid.inImage(address)) labels.set(name, address);
+    const used = [...new Set(uses.flatMap((use) => use.args.flatMap((arg) => identifiers(arg))))].filter((name) => labels.has(name)).sort();
+    const lines = ["!cpu 6510", '!source "constants.asm"', '!source "macros.asm"', ...used.map((name) => `${name} = ${labels.get(name)! < 0x100 ? `$${labels.get(name)!.toString(16).padStart(2, "0")}` : formatC64Address(labels.get(name)!)}`), `* = ${formatC64Address(PROBE_BASE)}`];
+    const lineOf = new Map<string, number>();
+    uses.forEach((use, index) => {
+      lines.push(`!pseudopc ${formatC64Address(use.start)} {`, `        +${use.macro}${use.args.length === 0 ? "" : ` ${use.args.join(", ")}`}`);
+      lineOf.set(`probe.asm:${lines.length}`, use.start);
+      lines.push(`probe_end_${index}`, "}");
+    });
+    const built = await assembleFiles([...support, { name: "probe.asm", text: `${lines.join("\n")}\n` }], "probe.asm");
+    if (built.program === undefined) {
+      const refused = usesInErrors(built.diagnostics, lineOf, uses, rendered.macroLines, 0);
+      if (refused.size === 0) throw new WireFailure("operation-failed", `ACME refused the macro probe: ${built.diagnostics.map((diagnostic) => diagnostic.message).join("; ")}`);
+      for (const [start, reason] of refused) blamed.set(start, reason);
+      continue;
+    }
+    const ends = new Map((built.symbols ?? []).map((symbol) => [symbol.name, symbol.kind === "address" ? symbol.address : symbol.value]));
+    let offset = 2 + PROBE_BASE - built.start!;
+    uses.forEach((use, index) => {
+      const length = ends.get(`probe_end_${index}`)! - use.start;
+      const wanted = use.end - use.start + 1;
+      const program = built.program!;
+      const at = offset;
+      offset += length;
+      if (length !== wanted) {
+        blamed.set(use.start, `ACME assembles it to ${length} bytes, and the range has ${wanted}.`);
+        return;
+      }
+      const reason = firstDifference(use.start, (address) => program[at + address - use.start]!, image.byteAt, use.end);
+      if (reason !== undefined) blamed.set(use.start, reason);
+    });
+    return blamed;
+  }
+  throw new WireFailure("operation-failed", "ACME refused the macro probe three times.");
+}
+
+/**
+ * The operand expressions (D65) and macro uses (D73) that made the assembly
+ * fail or that ACME assembled to other bytes than the image, with the
+ * reason. `markLines` is the number of lines added before the rendered text of
+ * each file. A use of another length moves every byte after it: then only the
+ * first use that differs is blamed, and no operand.
+ */
+function blame(rendered: Rendered, built: Awaited<ReturnType<typeof assembleFiles>>, image: Image, markLines: number): { numbers: Map<number, string>; uses: Map<number, string> } {
   const blamed = new Map<number, string>();
   if (built.program === undefined) {
     const lines = new Map(rendered.expressions.map((item) => [`${item.file}:${item.line + markLines}`, item.address]));
@@ -193,9 +273,20 @@ function blame(rendered: Rendered, built: Awaited<ReturnType<typeof assembleFile
       const address = lines.get(`${diagnostic.file}:${diagnostic.line}`);
       if (address !== undefined) blamed.set(address, `ACME refuses it: ${diagnostic.message}`);
     }
-    return blamed;
+    const useLines = new Map(rendered.uses.map((use) => [`${use.file}:${use.line + markLines}`, use.start]));
+    return { numbers: blamed, uses: usesInErrors(built.diagnostics, useLines, rendered.uses, rendered.macroLines, markLines) };
   }
   const end = built.start! + built.program.length - 3;
+  const at = (address: number) => (address >= built.start! && address <= end ? built.program![2 + address - built.start!]! : -1);
+  const uses = new Map<number, string>();
+  const imageEnd = Math.max(...image.segments.map((segment) => segment.end));
+  for (const use of rendered.uses) {
+    const reason = firstDifference(use.start, at, image.byteAt, use.end);
+    if (reason === undefined) continue;
+    uses.set(use.start, reason);
+    if (end !== imageEnd) break;
+  }
+  if (uses.size > 0) return { numbers: blamed, uses };
   const word = (at: (address: number) => number, item: Rendered["expressions"][number]) => (item.length === 3 ? at(item.address + 1) | (at(item.address + 2) << 8) : at(item.address + 1));
   const show = (value: number, length: number) => `$${value.toString(16).padStart(length === 3 ? 4 : 2, "0")}`;
   for (const item of rendered.expressions) {
@@ -204,7 +295,7 @@ function blame(rendered: Rendered, built: Awaited<ReturnType<typeof assembleFile
     const original = word(image.byteAt, item);
     if (assembled !== original) blamed.set(item.address, `ACME assembles it to ${show(assembled, item.length)}, and the image has ${show(original, item.length)}.`);
   }
-  return blamed;
+  return { numbers: blamed, uses };
 }
 
 interface SegmentCheck {
@@ -426,6 +517,8 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     referenceTargets: knowledge.references.map((reference) => reference.to),
     operands: knowledge.operands,
     patches: knowledge.patches,
+    macros: knowledge.macros,
+    macroUses: knowledge.macroUses,
     ...(coverage === undefined ? {} : { coverage }),
     // The platform names are C64 names: drive code and banks get none.
     ...(space === DEFAULT_SPACE ? { platform: platformNames(), describe: describeAddress } : {}),
@@ -441,7 +534,7 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
     const segments = image.segments.map((segment) => ({ ...segment, files: laid.pieces.filter((piece) => piece.start >= segment.start && piece.start <= segment.end).map((piece) => piece.file) }));
     try {
       const entryName = laid.names.get(image.entry!);
-      loader = planLoader({ segments, byteAt: image.byteAt, state, entry: image.entry!, ...(entryName === undefined ? {} : { entryName }), header: [`Loader generated by c64-source from ${image.path}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] });
+      loader = planLoader({ segments, byteAt: image.byteAt, state, entry: image.entry!, ...(entryName === undefined ? {} : { entryName }), macros: laid.macros.length > 0, header: [`Loader generated by c64-source from ${image.path}.`, "It copies the segments into place, sets the entry state and jumps to the entry."] });
     } catch (error) {
       if (!(error instanceof WireFailure)) throw error;
       loaderRefused = error.message;
@@ -450,16 +543,21 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
   // Every generated file starts with the mark, so a later run knows its own files and removes the ones it does not write again (F-25).
   const marked = (list: Array<{ name: string; text: string }>) => list.map((file) => ({ ...file, text: `${GENERATED_MARK}. Do not edit: change the knowledge and generate again.\n${file.text}` }));
   const loaderFiles = loader === undefined ? [] : [{ name: "loader.asm", text: loader.text }];
-  // An operand expression that ACME refuses, or assembles to other bytes, is written as its number, and the source is assembled again (D65).
+  // An operand expression that ACME refuses, or assembles to other bytes, is written as its number, and a macro use as its
+  // instructions; then the source is assembled again (D65, D73).
   const numbers = new Map<number, string>();
-  let rendered = render(laid, asBytes, header, numbers);
+  const asInstructions = new Map<number, string>();
+  let rendered = render(laid, asBytes, header, numbers, asInstructions);
+  if (laid.macroUses.size > 0) for (const [start, reason] of await probeUses(laid, rendered, image)) asInstructions.set(start, reason);
+  if (asInstructions.size > 0) rendered = render(laid, asBytes, header, numbers, asInstructions);
   let files = marked([...rendered.files, ...loaderFiles]);
   let built = await assembleFiles(files, "main.asm");
-  for (let round = 0; round < OPERAND_ROUNDS && rendered.expressions.length > 0; round++) {
+  for (let round = 0; round < ROUNDS && (rendered.expressions.length > 0 || rendered.uses.length > 0); round++) {
     const blamed = blame(rendered, built, image, 1);
-    if (blamed.size === 0) break;
-    for (const [address, reason] of blamed) numbers.set(address, reason);
-    rendered = render(laid, asBytes, header, numbers);
+    if (blamed.numbers.size === 0 && blamed.uses.size === 0) break;
+    for (const [address, reason] of blamed.numbers) numbers.set(address, reason);
+    for (const [start, reason] of blamed.uses) asInstructions.set(start, reason);
+    rendered = render(laid, asBytes, header, numbers, asInstructions);
     files = marked([...rendered.files, ...loaderFiles]);
     built = await assembleFiles(files, "main.asm");
   }
@@ -506,6 +604,16 @@ async function run(argv: string[]): Promise<{ output: Record<string, unknown>; f
           operandsAsNumbers: {
             count: rendered.operandsAsNumbers.length,
             listed: rendered.operandsAsNumbers.slice(0, MAX_LISTED).map((item) => ({ address: formatC64Address(item.address), expression: item.expression, reason: item.reason })),
+          },
+        }),
+    ...(rendered.uses.length === 0 && rendered.macrosAsInstructions.length === 0 ? {} : { macroUses: rendered.uses.length }),
+    // A macro use that the source writes as its instructions does not fail the run: the source stays identical (D73).
+    ...(rendered.macrosAsInstructions.length === 0
+      ? {}
+      : {
+          macrosAsInstructions: {
+            count: rendered.macrosAsInstructions.length,
+            listed: rendered.macrosAsInstructions.slice(0, MAX_LISTED).map((item) => ({ start: formatC64Address(item.start), end: formatC64Address(item.end), macro: item.macro, reason: item.reason })),
           },
         }),
     // A patch that the source cannot write fails the run: the switch would miss a part (D72).

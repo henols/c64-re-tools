@@ -5,7 +5,8 @@
 // generator forces operand sizes, and writes an opcode form that ACME
 // encodes differently as bytes (see the probe in generate.ts). An operand
 // expression of the knowledge is written in place of its number (D65). A
-// patch is written as !if SWITCH { code } else { original } (D72).
+// patch is written as !if SWITCH { code } else { original } (D72), and a
+// macro use as one +name args line (D73).
 
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
@@ -45,6 +46,26 @@ export interface SourceInput {
   operands?: ReadonlyArray<OperandExpression & { address: number }>;
   /** Patches of the knowledge (D72): code that replaces a range when the build defines the switch. */
   patches?: ReadonlyArray<{ start: number; end: number; switch: string; code: string; comment?: string }>;
+  /** Macros of the knowledge (D73), written to macros.asm. */
+  macros?: ReadonlyArray<{ name: string; params: readonly string[]; body: string; comment?: string }>;
+  /** Macro uses of the knowledge (D73): the instructions of a range, written as one use of a macro. */
+  macroUses?: ReadonlyArray<{ start: number; end: number; macro: string; args: readonly string[] }>;
+}
+
+/** A macro use that the source writes (D73), with its args in the names of this source. */
+export interface MacroUseBlock {
+  start: number;
+  end: number;
+  macro: string;
+  args: string[];
+}
+
+/** A macro use that the source writes as its instructions, and why. */
+export interface MacroAsInstructions {
+  start: number;
+  end: number;
+  macro: string;
+  reason: string;
 }
 
 /** A patch that the source writes (D72), with the addresses inside it that have a name. */
@@ -135,6 +156,11 @@ export interface Layout {
   /** The patches that the source writes, by start (D72). */
   patches: Map<number, PatchBlock>;
   patchesNotWritten: PatchNotWritten[];
+  /** The macros, by name (D73). */
+  macros: NonNullable<SourceInput["macros"]>;
+  /** The macro uses that the source can write, by start. */
+  macroUses: Map<number, MacroUseBlock>;
+  macrosAsInstructions: MacroAsInstructions[];
 }
 
 const hex2 = (value: number) => `$${value.toString(16).padStart(2, "0")}`;
@@ -187,7 +213,8 @@ export function layout(input: SourceInput): Layout {
 
   // A patch starts and ends at an item boundary, so a data run stops there (D72).
   const patches = [...(input.patches ?? [])].sort((a, b) => a.start - b.start);
-  const cuts = new Set(patches.flatMap((patch) => [patch.start, patch.end + 1]));
+  const macroUses = [...(input.macroUses ?? [])].sort((a, b) => a.start - b.start);
+  const cuts = new Set([...patches, ...macroUses].flatMap((range) => [range.start, range.end + 1]));
 
   const pieces: Piece[] = [];
   for (const segment of input.segments) {
@@ -279,6 +306,42 @@ export function layout(input: SourceInput): Layout {
   for (const row of input.platform ?? []) if (!byName.has(row.name)) byName.set(row.name, row.address);
   for (const symbol of input.symbols) byName.set(symbol.name, symbol.address);
   const instructionAt = new Map(pieces.flatMap((piece) => piece.items.flatMap((item) => (item.kind === "instruction" ? [[item.address, item] as const] : []))));
+  // A macro use is a run of whole instructions of one file, of a macro with one param for each arg, whose args name known names (D73).
+  const macrosByName = new Map((input.macros ?? []).map((macro) => [macro.name, macro]));
+  const macrosAsInstructions: MacroAsInstructions[] = [];
+  const candidates: Array<{ use: (typeof macroUses)[number]; items: InstructionItem[] }> = [];
+  for (const use of macroUses) {
+    const fallBack = (reason: string) => macrosAsInstructions.push({ start: use.start, end: use.end, macro: use.macro, reason });
+    const macro = macrosByName.get(use.macro);
+    if (macro === undefined) {
+      fallBack(`There is no macro ${use.macro}.`);
+      continue;
+    }
+    if (macro.params.length !== use.args.length) {
+      fallBack(`The macro has ${macro.params.length} params, and the use gives ${use.args.length} args.`);
+      continue;
+    }
+    if (patches.some((patch) => patch.start <= use.end && use.start <= patch.end)) {
+      fallBack("The use lies in a patch.");
+      continue;
+    }
+    const piece = pieces.find((row) => use.start >= row.start && use.start <= row.end);
+    const run = piece?.items.filter((item) => (item.kind === "instruction" ? item.address : item.start) >= use.start && (item.kind === "instruction" ? item.address : item.start) <= use.end) ?? [];
+    const last = run.at(-1);
+    const whole = last?.kind === "instruction" && run.every((item) => item.kind === "instruction") && (run[0] as InstructionItem).address === use.start && last.address + last.length - 1 === use.end;
+    if (!whole) {
+      fallBack("The range is not a run of whole instructions of one file.");
+      continue;
+    }
+    const missing = [...new Set(use.args.flatMap((arg) => identifiers(arg)))].filter((name) => !byName.has(name));
+    if (missing.length > 0) {
+      fallBack(`No symbol and no platform name is ${missing.join(", ")}.`);
+      continue;
+    }
+    candidates.push({ use, items: run as InstructionItem[] });
+  }
+  /** The instructions of a written use name nothing: the macro writes them. */
+  const inUse = new Set(candidates.flatMap((candidate) => candidate.items.map((item) => item.address)));
   const expressions: Array<{ address: number; text: string; kind: UseKind }> = [];
   const operandsAsNumbers: OperandAsNumber[] = [];
   for (const operand of [...(input.operands ?? [])].sort((a, b) => a.address - b.address)) {
@@ -303,15 +366,32 @@ export function layout(input: SourceInput): Layout {
   for (const piece of pieces) {
     for (const item of piece.items) {
       if (item.kind === "instruction") {
-        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address)) use(operandValue(item.address, item.opcode, input.byteAt)!, useKind(item.opcode));
+        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address) && !inUse.has(item.address)) use(operandValue(item.address, item.opcode, input.byteAt)!, useKind(item.opcode));
         continue;
       }
       for (const pointer of pointersOf(item, input.byteAt)) use(pointer, "table");
     }
   }
+  for (const candidate of candidates) for (const arg of candidate.use.args) for (const name of identifiers(arg)) use(byName.get(name)!, "macro argument");
   for (const symbol of input.symbols) want(symbol.address);
   for (const target of input.referenceTargets) want(target);
   if (input.entry !== undefined) want(input.entry);
+  // A use with a label inside it is written as its instructions, which then name their targets: that can put a label inside another use.
+  const accepted = new Set(candidates);
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const candidate of [...accepted]) {
+      const inside = [...wanted].filter((address) => address > candidate.use.start && address <= candidate.use.end).sort((a, b) => a - b)[0];
+      if (inside === undefined) continue;
+      accepted.delete(candidate);
+      changed = true;
+      macrosAsInstructions.push({ start: candidate.use.start, end: candidate.use.end, macro: candidate.use.macro, reason: `The source has a label at ${hex4(inside)}, inside the use.` });
+      for (const item of candidate.items) {
+        inUse.delete(item.address);
+        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address)) use(operandValue(item.address, item.opcode, input.byteAt)!, useKind(item.opcode));
+      }
+    }
+  }
 
   const names = new Map<number, string>();
   const taken = new Set([...knowledgeNames, ...platform.values()]);
@@ -368,6 +448,13 @@ export function layout(input: SourceInput): Layout {
   }
   // The high byte of a vector is NMINV+1. A zero-page entry keeps zero-page instructions: its constant has two digits.
   for (const [address, start] of insideEntry) names.set(address, `${names.get(start)!}+${address - start}`);
+  /** An expression with the names of this source: a name with an offset in brackets, so an operator after it keeps its meaning. */
+  const sourceText = (text: string) => replaceIdentifiers(text, (name) => {
+    const label = names.get(byName.get(name)!)!;
+    return label.includes("+") ? `(${label})` : label;
+  });
+  const usesWritten = new Map<number, MacroUseBlock>();
+  for (const { use: row } of [...accepted].sort((a, b) => a.use.start - b.use.start)) usesWritten.set(row.start, { start: row.start, end: row.end, macro: row.macro, args: row.args.map(sourceText) });
   const operands = new Map<number, string>();
   for (const { address, text } of expressions) {
     const unnamed: string[] = [];
@@ -397,6 +484,9 @@ export function layout(input: SourceInput): Layout {
     operandsAsNumbers: operandsAsNumbers.sort((a, b) => a.address - b.address),
     patches: blocks,
     patchesNotWritten,
+    macros: [...(input.macros ?? [])].sort((a, b) => (a.name < b.name ? -1 : 1)),
+    macroUses: usesWritten,
+    macrosAsInstructions: macrosAsInstructions.sort((a, b) => a.start - b.start),
   };
 }
 
@@ -711,6 +801,26 @@ export interface Rendered {
   operandsAsNumbers: OperandAsNumber[];
   /** The patches written, in address order (D72). */
   patches: number;
+  /** Each macro use written: its file and line (1 is the first line of the text) (D73). */
+  uses: Array<{ start: number; end: number; macro: string; file: string; line: number }>;
+  /** The macro uses written as instructions, in address order, with the reason. */
+  macrosAsInstructions: MacroAsInstructions[];
+  /** The lines of each macro in macros.asm, from its !macro line to its closing brace. */
+  macroLines: Map<string, { first: number; last: number }>;
+}
+
+/** macros.asm (D73): each macro with its comment, as ACME reads it; a param is .name in the body. */
+function macrosText(layout: Layout): { text: string; lines: Map<string, { first: number; last: number }> } {
+  const out = ["; Macros of the knowledge. The source writes a use as +name args."];
+  const lines = new Map<string, { first: number; last: number }>();
+  for (const macro of layout.macros) {
+    out.push("");
+    if (macro.comment !== undefined) out.push(...macro.comment.split(/\r?\n/).map((line) => `; ${line}`.trimEnd()));
+    const first = out.length + 1;
+    out.push(`!macro ${macro.name}${macro.params.map((param, index) => `${index === 0 ? " " : ", "}.${param}`).join("")} {`, ...macro.body.split(/\r?\n/), "}");
+    lines.set(macro.name, { first, last: out.length });
+  }
+  return { text: `${out.join("\n")}\n`, lines };
 }
 
 /** The lines that open a patch (D72): its zone, the switch, the code, and the guard that stops a patch longer than its range. */
@@ -737,7 +847,7 @@ const withSide = (text: string, side: string | undefined) => (side === undefined
  * holds the opcode form keys that the probe refused; `numbers` the operand
  * expressions that ACME did not assemble to the image, with the reason.
  */
-export function render(layout: Layout, asBytes: ReadonlySet<string>, header: string[], numbers: ReadonlyMap<number, string> = new Map()): Rendered {
+export function render(layout: Layout, asBytes: ReadonlySet<string>, header: string[], numbers: ReadonlyMap<number, string> = new Map(), asInstructions: ReadonlyMap<number, string> = new Map()): Rendered {
   const lineComments = new Map<number, string[]>();
   const sideComments = new Map<number, string>();
   for (const comment of layout.comments) {
@@ -746,7 +856,24 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     else sideComments.set(comment.address, comment.text.replace(/\s*\r?\n\s*/g, " "));
   }
   const breaks = new Set<number>([...layout.names.keys(), ...lineComments.keys(), ...sideComments.keys()]);
-  const result: Rendered = { files: [], instructions: 0, dataBytes: 0, undecodedBytes: 0, asBytes: [], expressions: [], operandsAsNumbers: [...layout.operandsAsNumbers], patches: 0 };
+  const result: Rendered = {
+    files: [],
+    instructions: 0,
+    dataBytes: 0,
+    undecodedBytes: 0,
+    asBytes: [],
+    expressions: [],
+    operandsAsNumbers: [...layout.operandsAsNumbers],
+    patches: 0,
+    uses: [],
+    macrosAsInstructions: [...layout.macrosAsInstructions],
+    macroLines: new Map(),
+  };
+  for (const [start, reason] of asInstructions) {
+    const use = layout.macroUses.get(start);
+    if (use !== undefined) result.macrosAsInstructions.push({ start, end: use.end, macro: use.macro, reason });
+  }
+  result.macrosAsInstructions.sort((a, b) => a.start - b.start);
   const unwritten = new Map(layout.operandsAsNumbers.map((row) => [row.address, row.expression]));
   const { coverage } = layout;
   const notExecuted = { instructions: 0, ranges: [] as Range[] };
@@ -759,6 +886,25 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     let markLine = 0;
     /** The open patch: its labels are defined before it, so the original code writes none (D72). */
     let patch: PatchBlock | undefined;
+    /** The last address of the macro use just written: its instructions are in the use line (D73). */
+    let useEnd = -1;
+    /** Marks the start of a range of instructions that no run executed, or makes the open range longer. */
+    const mark = (address: number, last: number, count: number) => {
+      const executed = coverage === undefined || (coverage[address]! & COVERAGE.ramExecute) !== 0;
+      if (!executed) {
+        if (running) notExecuted.ranges.at(-1)!.end = last;
+        else {
+          notExecuted.ranges.push({ start: address, end: last });
+          markLine = out.length;
+          out.push("");
+        }
+        // The mark gives the range, so a reader finds it in the full list (D49).
+        const range = notExecuted.ranges.at(-1)!;
+        out[markLine] = `; not executed ${hex4(range.start)}-${hex4(range.end)}`;
+        notExecuted.instructions += count;
+      }
+      running = !executed;
+    };
     const head = (address: number) => {
       if (patch?.start === address) return;
       for (const text of lineComments.get(address) ?? []) out.push(`; ${text}`.trimEnd());
@@ -781,22 +927,30 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         out.push("}", "}");
         patch = undefined;
       };
+      if (item.kind === "instruction" && item.address <= useEnd) {
+        result.instructions++;
+        continue;
+      }
+      const macroUse = item.kind === "instruction" && !asInstructions.has(item.address) ? layout.macroUses.get(item.address) : undefined;
+      if (macroUse !== undefined) {
+        head(macroUse.start);
+        const count = piece.items.filter((other) => other.kind === "instruction" && other.address >= macroUse.start && other.address <= macroUse.end).length;
+        mark(macroUse.start, macroUse.end, count);
+        // The comments inside the use go to its side comment, as for the bytes of an instruction.
+        const sides: string[] = [];
+        for (let address = macroUse.start; address <= macroUse.end; address++) {
+          if (address !== macroUse.start) for (const text of lineComments.get(address) ?? []) sides.push(text);
+          if (sideComments.has(address)) sides.push(sideComments.get(address)!);
+        }
+        out.push(withSide(`${INDENT}+${macroUse.macro}${macroUse.args.length === 0 ? "" : ` ${macroUse.args.join(", ")}`}`, sides.length === 0 ? undefined : sides.join(" ")));
+        result.uses.push({ start: macroUse.start, end: macroUse.end, macro: macroUse.macro, file: piece.file, line: out.length });
+        result.instructions++;
+        useEnd = macroUse.end;
+        continue;
+      }
       if (item.kind === "instruction") {
         head(item.address);
-        const executed = coverage === undefined || (coverage[item.address]! & COVERAGE.ramExecute) !== 0;
-        if (!executed) {
-          if (running) notExecuted.ranges.at(-1)!.end = item.address + item.length - 1;
-          else {
-            notExecuted.ranges.push({ start: item.address, end: item.address + item.length - 1 });
-            markLine = out.length;
-            out.push("");
-          }
-          // The mark gives the range, so a reader finds it in the full list (D49).
-          const range = notExecuted.ranges.at(-1)!;
-          out[markLine] = `; not executed ${hex4(range.start)}-${hex4(range.end)}`;
-          notExecuted.instructions++;
-        }
-        running = !executed;
+        mark(item.address, item.address + item.length - 1, 1);
         const sides: string[] = [];
         if (sideComments.has(item.address)) sides.push(sideComments.get(item.address)!);
         for (let offset = 1; offset < item.length; offset++) {
@@ -854,7 +1008,12 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
   }
 
   result.files.push({ name: "constants.asm", text: constantsText(layout) });
-  const main = [...header.map((line) => `; ${line}`), "", "!cpu 6510", '!source "constants.asm"'];
+  if (layout.macros.length > 0) {
+    const macros = macrosText(layout);
+    result.files.push({ name: "macros.asm", text: macros.text });
+    result.macroLines = macros.lines;
+  }
+  const main = [...header.map((line) => `; ${line}`), "", "!cpu 6510", '!source "constants.asm"', ...(layout.macros.length > 0 ? ['!source "macros.asm"'] : [])];
   for (const piece of layout.pieces) {
     if (piece.segmentStart) main.push("", `* = ${hex4(piece.start)}`);
     main.push(`!source "${piece.file}"`);

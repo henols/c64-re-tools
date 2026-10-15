@@ -61,7 +61,7 @@ export function isZeroPageMode(mode: Mode): boolean {
 }
 
 /** How an instruction uses the address of its operand, in the order a summary lists them. */
-export const USE_KINDS = ["read", "written", "modified", "called", "jumped to", "jumped through", "branched to", "pointer", "address", "table"] as const;
+export const USE_KINDS = ["read", "written", "modified", "called", "jumped to", "jumped through", "branched to", "pointer", "address", "table", "macro argument"] as const;
 export type UseKind = (typeof USE_KINDS)[number];
 
 const WRITES = new Set(["sta", "stx", "sty", "sax", "sha", "shx", "shy", "tas"]);
