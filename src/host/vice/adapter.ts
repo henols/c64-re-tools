@@ -135,7 +135,7 @@ export function parseDisassembly(answer: string, start: number): Instruction[] {
   for (const line of answer.split("\n")) {
     const match = /^\.(?:C|\d+):([0-9a-f]{4})\s+((?:[0-9a-f]{2} )*[0-9a-f]{2})\s+(.*?)\s*$/i.exec(line);
     if (match === null) {
-      if (line.trim() !== "") unknown.push(line.trim());
+      if (line.trim() !== "" && !CONDITION_LINE.test(line.trim())) unknown.push(line.trim());
       continue;
     }
     const address = Number.parseInt(match[1]!, 16);
@@ -164,7 +164,7 @@ export function parseHistory(answer: string): Array<Omit<HistoryEntry, "rasterLi
         line,
       );
     if (match === null) {
-      if (line.trim() !== "") unknown.push(line.trim());
+      if (line.trim() !== "" && !CONDITION_LINE.test(line.trim())) unknown.push(line.trim());
       continue;
     }
     entries.push({
@@ -193,7 +193,7 @@ export function parseHunt(answer: string, limit: number): number[] {
   for (const line of answer.split("\n")) {
     const match = /^([0-9a-f]{4})$/i.exec(line.trim());
     if (match === null) {
-      if (line.trim() !== "") unknown.push(line.trim());
+      if (line.trim() !== "" && !CONDITION_LINE.test(line.trim())) unknown.push(line.trim());
       continue;
     }
     if (matches.length < limit) matches.push(Number.parseInt(match[1]!, 16));
@@ -239,7 +239,7 @@ export function parseProfile(answer: string): ProfileEntry[] {
     // A profile of zero cycles, as after a window move restarts it, prints its percents as "-nan".
     const row = new RegExp(`^\\s*(${COUNT})\\s+(?:[\\d.,]+|-?nan)%\\s+(${COUNT})\\s+([\\d.,]+|-?nan)%\\s+(\\S+)\\s*$`, "i").exec(line);
     if (row === null) {
-      if (line.trim() !== "" && !/^Total\s+%\s+Self\s+%$/.test(line.trim()) && !/^[-\s]+$/.test(line)) unknown.push(line.trim());
+      if (line.trim() !== "" && !CONDITION_LINE.test(line.trim()) && !/^Total\s+%\s+Self\s+%$/.test(line.trim()) && !/^[-\s]+$/.test(line)) unknown.push(line.trim());
       continue;
     }
     // A row named ROOT or by a label has no routine address.
@@ -285,7 +285,7 @@ export function parseMemmap(answer: string, maxRanges: number): { ranges: Memmap
   for (const line of answer.split("\n")) {
     const match = /^([0-9a-f]{4}): (\S{3}) (\S{3}) (\S{3})/i.exec(line);
     if (match === null) {
-      if (line.trim() !== "" && !/^addr:\s+IO\s+ROM\s+RAM$/.test(line.trim())) unknown.push(line.trim());
+      if (line.trim() !== "" && !CONDITION_LINE.test(line.trim()) && !/^addr:\s+IO\s+ROM\s+RAM$/.test(line.trim())) unknown.push(line.trim());
       continue;
     }
     const address = Number.parseInt(match[1]!, 16);
@@ -309,12 +309,19 @@ export function parseMemmap(answer: string, maxRanges: number): { ranges: Memmap
  */
 const STOP_LINE = /^(?:#\d+ \((?:Stop on|Trace)\s|\.(?:C|\d+):[0-9a-f]{4}\s)/i;
 
-/** The lines of a text command's answer that are not blank, not a stop line and not `known`. */
+/**
+ * The line VICE prints on the text monitor when the binary monitor sets a
+ * checkpoint condition. It can come late, in the answer of the next text
+ * command (seen on Windows).
+ */
+const CONDITION_LINE = /^Setting checkpoint \d+ condition to: /;
+
+/** The lines of a text command's answer that are not blank, not a stop line, not a condition line and not `known`. */
 function otherLines(answer: string, known?: RegExp): string[] {
   return answer
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line !== "" && !STOP_LINE.test(line) && known?.test(line) !== true);
+    .filter((line) => line !== "" && !STOP_LINE.test(line) && !CONDITION_LINE.test(line) && known?.test(line) !== true);
 }
 
 /** Refuses the answer of a text command that prints nothing, or only `known` lines, when it works. */
