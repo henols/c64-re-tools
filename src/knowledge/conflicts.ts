@@ -9,15 +9,21 @@ import type { DatabaseSync } from "node:sqlite";
 import type { HistoryEntry } from "./history.ts";
 import {
   COMMENT_COLUMNS,
+  MACRO_COLUMNS,
+  MACRO_USE_COLUMNS,
   MODULE_COLUMNS,
   OPERAND_COLUMNS,
+  PATCH_COLUMNS,
   REFERENCE_COLUMNS,
   REGION_COLUMNS,
   SUPPRESSION_COLUMNS,
   SYMBOL_COLUMNS,
   toComment,
+  toMacro,
+  toMacroUse,
   toModule,
   toOperand,
+  toPatch,
   toReference,
   toRegion,
   toSuppression,
@@ -39,6 +45,9 @@ export const CONFLICT_RULES = {
   "suppression-symbol": "the same symbol suppression two times",
   "suppression-reference": "the same reference suppression two times",
   "suppression-region": "region suppressions that overlap",
+  patch: "patches that overlap",
+  macro: "two macros with one name",
+  "macro-use": "macro uses that overlap",
 } as const;
 export type ConflictRule = keyof typeof CONFLICT_RULES;
 
@@ -86,6 +95,9 @@ const RULES: readonly TableRule[] = [
     where: "entity = 'reference'",
   },
   { rule: "suppression-region", table: "suppressions", entity: "suppression", columns: SUPPRESSION_COLUMNS, map: toSuppression, key: "overlap", where: "entity = 'region'" },
+  { rule: "patch", table: "patches", entity: "patch", columns: PATCH_COLUMNS, map: toPatch, key: "overlap" },
+  { rule: "macro", table: "macros", entity: "macro", columns: MACRO_COLUMNS, map: toMacro, key: ["name"] },
+  { rule: "macro-use", table: "macro_uses", entity: "macro-use", columns: MACRO_USE_COLUMNS, map: toMacroUse, key: "overlap" },
 ];
 
 function conflictRow(rule: TableRule, raw: Raw): ConflictRow {

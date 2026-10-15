@@ -64,12 +64,12 @@ interface Field {
   optional?: boolean;
 }
 
-/** One fact table: its file, its fields in line order, and the column of its address. */
+/** One fact table: its file, its fields in line order, and the column that sorts its lines after the space (an address, or a name). */
 export interface TableSpec {
   table: string;
   file: string;
   fields: readonly Field[];
-  address: string;
+  sort: string;
 }
 
 const field = (key: string, column: string, format: Format, optional = false): Field => ({ key, column, format, ...(optional ? { optional } : {}) });
@@ -78,29 +78,29 @@ const origin = field("origin", "origin", "text");
 
 /** The fact tables. Each line has `id`, these fields, then `added` and `closed` (the revisions; closed is null while the row is current). */
 export const TABLES: readonly TableSpec[] = [
-  { table: "symbols", file: "symbols.jsonl", address: "address", fields: [space, field("address", "address", "address"), field("name", "name", "text"), field("kind", "kind", "text"), origin] },
+  { table: "symbols", file: "symbols.jsonl", sort: "address", fields: [space, field("address", "address", "address"), field("name", "name", "text"), field("kind", "kind", "text"), origin] },
   {
     table: "regions",
     file: "regions.jsonl",
-    address: "start_address",
+    sort: "start_address",
     fields: [space, field("start", "start_address", "address"), field("end", "end_address", "address"), field("type", "type", "text"), field("element", "element", "integer", true), origin],
   },
   {
     table: "comments",
     file: "comments.jsonl",
-    address: "address",
+    sort: "address",
     fields: [space, field("address", "address", "address"), field("placement", "placement", "text"), field("text", "text", "text"), origin],
   },
   {
     table: "references",
     file: "references.jsonl",
-    address: "from_address",
+    sort: "from_address",
     fields: [space, field("from", "from_address", "address"), field("to", "to_address", "address"), field("kind", "kind", "text"), origin],
   },
   {
     table: "suppressions",
     file: "suppressions.jsonl",
-    address: "start_address",
+    sort: "start_address",
     fields: [
       space,
       field("entity", "entity", "text"),
@@ -114,13 +114,13 @@ export const TABLES: readonly TableSpec[] = [
   {
     table: "modules",
     file: "modules.jsonl",
-    address: "start_address",
+    sort: "start_address",
     fields: [space, field("start", "start_address", "address"), field("file", "file", "text"), field("title", "title", "text", true), origin],
   },
   {
     table: "operands",
     file: "operands.jsonl",
-    address: "address",
+    sort: "address",
     fields: [
       space,
       field("address", "address", "address"),
@@ -130,6 +130,32 @@ export const TABLES: readonly TableSpec[] = [
       field("expression", "expression", "text", true),
       origin,
     ],
+  },
+  {
+    table: "patches",
+    file: "patches.jsonl",
+    sort: "start_address",
+    fields: [
+      space,
+      field("start", "start_address", "address"),
+      field("end", "end_address", "address"),
+      field("switch", "switch_name", "text"),
+      field("code", "code", "text"),
+      field("comment", "comment", "text", true),
+      origin,
+    ],
+  },
+  {
+    table: "macros",
+    file: "macros.jsonl",
+    sort: "name",
+    fields: [space, field("name", "name", "text"), field("params", "params", "text"), field("body", "body", "text"), field("comment", "comment", "text", true), origin],
+  },
+  {
+    table: "macro_uses",
+    file: "macro_uses.jsonl",
+    sort: "start_address",
+    fields: [space, field("start", "start_address", "address"), field("end", "end_address", "address"), field("macro", "macro", "text"), field("args", "args", "text"), origin],
   },
 ];
 
@@ -167,12 +193,13 @@ function lineOf(raw: Raw, fields: readonly Field[], extra: Raw): string {
 
 const spaceOrder = (space: string) => (space === "c64" ? -2 : space === "drive8" ? -1 : Number(space.slice(4)));
 
-/** The sort key of a row: space, address, the revision that added it, its order in that revision. */
+/** The sort key of a row: space, address (or name), the revision that added it, its order in that revision. */
 function compareRows(spec: TableSpec) {
   const order = (raw: Raw) => Number(ROW_ID.exec(raw.id as string)?.[2] ?? 0);
+  const key = (a: unknown, b: unknown) => (typeof a === "number" ? a - (b as number) : compareText(a as string, b as string));
   return (a: Raw, b: Raw) =>
     spaceOrder(a.space as string) - spaceOrder(b.space as string) ||
-    (a[spec.address] as number) - (b[spec.address] as number) ||
+    key(a[spec.sort], b[spec.sort]) ||
     compareText(a.valid_from_revision as string, b.valid_from_revision as string) ||
     order(a) - order(b) ||
     compareText(a.id as string, b.id as string);

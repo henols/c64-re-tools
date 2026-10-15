@@ -6,22 +6,28 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { KnowledgeError, openForWrite } from "./database.ts";
-import { at, commentsAt, currentRevision, listModules, listSuppressions, listSymbols, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
-import { historyAt, revision as revisionChanges } from "./history.ts";
+import { at, commentsAt, currentRevision, listMacroUses, listModules, listPatches, listSuppressions, listSymbols, macroNamed, moduleAt, operandAt, referencesFrom, referencesTo, regionsOverlapping, symbolAt } from "./read.ts";
+import { historyAt, historyOfMacro, revision as revisionChanges } from "./history.ts";
 import {
   addReference,
   applyBatch,
   classifyRegion,
   removeComment,
+  removeMacro,
+  removeMacroUse,
   removeModule,
   removeOperand,
+  removePatch,
   removeReference,
   removeSymbol,
   renameSymbol,
   revert,
   setComment,
+  setMacro,
+  setMacroUse,
   setModule,
   setOperand,
+  setPatch,
   unclassifyRegion,
   type OperandImage,
   type WriteContext,
@@ -336,8 +342,8 @@ test("a module starts a file of generated source: one per address and per file, 
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
   for (const file of ["../x.asm", "sub/x.asm", "x.a", ".asm", "x y.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
   // c64-source writes these files itself; macOS and Windows ignore the letter case (F-31).
-  for (const file of ["main.asm", "loader.asm", "constants.asm", "Main.asm", "CONSTANTS.asm"]) {
-    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof KnowledgeError && error.code === "invalid-input" && /writes main\.asm, loader\.asm, constants\.asm itself/.test(error.message), file);
+  for (const file of ["main.asm", "loader.asm", "constants.asm", "macros.asm", "Main.asm", "CONSTANTS.asm"]) {
+    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof KnowledgeError && error.code === "invalid-input" && /writes main\.asm, loader\.asm, constants\.asm, macros\.asm itself/.test(error.message), file);
   }
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
   assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: nth(db, 3) }, "a write without a title keeps it (F-26)");
@@ -462,4 +468,104 @@ test("a batch writes symbols and the operands that use them, and a revert restor
   assert.equal(operandAt(db, 0x807e)?.select, "hi");
   assert.deepEqual(referencesFrom(db, 0x807e).map((row) => row.kind), ["pointer"]);
   assert.throws(() => applyBatch(db, llm, [{ op: "operand", address: 0x8079, select: "hi", symbol: "irq_handler" }]), /Write 1: An operand expression is checked against the image/);
+});
+
+/**
+ * The operand image, and $8100 INC $fb, BNE +2, INC $fc; $8106 INC $fd, BNE
+ * +2, INC $fe; $8110 LDA $0400.
+ */
+function sourceImage(): OperandImage {
+  const image = operandImage();
+  const bytes = new Map<number, number>();
+  const put = (address: number, ...values: number[]) => values.forEach((value, index) => bytes.set(address + index, value));
+  put(0x8100, 0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xe6, 0xfd, 0xd0, 0x02, 0xe6, 0xfe);
+  put(0x8110, 0xad, 0x00, 0x04);
+  return { byteAt: (address) => bytes.get(address) ?? image.byteAt(address), platform: image.platform };
+}
+
+test("a patch puts code in a range of the image under a switch (D72)", () => {
+  const db = fresh();
+  const context: WriteContext = { origin: "llm", image: sourceImage() };
+  const first = setPatch(db, context, { start: 0x8079, end: 0x807d, switch: "CRACK", code: "  lda #0\n  rts  \n", comment: "Skips the check." });
+  assert.deepEqual(first.current, { space: "c64", start: 0x8079, end: 0x807d, switch: "CRACK", code: "  lda #0\n  rts", comment: "Skips the check.", origin: "llm", revision: nth(db, 1) });
+  assert.equal(setPatch(db, context, { start: 0x8079, end: 0x807d, switch: "CRACK", code: "  lda #0\n  rts" }).revision, null, "the same patch, no revision; the comment stays");
+  setPatch(db, { ...context, origin: "user" }, { start: 0x807e, end: 0x807f, switch: "CRACK", code: "" });
+  assert.deepEqual(listPatches(db, undefined, "CRACK").map((row) => [row.start, row.end, row.code]), [[0x8079, 0x807d, "  lda #0\n  rts"], [0x807e, 0x807f, ""]]);
+  assert.equal(at(db, 0x807b).patch?.start, 0x8079, "at gives the patch that holds the address");
+  assert.deepEqual(historyAt(db, 0x807c).map((entry) => entry.entity), ["patch"]);
+
+  assert.throws(() => setPatch(db, llm, { start: 0x8079, end: 0x807d, switch: "CRACK", code: "" }), /no image was given/);
+  assert.throws(() => setPatch(db, context, { start: 0x9000, end: 0x9001, switch: "CRACK", code: "" }), /\$9000 is outside the image/);
+  assert.throws(() => setPatch(db, context, { start: 0x807c, end: 0x807e, switch: "TRAINER", code: "" }), /overlaps the patch of CRACK at \$8079-\$807d/);
+  for (const name of ["crack", "C", "1UP", "CRACK-1"]) assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: name, code: "" }), failsWith("invalid-input"), name);
+  assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "VICSCN", code: "" }), /is a C64 platform name/);
+  renameSymbol(db, llm, { address: 0x2000, name: "LIVES" });
+  assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "LIVES", code: "" }), /is the name of the symbol at \$2000/);
+  assert.throws(() => renameSymbol(db, llm, { address: 0x2001, name: "CRACK" }), /CRACK is the switch of the patch at \$8079-\$807d/);
+  // c64-source writes the code inside { }: braces must pair, except in comments and strings.
+  for (const code of ["!if X {", "}"]) assert.throws(() => setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code }), /The patch code has a/, code);
+  for (const code of ["lda #0 ; }", 'lda #"{"', "!if X { nop }"]) setPatch(db, context, { start: 0x8a85, end: 0x8a87, switch: "TRAINER", code });
+
+  removePatch(db, llm, { start: 0x807e });
+  assert.throws(() => removePatch(db, llm, { start: 0x807e }), failsWith("not-found"));
+  revert(db, llm, { revision: nth(db, 2) });
+  assert.deepEqual(listPatches(db).map((row) => row.start), [0x8079, 0x807e], "a revert restores patches");
+});
+
+test("a macro and its uses: the use is whole instructions, its args are known names, and a rename follows (D73)", () => {
+  const db = fresh();
+  const context: WriteContext = { origin: "llm", image: sourceImage() };
+  renameSymbol(db, llm, { address: 0x00fb, name: "ptr" });
+  const macro = setMacro(db, llm, { name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+\n", comment: "Adds 1 to a 16-bit value." });
+  assert.deepEqual(macro.current, { space: "c64", name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+", comment: "Adds 1 to a 16-bit value.", origin: "llm", revision: nth(db, 2) });
+  const use = setMacroUse(db, context, { start: 0x8100, end: 0x8105, macro: "inc16", args: [" ptr "] });
+  assert.deepEqual(use.current, { space: "c64", start: 0x8100, end: 0x8105, macro: "inc16", args: ["ptr"], origin: "llm", revision: nth(db, 3) });
+  setMacroUse(db, context, { start: 0x8106, end: 0x810b, macro: "inc16", args: ["ptr+2"] });
+  assert.equal(at(db, 0x8102).macroUse?.start, 0x8100);
+
+  assert.throws(() => setMacroUse(db, context, { start: 0x8100, end: 0x8104, macro: "inc16", args: ["ptr"] }), /end at \$8105, not at \$8104/);
+  assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "inc16", args: [] }), /has 1 params \(dst\), and the use gives 0 args/);
+  assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "inc16", args: ["nowhere"] }), /"nowhere" is no symbol of the knowledge/);
+  assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "add16", args: [] }), failsWith("not-found"));
+  assert.throws(() => setMacroUse(db, context, { start: 0x8104, end: 0x8109, macro: "inc16", args: ["ptr"] }), /overlaps the use of inc16 at \$8100-\$8105/);
+  setPatch(db, context, { start: 0x8110, end: 0x8112, switch: "DEBUG", code: "" });
+  assert.throws(() => setMacroUse(db, context, { start: 0x8110, end: 0x8112, macro: "inc16", args: ["VICSCN"] }), /overlaps the patch of DEBUG/);
+  assert.throws(() => setPatch(db, context, { start: 0x8104, end: 0x8105, switch: "DEBUG", code: "" }), /overlaps the use of the macro inc16 at \$8100-\$8105/);
+
+  for (const request of [{ name: "1x", body: "nop" }, { name: "m", params: [".dst"], body: "nop" }, { name: "m", params: ["a", "a"], body: "nop" }, { name: "m", body: " " }, { name: "m", body: "nop }" }]) {
+    assert.throws(() => setMacro(db, llm, request), failsWith("invalid-input"), JSON.stringify(request));
+  }
+  assert.throws(() => setMacro(db, llm, { name: "inc16", params: ["dst", "by"], body: "nop" }), /its uses at \$8100, \$8106 give that many args/);
+  setMacro(db, { origin: "user" }, { name: "inc16", params: ["target"], body: "inc .target\nbne +\ninc .target+1\n+" });
+  assert.equal(macroNamed(db, "inc16")?.comment, "Adds 1 to a 16-bit value.", "a write without a comment keeps it");
+  assert.throws(() => removeMacro(db, llm, { name: "inc16" }), /has uses at \$8100, \$8106/);
+
+  renameSymbol(db, llm, { address: 0x00fb, name: "zp_pointer" });
+  assert.deepEqual(listMacroUses(db).map((row) => row.args), [["zp_pointer"], ["zp_pointer+2"]], "a rename follows into the args");
+  assert.throws(() => removeSymbol(db, llm, { address: 0x00fb }), /The macro uses at \$8100, \$8106 use zp_pointer/);
+  removeMacroUse(db, llm, { start: 0x8100 });
+  removeMacroUse(db, llm, { start: 0x8106 });
+  assert.throws(() => removeMacroUse(db, llm, { start: 0x8106 }), failsWith("not-found"));
+  removeMacro(db, llm, { name: "inc16" });
+  // Two macro rows (the rewrite closed the first) and four use rows (the rename closed the first two), all closed now.
+  const history = historyOfMacro(db, "inc16");
+  assert.deepEqual([history.filter((entry) => entry.entity === "macro").length, history.filter((entry) => entry.entity === "macro-use").length], [2, 4]);
+  assert.ok(history.every((entry) => entry.to !== undefined));
+});
+
+test("a batch writes a macro and its uses in one revision, and a revert restores them (D73)", () => {
+  const db = fresh();
+  const context: WriteContext = { origin: "llm", image: sourceImage() };
+  const applied = applyBatch(db, context, [
+    { op: "macro", name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+" },
+    { op: "use", start: 0x8100, end: 0x8105, macro: "inc16", args: ["$fb"] },
+    { op: "patch", start: 0x8110, end: 0x8112, switch: "DEBUG", code: "jsr $ffd2" },
+  ]);
+  assert.deepEqual(revisionChanges(db, applied.revision!).added.map((entry) => entry.entity), ["patch", "macro", "macro-use"]);
+  applyBatch(db, context, [{ op: "unuse", start: 0x8100 }, { op: "unmacro", name: "inc16" }, { op: "unpatch", start: 0x8110 }]);
+  assert.equal(macroNamed(db, "inc16"), undefined);
+  revert(db, llm, { revision: applied.revision! });
+  assert.deepEqual(listMacroUses(db).map((row) => [row.start, row.macro, row.args]), [[0x8100, "inc16", ["$fb"]]]);
+  assert.equal(listPatches(db)[0]?.code, "jsr $ffd2");
+  assert.throws(() => applyBatch(db, llm, [{ op: "use", start: 0x8106, end: 0x810b, macro: "inc16", args: ["$fd"] }]), /Write 1: A macro use is checked against the image/);
 });

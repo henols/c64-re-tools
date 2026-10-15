@@ -49,7 +49,10 @@ function copy(old: DatabaseSync, index: DatabaseSync): Map<number, string> {
   }
   // The order of a row in its revision counts across every table, so each row id is unique.
   const order = new Map<string, number>();
+  const has = old.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
   for (const spec of TABLES) {
+    // A table that came after schema 7 (patches, macros, macro uses) is empty in the text.
+    if (has.get(spec.table) === undefined) continue;
     const columns = spec.fields.map((field) => field.column);
     const insert = index.prepare(`INSERT INTO ${sqlName(spec.table)} (id, ${columns.join(", ")}, valid_from_revision, valid_to_revision) VALUES (${["?", ...columns.map(() => "?"), "?", "?"].join(", ")})`);
     for (const row of old.prepare(`SELECT * FROM ${sqlName(spec.table)} ORDER BY id`).all() as Raw[]) {

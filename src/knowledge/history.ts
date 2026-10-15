@@ -6,23 +6,32 @@ import type { DatabaseSync } from "node:sqlite";
 import { KnowledgeError } from "./database.ts";
 import {
   COMMENT_COLUMNS,
+  MACRO_COLUMNS,
+  MACRO_USE_COLUMNS,
   MODULE_COLUMNS,
   OPERAND_COLUMNS,
+  PATCH_COLUMNS,
   REFERENCE_COLUMNS,
   REGION_COLUMNS,
   resolveRevision,
   SUPPRESSION_COLUMNS,
   SYMBOL_COLUMNS,
   toComment,
+  toMacro,
+  toMacroUse,
   toModule,
   toOperand,
+  toPatch,
   toReference,
   toRegion,
   toSuppression,
   toSymbol,
   type CommentRow,
+  type MacroRow,
+  type MacroUseRow,
   type ModuleRow,
   type OperandRow,
+  type PatchRow,
   type ReferenceRow,
   type RegionRow,
   type SuppressionRow,
@@ -52,7 +61,10 @@ export type HistoryEntry =
   | { entity: "reference"; row: ReferenceRow; from: string; to?: string }
   | { entity: "suppression"; row: SuppressionRow; from: string; to?: string }
   | { entity: "module"; row: ModuleRow; from: string; to?: string }
-  | { entity: "operand"; row: OperandRow; from: string; to?: string };
+  | { entity: "operand"; row: OperandRow; from: string; to?: string }
+  | { entity: "patch"; row: PatchRow; from: string; to?: string }
+  | { entity: "macro"; row: MacroRow; from: string; to?: string }
+  | { entity: "macro-use"; row: MacroUseRow; from: string; to?: string };
 
 type Raw = Record<string, unknown>;
 
@@ -100,7 +112,21 @@ export function historyAt(db: DatabaseSync | undefined, address: number, space: 
   }
   for (const raw of db.prepare(`SELECT ${MODULE_COLUMNS}${validity} FROM modules WHERE space = ? AND start_address = ?`).all(space, address) as Raw[]) entries.push(entry("module", toModule(raw), raw));
   for (const raw of db.prepare(`SELECT ${OPERAND_COLUMNS}${validity} FROM operands WHERE space = ? AND address = ?`).all(space, address) as Raw[]) entries.push(entry("operand", toOperand(raw), raw));
+  for (const raw of db.prepare(`SELECT ${PATCH_COLUMNS}${validity} FROM patches WHERE space = ? AND start_address <= ? AND end_address >= ?`).all(space, address, address) as Raw[]) {
+    entries.push(entry("patch", toPatch(raw), raw));
+  }
+  for (const raw of db.prepare(`SELECT ${MACRO_USE_COLUMNS}${validity} FROM macro_uses WHERE space = ? AND start_address <= ? AND end_address >= ?`).all(space, address, address) as Raw[]) {
+    entries.push(entry("macro-use", toMacroUse(raw), raw));
+  }
   return entries.sort(bySequence);
+}
+
+/** Every row of a macro with this name, and every use of it, oldest first. */
+export function historyOfMacro(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): HistoryEntry[] {
+  if (db === undefined) return [];
+  const macros = (db.prepare(`SELECT ${MACRO_COLUMNS}, valid_to_revision FROM macros WHERE space = ? AND name = ?`).all(space, name) as Raw[]).map((raw) => entry("macro", toMacro(raw), raw));
+  const uses = (db.prepare(`SELECT ${MACRO_USE_COLUMNS}, valid_to_revision FROM macro_uses WHERE space = ? AND macro = ?`).all(space, name) as Raw[]).map((raw) => entry("macro-use", toMacroUse(raw), raw));
+  return [...macros, ...uses].sort(bySequence);
 }
 
 /** Every symbol row of a space that ever had this name, oldest first: a name can move between addresses. */
@@ -158,6 +184,9 @@ export function revision(db: DatabaseSync | undefined, text: string): RevisionCh
     ["suppression", "suppressions", SUPPRESSION_COLUMNS, toSuppression],
     ["module", "modules", MODULE_COLUMNS, toModule],
     ["operand", "operands", OPERAND_COLUMNS, toOperand],
+    ["patch", "patches", PATCH_COLUMNS, toPatch],
+    ["macro", "macros", MACRO_COLUMNS, toMacro],
+    ["macro-use", "macro_uses", MACRO_USE_COLUMNS, toMacroUse],
   ] as const;
   const added: HistoryEntry[] = [];
   const closed: HistoryEntry[] = [];

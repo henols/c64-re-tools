@@ -197,7 +197,7 @@ test("export writes all current knowledge to a project file and answers with cou
   knowledge(root, "rename", "$2100", "update_player");
   knowledge(root, "classify", "$3000", "$303f", "sprite");
   const exported = knowledge(root, "export", "--out", "exports/knowledge.json").json;
-  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, regions: 1, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0 }, revision: rev(root, 2) });
+  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, regions: 1, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0, patches: 0, macros: 0, macroUses: 0 }, revision: rev(root, 2) });
   const file = JSON.parse(readFileSync(join(root, "exports", "knowledge.json"), "utf8")) as { symbols: Array<{ name: string }> };
   assert.equal(file.symbols[0]!.name, "update_player");
   assert.equal(knowledge(root, "export").status, 2, "export needs --out");
@@ -272,4 +272,55 @@ test("a command takes a start of a revision id that only one revision has, and 0
   assert.equal(knowledge(root, "revert", "0").status, 0);
   assert.equal(knowledge(root, "at", "$2100").json.symbol, undefined);
   assert.equal(((knowledge(root, "revisions", "--before", rev(root, 2)).json.revisions as Array<{ id: string }>).map((row) => row.id)).join(), first);
+});
+
+test("patch, macro and use write the source knowledge, and patches, switches, macros, uses, at and history read it (D72, D73)", () => {
+  const root = project();
+  // $8100 INC $fb / BNE +2 / INC $fc / LDA #$00 / STA $d020
+  writeFileSync(join(root, "game.prg"), Buffer.from([0x00, 0x81, 0xe6, 0xfb, 0xd0, 0x02, 0xe6, 0xfc, 0xa9, 0x00, 0x8d, 0x20, 0xd0]));
+  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--nop").status, 2, "patch needs --image");
+  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--image", "game.prg").status, 2, "patch needs --code, --code-file or --nop");
+  assert.equal(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--nop", "--code", "nop", "--image", "game.prg").status, 2, "only one of them");
+  assert.equal(knowledge(root, "rename", "$8106", "x", "--code", "nop").status, 2, "--code works only with patch");
+  assert.equal(existsSync(join(root, ".c64-re-tools")), false, "a refused write creates no knowledge");
+
+  writeFileSync(join(root, "crack.asm"), "  lda #1\n  sta $d020\n");
+  assert.deepEqual(knowledge(root, "patch", "$8106", "$810a", "CRACK", "--code-file", "crack.asm", "--comment", "A white border.", "--image", "game.prg").json, {
+    revision: rev(root, 1),
+    patch: { start: "$8106", end: "$810a", bytes: 5, switch: "CRACK", code: "  lda #1\n  sta $d020", comment: "A white border.", origin: "llm", revision: rev(root, 1) },
+  });
+  assert.equal(knowledge(root, "patch", "$8100", "$8101", "DEBUG", "--nop", "--image", "game.prg").status, 0);
+  assert.deepEqual(knowledge(root, "switches").json, {
+    switches: [
+      { name: "CRACK", define: "--define CRACK=1", patches: [{ start: "$8106", end: "$810a" }] },
+      { name: "DEBUG", define: "--define DEBUG=1", patches: [{ start: "$8100", end: "$8101" }] },
+    ],
+  });
+  assert.deepEqual((knowledge(root, "patches", "--switch", "DEBUG").json.patches as Array<{ code: string }>).map((row) => row.code), [""]);
+  assert.equal(knowledge(root, "unpatch", "$8100").json.revision, rev(root, 3));
+
+  knowledge(root, "rename", "$00fb", "ptr");
+  assert.equal(knowledge(root, "macro", "inc16", "--params", "dst", "--body", "inc .dst\nbne +\ninc .dst+1\n+", "--comment", "Adds 1.").json.revision, rev(root, 5));
+  assert.deepEqual(knowledge(root, "use", "$8100", "$8105", "inc16", "--args", "ptr", "--image", "game.prg").json, {
+    revision: rev(root, 6),
+    use: { start: "$8100", end: "$8105", macro: "inc16", args: ["ptr"], text: "+inc16 ptr", origin: "llm", revision: rev(root, 6) },
+  });
+  const known = knowledge(root, "at", "$8103").json as { macroUse: { text: string }; patch?: unknown };
+  assert.equal(known.macroUse.text, "+inc16 ptr");
+  assert.equal((knowledge(root, "at", "$8108").json as { patch: { switch: string } }).patch.switch, "CRACK");
+  assert.deepEqual((knowledge(root, "macros").json.macros as Array<{ name: string; params: string[] }>).map((row) => [row.name, row.params]), [["inc16", ["dst"]]]);
+  assert.deepEqual((knowledge(root, "uses", "--macro", "inc16").json.uses as Array<{ start: string }>).map((row) => row.start), ["$8100"]);
+  assert.deepEqual((knowledge(root, "history", "--macro", "inc16").json.history as Array<{ entity: string }>).map((row) => row.entity), ["macro", "macro-use"]);
+  assert.equal(knowledge(root, "unmacro", "inc16").status, 1, "the macro has a use");
+
+  writeFileSync(join(root, "batch.json"), JSON.stringify([
+    { op: "unuse", start: "$8100" },
+    { op: "macro", name: "inc16", params: "dst", body: "inc .dst\nbne +\ninc .dst+1\n+" },
+    { op: "use", start: "$8100", end: "$8105", macro: "inc16", args: ["$fb"] },
+    { op: "patch", start: "$8106", end: "$810a", switch: "CRACK", code: "  lda #2\n  sta $d020" },
+  ]));
+  assert.equal(knowledge(root, "apply", "batch.json").status, 2, "apply with use or patch writes needs --image");
+  const applied = knowledge(root, "apply", "batch.json", "--image", "game.prg").json as { writes: number; replaced: unknown[] };
+  assert.equal(applied.writes, 4);
+  assert.deepEqual((knowledge(root, "export", "--out", "k.json").json as { counts: Record<string, number> }).counts, { symbols: 1, regions: 0, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0, patches: 1, macros: 1, macroUses: 1 });
 });

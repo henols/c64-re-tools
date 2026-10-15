@@ -13,7 +13,8 @@ import { conflicts, type Conflict } from "./conflicts.ts";
 import { KnowledgeError, openForRead, openForWrite, textPath, transaction, withWrite } from "./database.ts";
 import { importFindings } from "./import.ts";
 import { listRegions, operandAt, referencesFrom, symbolAt } from "./read.ts";
-import { addReference, Change, classifyRegion, mergeConflicts, renameSymbol, setComment, setModule, setOperand, unclassifyRegion, type OperandImage, type WriteContext } from "./write.ts";
+import { listMacros, listMacroUses, listPatches } from "./read.ts";
+import { addReference, Change, classifyRegion, mergeConflicts, renameSymbol, setComment, setMacro, setMacroUse, setModule, setOperand, setPatch, unclassifyRegion, type OperandImage, type WriteContext } from "./write.ts";
 
 const roots: string[] = [];
 after(() => {
@@ -183,4 +184,31 @@ test("a write that would leave two current rows is refused before it commits", (
   }
   assert.equal(readFileSync(join(textPath(root), "symbols.jsonl"), "utf8"), before);
   assert.equal(read(root, (db) => symbolAt(db, 0x2100)?.name), "main");
+});
+
+test("patches, macros and macro uses have their conflicts, and merge keeps the newest (D72, D73)", () => {
+  const bytes = new Map([[0x8100, 0xe6], [0x8101, 0xfb], [0x8102, 0xd0], [0x8103, 0x02], [0x8104, 0xe6], [0x8105, 0xfc], [0x8106, 0xea]]);
+  const image: OperandImage = { byteAt: (address) => bytes.get(address), platform: new Map() };
+  const root = computers(
+    nothing,
+    (a) =>
+      withWrite((db) => {
+        setPatch(db, { ...llm, image }, { start: 0x8100, end: 0x8101, switch: "CRACK", code: "" });
+        setMacro(db, llm, { name: "inc16", params: ["dst"], body: "inc .dst" });
+        return setMacroUse(db, { ...llm, image }, { start: 0x8102, end: 0x8105, macro: "inc16", args: ["1"] });
+      }, a),
+    (b) =>
+      withWrite((db) => {
+        setPatch(db, { ...llm, image }, { start: 0x8101, end: 0x8101, switch: "TRAINER", code: "" });
+        setMacro(db, llm, { name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+" });
+        setMacro(db, llm, { name: "skip", body: "bne *+4" });
+        return setMacroUse(db, { ...llm, image }, { start: 0x8104, end: 0x8106, macro: "skip" });
+      }, b),
+  );
+  assert.deepEqual(rules(read(root, conflicts)), ["patch", "macro", "macro-use"]);
+  withWrite((db) => mergeConflicts(db, llm, platform), root);
+  assert.deepEqual(read(root, conflicts), []);
+  assert.deepEqual(read(root, (db) => listPatches(db).map((row) => row.switch)), ["TRAINER"]);
+  assert.deepEqual(read(root, (db) => listMacros(db).map((row) => [row.name, row.body.split("\n").length])), [["inc16", 4], ["skip", 1]], "the newest inc16 stays");
+  assert.deepEqual(read(root, (db) => listMacroUses(db).map((row) => row.macro)), ["skip"]);
 });

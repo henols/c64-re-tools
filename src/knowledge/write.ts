@@ -12,12 +12,21 @@ import {
   COMMENT_COLUMNS,
   commentsAt,
   currentRevision,
+  listMacroUses,
   listOperands,
+  listPatches,
+  listText,
+  MACRO_COLUMNS,
+  MACRO_USE_COLUMNS,
+  macroNamed,
+  macroUsesOverlapping,
   MODULE_COLUMNS,
   moduleAt,
   moduleWithFile,
   OPERAND_COLUMNS,
   operandAt,
+  PATCH_COLUMNS,
+  patchesOverlapping,
   REFERENCE_COLUMNS,
   referencesFrom,
   REGION_COLUMNS,
@@ -29,15 +38,21 @@ import {
   symbolAt,
   symbolNamed,
   toComment,
+  toMacro,
+  toMacroUse,
   toModule,
   toOperand,
+  toPatch,
   toReference,
   toRegion,
   toSuppression,
   toSymbol,
   type CommentRow,
+  type MacroRow,
+  type MacroUseRow,
   type ModuleRow,
   type OperandRow,
+  type PatchRow,
   type ReferenceRow,
   type RegionRow,
   type SuppressionRow,
@@ -51,7 +66,10 @@ import {
   DEFAULT_SPACE,
   GENERATED_FILES,
   isGeneratedFile,
+  MACRO_NAME,
+  MACRO_PARAM,
   SPACE,
+  SWITCH_NAME,
   NO_ELEMENT_TYPES,
   OPERAND_SELECTS,
   POINTER_KIND,
@@ -85,11 +103,11 @@ export interface WriteContext {
   expectedRevision?: string;
   /** Kept with the revision when the write changes something. */
   evidence?: Evidence[];
-  /** The image that an operand write is checked against (D65). */
+  /** The image that an operand, patch or macro use write is checked against (D65, D72, D73). */
   image?: OperandImage;
 }
 
-/** The bytes of the image and the platform names (C64 space only) that operand expressions are checked against. */
+/** The bytes of the image and the platform names (C64 space only) that operand expressions, patches and macro uses are checked against. */
 export interface OperandImage {
   byteAt(address: number): number | undefined;
   platform: ReadonlyMap<string, number>;
@@ -105,6 +123,10 @@ export interface WriteResult<T, P = never> {
 
 export { SYMBOL_NAME };
 const MAX_COMMENT = 4000;
+/** The most characters of patch code and of a macro body. */
+const MAX_CODE = 8000;
+/** The most parameters of a macro. */
+const MAX_PARAMS = 16;
 const MAX_EVIDENCE_REF = 1000;
 
 export function checkAddress(value: number, what = "address"): void {
@@ -249,6 +271,24 @@ export class Change {
       .run(this.#rowId(), row.space, row.address, row.select, row.symbol ?? null, row.offset, row.expression ?? null, row.origin, this.id());
   }
 
+  insertPatch(row: Omit<PatchRow, "revision">): void {
+    this.#db
+      .prepare("INSERT INTO patches (id, space, start_address, end_address, switch_name, code, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.start, row.end, row.switch, row.code, row.comment ?? null, row.origin, this.id());
+  }
+
+  insertMacro(row: Omit<MacroRow, "revision">): void {
+    this.#db
+      .prepare("INSERT INTO macros (id, space, name, params, body, comment, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.name, listText(row.params), row.body, row.comment ?? null, row.origin, this.id());
+  }
+
+  insertMacroUse(row: Omit<MacroUseRow, "revision">): void {
+    this.#db
+      .prepare("INSERT INTO macro_uses (id, space, start_address, end_address, macro, args, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.start, row.end, row.macro, listText(row.args), row.origin, this.id());
+  }
+
   insertSuppression(row: Omit<SuppressionRow, "revision">): void {
     this.#db
       .prepare("INSERT INTO suppressions (id, space, entity, start_address, end_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -259,6 +299,7 @@ export class Change {
 /** A conflict in words: its rule, its space and the addresses of its rows. */
 function describe(conflict: Conflict): string {
   const place = (entry: ConflictRow) => {
+    if (entry.entity === "macro") return entry.row.name;
     const row = entry.row as { address?: number; start?: number; end?: number; from?: number };
     if (row.address !== undefined) return hex(row.address);
     if (row.from !== undefined && entry.entity === "reference") return hex(row.from);
@@ -346,9 +387,14 @@ function renameStep(db: DatabaseSync, change: Change, origin: Origin, request: S
   if (owner !== undefined && owner.address !== request.address) {
     throw new KnowledgeError("conflict", `The name ${request.name} already belongs to ${hex(owner.address)}. Rename or remove that symbol first.`);
   }
+  const [patch] = listPatches(db, undefined, request.name, undefined, space);
+  if (patch !== undefined) throw new KnowledgeError("conflict", `${request.name} is the switch of the patch at ${hex(patch.start)}-${hex(patch.end)}. Give the symbol another name.`);
   if (existing !== undefined) change.close("symbols", "space = ? AND address = ?", space, request.address);
   change.insertSymbol({ space, address: request.address, name: request.name, kind, origin });
-  if (existing !== undefined && existing.name !== request.name) renameInOperands(db, change, space, existing.name, request.name);
+  if (existing !== undefined && existing.name !== request.name) {
+    renameInOperands(db, change, space, existing.name, request.name);
+    renameInUses(db, change, space, existing.name, request.name);
+  }
   change.close("suppressions", "space = ? AND entity = 'symbol' AND start_address = ?", space, request.address);
   const current = symbolAt(db, request.address, space)!;
   return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
@@ -364,6 +410,10 @@ function removeSymbolStep(db: DatabaseSync, change: Change, origin: Origin, requ
       "conflict",
       `The operand expressions at ${users.map((row) => hex(row.address)).join(", ")} use ${existing.name}. Change or remove them first (unoperand), or rename the symbol.`,
     );
+  }
+  const uses = usesNaming(db, space, existing.name);
+  if (uses.length > 0) {
+    throw new KnowledgeError("conflict", `The macro uses at ${uses.map((row) => hex(row.start)).join(", ")} use ${existing.name}. Change or remove them first (unuse), or rename the symbol.`);
   }
   change.close("symbols", "space = ? AND address = ?", space, request.address);
   change.insertSuppression({ space, entity: "symbol", start: request.address, end: request.address, origin: origin as SuppressionRow["origin"] });
@@ -634,6 +684,222 @@ function unmoduleStep(db: DatabaseSync, change: Change, _origin: Origin, request
   return { current: null };
 }
 
+/**
+ * Refuses ACME text whose braces do not pair outside comments and strings:
+ * c64-source writes patch code and a macro body inside { }.
+ */
+function checkBraces(text: string, what: string): void {
+  let depth = 0;
+  for (const line of text.split("\n")) {
+    let quote: string | undefined;
+    for (let index = 0; index < line.length; index++) {
+      const character = line[index]!;
+      if (quote !== undefined) {
+        if (character === "\\") index++;
+        else if (character === quote) quote = undefined;
+        continue;
+      }
+      if (character === ";") break;
+      if (character === '"' || character === "'") quote = character;
+      else if (character === "{") depth++;
+      else if (character === "}" && --depth < 0) throw new KnowledgeError("invalid-input", `${what} has a } with no { before it.`);
+    }
+  }
+  if (depth !== 0) throw new KnowledgeError("invalid-input", `${what} has a { with no }.`);
+}
+
+function checkCommentText(comment: string | undefined, what: string): void {
+  if (comment !== undefined && (comment.trim().length === 0 || comment.length > MAX_COMMENT)) throw new KnowledgeError("invalid-input", `${what} has 1 to ${MAX_COMMENT} characters.`);
+}
+
+/** Refuses a range with a byte outside the image. */
+function checkInImage(image: OperandImage, start: number, end: number, what: string): void {
+  for (let address = start; address <= end; address++) {
+    if (image.byteAt(address) === undefined) throw new KnowledgeError("invalid-input", `${hex(address)} is outside the image: ${what} is a range of the image.`);
+  }
+}
+
+type PatchRequest = InSpace & { start: number; end: number; switch: string; code: string; comment?: string };
+
+function checkPatch(request: PatchRequest): void {
+  checkRange(request);
+  if (typeof request.switch !== "string" || !SWITCH_NAME.test(request.switch)) {
+    throw new KnowledgeError("invalid-input", "A switch name is an upper-case letter, then 1 to 31 upper-case letters, digits or underscores, for example CRACK.");
+  }
+  if (typeof request.code !== "string" || request.code.length > MAX_CODE) throw new KnowledgeError("invalid-input", `Patch code has at most ${MAX_CODE} characters; empty code fills the range with NOP.`);
+  checkBraces(request.code, "The patch code");
+  checkCommentText(request.comment, "A patch comment");
+}
+
+function patchStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: OperandImage }, request: PatchRequest): Step<PatchRow, PatchRow> {
+  const space = spaceOf(request);
+  const range = `${hex(request.start)}-${hex(request.end)}`;
+  if (context.image === undefined) throw new KnowledgeError("invalid-input", "A patch is checked against the image, and no image was given.");
+  checkInImage(context.image, request.start, request.end, "a patch");
+  const symbol = symbolNamed(db, request.switch, space);
+  if (symbol !== undefined) throw new KnowledgeError("conflict", `The switch name ${request.switch} is the name of the symbol at ${hex(symbol.address)}. Give the switch another name.`);
+  if (space === DEFAULT_SPACE && context.image.platform.has(request.switch)) throw new KnowledgeError("conflict", `The switch name ${request.switch} is a C64 platform name. Give the switch another name.`);
+  const other = patchesOverlapping(db, request.start, request.end, space).find((row) => row.start !== request.start);
+  if (other !== undefined) {
+    throw new KnowledgeError("conflict", `The patch ${range} overlaps the patch of ${other.switch} at ${hex(other.start)}-${hex(other.end)}. Change or remove that patch first (unpatch).`);
+  }
+  const [use] = macroUsesOverlapping(db, request.start, request.end, space);
+  if (use !== undefined) {
+    throw new KnowledgeError("conflict", `The patch ${range} overlaps the use of the macro ${use.macro} at ${hex(use.start)}-${hex(use.end)}. Remove that use first (unuse).`);
+  }
+  const existing = patchesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start);
+  const code = request.code.trimEnd();
+  // A patch write without a comment keeps the comment it has, as a module keeps its title.
+  const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
+  if (existing !== undefined && existing.end === request.end && existing.switch === request.switch && existing.code === code && existing.comment === comment) return { current: existing };
+  const origin = context.origin as PatchRow["origin"];
+  if (existing !== undefined) change.close("patches", "space = ? AND start_address = ?", space, request.start);
+  change.insertPatch({ space, start: request.start, end: request.end, switch: request.switch, code, ...(comment === undefined ? {} : { comment }), origin });
+  const current = patchesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start)!;
+  return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
+}
+
+function unpatchStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
+  const space = spaceOf(request);
+  if (!patchesOverlapping(db, request.start, request.start, space).some((row) => row.start === request.start)) throw new KnowledgeError("not-found", `No patch starts at ${hex(request.start)}.`);
+  change.close("patches", "space = ? AND start_address = ?", space, request.start);
+  return { current: null };
+}
+
+type MacroRequest = InSpace & { name: string; params?: string[]; body: string; comment?: string };
+
+function checkMacroName(name: unknown, what = "A macro name"): void {
+  if (typeof name !== "string" || !MACRO_NAME.test(name)) throw new KnowledgeError("invalid-input", `${what} is a letter or underscore, then at most 31 letters, digits or underscores.`);
+}
+
+function checkMacro(request: MacroRequest): void {
+  checkSpace(request);
+  checkMacroName(request.name);
+  const params = request.params ?? [];
+  if (!Array.isArray(params) || params.length > MAX_PARAMS) throw new KnowledgeError("invalid-input", `A macro has 0 to ${MAX_PARAMS} params.`);
+  for (const param of params) {
+    if (typeof param !== "string" || !MACRO_PARAM.test(param)) {
+      throw new KnowledgeError("invalid-input", "A macro param is a lower-case letter or underscore, then lower-case letters, digits or underscores, without a dot. The body names it with a dot: .dst.");
+    }
+  }
+  if (new Set(params).size !== params.length) throw new KnowledgeError("invalid-input", "The params of a macro have different names.");
+  if (typeof request.body !== "string" || request.body.trim().length === 0 || request.body.length > MAX_CODE) throw new KnowledgeError("invalid-input", `A macro body has 1 to ${MAX_CODE} characters.`);
+  checkBraces(request.body, "The macro body");
+  checkCommentText(request.comment, "A macro comment");
+}
+
+function macroStep(db: DatabaseSync, change: Change, origin: Origin, request: MacroRequest): Step<MacroRow, MacroRow> {
+  const space = spaceOf(request);
+  const existing = macroNamed(db, request.name, space);
+  const params = request.params ?? [];
+  const body = request.body.trimEnd();
+  const comment = request.comment === undefined ? existing?.comment : request.comment.trim();
+  if (existing !== undefined && listText(existing.params) === listText(params) && existing.body === body && existing.comment === comment) return { current: existing };
+  if (existing !== undefined && existing.params.length !== params.length) {
+    const uses = listMacroUses(db, undefined, request.name, undefined, space);
+    if (uses.length > 0) {
+      throw new KnowledgeError(
+        "conflict",
+        `The macro ${request.name} has ${existing.params.length} params, and its uses at ${uses.map((row) => hex(row.start)).join(", ")} give that many args. Remove the uses first (unuse), or keep the number of params.`,
+      );
+    }
+  }
+  if (existing !== undefined) change.close("macros", "space = ? AND name = ?", space, request.name);
+  change.insertMacro({ space, name: request.name, params, body, ...(comment === undefined ? {} : { comment }), origin: origin as MacroRow["origin"] });
+  const current = macroNamed(db, request.name, space)!;
+  return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
+}
+
+function unmacroStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { name: string }): Step<null> {
+  const space = spaceOf(request);
+  if (macroNamed(db, request.name, space) === undefined) throw new KnowledgeError("not-found", `There is no macro ${request.name}.`);
+  const uses = listMacroUses(db, undefined, request.name, undefined, space);
+  if (uses.length > 0) throw new KnowledgeError("conflict", `The macro ${request.name} has uses at ${uses.map((row) => hex(row.start)).join(", ")}. Remove them first (unuse).`);
+  change.close("macros", "space = ? AND name = ?", space, request.name);
+  return { current: null };
+}
+
+type MacroUseRequest = InSpace & { start: number; end: number; macro: string; args?: string[] };
+
+function checkMacroUse(request: MacroUseRequest): void {
+  checkRange(request);
+  checkMacroName(request.macro, "The macro of a use");
+  const args = request.args ?? [];
+  if (!Array.isArray(args) || args.length > MAX_PARAMS) throw new KnowledgeError("invalid-input", `A macro use has 0 to ${MAX_PARAMS} args.`);
+  for (const arg of args) {
+    if (typeof arg !== "string") throw new KnowledgeError("invalid-input", "Each arg of a macro use is expression text.");
+    try {
+      checkExpression(arg);
+    } catch (error) {
+      if (error instanceof ExpressionError) throw new KnowledgeError("invalid-input", error.message);
+      throw error;
+    }
+  }
+}
+
+/** Current macro uses that name a symbol in an arg. */
+function usesNaming(db: DatabaseSync, space: Space, name: string): MacroUseRow[] {
+  return listMacroUses(db, undefined, undefined, undefined, space).filter((row) => row.args.some((arg) => identifiers(arg).includes(name)));
+}
+
+/** A rename of a symbol renames it in the args of every macro use; the rows keep their origin. */
+function renameInUses(db: DatabaseSync, change: Change, space: Space, from: string, to: string): void {
+  for (const row of usesNaming(db, space, from)) {
+    change.close("macro_uses", "space = ? AND start_address = ?", space, row.start);
+    change.insertMacroUse({ ...row, args: row.args.map((arg) => replaceIdentifiers(arg, (name) => (name === from ? to : name))) });
+  }
+}
+
+function useStep(db: DatabaseSync, change: Change, context: ChangeContext & { image?: OperandImage }, request: MacroUseRequest): Step<MacroUseRow, MacroUseRow> {
+  const space = spaceOf(request);
+  const image = context.image;
+  const range = `${hex(request.start)}-${hex(request.end)}`;
+  if (image === undefined) throw new KnowledgeError("invalid-input", "A macro use is checked against the image, and no image was given.");
+  const macro = macroNamed(db, request.macro, space);
+  if (macro === undefined) throw new KnowledgeError("not-found", `There is no macro ${request.macro}. Write it first (macro).`);
+  const args = (request.args ?? []).map((arg) => arg.trim());
+  if (args.length !== macro.params.length) {
+    throw new KnowledgeError("invalid-input", `The macro ${macro.name} has ${macro.params.length} params (${listText(macro.params)}), and the use gives ${args.length} args.`);
+  }
+  const resolve = (name: string) => symbolNamed(db, name, space)?.address ?? (space === DEFAULT_SPACE ? image.platform.get(name) : undefined);
+  for (const arg of args) {
+    try {
+      evaluate(arg, resolve);
+    } catch (error) {
+      if (error instanceof ExpressionError) throw new KnowledgeError("invalid-input", `${range}: ${error.message}`);
+      throw error;
+    }
+  }
+  checkInImage(image, request.start, request.end, "a macro use");
+  let next = request.start;
+  while (next <= request.end) next += instructionLength(image.byteAt(next)!);
+  if (next !== request.end + 1) {
+    throw new KnowledgeError("invalid-input", `A macro use is a run of whole instructions, but the instructions from ${hex(request.start)} end at ${hex(next - 1)}, not at ${hex(request.end)}.`);
+  }
+  const [patch] = patchesOverlapping(db, request.start, request.end, space);
+  if (patch !== undefined) {
+    throw new KnowledgeError("conflict", `The macro use ${range} overlaps the patch of ${patch.switch} at ${hex(patch.start)}-${hex(patch.end)}. Change or remove that patch first (unpatch).`);
+  }
+  const other = macroUsesOverlapping(db, request.start, request.end, space).find((row) => row.start !== request.start);
+  if (other !== undefined) {
+    throw new KnowledgeError("conflict", `The macro use ${range} overlaps the use of ${other.macro} at ${hex(other.start)}-${hex(other.end)}. Remove that use first (unuse).`);
+  }
+  const existing = macroUsesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start);
+  if (existing !== undefined && existing.end === request.end && existing.macro === request.macro && listText(existing.args) === listText(args)) return { current: existing };
+  const origin = context.origin as MacroUseRow["origin"];
+  if (existing !== undefined) change.close("macro_uses", "space = ? AND start_address = ?", space, request.start);
+  change.insertMacroUse({ space, start: request.start, end: request.end, macro: request.macro, args, origin });
+  const current = macroUsesOverlapping(db, request.start, request.start, space).find((row) => row.start === request.start)!;
+  return existing !== undefined && existing.origin !== origin ? { current, previous: existing } : { current };
+}
+
+function unuseStep(db: DatabaseSync, change: Change, _origin: Origin, request: InSpace & { start: number }): Step<null> {
+  const space = spaceOf(request);
+  if (!macroUsesOverlapping(db, request.start, request.start, space).some((row) => row.start === request.start)) throw new KnowledgeError("not-found", `No macro use starts at ${hex(request.start)}.`);
+  change.close("macro_uses", "space = ? AND start_address = ?", space, request.start);
+  return { current: null };
+}
+
 /** Names the symbol at an address (one current symbol per address, unique names). */
 export function renameSymbol(db: DatabaseSync, context: WriteContext, request: SymbolRequest): WriteResult<SymbolRow, SymbolRow> {
   checkSymbol(request);
@@ -705,6 +971,46 @@ export function removeOperand(db: DatabaseSync, context: WriteContext, request: 
   return result(write(db, context, "remove-operand", (change) => unoperandStep(db, change, context.origin, request)));
 }
 
+/**
+ * Writes code that replaces [start, end] when the build defines the switch
+ * (D72), after a check that the range is in the image and overlaps no other
+ * patch or macro use.
+ */
+export function setPatch(db: DatabaseSync, context: WriteContext, request: PatchRequest): WriteResult<PatchRow, PatchRow> {
+  checkPatch(request);
+  return result(write(db, context, "set-patch", (change) => patchStep(db, change, context, request)));
+}
+
+export function removePatch(db: DatabaseSync, context: WriteContext, request: InSpace & { start: number }): WriteResult<null> {
+  checkSpace(request);
+  checkAddress(request.start, "start");
+  return result(write(db, context, "remove-patch", (change) => unpatchStep(db, change, context.origin, request)));
+}
+
+/** Writes a macro of the generated source (D73). */
+export function setMacro(db: DatabaseSync, context: WriteContext, request: MacroRequest): WriteResult<MacroRow, MacroRow> {
+  checkMacro(request);
+  return result(write(db, context, "set-macro", (change) => macroStep(db, change, context.origin, request)));
+}
+
+export function removeMacro(db: DatabaseSync, context: WriteContext, request: InSpace & { name: string }): WriteResult<null> {
+  checkSpace(request);
+  checkMacroName(request.name);
+  return result(write(db, context, "remove-macro", (change) => unmacroStep(db, change, context.origin, request)));
+}
+
+/** Writes the instructions in [start, end] as one use of a macro (D73), after a check against the image. */
+export function setMacroUse(db: DatabaseSync, context: WriteContext, request: MacroUseRequest): WriteResult<MacroUseRow, MacroUseRow> {
+  checkMacroUse(request);
+  return result(write(db, context, "set-macro-use", (change) => useStep(db, change, context, request)));
+}
+
+export function removeMacroUse(db: DatabaseSync, context: WriteContext, request: InSpace & { start: number }): WriteResult<null> {
+  checkSpace(request);
+  checkAddress(request.start, "start");
+  return result(write(db, context, "remove-macro-use", (change) => unuseStep(db, change, context.origin, request)));
+}
+
 /** One write of a batch (D42), named as the command that does it alone. */
 export type BatchOperation =
   | ({ op: "rename" } & SymbolRequest)
@@ -718,12 +1024,21 @@ export type BatchOperation =
   | ({ op: "module" } & ModuleRequest)
   | ({ op: "unmodule" } & InSpace & { start: number })
   | ({ op: "operand" } & OperandRequest)
-  | ({ op: "unoperand" } & AddressRequest);
+  | ({ op: "unoperand" } & AddressRequest)
+  | ({ op: "patch" } & PatchRequest)
+  | ({ op: "unpatch" } & InSpace & { start: number })
+  | ({ op: "macro" } & MacroRequest)
+  | ({ op: "unmacro" } & InSpace & { name: string })
+  | ({ op: "use" } & MacroUseRequest)
+  | ({ op: "unuse" } & InSpace & { start: number });
 
 export const MAX_BATCH = 10_000;
 
 /** The result of each write of a batch, in order. */
-export type BatchStep = Step<SymbolRow | RegionRow[] | CommentRow | ReferenceRow | ModuleRow | OperandRow | null, SymbolRow | RegionRow[] | OperandRow>;
+export type BatchStep = Step<
+  SymbolRow | RegionRow[] | CommentRow | ReferenceRow | ModuleRow | OperandRow | PatchRow | MacroRow | MacroUseRow | null,
+  SymbolRow | RegionRow[] | OperandRow | PatchRow | MacroRow | MacroUseRow
+>;
 
 /**
  * Applies many writes as one revision in one transaction (D42): all of them,
@@ -760,8 +1075,24 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
         case "unoperand":
           checkSpace(operation);
           return checkAddress(operation.address);
+        case "patch":
+          return checkPatch(operation);
+        case "unpatch":
+        case "unuse":
+          checkSpace(operation);
+          return checkAddress(operation.start, "start");
+        case "macro":
+          return checkMacro(operation);
+        case "unmacro":
+          checkSpace(operation);
+          return checkMacroName(operation.name);
+        case "use":
+          return checkMacroUse(operation);
         default:
-          throw new KnowledgeError("invalid-input", `op must be one of rename, remove-symbol, classify, unclassify, comment, uncomment, reference, unreference, module, unmodule, operand, unoperand.`);
+          throw new KnowledgeError(
+            "invalid-input",
+            `op must be one of rename, remove-symbol, classify, unclassify, comment, uncomment, reference, unreference, module, unmodule, operand, unoperand, patch, unpatch, macro, unmacro, use, unuse.`,
+          );
       }
     } catch (error) {
       if (error instanceof KnowledgeError) throw new KnowledgeError(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
@@ -796,6 +1127,18 @@ export function applyBatch(db: DatabaseSync, context: WriteContext, operations: 
             return operandStep(db, change, context, operation);
           case "unoperand":
             return unoperandStep(db, change, context.origin, operation);
+          case "patch":
+            return patchStep(db, change, context, operation);
+          case "unpatch":
+            return unpatchStep(db, change, context.origin, operation);
+          case "macro":
+            return macroStep(db, change, context.origin, operation);
+          case "unmacro":
+            return unmacroStep(db, change, context.origin, operation);
+          case "use":
+            return useStep(db, change, context, operation);
+          case "unuse":
+            return unuseStep(db, change, context.origin, operation);
         }
       } catch (error) {
         if (error instanceof KnowledgeError) throw new KnowledgeError(error.code, `Write ${index + 1}: ${error.message} Nothing was written.`);
@@ -818,6 +1161,13 @@ const KEYS = {
     map: toOperand,
     key: (row: OperandRow) => `${row.space}|${row.address}|${row.select}|${row.symbol ?? ""}|${row.offset}|${row.expression ?? ""}|${row.origin}`,
   },
+  patches: {
+    columns: PATCH_COLUMNS,
+    map: toPatch,
+    key: (row: PatchRow) => `${row.space}|${row.start}|${row.end}|${row.switch}|${row.code}|${row.comment ?? ""}|${row.origin}`,
+  },
+  macros: { columns: MACRO_COLUMNS, map: toMacro, key: (row: MacroRow) => `${row.space}|${row.name}|${listText(row.params)}|${row.body}|${row.comment ?? ""}|${row.origin}` },
+  macro_uses: { columns: MACRO_USE_COLUMNS, map: toMacroUse, key: (row: MacroUseRow) => `${row.space}|${row.start}|${row.end}|${row.macro}|${listText(row.args)}|${row.origin}` },
   suppressions: {
     columns: SUPPRESSION_COLUMNS,
     map: toSuppression,
@@ -854,6 +1204,18 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         }
         if (table === "operands") {
           change.insertOperand(spec.map(row as never) as OperandRow);
+          continue;
+        }
+        if (table === "patches") {
+          change.insertPatch(spec.map(row as never) as PatchRow);
+          continue;
+        }
+        if (table === "macros") {
+          change.insertMacro(spec.map(row as never) as MacroRow);
+          continue;
+        }
+        if (table === "macro_uses") {
+          change.insertMacroUse(spec.map(row as never) as MacroUseRow);
           continue;
         }
         const mapped = spec.map(row as never) as SymbolRow & RegionRow & CommentRow & ReferenceRow;

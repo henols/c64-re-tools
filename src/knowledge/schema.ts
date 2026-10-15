@@ -50,8 +50,14 @@ export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 
 /** A module file of the generated source (D48): a plain name that ends in .asm, no directory. */
 export const MODULE_FILE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}\.asm$/;
+/** A switch of the generated source (D72): upper case, so it reads as a build option and not as a label. */
+export const SWITCH_NAME = /^[A-Z][A-Z0-9_]{1,31}$/;
+/** A macro name and a macro parameter (D73). The body names a parameter with a dot in front: .dst. */
+export const MACRO_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,31}$/;
+export const MACRO_PARAM = /^[a-z_][a-z0-9_]{0,31}$/;
+
 /** Files that c64-source writes itself: no module can have these names. */
-export const GENERATED_FILES = ["main.asm", "loader.asm", "constants.asm"] as const;
+export const GENERATED_FILES = ["main.asm", "loader.asm", "constants.asm", "macros.asm"] as const;
 
 /** True for a generated file name in any letter case: the file systems of macOS and Windows ignore case. */
 export function isGeneratedFile(file: string): boolean {
@@ -193,6 +199,43 @@ function createSchema(db: DatabaseSync): void {
       );
       CREATE INDEX operands_current ON operands (space, address) WHERE valid_to_revision IS NULL;
       CREATE INDEX operands_address ON operands (space, address);
+      CREATE TABLE patches (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
+        end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
+        switch_name         TEXT NOT NULL CHECK (length(switch_name) > 0),
+        code                TEXT NOT NULL,
+        comment             TEXT CHECK (comment IS NULL OR length(comment) > 0),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
+      CREATE INDEX patches_start ON patches (space, start_address);
+      CREATE TABLE macros (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        name                TEXT NOT NULL CHECK (length(name) > 0),
+        params              TEXT NOT NULL,
+        body                TEXT NOT NULL CHECK (length(body) > 0),
+        comment             TEXT CHECK (comment IS NULL OR length(comment) > 0),
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
+      CREATE INDEX macros_name ON macros (space, name);
+      CREATE TABLE macro_uses (
+        id                  TEXT PRIMARY KEY,
+        space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
+        start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
+        end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
+        macro               TEXT NOT NULL CHECK (length(macro) > 0),
+        args                TEXT NOT NULL,
+        origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
+      );
+      CREATE INDEX macro_uses_start ON macro_uses (space, start_address);
       CREATE VIEW current_symbols AS SELECT * FROM symbols WHERE valid_to_revision IS NULL;
       CREATE VIEW current_regions AS SELECT * FROM regions WHERE valid_to_revision IS NULL;
       CREATE VIEW current_comments AS SELECT * FROM comments WHERE valid_to_revision IS NULL;
@@ -200,11 +243,14 @@ function createSchema(db: DatabaseSync): void {
       CREATE VIEW current_suppressions AS SELECT * FROM suppressions WHERE valid_to_revision IS NULL;
       CREATE VIEW current_modules AS SELECT * FROM modules WHERE valid_to_revision IS NULL;
       CREATE VIEW current_operands AS SELECT * FROM operands WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_patches AS SELECT * FROM patches WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_macros AS SELECT * FROM macros WHERE valid_to_revision IS NULL;
+      CREATE VIEW current_macro_uses AS SELECT * FROM macro_uses WHERE valid_to_revision IS NULL;
     `);
 }
 
 /** The version of the index this build makes. An index with another version is emptied and made again. */
-export const INDEX_VERSION = 1;
+export const INDEX_VERSION = 2;
 
 function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();

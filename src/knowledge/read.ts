@@ -84,6 +84,47 @@ export interface OperandRow {
   revision: string;
 }
 
+/**
+ * Code that replaces [start, end] when the build defines the switch as 1
+ * (D72). The code fits the range; NOP fills the rest. Empty code is only NOP.
+ */
+export interface PatchRow {
+  space: Space;
+  start: number;
+  end: number;
+  switch: string;
+  code: string;
+  comment?: string;
+  origin: Extract<Origin, "user" | "llm">;
+  revision: string;
+}
+
+/** An ACME macro of the generated source (D73). The body names a parameter with a dot in front: .dst. */
+export interface MacroRow {
+  space: Space;
+  name: string;
+  params: string[];
+  body: string;
+  comment?: string;
+  origin: Extract<Origin, "user" | "llm">;
+  revision: string;
+}
+
+/** The instructions in [start, end] written as one use of a macro, with one expression for each parameter (D73). */
+export interface MacroUseRow {
+  space: Space;
+  start: number;
+  end: number;
+  macro: string;
+  args: string[];
+  origin: Extract<Origin, "user" | "llm">;
+  revision: string;
+}
+
+/** A list of params or args as the knowledge stores it: the items with ", " between them. */
+export const listText = (items: readonly string[]) => items.join(", ");
+const items = (text: string) => (text.trim() === "" ? [] : text.split(",").map((item) => item.trim()));
+
 type Raw = Record<string, unknown>;
 
 export const SYMBOL_COLUMNS = "space, address, name, kind, origin, valid_from_revision";
@@ -93,6 +134,9 @@ export const REFERENCE_COLUMNS = "space, from_address, to_address, kind, origin,
 export const SUPPRESSION_COLUMNS = "space, entity, start_address, end_address, to_address, kind, origin, valid_from_revision";
 export const MODULE_COLUMNS = "space, start_address, file, title, origin, valid_from_revision";
 export const OPERAND_COLUMNS = "space, address, selector, symbol, offset, expression, origin, valid_from_revision";
+export const PATCH_COLUMNS = "space, start_address, end_address, switch_name, code, comment, origin, valid_from_revision";
+export const MACRO_COLUMNS = "space, name, params, body, comment, origin, valid_from_revision";
+export const MACRO_USE_COLUMNS = "space, start_address, end_address, macro, args, origin, valid_from_revision";
 
 export function toSymbol(row: Raw): SymbolRow {
   return { space: row.space as Space, address: row.address as number, name: row.name as string, kind: row.kind as SymbolKind, origin: row.origin as Origin, revision: row.valid_from_revision as string };
@@ -158,6 +202,38 @@ export function toOperand(row: Raw): OperandRow {
   if (row.symbol !== null && row.symbol !== undefined) operand.symbol = row.symbol as string;
   if (row.expression !== null && row.expression !== undefined) operand.expression = row.expression as string;
   return operand;
+}
+
+export function toPatch(row: Raw): PatchRow {
+  const patch: PatchRow = {
+    space: row.space as Space,
+    start: row.start_address as number,
+    end: row.end_address as number,
+    switch: row.switch_name as string,
+    code: row.code as string,
+    origin: row.origin as PatchRow["origin"],
+    revision: row.valid_from_revision as string,
+  };
+  if (row.comment !== null && row.comment !== undefined) patch.comment = row.comment as string;
+  return patch;
+}
+
+export function toMacro(row: Raw): MacroRow {
+  const macro: MacroRow = { space: row.space as Space, name: row.name as string, params: items(row.params as string), body: row.body as string, origin: row.origin as MacroRow["origin"], revision: row.valid_from_revision as string };
+  if (row.comment !== null && row.comment !== undefined) macro.comment = row.comment as string;
+  return macro;
+}
+
+export function toMacroUse(row: Raw): MacroUseRow {
+  return {
+    space: row.space as Space,
+    start: row.start_address as number,
+    end: row.end_address as number,
+    macro: row.macro as string,
+    args: items(row.args as string),
+    origin: row.origin as MacroUseRow["origin"],
+    revision: row.valid_from_revision as string,
+  };
 }
 
 /** The id of the newest revision, or "0" when the knowledge has none (D69). */
@@ -271,6 +347,29 @@ export function operandAt(db: DatabaseSync | undefined, address: number, space: 
   return row === undefined ? undefined : toOperand(row);
 }
 
+/** Current patches that share at least one address with [start, end], in address order. */
+export function patchesOverlapping(db: DatabaseSync | undefined, start: number, end: number, space: Space = DEFAULT_SPACE): PatchRow[] {
+  if (db === undefined) return [];
+  return db
+    .prepare(`SELECT ${PATCH_COLUMNS} FROM current_patches WHERE space = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address`)
+    .all(space, end, start)
+    .map((row) => toPatch(row as Raw));
+}
+
+/** Current macro uses that share at least one address with [start, end], in address order. */
+export function macroUsesOverlapping(db: DatabaseSync | undefined, start: number, end: number, space: Space = DEFAULT_SPACE): MacroUseRow[] {
+  if (db === undefined) return [];
+  return db
+    .prepare(`SELECT ${MACRO_USE_COLUMNS} FROM current_macro_uses WHERE space = ? AND start_address <= ? AND end_address >= ? ORDER BY start_address`)
+    .all(space, end, start)
+    .map((row) => toMacroUse(row as Raw));
+}
+
+export function macroNamed(db: DatabaseSync | undefined, name: string, space: Space = DEFAULT_SPACE): MacroRow | undefined {
+  const row = db?.prepare(`SELECT ${MACRO_COLUMNS} FROM current_macros WHERE space = ? AND name = ?`).get(space, name) as Raw | undefined;
+  return row === undefined ? undefined : toMacro(row);
+}
+
 /** Everything currently known at one address: the main lookup for skills. */
 export interface AddressKnowledge {
   space: Space;
@@ -283,6 +382,10 @@ export interface AddressKnowledge {
   referencesTo: ReferenceRow[];
   /** How the operand of the instruction here is written (D65). */
   operand?: OperandRow;
+  /** The patch whose range holds the address (D72). */
+  patch?: PatchRow;
+  /** The macro use whose range holds the address (D73). */
+  macroUse?: MacroUseRow;
   /** What user/LLM removals block here for the analyzers. */
   suppressions: SuppressionRow[];
   revision: string;
@@ -304,6 +407,10 @@ export function at(db: DatabaseSync | undefined, address: number, space: Space =
   if (region !== undefined) result.region = region;
   const operand = operandAt(db, address, space);
   if (operand !== undefined) result.operand = operand;
+  const [patch] = patchesOverlapping(db, address, address, space);
+  if (patch !== undefined) result.patch = patch;
+  const [macroUse] = macroUsesOverlapping(db, address, address, space);
+  if (macroUse !== undefined) result.macroUse = macroUse;
   return result;
 }
 
@@ -384,12 +491,32 @@ export function listOperands(db: DatabaseSync | undefined, range: Range = ALL, o
     .filter(kept(origins));
 }
 
+/** Current patches that share an address with the range, of one switch or of all, in address order. */
+export function listPatches(db: DatabaseSync | undefined, range: Range = ALL, switchName?: string, origins?: OriginFilter, space: Space = DEFAULT_SPACE): PatchRow[] {
+  return patchesOverlapping(db, range.start, range.end, space).filter((patch) => (switchName === undefined || patch.switch === switchName) && kept(origins)(patch));
+}
+
+/** Current macros, by name. */
+export function listMacros(db: DatabaseSync | undefined, origins?: OriginFilter, space: Space = DEFAULT_SPACE): MacroRow[] {
+  if (db === undefined) return [];
+  return db
+    .prepare(`SELECT ${MACRO_COLUMNS} FROM current_macros WHERE space = ? ORDER BY name`)
+    .all(space)
+    .map((row) => toMacro(row as Raw))
+    .filter(kept(origins));
+}
+
+/** Current macro uses that share an address with the range, of one macro or of all, in address order. */
+export function listMacroUses(db: DatabaseSync | undefined, range: Range = ALL, macro?: string, origins?: OriginFilter, space: Space = DEFAULT_SPACE): MacroUseRow[] {
+  return macroUsesOverlapping(db, range.start, range.end, space).filter((use) => (macro === undefined || use.macro === macro) && kept(origins)(use));
+}
+
 /** The spaces that hold current knowledge, the C64 first. */
 export function listSpaces(db: DatabaseSync | undefined): Space[] {
   if (db === undefined) return [];
   const rows = db
     .prepare(
-      `SELECT space FROM current_symbols UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands`,
+      `SELECT space FROM current_symbols UNION SELECT space FROM current_regions UNION SELECT space FROM current_comments UNION SELECT space FROM current_references UNION SELECT space FROM current_suppressions UNION SELECT space FROM current_modules UNION SELECT space FROM current_operands UNION SELECT space FROM current_patches UNION SELECT space FROM current_macros UNION SELECT space FROM current_macro_uses`,
     )
     .all() as Array<{ space: Space }>;
   const order = (space: Space) => (space === "c64" ? -2 : space === "drive8" ? -1 : Number(space.slice(4)));

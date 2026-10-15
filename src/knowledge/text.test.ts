@@ -35,7 +35,8 @@ function allText(db: DatabaseSync): Map<string, { text: string }> {
   return files;
 }
 
-const image = { byteAt: (address: number) => new Map([[0x8079, 0xa9], [0x807a, 0xc0]]).get(address), platform: new Map<string, number>() };
+/** $8079 LDA #$c0; $8100 INC $fb, BNE +2, INC $fc. */
+const image = { byteAt: (address: number) => new Map([[0x8079, 0xa9], [0x807a, 0xc0], [0x8100, 0xe6], [0x8101, 0xfb], [0x8102, 0xd0], [0x8103, 0x02], [0x8104, 0xe6], [0x8105, 0xfc]]).get(address), platform: new Map<string, number>() };
 
 /** A project with a row in every table and a revision with evidence. */
 function fullProject(): { folder: string; db: DatabaseSync } {
@@ -50,7 +51,12 @@ function fullProject(): { folder: string; db: DatabaseSync } {
     { op: "reference", from: 0x8000, to: 0x80c0, kind: "call" },
     { op: "module", start: 0x8000, file: "main_loop.asm", title: "Main loop" },
   ]);
-  applyBatch(db, { origin: "user", image }, [{ op: "operand", address: 0x8079, select: "lo", symbol: "irq_handler" }]);
+  applyBatch(db, { origin: "user", image }, [
+    { op: "operand", address: 0x8079, select: "lo", symbol: "irq_handler" },
+    { op: "patch", start: 0x8079, end: 0x807a, switch: "CRACK", code: "lda #0", comment: "No check." },
+    { op: "macro", name: "inc16", params: ["dst"], body: "inc .dst\nbne +\ninc .dst+1\n+" },
+    { op: "use", start: 0x8100, end: 0x8105, macro: "inc16", args: ["$fb"] },
+  ]);
   unclassifyRegion(db, { origin: "user" }, { start: 0x9000, end: 0x900f });
   renameSymbol(db, { origin: "user" }, { address: 0x80c0, name: "raster_irq" });
   return { folder, db };
