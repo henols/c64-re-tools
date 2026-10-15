@@ -69,6 +69,7 @@ test("VICE arguments put -default before -binarymonitor and fix the profile", ()
   });
   assert.equal(pal[pal.indexOf("-logfile") + 1], "/s/vice.log");
   assert.equal(pal[0], "/usr/bin/x64sc");
+  assert.deepEqual(pal.slice(1, 3), ["-config", "/s/vicerc"], "VICE's trunk drops the arguments before -config");
   assert.ok(pal.indexOf("-default") < pal.indexOf("-binarymonitor"));
   assert.equal(pal[pal.indexOf("-binarymonitoraddress") + 1], "ip4://127.0.0.1:6510");
   assert.ok(pal.indexOf("-default") < pal.indexOf("-remotemonitor"));

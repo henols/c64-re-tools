@@ -1,5 +1,7 @@
 // VICE launch, readiness and termination. The launch contract of x64sc:
 // - `-default` must come before `-binarymonitor`, or the monitor never binds;
+// - `-config` must come first: VICE's trunk (after 3.10) drops every argument
+//   before it, so the monitors would never start;
 // - the monitor may accept a connection during startup and then drop it, so
 //   readiness is a connect plus a successful ping, retried until a deadline;
 // - any monitor command stops the machine, so readiness ends with `exit`;
@@ -76,6 +78,9 @@ export function viceArguments(options: {
   const headless = options.mode === "headless" ? ["-console", "-sounddev", "dummy"] : [];
   return [
     options.binary,
+    // VICE's trunk (after 3.10) drops every argument before -config, so it comes first.
+    "-config",
+    options.configFile,
     "-default",
     "-logfile",
     options.logFile,
@@ -85,8 +90,6 @@ export function viceArguments(options: {
     "-remotemonitor",
     "-remotemonitoraddress",
     `ip4://127.0.0.1:${options.textPort}`,
-    "-config",
-    options.configFile,
     "-model",
     options.videoStandard === "ntsc" ? "ntsc" : "c64",
     "-drive8type",
