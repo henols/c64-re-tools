@@ -33,6 +33,7 @@ One repository can hold several programs, with one project folder for each progr
 - From the root of the repository, give `--project <folder>` to each skill script, and `project` to each emulator tool with a path.
 - Write all files in the project folder. Do not write files at the root of the repository.
 - Keep the results, batches and step files that you save for yourself in `.c64-re-tools/local/` of the project. Git ignores that folder.
+- Write the knowledge only with the c64-knowledge script. Do not write or edit the files in `.c64-re-tools/knowledge/` yourself.
 
 ## Workflow
 

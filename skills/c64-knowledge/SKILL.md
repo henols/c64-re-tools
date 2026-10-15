@@ -9,7 +9,7 @@ description: Use this skill to read, write, correct and review the durable knowl
 
 Read, write, correct and review the durable understanding of a C64 project. The knowledge is text in `.c64-re-tools/knowledge/` in the project folder: one JSON line for each row. Commit that folder with git. The script keeps an index of the text in `.c64-re-tools/local/knowledge.db` and makes the index again when the text changes. Do not commit the index.
 
-This skill is the only write path for conclusions of the user and the LLM. It does not run an emulator or an analyzer.
+This skill is the only write path for conclusions of the user and the LLM. It does not run an emulator or an analyzer. Write the knowledge only with the script. The script checks each write. Do not write or edit the files in `.c64-re-tools/knowledge/` or the index yourself.
 
 ## Inputs
 
