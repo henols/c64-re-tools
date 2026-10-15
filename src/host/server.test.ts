@@ -75,7 +75,7 @@ function stubFactory(log: StubLog, overrides: Partial<ViceSessionHandle> = {}): 
     log.started.push({ videoStandard });
     return {
       async handle(op, params) {
-        if (op === "status") return { state: "running", videoStandard, warp: false, window: false } as never;
+        if (op === "status") return { state: "running", videoStandard, warp: false, window: false, cartridge: false } as never;
         if (op === "memoryRead") return { address: (params as { address: number }).address, data: "00" } as never;
         throw new WireFailure("unsupported-in-space", "stub");
       },
@@ -177,7 +177,7 @@ test("requests are dispatched to the session and replies carry their id", async 
   client.send(hello);
   await client.next();
   client.send({ type: "request", id: 41, op: "status", params: {} });
-  assert.deepEqual(await client.next(), { type: "reply", id: 41, result: { state: "running", videoStandard: "pal", warp: false, window: false } });
+  assert.deepEqual(await client.next(), { type: "reply", id: 41, result: { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false } });
   client.send({ type: "request", id: 42, op: "registersGet", params: { space: "drive8" } });
   assert.deepEqual(await client.next(), {
     type: "reply",
@@ -489,7 +489,7 @@ test("with C64RT_TRACE every connection and request leaves a trace line with the
     assert.equal(ok.id, 1);
     assert.equal(ok.ok, true);
     assert.equal(typeof ok.ms, "number");
-    assert.deepEqual(ok.result, { state: "running", videoStandard: "pal", warp: false, window: false });
+    assert.deepEqual(ok.result, { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false });
     assert.equal(failed.op, "registersGet");
     assert.equal(failed.ok, false);
     assert.equal(failed.code, "unsupported-in-space");

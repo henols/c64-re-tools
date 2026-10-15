@@ -168,9 +168,12 @@ test("operation results are validated on the client", () => {
   assert.throws(() => validateViceResult("breakpoint", { ...point, condition: { kind: "register", register: "q" } }), ProtocolError);
   assert.deepEqual(validateViceResult("reset", { state: "stopped", pc: 0xfce2 }), { state: "stopped", pc: 0xfce2 });
   assert.throws(() => validateViceResult("reset", { state: "stopped", pc: 0x10000 }), ProtocolError);
-  const status = { state: "running", videoStandard: "pal", warp: false, window: false };
+  const status = { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false };
   assert.deepEqual(validateViceResult("status", status), status);
   assert.throws(() => validateViceResult("status", { ...status, state: "unknown" }), ProtocolError);
+  // cartridge is always given, so a missing field is an older host (D64).
+  const { cartridge: _, ...older } = status;
+  assert.throws(() => validateViceResult("status", older), ProtocolError);
 });
 
 test("write parameters are validated with invalid-input", () => {

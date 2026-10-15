@@ -507,8 +507,7 @@ export class ViceSession implements ViceSessionHandle {
   async #status(): Promise<MachineStatus> {
     const warp = await this.#observe(() => this.#machine.warp());
     // Read after #observe: it resumes a running machine, unless a breakpoint or a JAM stopped it meanwhile.
-    const status: MachineStatus = { state: this.#state, videoStandard: this.#videoStandard, warp, window: this.#mode === "window" };
-    if (this.#cartridge) status.cartridge = true;
+    const status: MachineStatus = { state: this.#state, videoStandard: this.#videoStandard, warp, window: this.#mode === "window", cartridge: this.#cartridge };
     if (status.state === "stopped") status.pc = await this.#pc();
     return status;
   }

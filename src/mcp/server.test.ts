@@ -68,8 +68,8 @@ class FakeSession implements ViceSessionApi {
   async status() {
     if (this.failure) throw this.failure;
     return this.stopped
-      ? { state: "stopped" as const, videoStandard: "pal" as const, warp: false, window: false, pc: 0x2a }
-      : { state: "running" as const, videoStandard: "pal" as const, warp: false, window: false };
+      ? { state: "stopped" as const, videoStandard: "pal" as const, warp: false, window: false, cartridge: false, pc: 0x2a }
+      : { state: "running" as const, videoStandard: "pal" as const, warp: false, window: false, cartridge: false };
   }
 
   async memoryRead(params: MemoryReadParams) {
@@ -355,10 +355,10 @@ test("c64_status returns the domain result directly, with pc only when stopped",
   const session = new FakeSession();
   const client = await connect(async () => session);
   const running = await call(client, "c64_status");
-  assert.deepEqual(running.structuredContent, { state: "running", videoStandard: "pal", warp: false, window: false });
+  assert.deepEqual(running.structuredContent, { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false });
   assert.deepEqual(JSON.parse((running.content[0] as { text: string }).text), running.structuredContent);
   session.stopped = true;
-  assert.deepEqual((await call(client, "c64_status")).structuredContent, { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: "$002a" });
+  assert.deepEqual((await call(client, "c64_status")).structuredContent, { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: "$002a" });
   await client.close();
 });
 
@@ -451,7 +451,7 @@ test("a result goes out in its output schema: an extra key is removed, and a res
   const opened = await call(client, "c64_window", { action: "open" });
   assert.deepEqual(opened.structuredContent, { window: true, state: "running", notCarried: [] });
   assert.doesNotMatch((opened.content[0] as { text: string }).text, /hostPid|4242/);
-  session.status = async () => ({ state: "dancing", videoStandard: "pal", warp: false, window: false }) as never;
+  session.status = async () => ({ state: "dancing", videoStandard: "pal", warp: false, window: false, cartridge: false }) as never;
   const error = errorOf(await call(client, "c64_status"));
   assert.equal(error.code, "operation-failed");
   assert.doesNotMatch(error.message, /dancing|state/);

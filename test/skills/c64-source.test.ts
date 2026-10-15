@@ -346,6 +346,22 @@ test("an address without a knowledge name gets its platform name; a knowledge na
   assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nEXTCOL = $d020\nbackground = $d021\n");
 });
 
+test("an analyzer name gives way to the platform name, and a user or LLM name still wins (D61)", () => {
+  // STA $D020, STA $D021, STA $0314, RTS
+  const bytes = [0x8d, 0x20, 0xd0, 0x8d, 0x21, 0xd0, 0x8d, 0x14, 0x03, 0x60];
+  const instructions = new Map([[0x1000, 3], [0x1003, 3], [0x1006, 3], [0x1009, 1]]);
+  const platform = [{ address: 0xd020, end: 0xd020, name: "EXTCOL" }, { address: 0xd021, end: 0xd021, name: "BGCOL0" }, { address: 0x0314, end: 0x0315, name: "CINV" }];
+  const symbols: SourceInput["symbols"] = [
+    { address: 0xd020, name: "ld020", origin: "dxa" },
+    { address: 0xd021, name: "background", origin: "llm" },
+    { address: 0x0314, name: "l0314", origin: "ghidra" },
+    { address: 0x3000, name: "l3000", origin: "dxa" },
+  ];
+  const rendered = render(layout(input(bytes, 0x1000, { instructions, platform, symbols })), new Set(), []);
+  assert.match(textOf(rendered, "segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}sta CINV\n/);
+  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nCINV = $0314\nEXTCOL = $d020\nbackground = $d021\n");
+});
+
 test("an address inside a platform entry gets NAME+n only when it has no name of its own and the entry name is in use (F-20)", () => {
   // STA $0319, STA $0315, STA $0317, RTS
   const bytes = [0x8d, 0x19, 0x03, 0x8d, 0x15, 0x03, 0x8d, 0x17, 0x03, 0x60];

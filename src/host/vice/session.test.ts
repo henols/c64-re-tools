@@ -47,7 +47,7 @@ test("setup leaves the machine running", async () => {
 test("status reads warp from VICE, reports no pc while running and keeps it running", async () => {
   const { fake, session } = await startSession();
   fake.warp = true;
-  assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: true, window: false });
+  assert.deepEqual(await session.handle("status", {}), { state: "running", videoStandard: "pal", warp: true, window: false, cartridge: false });
   assert.deepEqual(fake.textCommands, ["warp"]);
   assert.equal(fake.running, true);
   await session.close();
@@ -56,7 +56,7 @@ test("status reads warp from VICE, reports no pc while running and keeps it runn
 test("a breakpoint that stops the machine while status reads warp is reported as stopped with its pc", async () => {
   const { fake, session } = await startSession();
   fake.stopsAtNextCommand = { pc: 0x2100 };
-  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: 0x2100 });
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0x2100 });
   assert.equal(fake.running, false);
   await session.close();
 });
@@ -97,7 +97,7 @@ test("a read while stopped leaves the machine stopped and status reports the pc"
   });
   assert.ok(!fake.commands.includes(Command.exit), "a read must not resume a machine a breakpoint stopped");
   assert.equal(fake.running, false);
-  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: 0x2100 });
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0x2100 });
   await session.close();
 });
 
@@ -185,7 +185,7 @@ test("a reset without run stops at the reset vector and leaves no checkpoint", a
   assert.equal(fake.running, false);
   assert.equal(fake.registers.PC, 0xfce2);
   assert.equal(fake.checkpoints.size, 0);
-  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: 0xfce2 });
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0xfce2 });
   await session.close();
 });
 
@@ -437,7 +437,7 @@ test("an autostart of another file detaches the cartridge that an autostart atta
   assert.equal((await session.handle("status", {})).cartridge, true, "a reset keeps the cartridge");
   await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
   assert.equal(fake.cartridgeDetaches, 1);
-  assert.equal((await session.handle("status", {})).cartridge, undefined);
+  assert.equal((await session.handle("status", {})).cartridge, false);
   await session.close();
 });
 
@@ -859,7 +859,7 @@ async function sessionWithDriveBreakpoint() {
 
 test("a stop in the drive that status sees first is completed before status reports the pc", async () => {
   const { fake, session } = await sessionWithDriveBreakpoint();
-  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: 0x1236 });
+  assert.deepEqual(await session.handle("status", {}), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0x1236 });
   assert.equal(fake.running, false);
   assert.equal(fake.checkpoints.size, 1, "only the user breakpoint is left");
   await session.close();

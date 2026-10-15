@@ -7,7 +7,8 @@
 
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
-import { isGeneratedFile, type CommentPlacement, type RegionType } from "#src/knowledge/schema.ts";
+import { ANALYZERS } from "#src/knowledge/import.ts";
+import { isGeneratedFile, type CommentPlacement, type Origin, type RegionType } from "#src/knowledge/schema.ts";
 import { hasZeroPageForm, MNEMONICS, MODE_LENGTH, OPCODES, takesAddress, type Mode } from "./opcodes.ts";
 
 export interface Range {
@@ -23,7 +24,8 @@ export interface SourceInput {
   entry?: number;
   /** Where Ghidra decoded an instruction, with its length. */
   instructions: ReadonlyMap<number, number>;
-  symbols: ReadonlyArray<{ address: number; name: string }>;
+  /** Without an origin, a symbol counts as a user or LLM name. */
+  symbols: ReadonlyArray<{ address: number; name: string; origin?: Origin }>;
   regions: ReadonlyArray<{ start: number; end: number; type: RegionType; element?: number }>;
   comments: ReadonlyArray<{ address: number; placement: CommentPlacement; text: string }>;
   modules: ReadonlyArray<{ start: number; file: string; title?: string }>;
@@ -196,10 +198,12 @@ export function layout(input: SourceInput): Layout {
   const wanted = new Set<number>();
   const want = (address: number) => inImage(address) && wanted.add(address);
   const outside = new Set<number>();
-  const symbols = new Map(input.symbols.map((symbol) => [symbol.address, symbol.name]));
   // A platform name that knowledge gives to another address, or that reads as an instruction, is not used.
   const knowledgeNames = new Set(input.symbols.map((symbol) => symbol.name));
   const platform = new Map((input.platform ?? []).filter(({ name }) => !knowledgeNames.has(name) && !MNEMONICS.has(name.toLowerCase())).map(({ address, name }) => [address, name]));
+  // An analyzer name (DXA's ld020) gives way to the platform name (EXTCOL); a user or LLM name wins (D61).
+  const isAnalyzer = (origin: Origin | undefined) => (ANALYZERS as readonly (Origin | undefined)[]).includes(origin);
+  const symbols = new Map(input.symbols.filter((symbol) => !(isAnalyzer(symbol.origin) && platform.has(symbol.address))).map((symbol) => [symbol.address, symbol.name]));
   /** Addresses outside the image without a name of their own, inside a named platform entry of more bytes: the start of that entry (F-20). */
   const insideEntry = new Map<number, number>();
   const use = (address: number) => {

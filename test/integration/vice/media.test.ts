@@ -91,5 +91,5 @@ test("a cartridge stays through a reset; an autostart of a PRG detaches it and r
   await waitForPcIn(0x8009, 0x800e);
   await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from(borderLoopPrg)]);
   await waitForPcIn(BORDER_LOOP_START, BORDER_LOOP_END, 60_000);
-  assert.equal((await session.handle("status", {})).cartridge, undefined);
+  assert.equal((await session.handle("status", {})).cartridge, false);
 });

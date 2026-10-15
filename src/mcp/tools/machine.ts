@@ -22,7 +22,7 @@ export const c64Status = defineTool({
     warp: z.boolean(),
     window: z.boolean().describe("true when the emulator window is open (c64_window)"),
     pc: AddressOutput.optional().describe("program counter. Only when the CPU is stopped"),
-    cartridge: z.literal(true).optional().describe("true while a cartridge is attached. Absent when none is"),
+    cartridge: z.boolean().describe("true while a cartridge from c64_autostart is attached"),
   }),
   readOnly: true,
   async run(_input, session) {
@@ -32,8 +32,8 @@ export const c64Status = defineTool({
       videoStandard: status.videoStandard,
       warp: status.warp,
       window: status.window,
+      cartridge: status.cartridge,
       ...(status.pc === undefined ? {} : { pc: formatC64Address(status.pc) }),
-      ...(status.cartridge === undefined ? {} : { cartridge: status.cartridge }),
     };
   },
 });

@@ -35,7 +35,7 @@ afterEach(() => process.chdir(home));
 
 /** One example per operation: how the client calls it, what the session must see, what it answers. */
 const EXAMPLES: Record<ViceOperation, { call: (client: ViceSessionClient) => Promise<unknown>; params: unknown; result: unknown; attachments?: number }> = {
-  status: { call: (c) => c.status(), params: {}, result: { state: "stopped", videoStandard: "pal", warp: false, window: false, pc: 0x2100 } },
+  status: { call: (c) => c.status(), params: {}, result: { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: 0x2100 } },
   memoryRead: {
     call: (c) => c.memoryRead({ address: 0x2000, size: 2, space: "c64", view: "cpu" }),
     params: { address: 0x2000, size: 2, space: "c64", view: "cpu" },

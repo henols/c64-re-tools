@@ -330,8 +330,8 @@ export interface MachineStatus {
   window: boolean;
   /** Present only while the C64 CPU is stopped. */
   pc?: number;
-  /** Present, true, while a cartridge from an autostart is attached. */
-  cartridge?: true;
+  /** True while a cartridge from an autostart is attached (D64). */
+  cartridge: boolean;
 }
 
 export interface MemoryReadParams {
@@ -993,7 +993,7 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
         typeof value.warp === "boolean" &&
         typeof value.window === "boolean" &&
         (value.pc === undefined || isInteger(value.pc, 0, 0xffff)) &&
-        (value.cartridge === undefined || value.cartridge === true);
+        typeof value.cartridge === "boolean";
       if (!ok) throw new ProtocolError("status result is malformed");
       break;
     }
