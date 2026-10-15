@@ -127,21 +127,21 @@ export class ViceSessionClient {
     return this.#request("runUntil", params);
   }
 
-  /** Loads a project PRG into memory without reset or start; finishes stopped. */
-  async programLoad(params: { path: string; address?: number }): Promise<{ state: RunState; loadAddress: number; size: number }> {
-    const file = readProjectFile(params.path);
+  /** Loads a project PRG into memory without reset or start; finishes stopped. `root` is the project folder; it stays on this side. */
+  async programLoad(params: { path: string; address?: number; root?: string }): Promise<{ state: RunState; loadAddress: number; size: number }> {
+    const file = readProjectFile(params.path, params.root === undefined ? {} : { root: params.root });
     return this.#request("programLoad", params.address === undefined ? {} : { address: params.address }, [file.bytes]);
   }
 
-  /** Autostarts a project program or image, as VICE's autostart does. */
-  async autostart(params: { path: string; index: number; run: boolean }): Promise<{ state: RunState; emulatorFlaw?: string }> {
-    const file = readProjectFile(params.path);
+  /** Autostarts a project program or image, as VICE's autostart does. `root` is the project folder; it stays on this side. */
+  async autostart(params: { path: string; index: number; run: boolean; root?: string }): Promise<{ state: RunState; emulatorFlaw?: string }> {
+    const file = readProjectFile(params.path, params.root === undefined ? {} : { root: params.root });
     return this.#request("autostart", { type: file.type, index: params.index, run: params.run }, [file.bytes]);
   }
 
-  /** Attaches a project disk image to drive 8. */
-  async diskAttach(params: { path: string }): Promise<{ attached: boolean }> {
-    const file = readProjectFile(params.path);
+  /** Attaches a project disk image to drive 8. `root` is the project folder; it stays on this side. */
+  async diskAttach(params: { path: string; root?: string }): Promise<{ attached: boolean }> {
+    const file = readProjectFile(params.path, params.root === undefined ? {} : { root: params.root });
     return this.#request("diskAttach", { type: file.type }, [file.bytes]);
   }
 

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { formatC64Address } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { CIA_SELECTIONS, MAX_MASK_RECTANGLES, MAX_MEMORY_READ, MAX_OBSERVE_BYTES, MAX_OBSERVE_RANGES, SPACES, VICII_MODES, type ObserveParams } from "../../protocol/vice.ts";
-import { OutInput, writeOut, WrittenOutput } from "../output.ts";
+import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, AddressOutput, Byte, defineTool, HexData, MemoryViewInput, requireFields, SpaceInput, ToolOutput, TransientName } from "../server.ts";
 
 const Color = z.number().int().min(0).max(15);
@@ -150,6 +150,7 @@ export const c64Screen = defineTool({
       mask: z.array(Rectangle).max(MAX_MASK_RECTANGLES).optional().describe("compare only: rectangles to ignore, in frame pixels"),
       includeDiff: z.boolean().optional().describe("compare only: also return a difference image"),
       out: OutInput.optional(),
+      project: ProjectInput.optional().describe("capture and compare with out only: the project folder, relative to the folder where the agent started. Give it when that folder is not in a project and has projects below it"),
     })
     .strict(),
   outputSchema: z.object({
@@ -169,21 +170,21 @@ export const c64Screen = defineTool({
   async run(input, session) {
     const { action, ...fields } = input;
     if (action === "capture") {
-      requireFields(action, fields, ["baseline", "out"]);
+      requireFields(action, fields, fields.out === undefined ? ["baseline"] : ["baseline", "out", "project"]);
       const shot = await session.screenCapture(fields.baseline);
       const result = { width: shot.width, height: shot.height, ...(shot.baseline === undefined ? {} : { baseline: shot.baseline }) };
-      if (fields.out !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(shot.png, "base64")) };
+      if (fields.out !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(shot.png, "base64"), fields.project) };
       return new ToolOutput(result, [{ type: "image", data: shot.png, mimeType: "image/png" }]);
     }
     if (action === "compare") {
-      requireFields(action, fields, ["baseline", "maxMismatchRatio", "mask", "includeDiff", "out"], ["baseline"]);
+      requireFields(action, fields, ["baseline", "maxMismatchRatio", "mask", "includeDiff", ...(fields.out === undefined ? [] : ["out", "project"])], ["baseline"]);
       const { diffPng, ...result } = await session.screenCompare({
         baseline: fields.baseline!,
         maxMismatchRatio: fields.maxMismatchRatio ?? 0,
         mask: fields.mask ?? [],
         includeDiff: (fields.includeDiff ?? false) || fields.out !== undefined,
       });
-      if (fields.out !== undefined && diffPng !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(diffPng, "base64")) };
+      if (fields.out !== undefined && diffPng !== undefined) return { ...result, ...writeOut(fields.out, Buffer.from(diffPng, "base64"), fields.project) };
       return diffPng === undefined ? result : new ToolOutput(result, [{ type: "image", data: diffPng, mimeType: "image/png" }]);
     }
     if (action === "list") {

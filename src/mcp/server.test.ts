@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -549,11 +549,13 @@ test("media tools pass the project path and fill defaults", async () => {
   });
   assert.deepEqual((await call(client, "c64_disk_attach", { path: "original/game.d64" })).structuredContent, { attached: true });
   await call(client, "c64_autostart", { path: "original/game.d64", index: 1 });
+  // The project folder of a call without project: the D67 lookup from the working directory.
+  const root = process.cwd();
   assert.deepEqual(session.media, [
-    ["autostart", { path: "original/game.d64", index: 0, run: true }],
-    ["programLoad", { path: "build/game.prg", address: 0xc000 }],
-    ["diskAttach", { path: "original/game.d64" }],
-    ["autostart", { path: "original/game.d64", index: 2, run: true }],
+    ["autostart", { path: "original/game.d64", index: 0, run: true, root }],
+    ["programLoad", { path: "build/game.prg", address: 0xc000, root }],
+    ["diskAttach", { path: "original/game.d64", root }],
+    ["autostart", { path: "original/game.d64", index: 2, run: true, root }],
   ]);
   assert.equal(errorOf(await call(client, "c64_disk_attach", { path: "" })).code, "invalid-input");
   await client.close();
@@ -915,6 +917,38 @@ test("out writes memory, a listing, the history and a screen to project files (D
   } finally {
     process.chdir(home);
     rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test("in a folder with projects below it, a tool with a path takes project and refuses without it (D67, D68)", async () => {
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), "c64-re-tools-mcp-workspace-")));
+  for (const name of ["a", "b"]) mkdirSync(join(workspace, name, ".c64-re-tools"), { recursive: true });
+  const home = process.cwd();
+  process.chdir(workspace);
+  try {
+    const session = new FakeSession();
+    const client = await connect(async () => session);
+    const refused = errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin" }));
+    assert.equal(refused.code, "invalid-input");
+    assert.match(refused.message, /These folders below it are projects: a, b\. Give project: <folder> with one of them\./);
+    assert.equal(errorOf(await call(client, "c64_autostart", { path: "original/game.prg" })).code, "invalid-input");
+    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, project: "a" })).code, "invalid-input", "project without out");
+    assert.equal(errorOf(await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "x.bin", project: "missing" })).code, "not-found");
+
+    await call(client, "c64_memory_read", { address: "$1000", size: 4, out: "dumps/mem.bin", project: "a" });
+    assert.deepEqual(readFileSync(join(workspace, "a", "dumps", "mem.bin")), Buffer.alloc(4, 0xa9));
+    assert.ok(!existsSync(join(workspace, "dumps")), "nothing is written at the workspace root");
+    await call(client, "c64_snapshot", { action: "save", name: "room0", out: "snapshots/room0.vsf", project: "b" });
+    await call(client, "c64_snapshot", { action: "restore", file: "snapshots/room0.vsf", project: "b" });
+    assert.deepEqual(session.restoredFiles, ["VSF of room0"]);
+    await call(client, "c64_autostart", { path: "original/game.prg", project: "b" });
+    assert.deepEqual(session.media.at(-1), ["autostart", { path: "original/game.prg", index: 0, run: true, root: join(workspace, "b") }]);
+    assert.equal(errorOf(await call(client, "c64_snapshot", { action: "save", name: "room1", project: "b" })).code, "invalid-input", "project without out");
+    assert.equal((await call(client, "c64_status")).isError, undefined, "a tool without a path needs no project");
+    await client.close();
+  } finally {
+    process.chdir(home);
+    rmSync(workspace, { recursive: true, force: true });
   }
 });
 

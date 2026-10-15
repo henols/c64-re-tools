@@ -6,7 +6,7 @@ import { z } from "zod";
 import { formatC64Address } from "../../c64.ts";
 import { WireFailure } from "../../protocol/messages.ts";
 import { MAX_COMPARE_DIFFERENCES, MAX_COMPARE_SIZE, MAX_DISASSEMBLE, MAX_MEMORY_READ, MAX_MEMORY_WRITE, MAX_SEARCH_PATTERN, MAX_SEARCH_RESULTS, type RegisterValues } from "../../protocol/vice.ts";
-import { OutInput, writeOut, WrittenOutput } from "../output.ts";
+import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, AddressOutput, Byte, defineTool, HexData, HexDataInput, MemoryViewInput, requireFields, SpaceInput } from "../server.ts";
 
 /** With out, a read or a disassembly can be larger than one answer of the session: it is read in parts (D39). */
@@ -28,12 +28,14 @@ export const c64MemoryRead = defineTool({
       space: SpaceInput,
       view: MemoryViewInput,
       out: OutInput.optional(),
+      project: ProjectInput.optional(),
     })
     .strict(),
   outputSchema: z.object({ address: AddressOutput, size: z.number().int().min(1).max(MAX_MEMORY_READ_OUT), data: HexData.optional(), ...WrittenOutput }),
   readOnly: false,
   async run(input, session) {
-    const { out, ...read } = input;
+    const { out, project, ...read } = input;
+    if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
     if (out === undefined) {
       if (read.size > MAX_MEMORY_READ) throw new WireFailure("invalid-input", `size can be at most ${MAX_MEMORY_READ} without out.`);
       const result = await session.memoryRead(read);
@@ -45,7 +47,7 @@ export const c64MemoryRead = defineTool({
       const part = await session.memoryRead({ ...read, address: at, size: Math.min(MAX_MEMORY_READ, read.address + read.size - at) });
       parts.push(Buffer.from(part.data, "hex"));
     }
-    return { address: formatC64Address(read.address), size: read.size, ...writeOut(out, Buffer.concat(parts)) };
+    return { address: formatC64Address(read.address), size: read.size, ...writeOut(out, Buffer.concat(parts), project) };
   },
 });
 
@@ -210,12 +212,14 @@ export const c64Disassemble = defineTool({
       space: SpaceInput,
       view: MemoryViewInput,
       out: OutInput.optional(),
+      project: ProjectInput.optional(),
     })
     .strict(),
   outputSchema: z.object({ instructions: z.array(z.object({ address: AddressOutput, bytes: HexData, text: z.string() })).optional(), count: z.number().int().min(0).optional(), ...WrittenOutput }),
   readOnly: false,
   async run(input, session) {
-    const { out, ...request } = input;
+    const { out, project, ...request } = input;
+    if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
     if (out === undefined) {
       if (request.count > MAX_DISASSEMBLE) throw new WireFailure("invalid-input", `count can be at most ${MAX_DISASSEMBLE} without out.`);
       const result = await session.disassemble(request);
@@ -238,7 +242,7 @@ export const c64Disassemble = defineTool({
         address = instruction.address + instruction.bytes.length / 2;
       }
     }
-    return { count: lines.length, ...writeOut(out, `${lines.join("\n")}\n`) };
+    return { count: lines.length, ...writeOut(out, `${lines.join("\n")}\n`, project) };
   },
 });
 

@@ -8,6 +8,8 @@ Implementation may change internal protocol, VICE adapter, parser or broker deta
 
 The MCP exposes no project knowledge, no host-tool operations and no infrastructure/version information.
 
+Project paths (D67, D68 in docs/plan.md): every path of a tool (`path`, `file`, `out`) is relative to the project folder. A tool with a path also takes an optional `project`: the project folder, relative to the folder where the agent started, or absolute. It must be a folder, and not a folder inside another project. Without `project`, the MCP server finds the project from the folder where the agent started, with the rules of 17 §2. When that folder is in no project and has projects below it, a call with a path fails with `invalid-input`, and the message lists those projects. `project` without a path fails with `invalid-input`. A tool without a path never needs a project. The host still sees no path.
+
 ## 2. General result rules
 
 Successful tools return their domain result directly.
@@ -1585,7 +1587,7 @@ Input:
 }
 ~~~
 
-path is project-relative in the MCP/client environment and is transferred as bytes. The host never relies on the client filesystem path.
+path is relative to the project folder (§1, D68) in the MCP/client environment and is transferred as bytes. The host never relies on the client filesystem path. The optional `project` (§1) names the project folder; c64_program_load, c64_disk_attach and c64_snapshot take it too.
 
 index is optional: the directory entry of a disk image, 0 is the first entry, as the c64-disk directory list numbers it. Without index, the first file loads as with `LOAD"*",8,1`. VICE numbers the entries from 1 and loads `"*"` for 0, so the MCP server sends index + 1, or 0 without index.
 
@@ -1796,7 +1798,7 @@ No v1 public tool for:
 - generic host-tool execution;
 - Ghidra/DXA/ACME/c1541/petcat;
 - knowledge DB operations;
-- project discovery;
+- a tool that lists or selects projects (a tool with a path takes `project`, §1);
 - protocol diagnostics.
 
 Those belong below the LLM-facing boundary or in other skill execution surfaces.

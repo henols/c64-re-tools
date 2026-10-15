@@ -1,16 +1,16 @@
 // Media tools: c64_autostart, c64_program_load, c64_disk_attach and
-// c64_snapshot. Paths are project-relative; the host-client reads the file and
-// the Host Runtime receives only its bytes.
+// c64_snapshot. Paths are relative to the project folder (D68); the host-client
+// reads the file and the Host Runtime receives only its bytes.
 
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
-import { readProjectFile } from "../../host-client/transfer.ts";
+import { projectFolder, readProjectFile } from "../../host-client/transfer.ts";
 import { AUTOSTART_TYPES, DISK_TYPES, MAX_SNAPSHOTS, RUN_STATES } from "../../protocol/vice.ts";
-import { OutInput, writeOut, WrittenOutput } from "../output.ts";
+import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, AddressOutput, defineTool, requireFields, TransientName } from "../server.ts";
 
-const ProjectPath = z.string().min(1).describe("path relative to the project directory, for example build/game.prg");
+const ProjectPath = z.string().min(1).describe("path relative to the project folder, for example build/game.prg");
 
 const list = (types: readonly string[]) => types.map((type) => `.${type}`).join(", ");
 
@@ -27,6 +27,7 @@ export const c64Autostart = defineTool({
   inputSchema: z
     .object({
       path: ProjectPath,
+      project: ProjectInput.optional(),
       index: z.number().int().min(0).max(0xfffe).optional().describe("directory entry of a disk image, 0 is the first entry. Without it, the first file loads as with LOAD\"*\""),
       run: z.boolean().default(true).describe("true runs the program after it loads"),
     })
@@ -39,7 +40,7 @@ export const c64Autostart = defineTool({
   readOnly: false,
   async run(input, session) {
     // VICE numbers the directory entries from 1, and its 0 loads "*".
-    return session.autostart({ path: input.path, index: input.index === undefined ? 0 : input.index + 1, run: input.run });
+    return session.autostart({ path: input.path, index: input.index === undefined ? 0 : input.index + 1, run: input.run, root: projectFolder(input.project) });
   },
 });
 
@@ -53,13 +54,15 @@ export const c64ProgramLoad = defineTool({
   inputSchema: z
     .object({
       path: ProjectPath,
+      project: ProjectInput.optional(),
       address: AddressInput.optional().describe("load here instead of at the file's own load address"),
     })
     .strict(),
   outputSchema: z.object({ state: z.enum(RUN_STATES), loadAddress: AddressOutput, size: z.number().int().min(1).max(0x10000) }),
   readOnly: false,
   async run(input, session) {
-    const result = await session.programLoad(input.address === undefined ? { path: input.path } : { path: input.path, address: input.address });
+    const root = projectFolder(input.project);
+    const result = await session.programLoad(input.address === undefined ? { path: input.path, root } : { path: input.path, address: input.address, root });
     return { state: result.state, loadAddress: formatC64Address(result.loadAddress), size: result.size };
   },
 });
@@ -71,11 +74,11 @@ export const c64DiskAttach = defineTool({
     `Put a disk image from the project into drive 8 (${list(DISK_TYPES)}). ` +
     "Nothing loads or runs. To load from the disk, type LOAD on the C64 or use c64_autostart. " +
     "This does not change the run state of the machine.",
-  inputSchema: z.object({ path: ProjectPath }).strict(),
+  inputSchema: z.object({ path: ProjectPath, project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({ attached: z.boolean() }),
   readOnly: false,
   async run(input, session) {
-    return session.diskAttach(input);
+    return session.diskAttach({ path: input.path, root: projectFolder(input.project) });
   },
 });
 
@@ -94,6 +97,7 @@ export const c64Snapshot = defineTool({
       name: TransientName.optional().describe("save and discard, and restore without file: 1 to 64 letters, digits, dots, underscores or hyphens"),
       out: OutInput.optional().describe("save only: also write the snapshot to this project file, for example snapshots/room0.vsf. An existing file is overwritten"),
       file: ProjectPath.optional().describe("restore only: a .vsf file in the project, in place of name"),
+      project: ProjectInput.optional().describe("save with out, and restore with file: the project folder, relative to the folder where the agent started. Give it when that folder is not in a project and has projects below it"),
     })
     .strict(),
   outputSchema: z.object({
@@ -113,13 +117,13 @@ export const c64Snapshot = defineTool({
       return session.snapshot({ action });
     }
     if (action === "restore" && fields.file !== undefined) {
-      requireFields(action, fields, ["file"], ["file"]);
-      return session.snapshotRestore(readProjectFile(fields.file).bytes);
+      requireFields(action, fields, ["file", "project"], ["file"]);
+      return session.snapshotRestore(readProjectFile(fields.file, { root: projectFolder(fields.project) }).bytes);
     }
     if (action === "save") {
-      requireFields(action, fields, ["name", "out"], ["name"]);
+      requireFields(action, fields, fields.out === undefined ? ["name"] : ["name", "out", "project"], ["name"]);
       const saved = await session.snapshot({ action, name: fields.name! });
-      return fields.out === undefined ? saved : { ...saved, ...writeOut(fields.out, await session.snapshotExport(fields.name!)) };
+      return fields.out === undefined ? saved : { ...saved, ...writeOut(fields.out, await session.snapshotExport(fields.name!), fields.project) };
     }
     requireFields(action, fields, ["name"], ["name"]);
     return session.snapshot({ action, name: fields.name! });

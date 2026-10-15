@@ -7,7 +7,7 @@ import { COVERAGE, executedRamCode, EXECUTE, formatC64Address, READ, WRITE, type
 import { WireFailure } from "../../protocol/messages.ts";
 import { CHECKPOINT_ACTIONS, MAX_BACKTRACE, MAX_HISTORY, MAX_MEMMAP_RANGES, MAX_MEMORY_READ, MAX_PROFILE, MAX_WATCH_SIZE, SPACES, TIMING_ACTIONS, WATCH_ACCESS, type Breakpoint, type Watchpoint } from "../../protocol/vice.ts";
 import { readCoverage } from "../../host-client/coverage.ts";
-import { OutInput, writeOut, WrittenOutput } from "../output.ts";
+import { OutInput, ProjectInput, writeOut, WrittenOutput } from "../output.ts";
 import { AddressInput, AddressOutput, Byte, ConditionInput, ConditionOutput, defineTool, HexData, requireFields, showCondition, SpaceInput, toCondition, type ViceSessionApi } from "../server.ts";
 import { spaced } from "./memory.ts";
 
@@ -135,7 +135,7 @@ export const c64CpuHistory = defineTool({
     "In space c64, it also gives the raster line and cycle when the instruction started. " +
     "With out, it writes the entries as text lines to that project file, and the result gives the file in place of the entries. " +
     "This does not change the run state of the machine.",
-  inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput, out: OutInput.optional() }).strict(),
+  inputSchema: z.object({ limit: z.number().int().min(1).max(MAX_HISTORY).default(50), space: SpaceInput, out: OutInput.optional(), project: ProjectInput.optional() }).strict(),
   outputSchema: z.object({
     entries: z.array(
       z.object({
@@ -155,7 +155,8 @@ export const c64CpuHistory = defineTool({
   }),
   readOnly: false,
   async run(input, session) {
-    const { out, ...request } = input;
+    const { out, project, ...request } = input;
+    if (out === undefined && project !== undefined) throw new WireFailure("invalid-input", "project is used only with out.");
     const { entries } = await session.cpuHistory(request);
     if (out === undefined) return { entries: entries.map((entry) => ({ ...entry, address: formatC64Address(entry.address) })) };
     const byte = (value: number) => value.toString(16).padStart(2, "0");
@@ -163,7 +164,7 @@ export const c64CpuHistory = defineTool({
       const raster = entry.rasterLine === undefined ? "" : `  line ${entry.rasterLine} cycle ${entry.rasterCycle ?? 0}`;
       return `${formatC64Address(entry.address)}  ${spaced(entry.bytes).padEnd(9)} ${entry.text.padEnd(16)} a=${byte(entry.a)} x=${byte(entry.x)} y=${byte(entry.y)} sp=${byte(entry.sp)}${raster}`;
     });
-    return { count: entries.length, ...writeOut(out, `${lines.join("\n")}\n`) };
+    return { count: entries.length, ...writeOut(out, `${lines.join("\n")}\n`, project) };
   },
 });
 
@@ -261,6 +262,7 @@ export const c64Memmap = defineTool({
       end: AddressInput.optional().describe("read and summary. Default $ffff"),
       maxRanges: z.number().int().min(1).max(MAX_MEMMAP_RANGES).optional().describe("read without out only. Default 256"),
       out: OutInput.optional().describe("read only: write a coverage map to this project file, one byte for each address. An existing file is overwritten"),
+      project: ProjectInput.optional().describe("read with out only: the project folder, relative to the folder where the agent started. Give it when that folder is not in a project and has projects below it"),
     })
     .strict(),
   outputSchema: z.object({
@@ -307,8 +309,8 @@ export const c64Memmap = defineTool({
       };
     }
     if (fields.out !== undefined) {
-      requireFields("read", fields, ["start", "end", "out"]);
-      return writeOut(fields.out, await readCoverage(session, start, end));
+      requireFields("read", fields, ["start", "end", "out", "project"]);
+      return writeOut(fields.out, await readCoverage(session, start, end), fields.project);
     }
     requireFields("read", fields, ["start", "end", "maxRanges"]);
     const result = await session.memmap({ action: "read", start, end, maxRanges: fields.maxRanges ?? 256 });

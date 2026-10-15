@@ -111,7 +111,7 @@ Analyzer results return to the project side first. Local deterministic code vali
 
 ## 4. Project-relative path
 
-Every facade path is relative to the resolved project root.
+Every facade path is relative to the project folder: the folder that the skill script gets with `--project <folder>`, or the folder that the rules of 17 §2 find from the working directory (D67, D68).
 
 Rules:
 
