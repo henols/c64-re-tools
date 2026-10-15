@@ -1,6 +1,6 @@
 // Through the real skill scripts and real DXA, which the script runs itself:
 // a fixture PRG goes through DXA, normalized findings and the importer into
-// knowledge.db; a second, seeded run changes the result and retires the
+// the knowledge; a second, seeded run changes the result and retires the
 // obsolete DXA facts, keeps the history and protects the semantic knowledge;
 // a malformed listing imports nothing.
 
@@ -17,6 +17,7 @@ import { openForRead } from "../../../src/knowledge/database.ts";
 import { historyAt } from "../../../src/knowledge/history.ts";
 import { currentRevision, regionsOverlapping, symbolAt } from "../../../src/knowledge/read.ts";
 import { analysisSubjectPrg } from "../../fixtures/prg/analysis-subject.ts";
+import { nthIn } from "../../../src/knowledge/revisions.testkit.ts";
 
 let skip: string | false = false;
 try {
@@ -52,7 +53,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   // 1. First DXA pass: its regions and labels become DXA knowledge.
   const first = await skill(env, "c64-static-analysis", "analyze.ts", "game.prg", "--analyzer", "dxa");
   assert.equal(first.status, 0, JSON.stringify(first.json));
-  assert.equal(first.json.revision, 1);
+  assert.equal(first.json.revision, nthIn(project, 1));
   assert.deepEqual(regions(), [
     [0x0801, 0x080c, "bytes", "dxa"],
     [0x080d, 0x0815, "code", "dxa"],
@@ -62,8 +63,8 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   ]);
 
   // 2. Semantic work: the LLM names the routine, the user says what the table is.
-  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "rename", "$0818", "init_result", "--kind", "routine", "--expect-revision", "1")).json.revision, 2);
-  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "classify", "$0824", "$0827", "sprite", "--origin", "user", "--expect-revision", "2")).json.revision, 3);
+  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "rename", "$0818", "init_result", "--kind", "routine", "--expect-revision", nthIn(project, 1))).json.revision, nthIn(project, 2));
+  assert.equal((await skill(env, "c64-knowledge", "knowledge.ts", "classify", "$0824", "$0827", "sprite", "--origin", "user", "--expect-revision", nthIn(project, 2))).json.revision, nthIn(project, 3));
 
   // 3. A changed program: NOPs instead of the JMP let the code run on into the routine, so the two
   //    unused bytes become reachable code. (A JMP to them is not enough: DXA keeps them as data.)
@@ -72,7 +73,7 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
   writeFileSync(join(project, "game-v2.prg"), changed);
   const second = await skill(env, "c64-static-analysis", "analyze.ts", "game-v2.prg", "--analyzer", "dxa");
   assert.equal(second.status, 0, JSON.stringify(second.json));
-  assert.equal(second.json.revision, 4);
+  assert.equal(second.json.revision, nthIn(project, 4));
   assert.deepEqual(second.json.conflicts, [], "a finer data type from the user is no conflict");
   assert.deepEqual((second.json.changes as { regions: unknown }).regions, { added: 1, changed: 0, retired: 3, unchanged: 1, suppressed: 0 });
   assert.deepEqual(regions(), [
@@ -81,10 +82,10 @@ test("DXA findings reconcile through the importer, protect semantic knowledge an
     [0x0824, 0x0827, "sprite", "user"],
   ]);
   const db = openForRead(project);
-  assert.deepEqual(symbolAt(db, 0x0818), { space: "c64", address: 0x0818, name: "init_result", kind: "routine", origin: "llm", revision: 2 }, "the echoed seed stays semantic");
+  assert.deepEqual(symbolAt(db, 0x0818), { space: "c64", address: 0x0818, name: "init_result", kind: "routine", origin: "llm", revision: nthIn(project, 2) }, "the echoed seed stays semantic");
   const regionHistory = historyAt(db, 0x0816).flatMap((entry) => (entry.entity === "region" ? [[entry.row.type, entry.row.origin, entry.to ?? null]] : []));
   assert.deepEqual(regionHistory, [
-    ["bytes", "dxa", 4],
+    ["bytes", "dxa", nthIn(project, 4)],
     ["code", "dxa", null],
   ], "the retired DXA data region stays in the history");
   const symbolHistory = historyAt(db, 0x0818).flatMap((entry) => (entry.entity === "symbol" ? [[entry.row.name, entry.row.origin]] : []));

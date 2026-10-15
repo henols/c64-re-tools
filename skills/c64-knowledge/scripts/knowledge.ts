@@ -1,4 +1,4 @@
-// The c64-knowledge script: reads and writes .c64-re-tools/knowledge.db in the
+// The c64-knowledge script: reads and writes .c64-re-tools/knowledge/ in the
 // project folder (--project, or the one found from the working directory) and
 // prints one compact JSON result.
 
@@ -87,8 +87,8 @@ Read (no database needed):
   operands [--start A --end A --origin O]  operand expressions of instructions
   spaces                              the address spaces that hold knowledge
   history <address> | history --name <name>
-  revisions [--limit N --before N]
-  revision <id>
+  revisions [--limit N --before R]
+  revision <revision>
   export --out <file> [--start A --end A --origin O]   all current knowledge to a project file
 
 Every command takes --space S: c64 (the default), drive8 for code in the 1541
@@ -98,7 +98,7 @@ own space.
 Read option --origin O: user, llm, dxa, ghidra, heuristic, semantic (user and
 llm) or analyzer (dxa, ghidra and heuristic), or a comma list. search takes it too.
 
-Write (one revision each; creates the database when needed):
+Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
   rename <address> <name> [--kind K]
   remove-symbol <address>
   classify <start> <end> <type> [--element N]
@@ -126,10 +126,12 @@ Write options:
   --reason <text>          why, kept with the revision
   --evidence <kind:ref>    what the change rests on: coverage:<file>, test:<file>,
                            file:<file> or note:<text> (repeatable)
-  --expect-revision <N>    refuse the write if knowledge changed after revision N
+  --expect-revision <R>    refuse the write if knowledge changed after revision R
   --origin user|llm        who decided (default llm)
 
-Addresses are $ and four hex digits; quote them in a shell: '$2100'.`;
+Addresses are $ and four hex digits; quote them in a shell: '$2100'.
+A revision is its id, for example 20261015T214501.123-k3f9qz, or a start of
+the id that only one revision has; 0 is the knowledge before every revision.`;
 
 function address(value: string | undefined, what = "address"): number {
   if (value === undefined) throw new UsageError(`${what} is missing`);
@@ -207,8 +209,8 @@ function historyEntry(entry: HistoryEntry) {
 }
 
 /** The reason of each revision that wrote one of the rows. */
-function reasonsOf(db: DatabaseSync | undefined, rows: SuppressionRow[]): Map<number, string> {
-  const reasons = new Map<number, string>();
+function reasonsOf(db: DatabaseSync | undefined, rows: SuppressionRow[]): Map<string, string> {
+  const reasons = new Map<string, string>();
   const query = db?.prepare("SELECT description FROM revisions WHERE id = ?");
   for (const { revision } of rows) {
     if (query === undefined || reasons.has(revision)) continue;
@@ -330,13 +332,14 @@ function run(argv: string[]): unknown {
             history: (values.name === undefined ? historyAt(db, address(args[0]), space) : historyNamed(db, values.name, space)).map((entry) => ({ ...historyEntry(entry), ...revisionNote(db, entry.from) })),
           };
         case "revisions": {
-          const options: { limit?: number; before?: number } = {};
+          const options: { limit?: number; before?: string } = {};
           if (values.limit !== undefined) options.limit = integer(values.limit, "--limit");
-          if (values.before !== undefined) options.before = integer(values.before, "--before");
+          if (values.before !== undefined) options.before = values.before;
           return { revisions: revisions(db, options) };
         }
         default: {
-          const changes = revision(db, integer(args[0], "revision"));
+          if (args[0] === undefined) throw new UsageError("revision is missing");
+          const changes = revision(db, args[0]);
           return { revision: changes.revision, added: changes.added.map(historyEntry), closed: changes.closed.map(historyEntry) };
         }
       }
@@ -347,7 +350,7 @@ function run(argv: string[]): unknown {
 
   const context: WriteContext = { origin: values.origin === undefined ? "llm" : oneOf(["user", "llm"] as const, values.origin, "--origin") };
   if (values.reason !== undefined) context.description = values.reason;
-  if (values["expect-revision"] !== undefined) context.expectedRevision = integer(values["expect-revision"], "--expect-revision");
+  if (values["expect-revision"] !== undefined) context.expectedRevision = values["expect-revision"];
   if (values.evidence !== undefined) context.evidence = values.evidence.map(evidenceOf);
   // Every argument is checked before the database opens: a refused write creates no database.
   if (values.title !== undefined && command !== "module") throw new UsageError("--title works only with module");
@@ -603,7 +606,8 @@ function writeOperation(command: string, args: string[], kind: string | undefine
       return (db) => ({ revision: removeOperand(db, context, request).revision });
     }
     case "revert": {
-      const request = { revision: integer(args[0], "revision") };
+      if (args[0] === undefined) throw new UsageError("revision is missing");
+      const request = { revision: args[0] };
       return (db) => ({ revision: revert(db, context, request).revision });
     }
     default:

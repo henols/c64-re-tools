@@ -14,6 +14,7 @@ import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { openForRead } from "../../src/knowledge/database.ts";
 import { listReferences, regionsOverlapping, symbolAt } from "../../src/knowledge/read.ts";
 import { analysisSubjectPrg, MAIN, ROUTINE, TABLE_START } from "../fixtures/prg/analysis-subject.ts";
+import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 
 let skip: string | false = false;
 try {
@@ -49,7 +50,7 @@ test("an analysis imports Ghidra's structure into knowledge and reports it", { s
   const { status, json } = await analyze("game.prg", "--entry", "$080d", "--decompile", "$0818");
   assert.equal(status, 0, JSON.stringify(json));
   assert.deepEqual(json.coverage, [{ start: "$0801", end: "$0827" }]);
-  assert.equal(json.revision, 1);
+  assert.equal(json.revision, nthIn(project, 1));
   assert.deepEqual((json.changes as { symbols: unknown }).symbols, { added: 2, changed: 0, retired: 0, unchanged: 0, suppressed: 0 });
   assert.deepEqual(json.conflicts, []);
   assert.deepEqual(json.functions, {

@@ -21,6 +21,7 @@ import {
   referencesFrom,
   REGION_COLUMNS,
   regionsOverlapping,
+  resolveRevision,
   SUPPRESSION_COLUMNS,
   suppressionsOverlapping,
   SYMBOL_COLUMNS,
@@ -65,6 +66,7 @@ import {
   type Space,
   type SymbolKind,
 } from "./schema.ts";
+import { newRevisionId, rowId } from "./text.ts";
 
 /** What a change rests on (D42): a coverage run, a test or another project file with its SHA-256, or a note. */
 export interface Evidence {
@@ -79,7 +81,7 @@ export interface WriteContext {
   /** A short reason, kept with the revision for later review. */
   description?: string;
   /** The revision the caller read; the write is refused if knowledge changed since. */
-  expectedRevision?: number;
+  expectedRevision?: string;
   /** Kept with the revision when the write changes something. */
   evidence?: Evidence[];
   /** The image that an operand write is checked against (D65). */
@@ -94,7 +96,7 @@ export interface OperandImage {
 
 /** The revision a write created, or null when nothing needed to change. */
 export interface WriteResult<T, P = never> {
-  revision: number | null;
+  revision: string | null;
   current: T;
   /** The current rows of another origin that this write replaced, as they were before it. */
   previous?: P;
@@ -139,7 +141,7 @@ export function subtract(range: AddressRange, holes: AddressRange[]): AddressRan
 export interface ChangeContext {
   origin: Origin;
   description?: string;
-  expectedRevision?: number;
+  expectedRevision?: string;
   inputHash?: string;
   toolVersion?: string;
   evidence?: Evidence[];
@@ -150,7 +152,9 @@ export interface ChangeContext {
  * only when the first actual change happens, so a no-op leaves no revision.
  */
 export class Change {
-  revision: number | null = null;
+  revision: string | null = null;
+  /** The rows this write inserted, for their ids. */
+  #rows = 0;
   readonly #db: DatabaseSync;
   readonly #context: ChangeContext;
   readonly #operation: string;
@@ -160,7 +164,7 @@ export class Change {
     this.#context = context;
     this.#operation = operation;
     const current = currentRevision(db);
-    if (context.expectedRevision !== undefined && context.expectedRevision !== current) {
+    if (context.expectedRevision !== undefined && resolveRevision(db, context.expectedRevision) !== current) {
       throw new KnowledgeError(
         "stale-revision",
         `Knowledge changed since revision ${context.expectedRevision}; it is now at revision ${current}. Read it again and decide again.`,
@@ -168,24 +172,23 @@ export class Change {
     }
   }
 
-  /** The id of this write's revision, created on first use with its evidence. */
-  id(): number {
+  /** The id of this write's revision, created on first use with its evidence (D69: an id that sorts after every revision). */
+  id(): string {
     if (this.revision !== null) return this.revision;
-    const created = this.#db
-      .prepare("INSERT INTO revisions (created_at, origin, operation, input_hash, tool_version, description) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
-      .get(
-        isoCet(new Date()),
-        this.#context.origin,
-        this.#operation,
-        this.#context.inputHash ?? null,
-        this.#context.toolVersion ?? null,
-        this.#context.description ?? null,
-      ) as { id: number };
-    this.revision = created.id;
-    this.#db.prepare("UPDATE meta SET value = ? WHERE key = 'current_revision'").run(String(created.id));
+    const now = new Date();
+    const id = newRevisionId(currentRevision(this.#db), now);
+    this.#db
+      .prepare("INSERT INTO revisions (id, created_at, origin, operation, input_hash, tool_version, description) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(id, isoCet(now), this.#context.origin, this.#operation, this.#context.inputHash ?? null, this.#context.toolVersion ?? null, this.#context.description ?? null);
+    this.revision = id;
     const evidence = this.#db.prepare("INSERT INTO evidence (revision, kind, ref, sha256) VALUES (?, ?, ?, ?)");
-    for (const item of this.#context.evidence ?? []) evidence.run(created.id, item.kind, item.ref, item.sha256 ?? null);
-    return created.id;
+    for (const item of this.#context.evidence ?? []) evidence.run(id, item.kind, item.ref, item.sha256 ?? null);
+    return id;
+  }
+
+  /** The id of the next row this write inserts. */
+  #rowId(): string {
+    return rowId(this.id(), ++this.#rows);
   }
 
   /** Closes the current rows of `table` that `where` selects. */
@@ -194,43 +197,43 @@ export class Change {
   }
 
   insertSymbol(row: Omit<SymbolRow, "revision">): void {
-    this.#db.prepare("INSERT INTO symbols (space, address, name, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?)").run(row.space, row.address, row.name, row.kind, row.origin, this.id());
+    this.#db.prepare("INSERT INTO symbols (id, space, address, name, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)").run(this.#rowId(), row.space, row.address, row.name, row.kind, row.origin, this.id());
   }
 
   insertRegion(row: Omit<RegionRow, "revision">): void {
     this.#db
-      .prepare("INSERT INTO regions (space, start_address, end_address, type, element, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(row.space, row.start, row.end, row.type, row.element ?? null, row.origin, this.id());
+      .prepare("INSERT INTO regions (id, space, start_address, end_address, type, element, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.start, row.end, row.type, row.element ?? null, row.origin, this.id());
   }
 
   insertComment(row: Omit<CommentRow, "revision">): void {
     this.#db
-      .prepare("INSERT INTO comments (space, address, placement, text, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(row.space, row.address, row.placement, row.text, row.origin, this.id());
+      .prepare("INSERT INTO comments (id, space, address, placement, text, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.address, row.placement, row.text, row.origin, this.id());
   }
 
   insertReference(row: Omit<ReferenceRow, "revision">): void {
     this.#db
-      .prepare('INSERT INTO "references" (space, from_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(row.space, row.from, row.to, row.kind, row.origin, this.id());
+      .prepare('INSERT INTO "references" (id, space, from_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(this.#rowId(), row.space, row.from, row.to, row.kind, row.origin, this.id());
   }
 
   insertModule(row: Omit<ModuleRow, "revision">): void {
     this.#db
-      .prepare("INSERT INTO modules (space, start_address, file, title, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(row.space, row.start, row.file, row.title ?? null, row.origin, this.id());
+      .prepare("INSERT INTO modules (id, space, start_address, file, title, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.start, row.file, row.title ?? null, row.origin, this.id());
   }
 
   insertOperand(row: Omit<OperandRow, "revision">): void {
     this.#db
-      .prepare("INSERT INTO operands (space, address, selector, symbol, offset, expression, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(row.space, row.address, row.select, row.symbol ?? null, row.offset, row.expression ?? null, row.origin, this.id());
+      .prepare("INSERT INTO operands (id, space, address, selector, symbol, offset, expression, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.address, row.select, row.symbol ?? null, row.offset, row.expression ?? null, row.origin, this.id());
   }
 
   insertSuppression(row: Omit<SuppressionRow, "revision">): void {
     this.#db
-      .prepare("INSERT INTO suppressions (space, entity, start_address, end_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(row.space, row.entity, row.start, row.end, row.to ?? null, row.kind ?? null, row.origin, this.id());
+      .prepare("INSERT INTO suppressions (id, space, entity, start_address, end_address, to_address, kind, origin, valid_from_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.#rowId(), row.space, row.entity, row.start, row.end, row.to ?? null, row.kind ?? null, row.origin, this.id());
   }
 }
 
@@ -254,7 +257,7 @@ function checkEvidence(evidence: Evidence[] | undefined): void {
 }
 
 /** Runs semantic writes in one transaction, as one revision. */
-function write<T>(db: DatabaseSync, context: WriteContext, operation: string, work: (change: Change) => T): { revision: number | null; current: T } {
+function write<T>(db: DatabaseSync, context: WriteContext, operation: string, work: (change: Change) => T): { revision: string | null; current: T } {
   if (context.origin !== "user" && context.origin !== "llm") {
     throw new KnowledgeError("invalid-input", "A semantic write comes from the user or the LLM.");
   }
@@ -272,7 +275,7 @@ interface Step<T, P = never> {
   previous?: P;
 }
 
-const result = <T, P>(written: { revision: number | null; current: Step<T, P> }): WriteResult<T, P> =>
+const result = <T, P>(written: { revision: string | null; current: Step<T, P> }): WriteResult<T, P> =>
   written.current.previous === undefined ? { revision: written.revision, current: written.current.current } : { revision: written.revision, current: written.current.current, previous: written.current.previous };
 
 // Each write has a check, which refuses bad input before anything opens, and a
@@ -695,7 +698,7 @@ export type BatchStep = Step<SymbolRow | RegionRow[] | CommentRow | ReferenceRow
  * Applies many writes as one revision in one transaction (D42): all of them,
  * or none when one is refused. Every write is checked before anything opens.
  */
-export function applyBatch(db: DatabaseSync, context: WriteContext, operations: BatchOperation[]): { revision: number | null; steps: BatchStep[] } {
+export function applyBatch(db: DatabaseSync, context: WriteContext, operations: BatchOperation[]): { revision: string | null; steps: BatchStep[] } {
   if (operations.length === 0 || operations.length > MAX_BATCH) throw new KnowledgeError("invalid-input", `A batch has 1 to ${MAX_BATCH} writes.`);
   operations.forEach((operation, index) => {
     try {
@@ -795,22 +798,19 @@ const KEYS = {
  * Makes the current knowledge equal to what it was at `revision`, as a new
  * revision. History is never erased; restored rows keep their origin.
  */
-export function revert(db: DatabaseSync, context: WriteContext, request: { revision: number }): WriteResult<{ restoredRevision: number }> {
+export function revert(db: DatabaseSync, context: WriteContext, request: { revision: string }): WriteResult<{ restoredRevision: string }> {
   return write(db, context, "revert", (change) => {
-    const current = currentRevision(db);
-    if (!Number.isInteger(request.revision) || request.revision < 0 || request.revision > current) {
-      throw new KnowledgeError("not-found", `There is no revision ${request.revision}; knowledge is at revision ${current}.`);
-    }
+    const restored = resolveRevision(db, request.revision);
     const at = "valid_from_revision <= ? AND (valid_to_revision IS NULL OR valid_to_revision > ?)";
     for (const [table, spec] of Object.entries(KEYS)) {
       const name = table === "references" ? '"references"' : table;
-      const then = db.prepare(`SELECT ${spec.columns}, id FROM ${name} WHERE ${at}`).all(request.revision, request.revision) as Array<Record<string, unknown>>;
+      const then = db.prepare(`SELECT ${spec.columns}, id FROM ${name} WHERE ${at}`).all(restored, restored) as Array<Record<string, unknown>>;
       const now = db.prepare(`SELECT ${spec.columns}, id FROM ${name} WHERE valid_to_revision IS NULL`).all() as Array<Record<string, unknown>>;
       const key = (row: Record<string, unknown>) => (spec.key as (row: unknown) => string)(spec.map(row as never));
       const thenKeys = new Set(then.map(key));
       const nowKeys = new Set(now.map(key));
       // Close first, so restored rows never collide with the current-row rules.
-      for (const row of now) if (!thenKeys.has(key(row))) change.close(name, "id = ?", row.id as number);
+      for (const row of now) if (!thenKeys.has(key(row))) change.close(name, "id = ?", row.id as string);
       for (const row of then) {
         if (nowKeys.has(key(row))) continue;
         if (table === "suppressions") {
@@ -832,6 +832,6 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
         else change.insertReference(mapped);
       }
     }
-    return { restoredRevision: request.revision };
+    return { restoredRevision: restored };
   });
 }

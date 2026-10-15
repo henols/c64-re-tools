@@ -1,10 +1,12 @@
-// Current-state knowledge queries. A project without a database
+// Current-state knowledge queries. A project without knowledge
 // reads as empty knowledge. Each query reads one address space (D53); the
 // default is the C64.
 
 import type { DatabaseSync } from "node:sqlite";
 
+import { KnowledgeError } from "./database.ts";
 import { DEFAULT_SPACE, type CommentPlacement, type OperandSelect, type Origin, type ReferenceKind, type RegionType, type Space, type SuppressionEntity, type SymbolKind } from "./schema.ts";
+import { NO_REVISION } from "./text.ts";
 
 export interface SymbolRow {
   space: Space;
@@ -12,7 +14,7 @@ export interface SymbolRow {
   name: string;
   kind: SymbolKind;
   origin: Origin;
-  revision: number;
+  revision: string;
 }
 
 export interface RegionRow {
@@ -23,7 +25,7 @@ export interface RegionRow {
   /** Bytes per element of a table; the length is a multiple of it (D42). */
   element?: number;
   origin: Origin;
-  revision: number;
+  revision: string;
 }
 
 export interface CommentRow {
@@ -32,7 +34,7 @@ export interface CommentRow {
   placement: CommentPlacement;
   text: string;
   origin: Origin;
-  revision: number;
+  revision: string;
 }
 
 export interface ReferenceRow {
@@ -41,7 +43,7 @@ export interface ReferenceRow {
   to: number;
   kind: ReferenceKind;
   origin: Origin;
-  revision: number;
+  revision: string;
 }
 
 /** A place that a user/LLM removal blocks for every analyzer (D36). `to` and `kind` are set for a reference only. */
@@ -53,7 +55,7 @@ export interface SuppressionRow {
   to?: number;
   kind?: ReferenceKind;
   origin: Extract<Origin, "user" | "llm">;
-  revision: number;
+  revision: string;
 }
 
 /** Where a file of the generated source starts (D48): it runs to the next module or the end of its segment. */
@@ -63,7 +65,7 @@ export interface ModuleRow {
   file: string;
   title?: string;
   origin: Extract<Origin, "user" | "llm">;
-  revision: number;
+  revision: string;
 }
 
 /**
@@ -79,7 +81,7 @@ export interface OperandRow {
   offset: number;
   expression?: string;
   origin: Extract<Origin, "user" | "llm">;
-  revision: number;
+  revision: string;
 }
 
 type Raw = Record<string, unknown>;
@@ -93,7 +95,7 @@ export const MODULE_COLUMNS = "space, start_address, file, title, origin, valid_
 export const OPERAND_COLUMNS = "space, address, selector, symbol, offset, expression, origin, valid_from_revision";
 
 export function toSymbol(row: Raw): SymbolRow {
-  return { space: row.space as Space, address: row.address as number, name: row.name as string, kind: row.kind as SymbolKind, origin: row.origin as Origin, revision: row.valid_from_revision as number };
+  return { space: row.space as Space, address: row.address as number, name: row.name as string, kind: row.kind as SymbolKind, origin: row.origin as Origin, revision: row.valid_from_revision as string };
 }
 
 export function toRegion(row: Raw): RegionRow {
@@ -103,7 +105,7 @@ export function toRegion(row: Raw): RegionRow {
     end: row.end_address as number,
     type: row.type as RegionType,
     origin: row.origin as Origin,
-    revision: row.valid_from_revision as number,
+    revision: row.valid_from_revision as string,
   };
   if (row.element !== null && row.element !== undefined) region.element = row.element as number;
   return region;
@@ -116,12 +118,12 @@ export function toComment(row: Raw): CommentRow {
     placement: row.placement as CommentPlacement,
     text: row.text as string,
     origin: row.origin as Origin,
-    revision: row.valid_from_revision as number,
+    revision: row.valid_from_revision as string,
   };
 }
 
 export function toReference(row: Raw): ReferenceRow {
-  return { space: row.space as Space, from: row.from_address as number, to: row.to_address as number, kind: row.kind as ReferenceKind, origin: row.origin as Origin, revision: row.valid_from_revision as number };
+  return { space: row.space as Space, from: row.from_address as number, to: row.to_address as number, kind: row.kind as ReferenceKind, origin: row.origin as Origin, revision: row.valid_from_revision as string };
 }
 
 export function toSuppression(row: Raw): SuppressionRow {
@@ -131,7 +133,7 @@ export function toSuppression(row: Raw): SuppressionRow {
     start: row.start_address as number,
     end: row.end_address as number,
     origin: row.origin as SuppressionRow["origin"],
-    revision: row.valid_from_revision as number,
+    revision: row.valid_from_revision as string,
   };
   if (row.to_address !== null) suppression.to = row.to_address as number;
   if (row.kind !== null) suppression.kind = row.kind as ReferenceKind;
@@ -139,7 +141,7 @@ export function toSuppression(row: Raw): SuppressionRow {
 }
 
 export function toModule(row: Raw): ModuleRow {
-  const module: ModuleRow = { space: row.space as Space, start: row.start_address as number, file: row.file as string, origin: row.origin as ModuleRow["origin"], revision: row.valid_from_revision as number };
+  const module: ModuleRow = { space: row.space as Space, start: row.start_address as number, file: row.file as string, origin: row.origin as ModuleRow["origin"], revision: row.valid_from_revision as string };
   if (row.title !== null && row.title !== undefined) module.title = row.title as string;
   return module;
 }
@@ -151,16 +153,36 @@ export function toOperand(row: Raw): OperandRow {
     select: row.selector as OperandSelect,
     offset: row.offset as number,
     origin: row.origin as OperandRow["origin"],
-    revision: row.valid_from_revision as number,
+    revision: row.valid_from_revision as string,
   };
   if (row.symbol !== null && row.symbol !== undefined) operand.symbol = row.symbol as string;
   if (row.expression !== null && row.expression !== undefined) operand.expression = row.expression as string;
   return operand;
 }
 
-export function currentRevision(db: DatabaseSync | undefined): number {
-  if (db === undefined) return 0;
-  return Number((db.prepare("SELECT value FROM meta WHERE key = 'current_revision'").get() as { value: string }).value);
+/** The id of the newest revision, or "0" when the knowledge has none (D69). */
+export function currentRevision(db: DatabaseSync | undefined): string {
+  if (db === undefined) return "0";
+  return (db.prepare("SELECT max(id) AS id FROM revisions").get() as { id: string | null }).id ?? "0";
+}
+
+/** At most this many ids are named when a start of an id fits several revisions. */
+const NAMED_REVISIONS = 5;
+
+/**
+ * The revision that `text` names (D69): "0" (no revision), a full revision id,
+ * or a start of an id that only one revision has.
+ */
+export function resolveRevision(db: DatabaseSync | undefined, text: string): string {
+  if (text === NO_REVISION) return NO_REVISION;
+  if (!/^[0-9a-zT.-]+$/.test(text)) throw new KnowledgeError("invalid-input", `${JSON.stringify(text)} is not a revision id. A revision id looks like 20261015T214501.123-k3f9qz; its start is enough when only one revision has it.`);
+  const found = (db?.prepare("SELECT id FROM revisions WHERE substr(id, 1, ?) = ? ORDER BY id LIMIT ?").all(text.length, text, NAMED_REVISIONS + 1) ?? []) as Array<{ id: string }>;
+  if (found.length === 0) throw new KnowledgeError("not-found", `There is no revision ${text}.`);
+  if (found.length > 1) {
+    const named = found.slice(0, NAMED_REVISIONS).map((row) => row.id).join(", ");
+    throw new KnowledgeError("invalid-input", `${text} is the start of more than one revision: ${named}${found.length > NAMED_REVISIONS ? ", ..." : ""}. Give more of the id.`);
+  }
+  return found[0]!.id;
 }
 
 export function symbolAt(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): SymbolRow | undefined {
@@ -263,7 +285,7 @@ export interface AddressKnowledge {
   operand?: OperandRow;
   /** What user/LLM removals block here for the analyzers. */
   suppressions: SuppressionRow[];
-  revision: number;
+  revision: string;
 }
 
 export function at(db: DatabaseSync | undefined, address: number, space: Space = DEFAULT_SPACE): AddressKnowledge {

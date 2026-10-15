@@ -1,7 +1,7 @@
 // The c64-static-analysis script: analyzes a project program with DXA (fast
 // first pass) or Ghidra (deeper), which it runs itself, seeded from
 // current knowledge, and imports the structural findings into
-// .c64-re-tools/knowledge.db.
+// .c64-re-tools/knowledge/.
 
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -104,10 +104,10 @@ function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<stri
 
 /**
  * Imports one analyzer's findings as one revision, refused when knowledge
- * changed since the seeds were read. A refused import creates no knowledge.db.
+ * changed since the seeds were read. A refused import creates no knowledge.
  * The revision records the image hash and the analyzer version.
  */
-function record(findings: NormalizedFindings, revision: number, description: string, provenance: Pick<ImportContext, "inputHash" | "toolVersion" | "evidence">) {
+function record(findings: NormalizedFindings, revision: string, description: string, provenance: Pick<ImportContext, "inputHash" | "toolVersion" | "evidence">) {
   let imported: ImportResult;
   try {
     imported = withWrite((db) => importFindings(db, findings, { expectedRevision: revision, description, ...provenance }));

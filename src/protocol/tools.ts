@@ -5,7 +5,7 @@ import { type Fields, invalid, isInteger, isObject, isOneOf, onlyFields, Protoco
 
 // ---------------------------------------------------------------------------
 // Native-tool operations. Short-lived requests on "tool" connections; they
-// never touch an emulator or knowledge.db.
+// never touch an emulator or the knowledge.
 
 /** A transferred source tree: relative POSIX paths, one attachment per file in this order. */
 export type SourceTree = Array<{ path: string; size: number }>;

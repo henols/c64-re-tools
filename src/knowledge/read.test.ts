@@ -9,6 +9,7 @@ import { openForRead, openForWrite } from "./database.ts";
 import { historyAt, historyNamed, revision, revisions } from "./history.ts";
 import { at, listComments, listReferences, listRegions, listSymbols, search } from "./read.ts";
 import { addReference, classifyRegion, renameSymbol, setComment } from "./write.ts";
+import { nth } from "./revisions.testkit.ts";
 
 let root: string;
 let db: DatabaseSync;
@@ -38,9 +39,9 @@ test("at() gives the symbol, containing region, comments and references of an ad
   assert.equal(known.comments[0]?.text, "Reads joystick 2 and moves the player.");
   assert.deepEqual(known.referencesTo.map((reference) => [reference.from, reference.kind]), [[0x2000, "call"]]);
   assert.deepEqual(known.referencesFrom.map((reference) => [reference.to, reference.kind]), [[0xdc00, "read"]]);
-  assert.equal(known.revision, 8);
+  assert.equal(known.revision, nth(db, 8));
   // Inside a region, without a symbol of its own.
-  assert.deepEqual({ ...at(db, 0x2105), region: undefined }, { space: "c64", address: 0x2105, region: undefined, comments: [], referencesFrom: [], referencesTo: [], suppressions: [], revision: 8 });
+  assert.deepEqual({ ...at(db, 0x2105), region: undefined }, { space: "c64", address: 0x2105, region: undefined, comments: [], referencesFrom: [], referencesTo: [], suppressions: [], revision: nth(db, 8) });
 });
 
 test("a project without a database reads as empty knowledge", () => {
@@ -48,7 +49,7 @@ test("a project without a database reads as empty knowledge", () => {
   try {
     const none = openForRead(empty);
     assert.equal(none, undefined);
-    assert.deepEqual(at(none, 0x2100), { space: "c64", address: 0x2100, comments: [], referencesFrom: [], referencesTo: [], suppressions: [], revision: 0 });
+    assert.deepEqual(at(none, 0x2100), { space: "c64", address: 0x2100, comments: [], referencesFrom: [], referencesTo: [], suppressions: [], revision: "0" });
     assert.deepEqual(search(none, "x"), { symbols: [], comments: [] });
     assert.deepEqual(historyAt(none, 0x2100), []);
     assert.deepEqual(revisions(none), []);
@@ -81,21 +82,24 @@ test("history at an address shows every row with the revisions that opened and c
   assert.deepEqual(
     symbols.map((entry) => [(entry.row as { name: string }).name, entry.from, entry.to]),
     [
-      ["FUN_2100", 1, 3],
-      ["update_player", 3, undefined],
+      ["FUN_2100", nth(db, 1), nth(db, 3)],
+      ["update_player", nth(db, 3), undefined],
     ],
   );
   assert.ok(history.some((entry) => entry.entity === "region"));
   assert.equal(history.filter((entry) => entry.entity === "reference").length, 2);
-  assert.deepEqual(historyNamed(db, "FUN_2100").map((entry) => entry.to), [3]);
+  assert.deepEqual(historyNamed(db, "FUN_2100").map((entry) => entry.to), [nth(db, 3)]);
 });
 
 test("revisions list newest first and one revision shows what it changed", () => {
-  assert.deepEqual(revisions(db, { limit: 3 }).map((revision) => revision.id), [8, 7, 6]);
-  assert.deepEqual(revisions(db, { before: 3 }).map((revision) => revision.id), [2, 1]);
-  const third = revision(db, 3);
+  assert.deepEqual(revisions(db, { limit: 3 }).map((revision) => revision.id), [nth(db, 8), nth(db, 7), nth(db, 6)]);
+  assert.deepEqual(revisions(db, { before: nth(db, 3) }).map((revision) => revision.id), [nth(db, 2), nth(db, 1)]);
+  const third = revision(db, nth(db, 3));
+  assert.equal(revision(db, nth(db, 3).slice(0, 24)).revision.id, nth(db, 3), "a start of the id that one revision has is enough");
   assert.deepEqual([third.revision.origin, third.revision.operation, third.revision.description], ["user", "rename-symbol", "reads joystick 2"]);
   assert.deepEqual(third.added.map((entry) => (entry.row as { name: string }).name), ["update_player"]);
   assert.deepEqual(third.closed.map((entry) => (entry.row as { name: string }).name), ["FUN_2100"]);
-  assert.throws(() => revision(db, 99), /no revision 99/);
+  assert.throws(() => revision(db, "20991231T235959.999-zzzzzz"), /no revision 20991231T235959.999-zzzzzz/);
+  assert.throws(() => revision(db, "2"), /start of more than one revision/);
+  assert.throws(() => revision(db, "99;"), /is not a revision id/);
 });

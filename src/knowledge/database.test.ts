@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { KnowledgeError, knowledgePath, openForRead, openForWrite, transaction, withWrite } from "./database.ts";
-import { currentRevision } from "./read.ts";
-import { ensureSchema, SCHEMA_VERSION, schemaVersion } from "./schema.ts";
+import { indexPath, KnowledgeError, openForRead, openForWrite, textPath, transaction, withWrite } from "./database.ts";
+import { currentRevision, symbolAt } from "./read.ts";
+import { ensureSchema, INDEX_VERSION } from "./schema.ts";
+import { REVISION_ID } from "./text.ts";
 import { removeSymbol, renameSymbol } from "./write.ts";
 
 const projects: string[] = [];
@@ -29,6 +30,7 @@ function project(): string {
 }
 
 const failsWith = (code: string) => (error: unknown) => error instanceof KnowledgeError && error.code === code;
+const text = (root: string, file: string) => readFileSync(join(textPath(root), file), "utf8");
 
 test("a read of a project without knowledge creates nothing", () => {
   const root = project();
@@ -36,91 +38,150 @@ test("a read of a project without knowledge creates nothing", () => {
   assert.equal(existsSync(join(root, ".c64-re-tools")), false);
 });
 
-test("a write creates .c64-re-tools/knowledge.db with the current schema", () => {
+test("a write creates the knowledge text with its .gitattributes, and the index in local/", () => {
   const root = project();
   const db = openForWrite(root);
-  assert.equal(schemaVersion(db), SCHEMA_VERSION);
-  assert.equal((db.prepare("SELECT value FROM meta WHERE key = 'current_revision'").get() as { value: string }).value, "0");
+  assert.equal(currentRevision(db), "0");
   db.close();
-  assert.equal(knowledgePath(root), join(root, ".c64-re-tools", "knowledge.db"));
-  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")).sort(), ["knowledge.db", "local"]);
-  const again = openForRead(root);
-  assert.ok(again !== undefined);
-  assert.equal(schemaVersion(again), SCHEMA_VERSION);
-  again.close();
+  assert.equal(textPath(root), join(root, ".c64-re-tools", "knowledge"));
+  assert.equal(indexPath(root), join(root, ".c64-re-tools", "local", "knowledge.db"));
+  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")).sort(), ["knowledge", "local"]);
+  assert.match(readFileSync(join(textPath(root), ".gitattributes"), "utf8"), /^\*\.jsonl merge=union$/m);
+  assert.deepEqual(readdirSync(join(root, ".c64-re-tools", "local")).sort(), [".gitignore", "knowledge.db"]);
 });
 
-test("a committed transaction leaves one self-contained file and a failed one leaves nothing", () => {
+test("a write gives one revision line and one row line", () => {
   const root = project();
+  const renamed = withWrite((db) => renameSymbol(db, { origin: "user", description: "the entry" }, { address: 0xc000, name: "start" }), root);
+  assert.match(renamed.revision!, REVISION_ID);
+  const [revision] = text(root, "revisions.jsonl").trimEnd().split("\n");
+  assert.deepEqual(Object.keys(JSON.parse(revision!)), ["id", "time", "origin", "operation", "reason"]);
+  assert.equal(
+    text(root, "symbols.jsonl"),
+    `{"id":"${renamed.revision}/1","space":"c64","address":"$c000","name":"start","kind":"label","origin":"user","added":"${renamed.revision}","closed":null}\n`,
+  );
+  const again = withWrite((db) => renameSymbol(db, { origin: "user" }, { address: 0xc000, name: "main" }), root);
+  assert.equal(
+    text(root, "symbols.jsonl"),
+    [
+      `{"id":"${renamed.revision}/1","space":"c64","address":"$c000","name":"start","kind":"label","origin":"user","added":"${renamed.revision}","closed":"${again.revision}"}`,
+      `{"id":"${again.revision}/1","space":"c64","address":"$c000","name":"main","kind":"label","origin":"user","added":"${again.revision}","closed":null}`,
+      "",
+    ].join("\n"),
+  );
+  assert.ok(renamed.revision! < again.revision!);
+});
+
+test("a committed transaction writes the text and the index, and a failed one writes neither", () => {
+  const root = project();
+  withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "main" }), root);
+  const before = text(root, "symbols.jsonl");
   const db = openForWrite(root);
-  transaction(db, () => {
-    db.prepare("INSERT INTO revisions (created_at, origin, operation) VALUES ('t', 'llm', 'test')").run();
-  });
   assert.throws(() =>
     transaction(db, () => {
-      db.prepare("INSERT INTO revisions (created_at, origin, operation) VALUES ('t', 'llm', 'test')").run();
+      renameSymbol(db, { origin: "llm" }, { address: 0x2200, name: "other" });
       throw new Error("abort");
     }),
   );
-  assert.equal((db.prepare("SELECT count(*) AS n FROM revisions").get() as { n: number }).n, 1);
   db.close();
+  assert.equal(text(root, "symbols.jsonl"), before);
   // Rollback journal, not WAL: no side files after the writes.
-  assert.deepEqual(readdirSync(join(root, ".c64-re-tools")).sort(), ["knowledge.db", "local"]);
+  assert.deepEqual(readdirSync(join(root, ".c64-re-tools", "local")).sort(), [".gitignore", "knowledge.db"]);
+  assert.deepEqual(readdirSync(textPath(root)).sort(), [".gitattributes", "revisions.jsonl", "symbols.jsonl"]);
 });
 
-test("the schema enforces the current-row rules", () => {
+test("the index keeps the field rules of the knowledge", () => {
   const root = project();
   const db = openForWrite(root);
-  db.prepare("INSERT INTO revisions (id, created_at, origin, operation) VALUES (1, 't', 'llm', 'test')").run();
-  const symbol = db.prepare("INSERT INTO symbols (address, name, kind, origin, valid_from_revision) VALUES (?, ?, 'label', 'llm', 1)");
-  symbol.run(0x2100, "update_player");
-  assert.throws(() => symbol.run(0x2100, "other"), /UNIQUE/, "one current symbol per address");
-  assert.throws(() => symbol.run(0x2200, "update_player"), /UNIQUE/, "current names are unique");
-  assert.throws(() => symbol.run(0x10000, "too_high"), /CHECK/);
-  db.prepare("UPDATE symbols SET valid_to_revision = 1 WHERE address = ?").run(0x2100);
-  symbol.run(0x2100, "update_player"); // a closed row does not block a new current one
-  assert.throws(() => db.prepare("INSERT INTO regions (start_address, end_address, type, origin, valid_from_revision) VALUES (5, 4, 'code', 'llm', 1)").run(), /CHECK/);
-  assert.throws(() => db.prepare("INSERT INTO revisions (created_at, origin, operation) VALUES ('t', 'hacker', 'x')").run(), /CHECK/);
+  db.prepare("INSERT INTO revisions (id, created_at, origin, operation) VALUES ('r', 't', 'llm', 'test')").run();
+  const symbol = db.prepare("INSERT INTO symbols (id, address, name, kind, origin, valid_from_revision) VALUES (?, ?, ?, 'label', 'llm', 'r')");
+  assert.throws(() => symbol.run("a", 0x10000, "too_high"), /CHECK/);
+  assert.throws(() => db.prepare("INSERT INTO regions (id, start_address, end_address, type, origin, valid_from_revision) VALUES ('b', 5, 4, 'code', 'llm', 'r')").run(), /CHECK/);
+  assert.throws(() => db.prepare("INSERT INTO revisions (id, created_at, origin, operation) VALUES ('s', 't', 'hacker', 'x')").run(), /CHECK/);
   db.close();
 });
 
-test("a database with another schema version is refused for a read and a write, and garbage is invalid", () => {
-  const newer = project();
-  openForWrite(newer).close();
-  const raw = new DatabaseSync(knowledgePath(newer));
-  raw.prepare("UPDATE meta SET value = ? WHERE key = 'schema_version'").run(String(SCHEMA_VERSION + 1));
-  raw.close();
-  assert.throws(() => openForRead(newer), failsWith("unsupported-schema"));
-  assert.throws(() => openForWrite(newer), failsWith("unsupported-schema"));
-
-  const garbage = project();
-  mkdirSync(join(garbage, ".c64-re-tools"));
-  writeFileSync(knowledgePath(garbage), "this is not sqlite at all, not even close......................................");
-  assert.throws(() => openForRead(garbage), failsWith("invalid-database"));
-
-  const foreign = project();
-  mkdirSync(join(foreign, ".c64-re-tools"));
-  const other = new DatabaseSync(knowledgePath(foreign));
-  other.exec("CREATE TABLE something (x)");
-  other.close();
-  assert.throws(() => openForWrite(foreign), failsWith("invalid-database"));
-});
-
-test("a schema version that is not a whole number is invalid", () => {
+test("the index is made again when it is missing, of another version, or not a database", () => {
   const root = project();
-  openForWrite(root).close();
-  const raw = new DatabaseSync(knowledgePath(root));
-  raw.prepare("UPDATE meta SET value = 'one' WHERE key = 'schema_version'").run();
+  withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "main" }), root);
+  const read = () => {
+    const db = openForRead(root)!;
+    try {
+      return symbolAt(db, 0x2100)?.name;
+    } finally {
+      db.close();
+    }
+  };
+  rmSync(indexPath(root));
+  assert.equal(read(), "main");
+  const raw = new DatabaseSync(indexPath(root));
+  raw.prepare("UPDATE meta SET value = ? WHERE key = 'index_version'").run(String(INDEX_VERSION + 1));
   raw.close();
-  assert.throws(() => openForRead(root), failsWith("invalid-database"));
-  assert.throws(() => openForWrite(root), failsWith("invalid-database"));
+  assert.equal(read(), "main");
+  writeFileSync(indexPath(root), "this is not sqlite at all, not even close......................................");
+  assert.equal(read(), "main");
+  const foreign = new DatabaseSync(indexPath(root));
+  foreign.exec("DROP TABLE meta; CREATE TABLE something (x)");
+  foreign.close();
+  assert.equal(read(), "main");
 });
 
-test("two writers that create the database at the same time both get the current schema", () => {
+test("a change of the text shows in the next read and write", () => {
+  const root = project();
+  const first = withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "main" }), root);
+  writeFileSync(join(textPath(root), "symbols.jsonl"), text(root, "symbols.jsonl").replace('"main"', '"edited"'));
+  const db = openForRead(root)!;
+  assert.equal(symbolAt(db, 0x2100)?.name, "edited");
+  db.close();
+  const second = withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0x2200, name: "other" }), root);
+  assert.match(text(root, "symbols.jsonl"), /"edited"/);
+  assert.ok(second.revision! > first.revision!);
+});
+
+test("text that is written but not in the index, as after a crash, is read from the text", () => {
+  const root = project();
+  withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "main" }), root);
+  const index = readFileSync(indexPath(root));
+  withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0x2200, name: "other" }), root);
+  // The index of before the second write: the text has a revision that the index does not.
+  writeFileSync(indexPath(root), index);
+  const db = openForRead(root)!;
+  assert.equal(symbolAt(db, 0x2200)?.name, "other");
+  db.close();
+});
+
+test("a bad line in the text is refused with its file and line", () => {
+  const root = project();
+  withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "main" }), root);
+  const symbols = join(textPath(root), "symbols.jsonl");
+  const good = readFileSync(symbols, "utf8");
+  writeFileSync(symbols, `${good}{not json\n`);
+  assert.throws(() => openForRead(root), (error: unknown) => failsWith("invalid-database")(error) && /symbols\.jsonl:2: the line is not JSON/.test((error as Error).message));
+  writeFileSync(symbols, good.replace('"$2100"', '"2100"'));
+  assert.throws(() => openForRead(root), /symbols\.jsonl:1: address must be an address/);
+  writeFileSync(symbols, good.replace('"kind"', '"color":"red","kind"'));
+  assert.throws(() => openForRead(root), /symbols\.jsonl:1: the key "color" is not known/);
+  writeFileSync(symbols, good.replace('"origin":"llm"', '"origin":"hacker"'));
+  assert.throws(() => openForRead(root), (error: unknown) => failsWith("invalid-database")(error) && /CHECK/.test((error as Error).message));
+  writeFileSync(join(textPath(root), "symbols.jsonl"), good);
+  writeFileSync(join(textPath(root), "notes.jsonl"), "");
+  assert.throws(() => openForRead(root), /notes\.jsonl is not a knowledge file/);
+});
+
+test("a project with only the knowledge.db of an older c64-re-tools is refused", () => {
   const root = project();
   mkdirSync(join(root, ".c64-re-tools"));
-  const first = new DatabaseSync(knowledgePath(root));
-  const second = new DatabaseSync(knowledgePath(root));
+  writeFileSync(join(root, ".c64-re-tools", "knowledge.db"), "");
+  assert.throws(() => openForRead(root), failsWith("unsupported-schema"));
+  assert.throws(() => withWrite((db) => renameSymbol(db, { origin: "llm" }, { address: 0x2100, name: "main" }), root), failsWith("unsupported-schema"));
+  assert.equal(existsSync(textPath(root)), false);
+});
+
+test("two writers that create the index at the same time both get the current schema", () => {
+  const root = project();
+  mkdirSync(join(root, ".c64-re-tools", "local"), { recursive: true });
+  const first = new DatabaseSync(indexPath(root));
+  const second = new DatabaseSync(indexPath(root));
   let raced = false;
   // The second writer creates the schema after the first one read the version and before it takes the write lock.
   const racing = new Proxy(first, {
@@ -140,46 +201,39 @@ test("two writers that create the database at the same time both get the current
   });
   ensureSchema(racing);
   assert.equal(raced, true);
-  assert.equal(schemaVersion(first), SCHEMA_VERSION);
-  assert.equal((first.prepare("SELECT count(*) AS n FROM meta WHERE key = 'current_revision'").get() as { n: number }).n, 1);
+  assert.equal((first.prepare("SELECT value FROM meta WHERE key = 'index_version'").get() as { value: string }).value, String(INDEX_VERSION));
   first.close();
   second.close();
 });
 
-test("a refused write in a project without knowledge creates nothing, and an accepted one creates the database", () => {
+test("a refused write in a project without knowledge creates nothing, and an accepted one creates the knowledge", () => {
   const root = project();
   const context = { origin: "llm" as const };
   assert.throws(() => withWrite((db) => removeSymbol(db, context, { address: 0x2100 }), root), failsWith("not-found"));
-  assert.throws(() => withWrite((db) => renameSymbol(db, { ...context, expectedRevision: 3 }, { address: 0x2100, name: "main" }), root), failsWith("stale-revision"));
+  assert.throws(() => withWrite((db) => renameSymbol(db, { ...context, expectedRevision: "20261015T214501.123-k3f9qz" }, { address: 0x2100, name: "main" }), root), failsWith("not-found"));
   assert.equal(existsSync(join(root, ".c64-re-tools")), false);
-  const renamed = withWrite((db) => renameSymbol(db, context, { address: 0x2100, name: "main" }), root);
-  assert.equal(renamed.revision, 1);
+  const renamed = withWrite((db) => renameSymbol(db, { ...context, expectedRevision: "0" }, { address: 0x2100, name: "main" }), root);
   const db = openForRead(root)!;
-  assert.equal(currentRevision(db), 1);
+  assert.equal(currentRevision(db), renamed.revision);
   db.close();
+  assert.throws(() => withWrite((db) => renameSymbol(db, { ...context, expectedRevision: "0" }, { address: 0x2200, name: "late" }), root), failsWith("stale-revision"));
   assert.throws(() => withWrite((db) => removeSymbol(db, context, { address: 0x2200 }), root), failsWith("not-found"));
 });
 
-function projectWithSymbol(): string {
+test("a read opens the index read-only and never changes the text", () => {
   const root = project();
   withWrite((db) => renameSymbol(db, { origin: "user" }, { address: 0x2100, name: "main" }), root);
-  return root;
-}
-
-test("a read opens the database read-only and never changes the file", () => {
-  const root = projectWithSymbol();
-  const before = readFileSync(knowledgePath(root));
+  const before = text(root, "symbols.jsonl");
   const db = openForRead(root)!;
-  assert.throws(() => db.exec("INSERT INTO revisions (created_at, origin, operation) VALUES ('t', 'llm', 'test')"), /readonly/);
+  assert.throws(() => db.exec("INSERT INTO revisions (id, created_at, origin, operation) VALUES ('r', 't', 'llm', 'test')"), /readonly/);
   db.close();
-  assert.deepEqual(readFileSync(knowledgePath(root)), before);
+  assert.equal(text(root, "symbols.jsonl"), before);
 });
 
-test("a read of an empty database file reads as no knowledge and leaves the file empty", () => {
+test("a knowledge folder without files reads as no knowledge", () => {
   const root = project();
-  mkdirSync(join(root, ".c64-re-tools"));
-  writeFileSync(knowledgePath(root), "");
-  assert.equal(openForRead(root), undefined);
-  assert.equal(readFileSync(knowledgePath(root)).length, 0);
+  mkdirSync(textPath(root), { recursive: true });
+  const db = openForRead(root)!;
+  assert.equal(currentRevision(db), "0");
+  db.close();
 });
-

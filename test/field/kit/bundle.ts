@@ -9,7 +9,6 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 
 import { type FieldRun, fileStampCet, inContainer, isoCet, PACKAGE_NAME, run, RUN_FILE } from "./common.ts";
@@ -33,22 +32,35 @@ function transcriptDir(project: string): string | undefined {
   return long === undefined ? undefined : join(projects, long);
 }
 
+/** Counts of the knowledge text of a project: the revisions, and the current rows of each table. */
 function knowledgeSummary(project: string): Record<string, unknown> {
-  const file = join(project, ".c64-re-tools", "knowledge.db");
-  if (!existsSync(file)) return { present: false };
+  const folder = join(project, ".c64-re-tools", "knowledge");
+  if (!existsSync(folder)) return { present: false };
   try {
-    const db = new DatabaseSync(file, { readOnly: true });
-    const rows = (sql: string) => db.prepare(sql).all();
-    const summary = {
-      present: true,
-      revisions: rows("SELECT origin, operation, COUNT(*) AS count FROM revisions GROUP BY origin, operation"),
-      symbols: rows("SELECT origin, kind, COUNT(*) AS count FROM current_symbols GROUP BY origin, kind"),
-      regions: rows("SELECT origin, type, COUNT(*) AS count FROM current_regions GROUP BY origin, type"),
-      comments: rows("SELECT origin, COUNT(*) AS count FROM current_comments GROUP BY origin"),
-      references: rows('SELECT origin, kind, COUNT(*) AS count FROM "current_references" GROUP BY origin, kind'),
+    const lines = (file: string): Array<Record<string, unknown>> => {
+      const path = join(folder, file);
+      if (!existsSync(path)) return [];
+      return readFileSync(path, "utf8").split("\n").filter((line) => line.trim() !== "").map((line) => JSON.parse(line) as Record<string, unknown>);
     };
-    db.close();
-    return summary;
+    const count = (rows: Array<Record<string, unknown>>, keys: string[]) => {
+      const groups = new Map<string, Record<string, unknown>>();
+      for (const row of rows) {
+        const key = keys.map((name) => String(row[name])).join("|");
+        const group = groups.get(key) ?? { ...Object.fromEntries(keys.map((name) => [name, row[name]])), count: 0 };
+        group.count = (group.count as number) + 1;
+        groups.set(key, group);
+      }
+      return [...groups.values()];
+    };
+    const current = (file: string) => lines(file).filter((row) => row.closed === null);
+    return {
+      present: true,
+      revisions: count(lines("revisions.jsonl"), ["origin", "operation"]),
+      symbols: count(current("symbols.jsonl"), ["origin", "kind"]),
+      regions: count(current("regions.jsonl"), ["origin", "type"]),
+      comments: count(current("comments.jsonl"), ["origin"]),
+      references: count(current("references.jsonl"), ["origin", "kind"]),
+    };
   } catch (error) {
     return { present: true, error: error instanceof Error ? error.message : String(error) };
   }

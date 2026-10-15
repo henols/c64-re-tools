@@ -14,6 +14,7 @@ import { after, test } from "node:test";
 
 import { findGhidra } from "../../../src/native/ghidra/index.ts";
 import { analysisSubjectPrg } from "../../fixtures/prg/analysis-subject.ts";
+import { nthIn } from "../../../src/knowledge/revisions.testkit.ts";
 
 let skip: string | false = false;
 try {
@@ -42,14 +43,14 @@ async function skill(name: string, file: string, ...args: string[]): Promise<Rec
 test("Ghidra findings, a semantic rename and a seeded re-run go through one importer", { skip, timeout: 900_000 }, async () => {
   // 1. First Ghidra pass: generated names, regions and references become Ghidra knowledge.
   const first = await skill("c64-static-analysis", "analyze.ts", "game.prg", "--entry", "$080d");
-  assert.equal(first.revision, 1, JSON.stringify(first));
-  assert.deepEqual((await skill("c64-knowledge", "knowledge.ts", "at", "$0818")).symbol, { address: "$0818", name: "FUN_0818", kind: "routine", origin: "ghidra", revision: 1 });
+  assert.equal(first.revision, nthIn(project, 1), JSON.stringify(first));
+  assert.deepEqual((await skill("c64-knowledge", "knowledge.ts", "at", "$0818")).symbol, { address: "$0818", name: "FUN_0818", kind: "routine", origin: "ghidra", revision: nthIn(project, 1) });
 
   // 2. Semantic work: the LLM names the routine; the user marks $080d as data (wrong on purpose).
-  const renamed = await skill("c64-knowledge", "knowledge.ts", "rename", "$0818", "init_result", "--kind", "routine", "--reason", "stores the result", "--expect-revision", "1");
-  assert.equal(renamed.revision, 2, JSON.stringify(renamed));
-  const marked = await skill("c64-knowledge", "knowledge.ts", "rename", "$080d", "start_table", "--kind", "variable", "--origin", "user", "--expect-revision", "2");
-  assert.equal(marked.revision, 3, JSON.stringify(marked));
+  const renamed = await skill("c64-knowledge", "knowledge.ts", "rename", "$0818", "init_result", "--kind", "routine", "--reason", "stores the result", "--expect-revision", nthIn(project, 1));
+  assert.equal(renamed.revision, nthIn(project, 2), JSON.stringify(renamed));
+  const marked = await skill("c64-knowledge", "knowledge.ts", "rename", "$080d", "start_table", "--kind", "variable", "--origin", "user", "--expect-revision", nthIn(project, 2));
+  assert.equal(marked.revision, nthIn(project, 3), JSON.stringify(marked));
 
   // 3. Seeded re-run: Ghidra gets the semantic names; nothing changes owner, the contradiction is reported.
   const second = await skill("c64-static-analysis", "analyze.ts", "game.prg", "--entry", "$080d", "--decompile", "$080d");
@@ -67,7 +68,7 @@ test("Ghidra findings, a semantic rename and a seeded re-run go through one impo
 
   // 4. Knowledge after the loop: semantic names stay with their owners, history is complete.
   const at = await skill("c64-knowledge", "knowledge.ts", "at", "$0818");
-  assert.deepEqual(at.symbol, { address: "$0818", name: "init_result", kind: "routine", origin: "llm", revision: 2 });
+  assert.deepEqual(at.symbol, { address: "$0818", name: "init_result", kind: "routine", origin: "llm", revision: nthIn(project, 2) });
   const history = (await skill("c64-knowledge", "knowledge.ts", "history", "$0818")) as { history: Array<{ entity: string; name?: string; origin: string }> };
   assert.deepEqual(
     history.history.filter((entry) => entry.entity === "symbol").map((entry) => [entry.name, entry.origin]),
@@ -76,10 +77,10 @@ test("Ghidra findings, a semantic rename and a seeded re-run go through one impo
       ["init_result", "llm"],
     ],
   );
-  const revisions = (await skill("c64-knowledge", "knowledge.ts", "revisions")) as { revisions: Array<{ id: number; origin: string }> };
-  assert.deepEqual(revisions.revisions.map((entry) => [entry.id, entry.origin]).sort(), [
-    [1, "ghidra"],
-    [2, "llm"],
-    [3, "user"],
+  const revisions = (await skill("c64-knowledge", "knowledge.ts", "revisions")) as { revisions: Array<{ id: string; origin: string }> };
+  assert.deepEqual(revisions.revisions.map((entry) => [entry.id, entry.origin]).reverse(), [
+    [nthIn(project, 1), "ghidra"],
+    [nthIn(project, 2), "llm"],
+    [nthIn(project, 3), "user"],
   ]);
 });

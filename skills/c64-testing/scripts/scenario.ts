@@ -51,7 +51,7 @@ export type Step = StepBody & { side?: Side };
 
 export interface Subject {
   program: string;
-  /** "knowledge" for knowledge.db, a project JSON file (c64-assembler output or a name → "$xxxx" map), or "none". */
+  /** "knowledge" for the project knowledge, a project JSON file (c64-assembler output or a name → "$xxxx" map), or "none". */
   symbols: string;
 }
 

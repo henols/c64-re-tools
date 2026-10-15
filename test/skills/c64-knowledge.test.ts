@@ -21,6 +21,14 @@ function project(): string {
   return root;
 }
 
+/** The id of the n-th revision of the project, oldest first. */
+function rev(root: string, n: number): string {
+  const listed = knowledge(root, "revisions", "--limit", "1000").json.revisions as Array<{ id: string }>;
+  const id = listed.at(-n)?.id;
+  assert.ok(id !== undefined, `the project has no revision ${n}`);
+  return id;
+}
+
 function knowledge(root: string, ...args: string[]): { status: number | null; json: Record<string, unknown> } {
   const run = spawnSync(process.execPath, [...process.execArgv, script, ...args], { cwd: root, encoding: "utf8" });
   assert.equal(run.stderr, "", run.stderr);
@@ -29,7 +37,7 @@ function knowledge(root: string, ...args: string[]): { status: number | null; js
 
 test("reads in a project without knowledge answer empty and create nothing", () => {
   const root = project();
-  assert.deepEqual(knowledge(root, "at", "$2100").json, { address: "$2100", comments: [], referencesFrom: [], referencesTo: [], revision: 0 });
+  assert.deepEqual(knowledge(root, "at", "$2100").json, { address: "$2100", comments: [], referencesFrom: [], referencesTo: [], revision: "0" });
   assert.deepEqual(knowledge(root, "symbols").json, { symbols: [] });
   assert.deepEqual(knowledge(root, "revisions").json, { revisions: [] });
   assert.equal(existsSync(join(root, ".c64-re-tools")), false);
@@ -38,17 +46,17 @@ test("reads in a project without knowledge answer empty and create nothing", () 
 test("writes report their revision and the current value", () => {
   const root = project();
   assert.deepEqual(knowledge(root, "rename", "$2100", "update_player", "--kind", "routine", "--reason", "reads joystick 2").json, {
-    revision: 1,
-    symbol: { address: "$2100", name: "update_player", kind: "routine", origin: "llm", revision: 1 },
+    revision: rev(root, 1),
+    symbol: { address: "$2100", name: "update_player", kind: "routine", origin: "llm", revision: rev(root, 1) },
   });
   assert.deepEqual(knowledge(root, "classify", "$3000", "$303f", "sprite", "--origin", "user").json, {
-    revision: 2,
-    regions: [{ start: "$3000", end: "$303f", type: "sprite", origin: "user", revision: 2 }],
+    revision: rev(root, 2),
+    regions: [{ start: "$3000", end: "$303f", type: "sprite", origin: "user", revision: rev(root, 2) }],
   });
-  assert.equal(knowledge(root, "comment", "$2100", "side", "joystick", "2").json.revision, 3);
-  assert.equal(knowledge(root, "reference", "$2000", "$2100", "call").json.revision, 4);
+  assert.equal(knowledge(root, "comment", "$2100", "side", "joystick", "2").json.revision, rev(root, 3));
+  assert.equal(knowledge(root, "reference", "$2000", "$2100", "call").json.revision, rev(root, 4));
   assert.deepEqual(knowledge(root, "rename", "$2100", "update_player").json.revision, null, "no change, no revision");
-  const revision = knowledge(root, "revision", "1").json as { revision: { description: string }; added: unknown[] };
+  const revision = knowledge(root, "revision", rev(root, 1)).json as { revision: { description: string }; added: unknown[] };
   assert.equal(revision.revision.description, "reads joystick 2");
   assert.equal(revision.added.length, 1);
 });
@@ -69,7 +77,7 @@ test("errors are JSON with a stable code and a non-zero exit", () => {
   assert.equal((knowledge(root, "remove-symbol", "$9999").json.error as { code: string }).code, "not-found");
 });
 
-test("a refused write in a project without knowledge creates no knowledge database", () => {
+test("a refused write in a project without knowledge creates no knowledge", () => {
   const root = project();
   for (const args of [["rename", "2100", "loop"], ["classify", "$1000", "$2000", "music"], ["comment", "$2100", "middle", "text"], ["reference", "$2000", "$2100", "jump-to"]]) {
     const result = knowledge(root, ...args);
@@ -79,7 +87,7 @@ test("a refused write in a project without knowledge creates no knowledge databa
   }
 });
 
-test("refused writes of every kind create nothing, and the first accepted write creates the database", () => {
+test("refused writes of every kind create nothing, and the first accepted write creates the knowledge", () => {
   const root = project();
   for (const args of [
     ["classify", "$1000", "$2000", "music"],
@@ -96,11 +104,11 @@ test("refused writes of every kind create nothing, and the first accepted write 
     assert.ok(result.json.error !== undefined, args.join(" "));
   }
   assert.equal(existsSync(join(root, ".c64-re-tools")), false);
-  assert.equal(knowledge(root, "rename", "$2100", "main").json.revision, 1);
-  assert.equal(existsSync(join(root, ".c64-re-tools", "knowledge.db")), true);
+  assert.equal(knowledge(root, "rename", "$2100", "main").json.revision, rev(root, 1));
+  assert.equal(existsSync(join(root, ".c64-re-tools", "knowledge", "symbols.jsonl")), true);
 });
 
-test("a missing name or comment text is a usage error and creates no knowledge database", () => {
+test("a missing name or comment text is a usage error and creates no knowledge", () => {
   const root = project();
   for (const args of [["rename", "$2100"], ["comment", "$2100", "line"]]) {
     const result = knowledge(root, ...args);
@@ -114,15 +122,15 @@ test("a write over a row of another origin prints the replaced row", () => {
   const root = project();
   knowledge(root, "rename", "$2100", "update_player", "--kind", "routine", "--origin", "user");
   assert.deepEqual(knowledge(root, "rename", "$2100", "move_player").json, {
-    revision: 2,
-    symbol: { address: "$2100", name: "move_player", kind: "routine", origin: "llm", revision: 2 },
-    previous: { address: "$2100", name: "update_player", kind: "routine", origin: "user", revision: 1 },
+    revision: rev(root, 2),
+    symbol: { address: "$2100", name: "move_player", kind: "routine", origin: "llm", revision: rev(root, 2) },
+    previous: { address: "$2100", name: "update_player", kind: "routine", origin: "user", revision: rev(root, 1) },
   });
   knowledge(root, "classify", "$3000", "$303f", "sprite", "--origin", "user");
   assert.deepEqual(knowledge(root, "classify", "$3020", "$305f", "bytes").json, {
-    revision: 4,
-    regions: [{ start: "$3020", end: "$305f", type: "bytes", origin: "llm", revision: 4 }],
-    previous: [{ start: "$3000", end: "$303f", type: "sprite", origin: "user", revision: 3 }],
+    revision: rev(root, 4),
+    regions: [{ start: "$3020", end: "$305f", type: "bytes", origin: "llm", revision: rev(root, 4) }],
+    previous: [{ start: "$3000", end: "$303f", type: "sprite", origin: "user", revision: rev(root, 3) }],
   });
 });
 
@@ -136,14 +144,14 @@ test("a removal shows as a suppression with its reason, in at and in the history
   knowledge(root, "unclassify", "$0480", "$04ff");
   assert.deepEqual(knowledge(root, "suppressions").json, {
     suppressions: [
-      { suppresses: "symbol", address: "$0408", origin: "llm", revision: 4, reason: "not an entry" },
-      { suppresses: "reference", from: "$0410", to: "$ef29", kind: "jump", origin: "llm", revision: 5, reason: "the vector is written at run time" },
-      { suppresses: "region", start: "$0480", end: "$04ff", origin: "llm", revision: 6 },
+      { suppresses: "symbol", address: "$0408", origin: "llm", revision: rev(root, 4), reason: "not an entry" },
+      { suppresses: "reference", from: "$0410", to: "$ef29", kind: "jump", origin: "llm", revision: rev(root, 5), reason: "the vector is written at run time" },
+      { suppresses: "region", start: "$0480", end: "$04ff", origin: "llm", revision: rev(root, 6) },
     ],
   });
-  assert.deepEqual(knowledge(root, "at", "$0408").json.suppressions, [{ suppresses: "symbol", address: "$0408", origin: "llm", revision: 4 }]);
+  assert.deepEqual(knowledge(root, "at", "$0408").json.suppressions, [{ suppresses: "symbol", address: "$0408", origin: "llm", revision: rev(root, 4) }]);
   const history = knowledge(root, "history", "$0408").json.history as Array<Record<string, unknown>>;
-  assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "symbol", address: "$0408", origin: "llm", fromRevision: 4, reason: "not an entry" }, "the history gives the reason of the revision (F-26)");
+  assert.deepEqual(history.at(-1), { entity: "suppression", suppresses: "symbol", address: "$0408", origin: "llm", fromRevision: rev(root, 4), reason: "not an entry" }, "the history gives the reason of the revision (F-26)");
 });
 
 test("apply writes a batch from a file or standard input as one revision (D42)", () => {
@@ -155,15 +163,15 @@ test("apply writes a batch from a file or standard input as one revision (D42)",
       { op: "classify", start: "$3000", end: "$303b", type: "bytes", element: 6 },
     ]),
   );
-  assert.deepEqual(knowledge(root, "apply", "batch.json", "--reason", "first names", "--evidence", "note:seen in the attract mode").json, { revision: 1, writes: 2, replaced: [] });
+  assert.deepEqual(knowledge(root, "apply", "batch.json", "--reason", "first names", "--evidence", "note:seen in the attract mode").json, { revision: rev(root, 1), writes: 2, replaced: [] });
   const piped = spawnSync(process.execPath, [...process.execArgv, script, "apply", "-"], { cwd: root, encoding: "utf8", input: JSON.stringify([{ op: "comment", address: "$2100", placement: "line", text: "Reads joystick 2." }]) });
-  assert.deepEqual(JSON.parse(piped.stdout), { revision: 2, writes: 1, replaced: [] });
+  assert.deepEqual(JSON.parse(piped.stdout), { revision: rev(root, 2), writes: 1, replaced: [] });
   // A batch lists each row of another origin that it replaced, as previous does for one write (b2/07).
   knowledge(root, "rename", "$2200", "l2200", "--origin", "user");
   writeFileSync(join(root, "over.json"), JSON.stringify([{ op: "comment", address: "$2200", placement: "line", text: "x" }, { op: "rename", address: "$2200", name: "draw_cave" }]));
-  assert.deepEqual(knowledge(root, "apply", "over.json").json.replaced, [{ write: 2, op: "rename", previous: { address: "$2200", name: "l2200", kind: "label", origin: "user", revision: 3 } }]);
-  assert.deepEqual((knowledge(root, "regions").json.regions as unknown[])[0], { start: "$3000", end: "$303b", type: "bytes", element: 6, count: 10, origin: "llm", revision: 1 });
-  const refused = knowledge(root, "apply", "batch.json", "--expect-revision", "1");
+  assert.deepEqual(knowledge(root, "apply", "over.json").json.replaced, [{ write: 2, op: "rename", previous: { address: "$2200", name: "l2200", kind: "label", origin: "user", revision: rev(root, 3) } }]);
+  assert.deepEqual((knowledge(root, "regions").json.regions as unknown[])[0], { start: "$3000", end: "$303b", type: "bytes", element: 6, count: 10, origin: "llm", revision: rev(root, 1) });
+  const refused = knowledge(root, "apply", "batch.json", "--expect-revision", rev(root, 1));
   assert.equal((refused.json.error as { code: string }).code, "stale-revision");
   writeFileSync(join(root, "bad.json"), JSON.stringify([{ op: "rename", address: "2100", name: "x" }]));
   assert.equal(knowledge(root, "apply", "bad.json").status, 2);
@@ -189,7 +197,7 @@ test("export writes all current knowledge to a project file and answers with cou
   knowledge(root, "rename", "$2100", "update_player");
   knowledge(root, "classify", "$3000", "$303f", "sprite");
   const exported = knowledge(root, "export", "--out", "exports/knowledge.json").json;
-  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, regions: 1, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0 }, revision: 2 });
+  assert.deepEqual({ ...exported, bytes: undefined }, { out: "exports/knowledge.json", bytes: undefined, counts: { symbols: 1, regions: 1, comments: 0, references: 0, suppressions: 0, modules: 0, operands: 0 }, revision: rev(root, 2) });
   const file = JSON.parse(readFileSync(join(root, "exports", "knowledge.json"), "utf8")) as { symbols: Array<{ name: string }> };
   assert.equal(file.symbols[0]!.name, "update_player");
   assert.equal(knowledge(root, "export").status, 2, "export needs --out");
@@ -199,12 +207,12 @@ test("module records where a file of generated source starts, and modules lists 
   const root = project();
   const set = knowledge(root, "module", "$0801", "boot.asm", "--title", "BASIC start");
   assert.equal(set.status, 0, JSON.stringify(set.json));
-  assert.deepEqual(set.json, { revision: 1, module: { start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", revision: 1 } });
-  assert.deepEqual(knowledge(root, "modules").json, { modules: [{ start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", revision: 1 }] });
+  assert.deepEqual(set.json, { revision: rev(root, 1), module: { start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", revision: rev(root, 1) } });
+  assert.deepEqual(knowledge(root, "modules").json, { modules: [{ start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", revision: rev(root, 1) }] });
   assert.equal(knowledge(root, "module", "$1000", "sub/x.asm").status, 1);
   assert.equal(knowledge(root, "rename", "$1000", "x", "--title", "T").status, 2, "--title is for module only");
-  assert.equal(knowledge(root, "unmodule", "$0801").json.revision, 2);
-  assert.deepEqual(knowledge(root, "history", "$0801").json.history, [{ entity: "module", start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", fromRevision: 1, toRevision: 2 }]);
+  assert.equal(knowledge(root, "unmodule", "$0801").json.revision, rev(root, 2));
+  assert.deepEqual(knowledge(root, "history", "$0801").json.history, [{ entity: "module", start: "$0801", file: "boot.asm", title: "BASIC start", origin: "llm", fromRevision: rev(root, 1), toRevision: rev(root, 2) }]);
 });
 
 test("--space keeps drive code and cartridge banks apart from the C64 (D53)", () => {
@@ -212,7 +220,7 @@ test("--space keeps drive code and cartridge banks apart from the C64 (D53)", ()
   assert.equal(knowledge(root, "rename", "$0500", "loop").status, 0);
   const drive = knowledge(root, "rename", "$0500", "loop", "--space", "drive8");
   assert.equal(drive.status, 0, JSON.stringify(drive.json));
-  assert.deepEqual(drive.json.symbol, { space: "drive8", address: "$0500", name: "loop", kind: "label", origin: "llm", revision: 2 });
+  assert.deepEqual(drive.json.symbol, { space: "drive8", address: "$0500", name: "loop", kind: "label", origin: "llm", revision: rev(root, 2) });
   writeFileSync(join(root, "bank.json"), JSON.stringify([{ op: "classify", start: "$8000", end: "$80ff", type: "bytes" }, { op: "rename", address: "$8000", name: "cart_start", space: "bank1" }]));
   assert.equal(knowledge(root, "apply", "bank.json", "--space", "bank0").status, 0);
   assert.deepEqual(knowledge(root, "spaces").json, { spaces: ["c64", "drive8", "bank0", "bank1"] });
@@ -231,20 +239,20 @@ test("operand writes an expression after a check against the image, and at and o
   assert.equal(knowledge(root, "operand", "$8079", "--lo", "irq_handler").status, 2, "operand needs --image");
   assert.equal(knowledge(root, "operand", "$8079", "--lo", "irq_handler", "--hi", "irq_handler", "--image", "game.prg").status, 2, "one selector only");
   assert.deepEqual(knowledge(root, "operand", "$8079", "--lo", "irq_handler", "--image", "game.prg").json, {
-    revision: 2,
-    operand: { address: "$8079", select: "lo", symbol: "irq_handler", text: "<irq_handler", origin: "llm", revision: 2 },
+    revision: rev(root, 2),
+    operand: { address: "$8079", select: "lo", symbol: "irq_handler", text: "<irq_handler", origin: "llm", revision: rev(root, 2) },
   });
   const refused = knowledge(root, "operand", "$807e", "--lo", "irq_handler", "--image", "game.prg");
   assert.equal(refused.status, 1);
   assert.match((refused.json.error as { message: string }).message, /<irq_handler gives \$c0, but the operand in the image is \$80/);
-  assert.equal(knowledge(root, "operand", "$807b", "--value", "CINV", "--offset=0", "--image", "game.prg").json.revision, 3, "a platform name");
+  assert.equal(knowledge(root, "operand", "$807b", "--value", "CINV", "--offset=0", "--image", "game.prg").json.revision, rev(root, 3), "a platform name");
   writeFileSync(join(root, "batch.json"), JSON.stringify([{ op: "operand", address: "$807e", select: "expr", expression: ">irq_handler" }]));
   assert.equal(knowledge(root, "apply", "batch.json").status, 2, "apply with operand writes needs --image");
-  assert.equal(knowledge(root, "apply", "batch.json", "--image", "game.prg").json.revision, 4);
+  assert.equal(knowledge(root, "apply", "batch.json", "--image", "game.prg").json.revision, rev(root, 4));
   const known = knowledge(root, "at", "$807e").json as { operand: { text: string }; referencesFrom: Array<{ to: string; kind: string }> };
   assert.equal(known.operand.text, ">irq_handler");
   assert.deepEqual(known.referencesFrom.map((row) => [row.to, row.kind]), [["$80c0", "pointer"]]);
   assert.deepEqual((knowledge(root, "operands").json.operands as Array<{ address: string }>).map((row) => row.address), ["$8079", "$807b", "$807e"]);
   assert.equal(knowledge(root, "remove-symbol", "$80c0").status, 1, "the operands use it");
-  assert.equal(knowledge(root, "unoperand", "$807e").json.revision, 5);
+  assert.equal(knowledge(root, "unoperand", "$807e").json.revision, rev(root, 5));
 });

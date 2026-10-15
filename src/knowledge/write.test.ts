@@ -26,6 +26,7 @@ import {
   type OperandImage,
   type WriteContext,
 } from "./write.ts";
+import { nth } from "./revisions.testkit.ts";
 
 const roots: string[] = [];
 const databases: DatabaseSync[] = [];
@@ -52,15 +53,15 @@ function count(db: DatabaseSync, sql: string): number {
 test("a rename creates one revision, and the old name stays in history", () => {
   const db = fresh();
   const first = renameSymbol(db, { origin: "llm", description: "entry point" }, { address: 0x2100, name: "FUN_2100", kind: "routine" });
-  assert.equal(first.revision, 1);
-  assert.deepEqual(first.current, { space: "c64", address: 0x2100, name: "FUN_2100", kind: "routine", origin: "llm", revision: 1 });
+  assert.equal(first.revision, nth(db, 1));
+  assert.deepEqual(first.current, { space: "c64", address: 0x2100, name: "FUN_2100", kind: "routine", origin: "llm", revision: nth(db, 1) });
   const second = renameSymbol(db, { origin: "user", description: "reads joystick 2" }, { address: 0x2100, name: "update_player" });
-  assert.equal(second.revision, 2);
+  assert.equal(second.revision, nth(db, 2));
   assert.equal(second.current.kind, "routine", "the kind stays when not given");
-  assert.equal(currentRevision(db), 2);
+  assert.equal(currentRevision(db), nth(db, 2));
   assert.equal(count(db, "SELECT count(*) AS n FROM symbols WHERE address = 8448"), 2);
-  assert.equal(count(db, "SELECT count(*) AS n FROM symbols WHERE address = 8448 AND valid_to_revision = 2"), 1);
-  const revision = db.prepare("SELECT origin, operation, description FROM revisions WHERE id = 2").get();
+  assert.equal(count(db, `SELECT count(*) AS n FROM symbols WHERE address = 8448 AND valid_to_revision = '${nth(db, 2)}'`), 1);
+  const revision = db.prepare(`SELECT origin, operation, description FROM revisions WHERE id = '${nth(db, 2)}'`).get();
   assert.deepEqual({ ...revision }, { origin: "user", operation: "rename-symbol", description: "reads joystick 2" });
 });
 
@@ -68,7 +69,7 @@ test("a revision records its time in ISO 8601 at the CET offset", () => {
   const db = fresh();
   const before = Date.now();
   renameSymbol(db, llm, { address: 0x1000, name: "start" });
-  const { created_at } = db.prepare("SELECT created_at FROM revisions WHERE id = 1").get() as { created_at: string };
+  const { created_at } = db.prepare(`SELECT created_at FROM revisions WHERE id = '${nth(db, 1)}'`).get() as { created_at: string };
   assert.match(created_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}\+01:00$/);
   const recorded = Date.parse(created_at);
   assert.ok(recorded >= before && recorded <= Date.now());
@@ -78,7 +79,7 @@ test("an unchanged write creates no revision", () => {
   const db = fresh();
   renameSymbol(db, llm, { address: 0x1000, name: "loop", kind: "label" });
   assert.equal(renameSymbol(db, llm, { address: 0x1000, name: "loop" }).revision, null);
-  assert.equal(currentRevision(db), 1);
+  assert.equal(currentRevision(db), nth(db, 1));
 });
 
 test("a name used at another address is a conflict and changes nothing", () => {
@@ -89,7 +90,7 @@ test("a name used at another address is a conflict and changes nothing", () => {
     assert.match((error as Error).message, /\$1000/);
     return true;
   });
-  assert.equal(currentRevision(db), 1);
+  assert.equal(currentRevision(db), nth(db, 1));
   assert.equal(count(db, "SELECT count(*) AS n FROM revisions"), 1);
 });
 
@@ -97,8 +98,8 @@ test("a stale expected revision is refused", () => {
   const db = fresh();
   renameSymbol(db, llm, { address: 0x1000, name: "a" });
   renameSymbol(db, llm, { address: 0x1001, name: "b" });
-  assert.throws(() => renameSymbol(db, { origin: "llm", expectedRevision: 1 }, { address: 0x1002, name: "c" }), failsWith("stale-revision"));
-  assert.equal(renameSymbol(db, { origin: "llm", expectedRevision: 2 }, { address: 0x1002, name: "c" }).revision, 3);
+  assert.throws(() => renameSymbol(db, { origin: "llm", expectedRevision: nth(db, 1) }, { address: 0x1002, name: "c" }), failsWith("stale-revision"));
+  assert.equal(renameSymbol(db, { origin: "llm", expectedRevision: nth(db, 2) }, { address: 0x1002, name: "c" }).revision, nth(db, 3));
 });
 
 test("only the user and the LLM write semantic knowledge", () => {
@@ -106,13 +107,13 @@ test("only the user and the LLM write semantic knowledge", () => {
   assert.throws(() => renameSymbol(db, { origin: "ghidra" } as unknown as WriteContext, { address: 1, name: "x" }), failsWith("invalid-input"));
   assert.throws(() => renameSymbol(db, llm, { address: 1, name: "bad name" }), failsWith("invalid-input"));
   assert.throws(() => renameSymbol(db, llm, { address: 0x10000, name: "x" }), failsWith("invalid-input"));
-  assert.equal(currentRevision(db), 0);
+  assert.equal(currentRevision(db), "0");
 });
 
 test("removing a symbol closes it; removing a missing one is not-found", () => {
   const db = fresh();
   renameSymbol(db, llm, { address: 0x1000, name: "loop" });
-  assert.equal(removeSymbol(db, llm, { address: 0x1000 }).revision, 2);
+  assert.equal(removeSymbol(db, llm, { address: 0x1000 }).revision, nth(db, 2));
   assert.equal(symbolAt(db, 0x1000), undefined);
   assert.throws(() => removeSymbol(db, llm, { address: 0x1000 }), failsWith("not-found"));
   // The freed name can be used again.
@@ -123,16 +124,16 @@ test("a classification inside a region splits it in one revision; current region
   const db = fresh();
   classifyRegion(db, llm, { start: 0x1000, end: 0x1fff, type: "bytes" });
   const split = classifyRegion(db, llm, { start: 0x1400, end: 0x14ff, type: "sprite" });
-  assert.equal(split.revision, 2);
+  assert.equal(split.revision, nth(db, 2));
   assert.deepEqual(
     regionsOverlapping(db, 0, 0xffff).map((region) => [region.start, region.end, region.type, region.revision]),
     [
-      [0x1000, 0x13ff, "bytes", 2],
-      [0x1400, 0x14ff, "sprite", 2],
-      [0x1500, 0x1fff, "bytes", 2],
+      [0x1000, 0x13ff, "bytes", nth(db, 2)],
+      [0x1400, 0x14ff, "sprite", nth(db, 2)],
+      [0x1500, 0x1fff, "bytes", nth(db, 2)],
     ],
   );
-  assert.equal(count(db, "SELECT count(*) AS n FROM regions WHERE valid_to_revision = 2"), 1, "the old region is closed, not deleted");
+  assert.equal(count(db, `SELECT count(*) AS n FROM regions WHERE valid_to_revision = '${nth(db, 2)}'`), 1, "the old region is closed, not deleted");
   // Reclassifying across two regions replaces both parts it covers.
   classifyRegion(db, llm, { start: 0x1300, end: 0x15ff, type: "code" });
   assert.deepEqual(
@@ -184,7 +185,7 @@ test("a comment is set, replaced and removed per placement, with history", () =>
 
 test("references are added once and removed with history", () => {
   const db = fresh();
-  assert.equal(addReference(db, llm, { from: 0x2100, to: 0x2300, kind: "call" }).revision, 1);
+  assert.equal(addReference(db, llm, { from: 0x2100, to: 0x2300, kind: "call" }).revision, nth(db, 1));
   assert.equal(addReference(db, llm, { from: 0x2100, to: 0x2300, kind: "call" }).revision, null);
   addReference(db, llm, { from: 0x2100, to: 0xd020, kind: "write" });
   assert.deepEqual(referencesFrom(db, 0x2100).map((reference) => [reference.to, reference.kind]), [
@@ -203,8 +204,8 @@ test("a revert restores an earlier state as a new revision and erases nothing", 
   classifyRegion(db, llm, { start: 0x2100, end: 0x21ff, type: "code" }); // 2
   renameSymbol(db, { origin: "user" }, { address: 0x2100, name: "update_player" }); // 3
   setComment(db, llm, { address: 0x2100, placement: "line", text: "Moves the player." }); // 4
-  const reverted = revert(db, { origin: "user", description: "back to the analyzer view" }, { revision: 2 });
-  assert.equal(reverted.revision, 5);
+  const reverted = revert(db, { origin: "user", description: "back to the analyzer view" }, { revision: nth(db, 2) });
+  assert.equal(reverted.revision, nth(db, 5));
   assert.equal(symbolAt(db, 0x2100)?.name, "FUN_2100");
   assert.equal(symbolAt(db, 0x2100)?.origin, "llm", "the restored row keeps its origin");
   assert.deepEqual(commentsAt(db, 0x2100), []);
@@ -212,12 +213,12 @@ test("a revert restores an earlier state as a new revision and erases nothing", 
   assert.equal(count(db, "SELECT count(*) AS n FROM revisions"), 5);
   assert.equal(count(db, "SELECT count(*) AS n FROM symbols"), 3, "FUN_2100, update_player, restored FUN_2100");
   // Revert to the empty start, then forward again to revision 4.
-  revert(db, llm, { revision: 0 });
+  revert(db, llm, { revision: "0" });
   assert.equal(symbolAt(db, 0x2100), undefined);
-  revert(db, llm, { revision: 4 });
+  revert(db, llm, { revision: nth(db, 4) });
   assert.equal(symbolAt(db, 0x2100)?.name, "update_player");
   assert.equal(commentsAt(db, 0x2100)[0]?.text, "Moves the player.");
-  assert.throws(() => revert(db, llm, { revision: 99 }), failsWith("not-found"));
+  assert.throws(() => revert(db, llm, { revision: "20991231T235959.999-zzzzzz" }), failsWith("not-found"));
 });
 
 test("a failure in the middle of a write rolls all of it back", () => {
@@ -227,7 +228,7 @@ test("a failure in the middle of a write rolls all of it back", () => {
   db.exec("CREATE TEMP TRIGGER fail_boom BEFORE INSERT ON symbols WHEN NEW.name = 'boom' BEGIN SELECT RAISE(ABORT, 'boom'); END");
   assert.throws(() => renameSymbol(db, llm, { address: 0x1000, name: "boom" }), /boom/);
   assert.equal(symbolAt(db, 0x1000)?.name, "loop");
-  assert.equal(currentRevision(db), 1);
+  assert.equal(currentRevision(db), nth(db, 1));
   assert.equal(count(db, "SELECT count(*) AS n FROM revisions"), 1);
   db.exec("DROP TRIGGER fail_boom");
 });
@@ -237,7 +238,7 @@ test("a write over a row of another origin returns the replaced row", () => {
   const user: WriteContext = { origin: "user" };
   renameSymbol(db, user, { address: 0x2100, name: "update_player", kind: "routine" });
   const renamed = renameSymbol(db, llm, { address: 0x2100, name: "move_player" });
-  assert.deepEqual(renamed.previous, { space: "c64", address: 0x2100, name: "update_player", kind: "routine", origin: "user", revision: 1 });
+  assert.deepEqual(renamed.previous, { space: "c64", address: 0x2100, name: "update_player", kind: "routine", origin: "user", revision: nth(db, 1) });
   assert.equal(renameSymbol(db, llm, { address: 0x2100, name: "step_player" }).previous, undefined, "a row of the same origin is no surprise");
 
   classifyRegion(db, user, { start: 0x3000, end: 0x30ff, type: "sprite" });
@@ -258,9 +259,9 @@ test("an unclassify over a range that is partly suppressed adds only the free pa
   assert.deepEqual(
     listSuppressions(db).map((row) => [row.start, row.end, row.revision]),
     [
-      [0x1000, 0x103f, 3],
-      [0x1040, 0x107f, 2],
-      [0x1080, 0x10ff, 3],
+      [0x1000, 0x103f, nth(db, 3)],
+      [0x1040, 0x107f, nth(db, 2)],
+      [0x1080, 0x10ff, nth(db, 3)],
     ],
   );
 });
@@ -293,17 +294,17 @@ test("a batch is one revision, and a refused write leaves nothing written", () =
     { op: "comment", address: 0x2100, placement: "line", text: "Reads joystick 2." },
     { op: "reference", from: 0x2000, to: 0x2100, kind: "call" },
   ]);
-  assert.equal(applied.revision, 1);
+  assert.equal(applied.revision, nth(db, 1));
   assert.equal(applied.steps.length, 4);
   assert.equal(count(db, "SELECT count(*) AS n FROM revisions"), 1);
-  assert.equal(symbolAt(db, 0x2100)?.revision, 1);
+  assert.equal(symbolAt(db, 0x2100)?.revision, nth(db, 1));
 
   assert.throws(
     () => applyBatch(db, llm, [{ op: "rename", address: 0x2200, name: "other" }, { op: "remove-symbol", address: 0x2300 }]),
     (error: unknown) => failsWith("not-found")(error) && /^Write 2: /.test((error as Error).message),
   );
   assert.equal(symbolAt(db, 0x2200), undefined, "the first write of the refused batch is gone too");
-  assert.equal(currentRevision(db), 1);
+  assert.equal(currentRevision(db), nth(db, 1));
   assert.throws(() => applyBatch(db, llm, [{ op: "classify", start: 0x10, end: 0x0f, type: "bytes" }]), (error: unknown) => failsWith("invalid-input")(error) && /^Write 1: /.test((error as Error).message));
 });
 
@@ -329,7 +330,7 @@ test("lists keep only the origins asked for", () => {
 test("a module starts a file of generated source: one per address and per file, with history and revert", () => {
   const db = fresh();
   const first = setModule(db, llm, { start: 0x0801, file: "boot.asm", title: "BASIC start and setup" });
-  assert.deepEqual(first.current, { space: "c64", start: 0x0801, file: "boot.asm", title: "BASIC start and setup", origin: "llm", revision: 1 });
+  assert.deepEqual(first.current, { space: "c64", start: 0x0801, file: "boot.asm", title: "BASIC start and setup", origin: "llm", revision: nth(db, 1) });
   assert.equal(setModule(db, llm, { start: 0x0801, file: "boot.asm", title: "BASIC start and setup" }).revision, null);
   setModule(db, { origin: "user" }, { start: 0x2000, file: "player.asm" });
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
@@ -339,13 +340,13 @@ test("a module starts a file of generated source: one per address and per file, 
     assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof KnowledgeError && error.code === "invalid-input" && /writes main\.asm, loader\.asm, constants\.asm itself/.test(error.message), file);
   }
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
-  assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: 3 }, "a write without a title keeps it (F-26)");
+  assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: nth(db, 3) }, "a write without a title keeps it (F-26)");
   assert.deepEqual(listModules(db, undefined, ["user"]).map((row) => row.file), ["player.asm"]);
-  assert.equal(revisionChanges(db, 3).closed[0]?.entity, "module");
+  assert.equal(revisionChanges(db, nth(db, 3)).closed[0]?.entity, "module");
 
   removeModule(db, llm, { start: 0x2000 });
   assert.throws(() => removeModule(db, llm, { start: 0x2000 }), failsWith("not-found"));
-  revert(db, llm, { revision: 2 });
+  revert(db, llm, { revision: nth(db, 2) });
   assert.deepEqual(listModules(db).map((row) => [row.start, row.file]), [[0x0801, "boot.asm"], [0x2000, "player.asm"]]);
   applyBatch(db, llm, [{ op: "unmodule", start: 0x2000 }, { op: "module", start: 0x2100, file: "player.asm", title: "Player" }]);
   assert.deepEqual(listModules(db).map((row) => [row.start, row.file]), [[0x0801, "boot.asm"], [0x2100, "player.asm"]]);
@@ -368,7 +369,7 @@ test("each space has its own rows and names (D53)", () => {
   assert.deepEqual(regionsOverlapping(db, 0x8000, 0x8000), []);
   assert.throws(() => renameSymbol(db, llm, { space: "bank256", address: 0x8000, name: "x" }), failsWith("invalid-input"));
   assert.throws(() => applyBatch(db, llm, [{ op: "rename", space: "drive9", address: 0x0300, name: "x" }]), failsWith("invalid-input"));
-  revert(db, llm, { revision: 2 });
+  revert(db, llm, { revision: nth(db, 2) });
   assert.equal(symbolAt(db, 0x0500, "drive8")?.name, "loop", "a revert restores rows of every space");
   assert.equal(symbolAt(db, 0x8000, "bank3"), undefined);
 });
@@ -399,7 +400,7 @@ function operands(): { db: DatabaseSync; context: WriteContext } {
 test("an operand expression is checked against the image and writes pointer references (D65)", () => {
   const { db, context } = operands();
   const lo = setOperand(db, context, { address: 0x8079, select: "lo", symbol: "irq_handler" });
-  assert.deepEqual(lo.current, { space: "c64", address: 0x8079, select: "lo", symbol: "irq_handler", offset: 0, origin: "llm", revision: 4 });
+  assert.deepEqual(lo.current, { space: "c64", address: 0x8079, select: "lo", symbol: "irq_handler", offset: 0, origin: "llm", revision: nth(db, 4) });
   setOperand(db, context, { address: 0x807e, select: "hi", symbol: "irq_handler" });
   setOperand(db, context, { address: 0x8a85, select: "value", symbol: "bar_colours", offset: -1 });
   setOperand(db, context, { address: 0x807b, select: "value", symbol: "CINV" });
@@ -426,7 +427,7 @@ test("an operand expression that does not give the operand in the image is refus
   assert.throws(() => setOperand(db, context, { address: 0x8079, select: "expr", expression: "<irq_handler +" }), failsWith("invalid-input"));
   assert.throws(() => setOperand(db, context, { address: 0x8079, select: "lo" }), failsWith("invalid-input"));
   assert.throws(() => addReference(db, llm, { from: 0x8079, to: 0x80c0, kind: "pointer" }), /Only an operand expression writes a pointer reference/);
-  assert.equal(currentRevision(db), 3, "a refused write leaves no revision");
+  assert.equal(currentRevision(db), nth(db, 3), "a refused write leaves no revision");
 });
 
 test("a rename of a symbol follows into operand expressions, and a removal is refused while one uses it (D65)", () => {
@@ -453,11 +454,11 @@ test("a batch writes symbols and the operands that use them, and a revert restor
     { op: "operand", address: 0x8079, select: "lo", symbol: "irq_handler" },
     { op: "operand", address: 0x807e, select: "hi", symbol: "irq_handler" },
   ]);
-  assert.equal(applied.revision, 1);
-  assert.deepEqual(revisionChanges(db, 1).added.map((entry) => entry.entity), ["symbol", "reference", "reference", "operand", "operand"]);
+  assert.equal(applied.revision, nth(db, 1));
+  assert.deepEqual(revisionChanges(db, nth(db, 1)).added.map((entry) => entry.entity), ["symbol", "reference", "reference", "operand", "operand"]);
   applyBatch(db, context, [{ op: "unoperand", address: 0x807e }]);
   assert.equal(operandAt(db, 0x807e), undefined);
-  revert(db, llm, { revision: 1 });
+  revert(db, llm, { revision: nth(db, 1) });
   assert.equal(operandAt(db, 0x807e)?.select, "hi");
   assert.deepEqual(referencesFrom(db, 0x807e).map((row) => row.kind), ["pointer"]);
   assert.throws(() => applyBatch(db, llm, [{ op: "operand", address: 0x8079, select: "hi", symbol: "irq_handler" }]), /Write 1: An operand expression is checked against the image/);

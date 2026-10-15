@@ -13,6 +13,7 @@ import { after, test } from "node:test";
 
 import { openForWrite } from "../../src/knowledge/database.ts";
 import { classifyRegion } from "../../src/knowledge/write.ts";
+import { nthIn } from "../../src/knowledge/revisions.testkit.ts";
 
 const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
 const scratch = mkdtempSync(join(tmpdir(), "c64-re-tools-fake-dxa-"));
@@ -82,7 +83,7 @@ test("an accepted DXA import records the findings and writes the listing", { tim
   const root = project("accepted");
   const { status, json } = await analyze(root, fakeDxa("dxa-accepted", LISTING), "--listing", "analysis/game.lst");
   assert.equal(status, 0, JSON.stringify(json));
-  assert.equal(json.revision, 1);
+  assert.equal(json.revision, nthIn(root, 1));
   assert.equal(json.listing, "analysis/game.lst");
   assert.equal(existsSync(join(root, "analysis", "game.lst")), true);
 });

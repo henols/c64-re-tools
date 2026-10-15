@@ -55,7 +55,7 @@ export interface NormalizedFindings {
 
 export interface ImportContext {
   /** The revision the caller read; the import is refused if knowledge changed since. */
-  expectedRevision?: number;
+  expectedRevision?: string;
   description?: string;
   /** The SHA-256 of the analyzed image, as lowercase hex. */
   inputHash?: string;
@@ -92,7 +92,7 @@ export interface ImportCounts {
 
 export interface ImportResult {
   /** The new revision, or null when nothing changed. */
-  revision: number | null;
+  revision: string | null;
   symbols: ImportCounts;
   regions: ImportCounts;
   references: ImportCounts;

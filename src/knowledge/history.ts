@@ -10,6 +10,7 @@ import {
   OPERAND_COLUMNS,
   REFERENCE_COLUMNS,
   REGION_COLUMNS,
+  resolveRevision,
   SUPPRESSION_COLUMNS,
   SYMBOL_COLUMNS,
   toComment,
@@ -28,10 +29,11 @@ import {
   type SymbolRow,
 } from "./read.ts";
 import { DEFAULT_SPACE, type EvidenceKind, type Origin, type Space } from "./schema.ts";
+import { compareText } from "./text.ts";
 import type { Evidence } from "./write.ts";
 
 export interface Revision {
-  id: number;
+  id: string;
   createdAt: string;
   origin: Origin;
   operation: string;
@@ -44,19 +46,19 @@ export interface Revision {
 
 /** One knowledge row with its validity: from its first revision until the revision that closed it. */
 export type HistoryEntry =
-  | { entity: "symbol"; row: SymbolRow; from: number; to?: number }
-  | { entity: "region"; row: RegionRow; from: number; to?: number }
-  | { entity: "comment"; row: CommentRow; from: number; to?: number }
-  | { entity: "reference"; row: ReferenceRow; from: number; to?: number }
-  | { entity: "suppression"; row: SuppressionRow; from: number; to?: number }
-  | { entity: "module"; row: ModuleRow; from: number; to?: number }
-  | { entity: "operand"; row: OperandRow; from: number; to?: number };
+  | { entity: "symbol"; row: SymbolRow; from: string; to?: string }
+  | { entity: "region"; row: RegionRow; from: string; to?: string }
+  | { entity: "comment"; row: CommentRow; from: string; to?: string }
+  | { entity: "reference"; row: ReferenceRow; from: string; to?: string }
+  | { entity: "suppression"; row: SuppressionRow; from: string; to?: string }
+  | { entity: "module"; row: ModuleRow; from: string; to?: string }
+  | { entity: "operand"; row: OperandRow; from: string; to?: string };
 
 type Raw = Record<string, unknown>;
 
 function toRevision(row: Raw): Revision {
   const revision: Revision = {
-    id: row.id as number,
+    id: row.id as string,
     createdAt: row.created_at as string,
     origin: row.origin as Origin,
     operation: row.operation as string,
@@ -68,13 +70,14 @@ function toRevision(row: Raw): Revision {
 }
 
 function entry<E extends HistoryEntry["entity"]>(entity: E, row: unknown, raw: Raw): HistoryEntry {
-  const result = { entity, row, from: raw.valid_from_revision as number } as HistoryEntry;
-  if (raw.valid_to_revision !== null) result.to = raw.valid_to_revision as number;
+  const result = { entity, row, from: raw.valid_from_revision as string } as HistoryEntry;
+  if (raw.valid_to_revision !== null) result.to = raw.valid_to_revision as string;
   return result;
 }
 
+/** Revision ids sort in time order as text (D69); a current row sorts after every closed one. */
 function bySequence(a: HistoryEntry, b: HistoryEntry): number {
-  return a.from - b.from || (a.to ?? Infinity) - (b.to ?? Infinity);
+  return compareText(a.from, b.from) || compareText(a.to ?? "~", b.to ?? "~");
 }
 
 /** Every row, current or closed, that concerns one address of a space, oldest first. */
@@ -109,7 +112,7 @@ export function historyNamed(db: DatabaseSync | undefined, name: string, space: 
 }
 
 /** Why a revision was written and what it rests on: its description and its evidence, when it has them. */
-export function revisionNote(db: DatabaseSync | undefined, id: number): { reason?: string; evidence?: Evidence[] } {
+export function revisionNote(db: DatabaseSync | undefined, id: string): { reason?: string; evidence?: Evidence[] } {
   const raw = db?.prepare("SELECT * FROM revisions WHERE id = ?").get(id) as Raw | undefined;
   if (db === undefined || raw === undefined) return {};
   const { description, evidence } = withEvidence(db, toRevision(raw));
@@ -125,13 +128,13 @@ function withEvidence(db: DatabaseSync, revision: Revision): Revision {
 }
 
 /** Revisions, newest first; with `before`, only revisions older than it. */
-export function revisions(db: DatabaseSync | undefined, options: { limit?: number; before?: number } = {}): Revision[] {
+export function revisions(db: DatabaseSync | undefined, options: { limit?: number; before?: string } = {}): Revision[] {
   if (db === undefined) return [];
-  return (
-    db
-      .prepare("SELECT * FROM revisions WHERE id < ? ORDER BY id DESC LIMIT ?")
-      .all(options.before ?? Number.MAX_SAFE_INTEGER, options.limit ?? 50) as Raw[]
-  ).map((row) => withEvidence(db, toRevision(row)));
+  const rows =
+    options.before === undefined
+      ? db.prepare("SELECT * FROM revisions ORDER BY id DESC LIMIT ?").all(options.limit ?? 50)
+      : db.prepare("SELECT * FROM revisions WHERE id < ? ORDER BY id DESC LIMIT ?").all(resolveRevision(db, options.before), options.limit ?? 50);
+  return (rows as Raw[]).map((row) => withEvidence(db, toRevision(row)));
 }
 
 export interface RevisionChanges {
@@ -143,7 +146,8 @@ export interface RevisionChanges {
 }
 
 /** One revision and exactly what it changed. */
-export function revision(db: DatabaseSync | undefined, id: number): RevisionChanges {
+export function revision(db: DatabaseSync | undefined, text: string): RevisionChanges {
+  const id = resolveRevision(db, text);
   const raw = db?.prepare("SELECT * FROM revisions WHERE id = ?").get(id) as Raw | undefined;
   if (db === undefined || raw === undefined) throw new KnowledgeError("not-found", `There is no revision ${id}.`);
   const tables = [
@@ -167,3 +171,4 @@ export function revision(db: DatabaseSync | undefined, id: number): RevisionChan
   }
   return { revision: withEvidence(db, toRevision(raw)), added, closed };
 }
+

@@ -10,6 +10,7 @@ import { revision as revisionChanges, revisions } from "./history.ts";
 import { importFindings, runProvenance, type Analyzer, type NormalizedFindings } from "./import.ts";
 import { currentRevision, listReferences, listSuppressions, listSymbols, regionsOverlapping, symbolAt } from "./read.ts";
 import { addReference, classifyRegion, removeReference, removeSymbol, renameSymbol, revert, unclassifyRegion } from "./write.ts";
+import { nth } from "./revisions.testkit.ts";
 
 const roots: string[] = [];
 const databases: DatabaseSync[] = [];
@@ -55,17 +56,17 @@ test("a re-analysis closes the analyzer's own symbol that it no longer finds", (
     }),
     { toolVersion: "test 1" },
   );
-  assert.equal(first.revision, 1);
+  assert.equal(first.revision, nth(db, 1));
   assert.equal(first.symbols.added, 2);
-  const stored = db.prepare("SELECT origin, operation, tool_version FROM revisions WHERE id = 1").get();
+  const stored = db.prepare(`SELECT origin, operation, tool_version FROM revisions WHERE id = '${nth(db, 1)}'`).get();
   assert.deepEqual({ ...stored }, { origin: "ghidra", operation: "import-ghidra", tool_version: "test 1" });
 
   const second = importFindings(db, findings("ghidra", 0x2000, 0x22ff, { symbols: [{ address: 0x2100, name: "FUN_2100", kind: "routine" }] }));
-  assert.equal(second.revision, 2);
+  assert.equal(second.revision, nth(db, 2));
   assert.deepEqual(second.symbols, { added: 0, changed: 0, retired: 1, unchanged: 1, suppressed: 0 });
   assert.equal(symbolAt(db, 0x2200), undefined);
-  assert.equal(symbolAt(db, 0x2100)?.revision, 1, "the unchanged symbol keeps its row");
-  assert.equal(count(db, "SELECT count(*) AS n FROM symbols WHERE address = 8704 AND valid_to_revision = 2"), 1, "the old row stays in history");
+  assert.equal(symbolAt(db, 0x2100)?.revision, nth(db, 1), "the unchanged symbol keeps its row");
+  assert.equal(count(db, `SELECT count(*) AS n FROM symbols WHERE address = 8704 AND valid_to_revision = '${nth(db, 2)}'`), 1, "the old row stays in history");
 });
 
 test("the same result again changes nothing and makes no revision", () => {
@@ -79,7 +80,7 @@ test("the same result again changes nothing and makes no revision", () => {
   const again = importFindings(db, result);
   assert.equal(again.revision, null);
   assert.deepEqual([again.symbols.unchanged, again.regions.unchanged, again.references.unchanged], [1, 1, 1]);
-  assert.equal(currentRevision(db), 1);
+  assert.equal(currentRevision(db), nth(db, 1));
 });
 
 test("stale references inside the coverage retire; references from outside stay", () => {
@@ -109,14 +110,14 @@ test("a targeted region re-analysis keeps the parts outside its coverage", () =>
   const db = fresh();
   importFindings(db, findings("dxa", 0x2000, 0x2fff, { regions: [{ start: 0x2000, end: 0x2fff, type: "code" }] }));
   const result = importFindings(db, findings("dxa", 0x2400, 0x24ff, { regions: [{ start: 0x2400, end: 0x24ff, type: "bytes" }] }));
-  assert.equal(result.revision, 2);
+  assert.equal(result.revision, nth(db, 2));
   assert.deepEqual(result.regions, { added: 0, changed: 1, retired: 0, unchanged: 0, suppressed: 0 }, "the covered part changed its type");
   assert.deepEqual(regionList(db), [
     [0x2000, 0x23ff, "code", "dxa"],
     [0x2400, 0x24ff, "bytes", "dxa"],
     [0x2500, 0x2fff, "code", "dxa"],
   ]);
-  assert.equal(count(db, "SELECT count(*) AS n FROM regions WHERE valid_to_revision = 2"), 1, "the original row becomes history");
+  assert.equal(count(db, `SELECT count(*) AS n FROM regions WHERE valid_to_revision = '${nth(db, 2)}'`), 1, "the original row becomes history");
   // An unchanged targeted run leaves the rows alone, also one that crosses the coverage.
   assert.equal(importFindings(db, findings("dxa", 0x2300, 0x24ff, { regions: [{ start: 0x2300, end: 0x23ff, type: "code" }, { start: 0x2400, end: 0x24ff, type: "bytes" }] })).revision, null);
   // A region type that changes in place counts as changed.
@@ -204,8 +205,8 @@ test("an unusable result or a stale revision imports nothing", () => {
   ]) {
     assert.throws(() => importFindings(db, bad), failsWith("invalid-input"), JSON.stringify(bad));
   }
-  assert.throws(() => importFindings(db, findings("dxa", 0x2000, 0x20ff, { symbols: [{ address: 0x2000, name: "l2000", kind: "label" }] }), { expectedRevision: 0 }), failsWith("stale-revision"));
-  assert.equal(currentRevision(db), 1);
+  assert.throws(() => importFindings(db, findings("dxa", 0x2000, 0x20ff, { symbols: [{ address: 0x2000, name: "l2000", kind: "label" }] }), { expectedRevision: "0" }), failsWith("stale-revision"));
+  assert.equal(currentRevision(db), nth(db, 1));
 });
 
 test("a failure in the middle of an import rolls all of it back", () => {
@@ -224,14 +225,14 @@ test("a failure in the middle of an import rolls all of it back", () => {
     /boom/,
   );
   db.exec("DROP TRIGGER fail_boom");
-  assert.equal(currentRevision(db), 0);
+  assert.equal(currentRevision(db), "0");
   assert.equal(count(db, "SELECT count(*) AS n FROM symbols") + count(db, "SELECT count(*) AS n FROM regions"), 0);
 });
 
 test("history shows an import as one revision of the analyzer", () => {
   const db = fresh();
   importFindings(db, findings("dxa", 0x0801, 0x08ff, { symbols: [{ address: 0x080d, name: "l080d", kind: "label" }], regions: [{ start: 0x080d, end: 0x0812, type: "code" }] }));
-  const changes = revisionChanges(db, 1);
+  const changes = revisionChanges(db, nth(db, 1));
   assert.equal(changes.revision.origin, "dxa");
 });
 

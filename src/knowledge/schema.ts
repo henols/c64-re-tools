@@ -1,9 +1,10 @@
-// The knowledge.db schema: one version, created in an empty database.
+// The schema of the knowledge index, .c64-re-tools/local/knowledge.db (D69).
+// The index is made from the text in .c64-re-tools/knowledge/; an index with
+// another version is emptied and made again.
 
 import type { DatabaseSync } from "node:sqlite";
 
 import { REFERENCE_KINDS, type ReferenceKind } from "../c64.ts";
-import { KnowledgeError } from "./database.ts";
 import { OPERAND_SELECTS } from "./expression.ts";
 
 /** heuristic: 6502 idioms that the static analysis finds by pattern (D44); an analyzer origin. */
@@ -68,13 +69,13 @@ const SPACE_CHECK = "space IN ('c64', 'drive8') OR space GLOB 'bank[0-9]' OR spa
 
 const list = (values: readonly string[]) => values.map((value) => `'${value}'`).join(", ");
 
-/** The schema version this build reads and writes. */
-export const SCHEMA_VERSION = 7;
-
 /**
  * Creates the schema in an empty database. Knowledge rows are temporal: a
  * change closes the current row (valid_to_revision) and inserts a new one in
- * the same revision.
+ * the same revision. Revision and row ids are the text ids of the knowledge
+ * files; they sort in time order. The rules for current rows (one symbol at
+ * an address, ...) are not unique indexes, because a merged text can break
+ * them: the conflict check finds those rows (conflicts.ts).
  */
 function createSchema(db: DatabaseSync): void {
     db.exec(`
@@ -83,7 +84,7 @@ function createSchema(db: DatabaseSync): void {
         value TEXT NOT NULL
       );
       CREATE TABLE revisions (
-        id           INTEGER PRIMARY KEY,
+        id           TEXT PRIMARY KEY,
         created_at   TEXT NOT NULL,
         origin       TEXT NOT NULL CHECK (origin IN (${list(ORIGINS)})),
         operation    TEXT NOT NULL,
@@ -92,65 +93,65 @@ function createSchema(db: DatabaseSync): void {
         description  TEXT
       );
       CREATE TABLE symbols (
-        id                  INTEGER PRIMARY KEY,
+        id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         name                TEXT NOT NULL CHECK (length(name) > 0),
         kind                TEXT NOT NULL CHECK (kind IN (${list(SYMBOL_KINDS)})),
         origin              TEXT NOT NULL CHECK (origin IN (${list(ORIGINS)})),
-        valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
-        valid_to_revision   INTEGER REFERENCES revisions (id)
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
       );
-      CREATE UNIQUE INDEX symbols_current_address ON symbols (space, address) WHERE valid_to_revision IS NULL;
-      CREATE UNIQUE INDEX symbols_current_name ON symbols (space, name) WHERE valid_to_revision IS NULL;
+      CREATE INDEX symbols_current_address ON symbols (space, address) WHERE valid_to_revision IS NULL;
+      CREATE INDEX symbols_current_name ON symbols (space, name) WHERE valid_to_revision IS NULL;
       CREATE INDEX symbols_address ON symbols (space, address);
       CREATE TABLE regions (
-        id                  INTEGER PRIMARY KEY,
+        id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         end_address         INTEGER NOT NULL CHECK (end_address BETWEEN start_address AND 65535),
         type                TEXT NOT NULL CHECK (type IN (${list(REGION_TYPES)})),
         element             INTEGER CHECK (element BETWEEN 1 AND ${MAX_ELEMENT}),
         origin              TEXT NOT NULL CHECK (origin IN (${list(ORIGINS)})),
-        valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
-        valid_to_revision   INTEGER REFERENCES revisions (id)
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
       );
       CREATE INDEX regions_start ON regions (space, start_address);
       CREATE TABLE evidence (
         id       INTEGER PRIMARY KEY,
-        revision INTEGER NOT NULL REFERENCES revisions (id),
+        revision TEXT NOT NULL REFERENCES revisions (id),
         kind     TEXT NOT NULL CHECK (kind IN (${list(EVIDENCE_KINDS)})),
         ref      TEXT NOT NULL CHECK (length(ref) > 0),
         sha256   TEXT CHECK (sha256 IS NULL OR length(sha256) = 64)
       );
       CREATE INDEX evidence_revision ON evidence (revision);
       CREATE TABLE comments (
-        id                  INTEGER PRIMARY KEY,
+        id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         placement           TEXT NOT NULL CHECK (placement IN (${list(COMMENT_PLACEMENTS)})),
         text                TEXT NOT NULL CHECK (length(text) > 0),
         origin              TEXT NOT NULL CHECK (origin IN (${list(ORIGINS)})),
-        valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
-        valid_to_revision   INTEGER REFERENCES revisions (id)
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
       );
-      CREATE UNIQUE INDEX comments_current ON comments (space, address, placement) WHERE valid_to_revision IS NULL;
+      CREATE INDEX comments_current ON comments (space, address, placement) WHERE valid_to_revision IS NULL;
       CREATE INDEX comments_address ON comments (space, address);
       CREATE TABLE "references" (
-        id                  INTEGER PRIMARY KEY,
+        id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         from_address        INTEGER NOT NULL CHECK (from_address BETWEEN 0 AND 65535),
         to_address          INTEGER NOT NULL CHECK (to_address BETWEEN 0 AND 65535),
         kind                TEXT NOT NULL CHECK (kind IN (${list(REFERENCE_KINDS)})),
         origin              TEXT NOT NULL CHECK (origin IN (${list(ORIGINS)})),
-        valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
-        valid_to_revision   INTEGER REFERENCES revisions (id)
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
       );
-      CREATE UNIQUE INDEX references_current ON "references" (space, from_address, to_address, kind) WHERE valid_to_revision IS NULL;
+      CREATE INDEX references_current ON "references" (space, from_address, to_address, kind) WHERE valid_to_revision IS NULL;
       CREATE INDEX references_from ON "references" (space, from_address);
       CREATE INDEX references_to ON "references" (space, to_address);
       CREATE TABLE suppressions (
-        id                  INTEGER PRIMARY KEY,
+        id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         entity              TEXT NOT NULL CHECK (entity IN (${list(SUPPRESSION_ENTITIES)})),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
@@ -158,26 +159,26 @@ function createSchema(db: DatabaseSync): void {
         to_address          INTEGER CHECK (to_address BETWEEN 0 AND 65535),
         kind                TEXT CHECK (kind IN (${list(REFERENCE_KINDS)})),
         origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
-        valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
-        valid_to_revision   INTEGER REFERENCES revisions (id),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id),
         CHECK ((entity = 'reference') = (to_address IS NOT NULL AND kind IS NOT NULL)),
         CHECK (entity = 'region' OR start_address = end_address)
       );
       CREATE INDEX suppressions_start ON suppressions (space, start_address);
       CREATE TABLE modules (
-        id                  INTEGER PRIMARY KEY,
+        id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         start_address       INTEGER NOT NULL CHECK (start_address BETWEEN 0 AND 65535),
         file                TEXT NOT NULL CHECK (length(file) > 0),
         title               TEXT CHECK (title IS NULL OR length(title) > 0),
         origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
-        valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
-        valid_to_revision   INTEGER REFERENCES revisions (id)
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id)
       );
-      CREATE UNIQUE INDEX modules_current_start ON modules (space, start_address) WHERE valid_to_revision IS NULL;
-      CREATE UNIQUE INDEX modules_current_file ON modules (space, file) WHERE valid_to_revision IS NULL;
+      CREATE INDEX modules_current_start ON modules (space, start_address) WHERE valid_to_revision IS NULL;
+      CREATE INDEX modules_current_file ON modules (space, file) WHERE valid_to_revision IS NULL;
       CREATE TABLE operands (
-        id                  INTEGER PRIMARY KEY,
+        id                  TEXT PRIMARY KEY,
         space               TEXT NOT NULL DEFAULT 'c64' CHECK (${SPACE_CHECK}),
         address             INTEGER NOT NULL CHECK (address BETWEEN 0 AND 65535),
         selector            TEXT NOT NULL CHECK (selector IN (${list(OPERAND_SELECTS)})),
@@ -185,12 +186,12 @@ function createSchema(db: DatabaseSync): void {
         offset              INTEGER NOT NULL DEFAULT 0,
         expression          TEXT CHECK (expression IS NULL OR length(expression) > 0),
         origin              TEXT NOT NULL CHECK (origin IN ('user', 'llm')),
-        valid_from_revision INTEGER NOT NULL REFERENCES revisions (id),
-        valid_to_revision   INTEGER REFERENCES revisions (id),
+        valid_from_revision TEXT NOT NULL REFERENCES revisions (id),
+        valid_to_revision   TEXT REFERENCES revisions (id),
         CHECK ((selector = 'expr') = (expression IS NOT NULL AND symbol IS NULL AND offset = 0)),
         CHECK (selector = 'expr' OR symbol IS NOT NULL)
       );
-      CREATE UNIQUE INDEX operands_current ON operands (space, address) WHERE valid_to_revision IS NULL;
+      CREATE INDEX operands_current ON operands (space, address) WHERE valid_to_revision IS NULL;
       CREATE INDEX operands_address ON operands (space, address);
       CREATE VIEW current_symbols AS SELECT * FROM symbols WHERE valid_to_revision IS NULL;
       CREATE VIEW current_regions AS SELECT * FROM regions WHERE valid_to_revision IS NULL;
@@ -199,52 +200,48 @@ function createSchema(db: DatabaseSync): void {
       CREATE VIEW current_suppressions AS SELECT * FROM suppressions WHERE valid_to_revision IS NULL;
       CREATE VIEW current_modules AS SELECT * FROM modules WHERE valid_to_revision IS NULL;
       CREATE VIEW current_operands AS SELECT * FROM operands WHERE valid_to_revision IS NULL;
-      INSERT INTO meta (key, value) VALUES ('current_revision', '0');
     `);
 }
 
-export function schemaVersion(db: DatabaseSync): number {
+/** The version of the index this build makes. An index with another version is emptied and made again. */
+export const INDEX_VERSION = 1;
+
+function indexVersion(db: DatabaseSync): number | undefined {
   const hasMeta = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get();
-  if (hasMeta === undefined) {
-    const tables = db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table'").get() as { n: number };
-    if (tables.n > 0) throw new KnowledgeError("invalid-database", "The knowledge database has tables but no meta table; it is not a c64-re-tools database.");
-    return 0;
-  }
-  const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: unknown } | undefined;
-  if (row === undefined) throw new KnowledgeError("invalid-database", "The knowledge database has no schema version.");
-  const value = String(row.value);
-  if (!/^(0|[1-9][0-9]{0,8})$/.test(value)) throw new KnowledgeError("invalid-database", `The schema version of the knowledge database is not a whole number: ${JSON.stringify(value)}.`);
-  return Number(value);
+  if (hasMeta === undefined) return undefined;
+  const row = db.prepare("SELECT value FROM meta WHERE key = 'index_version'").get() as { value: unknown } | undefined;
+  return row === undefined ? undefined : Number(row.value);
 }
 
-/** Refuses a database with any schema version other than the one this build reads and writes. */
-export function checkVersion(version: number): void {
-  if (version !== SCHEMA_VERSION) {
-    throw new KnowledgeError(
-      "unsupported-schema",
-      `The knowledge database has schema version ${version}. This c64-re-tools reads and writes only version ${SCHEMA_VERSION}. Use the c64-re-tools release that wrote it.`,
-    );
-  }
+/** Drops every table and view of the database; the indexes go with their tables. */
+function dropAll(db: DatabaseSync): void {
+  const objects = db.prepare("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND type IN ('view', 'table')").all() as Array<{ type: string; name: string }>;
+  for (const { name } of objects.filter((object) => object.type === "view")) db.exec(`DROP VIEW "${name}"`);
+  for (const { name } of objects.filter((object) => object.type === "table")) db.exec(`DROP TABLE "${name}"`);
 }
 
 /**
- * Creates the schema in an empty database and refuses any other version. The
- * version is read again under the write lock, so two processes that open a
- * new database at the same time create the schema once.
+ * Makes the index schema of this build. An empty database gets it; a database
+ * with another index version, or one that is not an index, is emptied first.
+ * The version is read again under the write lock, so two processes that open
+ * a new index at the same time make the schema once.
  */
 export function ensureSchema(db: DatabaseSync): void {
-  if (schemaVersion(db) === 0) {
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      if (schemaVersion(db) === 0) {
-        createSchema(db);
-        db.prepare("INSERT INTO meta (key, value) VALUES ('schema_version', ?)").run(String(SCHEMA_VERSION));
-      }
-      db.exec("COMMIT");
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
+  if (indexVersion(db) === INDEX_VERSION) return;
+  // PRAGMA foreign_keys has no effect inside a transaction: switch it before.
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    if (indexVersion(db) !== INDEX_VERSION) {
+      dropAll(db);
+      createSchema(db);
+      db.prepare("INSERT INTO meta (key, value) VALUES ('index_version', ?)").run(String(INDEX_VERSION));
     }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
   }
-  checkVersion(schemaVersion(db));
 }

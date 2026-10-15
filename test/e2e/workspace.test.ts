@@ -31,7 +31,7 @@ test("from the workspace root, scripts write into the project that --project nam
   assert.equal(knowledge(["rename", "$c000", "start", "--project", "hover-bovver"]).status, 0);
   assert.equal(knowledge(["--project=boulder-dash", "rename", "$1000", "init"]).status, 0);
   for (const name of ["hover-bovver", "boulder-dash"]) {
-    assert.ok(existsSync(join(workspace, name, ".c64-re-tools", "knowledge.db")), name);
+    assert.ok(existsSync(join(workspace, name, ".c64-re-tools", "knowledge", "symbols.jsonl")), name);
     assert.match(readFileSync(join(workspace, name, ".c64-re-tools", "local", ".gitignore"), "utf8"), /^\*$/m, `${name}: local/ ignores itself`);
   }
 
