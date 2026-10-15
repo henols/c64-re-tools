@@ -48,10 +48,11 @@ With `--run`, a PRG starts with autostart and RUN. An image starts from its byte
 2. Read `identicalShare`. If it is low and `suggestedShifts` is present, the releases are at different addresses. Run the script again with `--shift`.
 3. Read `differences`. Each one has an address range, the bytes of each release, and `groups`: the releases that have the same bytes there.
 4. To know how the program uses the differences, run the script again with `--run` and the frames that get the program to the part you examine. Read `runtime` of each difference:
-   - `first`: the first access in that release: `read`, `write`, `execute` or `none`. An instruction that reads and then writes the same byte, for example INC, counts as `read`.
+   - `first`: the first access in that release: `read`, `write`, `execute` or `none`. An instruction that reads and then writes the same byte, for example INC, counts as `read`. The operand bytes of an executed instruction count as `execute`, for example the value of `LDA #$03`.
    - `changed`: `true` when the bytes at the end of the run are not the bytes of the release.
    - A range that each release writes before it reads is probably runtime state, not a difference of the releases.
    - A range with `none` in each release is not used in this run. Run more frames or other steps before you decide.
+   - `run.skipped`: the releases have no differences, so no release ran.
 5. Examine each important difference:
    - Disassemble the bytes of each release with the c64-emulator skill, or analyze them with the c64-static-analysis skill.
    - Find what the change does, for example a trainer, a removed copy protection, or a changed text.
@@ -62,7 +63,7 @@ With `--run`, a PRG starts with autostart and RUN. An image starts from its byte
 
 Use `separate` when you have only one release. It gives evidence, not a decision:
 
-- `ranges`: the image in ranges with the same stage and access. `stage` is the last unpack stage that wrote the range. In `image.json`, the last stage is the program. An earlier stage is a depacker, an intro or a loader.
+- `ranges`: the image in ranges with the same stage and access. `stage` is the last unpack stage that wrote the range. In `image.json`, the last stage is the program. An earlier stage is a depacker, an intro or a loader. Only an image from c64-unpacker `capture` has stages. For an image from `loads`, `noStages` tells this.
 - `access`: from the joined `--coverage` files: `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs.
 - `codeRegions.unreachable`: code regions of the knowledge that no chain of call and jump references reaches from the entry. Run c64-static-analysis first, so that the knowledge has the code regions and the references.
 - `outside`: RAM outside the image that the program `read` or `executed` but did not write, and code it `generated`. A loader or an earlier stage put the bytes that the program did not write.

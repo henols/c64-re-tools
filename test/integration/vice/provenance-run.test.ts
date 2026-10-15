@@ -33,6 +33,7 @@ function release(variant: "a" | "b"): Uint8Array {
   put(0x080d, [0xa9, 0xaa, 0x8d, 0x30, 0x08, 0x8d, 0x31, 0x08, 0xad, 0x40, 0x08, 0x20, 0x50, 0x08, 0x4c, 0x1c, 0x08]);
   put(0x0850, variant === "a" ? [0xea, 0xea, 0x60] : [0xea, 0x60, 0x00]);
   if (variant === "b") {
+    put(0x080e, [0xbb]); // the operand of LDA #$AA: a trainer patch (F-27)
     put(0x0830, [0x11, 0x22]);
     put(0x0840, [0x05]);
     put(0x0860, [0x77]);
@@ -80,6 +81,7 @@ test("each difference gets its first access in every release and whether the run
   const seen = Object.fromEntries(json.differences.map((difference) => [`${difference.start}-${difference.end}`, difference.runtime]));
   const all = (first: string, changed: boolean) => ({ "a.prg": { first, changed }, "b.prg": { first, changed }, "unpacked/image.json": { first, changed } });
   assert.deepEqual(seen, {
+    "$080e-$080e": all("execute", false),
     "$0830-$0831": all("write", true),
     "$0840-$0840": all("read", false),
     "$0851-$0852": all("execute", false),

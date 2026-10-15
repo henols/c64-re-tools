@@ -252,7 +252,9 @@ async function run(argv: string[]): Promise<unknown> {
     })),
     ...(comparison.moreDifferences ? { moreDifferences: true } : {}),
     ...(suggestions.length > 0 ? { suggestedShifts: suggestions } : {}),
-    ...(frames === undefined ? {} : { run: { frames, steps: steps.length, releases: runs } }),
+    ...(frames === undefined
+      ? {}
+      : { run: { frames, steps: steps.length, releases: runs, ...(comparison.differences.length === 0 ? { skipped: "The releases have no differences, so no release ran." } : {}) } }),
   };
 }
 
@@ -293,7 +295,7 @@ function separateCommand(path: string, coveragePaths: string[], out: string | un
     release: path,
     ...(loaded.entry === undefined ? {} : { entry: formatC64Address(loaded.entry) }),
     ...(lastStage === undefined
-      ? {}
+      ? { noStages: "image.json has no stage log. Only a capture of c64-unpacker writes one. A capture of loads holds one part of a program and has none." }
       : {
           stages: lastStage + 1,
           bytesByStage: Object.fromEntries([...[...Array(lastStage + 1).keys()].map((stage): [string, number] => [String(stage), bytes((range) => range.stage === stage)]), ["none", bytes((range) => range.stage === undefined)]]),

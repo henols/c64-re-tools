@@ -160,3 +160,27 @@ test("the separate command reads an image with its stages and writes all ranges 
   assert.equal((JSON.parse(readFileSync(join(project, "one", "separate.json"), "utf8")) as { ranges: unknown[] }).ranges.length, 2);
   assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "one/image.json", "--run", "5"], { cwd: project, encoding: "utf8" }).status, 2);
 });
+
+test("separate says when an image has no stage log, and a run of releases without differences says why nothing ran (F-28)", () => {
+  const memory = new Uint8Array(0x10000);
+  memory.fill(0xea, 0x3000, 0x30ff);
+  mkdirSync(join(project, "part"), { recursive: true });
+  writeFileSync(join(project, "part", "image.bin"), memory);
+  writeFileSync(join(project, "part", "image.json"), JSON.stringify({ entry: "$3000", image: "image.bin", segments: [{ start: "$3000", end: "$30ff" }] }));
+  const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
+  const separated = spawnSync(process.execPath, [...process.execArgv, script, "separate", "part/image.json"], { cwd: project, encoding: "utf8" });
+  assert.equal(separated.status, 0, separated.stdout + separated.stderr);
+  const result = JSON.parse(separated.stdout) as Record<string, unknown>;
+  assert.match(String(result.noStages), /no stage log/);
+  assert.equal(result.bytesByStage, undefined);
+
+  const prg = Buffer.concat([Buffer.from([0x01, 0x08]), base]);
+  writeFileSync(join(project, "same-a.prg"), prg);
+  writeFileSync(join(project, "same-b.prg"), prg);
+  // No difference: no emulator starts, so no host is needed.
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "same-a.prg", "same-b.prg", "--run", "10"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const compared = JSON.parse(run.stdout) as { run: { releases: object; skipped?: string } };
+  assert.deepEqual(compared.run.releases, {});
+  assert.match(compared.run.skipped ?? "", /no differences/);
+});

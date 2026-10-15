@@ -4,7 +4,7 @@
 // Watchpoints and range breakpoints stop the run at an access; the coverage
 // map then tells which range and which access it was.
 
-import { COVERAGE, formatC64Address } from "#src/c64.ts";
+import { COVERAGE, formatC64Address, instructionLength } from "#src/c64.ts";
 import { runProgram } from "#src/host-client/autostart.ts";
 import { readCoverage } from "#src/host-client/coverage.ts";
 import { runActionStep, type ActionStep } from "#src/host-client/steps.ts";
@@ -108,7 +108,12 @@ export async function watchRelease(
   }
   await client.memmap({ action: "clear" });
 
-  /** After a stop: the ranges that the coverage shows accessed get their first access, and lose their points. */
+  /**
+   * After a stop: the ranges that the coverage shows accessed get their first
+   * access, and lose their points. VICE marks only the opcode byte of an
+   * executed instruction, so an instruction that starts up to two bytes before
+   * a range, or in it, executes its operand bytes too (F-27).
+   */
   const settle = async (): Promise<boolean> => {
     const map = await readCoverage(client);
     let found = false;
@@ -116,6 +121,13 @@ export async function watchRelease(
       const range = ranges[index]!;
       let flags = 0;
       for (let address = range.start; address <= range.end; address++) flags |= map[address]!;
+      const from = Math.max(0, range.start - 2);
+      if ((flags & EXECUTE) === 0 && map.subarray(from, range.start).some((byte) => (byte & COVERAGE.ramExecute) !== 0)) {
+        const code = Buffer.from((await client.memoryRead({ address: from, size: range.start - from, space: "c64", view: "ram" })).data, "hex");
+        for (let address = from; address < range.start; address++) {
+          if ((map[address]! & COVERAGE.ramExecute) !== 0 && address + instructionLength(code[address - from]!) - 1 >= range.start) flags |= COVERAGE.ramExecute;
+        }
+      }
       if (accessOf(flags) === "none") continue;
       first[index] = accessOf(flags);
       for (const point of ids) {
