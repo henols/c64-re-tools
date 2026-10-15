@@ -81,7 +81,46 @@ test("a directory that cannot be used leaves the trace off and warns", () => {
   const off = startTrace("script", { env: { [TRACE_VARIABLE]: join(blocker, "sub") }, warn: (line) => warnings.push(line) });
   assert.equal(off.on, false);
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0]!, /^C64RT_TRACE=.* cannot be used \(.*\); the trace is off\.$/);
+  assert.match(warnings[0]!, /^C64RT_TRACE=.* cannot be used \(.*\); no trace file is written\.$/);
+});
+
+test("an echo gets each event but log as one line and writes no file", () => {
+  const echoed: string[] = [];
+  const on = startTrace("host", { env: { [TRACE_VARIABLE]: join(scratch, "ignored") }, target: { echo: (line) => echoed.push(line) } });
+  assert.equal(on.on, true);
+  assert.equal(on.file, undefined);
+  on.event("request", { op: "c1541", params: { image: Buffer.alloc(3) }, ok: true });
+  on.log("printed by the program itself");
+  on.keep(join(scratch, "nothing"), "nothing");
+  assert.deepEqual(echoed, ['request {"op":"c1541","params":{"image":{"bytes":3}},"ok":true}']);
+  assert.deepEqual(readdirSync(scratch).filter((name) => name === "ignored"), []);
+  startTrace("host", { env: {} });
+});
+
+test("a target directory that cannot be used warns with how it was given, and the echo stays on", () => {
+  const blocker = join(scratch, "blocker");
+  writeFileSync(blocker, "");
+  const warnings: string[] = [];
+  const echoed: string[] = [];
+  const path = join(blocker, "sub");
+  const on = startTrace("host", { target: { dir: { path, given: `--log-dir ${path}` }, echo: (line) => echoed.push(line) }, warn: (line) => warnings.push(line) });
+  assert.equal(on.on, true);
+  assert.equal(on.file, undefined);
+  on.event("request", { op: "status" });
+  assert.deepEqual(echoed, ['request {"op":"status"}']);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /^--log-dir .* cannot be used \(.*\); no trace file is written\.$/);
+  startTrace("host", { env: {} });
+});
+
+test("a target directory and an echo both get the events", () => {
+  const dir = join(scratch, "both");
+  const echoed: string[] = [];
+  const on = startTrace("host", { target: { dir: { path: dir, given: `--log-dir ${dir}` }, echo: (line) => echoed.push(line) } });
+  on.event("tool.run", { argv: ["c1541", "-list"] });
+  assert.deepEqual(lines(on.file!).map((line) => line.event), ["trace.start", "tool.run"]);
+  assert.equal(echoed.at(-1), 'tool.run {"argv":["c1541","-list"]}');
+  startTrace("host", { env: {} });
 });
 
 test("elapsedMs counts from a performance.now() reading, to a tenth", () => {

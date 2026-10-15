@@ -1,7 +1,8 @@
 // An opt-in trace for the person who debugs a run. With C64RT_TRACE=<directory>
-// in the environment, each process appends its events as JSON lines to a file
-// of its own in that directory; unset, every call does nothing. The trace is
-// for people: nothing of it reaches the agent, and no result depends on it.
+// in the environment (the host: --log-dir), each process appends its events as
+// JSON lines to a file of its own in that directory. The host can also echo
+// each event to the console (--log-console). Off, every call does nothing. The
+// trace is for people: nothing of it reaches the agent, and no result depends on it.
 
 import { appendFileSync, copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -66,14 +67,16 @@ export class Trace {
   readonly kind: TraceKind;
   /** The directory of the trace, or undefined when the trace is off. */
   readonly dir: string | undefined;
-  /** The file this trace appends to, or undefined when the trace is off. */
+  /** The file this trace appends to, or undefined when the trace writes no file. */
   readonly file: string | undefined;
+  readonly #echo: ((line: string) => void) | undefined;
   #broken = false;
 
-  private constructor(kind: TraceKind, dir: string | undefined, file: string | undefined) {
+  private constructor(kind: TraceKind, dir: string | undefined, file: string | undefined, echo?: (line: string) => void) {
     this.kind = kind;
     this.dir = dir;
     this.file = file;
+    this.#echo = echo;
   }
 
   /** A trace that records nothing. */
@@ -81,31 +84,46 @@ export class Trace {
     return new Trace(kind, undefined, undefined);
   }
 
+  /** A trace that writes no file and gives each event to `echo` as one line. */
+  static echoing(kind: TraceKind, echo: (line: string) => void): Trace {
+    return new Trace(kind, undefined, undefined, echo);
+  }
+
   /**
    * A trace into `dir`, created when it is missing. The file is
    * `<kind>-<CET time>-<pid>.jsonl`, and its first event is `trace.start`.
    * Throws when the directory cannot be used.
    */
-  static open(kind: TraceKind, dir: string, now = new Date()): Trace {
+  static open(kind: TraceKind, dir: string, now = new Date(), echo?: (line: string) => void): Trace {
     mkdirSync(dir, { recursive: true });
-    const trace = new Trace(kind, dir, join(dir, `${kind}-${fileStampCet(now)}-${process.pid}.jsonl`));
+    const trace = new Trace(kind, dir, join(dir, `${kind}-${fileStampCet(now)}-${process.pid}.jsonl`), echo);
     trace.event("trace.start", { version: runningVersion(), pid: process.pid, argv: process.argv.slice(1), cwd: process.cwd(), node: process.version, platform: process.platform });
     return trace;
   }
 
   get on(): boolean {
+    return this.#writes || this.#echo !== undefined;
+  }
+
+  get #writes(): boolean {
     return this.file !== undefined && !this.#broken;
   }
 
-  /** Appends one event. A write that fails turns the trace off; nothing throws. */
+  /**
+   * Records one event: appends it to the file, and gives it to the echo as
+   * "<event> <fields as JSON>". The echo skips `log` events, which the program
+   * prints itself. A write that fails stops the file; nothing throws.
+   */
   event(name: string, fields: TraceFields = {}): void {
     if (!this.on) return;
-    const line: Record<string, unknown> = { t: isoCet(), kind: this.kind, event: name };
+    const summary: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(fields)) {
-      if (!RESERVED.has(key) && value !== undefined) line[key] = summarize(value);
+      if (!RESERVED.has(key) && value !== undefined) summary[key] = summarize(value);
     }
+    if (this.#echo !== undefined && name !== "log") this.#echo(`${name} ${JSON.stringify(summary)}`);
+    if (!this.#writes) return;
     try {
-      appendFileSync(this.file!, `${JSON.stringify(line)}\n`);
+      appendFileSync(this.file!, `${JSON.stringify({ t: isoCet(), kind: this.kind, event: name, ...summary })}\n`);
     } catch {
       this.#broken = true;
     }
@@ -121,7 +139,7 @@ export class Trace {
    * trace, as `<kind>-<pid>-<name>`. A copy that fails is recorded, not thrown.
    */
   keep(source: string, name: string): void {
-    if (!this.on) return;
+    if (!this.#writes) return;
     const target = join(this.dir!, `${this.kind}-${process.pid}-${name}`);
     try {
       copyFileSync(source, target);
@@ -135,23 +153,37 @@ export class Trace {
 // Off until a program calls startTrace; the kind is a placeholder until then.
 let current = Trace.off("script");
 
+/** Where the trace of a process goes: a directory for its file, and an echo for each event. */
+export interface TraceTarget {
+  /** The directory, and how the user gave it (`--log-dir <path>`, for example) for a warning. */
+  dir?: { path: string; given: string };
+  echo?: (line: string) => void;
+}
+
+/** The target that C64RT_TRACE in `env` gives: its directory, or nothing. */
+export function traceTargetFromEnv(env: NodeJS.ProcessEnv = process.env): TraceTarget {
+  const path = env[TRACE_VARIABLE];
+  return path === undefined || path === "" ? {} : { dir: { path, given: `${TRACE_VARIABLE}=${path}` } };
+}
+
 /**
- * Switches the trace of this process on when `env` (the environment by
- * default) has C64RT_TRACE, and off otherwise. A directory that cannot be used
- * leaves the trace off and reports that through `warn`. Called once, at the
- * start of a program.
+ * Switches the trace of this process on for `target` (by default what
+ * C64RT_TRACE in `env` gives), and off when the target is empty. A directory
+ * that cannot be used writes no file and reports that through `warn`; an echo
+ * stays on. Called once, at the start of a program.
  */
-export function startTrace(kind: TraceKind, options: { env?: NodeJS.ProcessEnv; warn?: (line: string) => void } = {}): Trace {
-  const dir = (options.env ?? process.env)[TRACE_VARIABLE];
-  if (dir === undefined || dir === "") {
-    current = Trace.off(kind);
+export function startTrace(kind: TraceKind, options: { env?: NodeJS.ProcessEnv; target?: TraceTarget; warn?: (line: string) => void } = {}): Trace {
+  const { dir, echo } = options.target ?? traceTargetFromEnv(options.env);
+  const noFile = () => (echo === undefined ? Trace.off(kind) : Trace.echoing(kind, echo));
+  if (dir === undefined) {
+    current = noFile();
     return current;
   }
   try {
-    current = Trace.open(kind, dir);
+    current = Trace.open(kind, dir.path, new Date(), echo);
   } catch (error) {
-    current = Trace.off(kind);
-    options.warn?.(`${TRACE_VARIABLE}=${dir} cannot be used (${error instanceof Error ? error.message : String(error)}); the trace is off.`);
+    current = noFile();
+    options.warn?.(`${dir.given} cannot be used (${error instanceof Error ? error.message : String(error)}); no trace file is written.`);
   }
   return current;
 }

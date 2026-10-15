@@ -27,6 +27,8 @@ Start the Host Runtime and leave it running:
 npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host
 ```
 
+Add `--log-console` to print each request and each c1541 or petcat run, or `--log-dir <directory>` to write them to a file. Both are off by default.
+
 Install into your project and start the agent:
 
 ```
@@ -64,7 +66,7 @@ The Feature installs ACME, dxa, Java 21 and Ghidra, puts the toolkit into the pr
 | `C64RT_GHIDRA` | skills, CLI | The Ghidra installation directory, when `analyzeHeadless` is not on `PATH`. |
 | `C64RT_HOST` | MCP, skills, CLI | `host:port` of the Host Runtime when it is not on 127.0.0.1, `host.docker.internal` or `host.containers.internal` at 6464. |
 | `C64RT_VIDEO` | MCP | `pal` (default) or `ntsc`, fixed for the life of the MCP process. |
-| `C64RT_TRACE` | host, MCP, skills, CLI | A directory for a trace of what the programs do, for a person who debugs a run. See [docs/debug-install.md](docs/debug-install.md). Nothing of the trace reaches the agent. |
+| `C64RT_TRACE` | MCP, skills, CLI | A directory for a trace of what the programs do, for a person who debugs a run. See [docs/debug-install.md](docs/debug-install.md). Nothing of the trace reaches the agent. The host uses `--log-dir` instead. |
 
 Ghidra runs with its own settings directory for each request. The toolkit
 brings its own NMOS 6510 language (all 256 opcodes); your Ghidra installation

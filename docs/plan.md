@@ -275,6 +275,7 @@ Two testers ran 2.0.0-rc.7 on VICE trunk r46282: report b's round 2 on Boulder D
 - [x] M17.3 **Capture starts as a test starts (D62; b2/05)** — capture takes the c64-testing start path; two captures and a scenario reach the entry at the same raster line and CIA counters.
 - [x] M17.4 **The loader sets the CIA timers (D63; b2/02, R3 in-game FAIL)** — capture records the timer latches; the loader force-loads timers A and B of both CIAs after the raster wait; `loader.verified` compares the counters; the skill texts name the limits that stay (SID voice 3, TOD phase, ICR flags).
 - [x] M17.5 **Texts (R3-04, ids, profile)** — `selfModified` is a write and an execute in one run, in either order, with one coverage file per phase as the remedy; breakpoints and watchpoints share one id counter; after a window move or a snapshot restore VICE's profiler charges cycles to the routine that ran at the restore (a VICE flaw, D56 style), and `c64_profile` counts from the last window move, not the session start.
+- [x] M17.6 **Host log flags** — `c64-re-tools-host --log-console` prints each trace event (requests with their result, c1541 and petcat runs, connections) to stderr; `--log-dir <directory>` writes the trace file and the VICE log copy there. Both are off by default; the host no longer reads `C64RT_TRACE`, which stays for the MCP server, the skill scripts and the CLI. `pnpm host` passes both flags through.
 
 ## Decisions
 

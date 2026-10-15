@@ -39,6 +39,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck   # tsc over src/, skills/, distribution/ and test/; nothing is emitted
 pnpm test        # node --test "src/**/*.test.ts" "test/**/*.test.ts"
 pnpm host        # the Host Runtime from this checkout, in the foreground
+                 # --log-console / --log-dir <dir>: log each request and tool run (off by default)
 ```
 
 - Release by tag only: `git tag v2.0.0-rc.2 && git push origin v2.0.0-rc.2` (prerelease, npm `next`) or `v2.0.0` (release, `latest`). The tag gives the version; the repo keeps `0.0.0-development`. Never bump the version in a commit.

@@ -29,15 +29,17 @@ Then install in the container as usual, or add the Feature from the README with 
 
 ## Trace
 
-Set `C64RT_TRACE` to a directory. Each program then writes what it does there, as JSON lines. The Host Runtime also keeps a copy of VICE's log.
+Each program writes what it does to a directory, as JSON lines. The Host Runtime also keeps a copy of VICE's log.
 
-On the host:
+On the host, `--log-dir` names the directory, and `--log-console` prints the same events:
 
 ```
-C64RT_TRACE=$HOME/c64-trace npx -y --package=@henols/c64-re-tools@next c64-re-tools-host
+npx -y --package=@henols/c64-re-tools@next c64-re-tools-host --log-dir $HOME/c64-trace --log-console
 ```
 
-For the MCP server and the skill scripts, in the project's `.claude/settings.local.json`:
+From a checkout: `pnpm host --log-dir $HOME/c64-trace --log-console`.
+
+For the MCP server and the skill scripts, set `C64RT_TRACE` in the project's `.claude/settings.local.json`:
 
 ```json
 { "env": { "C64RT_TRACE": "/absolute/path/to/trace" } }

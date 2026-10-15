@@ -15,7 +15,7 @@ import { PACKAGE } from "../package.ts";
 const HELP = `c64-re-tools-host
 
 Usage:
-  npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host [--port <port>]
+  npx -y --package=${PACKAGE.name}@${PACKAGE.tag} c64-re-tools-host [--port <port>] [--log-console] [--log-dir <directory>]
   c64-re-tools-host --help
 
 Runs the c64-re-tools Host Runtime in the foreground. It first starts VICE
@@ -27,8 +27,15 @@ connected c64-re-tools-mcp process, and runs the tools that come with VICE
 emulator and tool it started.
 
 Options:
-  --port <port>       Listen on this port instead (0 picks a free port).
-  --help              Show this help.`;
+  --port <port>            Listen on this port instead (0 picks a free port).
+  --log-console            Also print each request with its result, and each run
+                           of c1541 or petcat, to the console.
+  --log-dir <directory>    Write the same events as JSON lines to a file in this
+                           directory, with a copy of each VICE log.
+  --help                   Show this help.
+
+Without --log-console and --log-dir the host logs only its start, its stop,
+connections and failures. C64RT_TRACE does not apply to the host.`;
 
 function log(line: string): void {
   process.stderr.write(`c64-re-tools-host: ${line}\n`);
@@ -36,9 +43,12 @@ function log(line: string): void {
 }
 
 async function main(): Promise<number> {
-  let values: { help?: boolean; port?: string };
+  let values: { help?: boolean; port?: string; "log-console"?: boolean; "log-dir"?: string };
   try {
-    ({ values } = parseArgs({ options: { help: { type: "boolean" }, port: { type: "string" } }, strict: true }));
+    ({ values } = parseArgs({
+      options: { help: { type: "boolean" }, port: { type: "string" }, "log-console": { type: "boolean" }, "log-dir": { type: "string" } },
+      strict: true,
+    }));
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n\n${HELP}\n`);
     return 2;
@@ -47,7 +57,18 @@ async function main(): Promise<number> {
     process.stdout.write(`${HELP}\n`);
     return 0;
   }
-  startTrace("host", { warn: log });
+  const logDir = values["log-dir"];
+  if (logDir === "") {
+    process.stderr.write("--log-dir needs a directory.\n");
+    return 2;
+  }
+  startTrace("host", {
+    target: {
+      ...(logDir === undefined ? {} : { dir: { path: logDir, given: `--log-dir ${logDir}` } }),
+      ...(values["log-console"] ? { echo: (line: string) => process.stderr.write(`c64-re-tools-host: ${line}\n`) } : {}),
+    },
+    warn: log,
+  });
 
   const port = values.port === undefined ? DEFAULT_HOST_PORT : parsePort(values.port);
   if (port === undefined) {
