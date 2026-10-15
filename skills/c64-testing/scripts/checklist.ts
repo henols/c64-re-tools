@@ -44,8 +44,8 @@ function run(argv: string[]): string {
 }
 
 await runScript(
-  () => {
-    process.stdout.write(run(process.argv.slice(2)));
+  (argv) => {
+    process.stdout.write(run(argv));
   },
   { usage: USAGE },
 );

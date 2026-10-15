@@ -89,4 +89,4 @@ function run(argv: string[]): unknown {
   }
 }
 
-await runScript(() => run(process.argv.slice(2)), { usage: USAGE });
+await runScript((argv) => run(argv), { usage: USAGE });

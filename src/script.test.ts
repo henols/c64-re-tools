@@ -2,23 +2,32 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { PROJECT_USAGE, takeProject, UsageError } from "./script.ts";
+
 const USAGE = "fixture.ts <file> [--out <file>]";
 
-/** Runs `await runScript(<body>, <options>)` in a child node and returns its exit status and output. */
-function run(body: string, options = "{ usage: USAGE }"): { status: number | null; stdout: string; stderr: string } {
+/** The usage text that a usage error prints: the script's own, then the --project line. */
+const SHOWN_USAGE = `${USAGE}\n\n${PROJECT_USAGE}`;
+
+/** Runs `await runScript(<body>, <options>)` in a child node with `args` as its command line, and returns its exit status and output. */
+function run(body: string, options = "{ usage: USAGE }", args: readonly string[] = [], cwd?: string): { status: number | null; stdout: string; stderr: string } {
   const source = [
     `import { parseArgs } from "node:util";`,
     `import { runScript, UsageError } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "script.ts")).href)};`,
     `import { WireFailure } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "protocol", "messages.ts")).href)};`,
+    `import { projectRoot } from ${JSON.stringify(pathToFileURL(join(import.meta.dirname, "project.ts")).href)};`,
     `class Refused extends Error { code = "not-found"; }`,
     `const USAGE = ${JSON.stringify(USAGE)};`,
     `await runScript(${body}, ${options});`,
   ].join("\n");
-  const child = spawnSync(process.execPath, [...process.execArgv, "--input-type=module", "--eval", source], { encoding: "utf8", timeout: 30_000 });
+  // With --eval, process.argv has no script entry: "fixture" takes its place, so argv.slice(2) is args.
+  const child = spawnSync(process.execPath, [...process.execArgv, "--input-type=module", "--eval", source, "fixture", ...args], { encoding: "utf8", timeout: 30_000, ...(cwd === undefined ? {} : { cwd }) });
   return { status: child.status, stdout: child.stdout, stderr: child.stderr };
 }
 
@@ -70,13 +79,13 @@ test("any other error is thrown on", () => {
 test("a usage error names the problem, then the usage text, with exit status 2", () => {
   const result = run(`() => { throw new UsageError("give one file"); }`);
   assert.equal(result.status, 2, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), { error: { code: "invalid-input", message: `give one file\n\n${USAGE}` } });
+  assert.deepEqual(JSON.parse(result.stdout), { error: { code: "invalid-input", message: `give one file\n\n${SHOWN_USAGE}` } });
 });
 
 test("a usage error without a message prints the usage text alone", () => {
   const result = run(`() => { throw new UsageError(""); }`);
   assert.equal(result.status, 2, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), { error: { code: "invalid-input", message: USAGE } });
+  assert.deepEqual(JSON.parse(result.stdout), { error: { code: "invalid-input", message: SHOWN_USAGE } });
 });
 
 test("a parseArgs error is a usage error", () => {
@@ -85,5 +94,39 @@ test("a parseArgs error is a usage error", () => {
   const { error } = JSON.parse(result.stdout) as { error: { code: string; message: string } };
   assert.equal(error.code, "invalid-input");
   assert.match(error.message, /^Unknown option '--bogus'/);
-  assert.ok(error.message.endsWith(`\n\n${USAGE}`), error.message);
+  assert.ok(error.message.endsWith(`\n\n${SHOWN_USAGE}`), error.message);
+});
+
+test("takeProject takes --project in both forms out of the command line, up to --", () => {
+  assert.deepEqual(takeProject(["list", "--project", "game", "--space", "c64"]), { project: "game", argv: ["list", "--space", "c64"] });
+  assert.deepEqual(takeProject(["--project=game", "at", "$c000"]), { project: "game", argv: ["at", "$c000"] });
+  assert.deepEqual(takeProject(["comment", "--", "--project", "x"]), { argv: ["comment", "--", "--project", "x"] });
+  assert.deepEqual(takeProject(["at", "$c000"]), { argv: ["at", "$c000"] });
+  assert.throws(() => takeProject(["--project"]), UsageError);
+  assert.throws(() => takeProject(["--project", "--out", "x"]), UsageError);
+  assert.throws(() => takeProject(["--project="]), UsageError);
+  assert.throws(() => takeProject(["--project", "a", "--project", "b"]), /only once/);
+});
+
+test("--project sets the project of the script, and the body gets the command line without it", () => {
+  const sandbox = mkdtempSync(join(tmpdir(), "c64-re-tools-script-"));
+  try {
+    mkdirSync(join(sandbox, "game", ".c64-re-tools"), { recursive: true });
+    const body = "(argv) => ({ argv, root: projectRoot() })";
+    const chosen = run(body, undefined, ["at", "--project", "game", "$c000"], sandbox);
+    assert.equal(chosen.status, 0, chosen.stderr);
+    assert.deepEqual(JSON.parse(chosen.stdout), { argv: ["at", "$c000"], root: join(realpathSync(sandbox), "game") });
+
+    const refused = run(body, undefined, ["at"], sandbox);
+    assert.equal(refused.status, 1, refused.stderr);
+    const { error } = JSON.parse(refused.stdout) as { error: { code: string; message: string } };
+    assert.equal(error.code, "invalid-input");
+    assert.match(error.message, /These folders below it are projects: game\. Give --project <folder>/);
+
+    const missing = run(body, undefined, ["--project", "nothing"], sandbox);
+    assert.equal(missing.status, 1, missing.stderr);
+    assert.equal((JSON.parse(missing.stdout) as { error: { code: string } }).error.code, "not-found");
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
 });

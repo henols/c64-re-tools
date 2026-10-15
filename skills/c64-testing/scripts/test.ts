@@ -56,8 +56,8 @@ async function runScenarioFile(path: string, out: string | undefined): Promise<S
 }
 
 await runScript(
-  async () => {
-    const result = await run(process.argv.slice(2));
+  async (argv) => {
+    const result = await run(argv);
     process.exitCode = EXIT[result.result];
     return result;
   },

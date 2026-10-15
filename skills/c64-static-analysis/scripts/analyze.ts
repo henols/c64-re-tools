@@ -290,4 +290,4 @@ async function run(argv: string[]): Promise<unknown> {
   };
 }
 
-await runScript(() => run(process.argv.slice(2)), { usage: USAGE, refusals: [KnowledgeError] });
+await runScript((argv) => run(argv), { usage: USAGE, refusals: [KnowledgeError] });

@@ -4,10 +4,34 @@
 import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, relative, sep } from "node:path";
 
-import { isInside, projectRoot, resolveProjectFile, resolveProjectPath } from "../project.ts";
+import { isInside, ProjectError, projectRoot, resolveProject, resolveProjectFile, resolveProjectPath } from "../project.ts";
 import { MAX_ATTACHMENT_BYTES } from "../protocol/framing.ts";
 import { WireFailure } from "../protocol/messages.ts";
 import { MAX_TREE_FILES, type SourceTree } from "../protocol/tools.ts";
+
+/** Runs a project lookup and gives a refusal of the project rules as a WireFailure with the same code and message. */
+function asWireFailure<T>(lookup: () => T): T {
+  try {
+    return lookup();
+  } catch (error) {
+    if (error instanceof ProjectError) throw new WireFailure(error.code, error.message);
+    throw error;
+  }
+}
+
+/**
+ * The project folder of a call that names it with `project` (relative to the
+ * working directory) or not (D67, D68). Throws WireFailure when the rules
+ * refuse it, for example at a folder with several projects below it.
+ */
+export function projectFolder(project: string | undefined): string {
+  return asWireFailure(() => resolveProject(project, process.cwd(), { remedy: "Give project: <folder>" }));
+}
+
+/** The project folder of this process (--project or the D67 lookup), or a WireFailure. */
+function currentProject(): string {
+  return asWireFailure(projectRoot);
+}
 
 export interface ProjectFile {
   bytes: Buffer;
@@ -21,7 +45,7 @@ export interface ProjectFile {
  * the file is too large to transfer.
  */
 export function readProjectFile(path: string, options: { root?: string } = {}): ProjectFile {
-  const root = options.root ?? projectRoot();
+  const root = options.root ?? currentProject();
   let real: string;
   try {
     real = resolveProjectFile(path, root);
@@ -48,7 +72,7 @@ export function readProjectFile(path: string, options: { root?: string } = {}): 
  * project, also one that leaves it through a symbolic link.
  */
 export function writeProjectFile(path: string, bytes: Uint8Array, options: { root?: string; what?: string } = {}): void {
-  const root = options.root ?? projectRoot();
+  const root = options.root ?? currentProject();
   const refuse = () => new WireFailure("invalid-input", `${options.what ?? path}: give a path relative to the project directory that stays inside it, not ${path}.`);
   let file: string;
   try {
@@ -77,7 +101,7 @@ const SKIPPED_DIRECTORIES = new Set([".git", ".hg", ".svn", ".c64-re-tools"]);
  * target stays inside the source root; otherwise the tree is refused.
  */
 export function readProjectTree(path: string, options: { root?: string } = {}): { files: SourceTree; contents: Buffer[] } {
-  const projectRootPath = options.root ?? projectRoot();
+  const projectRootPath = options.root ?? currentProject();
   let sourceRoot: string;
   try {
     sourceRoot = resolveProjectFile(path, projectRootPath);

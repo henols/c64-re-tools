@@ -610,4 +610,4 @@ function writeOperation(command: string, args: string[], kind: string | undefine
   }
 }
 
-await runScript(() => run(process.argv.slice(2)), { usage: USAGE, refusals: [KnowledgeError] });
+await runScript((argv) => run(argv), { usage: USAGE, refusals: [KnowledgeError] });

@@ -331,4 +331,4 @@ function separateCommand(path: string, coveragePaths: string[], out: string | un
   };
 }
 
-await runScript(() => run(process.argv.slice(2)), { usage: USAGE, refusals: [KnowledgeError] });
+await runScript((argv) => run(argv), { usage: USAGE, refusals: [KnowledgeError] });

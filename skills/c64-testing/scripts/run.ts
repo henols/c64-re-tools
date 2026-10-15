@@ -171,8 +171,8 @@ async function runFile(path: string, out: string): Promise<{ output: Record<stri
 }
 
 await runScript(
-  async () => {
-    const { values, positionals } = parseArgs({ args: process.argv.slice(2), strict: true, allowPositionals: true, options: { out: { type: "string" }, help: { type: "boolean" } } });
+  async (argv) => {
+    const { values, positionals } = parseArgs({ args: argv, strict: true, allowPositionals: true, options: { out: { type: "string" }, help: { type: "boolean" } } });
     if (values.help) throw new UsageError("");
     if (positionals.length !== 1) throw new UsageError("give one run file");
     if (values.out === undefined) throw new UsageError("run needs --out <dir>");

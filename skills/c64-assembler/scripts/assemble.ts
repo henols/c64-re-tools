@@ -101,8 +101,8 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
 }
 
 await runScript(
-  async () => {
-    const { output, failed } = await run(process.argv.slice(2));
+  async (argv) => {
+    const { output, failed } = await run(argv);
     if (failed) process.exitCode = 1;
     return output;
   },
