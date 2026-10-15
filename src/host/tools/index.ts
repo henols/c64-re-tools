@@ -3,6 +3,7 @@
 // ACME, DXA and Ghidra themselves. One entry per operation, never a
 // generic executable route.
 
+import type { ViceVersion } from "../../native/discover.ts";
 import type { ProcessSupervisor } from "../../native/processes.ts";
 import type { ToolContext } from "../../native/run.ts";
 import type { ToolOperation, ToolOperations } from "../../protocol/tools.ts";
@@ -24,8 +25,11 @@ const ADAPTERS: { [O in ToolOperation]: Adapter<O> } = {
   "petcat.decode": (_params, attachments, context) => decode(attachments[0]!, context),
 };
 
-export function createToolDispatcher(options: { supervisor: ProcessSupervisor; env?: NodeJS.ProcessEnv; log?: (line: string) => void }): ToolDispatcher {
+/** `vice`: the version that the host read from the emulator at start, for host.status. */
+export function createToolDispatcher(options: { supervisor: ProcessSupervisor; env?: NodeJS.ProcessEnv; log?: (line: string) => void; vice?: ViceVersion }): ToolDispatcher {
   return (op, params, attachments, signal) => {
-    return ADAPTERS[op](params, attachments, { supervisor: options.supervisor, signal, env: options.env, log: options.log });
+    const context = { supervisor: options.supervisor, signal, env: options.env, log: options.log };
+    if (op === "host.status") return hostStatus(context, options.vice) as ReturnType<ToolDispatcher>;
+    return ADAPTERS[op](params, attachments, context);
   };
 }

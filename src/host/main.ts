@@ -6,7 +6,7 @@ import { DEFAULT_HOST_PORT } from "../protocol/messages.ts";
 import { ProcessSupervisor } from "../native/processes.ts";
 import { startTrace, trace } from "../trace.ts";
 import { ListenError, parsePort, startHostServer, stopSignal } from "./server.ts";
-import { viceFlaws } from "../native/discover.ts";
+import { viceFlaws, type ViceVersion } from "../native/discover.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
@@ -70,15 +70,16 @@ async function main(): Promise<number> {
   supervisor.startWatchdog("host");
 
   // Finding x64sc is not enough: VICE without its ROM files exits at once.
-  let flaws: string[];
+  let vice: ViceVersion;
   try {
-    flaws = viceFlaws(await checkViceStarts({ supervisor }));
+    vice = await checkViceStarts({ supervisor });
   } catch (error) {
     process.stderr.write(`${(error as Error).message}\n`);
     await supervisor.stopAll();
     return 1;
   }
   log("VICE starts");
+  const flaws = viceFlaws(vice);
   // A known VICE flaw is named, not worked around (D56).
   for (const flaw of flaws) log(`Known VICE flaw: ${flaw}`);
 
@@ -89,7 +90,7 @@ async function main(): Promise<number> {
       port,
       log,
       createViceSession: viceSessionFactory({ supervisor, log, flaws }),
-      tools: createToolDispatcher({ supervisor, log }),
+      tools: createToolDispatcher({ supervisor, log, vice }),
     });
   } catch (error) {
     if (error instanceof ListenError && error.code === "EADDRINUSE") {

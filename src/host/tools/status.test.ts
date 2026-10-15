@@ -59,3 +59,30 @@ test("host.status reports a tool from a VICE older than 3.9 as not working, with
     await supervisor.stopAll();
   }
 });
+
+test("host.status reports VICE with the version that the host read at start, without -version, and names its flaws (D56)", { skip, timeout: 30_000 }, async () => {
+  const env = {
+    PATH: "/usr/bin:/bin",
+    // As the Homebrew x64sc of VICE 3.10 on macOS: -version stops with an error.
+    C64RT_VICE: standIn(scratch, "x64sc-no-version", ["Error - argv[0] is NULL, giving up."], 1),
+    C64RT_C1541: standIn(scratch, "c1541-ok", ["c1541 (VICE 3.10)"]),
+    C64RT_PETCAT: standIn(scratch, "petcat-ok", ["petcat (VICE 3.10)"]),
+  };
+  const supervisor = new ProcessSupervisor();
+  try {
+    const { result } = await hostStatus({ supervisor, signal: new AbortController().signal, env }, { major: 3, minor: 10 });
+    assert.deepEqual(
+      result.tools.map((tool) => [tool.name, tool.runs, tool.version]),
+      [
+        ["VICE (x64sc)", true, "x64sc (VICE 3.10)"],
+        ["c1541", true, "c1541 (VICE 3.10)"],
+        ["petcat", true, "petcat (VICE 3.10)"],
+      ],
+    );
+    assert.match(result.tools[0]!.flaws![0]!, /VICE bug #2202/);
+    const fixed = await hostStatus({ supervisor, signal: new AbortController().signal, env }, { major: 3, minor: 10, revision: 46000 });
+    assert.deepEqual([fixed.result.tools[0]!.version, fixed.result.tools[0]!.flaws], ["x64sc (VICE 3.10 SVN r46000)", undefined]);
+  } finally {
+    await supervisor.stopAll();
+  }
+});
