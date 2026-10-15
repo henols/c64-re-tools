@@ -47,6 +47,8 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 | Add or remove a reference | `reference '$2000' '$2100' call` / `unreference ...` |
 | Places that a removal blocks | `suppressions` with `--start` and `--end` |
 | Start a file of generated source | `module '$2000' player.asm --title 'Player movement'` / `unmodule '$2000'` |
+| Write the operand of an instruction as an expression | `operand '$8079' --lo irq_handler --image unpacked/image.json` / `unoperand '$8079'` |
+| Operand expressions | `operands` with `--start` and `--end` |
 | Files of generated source | `modules` |
 | The address spaces that hold knowledge | `spaces` |
 | History | `history '$2100'`, `history --name update_player`, `revisions`, `revision 12` |
@@ -54,7 +56,7 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 
 Every command takes `--space`: `c64` (the default), `drive8` for code in the 1541 drive, or `bank0` to `bank255` for cartridge banks. Drive code and banks use the same addresses as the C64, so each space has its own knowledge. A name is unique inside one space. In a batch, a write can name its own `space`.
 
-Symbol kinds are `label`, `routine`, `variable`, `data` and `vector`. Reference kinds are `call`, `jump`, `read`, `write` and `reference`.
+Symbol kinds are `label`, `routine`, `variable`, `data` and `vector`. Reference kinds are `call`, `jump`, `read`, `write`, `reference` and `pointer`. Only an operand expression writes a `pointer` reference.
 
 Region types:
 
@@ -110,12 +112,36 @@ The ops and their fields:
 | `reference`, `unreference` | `from`, `to`, `kind` |
 | `module` | `start`, `file`, `title` (optional) |
 | `unmodule` | `start` |
+| `operand` | `address`, `select` (`lo`, `hi`, `value` or `expr`), `symbol` and `offset` (optional), or `expression` for `expr` |
+| `unoperand` | `address` |
 
 A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
 
 ## Modules
 
 A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The c64-source skill writes `main.asm`, `loader.asm` and `constants.asm` itself. Thus a module cannot have one of these names, in upper or lower case. The title becomes the first line of the file. A `module` write without a title keeps the title that the module has. Modules have a history, and `revert` restores them.
+
+## Operand expressions
+
+An operand expression tells the c64-source skill how to write the operand of one instruction. The source then has a name, not a number. When code or data changes its length, the operand follows the address that moved.
+
+Give one selector:
+
+| Option | Operand | Source |
+|---|---|---|
+| `--lo <symbol>` | The low byte of the symbol plus the offset | `lda #<irq_handler` |
+| `--hi <symbol>` | The high byte of the symbol plus the offset | `lda #>(sprite_bank+$1000)` |
+| `--value <symbol>` | The symbol plus the offset | `lda bar_colours-1,x` |
+| `--expr <text>` | ACME expression text with names and numbers | `lda #(sprite_bank + 5*64) / 64` |
+
+- `--offset` adds a whole number to the symbol. Write a negative offset as `--offset=-1`.
+- A name is a symbol of the knowledge or a platform name of the c64-memory-map skill.
+- `--expr` takes `$`, `%` and decimal numbers, names, brackets, the operators `+ - * / % << >> >>> & | XOR`, and `<`, `>`, `-` and `!` before an operand.
+- The script compares the value of the expression with the operand in the image. If they are not equal, the script refuses the write. Give the image with `--image`: an `image.json` of the c64-unpacker skill or a PRG. `apply` with an `operand` write also needs `--image`.
+- Each name in the expression gets a `pointer` reference from the instruction. Thus `at` on the named address shows the code that uses the address.
+- A `rename` of a symbol changes the name in each expression. The knowledge refuses `remove-symbol` while an expression uses the symbol. Use `unoperand` first.
+
+Write an operand expression for each immediate that is a byte of an address. Also write one for each table read through the byte before the table. The pointer candidates of the c64-static-analysis skill show many of these places.
 
 ## Removals
 
@@ -146,7 +172,7 @@ The script records the origin `llm`. Use `--origin user` only when the user deci
 
 For a read: the current or historical knowledge in compact JSON.
 
-For a write: the new revision and the current value after the write. If the write replaces a symbol or a region of a different origin, `previous` gives that row as it was before the write. For example, an `llm` write over a `user` name gives `previous`. Read `previous` and tell the user about the change. For `apply`, `replaced` lists each write that replaced a row. Each item has the number of the write, its `op` and its `previous`.
+For a write: the new revision and the current value after the write. If the write replaces a symbol, a region or an operand expression of a different origin, `previous` gives that row as it was before the write. For example, an `llm` write over a `user` name gives `previous`. Read `previous` and tell the user about the change. For `apply`, `replaced` lists each write that replaced a row. Each item has the number of the write, its `op` and its `previous`.
 
 The exit status is 0 for a result. The exit status is 1 for an error from the knowledge, for example `conflict`. The exit status is 2 for a wrong argument.
 

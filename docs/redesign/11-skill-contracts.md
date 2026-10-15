@@ -289,6 +289,7 @@ Automatically write:
 - analyzer-derived references.
 
 Do not automatically write:
+- pointer candidates (D65): code that builds an address from immediates is reported, and the LLM records operand expressions;
 - semantic routine names invented by the LLM;
 - raw listings;
 - decompiler text;

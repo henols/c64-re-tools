@@ -280,7 +280,10 @@ jump
 read
 write
 reference
+pointer
 ```
+
+Only an operand expression writes a `pointer` reference (D65): one from the instruction to the address of each name in the expression. A change or removal of the expression closes them, and the `reference` and `unreference` commands and analyzer imports refuse the kind.
 
 The vocabulary should remain small and based on concrete consumers.
 
@@ -319,6 +322,23 @@ origin                TEXT NOT NULL      user | llm
 valid_from_revision   INTEGER NOT NULL
 valid_to_revision     INTEGER
 ```
+
+### `operands`
+
+An operand expression records how the c64-source skill writes the operand of one instruction: by names, not by its number, so that a rebuild in which code or data moves still assembles to a working program (D65). Only the user or the LLM writes them; no analyzer does.
+
+```text
+address               INTEGER NOT NULL   the instruction; one current expression per address
+selector              TEXT NOT NULL      lo | hi | value | expr
+symbol                TEXT               a knowledge symbol or a platform name; not for expr
+offset                INTEGER NOT NULL   added to the symbol before lo or hi; 0 for expr
+expression            TEXT               ACME expression text, for expr only
+origin                TEXT NOT NULL      user | llm
+valid_from_revision   INTEGER NOT NULL
+valid_to_revision     INTEGER
+```
+
+A write is checked against the image that the caller names: the value of the expression must be the operand byte (a 2-byte instruction) or word (a 3-byte instruction). Names resolve to knowledge symbols first, then to the platform names of the C64 space. The knowledge does not store the image. A rename of a symbol renames it in every expression in the same revision; the removal of a symbol that an expression uses is refused.
 
 ## 5. Automatic DXA/Ghidra import
 
@@ -465,6 +485,7 @@ The normal API presents current knowledge unless history is explicitly requested
 - comments;
 - incoming references;
 - outgoing references;
+- the operand expression of the instruction there;
 - the suppressions that cover the address.
 
 This should be one of the main operations used by skills/LLMs.

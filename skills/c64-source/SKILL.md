@@ -58,6 +58,8 @@ node <skill>/scripts/generate.ts unpacked/image.json --out src --loader
 - `lda+2 $0012` is an absolute operand below $0100. `+1` is a zero-page operand with a label.
 - `sta NMINV+1` is an address inside a platform entry of more than one byte, for example the high byte of a vector.
 - `name = * + 1` is a label inside an instruction, for example for code that changes its own operand.
+- `lda #<irq_handler` and `lda bar_colours-1,x` are operand expressions of the knowledge. The script writes each name of an expression with the name of its address in the source. An operand expression in a non-immediate mode that starts with a bracket gets `0+` before it, because ACME reads `(...)` as indirect.
+- `; = <irq_handler` at the end of an instruction with a number: the source cannot use this operand expression. `operandsAsNumbers` gives the reason.
 - `!byte` with an instruction as its comment: ACME writes this instruction with a different opcode. The bytes keep the source identical.
 - `not decoded` marks bytes in a code region that Ghidra did not decode.
 - `; not executed $xxxx-$yyyy` starts code that no run of the `--coverage` files executed. The range is the same as in `not_executed.json`.
@@ -75,6 +77,8 @@ Do not edit the generated files. The next run writes over them.
 5. It sets the CIA timers, their latches and the interrupt masks from `io` and `cia` in the entry state. A running timer gets the value that counts down to the timer value of the entry at the entry.
 6. It sets $00/$01, the stack pointer, A, X, Y and the flags, and jumps to the entry.
 
+The copy table, the copier and the jump to the entry use labels, not numbers. `loader_from_xxxx` and `loader_end_xxxx` are around each packed segment, and `loader_to_xxxx` is its first address in place. The jump goes to the label of the entry. Thus a segment can change its length, and the loader still copies it and jumps to the entry that moved. The display values, the raster line and the CIA values stay numbers. They are the entry state, not addresses of the program.
+
 The flags go through the free stack byte below the stack pointer (`stackByte`). The loader changes this byte. The loader does not set the SID, the time of day of the CIAs, the CIA interrupt flags or the interrupt registers of the VIC-II. `loader.limits` names each CIA value that the loader cannot set as it was at the entry. A program that reads the SID voice 3 for random numbers can still differ in a scenario. A raster sync does not change a timer or the SID. Then observe after the program sets up its own random numbers.
 
 The script simulates the copies first. Then it runs `loader.prg` in the emulator to its jump to the entry. It compares the memory, $00/$01, the registers, the display registers of the VIC-II, the VIC bank and the raster line with the entry state there. It also compares the CIA timers, latches and interrupt masks. `loader.verified: true` tells that all of them are equal. An interrupt can run right at the entry, as in the original program.
@@ -82,7 +86,7 @@ The script simulates the copies first. Then it runs `loader.prg` in the emulator
 ## Knowledge
 
 Read:
-- symbols, regions, comments, references and modules of all origins.
+- symbols, regions, comments, references, modules and operand expressions of all origins.
 
 Automatic write:
 - none.
@@ -99,6 +103,8 @@ One JSON object:
 - `labels`: `named` labels from the knowledge and `generated` labels `l_xxxx`.
 - `entriesInData`: each `--entry` in a data region of the knowledge, with the `region` and its `origin`. Ghidra does not decode an entry in a data region.
 - `asBytes`: the instructions that the source has as bytes.
+- `operandExpressions`: the count of instructions that the source has with an operand expression.
+- `operandsAsNumbers`: the operand expressions that the source has as a number with a side comment, each with its `address`, `expression` and `reason`. An expression becomes a number when no instruction with an operand value is at the address, or when a name has no address. An expression that ACME refuses or does not assemble to the image also becomes a number. Then the script assembles the source again, at most three times.
 - `unusedModules`: modules in the knowledge whose start is in no segment of the image. Often this tells that the image does not hold code that the knowledge describes.
 - `entryOutside`: the entry of `image.json` is in no segment of the image, with a `reason`. The image does not hold the program.
 - `notExecuted`: with `--coverage`, the count of instructions that no run executed, the count of their ranges, and the first ranges. `all` names the file `not_executed.json` in `--out`. It has all of the ranges. Put all of these ranges in the report.
@@ -111,6 +117,7 @@ The exit status is 0 when the source is identical and the emulator check of the 
 
 - `check.diagnostics`: ACME did not assemble the source. A name in the knowledge can be wrong for ACME. Read the diagnostics and change the name with c64-knowledge.
 - `check.identical: false`: the script has a defect. Give the result to the user.
+- `operandsAsNumbers`: read each `reason`. Correct the expression with `operand` of the c64-knowledge skill, or remove it with `unoperand`.
 - `invalid-input` that names a symbol or a module: change that symbol or module in the knowledge.
 - `entryOutside`: the run fails, but the script still writes and checks the source. With `--loader`, `loader.verified` is `false` with the same `reason`. Capture the image again with c64-unpacker `loads` or `capture`. Make sure that a segment holds the entry.
 - `entriesInData`: an analyzer region of data hides the code at the entry. If the entry is code, record a code region at the entry with the c64-knowledge skill, for example `classify '$0500' '$05ff' code`. A region of the user or the LLM replaces the analyzer region. Then generate again.
