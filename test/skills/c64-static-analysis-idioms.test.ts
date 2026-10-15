@@ -14,6 +14,7 @@ import { listReferences, listRegions } from "../../src/knowledge/read.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
 import { imageReader } from "../../skills/c64-static-analysis/scripts/coverage.ts";
 import { findIdioms } from "../../skills/c64-static-analysis/scripts/idioms.ts";
+import { findPointers } from "../../skills/c64-static-analysis/scripts/pointers.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-idioms-"));
 after(() => rmSync(project, { recursive: true, force: true }));
@@ -104,4 +105,26 @@ test("an analysis writes the idioms as heuristic knowledge and DXA finds the cod
   assert.ok(listReferences(db).some((reference) => reference.origin === "heuristic" && reference.from === 0x0817 && reference.to === 0x0820));
   assert.equal(listRegions(db, { start: 0x0820, end: 0x0820 })[0]?.type, "code", "DXA, seeded with the target, sees code");
   db?.close();
+});
+
+test("pointer candidates: immediate pairs stored to a vector or a (zp),y pair, and sprite pointers in a sprite region (D65)", () => {
+  const { byteAt } = image({
+    // $1000: SEI / LDA #$c0 / STA $0314 / LDA #$10 / STA $0315: CINV gets $10c0.
+    0x1000: [0x78, 0xa9, 0xc0, 0x8d, 0x14, 0x03, 0xa9, 0x10, 0x8d, 0x15, 0x03],
+    // $1020: LDX #$00 / LDY #$04 / STX $fb / STY $fc, and later LDA ($fb),Y: $fb gets VICSCN, a platform name.
+    0x1020: [0xa2, 0x00, 0xa0, 0x04, 0x86, 0xfb, 0x84, 0xfc],
+    0x1030: [0xb1, 0xfb],
+    // $1040: LDA #$00 / STA $fd / LDA #$90 / STA $fe: $fd is no (zp),y pair and $9000 is outside the image.
+    0x1040: [0xa9, 0x00, 0x85, 0xfd, 0xa9, 0x90, 0x85, 0xfe],
+    // $1050: LDA #$c5 / STA $07f9: sprite data at $3140; LDA #$02 / STA $07fa: $0080 is no sprite.
+    0x1050: [0xa9, 0xc5, 0x8d, 0xf9, 0x07, 0xa9, 0x02, 0x8d, 0xfa, 0x07],
+    // $1060: LDA #$00 / JSR / STA $0318: the run ends at the JSR.
+    0x1060: [0xa9, 0x00, 0x20, 0x00, 0x10, 0x8d, 0x18, 0x03, 0xa9, 0x10, 0x8d, 0x19, 0x03],
+  });
+  const found = findPointers(byteAt, RANGE, { platform: (address) => address >= 0x0400 && address <= 0x07e7, sprites: [{ start: 0x3000, end: 0x3fff }] });
+  assert.deepEqual(found, [
+    { kind: "vector", to: 0x0314, target: 0x10c0, low: 0x1001, high: 0x1006 },
+    { kind: "zero-page pointer", to: 0xfb, target: 0x0400, low: 0x1020, high: 0x1022 },
+    { kind: "sprite pointer", to: 0x07f9, target: 0x3140, at: 0x1050, value: 0xc5 },
+  ]);
 });

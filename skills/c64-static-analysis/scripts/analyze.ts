@@ -18,14 +18,16 @@ import { localToolContext } from "#src/native/local.ts";
 import { GHIDRA_LIMITS } from "#src/native/types.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
 import { importFindings, runProvenance, type Analyzer, type ImportConflict, type ImportContext, type ImportResult, type NormalizedFindings } from "#src/knowledge/import.ts";
-import { currentRevision } from "#src/knowledge/read.ts";
+import { currentRevision, listRegions } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, SPACE } from "#src/knowledge/schema.ts";
+import { platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps } from "./coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
 import { findIdioms } from "./idioms.ts";
 import { instructionList } from "./instructions.ts";
+import { findPointers, type PointerCandidate } from "./pointers.ts";
 
 const USAGE = `analyze.ts <image> [options]
 
@@ -54,6 +56,15 @@ const DEFAULT_MAX_LISTED = 50;
 /** The first `max` items, the count, and where to read the rest when the list is cut. */
 function listed<T, U>(items: T[], max: number, show: (item: T) => U, all: string) {
   return { count: items.length, listed: items.slice(0, max).map(show), ...(items.length > max ? { rest: all } : {}) };
+}
+
+/** A pointer candidate with $ addresses, and the operand writes that would name it (D65). */
+function showPointer(candidate: PointerCandidate) {
+  const hex = formatC64Address;
+  if (candidate.kind === "sprite pointer") {
+    return { kind: candidate.kind, at: hex(candidate.at), to: hex(candidate.to), value: `$${candidate.value.toString(16).padStart(2, "0")}`, target: hex(candidate.target), assumes: "VIC bank 0 and the screen at $0400" };
+  }
+  return { kind: candidate.kind, to: hex(candidate.to), target: hex(candidate.target), low: hex(candidate.low), high: hex(candidate.high) };
 }
 
 /** A decompiler that did not start gets the remedy: Ghidra ships no native decompiler for macOS. */
@@ -185,6 +196,12 @@ async function run(argv: string[]): Promise<unknown> {
   // Idiom tables are data for this run too; semantic data ranges come first.
   seeds.dataRanges = [...seeds.dataRanges, ...idioms.dataRanges.filter((range) => !seeds.dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start))].slice(0, GHIDRA_LIMITS.dataRanges);
   const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry)).length;
+  // Platform names are C64 names: drive code and banks get none.
+  const platform = space === DEFAULT_SPACE ? platformNames() : [];
+  const pointers = findPointers(byteAt, { start: loaded.start, end: loaded.end }, {
+    platform: (address) => platform.some((entry) => address >= entry.address && address <= entry.end),
+    sprites: listRegions(reader, undefined, "sprite", undefined, space),
+  });
   reader?.close();
   /** Imports the idioms as their own revision, after the analyzer's, and gives their part of the result. */
   const idiomsResult = () => {
@@ -199,6 +216,7 @@ async function run(argv: string[]): Promise<unknown> {
         candidates: {
           dop: listed(idioms.candidates.dop, max, formatC64Address, "a larger --max-listed"),
           selfModified: listed(idioms.candidates.selfModified, max, formatC64Address, "a larger --max-listed"),
+          pointers: listed(pointers, max, showPointer, "a larger --max-listed"),
         },
       },
     };
