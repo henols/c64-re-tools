@@ -27,7 +27,7 @@ Start the Host Runtime and leave it running:
 npx -y --package=@henols/c64-re-tools@latest c64-re-tools-host
 ```
 
-Add `--log-console` to print each request and each c1541 or petcat run, or `--log-dir <directory>` to write them to a file. Both are off by default.
+The host logs each call from a skill script. Add `--log-console` to print also each MCP call and each c1541 or petcat run, or `--log-dir <directory>` to write them to a file. Both are off by default.
 
 Install into your project and start the agent:
 

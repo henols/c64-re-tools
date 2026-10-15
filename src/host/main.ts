@@ -34,8 +34,9 @@ Options:
                            directory, with a copy of each VICE log.
   --help                   Show this help.
 
-Without --log-console and --log-dir the host logs only its start, its stop,
-connections and failures. C64RT_TRACE does not apply to the host.`;
+The host always logs its start and stop, connections, failures, and each call
+from a skill script (c1541, petcat) with its outcome. --log-console adds the
+calls of the MCP server and the tool runs. C64RT_TRACE does not apply to the host.`;
 
 function log(line: string): void {
   process.stderr.write(`c64-re-tools-host: ${line}\n`);

@@ -4,7 +4,7 @@ import { encodeFrame, MessageReader } from "../protocol/framing.ts";
 import { checkHello, isOneOf, HEARTBEAT_TIMEOUT_MS, parseClientMessage, ProtocolError, type HostMessage, type ReceivedRequest, type VideoStandard, type WireError, WireFailure } from "../protocol/messages.ts";
 import { TOOL_OPERATIONS, validateToolParams, type ToolOperation, type ToolOperations } from "../protocol/tools.ts";
 import { attachmentCount, VICE_OPERATIONS, validateViceParams, type ViceOperation, type ViceOperations } from "../protocol/vice.ts";
-import { elapsedMs, trace } from "../trace.ts";
+import { elapsedMs, summarize, trace } from "../trace.ts";
 
 /** One live VICE session, owned by one connection. */
 export interface ViceSessionHandle {
@@ -234,8 +234,15 @@ class Connection {
 
   async #answer(request: ReceivedRequest, attachments: Buffer[]): Promise<void> {
     const started = performance.now();
-    const record = (outcome: Record<string, unknown>) =>
-      trace().event("request", { connection: this.#id, op: request.op, id: request.id, params: request.params, attachments: attachments.length, ms: elapsedMs(started), ...outcome });
+    const record = (outcome: Record<string, unknown>) => {
+      const ms = elapsedMs(started);
+      trace().event("request", { connection: this.#id, op: request.op, id: request.id, params: request.params, attachments: attachments.length, ms, ...outcome });
+      // A call from a skill script (c1541, petcat, status) is always logged; the many calls of a VICE session only in the trace.
+      if (this.#isTool) {
+        const what = outcome.ok === true ? "ok" : `${String(outcome.code)}: ${String(outcome.message)}`;
+        this.#log(`${request.op} ${JSON.stringify(summarize(request.params) ?? {})}: ${what} (${ms} ms)`);
+      }
+    };
     try {
       let result: unknown;
       let replyAttachments: Buffer[] = [];
