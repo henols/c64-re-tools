@@ -3,10 +3,12 @@
 // knowledge; a target that knowledge does not name gets l_xxxx. Data is
 // written by its region type. The source assembles to the same bytes: the
 // generator forces operand sizes, and writes an opcode form that ACME
-// encodes differently as bytes (see the probe in generate.ts).
+// encodes differently as bytes (see the probe in generate.ts). An operand
+// expression of the knowledge is written in place of its number (D65).
 
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
+import { identifiers, operandText, replaceIdentifiers, type OperandExpression } from "#src/knowledge/expression.ts";
 import { ANALYZERS } from "#src/knowledge/import.ts";
 import { isGeneratedFile, type CommentPlacement, type Origin, type RegionType } from "#src/knowledge/schema.ts";
 import { hasZeroPageForm, MNEMONICS, MODE_LENGTH, OPCODES, takesAddress, type Mode } from "./opcodes.ts";
@@ -35,6 +37,15 @@ export interface SourceInput {
   coverage?: Uint8Array;
   /** Platform names (D52): the name of an address that knowledge does not name, and the last address of its entry. */
   platform?: ReadonlyArray<{ address: number; end: number; name: string }>;
+  /** Operand expressions of the knowledge (D65), by instruction address. */
+  operands?: ReadonlyArray<OperandExpression & { address: number }>;
+}
+
+/** An operand expression that the source writes as a number, with its text and why. */
+export interface OperandAsNumber {
+  address: number;
+  expression: string;
+  reason: string;
 }
 
 const CODE_TYPES: readonly RegionType[] = ["code", "jumps", "dual-use"];
@@ -88,6 +99,10 @@ export interface Layout {
   generatedLabels: number;
   namedLabels: number;
   unusedModules: Array<{ start: number; file: string }>;
+  /** The operand of an instruction as an expression with the names of this source (D65). */
+  operands: Map<number, string>;
+  /** Operand expressions that cannot be written. */
+  operandsAsNumbers: OperandAsNumber[];
 }
 
 const hex2 = (value: number) => `$${value.toString(16).padStart(2, "0")}`;
@@ -216,10 +231,35 @@ export function layout(input: SourceInput): Layout {
       insideEntry.set(address, entry.address);
     }
   };
+  // The names of an operand expression are found by name, a knowledge symbol before a platform name, and written with the name the source gives that address (D65).
+  const byName = new Map<string, number>();
+  for (const row of input.platform ?? []) if (!byName.has(row.name)) byName.set(row.name, row.address);
+  for (const symbol of input.symbols) byName.set(symbol.name, symbol.address);
+  const instructionAt = new Map(pieces.flatMap((piece) => piece.items.flatMap((item) => (item.kind === "instruction" ? [[item.address, item] as const] : []))));
+  const expressions: Array<{ address: number; text: string }> = [];
+  const operandsAsNumbers: OperandAsNumber[] = [];
+  for (const operand of [...(input.operands ?? [])].sort((a, b) => a.address - b.address)) {
+    const expression = operandText(operand);
+    const item = instructionAt.get(operand.address);
+    const mode = item === undefined ? undefined : OPCODES[item.opcode]!.mode;
+    if (mode === undefined || mode === "imp" || mode === "rel") {
+      operandsAsNumbers.push({ address: operand.address, expression, reason: "The source has no instruction with an operand value at this address." });
+      continue;
+    }
+    const missing = identifiers(expression).filter((name) => !byName.has(name));
+    if (missing.length > 0) {
+      operandsAsNumbers.push({ address: operand.address, expression, reason: `No symbol and no platform name is ${missing.join(", ")}.` });
+      continue;
+    }
+    expressions.push({ address: operand.address, text: expression });
+  }
+  for (const { text: expression } of expressions) for (const name of identifiers(expression)) use(byName.get(name)!);
+  // An instruction with an expression names what the expression names, not its plain target (D65).
+  const written = new Set(expressions.map((expression) => expression.address));
   for (const piece of pieces) {
     for (const item of piece.items) {
       if (item.kind === "instruction") {
-        if (takesAddress(OPCODES[item.opcode]!.mode)) use(operandValue(item.address, item.opcode, input.byteAt)!);
+        if (takesAddress(OPCODES[item.opcode]!.mode) && !written.has(item.address)) use(operandValue(item.address, item.opcode, input.byteAt)!);
         continue;
       }
       for (const pointer of pointersOf(item, input.byteAt)) use(pointer);
@@ -255,6 +295,17 @@ export function layout(input: SourceInput): Layout {
   }
   // The high byte of a vector is NMINV+1. A zero-page entry keeps zero-page instructions: its constant has two digits.
   for (const [address, start] of insideEntry) names.set(address, `${names.get(start)!}+${address - start}`);
+  const operands = new Map<number, string>();
+  for (const { address, text } of expressions) {
+    const unnamed: string[] = [];
+    const written = replaceIdentifiers(text, (name) => {
+      const label = names.get(byName.get(name)!);
+      if (label === undefined) unnamed.push(name);
+      return label === undefined ? name : label.includes("+") ? `(${label})` : label;
+    });
+    if (unnamed.length === 0) operands.set(address, written);
+    else operandsAsNumbers.push({ address, expression: text, reason: `The source has no name for ${unnamed.join(", ")}.` });
+  }
   return {
     pieces,
     names,
@@ -266,6 +317,8 @@ export function layout(input: SourceInput): Layout {
     generatedLabels,
     namedLabels,
     unusedModules,
+    operands,
+    operandsAsNumbers: operandsAsNumbers.sort((a, b) => a.address - b.address),
   };
 }
 
@@ -497,12 +550,20 @@ export interface Rendered {
   asBytes: Array<{ address: number; text: string }>;
   /** With coverage: runs of instructions that no run executed. */
   notExecuted?: { instructions: number; ranges: Range[] };
+  /** Each instruction written with an operand expression: its file and line (1 is the first line of the text). */
+  expressions: Array<{ address: number; length: number; file: string; line: number }>;
+  /** Operand expressions written as numbers, in address order (D65). */
+  operandsAsNumbers: OperandAsNumber[];
 }
 
 const withSide = (text: string, side: string | undefined) => (side === undefined ? text : `${text.padEnd(SIDE_COLUMN - 1)} ; ${side}`);
 
-/** The source text of each piece, the main file and the constants. `asBytes` holds the opcode form keys that the probe refused. */
-export function render(layout: Layout, asBytes: ReadonlySet<string>, header: string[]): Rendered {
+/**
+ * The source text of each piece, the main file and the constants. `asBytes`
+ * holds the opcode form keys that the probe refused; `numbers` the operand
+ * expressions that ACME did not assemble to the image, with the reason.
+ */
+export function render(layout: Layout, asBytes: ReadonlySet<string>, header: string[], numbers: ReadonlyMap<number, string> = new Map()): Rendered {
   const lineComments = new Map<number, string[]>();
   const sideComments = new Map<number, string>();
   for (const comment of layout.comments) {
@@ -511,7 +572,8 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     else sideComments.set(comment.address, comment.text.replace(/\s*\r?\n\s*/g, " "));
   }
   const breaks = new Set<number>([...layout.names.keys(), ...lineComments.keys(), ...sideComments.keys()]);
-  const result: Rendered = { files: [], instructions: 0, dataBytes: 0, undecodedBytes: 0, asBytes: [] };
+  const result: Rendered = { files: [], instructions: 0, dataBytes: 0, undecodedBytes: 0, asBytes: [], expressions: [], operandsAsNumbers: [...layout.operandsAsNumbers] };
+  const unwritten = new Map(layout.operandsAsNumbers.map((row) => [row.address, row.expression]));
   const { coverage } = layout;
   const notExecuted = { instructions: 0, ranges: [] as Range[] };
 
@@ -556,10 +618,25 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
         const { mode } = OPCODES[item.opcode]!;
         const value = mode === "imp" ? 0 : operandValue(item.address, item.opcode, layout.byteAt)!;
         const literal = instructionText(item.opcode, "", literalOperand(item.opcode, value));
+        let written = layout.operands.get(item.address);
+        // An expression that is not written stays visible as a side comment (D65).
+        const asNumber = (expression: string, reason: string) => {
+          sides.unshift(`= ${expression}`);
+          result.operandsAsNumbers.push({ address: item.address, expression, reason });
+          written = undefined;
+        };
+        if (written !== undefined && asBytes.has(form.key)) asNumber(written, "ACME writes this instruction with other bytes, so the source has it as bytes.");
+        if (written !== undefined && numbers.has(item.address)) asNumber(written, numbers.get(item.address)!);
+        if (unwritten.has(item.address)) sides.unshift(`= ${unwritten.get(item.address)!}`);
         if (asBytes.has(form.key)) {
           const bytes = Array.from({ length: item.length }, (_, offset) => hex2(layout.byteAt(item.address + offset)));
           out.push(withSide(`${INDENT}!byte ${bytes.join(",")}`, [literal, ...sides].join(" ")));
           result.asBytes.push({ address: item.address, text: literal });
+        } else if (written !== undefined) {
+          // ACME reads an operand in brackets as indirect, so a non-immediate expression does not start with one.
+          const expression = mode !== "imm" && written.startsWith("(") ? `0+${written}` : written;
+          out.push(withSide(`${INDENT}${instructionText(item.opcode, form.suffix, expression)}`, sides.length === 0 ? undefined : sides.join(" ")));
+          result.expressions.push({ address: item.address, length: item.length, file: piece.file, line: out.length });
         } else {
           const expression = takesAddress(mode) ? (layout.names.get(value) ?? literalOperand(item.opcode, value)) : literalOperand(item.opcode, value);
           out.push(withSide(`${INDENT}${instructionText(item.opcode, form.suffix, expression)}`, sides.length === 0 ? undefined : sides.join(" ")));
@@ -591,5 +668,6 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
   }
   result.files.push({ name: "main.asm", text: `${main.join("\n")}\n` });
   if (coverage !== undefined) result.notExecuted = notExecuted;
+  result.operandsAsNumbers.sort((a, b) => a.address - b.address);
   return result;
 }

@@ -186,6 +186,78 @@ test("with real ACME, zero-page names outside the image assemble to zero-page in
   assert.deepEqual([...attachments![0]!.subarray(2)], bytes);
 });
 
+/**
+ * $1000 LDA #$20 / LDX #$10 / LDA $101f,X / LDA #$18 / LDA $1021 / STA $d020 / RTS / LDA #$05,
+ * then a table at $1020. The knowledge names the operands of all but the last two.
+ */
+function operandInput(overrides: Partial<SourceInput> = {}): SourceInput {
+  const bytes = [0xa9, 0x20, 0xa2, 0x10, 0xbd, 0x1f, 0x10, 0xa9, 0x18, 0xad, 0x21, 0x10, 0x8d, 0x20, 0xd0, 0x60, 0xa9, 0x05, ...Array.from({ length: 14 }, () => 0xea), 1, 2, 3, 4];
+  const instructions = new Map([[0x1000, 2], [0x1002, 2], [0x1004, 3], [0x1007, 2], [0x1009, 3], [0x100c, 3], [0x100f, 1], [0x1010, 2]]);
+  return input(bytes, 0x1000, {
+    instructions,
+    regions: [{ start: 0x1020, end: 0x1023, type: "bytes" }],
+    symbols: [{ address: 0x1020, name: "table" }, { address: 0x2000, name: "charset" }, { address: 0xd020, name: "ld020", origin: "dxa" }],
+    platform: [{ address: 0x0400, end: 0x07e7, name: "VICSCN" }, { address: 0xd020, end: 0xd020, name: "EXTCOL" }],
+    ...overrides,
+  });
+}
+
+const OPERANDS: SourceInput["operands"] = [
+  { address: 0x1000, select: "lo", symbol: "table" },
+  { address: 0x1002, select: "hi", symbol: "table" },
+  { address: 0x1004, select: "value", symbol: "table", offset: -1 },
+  { address: 0x1007, select: "expr", expression: "((VICSCN & $3c00) >> 6) | ((charset & $3800) >> 10)" },
+  { address: 0x1009, select: "expr", expression: "(table + 1)" },
+  { address: 0x100c, select: "value", symbol: "ld020" },
+  { address: 0x100f, select: "expr", expression: "1" },
+  { address: 0x1010, select: "expr", expression: "nowhere + 5" },
+  { address: 0x1001, select: "lo", symbol: "table" },
+];
+
+test("operand expressions are written in place of numbers, with the names of the source (D65)", () => {
+  const without = render(layout(operandInput()), new Set(), []);
+  assert.deepEqual(render(layout(operandInput({ operands: [] })), new Set(), []).files, without.files, "no operand expressions, the same source");
+  assert.match(textOf(without, "segment_1000.asm"), /lda l_101f,x/, "without an expression the target gets a label");
+  const rendered = render(layout(operandInput({ operands: OPERANDS })), new Set(), []);
+  const text = textOf(rendered, "segment_1000.asm");
+  const lines = text.split("\n").map((line) => line.trim());
+  const first = lines.indexOf("lda #<table");
+  assert.deepEqual(lines.slice(first, first + 8), [
+    "lda #<table",
+    "ldx #>table",
+    "lda table-1,x",
+    "lda #((VICSCN & $3c00) >> 6) | ((charset & $3800) >> 10)",
+    "lda 0+(table + 1)",
+    "sta EXTCOL",
+    "rts                             ; = 1",
+    "lda #$05                        ; = nowhere + 5",
+  ]);
+  assert.doesNotMatch(text, /l_101f/, "the byte before the table gets no label");
+  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nVICSCN = $0400\ncharset = $2000\nEXTCOL = $d020\n");
+  assert.deepEqual(
+    rendered.operandsAsNumbers.map((row) => [row.address, row.expression]),
+    [[0x1001, "<table"], [0x100f, "1"], [0x1010, "nowhere + 5"]],
+  );
+  assert.match(rendered.operandsAsNumbers[2]!.reason, /No symbol and no platform name is nowhere/);
+  assert.deepEqual(rendered.expressions.map((row) => [row.address, row.line]), [[0x1000, 4], [0x1002, 5], [0x1004, 6], [0x1007, 7], [0x1009, 8], [0x100c, 9]]);
+  const demoted = render(layout(operandInput({ operands: OPERANDS })), new Set(), [], new Map([[0x1000, "a reason"]]));
+  assert.ok(textOf(demoted, "segment_1000.asm").includes("        lda #$20                        ; = <table\n"));
+  assert.deepEqual(demoted.operandsAsNumbers[0], { address: 0x1000, expression: "<table", reason: "a reason" });
+});
+
+test("with real ACME, operand expressions assemble to the same bytes (D65)", { skip: acmeSkip }, async () => {
+  const source = operandInput({ operands: OPERANDS });
+  const rendered = render(layout(source), new Set(), []);
+  const contents = rendered.files.map((file) => Buffer.from(file.text));
+  const { result, attachments } = await assemble(
+    { files: rendered.files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "main.asm", includeDirs: [], defines: {} },
+    contents,
+    localToolContext(),
+  );
+  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+  assert.deepEqual([...attachments![0]!.subarray(2)], Array.from({ length: 0x24 }, (_, offset) => source.byteAt(0x1000 + offset)));
+});
+
 test("with real Ghidra and ACME, the script writes source that assembles to the program, aliases as bytes", { skip: ghidraSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
@@ -243,6 +315,36 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
 
   const refused = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(refused.status, 2, "--out is necessary");
+});
+
+test("with real Ghidra and ACME, an operand expression that ACME assembles to other bytes is written as its number (D65)", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
+  projects.push(project);
+  // $1000 LDA #$0b / STA $0314 / LDA #$10 / STA $0315 / RTS, then the handler at $100b: RTS.
+  const code = [0xa9, 0x0b, 0x8d, 0x14, 0x03, 0xa9, 0x10, 0x8d, 0x15, 0x03, 0x60, 0x60];
+  writeFileSync(join(project, "test.prg"), Uint8Array.from([0x00, 0x10, ...code]));
+  // An older image with $11 at $1006: an expression that fits it does not fit test.prg.
+  writeFileSync(join(project, "old.prg"), Uint8Array.from([0x00, 0x10, ...code.map((byte, index) => (index === 6 ? 0x11 : byte))]));
+  const knowledge = resolve(import.meta.dirname, "../../skills/c64-knowledge/scripts/knowledge.ts");
+  const write = (...args: string[]) => assert.equal(spawnSync(process.execPath, [...process.execArgv, knowledge, ...args], { cwd: project, encoding: "utf8" }).status, 0, args.join(" "));
+  write("rename", "$1000", "start", "--kind", "routine");
+  write("rename", "$100b", "handler", "--kind", "routine");
+  write("operand", "$1000", "--lo", "handler", "--image", "test.prg");
+  write("operand", "$1002", "--value", "CINV", "--image", "test.prg");
+  write("operand", "$1005", "--expr", ">handler+$100", "--image", "old.prg");
+  const generated = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg", "--out", "src"], {
+    cwd: project,
+    env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
+    encoding: "utf8",
+  });
+  assert.equal(generated.status, 0, generated.stdout);
+  const json = JSON.parse(generated.stdout) as { check: { identical: boolean }; operandExpressions: number; operandsAsNumbers: unknown };
+  assert.equal(json.check.identical, true);
+  assert.equal(json.operandExpressions, 2);
+  assert.deepEqual(json.operandsAsNumbers, { count: 1, listed: [{ address: "$1005", expression: ">handler+$100", reason: "ACME assembles it to $11, and the image has $10." }] });
+  const lines = readFileSync(join(project, "src", "segment_1000.asm"), "utf8").split("\n").map((line) => line.trim());
+  const first = lines.indexOf("lda #<handler");
+  assert.deepEqual(lines.slice(first, first + 4), ["lda #<handler", "sta CINV", "lda #$10                        ; = >handler+$100", "sta CINV+1"]);
 });
 
 test("with real Ghidra and ACME, a loader that cannot be planned still gives the checked source and says why (F-24)", { skip: ghidraSkip, timeout: 600_000 }, async () => {
