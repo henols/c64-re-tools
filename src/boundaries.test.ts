@@ -22,7 +22,8 @@ function areaOf(path: string): string | undefined {
     return ["mcp", "host-client", "host", "knowledge", "cli", "native", "protocol"].includes(dir) ? dir : undefined;
   }
   if (parts[0] === "skills" && parts.length > 2) return `skill:${parts[1]}`;
-  if (parts[0] === "distribution") return "distribution";
+  // The one-off conversion of an old knowledge.db (M20.5) is no part of the package edge.
+  if (parts[0] === "distribution") return parts[1] === "convert-knowledge.ts" ? "convert" : "distribution";
   return undefined;
 }
 
@@ -50,6 +51,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   // The installation and status edge: host tool status through the host-client, local tool status through native.
   cli: ["host-client", "native", "protocol", "script", "distribution", "trace", "package"],
   distribution: ["package"],
+  convert: ["knowledge"],
 };
 const SKILL_ALLOWED = ["host-client", "native", "knowledge", "project", "c64", "platform", "script", "time"];
 
