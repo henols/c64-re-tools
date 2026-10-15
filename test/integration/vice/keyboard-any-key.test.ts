@@ -25,7 +25,9 @@ const PRESSED = 0xc00e;
 const program = [0x78, 0xa9, 0x00, 0x8d, 0x00, 0xdc, 0xad, 0x01, 0xdc, 0xc9, 0xff, 0xf0, 0xf9, 0xea, 0x4c, 0x0e, 0xc0];
 
 test("a wait for any key that reads all keyboard columns ends without input only on a VICE with the known flaw", { skip: liveSkip, timeout: 120_000 }, async () => {
-  const version = viceVersionOf(spawnSync(LIVE_VICE!, ["-version"], { encoding: "utf8" }).stdout);
+  // VICE prints its version on stdout or stderr, depending on the build (macOS: stderr), as the host's probe reads it.
+  const printed = spawnSync(LIVE_VICE!, ["-version"], { encoding: "utf8" });
+  const version = viceVersionOf(`${printed.stdout}\n${printed.stderr}`);
   assert.ok(version !== undefined, "x64sc -version tells its version");
   const flawed = viceFlaws(version).length > 0;
   const supervisor = new ProcessSupervisor();
