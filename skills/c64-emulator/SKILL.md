@@ -72,6 +72,7 @@ Step, next and until-return work only in space `c64`. The emulator cannot stop t
 
 `c64_keyboard` puts keys in the keyboard queue of the KERNAL. A program that reads the keyboard hardware directly does not see them. Many games do this. The emulator has no command that presses one key of the keyboard matrix. For such a program:
 
+- After `c64_window` or a snapshot restore, the profiler of VICE keeps the routines that ran before the restore. Then `c64_profile` can give the cycles of the program to such a routine, for example `$fd50`. Do not trust the routine addresses of `c64_profile` after a restore.
 - VICE 3.10 and older have a known flaw: bits 5-7 of `$DC00` and `$DC01` are always 0. Then `emulatorFlaw` in the result of `c64_keyboard` and `c64_joystick` gives the flaw. With this flaw, a wait for any key that reads all keyboard columns at one time ends without a key. A wait for one specific key, or a compare of the full byte of a joystick port, never ends. Tell the user about the flaw. The next VICE release and the VICE nightly builds do not have it. Joystick port 1 uses the same lines as the keyboard.
 - For one specific key, for example F1 or RUN/STOP, open the window and ask the user to press the key.
 - Do not change the program to make it accept a key.

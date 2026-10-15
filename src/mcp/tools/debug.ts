@@ -41,7 +41,8 @@ export const c64Breakpoint = defineTool({
   description:
     "Manage breakpoints. A breakpoint stops the CPU when it is about to execute the instruction at an address. " +
     "Action add sets one at address in space c64 or drive8. With a condition, it stops only when the condition is true. " +
-    "add returns the new id. Actions remove, enable and disable take that id. remove returns removed true and the id. Action list gives all breakpoints. Each breakpoint shows its condition, when it has one. " +
+    "add returns the new id. Breakpoints and watchpoints take their ids from one counter, so the ids of one kind can have gaps. " +
+    "Actions remove, enable and disable take that id. remove returns removed true and the id. Action list gives all breakpoints. Each breakpoint shows its condition, when it has one. " +
     "Breakpoints stay through a reset.",
   inputSchema: z
     .object({
@@ -84,7 +85,8 @@ export const c64Watchpoint = defineTool({
     "Manage watchpoints. A watchpoint stops the CPU when an instruction reads or writes memory in a range. " +
     `Action add sets one at address for size bytes (1 to ${MAX_WATCH_SIZE}, default 1), with access read, write or read-write. ` +
     "With a condition, it stops only when the condition is true. For a write, a memory condition sees the memory after the write. " +
-    "add returns the new id. Actions remove, enable and disable take that id. remove returns removed true and the id. Action list gives all watchpoints. Each watchpoint shows its condition, when it has one.",
+    "add returns the new id. Breakpoints and watchpoints take their ids from one counter, so the ids of one kind can have gaps. " +
+    "Actions remove, enable and disable take that id. remove returns removed true and the id. Action list gives all watchpoints. Each watchpoint shows its condition, when it has one.",
   inputSchema: z
     .object({
       action: z.enum(CHECKPOINT_ACTIONS),
@@ -205,7 +207,8 @@ export const c64Profile = defineTool({
   name: "c64_profile",
   title: "Cycle profile",
   description:
-    "Get the routines where the C64 CPU spent the most cycles since the session started. " +
+    "Get the routines where the C64 CPU spent the most cycles since the session started or since the last c64_window. " +
+    "After c64_window or a snapshot restore, the emulator can give the cycles to a routine that ran before the restore, for example $fd50. Do not trust the routine addresses then. " +
     `limit is the maximum number of routines (1 to ${MAX_PROFILE}, default 20). ` +
     "Each entry gives the routine address, its total cycles with the routines it calls, and its own cycles. " +
     "percent is the part of all cycles that the routine used itself. " +

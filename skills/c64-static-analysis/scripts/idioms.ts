@@ -2,8 +2,8 @@
 // JMP tables and BIT skips are found by their exact instruction patterns and
 // become heuristic findings and entry points; DOP padding and self-modified
 // opcodes are only reported. A self-modified opcode is one that one run wrote
-// and executed: a copier's writes in one run and their execution in another
-// do not count (F-16). A table's length is not known statically: entries
+// and executed, in either order, since a coverage file holds no order (R3-04):
+// a copier's writes in one run and their execution in another do not count (F-16). A table's length is not known statically: entries
 // count while each target is a plausible instruction in the program.
 
 import { COVERAGE } from "#src/c64.ts";
