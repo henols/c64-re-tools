@@ -20,7 +20,7 @@ export interface ViceSessionHandle {
 }
 
 /** Starts a VICE session. Throws WireFailure with an actionable code when it cannot. */
-export type ViceSessionFactory = (options: { videoStandard: VideoStandard }) => Promise<ViceSessionHandle>;
+export type ViceSessionFactory = (options: { videoStandard: VideoStandard; log?: (line: string) => void }) => Promise<ViceSessionHandle>;
 
 /**
  * Runs one native-tool request. `signal` aborts when the client goes away; the
@@ -95,9 +95,12 @@ class Connection {
   constructor(socket: Socket, options: HostServerOptions, log: (line: string) => void) {
     this.#socket = socket;
     this.#options = options;
-    this.#log = log;
+    // Every line names its connection, so the console shows which client starts and stops what.
+    this.#log = (line) => log(`connection ${this.#id}: ${line}`);
     this.closed = new Promise((resolve) => (this.#resolveClosed = resolve));
-    trace().event("connection.open", { connection: this.#id, remote: `${socket.remoteAddress}:${socket.remotePort}`, local: socket.localAddress });
+    const remote = `${socket.remoteAddress}:${socket.remotePort}`;
+    this.#log(`opened from ${remote}`);
+    trace().event("connection.open", { connection: this.#id, remote, local: socket.localAddress });
     this.#handshakeTimer = setTimeout(
       () => this.#abort("no hello before the handshake timeout"),
       options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS,
@@ -180,11 +183,13 @@ class Connection {
         this.#isTool = true;
         this.#state = "open";
         this.#send({ type: "ready" });
+        this.#log("ready for tool requests");
         trace().event("connection.ready", { connection: this.#id, role: "tool" });
         this.#restartHeartbeat();
         return;
       }
       this.#state = "starting";
+      this.#log(`starts a VICE session (${message.videoStandard ?? "pal"})`);
       this.#contain(this.#startSession(message.videoStandard ?? "pal"));
       return;
     }
@@ -206,6 +211,7 @@ class Connection {
     this.#session = session;
     this.#state = "open";
     this.#send({ type: "ready" });
+    this.#log(`VICE session ready after ${Math.round(performance.now() - started)} ms`);
     trace().event("connection.ready", { connection: this.#id, role: "vice-session", videoStandard, ms: elapsedMs(started) });
     this.#restartHeartbeat();
   }
@@ -213,7 +219,7 @@ class Connection {
   /** The new session, or undefined after the failure is sent to the client. Never rejects, also when the factory throws at once. */
   async #createSession(videoStandard: VideoStandard): Promise<ViceSessionHandle | undefined> {
     try {
-      return await this.#options.createViceSession({ videoStandard });
+      return await this.#options.createViceSession({ videoStandard, log: this.#log });
     } catch (error) {
       this.#log(`VICE session failed to start: ${error instanceof Error ? error.message : String(error)}`);
       trace().event("connection.session-failed", { connection: this.#id, error });
@@ -275,11 +281,13 @@ class Connection {
     this.#toolAbort.abort();
     const session = this.#session ?? (await this.#starting);
     this.#session = undefined;
+    if (session !== undefined) this.#log("the client is gone; stopping its VICE session");
     try {
       await session?.close();
     } catch (error) {
       this.#log(`session close failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+    this.#log("closed");
     this.#resolveClosed();
   }
 }

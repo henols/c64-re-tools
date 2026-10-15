@@ -307,6 +307,7 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
         clearInterval(slow);
       }
       if (failure !== undefined) throw failure;
+      log(`VICE stopped (pid ${child.pid}, in ${Date.now() - started} ms)`);
     })();
     return stopping;
   };
@@ -325,7 +326,7 @@ async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {
     if (error instanceof WireFailure) throw error;
     throw new WireFailure("machine-unavailable", "The emulator could not be started on the host.");
   }
-  log(`VICE started (pid ${child.pid}, monitor ports ${port} and ${textPort})`);
+  log(`VICE started (${mode}, pid ${child.pid}, monitor ports ${port} and ${textPort})`);
   trace().event("vice.ready", { pid: child.pid, ms: elapsedMs(launched) });
   return { pid: child.pid, monitor, text, exited: child.exited, outputTail, stop };
 }

@@ -78,7 +78,7 @@ async function main(): Promise<number> {
     await supervisor.stopAll();
     return 1;
   }
-  log("VICE starts");
+  log(`VICE ${vice.major}.${vice.minor}${vice.revision === undefined ? "" : ` r${vice.revision}`} starts`);
   const flaws = viceFlaws(vice);
   // A known VICE flaw is named, not worked around (D56).
   for (const flaw of flaws) log(`Known VICE flaw: ${flaw}`);

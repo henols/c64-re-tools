@@ -988,6 +988,7 @@ export class ViceSession implements ViceSessionHandle {
     if (this.#held !== undefined) throw new WireFailure("machine-unavailable", this.#heldWhy);
     if (this.#launch === undefined) throw new WireFailure("operation-failed", "This session cannot start another emulator.");
     const running = this.#state === "running";
+    this.#log(mode === "window" ? "moving the machine to a VICE with a window" : "moving the machine back to a headless VICE");
     await this.#stop();
     const handover: Handover = {
       file: join(this.#workDir, mode === "window" ? "window-open.vsf" : "window-close.vsf"),
@@ -1354,8 +1355,7 @@ export function viceSessionFactory(options: {
   /** The known flaws of the VICE version that the host checked at start. */
   flaws?: readonly string[];
 }): ViceSessionFactory {
-  const log = options.log ?? (() => {});
-  return async ({ videoStandard }) => {
+  return async ({ videoStandard, log = options.log ?? (() => {}) }) => {
     const launch: ViceLauncher = (mode, launchLog) =>
       launchVice({
         videoStandard,
