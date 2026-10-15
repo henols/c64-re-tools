@@ -7,6 +7,7 @@ import { ProcessSupervisor } from "../native/processes.ts";
 import { startTrace, trace } from "../trace.ts";
 import { ListenError, parsePort, startHostServer, stopSignal } from "./server.ts";
 import { viceFlaws, type ViceVersion } from "../native/discover.ts";
+import { inspect } from "./tools/c1541.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
@@ -111,7 +112,16 @@ async function main(): Promise<number> {
       host: "0.0.0.0",
       port,
       log,
-      createViceSession: viceSessionFactory({ supervisor, log, flaws }),
+      createViceSession: viceSessionFactory({
+        supervisor,
+        log,
+        flaws,
+        // c1541 lists the disk, so an autostart index selects a program (R2-08).
+        directory: async (imageType, image) => {
+          const { result } = await inspect({ action: "directory", imageType }, image, { supervisor, signal: new AbortController().signal, log });
+          return result.action === "directory" ? result.entries : [];
+        },
+      }),
       tools: createToolDispatcher({ supervisor, log, vice }),
     });
   } catch (error) {

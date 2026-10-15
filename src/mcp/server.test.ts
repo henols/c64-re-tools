@@ -19,6 +19,7 @@ import { machineTools } from "./tools/machine.ts";
 import { mediaTools } from "./tools/media.ts";
 import { memoryTools } from "./tools/memory.ts";
 import { videoTools } from "./tools/video.ts";
+import { PACKAGE } from "../package.ts";
 
 /** The public tool list, in its order. */
 const PUBLIC_TOOLS = [
@@ -358,10 +359,10 @@ test("c64_status returns the domain result directly, with pc only when stopped",
   const session = new FakeSession();
   const client = await connect(async () => session);
   const running = await call(client, "c64_status");
-  assert.deepEqual(running.structuredContent, { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false });
+  assert.deepEqual(running.structuredContent, { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false, version: PACKAGE.version });
   assert.deepEqual(JSON.parse((running.content[0] as { text: string }).text), running.structuredContent);
   session.stopped = true;
-  assert.deepEqual((await call(client, "c64_status")).structuredContent, { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: "$002a" });
+  assert.deepEqual((await call(client, "c64_status")).structuredContent, { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, version: PACKAGE.version, pc: "$002a" });
   await client.close();
 });
 

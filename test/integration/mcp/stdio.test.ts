@@ -15,6 +15,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { startHostServer, type HostServer, type ViceSessionFactory } from "../../../src/host/server.ts";
 import { freePort } from "../../../src/host/vice/process.ts";
 import { startMcp, waitFor } from "../../kit.ts";
+import { PACKAGE } from "../../../src/package.ts";
 
 /** Every tool that the MCP server registers. */
 const TOOLS = [
@@ -68,7 +69,7 @@ test("the MCP opens one session at start and closes it when the harness disconne
   servers.push(server);
   const client = await mcp(server.port, { C64RT_VIDEO: "ntsc" });
   assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), TOOLS);
-  assert.deepEqual((await status(client)).structuredContent, { state: "running", videoStandard: "ntsc", warp: false, window: false, cartridge: false });
+  assert.deepEqual((await status(client)).structuredContent, { state: "running", videoStandard: "ntsc", warp: false, window: false, cartridge: false, version: PACKAGE.version });
   await status(client);
   assert.deepEqual(state.opened, ["ntsc"], "one MCP process must own exactly one session");
   await client.close();

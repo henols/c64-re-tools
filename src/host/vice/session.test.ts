@@ -427,6 +427,31 @@ test("autostart stages the bytes with their type and leaves the machine running"
   await session.close();
 });
 
+test("an autostart index of a DEL entry or past the last entry is refused before VICE sees it (R2-08)", async () => {
+  const listed: string[] = [];
+  const entries = [
+    { name: "GAME", type: "prg" as const, blocks: 10, closed: true, locked: false },
+    { name: "----------------", type: "del" as const, blocks: 0, closed: true, locked: false },
+  ];
+  const { fake, session } = await startSession({
+    directory: async (type) => {
+      listed.push(type);
+      return entries;
+    },
+  });
+  const image = Buffer.alloc(174848, 0x11);
+  // The session gets the VICE index: the caller's index plus 1.
+  await assert.rejects(session.handle("autostart", { type: "d64", index: 2, run: true }, [image]), (error: WireFailure) => error.code === "invalid-input" && /entry 1 \(----------------\) is a DEL entry/.test(error.message));
+  await assert.rejects(session.handle("autostart", { type: "g64", index: 3, run: true }, [image]), (error: WireFailure) => error.code === "invalid-input" && /2 directory entries, so index 2 selects no entry/.test(error.message));
+  assert.equal(fake.autostarts.length, 0);
+  await session.handle("autostart", { type: "d64", index: 1, run: true }, [image]);
+  await session.handle("autostart", { type: "d64", index: 0, run: true }, [image]);
+  await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);
+  assert.deepEqual(fake.autostarts.map((autostart) => autostart.index), [1, 0, 0]);
+  assert.deepEqual(listed, ["d64", "g64", "d64"], "only a disk image with an index is listed");
+  await session.close();
+});
+
 test("an autostart of another file detaches the cartridge that an autostart attached, and status names it until then", async () => {
   const { fake, session } = await startSession();
   await session.handle("autostart", { type: "prg", index: 0, run: true }, [Buffer.from([0x01, 0x08, 0x60])]);

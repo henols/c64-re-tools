@@ -29,7 +29,7 @@ interface Manifest {
 }
 
 /** The directory that the manifest and relative item paths belong to. */
-function scopeRoot(scope: Scope, cwd = process.cwd()): string {
+export function scopeRoot(scope: Scope, cwd = process.cwd()): string {
   return scope === "global" ? homedir() : cwd;
 }
 

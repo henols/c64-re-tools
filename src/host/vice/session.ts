@@ -3,7 +3,8 @@
 // session starts headless and can move the machine into a VICE with a window
 // and back; breakpoints, watchpoints and the rest go along.
 
-import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
+import { isOneOf, WireFailure, type VideoStandard } from "../../protocol/messages.ts";
+import { DISK_IMAGE_TYPES, type DiskFile, type DiskImageType } from "../../protocol/tools.ts";
 import { MAX_BASELINES, MAX_SNAPSHOTS, MAX_COMPARE_DIFFERENCES, RASTER, type Breakpoint, type BreakpointParams, type PointRemoved, type Condition, type ExecutionParams, type HistoryEntry, type RunTarget, type RunUntilResult, type ScreenComparison, type CiaSelection, type CiaState, type ObserveParams, type ObserveResult, type SidState, type SpriteState, type ViciiState, type JoystickState, type Watchpoint, type WatchpointParams, type ExecutionResult, type MachineStatus, type RunState, type ViceOperation, type ViceOperations, type WindowResult } from "../../protocol/vice.ts";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -123,7 +124,11 @@ export interface SessionOptions {
   ownPath?: (path: string) => () => void;
   /** The known flaws of this VICE version (D56); keyboard and joystick results name them. */
   flaws?: readonly string[];
+  /** Lists the entries of a disk image, so an autostart index is checked first (R2-08). Without it, VICE gets the index unchecked. */
+  directory?: DiskDirectory;
 }
+
+export type DiskDirectory = (type: DiskImageType, image: Buffer) => Promise<DiskFile[]>;
 
 /**
  * Where VICE keeps a staged file: an autostarted disk stays in drive 8, a tape
@@ -151,6 +156,7 @@ export class ViceSession implements ViceSessionHandle {
   readonly #untilReturnLimitMs: number;
   readonly #stepLimitMs: number;
   readonly #launch: ViceLauncher | undefined;
+  readonly #directory: DiskDirectory | undefined;
   /** Session files that outlive one VICE: snapshots, staged media, handovers. */
   readonly #workDir: string;
   readonly #releaseWorkDir: () => void;
@@ -218,6 +224,7 @@ export class ViceSession implements ViceSessionHandle {
     this.#untilReturnLimitMs = options.untilReturnLimitMs ?? UNTIL_RETURN_LIMIT_MS;
     this.#stepLimitMs = options.stepLimitMs ?? RUNNING_COMMAND_TIMEOUT_MS;
     this.#launch = options.launch;
+    this.#directory = options.directory;
     this.#inputFlaw = options.flaws === undefined || options.flaws.length === 0 ? undefined : options.flaws.join(" ");
     this.#workDir = mkdtempSync(join(tmpdir(), "c64-re-tools-session-"));
     this.#releaseWorkDir = options.ownPath?.(this.#workDir) ?? (() => {});
@@ -374,7 +381,9 @@ export class ViceSession implements ViceSessionHandle {
         return this.#programLoad(params as ViceOperations["programLoad"]["params"], onlyAttachment(attachments));
       case "autostart": {
         const { type, index, run } = params as ViceOperations["autostart"]["params"];
-        const file = this.#stage(onlyAttachment(attachments), type);
+        const bytes = onlyAttachment(attachments);
+        if (index > 0 && this.#directory !== undefined && isOneOf(DISK_IMAGE_TYPES, type)) checkDirectoryEntry(await this.#directory(type, bytes), index);
+        const file = this.#stage(bytes, type);
         // VICE keeps a cartridge through every reset and autostart, as a real C64 does.
         if (type !== "crt" && this.#cartridge) {
           await this.#observe(() => this.#machine.detachCartridge());
@@ -1400,6 +1409,17 @@ async function setPoint(
   return checkpoint;
 }
 
+/**
+ * Refuses an autostart index that selects no program: VICE numbers the
+ * entries from 1, and the caller from 0, as the c64-disk directory list does.
+ * A DEL entry holds no program (R2-08), and an index past the last entry selects nothing.
+ */
+function checkDirectoryEntry(entries: DiskFile[], index: number): void {
+  const entry = entries[index - 1];
+  if (entry === undefined) throw new WireFailure("invalid-input", `The disk has ${entries.length} directory entries, so index ${index - 1} selects no entry. The c64-disk directory list gives the index of each entry.`);
+  if (entry.type === "del") throw new WireFailure("invalid-input", `Directory entry ${index - 1} (${entry.name}) is a DEL entry and holds no program. Give the index of a PRG entry.`);
+}
+
 /** The production factory: launch a headless VICE per session through the host's supervisor. */
 export function viceSessionFactory(options: {
   supervisor: ProcessSupervisor;
@@ -1407,6 +1427,7 @@ export function viceSessionFactory(options: {
   log?: (line: string) => void;
   /** The known flaws of the VICE version that the host checked at start. */
   flaws?: readonly string[];
+  directory?: DiskDirectory;
 }): ViceSessionFactory {
   return async ({ videoStandard, log = options.log ?? (() => {}) }) => {
     const launch: ViceLauncher = (mode, launchLog) =>
@@ -1421,6 +1442,11 @@ export function viceSessionFactory(options: {
         ...(options.env === undefined ? {} : { env: options.env }),
       });
     const vice = await launch("headless", () => {});
-    return ViceSession.start(vice, videoStandard, log, { launch, ownPath: (path) => options.supervisor.ownPath(path), ...(options.flaws === undefined ? {} : { flaws: options.flaws }) });
+    return ViceSession.start(vice, videoStandard, log, {
+      launch,
+      ownPath: (path) => options.supervisor.ownPath(path),
+      ...(options.flaws === undefined ? {} : { flaws: options.flaws }),
+      ...(options.directory === undefined ? {} : { directory: options.directory }),
+    });
   };
 }

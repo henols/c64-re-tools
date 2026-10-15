@@ -14,7 +14,7 @@ import { WireFailure } from "../protocol/messages.ts";
 import { startTrace } from "../trace.ts";
 import { runApSdk } from "./ap-sdk.ts";
 import { installedItems, parseTargets, tidyAfterUninstall, undoWindsurfProjectMcp, windsurfBefore, withoutWindsurfMcp, type Scope } from "./cleanup.ts";
-import { hostStatusLines, toolLines } from "./status.ts";
+import { hostStatusLines, installedLines, toolLines } from "./status.ts";
 
 const HELP = `c64-re-tools: Commodore 64 reverse engineering and development
 
@@ -52,6 +52,7 @@ async function status(): Promise<number> {
   console.log(`c64-re-tools ${PACKAGE.version}`);
   console.log(`Package: ${join(here, "..", "..")}`);
   console.log(`Node: ${process.version} (${process.execPath})`);
+  for (const line of installedLines()) console.log(line);
   // The skill scripts run these tools here, on this machine.
   const local = await localToolStatus(localToolContext());
   for (const line of toolLines("Tools here:", local)) console.log(line);

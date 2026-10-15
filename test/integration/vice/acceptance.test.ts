@@ -15,6 +15,7 @@ import { launchVice } from "../../../src/host/vice/process.ts";
 import { ViceSession } from "../../../src/host/vice/session.ts";
 import { startMcp, waitFor } from "../../kit.ts";
 import { liveEnv, liveLog, liveSkip, startHost, stopHosts, viceChildren } from "./live.ts";
+import { PACKAGE } from "../../../src/package.ts";
 
 after(stopHosts);
 
@@ -40,12 +41,12 @@ test("host → MCP → one VICE: KERNAL bytes, registers and running state", { s
     assert.equal(Object.keys(registers.flags as object).sort().join(""), "bcdinvz");
 
     // Reads keep the machine running, and a running machine reports no pc.
-    assert.deepEqual(await tool(client, "c64_status"), { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false });
+    assert.deepEqual(await tool(client, "c64_status"), { state: "running", videoStandard: "pal", warp: false, window: false, cartridge: false, version: PACKAGE.version });
 
     // A paused machine reports stopped with its pc, and reads keep it stopped.
     const paused = await tool(client, "c64_execution", { action: "pause" });
     assert.equal(paused.state, "stopped");
-    assert.deepEqual(await tool(client, "c64_status"), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, pc: paused.pc });
+    assert.deepEqual(await tool(client, "c64_status"), { state: "stopped", videoStandard: "pal", warp: false, window: false, cartridge: false, version: PACKAGE.version, pc: paused.pc });
     await tool(client, "c64_memory_read", { address: "$e000", size: 1 });
     assert.equal((await tool(client, "c64_status")).state, "stopped");
     assert.deepEqual(await tool(client, "c64_execution", { action: "resume" }), { state: "running" });

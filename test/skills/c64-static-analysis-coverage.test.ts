@@ -15,7 +15,7 @@ import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
 import { classifyRegion } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps } from "../../skills/c64-static-analysis/scripts/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps, romOnlyRanges } from "../../skills/c64-static-analysis/scripts/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-coverage-"));
@@ -71,6 +71,50 @@ test("code regions and JMP tables are entry points, and analyzer data over execu
   db.close();
 });
 
+/**
+ * A flat image whose program calls the KERNAL and stops: $080d JSR $FFE4 / BRK.
+ * The RAM under the KERNAL holds leftover code at $ffe4, and its IRQ vector at
+ * $fffe points to leftover code at $0016. The run executed the ROM there, never the RAM (R2-07).
+ */
+function kernalCall(): { image: Uint8Array; map: Uint8Array } {
+  const image = new Uint8Array(0x10000);
+  image.set([0x20, 0xe4, 0xff, 0x00], 0x080d);
+  image.set([0xa9, 0x00, 0x8d, 0x00, 0x04, 0x60], 0xffe4);
+  image.set([0x16, 0x00], 0xfffe);
+  image.set([0xee, 0x20, 0xd0, 0x60], 0x0016);
+  const map = mapWith([0x080d, 0x0810]);
+  for (let address = 0xffe4; address <= 0xffe9; address++) map[address] = address === 0xffe4 ? COVERAGE.romExecute : COVERAGE.romRead;
+  map[0xfffe] = COVERAGE.romRead;
+  map[0xffff] = COVERAGE.romRead;
+  return { image, map };
+}
+
+test("the RAM under ROM that the runs never read or ran is data for the analysis run (R2-07)", () => {
+  const { image, map } = kernalCall();
+  map[0xe000] = COVERAGE.romExecute | COVERAGE.ramExecute;
+  map[0xa000] = COVERAGE.romRead | COVERAGE.ramRead;
+  map[0xa001] = COVERAGE.romRead;
+  assert.deepEqual(romOnlyRanges(map, imageReader(image, "flat64k")), [{ start: 0xa001, end: 0xa001 }, { start: 0xffe4, end: 0xffe9 }, { start: 0xfffe, end: 0xffff }], "RAM that a run read or ran is not in a range");
+  const prg = Uint8Array.from([0x00, 0xa0, 0x00, 0x00]);
+  assert.deepEqual(romOnlyRanges(map, imageReader(prg, "prg")), [{ start: 0xa001, end: 0xa001 }], "only bytes of the image");
+});
+
+test("with coverage, Ghidra does not follow a KERNAL call or the IRQ vector into the RAM under the KERNAL (R2-07)", { skip: process.env.C64RT_GHIDRA ? false : "set C64RT_GHIDRA to run Ghidra", timeout: 600_000 }, () => {
+  const { image, map } = kernalCall();
+  writeFileSync(join(project, "kernal.bin"), image);
+  writeFileSync(join(project, "kernal-run.bin"), map);
+  const script = resolve(import.meta.dirname, "../../skills/c64-static-analysis/scripts/analyze.ts");
+  const run = spawnSync(process.execPath, [...process.execArgv, script, "kernal.bin", "--flat64k", "--entry", "$080d", "--coverage", "kernal-run.bin"], { cwd: project, encoding: "utf8", env: { ...process.env, C64RT_HOST: "127.0.0.1:1" } });
+  const json = JSON.parse(run.stdout) as { coverageSeeds: unknown };
+  assert.deepEqual(json.coverageSeeds, { entryPoints: 1, used: 1, romOnlyRanges: 2, romOnlyUsed: 2 }, run.stdout);
+  const db = openForRead(project);
+  const typeAt = (address: number) => regionsOverlapping(db, address, address).find((region) => region.origin === "ghidra")?.type;
+  assert.equal(typeAt(0x080d), "code", run.stdout);
+  assert.notEqual(typeAt(0xffe4), "code", "the KERNAL call stays in ROM");
+  assert.notEqual(typeAt(0x0016), "code", "BRK does not follow the IRQ vector under the KERNAL");
+  db?.close();
+});
+
 test("with coverage, DXA finds the code that only a vector reaches", { skip: dxaSkip, timeout: 120_000 }, () => {
   writeFileSync(join(project, "vectored.prg"), vectoredPrg);
   writeFileSync(join(project, "run.bin"), mapWith([0x080d, 0x080f, 0x0812, 0x0814, 0x0817, VECTORED_ROUTINE, VECTORED_ROUTINE + 3]));
@@ -88,7 +132,7 @@ test("with coverage, DXA finds the code that only a vector reaches", { skip: dxa
   analyze();
   assert.notEqual(codeAt(VECTORED_ROUTINE), "code", "without coverage the routine looks like data");
   const seeded = analyze("--coverage", "run.bin");
-  assert.deepEqual(seeded.coverageSeeds, { entryPoints: 2, used: 2 }, JSON.stringify(seeded));
+  assert.deepEqual(seeded.coverageSeeds, { entryPoints: 2, used: 2, romOnlyRanges: 0, romOnlyUsed: 0 }, JSON.stringify(seeded));
   assert.equal(codeAt(VECTORED_ROUTINE), "code");
   assert.deepEqual(seeded.coverageConflicts, []);
 });

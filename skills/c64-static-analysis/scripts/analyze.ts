@@ -23,7 +23,7 @@ import { DEFAULT_SPACE, SPACE } from "#src/knowledge/schema.ts";
 import { platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps, type ImageByte } from "./coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps, romOnlyRanges, type ImageByte } from "./coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
 import { findIdioms } from "./idioms.ts";
 import { instructionList } from "./instructions.ts";
@@ -270,10 +270,16 @@ async function run(argv: string[]): Promise<unknown> {
   const seeds = seedsFromKnowledge(reader, entries, space);
   // Knowledge routines and --entry first, then code regions and JMP tables, then idioms, then coverage, up to the seed bound (D44).
   const fromCoverage = coverage === undefined ? [] : coverageEntries(coverage, byteAt);
-  const ordered = [...new Set([...seeds.entryPoints, ...codeEntries(reader, byteAt, space), ...idioms.entryPoints, ...fromCoverage])];
+  const known = [...seeds.entryPoints, ...codeEntries(reader, byteAt, space)];
+  const ordered = [...new Set([...known, ...idioms.entryPoints, ...fromCoverage])];
   seeds.entryPoints = ordered.slice(0, GHIDRA_LIMITS.entryPoints).sort((a, b) => a - b);
-  // Idiom tables are data for this run too; semantic data ranges come first.
-  seeds.dataRanges = [...seeds.dataRanges, ...idioms.dataRanges.filter((range) => !seeds.dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start))].slice(0, GHIDRA_LIMITS.dataRanges);
+  // Idiom tables and the RAM under ROM that the runs never used are data for this run too; semantic data ranges come first.
+  // A range with an entry point of the knowledge or --entry in it is left out: that code stays code.
+  const fromRom = coverage === undefined ? [] : romOnlyRanges(coverage, byteAt).filter((range) => !known.some((entry) => entry >= range.start && entry <= range.end));
+  const dataRanges = [...seeds.dataRanges];
+  for (const range of [...idioms.dataRanges, ...fromRom]) if (!dataRanges.some((seed) => range.start <= seed.end && range.end >= seed.start)) dataRanges.push(range);
+  seeds.dataRanges = dataRanges.slice(0, GHIDRA_LIMITS.dataRanges);
+  const romUsed = fromRom.filter((range) => seeds.dataRanges.includes(range)).length;
   const coverageUsed = fromCoverage.filter((entry) => seeds.entryPoints.includes(entry)).length;
   // Platform names are C64 names: drive code and banks get none.
   const platform = space === DEFAULT_SPACE ? platformNames() : [];
@@ -315,7 +321,7 @@ async function run(argv: string[]): Promise<unknown> {
     const conflicts = coverageConflicts(db, coverage);
     db?.close();
     return {
-      coverageSeeds: { entryPoints: fromCoverage.length, used: coverageUsed },
+      coverageSeeds: { entryPoints: fromCoverage.length, used: coverageUsed, romOnlyRanges: fromRom.length, romOnlyUsed: romUsed },
       coverageConflicts: conflicts.map(({ region, executed }) => ({
         range: { start: formatC64Address(region.start), end: formatC64Address(region.end) },
         knowledge: { type: region.type, origin: region.origin },

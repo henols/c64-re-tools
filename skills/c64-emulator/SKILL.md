@@ -25,7 +25,7 @@ Use only the MCP tools. Each MCP session has its own C64. Nothing else can chang
 
 | Need | Tool |
 |---|---|
-| Run state, video standard, warp mode, window | `c64_status` |
+| Run state, video standard, warp mode, window, version of the MCP server | `c64_status` |
 | Reset, power cycle | `c64_reset` |
 | Fast emulation | `c64_warp` |
 | Show the C64 to the user in a window, hide it again | `c64_window` |

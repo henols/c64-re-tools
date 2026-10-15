@@ -51,8 +51,9 @@ More seeds come from evidence:
 
 - The start of each `code` region and each entry of a `jumps` table from the user or the LLM is an entry point.
 - With `--coverage`, each executed instruction that starts a flow is an entry point. A flow starts after a gap, or after RTS, RTI, JMP or BRK. Then the analyzers find code that only a vector, an RTS table or an interrupt reaches.
+- With `--coverage`, some RAM under a ROM is data for the analysis. At these addresses, the runs used the ROM and did not read or execute the RAM. Then a call into the KERNAL does not decode the RAM bytes under it as code. A knowledge routine or an `--entry` in such a range keeps its code. Ghidra does not follow BRK, because the vector at `$fffe` is in ROM unless the program removes the KERNAL.
 
-The analyzers take at most 1024 entry points. Knowledge routines and `--entry` come first, then code regions and tables, then coverage. `coverageSeeds` gives how many entry points the coverage gave and how many the analysis used.
+The analyzers take at most 1024 entry points. Knowledge routines and `--entry` come first, then code regions and tables, then coverage. `coverageSeeds` gives how many entry points the coverage gave and how many the analysis used. `romOnlyRanges` and `romOnlyUsed` give the same counts for the data ranges under ROM.
 
 ### Project folder
 

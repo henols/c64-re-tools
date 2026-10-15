@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import { formatC64Address } from "../../c64.ts";
+import { PACKAGE } from "../../package.ts";
 import { VIDEO_STANDARDS } from "../../protocol/messages.ts";
 import { RESET_MODES, RUN_STATES, WINDOW_ACTIONS } from "../../protocol/vice.ts";
 import { AddressOutput, defineTool } from "../server.ts";
@@ -14,7 +15,8 @@ export const c64Status = defineTool({
     "Get the state of the C64. The result tells if the CPU runs or has stopped, the video standard (pal or ntsc), " +
     "and if warp mode is on. It also tells if the emulator window is open (window). " +
     "When the CPU has stopped, the result also gives the program counter (pc). " +
-    "cartridge is true while a cartridge from c64_autostart is attached: a reset keeps it, and an autostart of another file detaches it.",
+    "cartridge is true while a cartridge from c64_autostart is attached: a reset keeps it, and an autostart of another file detaches it. " +
+    "version is the c64-re-tools version of this MCP server.",
   inputSchema: z.object({}).strict(),
   outputSchema: z.object({
     state: z.enum(RUN_STATES),
@@ -23,6 +25,7 @@ export const c64Status = defineTool({
     window: z.boolean().describe("true when the emulator window is open (c64_window)"),
     pc: AddressOutput.optional().describe("program counter. Only when the CPU is stopped"),
     cartridge: z.boolean().describe("true while a cartridge from c64_autostart is attached"),
+    version: z.string().describe("the c64-re-tools version of this MCP server"),
   }),
   readOnly: true,
   async run(_input, session) {
@@ -33,6 +36,7 @@ export const c64Status = defineTool({
       warp: status.warp,
       window: status.window,
       cartridge: status.cartridge,
+      version: PACKAGE.version,
       ...(status.pc === undefined ? {} : { pc: formatC64Address(status.pc) }),
     };
   },

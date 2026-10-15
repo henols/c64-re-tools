@@ -49,6 +49,26 @@ export function coverageEntries(map: Uint8Array, image: ImageByte): number[] {
   return entries;
 }
 
+const ROM_ACCESS = COVERAGE.romRead | COVERAGE.romExecute;
+const RAM_USE = COVERAGE.ramRead | COVERAGE.ramExecute;
+
+/**
+ * The image bytes under ROM that the runs never used: the CPU read or ran the
+ * ROM there, and never read or ran the RAM (R2-07). A JSR $FFE4 or an IRQ
+ * vector at $FFFE then leads into ROM, not into the leftover RAM bytes of a
+ * flat image, so the ranges are data for the analysis run.
+ */
+export function romOnlyRanges(map: Uint8Array, image: ImageByte): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (let address = 0; address < FULL_MAP; address++) {
+    if ((map[address]! & ROM_ACCESS) === 0 || (map[address]! & RAM_USE) !== 0 || image(address) === undefined) continue;
+    const last = ranges.at(-1);
+    if (last !== undefined && last.end === address - 1) last.end = address;
+    else ranges.push({ start: address, end: address });
+  }
+  return ranges;
+}
+
 /** Entry points from semantic knowledge beyond routines: the start of each code region, and each entry of a JMP table with its target. */
 export function codeEntries(db: DatabaseSync | undefined, image: ImageByte, space: Space = DEFAULT_SPACE): number[] {
   const entries: number[] = [];
