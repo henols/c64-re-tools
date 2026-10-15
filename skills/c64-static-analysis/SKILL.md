@@ -17,7 +17,7 @@ Find the static structure of a C64 program. Record the structure in the project 
 
 ## Tools / execution path
 
-The script reads the current knowledge and runs DXA or Ghidra on this machine. The host runtime is not necessary. The script records the result in `.c64-re-tools/knowledge.db`.
+The script reads the current knowledge and runs DXA or Ghidra on this machine. The host runtime is not necessary. The script records the result in the project knowledge, `.c64-re-tools/knowledge/`.
 
 ```
 node <skill>/scripts/analyze.ts extracted/game.prg --analyzer dxa --listing analysis/game.lst

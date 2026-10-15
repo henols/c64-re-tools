@@ -85,7 +85,7 @@ In stage 5, if you cannot get to a part of the program, ask the user how to get 
 
 ### Deliverables of a full rebuild
 
-- `.c64-re-tools/knowledge.db` with the names, regions, comments and modules
+- `.c64-re-tools/knowledge/` with the names, regions, comments and modules
 - the image and the entry state
 - the coverage files
 - the generated source

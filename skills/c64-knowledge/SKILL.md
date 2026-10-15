@@ -1,13 +1,13 @@
 ---
 name: c64-knowledge
-description: Use this skill to read, write, correct and review the durable knowledge of a C64 project in .c64-re-tools/knowledge.db. It gives the knowledge at an address, and it names symbols, classifies memory regions, sets comments and records references. It also shows the history of each change, and it can revert to an earlier revision. Do not use it for live emulator state or for static analysis.
+description: Use this skill to read, write, correct and review the durable knowledge of a C64 project in .c64-re-tools/knowledge/. It gives the knowledge at an address, and it names symbols, classifies memory regions, sets comments and records references. It also shows the history of each change, and it can revert to an earlier revision. Do not use it for live emulator state or for static analysis.
 ---
 
 # c64-knowledge
 
 ## Purpose
 
-Read, write, correct and review the durable understanding of a C64 project. The knowledge is in `.c64-re-tools/knowledge.db` in the project folder. Git can version that file.
+Read, write, correct and review the durable understanding of a C64 project. The knowledge is text in `.c64-re-tools/knowledge/` in the project folder: one JSON line for each row. Commit that folder with git. The script keeps an index of the text in `.c64-re-tools/local/knowledge.db` and makes the index again when the text changes. Do not commit the index.
 
 This skill is the only write path for conclusions of the user and the LLM. It does not run an emulator or an analyzer.
 
@@ -49,8 +49,11 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 | Operand expressions | `operands` with `--start` and `--end` |
 | Files of generated source | `modules` |
 | The address spaces that hold knowledge | `spaces` |
-| History | `history '$2100'`, `history --name update_player`, `revisions`, `revision 12` |
-| Go back to an earlier state | `revert 12` |
+| History | `history '$2100'`, `history --name update_player`, `revisions`, `revision 20261015T2145` |
+| Go back to an earlier state | `revert 20261015T2145` |
+| Decide the conflicts after a git merge | `merge --reason 'merge of two computers'` |
+
+A revision has an id such as `20261015T214501.123-k3f9qz`. The id starts with the date and time. A command takes the full id, or a start of the id that only one revision has. The revision `0` is the knowledge before the first revision.
 
 Every command takes `--space`: `c64` (the default), `drive8` for code in the 1541 drive, or `bank0` to `bank255` for cartridge banks. Drive code and banks use the same addresses as the C64, so each space has its own knowledge. A name is unique inside one space. In a batch, a write can name its own `space`.
 
@@ -186,7 +189,8 @@ The exit status is 0 for a result. The exit status is 1 for an error from the kn
 - `conflict`: the change contradicts current knowledge. For example, the name belongs to another address. Read that address and its history, then decide.
 - `stale-revision`: the knowledge changed after you read it. Read it again, then decide again.
 - `not-found`: there is nothing to remove or no such revision.
-- `invalid-database` or `unsupported-schema`: tell the user the message. Do not edit the file.
+- `conflict` with "from a git merge": git joined the knowledge of two computers, and two rows are current where the knowledge permits one row. For example, two names are at one address. Every read shows these rows in `conflicts`. Writes stop until you run `merge`. The `merge` command keeps the newest row of each conflict and closes the other rows, in one revision. Its result lists each choice. Tell the user the choices.
+- `invalid-database` or `unsupported-schema`: tell the user the message. Do not edit the knowledge files.
 
 A revert makes a new revision. The history stays complete.
 

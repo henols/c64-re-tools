@@ -256,3 +256,20 @@ test("operand writes an expression after a check against the image, and at and o
   assert.equal(knowledge(root, "remove-symbol", "$80c0").status, 1, "the operands use it");
   assert.equal(knowledge(root, "unoperand", "$807e").json.revision, rev(root, 5));
 });
+
+test("a command takes a start of a revision id that only one revision has, and 0 for the knowledge before every revision", () => {
+  const root = project();
+  knowledge(root, "rename", "$2100", "main", "--reason", "the entry");
+  knowledge(root, "rename", "$2100", "start");
+  const first = rev(root, 1);
+  assert.match(first, /^\d{8}T\d{6}\.\d{3}-[0-9a-z]{6}$/);
+  assert.equal(((knowledge(root, "revision", first.slice(0, 26)).json.revision as { description: string }).description), "the entry", "the date, the time and part of the random characters");
+  const ambiguous = knowledge(root, "revision", first.slice(0, 8));
+  assert.equal(ambiguous.status, 1);
+  assert.match((ambiguous.json.error as { message: string }).message, /is the start of more than one revision/);
+  assert.equal(knowledge(root, "revert", first.slice(0, 26)).status, 0);
+  assert.equal((knowledge(root, "at", "$2100").json.symbol as { name: string }).name, "main");
+  assert.equal(knowledge(root, "revert", "0").status, 0);
+  assert.equal(knowledge(root, "at", "$2100").json.symbol, undefined);
+  assert.equal(((knowledge(root, "revisions", "--before", rev(root, 2)).json.revisions as Array<{ id: string }>).map((row) => row.id)).join(), first);
+});
