@@ -56,6 +56,7 @@ Select the path for the scope:
 | The routines, code, data and references of the program | c64-static-analysis |
 | The platform meaning of an address or a register | c64-memory-map |
 | Differences between releases of the program | c64-provenance |
+| A routine that another program of the workspace has, for example a music driver | c64-provenance, with the library |
 | Source code from the knowledge | c64-source |
 | Source code to build | c64-assembler |
 | Proof that a rebuild behaves as the original | c64-testing |
@@ -76,12 +77,14 @@ Do the stages in this sequence. Go to the next stage only when its exit check is
 | 4. Unpack | c64-unpacker: examine the program. Capture a packed program into `unpacked/`. | `image.json` and `entry_state.json` exist, or the evidence shows no packer. |
 | 5. Run | c64-emulator and the run of c64-testing: run each part that the scope names. Write a coverage file for each part into `coverage/`. | Each part that the scope names has a coverage file. |
 | 6. Analyze | c64-static-analysis with `--coverage` for each coverage file. | No coverage conflict is open. |
-| 7. Name | c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. | Each routine in the scope has a name and a comment. |
+| 7. Name | c64-provenance: if the workspace has a library, find its routines with `match` and apply the batch. Then c64-knowledge and c64-memory-map: name each routine in the scope and give it a comment. Record the modules. | Each routine in the scope has a name and a comment. |
 | 8. Generate | c64-source with `--coverage` into `src/`. For an unpacked program, add `--loader`. | `check.identical` is true. For an unpacked program, `loader.verified` is true. |
 | 9. Build and test | c64-assembler with `--compare` into `build/`. c64-testing scenarios in `tests/`. | The criteria of stage 1 are true. |
 | 10. Report | Write `report.md`. | The report has all its sections. |
 
 In stage 5, if you cannot get to a part of the program, ask the user how to get to it. Do stages 7 and 8 again until the source is clear. Each run of c64-source writes the source again.
+
+After stage 7, save each routine that other programs can have to the library with c64-provenance `routine`. Examples are a music driver, a decruncher and a loader. Ask the user before you make a library.
 
 ### Deliverables of a full rebuild
 
@@ -120,6 +123,8 @@ report.md      the report
 ```
 
 If the project has a layout, use that layout.
+
+A workspace with several projects keeps its library of routines in `library/` beside the projects. The library is not a project folder.
 
 ## Knowledge
 

@@ -109,7 +109,7 @@ The agent keeps what it learns about the program as text in `.c64-re-tools/knowl
 | c64-basic | BASIC V2 listings and the SYS/USR handoff to machine code. |
 | c64-unpacker | Packing evidence, and capture of the unpacked program from the emulator. |
 | c64-memory-map | Platform meaning of addresses and register values. |
-| c64-provenance | Byte comparison of releases. |
+| c64-provenance | Byte comparison of releases, and a library of routines that several programs share. |
 | c64-source | ACME source from the image and the knowledge, checked byte by byte, and a loader for the entry state. |
 | c64-assembler | ACME builds with diagnostics and symbols. |
 | c64-testing | Original-against-rebuild scenarios with PASS, FAIL or INCONCLUSIVE. |

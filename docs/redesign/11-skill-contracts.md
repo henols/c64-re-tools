@@ -783,6 +783,8 @@ Specific durable conclusions may be recorded as ordinary semantic comments/regio
 
 A specialized provenance database model is not introduced without a concrete requirement.
 
+The library of routines that several programs share (D71) is a plain folder of routine files beside the projects, not a database. `routine` saves a range of one program with its knowledge at offsets; `match` finds the routines in another program and writes their names there as an apply batch, which the agent applies with c64-knowledge. `match` writes no knowledge.
+
 ### Result
 
 A focused provenance conclusion/report for the requested region or behavior.

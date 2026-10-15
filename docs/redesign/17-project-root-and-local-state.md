@@ -60,6 +60,8 @@ A project-relative path:
 
 The LLM normally sees these project-relative paths. A shell redirect is relative to the shell's working directory; the skill texts say so.
 
+One path is not project-relative: the library of routines that several programs share (D71). It is a plain folder beside the projects, for example `library/` at the workspace root, with one `<name>.json` for each routine. It is never a project: a folder that holds `.c64-re-tools/` is refused as a library. The c64-provenance scripts name it with `--library <folder>`, relative to the working directory, as `--project`. Only `routine` writes into it, and `match` only reads it.
+
 ## 5. Persistent project layout
 
 The committed toolkit-owned project state is:

@@ -125,6 +125,8 @@ The ops and their fields:
 
 A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
 
+The c64-provenance skill writes a batch with `match --out`. The batch holds the names of library routines at their addresses in this program. Read the `batch.leftOut` of its result first. Then apply the batch with the command in its `apply`.
+
 ## Modules
 
 A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The c64-source skill writes `main.asm`, `loader.asm` and `constants.asm` itself. Thus a module cannot have one of these names, in upper or lower case. The title becomes the first line of the file. A `module` write without a title keeps the title that the module has. Modules have a history, and `revert` restores them.
@@ -199,3 +201,4 @@ A revert makes a new revision. The history stays complete.
 - Runtime evidence → c64-emulator
 - Static evidence → c64-static-analysis
 - Source from the knowledge → c64-source
+- Names of routines that other programs share → c64-provenance
