@@ -45,6 +45,13 @@ export type SuppressionEntity = (typeof SUPPRESSION_ENTITIES)[number];
 
 /** A module file of the generated source (D48): a plain name that ends in .asm, no directory. */
 export const MODULE_FILE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}\.asm$/;
+/** Files that c64-source writes itself: no module can have these names. */
+export const GENERATED_FILES = ["main.asm", "loader.asm", "constants.asm"] as const;
+
+/** True for a generated file name in any letter case: the file systems of macOS and Windows ignore case. */
+export function isGeneratedFile(file: string): boolean {
+  return (GENERATED_FILES as readonly string[]).includes(file.toLowerCase());
+}
 
 /**
  * The address space of a knowledge row (D53): the C64, the 1541 drive, or a

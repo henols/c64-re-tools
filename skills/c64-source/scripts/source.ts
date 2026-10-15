@@ -7,7 +7,7 @@
 
 import { COVERAGE, formatC64Address } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
-import type { CommentPlacement, RegionType } from "#src/knowledge/schema.ts";
+import { isGeneratedFile, type CommentPlacement, type RegionType } from "#src/knowledge/schema.ts";
 import { hasZeroPageForm, MNEMONICS, MODE_LENGTH, OPCODES, takesAddress, type Mode } from "./opcodes.ts";
 
 export interface Range {
@@ -31,12 +31,9 @@ export interface SourceInput {
   referenceTargets: readonly number[];
   /** Joined coverage files (D40): an instruction that no run executed is marked (D49). */
   coverage?: Uint8Array;
-  /** Platform names (D52): the name of an address that knowledge does not name. */
-  platform?: ReadonlyMap<number, string>;
+  /** Platform names (D52): the name of an address that knowledge does not name, and the last address of its entry. */
+  platform?: ReadonlyArray<{ address: number; end: number; name: string }>;
 }
-
-/** Files that the generator writes itself; a module cannot have these names. */
-export const GENERATED_FILES = ["main.asm", "loader.asm", "constants.asm"] as const;
 
 const CODE_TYPES: readonly RegionType[] = ["code", "jumps", "dual-use"];
 const BYTES_PER_LINE = 8;
@@ -106,6 +103,24 @@ function operandValue(address: number, opcode: number, byteAt: (address: number)
   return low;
 }
 
+/**
+ * Each entry point inside a data region of the knowledge, with that region.
+ * A data region wins over an entry (D44, D48): Ghidra does not decode there,
+ * and the source has data there. A code region in the knowledge changes that (F-27).
+ */
+export function entriesInData<R extends { start: number; end: number; type: RegionType }>(entries: readonly number[], regions: readonly R[]): Array<{ entry: number; region: R }> {
+  return entries.flatMap((entry) => {
+    const region = regions.find((row) => entry >= row.start && entry <= row.end && !CODE_TYPES.includes(row.type));
+    return region === undefined ? [] : [{ entry, region }];
+  });
+}
+
+/** Why an image without its entry fails: the image does not hold the program (R2-02). Undefined when the entry is in a segment, or the image has no entry. */
+export function entryOutsideImage(entry: number | undefined, segments: readonly Range[]): string | undefined {
+  if (entry === undefined || segments.some((segment) => entry >= segment.start && entry <= segment.end)) return undefined;
+  return `The entry ${hex4(entry)} is in no segment of the image: the image does not hold the program. Capture it again with c64-unpacker loads or capture.`;
+}
+
 /** Splits the segments into pieces at module starts and lays out instructions and data. */
 export function layout(input: SourceInput): Layout {
   const inImage = (address: number) => input.segments.some((segment) => address >= segment.start && address <= segment.end);
@@ -116,7 +131,7 @@ export function layout(input: SourceInput): Layout {
   };
 
   for (const module of input.modules) {
-    if ((GENERATED_FILES as readonly string[]).includes(module.file)) throw new WireFailure("invalid-input", `The module at ${hex4(module.start)} has the file ${module.file}, which the generator writes itself. Give the module another file.`);
+    if (isGeneratedFile(module.file)) throw new WireFailure("invalid-input", `The module at ${hex4(module.start)} has the file ${module.file}, which the generator writes itself. Give the module another file.`);
   }
   const modules = [...input.modules].sort((a, b) => a.start - b.start);
   const unusedModules = modules.filter((module) => !inImage(module.start)).map(({ start, file }) => ({ start, file }));
@@ -184,10 +199,18 @@ export function layout(input: SourceInput): Layout {
   const symbols = new Map(input.symbols.map((symbol) => [symbol.address, symbol.name]));
   // A platform name that knowledge gives to another address, or that reads as an instruction, is not used.
   const knowledgeNames = new Set(input.symbols.map((symbol) => symbol.name));
-  const platform = new Map([...(input.platform ?? [])].filter(([, name]) => !knowledgeNames.has(name) && !MNEMONICS.has(name.toLowerCase())));
+  const platform = new Map((input.platform ?? []).filter(({ name }) => !knowledgeNames.has(name) && !MNEMONICS.has(name.toLowerCase())).map(({ address, name }) => [address, name]));
+  /** Addresses outside the image without a name of their own, inside a named platform entry of more bytes: the start of that entry (F-20). */
+  const insideEntry = new Map<number, number>();
   const use = (address: number) => {
     if (inImage(address)) wanted.add(address);
     else if (symbols.has(address) || platform.has(address)) outside.add(address);
+    else {
+      const entry = input.platform?.find((row) => address > row.address && address <= row.end && !inImage(row.address) && (symbols.has(row.address) || platform.has(row.address)));
+      if (entry === undefined) return;
+      outside.add(entry.address);
+      insideEntry.set(address, entry.address);
+    }
   };
   for (const piece of pieces) {
     for (const item of piece.items) {
@@ -226,6 +249,8 @@ export function layout(input: SourceInput): Layout {
     names.set(address, name);
     generatedLabels++;
   }
+  // The high byte of a vector is NMINV+1. A zero-page entry keeps zero-page instructions: its constant has two digits.
+  for (const [address, start] of insideEntry) names.set(address, `${names.get(start)!}+${address - start}`);
   return {
     pieces,
     names,

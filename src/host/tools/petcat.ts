@@ -16,14 +16,17 @@ import { runToolOrFail, type ToolContext } from "../../native/run.ts";
 
 const TIMEOUT_MS = 30_000;
 const LISTING = "listing.txt";
-/** petcat's listing lines ("   10 sys2061"), as number and text. */
+/**
+ * petcat's listing lines ("   10 sys2061"), as number and text. petcat
+ * prints π ($ff) as `~`, which is no PETSCII character: the text has π (F-13).
+ */
 export function parseListing(listing: string): Array<{ number: number; text: string }> {
   const lines: Array<{ number: number; text: string }> = [];
   for (const line of listing.split(/\r?\n/)) {
     if (line.trim() === "") continue;
     const match = /^\s*(\d+) ?(.*)$/.exec(line);
     if (match === null) throw new WireFailure("operation-failed", "petcat printed a listing line without a line number.");
-    lines.push({ number: Number(match[1]), text: match[2]! });
+    lines.push({ number: Number(match[1]), text: match[2]!.replaceAll("~", "π") });
   }
   return lines;
 }

@@ -345,12 +345,13 @@ export function lookup(address: number): Lookup {
  * The platform name of each named address (D52): system variables, ROM
  * entries and I/O registers, not mirrors, in address order. Only names that
  * an assembler can use as a symbol, and each name once, at its lowest address.
+ * `end` is the last address of the entry: a vector has two bytes.
  */
-export function platformNames(): Array<{ address: number; name: string; meaning: string }> {
+export function platformNames(): Array<{ address: number; end: number; name: string; meaning: string }> {
   const io = IO.flatMap((block) => block.registers);
   const seen = new Set<string>();
   return [...SYSTEM, ...ROM, ...io]
-    .map((entry) => ({ address: entry.start, name: entry.name, meaning: entry.meaning }))
+    .map((entry) => ({ address: entry.start, end: entry.end, name: entry.name, meaning: entry.meaning }))
     .filter((entry) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.name))
     .sort((a, b) => a.address - b.address)
     .filter((entry) => !seen.has(entry.name) && seen.add(entry.name) !== undefined);

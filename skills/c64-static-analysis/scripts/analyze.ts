@@ -9,6 +9,7 @@ import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 import { COVERAGE, formatC64Address, parseC64Address, prgRange } from "#src/c64.ts";
+import { joinCoverage } from "#src/host-client/coverage.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
@@ -21,7 +22,7 @@ import { currentRevision } from "#src/knowledge/read.ts";
 import { DEFAULT_SPACE, SPACE } from "#src/knowledge/schema.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageFiles } from "./coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps } from "./coverage.ts";
 import { dxaFindings, ghidraFindings, seedsFromKnowledge } from "./findings.ts";
 import { findIdioms } from "./idioms.ts";
 import { instructionList } from "./instructions.ts";
@@ -38,8 +39,9 @@ const USAGE = `analyze.ts <image> [options]
                           mode, operand, target, executed) to this project file as JSON
   --coverage <file>       a coverage map of 64 KiB from c64_memmap (repeatable): its
                           executed code is seeded, and analyzer data over it is reported
-  --max-listed <n>        list at most n labels or functions (default 50, 0 for none);
-                          the counts are always given, and knowledge has all of them
+  --max-listed <n>        list at most n labels, functions or candidates (default 50,
+                          0 for none); the counts are always given, and knowledge has
+                          all labels and functions
   --space <space>         the knowledge space of the image: c64 (the default), drive8
                           for 1541 drive code, or bank0 to bank255 for a cartridge bank
 
@@ -158,7 +160,8 @@ async function run(argv: string[]): Promise<unknown> {
   if (space !== DEFAULT_SPACE && values.coverage !== undefined) throw new UsageError("--coverage works only in space c64");
   const imageKind = values.flat64k ? "flat64k" : "prg";
   const bytes = readProjectFile(image).bytes;
-  const coverage = readCoverageFiles(values.coverage ?? []);
+  const runs = readCoverageMaps(values.coverage ?? []);
+  const coverage = runs.length === 0 ? undefined : joinCoverage(runs);
   const byteAt = imageReader(bytes, imageKind);
   // With coverage, a code finding over an executed instruction start replaces the data of the other analyzer (D58), and the files are the evidence.
   const executed = coverage === undefined ? {} : { executed: (address: number) => (coverage[address]! & COVERAGE.ramExecute) !== 0 };
@@ -170,7 +173,7 @@ async function run(argv: string[]): Promise<unknown> {
   } catch (error) {
     throw new UsageError(`${image}: ${(error as Error).message}`);
   }
-  const idioms = findIdioms(byteAt, { start: loaded.start, end: loaded.end }, coverage);
+  const idioms = findIdioms(byteAt, { start: loaded.start, end: loaded.end }, runs);
 
   const reader = openForRead();
   const revision = currentRevision(reader);
@@ -192,7 +195,11 @@ async function run(argv: string[]): Promise<unknown> {
         revision: imported.revision,
         changes: { regions: imported.regions, references: imported.references },
         conflicts: imported.conflicts.map((conflict) => showConflict(conflict, "heuristic")),
-        candidates: { dop: idioms.candidates.dop.map(formatC64Address), selfModified: idioms.candidates.selfModified.map(formatC64Address) },
+        // Candidates are not knowledge: a larger --max-listed gives more of them.
+        candidates: {
+          dop: listed(idioms.candidates.dop, max, formatC64Address, "a larger --max-listed"),
+          selfModified: listed(idioms.candidates.selfModified, max, formatC64Address, "a larger --max-listed"),
+        },
       },
     };
   };

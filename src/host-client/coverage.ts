@@ -9,21 +9,30 @@ import type { ViceSessionClient } from "./vice-session.ts";
 /** A full coverage file: offset n is address n (D40). */
 export const FULL_COVERAGE = 0x10000;
 
+/** Reads full coverage files from the project, one map per file. `fail` refuses a file of another size. */
+export function readCoverageMaps(paths: string[], fail: (message: string) => never): Uint8Array[] {
+  return paths.map((path) => {
+    const { bytes } = readProjectFile(path);
+    if (bytes.length !== FULL_COVERAGE) {
+      fail(`--coverage ${path} has ${bytes.length} bytes; a full coverage file has 65536, one for each address. Write it with c64_memmap action read and out, without start and end.`);
+    }
+    return bytes;
+  });
+}
+
+/** Joins coverage maps: an address has every flag that any run gave it. */
+export function joinCoverage(maps: readonly Uint8Array[]): Uint8Array {
+  const joined = new Uint8Array(FULL_COVERAGE);
+  for (const map of maps) for (let address = 0; address < FULL_COVERAGE; address++) joined[address]! |= map[address]!;
+  return joined;
+}
+
 /**
  * Reads full coverage files from the project and joins them: an address has
  * every flag that any run gave it. `fail` refuses a file of another size.
  */
 export function readCoverageFiles(paths: string[], fail: (message: string) => never): Uint8Array | undefined {
-  if (paths.length === 0) return undefined;
-  const joined = new Uint8Array(FULL_COVERAGE);
-  for (const path of paths) {
-    const { bytes } = readProjectFile(path);
-    if (bytes.length !== FULL_COVERAGE) {
-      fail(`--coverage ${path} has ${bytes.length} bytes; a full coverage file has 65536, one for each address. Write it with c64_memmap action read and out, without start and end.`);
-    }
-    for (let address = 0; address < FULL_COVERAGE; address++) joined[address]! |= bytes[address]!;
-  }
-  return joined;
+  return paths.length === 0 ? undefined : joinCoverage(readCoverageMaps(paths, fail));
 }
 
 /** The coverage bytes of start..end, read from the session in parts. */

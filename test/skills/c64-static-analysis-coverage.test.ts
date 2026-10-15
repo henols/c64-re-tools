@@ -9,12 +9,13 @@ import { join, resolve } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
+import { joinCoverage } from "../../src/host-client/coverage.ts";
 import { openForRead, openForWrite } from "../../src/knowledge/database.ts";
 import { importFindings } from "../../src/knowledge/import.ts";
 import { regionsOverlapping } from "../../src/knowledge/read.ts";
 import { classifyRegion } from "../../src/knowledge/write.ts";
 import { DXA, findTool } from "../../src/native/discover.ts";
-import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageFiles } from "../../skills/c64-static-analysis/scripts/coverage.ts";
+import { codeEntries, coverageConflicts, coverageEntries, imageReader, readCoverageMaps } from "../../skills/c64-static-analysis/scripts/coverage.ts";
 import { VECTORED_ROUTINE, vectoredPrg } from "../fixtures/prg/vectored.ts";
 
 const project = mkdtempSync(join(tmpdir(), "c64-re-tools-analysis-coverage-"));
@@ -47,10 +48,12 @@ test("coverage seeds the first instruction of each flow, not every instruction",
 
 test("a coverage file for analysis covers all 64 KiB", () => {
   writeFileSync(join(project, "part.bin"), new Uint8Array(256));
-  assert.throws(() => readCoverageFiles(["part.bin"]), /has 256 bytes; a full coverage file has 65536/);
+  assert.throws(() => readCoverageMaps(["part.bin"]), /has 256 bytes; a full coverage file has 65536/);
   writeFileSync(join(project, "a.bin"), mapWith([0x1000]));
   writeFileSync(join(project, "b.bin"), mapWith([0x2000]));
-  const joined = readCoverageFiles(["a.bin", "b.bin"])!;
+  const runs = readCoverageMaps(["a.bin", "b.bin"]);
+  assert.equal(runs.length, 2, "one map for each file");
+  const joined = joinCoverage(runs);
   assert.equal(joined[0x1000], COVERAGE.ramExecute);
   assert.equal(joined[0x2000], COVERAGE.ramExecute, "runs join");
 });

@@ -5,7 +5,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import { COVERAGE, instructionLength } from "#src/c64.ts";
-import { FULL_COVERAGE, readCoverageFiles as readFiles } from "#src/host-client/coverage.ts";
+import { FULL_COVERAGE, readCoverageMaps as readMaps } from "#src/host-client/coverage.ts";
 import { listRegions, type RegionRow } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, type Space } from "#src/knowledge/schema.ts";
 import { UsageError } from "#src/script.ts";
@@ -15,9 +15,9 @@ const FULL_MAP = FULL_COVERAGE;
 const FLOW_ENDS = new Set([0x00, 0x40, 0x4c, 0x60, 0x6c]);
 const ANALYZER_ORIGINS = new Set(["dxa", "ghidra", "heuristic"]);
 
-/** Reads coverage files and joins them: an address has every flag that any run gave it. */
-export function readCoverageFiles(paths: string[]): Uint8Array | undefined {
-  return readFiles(paths, (message) => {
+/** Reads coverage files, one map per file (a run). */
+export function readCoverageMaps(paths: string[]): Uint8Array[] {
+  return readMaps(paths, (message) => {
     throw new UsageError(message);
   });
 }

@@ -56,6 +56,7 @@ node <skill>/scripts/generate.ts unpacked/image.json --out src --loader
 - Code regions, and the instructions that Ghidra decodes outside of data regions, become instructions.
 - Data regions become data by their type: `!byte`, `!word`, `!pet`, `!scr`, `!fill`, tables of labels, and sprite bytes in binary.
 - `lda+2 $0012` is an absolute operand below $0100. `+1` is a zero-page operand with a label.
+- `sta NMINV+1` is an address inside a platform entry of more than one byte, for example the high byte of a vector.
 - `name = * + 1` is a label inside an instruction, for example for code that changes its own operand.
 - `!byte` with an instruction as its comment: ACME writes this instruction with a different opcode. The bytes keep the source identical.
 - `not decoded` marks bytes in a code region that Ghidra did not decode.
@@ -94,19 +95,23 @@ One JSON object:
 - `files`: the files in the output directory.
 - `instructions`, `dataBytes` and `undecodedBytes`.
 - `labels`: `named` labels from the knowledge and `generated` labels `l_xxxx`.
+- `entriesInData`: each `--entry` in a data region of the knowledge, with the `region` and its `origin`. Ghidra does not decode an entry in a data region.
 - `asBytes`: the instructions that the source has as bytes.
-- `unusedModules`: modules that start outside the image.
+- `unusedModules`: modules in the knowledge whose start is in no segment of the image. Often this tells that the image does not hold code that the knowledge describes.
+- `entryOutside`: the entry of `image.json` is in no segment of the image, with a `reason`. The image does not hold the program.
 - `notExecuted`: with `--coverage`, the count of instructions that no run executed, the count of their ranges, and the first ranges. `all` names the file `not_executed.json` in `--out`. It has all of the ranges. Put all of these ranges in the report.
 - `check`: `identical`, and the result for each segment. A different segment gives its first different address.
 - `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`. When the script cannot make the loader, `loader` has `verified: false` and a `reason`. The loader includes the source. Thus a source that does not assemble to the image also stops the loader.
 
-The exit status is 0 when the source is identical and the emulator check of the loader passes. The exit status is 1 for a failed check and for an error. The exit status is 2 for a wrong argument.
+The exit status is 0 when the source is identical and the emulator check of the loader passes. The exit status is 1 for a failed check, for an entry in no segment, and for an error. The exit status is 2 for a wrong argument.
 
 ## Failure and conflicts
 
 - `check.diagnostics`: ACME did not assemble the source. A name in the knowledge can be wrong for ACME. Read the diagnostics and change the name with c64-knowledge.
 - `check.identical: false`: the script has a defect. Give the result to the user.
 - `invalid-input` that names a symbol or a module: change that symbol or module in the knowledge.
+- `entryOutside`: the run fails, but the script still writes and checks the source. With `--loader`, `loader.verified` is `false` with the same `reason`. Capture the image again with c64-unpacker `loads` or `capture`. Make sure that a segment holds the entry.
+- `entriesInData`: an analyzer region of data hides the code at the entry. If the entry is code, record a code region at the entry with the c64-knowledge skill, for example `classify '$0500' '$05ff' code`. A region of the user or the LLM replaces the analyzer region. Then generate again.
 - `loader.verified: false` with a `reason`: the script did not make the loader. The script still writes and checks the source. When no copy order or no free pages exist, or the loader needs too many copies, the reason gives the ranges. Capture the image again with fewer segments, or write the loader by hand.
 - `loader.verified: false` with `differences`: the loader ran, and `differences` gives the bytes and registers that are not equal.
 - `installation-incomplete`, or `machine-unavailable` with a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disassembler or emulator script.

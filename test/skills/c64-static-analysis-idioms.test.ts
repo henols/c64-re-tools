@@ -63,13 +63,26 @@ test("three JMP abs in a row are a JMP table; a BIT skip is dual-use bytes with 
 });
 
 test("DOP padding and self-modified opcodes are candidates from the coverage only", () => {
-  const { byteAt } = image({ 0x1a00: [0x80, 0x00, 0xa9, 0x01] });
-  const coverage = new Uint8Array(0x10000);
-  coverage[0x1a00] = COVERAGE.ramExecute;
-  coverage[0x1a02] = COVERAGE.ramExecute | COVERAGE.ramWrite;
-  const found = findIdioms(byteAt, RANGE, coverage);
+  const { byteAt } = image({ 0x1a00: [0x80, 0x00, 0xa9, 0x01, 0xa9, 0x02] });
+  const run = new Uint8Array(0x10000);
+  run[0x1a00] = COVERAGE.ramExecute;
+  run[0x1a02] = COVERAGE.ramExecute | COVERAGE.ramWrite;
+  const found = findIdioms(byteAt, RANGE, [run]);
   assert.deepEqual(found.candidates, { dop: [0x1a00], selfModified: [0x1a02] });
   assert.deepEqual(findIdioms(byteAt, RANGE).candidates, { dop: [], selfModified: [] });
+});
+
+test("a self-modified opcode is written and executed in one run: a copier's writes in another run do not count (F-16)", () => {
+  const { byteAt } = image({ 0x1a00: [0xa9, 0x01, 0xa9, 0x02] });
+  // The copier run writes $1a00-$1a03; the game run executes them and writes $1a02 again.
+  const copier = new Uint8Array(0x10000).fill(COVERAGE.ramWrite, 0x1a00, 0x1a04);
+  const game = new Uint8Array(0x10000);
+  game[0x1a00] = COVERAGE.ramExecute;
+  game[0x1a02] = COVERAGE.ramExecute | COVERAGE.ramWrite;
+  assert.deepEqual(findIdioms(byteAt, RANGE, [copier, game]).candidates.selfModified, [0x1a02]);
+  // More than 64 are all given: the result lists them with their count.
+  const many = new Uint8Array(0x10000).fill(COVERAGE.ramExecute | COVERAGE.ramWrite, 0x1000, 0x1100);
+  assert.equal(findIdioms(byteAt, RANGE, [many]).candidates.selfModified.length, 0x100);
 });
 
 test("an analysis writes the idioms as heuristic knowledge and DXA finds the code behind an RTS table", { skip: (() => { try { findTool(DXA); return false; } catch { return "dxa is not installed"; } })(), timeout: 120_000 }, () => {

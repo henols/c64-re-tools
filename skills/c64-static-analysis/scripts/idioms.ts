@@ -1,10 +1,13 @@
 // 6502 idioms that hide code from a disassembler (D44): RTS dispatch tables,
 // JMP tables and BIT skips are found by their exact instruction patterns and
 // become heuristic findings and entry points; DOP padding and self-modified
-// opcodes are only reported. A table's length is not known statically:
-// entries count while each target is a plausible instruction in the program.
+// opcodes are only reported. A self-modified opcode is one that one run wrote
+// and executed: a copier's writes in one run and their execution in another
+// do not count (F-16). A table's length is not known statically: entries
+// count while each target is a plausible instruction in the program.
 
 import { COVERAGE } from "#src/c64.ts";
+import { joinCoverage } from "#src/host-client/coverage.ts";
 import type { NormalizedFindings } from "#src/knowledge/import.ts";
 import type { ImageByte } from "./coverage.ts";
 
@@ -22,7 +25,7 @@ export interface Idioms {
   /** Table ranges for the same run: they are data. */
   dataRanges: Array<{ start: number; end: number }>;
   counts: { rtsTables: number; jumpTables: number; bitSkips: number };
-  /** Seen in the coverage, not written: the LLM decides. */
+  /** Seen in the coverage, not written: the LLM decides. All of them: the result lists the first ones. */
   candidates: { dop: number[]; selfModified: number[] };
 }
 
@@ -38,7 +41,9 @@ const word = (byteAt: ImageByte, address: number) => {
   return low === undefined || high === undefined ? undefined : low | (high << 8);
 };
 
-export function findIdioms(byteAt: ImageByte, range: { start: number; end: number }, coverage?: Uint8Array): Idioms {
+/** `runs` are the coverage maps, one for each file. */
+export function findIdioms(byteAt: ImageByte, range: { start: number; end: number }, runs: readonly Uint8Array[] = []): Idioms {
+  const coverage = runs.length === 0 ? undefined : joinCoverage(runs);
   const regions: NormalizedFindings["regions"] = [];
   const references: NormalizedFindings["references"] = [];
   const entryPoints = new Set<number>();
@@ -113,14 +118,14 @@ export function findIdioms(byteAt: ImageByte, range: { start: number; end: numbe
     }
   }
 
-  // Candidates from the coverage: DOP padding that ran, and opcodes that the program wrote and then ran.
+  // Candidates from the coverage: DOP padding that ran, and opcodes that one run wrote and executed.
   const candidates = { dop: [] as number[], selfModified: [] as number[] };
   if (coverage !== undefined) {
+    const both = COVERAGE.ramWrite | COVERAGE.ramExecute;
     for (let address = range.start; address <= range.end; address++) {
-      const flags = coverage[address]!;
-      if ((flags & COVERAGE.ramExecute) === 0) continue;
-      if (DOPS.has(byteAt(address)!) && candidates.dop.length < MAX_TABLE) candidates.dop.push(address);
-      if ((flags & COVERAGE.ramWrite) !== 0 && candidates.selfModified.length < MAX_TABLE) candidates.selfModified.push(address);
+      if ((coverage[address]! & COVERAGE.ramExecute) === 0) continue;
+      if (DOPS.has(byteAt(address)!)) candidates.dop.push(address);
+      if (runs.some((run) => (run[address]! & both) === both)) candidates.selfModified.push(address);
     }
   }
 

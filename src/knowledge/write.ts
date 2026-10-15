@@ -41,6 +41,8 @@ import {
   MAX_ELEMENT,
   MODULE_FILE,
   DEFAULT_SPACE,
+  GENERATED_FILES,
+  isGeneratedFile,
   SPACE,
   NO_ELEMENT_TYPES,
   REFERENCE_KINDS,
@@ -431,6 +433,9 @@ function checkModule(request: ModuleRequest): void {
   checkSpace(request);
   checkAddress(request.start, "start");
   if (!MODULE_FILE.test(request.file)) throw new KnowledgeError("invalid-input", "A module file is a name of letters, digits, underscores or hyphens (at most 60) that ends in .asm, without a directory.");
+  if (isGeneratedFile(request.file)) {
+    throw new KnowledgeError("invalid-input", `c64-source writes ${GENERATED_FILES.join(", ")} itself, in any letter case, so a module cannot have the file ${request.file}. Give the module another file.`);
+  }
   if (request.title !== undefined && (request.title.trim().length === 0 || request.title.length > MAX_COMMENT)) throw new KnowledgeError("invalid-input", `A module title has 1 to ${MAX_COMMENT} characters.`);
 }
 

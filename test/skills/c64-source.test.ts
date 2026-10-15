@@ -18,7 +18,7 @@ import { findGhidra } from "../../src/native/ghidra/index.ts";
 import { localToolContext } from "../../src/native/local.ts";
 import { copyOrder, planLoader, readEntryState, simulate, type EntryState } from "../../skills/c64-source/scripts/loader.ts";
 import { MODE_LENGTH, OPCODES } from "../../skills/c64-source/scripts/opcodes.ts";
-import { layout, render, type SourceInput } from "../../skills/c64-source/scripts/source.ts";
+import { entriesInData, entryOutsideImage, layout, render, type SourceInput } from "../../skills/c64-source/scripts/source.ts";
 
 let acmeSkip: string | false = false;
 try {
@@ -166,14 +166,16 @@ test("with real ACME, data of every kind assembles to the same bytes", { skip: a
   assert.deepEqual([...attachments![0]!.subarray(2)], bytes);
 });
 
-test("with real ACME, zero-page names outside the image assemble to zero-page instructions", { skip: acmeSkip }, async () => {
-  // LDA $66, STA ($66),Y, LDA $66,X, LDA $0005 (absolute), RTS; $66 and $05 have names and lie outside the image.
-  const bytes = [0xa5, 0x66, 0x91, 0x66, 0xb5, 0x66, 0xad, 0x05, 0x00, 0x60];
-  const instructions = new Map([[0x1000, 2], [0x1002, 2], [0x1004, 2], [0x1006, 3], [0x1009, 1]]);
+test("with real ACME, zero-page names outside the image assemble to zero-page instructions, and an address inside a platform entry is NAME+n", { skip: acmeSkip }, async () => {
+  // LDA $66, STA ($66),Y, LDA $66,X, LDA $0005 (absolute), STA $0319, LDA $04, LDA $0004 (absolute), RTS;
+  // $66 and $05 have names, NMINV is $0318-$0319 and ADRAY1 $03-$04, all outside the image.
+  const bytes = [0xa5, 0x66, 0x91, 0x66, 0xb5, 0x66, 0xad, 0x05, 0x00, 0x8d, 0x19, 0x03, 0xa5, 0x04, 0xad, 0x04, 0x00, 0x60];
+  const instructions = new Map([[0x1000, 2], [0x1002, 2], [0x1004, 2], [0x1006, 3], [0x1009, 3], [0x100c, 2], [0x100e, 3], [0x1011, 1]]);
   const symbols = [{ address: 0x66, name: "ptr" }, { address: 0x05, name: "small" }];
-  const rendered = render(layout(input(bytes, 0x1000, { instructions, symbols })), new Set(), []);
-  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nsmall = $05\nptr = $66\n");
-  assert.match(textOf(rendered, "segment_1000.asm"), /sta \(ptr\),y\n {8}lda ptr,x\n {8}lda\+2 small\n/);
+  const platform = [{ address: 0x03, end: 0x04, name: "ADRAY1" }, { address: 0x0318, end: 0x0319, name: "NMINV" }];
+  const rendered = render(layout(input(bytes, 0x1000, { instructions, symbols, platform })), new Set(), []);
+  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nADRAY1 = $03\nsmall = $05\nptr = $66\nNMINV = $0318\n");
+  assert.match(textOf(rendered, "segment_1000.asm"), /sta \(ptr\),y\n {8}lda ptr,x\n {8}lda\+2 small\n {8}sta NMINV\+1\n {8}lda ADRAY1\+1\n {8}lda\+2 ADRAY1\+1\n/);
   const contents = rendered.files.map((file) => Buffer.from(file.text));
   const { result, attachments } = await assemble(
     { files: rendered.files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "main.asm", includeDirs: [], defines: {} },
@@ -276,6 +278,43 @@ test("with real Ghidra and ACME, a loader that cannot be planned still gives the
   assert.match(json.loader.reason, /needs 41 copies|needs 40 copies/);
 });
 
+test("with real Ghidra and ACME, an image whose entry is in no segment gives the checked source and fails (R2-02)", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
+  projects.push(project);
+  // The program at $0801 is missing: the image has only $1000-$1003, which starts with RTS.
+  const memory = new Uint8Array(0x10000);
+  memory.set([0x60, 0xea, 0xea, 0xea], 0x1000);
+  mkdirSync(join(project, "unpacked"));
+  writeFileSync(join(project, "unpacked", "image.bin"), memory);
+  writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ entry: "$0801", image: "image.bin", segments: [{ start: "$1000", end: "$1003" }] }));
+  writeFileSync(
+    join(project, "unpacked", "entry_state.json"),
+    JSON.stringify({
+      registers: { pc: "$0801", a: 0, x: 0, y: 0, sp: 0xf6, flags: { n: false, v: false, b: false, d: false, i: false, z: false, c: false } },
+      cpuPort: { $00: 0x2f, $01: 0x37 },
+      pages: Object.fromEntries([0, 1, 2, 3].map((page) => [`$${(page << 8).toString(16).padStart(4, "0")}`, "00".repeat(256)])),
+    }),
+  );
+  const generate = (...args: string[]) =>
+    spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "unpacked/image.json", "--out", "src", "--entry", "$1000", ...args], {
+      cwd: project,
+      env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
+      encoding: "utf8",
+    });
+  const reason = /^The entry \$0801 is in no segment of the image: the image does not hold the program\. Capture it again/;
+  const withLoader = generate("--loader");
+  assert.equal(withLoader.status, 1, withLoader.stdout + withLoader.stderr);
+  const json = JSON.parse(withLoader.stdout) as { check: { identical: boolean }; files: string[]; entryOutside: { entry: string; reason: string }; loader: { verified: boolean; reason: string } };
+  assert.equal(json.check.identical, true);
+  assert.ok(json.files.includes("main.asm") && !json.files.includes("loader.asm"));
+  assert.equal(json.entryOutside.entry, "$0801");
+  assert.equal(json.loader.verified, false);
+  assert.match(json.loader.reason, reason);
+  const source = generate();
+  assert.equal(source.status, 1, source.stdout + source.stderr);
+  assert.match((JSON.parse(source.stdout) as { entryOutside: { reason: string } }).entryOutside.reason, reason);
+});
+
 test("with coverage, each run of instructions that no run executed is marked and listed (D49)", () => {
   // $1000 NOP (executed), $1001 NOP, $1002 NOP, $1003-$1004 data, $1005 RTS
   const bytes = [0xea, 0xea, 0xea, 0x00, 0x00, 0x60];
@@ -293,9 +332,37 @@ test("an address without a knowledge name gets its platform name; a knowledge na
   // STA $D020, STA $D021, JSR $FFD2, RTS
   const bytes = [0x8d, 0x20, 0xd0, 0x8d, 0x21, 0xd0, 0x20, 0xd2, 0xff, 0x60];
   const instructions = new Map([[0x1000, 3], [0x1003, 3], [0x1006, 3], [0x1009, 1]]);
-  const platform = new Map([[0xd020, "EXTCOL"], [0xd021, "BGCOL0"], [0xffd2, "CHROUT"]]);
+  const platform = [{ address: 0xd020, end: 0xd020, name: "EXTCOL" }, { address: 0xd021, end: 0xd021, name: "BGCOL0" }, { address: 0xffd2, end: 0xffd4, name: "CHROUT" }];
   const laid = layout(input(bytes, 0x1000, { instructions, platform, symbols: [{ address: 0xd021, name: "background" }, { address: 0x2000, name: "CHROUT" }] }));
   const rendered = render(laid, new Set(), []);
   assert.match(textOf(rendered, "segment_1000.asm"), / {8}sta EXTCOL\n {8}sta background\n {8}jsr \$ffd2\n/);
   assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nEXTCOL = $d020\nbackground = $d021\n");
+});
+
+test("an address inside a platform entry gets NAME+n only when it has no name of its own and the entry name is in use (F-20)", () => {
+  // STA $0319, STA $0315, STA $0317, RTS
+  const bytes = [0x8d, 0x19, 0x03, 0x8d, 0x15, 0x03, 0x8d, 0x17, 0x03, 0x60];
+  const instructions = new Map([[0x1000, 3], [0x1003, 3], [0x1006, 3], [0x1009, 1]]);
+  const platform = [{ address: 0x0314, end: 0x0315, name: "CINV" }, { address: 0x0316, end: 0x0317, name: "CBINV" }, { address: 0x0318, end: 0x0319, name: "NMINV" }];
+  // $0315 has a knowledge name; $0316 has a knowledge name too, so $0317 is that name +1; NMINV is taken by another address.
+  const symbols = [{ address: 0x0315, name: "irqHigh" }, { address: 0x0316, name: "brkVector" }, { address: 0x2000, name: "NMINV" }];
+  const rendered = render(layout(input(bytes, 0x1000, { instructions, platform, symbols })), new Set(), []);
+  assert.match(textOf(rendered, "segment_1000.asm"), / {8}sta \$0319\n {8}sta irqHigh\n {8}sta brkVector\+1\n/);
+  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nirqHigh = $0315\nbrkVector = $0316\n");
+});
+
+test("an --entry in a data region of the knowledge is reported with the region (F-27)", () => {
+  const regions = [
+    { start: 0x0000, end: 0x04ff, type: "bytes" as const, origin: "dxa" },
+    { start: 0x0500, end: 0x05ff, type: "code" as const, origin: "user" },
+    { start: 0x0600, end: 0x07ff, type: "dual-use" as const, origin: "llm" },
+  ];
+  assert.deepEqual(entriesInData([0x0400, 0x0500, 0x0600, 0x0900], regions), [{ entry: 0x0400, region: regions[0] }]);
+});
+
+test("an image entry in no segment is named: the image does not hold the program (R2-02)", () => {
+  const segments = [{ start: 0xc2ff, end: 0xcfff }, { start: 0xe000, end: 0xfffe }];
+  assert.match(entryOutsideImage(0x0801, segments)!, /^The entry \$0801 is in no segment of the image: the image does not hold the program\./);
+  assert.equal(entryOutsideImage(0xc300, segments), undefined);
+  assert.equal(entryOutsideImage(undefined, segments), undefined);
 });

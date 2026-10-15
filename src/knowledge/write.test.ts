@@ -331,6 +331,10 @@ test("a module starts a file of generated source: one per address and per file, 
   setModule(db, { origin: "user" }, { start: 0x2000, file: "player.asm" });
   assert.throws(() => setModule(db, llm, { start: 0x3000, file: "player.asm" }), failsWith("conflict"));
   for (const file of ["../x.asm", "sub/x.asm", "x.a", ".asm", "x y.asm"]) assert.throws(() => setModule(db, llm, { start: 0x3000, file }), failsWith("invalid-input"), file);
+  // c64-source writes these files itself; macOS and Windows ignore the letter case (F-31).
+  for (const file of ["main.asm", "loader.asm", "constants.asm", "Main.asm", "CONSTANTS.asm"]) {
+    assert.throws(() => setModule(db, llm, { start: 0x3000, file }), (error: unknown) => error instanceof KnowledgeError && error.code === "invalid-input" && /writes main\.asm, loader\.asm, constants\.asm itself/.test(error.message), file);
+  }
   setModule(db, llm, { start: 0x0801, file: "start.asm" });
   assert.deepEqual(moduleAt(db, 0x0801), { space: "c64", start: 0x0801, file: "start.asm", title: "BASIC start and setup", origin: "llm", revision: 3 }, "a write without a title keeps it (F-26)");
   assert.deepEqual(listModules(db, undefined, ["user"]).map((row) => row.file), ["player.asm"]);

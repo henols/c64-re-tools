@@ -31,7 +31,7 @@ node <skill>/scripts/analyze.ts extracted/game.prg --entry '$080d' --decompile '
 | `--listing analysis/game.lst` | DXA only: write the disassembly listing to this project file. |
 | `--decompile '$0818'` | Ghidra only: decompile the routine at this address. Use it again for more routines, at most 32. |
 | `--flat64k` | The file is 64 KiB of memory from `$0000`, not a PRG. |
-| `--max-listed 20` | List at most this number of labels or functions. The default is 50. Use 0 to list none. |
+| `--max-listed 20` | List at most this number of labels, functions or candidates. The default is 50. Use 0 to list none. |
 | `--instructions analysis/instructions.json` | Ghidra only: write every instruction to this project file as JSON. Each has `address`, `bytes`, `mnemonic`, `mode` and `operand` in 6502 syntax. A branch, jump or call also has its `target`. With `--coverage`, `executed` tells if it ran. |
 | `--space drive8` | The knowledge space of the image: `drive8` for code from the 1541 drive, or `bank0` to `bank255` for a cartridge bank. The default is `c64`. The seeds come from that space, and the findings go into it. |
 | `--coverage coverage/attract.bin` | A coverage file of 64 KiB from `c64_memmap` (action `read` with `out`). Use it again for more runs. The executed code becomes entry points. |
@@ -63,9 +63,9 @@ The analyzers take at most 1024 entry points. Knowledge routines and `--entry` c
    - `changes` counts the symbols, regions and references that the analysis `added`, `changed`, `retired` or kept `unchanged`. `suppressed` counts the findings that the analysis did not write, because a removal blocks that place.
    - DXA: `regions` lists the code and data regions. `labels` gives the number of names that DXA found (`count`) and lists the first names (`listed`).
    - Ghidra: `functions` gives the number of routines that Ghidra found (`count`) and lists the first routines (`listed`). `decompilations` gives C-like code for the requested routines.
-   - If a list is not complete, `rest` gives the c64-knowledge command that lists all of them.
+   - If a list is not complete, `rest` gives the c64-knowledge command that lists all of them. For `candidates`, `rest` tells you to give a larger `--max-listed`.
    - `conflicts` lists the places where the analyzer and the current knowledge disagree.
-   - `idioms` tells what the script found by pattern: RTS dispatch tables (`rtsTables`), JMP tables (`jumpTables`) and BIT skips (`bitSkips`). The script writes them as knowledge with the origin `heuristic`, and seeds their targets into the same analysis. `candidates` gives DOP padding and opcodes that the program wrote and then executed. The script does not write those. Look at them and decide.
+   - `idioms` tells what the script found by pattern: RTS dispatch tables (`rtsTables`), JMP tables (`jumpTables`) and BIT skips (`bitSkips`). The script writes them as knowledge with the origin `heuristic`, and seeds their targets into the same analysis. `candidates` gives DOP padding (`dop`) and opcodes that the program wrote and then executed (`selfModified`). For `selfModified`, the write and the execution must be in one coverage file. Each list has a `count`. The script does not write the candidates. Look at them and decide.
    - With `--coverage`, a code finding replaces the DXA or Ghidra data where a run executed an instruction start. `coverageConflicts` lists the analyzer data regions where the coverage still shows executed code. Classify them as code with the c64-knowledge skill, or as `dual-use` when the bytes are also data.
 6. Give each important routine a name with the c64-knowledge skill. Then run the analysis again. The analyzers use the new names.
 
