@@ -1,6 +1,6 @@
 ---
 name: c64-knowledge
-description: Use this skill to read, write, correct and review the durable knowledge of a C64 project in .c64-re-tools/knowledge/. It gives the knowledge at an address, and it names symbols, classifies memory regions, sets comments and records references. It also shows the history of each change, and it can revert to an earlier revision. Do not use it for live emulator state or for static analysis.
+description: Use this skill to read, write, correct and review the durable knowledge of a C64 project in .c64-re-tools/knowledge/. It gives the knowledge at an address, and it names symbols, classifies memory regions, sets comments and records references. It records patches and macros for the generated source. It also shows the history of each change, and it can revert to an earlier revision. Do not use it for live emulator state or for static analysis.
 ---
 
 # c64-knowledge
@@ -47,9 +47,14 @@ The script prints one JSON object. An error prints `{"error": {"code": ..., "mes
 | Start a file of generated source | `module '$2000' player.asm --title 'Player movement'` / `unmodule '$2000'` |
 | Write the operand of an instruction as an expression | `operand '$8079' --lo irq_handler --image unpacked/image.json` / `unoperand '$8079'` |
 | Operand expressions | `operands` with `--start` and `--end` |
+| Replace a range with code when a switch is on | `patch '$100e' '$1010' CRACK --code-file crack.asm --image unpacked/image.json` / `unpatch '$100e'` |
+| Patches and switches | `patches` with `--switch`, and `switches` |
+| Write a macro | `macro inc16 --params dst --body-file inc16.asm` / `unmacro inc16` |
+| Write instructions as one use of a macro | `use '$1005' '$100a' inc16 --args ptr --image unpacked/image.json` / `unuse '$1005'` |
+| Macros and their uses | `macros`, and `uses` with `--start`, `--end` and `--macro` |
 | Files of generated source | `modules` |
 | The address spaces that hold knowledge | `spaces` |
-| History | `history '$2100'`, `history --name update_player`, `revisions`, `revision 20261015T2145` |
+| History | `history '$2100'`, `history --name update_player`, `history --macro inc16`, `revisions`, `revision 20261015T2145` |
 | Go back to an earlier state | `revert 20261015T2145` |
 | Decide the conflicts after a git merge | `merge --reason 'merge of two computers'` |
 
@@ -122,14 +127,19 @@ The ops and their fields:
 | `unmodule` | `start` |
 | `operand` | `address`, `select` (`lo`, `hi`, `value` or `expr`), `symbol` and `offset` (optional), or `expression` for `expr` |
 | `unoperand` | `address` |
+| `patch` | `start`, `end`, `switch`, `code` (empty for NOP only), `comment` (optional) |
+| `unpatch`, `unuse` | `start` |
+| `macro` | `name`, `params` (a list or a comma list), `body`, `comment` (optional) |
+| `unmacro` | `name` |
+| `use` | `start`, `end`, `macro`, `args` (a list or a comma list) |
 
-A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
+A `line` comment is a line of its own above the address. A `side` comment is at the end of the line of the address. `apply` with an `operand`, `patch` or `use` write needs `--image`. All writes become one revision. If the knowledge refuses one write, the script writes nothing, and the error names the write.
 
 The c64-provenance skill writes a batch with `match --out`. The batch holds the names of library routines at their addresses in this program. Read the `batch.leftOut` of its result first. Then apply the batch with the command in its `apply`.
 
 ## Modules
 
-A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The c64-source skill writes `main.asm`, `loader.asm` and `constants.asm` itself. Thus a module cannot have one of these names, in upper or lower case. The title becomes the first line of the file. A `module` write without a title keeps the title that the module has. Modules have a history, and `revert` restores them.
+A module tells the c64-source skill where a file of the generated source starts. The file runs to the next module or to the end of its segment. Each address has one module, and each file name has one module. A file name has letters, digits, underscores or hyphens, and ends in `.asm`. The c64-source skill writes `main.asm`, `loader.asm`, `constants.asm` and `macros.asm` itself. Thus a module cannot have one of these names, in upper or lower case. The title becomes the first line of the file. A `module` write without a title keeps the title that the module has. Modules have a history, and `revert` restores them.
 
 ## Operand expressions
 
@@ -152,6 +162,34 @@ Give one selector:
 - A `rename` of a symbol changes the name in each expression. The knowledge refuses `remove-symbol` while an expression uses the symbol. Use `unoperand` first.
 
 Write an operand expression for each immediate that is a byte of an address. Also write one for each table read through the byte before the table. The pointer candidates of the c64-static-analysis skill show many of these places.
+
+## Code switches
+
+A patch is ACME code that replaces a range of the image when the build defines its switch as 1. Use patches to change the program, for example for a crack, a trainer or a debug hook. The default build does not define the switch. Thus the c64-source skill still makes a source that is identical to the image.
+
+- A switch name is upper case, for example `CRACK` or `TRAINER`. It cannot be the name of a symbol or a platform name.
+- Many patches can have the same switch. The c64-source skill builds each switch on its own. It does not build two switches together.
+- The code must fit in the range. NOP ($EA) fills the bytes after the code. `--nop` gives a range of NOP only.
+- `--code` gives the code as text. `--code-file` reads the code from a project file. The code can use the labels and the macros of the source, and local labels with a dot, for example `.skip`.
+- The braces in the code must be pairs, because the source puts the code inside `{ }`.
+- A patch cannot overlap another patch or a macro use.
+- Give the image with `--image`. Each byte of the range must be in the image.
+- A `patch` write without `--comment` keeps the comment that the patch has.
+
+Build the program with a switch on with the c64-assembler skill: `--define CRACK=1`.
+
+## Macros
+
+A macro writes a run of instructions as one line of the source, for example `+inc16 ptr`. Use macros to make the source shorter and easier to read.
+
+- `macro` writes the ACME macro: its name, its params and its body. `--params` gives the params as a comma list, without a dot. The body uses each param with a dot, for example `.dst`.
+- `use` writes the instructions from the start to the end as one use of a macro. `--args` gives one expression for each param, as a comma list. Each name in an arg is a symbol of the knowledge or a platform name.
+- The range of a use is complete instructions. Give the image with `--image`.
+- A `rename` of a symbol changes the name in each arg. The knowledge refuses `remove-symbol` while an arg uses the symbol.
+- The knowledge refuses `unmacro` while the macro has uses. It also refuses a change of the number of params while the macro has uses.
+- A use cannot overlap a patch or another use.
+
+The c64-source skill writes a use only when the use gives the bytes of the image. If not, it writes the instructions and gives the reason. The c64-static-analysis skill finds uses of known 6502 idioms and writes them to a batch with `--macro-batch`.
 
 ## Removals
 

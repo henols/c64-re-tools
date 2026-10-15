@@ -7,7 +7,7 @@ description: Use this skill to generate ACME source code for a C64 program from 
 
 ## Purpose
 
-Generate ACME source from an image and the knowledge. The same knowledge gives the same source. Make the source better through the knowledge: names, comments, regions and modules. Then generate again.
+Generate ACME source from an image and the knowledge. The same knowledge gives the same source. Make the source better through the knowledge: names, comments, regions, modules and macros. Change the program through patches. Then generate again.
 
 This skill does not change the knowledge.
 
@@ -58,7 +58,8 @@ node <skill>/scripts/generate.ts unpacked/image.json --out src --loader
 
 - `main.asm` sets the address of each segment and includes the files in address order.
 - Each module in the knowledge is one file. A module starts at its address and stops at the next module or at the end of its segment. Without modules, each segment is one file, `segment_xxxx.asm`.
-- `constants.asm` holds the names of addresses outside the image, for example `EXTCOL = $d020`. The file puts the names in groups by memory area, for example zero page, VIC-II registers or CIA 1 registers. Each group is in address order. Drive code and banks have one group only. The side comment of a name tells what the address is. This text is the knowledge comment of the address. Without a comment, the text is the platform meaning. When the knowledge name is not the platform name, the platform name comes first. For an I/O mirror without a meaning, the text gives the register that the mirror repeats. Then `Used:` counts how the source uses the name. The kinds are `read`, `written`, `modified`, `called`, `jumped to`, `jumped through`, `branched to`, `pointer`, `address` and `table`. `address` is an immediate operand expression. `table` is an entry in a table of addresses.
+- `constants.asm` holds the names of addresses outside the image, for example `EXTCOL = $d020`. The file puts the names in groups by memory area, for example zero page, VIC-II registers or CIA 1 registers. Each group is in address order. Drive code and banks have one group only. The side comment of a name tells what the address is. This text is the knowledge comment of the address. Without a comment, the text is the platform meaning. When the knowledge name is not the platform name, the platform name comes first. For an I/O mirror without a meaning, the text gives the register that the mirror repeats. Then `Used:` counts how the source uses the name. The kinds are `read`, `written`, `modified`, `called`, `jumped to`, `jumped through`, `branched to`, `pointer`, `address`, `table` and `macro argument`. `address` is an immediate operand expression. `table` is an entry in a table of addresses.
+- The top of `constants.asm` sets each switch to 0, for example `!ifndef CRACK { CRACK = 0 }`. A build that defines the switch as 1 uses the patches of that switch.
 - A label or a constant gets the name of the address in the knowledge. Without a knowledge name, it gets the platform name of the c64-memory-map skill, for example `EXTCOL` or `CHROUT`. A platform name wins over a name from an analyzer (`dxa`, `ghidra` or `heuristic`), for example `EXTCOL` over `ld020`. A `user` or `llm` name wins over a platform name. An address in the image without a name gets `l_xxxx`.
 - Code regions, and the instructions that Ghidra decodes outside of data regions, become instructions.
 - Data regions become data by their type: `!byte`, `!word`, `!pet`, `!scr`, `!fill`, tables of labels, and sprite bytes in binary.
@@ -70,8 +71,23 @@ node <skill>/scripts/generate.ts unpacked/image.json --out src --loader
 - `!byte` with an instruction as its comment: ACME writes this instruction with a different opcode. The bytes keep the source identical.
 - `not decoded` marks bytes in a code region that Ghidra did not decode.
 - `; not executed $xxxx-$yyyy` starts code that no run of the `--coverage` files executed. The range is the same as in `not_executed.json`.
+- `+inc16 ptr` is a use of a macro of the knowledge. `macros.asm` holds the macros. `main.asm` and `loader.asm` include it. The comments inside a use go to its side comment.
+- `!zone patch_CRACK_100e` starts a patch of the knowledge. `!if CRACK` has the code of the patch and NOP to the end of the range. `else` has the original code. The labels inside the range come before the zone as `name = * + n`. Thus both builds have them.
 
 Do not edit the generated files. The next run writes over them.
+
+## Switches and macros
+
+A switch changes the program only when the build defines it. Thus the source without a define stays identical to the image.
+
+1. The script checks the default build with `check`.
+2. Then it builds each switch on its own, with the switch as 1. It does not build two switches together.
+3. The build of a switch must have the same length as the default build. It can change bytes only in the ranges of its patches.
+4. Build the program with a switch on with the c64-assembler skill: `--define CRACK=1`.
+
+The script writes a patch only when its range is complete items of one file. A patch cannot cut an instruction. Its switch name cannot be a name of the source.
+
+The script writes a macro use only when the use gives the bytes of the image. First it assembles each use alone at its address. Then it checks the full build. A use that fails stays instructions, and `macrosAsInstructions` gives the reason. A label inside the range of a use also keeps the instructions, because the macro line has no place for the label.
 
 ## The loader
 
@@ -93,7 +109,7 @@ The script simulates the copies first. Then it runs `loader.prg` in the emulator
 ## Knowledge
 
 Read:
-- symbols, regions, comments, references, modules and operand expressions of all origins.
+- symbols, regions, comments, references, modules, operand expressions, patches, macros and macro uses of all origins.
 
 Automatic write:
 - none.
@@ -111,14 +127,18 @@ One JSON object:
 - `entriesInData`: each `--entry` in a data region of the knowledge, with the `region` and its `origin`. Ghidra does not decode an entry in a data region.
 - `asBytes`: the instructions that the source has as bytes.
 - `operandExpressions`: the count of instructions that the source has with an operand expression.
-- `operandsAsNumbers`: the operand expressions that the source has as a number with a side comment, each with its `address`, `expression` and `reason`. An expression becomes a number when no instruction with an operand value is at the address, or when a name has no address. An expression that ACME refuses or does not assemble to the image also becomes a number. Then the script assembles the source again, at most three times.
+- `operandsAsNumbers`: the operand expressions that the source has as a number with a side comment, each with its `address`, `expression` and `reason`. An expression becomes a number when no instruction with an operand value is at the address, or when a name has no address. An expression that ACME refuses or does not assemble to the image also becomes a number. Then the script assembles the source again, at most six times.
 - `unusedModules`: modules in the knowledge whose start is in no segment of the image. Often this tells that the image does not hold code that the knowledge describes.
 - `entryOutside`: the entry of `image.json` is in no segment of the image, with a `reason`. The image does not hold the program.
 - `notExecuted`: with `--coverage`, the count of instructions that no run executed, the count of their ranges, and the first ranges. `all` names the file `not_executed.json` in `--out`. It has all of the ranges. Put all of these ranges in the report.
+- `macroUses`: the count of macro uses that the source has.
+- `macrosAsInstructions`: the macro uses that the source has as instructions, each with its `start`, `end`, `macro` and `reason`.
+- `patchesNotWritten`: the patches that the source does not have, each with its range, `switch` and `reason`.
 - `check`: `identical`, and the result for each segment. A different segment gives its first different address.
+- `switches`: the build of each switch. Each item has the `define` for the c64-assembler skill, the patches and the `result` of the build with the switch on. `fits` tells that the build is good, and `changedBytes` counts the changed bytes. `overflow` tells that the code of a patch is longer than its range. `changes outside` gives the first byte outside the ranges that changed. `does not assemble` gives the diagnostics of ACME. `insideNames` lists the labels inside a patch. Code that writes to one of these labels changes the patch when the switch is on.
 - `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`. `limits` lists the CIA values that the loader cannot set. When the script cannot make the loader, `loader` has `verified: false` and a `reason`. The loader includes the source. Thus a source that does not assemble to the image also stops the loader.
 
-The exit status is 0 when the source is identical and the emulator check of the loader passes. The exit status is 1 for a failed check, for an entry in no segment, and for an error. The exit status is 2 for a wrong argument.
+The exit status is 0 when the source is identical and the emulator check of the loader passes. The exit status is 1 for a failed check, for an entry in no segment, and for an error. A patch that the source does not have, or a switch that does not fit, also gives 1. The exit status is 2 for a wrong argument.
 
 ## Failure and conflicts
 
@@ -126,6 +146,10 @@ The exit status is 0 when the source is identical and the emulator check of the 
 - `check.identical: false`: the script has a defect. Give the result to the user.
 - `operandsAsNumbers`: read each `reason`. Correct the expression with `operand` of the c64-knowledge skill, or remove it with `unoperand`.
 - `invalid-input` that names a symbol or a module: change that symbol or module in the knowledge.
+- `switches` with `overflow`: make the code of the patch shorter, or make the range of the patch larger, with `patch` of the c64-knowledge skill.
+- `switches` with `does not assemble`: read the diagnostics and correct the code of the patch.
+- `patchesNotWritten`: read each `reason`. Move the start or the end of the patch to an instruction, or give the switch another name.
+- `macrosAsInstructions`: read each `reason`. Correct the macro or the args, or remove the use with `unuse`. The source stays identical, so this is not a failure.
 - `entryOutside`: the run fails, but the script still writes and checks the source. With `--loader`, `loader.verified` is `false` with the same `reason`. Capture the image again with c64-unpacker `loads` or `capture`. Make sure that a segment holds the entry.
 - `entriesInData`: an analyzer region of data hides the code at the entry. If the entry is code, record a code region at the entry with the c64-knowledge skill, for example `classify '$0500' '$05ff' code`. A region of the user or the LLM replaces the analyzer region. Then generate again.
 - `loader.verified: false` with a `reason`: the script did not make the loader. The script still writes and checks the source. When no copy order or no free pages exist, or the loader needs too many copies, the reason gives the ranges. Capture the image again with fewer segments, or write the loader by hand.

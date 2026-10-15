@@ -52,6 +52,8 @@ The script prints one JSON object. The target CPU is the 6510 and the output is 
 4. If `assembled` is `false`, read `diagnostics`. Each one has a severity, a file, a line and a message. Correct the source and run the script again.
 5. To run the program, give the PRG path to the c64-emulator skill.
 
+The source of the c64-source skill has switches. Each switch is 0 when the build does not define it. `--define CRACK=1` puts in the patches of the switch `CRACK`. With `--compare`, only the bytes of those patches are different.
+
 ## Knowledge
 
 Automatic write:

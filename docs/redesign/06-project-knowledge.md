@@ -32,7 +32,8 @@ The only authoritative persistent toolkit-owned project state is the knowledge t
 .c64-re-tools/knowledge/
 ├── .gitattributes        *.jsonl merge=union text eol=lf
 ├── revisions.jsonl
-└── <table>.jsonl         symbols, regions, comments, references, suppressions, modules, operands
+└── <table>.jsonl         symbols, regions, comments, references, suppressions, modules, operands,
+                          patches, macros, macro_uses
 ```
 
 `.c64-re-tools/local/knowledge.db` is an index of that text. It is never committed and is made again whenever a knowledge file has another SHA-256 than the index holds.
@@ -344,6 +345,45 @@ valid_to_revision     INTEGER
 ```
 
 A write is checked against the image that the caller names: the value of the expression must be the operand byte (a 2-byte instruction) or word (a 3-byte instruction). Names resolve to knowledge symbols first, then to the platform names of the C64 space. The knowledge does not store the image. A rename of a symbol renames it in every expression in the same revision; the removal of a symbol that an expression uses is refused.
+
+### `patches`
+
+A patch records ACME code that replaces a range of the image when the build defines its switch as 1 (D72): a crack, a trainer or a debug hook. The code must fit the range and NOP fills the rest, so no other byte moves and the default build stays the image. Only the user or the LLM writes patches.
+
+```text
+start_address         INTEGER NOT NULL   one current patch per start; patches and macro uses never overlap
+end_address           INTEGER NOT NULL
+switch_name           TEXT NOT NULL      upper case; not a symbol or a platform name of the space
+code                  TEXT NOT NULL      ACME text with braces in pairs; empty for NOP only
+comment               TEXT
+origin                TEXT NOT NULL      user | llm
+valid_from_revision   INTEGER NOT NULL
+valid_to_revision     INTEGER
+```
+
+A write is checked against the image: every byte of the range is in it. Several patches share one switch; c64-source builds each switch on alone and reports whether it fits and changes only its ranges.
+
+### `macros` and `macro_uses`
+
+A macro is an ACME macro of the generated source, and a use writes a run of instructions as one `+name args` line (D73). Only the user or the LLM writes them; c64-static-analysis reports uses of a fixed list of idioms as candidates and an `apply` batch.
+
+```text
+macros:
+name                  TEXT NOT NULL      one current macro per name
+params                TEXT NOT NULL      a comma list of lower-case names; the body names one as .name
+body                  TEXT NOT NULL      ACME text with braces in pairs
+comment               TEXT
+origin                TEXT NOT NULL      user | llm
+
+macro_uses:
+start_address         INTEGER NOT NULL   one current use per start; uses and patches never overlap
+end_address           INTEGER NOT NULL   the end of the last instruction of the run
+macro                 TEXT NOT NULL      a current macro of the space
+args                  TEXT NOT NULL      a comma list of expressions, one for each param
+origin                TEXT NOT NULL      user | llm
+```
+
+Both have `valid_from_revision` and `valid_to_revision`. A use write is checked against the image: the instructions from the start end at the end. Its args name knowledge symbols or platform names. A rename follows into the args, the removal of a symbol that an arg uses is refused, and a macro with uses can neither be removed nor change its number of params. c64-source writes a use only when it assembles to the bytes of the image and has no label inside it; otherwise it writes the instructions with the reason.
 
 ## 5. Automatic DXA/Ghidra import
 
