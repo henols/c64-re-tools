@@ -51,9 +51,12 @@ async function status(): Promise<number> {
   console.log(`Package: ${join(here, "..", "..")}`);
   console.log(`Node: ${process.version} (${process.execPath})`);
   // The skill scripts run these tools here, on this machine.
-  for (const line of toolLines("Tools here:", await localToolStatus(localToolContext()))) console.log(line);
-  for (const line of await hostStatusLines()) console.log(line);
-  return 0;
+  const local = await localToolStatus(localToolContext());
+  for (const line of toolLines("Tools here:", local)) console.log(line);
+  const host = await hostStatusLines();
+  for (const line of host.lines) console.log(line);
+  // A script or a CI check can tell a ready setup from a broken one.
+  return host.ready && local.every((tool) => tool.runs) ? 0 : 1;
 }
 
 async function main(argv: string[]): Promise<number> {

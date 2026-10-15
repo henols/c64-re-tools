@@ -35,13 +35,13 @@ node <skill>/scripts/unpack.ts loads original/game.d64 --steps parts.json --out 
 | `--range '$c000' '$cfff'` | Write this range as a PRG. Without it, the script writes all 64 KiB of RAM as a flat file. |
 | `--timeout-frames 3000` | How many frames the program can run before the capture stops (default 3000). |
 | `--frames 3000` | `trace` only: how many frames the program runs (default 3000). |
-| `--entry '$c000'` | `trace` only: start the program at this address. Without it, `trace` types RUN. A program without a BASIC start line needs it. |
+| `--entry '$c000'` | `trace`, `stages` and `capture`: start the program at this address. Without it, the script types RUN. A file that is not a BASIC program at `$0801` needs it. |
 | `--steps input.json` | Input for the program, right after it starts: a JSON list of steps. Use it when an intro waits for a key or a menu waits for a choice. |
 | `--drive` | `loads` only: each capture also writes the 2 KiB RAM of the 1541 drive as `drive8.prg`. |
 | `--min-block 64` | `loads` only: the smallest block of changed memory that becomes a segment (default 64). The result counts smaller changes as `smallChanges`. |
-| `--min-stage 64` | `stages` only: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). |
+| `--min-stage 64` | `stages` and `capture`: the smallest block of written memory that starts a new stage when the CPU executes it (default 64). |
 
-The capture reads RAM, also the RAM under the ROMs and the I/O area. The script prints one JSON object.
+The capture reads RAM, also the RAM under the ROMs and the I/O area. The script prints one JSON object. The script refuses an option that the command does not use.
 
 A steps file has the steps `write`, `registers`, `joystick`, `type`, `frames` and `runUntil` of the c64-testing skill. Addresses are `$` and four hex digits. For example, wait 50 frames and press the space bar:
 
@@ -53,7 +53,7 @@ A `type` step puts keys in the keyboard queue of the KERNAL. A program that read
 
 ## Workflow
 
-1. Run `inspect`. Read `basicStart` and `packing`:
+1. Run `inspect`. Read `basicStart` and `packing`. `basicStart` gives the first SYS line and its address. When the SYS argument needs values at run time, `sys` is null and `expression` gives the argument. Then `trace`, `stages` and `capture` stop at the first instruction after the BASIC text:
    - `likely`: most of the bytes look compressed. Packed data has this property.
    - `unlikely`: the bytes look like code and data. A simple cruncher can also give this result.
    - `unclear`: the file is short, or the blocks do not give clear evidence. Or the code at the SYS address decodes or moves bytes outside the program.
@@ -64,7 +64,7 @@ A `type` step puts keys in the keyboard queue of the KERNAL. A program that read
    - `start`: the code at the SYS address. `jumpsOutside` and `writesOutside` give an address outside the loaded program, where the code jumps or writes.
    - `decodeLoops`: EOR instructions in loops that store with an index. This is usually decryption or decoding.
 2. Run `trace`. It gives the evidence from the run. Read `packing`:
-   - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code. `runningRange` is the code that runs now. Its `start` is usually the entry point of the unpacked program.
+   - `likely`: the program wrote code and then executed it. It unpacked, decrypted or moved code. `runningRange` is the written code that runs at the end of the trace. When the trace ends in ROM code, for example in an interrupt, it is the written code that runs next. Its `start` is usually the entry point of the unpacked program. When no written code runs in 50 more frames, the result has no `runningRange` and no `suggestedUntil`.
    - `unclear`: the program executed a small quantity of code that it wrote. This can be code that changes itself.
    - `unlikely`: the program executed no code that it wrote. If the program waits for a key or a joystick, it can move code after that input. Then use the c64-emulator skill.
 3. Find the address where the unpacked program starts:

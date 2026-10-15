@@ -7,7 +7,7 @@ import { type ToolStatus } from "../../../src/protocol/tools.ts";
 import { hostStatusLines, toolLines } from "../../../src/cli/status.ts";
 
 const HOST_TOOLS: ToolStatus[] = [
-  { name: "VICE", found: true, path: "/opt/vice/bin/x64sc", version: "3.9", runs: true },
+  { name: "VICE", found: true, path: "/opt/vice/bin/x64sc", version: "3.9", runs: true, flaws: ["Bits 5-7 read low."] },
   { name: "c1541", found: true, path: "/opt/vice/bin/c1541", runs: false, problem: "It stops at once. Install VICE again." },
   { name: "petcat", found: false, runs: false, problem: "Install VICE, which includes petcat." },
 ];
@@ -16,6 +16,7 @@ test("status names each tool with its version, or why it does not run", () => {
   assert.deepEqual(toolLines("Tools here:", HOST_TOOLS), [
     "Tools here:",
     "  VICE: 3.9 (/opt/vice/bin/x64sc)",
+    "    Known flaw: Bits 5-7 read low.",
     "  c1541: found at /opt/vice/bin/c1541 but it does not run. It stops at once. Install VICE again.",
     "  petcat: missing. Install VICE, which includes petcat.",
   ]);
@@ -33,10 +34,10 @@ test("status shows a Host Runtime that answers, with the tools on the host", asy
     createViceSession: () => Promise.reject(new WireFailure("machine-unavailable", "No VICE in this test.")),
   });
   try {
-    assert.deepEqual(await hostStatusLines({ env: { C64RT_HOST: `${server.host}:${server.port}` } }), [
-      "Host Runtime: reachable",
-      ...toolLines("Tools on the host:", HOST_TOOLS),
-    ]);
+    assert.deepEqual(await hostStatusLines({ env: { C64RT_HOST: `${server.host}:${server.port}` } }), {
+      lines: ["Host Runtime: reachable", ...toolLines("Tools on the host:", HOST_TOOLS)],
+      ready: false,
+    });
     assert.deepEqual(requests, ["host.status"]);
   } finally {
     await server.close();
@@ -47,7 +48,8 @@ test("status shows a Host Runtime that does not answer as not reachable, with th
   const server = await startHostServer({ port: 0, createViceSession: () => Promise.reject(new Error("unused")) });
   const endpoint = `${server.host}:${server.port}`;
   await server.close();
-  const lines = await hostStatusLines({ env: { C64RT_HOST: endpoint } });
+  const { lines, ready } = await hostStatusLines({ env: { C64RT_HOST: endpoint } });
+  assert.equal(ready, false);
   assert.equal(lines.length, 1);
   assert.match(lines[0]!, /^Host Runtime: not reachable\. \S/);
   assert.doesNotMatch(lines[0]!, /Stop the task/, "the instruction for an agent is not for a person");

@@ -19,7 +19,7 @@ The design is in [`docs/redesign/`](docs/redesign/README.md), and
 
 ## Install
 
-You need Node.js 24 or newer, and VICE 3.9 or later (`x64sc`, `c1541`, `petcat`) with its ROM files. ACME, DXA and Ghidra are needed only for the skills that use them: [docs/install-tools.md](docs/install-tools.md) has the steps for each system.
+You need Node.js 24 or newer, and VICE 3.9 or later (`x64sc`, `c1541`, `petcat`) with its ROM files; use the latest VICE release. `status` and the host name the known flaws of an older VICE. ACME, DXA and Ghidra are needed only for the skills that use them: [docs/install-tools.md](docs/install-tools.md) has the steps for each system.
 
 Start the Host Runtime and leave it running:
 

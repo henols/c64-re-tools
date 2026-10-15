@@ -81,7 +81,7 @@ test("a project install for every harness leaves the home directory alone; unins
 
 test("status reports the version, the package, the tools here and a Host Runtime that does not answer", () => {
   const status = run("status");
-  assert.equal(status.status, 0);
+  assert.equal(status.status, 1, "a host that does not answer is a setup that is not ready");
   assert.match(status.stdout, /^c64-re-tools \S+\nPackage: .+\nNode: v\d+/);
   // Found or missing, each tool that skill scripts run here has a line.
   assert.match(status.stdout, /Tools here:\n {2}ACME: .+\n {2}dxa: .+\n {2}Ghidra: .+\n/);
@@ -110,7 +110,7 @@ test("status reports a Host Runtime that accepts the connection but drops the re
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
     const [code] = (await once(child, "close")) as [number | null];
-    assert.equal(code, 0, stdout + stderr);
+    assert.equal(code, 1, stdout + stderr);
     assert.match(stdout, /Host Runtime: not reachable\. .+/);
     assert.doesNotMatch(stdout, /Host Runtime: reachable/);
     assert.equal(stderr, "");

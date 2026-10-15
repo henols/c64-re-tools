@@ -541,6 +541,16 @@ test("joystick states set active-low lines on the right port and are held", asyn
   await session.close();
 });
 
+test("keyboard and joystick results name the known VICE flaws of the session, and only then (D56)", async () => {
+  const { session } = await startSession({ flaws: ["Bits 5-7 read low.", "Another flaw."] });
+  assert.deepEqual(await session.handle("joystick", { port: 2, direction: "center", fire: true }), { port: 2, direction: "center", fire: true, emulatorFlaw: "Bits 5-7 read low. Another flaw." });
+  assert.deepEqual(await session.handle("keyboard", { data: "52" }), { queuedBytes: 1, emulatorFlaw: "Bits 5-7 read low. Another flaw." });
+  await session.close();
+  const plain = await startSession({ flaws: [] });
+  assert.deepEqual(await plain.session.handle("keyboard", { data: "52" }), { queuedBytes: 1 });
+  await plain.session.close();
+});
+
 test("keyboard bytes are fed in chunks VICE accepts and keep the run state", async () => {
   const { fake, session } = await startSession();
   const text = Buffer.alloc(600, 0x41);

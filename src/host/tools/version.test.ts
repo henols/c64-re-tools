@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { WireFailure } from "../../protocol/messages.ts";
-import { C1541, isOlderThanMinimum, viceVersionOf } from "../../native/discover.ts";
+import { C1541, isOlderThanMinimum, viceFlaws, viceVersionOf } from "../../native/discover.ts";
 import { ProcessSupervisor } from "../../native/processes.ts";
 import { standIn } from "../../native/standin.testkit.ts";
 import { requireMinimumVersion } from "./version.ts";
@@ -22,6 +22,8 @@ test("VICE versions are read from the tools' version lines and compared with 3.9
   assert.deepEqual(viceVersionOf("c1541 (VICE 3.10)"), { major: 3, minor: 10 });
   assert.deepEqual(viceVersionOf("x64sc (VICE 3.7.1)"), { major: 3, minor: 7 });
   assert.equal(viceVersionOf("no version here"), undefined);
+  assert.deepEqual(viceVersionOf("x64sc (VICE 3.10 SVN r45999)"), { major: 3, minor: 10, revision: 45999 });
+  assert.deepEqual(viceVersionOf("x64sc (VICE 3.10.1 SVN r46000)"), { major: 3, minor: 10, revision: 46000 });
   assert.equal(isOlderThanMinimum({ major: 3, minor: 7 }), true);
   assert.equal(isOlderThanMinimum({ major: 3, minor: 8 }), true);
   assert.equal(isOlderThanMinimum({ major: 3, minor: 9 }), false);
@@ -62,4 +64,13 @@ test("a caller that cancels does not cancel the version check that another calle
   leaving.abort();
   await second;
   await first;
+});
+
+test("a known VICE flaw is named for the versions that have it, and not for a build with the fix (D56)", () => {
+  assert.equal(viceFlaws({ major: 3, minor: 9 }).length, 1);
+  assert.match(viceFlaws({ major: 3, minor: 10 })[0]!, /VICE bug #2202/);
+  assert.equal(viceFlaws({ major: 3, minor: 10, revision: 45970 }).length, 1);
+  assert.deepEqual(viceFlaws({ major: 3, minor: 10, revision: 45971 }), [], "a nightly build with the fix");
+  assert.deepEqual(viceFlaws({ major: 3, minor: 11 }), []);
+  assert.deepEqual(viceFlaws({ major: 4, minor: 0 }), []);
 });

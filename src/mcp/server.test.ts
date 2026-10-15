@@ -545,10 +545,12 @@ test("media tools pass the project path and fill defaults", async () => {
     size: 100,
   });
   assert.deepEqual((await call(client, "c64_disk_attach", { path: "original/game.d64" })).structuredContent, { attached: true });
+  await call(client, "c64_autostart", { path: "original/game.d64", index: 1 });
   assert.deepEqual(session.media, [
     ["autostart", { path: "original/game.d64", index: 0, run: true }],
     ["programLoad", { path: "build/game.prg", address: 0xc000 }],
     ["diskAttach", { path: "original/game.d64" }],
+    ["autostart", { path: "original/game.d64", index: 2, run: true }],
   ]);
   assert.equal(errorOf(await call(client, "c64_disk_attach", { path: "" })).code, "invalid-input");
   await client.close();

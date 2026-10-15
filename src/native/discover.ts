@@ -69,10 +69,44 @@ export const VICE: ToolSpec = {
  */
 export const MIN_VICE = { major: 3, minor: 9 } as const;
 
-/** "x64sc (VICE 3.10)", "c1541 (VICE 3.9)" or "VICE 3.9.0": the major and minor version. */
-export function viceVersionOf(text: string): { major: number; minor: number } | undefined {
-  const match = /VICE (\d+)\.(\d+)/.exec(text);
-  return match === null ? undefined : { major: Number(match[1]), minor: Number(match[2]) };
+/** A VICE version; `revision` is the SVN revision of a build from VICE's source tree (nightly builds), absent for a release. */
+export interface ViceVersion {
+  major: number;
+  minor: number;
+  revision?: number;
+}
+
+/** "x64sc (VICE 3.10)", "c1541 (VICE 3.9)", "VICE 3.9.0" or "x64sc (VICE 3.10 SVN r45999)": the major and minor version, and the SVN revision. */
+export function viceVersionOf(text: string): ViceVersion | undefined {
+  const match = /VICE (\d+)\.(\d+)(?:[.\d]*)(?: SVN r(\d+))?/.exec(text);
+  if (match === null) return undefined;
+  return { major: Number(match[1]), minor: Number(match[2]), ...(match[3] === undefined ? {} : { revision: Number(match[3]) }) };
+}
+
+/**
+ * Known flaws of VICE versions that c64-re-tools still runs on (D56). A flaw
+ * is not worked around: it is named with the VICE version that fixes it.
+ * `upTo` is the last flawed major.minor; `fixedRevision` the first SVN
+ * revision with the fix, for builds from VICE's source tree.
+ */
+const VICE_FLAWS = [
+  {
+    upTo: { major: 3, minor: 10 },
+    fixedRevision: 45971,
+    text:
+      "VICE 3.10 and older hold bits 5-7 of CIA 1 ports A and B low with the joystick device that c64-re-tools uses (VICE bug #2202). " +
+      "$DC00 and $DC01 read $1F with no input. A program that waits for one key of the keyboard matrix (for example LDA $DC01 / CMP #$EF for SPACE) waits forever. " +
+      "A program that compares the full byte of a joystick port also waits forever. The fix is in the next VICE release, and in VICE nightly builds now (SVN r45971 or later). " +
+      "Install the latest VICE when this matters.",
+  },
+] as const;
+
+/** The known flaws of this VICE version, as text for a person or an agent. */
+export function viceFlaws(version: ViceVersion): string[] {
+  return VICE_FLAWS.filter((flaw) => {
+    const newer = version.major > flaw.upTo.major || (version.major === flaw.upTo.major && version.minor > flaw.upTo.minor);
+    return !newer && (version.revision === undefined || version.revision < flaw.fixedRevision);
+  }).map((flaw) => flaw.text);
 }
 
 export function isOlderThanMinimum(version: { major: number; minor: number }): boolean {

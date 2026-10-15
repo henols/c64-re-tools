@@ -93,6 +93,8 @@ export interface Layout {
 
 const hex2 = (value: number) => `$${value.toString(16).padStart(2, "0")}`;
 const hex4 = (value: number) => formatC64Address(value);
+/** ACME reads leading zeros as a 16-bit value, so a zero-page name gets two digits. */
+const constantValue = (address: number) => (address < 0x100 ? hex2(address) : hex4(address));
 const signed = (byte: number) => (byte < 0x80 ? byte : byte - 0x100);
 
 function operandValue(address: number, opcode: number, byteAt: (address: number) => number): number | undefined {
@@ -545,7 +547,7 @@ export function render(layout: Layout, asBytes: ReadonlySet<string>, header: str
     result.files.push({ name: piece.file, text: `${out.join("\n")}\n` });
   }
 
-  const constants = ["; Names outside the image.", ...layout.constants.map((address) => `${layout.names.get(address)} = ${hex4(address)}`)];
+  const constants = ["; Names outside the image.", ...layout.constants.map((address) => `${layout.names.get(address)} = ${constantValue(address)}`)];
   result.files.push({ name: "constants.asm", text: `${constants.join("\n")}\n` });
   const main = [...header.map((line) => `; ${line}`), "", "!cpu 6510", '!source "constants.asm"'];
   for (const piece of layout.pieces) {

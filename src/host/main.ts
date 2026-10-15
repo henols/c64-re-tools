@@ -6,6 +6,7 @@ import { DEFAULT_HOST_PORT } from "../protocol/messages.ts";
 import { ProcessSupervisor } from "../native/processes.ts";
 import { startTrace, trace } from "../trace.ts";
 import { ListenError, parsePort, startHostServer, stopSignal } from "./server.ts";
+import { viceFlaws } from "../native/discover.ts";
 import { createToolDispatcher } from "./tools/index.ts";
 import { checkViceStarts, findVice } from "./vice/process.ts";
 import { viceSessionFactory } from "./vice/session.ts";
@@ -68,14 +69,17 @@ async function main(): Promise<number> {
   supervisor.startWatchdog("host");
 
   // Finding x64sc is not enough: VICE without its ROM files exits at once.
+  let flaws: string[];
   try {
-    await checkViceStarts({ supervisor });
+    flaws = viceFlaws(await checkViceStarts({ supervisor }));
   } catch (error) {
     process.stderr.write(`${(error as Error).message}\n`);
     await supervisor.stopAll();
     return 1;
   }
   log("VICE starts");
+  // A known VICE flaw is named, not worked around (D56).
+  for (const flaw of flaws) log(`Known VICE flaw: ${flaw}`);
 
   let server;
   try {
@@ -83,7 +87,7 @@ async function main(): Promise<number> {
       host: "0.0.0.0",
       port,
       log,
-      createViceSession: viceSessionFactory({ supervisor, log }),
+      createViceSession: viceSessionFactory({ supervisor, log, flaws }),
       tools: createToolDispatcher({ supervisor, log }),
     });
   } catch (error) {

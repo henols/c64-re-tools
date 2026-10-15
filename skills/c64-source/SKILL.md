@@ -98,7 +98,7 @@ One JSON object:
 - `unusedModules`: modules that start outside the image.
 - `notExecuted`: with `--coverage`, the count of instructions that no run executed, and their ranges. Put these ranges in the report.
 - `check`: `identical`, and the result for each segment. A different segment gives its first different address.
-- `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`.
+- `loader`: the program, the copies in their order, the copier page, `stackByte`, `verified` and `differences`. When the script cannot make the loader, `loader` has `verified: false` and a `reason`. The loader includes the source. Thus a source that does not assemble to the image also stops the loader.
 
 The exit status is 0 when the source is identical and the emulator check of the loader passes. The exit status is 1 for a failed check and for an error. The exit status is 2 for a wrong argument.
 
@@ -107,8 +107,8 @@ The exit status is 0 when the source is identical and the emulator check of the 
 - `check.diagnostics`: ACME did not assemble the source. A name in the knowledge can be wrong for ACME. Read the diagnostics and change the name with c64-knowledge.
 - `check.identical: false`: the script has a defect. Give the result to the user.
 - `invalid-input` that names a symbol or a module: change that symbol or module in the knowledge.
-- `invalid-input` for the loader: no copy order or no free pages exist. The message gives the ranges. Capture the image again with fewer segments, or write the loader by hand.
-- `loader.verified: false`: `differences` gives the bytes and registers that are not equal.
+- `loader.verified: false` with a `reason`: the script did not make the loader. The script still writes and checks the source. When no copy order or no free pages exist, or the loader needs too many copies, the reason gives the ranges. Capture the image again with fewer segments, or write the loader by hand.
+- `loader.verified: false` with `differences`: the loader ran, and `differences` gives the bytes and registers that are not equal.
 - `installation-incomplete`, or a message that the host runtime does not run: stop the task. Give the message to the user and wait for the user. The message gives the remedy. Do not make a replacement for the tool or the host runtime, for example your own disassembler or emulator script.
 
 ## Handoffs

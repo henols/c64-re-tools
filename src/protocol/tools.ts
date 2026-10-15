@@ -61,7 +61,7 @@ export type PetcatResult =
   | {
       decoded: true;
       loadAddress: number;
-      /** The address after the BASIC end marker; any bytes from here on are no BASIC. */
+      /** The first address that holds no BASIC: after a 00 00 end marker, or at a link whose high byte only is zero. */
       basicEnd: number;
       listing: string;
       lines: Array<{ number: number; text: string }>;
@@ -79,6 +79,8 @@ export interface ToolStatus {
   runs: boolean;
   /** What is wrong and what to do, when it is missing or does not run. */
   problem?: string;
+  /** Known flaws of this version, each with the version that fixes it (D56). The tool still runs. */
+  flaws?: string[];
 }
 
 export interface ToolOperations {
@@ -173,7 +175,8 @@ export function validateToolResult<O extends ToolOperation>(op: O, value: unknow
         typeof tool.name === "string" &&
         typeof tool.found === "boolean" &&
         typeof tool.runs === "boolean" &&
-        [tool.path, tool.version, tool.problem].every((field) => field === undefined || typeof field === "string");
+        [tool.path, tool.version, tool.problem].every((field) => field === undefined || typeof field === "string") &&
+        (tool.flaws === undefined || (Array.isArray(tool.flaws) && tool.flaws.every((flaw: unknown) => typeof flaw === "string")));
       if (!Array.isArray(tools) || !tools.every(isStatus) || attachments.length !== 0) throw new ProtocolError("host.status result is malformed");
       return value as unknown as ToolOperations[O]["result"];
     }
@@ -233,7 +236,8 @@ function isPetcatResult(value: Fields): boolean {
     isObject(handoff) &&
     isInteger(handoff.line, 0, 0xffff) &&
     ((handoff.kind === "sys" && isInteger(handoff.address, 0, 0xffff) && handoff.computed === undefined) ||
-      ((handoff.kind === "sys" || handoff.kind === "usr") && handoff.computed === true && handoff.address === undefined));
+      (handoff.kind === "sys" && handoff.computed === true && handoff.address === undefined && typeof handoff.expression === "string") ||
+      (handoff.kind === "usr" && handoff.computed === true && handoff.address === undefined));
   return (
     value.decoded === true &&
     isInteger(value.loadAddress, 0, 0xffff) &&

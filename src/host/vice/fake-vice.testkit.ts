@@ -132,7 +132,7 @@ export class FakeVice {
   refuseUndump = false;
   /** PETSCII fed to the keyboard buffer, in order. */
   readonly keyboard: number[] = [];
-  /** Control-port line levels by 0-based joyport index; real VICE starts them at 0 (all pressed). */
+  /** Control-port line levels by 0-based joyport index; VICE 3.10 and older start them at 0 (all pressed, VICE bug #2202). */
   readonly joyport = [0x00, 0x00];
   readonly binaryServer: Server;
   readonly textServer: Server;

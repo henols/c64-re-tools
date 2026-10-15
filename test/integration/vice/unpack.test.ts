@@ -17,6 +17,7 @@ import { viceSessionFactory } from "../../../src/host/vice/session.ts";
 import { ORIGINAL } from "../../fixtures/prg/counter-variants.ts";
 import { borderLoopPrg } from "../../fixtures/prg/border-loop.ts";
 import { gatedPackedPrg } from "../../fixtures/prg/gated-packed.ts";
+import { selfOverwritingPrg } from "../../fixtures/prg/self-overwriting.ts";
 import { stagedPrg } from "../../fixtures/prg/staged.ts";
 import { xorPackedPrg } from "../../fixtures/prg/xor-packed.ts";
 import { liveEnv, liveLog, liveSkip } from "./live.ts";
@@ -26,6 +27,7 @@ const project = mkdtempSync(join(tmpdir(), "c64-re-tools-unpack-"));
 writeFileSync(join(project, "packed.prg"), xorPackedPrg);
 writeFileSync(join(project, "gated.prg"), gatedPackedPrg);
 writeFileSync(join(project, "staged.prg"), stagedPrg);
+writeFileSync(join(project, "self-overwriting.prg"), selfOverwritingPrg);
 writeFileSync(join(project, "press-key.json"), JSON.stringify([{ frames: 50 }, { type: " " }]));
 let server: HostServer | undefined;
 after(async () => {
@@ -139,4 +141,22 @@ test("a capture at the last stage writes the image, its segments and the entry s
   assert.equal(state.io.vic.bytes.length, 0x2f * 2);
   assert.equal(state.vectors.irq, "$ea31", "the KERNAL IRQ handler: this release does not change it");
   assert.ok(Array.isArray(state.differsFromReset) && state.differsFromReset.length > 0, "a run leaves zero page and stack different from a fresh READY");
+});
+
+test("stages follows a release whose stages write over code that ran before, and a SYS π*656 start (F-17, F-15)", { skip: liveSkip, timeout: 300_000 }, async () => {
+  const { status, json } = await unpack("stages", "self-overwriting.prg", "--frames", "100");
+  assert.equal(status, 0, JSON.stringify(json));
+  const found = json.stages as Array<{ entry: string; next?: string; wrote: Array<{ start: string; end: string }> }>;
+  assert.deepEqual(
+    found.map((stage) => [stage.entry, stage.next]),
+    [
+      ["$080c", "$0340"],
+      ["$0340", "$0801"],
+      ["$0801", "$0801"],
+      ["$0801", undefined],
+    ],
+    JSON.stringify(found),
+  );
+  assert.deepEqual(found[1]!.wrote, [{ start: "$0801", end: "$0900" }], "the mover wrote the payload over the stub");
+  assert.deepEqual(found[2]!.wrote, [{ start: "$0801", end: "$0840" }], "the payload wrote over its own start code");
 });

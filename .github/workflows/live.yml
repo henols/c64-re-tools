@@ -2,8 +2,9 @@ name: Live
 
 # The live suites with a real VICE on Linux, macOS and Windows. CI installs
 # VICE itself; the product never does (it refuses by name with the remedy).
-# c64-re-tools needs VICE 3.9 or later: Linux runs in Debian 13, whose
-# package is VICE 3.9 (Ubuntu 24.04 has 3.7.1).
+# c64-re-tools needs VICE 3.9 or later and supports the latest release (D56):
+# Linux runs in Debian 13, whose package is VICE 3.9, the minimum (Ubuntu
+# 24.04 has 3.7.1); macOS (Homebrew) and Windows run the latest release.
 
 on:
   push:
@@ -128,7 +129,7 @@ jobs:
         shell: pwsh
         run: |
           $zip = "$env:RUNNER_TEMP\vice.zip"
-          Invoke-WebRequest -UserAgent "Wget" -Uri "https://sourceforge.net/projects/vice-emu/files/releases/binaries/windows/GTK3VICE-3.9-win64.zip/download" -OutFile $zip
+          Invoke-WebRequest -UserAgent "Wget" -Uri "https://sourceforge.net/projects/vice-emu/files/releases/binaries/windows/GTK3VICE-3.10-win64.zip/download" -OutFile $zip
           Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\vice"
           $bin = (Get-ChildItem -Path "$env:RUNNER_TEMP\vice" -Recurse -Filter x64sc.exe | Select-Object -First 1).DirectoryName
           "C64RT_LIVE_VICE=$bin\x64sc.exe" | Out-File -FilePath $env:GITHUB_ENV -Append

@@ -79,7 +79,7 @@ function run(argv: string[]): unknown {
     case "export": {
       if (rest.length !== 0 || values.out === undefined) throw new UsageError("export takes --out <file> and nothing else");
       const names = platformNames();
-      const lines = ["; C64 platform names from the c64-memory-map skill, for ACME.", ...names.map((item) => `${item.name} = ${hex(item.address)}`.padEnd(24) + `; ${item.meaning}`)];
+      const lines = ["; C64 platform names from the c64-memory-map skill, for ACME.", ...names.map((item) => `${item.name} = ${hex(item.address, item.address < 0x100 ? 2 : 4)}`.padEnd(24) + `; ${item.meaning}`)];
       const bytes = Buffer.from(`${lines.join("\n")}\n`, "utf8");
       writeProjectFile(values.out, bytes, { what: "--out" });
       return { out: values.out, names: names.length, bytes: bytes.length };

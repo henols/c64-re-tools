@@ -119,6 +119,8 @@ export interface SessionOptions {
   launch?: ViceLauncher;
   /** Makes the host remove a path if it dies; returns the release. */
   ownPath?: (path: string) => () => void;
+  /** The known flaws of this VICE version (D56); keyboard and joystick results name them. */
+  flaws?: readonly string[];
 }
 
 export class ViceSession implements ViceSessionHandle {
@@ -128,6 +130,8 @@ export class ViceSession implements ViceSessionHandle {
   #mode: ViceMode = "headless";
   readonly #videoStandard: VideoStandard;
   readonly #log: (line: string) => void;
+  /** The known VICE flaws that keyboard and joystick input meet, as one text, or undefined. */
+  readonly #inputFlaw: string | undefined;
   readonly #untilReturnLimitMs: number;
   readonly #stepLimitMs: number;
   readonly #launch: ViceLauncher | undefined;
@@ -196,6 +200,7 @@ export class ViceSession implements ViceSessionHandle {
     this.#untilReturnLimitMs = options.untilReturnLimitMs ?? UNTIL_RETURN_LIMIT_MS;
     this.#stepLimitMs = options.stepLimitMs ?? RUNNING_COMMAND_TIMEOUT_MS;
     this.#launch = options.launch;
+    this.#inputFlaw = options.flaws === undefined || options.flaws.length === 0 ? undefined : options.flaws.join(" ");
     this.#workDir = mkdtempSync(join(tmpdir(), "c64-re-tools-session-"));
     this.#releaseWorkDir = options.ownPath?.(this.#workDir) ?? (() => {});
     this.#watch(vice);
@@ -268,7 +273,7 @@ export class ViceSession implements ViceSessionHandle {
           session.#timingStart = await session.#adapter.clock();
           // c64_profile reports what ran since the session started.
           await session.#adapter.startProfiler();
-          // The control-port lines start all pressed; release them before the C64 reads them.
+          // In VICE 3.10 and older the control-port lines start all pressed; release them before the C64 reads them.
           for (const joystick of session.#joysticks.values()) await session.#adapter.setJoystick(joystick);
         }),
       );
@@ -368,7 +373,7 @@ export class ViceSession implements ViceSessionHandle {
       case "keyboard": {
         const bytes = Buffer.from((params as ViceOperations["keyboard"]["params"]).data, "hex");
         await this.#observe(() => this.#machine.feedKeyboard(bytes));
-        return { queuedBytes: bytes.length };
+        return { queuedBytes: bytes.length, ...(this.#inputFlaw === undefined ? {} : { emulatorFlaw: this.#inputFlaw }) };
       }
       case "breakpoint":
         return this.#breakpoint(params as BreakpointParams);
@@ -450,7 +455,7 @@ export class ViceSession implements ViceSessionHandle {
         const joystick = params as JoystickState;
         await this.#observe(() => this.#machine.setJoystick(joystick));
         this.#joysticks.set(joystick.port, joystick);
-        return joystick;
+        return { ...joystick, ...(this.#inputFlaw === undefined ? {} : { emulatorFlaw: this.#inputFlaw }) };
       }
       case "warp": {
         const { enabled } = params as ViceOperations["warp"]["params"];
@@ -1340,6 +1345,8 @@ export function viceSessionFactory(options: {
   supervisor: ProcessSupervisor;
   env?: NodeJS.ProcessEnv;
   log?: (line: string) => void;
+  /** The known flaws of the VICE version that the host checked at start. */
+  flaws?: readonly string[];
 }): ViceSessionFactory {
   const log = options.log ?? (() => {});
   return async ({ videoStandard }) => {
@@ -1355,6 +1362,6 @@ export function viceSessionFactory(options: {
         ...(options.env === undefined ? {} : { env: options.env }),
       });
     const vice = await launch("headless", () => {});
-    return ViceSession.start(vice, videoStandard, log, { launch, ownPath: (path) => options.supervisor.ownPath(path) });
+    return ViceSession.start(vice, videoStandard, log, { launch, ownPath: (path) => options.supervisor.ownPath(path), ...(options.flaws === undefined ? {} : { flaws: options.flaws }) });
   };
 }

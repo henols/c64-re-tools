@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
@@ -165,6 +165,24 @@ test("with real ACME, data of every kind assembles to the same bytes", { skip: a
   assert.deepEqual([...attachments![0]!.subarray(2)], bytes);
 });
 
+test("with real ACME, zero-page names outside the image assemble to zero-page instructions", { skip: acmeSkip }, async () => {
+  // LDA $66, STA ($66),Y, LDA $66,X, LDA $0005 (absolute), RTS; $66 and $05 have names and lie outside the image.
+  const bytes = [0xa5, 0x66, 0x91, 0x66, 0xb5, 0x66, 0xad, 0x05, 0x00, 0x60];
+  const instructions = new Map([[0x1000, 2], [0x1002, 2], [0x1004, 2], [0x1006, 3], [0x1009, 1]]);
+  const symbols = [{ address: 0x66, name: "ptr" }, { address: 0x05, name: "small" }];
+  const rendered = render(layout(input(bytes, 0x1000, { instructions, symbols })), new Set(), []);
+  assert.equal(textOf(rendered, "constants.asm"), "; Names outside the image.\nsmall = $05\nptr = $66\n");
+  assert.match(textOf(rendered, "segment_1000.asm"), /sta \(ptr\),y\n {8}lda ptr,x\n {8}lda\+2 small\n/);
+  const contents = rendered.files.map((file) => Buffer.from(file.text));
+  const { result, attachments } = await assemble(
+    { files: rendered.files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource: "main.asm", includeDirs: [], defines: {} },
+    contents,
+    localToolContext(),
+  );
+  assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+  assert.deepEqual([...attachments![0]!.subarray(2)], bytes);
+});
+
 test("with real Ghidra and ACME, the script writes source that assembles to the program, aliases as bytes", { skip: ghidraSkip, timeout: 600_000 }, async () => {
   const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
   projects.push(project);
@@ -196,6 +214,39 @@ test("with real Ghidra and ACME, the script writes source that assembles to the 
 
   const refused = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "test.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(refused.status, 2, "--out is necessary");
+});
+
+test("with real Ghidra and ACME, a loader that cannot be planned still gives the checked source and says why (F-24)", { skip: ghidraSkip, timeout: 600_000 }, async () => {
+  const project = mkdtempSync(join(tmpdir(), "c64-re-tools-source-"));
+  projects.push(project);
+  // 40 segments of 4 bytes: more copies than one loader can do. The first one starts with RTS.
+  const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
+  const segments = Array.from({ length: 40 }, (_, index) => ({ start: 0x1000 + index * 16, end: 0x1003 + index * 16 }));
+  const memory = new Uint8Array(0x10000);
+  for (const segment of segments) memory.fill(0x11, segment.start, segment.end + 1);
+  memory[0x1000] = 0x60;
+  mkdirSync(join(project, "unpacked"));
+  writeFileSync(join(project, "unpacked", "image.bin"), memory);
+  writeFileSync(join(project, "unpacked", "image.json"), JSON.stringify({ entry: "$1000", image: "image.bin", segments: segments.map((segment) => ({ start: hex(segment.start), end: hex(segment.end) })) }));
+  writeFileSync(
+    join(project, "unpacked", "entry_state.json"),
+    JSON.stringify({
+      registers: { pc: "$1000", a: 0, x: 0, y: 0, sp: 0xf6, flags: { n: false, v: false, b: false, d: false, i: false, z: false, c: false } },
+      cpuPort: { $00: 0x2f, $01: 0x37 },
+      pages: Object.fromEntries([0, 1, 2, 3].map((page) => [hex(page << 8), "00".repeat(256)])),
+    }),
+  );
+  const run = spawnSync(process.execPath, [...process.execArgv, resolve(import.meta.dirname, "../../skills/c64-source/scripts/generate.ts"), "unpacked/image.json", "--out", "src", "--loader"], {
+    cwd: project,
+    env: { ...process.env, C64RT_HOST: "127.0.0.1:1" },
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  const json = JSON.parse(run.stdout) as { check: { identical: boolean }; files: string[]; loader: { verified: boolean; reason: string } };
+  assert.equal(json.check.identical, true);
+  assert.ok(json.files.includes("main.asm") && !json.files.includes("loader.asm"));
+  assert.equal(json.loader.verified, false);
+  assert.match(json.loader.reason, /needs 41 copies|needs 40 copies/);
 });
 
 test("with coverage, each run of instructions that no run executed is marked and listed (D49)", () => {

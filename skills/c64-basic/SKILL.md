@@ -30,9 +30,9 @@ The script prints one JSON object. Addresses are `$` and four hex digits.
 1. Run the script on the program.
 2. Read `listing`. Each line starts with its BASIC line number. Keywords show in lower case. Control characters in strings show in braces, for example `{clr}`.
 3. Read `handoffs`. Each handoff has a `kind` (`sys` or `usr`) and the BASIC `line`.
-   - A `sys` handoff with an `address`: BASIC calls the machine code at that address.
-   - A handoff with `computed: true`: the address comes from a calculation at run time. Use the c64-emulator skill to find the address.
-4. Compare the address with `loadRange` and `basicEnd`. From `basicEnd` to the end of `loadRange`, the file holds bytes that are not BASIC. Usually this is the machine code that the handoff calls.
+   - A `sys` handoff with an `address`: BASIC calls the machine code at that address. The script calculates a SYS argument with numbers, π, `+`, `-`, `*`, `/` and brackets. For example, `SYS π*656` calls `$080c`.
+   - A handoff with `computed: true`: the address comes from a calculation at run time, for example with `PEEK`. A `sys` handoff gives its argument in `expression`. Use the c64-emulator skill to find the address.
+4. Compare the address with `loadRange` and `basicEnd`. From `basicEnd` to the end of `loadRange`, the file holds bytes that are not BASIC. Usually this is the machine code that the handoff calls. Some programs have no end marker (two zero bytes) after the last line. The machine code starts directly after the last line. Then `basicEnd` is the first byte of that machine code.
 
 The address ranges are for a load to the load address of the file. A load without `,1` puts a BASIC program at `$0801`. Most loaders have `$0801` as their load address.
 

@@ -36,9 +36,13 @@ export async function decode(
   if ("reason" in tokenized) return { result: { decoded: false, reason: tokenized.reason } };
   const executable = findTool(PETCAT, context.env);
   await requireMinimumVersion(PETCAT, executable, context);
+  // petcat gets the BASIC text only, closed with a real end marker: after a
+  // link that only ends BASIC (machine code right after the last line), petcat
+  // prints a comment line where a listing line belongs.
+  const text = Buffer.concat([program.subarray(0, tokenized.textBytes), Buffer.of(0, 0)]);
   const workspace = Workspace.create(context.supervisor);
   try {
-    workspace.materialize("input", [{ path: "program.prg", size: program.length }], [program]);
+    workspace.materialize("input", [{ path: "program.prg", size: text.length }], [text]);
     const listingPath = join(workspace.directory("out"), LISTING);
     const run = await runToolOrFail(
       "petcat",

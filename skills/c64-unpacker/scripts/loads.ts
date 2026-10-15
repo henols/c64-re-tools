@@ -22,6 +22,8 @@ const NAME = /^[A-Za-z0-9._-]{1,64}$/;
 const DRIVE_RAM = 0x0800;
 /** Pages 0-3 belong to the entry state, not to the segments. */
 const FIRST_SEGMENT_ADDRESS = 0x0400;
+/** The KERNAL LOAD entry in the jump table. */
+const KERNAL_LOAD = 0xffd5;
 
 /** Reads and checks the steps file of loads: action steps with $ addresses, and capture steps with new names. */
 export function readLoadSteps(path: string): LoadStep[] {
@@ -58,18 +60,27 @@ export function readLoadSteps(path: string): LoadStep[] {
   return value as LoadStep[];
 }
 
-/** Ranges from $0400 where the RAM changed and the CPU wrote since the last capture, joined across gaps below `join` bytes. */
-export function changedBlocks(before: Uint8Array, after: Uint8Array, map: Uint8Array, join: number): Array<{ start: number; end: number; bytes: number }> {
-  const blocks: Array<{ start: number; end: number; bytes: number }> = [];
+/**
+ * Ranges from $0400 that the CPU wrote since the last capture, joined across
+ * gaps of up to `join` bytes, each with at least one changed byte. With
+ * `writesKnown`, every written byte counts, also one written with the value
+ * that was there (zeros over the zeros of VICE's start pattern, F-20).
+ * Without it, the KERNAL RAM test wrote all of RAM after the map was cleared,
+ * and only the changed bytes count.
+ */
+export function changedBlocks(before: Uint8Array, after: Uint8Array, map: Uint8Array, join: number, writesKnown: boolean): Array<{ start: number; end: number; bytes: number }> {
+  const blocks: Array<{ start: number; end: number; bytes: number; changed: boolean }> = [];
   for (let address = FIRST_SEGMENT_ADDRESS; address < 0x10000; address++) {
-    if (before[address] === after[address] || (map[address]! & COVERAGE.ramWrite) === 0) continue;
+    const changed = before[address] !== after[address];
+    if ((map[address]! & COVERAGE.ramWrite) === 0 || (!writesKnown && !changed)) continue;
     const last = blocks.at(-1);
     if (last !== undefined && address - last.end <= join) {
       last.end = address;
       last.bytes++;
-    } else blocks.push({ start: address, end: address, bytes: 1 });
+      last.changed ||= changed;
+    } else blocks.push({ start: address, end: address, bytes: 1, changed });
   }
-  return blocks;
+  return blocks.filter((block) => block.changed).map(({ start, end, bytes }) => ({ start, end, bytes }));
 }
 
 const hex4 = (value: number) => value.toString(16).padStart(4, "0");
@@ -87,6 +98,8 @@ export async function loads(program: string, options: { out: string; steps: Load
     let previous: Buffer;
     /** A PRG that autostart put into memory without the CPU: its bytes count as written in the first capture. */
     let loadedProgram: Buffer | undefined;
+    /** False while the map holds the writes of the KERNAL RAM test. */
+    let writesKnown = true;
     if (program.toLowerCase().endsWith(".prg")) {
       const { bytes } = readProjectFile(program);
       if (!(await autostartLoaded(client, program, bytes))) return { output: { loaded: false, reason: `The program was not in memory after ${LOAD_LIMIT_FRAMES} frames.` }, failed: true };
@@ -102,6 +115,15 @@ export async function loads(program: string, options: { out: string; steps: Load
       previous = await readRam(client, 0x0000, 0x10000);
       await client.memmap({ action: "clear" });
       await client.autostart({ path: program, index: 0, run: true });
+      writesKnown = false;
+      if (!program.toLowerCase().endsWith(".crt")) {
+        // The map starts again where the KERNAL LOAD starts, after the RAM test: then it holds only what the program wrote.
+        const load = await client.runUntil({ target: { kind: "address", address: KERNAL_LOAD, space: "c64" }, timeoutFrames: LOAD_LIMIT_FRAMES });
+        if (load.reached) {
+          await client.memmap({ action: "clear" });
+          writesKnown = true;
+        }
+      }
     }
 
     const captures: Array<Record<string, unknown>> = [];
@@ -124,7 +146,7 @@ export async function loads(program: string, options: { out: string; steps: Load
         for (let address = load; address < Math.min(0x10000, load + loadedProgram.length - 2); address++) map[address]! |= COVERAGE.ramWrite;
         loadedProgram = undefined;
       }
-      const blocks = changedBlocks(previous, memory, map, 16);
+      const blocks = changedBlocks(previous, memory, map, 16, writesKnown);
       const segments = blocks.filter((block) => block.end - block.start + 1 >= options.minBlock);
       const small = blocks.filter((block) => !segments.includes(block)).reduce((sum, block) => sum + block.bytes, 0);
       const state = await machineState(client);
@@ -166,6 +188,7 @@ export async function loads(program: string, options: { out: string; steps: Load
       });
       previous = memory;
       await client.memmap({ action: "clear" });
+      writesKnown = true;
     }
     return { output: { loaded: true, captures }, failed: false };
   } finally {

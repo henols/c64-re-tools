@@ -1,16 +1,18 @@
-// The keyboard note of D55: no command presses one key of the matrix, and a
-// wait for any key that reads all keyboard columns ends without input,
-// because the joyport simulation on port 1 holds keyboard lines low.
-// Opt-in with C64RT_LIVE_VICE.
+// The keyboard note of D55 and D56: a wait for any key that reads all
+// keyboard columns ends without input only on a VICE with the known flaw
+// (bug #2202: the joyport simulation holds bits 5-7 of CIA 1 low). With the
+// fix, the wait goes on, as on a C64. Opt-in with C64RT_LIVE_VICE.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { after, test } from "node:test";
 
 import { ViceSessionClient } from "../../../src/host-client/vice-session.ts";
 import { ProcessSupervisor } from "../../../src/native/processes.ts";
 import { startHostServer, type HostServer } from "../../../src/host/server.ts";
 import { viceSessionFactory } from "../../../src/host/vice/session.ts";
-import { liveEnv, liveLog, liveSkip } from "./live.ts";
+import { viceFlaws, viceVersionOf } from "../../../src/native/discover.ts";
+import { LIVE_VICE, liveEnv, liveLog, liveSkip } from "./live.ts";
 
 let server: HostServer | undefined;
 after(async () => {
@@ -22,7 +24,10 @@ const PRESSED = 0xc00e;
 /** SEI; LDA #0; STA $DC00; wait: LDA $DC01; CMP #$FF; BEQ wait; NOP; pressed: JMP pressed. */
 const program = [0x78, 0xa9, 0x00, 0x8d, 0x00, 0xdc, 0xad, 0x01, 0xdc, 0xc9, 0xff, 0xf0, 0xf9, 0xea, 0x4c, 0x0e, 0xc0];
 
-test("a wait for any key that reads all keyboard columns ends without input", { skip: liveSkip, timeout: 120_000 }, async () => {
+test("a wait for any key that reads all keyboard columns ends without input only on a VICE with the known flaw", { skip: liveSkip, timeout: 120_000 }, async () => {
+  const version = viceVersionOf(spawnSync(LIVE_VICE!, ["-version"], { encoding: "utf8" }).stdout);
+  assert.ok(version !== undefined, "x64sc -version tells its version");
+  const flawed = viceFlaws(version).length > 0;
   const supervisor = new ProcessSupervisor();
   supervisor.installExitGuard();
   server = await startHostServer({ port: 0, createViceSession: viceSessionFactory({ supervisor, env: liveEnv(), log: liveLog }) });
@@ -33,7 +38,9 @@ test("a wait for any key that reads all keyboard columns ends without input", { 
     await client.memoryWrite({ address: START, data: Buffer.from(program).toString("hex"), space: "c64", view: "cpu" });
     await client.registersSet("c64", { pc: START });
     const ended = await client.runUntil({ target: { kind: "address", address: PRESSED, space: "c64" }, timeoutFrames: 25 });
-    assert.equal(ended.reached, true);
+    assert.equal(ended.reached, flawed, flawed ? "the flaw ends the wait" : "with no key the wait goes on, as on a C64");
+    const port = await client.memoryRead({ address: 0xdc01, size: 1, space: "c64", view: "cpu" });
+    assert.equal(Buffer.from(port.data, "hex")[0]! & 0xe0, flawed ? 0x00 : 0xe0, "bits 5-7 of $DC01");
   } finally {
     await client.close();
   }

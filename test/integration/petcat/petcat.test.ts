@@ -40,6 +40,17 @@ test("a BASIC loader decodes to its listing and its SYS handoff", { skip }, asyn
   });
 });
 
+test("a SYS line with machine code right after it decodes; petcat gets the BASIC text only", { skip }, async () => {
+  // 1993 SYS π*656, then LDY #$00 / SEI / RTS where the next link would be.
+  const program = Buffer.from([0x01, 0x08, 0x0c, 0x08, 0xc9, 0x07, 0x9e, 0xff, 0xac, 0x36, 0x35, 0x36, 0x00, 0xa0, 0x00, 0x78, 0x60]);
+  const { result } = await decode(program, context());
+  assert.ok(result.decoded, JSON.stringify(result));
+  assert.equal(result.basicEnd, 0x080c);
+  assert.deepEqual(result.lines.map((line) => line.number), [1993]);
+  assert.match(result.listing, /^1993 sys/);
+  assert.deepEqual(result.handoffs, [{ kind: "sys", line: 1993, address: 0x080c }]);
+});
+
 test("a program tokenized by petcat decodes back, with handoffs only from program text", { skip }, async () => {
   const source = [
     '10 print"{clr}hello":poke53280,0',
@@ -58,7 +69,7 @@ test("a program tokenized by petcat decodes back, with handoffs only from progra
   assert.equal(result.listing, source.join("\n"));
   assert.deepEqual(result.handoffs, [
     { kind: "sys", line: 20, address: 8205 },
-    { kind: "sys", line: 50, computed: true },
+    { kind: "sys", line: 50, computed: true, expression: "PEEK(43)+256*PEEK(44)" },
     { kind: "usr", line: 60, computed: true },
   ]);
 });

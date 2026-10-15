@@ -414,15 +414,16 @@ export interface ViceOperations {
   runUntil: { params: { target: RunTarget; timeoutFrames: number }; result: RunUntilResult };
   /** Attachment: the PRG bytes, load address first. */
   programLoad: { params: { address?: number }; result: { state: RunState; loadAddress: number; size: number } };
-  /** Attachment: the program or image bytes; `type` is the file's extension. */
+  /** Attachment: the program or image bytes; `type` is the file's extension. `index` is VICE's file number: 0 loads "*", 1 is the first directory entry. */
   autostart: { params: { type: string; index: number; run: boolean }; result: { state: RunState } };
   /** Attachment: the disk image bytes; `type` is the file's extension. */
   diskAttach: { params: { type: string }; result: { attached: boolean } };
   /** pc is the reset vector when run is false: the CPU stops there. */
   reset: { params: { mode: ResetMode; run: boolean }; result: { state: RunState; pc?: number } };
   /** `data`: PETSCII bytes as lowercase hex. */
-  keyboard: { params: { data: string }; result: { queuedBytes: number } };
-  joystick: { params: JoystickState; result: JoystickState };
+  /** `emulatorFlaw`: a known flaw of the host's VICE version that this input meets (D56). */
+  keyboard: { params: { data: string }; result: { queuedBytes: number; emulatorFlaw?: string } };
+  joystick: { params: JoystickState; result: JoystickState & { emulatorFlaw?: string } };
   breakpoint: { params: BreakpointParams; result: Breakpoint | PointRemoved | { breakpoints: Breakpoint[] } };
   watchpoint: { params: WatchpointParams; result: Watchpoint | PointRemoved | { watchpoints: Watchpoint[] } };
   cpuHistory: { params: { limit: number; space: Space }; result: { entries: HistoryEntry[] } };
@@ -1060,7 +1061,7 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       break;
     }
     case "keyboard": {
-      if (!isInteger(value.queuedBytes, 1, MAX_KEYBOARD_BYTES)) throw new ProtocolError("keyboard result is malformed");
+      if (!isInteger(value.queuedBytes, 1, MAX_KEYBOARD_BYTES) || !(value.emulatorFlaw === undefined || typeof value.emulatorFlaw === "string")) throw new ProtocolError("keyboard result is malformed");
       break;
     }
     case "breakpoint": {
@@ -1265,7 +1266,11 @@ export function validateViceResult<O extends ViceOperation>(op: O, value: unknow
       break;
     }
     case "joystick": {
-      const ok = (value.port === 1 || value.port === 2) && isOneOf(JOYSTICK_DIRECTIONS, value.direction) && typeof value.fire === "boolean";
+      const ok =
+        (value.port === 1 || value.port === 2) &&
+        isOneOf(JOYSTICK_DIRECTIONS, value.direction) &&
+        typeof value.fire === "boolean" &&
+        (value.emulatorFlaw === undefined || typeof value.emulatorFlaw === "string");
       if (!ok) throw new ProtocolError("joystick result is malformed");
       break;
     }

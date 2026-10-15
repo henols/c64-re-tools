@@ -1584,7 +1584,7 @@ Input:
 
 path is project-relative in the MCP/client environment and is transferred as bytes. The host never relies on the client filesystem path.
 
-index defaults 0.
+index is optional: the directory entry of a disk image, 0 is the first entry, as the c64-disk directory list numbers it. Without index, the first file loads as with `LOAD"*",8,1`. VICE numbers the entries from 1 and loads `"*"` for 0, so the MCP server sends index + 1, or 0 without index.
 
 run defaults true.
 

@@ -9,7 +9,8 @@
 //   operations only it offers; both act on the same machine;
 // - autostart of a PRG needs `-autostartprgmode 1` (inject into RAM);
 // - the joyport command reaches the C64 only through the "Joyport I/O
-//   simulation" device (37), whose lines start all pressed until set;
+//   simulation" device (37). In VICE 3.10 and older it holds bits 5-7 of
+//   both CIA 1 ports low (VICE bug #2202, a known flaw named by D56);
 // - with the default JAM action a jammed CPU hangs silently; -jamaction 2
 //   enters the monitor instead;
 // - the monitor's profiler prints numbers in the host locale, so VICE runs
@@ -29,7 +30,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { WireFailure, type VideoStandard } from "../../protocol/messages.ts";
 import { elapsedMs, trace } from "../../trace.ts";
-import { findTool, isOlderThanMinimum, MIN_VICE, VICE } from "../../native/discover.ts";
+import { findTool, isOlderThanMinimum, MIN_VICE, VICE, type ViceVersion } from "../../native/discover.ts";
 import type { ExitStatus, ProcessSupervisor, SupervisedProcess } from "../../native/processes.ts";
 import { BinaryMonitor, Command, decodeMemory, memoryGetBody } from "./binary-monitor.ts";
 import { TextMonitor } from "./text-monitor.ts";
@@ -200,9 +201,10 @@ export function startErrorLines(output: string[]): string[] {
 /**
  * Starts VICE once, as a session does, and stops it again. Finding
  * x64sc is not enough: without its ROM files VICE exits at once. Throws
- * WireFailure installation-incomplete with VICE's own error lines.
+ * WireFailure installation-incomplete with VICE's own error lines. Returns
+ * the VICE version.
  */
-export async function checkViceStarts(options: Omit<LaunchOptions, "videoStandard" | "log">): Promise<void> {
+export async function checkViceStarts(options: Omit<LaunchOptions, "videoStandard" | "log">): Promise<ViceVersion> {
   const binary = findVice(options.env ?? process.env);
   const output: string[] = [];
   let vice: ViceProcess;
@@ -231,13 +233,16 @@ export async function checkViceStarts(options: Omit<LaunchOptions, "videoStandar
   } finally {
     await vice.stop();
   }
-  const version = { major: info[1] ?? 0, minor: info[2] ?? 0 };
+  // The SVN revision is 0 in a release build.
+  const revision = info.length >= 10 ? info.readUInt32LE(6) : 0;
+  const version = { major: info[1] ?? 0, minor: info[2] ?? 0, ...(revision === 0 ? {} : { revision }) };
   if (isOlderThanMinimum(version)) {
     throw new WireFailure(
       "installation-incomplete",
       `VICE (${binary}) is version ${version.major}.${version.minor}, and c64-re-tools needs VICE ${MIN_VICE.major}.${MIN_VICE.minor} or later. ${VICE.remedy}`,
     );
   }
+  return version;
 }
 
 async function launchOnce(options: LaunchOptions): Promise<ViceProcess> {

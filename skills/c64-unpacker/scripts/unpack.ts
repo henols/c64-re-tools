@@ -8,22 +8,23 @@
 
 import { parseArgs } from "node:util";
 
-import { EXECUTE, formatC64Address, parseC64Address, READ, textToPetscii, WRITE } from "#src/c64.ts";
+import { COVERAGE, EXECUTE, formatC64Address, parseC64Address, READ, textToPetscii, WRITE } from "#src/c64.ts";
 import { autostartLoaded, LOAD_LIMIT_FRAMES } from "#src/host-client/autostart.ts";
-import { executedIn, readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
+import { readCoverage, writtenBlocks } from "#src/host-client/coverage.ts";
 import { checkActionSteps, runActionStep, type ActionStep } from "#src/host-client/steps.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./evidence.ts";
+import { basicStart, inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./evidence.ts";
 import { loads, readLoadSteps } from "./loads.ts";
+import { inRanges, mergeMaps, stageCandidates, stagePoints, type Range } from "./stages.ts";
 import { entryState, IO_AREAS, json, machineState, readRam, READY_FRAMES, vectorsOf } from "./machine.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
 unpack.ts trace <program.prg> [--frames <n>] [--entry <address>] [--steps <file>]
-unpack.ts capture <program.prg> --until <address> --out <dir> [--range <start> <end>] [--timeout-frames <n>] [--steps <file>] [--min-stage <bytes>]
+unpack.ts capture <program.prg> --until <address> --out <dir> [--range <start> <end>] [--timeout-frames <n>] [--entry <address>] [--steps <file>] [--min-stage <bytes>]
 unpack.ts stages <program.prg> [--frames <n>] [--entry <address>] [--steps <file>] [--min-stage <bytes>]
 unpack.ts loads <program> --steps <file> --out <dir> [--drive] [--min-block <bytes>]
 
@@ -36,6 +37,7 @@ capture   run the program until the CPU gets to <address>, and write into the
           for each segment, and entry_state.json (registers, $00/$01, pages
           0-3, VIC, SID and CIA registers, vectors, and what differs from a
           clean reset). --range gives one segment in place of the found ones.
+          --entry starts it there instead of RUN.
 
 stages    run the program for <n> frames (default 3000) and report each stage:
           where it starts, the memory it wrote, and where the next one starts.
@@ -100,8 +102,7 @@ async function trace(program: string, options: { frames: number; entry?: number;
   const { bytes } = readProjectFile(program);
   if (bytes.length < 3) throw new UsageError("the file is too short for a PRG");
   const load = bytes[0]! | (bytes[1]! << 8);
-  const basic = inspect(bytes).basicStart;
-  if (options.entry === undefined && basic === null) throw new UsageError("the program has no BASIC start line; give --entry <address>");
+  if (options.entry === undefined && basicStart(bytes) === undefined) throw new UsageError(NO_BASIC);
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
     // Loaded but not started, so the memory map can start empty: the KERNAL start-up writes all of RAM.
@@ -125,7 +126,17 @@ async function trace(program: string, options: { frames: number; entry?: number;
       const ranges = map.ranges.map(({ start: from, end, flags }) => ({ start: from, end, read: (flags & READ) !== 0, write: (flags & WRITE) !== 0, execute: (flags & EXECUTE) !== 0 }));
       return map.next === undefined ? { ranges } : { ranges, next: map.next };
     });
-    const { written, bytes: count, running } = writtenThenExecuted(ranges, pc);
+    const { written, counted, bytes: count, running: atStop } = writtenThenExecuted(ranges, pc);
+    // The run often ends in a KERNAL interrupt: the written code that runs next gives the range and the point after the unpacking.
+    let running = atStop;
+    let until = pc;
+    if (running === undefined && counted.length > 0) {
+      const next = await firstPcIn(client, counted);
+      if (next !== undefined) {
+        running = counted.find((range) => next >= range.start && next <= range.end);
+        until = next;
+      }
+    }
     const packing = count >= UNPACKED_BYTES || running !== undefined ? "likely" : count > 0 ? "unclear" : "unlikely";
     return {
       output: {
@@ -142,13 +153,13 @@ async function trace(program: string, options: { frames: number; entry?: number;
         evidence:
           packing === "likely"
             ? running !== undefined
-              ? `The CPU now runs code at ${formatC64Address(pc)} that the program wrote: it unpacked, decrypted or relocated it.`
+              ? `The CPU runs code at ${formatC64Address(until)} that the program wrote: it unpacked, decrypted or relocated it.`
               : `The program wrote ${count} bytes and then executed them: it unpacked, decrypted or relocated code.`
             : packing === "unclear"
               ? `The program executed ${count} bytes that it wrote. This can be code that changes itself or a small loader.`
               : "The program executed no code that it wrote while it ran.",
         // A point after the unpacking where the unpacked code runs; the entry point can be at the start of its range.
-        ...(running === undefined ? {} : { suggestedUntil: formatC64Address(pc), runningRange: { start: formatC64Address(running.start), end: formatC64Address(running.end) } }),
+        ...(running === undefined ? {} : { suggestedUntil: formatC64Address(until), runningRange: { start: formatC64Address(running.start), end: formatC64Address(running.end) } }),
       },
       failed: false,
     };
@@ -157,9 +168,37 @@ async function trace(program: string, options: { frames: number; entry?: number;
   }
 }
 
+const NO_BASIC = "the program is no BASIC program at $0801, so RUN cannot start it. Give --entry <address>.";
+
+/** The first PC in one of the ranges within SYS_FRAMES frames, found with exec breakpoints over them. */
+async function firstPcIn(client: ViceSessionClient, ranges: Array<{ start: number; end: number }>): Promise<number | undefined> {
+  const points = [];
+  for (const range of ranges) points.push(await client.breakpoint({ action: "add", address: range.start, size: range.end - range.start + 1, space: "c64" }));
+  try {
+    const stop = await client.execution({ action: "advance-frames", count: SYS_FRAMES, space: "c64" });
+    const pc = stop.pc ?? (await client.registersGet("c64")).pc;
+    return ranges.some((range) => pc >= range.start && pc <= range.end) ? pc : undefined;
+  } finally {
+    for (const point of points) await client.breakpoint({ action: "remove", id: point.id });
+  }
+}
+
+/** Frames that RUN gets to reach the machine code of a SYS whose argument needs run-time values. */
+const SYS_FRAMES = 50;
+
+/**
+ * The first PC in the program after its BASIC text, for a SYS whose address
+ * BASIC computes: an exec breakpoint over that part of the program stops there.
+ */
+async function firstPcAfterBasic(client: ViceSessionClient, from: number, to: number): Promise<number | undefined> {
+  return from > to ? undefined : firstPcIn(client, [{ start: from, end: to }]);
+}
+
 /** Frames between two looks at the memory map while stages are followed. */
 const STAGE_CHUNK_FRAMES = 25;
 const MAX_STAGES = 16;
+/** Most stops of one re-run of a chunk: own code and writes over it each stop once. */
+const MAX_STAGE_STOPS = 4096;
 const STAGE_SNAPSHOT = "stage-chunk";
 
 interface Stage {
@@ -196,65 +235,125 @@ async function follow(
   const { bytes } = readProjectFile(program);
   if (bytes.length < 3) throw new UsageError("the file is too short for a PRG");
   const load = bytes[0]! | (bytes[1]! << 8);
-  const sys = inspect(bytes).basicStart?.sys;
-  if (options.entry === undefined && sys === undefined) throw new UsageError("the program has no BASIC start line; give --entry <address>");
+  const basic = basicStart(bytes);
+  if (options.entry === undefined && basic === undefined) throw new UsageError(NO_BASIC);
   if (!(await autostartLoaded(client, program, bytes))) return { stages: [], frames: 0, reached: false, failed: `The program was not in memory at ${formatC64Address(load)} after ${LOAD_LIMIT_FRAMES} frames.` };
   await client.memmap({ action: "clear" });
   if (options.entry !== undefined) await client.registersSet("c64", { pc: options.entry });
   else await client.keyboard(textToPetscii("RUN\n"));
   const target = options.until === undefined ? undefined : await client.breakpoint({ action: "add", address: options.until, space: "c64" });
   const found: Stage[] = [];
-  let entry = options.entry ?? parseC64Address(sys!);
+  const start = options.entry ?? basic!.sys?.address ?? (await firstPcAfterBasic(client, basic!.basicEnd, load + bytes.length - 3));
+  if (start === undefined) return { stages: [], frames: 0, reached: false, failed: `After RUN, the CPU did not execute the program after its BASIC text (${formatC64Address(basic!.basicEnd)} on) in ${SYS_FRAMES} frames. Give --entry <address>.` };
+  let entry = start;
   let firstFrame = 0;
   let total = 0;
   let ended = false;
   let reached = false;
   const atTarget = (pc: number) => options.until !== undefined && pc === options.until;
+  // The current stage: its memory map since it started, chunk by chunk, and its own code.
+  let stage = { map: new Uint8Array(0x10000), own: new Set<number>() };
+  const startStage = async (next: number, last: Uint8Array) => {
+    mergeMaps(stage.map, last);
+    found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(stage.map, options.minStage), next });
+    entry = next;
+    firstFrame = total;
+    stage = { map: new Uint8Array(0x10000), own: new Set<number>() };
+    await client.memmap({ action: "clear" });
+  };
+
+  /**
+   * Runs the chunk again from its snapshot with points over the candidate
+   * blocks, and stops at the first opcode that the stage wrote and the CPU
+   * then executes. Own code stops the run once; a write watch arms it again.
+   */
+  const rerun = async (candidates: Range[], frames: number): Promise<{ used: number; map: Uint8Array; next?: number; atTarget: boolean }> => {
+    const points = new Map<string, { kind: "exec" | "watch"; id: number }>();
+    const arm = async (wanted: { exec: Range[]; watch: Range[] }) => {
+      const keys = new Set([...wanted.exec.map((range) => `exec:${range.start}:${range.end}`), ...wanted.watch.map((range) => `watch:${range.start}:${range.end}`)]);
+      for (const [key, point] of points) {
+        if (keys.has(key)) continue;
+        if (point.kind === "exec") await client.breakpoint({ action: "remove", id: point.id });
+        else await client.watchpoint({ action: "remove", id: point.id });
+        points.delete(key);
+      }
+      for (const range of wanted.exec) {
+        const key = `exec:${range.start}:${range.end}`;
+        if (!points.has(key)) points.set(key, { kind: "exec", id: (await client.breakpoint({ action: "add", address: range.start, size: range.end - range.start + 1, space: "c64" })).id });
+      }
+      for (const range of wanted.watch) {
+        const key = `watch:${range.start}:${range.end}`;
+        if (!points.has(key)) points.set(key, { kind: "watch", id: (await client.watchpoint({ action: "add", address: range.start, size: range.end - range.start + 1, access: "write", space: "c64" })).id });
+      }
+    };
+    let left = frames;
+    let used = 0;
+    let map: Uint8Array = new Uint8Array(0x10000);
+    try {
+      for (let stops = 0; ; stops++) {
+        if (stops > MAX_STAGE_STOPS) {
+          throw new WireFailure("operation-failed", `The stage that starts at ${formatC64Address(entry)} stopped ${MAX_STAGE_STOPS} times in one chunk of frames without a new stage. Use --min-stage with a larger block size, or capture with --until.`);
+        }
+        const written = (address: number) => ((stage.map[address]! | map[address]!) & COVERAGE.ramWrite) !== 0;
+        await arm(stagePoints(candidates, stage.own, written));
+        const run = await client.execution({ action: "advance-frames", count: left, space: "c64" });
+        const advanced = run.advancedFrames ?? 0;
+        used += advanced;
+        left -= advanced;
+        const pc = run.pc ?? (await client.registersGet("c64")).pc;
+        map = await readCoverage(client);
+        if (inRanges(candidates, pc)) {
+          if (written(pc)) return { used, map, next: pc, atTarget: atTarget(pc) };
+          stage.own.add(pc);
+        }
+        if (atTarget(pc)) return { used, map, atTarget: true };
+        if (left <= 0) return { used, map, atTarget: false };
+      }
+    } finally {
+      for (const point of points.values()) {
+        if (point.kind === "exec") await client.breakpoint({ action: "remove", id: point.id });
+        else await client.watchpoint({ action: "remove", id: point.id });
+      }
+    }
+  };
+
   const track = async (frames: number): Promise<void> => {
     let left = frames;
     while (left > 0 && !ended && !reached && found.length < MAX_STAGES) {
       await client.snapshot({ action: "save", name: STAGE_SNAPSHOT });
+      await client.memmap({ action: "clear" });
       const chunk = Math.min(STAGE_CHUNK_FRAMES, left);
       const first = await client.execution({ action: "advance-frames", count: chunk, space: "c64" });
       const firstPc = first.pc ?? (await client.registersGet("c64")).pc;
       const map = await readCoverage(client);
-      const entered = writtenBlocks(map, options.minStage).filter((block) => executedIn(map, block));
-      if (entered.length === 0) {
+      const candidates = stageCandidates(stage.map, map, stage.own, options.minStage);
+      if (candidates.length === 0) {
         const advanced = first.advancedFrames ?? 0;
         total += advanced;
         left -= advanced;
         if (atTarget(firstPc)) {
-          // The stop at until comes before its instruction runs: a target in written memory starts a stage too.
-          const blocks = writtenBlocks(map, options.minStage);
-          if (blocks.some((block) => firstPc >= block.start && firstPc <= block.end)) {
-            found.push({ entry, firstFrame, frames: total - firstFrame, wrote: blocks, next: firstPc });
-            entry = firstPc;
-            firstFrame = total;
-            await client.memmap({ action: "clear" });
-          }
+          // The stop at until comes before its instruction runs: a target that the stage wrote starts a stage too.
+          const combined = Uint8Array.from(stage.map);
+          mergeMaps(combined, map);
+          const wrote = (combined[firstPc]! & COVERAGE.ramWrite) !== 0 && inRanges(writtenBlocks(combined, options.minStage), firstPc);
+          if (wrote) await startStage(firstPc, map);
+          else mergeMaps(stage.map, map);
           reached = true;
-        } else if (advanced === 0) ended = true;
+        } else {
+          mergeMaps(stage.map, map);
+          if (advanced === 0) ended = true;
+        }
         continue;
       }
-      // Again from the start of the chunk, with breakpoints over the blocks: the stop is the next entry.
+      // Again from the start of the chunk, with points over the candidate blocks.
       await client.snapshot({ action: "restore", name: STAGE_SNAPSHOT });
-      const points = [];
-      for (const block of entered) points.push(await client.breakpoint({ action: "add", address: block.start, size: block.end - block.start + 1, space: "c64" }));
-      const rerun = await client.execution({ action: "advance-frames", count: chunk, space: "c64" });
-      for (const point of points) await client.breakpoint({ action: "remove", id: point.id });
-      const next = rerun.pc ?? (await client.registersGet("c64")).pc;
-      const used = rerun.advancedFrames ?? 0;
-      total += used;
-      left -= used;
-      if (entered.some((block) => next >= block.start && next <= block.end)) {
-        found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(await readCoverage(client), options.minStage), next });
-        entry = next;
-        firstFrame = total;
-        await client.memmap({ action: "clear" });
-      } else if (!atTarget(next)) {
-        throw new WireFailure("operation-failed", `The run from the snapshot did not enter the written memory again; it stopped at ${formatC64Address(next)}.`);
-      }
-      if (atTarget(next)) reached = true;
+      await client.memmap({ action: "clear" });
+      const again = await rerun(candidates, chunk);
+      total += again.used;
+      left -= again.used;
+      if (again.next !== undefined) await startStage(again.next, again.map);
+      else mergeMaps(stage.map, again.map);
+      if (again.atTarget) reached = true;
     }
   };
   for (const step of options.steps) {
@@ -264,7 +363,8 @@ async function follow(
   await track(Math.max(0, options.frames - total));
   if (target !== undefined) await client.breakpoint({ action: "remove", id: target.id });
   await client.snapshot({ action: "discard", name: STAGE_SNAPSHOT }).catch(() => undefined);
-  found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(await readCoverage(client), options.minStage) });
+  mergeMaps(stage.map, await readCoverage(client));
+  found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(stage.map, options.minStage) });
   return { stages: found, frames: total, reached };
 }
 
@@ -301,11 +401,11 @@ async function stages(program: string, options: { frames: number; entry?: number
 
 async function capture(
   program: string,
-  options: { until: number; out: string; range?: [number, number]; timeoutFrames: number; steps: ActionStep[]; minStage: number },
+  options: { until: number; out: string; range?: [number, number]; timeoutFrames: number; entry?: number; steps: ActionStep[]; minStage: number },
 ): Promise<{ output: Record<string, unknown>; failed: boolean }> {
   const client = await ViceSessionClient.open({ videoStandard: "pal" });
   try {
-    const followed = await follow(client, program, { frames: options.timeoutFrames, steps: options.steps, minStage: options.minStage, until: options.until });
+    const followed = await follow(client, program, { frames: options.timeoutFrames, steps: options.steps, minStage: options.minStage, until: options.until, ...(options.entry === undefined ? {} : { entry: options.entry }) });
     if (followed.failed !== undefined) return { output: { captured: false, reason: followed.failed }, failed: true };
     const registers = await client.registersGet("c64");
     if (!followed.reached) {
@@ -373,6 +473,15 @@ async function capture(
   }
 }
 
+/** The options that each command takes; any other option is refused, not ignored. */
+const OPTIONS_OF: Record<string, string[]> = {
+  inspect: [],
+  trace: ["frames", "entry", "steps"],
+  stages: ["frames", "entry", "steps", "min-stage"],
+  capture: ["until", "out", "range", "timeout-frames", "entry", "steps", "min-stage"],
+  loads: ["steps", "out", "drive", "min-block"],
+};
+
 async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -395,6 +504,11 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   if (values.help) throw new UsageError("");
   const [command, program, ...rest] = positionals;
   if (program === undefined) throw new UsageError("give a command and a program");
+  const allowed = OPTIONS_OF[command ?? ""];
+  if (allowed === undefined) throw new UsageError(`unknown command ${command}`);
+  for (const option of Object.keys(values)) {
+    if (option !== "help" && !allowed.includes(option)) throw new UsageError(`${command} does not take --${option}`);
+  }
   if (command === "inspect") {
     if (rest.length > 0) throw new UsageError("inspect takes one program");
     const { bytes } = readProjectFile(program);
@@ -435,8 +549,6 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     if (!Number.isInteger(minBlock) || minBlock < 1 || minBlock > 0x10000) throw new UsageError("--min-block must be from 1 to 65536");
     return loads(program, { out: values.out, steps: readLoadSteps(values.steps), drive: values.drive === true, minBlock });
   }
-  if (values.drive !== undefined || values["min-block"] !== undefined) throw new UsageError("--drive and --min-block work only with loads");
-  if (command !== "capture") throw new UsageError(`unknown command ${command}`);
   if (values.until === undefined || values.out === undefined) throw new UsageError("capture needs --until and --out");
   // --range takes two values: the end is the next positional argument.
   let range: [number, number] | undefined;
@@ -457,7 +569,15 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
   const steps = values.steps === undefined ? [] : readSteps(values.steps);
   const minStage = values["min-stage"] === undefined ? 64 : Number(values["min-stage"]);
   if (!Number.isInteger(minStage) || minStage < 1 || minStage > 0x10000) throw new UsageError("--min-stage must be from 1 to 65536");
-  return capture(program, { until: address(values.until, "--until"), out: values.out, ...(range === undefined ? {} : { range }), timeoutFrames, steps, minStage });
+  return capture(program, {
+    until: address(values.until, "--until"),
+    out: values.out,
+    ...(range === undefined ? {} : { range }),
+    timeoutFrames,
+    steps,
+    minStage,
+    ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }),
+  });
 }
 
 await runScript(

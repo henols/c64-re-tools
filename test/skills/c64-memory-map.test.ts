@@ -121,13 +121,14 @@ test("export writes the platform names as an ACME include that ACME reads (D52)"
   assert.equal((JSON.parse(run.stdout) as { names: number }).names, platformNames().length);
   const include = readFileSync(join(project, "src", "hw.asm"));
   assert.match(include.toString(), /^EXTCOL = \$d020 +; Border color/m);
-  const main = Buffer.from('!source "hw.asm"\n* = $1000\n        sta EXTCOL\n        jsr CHROUT\n');
+  assert.match(include.toString(), /^ADRAY2 = \$05 +;/m);
+  const main = Buffer.from('!source "hw.asm"\n* = $1000\n        sta EXTCOL\n        jsr CHROUT\n        lda ADRAY2\n        sta (ADRAY2),y\n');
   const { result, attachments } = await assemble(
     { files: [{ path: "hw.asm", size: include.length }, { path: "main.asm", size: main.length }], entrySource: "main.asm", includeDirs: [], defines: {} },
     [include, main],
     localToolContext(),
   );
   assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
-  assert.deepEqual([...attachments![0]!.subarray(2)], [0x8d, 0x20, 0xd0, 0x20, 0xd2, 0xff]);
+  assert.deepEqual([...attachments![0]!.subarray(2)], [0x8d, 0x20, 0xd0, 0x20, 0xd2, 0xff, 0xa5, 0x05, 0x91, 0x05]);
   assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "export"], { cwd: project, encoding: "utf8" }).status, 2);
 });

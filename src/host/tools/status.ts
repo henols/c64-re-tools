@@ -3,7 +3,7 @@
 // VICE older than MIN_VICE is reported as not working, as its operations refuse it.
 
 import type { ToolStatus } from "../../protocol/tools.ts";
-import { C1541, findTool, isOlderThanMinimum, MIN_VICE, PETCAT, VICE, viceVersionOf, type ToolSpec } from "../../native/discover.ts";
+import { C1541, findTool, isOlderThanMinimum, MIN_VICE, PETCAT, VICE, viceFlaws, viceVersionOf, type ToolSpec } from "../../native/discover.ts";
 import type { ToolContext } from "../../native/run.ts";
 import { probeTools } from "../../native/status.ts";
 import { findVice } from "../vice/process.ts";
@@ -26,5 +26,11 @@ export async function hostStatus(context: ToolContext): Promise<{ result: { tool
     ],
     context,
   );
-  return { result: { tools: tools.map((status, index) => requireMinimum(status, specs[index]!)) } };
+  const checked = tools.map((status, index) => requireMinimum(status, specs[index]!));
+  // VICE runs with its known flaws; status names them (D56).
+  const vice = checked[0]!;
+  const version = vice.runs ? viceVersionOf(vice.version ?? "") : undefined;
+  const flaws = version === undefined ? [] : viceFlaws(version);
+  if (flaws.length > 0) checked[0] = { ...vice, flaws };
+  return { result: { tools: checked } };
 }

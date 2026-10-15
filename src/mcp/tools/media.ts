@@ -20,19 +20,20 @@ export const c64Autostart = defineTool({
   description:
     `Start a program, or a disk, tape or cartridge image, from the project (${list(AUTOSTART_TYPES)}). ` +
     "The C64 resets and loads the file. With run true (the default), it also runs the file. A disk image stays in drive 8. " +
-    "index selects a file on a disk image (default 0, the first file). " +
+    "Without index, a disk image loads like LOAD\"*\",8,1. index selects one directory entry by its number in the c64-disk directory list (0 is the first entry). " +
     "The machine runs when this tool returns, and the load continues.",
   inputSchema: z
     .object({
       path: ProjectPath,
-      index: z.number().int().min(0).max(0xffff).default(0).describe("file number on a disk image. 0 is the first file"),
+      index: z.number().int().min(0).max(0xfffe).optional().describe("directory entry of a disk image, 0 is the first entry. Without it, the first file loads as with LOAD\"*\""),
       run: z.boolean().default(true).describe("true runs the program after it loads"),
     })
     .strict(),
   outputSchema: z.object({ state: z.enum(RUN_STATES) }),
   readOnly: false,
   async run(input, session) {
-    return session.autostart(input);
+    // VICE numbers the directory entries from 1, and its 0 loads "*".
+    return session.autostart({ path: input.path, index: input.index === undefined ? 0 : input.index + 1, run: input.run });
   },
 });
 

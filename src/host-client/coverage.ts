@@ -52,8 +52,3 @@ export function writtenBlocks(map: Uint8Array, minimum: number): CodeRange[] {
   return blocks;
 }
 
-/** True when the CPU executed an instruction in RAM somewhere in the range. */
-export function executedIn(map: Uint8Array, range: CodeRange): boolean {
-  for (let address = range.start; address <= range.end; address++) if ((map[address]! & COVERAGE.ramExecute) !== 0) return true;
-  return false;
-}

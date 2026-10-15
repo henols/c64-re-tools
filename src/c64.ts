@@ -128,7 +128,7 @@ export function textToPetsciiName(text: string): Uint8Array {
 /** BASIC refuses higher line numbers when a line is entered. */
 const MAX_LINE_NUMBER = 63999;
 
-const TOKEN = { data: 0x83, rem: 0x8f, sys: 0x9e, usr: 0xb7, plus: 0xaa, minus: 0xab, times: 0xac, divide: 0xad } as const;
+const TOKEN = { data: 0x83, rem: 0x8f, sys: 0x9e, usr: 0xb7, plus: 0xaa, minus: 0xab, times: 0xac, divide: 0xad, pi: 0xff } as const;
 const QUOTE = 0x22;
 const COLON = 0x3a;
 
@@ -138,15 +138,27 @@ export interface TokenizedLine {
   tokens: Uint8Array;
 }
 
-/** A machine-code handoff in BASIC program text: SYS with a constant address, or a SYS or USR whose target needs run-time values. */
-export type BasicHandoff = { kind: "sys"; line: number; address: number } | { kind: "sys" | "usr"; line: number; computed: true };
+/**
+ * A machine-code handoff in BASIC program text: SYS with a constant address, a
+ * SYS whose argument needs run-time values (with the argument as text), or a USR.
+ */
+export type BasicHandoff =
+  | { kind: "sys"; line: number; address: number }
+  | { kind: "sys"; line: number; computed: true; expression: string }
+  | { kind: "usr"; line: number; computed: true };
 
-export type TokenizedProgram = { loadAddress: number; basicEnd: number; lines: TokenizedLine[] } | { reason: string };
+/**
+ * `basicEnd` is the first address that holds no BASIC; `textBytes` is the
+ * number of file bytes (load address included) before the end of the BASIC text.
+ */
+export type TokenizedProgram = { loadAddress: number; basicEnd: number; textBytes: number; lines: TokenizedLine[] } | { reason: string };
 
 /**
  * Splits a PRG into BASIC lines the way BASIC relinks a loaded program: each
  * line ends at a zero byte, and a link whose high byte is zero ends the
- * program. The stored links are not trusted.
+ * program. The stored links are not trusted. A real end marker is two zero
+ * bytes; when only the high byte is zero, the "marker" is the first machine
+ * code after the BASIC text (SYS lines that jump right behind themselves).
  */
 export function parseTokenized(program: Uint8Array): TokenizedProgram {
   if (program.length < 4) return { reason: "The file is too short for a BASIC program." };
@@ -157,12 +169,13 @@ export function parseTokenized(program: Uint8Array): TokenizedProgram {
   for (;;) {
     // A file that ends right after a line leaves the end marker to the zeros after it in memory;
     // basicEnd is the address after that marker, as when the file holds it.
-    if (at === program.length && lines.length > 0) return { loadAddress, basicEnd: loadAddress + at, lines };
+    if (at === program.length && lines.length > 0) return { loadAddress, basicEnd: loadAddress + at, textBytes: at, lines };
     if (at + 1 >= program.length) return { reason: "The BASIC program has no end marker." };
     if (program[at + 1] === 0) {
       // An end marker before any line, with more bytes after it, is how machine code at a non-BASIC address often starts.
       if (lines.length === 0 && at + 2 < program.length) return { reason: "The file holds no BASIC line before other bytes, so it is no BASIC program." };
-      return { loadAddress, basicEnd: loadAddress + at, lines };
+      const marker = program[at] === 0;
+      return { loadAddress, basicEnd: loadAddress + (marker ? at : at - 2), textBytes: at, lines };
     }
     if (at + 4 > program.length) return { reason: "The last BASIC line is cut off." };
     const number = program[at + 2]! | (program[at + 3]! << 8);
@@ -188,13 +201,20 @@ const KEYWORDS = [
  * as it is, and {$xx} for bytes that are no character. For evidence, not a listing.
  */
 export function basicLineText(line: TokenizedLine): string {
-  let text = `${line.number} `;
+  return `${line.number} ${basicText(line.tokens)}`;
+}
+
+/** Tokenized BASIC bytes as text, as for basicLineText; pi is π. */
+function basicText(tokens: Uint8Array): string {
+  let text = "";
   let literal = false;
-  for (const byte of line.tokens) {
+  for (const byte of tokens) {
     if (byte === QUOTE) literal = !literal;
     if (!literal && byte >= 0x80 && byte < 0x80 + KEYWORDS.length) {
       text += KEYWORDS[byte - 0x80];
       if (byte === TOKEN.rem) literal = true;
+    } else if (!literal && byte === TOKEN.pi) {
+      text += "π";
     } else {
       text += petsciiNameToText(Uint8Array.of(byte));
     }
@@ -203,7 +223,7 @@ export function basicLineText(line: TokenizedLine): string {
 }
 
 /**
- * Evaluates a SYS argument that holds only numbers, + - * / and brackets.
+ * Evaluates a SYS argument that holds only numbers, π, + - * / and brackets.
  * Returns undefined for anything that needs run-time values.
  */
 export function constantExpression(bytes: Uint8Array): number | undefined {
@@ -241,6 +261,10 @@ export function constantExpression(bytes: Uint8Array): number | undefined {
       const value = sum();
       if (value === undefined || tokens[at++] !== 0x29) return undefined;
       return value;
+    }
+    if (peek() === TOKEN.pi) {
+      at++;
+      return Math.PI;
     }
     return number();
   };
@@ -297,8 +321,9 @@ export function findHandoffs(lines: TokenizedLine[]): BasicHandoff[] {
         // The argument ends at the statement end or at a comma (extra SYS parameters).
         let end = at + 1;
         while (end < tokens.length && tokens[end] !== COLON && tokens[end] !== 0x2c) end++;
-        const value = constantExpression(tokens.subarray(at + 1, end));
-        if (value === undefined) handoffs.push({ kind: "sys", line: number, computed: true });
+        const argument = tokens.subarray(at + 1, end);
+        const value = constantExpression(argument);
+        if (value === undefined) handoffs.push({ kind: "sys", line: number, computed: true, expression: basicText(argument).trim() });
         // BASIC drops the fraction; outside 0-65535 SYS stops with ILLEGAL QUANTITY and jumps nowhere.
         else if (Math.trunc(value) >= 0 && Math.trunc(value) <= 0xffff) handoffs.push({ kind: "sys", line: number, address: Math.trunc(value) });
         at = end - 1;

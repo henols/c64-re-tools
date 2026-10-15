@@ -135,9 +135,22 @@ test("handoffs come from SYS and USR in program text only", () => {
     { kind: "sys", line: 20, address: 8205 },
     { kind: "usr", line: 30, computed: true },
     { kind: "sys", line: 50, address: 49152 },
-    { kind: "sys", line: 60, computed: true },
+    { kind: "sys", line: 60, computed: true, expression: "PEEK(43)+256*PEEK(44)" },
     { kind: "sys", line: 80, address: 49152 },
   ]);
+});
+
+// A cracked game's start line: 1993 SYS π*656, then machine code right after
+// the line's zero byte, with no 00 00 end marker (the "link" is LDY #$00).
+const PI_START = Uint8Array.from([0x01, 0x08, 0x0c, 0x08, 0xc9, 0x07, 0x9e, 0xff, 0xac, 0x36, 0x35, 0x36, 0x00, 0xa0, 0x00, 0x78, 0x60]);
+
+test("a SYS with π hands over to its truncated value, and BASIC ends where the code after the line starts", () => {
+  const parsed = parseTokenized(PI_START);
+  assert.ok(!("reason" in parsed));
+  assert.equal(parsed.basicEnd, 0x080c, "BASIC ends at the link whose high byte is zero, where LDY #$00 starts");
+  assert.equal(parsed.textBytes, 13);
+  assert.equal(basicLineText(parsed.lines[0]!), "1993 SYSπ*656");
+  assert.deepEqual(findHandoffs(parsed.lines), [{ kind: "sys", line: 1993, address: 0x080c }]);
 });
 
 test("the VIC-II bank comes from CIA 2 port A, inverted, with undriven lines high", () => {

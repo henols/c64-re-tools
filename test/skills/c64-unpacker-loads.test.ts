@@ -41,8 +41,25 @@ test("a capture block is RAM from $0400 that changed and that the CPU wrote, joi
   for (const address of [0x0300, 0x2000, 0x2001, 0x2010, 0x3000]) change(address);
   change(0x4000, false);
   map[0x5000] = COVERAGE.ramWrite; // written with the same value: no change
-  assert.deepEqual(changedBlocks(before, after, map, 16), [
+  assert.deepEqual(changedBlocks(before, after, map, 16, false), [
     { start: 0x2000, end: 0x2010, bytes: 3 },
     { start: 0x3000, end: 0x3000, bytes: 1 },
+  ]);
+});
+
+test("with known writes, a capture block keeps the bytes written with the value that was there (F-20)", () => {
+  // A program at $2000-$20ff whose middle 64 bytes are zeros over a zero area of the start pattern.
+  const before = new Uint8Array(0x10000);
+  const after = new Uint8Array(0x10000);
+  const map = new Uint8Array(0x10000);
+  for (let address = 0x2000; address <= 0x20ff; address++) {
+    map[address] = COVERAGE.ramWrite;
+    if (address < 0x2080 || address > 0x20bf) after[address] = 0x11;
+  }
+  map[0x5000] = COVERAGE.ramWrite; // written with the same value only: no block
+  assert.deepEqual(changedBlocks(before, after, map, 16, true), [{ start: 0x2000, end: 0x20ff, bytes: 256 }]);
+  assert.deepEqual(changedBlocks(before, after, map, 16, false), [
+    { start: 0x2000, end: 0x207f, bytes: 128 },
+    { start: 0x20c0, end: 0x20ff, bytes: 64 },
   ]);
 });
