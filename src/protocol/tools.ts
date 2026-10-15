@@ -84,8 +84,18 @@ export interface ToolStatus {
   flaws?: string[];
 }
 
+/** The Host Runtime itself: its package version and the system it runs on. */
+export interface HostInfo {
+  version: string;
+  /** Node's name of the operating system: linux, darwin or win32. */
+  platform: string;
+  /** The release of the operating system. */
+  release: string;
+  arch: string;
+}
+
 export interface ToolOperations {
-  "host.status": { params: Record<string, never>; result: { tools: ToolStatus[] } };
+  "host.status": { params: Record<string, never>; result: { host: HostInfo; tools: ToolStatus[] } };
   "c1541.inspect": { params: C1541Params; result: C1541Result };
   "petcat.decode": { params: PetcatParams; result: PetcatResult };
 }
@@ -178,7 +188,9 @@ export function validateToolResult<O extends ToolOperation>(op: O, value: unknow
         typeof tool.runs === "boolean" &&
         [tool.path, tool.version, tool.problem].every((field) => field === undefined || typeof field === "string") &&
         (tool.flaws === undefined || (Array.isArray(tool.flaws) && tool.flaws.every((flaw: unknown) => typeof flaw === "string")));
-      if (!Array.isArray(tools) || !tools.every(isStatus) || attachments.length !== 0) throw new ProtocolError("host.status result is malformed");
+      const host = value.host;
+      const isHost = isObject(host) && [host.version, host.platform, host.release, host.arch].every((field) => typeof field === "string");
+      if (!isHost || !Array.isArray(tools) || !tools.every(isStatus) || attachments.length !== 0) throw new ProtocolError("host.status result is malformed");
       return value as unknown as ToolOperations[O]["result"];
     }
   }

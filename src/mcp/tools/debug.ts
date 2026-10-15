@@ -129,7 +129,7 @@ export const c64CpuHistory = defineTool({
   description:
     "Get the last instructions that the CPU executed, oldest first. " +
     `limit is the number of instructions (1 to ${MAX_HISTORY}, default 50). ` +
-    "Each entry gives the address, the bytes, the instruction and the registers a, x, y and sp. " +
+    "Each entry gives the address, the bytes, the instruction and the registers a, x, y and sp before the instruction executed. " +
     "In space c64, it also gives the raster line and cycle when the instruction started. " +
     "With out, it writes the entries as text lines to that project file, and the result gives the file in place of the entries. " +
     "This does not change the run state of the machine.",

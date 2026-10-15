@@ -3,8 +3,11 @@ import { test } from "node:test";
 
 import { startHostServer, type ToolDispatcher } from "../../../src/host/server.ts";
 import { WireFailure } from "../../../src/protocol/messages.ts";
-import { type ToolStatus } from "../../../src/protocol/tools.ts";
-import { hostStatusLines, toolLines } from "../../../src/cli/status.ts";
+import { PACKAGE } from "../../../src/package.ts";
+import { type HostInfo, type ToolStatus } from "../../../src/protocol/tools.ts";
+import { hostStatusLines, mixedViceBuilds, toolLines } from "../../../src/cli/status.ts";
+
+const HOST: HostInfo = { version: PACKAGE.version, platform: "linux", release: "6.12.0", arch: "x64" };
 
 const HOST_TOOLS: ToolStatus[] = [
   { name: "VICE", found: true, path: "/opt/vice/bin/x64sc", version: "3.9", runs: true, flaws: ["Bits 5-7 read low."] },
@@ -26,7 +29,7 @@ test("status shows a Host Runtime that answers, with the tools on the host", asy
   const requests: string[] = [];
   const tools = (async (op) => {
     requests.push(op);
-    return { result: { tools: HOST_TOOLS } };
+    return { result: { host: HOST, tools: HOST_TOOLS } };
   }) as ToolDispatcher;
   const server = await startHostServer({
     port: 0,
@@ -35,7 +38,7 @@ test("status shows a Host Runtime that answers, with the tools on the host", asy
   });
   try {
     assert.deepEqual(await hostStatusLines({ env: { C64RT_HOST: `${server.host}:${server.port}` } }), {
-      lines: ["Host Runtime: reachable", ...toolLines("Tools on the host:", HOST_TOOLS)],
+      lines: [`Host Runtime: reachable, c64-re-tools ${PACKAGE.version} on linux 6.12.0 (x64)`, ...toolLines("Tools on the host:", HOST_TOOLS)],
       ready: false,
     });
     assert.deepEqual(requests, ["host.status"]);
@@ -53,4 +56,11 @@ test("status shows a Host Runtime that does not answer as not reachable, with th
   assert.equal(lines.length, 1);
   assert.match(lines[0]!, /^Host Runtime: not reachable\. \S/);
   assert.doesNotMatch(lines[0]!, /Stop the task/, "the instruction for an agent is not for a person");
+});
+
+test("status warns when x64sc, c1541 and petcat come from different VICE builds (R2-11)", () => {
+  const tool = (name: string, version: string): ToolStatus => ({ name, found: true, path: `/bin/${name}`, version, runs: true });
+  assert.equal(mixedViceBuilds([tool("VICE", "x64sc (VICE 3.10)"), tool("c1541", "c1541 (VICE 3.10)"), tool("petcat", "petcat (VICE 3.10)")]), undefined);
+  const mixed = mixedViceBuilds([tool("VICE", "x64sc (VICE 3.10 SVN r46282)"), tool("c1541", "c1541 (VICE 3.10)"), tool("petcat", "petcat (VICE 3.10)")]);
+  assert.match(mixed ?? "", /^the VICE tools come from different VICE builds: x64sc \(VICE 3\.10 SVN r46282\) \(\/bin\/VICE\), c1541 \(VICE 3\.10\)/);
 });

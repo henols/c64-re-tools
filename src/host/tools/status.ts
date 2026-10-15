@@ -5,7 +5,10 @@
 // running emulator at start: the Homebrew x64sc of VICE 3.10 on macOS stops
 // on -version ("argv[0] is NULL") although the emulator runs.
 
-import type { ToolStatus } from "../../protocol/tools.ts";
+import { arch, platform, release } from "node:os";
+
+import { PACKAGE } from "../../package.ts";
+import type { HostInfo, ToolStatus } from "../../protocol/tools.ts";
 import { C1541, findTool, isOlderThanMinimum, MIN_VICE, PETCAT, VICE, viceFlaws, viceVersionOf, type ToolSpec, type ViceVersion } from "../../native/discover.ts";
 import type { ToolContext } from "../../native/run.ts";
 import { probeTools } from "../../native/status.ts";
@@ -23,7 +26,7 @@ function requireMinimum(status: ToolStatus, tool: ToolSpec): ToolStatus {
 const versionText = (version: ViceVersion) => `x64sc (VICE ${version.major}.${version.minor}${version.revision === undefined ? "" : ` SVN r${version.revision}`})`;
 
 /** `started`: the version that the host read from the emulator at start; without it, VICE is probed with -version too. */
-export async function hostStatus(context: ToolContext, started?: ViceVersion): Promise<{ result: { tools: ToolStatus[] } }> {
+export async function hostStatus(context: ToolContext, started?: ViceVersion): Promise<{ result: { host: HostInfo; tools: ToolStatus[] } }> {
   const specs = [VICE, C1541, PETCAT];
   const probed = await probeTools(
     [
@@ -40,5 +43,5 @@ export async function hostStatus(context: ToolContext, started?: ViceVersion): P
   const version = vice.runs ? viceVersionOf(vice.version ?? "") : undefined;
   const flaws = version === undefined ? [] : viceFlaws(version);
   if (flaws.length > 0) checked[0] = { ...vice, flaws };
-  return { result: { tools: checked } };
+  return { result: { host: { version: PACKAGE.version, platform: platform(), release: release(), arch: arch() }, tools: checked } };
 }

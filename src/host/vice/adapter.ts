@@ -236,14 +236,15 @@ export function parseProfile(answer: string): ProfileEntry[] {
   const unknown: string[] = [];
   for (const line of answer.split("\n")) {
     // Counts can carry the host locale's digit grouping ("1,123,200") and the percent a decimal comma.
-    const row = new RegExp(`^\\s*(${COUNT})\\s+[\\d.,]+%\\s+(${COUNT})\\s+([\\d.,]+)%\\s+(\\S+)\\s*$`).exec(line);
+    // A profile of zero cycles, as after a window move restarts it, prints its percents as "-nan".
+    const row = new RegExp(`^\\s*(${COUNT})\\s+(?:[\\d.,]+|-?nan)%\\s+(${COUNT})\\s+([\\d.,]+|-?nan)%\\s+(\\S+)\\s*$`, "i").exec(line);
     if (row === null) {
       if (line.trim() !== "" && !/^Total\s+%\s+Self\s+%$/.test(line.trim()) && !/^[-\s]+$/.test(line)) unknown.push(line.trim());
       continue;
     }
     // A row named ROOT or by a label has no routine address.
     if (!/^[0-9a-f]{4}$/i.test(row[4]!)) continue;
-    entries.push({ address: Number.parseInt(row[4]!, 16), totalCycles: digits(row[1]!), selfCycles: digits(row[2]!), percent: Number(row[3]!.replace(",", ".")) });
+    entries.push({ address: Number.parseInt(row[4]!, 16), totalCycles: digits(row[1]!), selfCycles: digits(row[2]!), percent: /nan/i.test(row[3]!) ? 0 : Number(row[3]!.replace(",", ".")) });
   }
   // An answer in another form must not read as "nothing ran".
   if (entries.length === 0 && unknown.length > 0) throw unknownForm("profile", unknown);

@@ -97,6 +97,8 @@ export function viceArguments(options: {
     // Autostart injects a PRG into RAM; the default mode copies it to a disk image first.
     "-autostartprgmode",
     "1",
+    // VICE's default waits a random time before an autostart types its LOAD, so two runs of one file differ (R2-12).
+    "+autostart-delay-random",
     // The same RAM after every power-up: a hard reset is a power cycle, and VICE's default can flip
     // random bits, so two runs from one start state could differ.
     "-raminitstartvalue",

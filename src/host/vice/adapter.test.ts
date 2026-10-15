@@ -118,6 +118,8 @@ test("profile counts grouped by the host locale parse as plain digits (macOS)", 
     { address: 0xfd50, totalCycles: "1985259", selfCycles: "862059", percent: 43.4 },
   ]);
   assert.throws(() => parseProfile("Total %\nsomething else entirely"), /does not read/);
+  // A profile that counted no cycles yet, as after a window move (R2-04).
+  assert.deepEqual(parseProfile("Total      %          Self      %\n------------- ------ ------------- ------\n            0  -nan%             0  -nan% ROOT\n"), []);
 });
 
 test("memmap rows merge into ranges of equal access", () => {
