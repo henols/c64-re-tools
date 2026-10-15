@@ -354,8 +354,16 @@ export interface LoaderInput {
   byteAt: (address: number) => number;
   state: EntryState;
   entry: number;
+  /** The label of the entry in the source: the loader jumps to it, so the jump follows the code when it moves (D66). */
+  entryName?: string;
   header: string[];
 }
+
+/** The label of a block (D66): its first byte and the byte after it in the loader file, and its first address where it runs. */
+const blockLabel = (start: number, part: "from" | "end" | "to") => `loader_${part}_${start.toString(16).padStart(4, "0")}`;
+const plus = (label: string, offset: number) => (offset === 0 ? label : `${label}+${offset}`);
+/** The label of the copier in the loader file, which the stub moves to its two pages. */
+export const COPIER_SOURCE = "loader_copier_src";
 
 /** Plans the loader: the packed layout, the copy order and the copier page, and writes loader.asm. Refuses by name when no plan exists. */
 export function planLoader(input: LoaderInput): LoaderPlan {
@@ -371,12 +379,15 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   let at = STUB + STUB_SIZE;
   const plain: Array<Omit<Copy, "backward">> = [];
   const packedAt: number[] = [];
+  /** The block start of each copy in `plain`, which names its labels. */
+  const blockOf: number[] = [];
   for (const block of blocks) {
     packedAt.push(at);
     const target = { start: Math.max(block.range.start, 0x0002), end: block.range.end };
     if (target.start <= target.end) {
       const source = { start: at + (target.start - block.range.start), end: at + (target.end - block.range.start) };
       plain.push({ what: block.what, target, source });
+      blockOf.push(block.range.start);
     }
     at += block.range.end - block.range.start + 1;
   }
@@ -405,6 +416,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     const copy = plain[index]!;
     return { ...copy, backward: copy.target.start > copy.source.start && overlaps(copy.target, copy.source) };
   });
+  const copyBlocks = order.map((index) => blockOf[index]!);
 
   const stackByte = 0x0100 + state.sp;
   const lines: string[] = [...input.header.map((line) => `; ${line}`), "", "!cpu 6510", '!source "constants.asm"', "", `* = ${hex4(LOAD)}`];
@@ -413,17 +425,18 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     "!zone loader_stub {",
     "        sei",
     "        ldx #0",
-    `-       lda ${hex4(copierImage)},x`,
+    `-       lda ${COPIER_SOURCE},x`,
     `        sta ${hex4(copier)},x`,
-    `        lda ${hex4(copierImage + 0x100)},x`,
+    `        lda ${COPIER_SOURCE}+$100,x`,
     `        sta ${hex4(copier + 0x100)},x`,
     "        inx",
     "        bne -",
     `        jmp ${hex4(copier)}`,
     "}",
   );
+  // The labels around each block give the copy table its numbers, so a block can change its length (D66).
   for (const block of blocks) {
-    lines.push("", `; ${block.what}`, `!pseudopc ${hex4(block.pseudo)} {`);
+    lines.push("", `; ${block.what}`, blockLabel(block.range.start, "from"), `!pseudopc ${hex4(block.pseudo)} {`, blockLabel(block.range.start, "to"));
     if (block.files !== undefined) for (const file of block.files) lines.push(`!source "${file}"`);
     else {
       for (let address = block.range.start; address <= block.range.end; address += 16) {
@@ -431,12 +444,13 @@ export function planLoader(input: LoaderInput): LoaderPlan {
         lines.push(`        !byte ${Array.from({ length: last - address + 1 }, (_, offset) => hex2(block.bytes(address + offset))).join(",")}`);
       }
     }
-    lines.push("}");
+    lines.push("}", blockLabel(block.range.start, "end"));
   }
   const [port0, port1] = state.port;
   lines.push(
     "",
     `; The copier runs at ${hex4(copier)}. The flags pass through ${hex4(stackByte)}, the free stack byte below the stack pointer.`,
+    COPIER_SOURCE,
     `!pseudopc ${hex4(copier)} {`,
     "!zone loader_copier {",
     "        lda #$34",
@@ -508,7 +522,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     `        ldy #${hex2(state.y)}`,
     "        plp",
     // A global label: the check of the loader stops here, before an interrupt can run (F-32).
-    `${LOADER_JUMP} jmp ${hex4(input.entry)}`,
+    `${LOADER_JUMP} jmp ${input.entryName ?? hex4(input.entry)}`,
     ".count  !word 0",
     ".index  !byte 0",
     ".back   !byte 0",
@@ -520,12 +534,16 @@ export function planLoader(input: LoaderInput): LoaderPlan {
         ]),
     ".table",
   );
-  for (const copy of copies) {
-    const length = copy.target.end - copy.target.start + 1;
-    const read = copy.backward ? copy.source.end : copy.source.start;
-    const write = copy.backward ? copy.target.end : copy.target.start;
-    lines.push(`        !word ${hex4(length)},${hex4(read)},${hex4(write)} : !byte ${copy.backward ? 1 : 0} ; ${copy.what}`);
-  }
+  copies.forEach((copy, index) => {
+    // A block that starts at $0000 skips $00/$01, which the loader sets last.
+    const start = copyBlocks[index]!;
+    const skip = copy.target.start - start;
+    const [from, end, to] = [blockLabel(start, "from"), blockLabel(start, "end"), blockLabel(start, "to")];
+    const length = skip === 0 ? `${end} - ${from}` : `${end} - ${from} - ${skip}`;
+    const read = copy.backward ? `${end} - 1` : plus(from, skip);
+    const write = copy.backward ? `${to} + ${end} - ${from} - 1` : plus(to, skip);
+    lines.push(`        !word ${length}, ${read}, ${write} : !byte ${copy.backward ? 1 : 0} ; ${copy.what}`);
+  });
   lines.push("        !word 0", "}", "}");
 
   return {

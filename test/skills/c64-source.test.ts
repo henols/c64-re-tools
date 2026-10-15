@@ -137,6 +137,75 @@ test("the loader plan refuses a loader that would load into the I/O area, and pu
   assert.match(plan.text, /\n {8}plp\nc64_source_loader_jump jmp \$0810\n/, "the check of the loader stops at this label (F-32)");
 });
 
+/** Runs the copy table at the end of an assembled loader on a memory model, as the copier does. */
+function runCopyTable(program: Buffer, copies: number): Int16Array {
+  const memory = new Int16Array(0x10000).fill(-1);
+  program.subarray(2).forEach((byte, offset) => (memory[0x0801 + offset] = byte));
+  const table = program.length - 2 - 7 * copies;
+  for (let index = 0; index < copies; index++) {
+    const word = (offset: number) => program[table + 7 * index + offset]! | (program[table + 7 * index + offset + 1]! << 8);
+    const [length, read, write, backward] = [word(0), word(2), word(4), program[table + 7 * index + 6] === 1];
+    for (let step = 0; step < length; step++) memory[backward ? write - step : write + step] = memory[backward ? read - step : read + step]!;
+  }
+  return memory;
+}
+
+test("with real ACME, the loader takes its copies and its jump from labels, so code that moves still loads (D66)", { skip: acmeSkip }, async () => {
+  // $1000-$103f unused; $1040 LDA #<$c000 / LDA $1050 / JMP $1040; data to $10ff. A second segment at $c000.
+  const bytes = Array.from({ length: 0x100 }, (_, offset) => (offset < 0x40 ? 0 : offset & 0xff));
+  bytes.splice(0x40, 8, 0xa9, 0x00, 0xad, 0x50, 0x10, 0x4c, 0x40, 0x10);
+  const source: SourceInput = {
+    ...input(bytes, 0x1000, {
+      entry: 0x1040,
+      instructions: new Map([[0x1040, 2], [0x1042, 3], [0x1045, 3]]),
+      regions: [{ start: 0x1000, end: 0x103f, type: "unused" }, { start: 0x1048, end: 0x10ff, type: "bytes" }, { start: 0xc000, end: 0xc0ff, type: "bytes" }],
+      symbols: [{ address: 0x1040, name: "entry" }, { address: 0xc000, name: "tab" }],
+      operands: [{ address: 0x1040, select: "lo", symbol: "tab" }],
+    }),
+    segments: [{ start: 0x1000, end: 0x10ff }, { start: 0xc000, end: 0xc0ff }],
+    byteAt: (address) => (address >= 0xc000 ? address & 0x7f : bytes[address - 0x1000]!),
+  };
+  const laid = layout(source);
+  const rendered = render(laid, new Set(), []);
+  const plan = planLoader({
+    segments: [{ start: 0x1000, end: 0x10ff, files: ["segment_1000.asm"] }, { start: 0xc000, end: 0xc0ff, files: ["segment_c000.asm"] }],
+    byteAt: source.byteAt,
+    state: state({ pc: 0x1040 }),
+    entry: 0x1040,
+    entryName: laid.names.get(0x1040)!,
+    header: [],
+  });
+  assert.match(plan.text, /\n- {7}lda loader_copier_src,x\n/);
+  assert.match(plan.text, /\n {8}!word loader_end_1000 - loader_from_1000, loader_from_1000, loader_to_1000 : !byte 0 ; segment \$1000-\$10ff\n/);
+  assert.match(plan.text, /\nc64_source_loader_jump jmp entry\n/);
+  const build = async (files: Array<{ name: string; text: string }>, entrySource: string) => {
+    const contents = files.map((file) => Buffer.from(file.text));
+    const { result, attachments } = await assemble({ files: files.map((file, index) => ({ path: file.name, size: contents[index]!.length })), entrySource, includeDirs: [], defines: {} }, contents, localToolContext());
+    assert.equal(result.assembled, true, JSON.stringify(result.diagnostics));
+    return { program: attachments![0]!, symbols: result.symbols ?? [] };
+  };
+  const files = [...rendered.files, { name: "loader.asm", text: plan.text }];
+  const unchanged = await build(files, "loader.asm");
+  const memory = runCopyTable(unchanged.program, plan.copies.length);
+  for (const segment of source.segments) for (let address = segment.start; address <= segment.end; address++) assert.equal(memory[address], source.byteAt(address), `$${address.toString(16)}`);
+
+  // 16 fill bytes fewer: the code from the entry moves down by 16, the copies and the jump follow it.
+  const moved = files.map((file) => (file.name === "segment_1000.asm" ? { ...file, text: file.text.replace("!fill 64, $00", "!fill 48, $00") } : file));
+  assert.notDeepEqual(moved, files);
+  const main = await build(moved, "main.asm");
+  const relocated = await build(moved, "loader.asm");
+  const after = runCopyTable(relocated.program, plan.copies.length);
+  main.program.subarray(2, 2 + 0xf0).forEach((byte, offset) => assert.equal(after[0x1000 + offset], byte, `$${(0x1000 + offset).toString(16)}`));
+  for (let address = 0xc000; address <= 0xc0ff; address++) assert.equal(after[address], source.byteAt(address));
+  assert.deepEqual([...main.program.subarray(2 + 0x30, 2 + 0x38)], [0xa9, 0x00, 0xad, 0x40, 0x10, 0x4c, 0x30, 0x10], "the code at $1030 names its moved targets");
+  const value = (name: string) => {
+    const symbol = relocated.symbols.find((item) => item.name === name)!;
+    return symbol.kind === "address" ? symbol.address : symbol.value;
+  };
+  const at = 2 + value("loader_copier_src") - 0x0801 + (value("c64_source_loader_jump") - plan.copier);
+  assert.deepEqual([...relocated.program.subarray(at, at + 3)], [0x4c, 0x30, 0x10], "the loader jumps to the moved entry");
+});
+
 test("an entry state file is read with its flags as PLP reads them, and a wrong one is refused", () => {
   const pages = Object.fromEntries(["$0000", "$0100", "$0200", "$0300"].map((page) => [page, "00".repeat(256)]));
   const read = readEntryState(JSON.stringify({ registers: { pc: "$0810", a: 1, x: 2, y: 3, sp: 0xf0, flags: { n: true, i: true, c: true } }, cpuPort: { $00: 0x2f, $01: 0x35 }, pages }), "e.json");
