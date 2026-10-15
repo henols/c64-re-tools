@@ -30,7 +30,7 @@ echo 'export C64RT_GHIDRA="$HOME/.local/share/ghidra_12.1.3_PUBLIC"' >> ~/.profi
 xcode-select --install
 brew install acme openjdk@21
 export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
-curl -fsSLO https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz
+curl -fsSLO https://sources.voidlinux.org/dxa-0.1.5/dxa-0.1.5.tar.gz
 test "$(md5 -q dxa-0.1.5.tar.gz)" = 6d69ae1772ed58de97b0180e480dfe0c
 tar -xzf dxa-0.1.5.tar.gz && make -C dxa-0.1.5 CC=clang
 install -m 0755 dxa-0.1.5/dxa "$(brew --prefix)/bin/dxa"
@@ -46,7 +46,7 @@ Then set `C64RT_GHIDRA=$HOME/ghidra_12.1.3_PUBLIC` and `JAVA_HOME` (the line abo
 
 1. Java 21: `winget install EclipseAdoptium.Temurin.21.JDK`
 2. ACME: unzip [acme0.97win.zip](https://sourceforge.net/projects/acme-crossass/files/win32/) and put `acme.exe` on `PATH`, or set `C64RT_ACME` to its full path.
-3. dxa has no Windows release. Build [dxa-0.1.5.tar.gz](https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz) with MinGW-w64: `make CC=gcc LDFLAGS=-static`. Put `dxa.exe` on `PATH`, or set `C64RT_DXA`.
+3. dxa has no Windows release. Build [dxa-0.1.5.tar.gz](https://sources.voidlinux.org/dxa-0.1.5/dxa-0.1.5.tar.gz) with MinGW-w64: `make CC=gcc LDFLAGS=-static`. Put `dxa.exe` on `PATH`, or set `C64RT_DXA`.
 4. Ghidra: unzip [ghidra_12.1.3_PUBLIC_20260817.zip](https://github.com/NationalSecurityAgency/ghidra/releases/tag/Ghidra_12.1.3_build) (SHA-256 `93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54`), then `setx C64RT_GHIDRA C:\path\to\ghidra_12.1.3_PUBLIC`.
 
 ## Settings

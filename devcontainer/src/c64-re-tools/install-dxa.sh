@@ -21,11 +21,8 @@ DXA_VERSION="0.1.5"
 
 DXA_ARCHIVE="dxa-${DXA_VERSION}.tar.gz"
 
-# Official upstream source
-DXA_URL_PRIMARY="https://www.floodgap.com/retrotech/xa/dists/${DXA_ARCHIVE}"
-
-# Fallback mirror of the same source archive
-DXA_URL_FALLBACK="https://sources.voidlinux.org/dxa-${DXA_VERSION}/${DXA_ARCHIVE}"
+# The source archive. The upstream site (floodgap.com) is gone; Void Linux keeps the same archive.
+DXA_URL="https://sources.voidlinux.org/dxa-${DXA_VERSION}/${DXA_ARCHIVE}"
 
 # Published MD5 from SlackBuilds.
 DXA_MD5="6d69ae1772ed58de97b0180e480dfe0c"
@@ -146,28 +143,14 @@ cd "${BUILD_DIR}"
 
 info "Downloading dxa ${DXA_VERSION}"
 
-if ! curl \
+curl \
     --fail \
     --location \
     --show-error \
     --silent \
     --retry 3 \
     --output "${DXA_ARCHIVE}" \
-    "${DXA_URL_PRIMARY}"
-then
-    echo
-    echo "Primary Floodgap download failed."
-    echo "Trying Void Linux source mirror..."
-
-    curl \
-        --fail \
-        --location \
-        --show-error \
-        --silent \
-        --retry 3 \
-        --output "${DXA_ARCHIVE}" \
-        "${DXA_URL_FALLBACK}"
-fi
+    "${DXA_URL}"
 
 
 # ------------------------------------------------------------

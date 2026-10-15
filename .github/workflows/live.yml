@@ -50,7 +50,7 @@ jobs:
       - name: Install ACME, dxa and Ghidra
         run: |
           apt-get install -y --no-install-recommends unzip build-essential acme openjdk-21-jdk-headless
-          curl -fsSL -o /tmp/dxa.tgz https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz
+          curl -fsSL -o /tmp/dxa.tgz https://sources.voidlinux.org/dxa-0.1.5/dxa-0.1.5.tar.gz
           echo "6d69ae1772ed58de97b0180e480dfe0c  /tmp/dxa.tgz" | md5sum -c -
           tar -xzf /tmp/dxa.tgz -C /tmp
           make -C /tmp/dxa-0.1.5 CC=gcc
@@ -112,7 +112,7 @@ jobs:
           jdk="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
           echo "JAVA_HOME=$jdk" >> "$GITHUB_ENV"
           echo "$jdk/bin" >> "$GITHUB_PATH"
-          curl -fsSL -o "$RUNNER_TEMP/dxa.tgz" https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz
+          curl -fsSL -o "$RUNNER_TEMP/dxa.tgz" https://sources.voidlinux.org/dxa-0.1.5/dxa-0.1.5.tar.gz
           test "$(md5 -q "$RUNNER_TEMP/dxa.tgz")" = 6d69ae1772ed58de97b0180e480dfe0c
           tar -xzf "$RUNNER_TEMP/dxa.tgz" -C "$RUNNER_TEMP"
           make -C "$RUNNER_TEMP/dxa-0.1.5" CC=clang
@@ -161,7 +161,8 @@ jobs:
           # Unix-style paths: Git Bash tar reads "D:\\..." as a remote host.
           T="$(cygpath -u "$RUNNER_TEMP")"
           MAKE="$(command -v make || command -v mingw32-make)"
-          curl -fsSL -o "$T/dxa.tgz" https://www.floodgap.com/retrotech/xa/dists/dxa-0.1.5.tar.gz
+          curl -fsSL -o "$T/dxa.tgz" https://sources.voidlinux.org/dxa-0.1.5/dxa-0.1.5.tar.gz
+          echo "6d69ae1772ed58de97b0180e480dfe0c  $T/dxa.tgz" | md5sum -c -
           tar -xzf "$T/dxa.tgz" -C "$T"
           # A build is installed only when it runs.
           "$MAKE" -C "$T/dxa-0.1.5" CC=gcc LDFLAGS=-static || true
