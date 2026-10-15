@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { instructionLength, SYMBOL_NAME } from "../c64.ts";
 import { isoCet } from "../time.ts";
+import { CONFLICT_RULES, conflicts, conflictTable, type Conflict, type ConflictRow } from "./conflicts.ts";
 import { KnowledgeError, transaction } from "./database.ts";
 import { checkExpression, evaluate, ExpressionError, identifiers, operandText, replaceIdentifiers } from "./expression.ts";
 import {
@@ -66,7 +67,7 @@ import {
   type Space,
   type SymbolKind,
 } from "./schema.ts";
-import { newRevisionId, rowId } from "./text.ts";
+import { newRevisionId, rowId, sqlName } from "./text.ts";
 
 /** What a change rests on (D42): a coverage run, a test or another project file with its SHA-256, or a note. */
 export interface Evidence {
@@ -163,6 +164,14 @@ export class Change {
     this.#db = db;
     this.#context = context;
     this.#operation = operation;
+    // A merge of two computers' work can leave conflicts: only a merge revision writes then (D69).
+    const found = operation === "merge" ? [] : conflicts(db);
+    if (found.length > 0) {
+      throw new KnowledgeError(
+        "conflict",
+        `The knowledge has ${found.length} conflict${found.length === 1 ? "" : "s"} from a git merge, for example ${describe(found[0]!)}. Nothing was written. Run knowledge.ts merge to decide them, then write again.`,
+      );
+    }
     const current = currentRevision(db);
     if (context.expectedRevision !== undefined && resolveRevision(db, context.expectedRevision) !== current) {
       throw new KnowledgeError(
@@ -184,6 +193,16 @@ export class Change {
     const evidence = this.#db.prepare("INSERT INTO evidence (revision, kind, ref, sha256) VALUES (?, ?, ?, ?)");
     for (const item of this.#context.evidence ?? []) evidence.run(id, item.kind, item.ref, item.sha256 ?? null);
     return id;
+  }
+
+  /**
+   * Refuses a write that leaves two current rows where one is allowed: the
+   * index has no unique indexes, because a merged text can hold such rows.
+   */
+  check(): void {
+    if (this.revision === null) return;
+    const [found] = conflicts(this.#db);
+    if (found !== undefined) throw new KnowledgeError("conflict", `The write would leave ${describe(found)}. Nothing was written.`);
   }
 
   /** The id of the next row this write inserts. */
@@ -237,6 +256,17 @@ export class Change {
   }
 }
 
+/** A conflict in words: its rule, its space and the addresses of its rows. */
+function describe(conflict: Conflict): string {
+  const place = (entry: ConflictRow) => {
+    const row = entry.row as { address?: number; start?: number; end?: number; from?: number };
+    if (row.address !== undefined) return hex(row.address);
+    if (row.from !== undefined && entry.entity === "reference") return hex(row.from);
+    return row.end === undefined || row.end === row.start ? hex(row.start!) : `${hex(row.start!)}-${hex(row.end)}`;
+  };
+  return `${CONFLICT_RULES[conflict.rule]} in ${conflict.space} (${[...new Set(conflict.rows.map(place))].join(", ")})`;
+}
+
 /** Closes the current region suppressions over [start, end] and keeps their parts outside it: a user/LLM region there decides now. */
 function liftRegionSuppressions(db: DatabaseSync, change: Change, start: number, end: number, space: Space): void {
   const overlapping = suppressionsOverlapping(db, "region", start, end, space);
@@ -265,6 +295,7 @@ function write<T>(db: DatabaseSync, context: WriteContext, operation: string, wo
   return transaction(db, () => {
     const change = new Change(db, context, operation);
     const current = work(change);
+    change.check();
     return { revision: change.revision, current };
   });
 }
@@ -834,4 +865,68 @@ export function revert(db: DatabaseSync, context: WriteContext, request: { revis
     }
     return { restoredRevision: restored };
   });
+}
+
+/** What a merge decided for one conflict: the newest row stays and the older rows close. */
+export interface MergeChoice {
+  rule: Conflict["rule"];
+  space: Space;
+  kept: ConflictRow;
+  closed: ConflictRow[];
+}
+
+/** The most choices one merge makes; more means the knowledge text is broken. */
+const MAX_CHOICES = 100_000;
+
+/**
+ * Decides every conflict of a git merge in one merge revision (D69). Of the
+ * rows of one conflict, the row of the newest revision stays and the others
+ * close; an older region keeps its parts outside the newer regions. Where an
+ * operand expression closes, the pointer references of its address follow the
+ * expression that stays. `platform` gives the C64 platform names.
+ */
+export function mergeConflicts(db: DatabaseSync, context: WriteContext, platform: ReadonlyMap<string, number>): WriteResult<MergeChoice[]> {
+  return write(db, context, "merge", (change) => {
+    const choices: MergeChoice[] = [];
+    for (let found = conflicts(db); found.length > 0; found = conflicts(db)) {
+      if (choices.length >= MAX_CHOICES) throw new KnowledgeError("invalid-database", `The merge made ${MAX_CHOICES} choices and still finds conflicts. Nothing was written.`);
+      const conflict = found[0]!;
+      const newest = conflict.rows.at(-1)!;
+      const older = conflict.rows.slice(0, -1);
+      const table = sqlName(conflictTable(conflict.rule));
+      for (const entry of older) change.close(table, "id = ?", entry.id);
+      if (conflict.rule === "region" || conflict.rule === "suppression-region") keepOutside(change, conflict, conflict.rule === "region");
+      if (conflict.rule === "operand") followOperand(db, change, newest.row as OperandRow, platform);
+      choices.push({ rule: conflict.rule, space: conflict.space, kept: newest, closed: older });
+    }
+    return choices;
+  });
+}
+
+/** Puts back the parts of the older ranges of a conflict that no newer range covers. */
+function keepOutside(change: Change, conflict: Conflict, regions: boolean): void {
+  const newer: AddressRange[] = [];
+  for (const entry of [...conflict.rows].reverse()) {
+    const row = entry.row as RegionRow & SuppressionRow;
+    if (newer.length > 0) {
+      for (const piece of subtract({ start: row.start, end: row.end }, newer)) {
+        if (regions) change.insertRegion({ space: row.space, ...piece, type: row.type, ...elementOf(piece, row.element), origin: row.origin });
+        else change.insertSuppression({ space: row.space, entity: "region", ...piece, origin: row.origin });
+      }
+    }
+    newer.push({ start: row.start, end: row.end });
+  }
+}
+
+/** Makes the pointer references of an address the ones of the operand expression that stays there. */
+function followOperand(db: DatabaseSync, change: Change, kept: OperandRow, platform: ReadonlyMap<string, number>): void {
+  const resolve = (name: string) => symbolNamed(db, name, kept.space)?.address ?? (kept.space === DEFAULT_SPACE ? platform.get(name) : undefined);
+  const targets = new Set(identifiers(operandText(kept)).flatMap((name) => resolve(name) ?? []));
+  const pointers = referencesFrom(db, kept.address, kept.space).filter((reference) => reference.kind === POINTER_KIND);
+  for (const reference of pointers) {
+    if (!targets.has(reference.to)) change.close('"references"', "space = ? AND from_address = ? AND to_address = ? AND kind = ?", kept.space, kept.address, reference.to, POINTER_KIND);
+  }
+  for (const to of targets) {
+    if (!pointers.some((reference) => reference.to === to)) change.insertReference({ space: kept.space, from: kept.address, to, kind: POINTER_KIND, origin: kept.origin });
+  }
 }

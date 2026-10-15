@@ -10,6 +10,7 @@ import { parseArgs } from "node:util";
 import { formatC64Address, parseC64Address } from "#src/c64.ts";
 import { ImageError, readImage } from "#src/host-client/image.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
+import { CONFLICT_RULES, conflicts, type Conflict } from "#src/knowledge/conflicts.ts";
 import { KnowledgeError, openForRead, withWrite } from "#src/knowledge/database.ts";
 import { operandText } from "#src/knowledge/expression.ts";
 import { historyAt, historyNamed, revision, revisionNote, revisions, type HistoryEntry } from "#src/knowledge/history.ts";
@@ -54,6 +55,7 @@ import {
   addReference,
   applyBatch,
   classifyRegion,
+  mergeConflicts,
   removeComment,
   removeModule,
   removeOperand,
@@ -67,6 +69,7 @@ import {
   unclassifyRegion,
   type BatchOperation,
   type Evidence,
+  type MergeChoice,
   type OperandImage,
   type WriteContext,
 } from "#src/knowledge/write.ts";
@@ -118,6 +121,9 @@ Write (one revision each; creates .c64-re-tools/knowledge/ when needed):
                            or PRG); give a negative offset as --offset=-1
   unoperand <address>
   revert <revision>
+  merge                    decide the conflicts that a git merge of two
+                           computers' work left: of the rows of one conflict,
+                           the newest stays; one revision for all
   apply <file>             many writes from a JSON file ('-' reads standard input),
                            all as one revision, or none when one is refused;
                            operand writes need --image <file>
@@ -208,6 +214,16 @@ function historyEntry(entry: HistoryEntry) {
   return { entity: entry.entity, ...row, fromRevision: entry.from, ...(entry.to === undefined ? {} : { toRevision: entry.to }) };
 }
 
+/** A conflict of a git merge (D69): what is wrong, and the rows, oldest first. */
+function showConflict(conflict: Conflict) {
+  return { conflict: CONFLICT_RULES[conflict.rule], ...spaceOf(conflict), rows: conflict.rows.map(historyEntry) };
+}
+
+/** What merge decided for one conflict: the row that stays and the rows it closed. */
+function showChoice(choice: MergeChoice) {
+  return { conflict: CONFLICT_RULES[choice.rule], ...spaceOf(choice), kept: historyEntry(choice.kept), closed: choice.closed.map(historyEntry) };
+}
+
 /** The reason of each revision that wrote one of the rows. */
 function reasonsOf(db: DatabaseSync | undefined, rows: SuppressionRow[]): Map<string, string> {
   const reasons = new Map<string, string>();
@@ -257,7 +273,7 @@ function run(argv: string[]): unknown {
   const space = values.space ?? DEFAULT_SPACE;
 
   const read = new Set(["at", "search", "symbols", "regions", "comments", "references", "suppressions", "modules", "operands", "spaces", "history", "revisions", "revision", "export"]);
-  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "operand", "unoperand", "revert", "apply"]);
+  const write = new Set(["rename", "remove-symbol", "classify", "unclassify", "comment", "uncomment", "reference", "unreference", "module", "unmodule", "operand", "unoperand", "revert", "apply", "merge"]);
   // Refuse a mistyped command before anything opens, so no database appears by accident.
   if (!read.has(command) && !write.has(command)) throw new UsageError(`unknown command: ${command}`);
   if (read.has(command)) {
@@ -265,84 +281,10 @@ function run(argv: string[]): unknown {
     if (command === "export" && values.out === undefined) throw new UsageError("export needs --out <file>");
     const db = openForRead();
     try {
-      switch (command) {
-        case "at": {
-          const known = at(db, address(args[0]), space);
-          return {
-            ...(space === DEFAULT_SPACE ? {} : { space }),
-            address: formatC64Address(known.address),
-            ...(known.symbol === undefined ? {} : { symbol: symbol(known.symbol) }),
-            ...(known.region === undefined ? {} : { region: region(known.region) }),
-            comments: known.comments.map(comment),
-            referencesFrom: known.referencesFrom.map(reference),
-            referencesTo: known.referencesTo.map(reference),
-            ...(known.operand === undefined ? {} : { operand: operand(known.operand) }),
-            ...(known.suppressions.length === 0 ? {} : { suppressions: known.suppressions.map(suppression) }),
-            revision: known.revision,
-          };
-        }
-        case "search": {
-          if (args[0] === undefined || args[0] === "") throw new UsageError("search needs text");
-          const found = search(db, args[0], values.limit === undefined ? 50 : integer(values.limit, "--limit"), origins, space);
-          return { symbols: found.symbols.map(symbol), comments: found.comments.map(comment) };
-        }
-        case "symbols":
-          return { symbols: listSymbols(db, range, values.kind === undefined ? undefined : oneOf(SYMBOL_KINDS, values.kind, "--kind"), origins, space).map(symbol) };
-        case "regions":
-          return { regions: listRegions(db, range, values.type === undefined ? undefined : oneOf(REGION_TYPES, values.type, "--type"), origins, space).map(region) };
-        case "comments":
-          return { comments: listComments(db, range, origins, space).map(comment) };
-        case "references":
-          return { references: listReferences(db, range, values.kind === undefined ? undefined : oneOf(REFERENCE_KINDS, values.kind, "--kind"), origins, space).map(reference) };
-        case "export": {
-          const exported = {
-            revision: currentRevision(db),
-            ...(space === DEFAULT_SPACE ? {} : { space }),
-            symbols: listSymbols(db, range, undefined, origins, space).map(symbol),
-            regions: listRegions(db, range, undefined, origins, space).map(region),
-            comments: listComments(db, range, origins, space).map(comment),
-            references: listReferences(db, range, undefined, origins, space).map(reference),
-            suppressions: listSuppressions(db, range, space).map(suppression),
-            modules: listModules(db, range, origins, space).map(module),
-            operands: listOperands(db, range, origins, space).map(operand),
-          };
-          const bytes = Buffer.from(`${JSON.stringify(exported, null, 2)}\n`, "utf8");
-          writeProjectFile(values.out!, bytes, { what: "--out" });
-          return {
-            out: values.out,
-            bytes: bytes.length,
-            counts: { symbols: exported.symbols.length, regions: exported.regions.length, comments: exported.comments.length, references: exported.references.length, suppressions: exported.suppressions.length, modules: exported.modules.length, operands: exported.operands.length },
-            revision: exported.revision,
-          };
-        }
-        case "suppressions": {
-          const rows = listSuppressions(db, range, space);
-          const reasons = reasonsOf(db, rows);
-          return { suppressions: rows.map((row) => ({ ...suppression(row), ...(reasons.has(row.revision) ? { reason: reasons.get(row.revision) } : {}) })) };
-        }
-        case "modules":
-          return { modules: listModules(db, range, origins, space).map(module) };
-        case "operands":
-          return { operands: listOperands(db, range, origins, space).map(operand) };
-        case "spaces":
-          return { spaces: listSpaces(db) };
-        case "history":
-          // Each row with the reason and the evidence of the revision that wrote it (F-26).
-          return {
-            history: (values.name === undefined ? historyAt(db, address(args[0]), space) : historyNamed(db, values.name, space)).map((entry) => ({ ...historyEntry(entry), ...revisionNote(db, entry.from) })),
-          };
-        case "revisions": {
-          const options: { limit?: number; before?: string } = {};
-          if (values.limit !== undefined) options.limit = integer(values.limit, "--limit");
-          if (values.before !== undefined) options.before = values.before;
-          return { revisions: revisions(db, options) };
-        }
-        default: {
-          if (args[0] === undefined) throw new UsageError("revision is missing");
-          const changes = revision(db, args[0]);
-          return { revision: changes.revision, added: changes.added.map(historyEntry), closed: changes.closed.map(historyEntry) };
-        }
-      }
+      const answer = readAnswer(db, command, args, values, range, origins, space);
+      const found = conflicts(db);
+      // A git merge can leave conflicts: every read shows them until merge decides them (D69).
+      return found.length === 0 ? answer : { ...answer, conflicts: found.map(showConflict) };
     } finally {
       db?.close();
     }
@@ -365,6 +307,90 @@ function run(argv: string[]): unknown {
         ? operandOperation(args, values, context, space)
         : writeOperation(command, args, values.kind, values.element, context, values.title, space);
   return withWrite(operation);
+}
+
+type ReadValues = { kind?: string | undefined; type?: string | undefined; name?: string | undefined; limit?: string | undefined; before?: string | undefined; out?: string | undefined };
+
+/** The answer of one read command. */
+function readAnswer(db: DatabaseSync | undefined, command: string, args: string[], values: ReadValues, range: { start: number; end: number }, origins: Origin[] | undefined, space: string): Record<string, unknown> {
+  switch (command) {
+    case "at": {
+      const known = at(db, address(args[0]), space);
+      return {
+        ...(space === DEFAULT_SPACE ? {} : { space }),
+        address: formatC64Address(known.address),
+        ...(known.symbol === undefined ? {} : { symbol: symbol(known.symbol) }),
+        ...(known.region === undefined ? {} : { region: region(known.region) }),
+        comments: known.comments.map(comment),
+        referencesFrom: known.referencesFrom.map(reference),
+        referencesTo: known.referencesTo.map(reference),
+        ...(known.operand === undefined ? {} : { operand: operand(known.operand) }),
+        ...(known.suppressions.length === 0 ? {} : { suppressions: known.suppressions.map(suppression) }),
+        revision: known.revision,
+      };
+    }
+    case "search": {
+      if (args[0] === undefined || args[0] === "") throw new UsageError("search needs text");
+      const found = search(db, args[0], values.limit === undefined ? 50 : integer(values.limit, "--limit"), origins, space);
+      return { symbols: found.symbols.map(symbol), comments: found.comments.map(comment) };
+    }
+    case "symbols":
+      return { symbols: listSymbols(db, range, values.kind === undefined ? undefined : oneOf(SYMBOL_KINDS, values.kind, "--kind"), origins, space).map(symbol) };
+    case "regions":
+      return { regions: listRegions(db, range, values.type === undefined ? undefined : oneOf(REGION_TYPES, values.type, "--type"), origins, space).map(region) };
+    case "comments":
+      return { comments: listComments(db, range, origins, space).map(comment) };
+    case "references":
+      return { references: listReferences(db, range, values.kind === undefined ? undefined : oneOf(REFERENCE_KINDS, values.kind, "--kind"), origins, space).map(reference) };
+    case "export": {
+      const exported = {
+        revision: currentRevision(db),
+        ...(space === DEFAULT_SPACE ? {} : { space }),
+        symbols: listSymbols(db, range, undefined, origins, space).map(symbol),
+        regions: listRegions(db, range, undefined, origins, space).map(region),
+        comments: listComments(db, range, origins, space).map(comment),
+        references: listReferences(db, range, undefined, origins, space).map(reference),
+        suppressions: listSuppressions(db, range, space).map(suppression),
+        modules: listModules(db, range, origins, space).map(module),
+        operands: listOperands(db, range, origins, space).map(operand),
+      };
+      const bytes = Buffer.from(`${JSON.stringify(exported, null, 2)}\n`, "utf8");
+      writeProjectFile(values.out!, bytes, { what: "--out" });
+      return {
+        out: values.out,
+        bytes: bytes.length,
+        counts: { symbols: exported.symbols.length, regions: exported.regions.length, comments: exported.comments.length, references: exported.references.length, suppressions: exported.suppressions.length, modules: exported.modules.length, operands: exported.operands.length },
+        revision: exported.revision,
+      };
+    }
+    case "suppressions": {
+      const rows = listSuppressions(db, range, space);
+      const reasons = reasonsOf(db, rows);
+      return { suppressions: rows.map((row) => ({ ...suppression(row), ...(reasons.has(row.revision) ? { reason: reasons.get(row.revision) } : {}) })) };
+    }
+    case "modules":
+      return { modules: listModules(db, range, origins, space).map(module) };
+    case "operands":
+      return { operands: listOperands(db, range, origins, space).map(operand) };
+    case "spaces":
+      return { spaces: listSpaces(db) };
+    case "history":
+      // Each row with the reason and the evidence of the revision that wrote it (F-26).
+      return {
+        history: (values.name === undefined ? historyAt(db, address(args[0]), space) : historyNamed(db, values.name, space)).map((entry) => ({ ...historyEntry(entry), ...revisionNote(db, entry.from) })),
+      };
+    case "revisions": {
+      const options: { limit?: number; before?: string } = {};
+      if (values.limit !== undefined) options.limit = integer(values.limit, "--limit");
+      if (values.before !== undefined) options.before = values.before;
+      return { revisions: revisions(db, options) };
+    }
+    default: {
+      if (args[0] === undefined) throw new UsageError("revision is missing");
+      const changes = revision(db, args[0]);
+      return { revision: changes.revision, added: changes.added.map(historyEntry), closed: changes.closed.map(historyEntry) };
+    }
+  }
 }
 
 /** --origin for reads: one origin, semantic (user and llm), analyzer (dxa and ghidra), or a comma list. */
@@ -604,6 +630,14 @@ function writeOperation(command: string, args: string[], kind: string | undefine
     case "unoperand": {
       const request = { space, address: address(args[0]) };
       return (db) => ({ revision: removeOperand(db, context, request).revision });
+    }
+    case "merge": {
+      if (args.length > 0) throw new UsageError("merge takes no arguments");
+      const platform = new Map(platformNames().map((entry) => [entry.name, entry.address]));
+      return (db) => {
+        const merged = mergeConflicts(db, context, platform);
+        return { revision: merged.revision, choices: merged.current.map(showChoice) };
+      };
     }
     case "revert": {
       if (args[0] === undefined) throw new UsageError("revision is missing");

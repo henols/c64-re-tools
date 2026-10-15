@@ -16,6 +16,7 @@ import { ImageError, readImage as readSharedImage, type Image } from "#src/host-
 import { MAX_MEMORY_READ, WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { ViceSessionClient } from "#src/host-client/vice-session.ts";
+import { conflicts } from "#src/knowledge/conflicts.ts";
 import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
 import { currentRevision, listComments, listModules, listOperands, listReferences, listRegions, listSymbols } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, SPACE, type Space } from "#src/knowledge/schema.ts";
@@ -69,6 +70,9 @@ function readImage(path: string): Image {
 function readKnowledge(space: Space) {
   const db = openForRead();
   try {
+    // With conflicts from a git merge, the source would depend on which of two rows comes first (D69).
+    const found = conflicts(db).length;
+    if (found > 0) throw new KnowledgeError("conflict", `The knowledge has ${found} conflict${found === 1 ? "" : "s"} from a git merge. Nothing was generated. Run c64-knowledge's knowledge.ts merge, then generate again.`);
     return {
       revision: currentRevision(db),
       symbols: listSymbols(db, undefined, undefined, undefined, space),

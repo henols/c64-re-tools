@@ -386,6 +386,7 @@ export function importFindings(db: DatabaseSync, findings: NormalizedFindings, c
     importSymbols(db, change, findings, coverage, result);
     importRegions(db, change, findings, coverage, result);
     importReferences(db, change, findings, coverage, result);
+    change.check();
     result.revision = change.revision;
     return result;
   });
