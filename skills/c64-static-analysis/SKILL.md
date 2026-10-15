@@ -66,7 +66,7 @@ The analyzers take at most 1024 entry points. Knowledge routines and `--entry` c
    - If a list is not complete, `rest` gives the c64-knowledge command that lists all of them.
    - `conflicts` lists the places where the analyzer and the current knowledge disagree.
    - `idioms` tells what the script found by pattern: RTS dispatch tables (`rtsTables`), JMP tables (`jumpTables`) and BIT skips (`bitSkips`). The script writes them as knowledge with the origin `heuristic`, and seeds their targets into the same analysis. `candidates` gives DOP padding and opcodes that the program wrote and then executed. The script does not write those. Look at them and decide.
-   - With `--coverage`, `coverageConflicts` lists the analyzer data regions where the coverage shows executed code. Classify them as code with the c64-knowledge skill, or as `dual-use` when the bytes are also data.
+   - With `--coverage`, a code finding replaces the DXA or Ghidra data where a run executed an instruction start. `coverageConflicts` lists the analyzer data regions where the coverage still shows executed code. Classify them as code with the c64-knowledge skill, or as `dual-use` when the bytes are also data.
 6. Give each important routine a name with the c64-knowledge skill. Then run the analysis again. The analyzers use the new names.
 
 The script records only structure: generated names, code and data regions, and references from Ghidra. The listing and the decompiled code are only for the current task. The script does not record them in the knowledge.
@@ -78,7 +78,7 @@ Automatic write:
 - names that DXA generated (labels) and routine entry points with names that Ghidra generated
 - references from Ghidra: call, jump, read and write.
 
-The script never replaces a name or a region from the user or the LLM. A name that an analyzer only shows back stays with its owner. DXA and Ghidra do not replace the facts of each other.
+The script never replaces a name or a region from the user or the LLM. A name that an analyzer only shows back stays with its owner. DXA and Ghidra do not replace the facts of each other, with one exception. With `--coverage`, a code finding replaces a DXA or Ghidra data region or data name where a run executed an instruction start. The revision keeps the coverage files as evidence. Thus run DXA first, then Ghidra with all coverage files.
 
 A `heuristic` region replaces the part of a DXA or Ghidra region where it lies, because an idiom is specific evidence about those bytes. DXA and Ghidra never replace a `heuristic` region. If they find code there, the result shows a conflict. A heuristic table can be too long or too short, because the script cannot know its length. Correct it with the c64-knowledge skill. Your region replaces it, and a removal holds.
 

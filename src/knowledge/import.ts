@@ -6,7 +6,9 @@
 // that the snapshot no longer holds are closed. Rows of the user, the LLM or
 // another analyzer are never replaced: a finding that contradicts one is
 // reported as a conflict. Code against data is a contradiction; a different
-// name or a finer data type for the same kind of memory is not.
+// name or a finer data type for the same kind of memory is not. One exception
+// (D58): where a run executed an instruction start, a code finding replaces
+// the data of another analyzer, never of the user, the LLM or a heuristic.
 
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
@@ -28,7 +30,7 @@ import {
   type SymbolRow,
 } from "./read.ts";
 import { CODE_REGION_TYPES, DEFAULT_SPACE, REFERENCE_KINDS, REGION_TYPES, SYMBOL_KINDS, type Origin, type ReferenceKind, type RegionType, type Space, type SymbolKind } from "./schema.ts";
-import { Change, checkAddress, checkSpace, hex, subtract, SYMBOL_NAME, type AddressRange } from "./write.ts";
+import { Change, checkAddress, checkSpace, hex, subtract, SYMBOL_NAME, type AddressRange, type Evidence } from "./write.ts";
 
 export type { AddressRange };
 
@@ -47,6 +49,8 @@ export interface NormalizedFindings {
   regions: Array<{ start: number; end: number; type: RegionType }>;
   /** Owned and covered by their source address. */
   references: Array<{ from: number; to: number; kind: ReferenceKind }>;
+  /** True for an address where a coverage run executed an instruction start (D58). */
+  executed?: (address: number) => boolean;
 }
 
 export interface ImportContext {
@@ -57,6 +61,8 @@ export interface ImportContext {
   inputHash?: string;
   /** The analyzer's own version line. */
   toolVersion?: string;
+  /** What the import rests on besides the image, for example the coverage files. */
+  evidence?: Evidence[];
 }
 
 /** What a revision records about one analyzer run: the hash of the image bytes and, when the analyzer tells it, its version. */
@@ -204,7 +210,13 @@ function importSymbols(db: DatabaseSync, change: Change, findings: NormalizedFin
       result.symbols.suppressed++;
       continue;
     }
-    const current = symbolAt(db, finding.address, space);
+    let current = symbolAt(db, finding.address, space);
+    if (current !== undefined && isCode(finding.kind) && !isCode(current.kind) && YIELDS_TO_EXECUTED_CODE.has(current.origin) && findings.executed?.(finding.address) === true) {
+      // A run executed this address: the data symbol of another analyzer gives way (D58).
+      change.close("symbols", "space = ? AND address = ?", space, current.address);
+      result.symbols.retired++;
+      current = undefined;
+    }
     if (current !== undefined) {
       // A semantic or other-analyzer row stays; only a code/data disagreement matters.
       if (isCode(current.kind) !== isCode(finding.kind)) {
@@ -230,6 +242,15 @@ function importSymbols(db: DatabaseSync, change: Change, findings: NormalizedFin
 
 /** Analyzers whose regions a heuristic finding replaces where it lies (D44): user/LLM > heuristic > DXA/Ghidra. */
 const YIELDS_TO_HEURISTIC = new Set<Origin>(["dxa", "ghidra"]);
+/** Analyzers whose data gives way to a code finding over an executed instruction start (D58). */
+const YIELDS_TO_EXECUTED_CODE = new Set<Origin>(["dxa", "ghidra"]);
+
+/** True when an address in the range is an executed instruction start. */
+function holdsExecuted(findings: NormalizedFindings, start: number, end: number): boolean {
+  if (findings.executed === undefined) return false;
+  for (let address = start; address <= end; address++) if (findings.executed(address)) return true;
+  return false;
+}
 
 function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFindings, coverage: AddressRange[], result: ImportResult): void {
   const { analyzer } = findings;
@@ -241,6 +262,16 @@ function importRegions(db: DatabaseSync, change: Change, findings: NormalizedFin
         change.close("regions", "space = ? AND start_address = ? AND end_address = ? AND origin = ?", space, row.start, row.end, row.origin);
         for (const piece of subtract(row, [region])) change.insertRegion({ space, ...piece, type: row.type, ...(row.element === undefined ? {} : { element: row.element }), origin: row.origin });
       }
+    }
+  }
+  // Executed code is evidence about its bytes (D58): another analyzer's data region under a code finding gives way where a run executed an instruction start.
+  for (const region of findings.regions.filter((candidate) => isCode(candidate.type))) {
+    for (const row of regionsOverlapping(db, region.start, region.end, space)) {
+      if (row.origin === analyzer || !YIELDS_TO_EXECUTED_CODE.has(row.origin) || isCode(row.type) || row.type === "dual-use") continue;
+      if (!holdsExecuted(findings, Math.max(row.start, region.start), Math.min(row.end, region.end))) continue;
+      change.close("regions", "space = ? AND start_address = ? AND end_address = ? AND origin = ?", space, row.start, row.end, row.origin);
+      for (const piece of subtract(row, [region])) change.insertRegion({ space, ...piece, type: row.type, ...(row.element === undefined ? {} : { element: row.element }), origin: row.origin });
+      result.regions.retired++;
     }
   }
   const conflictWith = (row: RegionRow, region: { start: number; end: number; type: RegionType }) => {

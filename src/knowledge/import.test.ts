@@ -414,3 +414,39 @@ test("a heuristic region replaces the DXA region where it lies, and DXA never re
   assert.deepEqual(regionList(db)[1], [0x1040, 0x104f, "rts-addresses", "heuristic"], "a DXA re-run keeps the table");
   assert.equal(again.conflicts.length, 1, "DXA's code over the table is a conflict");
 });
+
+test("a code finding over an executed instruction start replaces another analyzer's data, and nothing else (D58)", () => {
+  const db = fresh();
+  importFindings(db, findings("dxa", 0x1000, 0x10ff, { regions: [{ start: 0x1000, end: 0x10ff, type: "bytes" }], symbols: [{ address: 0x1010, name: "d1010", kind: "data" }] }));
+  const ghidra = (executed?: (address: number) => boolean) =>
+    findings("ghidra", 0x1000, 0x10ff, {
+      regions: [{ start: 0x1000, end: 0x103f, type: "code" }],
+      symbols: [{ address: 0x1010, name: "FUN_1010", kind: "routine" }],
+      ...(executed === undefined ? {} : { executed }),
+    });
+
+  // Without coverage, the contradiction stays a conflict.
+  const without = importFindings(db, ghidra());
+  assert.deepEqual(
+    without.conflicts.map((conflict) => conflict.category),
+    ["symbol", "region"],
+  );
+  assert.deepEqual(regionList(db), [[0x1000, 0x10ff, "bytes", "dxa"]]);
+
+  // A run executed $1010: the DXA data gives way under the code finding, its part outside stays.
+  const executed = importFindings(db, ghidra((address) => address === 0x1010), { evidence: [{ kind: "coverage", ref: "runs/boot.bin", sha256: "0".repeat(64) }] });
+  assert.deepEqual(executed.conflicts, []);
+  assert.deepEqual(regionList(db), [
+    [0x1000, 0x103f, "code", "ghidra"],
+    [0x1040, 0x10ff, "bytes", "dxa"],
+  ]);
+  assert.equal(symbolAt(db, 0x1010)?.name, "FUN_1010");
+  assert.deepEqual(revisionChanges(db, executed.revision!).revision.evidence, [{ kind: "coverage", ref: "runs/boot.bin", sha256: "0".repeat(64) }]);
+
+  // User data stays, also over executed code.
+  const user = fresh();
+  classifyRegion(user, { origin: "user" }, { start: 0x2000, end: 0x20ff, type: "bytes" });
+  const kept = importFindings(user, findings("ghidra", 0x2000, 0x20ff, { regions: [{ start: 0x2000, end: 0x20ff, type: "code" }], executed: () => true }));
+  assert.equal(kept.conflicts.length, 1);
+  assert.deepEqual(regionList(user), [[0x2000, 0x20ff, "bytes", "user"]]);
+});

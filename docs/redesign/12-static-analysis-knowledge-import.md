@@ -272,7 +272,7 @@ A user/LLM removal is protected too (D36). It writes a suppression, and an impor
 
 ## 11. Cross-analyzer disagreement
 
-DXA does not silently replace contradictory current Ghidra knowledge, and Ghidra does not silently replace contradictory current DXA knowledge.
+DXA does not silently replace contradictory current Ghidra knowledge, and Ghidra does not silently replace contradictory current DXA knowledge. Exception (D58): in a run with coverage, a code finding that holds an executed instruction start replaces the other analyzer's data region or data symbol there; the coverage files are the revision's evidence.
 
 Example:
 

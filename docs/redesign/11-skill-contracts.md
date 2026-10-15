@@ -307,7 +307,7 @@ A malformed/incomplete analyzer result imports nothing.
 
 A contradiction with semantic user/LLM knowledge is reported, never silently overwritten.
 
-A contradiction with another analyzer remains a conflict unless the current operation is merely refreshing findings owned by the same analyzer.
+A contradiction with another analyzer remains a conflict unless the current operation is merely refreshing findings owned by the same analyzer, or (D58) a run with coverage finds code where another analyzer has data over an executed instruction start.
 
 ### Handoffs
 

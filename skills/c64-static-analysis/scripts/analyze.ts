@@ -3,11 +3,12 @@
 // current knowledge, and imports the structural findings into
 // .c64-re-tools/knowledge.db.
 
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 
-import { formatC64Address, parseC64Address, prgRange } from "#src/c64.ts";
+import { COVERAGE, formatC64Address, parseC64Address, prgRange } from "#src/c64.ts";
 import { WireFailure } from "#src/host-client/tools.ts";
 import { readProjectFile, writeProjectFile } from "#src/host-client/transfer.ts";
 import { analyze as analyzeWithDxa } from "#src/native/dxa.ts";
@@ -93,7 +94,7 @@ function showConflict(conflict: ImportConflict, analyzer: Analyzer): Record<stri
  * changed since the seeds were read. A refused import creates no knowledge.db.
  * The revision records the image hash and the analyzer version.
  */
-function record(findings: NormalizedFindings, revision: number, description: string, provenance: Pick<ImportContext, "inputHash" | "toolVersion">) {
+function record(findings: NormalizedFindings, revision: number, description: string, provenance: Pick<ImportContext, "inputHash" | "toolVersion" | "evidence">) {
   let imported: ImportResult;
   try {
     imported = withWrite((db) => importFindings(db, findings, { expectedRevision: revision, description, ...provenance }));
@@ -159,6 +160,9 @@ async function run(argv: string[]): Promise<unknown> {
   const bytes = readProjectFile(image).bytes;
   const coverage = readCoverageFiles(values.coverage ?? []);
   const byteAt = imageReader(bytes, imageKind);
+  // With coverage, a code finding over an executed instruction start replaces the data of the other analyzer (D58), and the files are the evidence.
+  const executed = coverage === undefined ? {} : { executed: (address: number) => (coverage[address]! & COVERAGE.ramExecute) !== 0 };
+  const coverageEvidence = coverage === undefined ? {} : { evidence: (values.coverage ?? []).map((path) => ({ kind: "coverage" as const, ref: path, sha256: createHash("sha256").update(readProjectFile(path).bytes).digest("hex") })) };
 
   let loaded: { start: number; end: number };
   try {
@@ -212,7 +216,7 @@ async function run(argv: string[]): Promise<unknown> {
     const { result, attachments } = await analyzeWithDxa({ imageKind, ...seeds }, bytes, localToolContext());
     const listing = attachments[0]!.toString("utf8");
     // The listing is written only after the import: a refused import leaves no new file.
-    const imported = record({ ...dxaFindings(result), space }, revision, `DXA analysis of ${image}`, runProvenance(bytes, result.toolVersion));
+    const imported = record({ ...dxaFindings(result), space, ...executed }, revision, `DXA analysis of ${image}`, { ...runProvenance(bytes, result.toolVersion), ...coverageEvidence });
     if (listingPath !== undefined) {
       try {
         mkdirSync(dirname(listingPath), { recursive: true });
@@ -237,7 +241,7 @@ async function run(argv: string[]): Promise<unknown> {
   }
 
   const { result } = await analyzeWithGhidra({ imageKind, ...seeds, decompile }, bytes, localToolContext());
-  const imported = record({ ...ghidraFindings(result), space }, revision, `Ghidra analysis of ${image}`, runProvenance(bytes, result.toolVersion));
+  const imported = record({ ...ghidraFindings(result), space, ...executed }, revision, `Ghidra analysis of ${image}`, { ...runProvenance(bytes, result.toolVersion), ...coverageEvidence });
   const found = idiomsResult();
   let instructions: { out: string; count: number } | undefined;
   if (values.instructions !== undefined) {
