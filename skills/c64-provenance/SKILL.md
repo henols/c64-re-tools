@@ -40,12 +40,14 @@ node <skill>/scripts/provenance.ts separate unpacked/image.json --coverage cover
 
 The script puts each PRG at its load address. An image has bytes only in its segments. The script compares the addresses where all releases have bytes. It prints one JSON object.
 
+With `--shift`, the addresses of `segments`, `common` and `differences` are the release addresses plus the `shift` of the release. The `start` and `end` of `runtime` are the addresses in the release itself, without the shift.
+
 With `--run`, a PRG starts with autostart and RUN. An image starts from its bytes: the script writes the segments and the entry state from `entry_state.json` into the emulator, and starts at the entry. Watchpoints on each difference stop the run at its first access.
 
 ## Workflow
 
 1. Run the script on the releases.
-2. Read `identicalShare`. If it is low and `suggestedShifts` is present, the releases are at different addresses. Run the script again with `--shift`.
+2. Read `identicalShare`. If it is low and `suggestedShifts` is present, the releases are at different addresses. Run the script again with the `--shift` of `suggestedShifts`. `shiftsNotSuggested` tells why a found shift does not fit in `$0000-$ffff`.
 3. Read `differences`. Each one has an address range, the bytes of each release, and `groups`: the releases that have the same bytes there.
 4. To know how the program uses the differences, run the script again with `--run` and the frames that get the program to the part you examine. Read `runtime` of each difference:
    - `first`: the first access in that release: `read`, `write`, `execute` or `none`. An instruction that reads and then writes the same byte, for example INC, counts as `read`. The operand bytes of an executed instruction count as `execute`, for example the value of `LDA #$03`.
@@ -66,9 +68,9 @@ Use `separate` when you have only one release. It gives evidence, not a decision
 - `ranges`: the image in ranges with the same stage and access. `stage` is the last unpack stage that wrote the range. In `image.json`, the last stage is the program. An earlier stage is a depacker, an intro or a loader. Only an image from c64-unpacker `capture` has stages. For an image from `loads`, `noStages` tells this.
 - `access`: from the joined `--coverage` files: `executed`, `read`, `written`, `read-written` or `untouched`. `untouched` bytes did not take part in the runs.
 - `codeRegions.unreachable`: code regions of the knowledge that no chain of call and jump references reaches from the entry. Run c64-static-analysis first, so that the knowledge has the code regions and the references.
-- `outside`: RAM outside the image that the program `read` or `executed` but did not write, and code it `generated`. A loader or an earlier stage put the bytes that the program did not write.
+- `outside`: RAM outside the image that the program `read` or `executed` but did not write, and code it `generated`. A loader or an earlier stage put the bytes that the program did not write. A `generated` range can have gaps of two bytes or less: these are operand bytes.
 
-The result lists the first ranges. `--out` writes all of them. Run more coverage runs for parts that are `untouched` before you decide.
+Each list has `count` and `listed`. `listed` has the first ranges, at most `--max-listed`. `--out` writes all of them. Run more coverage runs for parts that are `untouched` before you decide.
 
 ## Knowledge
 
@@ -79,7 +81,7 @@ Record a confirmed conclusion as a normal comment, region or symbol with the c64
 
 ## Result
 
-The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes. `common` gives the ranges where all releases have bytes. With `--run`, each difference also has `runtime`, and `run` tells if each release started, or why not.
+The differing ranges with the bytes of each release and the groups that agree, and the share of identical bytes. `common` gives the ranges where all releases have bytes. `releases` gives the segments and the `shift` of each release. With `--run`, each difference also has `runtime`, and `run` tells if each release started, or why not.
 
 The runtime evidence is evidence only. The script does not decide which bytes are original.
 

@@ -19,7 +19,7 @@ import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
 import { basicStart, inspect, PackingError, readMemoryMap, underRom, writtenThenExecuted } from "./evidence.ts";
 import { loads, readLoadSteps } from "./loads.ts";
-import { callReturn, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, type Range } from "./stages.ts";
+import { callReturn, captureSegments, executedIn, inRanges, mergeMaps, stageCandidates, stagePoints, type Range } from "./stages.ts";
 import { entryState, IO_AREAS, json, machineState, readRam, READY_FRAMES, vectorsOf } from "./machine.ts";
 
 const USAGE = `unpack.ts inspect <program.prg>
@@ -31,7 +31,7 @@ unpack.ts loads <program> --steps <file> --out <dir> [--drive] [--min-block <byt
 inspect   packing evidence: the BASIC start and the entropy of the bytes
 trace     run the program for <n> frames (default 3000) and report the memory
           that it wrote and then executed; --entry starts it there instead of RUN
-capture   run the program until the CPU gets to <address>, and write into the
+capture   run the program until the CPU gets to <address> after the steps, and write into the
           directory --out: image.bin (64 KiB of RAM), image.json (the entry,
           the segments that the stages wrote, the vectors, the stages), a PRG
           for each segment, and entry_state.json (registers, $00/$01, pages
@@ -54,7 +54,8 @@ loads     run a multi-load program (a PRG, or a disk, tape or cartridge image)
 --steps <file>  a JSON list of input steps that run right after the program
           starts: write, registers, joystick, type, frames and runUntil, as in
           c64-testing scenarios, with $ addresses only. Use it to press a key
-          in an intro or to get through a menu.
+          in an intro or to get through a menu. stages and capture track the
+          stages in frames steps and in runUntil steps with at alone.
 
 Addresses are $ and four hex digits. The result is one JSON object.`;
 
@@ -220,14 +221,20 @@ interface Followed {
   failed?: string;
 }
 
+/** A runUntil step to an address alone: a breakpoint stops it, so the stages are tracked while it runs. */
+function trackedRunUntil(step: ActionStep): step is { runUntil: { at: string }; timeoutFrames: number } {
+  return "runUntil" in step && "at" in step.runUntil && !("raster" in step.runUntil);
+}
+
 /**
  * Starts the program and follows its stages (D43). The memory map holds what
  * the current stage wrote; when the CPU executed a block of at least
  * `minStage` written bytes during a chunk of frames, the chunk runs again from
  * its snapshot with exec breakpoints over those blocks, which stop at the
  * first instruction of the next stage. Steps run in the tracked time: a frames
- * step is tracked, the others act between two chunks. With `until`, the
- * run ends when the CPU gets there.
+ * step and a runUntil step to an address alone are tracked, the others act
+ * between two chunks. With `until`, the run ends when the CPU gets there
+ * after the steps.
  */
 async function follow(
   client: ViceSessionClient,
@@ -243,7 +250,6 @@ async function follow(
   await client.memmap({ action: "clear" });
   if (options.entry !== undefined) await client.registersSet("c64", { pc: options.entry });
   else await client.keyboard(textToPetscii("RUN\n"));
-  const target = options.until === undefined ? undefined : await client.breakpoint({ action: "add", address: options.until, space: "c64" });
   const found: Stage[] = [];
   const start = options.entry ?? basic!.sys?.address ?? (await firstPcAfterBasic(client, basic!.basicEnd, load + bytes.length - 3));
   if (start === undefined) return { stages: [], frames: 0, reached: false, failed: `After RUN, the CPU did not execute the program after its BASIC text (${formatC64Address(basic!.basicEnd)} on) in ${SYS_FRAMES} frames. Give --entry <address>.` };
@@ -251,8 +257,9 @@ async function follow(
   let firstFrame = 0;
   let total = 0;
   let ended = false;
-  let reached = false;
-  const atTarget = (pc: number) => options.until !== undefined && pc === options.until;
+  /** Where the run stops: the target of a runUntil step while it runs, then until (R2-06). */
+  let stopAt: number | undefined;
+  const atTarget = (pc: number) => stopAt !== undefined && pc === stopAt;
   // The current stage: its memory map since it started, chunk by chunk, its own code, and the written code it calls (D59).
   let stage = { map: new Uint8Array(0x10000), own: new Set<number>(), called: [] as Range[] };
   const startStage = async (next: number, last: Uint8Array) => {
@@ -356,9 +363,11 @@ async function follow(
     }
   };
 
-  const track = async (frames: number): Promise<void> => {
+  /** Tracks the stages for some frames; true when the CPU got to stopAt. */
+  const track = async (frames: number): Promise<boolean> => {
     let left = frames;
-    while (left > 0 && !ended && !reached && found.length < MAX_STAGES) {
+    let stopped = false;
+    while (left > 0 && !ended && !stopped && found.length < MAX_STAGES) {
       await client.snapshot({ action: "save", name: STAGE_SNAPSHOT });
       await client.memmap({ action: "clear" });
       const chunk = Math.min(STAGE_CHUNK_FRAMES, left);
@@ -371,13 +380,13 @@ async function follow(
         total += advanced;
         left -= advanced;
         if (atTarget(firstPc)) {
-          // The stop at until comes before its instruction runs: a target that the stage wrote starts a stage too.
+          // The stop at a target comes before its instruction runs: a target that the stage wrote starts a stage too.
           const combined = Uint8Array.from(stage.map);
           mergeMaps(combined, map);
           const wrote = (combined[firstPc]! & COVERAGE.ramWrite) !== 0 && inRanges(writtenBlocks(combined, options.minStage), firstPc);
           if (wrote) await startStage(firstPc, map);
           else mergeMaps(stage.map, map);
-          reached = true;
+          stopped = true;
         } else {
           mergeMaps(stage.map, map);
           if (advanced === 0) ended = true;
@@ -392,15 +401,35 @@ async function follow(
       left -= again.used;
       if (again.next !== undefined) await startStage(again.next, again.map);
       else mergeMaps(stage.map, again.map);
-      if (again.atTarget) reached = true;
+      if (again.atTarget) stopped = true;
+    }
+    return stopped;
+  };
+  /** Tracks the stages until the CPU gets to an address, with a breakpoint there. */
+  const trackTo = async (address: number, frames: number): Promise<boolean> => {
+    stopAt = address;
+    const point = await client.breakpoint({ action: "add", address, space: "c64" });
+    try {
+      return await track(frames);
+    } finally {
+      await client.breakpoint({ action: "remove", id: point.id });
+      stopAt = undefined;
     }
   };
-  for (const step of options.steps) {
+  // The steps run first and in the tracked time: a frames step and a runUntil step to an address (R2-06). The others act between two chunks.
+  for (const [index, step] of options.steps.entries()) {
     if ("frames" in step) await track(step.frames);
-    else await runActionStep(client, step, parseC64Address);
+    else if (trackedRunUntil(step)) {
+      if (!(await trackTo(parseC64Address(step.runUntil.at), step.timeoutFrames))) {
+        const { pc } = await client.registersGet("c64");
+        return { stages: found, frames: total, reached: false, failed: `Step ${index + 1} did not reach its target in ${step.timeoutFrames} frames. It is at ${formatC64Address(pc)}.` };
+      }
+    } else await runActionStep(client, step, parseC64Address);
   }
-  await track(Math.max(0, options.frames - total));
-  if (target !== undefined) await client.breakpoint({ action: "remove", id: target.id });
+  const left = Math.max(0, options.frames - total);
+  let reached = false;
+  if (options.until === undefined) await track(left);
+  else reached = await trackTo(options.until, left);
   await client.snapshot({ action: "discard", name: STAGE_SNAPSHOT }).catch(() => undefined);
   mergeMaps(stage.map, await readCoverage(client));
   found.push({ entry, firstFrame, frames: total - firstFrame, wrote: writtenBlocks(stage.map, options.minStage) });
@@ -456,10 +485,8 @@ async function capture(
     // The RAM view: unpacked code is often under the ROMs or the I/O area.
     const memory = await readRam(client, 0x0000, 0x10000);
     const state = await machineState(client);
-    // The segments: what the stages wrote, without the blocks that hold the code of an earlier stage.
-    const earlier = followed.stages.slice(0, -1).map((stage) => stage.entry);
-    const written = followed.stages.flatMap((stage, index) => stage.wrote.map((range) => ({ ...range, writtenBy: index })));
-    const segments = options.range !== undefined ? [{ start: options.range[0], end: options.range[1] }] : written.filter((range) => !earlier.some((entry) => entry >= range.start && entry <= range.end));
+    // The segments: what the stages wrote, without loader leftovers, with no overlap.
+    const segments = options.range !== undefined ? [{ start: options.range[0], end: options.range[1] }] : captureSegments(followed.stages, registers.pc);
     const file = (path: string) => `${options.out}/${path}`;
     const write = (path: string, bytes: Uint8Array) => writeProjectFile(file(path), bytes, { what: "--out" });
     write("image.bin", memory);
@@ -572,8 +599,8 @@ async function run(argv: string[]): Promise<{ output: unknown; failed: boolean }
     const minStage = values["min-stage"] === undefined ? 64 : Number(values["min-stage"]);
     if (!Number.isInteger(minStage) || minStage < 1 || minStage > 0x10000) throw new UsageError("--min-stage must be from 1 to 65536");
     const steps = values.steps === undefined ? [] : readSteps(values.steps);
-    // A runUntil step cannot be tracked in chunks of frames; capture takes it.
-    if (steps.some((step) => "runUntil" in step)) throw new UsageError("stages takes no runUntil step; use frames steps");
+    // A runUntil step to a raster line or a memory value cannot be tracked in chunks of frames; capture takes it.
+    if (steps.some((step) => "runUntil" in step && !trackedRunUntil(step))) throw new UsageError("stages takes a runUntil step only with at alone; use frames steps or runUntil at");
     return stages(program, { frames, steps, minStage, ...(values.entry === undefined ? {} : { entry: address(values.entry, "--entry") }) });
   }
   if (command === "loads") {

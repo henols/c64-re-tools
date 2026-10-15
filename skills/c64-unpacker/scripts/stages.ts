@@ -97,3 +97,34 @@ export function executedIn(map: Uint8Array, block: Range): Range[] {
   }
   return ranges;
 }
+
+/**
+ * The segments of a capture: the blocks that the stages wrote, without loader
+ * leftovers, joined into ranges that do not overlap or touch (F-26). A block
+ * is a leftover when it holds the entry of an intermediate stage that started
+ * after the block's writer, and no write from that stage on replaced the code
+ * at that entry (R2-01). Code that a stage ran before a later stage wrote over
+ * it never drops a block, and the block that holds the capture entry is always
+ * a segment. The filter comes before the join: a join first would drop the
+ * program with a leftover. `writtenBy` is the last stage that wrote into the
+ * range.
+ */
+export function captureSegments(stages: ReadonlyArray<{ entry: number; wrote: readonly Range[] }>, entry: number): Array<Range & { writtenBy: number }> {
+  const last = stages.length - 1;
+  const replaced = (from: number, address: number) => stages.slice(from).some((stage) => inRanges(stage.wrote, address));
+  const leftover = (block: Range, writer: number) =>
+    !contains(block, entry) && stages.some((stage, index) => index > writer && index < last && contains(block, stage.entry) && !replaced(index, stage.entry));
+  const blocks = stages
+    .flatMap((stage, index) => stage.wrote.map((range) => ({ start: range.start, end: range.end, writtenBy: index })))
+    .filter((block) => !leftover(block, block.writtenBy))
+    .sort((a, b) => a.start - b.start);
+  const segments: Array<Range & { writtenBy: number }> = [];
+  for (const block of blocks) {
+    const previous = segments[segments.length - 1];
+    if (previous !== undefined && block.start <= previous.end + 1) {
+      previous.end = Math.max(previous.end, block.end);
+      previous.writtenBy = Math.max(previous.writtenBy, block.writtenBy);
+    } else segments.push({ ...block });
+  }
+  return segments;
+}

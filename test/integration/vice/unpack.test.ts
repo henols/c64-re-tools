@@ -163,6 +163,23 @@ test("stages follows a release whose stages write over code that ran before, and
   assert.deepEqual(found[2]!.wrote, [{ start: "$0801", end: "$0840" }], "the payload wrote over its own start code");
 });
 
+test("a capture keeps the program that a mover wrote back over the first stage, also at a later arrival after a runUntil step (R2-01, R2-06)", { skip: liveSkip, timeout: 300_000 }, async () => {
+  const first = await unpack("capture", "self-overwriting.prg", "--until", "$0801", "--out", "unpacked/first", "--timeout-frames", "100");
+  assert.equal(first.status, 0, JSON.stringify(first.json));
+  assert.deepEqual(first.json.segments, [{ start: "$0801", end: "$0900" }], "the stub at $080c ran before the mover wrote over it");
+
+  writeFileSync(join(project, "to-loop.json"), JSON.stringify([{ runUntil: { at: "$0850" }, timeoutFrames: 100 }]));
+  const second = await unpack("capture", "self-overwriting.prg", "--steps", "to-loop.json", "--until", "$0801", "--out", "unpacked/second", "--timeout-frames", "200");
+  assert.equal(second.status, 0, JSON.stringify(second.json));
+  const image = JSON.parse(readFileSync(join(project, "unpacked", "second", "image.json"), "utf8")) as { segments: unknown; stages: Array<{ entry: string }> };
+  assert.deepEqual(image.stages.map((stage) => stage.entry), ["$080c", "$0340", "$0801", "$0801"], "the stages of the runUntil step are tracked");
+  assert.deepEqual(image.segments, [{ start: "$0801", end: "$0900", writtenBy: 2, file: "segment-0801-0900.prg" }], "the mover at $0340 is loader code");
+
+  const staged = await unpack("stages", "self-overwriting.prg", "--steps", "to-loop.json", "--frames", "100");
+  assert.equal(staged.status, 0, JSON.stringify(staged.json));
+  assert.deepEqual((staged.json.stages as Array<{ entry: string }>).map((stage) => stage.entry), ["$080c", "$0340", "$0801", "$0801"]);
+});
+
 test("a routine that the program writes and calls, and that returns, starts no stage (D59)", { skip: liveSkip, timeout: 300_000 }, async () => {
   const { status, json } = await unpack("stages", "generated-call.prg", "--frames", "100");
   assert.equal(status, 0, JSON.stringify(json));

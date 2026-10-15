@@ -18,7 +18,7 @@ import { KnowledgeError, openForRead } from "#src/knowledge/database.ts";
 import { listReferences, listRegions } from "#src/knowledge/read.ts";
 import { CODE_REGION_TYPES } from "#src/knowledge/schema.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { compareReleases, suggestShift, type Range, type Release } from "./compare.ts";
+import { compareReleases, shiftSuggestion, suggestShift, type Range, type Release } from "./compare.ts";
 import { watchRelease, type ImageState, type Start } from "./runtime.ts";
 import { separate } from "./separate.ts";
 
@@ -36,7 +36,7 @@ separate gives evidence from one release: the unpack stage that wrote each range
 its access in the --coverage files (64 KiB each, repeatable), whether call and
 jump references in knowledge reach each code region from the entry, and what the
 program reads or executes outside the image. --out writes all ranges to a file;
-the result lists at most --max-listed of them (default 50).
+the result lists at most --max-listed of each list (default 50) and its count.
 
 A release is a PRG, placed at its load address, or an image.json of the
 c64-unpacker skill, compared inside its segments. Paths are relative to the
@@ -208,12 +208,14 @@ async function run(argv: string[]): Promise<unknown> {
     identicalShare < 0.5
       ? releases.slice(1).flatMap((release, index) => {
           const best = suggestShift(releases[0]!, release);
-          return best === undefined || best.shift === 0 ? [] : [{ release: index + 2, shift: best.shift, matchingSequences: best.matches }];
+          return best === undefined || best.shift === 0 ? [] : [shiftSuggestion(releases, loaded.map((item) => item.shift), index + 1, best)];
         })
       : [];
+  const suggested = suggestions.filter((suggestion) => "shift" in suggestion);
+  const notSuggested = suggestions.filter((suggestion) => "reason" in suggestion);
 
   // The runtime evidence: one emulator for each release, the differences at the release's own addresses.
-  const runtime = new Map<string, Array<{ first: string; changed: boolean }>>();
+  const runtime = new Map<string, Array<Range & { first: string; changed: boolean }>>();
   const runs: Record<string, unknown> = {};
   if (frames !== undefined && comparison.differences.length > 0) {
     for (const item of loaded) {
@@ -229,7 +231,7 @@ async function run(argv: string[]): Promise<unknown> {
         if (!watched.started) runs[name] = { started: false, reason: watched.reason };
         else {
           runs[name] = { started: true };
-          runtime.set(name, watched.accesses);
+          runtime.set(name, watched.accesses.map((access, index) => ({ ...ranges[index]!, ...access })));
         }
       } finally {
         await client.close();
@@ -238,7 +240,7 @@ async function run(argv: string[]): Promise<unknown> {
   }
 
   return {
-    releases: loaded.map((item) => ({ name: item.release.name, segments: item.release.segments.map((segment) => ({ start: formatC64Address(segment.start), end: formatC64Address(segment.end) })) })),
+    releases: loaded.map((item) => ({ name: item.release.name, shift: item.shift, segments: item.release.segments.map((segment) => ({ start: formatC64Address(segment.start), end: formatC64Address(segment.end) })) })),
     common: comparison.common.map((range) => ({ start: formatC64Address(range.start), end: formatC64Address(range.end) })),
     identicalBytes: comparison.identicalBytes,
     differingBytes: comparison.differingBytes,
@@ -248,10 +250,21 @@ async function run(argv: string[]): Promise<unknown> {
       end: formatC64Address(difference.end),
       values: Object.fromEntries(Object.entries(difference.values).map(([name, bytes]) => [name, hexBytes(bytes.slice(0, 32)) + (bytes.length > 32 ? " ..." : "")])),
       groups: difference.groups,
-      ...(runtime.size === 0 ? {} : { runtime: Object.fromEntries([...runtime].map(([name, accesses]) => [name, accesses[index]!])) }),
+      // runtime gives the release's own addresses: with a shift, they are not the addresses of the difference (F-24).
+      ...(runtime.size === 0
+        ? {}
+        : {
+            runtime: Object.fromEntries(
+              [...runtime].map(([name, accesses]) => {
+                const { start, end, first, changed } = accesses[index]!;
+                return [name, { start: formatC64Address(start), end: formatC64Address(end), first, changed }];
+              }),
+            ),
+          }),
     })),
     ...(comparison.moreDifferences ? { moreDifferences: true } : {}),
-    ...(suggestions.length > 0 ? { suggestedShifts: suggestions } : {}),
+    ...(suggested.length > 0 ? { suggestedShifts: suggested } : {}),
+    ...(notSuggested.length > 0 ? { shiftsNotSuggested: notSuggested } : {}),
     ...(frames === undefined
       ? {}
       : { run: { frames, steps: steps.length, releases: runs, ...(comparison.differences.length === 0 ? { skipped: "The releases have no differences, so no release ran." } : {}) } }),
@@ -288,6 +301,7 @@ function separateCommand(path: string, coveragePaths: string[], out: string | un
   const ranges = found.ranges.map((range) => ({ ...show(range), ...(range.stage === undefined ? {} : { stage: range.stage }), ...(range.access === undefined ? {} : { access: range.access }) }));
   const codeRegions = found.codeRegions.map((region) => ({ ...show(region), type: region.type, ...(region.reachable === undefined ? {} : { reachable: region.reachable }), ...(region.executed === undefined ? {} : { executed: region.executed }) }));
   const outside = { read: found.outside.read.map(show), executed: found.outside.executed.map(show), generated: found.outside.generated.map(show) };
+  const listed = <T>(items: T[]) => ({ count: items.length, listed: items.slice(0, Number(max)) });
   if (out !== undefined) writeProjectFile(out, Buffer.from(`${JSON.stringify({ release: path, ranges, codeRegions, outside }, null, 1)}\n`), { what: "--out" });
   const bytes = (filter: (range: (typeof found.ranges)[number]) => boolean) => found.ranges.filter(filter).reduce((sum, range) => sum + range.end - range.start + 1, 0);
   const lastStage = loaded.stages === undefined ? undefined : loaded.stages.length - 1;
@@ -301,12 +315,12 @@ function separateCommand(path: string, coveragePaths: string[], out: string | un
           bytesByStage: Object.fromEntries([...[...Array(lastStage + 1).keys()].map((stage): [string, number] => [String(stage), bytes((range) => range.stage === stage)]), ["none", bytes((range) => range.stage === undefined)]]),
         }),
     ...(coverage === undefined ? {} : { bytesByAccess: Object.fromEntries((["executed", "read", "written", "read-written", "untouched"] as const).map((access) => [access, bytes((range) => range.access === access)])) }),
-    ranges: { count: ranges.length, listed: ranges.slice(0, Number(max)) },
+    ranges: listed(ranges),
     codeRegions: {
       count: codeRegions.length,
       ...(loaded.entry === undefined ? {} : { unreachable: codeRegions.filter((region) => region.reachable === false) }),
     },
-    ...(coverage === undefined ? {} : { outside }),
+    ...(coverage === undefined ? {} : { outside: { read: listed(outside.read), executed: listed(outside.executed), generated: listed(outside.generated) } }),
     ...(out === undefined ? {} : { out }),
   };
 }

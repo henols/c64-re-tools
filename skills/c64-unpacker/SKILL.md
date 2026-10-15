@@ -26,11 +26,11 @@ node <skill>/scripts/unpack.ts stages original/game.prg --steps input.json
 node <skill>/scripts/unpack.ts loads original/game.d64 --steps parts.json --out parts --drive
 ```
 
-`inspect` examines the file locally. `trace` and `capture` start their own emulator through the host runtime and start the program. `trace` runs the program and finds the memory that the program wrote and then executed. `capture` stops the program when the CPU gets to the `--until` address. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). In `stages`, a `frames` step counts as run time, and a `runUntil` step is not possible.
+`inspect` examines the file locally. `trace` and `capture` start their own emulator through the host runtime and start the program. `trace` runs the program and finds the memory that the program wrote and then executed. `capture` stops the program when the CPU gets to the `--until` address. `stages` runs the program and finds each stage: a decruncher, an intro, a copier, and then the program. For each stage it gives the entry, the frames, the written memory (`wrote`) and the entry of the next stage (`next`). In `stages` and `capture`, a `frames` step and a `runUntil` step with only `at` count as run time. `stages` refuses a `runUntil` step with `raster` or `memory`.
 
 | Option | Meaning |
 |---|---|
-| `--until '$c000'` | The address where the unpacked program starts. |
+| `--until '$c000'` | The address where the unpacked program starts. The capture stops there after the steps. To capture a later arrival at the address, add a `runUntil` step to an address after the first arrival. |
 | `--out unpacked/game.prg` | Where to write the result, relative to the project directory. |
 | `--range '$c000' '$cfff'` | Write this range as a PRG. Without it, the script writes all 64 KiB of RAM as a flat file. |
 | `--timeout-frames 3000` | How many frames the program can run before the capture stops (default 3000). |
@@ -74,7 +74,7 @@ A `type` step puts keys in the keyboard queue of the KERNAL. A program that read
    - Disassemble the code at the address with the c64-emulator skill. Make sure that it is the start of the program. The start of a program often sets the stack pointer, the interrupts and the vectors.
 4. Run `capture` with that address and a directory in `--out`. Give the same `--steps` as before. The directory gets:
    - `image.bin`: all 64 KiB of RAM at the entry.
-   - `image.json`: the entry, the segments, the vectors and the stages. A segment is a block that a stage wrote. Blocks with the code of an earlier stage are not segments. `writtenBy` tells which stage wrote the segment.
+   - `image.json`: the entry, the segments, the vectors and the stages. A segment is a block that a stage wrote. A block is not a segment when it holds the entry of a later stage before the program, and no stage wrote over that entry. The block with the capture entry is always a segment. Segments do not overlap. `writtenBy` tells the last stage that wrote into the segment.
    - One PRG for each segment.
    - `entry_state.json`: the registers, `$00` and `$01`, pages 0 to 3, the VIC, SID and CIA registers, and the vectors. `differsFromReset` lists the bytes that are not as a clean C64 has them at READY. A rebuild must make these bytes the same, because the program can read them.
 5. Make sure that the result is the application: the code at the entry must not be the unpacker again. A segment can be data that a loader left, for example intro graphics. Keep it until other evidence shows that the program does not use it.

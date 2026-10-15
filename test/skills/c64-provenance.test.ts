@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { COVERAGE } from "../../src/c64.ts";
-import { compareReleases, suggestShift } from "../../skills/c64-provenance/scripts/compare.ts";
+import { compareReleases, shiftSuggestion, suggestShift } from "../../skills/c64-provenance/scripts/compare.ts";
 import { separate } from "../../skills/c64-provenance/scripts/separate.ts";
 import { seededBytes } from "../kit.ts";
 
@@ -47,6 +47,20 @@ test("a release at another address gets a suggested shift", () => {
   assert.deepEqual(suggestShift(at("release", 0x0801, base), at("moved", 0x0901, base)), { shift: -256, matches: 2041 });
 });
 
+test("a shift that moves a segment out of $0000-$ffff is not suggested: the opposite shift of release 1 is, or the reason (F-25)", () => {
+  const found = { shift: 920, matches: 3544 };
+  const high = { name: "high", segments: [{ start: 0x5000, end: 0x9000 }, { start: 0xe000, end: 0xffff }], byteAt: () => 0 };
+  const low = { name: "low", segments: [{ start: 0x0801, end: 0x9000 }], byteAt: () => 0 };
+  assert.deepEqual(shiftSuggestion([low, low], [0, 0], 1, found), { release: 2, shift: 920, matchingSequences: 3544 });
+  assert.deepEqual(shiftSuggestion([low, low], [0, 100], 1, found), { release: 2, shift: 1020, matchingSequences: 3544 }, "the full value for --shift");
+  assert.deepEqual(shiftSuggestion([low, high], [0, 0], 1, found), { release: 1, shift: -920, matchingSequences: 3544 });
+  const none = shiftSuggestion([low, high, low], [0, 0, 0], 1, found);
+  assert.equal("shift" in none, false);
+  assert.match((none as { reason: string }).reason, /release 2 moved by 920 puts \$e000-\$ffff past \$ffff/);
+  const zero = { name: "zero", segments: [{ start: 0x0000, end: 0x00ff }], byteAt: () => 0 };
+  assert.match((shiftSuggestion([zero, high], [0, 0], 1, found) as { reason: string }).reason, /release 1 moved by -920 puts \$0000-\$00ff below \$0000/);
+});
+
 test("the script compares PRG files and applies a shift", () => {
   const prg = (start: number, bytes: Uint8Array) => Buffer.concat([Buffer.from([start & 0xff, start >> 8]), bytes]);
   writeFileSync(join(project, "release.prg"), prg(0x0801, base));
@@ -60,6 +74,7 @@ test("the script compares PRG files and applies a shift", () => {
   const aligned = JSON.parse(spawnSync(process.execPath, [...process.execArgv, script, "release.prg", "moved.prg", "--shift", "2:-256"], { cwd: project, encoding: "utf8" }).stdout) as Record<string, unknown>;
   assert.equal(aligned.differingBytes, 0);
   assert.equal(aligned.identicalShare, 1);
+  assert.deepEqual((aligned.releases as Array<{ shift: number }>).map((item) => item.shift), [0, -256]);
   const bad = spawnSync(process.execPath, [...process.execArgv, script, "release.prg"], { cwd: project, encoding: "utf8" });
   assert.equal(bad.status, 2);
 });
@@ -139,6 +154,20 @@ test("separate gives each range its stage and access, each code region its reach
   assert.deepEqual(found.outside, { read: [{ start: 0xc000, end: 0xc000 }], executed: [{ start: 0xc200, end: 0xc200 }], generated: [{ start: 0xc100, end: 0xc100 }] });
 });
 
+test("generated code outside the image joins over gaps of up to two operand bytes, never over the image (F-28)", () => {
+  const coverage = new Uint8Array(0x10000);
+  const ran = COVERAGE.ramWrite | COVERAGE.ramExecute;
+  // Opcodes at $c000, $c002, $c005; $c009 is four bytes on; $1ffe-$2002 goes over the image byte $2000.
+  for (const address of [0xc000, 0xc002, 0xc005, 0xc009, 0x1ffe, 0x2001]) coverage[address] = ran;
+  const found = separate({ segments: [{ start: 0x2000, end: 0x2000 }], memory: new Uint8Array(0x10000), coverage, codeRegions: [], references: [] });
+  assert.deepEqual(found.outside.generated, [
+    { start: 0x1ffe, end: 0x1ffe },
+    { start: 0x2001, end: 0x2001 },
+    { start: 0xc000, end: 0xc005 },
+    { start: 0xc009, end: 0xc009 },
+  ]);
+});
+
 test("the separate command reads an image with its stages and writes all ranges to --out", () => {
   const memory = new Uint8Array(0x10000);
   memory.fill(0xea, 0x2000, 0x20ff);
@@ -148,7 +177,10 @@ test("the separate command reads an image with its stages and writes all ranges 
     join(project, "one", "image.json"),
     JSON.stringify({ entry: "$2000", image: "image.bin", segments: [{ start: "$2000", end: "$20ff" }], stages: [{ stage: 0, entry: "$0810", wrote: [{ start: "$2000", end: "$207f" }] }, { stage: 1, entry: "$2000", wrote: [{ start: "$2080", end: "$20ff" }] }] }),
   );
-  writeFileSync(join(project, "one", "cov.bin"), new Uint8Array(0x10000));
+  // Code that the program wrote and ran outside the image: three pieces.
+  const coverage = new Uint8Array(0x10000);
+  for (const address of [0xc000, 0xc010, 0xc020]) coverage[address] = COVERAGE.ramWrite | COVERAGE.ramExecute;
+  writeFileSync(join(project, "one", "cov.bin"), coverage);
   const script = resolve(import.meta.dirname, "../../skills/c64-provenance/scripts/provenance.ts");
   const run = spawnSync(process.execPath, [...process.execArgv, script, "separate", "one/image.json", "--coverage", "one/cov.bin", "--out", "one/separate.json", "--max-listed", "1"], { cwd: project, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
@@ -157,7 +189,12 @@ test("the separate command reads an image with its stages and writes all ranges 
   assert.equal(result.bytesByAccess.untouched, 256);
   assert.equal(result.ranges.count, 2);
   assert.equal(result.ranges.listed.length, 1);
-  assert.equal((JSON.parse(readFileSync(join(project, "one", "separate.json"), "utf8")) as { ranges: unknown[] }).ranges.length, 2);
+  assert.equal(result.outside.generated.count, 3);
+  assert.deepEqual(result.outside.generated.listed, [{ start: "$c000", end: "$c000" }], "--max-listed caps the outside lists too (F-28)");
+  assert.deepEqual(result.outside.read, { count: 0, listed: [] });
+  const written = JSON.parse(readFileSync(join(project, "one", "separate.json"), "utf8")) as { ranges: unknown[]; outside: { generated: unknown[] } };
+  assert.equal(written.ranges.length, 2);
+  assert.equal(written.outside.generated.length, 3);
   assert.equal(spawnSync(process.execPath, [...process.execArgv, script, "separate", "one/image.json", "--run", "5"], { cwd: project, encoding: "utf8" }).status, 2);
 });
 

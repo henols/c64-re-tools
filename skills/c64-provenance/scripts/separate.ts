@@ -42,18 +42,20 @@ export interface Separation {
   /**
    * RAM outside the image and outside pages 0-3, from the coverage: `read`
    * and `executed` the program never wrote (a loader or an earlier stage put
-   * those bytes there), and `generated` it wrote and then executed.
+   * those bytes there), and `generated` it wrote and then executed, in
+   * pieces of code with gaps of up to two operand bytes.
    */
   outside: { read: Range[]; executed: Range[]; generated: Range[] };
 }
 
 const SYSTEM_PAGES_END = 0x03ff;
 
-function merge(addresses: number[]): Range[] {
+/** Joins addresses in order into ranges; `gap` is the most bytes between two addresses in one range. */
+function merge(addresses: number[], gap = 0, joins: (from: number, to: number) => boolean = () => true): Range[] {
   const ranges: Range[] = [];
   for (const address of addresses) {
     const last = ranges.at(-1);
-    if (last !== undefined && last.end + 1 === address) last.end = address;
+    if (last !== undefined && address - last.end - 1 <= gap && joins(last.end, address)) last.end = address;
     else ranges.push({ start: address, end: address });
   }
   return ranges;
@@ -128,5 +130,11 @@ export function separate(input: SeparationInput): Separation {
       else if (!written && (input.coverage[address]! & COVERAGE.ramRead) !== 0) read.push(address);
     }
   }
-  return { ranges, codeRegions, outside: { read: merge(read), executed: merge(ranOutside), generated: merge(generated) } };
+  // The image has no bytes of generated code, so only its opcode bytes count as executed. VICE marks only
+  // opcode bytes: a gap of at most two operand bytes outside the image stays inside one piece of code (F-28).
+  const outsideImage = (from: number, to: number) => {
+    for (let address = from + 1; address < to; address++) if (inImage(address)) return false;
+    return true;
+  };
+  return { ranges, codeRegions, outside: { read: merge(read), executed: merge(ranOutside), generated: merge(generated, 2, outsideImage) } };
 }

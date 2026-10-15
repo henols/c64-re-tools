@@ -121,3 +121,29 @@ export function suggestShift(base: Release, other: Release): { shift: number; ma
   for (const [shift, matches] of votes) if (best === undefined || matches > best.matches) best = { shift, matches };
   return best;
 }
+
+export type ShiftSuggestion = { release: number; shift: number; matchingSequences: number } | { release: number; matchingSequences: number; reason: string };
+
+/**
+ * The --shift to suggest for release `index` (0 = the first) from `found`,
+ * the best shift of that release over the first one (F-25). The shift is the
+ * full value for --shift: `applied` holds the shifts already given. A shift
+ * that moves a segment out of $0000-$ffff is not suggested: with two releases,
+ * the opposite shift of the first release is suggested when it fits, else the
+ * result gives the reason.
+ */
+export function shiftSuggestion(releases: Release[], applied: number[], index: number, found: { shift: number; matches: number }): ShiftSuggestion {
+  const outside = (release: Release, by: number) => release.segments.find((segment) => segment.start + by < 0 || segment.end + by > 0xffff);
+  const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
+  const why = (number: number, by: number, segment: Range) =>
+    `release ${number} moved by ${by} puts ${hex(segment.start)}-${hex(segment.end)} ${segment.start + by < 0 ? "below $0000" : "past $ffff"}`;
+  const own = outside(releases[index]!, found.shift);
+  if (own === undefined) return { release: index + 1, shift: applied[index]! + found.shift, matchingSequences: found.matches };
+  const reasons = [why(index + 1, found.shift, own)];
+  if (releases.length === 2) {
+    const base = outside(releases[0]!, -found.shift);
+    if (base === undefined) return { release: 1, shift: applied[0]! - found.shift, matchingSequences: found.matches };
+    reasons.push(why(1, -found.shift, base));
+  }
+  return { release: index + 1, matchingSequences: found.matches, reason: `No shift fits: ${reasons.join(", and ")}.` };
+}

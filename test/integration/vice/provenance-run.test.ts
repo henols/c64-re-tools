@@ -74,17 +74,46 @@ test("each difference gets its first access in every release and whether the run
   const [status] = (await once(child, "exit")) as [number | null];
   assert.equal(status, 0, stdout);
   const json = JSON.parse(stdout) as {
-    differences: Array<{ start: string; end: string; runtime: Record<string, { first: string; changed: boolean }> }>;
+    differences: Array<{ start: string; end: string; runtime: Record<string, { start: string; end: string; first: string; changed: boolean }> }>;
     run: { releases: Record<string, { started: boolean }> };
   };
   assert.deepEqual(json.run.releases, { "a.prg": { started: true }, "b.prg": { started: true }, "unpacked/image.json": { started: true } });
   const seen = Object.fromEntries(json.differences.map((difference) => [`${difference.start}-${difference.end}`, difference.runtime]));
-  const all = (first: string, changed: boolean) => ({ "a.prg": { first, changed }, "b.prg": { first, changed }, "unpacked/image.json": { first, changed } });
-  assert.deepEqual(seen, {
-    "$080e-$080e": all("execute", false),
-    "$0830-$0831": all("write", true),
-    "$0840-$0840": all("read", false),
-    "$0851-$0852": all("execute", false),
-    "$0860-$0860": all("none", false),
+  // No release has a shift, so each runtime range is the range of the difference.
+  const all = (range: string, first: string, changed: boolean) => {
+    const [start, end] = range.split("-");
+    const access = { start, end, first, changed };
+    return [range, { "a.prg": access, "b.prg": access, "unpacked/image.json": access }];
+  };
+  assert.deepEqual(
+    seen,
+    Object.fromEntries([
+      all("$080e-$080e", "execute", false),
+      all("$0830-$0831", "write", true),
+      all("$0840-$0840", "read", false),
+      all("$0851-$0852", "execute", false),
+      all("$0860-$0860", "none", false),
+    ]),
+  );
+
+  // With a shift, the watches sit at the release's own addresses, and runtime gives those addresses (F-24).
+  const shifted = spawn(process.execPath, [...process.execArgv, script, "a.prg", "b.prg", "--shift", "1:16", "--run", "50"], {
+    cwd: project,
+    env: { ...process.env, C64RT_HOST: `${server.host}:${server.port}` },
+    stdio: ["ignore", "pipe", "inherit"],
   });
+  let shiftedOut = "";
+  shifted.stdout.on("data", (chunk) => (shiftedOut += chunk));
+  const [shiftedStatus] = (await once(shifted, "exit")) as [number | null];
+  assert.equal(shiftedStatus, 0, shiftedOut);
+  const moved = JSON.parse(shiftedOut) as typeof json & { releases: Array<{ name: string; shift: number }> };
+  assert.deepEqual(moved.releases.map((item) => [item.name, item.shift]), [["a.prg", 16], ["b.prg", 0]]);
+  const hex = (text: string) => Number.parseInt(text.slice(1), 16);
+  for (const difference of moved.differences) {
+    assert.equal(hex(difference.runtime["a.prg"]!.start), hex(difference.start) - 16);
+    assert.equal(hex(difference.runtime["b.prg"]!.end), hex(difference.end));
+  }
+  // At its own addresses, a.prg writes $0830, reads $0840 and calls $0850.
+  const own = Object.fromEntries(moved.differences.map((difference) => [`${difference.runtime["a.prg"]!.start}-${difference.runtime["a.prg"]!.end}`, difference.runtime["a.prg"]!.first]));
+  assert.deepEqual(own, { "$0801-$0821": "read", "$0830-$0830": "write", "$0840-$0841": "read", "$0850-$0852": "execute" });
 });

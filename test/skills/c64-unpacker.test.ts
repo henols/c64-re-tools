@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 
 import { inspect, readMemoryMap, writtenThenExecuted } from "../../skills/c64-unpacker/scripts/evidence.ts";
-import { callReturn, executedIn, stageCandidates, stagePoints } from "../../skills/c64-unpacker/scripts/stages.ts";
+import { callReturn, captureSegments, executedIn, stageCandidates, stagePoints } from "../../skills/c64-unpacker/scripts/stages.ts";
 import { COVERAGE } from "../../src/c64.ts";
 import { xorPackedPrg } from "../fixtures/prg/xor-packed.ts";
 import { seededBytes } from "../kit.ts";
@@ -196,4 +196,45 @@ test("the points of a run: exec breakpoints over the blocks, write watches over 
     ],
     watch: [{ start: 0x0802, end: 0x0803 }],
   });
+});
+
+const range = (start: number, end: number) => ({ start, end });
+
+test("capture segments do not overlap, and a block that later stages wrote over is no leftover (F-26)", () => {
+  // The stages of a tape release in the rc.5 test run, captured at $8ab2.
+  const segments = captureSegments(
+    [
+      { entry: 0x081b, wrote: [range(0x0008, 0x00ff), range(0x5203, 0xcfff), range(0xe000, 0xffff)] },
+      { entry: 0x00a8, wrote: [range(0x0200, 0x0700)] },
+      { entry: 0x0690, wrote: [range(0x00c5, 0xcfff), range(0xe000, 0xffff)] },
+      { entry: 0x01ca, wrote: [range(0x0000, 0x00c6), range(0x0400, 0x07e7), range(0x3000, 0x34ff), range(0x58fe, 0x5956), range(0x8c2e, 0x8c70), range(0xd000, 0xd0ff)] },
+    ],
+    0x8ab2,
+  );
+  assert.deepEqual(segments, [
+    { start: 0x0000, end: 0xd0ff, writtenBy: 3 },
+    { start: 0xe000, end: 0xffff, writtenBy: 2 },
+  ]);
+});
+
+test("a block with the code of a later intermediate stage is a leftover; the block with the capture entry never is (R2-01)", () => {
+  // A packer: $080d copies a depacker to $c000; $c000 writes the program to $4000.
+  const staged = [
+    { entry: 0x080d, wrote: [range(0xc000, 0xc07f)] },
+    { entry: 0xc000, wrote: [range(0x4000, 0x407f)] },
+    { entry: 0x4000, wrote: [] },
+  ];
+  assert.deepEqual(captureSegments(staged, 0x4000), [{ start: 0x4000, end: 0x407f, writtenBy: 1 }]);
+  // A release at $0801 moves a mover to $0340, and the mover writes the program back over $0801.
+  const moved = [
+    { entry: 0x080c, wrote: [range(0x0340, 0x037f)] },
+    { entry: 0x0340, wrote: [range(0x0723, 0x449d)] },
+    { entry: 0x0801, wrote: [range(0x00fd, 0x019c)] },
+    { entry: 0x0111, wrote: [range(0x0800, 0x5fff)] },
+    { entry: 0x0801, wrote: [] },
+  ];
+  // At the first $0801: the block holds the code of stage 0, which ran before the mover wrote over it.
+  assert.deepEqual(captureSegments([...moved.slice(0, 2), { entry: 0x0801, wrote: [] }], 0x0801), [{ start: 0x0723, end: 0x449d, writtenBy: 1 }]);
+  // At the second $0801: the code at $0111 and $0340 is loader code that nothing wrote over.
+  assert.deepEqual(captureSegments(moved, 0x0801), [{ start: 0x0723, end: 0x5fff, writtenBy: 3 }]);
 });
