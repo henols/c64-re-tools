@@ -25,7 +25,7 @@ import { GHIDRA_LIMITS, type AssembledSymbol, type Diagnostic } from "#src/nativ
 import { platformNames } from "#src/platform.ts";
 import { resolveProjectPath } from "#src/project.ts";
 import { runScript, UsageError } from "#src/script.ts";
-import { LOADER_JUMP, planLoader, readEntryState, simulate, type EntryState, type LoaderPlan } from "./loader.ts";
+import { LOADER_JUMP, planLoader, rasterLine, readEntryState, simulate, VIC_DISPLAY_REGISTERS, type EntryState, type LoaderPlan } from "./loader.ts";
 import { OPCODES } from "./opcodes.ts";
 import { entriesInData, entryOutsideImage, instructionText, layout, literalOperand, probeForms, render, type Layout, type Range } from "./source.ts";
 
@@ -277,6 +277,15 @@ async function runLoader(path: string, program: Buffer, plan: LoaderPlan, image:
     differ("sp", registers.sp, state.sp);
     const flags = (["n", "v", "d", "i", "z", "c"] as const).reduce((value, name, index) => value | (registers.flags[name] ? [0x80, 0x40, 0x08, 0x04, 0x02, 0x01][index]! : 0), 0);
     differ("flags", flags, state.flags & 0xcf);
+    if (state.vic !== undefined) {
+      // The display registers and the raster line (D60): the loader waited for the line, so the jump comes in it or the next one.
+      const vic = Buffer.from((await client.ioRead(0xd000, 0x2f)).data, "hex");
+      for (const { register, mask } of VIC_DISPLAY_REGISTERS) differ(formatC64Address(0xd000 + register), vic[register]! & mask, state.vic.registers[register]! & mask);
+      differ("the VIC bank", Buffer.from((await client.ioRead(0xdd00, 1)).data, "hex")[0]! & 0x03, state.vic.bank);
+      const line = rasterLine(vic);
+      const wanted = rasterLine(state.vic.registers);
+      if (line !== wanted && line !== wanted + 1) differences.push(`the raster line is ${line}, not ${wanted}`);
+    }
     return { verified: differences.length === 0, differences: differences.slice(0, MAX_LISTED) };
   } finally {
     await client.close();

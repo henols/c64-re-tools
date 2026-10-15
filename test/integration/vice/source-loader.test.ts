@@ -1,6 +1,7 @@
 // The loader of c64-source (D48): generated from an image.json and an
 // entry_state.json, simulated, then run in the emulator to the entry, where
-// memory, $00/$01 and the registers must equal the entry state. The segments
+// memory, $00/$01, the registers, the VIC-II display registers, the VIC bank
+// and the raster line (D60) must equal the entry state. The segments
 // lie under the loader, at $c000 and under the I/O area. Opt-in with
 // C64RT_LIVE_VICE; Ghidra and ACME are necessary too.
 
@@ -53,6 +54,11 @@ test("the loader puts every segment and pages 0-3 in place and gets to the entry
   for (const segment of segments) for (let address = segment.start; address <= segment.end; address++) memory[address] = (address * 7 + 3) & 0xff;
   memory.set([0x4c, ENTRY & 0xff, ENTRY >> 8], ENTRY); // JMP to itself
   const pages = Uint8Array.from({ length: 0x400 }, (_, index) => (index * 13 + 5) & 0xff);
+  const vic = new Uint8Array(0x2f);
+  vic.set([0x9b, 0x23], 0x11);
+  vic.set([0x01, 0xc8, 0x00, 0x39], 0x15);
+  vic.set([0xf5, 0xf6, 0xf1, 0xf2, 0xf3], 0x20);
+  vic[0x00] = 0x60;
   mkdirSync(join(project, "unpacked"));
   writeFileSync(join(project, "unpacked", "image.bin"), memory);
   const hex = (value: number) => `$${value.toString(16).padStart(4, "0")}`;
@@ -63,6 +69,8 @@ test("the loader puts every segment and pages 0-3 in place and gets to the entry
       registers: { pc: hex(ENTRY), a: 1, x: 2, y: 3, sp: 0xf0, flags: { n: true, v: false, b: false, d: false, i: true, z: false, c: true } },
       cpuPort: { $00: 0x2f, $01: 0x35 },
       pages: Object.fromEntries([0, 1, 2, 3].map((page) => [hex(page << 8), Buffer.from(pages.subarray(page << 8, (page + 1) << 8)).toString("hex")])),
+      // The VIC-II at the entry (D60): raster line $123, screen at $0c00 with bitmap mode, VIC bank 2, other colours.
+      io: { vic: { from: "$d000", bytes: Buffer.from(vic).toString("hex") }, cia2: { from: "$dd00", bytes: "c6".padEnd(32, "0") } },
     }),
   );
 

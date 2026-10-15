@@ -1,6 +1,8 @@
 // The loader of a generated source (D48): a PRG that copies each segment and
-// the entry state's pages $0002-$03ff into place, sets $00/$01, the stack
-// pointer, A, X, Y and the flags, and jumps to the entry. The copies run
+// the entry state's pages $0002-$03ff into place, sets the display registers
+// of the VIC-II and the VIC bank, waits for the entry's raster line (D60),
+// sets $00/$01, the stack pointer, A, X, Y and the flags, and jumps to the
+// entry. The copies run
 // from a free page with SEI and all RAM visible, in an order where no copy
 // overwrites the packed bytes of a copy that has not run yet. The plan is
 // simulated here before the emulator runs it.
@@ -20,6 +22,31 @@ export interface EntryState {
   port: [number, number];
   /** $0000-$03ff at the entry. */
   pages: Uint8Array;
+  /** The VIC-II at the entry (D60): $d000-$d02e, and the VIC bank (bits 0-1 of $dd00). */
+  vic?: { registers: Uint8Array; bank: number };
+}
+
+/**
+ * The VIC-II registers that the loader sets (D60), each with the bits that a
+ * read gives back: not the raster, the light pen, the interrupt registers or
+ * the collisions. The raster line comes from a wait instead.
+ */
+export const VIC_DISPLAY_REGISTERS: ReadonlyArray<{ register: number; mask: number }> = [
+  ...Array.from({ length: 0x11 }, (_, register) => ({ register, mask: 0xff })),
+  { register: 0x11, mask: 0x7f },
+  { register: 0x15, mask: 0xff },
+  { register: 0x16, mask: 0x3f },
+  { register: 0x17, mask: 0xff },
+  { register: 0x18, mask: 0xfe },
+  { register: 0x1b, mask: 0xff },
+  { register: 0x1c, mask: 0xff },
+  { register: 0x1d, mask: 0xff },
+  ...Array.from({ length: 0x0f }, (_, index) => ({ register: 0x20 + index, mask: 0x0f })),
+];
+
+/** The raster line of the entry, from $d011 bit 7 and $d012 as the capture read them. */
+export function rasterLine(registers: Uint8Array): number {
+  return ((registers[0x11]! & 0x80) << 1) | registers[0x12]!;
 }
 
 const FLAG_BITS: Record<string, number> = { n: 0x80, v: 0x40, b: 0x10, d: 0x08, i: 0x04, z: 0x02, c: 0x01 };
@@ -57,6 +84,7 @@ export function readEntryState(text: string, path: string): EntryState {
     flags,
     port: [byte(value.cpuPort?.$00, "cpuPort.$00"), byte(value.cpuPort?.$01, "cpuPort.$01")],
     pages,
+    ...readVic(value.io, fail),
   };
 }
 
@@ -97,9 +125,14 @@ const STUB = 0x080d;
 const STUB_SIZE = 21;
 /** The copier code and its three variables, without the table. */
 const COPIER_CODE_SIZE = 167;
+/** The VIC-II code of the copier (D60), without its two tables of one byte per register. */
+const VIC_CODE_SIZE = 44;
+const VIC_SIZE = VIC_CODE_SIZE + 2 * VIC_DISPLAY_REGISTERS.length;
+/** The copier and the stub's move of it: two pages. */
+const COPIER_LIMIT = 0x200;
 const COPY_ENTRY = 7;
-/** X indexes the table, so the table fits in 256 bytes. */
-export const MAX_COPIES = Math.floor((256 - 2) / COPY_ENTRY);
+/** X indexes the table, so the table fits in 256 bytes, and the copier with the VIC-II code fits in two pages. */
+export const MAX_COPIES = Math.min(Math.floor((256 - 2) / COPY_ENTRY), Math.floor((COPIER_LIMIT - COPIER_CODE_SIZE - VIC_SIZE - 2) / COPY_ENTRY));
 /** A loader that loads into $d000 or higher would write the I/O area. */
 const LOAD_LIMIT = 0xcfff;
 const COPIER_PAGES = [...Array.from({ length: 15 }, (_, index) => 0xc000 + index * 0x100), ...Array.from({ length: 0x9b }, (_, index) => 0x9e00 - index * 0x100)];
@@ -147,6 +180,16 @@ export function simulate(memory: Int16Array, copies: Copy[], expected: (address:
   return undefined;
 }
 
+/** The VIC-II and its bank from the io part of an entry state, when it has them. */
+function readVic(io: Record<string, any> | undefined, fail: (what: string) => never): { vic: NonNullable<EntryState["vic"]> } | Record<string, never> {
+  if (io?.vic === undefined) return {};
+  const vic = io.vic.bytes;
+  const cia2 = io.cia2?.bytes;
+  if (typeof vic !== "string" || !/^[0-9a-f]{94}$/i.test(vic)) return fail("io.vic.bytes is not 47 bytes of hex");
+  if (typeof cia2 !== "string" || !/^[0-9a-f]{2}/i.test(cia2)) return fail("io.cia2.bytes is missing");
+  return { vic: { registers: Buffer.from(vic, "hex"), bank: Number.parseInt(cia2.slice(0, 2), 16) & 0x03 } };
+}
+
 export interface LoaderInput {
   /** The segments with the files that hold them, in address order. */
   segments: Array<Range & { files: string[] }>;
@@ -181,7 +224,7 @@ export function planLoader(input: LoaderInput): LoaderPlan {
   }
   if (plain.length > MAX_COPIES) throw new WireFailure("invalid-input", `The loader needs ${plain.length} copies; it can do at most ${MAX_COPIES}. Join segments in the unpacker capture (--range) or write the loader by hand.`);
   const copierImage = at;
-  const copierSize = COPIER_CODE_SIZE + COPY_ENTRY * plain.length + 2;
+  const copierSize = COPIER_CODE_SIZE + (state.vic === undefined ? 0 : VIC_SIZE) + COPY_ENTRY * plain.length + 2;
   const end = copierImage + copierSize - 1;
   if (end > LOAD_LIMIT) throw new WireFailure("invalid-input", `The loader would end at ${hex4(end)}, after ${hex4(LOAD_LIMIT)}: loading it would write the I/O area. The image is too large for one loader file.`);
 
@@ -286,7 +329,9 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     "        adc #7",
     "        tax",
     "        jmp .next",
-    `.done   lda #${hex2(port0)}`,
+    ".done",
+    ...vicLines(state),
+    `        lda #${hex2(port0)}`,
     "        sta $00",
     `        lda #${hex2(port1)}`,
     "        sta $01",
@@ -303,6 +348,12 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     ".count  !word 0",
     ".index  !byte 0",
     ".back   !byte 0",
+    ...(state.vic === undefined
+      ? []
+      : [
+          `.vicreg !byte ${VIC_DISPLAY_REGISTERS.map((item) => hex2(item.register)).join(",")}`,
+          `.vicval !byte ${VIC_DISPLAY_REGISTERS.map((item) => hex2(state.vic!.registers[item.register]!)).join(",")}`,
+        ]),
     ".table",
   );
   for (const copy of copies) {
@@ -321,4 +372,35 @@ export function planLoader(input: LoaderInput): LoaderPlan {
     end,
     text: `${lines.join("\n")}\n`,
   };
+}
+
+/**
+ * The copier's VIC-II part (D60): with the I/O area visible it sets the
+ * display registers and the VIC bank of the entry state, then waits for the
+ * entry's raster line, so the program starts in the same phase of the frame.
+ */
+function vicLines(state: EntryState): string[] {
+  if (state.vic === undefined) return [];
+  const line = rasterLine(state.vic.registers);
+  return [
+    "        lda #$35",
+    "        sta $01",
+    `        ldx #${hex2(VIC_DISPLAY_REGISTERS.length - 1)}`,
+    ".vic    ldy .vicreg,x",
+    "        lda .vicval,x",
+    "        sta $d000,y",
+    "        dex",
+    "        bpl .vic",
+    "        lda $dd00",
+    "        and #$fc",
+    `        ora #${hex2(state.vic.bank)}`,
+    "        sta $dd00",
+    `.raster lda $d012`,
+    `        cmp #${hex2(line & 0xff)}`,
+    "        bne .raster",
+    "        lda $d011",
+    "        and #$80",
+    `        cmp #${hex2((line >> 1) & 0x80)}`,
+    "        bne .raster",
+  ];
 }

@@ -71,11 +71,12 @@ Do not edit the generated files. The next run writes over them.
 1. `10 SYS 2061` starts it.
 2. It moves its copier to two free pages. The copier runs with interrupts off and with all RAM visible.
 3. It copies each segment and the pages $0002-$03ff of the entry state into place. The script selects an order in which no copy writes over the packed bytes of a copy that has not run yet.
-4. It sets $00/$01, the stack pointer, A, X, Y and the flags, and jumps to the entry.
+4. It sets the display registers of the VIC-II and the VIC bank from `io` in the entry state. Then it waits for the raster line of the entry.
+5. It sets $00/$01, the stack pointer, A, X, Y and the flags, and jumps to the entry.
 
-The flags go through the free stack byte below the stack pointer (`stackByte`). The loader changes this byte. The loader does not set the VIC, SID and CIA registers. They stay as the KERNAL set them.
+The flags go through the free stack byte below the stack pointer (`stackByte`). The loader changes this byte. The loader does not set the SID, the CIA timers or the interrupt registers of the VIC-II. They stay as the KERNAL set them. Thus a scenario can still find a difference in an interrupt or a timer. Then use `runUntil` with `raster` in the c64-testing skill.
 
-The script simulates the copies first. Then it runs `loader.prg` in the emulator to its jump to the entry. It compares the memory, $00/$01 and the registers with the entry state there. `loader.verified: true` tells that all of them are equal. An interrupt can run right at the entry, as in the original program.
+The script simulates the copies first. Then it runs `loader.prg` in the emulator to its jump to the entry. It compares the memory, $00/$01, the registers, the display registers of the VIC-II, the VIC bank and the raster line with the entry state there. `loader.verified: true` tells that all of them are equal. An interrupt can run right at the entry, as in the original program.
 
 ## Knowledge
 
