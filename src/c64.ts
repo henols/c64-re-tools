@@ -161,9 +161,9 @@ const MIN_BASIC_LOAD = 0x0400;
  * line ends at a zero byte, and a link whose high byte is zero ends the
  * program. A real end marker is two zero bytes; when only the high byte is
  * zero, the "marker" is the first machine code after the BASIC text (SYS
- * lines that jump right behind themselves). The stored links need not point
- * to the load address (a relocated program), but with two lines or more, each
- * difference between links must be the length of a line (F-12).
+ * lines that jump right behind themselves). The stored links are not read:
+ * BASIC relinks a loaded program, and a crack can store odd links to hide
+ * lines from LIST. A load address below $0400 is a memory dump (F-12).
  */
 export function parseTokenized(program: Uint8Array): TokenizedProgram {
   if (program.length < 4) return { reason: "The file is too short for a BASIC program." };
@@ -172,19 +172,8 @@ export function parseTokenized(program: Uint8Array): TokenizedProgram {
     return { reason: `The load address ${formatC64Address(loadAddress)} is below $0400, in the zero page, the stack or the system pages. The file is a memory dump or machine code, not a BASIC program.` };
   }
   const lines: TokenizedLine[] = [];
-  /** The file offset and the stored link of each line. */
-  const starts: Array<{ at: number; link: number }> = [];
   let at = 2;
-  /** The program, when the stored links agree with the line lengths. */
-  const ended = (basicEnd: number): TokenizedProgram => {
-    const offsets = [...starts.map((start) => start.at), at];
-    for (let index = 1; index < starts.length; index++) {
-      if (((starts[index]!.link - starts[index - 1]!.link) & 0xffff) !== offsets[index + 1]! - offsets[index]!) {
-        return { reason: `The link of BASIC line ${lines[index]!.number} does not agree with the length of the line, so the bytes are no BASIC program.` };
-      }
-    }
-    return { loadAddress, basicEnd, textBytes: at, lines };
-  };
+  const ended = (basicEnd: number): TokenizedProgram => ({ loadAddress, basicEnd, textBytes: at, lines });
   // File offset k (from 2 on) loads at loadAddress + k - 2.
   for (;;) {
     // A file that ends right after a line leaves the end marker to the zeros after it in memory;
@@ -203,7 +192,6 @@ export function parseTokenized(program: Uint8Array): TokenizedProgram {
     const end = program.indexOf(0, at + 4);
     if (end < 0) return { reason: `BASIC line ${number} has no end.` };
     lines.push({ number, tokens: program.subarray(at + 4, end) });
-    starts.push({ at, link: program[at]! | (program[at + 1]! << 8) });
     at = end + 1;
   }
 }

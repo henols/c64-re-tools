@@ -82,16 +82,16 @@ test("bytes that are no BASIC program give a reason, not lines", () => {
   assert.ok(!("reason" in unterminated) && unterminated.lines.length === 1, "a file may end right after its last line");
 });
 
-test("a memory dump is no BASIC program: a load address below $0400, or links that do not follow the lines (F-12)", () => {
+test("a memory dump is no BASIC program: a load address below $0400; odd links are BASIC still (F-12)", () => {
   // 64 KiB of RAM from $0000: the "load address" is the bytes at $0000-$0001.
   const dump = new Uint8Array(0x10000);
   dump.set([0x00, 0x00, 0x09, 0x00, 0xb1, 0x91, 0x3c, 0x22, 0x22, 0x00, 0x0e, 0x00]);
   assert.match((parseTokenized(dump) as { reason: string }).reason, /load address \$0000 is below \$0400/);
   assert.match((parseTokenized(Uint8Array.from([0xff, 0x03, 0, 0])) as { reason: string }).reason, /below \$0400/);
-  // Two lines whose links do not differ by the length of the first line.
+  // A crack can store an odd link to hide lines from LIST; BASIC relinks the program when it loads.
   const twoLines = program([[10, bytes(SYS, "2061")], [20, bytes(SYS, "2062")]]);
   twoLines[12]! ^= 0x01;
-  assert.match((parseTokenized(twoLines) as { reason: string }).reason, /link of BASIC line 20 does not agree/);
+  assert.deepEqual((parseTokenized(twoLines) as { lines: Array<{ number: number }> }).lines.map((line) => line.number), [10, 20]);
   // A relocated program: every link points 0x0400 bytes higher, and the lines still split.
   const relocated = program([[10, bytes(SYS, "2061")], [20, bytes(SYS, "2062")], [30, bytes(SYS, "2063")]]);
   for (const at of [2, 2 + 10, 2 + 20]) relocated[at + 1]! += 0x04;
